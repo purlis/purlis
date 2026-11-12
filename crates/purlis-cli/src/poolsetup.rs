@@ -62,6 +62,30 @@ fn said(setup: &Setup) -> String {
         for finding in &step.findings {
             let _ = writeln!(out, "             {finding}");
         }
+        // The machine, as Connect shows it: the key to check, or the one trusted.
+        if let Some(machine) = &step.machine {
+            if let Some(key) = &machine.key {
+                let _ = writeln!(
+                    out,
+                    "             shows {} ({})",
+                    key.fingerprint, key.algorithm
+                );
+            }
+            if let Some(key) = &machine.trusted {
+                let _ = writeln!(
+                    out,
+                    "             trusted {} ({})",
+                    key.fingerprint, key.algorithm
+                );
+            }
+            if let Some(key) = &machine.now {
+                let _ = writeln!(
+                    out,
+                    "             shows now {} ({})",
+                    key.fingerprint, key.algorithm
+                );
+            }
+        }
         for check in &step.checks {
             let word = serde_json::to_value(check.verdict)
                 .ok()
@@ -85,6 +109,13 @@ fn said(setup: &Setup) -> String {
         if let Some(command) = &next.command {
             let _ = writeln!(out, "  {command}");
         }
+    }
+    let other = setup
+        .at
+        .and_then(|at| setup.step(at))
+        .and_then(|step| step.other.as_ref());
+    if let Some(other) = other {
+        let _ = writeln!(out, "Or: {}. {}", other.label, other.does);
     }
     out
 }

@@ -27,10 +27,13 @@ pub enum PoolCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Add a Docker pool on this machine: its runner is made from the image and paired here.
+    /// Add a Docker pool: its runner is made from the image and paired here.
     ///
     /// This is what Pool setup's Create button runs, and Pool setup picks it up. A team's own
-    /// image is checked against the runner image contract first.
+    /// image is checked against the runner image contract first. With `--on ssh://…`, the pool's
+    /// Docker is on that machine, reached over SSH with your own SSH settings and agent: purlis
+    /// shows the key the machine presents, and makes the pool only once you give its fingerprint
+    /// with `--trust`.
     Add {
         /// The pool's name: lower-case letters, digits and dashes.
         name: String,
@@ -58,6 +61,14 @@ pub enum PoolCommand {
         /// The widest frame its runner's browsers are watched at, in pixels.
         #[arg(long)]
         width: Option<u32>,
+        /// The machine its Docker is on: ssh://[user@]host[:port][/socket]. Plain tcp:// is
+        /// refused.
+        #[arg(long, value_name = "ROUTE")]
+        on: Option<String>,
+        /// The fingerprint of that machine's host key, as you checked it there
+        /// (SHA256:…, from `ssh-keygen -lf`).
+        #[arg(long, value_name = "FINGERPRINT", requires = "on")]
+        trust: Option<String>,
     },
     /// Record profiles of this machine's on a pool, for its chats to use. Its runner keeps them
     /// the next time their sign-ins are asked, and `purlis profile sign-in <profile> --pool
@@ -183,6 +194,8 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
             suspend_after,
             frames,
             width,
+            on,
+            trust,
         } => {
             let asked = Asked {
                 name: name.clone(),
@@ -194,6 +207,8 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
                 suspend_after: suspend_after.clone(),
                 frames: *frames,
                 width: *width,
+                on: on.clone(),
+                trust: trust.clone(),
             };
             added(&config()?, &asked)
         }
@@ -435,7 +450,10 @@ fn taken_off(_config: &std::path::Path, pool: &str, name: &str) -> Result<Option
 fn added(config: &std::path::Path, asked: &Asked) -> Result<u8, String> {
     let docker = poolsetup::docker_here()
         .ok_or_else(|| "purlis found no docker on this machine.".to_owned())?;
-    docker.answers().map_err(|why| why.0)?;
+    // A pool on another machine needs only Docker's command here: its engine is there.
+    if asked.on.is_none() {
+        docker.answers().map_err(|why| why.0)?;
+    }
     let keyring = purlis_core::linkkey::this_builds_keyring(config);
     let desktop = purlis_core::linkkey::desktop(config, &*keyring)?.pinned();
     match poolsetup::asked::create(config, &docker, asked, &desktop)

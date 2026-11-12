@@ -19,8 +19,11 @@ import type { Place } from "./pieceViews";
  * a newer one replaces it, so a tab that mounts after the ask still lands on the line.
  */
 
-/** Where to land: the project, the branch, the path in it, and the line, from 1. */
-export type Jump = { plane: PlaneId; place: Place; path: string; line: number };
+/**
+ * Where to land: the project, the branch, the path in it, and the line and column, from 1. A
+ * jump with no line opens the file in a tab of its own (a pane's file link, #6216).
+ */
+export type Jump = { plane: PlaneId; place: Place; path: string; line?: number; column?: number };
 
 /** A jump with its count: each ask is answered once, even for the same place twice. */
 export type Pending = Jump & { at: number };
@@ -32,8 +35,10 @@ const windows = new Set<(jump: Pending) => void>();
 
 /** Asks the window to open `jump`'s file at its line. */
 export function jumpTo(jump: Jump): void {
-  pending = { ...jump, at: ++asked };
-  for (const told of windows) told(pending);
+  const now = { ...jump, at: ++asked };
+  // Only a jump to a line lands in a branch's file tab; one without opens the file's own tab.
+  if (jump.line !== undefined) pending = now;
+  for (const told of windows) told(now);
   for (const told of tabs) told();
 }
 

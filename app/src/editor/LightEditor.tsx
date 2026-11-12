@@ -110,19 +110,22 @@ export function linesSelected(
 }
 
 /** One file, read only. `line`, when given, is brought into view (a jump from a diff, a
- *  record or the knowledge graph). `onLine` hears the line the cursor moves to, which is the
- *  line *Open in your editor* hands on (RC-20); `onLines` hears the lines selected, which a
- *  reference to part of the file names (FM-9). */
+ *  record or the knowledge graph), with the cursor at `column` on it (a pane's file link).
+ *  `onLine` hears the line the cursor moves to, which is the line *Open in your editor* hands
+ *  on (RC-20); `onLines` hears the lines selected, which a reference to part of the file names
+ *  (FM-9). */
 export function LightEditor({
   path,
   text,
   line,
+  column,
   onLine,
   onLines,
 }: {
   path: string;
   text: string;
   line?: number;
+  column?: number;
   onLine?: (line: number) => void;
   onLines?: (lines: { first: number; last: number } | undefined) => void;
 }) {
@@ -151,7 +154,8 @@ export function LightEditor({
       state: EditorState.create({ doc: text, extensions: [reading(language, path), cursor] }),
     });
     if (line !== undefined && line >= 1 && line <= view.state.doc.lines) {
-      const at = view.state.doc.line(line).from;
+      const there = view.state.doc.line(line);
+      const at = there.from + Math.min(Math.max((column ?? 1) - 1, 0), there.length);
       view.dispatch({
         selection: { anchor: at },
         effects: EditorView.scrollIntoView(at, { y: "center" }),
@@ -164,7 +168,7 @@ export function LightEditor({
       views.current = [];
       view.destroy();
     };
-  }, [path, text, line]);
+  }, [path, text, line, column]);
   return (
     <>
       <div

@@ -303,3 +303,9 @@ named in the window "Another machine without Docker" when it is built.
 - A machine reinstalled under a pool stops that pool until the person checks and trusts it again.
 - The remote account that reaches the engine controls that machine's Docker. The guide says so
   at Connect and offers rootless Docker or Podman under Options.
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0123/`](0123/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record.

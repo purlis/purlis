@@ -62,6 +62,9 @@ import type { ViewRef } from "../tabs";
 import { BranchTree } from "./BranchTree";
 import { LightEditor } from "./LightEditor";
 import { settleJump, usePendingJump } from "../fileJump";
+import { onAMac } from "../mac";
+import { modifierSaid } from "../PaneLinkSurfaces";
+import { outsideLanding } from "../paneLinkFiles";
 import { DragHandle, PickAChat, StartAChatHere, type Referenced } from "../references";
 import { useBranchMoved } from "./branchMoved";
 import { readAt } from "./lastRead";
@@ -546,6 +549,7 @@ export function Shown({
   path,
   read,
   line,
+  column,
   onLine,
   onLines,
   source = false,
@@ -554,6 +558,8 @@ export function Shown({
   path: string;
   read: FileRead;
   line?: number;
+  /** The column on `line` the cursor lands at, from 1. */
+  column?: number;
   onLine?: (line: number) => void;
   onLines?: (lines: Lines | undefined) => void;
   /** Markdown's source rather than the rendering. */
@@ -582,7 +588,14 @@ export function Shown({
           </Markdown>
         </article>
       ) : (
-        <LightEditor path={path} text={read.text} line={line} onLine={onLine} onLines={onLines} />
+        <LightEditor
+          path={path}
+          text={read.text}
+          line={line}
+          column={column}
+          onLine={onLine}
+          onLines={onLines}
+        />
       );
     case "image":
       return <BytesPreview key={path} name={name} mime={read.mime} base64={read.base64} />;
@@ -680,6 +693,55 @@ export function PieceFileTab({
   );
 }
 
+/**
+ * **A file outside the project, in a tab of its own** (#6216): one a pane's link opened after its
+ * ask was answered, read only, at the line and column the link named. The core reads it only for
+ * the chat whose pane opened it, within the hour, and while it is still the file it was then
+ * (`pane_link_file`); otherwise the tab says to open it from its link again.
+ */
+export function OutsideFileTab({
+  plane,
+  session,
+  path,
+}: {
+  plane: PlaneId;
+  session: number | null;
+  path: string;
+}) {
+  const [landing] = useState(() => outsideLanding(path));
+  const read =
+    useFileRead(
+      path,
+      (path) =>
+        commands.paneLinkFile({ plane, session }, path).then((said) => {
+          if (said.status === "error") return said;
+          if (said.data.read === "not-opened")
+            return { status: "error" as const, error: notOpenedSaid(onAMac()) };
+          return { status: "ok" as const, data: said.data.file };
+        }),
+      [plane, session],
+    ) ?? READING;
+  return (
+    <div className="piece-file">
+      <header className="piece-files-head" {...editorToolbar}>
+        <ToolbarFile path={path} named={false} />
+      </header>
+      <Shown
+        path={path}
+        read={read}
+        line={landing.line}
+        column={landing.column}
+        source={landing.line !== undefined}
+      />
+    </div>
+  );
+}
+
+/** What a file outside the project's tab says when the core will not read it for this chat. */
+export function notOpenedSaid(mac: boolean): string {
+  return `purlis shows a file outside the project only after you open it from its link: ${modifierSaid(mac)} it in the chat again.`;
+}
+
 /** *Show what changed*: the file's comparison against the branch's base, in a view tab. */
 function ShowWhatChanged({
   cut,
@@ -768,15 +830,21 @@ export function PieceFilesTab({
   // Taken while drawing, the way React keeps what an earlier render saw, so the preview never
   // draws the old file first; settled after, so a tab opened later does not land on it again.
   const jump = usePendingJump(plane, cut);
-  const [landed, setLanded] = useState<{ at: number; path: string; line: number }>();
+  const [landed, setLanded] = useState<{
+    at: number;
+    path: string;
+    line?: number;
+    column?: number;
+  }>();
   if (jump !== undefined && jump.at !== landed?.at) {
-    setLanded({ at: jump.at, path: jump.path, line: jump.line });
+    setLanded({ at: jump.at, path: jump.path, line: jump.line, column: jump.column });
     setPicked(jump.path);
   }
   useEffect(() => {
     if (landed !== undefined) settleJump(landed.at);
   }, [landed]);
   const line = landed !== undefined && landed.path === picked ? landed.line : undefined;
+  const column = landed !== undefined && landed.path === picked ? landed.column : undefined;
   const at = useCursorLine(plane, cut, picked, line);
   const selection = useSelectedLines(picked);
   const read = useFile(plane, cut, picked);
@@ -858,6 +926,7 @@ export function PieceFilesTab({
                 path={picked}
                 read={read}
                 line={line}
+                column={column}
                 onLine={at.moved}
                 onLines={selection.selected}
                 source={showsSource}

@@ -228,6 +228,7 @@ pub const PURLIS_KEEPS: &[&str] = &[
     "cache-homes",
     "codex-homes",
     "docker-settings",
+    "engine-links",
     "engines",
     "events",
     "harnesses",

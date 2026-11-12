@@ -71,9 +71,19 @@ beforeEach(() => {
       const { candidates } = args as { candidates: { kind: string; text: string }[] };
       return candidates.map((one) =>
         one.text.startsWith("https://")
-          ? { kind: "url", target: one.text, does: { does: "opens" } }
+          ? {
+              kind: "url",
+              target: one.text,
+              shown: one.text,
+              does: { does: "opens", into: "browser" },
+            }
           : one.text.startsWith("ftp://")
-            ? { kind: "url", target: one.text, does: { does: "refused", reason: FTP } }
+            ? {
+                kind: "url",
+                target: one.text,
+                shown: one.text,
+                does: { does: "refused", reason: FTP },
+              }
             : null,
       );
     }
@@ -178,22 +188,29 @@ describe("Links in this pane…", () => {
     expect(asked("pane_link_open")[0].args).toEqual({
       from: { plane: "/planes/one", session: 1 },
       candidate: { kind: "url", text: "https://c.example/three" },
-      confirmed: null,
+      token: null,
     });
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "Links in this pane" })).toBeNull(),
     );
   });
 
-  it("asks first where the core asks, and opens on the person's answer", async () => {
-    opens = { answer: "ask", reason: "it is outside the workspace", shown: "x", target: "/x" };
+  it("asks first where the core asks, and opens on the answer with the ask's token", async () => {
+    opens = {
+      answer: "ask",
+      reason: "it is outside the workspace",
+      shown: "x",
+      target: "/x",
+      token: "a-one-use-token",
+      about: { about: "link" },
+    };
     const { dialog } = await listed();
     fireEvent.click(within(dialog).getAllByRole("option")[0]);
     const ask = await screen.findByRole("dialog", { name: "Open this link?" });
     opens = { answer: "opened", kind: "url", target: "/x" };
     fireEvent.click(within(ask).getByRole("button", { name: "Open link" }));
     await waitFor(() => expect(asked("pane_link_open")).toHaveLength(2));
-    expect(asked("pane_link_open")[1].args.confirmed).toBe("/x");
+    expect(asked("pane_link_open")[1].args.token).toBe("a-one-use-token");
   });
 
   it("lists a link printed twice once, where it was printed last", async () => {

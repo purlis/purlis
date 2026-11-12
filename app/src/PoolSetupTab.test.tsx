@@ -19,6 +19,9 @@ const step = (id: string, name: string, state: string, more: Partial<PoolSetupSt
     skippable: false,
     see: null,
     checks: [],
+    other: null,
+    machine: null,
+    cause: null,
     also: null,
     parts: [],
     undo: null,
@@ -34,6 +37,7 @@ const action = (id: string, label: string, url: string | null = null) => ({
 });
 
 const setup = (at: string, steps: PoolSetupStep[], pool: string | null = null): PoolSetupShown => ({
+  kind: "docker",
   pool,
   name: pool,
   at,
@@ -41,7 +45,6 @@ const setup = (at: string, steps: PoolSetupStep[], pool: string | null = null): 
   noticed: false,
   recommended: "docker",
   others: [],
-  kind: "docker",
   contexts: { names: [], recommended: null, chosen: null, pools: [] },
 });
 
