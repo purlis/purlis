@@ -72,23 +72,10 @@ export function taskScreensSetting(plane: PlaneId): LiveSetting {
               onCheckedChange={(to) => (to ? set(true) : setAsking(true))}
             />
             {asking && (
-              <AlertDialog
-                onClose={() => setAsking(false)}
-                title="Stop keeping task screens?"
-                description={
-                  <p>
-                    {kept === 0
-                      ? "No screen is kept now. "
-                      : `purlis deletes the ${kept} kept ${kept === 1 ? "screen" : "screens"} now. `}
-                    From then on no task's screen is kept, so Read it on a closed task's card has
-                    nothing to show. Its report stays.
-                  </p>
-                }
-                main={{
-                  children: "Delete kept screens",
-                  variant: "danger",
-                  onPress: () => set(false),
-                }}
+              <StopKeepingTaskScreens
+                kept={kept}
+                onCancel={() => setAsking(false)}
+                onDelete={() => set(false)}
               />
             )}
           </>
@@ -96,4 +83,36 @@ export function taskScreensSetting(plane: PlaneId): LiveSetting {
       };
     },
   };
+}
+
+/**
+ * **The ask before keeping is turned off** (#6306): how many kept screens go, that nothing is
+ * kept from then on, and that each task's report stays. *Delete kept screens* is the danger
+ * answer, since nothing puts them back.
+ */
+export function StopKeepingTaskScreens({
+  kept,
+  onDelete,
+  onCancel,
+}: {
+  kept: number;
+  onDelete: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <AlertDialog
+      onClose={onCancel}
+      title="Stop keeping task screens?"
+      description={
+        <p>
+          {kept === 0
+            ? "No screen is kept now. "
+            : `purlis deletes the ${kept} kept ${kept === 1 ? "screen" : "screens"} now. `}
+          From then on no task's screen is kept, so Read it on a closed task's card has nothing to
+          show. Its report stays.
+        </p>
+      }
+      main={{ children: "Delete kept screens", variant: "danger", onPress: onDelete }}
+    />
+  );
 }
