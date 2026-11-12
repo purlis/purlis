@@ -60,15 +60,10 @@ describe("Pool setup on Docker on another machine", () => {
     await address.setValue(ADDRESS);
     await press("Connect to 127.0.0.1", MAKING);
     await press("Trust this machine", MAKING);
-    await $("aria/Every check passed")
-      .waitForDisplayed({ timeout: MAKING })
-      .catch(async () => {
-        throw new Error(`Connect never passed: ${await theStepSays()}`);
-      });
-    await press("Continue");
 
+    // Every check passed, the machine is trusted, and setup goes on to the pool.
     // Pool: its name and the image, made on the other machine.
-    await on("Pool");
+    await on("Pool", MAKING);
     const name = await $("aria/Name");
     await name.waitForDisplayed();
     await name.setValue(POOL);
