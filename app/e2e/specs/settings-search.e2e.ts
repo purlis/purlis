@@ -58,18 +58,35 @@ async function focusedSetting(): Promise<string> {
   );
 }
 
-/** Presses the Set here toggle, asked for by its role and its accessible name, and says what it
- *  is now. A toggle button is a button with `aria-pressed`, its name its words. */
-async function pressSetHere(): Promise<string> {
-  return browser.execute(() => {
-    const toggle = () =>
+/** The Set here toggle's `aria-pressed`, asked for by its role and its accessible name: a toggle
+ *  button is a button with `aria-pressed`, its name its words. */
+async function setHerePressed(): Promise<string> {
+  return browser.execute(
+    () =>
       [
         ...document.querySelectorAll<HTMLElement>(
           '[role="button"][aria-pressed], button:not([role])[aria-pressed]',
         ),
-      ].find((one) => (one.getAttribute("aria-label") ?? one.textContent)?.trim() === "Set here");
-    toggle()?.click();
-    return toggle()?.getAttribute("aria-pressed") ?? "";
+      ]
+        .find((one) => (one.getAttribute("aria-label") ?? one.textContent)?.trim() === "Set here")
+        ?.getAttribute("aria-pressed") ?? "",
+  );
+}
+
+/** Presses Set here, and waits until the toggle says it is `to`. */
+async function pressSetHere(to: "true" | "false"): Promise<void> {
+  await browser.execute(() => {
+    [
+      ...document.querySelectorAll<HTMLElement>(
+        '[role="button"][aria-pressed], button:not([role])[aria-pressed]',
+      ),
+    ]
+      .find((one) => (one.getAttribute("aria-label") ?? one.textContent)?.trim() === "Set here")
+      ?.click();
+  });
+  await browser.waitUntil(async () => (await setHerePressed()) === to, {
+    timeout: 10_000,
+    timeoutMsg: `Set here, pressed, never said ${to}`,
   });
 }
 
@@ -117,7 +134,7 @@ describe("one settings search across every level, in the real WebView", () => {
   it("narrows to what this level's files set, with Set here", async () => {
     await settingsAt("Project", "Saving");
     await $(SETTINGS_GROUPS).waitForDisplayed({ timeout: 20_000 });
-    expect(await pressSetHere()).toBe("true");
+    await pressSetHere("true");
 
     await browser.waitUntil(
       async () => (await found()).rows.some((one) => one.setting === "project.saving.memory.share"),
@@ -127,7 +144,7 @@ describe("one settings search across every level, in the real WebView", () => {
     expect(sections.every((one) => one.startsWith("Project › "))).toBe(true);
     expect(rows.every((one) => one.setHere)).toBe(true);
 
-    expect(await pressSetHere()).toBe("false");
+    await pressSetHere("false");
     await browser.waitUntil(async () => (await found()).title === "", {
       timeout: 10_000,
       timeoutMsg: "Set here, pressed again, left the matches on screen",

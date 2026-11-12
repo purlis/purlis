@@ -141,7 +141,7 @@ function headOf(groups: readonly GroupOffer[], id: string): string | undefined {
  * and the chosen group says so with `aria-current="page"` and the family's mark.
  *
  * **The search** (SE-21, V89c; one search across every level, #2920, N27) sits above the nav: a
- * search box, labelled, and the "Set here" toggle beside it, whose words and toggle the caller
+ * search box, labelled, and the "Set here" toggle under it, whose words and toggle the caller
  * searches by — the layout draws what it is handed. While either holds (`searching`), the nav's
  * first page is every match at every level ({@link FOUND_PAGE}, "All results"), apart from the
  * caller's narrowed groups under it, and a polite live region under the box says how many

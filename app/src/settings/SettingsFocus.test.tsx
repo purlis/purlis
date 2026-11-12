@@ -202,6 +202,28 @@ describe("every way into Settings leaves the keyboard on the nav's current group
     await onTheCurrentGroup();
   });
 
+  it("a setting's own row in the palette, on that setting's field (#2920)", async () => {
+    core(PLANE);
+    render(<App />);
+    await screen.findByRole("tab", { name: /plane/ });
+
+    await palette("Saving › Target branch");
+
+    await waitFor(() => expect(level("Project")).toBeChecked());
+    await waitFor(() =>
+      expect(document.activeElement?.closest("[data-setting]")).toHaveAttribute(
+        "data-setting",
+        "project.saving.plane.branch",
+      ),
+    );
+    await settled();
+    // Still there once the palette has finished closing.
+    expect(document.activeElement?.closest("[data-setting]")).toHaveAttribute(
+      "data-setting",
+      "project.saving.plane.branch",
+    );
+  });
+
   it("the palette's Your settings…", async () => {
     core(PLANE);
     render(<App />);

@@ -7171,16 +7171,18 @@ nav.piece-files-head {
   color: var(--text-secondary);
 }
 
-/* The search (#2920, N27): its box, and the "Set here" toggle beside it. */
+/* The search (#2920, N27): its box across the column, so its words are whole, and the "Set
+   here" toggle under it, at the column's start. */
 .ui-settings-search {
   display: flex;
+  flex-direction: column;
   gap: var(--space-3);
-  align-items: center;
+  align-items: flex-start;
   min-inline-size: 0;
 }
 
 .ui-settings-search > .ui-settings-filter {
-  flex: 1 1 auto;
+  align-self: stretch;
   min-inline-size: 0;
 }
 
