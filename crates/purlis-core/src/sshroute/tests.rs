@@ -204,6 +204,9 @@ fn a_first_contact_learns_the_key_and_signs_in_with_nothing() {
         Some("/run/known_hosts")
     );
     assert_eq!(option(&args, "PubkeyAuthentication"), Some("no"));
+    // A system's ssh_config may hash names (Debian's and Ubuntu's do): the key is found by its
+    // alias only when it is written plainly.
+    assert_eq!(option(&args, "HashKnownHosts"), Some("no"));
     assert_eq!(option(&args, "PasswordAuthentication"), Some("no"));
     assert_eq!(option(&args, "KbdInteractiveAuthentication"), Some("no"));
     assert_eq!(option(&args, "ForwardAgent"), Some("no"));

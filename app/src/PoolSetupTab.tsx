@@ -121,6 +121,10 @@ function Where({
     const remote = kind === "remote-docker" ? next : step.other;
     const chosen = picking === "remote" ? remote : local;
     const here = kind === "docker" && step.state !== "attention";
+    // The core's own words for each way on, and Continue where it is already the one chosen.
+    const chosenAlready =
+      step.state === "done" && picking === (kind === "docker" ? "local" : "remote");
+    const mainLabel = chosenAlready ? "Continue" : (chosen?.label ?? "Continue");
     return (
       <>
         <StepHead title={WHERE_TITLE} lead={WHERE_LEAD} />
@@ -147,7 +151,10 @@ function Where({
               ? undefined
               : chosen?.does
           }
-          main="Continue"
+          main={mainLabel}
+          reserve={[local?.label, remote?.label, "Continue"].filter(
+            (one): one is string => one !== undefined,
+          )}
           onMain={() => {
             if (picking === "remote") {
               if (kind === "remote-docker" && step.state === "done") onNext();

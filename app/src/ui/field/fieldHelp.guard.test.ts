@@ -23,6 +23,10 @@ import { handed, listed, PARTS, SRC, sources } from "./fieldCalls.testkit";
 
 /** Every file that hands a field its help, the grounds that field stands on, and where. */
 const HELPED: Record<string, { grounds: string[]; where: string }> = {
+  "poolsetup/ConnectStep.tsx": {
+    grounds: ["surface.raised"],
+    where: "Pool setup's Connect: the address of a machine not in your SSH settings (#6266)",
+  },
   "poolsetup/PoolStep.tsx": {
     grounds: ["surface.raised"],
     where:

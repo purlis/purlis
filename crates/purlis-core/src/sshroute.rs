@@ -486,6 +486,8 @@ pub fn contact_args(route: &Route, scratch: &Path) -> Vec<String> {
         "StrictHostKeyChecking=accept-new".to_owned(),
         format!("UserKnownHostsFile={}", scratch.display()),
         format!("HostKeyAlias={FIRST_CONTACT}"),
+        // Written plainly whatever the system's ssh_config says, so it is found by its alias.
+        "HashKnownHosts=no".to_owned(),
         "PubkeyAuthentication=no".to_owned(),
         "GSSAPIAuthentication=no".to_owned(),
         "HostbasedAuthentication=no".to_owned(),
