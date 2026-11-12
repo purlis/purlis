@@ -607,13 +607,19 @@ pool…, or Add a pool… in Settings › This machine › Pools once one is kep
 kubeconfig's context for the cluster, the Pool's name and the operator key their admin gave
 them. Check its key compares that key with the one the Pool's status names, and shows it only
 where they are the same (#4495); nothing is pinned otherwise. Only Pool setup on the machine that
-made the signing key in that same setup pins without a paste. Give your people the key, as
+made the signing key in that same setup, through the same context and in the same cluster, pins
+without a paste. Give your people the key from the signing key's own Secret, never from a Pool's
+status, which is what their purlis checks it against:
 
 ```bash
-kubectl get pools.runners.purlis.dev <pool> --output jsonpath='{.status.signingKey}'
+kubectl -n purlis-system get secret purlis-cluster-operator-signing-key \
+  --output jsonpath='{.data.key\.pem}' | base64 --decode |
+  openssl pkey -pubout -outform DER | tail -c 32 | od -An -tx1 -v | tr -d ' \n' |
+  sed 's/^/ed25519:/'
+echo
 ```
 
-prints it. Add pool pins it and makes the person's one kept Claim, `<pool>-<a label of their
+prints it, or the Pool step of your own Pool setup shows the key your machine pinned. Add pool pins it and makes the person's one kept Claim, `<pool>-<a label of their
 desktop>`, marked `runners.purlis.dev/desktop: <that label>`, in the namespace their context
 names (`default` where it names none). Removing the pool deletes only that Claim. A Pool that
 later names another key refuses every link to that desktop's runner. The pool's Pool step in Pool
@@ -882,8 +888,12 @@ both from the one version of the Secret the kubelet holds then.
    ```
 
    Every Pool names the new key alone, and every statement is signed by it alone. A desktop
-   that missed the roll refuses the pool's new key and asks for the pool to be added again, as
-   for any key it did not pin. The old key signs nothing now; delete any copy of it.
+   that missed the roll refuses the pool's new key, and its Pool setup shows the key it pinned
+   and asks for the new one. Give your people the new key as you gave the first, from the
+   Secret (the command under **Adding the pool in a person's window** above prints `key.pem`'s
+   public half), never from a Pool's status: their purlis pins it again only
+   where the key they paste is the one the Pool names, in the same cluster. The old key signs
+   nothing now; delete any copy of it.
 
 **A roll given up** (`next.pem` removed without step 3) leaves desktops that had moved their pin
 pinned to a key the operator no longer uses: they ask again. Roll forward rather than back.

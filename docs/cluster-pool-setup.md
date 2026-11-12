@@ -189,16 +189,22 @@ spec:
 EOF
 ```
 
-You should see `pool.runners.purlis.dev/team created`. Now print the pool's key, which you'll check
-in the next step:
+You should see `pool.runners.purlis.dev/team created`. Now print the operator's key, which you'll
+check in the next step and give your teammates. It comes from the signing key itself, the Secret
+step 4 made, which only someone who may read Secrets in `purlis-system` can see, and not from the
+pool's status, which is the very thing everyone checks it against:
 
 <!-- kind: pool-key -->
 
 ```bash
-kubectl get pools.runners.purlis.dev team --output jsonpath='{.status.signingKey}'
+kubectl -n purlis-system get secret purlis-cluster-operator-signing-key \
+  --output jsonpath='{.data.key\.pem}' | base64 --decode |
+  openssl pkey -pubout -outform DER | tail -c 32 | od -An -tx1 -v | tr -d ' \n' |
+  sed 's/^/ed25519:/'
+echo
 ```
 
-It can print nothing for a few seconds. Run it again until it prints the key.
+It prints `ed25519:` and 64 hex digits: the key's public half, never the key.
 
 ## 7. Connect from the window
 
@@ -290,8 +296,10 @@ kubectl auth can-i create claims.runners.purlis.dev --namespace <their namespace
 ```
 
 You should see `yes` three times at the end. Give them the pool's name and its key, the one step 6
-printed, through a channel of your own such as your team's chat: Pool setup's Pool step shows it on
-your machine too, once you've added the pool. They only need step 7, and the operator gives them a
+printed from the signing key's Secret, through a channel of your own such as your team's chat:
+Pool setup's Pool step shows the key your machine pinned too, once you've added the pool. Never
+copy it from the pool's status: anyone who may write a Pool's status could put their own key
+there, and the key you give is what your teammate's purlis checks the status against. They only need step 7, and the operator gives them a
 namespace of their own for their runners.
 
 In Pool setup (the palette's Add a cluster pool…), a teammate whose sign-in holds only these rights

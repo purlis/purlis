@@ -391,23 +391,22 @@ subjects:
         "{setup:#?}"
     );
 
-    let admins = ran(
-        &[
-            "get",
-            "pools.runners.purlis.dev",
-            pool,
-            "--output",
-            "jsonpath={.status.signingKey}",
-        ],
-        None,
-    );
+    // The key the admin gives: the signing key's own public half, read from its Secret as the
+    // guide's step 6 reads it, never from the Pool's status, which is what it is checked against.
+    let admins = signing_key_of_its_secret(&on);
     let read = teammate
         .clone()
         .with_context("teammate")
         .pool_pin(pool)
         .unwrap();
-    assert_eq!(read.key.spelled(), admins.trim());
-    let hex = admins.trim().trim_start_matches("ed25519:").to_uppercase();
+    assert_eq!(
+        read.key, admins,
+        "an honest operator's Pool names its signing key"
+    );
+    let hex = admins
+        .spelled()
+        .trim_start_matches("ed25519:")
+        .to_uppercase();
     let pasted = format!("{}\n{}", &hex[..32], &hex[32..]);
     assert_eq!(
         purlis_core::clusterpool::OperatorKey::from_pasted(&pasted).unwrap(),
@@ -419,6 +418,100 @@ subjects:
         poolsetup::confirm_key(config.path(), "teammate", &read, Some(&pasted)).unwrap(),
         purlis_core::clusterpool::Confirmed::Pasted
     );
+
+    // A forged status: someone who may write the Pool's status (here the admin, with the operator
+    // stopped so it doesn't write it back) puts their own key there. The teammate reads that key
+    // through their sign-in, and the admin's key, pasted, refuses it: nothing is pinned.
+    ran(
+        &[
+            "scale",
+            &format!("deployment/{}", poolsetup::cluster::OPERATOR_DEPLOYMENT),
+            "--namespace",
+            poolsetup::cluster::SYSTEM_NAMESPACE,
+            "--replicas=0",
+        ],
+        None,
+    );
+    let stopped_by = Instant::now() + Duration::from_secs(120);
+    while !ran(
+        &[
+            "get",
+            "pods",
+            "--selector",
+            "app.kubernetes.io/name=purlis-cluster-operator",
+            "--namespace",
+            poolsetup::cluster::SYSTEM_NAMESPACE,
+            "--output",
+            "name",
+        ],
+        None,
+    )
+    .trim()
+    .is_empty()
+    {
+        assert!(Instant::now() < stopped_by, "the operator never stopped");
+        std::thread::sleep(Duration::from_secs(1));
+    }
+    let forged = purlis_core::clusterpool::OperatorKey::of_public([0x5a; 32]).spelled();
+    ran(
+        &[
+            "patch",
+            "pools.runners.purlis.dev",
+            pool,
+            "--subresource=status",
+            "--type=merge",
+            "--patch",
+            &serde_json::json!({"status": {"signingKey": forged}}).to_string(),
+        ],
+        None,
+    );
+    let seen = teammate
+        .clone()
+        .with_context("teammate")
+        .pool_pin(pool)
+        .unwrap();
+    assert_eq!(
+        seen.key.spelled(),
+        forged,
+        "the teammate reads the forged key"
+    );
+    let why = poolsetup::confirm_key(config.path(), "teammate", &seen, Some(&pasted)).unwrap_err();
+    assert!(why.to_string().contains("isn't the one"), "{why}");
+}
+
+/// **The cluster operator key as an admin reads it from its Secret** (#4495): `key.pem`'s public
+/// half, through OpenSSL as the guide's step 6 has the admin read it, with the admin's sign-in.
+fn signing_key_of_its_secret(admin: &Kubectl) -> purlis_core::clusterpool::OperatorKey {
+    use base64::Engine as _;
+    let answer = admin
+        .asked(
+            &[
+                "get",
+                "secret",
+                "purlis-cluster-operator-signing-key",
+                "--namespace",
+                poolsetup::cluster::SYSTEM_NAMESPACE,
+                "--output",
+                "jsonpath={.data.key\\.pem}",
+            ],
+            None,
+        )
+        .unwrap();
+    assert!(answer.ok, "{}", answer.said);
+    let pem = base64::engine::general_purpose::STANDARD
+        .decode(answer.printed.trim())
+        .expect("the Secret's key.pem in base64");
+    let mut openssl = std::process::Command::new("openssl")
+        .args(["pkey", "-pubout", "-outform", "DER"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("openssl on PATH");
+    std::io::Write::write_all(&mut openssl.stdin.take().unwrap(), &pem).unwrap();
+    let der = openssl.wait_with_output().unwrap();
+    assert!(der.status.success(), "openssl read no public key");
+    let public: [u8; 32] = der.stdout[der.stdout.len() - 32..].try_into().unwrap();
+    purlis_core::clusterpool::OperatorKey::of_public(public)
 }
 
 /// The signing key's Secret by its uid alone: what it holds is never asked.
