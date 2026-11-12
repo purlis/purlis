@@ -1900,10 +1900,9 @@ jobs:
       # has 16. At 3 it took one `rustc` to 14.4 GB and the runner shut down (#5277).
       - name: Build the app, the harness and the CLI for the scenario tests
         if: ${{ !matrix.sandbox }}
-        # A macOS release build takes 37-39 min; debug builds less. One stalled past an hour
-        # on main (2026-11-11, run 42929397737). Unbounded it holds its Mac for the job's
-        # 6 h default, so it fails here.
-        timeout-minutes: 75
+        # A warm macOS release build takes 37-54 min, and a cold one 70-73. Unbounded, a stalled
+        # build would hold its Mac for the job's 6 h default, so it fails at 110 (#6189).
+        timeout-minutes: 110
         # The outcome bars are judged on a release build (the operator's ruling of 2026-11-03,
         # #4351): `dev-release`, release with thin LTO over sixteen codegen units, what the dev
         # channel ships. Every other leg builds debug.
@@ -2290,8 +2289,10 @@ jobs:
     # build had (twice its slowest, 9 to 18 minutes), for the release build (the operator's ruling
     # of 2026-11-03, #4351): cold, with no cache, it ran past 40 twice and was cut off before
     # rust-cache saved anything, so the cache main writes was never warm. Warm, a release run took
-    # 31 minutes.
-    timeout-minutes: 75
+    # 31 minutes. 130 since 2026-11-11: at 75 a cold build (70-73 min) was cut off on every main
+    # run from 05:41 to 10:44, so the cache was never saved, every run ended `cancelled`, and no dev
+    # build shipped. One run that finishes warms the cache again.
+    timeout-minutes: 130
     if: ${{ !cancelled() && (github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.outcome-bars != 'false')) && !github.event.pull_request.draft }}
     # Where the specs find the build: the profile the build step names for `outcome` (one place
     # for the path, so no harness's run can take another build's program).
