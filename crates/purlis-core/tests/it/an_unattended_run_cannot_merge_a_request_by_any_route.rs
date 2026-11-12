@@ -568,3 +568,92 @@ fn a_substitution_inside_a_push_option_value_is_unreadable() {
         "git push -o \"ci.variable=`cat v`\" origin feat",
     ]);
 }
+
+/// #6294: an unattended run reads GitLab in compound calls — deployments, a job's trace,
+/// pipelines — piped through filters, in a subshell, in a loop over ids, with the endpoint built
+/// from a variable. A read is a read in every one of those shapes, including with a flag this
+/// reader does not know once the method is spelled out, and with a repository flag.
+#[test]
+fn a_read_from_gitlab_in_any_compound_shape_stays_allowed_unattended() {
+    purlis_core::unsteered!();
+    allowed_unattended(&[
+        "(glab api projects/1/deployments/9; glab api projects/1/jobs/2/trace | sed | grep | head) > file",
+        "(glab api projects/$ID/deployments/9; glab api projects/$ID/jobs/2/trace | sed -n '1,5p' | grep x | head -5) > file 2>&1",
+        "{ glab api \"projects/${PROJECT}/deployments\"; glab api projects/${PROJECT}/jobs/$JOB/trace | tail -n 50; } > out",
+        "glab api projects/$ID/pipelines | jq -r '.[].id' | while read id; do glab api projects/$ID/pipelines/$id/jobs; done",
+        "for id in $(glab api projects/$ID/pipelines -X GET -f status=failed | jq '.[].id'); do glab api \"projects/$ID/pipelines/$id\"; done",
+        "grep -c error <<< \"$(glab api projects/$ID/jobs/$JOB/trace)\"",
+        "glab api --paginate projects/$ID/pipelines --output ndjson | head",
+        "glab api -X GET projects/$ID/pipelines -f per_page=5 | head",
+        "glab api --method GET \"projects/$ID/deployments?environment=production\"",
+        "glab api -R group/proj projects/$ID/jobs/$JOB/trace | tail",
+        "glab api --repo group/proj projects/$ID/pipelines | head",
+        "for j in 1 2 3; do glab api -R g/p projects/$ID/jobs/$j/trace | grep -m1 ERROR; done",
+        "glab api -X GET --frobnicate projects/$ID/merge_requests/$MR/merge",
+        "glab api -X HEAD projects/$ID",
+    ]);
+}
+
+/// The other half of #6294: every write to GitLab built the same ways is still refused when it
+/// could merge, and an unreadable one still is.
+#[test]
+fn a_write_to_gitlab_in_a_compound_shape_is_still_refused() {
+    purlis_core::unsteered!();
+    refused_unattended_only(&[
+        "for mr in 1 2; do glab api -X PUT projects/$ID/merge_requests/$mr/merge; done",
+        "(glab api projects/$ID/pipelines; glab api -X PUT projects/1/merge_requests/5/merge) > out",
+        "glab api projects/$ID/merge_requests/$MR/merge -f sha=abc | head",
+        "glab api -X DELETE projects/$ID/$WHAT",
+        "glab api -R g/p -X POST projects/$ID/merge_requests/$MR/merge",
+        "glab api --frobnicate projects/$ID/jobs",
+        "glab api -X \"$M\" projects/1/jobs",
+    ]);
+}
+
+/// A release or a tag made through the API is the act `glab release create` and `git tag` are,
+/// so it is refused on the same floor. Reading them is not.
+#[test]
+fn a_release_or_tag_made_through_the_api_is_refused() {
+    purlis_core::unsteered!();
+    refused_unattended_only(&[
+        "glab api -X POST projects/1/releases -f tag_name=v1.0.0",
+        "glab api projects/1/releases -f tag_name=v1.0.0 -f ref=main",
+        "glab api -X PUT projects/1/releases/v1.0.0 -f description=x",
+        "glab api -X POST projects/1/repository/tags -f tag_name=v1 -f ref=main",
+        "glab api -X POST projects/1/releases/v1/assets/links -f name=x -f url=y",
+        "gh api -X POST repos/o/r/releases -f tag_name=v1",
+        "gh api -X PATCH repos/o/r/releases/12 -F draft=false",
+        "gh api -X POST repos/o/r/git/refs -f ref=refs/tags/v1 -f sha=abc",
+        "gh api -X POST repos/o/r/git/refs -f ref=\"$REF\" -f sha=abc",
+        "gh api -X PATCH repos/o/r/git/refs/tags/v1 -f sha=abc",
+        "gh api -X POST repos/o/r/git/tags -f tag=v1 -f object=abc -f type=commit -f message=m",
+    ]);
+    allowed_unattended(&[
+        "glab api projects/1/releases",
+        "glab api projects/$ID/repository/tags | jq -r '.[0].name'",
+        "gh api repos/o/r/releases/latest",
+        "gh api -X POST repos/o/r/git/refs -f ref=refs/heads/fix -f sha=abc",
+    ]);
+}
+
+/// A call the floor cannot read is refused with the part it could not read named, and how to
+/// split it into calls it can.
+#[test]
+fn an_unreadable_api_call_names_the_part_it_could_not_read_and_how_to_split_it() {
+    purlis_core::unsteered!();
+    let said =
+        release_floor_reason("glab api --frobnicate projects/$ID/jobs", true).expect("a refusal");
+    assert!(said.contains("`--frobnicate`"), "{said}");
+    assert!(said.contains("`projects/$ID/jobs`"), "{said}");
+    assert!(said.contains("-X GET"), "{said}");
+    let said = release_floor_reason(
+        "glab api projects/$ID/pipelines | head; glab api -X PUT projects/$ID/merge_requests/$MR",
+        true,
+    )
+    .expect("a refusal");
+    assert!(said.contains("`projects/$ID/merge_requests/$MR`"), "{said}");
+    assert!(said.contains("`PUT`"), "{said}");
+    assert!(said.contains("on its own"), "{said}");
+    let said = release_floor_reason("glab api -X \"$M\" projects/1/jobs", true).expect("a refusal");
+    assert!(said.contains("`$M`"), "{said}");
+}
