@@ -225,7 +225,7 @@ pub async fn artifact_open_as_of(
         theme: sheet,
         declared,
         load: None,
-        begun: 0,
+        offered: 0,
     };
     let label = lay(&window, &artifacts, served, place)?;
     Ok(ArtifactOpenedAsOf {

@@ -1,7 +1,6 @@
 ### Fixed
 
-- **An artifact page hears the answers to what it asks as it opens.** A page that called its
-  queries the moment it loaded, as after its script was approved, could hear nothing back: the
-  window took the page's load as starting only once the webview said so, which can come after
-  the page has already asked, and dropped those asks. A load now starts when the page's document
-  is asked for, before the page can ask anything (#6232).
+- **An artifact page's newest offers are the ones purlis's bar draws.** A page that offered
+  twice in quick succession, such as once for each of two answers, could have its fuller set
+  drawn over by the one it sent before, so an action it offered went missing from the bar. The
+  set a page sends last now always wins (#6232).

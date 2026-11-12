@@ -4,8 +4,9 @@
 //! **A page offers actions; it never performs one** (ADR 0122 §8, #5972).
 //!
 //! The page posts the whole set it offers now, `{ id, offers: [{ does, subject }] }`, on
-//! `purlis.port`; purlis's script carries it as `/.purlis/port/<load>/offers/<id>?<{offers}>`
-//! ([`heard`]), on the same port and load as a read. It is gated when it is said, as a read is:
+//! `purlis.port`; purlis's script carries it as `/.purlis/port/<load>/offers/<id>/<n>?<{offers}>`
+//! ([`heard`]), on the same port and load as a read, `<n>` counting the load's sets from 1 so
+//! the newest one said is the one drawn however the sets are gated (#6232). It is gated when it is said, as a read is:
 //! only on the load whose port is open, and only while the pin and this machine's approval still
 //! run the page's script ([`super::still_runs`]); then read in closed types
 //! ([`purlis_core::artifact::offers::asked`]). What passes is handed to the page's own window
@@ -43,24 +44,27 @@ pub struct ArtifactOffers {
     pub offers: Vec<ArtifactOffer>,
 }
 
-/// A set of offers a page said on its port: its load, its id, and the set as it was sent.
+/// A set of offers a page said on its port: its load, its id, its number among the load's
+/// sets, and the set as it was sent.
 #[derive(Debug, PartialEq, Eq)]
 struct Said {
     load: String,
     id: u64,
+    n: u64,
     query: String,
 }
 
 /// **What a request for `path` with `query` says, when it is a page's offers**:
-/// `/.purlis/port/<load>/offers/<id>`.
+/// `/.purlis/port/<load>/offers/<id>/<n>`.
 fn said(path: &str, query: Option<&str>) -> Option<Said> {
     let rest = path.strip_prefix(serve::OWN_PATH)?.strip_prefix("port/")?;
     let (load, said) = rest.split_once('/')?;
-    let id = said.strip_prefix("offers/")?;
+    let (id, n) = said.strip_prefix("offers/")?.split_once('/')?;
     is_load(load).then_some(())?;
     Some(Said {
         load: load.to_owned(),
         id: page_id(id)?,
+        n: page_id(n)?,
         query: query?.to_owned(),
     })
 }
@@ -73,6 +77,23 @@ impl Artifacts {
             .get(label)
             .filter(|one| one.load.as_deref() == Some(load))
             .map(|one| (one.of.clone(), one.snapshot.clone(), one.window.clone()))
+    }
+
+    /// **Hands set `n` of load `load`'s offers to the window with `draw`**, while that load's
+    /// port is still open, only if no newer set of it was taken; `draw` runs under the lock, so
+    /// two sets gated on two threads reach the window in the order the page said them (#6232).
+    pub(super) fn newest(&self, label: &str, load: &str, n: u64, draw: impl FnOnce()) {
+        let mut served = self.served();
+        let Some(one) = served
+            .get_mut(label)
+            .filter(|one| one.load.as_deref() == Some(load))
+        else {
+            return;
+        };
+        if n > one.offered {
+            one.offered = n;
+            draw();
+        }
     }
 
     /// The window artifact webview `label` is in.
@@ -129,14 +150,16 @@ pub(crate) fn heard<R: Runtime>(
         let answer = match admitted(config.as_deref(), &of, &snapshot, &said.query) {
             Ok(offers) => {
                 let taken = offers.len();
-                let _ = app.emit_to(
-                    tauri::EventTarget::webview(window.as_str()),
-                    ARTIFACT_OFFERS,
-                    ArtifactOffers {
-                        label: label.clone(),
-                        offers,
-                    },
-                );
+                artifacts.newest(&label, &said.load, said.n, || {
+                    let _ = app.emit_to(
+                        tauri::EventTarget::webview(window.as_str()),
+                        ARTIFACT_OFFERS,
+                        ArtifactOffers {
+                            label: label.clone(),
+                            offers,
+                        },
+                    );
+                });
                 Answer::data(serde_json::json!({ "offered": taken }), now)
             }
             Err(kind) => Answer::error(kind, now),
@@ -194,15 +217,19 @@ mod tests {
     fn a_set_of_offers_is_heard_only_on_the_port_path_with_a_load_and_an_id() {
         let set = sent(r#"{"offers":[]}"#);
         assert_eq!(
-            said(&format!("/.purlis/port/{LOAD}/offers/3"), Some(&set)),
+            said(&format!("/.purlis/port/{LOAD}/offers/3/1"), Some(&set)),
             Some(Said {
                 load: LOAD.to_owned(),
                 id: 3,
+                n: 1,
                 query: set.clone(),
             })
         );
         for not in [
-            format!("/.purlis/port/{LOAD}/offers/x"),
+            format!("/.purlis/port/{LOAD}/offers/x/1"),
+            format!("/.purlis/port/{LOAD}/offers/3"),
+            format!("/.purlis/port/{LOAD}/offers/3/"),
+            format!("/.purlis/port/{LOAD}/offers/3/x"),
             format!("/.purlis/port/{LOAD}/offers/"),
             format!("/.purlis/port/{LOAD}/perform/3"),
             format!("/.purlis/port/{LOAD}/read/3"),
@@ -211,7 +238,10 @@ mod tests {
         ] {
             assert_eq!(said(&not, Some(&set)), None, "{not}");
         }
-        assert_eq!(said(&format!("/.purlis/port/{LOAD}/offers/3"), None), None);
+        assert_eq!(
+            said(&format!("/.purlis/port/{LOAD}/offers/3/1"), None),
+            None
+        );
     }
 
     /// A plane with workspace `alpha` holding artifact folder `board`, pinned, with script.
@@ -298,7 +328,7 @@ mod tests {
                 theme: String::new(),
                 declared: None,
                 load: None,
-                begun: 0,
+                offered: 0,
             },
         );
         assert!(artifacts.offering("artifact-1", LOAD).is_none());
@@ -316,5 +346,45 @@ mod tests {
         artifacts.reloaded("artifact-1");
         assert!(artifacts.offering("artifact-1", LOAD).is_none());
         assert_eq!(artifacts.window_of("artifact-1").as_deref(), Some("main"));
+    }
+
+    /// **The set a page said last is the one drawn, whatever order its sets are gated in**
+    /// (#6232): each is gated on a thread of its own, so a page that offers twice in a row, as
+    /// each of two answers comes back, could have its fuller set drawn over by the one before.
+    #[test]
+    fn only_a_set_newer_than_the_one_taken_is_handed_to_the_window() {
+        let (_root, of, snapshot) = board();
+        let artifacts = Artifacts::default();
+        artifacts.served().insert(
+            "artifact-1".to_owned(),
+            super::super::Served {
+                window: "main".to_owned(),
+                host: "a1".to_owned(),
+                snapshot,
+                of,
+                theme: String::new(),
+                declared: None,
+                load: Some(LOAD.to_owned()),
+                offered: 0,
+            },
+        );
+        let mut drawn = Vec::new();
+        // The page said set 1 and then set 2; set 2 was gated first.
+        for n in [2, 1, 2, 3] {
+            artifacts.newest("artifact-1", LOAD, n, || drawn.push(n));
+        }
+        assert_eq!(drawn, [2, 3]);
+        // Nor from another load, or once the port is gone.
+        artifacts.newest("artifact-1", "fedcba9876543210fedcba9876543210", 9, || {
+            drawn.push(9)
+        });
+        artifacts.reloaded("artifact-1");
+        artifacts.newest("artifact-1", LOAD, 10, || drawn.push(10));
+        assert_eq!(drawn, [2, 3]);
+        // A new load counts from its own first set.
+        artifacts.served().get_mut("artifact-1").unwrap().load = Some(LOAD.to_owned());
+        artifacts.served().get_mut("artifact-1").unwrap().offered = 0;
+        artifacts.newest("artifact-1", LOAD, 1, || drawn.push(1));
+        assert_eq!(drawn, [2, 3, 1]);
     }
 }
