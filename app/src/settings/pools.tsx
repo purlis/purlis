@@ -27,6 +27,15 @@ import { Button, ButtonRow } from "../ui/button/Button";
 import { Tooltip } from "../ui/tooltip/Tooltip";
 import { AlertDialog } from "../ui/dialog/Dialog";
 import { Badge } from "../ui/badge/Badge";
+import {
+  ControlBody,
+  ControlCell,
+  ControlColumn,
+  ControlHead,
+  ControlRow,
+  ControlRowHeading,
+  ControlTable,
+} from "../ui/table/ControlTable";
 import { Switch } from "../ui/choice/Switch";
 import { PoolLimits } from "./PoolLimits";
 import { PoolProfiles } from "./PoolProfiles";
@@ -506,61 +515,77 @@ function PoolEntry({
   const owed = owedSaid(version, useNow());
   const left = leftSaid(version);
   return (
-    <li className="ui-machine-entry">
-      <span className="ui-machine-name">{pool.name}</span>
-      <Tooltip tip={pool.image}>
-        <span className="ui-machine-path">{limitsSaid(pool)}</span>
-      </Tooltip>
-      <Badge variant="accent">{linkSaid(link)}</Badge>
-      {/* A pool's own setup, each step as it stands (#4491): never reached from Add (#6256). */}
-      {plane !== undefined && (
-        <Button
-          size="sm"
-          aria-label={`Open setup of pool ${pool.name}`}
-          onPress={() => openSetupOf(pool.name)}
-        >
-          Open setup
-        </Button>
-      )}
-      <Button
-        size="sm"
-        aria-label={removing ? `Removing pool ${pool.name}` : `Remove pool ${pool.name}`}
-        aria-disabled={removing}
-        onPress={removing ? undefined : remove}
-      >
-        {removing ? "Removing…" : "Remove"}
-      </Button>
-      <p className="ui-setting-help">{suspendSaid(pool, version)}</p>
-      <KeyChangedNotice name={pool.name} link={link} removing={removing} onRemove={remove} />
-      {typeof link === "object" && link.state === "removed" && (
-        <RemovedNotice
-          name={pool.name}
-          homeKept={link.home_kept}
-          remaking={remaking}
-          onMakeAgain={onMakeAgain}
-        />
-      )}
-      {typeof link === "object" && link.state === "on_another_engine" && (
-        <p className="ui-setting-help">{anotherEngineSaid(pool.name)}</p>
-      )}
-      {remade !== undefined && <p className="ui-setting-help">{remade}</p>}
-      {typeof link === "object" && link.state === "down" && (
-        <p className="ui-setting-help">{link.why}</p>
-      )}
-      {versionSaid(version) !== undefined && (
-        <p className="ui-setting-help">{versionSaid(version)}</p>
-      )}
-      {owed !== undefined && <p className="ui-setting-help">{owed}</p>}
-      {left !== undefined && <p className="ui-setting-help">{left}</p>}
-      {version?.not_checked.map((one) => (
-        <p key={`not-checked:${one.runner}`} className="ui-setting-help">
-          {notCheckedPoolSaid(one.runner, one.left)}
-        </p>
-      ))}
-      {notHeld}
-      {profiles}
-      <PoolLimits pool={pool.name} plane={plane} />
-    </li>
+    <ControlBody>
+      <ControlRow>
+        <ControlRowHeading>
+          <span className="ui-record-lines">
+            {pool.name}
+            <Tooltip tip={pool.image}>
+              <span className="ui-record-where">{limitsSaid(pool)}</span>
+            </Tooltip>
+          </span>
+        </ControlRowHeading>
+        <ControlCell heading="Runner">
+          <Badge variant="accent">{linkSaid(link)}</Badge>
+        </ControlCell>
+        <ControlCell actions>
+          {/* A pool's own setup, each step as it stands (#4491): never reached from Add (#6256). */}
+          {plane !== undefined && (
+            <Button
+              size="sm"
+              aria-label={`Open setup of pool ${pool.name}`}
+              onPress={() => openSetupOf(pool.name)}
+            >
+              Open setup
+            </Button>
+          )}
+          <Button
+            size="sm"
+            aria-label={removing ? `Removing pool ${pool.name}` : `Remove pool ${pool.name}`}
+            aria-disabled={removing}
+            onPress={removing ? undefined : remove}
+          >
+            {removing ? "Removing…" : "Remove"}
+          </Button>
+        </ControlCell>
+      </ControlRow>
+      <ControlRow>
+        <ControlCell colSpan={3}>
+          <div className="pools-about">
+            <p className="ui-setting-help">{suspendSaid(pool, version)}</p>
+            <KeyChangedNotice name={pool.name} link={link} removing={removing} onRemove={remove} />
+            {typeof link === "object" && link.state === "removed" && (
+              <RemovedNotice
+                name={pool.name}
+                homeKept={link.home_kept}
+                remaking={remaking}
+                onMakeAgain={onMakeAgain}
+              />
+            )}
+            {typeof link === "object" && link.state === "on_another_engine" && (
+              <p className="ui-setting-help">{anotherEngineSaid(pool.name)}</p>
+            )}
+            {remade !== undefined && <p className="ui-setting-help">{remade}</p>}
+            {typeof link === "object" && link.state === "down" && (
+              <p className="ui-setting-help">{link.why}</p>
+            )}
+            {versionSaid(version) !== undefined && (
+              <p className="ui-setting-help">{versionSaid(version)}</p>
+            )}
+            {owed !== undefined && <p className="ui-setting-help">{owed}</p>}
+            {left !== undefined && <p className="ui-setting-help">{left}</p>}
+            {version?.not_checked.map((one) => (
+              <p key={`not-checked:${one.runner}`} className="ui-setting-help">
+                {notCheckedPoolSaid(one.runner, one.left)}
+              </p>
+            ))}
+            {notHeld}
+            {profiles}
+            <PoolLimits pool={pool.name} plane={plane} />
+          </div>
+        </ControlCell>
+      </ControlRow>
+    </ControlBody>
   );
 }
 
@@ -651,48 +676,64 @@ function ClusterPoolEntry({
   const said = useId();
   const [refused, setRefused] = useState<string | undefined>();
   return (
-    <li className="ui-machine-entry">
-      <span className="ui-machine-name">{pool.name}</span>
-      <span className="ui-machine-path">
-        Pool {pool.pool} in {pool.context}, namespace {pool.namespace}
-      </span>
-      <Badge variant="accent">{linkSaid(link)}</Badge>
-      <Button
-        size="sm"
-        aria-label={removing ? `Removing pool ${pool.name}` : `Remove pool ${pool.name}`}
-        aria-disabled={removing}
-        onPress={removing ? undefined : onAsk}
-      >
-        {removing ? "Removing…" : "Remove"}
-      </Button>
-      <p className="ui-setting-help">
-        Cluster operator key <code>{pool.operator_key}</code>
-      </p>
-      <Switch
-        isSelected={pool.owned}
-        aria-describedby={said}
-        onChange={(owned) => {
-          void markPoolOwned(pool.name, owned).then(setRefused);
-        }}
-      >
-        This is my own
-      </Switch>
-      <p className="ui-setting-help" id={said}>
-        {MY_OWN_SAID}
-      </p>
-      {refused !== undefined && (
-        <p className="ui-setting-help" role="alert">
-          {refused}
-        </p>
-      )}
-      <KeyChangedNotice name={pool.name} link={link} removing={removing} onRemove={onAsk} />
-      {typeof link === "object" && link.state === "down" && (
-        <p className="ui-setting-help">{link.why}</p>
-      )}
-      {pool.owned ? profiles : <p className="ui-setting-help">{notMarkedSaid(pool.name)}</p>}
-      {notHeld}
-      <PoolLimits pool={pool.name} />
-    </li>
+    <ControlBody>
+      <ControlRow>
+        <ControlRowHeading>
+          <span className="ui-record-lines">
+            {pool.name}
+            <span className="ui-record-where">
+              Pool {pool.pool} in {pool.context}, namespace {pool.namespace}
+            </span>
+          </span>
+        </ControlRowHeading>
+        <ControlCell heading="Runner">
+          <Badge variant="accent">{linkSaid(link)}</Badge>
+        </ControlCell>
+        <ControlCell actions>
+          <Button
+            size="sm"
+            aria-label={removing ? `Removing pool ${pool.name}` : `Remove pool ${pool.name}`}
+            aria-disabled={removing}
+            onPress={removing ? undefined : onAsk}
+          >
+            {removing ? "Removing…" : "Remove"}
+          </Button>
+        </ControlCell>
+      </ControlRow>
+      <ControlRow>
+        <ControlCell colSpan={3}>
+          <div className="pools-about">
+            <p className="ui-setting-help">
+              Cluster operator key <code>{pool.operator_key}</code>
+            </p>
+            <Switch
+              isSelected={pool.owned}
+              aria-describedby={said}
+              onChange={(owned) => {
+                void markPoolOwned(pool.name, owned).then(setRefused);
+              }}
+            >
+              This is my own
+            </Switch>
+            <p className="ui-setting-help" id={said}>
+              {MY_OWN_SAID}
+            </p>
+            {refused !== undefined && (
+              <p className="ui-setting-help" role="alert">
+                {refused}
+              </p>
+            )}
+            <KeyChangedNotice name={pool.name} link={link} removing={removing} onRemove={onAsk} />
+            {typeof link === "object" && link.state === "down" && (
+              <p className="ui-setting-help">{link.why}</p>
+            )}
+            {pool.owned ? profiles : <p className="ui-setting-help">{notMarkedSaid(pool.name)}</p>}
+            {notHeld}
+            <PoolLimits pool={pool.name} />
+          </div>
+        </ControlCell>
+      </ControlRow>
+    </ControlBody>
   );
 }
 
@@ -788,7 +829,22 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
             (pools.length === 0 ? (
               <p className="ui-setting-help">{NO_POOL_YET}</p>
             ) : (
-              <ul className="ui-machine-list">
+              // **A table of the pools** (#6301, as Your hosts is, #2919 R65, R67): a table of
+              // controls, since what is said and set about a pool (its notices, its limits, its
+              // profiles) takes a row of its own under its heading row, across the table.
+              <ControlTable
+                className="pools-table ui-record-table"
+                stacks
+                aria-label="Pools on this machine"
+                aria-describedby={removeSaid}
+              >
+                <ControlHead>
+                  <ControlColumn>Pool</ControlColumn>
+                  <ControlColumn>Runner</ControlColumn>
+                  <ControlColumn actions hideName>
+                    Actions
+                  </ControlColumn>
+                </ControlHead>
                 {now.read.shown.pools.map((pool) => (
                   <PoolEntry
                     key={pool.name}
@@ -816,7 +872,7 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
                     profiles={<PoolProfiles pool={pool.name} plane={plane} />}
                   />
                 ))}
-              </ul>
+              </ControlTable>
             ))}
           {pools.length > 0 && (
             <p className="ui-setting-help" id={removeSaid}>

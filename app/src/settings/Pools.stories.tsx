@@ -154,15 +154,34 @@ export const NoPoolYet: Story = {
   },
 };
 
-/** **A pool kept**: its row, and Add a pool… after the list. */
+/**
+ * **A pool kept** (#6301): a table of controls, the pool's heading row with its Remove at its
+ * end, then the row about it with its profiles, rows of the list family; Add a pool… after the
+ * table. Tab goes from Remove into the profiles, one Tab stop, and → reaches a profile's own
+ * buttons.
+ */
 export const WithAPool: Story = {
   parameters: { pools: [BUILDS] },
-  play: async ({ canvas }) => {
+  play: async ({ canvas, userEvent }) => {
     const group = await canvas.findByRole("region", { name: "Pools" });
-    await within(group).findByRole("button", { name: "Remove pool builds" });
+    await within(group).findByRole("table", { name: "Pools on this machine" });
+    const remove = await within(group).findByRole("button", { name: "Remove pool builds" });
     await within(group).findByText("linked");
     await expect(within(group).queryByText(/No pool yet/)).toBeNull();
     await expect(within(group).getByRole("button", { name: "Add a pool…" })).toBeVisible();
+    const profiles = await within(group).findByRole("grid", { name: "Profiles on pool builds" });
+    remove.focus();
+    await untilFocused(() => remove, "the pool's Remove");
+    await userEvent.tab();
+    const work = within(profiles).getByRole("row", { name: "work" });
+    await untilFocused(() => work, "Tab goes on to the pool's profiles");
+    expectFocusInSight();
+    await userEvent.keyboard("{ArrowRight}");
+    await untilFocused(
+      () => within(work).getByRole("button", { name: "Sign out work on pool builds" }),
+      "→ reaches the profile's Sign out",
+    );
+    expectFocusInSight();
   },
 };
 
