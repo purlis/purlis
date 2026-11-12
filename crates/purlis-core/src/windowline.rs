@@ -102,14 +102,18 @@ pub enum Asked {
 }
 
 impl Asked {
-    /// **The project the command that asks runs in**, where it said one (#6000): the window
-    /// lists a confirmation it waits on in that project's Asks.
+    /// **The project the command that asks runs in**, where it said one (#6000, Q233): the
+    /// window lists a confirmation it waits on in that project's Asks.
     pub fn project(&self) -> Option<&Path> {
         match self {
-            Asked::ApproveSignIn { project, .. } | Asked::TakeOffAPool { project, .. } => {
+            Asked::ApproveSignIn { project, .. }
+            | Asked::TakeOffAPool { project, .. }
+            | Asked::Signing(crate::signingsetup::Asked::Check { project, .. }) => {
                 project.as_deref()
             }
-            _ => None,
+            Asked::ForgetOffThePools { .. }
+            | Asked::KeepOnAPool { .. }
+            | Asked::Signing(crate::signingsetup::Asked::KeyOnAccount { .. }) => None,
         }
     }
 }
@@ -545,7 +549,7 @@ pub fn ask_on(
 }
 
 /// [`ask_on`], on a connection to the window already made and admitted. Once an ask the person
-/// answers is on its way, `say` is told where they answer it ([`waiting_said`]), so nothing is
+/// answers is on its way, `say` is told where they answer it ([`waiting_said_for`]), so nothing is
 /// said of a wait that never was.
 pub fn asked_over(
     stream: &UnixStream,
@@ -556,7 +560,7 @@ pub fn asked_over(
     let mut answered = || -> Option<Said> {
         stream.set_write_timeout(Some(A_PEER_HAS)).ok()?;
         write_line(stream, asked)?;
-        if let Some(line) = waiting_said(asked) {
+        if let Some(line) = waiting_said_for(asked) {
             say(&line);
         }
         serde_json::from_str(&line_of(stream, within)?).ok()
@@ -567,7 +571,7 @@ pub fn asked_over(
 /// **How long `asked` waits on the person**, where the person answers it in the window, and
 /// `None` where the window answers it alone. Every kind says which, so a kind added later says
 /// where it waits as it starts to (ADR 0121 decision 16).
-pub fn waits_on_the_person(asked: &Asked) -> Option<Duration> {
+fn waits_on_the_person(asked: &Asked) -> Option<Duration> {
     match asked {
         Asked::ApproveSignIn { .. }
         | Asked::TakeOffAPool { .. }
@@ -581,7 +585,7 @@ pub fn waits_on_the_person(asked: &Asked) -> Option<Duration> {
 /// **What a command says as it starts to wait on the person for `asked`** (ADR 0121 decision
 /// 16): Asks, under the project the ask names, or the one the window has in front where it names
 /// none. `None` where only the window answers it.
-pub fn waiting_said(asked: &Asked) -> Option<String> {
+fn waiting_said_for(asked: &Asked) -> Option<String> {
     let within = waits_on_the_person(asked)?;
     Some(asked.project().map_or_else(
         || crate::askwait::waiting_said_in_the_window(within),
