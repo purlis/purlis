@@ -137,15 +137,15 @@ describe("Settings › You › Profiles", () => {
       within(table)
         .getAllByRole("columnheader")
         .map((one) => one.getAttribute("aria-label") ?? one.textContent),
-    ).toEqual(["Profile", "Harness", "Sign-in", "Pin", "Actions"]);
-    expect(
-      within(table)
-        .getAllByRole("rowheader")
-        .map((one) => one.textContent),
-      // The icon's monogram first, kept from a reader; then the name and the folder.
-    ).toEqual(["Cwork/data/profiles/work/config", "Cmine/data/profiles/mine/config"]);
-    const work = within(table).getAllByRole("row")[1] as HTMLElement;
-    const actions = work.querySelector("[data-actions]") as HTMLElement;
+    ).toEqual(["Profile", "Sign-in", "Pin", "Actions"]);
+    // The icon's monogram first, kept from a reader; then the name, its harness and its folder.
+    const [work, mine] = within(table)
+      .getAllByRole("rowheader")
+      .map((one) => one.textContent ?? "");
+    expect(work).toMatch(/^CworkClaude Code, settings imported .+\/data\/profiles\/work\/config$/);
+    expect(mine).toBe("CmineClaude Code, the harness's own folder/data/profiles/mine/config");
+    const workRow = within(table).getAllByRole("row")[1] as HTMLElement;
+    const actions = workRow.querySelector("[data-actions]") as HTMLElement;
     expect(
       within(actions)
         .getAllByRole("button")

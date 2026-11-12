@@ -833,7 +833,7 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
               // controls, since what is said and set about a pool (its notices, its limits, its
               // profiles) takes a row of its own under its heading row, across the table.
               <ControlTable
-                className="pools-table"
+                className="pools-table ui-record-table"
                 stacks
                 aria-label="Pools on this machine"
                 aria-describedby={removeSaid}

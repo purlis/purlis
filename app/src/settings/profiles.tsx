@@ -289,18 +289,18 @@ const listed = (plane: string | undefined): LiveSetting => ({
             ) : (
               // **A table of the profiles** (#6301, as Your hosts is, #2919 R65, R67): a table of
               // controls, since a row holds several buttons, each its own Tab stop. A row a
-              // profile: its icon and name heading it, its folder under them; its harness; how
-              // and where it signs in; its pin; and its own actions at its end.
+              // profile: its icon and name heading it, its harness and folder under them; how
+              // and where it signs in; its pin; and its own actions at its end, one under
+              // another, so four columns fit the page.
               <ControlTable
-                className="profiles-table"
+                className="profiles-table ui-record-table"
                 stacks
                 aria-label="This machine's profiles"
                 aria-describedby={ids.describedBy}
               >
                 <ControlHead>
-                  <ControlColumn>Profile</ControlColumn>
-                  <ControlColumn>Harness</ControlColumn>
-                  <ControlColumn>Sign-in</ControlColumn>
+                  <ControlColumn minWidth={200}>Profile</ControlColumn>
+                  <ControlColumn minWidth={160}>Sign-in</ControlColumn>
                   <ControlColumn>Pin</ControlColumn>
                   <ControlColumn actions hideName>
                     Actions
@@ -315,12 +315,10 @@ const listed = (plane: string | undefined): LiveSetting => ({
                             <HarnessIcon icon={profile.icon} kind={profile.kind} />
                             {profile.name}
                           </span>
+                          <Badge variant="accent">{note(profile)}</Badge>
                           <span className="ui-record-where">{profile.folder}</span>
                         </span>
                       </ControlRowHeading>
-                      <ControlCell heading="Harness">
-                        <Badge variant="accent">{note(profile)}</Badge>
-                      </ControlCell>
                       <ControlCell heading="Sign-in">
                         <span className="ui-record-lines">
                           <span className="ui-setting-help">{signedIn(profile)}</span>

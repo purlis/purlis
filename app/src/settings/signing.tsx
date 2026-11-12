@@ -222,7 +222,7 @@ function On({
       {accounts.length > 0 ? (
         // **A table of the accounts' signing** (#6301, as Your hosts is, #2919 R65): a row an
         // account, its login heading it, its host, and where its signing stands.
-        <Table aria-label="Signing on your accounts" stacks>
+        <Table className="ui-record-table" aria-label="Signing on your accounts" stacks>
           <TableHeader>
             <TableColumn id="login" isRowHeader>
               Account

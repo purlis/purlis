@@ -272,7 +272,7 @@ function EntryTable({
   entries: readonly Entry[];
 }) {
   return (
-    <Table aria-label={label} aria-describedby={ids.describedBy} stacks>
+    <Table className="ui-record-table" aria-label={label} aria-describedby={ids.describedBy} stacks>
       <TableHeader>
         <TableColumn id="what" isRowHeader>
           {columns.what}
