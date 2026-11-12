@@ -12,6 +12,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import App from "./App";
@@ -298,9 +299,12 @@ describe("a chat's pane head", () => {
 });
 
 describe("Links in this pane… from the pane's head, its ⋯ and the palette (#6332)", () => {
-  /** The row's name, as a reader hears it, and the key it says. */
+  /** The row, under the list's Open ▸ (the list is ten rows at most), and the key it says. */
   const linksRow = async (menu: HTMLElement) => {
-    const row = within(menu).getByRole("menuitem", { name: "Links in this pane…" });
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "Open" }));
+    const menus = await screen.findAllByRole("menu");
+    const open = menus[menus.length - 1];
+    const row = await within(open).findByRole("menuitem", { name: "Links in this pane…" });
     // The key is the registry's `pane.links`, drawn and said (Ctrl+Shift+L off a Mac).
     expect(row).toHaveAttribute("aria-keyshortcuts", "Control+Shift+L");
     expect(row.querySelector('[data-part="shortcut"]')).toHaveAttribute("data-key", "Ctrl+Shift+L");
@@ -334,16 +338,16 @@ describe("Links in this pane… from the pane's head, its ⋯ and the palette (#
     await waitFor(() => expect(ran).toEqual(["links:4"]));
   });
 
-  it("is a palette row, for the pane with the keyboard", async () => {
+  it("is a palette row, named for the pane's chat", async () => {
     await aPane();
     ran.length = 0;
     fireEvent.keyDown(window, { key: "F2" });
     const dialog = await screen.findByRole("dialog", { name: "Command palette" });
     fireEvent.change(within(dialog).getByRole("combobox"), {
-      target: { value: "links in this pane" },
+      target: { value: "links in" },
     });
     const list = await within(dialog).findByRole("listbox", { name: "Actions" });
-    fireEvent.click(await within(list).findByRole("option", { name: /^Links in this pane…/ }));
+    fireEvent.click(await within(list).findByRole("option", { name: /^Links in .*claude 4…/ }));
     await waitFor(() => expect(ran).toEqual(["links:4"]));
   });
 });

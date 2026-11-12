@@ -275,8 +275,6 @@ export const PASS_THROUGH_KEY = "F2";
 
 /** The row that sends it, looked up by id wherever the keystroke is handled. */
 export const PASS_THROUGH_ID = "pane.sendkey";
-/** The palette's *Links in this pane…*, for the pane with the keyboard (#6332). */
-export const PANE_LINKS_ID = "pane.links";
 
 /** The row that turns screen-reader mode on or off (DS-6, #629). Its id names what it changes,
  *  every terminal's mode, after the colon: it is no row about what is in front
@@ -2362,32 +2360,6 @@ export function catalogue(now: Now): Offer[] {
       });
     }
   }
-
-  // **Links in this pane…** (#6332, spec #6208 D10): the links on a pane's screen, to pick from by
-  // the keyboard. The palette's row is the focused pane's, as ⇧⌘L is; each pane's ⋯ list and its
-  // head's right-click have their own (`chatLinksId`), menu-only.
-  offers.push(
-    focusedOn?.kind === "session"
-      ? can(PANE_LINKS_ID, SAID.linksInThisPane, {
-          verb: "listLinks",
-          session: focusedOn.session,
-        })
-      : cannot(
-          PANE_LINKS_ID,
-          SAID.linksInThisPane,
-          front === undefined
-            ? "No pane is in front, so there are no links to list."
-            : "The pane in focus shows no terminal, so there are no links to list.",
-        ),
-  );
-  const drawn = new Set(
-    now.tabs.order.flatMap((tab) => panesOf(now.tabs, tab).map((one) => one.session)),
-  );
-  for (const session of drawn)
-    offers.push({
-      ...can(chatLinksId(session), SAID.linksInThisPane, { verb: "listLinks", session }),
-      menuOnly: true,
-    });
 
   // The key the palette claimed, handed back. Not destructive and not below the line: it is
   // how an operator whose harness binds `F2` types `F2` at all (charter-app#47).
@@ -4775,6 +4747,10 @@ function chatRows(now: Now): Offer[] {
   const askLocked = now.ask?.locked ?? null;
   if (askLocked !== null) offers.push(cannot(ASK_LOCKED_ID, "Ask a persona…", askLocked));
   const endedHere = new Set(now.endedHere ?? []);
+  // The chats a pane draws, whose screens have links to list (#6332).
+  const drawn = new Set(
+    now.tabs.order.flatMap((tab) => panesOf(now.tabs, tab).map((one) => one.session)),
+  );
   for (const { session, name } of chatsHere(now)) {
     // **A chat ended on purpose that its pane still shows** (#5019): the core has closed it, so
     // only what reads it is left, its Activity and its Network. The ended band's Resume and
@@ -4805,6 +4781,14 @@ function chatRows(now: Now): Offer[] {
     offers.push(
       can(renameId(session), `Rename chat ${name}…`, { verb: "renameChat", session }, name),
     );
+
+    // **Links in this pane…** (#6332, spec #6208 D10): the links on its pane's screen, to pick
+    // from by the keyboard, on its list's Open ▸ and in the palette, as Use skill… is (#4753). A
+    // chat no pane draws has no screen to list.
+    if (drawn.has(session))
+      offers.push(
+        can(chatLinksId(session), `Links in ${name}…`, { verb: "listLinks", session }, name),
+      );
 
     // **Move…** (#4764): the keyboard's drag of the chat, as its row's drag is the pointer's.
     // Every chat's, as Rename is; ⌘⇧M on its row or its pane does the same.
@@ -6036,14 +6020,14 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
           // Where it is drawn, by the keys (#4764).
           moveToChatId(at),
           briefId(at),
-          // The links on its pane's screen (#6332), in its ⋯ list and its head's right-click.
-          chatLinksId(at),
           // What its pane foot presses (#5204), then what it said and reached.
           chatHarnessId(at),
           chatWorkspaceId(at),
           askerId(at),
           chatSkillsId(at),
           chatStudioId(at),
+          // The links on its pane's screen (#6332), before what it reached.
+          chatLinksId(at),
           activityId(at),
           networkId(at),
           ignoreId(at),
