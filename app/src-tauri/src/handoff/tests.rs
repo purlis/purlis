@@ -13288,6 +13288,92 @@ fn a_run_grant_held_on_the_window_s_plane_is_listed_there_and_the_window_is_told
     });
 }
 
+/// **R-327, a regression watch for the phase 1 gate** (Q199): a run grant raised in the asks
+/// registry is a Blocking ask the ✋ counts (`asking::counted`, ADR 0121 decision 3), one more
+/// than before it was raised, and none once it is answered. Chat 212's run-grant case, which
+/// was never reproduced, stays watched here.
+#[test]
+fn a_raised_run_grant_is_a_blocking_ask_the_core_counts() {
+    use crate::asking::AskSource;
+    use purlis_core::harness::asks::{Admitted, Answerer};
+    use purlis_core::secrets::ask::run::{Bound, Hosts, Offer, RunAnswer, RunHeld, RunNeed};
+    let plane = Plane::new();
+    let branch = a_workspace_branch_folder(&plane);
+    let host = Pretend::default();
+    let (planes, _told) = planes_telling_asks(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let blocking = |held: &Held| crate::asking::counted(held).asks;
+    let before = blocking(&held).len();
+    let need = RunNeed {
+        ahead: false,
+        fills: Vec::new(),
+        offer: Offer::Program,
+        not_its_vault: false,
+        bound: Bound {
+            chat: 212,
+            name: "curl".to_owned(),
+            program: PathBuf::from("/usr/bin/curl"),
+            vault: "sentry".to_owned(),
+            env: vec!["TOKEN=TOKEN".to_owned()],
+            file: Vec::new(),
+            cwd: branch,
+            args: vec!["https://example.com/".to_owned()],
+        },
+        persona: "steward".to_owned(),
+        hosts: Hosts::Every,
+        caution: None,
+        command: "curl https://example.com/".to_owned(),
+    };
+
+    std::thread::scope(|scope| {
+        let run = scope.spawn(|| {
+            held.secret_asks().allowed_or_held(
+                need,
+                std::time::Duration::from_secs(60),
+                &mut |_| held.chats().asks_may_have_moved(),
+            )
+        });
+        let open = loop {
+            if let Some(open) = held.secret_asks().open_runs().into_iter().next() {
+                break open;
+            }
+            assert!(!run.is_finished(), "the run ended without asking");
+            std::thread::yield_now();
+        };
+
+        let counted = blocking(&held);
+        assert_eq!(
+            counted.len(),
+            before + 1,
+            "one more Blocking ask: {counted:?}"
+        );
+        assert_eq!(
+            counted
+                .iter()
+                .filter(|ask| ask.source == AskSource::RunGrant)
+                .map(|ask| ask.session)
+                .collect::<Vec<_>>(),
+            [212],
+            "the one counted is chat 212's run grant"
+        );
+
+        let by = Answerer::admitted(Admitted::LocalUi).expect("the window");
+        held.secret_asks()
+            .answer_run(open.id, RunAnswer::Refuse, by)
+            .expect("answered");
+        assert!(matches!(
+            run.join().expect("it ends"),
+            RunHeld::Refused { .. }
+        ));
+        assert_eq!(
+            blocking(&held).len(),
+            before,
+            "answered, it is counted no more"
+        );
+    });
+}
+
 /// #5242: a run on a vault its persona may not use that lacks its key is one notice, with the key's
 /// field and the program's Allow, and no vault ask beside it. Allow once with the value typed
 /// stores it there and lets the run go on.
