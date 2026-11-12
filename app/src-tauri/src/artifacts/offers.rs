@@ -160,7 +160,6 @@ pub(crate) fn heard<R: Runtime>(
     else {
         return;
     };
-    tracing::info!("[DEBUG-6261] offers said: label {label} load {} id {} n {n} set {}", said.load, said.id, said.query);
     let app = app.clone();
     let label = label.to_owned();
     tauri::async_runtime::spawn_blocking(move || {
@@ -176,7 +175,7 @@ pub(crate) fn heard<R: Runtime>(
             Ok(offers) => {
                 let taken = offers.len();
                 // A set said before one already drawn is not drawn: the later one stands.
-                let drawn = artifacts.draw_offers(&label, &said.load, n, |window| {
+                artifacts.draw_offers(&label, &said.load, n, |window| {
                     let _ = app.emit_to(
                         tauri::EventTarget::webview(window),
                         ARTIFACT_OFFERS,
@@ -186,7 +185,6 @@ pub(crate) fn heard<R: Runtime>(
                         },
                     );
                 });
-                tracing::info!("[DEBUG-6261] offers gated: label {label} load {} n {n} drawn {drawn} set {}", said.load, said.query);
                 Answer::data(serde_json::json!({ "offered": taken }), now)
             }
             Err(kind) => Answer::error(kind, now),
@@ -370,7 +368,7 @@ mod tests {
 
     /// #6261: the page said `{refused}` and then `{todo, refused}`; each was gated on a thread
     /// of its own, the first finished last, and the window drew `{refused}` in the place of the
-    /// set the page said last (Linux scenario runs 42999270036, 43015091955).
+    /// set the page said last (Linux scenario runs 42999270036 and 43015091955; drawn so in the core's own log in 43031476308).
     #[test]
     fn a_set_of_offers_gated_after_a_later_one_was_drawn_is_not_drawn() {
         let (_root, of, snapshot) = board();

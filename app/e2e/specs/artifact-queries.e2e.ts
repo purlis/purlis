@@ -25,14 +25,12 @@ import { closeTabOf, iconFor, iconOf } from "../artifactTabs.js";
  * `purlis_core::artifact::calls` and `purlis_core::extension::queries`.
  */
 
-for (const ROUND of [1, 2, 3, 4, 5, 6, 7, 8]) {
-// [DEBUG-6261] repeated, each round its own page, pin and todo.
-const NAME = `Todo board ${ROUND}`;
+const NAME = "Todo board";
 const DECLARED = `{"api":1,"queries":{"purlis.todo_list@1":["done"],"purlis.change_status@1":[]}}`;
 const PAGE = `<!doctype html><title>${NAME}</title><script type="application/json" id="purlis">${DECLARED}</script><ul id=todos></ul><script src=app.js></script>`;
 const OFFERS = `[role="group"][aria-label="Offered by ${NAME}"]`;
 /** The todo of this spec's own the page finds in its answer. */
-const TODO = ["Water the garden ferns", "Tune the cello strings", "Oil the bicycle chain", "Sort the winter coats", "Paint the attic door", "Bake rye bread loaves", "Mend the fishing net", "Polish brass candlesticks"][ROUND - 1];
+const TODO = "Queried by the board";
 /**
  * The page's script: its two calls, and each answer said as an offer (see above). The offers
  * answer on the port too, under id 99, which it passes over.
@@ -50,7 +48,6 @@ purlis.port.onmessage = (event) => {
 };
 purlis.port.postMessage({ id: 1, query: "purlis.todo_list@1" });
 purlis.port.postMessage({ id: 2, query: "purlis.session_record_list@1" });
-// round ${ROUND}
 `;
 
 /** What the app answered a command with, insisting it answered at all. */
@@ -82,7 +79,7 @@ async function inFront(): Promise<string | null> {
   );
 }
 
-describe(`a pinned artifact that calls purlis's queries, round ${ROUND}`, function () {
+describe("a pinned artifact that calls purlis's queries", function () {
   this.timeout(180_000);
 
   let at = "";
@@ -91,7 +88,7 @@ describe(`a pinned artifact that calls purlis's queries, round ${ROUND}`, functi
   before(async () => {
     const plane = (await ask<string[]>("open_planes"))[0];
     at = join(plane, "workspaces", "alpha", "artifacts");
-    const folder = join(at, `todo-board-${ROUND}`);
+    const folder = join(at, "todo-board");
     mkdirSync(folder, { recursive: true });
     writeFileSync(join(folder, "index.html"), PAGE);
     writeFileSync(join(folder, "app.js"), SCRIPT);
@@ -100,7 +97,7 @@ describe(`a pinned artifact that calls purlis's queries, round ${ROUND}`, functi
       join(at, "pins.toml"),
       `version = 1
 pin = [
-  { id = "e2e00000003${ROUND}", folder = "todo-board-${ROUND}", name = "${NAME}", icon = "chart", order = 1 },
+  { id = "e2e000000003", folder = "todo-board", name = "${NAME}", icon = "chart", order = 1 },
 ]
 `,
     );
@@ -141,17 +138,10 @@ pin = [
   });
 
   it("answers a call its page declared with the workspace's own data", async () => {
-    // [DEBUG-6261] on failure, say what the bar drew.
-    try {
-      await $(OFFERS).$(`aria/Mark done: ${TODO}`).waitForExist({ timeout: 20_000 });
-    } catch {
-      const drew = await browser.execute(() => ({
-        bar: document.querySelector('[data-testid="artifact-bar"]')?.textContent ?? null,
-        refused: [...document.querySelectorAll('[data-testid="artifact-offer-refused"]')].map((one) => one.textContent ?? ""),
-        buttons: [...document.querySelectorAll('[data-testid="artifact-bar"] button')].map((one) => one.getAttribute("aria-label") ?? one.textContent ?? ""),
-      }));
-      throw new Error(`the page was not answered its declared purlis.todo_list@1 with the todo; [DEBUG-6261] the bar drew ${JSON.stringify(drew)}`);
-    }
+    await $(OFFERS).$(`aria/Mark done: ${TODO}`).waitForExist({
+      timeout: 20_000,
+      timeoutMsg: "the page was not answered its declared purlis.todo_list@1 with the todo",
+    });
   });
 
   it("refuses a call its page did not declare, as not-approved", async () => {
@@ -172,4 +162,3 @@ pin = [
     );
   });
 });
-}

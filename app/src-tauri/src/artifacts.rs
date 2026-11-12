@@ -592,16 +592,7 @@ fn answer_ask<R: Runtime>(app: tauri::AppHandle<R>, ask: Ask) {
                 params,
             ),
         };
-        let open = artifacts.still_open(&ask.label, &ask.load);
-        tracing::info!(
-            "[DEBUG-6261] answered: label {} load {} id {} name {} open {open} answer {}",
-            ask.label,
-            ask.load,
-            ask.id,
-            ask.name,
-            format!("{answer:?}").chars().take(300).collect::<String>()
-        );
-        if !open {
+        if !artifacts.still_open(&ask.label, &ask.load) {
             return;
         }
         let Some(webview) = app.get_webview(&ask.label) else {
