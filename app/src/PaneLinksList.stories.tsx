@@ -73,7 +73,9 @@ async function listed(canvasElement: HTMLElement) {
   const page = within(canvasElement.ownerDocument.body);
   const region = await page.findByRole("region", { name: "A saved chat's last screen" });
   await waitFor(() =>
-    expect(canvasElement.querySelector(".xterm-screen")?.textContent ?? "").toContain("●"),
+    expect(canvasElement.querySelector(".xterm-screen")?.textContent ?? "").toMatch(
+      /setup first|tests pass/,
+    ),
   );
   region.focus();
   await userEvent.keyboard(
@@ -131,7 +133,9 @@ export const NoLinks: StoryObj<typeof meta> = {
   args: { screen: PLAIN },
   play: async ({ canvasElement }) => {
     const { dialog } = await listed(canvasElement);
-    await expect(await within(dialog).findByText("No links on screen.")).toBeVisible();
+    const none = await within(dialog).findByText("No links on screen.");
+    // Once the dialog has come in: it fades in (WebKit reads it as hidden until then).
+    await waitFor(() => expect(none).toBeVisible());
     await pictureNow();
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(within(document.body).queryByRole("dialog")).toBeNull());
