@@ -162,10 +162,9 @@ export function HostsTable({
         onSelectionChange={setChosen}
       >
         <TableHeader>
-          {/* The host is what gives way where the page is narrow, down to a width a host reads
-              in, cut with its whole words in the cell's tooltip, so the Added column never pushes
-              Remove out of the frame (#6172). */}
-          <TableColumn id="host" isRowHeader size="fill" cut minWidth="16rem">
+          {/* A host longer than 16rem is cut, its whole words in the cell's tooltip, so the Added
+              column never pushes Remove out of the frame (#6172). */}
+          <TableColumn id="host" isRowHeader cut maxWidth="16rem">
             Host
           </TableColumn>
           <TableColumn id="status">Status</TableColumn>
