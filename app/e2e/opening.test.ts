@@ -504,8 +504,8 @@ describe("a press that holds no node", () => {
     expect(sent(pressClearPane)('[data-cause="chat-ended:4"]')).toBe(true);
     const closed = clicks(aQuestion("End chat steward 4?", "Close")[0]);
     expect(sent(pressTheAnswer)("steward 4", "Close")).toBe(true);
-    const ended = clicks(aRow("chat.end:5", "End chat steward 5")[0]);
-    expect(sent(pressEndChat)()).toBe("End chat steward 5");
+    const ended = clicks(aRow("chat.end:5", "End chat steward 5…")[0]);
+    expect(sent(pressEndChat)()).toBe("End chat steward 5…");
     expect([cleared(), closed(), ended()]).toEqual([1, 1, 1]);
   });
 
@@ -525,10 +525,17 @@ describe("a press that holds no node", () => {
   // The question is waited for by the title of the row pressed (#6227): with no name, any
   // question offering Close was "the question about " in a red run's words.
   it("presses the first End chat row the palette offers and answers its title", () => {
-    const pressed = clicks(aRow("chat.end:4", "End chat steward 4")[0]);
-    const after = clicks(aRow("chat.end:5", "End chat steward 5")[0]);
-    expect(pressEndChat()).toBe("End chat steward 4");
+    const pressed = clicks(aRow("chat.end:4", "End chat steward 4…")[0]);
+    const after = clicks(aRow("chat.end:5", "End chat steward 5…")[0]);
+    expect(pressEndChat()).toBe("End chat steward 4…");
     expect([pressed(), after()]).toEqual([1, 0]);
+  });
+
+  it("refuses an End chat row with no title, and presses nothing", () => {
+    const [row] = aRow("chat.end:4", "");
+    const pressed = clicks(row);
+    expect(() => pressEndChat()).toThrow("has no title");
+    expect(pressed()).toBe(0);
   });
 
   it("presses no End chat row that is off, and answers null with none left", () => {

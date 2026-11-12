@@ -980,7 +980,7 @@ fn a_close_the_host_is_slow_to_answer_does_not_hold_the_window() {
     let (_dir, root) = a_project();
     let sessions = HostedSessions::new(connection, &root);
     let chat = started(&sessions).expect("it starts");
-    *close_takes.lock().unwrap() = Some(Duration::from_secs(10));
+    *close_takes.lock().unwrap() = Some(A_CLOSE_WAITS_AT_MOST * 5);
 
     let asked = Instant::now();
     sessions.close(chat).expect("a close is answered");
@@ -994,10 +994,37 @@ fn a_close_the_host_is_slow_to_answer_does_not_hold_the_window() {
         sessions.running().is_empty(),
         "the chat is gone here at once"
     );
-    *close_takes.lock().unwrap() = None;
     until("the host is still told to close it", || {
         closed.lock().unwrap().len() == 1
     });
+}
+
+/// **What a close that waited only its second gives up** (#6227, ADR 0108 as amended
+/// 2026-11-12): a chat put back under the closed one's number while the host still holds the
+/// old program is numbered otherwise by the host, so its start is refused and closed, never run
+/// as a second chat under another number.
+#[test]
+fn a_chat_put_back_under_a_number_the_host_has_not_let_go_of_is_refused() {
+    let runtime = a_runtime();
+    let host = a_host_slow_by(Duration::ZERO, &runtime);
+    let close_takes = Arc::clone(&host.close_takes);
+    let connection = a_window_on(host, &runtime);
+    let (_dir, root) = a_project();
+    let sessions = HostedSessions::new(connection, &root);
+    let chat = started(&sessions).expect("it starts");
+    *close_takes.lock().unwrap() = Some(A_CLOSE_WAITS_AT_MOST * 5);
+    sessions.close(chat).expect("a close is answered");
+
+    let refused = sessions
+        .open_named(Some(chat), &by_its_names(), Default::default(), &|_| {})
+        .map(|composed| composed.number)
+        .expect_err("a number the host still holds is not taken");
+
+    assert!(refused.contains(&format!("not {chat}")), "{refused}");
+    assert!(
+        sessions.running().is_empty(),
+        "nothing runs under another number"
+    );
 }
 
 /// **A link that comes back during the wait still gets what a hold does after it** (#4403,

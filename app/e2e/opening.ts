@@ -348,6 +348,13 @@ async function pressTheEmptyPanesNewChat(): Promise<void> {
  * It is `role="alertdialog"` rather than `dialog`: the dialog family's `AlertDialog`
  * (`ui/dialog/Dialog.tsx`), which is the one for a question the operator did not go looking for.
  */
+/**
+ * How long one look in the page may take before a red run says the window held it (#6227): a
+ * look answers in milliseconds, and a main thread held by a command answers it only once it
+ * lets go.
+ */
+const A_HELD_LOOK_MS = 5_000;
+
 export async function answerTheAsk(ending: string): Promise<void> {
   // The question is about the row that was pressed; its title says which. Looked for by that,
   // afresh at every look: `endEveryChat` asks one after another, and a node held from the last
@@ -370,20 +377,25 @@ export async function answerTheAsk(ending: string): Promise<void> {
   // window whose main thread is held (a close waiting on its host, `slow.jsonl`'s
   // `core_stall`) answers the look that pressed only once it lets go, and that is no question
   // left without its answer.
-  let slowest = 0;
+  // The look still out counts too: WebdriverIO gives up while it is pending once an earlier
+  // look has come back.
+  let slowestLook = 0;
+  let lookedAt: number | null = null;
+  const longestLook = () => Math.max(slowestLook, lookedAt === null ? 0 : Date.now() - lookedAt);
   await browser.waitUntil(
     async () => {
-      const asked = Date.now();
+      lookedAt = Date.now();
       const pressed = await browser.execute(pressTheAnswer, ending, word);
-      slowest = Math.max(slowest, Date.now() - asked);
+      slowestLook = longestLook();
+      lookedAt = null;
       return pressed;
     },
     {
       timeout: 20_000,
       interval: 200,
       timeoutMsg: () =>
-        slowest >= 5_000
-          ? `the window took ${Math.round(slowest / 1000)} s to answer one look at the question about ${ending}: its main thread was held`
+        longestLook() >= A_HELD_LOOK_MS
+          ? `the window took ${Math.round(longestLook() / 1000)} s to answer one look at the question about ${ending}: its main thread was held`
           : `the question about ${ending} never offered ${word}`,
     },
   );
@@ -501,7 +513,7 @@ export function pressClearPane(cause: string): boolean {
 
 /**
  * **Presses the palette's first End chat row that can run, and answers its title** (#6227), or
- * `null` with none left. The question it asks is titled the row's title and a `?`, so the title
+ * `null` with none left; a row with no title is refused, never pressed. The question it asks is titled the row's title and a `?`, so the title
  * is what the spec waits for: with no name, any question offering Close was "the question
  * about " in a red run's words. **Run in the page**, as {@link aDialogOffers} is.
  */
@@ -511,6 +523,8 @@ export function pressEndChat(): string | null {
   );
   if (row === null) return null;
   const title = (row.querySelector(".palette-title")?.textContent ?? "").trim();
+  // A title of none would wait for any question at all, which is what #6227 was.
+  if (title === "") throw new Error(`the palette's ${row.id} has no title to wait for`);
   row.click();
   return title;
 }
