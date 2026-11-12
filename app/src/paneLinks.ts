@@ -117,9 +117,50 @@ const MOST_KEPT = 256;
 
 /**
  * **How long a file's answer is kept** (#6216): a file is made and deleted while a chat works,
- * so a path hovered again after this is asked again, and a deleted file stops linking.
+ * so a path hovered or listed again after this is asked again, and a deleted file stops linking.
  */
 export const FILE_ANSWER_LIFE = 5_000;
+
+/** A pane's kept answers, by {@link linkKey}. */
+type Kept = Map<string, Promise<LinkSeen | null>>;
+
+/** When each kept file answer stops counting: {@link FILE_ANSWER_LIFE} after it was asked. */
+const lives = new WeakMap<Promise<LinkSeen | null>, number>();
+
+/** The start of a file candidate's {@link linkKey}. */
+const FILE_KEY = "file\u0000";
+
+/** **The answer kept for `key`**, while it still counts: a file's for {@link FILE_ANSWER_LIFE}. */
+function held(kept: Kept, key: string): Promise<LinkSeen | null> | undefined {
+  const had = kept.get(key);
+  if (had === undefined) return undefined;
+  if ((lives.get(had) ?? Infinity) > Date.now()) return had;
+  kept.delete(key);
+  return undefined;
+}
+
+/** **What a link is kept and listed by**: its kind and its text. */
+export const linkKey = (link: Pick<LinkCandidate, "kind" | "text">) =>
+  `${link.kind}\u0000${link.text}`;
+
+/**
+ * **Keeps the core's answer for `key`**, the oldest let go of once a pane keeps
+ * {@link MOST_KEPT}. An answer the core could not give is not kept: it is asked again.
+ */
+function keep(kept: Kept, key: string, asked: Promise<LinkSeen | null>): Promise<LinkSeen | null> {
+  const answer: Promise<LinkSeen | null> = asked.catch(() => {
+    if (kept.get(key) === answer) kept.delete(key);
+    return null;
+  });
+  if (key.startsWith(FILE_KEY)) lives.set(answer, Date.now() + FILE_ANSWER_LIFE);
+  if (!kept.has(key) && kept.size >= MOST_KEPT) {
+    const oldest = kept.keys().next().value;
+    if (oldest !== undefined) kept.delete(oldest);
+  }
+  kept.set(key, answer);
+  return answer;
+}
+
 
 /**
  * A line as xterm holds it across the rows it wraps over: its text, each character's cell, and
@@ -261,39 +302,40 @@ function placeOf(pane: Terminal, x: number, y: number, width: number): LinkPlace
   };
 }
 
+/** **A link on screen**, as *Links in this pane…* lists it (#6220): its candidate and the
+ *  core's answer for it. */
+export type ScreenLink = { candidate: LinkCandidate; seen: LinkSeen };
+
+/** **A pane with its link hook registered**: let go of by `dispose`. */
+export type LinkedPane = IDisposable & {
+  /**
+   * **The links on screen, newest first** (#6220, D5): the viewport's, not the history's, the
+   * lowest first and, on one line, the rightmost. A link on screen twice is listed once, where
+   * it is lowest. What the core answers is kept with the hover's, and the candidates it has not
+   * answered yet are asked in one call. Text the core says nothing of (`null`) is left out.
+   */
+  onScreen: () => Promise<ScreenLink[]>;
+};
+
 /**
  * **Registers the link hook on `pane`**: its links are found, resolved by the core and opened
  * as {@link LinkHands} says. Disposing it lets go of the provider and of the colour drawn.
  */
-export function linkPane(pane: Terminal, hands: LinkHands): IDisposable {
+export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
   /** The core's answers, per pane, by kind and text: a line hovered again asks nothing, until a
    *  file's answer is past {@link FILE_ANSWER_LIFE}. */
-  const kept = new Map<string, Promise<LinkSeen | null>>();
-  const until = new Map<string, number>();
+  const kept: Kept = new Map();
   const seenOf = (found: Found): Promise<LinkSeen | null> => {
-    const key = `${found.kind}\u0000${found.text}`;
-    const had = kept.get(key);
-    if (had !== undefined && (until.get(key) ?? Infinity) > Date.now()) return had;
-    kept.delete(key);
-    until.delete(key);
-    const asked = hands.core.resolve(hands.from(), [{ kind: found.kind, text: found.text }]).then(
-      ([seen]) => seen ?? null,
-      () => {
-        // Not kept: a core that could not answer is asked again on the next hover.
-        kept.delete(key);
-        return null;
-      },
+    const key = linkKey(found);
+    const had = held(kept, key);
+    if (had !== undefined) return had;
+    return keep(
+      kept,
+      key,
+      hands.core
+        .resolve(hands.from(), [{ kind: found.kind, text: found.text }])
+        .then(([seen]) => seen ?? null),
     );
-    if (kept.size >= MOST_KEPT) {
-      const oldest = kept.keys().next().value;
-      if (oldest !== undefined) {
-        kept.delete(oldest);
-        until.delete(oldest);
-      }
-    }
-    kept.set(key, asked);
-    if (found.kind === "file") until.set(key, Date.now() + FILE_ANSWER_LIFE);
-    return asked;
   };
 
   /** The colour drawn over the link under the pointer, let go of as it leaves. */
@@ -417,7 +459,75 @@ export function linkPane(pane: Terminal, hands: LinkHands): IDisposable {
       undraw();
       provider.dispose();
       kept.clear();
-      until.clear();
     },
+    onScreen: () => screenLinks(pane, hands, kept),
   };
+}
+
+/** The candidates on `pane`'s screen, newest first, each once: {@link LinkedPane.onScreen}. */
+function onScreenNewestFirst(pane: Terminal): Found[] {
+  const buffer = pane.buffer.active;
+  const top = buffer.viewportY;
+  const bottom = top + pane.rows - 1;
+  const found: Found[] = [];
+  for (let y = top; y <= bottom;) {
+    const wrapped = wrappedAt(pane, y);
+    if (wrapped === undefined) break;
+    const rows = wrapped.cells.map((cell) => cell.y);
+    const last = rows.length === 0 ? y : Math.max(y, ...rows);
+    for (const one of candidatesIn(wrapped.text)) {
+      if (cutShort(one, wrapped)) continue;
+      const shown = wrapped.cells
+        .slice(one.start, one.end)
+        .some((cell) => cell.y >= top && cell.y <= bottom);
+      if (shown) found.push(one);
+    }
+    y = last + 1;
+  }
+  const once = new Set<string>();
+  return found.reverse().filter((one) => {
+    const key = linkKey(one);
+    if (once.has(key)) return false;
+    once.add(key);
+    return true;
+  });
+}
+
+/** The links on `pane`'s screen, answered from `kept` or asked in one call and kept there. */
+async function screenLinks(
+  pane: Terminal,
+  hands: Pick<LinkHands, "core" | "from">,
+  kept: Kept,
+): Promise<ScreenLink[]> {
+  const found = onScreenNewestFirst(pane);
+  /** Each candidate's answer, held here too: one the pane lets go of still counts now. */
+  const answerOf = new Map<string, Promise<LinkSeen | null>>();
+  const unasked: Found[] = [];
+  for (const one of found) {
+    const had = held(kept, linkKey(one));
+    if (had === undefined) unasked.push(one);
+    else answerOf.set(linkKey(one), had);
+  }
+  if (unasked.length > 0) {
+    const asked = hands.core.resolve(
+      hands.from(),
+      unasked.map((one) => ({ kind: one.kind, text: one.text })),
+    );
+    unasked.forEach((one, at) => {
+      const key = linkKey(one);
+      answerOf.set(
+        key,
+        keep(
+          kept,
+          key,
+          asked.then((answers) => answers[at] ?? null),
+        ),
+      );
+    });
+  }
+  const answers = await Promise.all(found.map((one) => answerOf.get(linkKey(one)) ?? null));
+  return found.flatMap((one, at) => {
+    const seen = answers[at];
+    return seen === null ? [] : [{ candidate: { kind: one.kind, text: one.text }, seen }];
+  });
 }
