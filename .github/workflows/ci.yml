@@ -2228,9 +2228,9 @@ jobs:
           test "$RESULT" = "$want"
 
   # Its own job, not a leg of `scenario`'s matrix, so that `scenario-checks` waits on macOS
-  # alone. Two parts too, since its specs alone took 7.8 minutes of 12.7 (2026-10-12); Linux
-  # runners are not the ones in short supply. Part 2 runs the seven single-app runs (on macOS
-  # they are a leg of their own).
+  # alone. Three parts since 2026-11-11 (two before), cut by measured time in `e2e/parts.ts`: its
+  # first half had grown to 28.6 minutes of specs; Linux runners are not the ones in short
+  # supply. The last part runs the seven single-app runs (on macOS they are a leg of their own).
   scenario-linux:
     name: scenario tests (${{ matrix.os }}, part ${{ matrix.shard }} of ${{ matrix.shards }})
     needs: changes
@@ -2239,8 +2239,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04]
-        shard: [1, 2]
-        shards: [2]
+        shard: [1, 2, 3]
+        shards: [3]
         outcome: [false]
         include:
           - shard: 1
@@ -2248,6 +2248,10 @@ jobs:
             specs: true
             sandbox: false
           - shard: 2
+            extras: false
+            specs: true
+            sandbox: false
+          - shard: 3
             extras: true
             specs: true
             sandbox: false
