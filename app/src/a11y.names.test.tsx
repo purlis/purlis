@@ -3,7 +3,12 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render } from "@testing-library/react";
-import { expectEveryControlNamed, namelessControls, paidDebts } from "./a11y.testkit";
+import {
+  expectEveryControlNamed,
+  namedWithoutItsWords,
+  namelessControls,
+  paidDebts,
+} from "./a11y.testkit";
 
 /**
  * **The check that every control has a name** (DS-6, #629), on its own cases: what counts as a
@@ -99,6 +104,54 @@ describe("a surface held to it", () => {
 
     expect(paidDebts(["button <button.closer>", "tab <div.gone>"], found)).toEqual([
       "tab <div.gone>",
+    ]);
+  });
+});
+
+describe("a control's name holds the words it shows (WCAG 2.5.3 Label in Name, #6371)", () => {
+  it("passes a name that is its words, or its words and then what is only heard", () => {
+    const { container } = render(
+      <div>
+        <button type="button">Sign in</button>
+        <button type="button" aria-label="Sign in: work on pool builds">
+          Sign in
+        </button>
+        <button type="button">
+          devops 2,<span className="hidden-words"> 3 notices, folded</span>
+        </button>
+        <button type="button" aria-label="Close tab">
+          <svg aria-hidden="true" />
+        </button>
+      </div>,
+    );
+
+    expect(namedWithoutItsWords(container)).toEqual([]);
+  });
+
+  it("finds a name that leaves out, reorders or breaks up the words shown", () => {
+    const { container } = render(
+      <div>
+        <button type="button" aria-label="Open pane 2">
+          devops 2
+        </button>
+        <button type="button" aria-label="in Sign">
+          Sign in
+        </button>
+        <button type="button" aria-label="Sign me in">
+          Sign in
+        </button>
+        <span id="far">Elsewhere</span>
+        <button type="button" aria-labelledby="far">
+          Here
+        </button>
+      </div>,
+    );
+
+    expect(namedWithoutItsWords(container)).toEqual([
+      'button "Open pane 2" shows "devops 2"',
+      'button "in Sign" shows "Sign in"',
+      'button "Sign me in" shows "Sign in"',
+      'button "Elsewhere" shows "Here"',
     ]);
   });
 });
