@@ -17,7 +17,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { useState } from "react";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import type { ChatCard, LinkCandidate, LinkOpened, LinkSeen } from "./bindings";
-import { LinkAnswer } from "./PaneLinkSurfaces";
+import { LinkAnswer, type AskingChat } from "./PaneLinkSurfaces";
 import { usePaneLinkChats } from "./PaneLinkChats";
 import { LINK_CORE } from "./paneLinkCore";
 import { ReadOnlyTerminal } from "./ReadOnlyTerminal";
@@ -294,12 +294,21 @@ export const ClosedChatCardFromALink: StoryObj<typeof meta> = {
 };
 
 /** The window's answer to a link ⌘-clicked, up until it is closed (Esc, or an answer). */
-function Answer({ answer, candidate }: { answer: LinkOpened; candidate: LinkCandidate }) {
+function Answer({
+  answer,
+  candidate,
+  chat,
+}: {
+  answer: LinkOpened;
+  candidate: LinkCandidate;
+  chat?: AskingChat;
+}) {
   const [up, setUp] = useState(true);
   if (!up) return <p>Closed.</p>;
   return (
     <LinkAnswer
       answering={{ answer, candidate }}
+      chat={chat}
       onClose={() => setUp(false)}
       onConfirm={() => setUp(false)}
     />
@@ -376,7 +385,8 @@ export const Asks: StoryObj<typeof meta> = {
 /**
  * **A file outside the workspace** (#6216, the prototype's S7 `FileOutsideTheWorkspace`, D9): the
  * file and the workspace, *Don't open*, *Copy path* and *Open file*. It starts on *Open file*,
- * since opening only shows the file in an editor tab, and Return opens it.
+ * since opening only shows the file in an editor tab, and Return opens it. Under its title, the
+ * chat whose output named the file (#6355).
  */
 export const FileOutsideTheWorkspace: StoryObj<typeof meta> = {
   render: () => (
@@ -397,6 +407,7 @@ export const FileOutsideTheWorkspace: StoryObj<typeof meta> = {
         },
       }}
       candidate={{ kind: "file", text: "/etc/hosts:3" }}
+      chat={{ number: 641, title: "Fix the login form" }}
     />
   ),
   play: async ({ canvasElement }) => {
@@ -404,6 +415,7 @@ export const FileOutsideTheWorkspace: StoryObj<typeof meta> = {
     const dialog = await page.findByRole("dialog", {
       name: "Open a file outside this workspace?",
     });
+    await expect(dialog).toHaveTextContent("From chat #641 · Fix the login form");
     await expect(dialog).toHaveTextContent(
       "This chat's output names a file that is not in smart-ide.",
     );

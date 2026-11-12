@@ -124,12 +124,15 @@ type Answering = { answer: LinkOpened; candidate: LinkCandidate };
  */
 export function usePaneLinks({
   from,
+  chat,
   core,
   colour,
   onScreen,
   onChat,
 }: {
   from: LinkFrom;
+  /** The chat whose pane this is, as its asks name it (#6355): none for a shell's pane. */
+  chat?: AskingChat;
   core: LinkCore | undefined;
   colour: () => string;
   /** The links on the pane's screen, newest first (`LinkedPane.onScreen`). */
@@ -267,6 +270,7 @@ export function usePaneLinks({
       {answering !== null && (
         <LinkAnswer
           answering={answering}
+          chat={chat}
           onClose={() => setAnswering(null)}
           onConfirm={(token) => {
             setAnswering(null);
@@ -293,10 +297,13 @@ export function placed(place: LinkPlace | undefined) {
  *  accepted ask is answered with the token the core issued with it (#6216). */
 export function LinkAnswer({
   answering: { answer, candidate },
+  chat,
   onClose,
   onConfirm,
 }: {
   answering: Answering;
+  /** The chat the pane is, named under an ask's title (#6355); none for a shell. */
+  chat?: AskingChat;
   onClose: () => void;
   onConfirm: (token: string) => void;
 }) {
@@ -305,6 +312,7 @@ export function LinkAnswer({
       <FileOutsideAsk
         target={answer.target}
         home={answer.about.home}
+        chat={chat}
         onClose={onClose}
         onOpen={() => onConfirm(answer.token)}
       />
@@ -344,16 +352,20 @@ export function LinkAnswer({
  * opens it: opening only shows it in an editor tab, so the ask is a notice more than a guard.
  * That starting place is the person's ruling on the prototype (D9, accepted on #6211), over
  * the family's rule that an ask starts on its safe answer. `home` is the chat's workspace, or
- * the project for a chat at its root; with none, its row is left out.
+ * the project for a chat at its root; with none, its row is left out. `chat` is the chat whose
+ * output named the file, said under the title as the prototype's S7 draws it (#6355): none for
+ * a shell's pane, which is no chat.
  */
 export function FileOutsideAsk({
   target,
   home,
+  chat,
   onClose,
   onOpen,
 }: {
   target: string;
   home: LinkHome | null;
+  chat?: AskingChat;
   onClose: () => void;
   onOpen: () => void;
 }) {
@@ -362,6 +374,7 @@ export function FileOutsideAsk({
   return (
     <Dialog
       title={workspace ? "Open a file outside this workspace?" : "Open a file outside the project?"}
+      subtitle={chat === undefined ? undefined : fromChatSaid(chat)}
       description={`This chat's output names a file that is not in ${within}.`}
       cancel={{ children: "Don't open" }}
       alternative={{
@@ -389,6 +402,17 @@ export function FileOutsideAsk({
       <p className="ui-text-secondary">It opens in an editor tab. Nothing is run.</p>
     </Dialog>
   );
+}
+
+/** **A chat, as an ask names the pane it came from** (#6355): its number and its title. */
+export type AskingChat = { number: number; title: string };
+
+/** "From chat #N · title", the prototype's S7 line; a chat called only by its number is said once. */
+export function fromChatSaid({ number, title }: AskingChat): string {
+  const named = title.trim();
+  return named === "" || named === String(number)
+    ? `From chat #${number}`
+    : `From chat #${number} · ${named}`;
 }
 
 export { sentence };

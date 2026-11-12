@@ -142,13 +142,19 @@ function Opened({ jumps, outside }: { jumps: Pending[]; outside: OutsideAsk[] })
   return null;
 }
 
-async function pane(text: string) {
+async function pane(text: string, title?: string) {
   const jumps: Pending[] = [];
   const outside: OutsideAsk[] = [];
   render(
     <>
       <Opened jumps={jumps} outside={outside} />
-      <SessionPane plane="/planes/one" session={1} focused={false} onFocus={() => {}} />
+      <SessionPane
+        plane="/planes/one"
+        session={1}
+        title={title}
+        focused={false}
+        onFocus={() => {}}
+      />
     </>,
   );
   const term = made[0];
@@ -286,9 +292,9 @@ describe("a file path in a chat's pane", () => {
 });
 
 describe("a file outside the workspace", () => {
-  async function asking() {
+  async function asking(title?: string) {
     opens = [ASKS];
-    const opened = await pane(`wrote ${HOSTS} now`);
+    const opened = await pane(`wrote ${HOSTS} now`, title);
     hover(opened.drawn, 8, 0);
     await waitFor(() => expect(asked("pane_link_resolve")).toHaveLength(1));
     click(opened.drawn, 8, 0, { ctrlKey: true });
@@ -317,6 +323,21 @@ describe("a file outside the workspace", () => {
     await waitFor(() =>
       expect(document.activeElement).toBe(screen.getByRole("button", { name: "Open file" })),
     );
+  });
+
+  it("names the chat it came from under its title (#6355)", async () => {
+    const { ask } = await asking("Fix the login form");
+
+    expect(ask).toHaveTextContent("From chat #1 · Fix the login form");
+    // The line under the title describes the dialog, so a screen reader says it too.
+    const subtitle = screen.getByText("From chat #1 · Fix the login form");
+    expect(ask.getAttribute("aria-describedby") ?? "").toContain(subtitle.id);
+  });
+
+  it("names no chat for a shell's pane, which has no title (#6355)", async () => {
+    const { ask } = await asking();
+
+    expect(ask).not.toHaveTextContent("From chat");
   });
 
   it("opens on Open file, answered with the ask's token, in a tab of its own", async () => {
