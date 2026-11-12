@@ -144,7 +144,7 @@ mod over_the_window_line {
                 key: line,
                 on: None,
             },
-            |asked| windowline::ask_on(&socket, asked, within),
+            |asked| windowline::ask_on(&socket, asked, within, &mut |_| {}),
         );
         assert_eq!(reached, Reached::Heard(Heard::KeyOnAccount { on: true }));
     }

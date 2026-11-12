@@ -306,7 +306,9 @@ fn a_new_code() -> String {
 
 #[cfg(unix)]
 fn ask_the_window(asked: Asked) -> Reached {
-    signingsetup::reach(asked, purlis_core::windowline::ask)
+    signingsetup::reach(asked, |asked| {
+        purlis_core::windowline::ask(asked, &mut |line| voice::info(line.to_owned()))
+    })
 }
 
 /// The window line is a Unix socket: elsewhere this command reaches no window.

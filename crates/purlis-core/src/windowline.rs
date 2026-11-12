@@ -472,8 +472,9 @@ pub fn beside(host: &Path) -> PathBuf {
     host.with_file_name(format!("{stem}-window.sock"))
 }
 
-/// Asks the running window.
-pub fn ask(asked: &Asked) -> Answered {
+/// **Asks the running window**, `say` told what the command waits on as it starts to wait
+/// ([`ask_on`]).
+pub fn ask(asked: &Asked, say: &mut dyn FnMut(&str)) -> Answered {
     let within = match asked {
         Asked::ForgetOffThePools { .. } => THE_WINDOW_ANSWERS_WITHIN,
         Asked::KeepOnAPool { .. } => THE_WINDOW_KEEPS_WITHIN,
@@ -486,7 +487,7 @@ pub fn ask(asked: &Asked) -> Answered {
         }
         Asked::Signing(_) => THE_WINDOW_ANSWERS_WITHIN,
     };
-    ask_on(&socket(), asked, within)
+    ask_on(&socket(), asked, within, say)
 }
 
 /// One line read within `within` all told, at most [`LONGEST_LINE`] of it.
@@ -528,19 +529,64 @@ fn this_user(stream: &UnixStream) -> bool {
 
 /// [`ask`], of the window listening on `socket`, waiting `within`. What another user listens on
 /// is no window, and is told nothing.
-pub fn ask_on(socket: &Path, asked: &Asked, within: Duration) -> Answered {
+pub fn ask_on(
+    socket: &Path,
+    asked: &Asked,
+    within: Duration,
+    say: &mut dyn FnMut(&str),
+) -> Answered {
     let Ok(stream) = UnixStream::connect(socket) else {
         return Answered::NoWindow;
     };
     if !this_user(&stream) {
         return Answered::NoWindow;
     }
-    let answered = || -> Option<Said> {
+    asked_over(&stream, asked, within, say)
+}
+
+/// [`ask_on`], on a connection to the window already made and admitted. Once an ask the person
+/// answers is on its way, `say` is told where they answer it ([`waiting_said`]), so nothing is
+/// said of a wait that never was.
+pub fn asked_over(
+    stream: &UnixStream,
+    asked: &Asked,
+    within: Duration,
+    say: &mut dyn FnMut(&str),
+) -> Answered {
+    let mut answered = || -> Option<Said> {
         stream.set_write_timeout(Some(A_PEER_HAS)).ok()?;
-        write_line(&stream, asked)?;
-        serde_json::from_str(&line_of(&stream, within)?).ok()
+        write_line(stream, asked)?;
+        if let Some(line) = waiting_said(asked) {
+            say(&line);
+        }
+        serde_json::from_str(&line_of(stream, within)?).ok()
     };
     answered().map_or(Answered::NoAnswer, Answered::Said)
+}
+
+/// **How long `asked` waits on the person**, where the person answers it in the window, and
+/// `None` where the window answers it alone. Every kind says which, so a kind added later says
+/// where it waits as it starts to (ADR 0121 decision 16).
+pub fn waits_on_the_person(asked: &Asked) -> Option<Duration> {
+    match asked {
+        Asked::ApproveSignIn { .. }
+        | Asked::TakeOffAPool { .. }
+        | Asked::Signing(crate::signingsetup::Asked::Check { .. }) => Some(THE_PERSON_HAS),
+        Asked::ForgetOffThePools { .. }
+        | Asked::KeepOnAPool { .. }
+        | Asked::Signing(crate::signingsetup::Asked::KeyOnAccount { .. }) => None,
+    }
+}
+
+/// **What a command says as it starts to wait on the person for `asked`** (ADR 0121 decision
+/// 16): Asks, under the project the ask names, or the one the window has in front where it names
+/// none. `None` where only the window answers it.
+pub fn waiting_said(asked: &Asked) -> Option<String> {
+    let within = waits_on_the_person(asked)?;
+    Some(asked.project().map_or_else(
+        || crate::askwait::waiting_said_in_the_window(within),
+        |root| crate::askwait::waiting_said(root, within),
+    ))
 }
 
 /// **Serves `answer` on `socket`** for the app's life, each peer on a thread of its own, since a
