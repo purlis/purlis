@@ -250,6 +250,8 @@ describe("a chat link in a chat's pane", () => {
 
     const card = await screen.findByRole("dialog", { name: "#641 · Signed commits #5607" });
     expect(within(card).getByTestId("closed-chat-card")).toHaveTextContent("Signed all 12.");
+    // The card stands where the hover's tooltip did: the tooltip goes.
+    await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull());
     await userEvent.click(within(card).getByRole("button", { name: "Read it" }));
     await waitFor(() => expect(pressed).toHaveBeenCalledTimes(1));
     expect((pressed.mock.calls[0][0] as Offer).does).toMatchObject({ verb: "openView" });
