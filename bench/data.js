@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794480707471,
+  "lastUpdate": 1794483317836,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -47292,6 +47292,48 @@ window.BENCHMARK_DATA = {
             "value": 102.84971200000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.816, 102.469, 102.850, 103.676, 103.808 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "255a3a41910087bcb6fed925cf5c290c682c1ced",
+          "message": "The floor's token refusal opens with its own sentence and names the way through (#6314) (#6326)\n\nA command that prints the forge token or reads a stored secret is still refused\nunattended (#866). Its refusal no longer opens with the release floor's sentence,\nabout cutting a release: it says a stored credential is on the floor and names\npurlis secret exec <vault> --env NAME=<key> -- <command> (a declared persona tool\nin a sandboxed chat, git only with its args), or re-running the step attended.\nEvery other floor refusal keeps its wording.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77CCEVGG85WKX5NZKVWAB9T\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-12T10:06:05Z",
+          "tree_id": "5ce5771bc921cc06bd1e4d71ce5552a9c46ca359",
+          "url": "https://github.com/purlis/purlis/commit/255a3a41910087bcb6fed925cf5c290c682c1ced"
+        },
+        "date": 1794483310639,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3733465,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.367, 0.373, 0.373, 0.374, 0.385 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.464962999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.315, 16.373, 16.465, 16.492, 16.538 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.6184,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.236, 101.484, 101.618, 102.505, 102.892 ms"
           }
         ]
       }
