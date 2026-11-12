@@ -11,9 +11,11 @@
 // and the steward applies it after triage (`docs/agents/skills/report-intake/SKILL.md`).
 //
 //   purlis secret list sentry | node tools/report-intake.mjs has-token
-//   node tools/report-intake.mjs url [--weeks 4]
+//   node tools/report-intake.mjs url [--issues] [--weeks 4]
 //   node tools/report-intake.mjs next <headers-file>
 //   node tools/report-intake.mjs plan --from <dir> [--since-hours 26] [--weeks 4]
+//   node tools/report-intake.mjs merge --plan <plan.json> --steps <n,n,…> [--title <title>]
+//   node tools/report-intake.mjs milestone --area <area:label>
 //
 // **It never sees the token.** purlis hands a vault's value to no program that runs what it is
 // told, `node` among them (ADR 0112, D-PE-ruling-2), so curl fetches the pages:
@@ -35,6 +37,14 @@
 // which Sentry also groups by), else by Sentry's own issue. Words an agent added to a sent draft
 // (`follows`) join the group of the event they follow. Tested on recorded API answers in
 // `tools/report-intake.test.mjs` (`node --test tools/`).
+//
+// **Urgent, and in a milestone.** Every issue it files carries `priority:p0` beside `reported`,
+// and a duplicate raises the issue it is added to to `priority:p0` (the operator, 2026-11-12).
+// `milestone` answers the milestone holding the most open issues of an `area:*` label, by
+// `docs/agents/issue-tracker.md`; the steward picks the area and passes `--milestone`. `merge`
+// joins file steps the steward judged one bug into one issue, listing each Sentry short id
+// (`PURLIS-APP-2`), which the intake's issues page (`url --issues`, saved as `issues-1.json`)
+// names.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -54,6 +64,10 @@ export const INTAKE = {
 export const TOKEN = { vault: "sentry", key: "intake-read-token", env: "SENTRY_INTAKE_TOKEN" };
 
 export const LABEL = "reported";
+/** The priority every issue the routine files or adds to gets, and the prefix of its peers. */
+export const PRIORITY = "priority:p0";
+const PRIORITY_PREFIX = "priority:";
+export const LABELS = [LABEL, PRIORITY];
 export const REPO = "purlis/purlis";
 
 /** What the routine says when it has no token, and so does nothing. */
@@ -76,12 +90,13 @@ export function tagsOf(event) {
 }
 
 /** The fields of an event the routine reads, and nothing else. */
-export function reportOf(event) {
+export function reportOf(event, shortIds = new Map()) {
   const tags = tagsOf(event);
   const release = tags.release ?? event.release?.version ?? "";
   return {
     id: event.eventID ?? event.id,
     sentryIssue: String(event.groupID),
+    shortId: shortIds.get(String(event.groupID)) ?? null,
     at: event.dateCreated,
     title: event.title ?? "",
     // What it says: for the steward to read, never pasted into a public issue (ADR 0118).
@@ -152,8 +167,15 @@ export function markersIn(text) {
 export function knownIssues(issues) {
   return issues.map((issue) => {
     const text = [issue.body, ...(issue.comments ?? []).map((comment) => comment.body)].join("\n");
-    return { number: issue.number, title: issue.title, state: issue.state, url: issue.url, ...markersIn(text) };
+    const labels = (issue.labels ?? []).map((label) => label.name);
+    return { number: issue.number, title: issue.title, state: issue.state, url: issue.url, labels, ...markersIn(text) };
   });
+}
+
+/** What raises `issue` to {@link PRIORITY}: the label to add and the lower ones to take off, or null when it has it. */
+export function raiseOf(issue) {
+  if (issue.labels.includes(PRIORITY)) return null;
+  return { add: PRIORITY, remove: issue.labels.filter((label) => label.startsWith(PRIORITY_PREFIX)) };
 }
 
 /** The issue that already covers `one`, by a fingerprint first and a Sentry issue second, or null. */
@@ -164,6 +186,12 @@ export function matchOf(one, known) {
 
 /** What `one`'s reports say, each once: the steward reads them; no issue or comment quotes them. */
 const textsOf = (one) => [...new Set(one.reports.map((r) => r.text).filter(Boolean))];
+
+/** The Sentry short ids of `reports`, each once, in order. */
+const shortIdsOf = (reports) => [...new Set(reports.map((r) => r.shortId).filter(Boolean))];
+
+/** One event's line: its short id where known, and its link. */
+const eventLine = (r) => `- ${r.shortId ? `${r.shortId}: ` : ""}${r.link}`;
 
 const versionsOf = (reports) => [...new Set(reports.map((r) => `${r.version} (${r.channel})`))].join(", ");
 
@@ -187,7 +215,7 @@ export function issueBody(one) {
     `- **First seen:** ${one.reports[0].at}`,
     ``,
     `Events (private to purlis's maintainers):`,
-    ...one.reports.map((r) => `- ${r.link}`),
+    ...one.reports.map(eventLine),
     ``,
     marker({ fingerprints: one.fingerprints, sentryIssues: one.sentryIssues, events: one.reports.map((r) => r.id) }),
   ].join("\n");
@@ -197,10 +225,67 @@ export function issueBody(one) {
 export function commentBody(one, issue) {
   return [
     `${one.reports.length} more report${one.reports.length === 1 ? "" : "s"} from the Report intake, from ${versionsOf(one.reports)}${issue.state === "CLOSED" ? ", after this issue was closed" : ""}:`,
-    ...one.reports.map((r) => `- ${r.link}`),
+    ...one.reports.map(eventLine),
     ``,
     marker({ fingerprints: one.fingerprints, sentryIssues: one.sentryIssues, events: one.reports.map((r) => r.id) }),
   ].join("\n");
+}
+
+/** The step that files `one` as a new issue, under `title`. Its `group` is what {@link merge} joins. */
+function fileStep(one, title = issueTitle(one)) {
+  return {
+    action: "file",
+    title,
+    body: issueBody(one),
+    labels: LABELS,
+    reports: one.reports.length,
+    versions: versionsOf(one.reports),
+    shortIds: shortIdsOf(one.reports),
+    texts: textsOf(one),
+    group: {
+      title: one.title,
+      fingerprints: [...one.fingerprints],
+      sentryIssues: [...one.sentryIssues],
+      reports: one.reports,
+    },
+  };
+}
+
+/**
+ * One file step for the plan's steps `numbers` (1 up, as the steward counts them), which the
+ * steward judged the same underlying bug: their reports, oldest first, under `title`.
+ */
+export function merge(steps, numbers, { title } = {}) {
+  if (new Set(numbers).size < 2) throw new Error("merge wants two or more distinct steps");
+  const groups = numbers.map((n) => {
+    const step = steps[n - 1];
+    if (!step) throw new Error(`no step ${n}: the plan has ${steps.length}`);
+    if (step.action !== "file" || !step.group) throw new Error(`step ${n} is not one to file: add its reports to issue #${step.issue} instead`);
+    return step.group;
+  });
+  const one = {
+    title: groups[0].title,
+    fingerprints: new Set(groups.flatMap((g) => g.fingerprints)),
+    sentryIssues: new Set(groups.flatMap((g) => g.sentryIssues)),
+    reports: groups.flatMap((g) => g.reports).sort((a, b) => a.at.localeCompare(b.at)),
+  };
+  return fileStep(one, title ?? issueTitle(one));
+}
+
+/**
+ * The milestone holding the most of `issues` (`gh issue list --label <area> --state open --json
+ * milestone`), the first listed on a tie, or null when none has one: then the closest existing
+ * milestone is the steward's call (`docs/agents/issue-tracker.md`).
+ */
+export function milestoneFor(issues) {
+  const counts = new Map();
+  for (const issue of issues) {
+    const title = issue.milestone?.title;
+    if (title) counts.set(title, (counts.get(title) ?? 0) + 1);
+  }
+  let best = null;
+  for (const [title, count] of counts) if (!best || count > best.count) best = { title, count };
+  return best?.title ?? null;
 }
 
 /**
@@ -215,17 +300,16 @@ export function plan(reports, issues) {
   const fresh = reports.filter((report) => !handled.has(report.id));
   return group(fresh).map((one) => {
     const issue = matchOf(one, known);
-    const versions = versionsOf(one.reports);
-    if (!issue) {
-      return { action: "file", title: issueTitle(one), body: issueBody(one), label: LABEL, reports: one.reports.length, versions, texts: textsOf(one) };
-    }
+    if (!issue) return fileStep(one);
     return {
       action: issue.state === "CLOSED" ? "closed" : "add",
       issue: issue.number,
       reaction: "+1",
+      priority: raiseOf(issue),
       comment: commentBody(one, issue),
       reports: one.reports.length,
-      versions,
+      versions: versionsOf(one.reports),
+      shortIds: shortIdsOf(one.reports),
       texts: textsOf(one),
     };
   });
@@ -315,6 +399,14 @@ export function firstPage(hours) {
 }
 
 /**
+ * The intake's issues of the last `hours`, for their short ids. One page of 100: an event whose
+ * issue is not on it is listed by its link alone.
+ */
+export function issuesPage(hours) {
+  return `${INTAKE.api}/api/0/projects/${INTAKE.org}/${INTAKE.project}/issues/?statsPeriod=&query=lastSeen%3A-${hours}h&limit=100`;
+}
+
+/**
  * A response's status and `Link` header from what `curl -D` saved. curl saves every response it
  * read (a proxy's `CONNECT` answer first), so the last one is the server's.
  */
@@ -358,6 +450,20 @@ export function readPages(dir) {
   return events;
 }
 
+/**
+ * Each Sentry issue's short id, by its id, from the `issues-1.json` saved in `dir` beside its
+ * `issues-1.headers`. Empty where it was not saved; a refused token throws {@link REFUSED_TOKEN}.
+ */
+export function readShortIds(dir) {
+  const ids = new Map();
+  if (!existsSync(join(dir, "issues-1.headers"))) return ids;
+  checkStatus(responseOf(readFileSync(join(dir, "issues-1.headers"), "utf8")).status);
+  for (const issue of JSON.parse(readFileSync(join(dir, "issues-1.json"), "utf8"))) {
+    if (issue.shortId) ids.set(String(issue.id), issue.shortId);
+  }
+  return ids;
+}
+
 /** Whether `purlis secret list <vault>`'s answer, a key a line, lists the read token. */
 export function hasToken(listed) {
   return listed.split(/\r?\n/).some((line) => line.trim() === TOKEN.key);
@@ -365,9 +471,11 @@ export function hasToken(listed) {
 
 const USAGE = [
   "usage: node tools/report-intake.mjs has-token < <purlis secret list sentry>",
-  "       node tools/report-intake.mjs url [--weeks 4]",
+  "       node tools/report-intake.mjs url [--issues] [--weeks 4]",
   "       node tools/report-intake.mjs next <headers-file>",
   "       node tools/report-intake.mjs plan --from <dir> [--since-hours 26] [--weeks 4]",
+  "       node tools/report-intake.mjs merge --plan <plan.json> --steps <n,n,…> [--title <title>]",
+  "       node tools/report-intake.mjs milestone --area <area:label>",
 ].join("\n");
 
 /** `argv` as options: `--since-hours` (default 26) and `--weeks` (default 4), both whole and positive, and `--from`. */
@@ -379,8 +487,33 @@ export function parseArgs(argv) {
     return { command, headers: rest[0] };
   }
   if (command === "has-token" && rest.length === 0) return { command };
+  if (command === "milestone") {
+    if (rest.length !== 2 || rest[0] !== "--area") throw new Error(USAGE);
+    if (!/^area:[a-z0-9-]+$/.test(rest[1])) throw new Error(`--area wants an area:* label, not ${rest[1]}`);
+    return { command, area: rest[1] };
+  }
+  if (command === "merge") {
+    const merged = { command };
+    for (let i = 0; i < rest.length; i += 2) {
+      const [flag, value] = [rest[i], rest[i + 1]];
+      if (!value) throw new Error(USAGE);
+      if (flag === "--plan") merged.plan = value;
+      else if (flag === "--title") merged.title = value;
+      else if (flag === "--steps") {
+        if (!/^\d+(,\d+)*$/.test(value)) throw new Error("--steps wants whole numbers joined by commas, as 1,3");
+        merged.steps = value.split(",").map(Number);
+      } else throw new Error(`unknown option ${flag}`);
+    }
+    if (!merged.plan || !merged.steps) throw new Error(USAGE);
+    return merged;
+  }
   if (command !== "plan" && command !== "url") throw new Error(USAGE);
   for (let i = 0; i < rest.length; i += 2) {
+    if (rest[i] === "--issues" && command === "url") {
+      options.issues = true;
+      i -= 1;
+      continue;
+    }
     if (rest[i] === "--from" && command === "plan") {
       if (!rest[i + 1]) throw new Error("--from wants the folder the pages were saved in");
       options.from = rest[i + 1];
@@ -398,11 +531,11 @@ export function parseArgs(argv) {
   return options;
 }
 
-/** The `reported` issues on purlis/purlis, with their comments, through `gh`. */
-function reportedIssues() {
+/** Issues on purlis/purlis with `label` in `state`, as `gh issue list --json <fields>` answers. */
+function issuesLabelled(label, state, fields) {
   const out = execFileSync(
     "gh",
-    ["issue", "list", "-R", REPO, "--label", LABEL, "--state", "all", "--limit", "1000", "--json", "number,title,state,url,body,comments"],
+    ["issue", "list", "-R", REPO, "--label", label, "--state", state, "--limit", "1000", "--json", fields],
     { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
   );
   return JSON.parse(out);
@@ -416,7 +549,18 @@ function main() {
     process.exit(2);
   }
   if (options.command === "url") {
-    process.stdout.write(`${firstPage(options.weeks * 7 * 24)}\n`);
+    const hours = options.weeks * 7 * 24;
+    process.stdout.write(`${options.issues ? issuesPage(hours) : firstPage(hours)}\n`);
+    return;
+  }
+  if (options.command === "merge") {
+    const { steps } = JSON.parse(readFileSync(options.plan, "utf8"));
+    process.stdout.write(`${JSON.stringify(merge(steps, options.steps, { title: options.title }), null, 2)}\n`);
+    return;
+  }
+  if (options.command === "milestone") {
+    const milestone = milestoneFor(issuesLabelled(options.area, "open", "number,milestone"));
+    if (milestone) process.stdout.write(`${milestone}\n`);
     return;
   }
   if (options.command === "next") {
@@ -425,10 +569,11 @@ function main() {
     return;
   }
   const now = new Date();
-  const recent = readPages(options.from).map(reportOf);
+  const shortIds = readShortIds(options.from);
+  const recent = readPages(options.from).map((event) => reportOf(event, shortIds));
   const since = now.getTime() - options.sinceHours * 3_600_000;
   const fresh = recent.filter((report) => Date.parse(report.at) >= since);
-  const steps = plan(fresh, reportedIssues());
+  const steps = plan(fresh, issuesLabelled(LABEL, "all", "number,title,state,url,body,comments,labels"));
   process.stdout.write(`${JSON.stringify({ steps, summary: summary(steps, recent, { day: now.toISOString().slice(0, 10) }) }, null, 2)}\n`);
 }
 
