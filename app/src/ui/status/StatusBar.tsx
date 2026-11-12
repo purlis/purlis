@@ -27,6 +27,7 @@
  * just hidden, on the bar's first item the keyboard reaches.
  */
 import { useRef, useState, type ReactNode } from "react";
+import clsx from "clsx";
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, horizontalListSortingStrategy } from "@dnd-kit/sortable";
 import { VisuallyHidden } from "react-aria";
@@ -256,7 +257,8 @@ export function StatusBar({
       data-scope="status-bar"
       aria-label={named}
       data-testid={testid}
-      className={className}
+      // What the bar says is the secondary's (#1920); each item sets its own colour.
+      className={clsx("ui-text-secondary", className)}
     >
       <div data-scope="status-bar" data-part="start">
         {end("left")}

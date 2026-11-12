@@ -1558,13 +1558,15 @@ body {
 
 /* **A tab that shows a task says so** (#1486, V100-35): `steward 4 › talk`, the task's name
    dimmer than the session's, since the tab is the session's. Both names give way to an
-   ellipsis as a tab's name always did; the task's goes first. */
+   ellipsis as a tab's name always did; the task's goes first. The task's name is read after the
+   session's, so it is in the meta's colour (`text.quiet`, #1920) at the tab's body size: under
+   the pointer and on the chosen tab the session's name turns primary and the task's stays. */
 .tab-task {
   flex: 0 100 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--text-muted);
+  color: var(--text-quiet);
 }
 
 .tab-task-sep {

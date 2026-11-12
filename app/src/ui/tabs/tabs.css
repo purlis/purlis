@@ -92,8 +92,9 @@
   /* What a chat's mark rings its badge in (`ui/chat-mark`): the window, behind a tab at rest. */
   --chat-mark-ground: var(--surface-deep);
   background-color: transparent;
+  /* Its words are the body's (`ui-text-body`, #1920): the size is the role's, and the tier is
+     the tab's, quiet at rest and primary under the pointer and chosen. */
   color: var(--text-quiet);
-  font-size: var(--font-size-md);
   white-space: nowrap;
 }
 
@@ -450,8 +451,8 @@
   box-sizing: border-box;
   min-block-size: var(--size-control);
   padding: 0 var(--space-1);
+  /* The body's size (`ui-text-body`, #1920), in the tab's own tier. */
   color: var(--text-muted);
-  font-size: var(--font-size-md);
   white-space: nowrap;
   outline: none;
 }
@@ -469,12 +470,10 @@
   outline-offset: var(--focus-ring-inset);
 }
 
-/* **A count**: 11px, in the quiet tier, its room kept for three figures in figures of one width,
-   so 9 to 10 widens nothing. */
+/* **A count**: the meta (`ui-text-meta`, #1920), its room kept for three figures in figures of
+   one width, so 9 to 10 widens nothing. */
 [data-scope="page-tabs"][data-part="count"] {
   min-inline-size: 3ch;
-  color: var(--text-quiet);
-  font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
   text-align: start;
 }
