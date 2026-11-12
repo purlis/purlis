@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794477612958,
+  "lastUpdate": 1794480707471,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -47250,6 +47250,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5254975,
             "unit": "ms",
             "extra": "median of 5 runs: 101.053, 101.081, 101.525, 102.338, 102.383 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "76ca92b5780f7272bed48d614cfdd6f33faaa04b",
+          "message": "browser_login opens a declared login's OAuth authorize URL with its query (#6291) (#6323)\n\n* browser_login starts a declared login's sign-in where the chat names it (#6291)\n\nA chat could not start an OAuth or OpenID Connect sign-in with its own\nrequest: the sign-in host is refused outside a sign-in, browser_login\nopened only the login's declared page, and a suggestion's site drops the\nquery and refuses '%'.\n\nThe operator ruled on 2026-11-12 (ADR 0067, amended): browser_login takes\n'start' for a declared or allowed login, never beside a suggestion. Its\norigin must be the login's page's or its form's; its query and fragment\nare opened as written; every decoded redirect_uri must be on the login's\npage origin; request and request_uri are refused. purlis_core::loginstart\njudges it in the window and again in the host. Session protocol 1.86\ncarries it, and no login with a start goes to an older host or runner.\nEverything else of a login stays as ruled. A refused redirect is said by\nits site alone, now held by a test.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M776VP3HFVNXMWZBA7G0CV3N\nPurlis-Persona: steward\n\n* Keep one url dependency in purlis-core after rebasing onto main (#6291)\n\nmain added url = \"2\" for #6215 since this branch was cut; the manifest then\nnamed it twice. Main's line stays, with this branch's reason added to its comment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77FSEN2GSV7HDZ4WFH2BBEJ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-12T10:01:12Z",
+          "tree_id": "d8af9249c18ed0dbe29768d65bb26cae5f86d581",
+          "url": "https://github.com/purlis/purlis/commit/76ca92b5780f7272bed48d614cfdd6f33faaa04b"
+        },
+        "date": 1794480701376,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7101525,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.691, 0.697, 0.710, 0.716, 0.729 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.650499500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.543, 16.631, 16.650, 16.652, 16.772 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.84971200000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.816, 102.469, 102.850, 103.676, 103.808 ms"
           }
         ]
       }
