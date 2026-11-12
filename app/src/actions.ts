@@ -6688,6 +6688,12 @@ export function readItOffer(card: ChatCard): Offer {
   });
 }
 
+/** **A pane's `chat 641` link, ⌘-clicked** (#6217): the chat open under `session`, shown in its
+ *  tab or the workspace it is in. */
+export function showLinkedChatOffer(session: number): Offer {
+  return can(`chat.link:${session}`, `Show chat #${session}`, { verb: "showChat", session });
+}
+
 /** ***Reopen* on a closed chat's card** (#6214): its task's conversation started again as an
  *  ordinary chat, as Reopen on its finished row does. */
 export function reopenTaskOffer(card: ChatCard): Offer {

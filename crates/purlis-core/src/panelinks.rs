@@ -7,7 +7,9 @@
 //!
 //! - **The kind is a seam** ([`LinkKind`]): each kind reads a candidate's text into a
 //!   [`Target`] or says it is not a link, and decides what opening that target does. The web
-//!   address ([`Kind::Url`]) is the first; files and chats follow (#6216, #6217).
+//!   address ([`Kind::Url`]) is the first; files follow (#6216).
+//! - **A chat's number** ([`Kind::Chat`], [`ChatNumber`], #6217): `chat 641`, looked up in the
+//!   pane's own project, links to an open chat, one started again, or an ended one's card.
 //! - **Opening resolves again** ([`Resolver::open`]): what the window asks to open is the
 //!   candidate's text, never a target it resolved, so a pane can never name what opens.
 //! - **The answer is one of three** ([`Opening`]): open it, ask the person first (showing what
@@ -24,6 +26,8 @@ mod asks;
 mod file;
 pub use asks::{Asks, Identity};
 pub use file::{FileAt, Home, HomeIs, LocalFile, ReadFrom, home_of};
+mod chat;
+pub use chat::{ChatAt, ChatNumber, Goes, number_in as chat_number_in};
 
 /// **What the pane thinks a candidate is**: a hint that picks the kind that reads it, never
 /// trusted for more.
@@ -33,6 +37,8 @@ pub enum Kind {
     Url,
     /// A file path, with an optional `:line[:col]`, or a `file:` address.
     File,
+    /// `chat 641`: a chat's number in the pane's project.
+    Chat,
 }
 
 /// **Text a pane found that may be a link**: the words as the program printed them, and the
@@ -66,12 +72,14 @@ pub enum Runs {
 }
 
 /// **Where a link goes**, as the core resolved it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Target {
     /// A web address, as the browser will be handed it: read once, never parsed again.
     Url(url::Url),
     /// A file on this machine, at a line. Boxed: it holds its path and its place.
     File(Box<FileAt>),
+    /// A chat of the pane's project. Boxed: an ended one holds its record.
+    Chat(Box<ChatAt>),
 }
 
 impl Target {
@@ -80,6 +88,7 @@ impl Target {
         match self {
             Target::Url(_) => Kind::Url,
             Target::File(_) => Kind::File,
+            Target::Chat(_) => Kind::Chat,
         }
     }
 
@@ -89,12 +98,13 @@ impl Target {
         match self {
             Target::Url(url) => url.as_str(),
             Target::File(file) => file.shown(),
+            Target::Chat(chat) => chat.shown(),
         }
     }
 }
 
 /// **What a candidate is**: a link to a target, or not a link, and why not.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Resolved {
     Link(Target),
     NotALink(String),
@@ -104,7 +114,7 @@ pub enum Resolved {
 
 /// **What a hover over a candidate shows**: a link, where it goes and what opening it does, read
 /// once; or not a link, and why not.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Hover {
     /// Boxed: the answer holds the target again, as an ask shows it.
     Link {
@@ -117,7 +127,7 @@ pub enum Hover {
 }
 
 /// **What opening a link does**, the open command's answer.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Opening {
     /// Open it now.
     Open(Target),
@@ -164,6 +174,14 @@ impl Resolver {
     /// A resolver of these kinds. A hint no kind answers is never a link.
     pub fn with(kinds: Vec<Box<dyn LinkKind>>) -> Self {
         Self { kinds }
+    }
+
+    /// This resolver with `kind` too: a kind that needs what only its caller knows, as the chat
+    /// kind needs the chats open now ([`ChatNumber`]).
+    #[must_use]
+    pub fn with_kind(mut self, kind: Box<dyn LinkKind>) -> Self {
+        self.kinds.push(kind);
+        self
     }
 
     fn kind_of(&self, kind: Kind) -> Option<&dyn LinkKind> {

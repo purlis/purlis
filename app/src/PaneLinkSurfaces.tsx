@@ -2,7 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { LinkCandidate, LinkFrom, LinkHome, LinkOpened, LinkSeen, OpensIn } from "./bindings";
+import type {
+  ChatGo,
+  ChatSeen,
+  LinkCandidate,
+  LinkFrom,
+  LinkHome,
+  LinkOpened,
+  LinkSeen,
+  OpensIn,
+} from "./bindings";
+import { endedAt } from "./chatEnded";
 import { sentence } from "./coreSentence";
 import { onAMac } from "./mac";
 import {
@@ -11,6 +21,7 @@ import {
   type HoveredLink,
   type LinkCore,
   type LinkHands,
+  type LinkPlace,
   type ScreenLink,
 } from "./paneLinks";
 import { openFileLink } from "./paneLinkFiles";
@@ -37,6 +48,9 @@ import {
  * - **An ask shows the link's text and where it really goes**, and opens only on an answer,
  *   sent back with the one-use token the core issued with the ask. No v1 web address asks; the
  *   file and OSC 8 kinds do (#6216, #6218), and draw their own asks there.
+ * - **A chat link** (`chat 641`, #6217) says "#641 · <title>", then where the chat is and what
+ *   ⌘-click does. What ⌘-click shows is the pane's to do (`PaneLinkChats.tsx`): this file draws
+ *   on screens that reach no core, the theme specimen's, and imports nothing that does.
  */
 
 /** The modifier word a link opens with, in the window's words (D12). */
@@ -52,6 +66,8 @@ const OPENS_IN: Record<OpensIn, string> = {
  *  (D2): "Outside smart-ide · ⌘-click asks first". */
 export function linkDoesSaid(seen: LinkSeen, mac: boolean): string {
   const click = modifierSaid(mac);
+  // A chat link says where its chat is; every other kind, what opening it does.
+  if (seen.chat) return chatSaid(seen.chat, click);
   switch (seen.does.does) {
     case "opens":
       return `${click} opens it ${OPENS_IN[seen.does.into]}`;
@@ -60,6 +76,27 @@ export function linkDoesSaid(seen: LinkSeen, mac: boolean): string {
     case "refused":
       return `${sentence(seen.does.reason)}.`;
   }
+}
+
+/** **Where a linked chat is, and what ⌘-click does with it**: the prototype's second line. */
+export function chatSaid(chat: ChatSeen, click: string): string {
+  switch (chat.is) {
+    case "this_chat":
+      return `This chat · ${click} does nothing more`;
+    case "open":
+      return chat.workspace === null
+        ? `Open · ${click} shows its tab`
+        : `Open in ${chat.workspace} · ${click} shows it there`;
+    case "ended": {
+      const at = endedAt(chat.card.task.ended);
+      const how = capitalised(chat.card.task.outcome);
+      return `${at === undefined ? how : `${how} ${at}`} · ${click} shows its card`;
+    }
+  }
+}
+
+function capitalised(words: string): string {
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 /** **A hovered link's tooltip**: where it goes (a file in the chat's workspace from the
@@ -79,8 +116,9 @@ type Answering = { answer: LinkOpened; candidate: LinkCandidate };
 /**
  * **A pane's link surfaces, and the hands its link hook is handed** (`paneLinks.ts`): `core`
  * decides its links, found `from` where it is, drawn in `colour`. With no core there are no
- * hands, and so no links. The hands are made once per core: `from` and `colour` are read as
- * they are when asked.
+ * hands, and so no links. The hands are made once per core: `from`, `colour`, `onScreen` and
+ * `onChat` are read as they are when asked. `onChat` is handed what a chat link ⌘-clicked shows,
+ * and where the link is (`PaneLinkChats.tsx`): with none, a chat link shows nothing.
  *
  * **`list` opens *Links in this pane…*** (#6220, `PaneLinksList.tsx`): the links `onScreen`
  * reads, newest first. Its key (`pane.links`) and the terminal menu's row (#6219) call it. A
@@ -91,12 +129,14 @@ export function usePaneLinks({
   core,
   colour,
   onScreen,
+  onChat,
 }: {
   from: LinkFrom;
   core: LinkCore | undefined;
   colour: () => string;
   /** The links on the pane's screen, newest first (`LinkedPane.onScreen`). */
   onScreen?: () => Promise<ScreenLink[]>;
+  onChat?: (go: ChatGo, place: LinkPlace | undefined) => void;
 }): {
   hands: LinkHands | undefined;
   surfaces: ReactNode;
@@ -104,9 +144,9 @@ export function usePaneLinks({
   list: (() => void) | undefined;
 } {
   const mac = onAMac();
-  const now = useRef({ from, colour, onScreen });
+  const now = useRef({ from, colour, onScreen, onChat });
   useEffect(() => {
-    now.current = { from, colour, onScreen };
+    now.current = { from, colour, onScreen, onChat };
   });
   /** The list while it is up: the links read, or `undefined` while they are read. */
   const [listing, setListing] = useState<{ links: ScreenLink[] | undefined } | null>(null);
@@ -147,17 +187,29 @@ export function usePaneLinks({
     // Kept a moment, so the pointer can reach it (WCAG 1.4.13).
     else later(() => !onTip.current && setShown(null), TOOLTIP_CLOSE_DELAY);
   }, []);
-  const answered = useCallback((answer: LinkOpened, candidate: LinkCandidate) => {
-    if (answer.answer === "opened") return;
-    // A file opens in an editor tab of the pane's project (#6216); with none, it cannot.
-    if (answer.answer === "file") {
-      const { plane, session } = now.current.from;
-      if (plane !== null) return openFileLink(plane, session, answer);
-      setAnswering({ answer: { answer: "refused", reason: UNASKED }, candidate });
-      return;
-    }
-    setAnswering({ answer, candidate });
-  }, []);
+  const answered = useCallback(
+    (answer: LinkOpened, candidate: LinkCandidate, place?: LinkPlace) => {
+      if (answer.answer === "opened") return;
+      // What the answer draws (a card, a dialog, a tab) stands where the tooltip did: it goes.
+      pending.current = null;
+      clearTimeout(timer.current);
+      setShown(null);
+      // A chat link shows the chat or its card (#6217): the pane's to do.
+      if (answer.answer === "chat") {
+        now.current.onChat?.(answer.go, place);
+        return;
+      }
+      // A file opens in an editor tab of the pane's project (#6216); with none, it cannot.
+      if (answer.answer === "file") {
+        const { plane, session } = now.current.from;
+        if (plane !== null) return openFileLink(plane, session, answer);
+        setAnswering({ answer: { answer: "refused", reason: UNASKED }, candidate });
+        return;
+      }
+      setAnswering({ answer, candidate });
+    },
+    [],
+  );
   const hands = useMemo(
     () =>
       core === undefined
@@ -182,12 +234,7 @@ export function usePaneLinks({
             ref={anchor}
             className="pane-link-anchor"
             aria-hidden="true"
-            style={{
-              left: shown.place.left,
-              top: shown.place.top,
-              width: shown.place.width,
-              height: shown.place.height,
-            }}
+            style={placed(shown.place)}
           />
           <AnchoredTooltip
             anchor={anchor}
@@ -232,6 +279,16 @@ export function usePaneLinks({
     </>
   );
   return { hands, surfaces, list: core === undefined ? undefined : openLinksList };
+}
+
+/** Where an anchor stands: over the link, or at the window's top left where none was said. */
+export function placed(place: LinkPlace | undefined) {
+  return {
+    left: place?.left ?? 0,
+    top: place?.top ?? 0,
+    width: place?.width ?? 0,
+    height: place?.height ?? 0,
+  };
 }
 
 /** **The window's answer to a link that did not open**: why not, or the question first. An
