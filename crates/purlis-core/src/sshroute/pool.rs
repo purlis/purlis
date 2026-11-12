@@ -168,8 +168,8 @@ pub fn docker_of_named(config: &Path, docker: &Docker, name: &str) -> Result<Doc
 }
 
 /// **Why a forward did not open**, looked at again from the start (ADR 0123 §7): the name, the
-/// machine answering, the key it presents against the pin, the sign-in. Where all of those hold,
-/// what ssh said.
+/// machine answering, the sign-in with the pinned key, and only where that fails the key it
+/// presents against the pin. Where all of those hold, what ssh said.
 fn diagnosed(ssh: &Path, remote: &Remote, pool: &str, settings_in: &Path, said: String) -> Finding {
     let route = &remote.route;
     let resolved = match connect::resolve(ssh, route) {
@@ -179,17 +179,10 @@ fn diagnosed(ssh: &Path, remote: &Remote, pool: &str, settings_in: &Path, said: 
     if let Err(finding) = connect::reachable(route, &resolved) {
         return finding;
     }
-    match connect::meet(ssh, route, settings_in) {
-        Ok(now) if now != remote.pin.host_key => {
-            return Finding::KeyChanged {
-                host: route.host().to_owned(),
-                pinned: remote.pin.host_key.clone(),
-                now,
-            };
-        }
-        Ok(_) => {}
-        Err(finding) => return finding,
-    }
+    // Signed in with the pinned key first, and met with nothing signed in only where that fails
+    // (`connect::probe`): each meeting is a connection without authentication, which an sshd's
+    // per-source penalties count against this machine's address, and a link that keeps
+    // reconnecting would look for why again and again.
     match connect::probe(
         ssh,
         route,
