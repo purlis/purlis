@@ -8,10 +8,13 @@
  *
  * The design under test:
  * - Asks' chips are **Chat, Workspace, Project**. Chat is the focused chat and its whole dispatch
- *   subtree, named in its tooltip ("steward 8 and its 3 tasks"), and out of reach when no chat
- *   has focus. Workspace is not drawn when the project has one workspace.
+ *   subtree, named in its tooltip ("steward 8 and its 3 tasks"). With no chat focused it is
+ *   greyed and Asks uses Workspace (Project where there is one workspace).
+ *   Workspace is not drawn when the project has one workspace.
  * - A chip shows its waiting count in the ✋'s colour only above 0; at 0, its name alone.
- *   Chat ≤ Workspace ≤ Project.
+ *   Chat ≤ Workspace ≤ Project. Every count keeps the room of two digits; above 99, 99+.
+ * - The ✋ counts the project in front only, never more than the Project chip; another
+ *   project's asks show only on its tab.
  * - A changed count slides once (old number out, new in) on the chips, the ✋ and the project
  *   tabs. No pulse, no repeat. Under reduced motion the number just swaps.
  * - Asks opens on Chat. An empty scope says how many wait in the next wider one, which widens
@@ -56,14 +59,16 @@ function enterEase(): string {
 /**
  * **A number that slides once when it changes**: the old one out, the new one in, up when it
  * grows and down when it shrinks, over `ms`. At `ms` 0, or under reduced motion, it swaps.
+ * It always takes the room of two digits, so 9 to 10 moves nothing; above 99 it says 99+.
  */
 export function Rolling({ value, ms, reduced }: { value: number; ms: number; reduced: boolean }) {
   const [now, setNow] = useState(value);
   const [from, setFrom] = useState<number | null>(null);
   const still = reduced || ms <= 0 || motionReduced();
   if (now !== value) {
-    // Under reduced motion there is nothing to slide from: the number just swaps.
-    setFrom(still ? null : now);
+    // Under reduced motion there is nothing to slide from: the number just swaps. Nor is there
+    // when what is drawn stays the same (99+ to 99+).
+    setFrom(still || capped(now) === capped(value) ? null : now);
     setNow(value);
   }
   const incoming = useRef<HTMLSpanElement>(null);
@@ -88,18 +93,25 @@ export function Rolling({ value, ms, reduced }: { value: number; ms: number; red
     };
   }, [from, value, ms, still]);
   return (
-    <span className="inline-grid overflow-hidden tabular-nums">
+    <span className="inline-grid overflow-hidden text-center tabular-nums">
+      {/* The room of two digits, drawn by no one. */}
+      <span aria-hidden="true" className="invisible col-start-1 row-start-1">
+        88
+      </span>
       <span ref={incoming} className="col-start-1 row-start-1">
-        {value}
+        {capped(value)}
       </span>
       {from !== null && !still && (
         <span ref={outgoing} className="col-start-1 row-start-1">
-          {from}
+          {capped(from)}
         </span>
       )}
     </span>
   );
 }
+
+/** A count as it is drawn: the number, or 99+ above 99. */
+const capped = (count: number) => (count > 99 ? "99+" : String(count));
 
 /** A waiting count in the ✋'s colour, drawn only above 0. */
 function Waiting({
@@ -150,7 +162,8 @@ export function scopeCounts(counts: Counts, setup: Setup): Record<Scope, number>
   return { chat, workspace, project };
 }
 
-/** **The ✋** in the title bar: every project's waiting count, as today's ✋ counts. */
+/** **The ✋** in the title bar: the project in front's waiting count, never more than the Project
+ *  chip (reversing ADR 0121 decision 2). Another project's asks show only on its tab. */
 function HandBadge({ total, setup }: { total: number; setup: Setup }) {
   return (
     <Button
@@ -232,8 +245,15 @@ function Asks({ counts, setup }: { counts: Record<Scope, number>; setup: Setup }
   const offered: Scope[] = setup.oneWorkspace
     ? ["chat", "project"]
     : ["chat", "workspace", "project"];
-  // A hidden Workspace leaves its pick on Project, the same asks.
-  const picked: Scope = offered.includes(scope) ? scope : "project";
+  // With no chat focused, a Chat pick is drawn on the next scope (Workspace, or Project where
+  // there is one workspace), and comes back when a chat has focus. A hidden Workspace leaves its
+  // pick on Project, the same asks.
+  const reachable = offered.filter((one) => !(one === "chat" && setup.noChatFocused));
+  const picked: Scope = reachable.includes(scope)
+    ? scope
+    : scope === "chat"
+      ? (reachable[0] ?? "project")
+      : "project";
   const listed = counts[picked];
   const wider = offered.slice(offered.indexOf(picked) + 1).find((one) => counts[one] > 0);
   const chatTip = setup.noChatFocused
@@ -277,11 +297,7 @@ function Asks({ counts, setup }: { counts: Record<Scope, number>; setup: Setup }
         </ul>
       ) : (
         <div className="flex flex-col gap-1">
-          <p className="text-sm">
-            {picked === "chat" && setup.noChatFocused
-              ? "No chat has focus."
-              : `Nothing waits on you in ${IN[picked]}.`}
-          </p>
+          <p className="text-sm">{`Nothing waits on you in ${IN[picked]}.`}</p>
           {wider !== undefined && (
             <Button variant="ghost" size="sm" onPress={() => setScope(wider)}>
               {`${counts[wider]} waiting in ${IN[wider]} ›`}
@@ -303,9 +319,9 @@ export function AsksScopesPrototype({ start }: { start: Counts }) {
     ms: 200,
   });
   const scoped = scopeCounts(counts, setup);
-  const othersTotal = OTHERS.reduce((sum, name) => sum + counts.others[name], 0);
   const waiting: Record<string, number> = { [HERE]: scoped.project, ...counts.others };
-  const total = scoped.project + othersTotal;
+  // The ✋ counts the project in front only.
+  const total = scoped.project;
   const move = (key: "chat" | "workspaceRest" | "otherWorkspaces", by: number) =>
     setCounts((was) => ({ ...was, [key]: Math.max(0, was[key] + by) }));
   const moveOther = (name: (typeof OTHERS)[number], by: number) =>
@@ -330,6 +346,12 @@ export function AsksScopesPrototype({ start }: { start: Counts }) {
           </Button>
           <Button size="sm" onPress={() => move("chat", -1)}>
             Chat −1
+          </Button>
+          <Button size="sm" onPress={() => move("chat", 100)}>
+            Chat +100
+          </Button>
+          <Button size="sm" onPress={() => move("chat", -100)}>
+            Chat −100
           </Button>
           <Button size="sm" onPress={() => move("workspaceRest", 1)}>
             Workspace +1

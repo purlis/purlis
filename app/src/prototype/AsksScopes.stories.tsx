@@ -25,12 +25,15 @@ const SOME: Counts = {
   others: { website: 2, infra: 0 },
 };
 
-/** Something waits in every scope: the chips read 1, 3, 4, and the ✋ 6. */
+/** Something waits in every scope: the chips read 1, 3, 4, and the ✋ 4, this project's alone. */
 export const SomethingWaitsEverywhere: Story = {
   args: { start: SOME },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByRole("radio", { name: "Chat, 1 waiting on you" })).toBeInTheDocument();
+    await expect(
+      canvas.getByRole("button", { name: "Asks, 4 waiting on you" }),
+    ).toBeInTheDocument();
     await userEvent.click(canvas.getByRole("button", { name: "Chat +1" }));
     await waitFor(() =>
       expect(canvas.getByRole("radio", { name: "Chat, 2 waiting on you" })).toBeInTheDocument(),
@@ -64,6 +67,28 @@ export const OneWorkspace: Story = {
       expect(canvas.queryByRole("radio", { name: /^Workspace/ })).not.toBeInTheDocument(),
     );
   },
+};
+
+/** No chat focused: Chat is greyed and Asks uses Workspace; with one workspace, Project. */
+export const NoChatFocused: Story = {
+  args: { start: SOME },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("switch", { name: "No chat focused" }));
+    await waitFor(() =>
+      expect(canvas.getByRole("radio", { name: "Workspace, 3 waiting on you" })).toBeChecked(),
+    );
+    await expect(canvas.getByRole("radio", { name: "Chat" })).toBeDisabled();
+    await userEvent.click(canvas.getByRole("switch", { name: "One workspace" }));
+    await waitFor(() =>
+      expect(canvas.getByRole("radio", { name: "Project, 3 waiting on you" })).toBeChecked(),
+    );
+  },
+};
+
+/** Over 99 in the chat: its chip, the Workspace and Project chips, the tab and the ✋ say 99+. */
+export const OverNinetyNine: Story = {
+  args: { start: { ...SOME, chat: 120 } },
 };
 
 /** Nothing waits anywhere: every chip, tab and the ✋ show no number. */
