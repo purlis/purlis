@@ -32,6 +32,8 @@ import {
   pickAsksScope,
   scopeCounts,
   scopeHolds,
+  scopeHoldsAbout,
+  type AsksSets,
   useAsksScope,
 } from "./asksScope";
 import type { AskedBy } from "./tabs";
@@ -206,7 +208,8 @@ export const NOTICES = "Notices";
  * count above 0, and Asks opens on Chat every time: a pick holds until Asks closes. Another
  * project's asks are answered in its own Asks, never listed here. A scope with nothing in it
  * offers the nearest wider one with something waiting, one press to widen. Notices and updates
- * are the project's and are listed whatever the scope.
+ * under the chips follow them (decision 9): one about a chat in every scope that holds its chat,
+ * one about no chat only under Project. The Panel's Notices view has no chips.
  *
  * **A row reads in three ranks** (qw359, `InboxRow.tsx`): what needs you, strongest; where it
  * is (project · workspace · persona), quieter; its kind and how long it has waited, smallest
@@ -401,17 +404,23 @@ export function Inbox({
    */
   const ignoring = useDismissHold();
   const unheld = asks?.filter((ask) => !ignoring.held.has(askKey(ask)));
-  const inHere = (ask: Shown) => workspaceOf?.(ask.session) === here;
   /**
    * **Whose asks Asks lists** (ADR 0121, amended 2026-11-12): Chat, Workspace where the window
    * says which is in front and the project has more than one, and Project, each counted. The
    * pick holds until Asks closes (`asksScope.ts`).
    */
   const asksPicked = useAsksScope(plane);
-  const inChatSet = inChatOf(chat?.session, askedBy ?? (() => undefined));
-  const sets = {
-    inChat: (ask: Shown) => inChatSet(ask.session),
-    ...(here !== undefined && workspaceOf !== undefined && oneWorkspace !== true ? { inHere } : {}),
+  /** Which chats each scope holds, by session: Chat's set, and the workspace in front's. */
+  const chatSets: AsksSets<number> = {
+    inChat: inChatOf(chat?.session, askedBy ?? (() => undefined)),
+    ...(here !== undefined && workspaceOf !== undefined && oneWorkspace !== true
+      ? { inHere: (session: number) => workspaceOf(session) === here }
+      : {}),
+  };
+  const { inHere } = chatSets;
+  const sets: AsksSets<Shown> = {
+    inChat: (ask) => chatSets.inChat(ask.session),
+    ...(inHere === undefined ? {} : { inHere: (ask: Shown) => inHere(ask.session) }),
   };
   const counts = scopeCounts(unheld ?? [], sets);
   /** Chat is offered where the window says who dispatched whom; listed where a chat has focus. */
@@ -421,6 +430,18 @@ export function Inbox({
     (one) => counts[one.scope] !== undefined && (one.scope !== "chat" || chatOffered),
   );
   const scope = asksScopeDrawn(asksPicked, counts, focused);
+  /**
+   * **Notices and updates under the chips follow them** (decision 9): one about a chat is listed
+   * in every scope that holds its chat, one about no chat of this project only under Project.
+   * With no chips drawn nothing narrows, and the Panel's Notices view draws none.
+   */
+  const chipsDrawn = drawsAsks && chips.length > 1 && counts.project > 0;
+  const aboutListed = scopeHoldsAbout(chipsDrawn ? scope : "project", chatSets);
+  /** The chats that cannot say they wait listed here: another project's is about no chat of
+   *  this one. */
+  const quietListed = quiet.filter((one) =>
+    aboutListed(one.plane === plane ? one.session : undefined),
+  );
   // **Closed, it opens on Chat next time** (decision 4).
   useEffect(() => {
     if (drawsAsks && asksOpen === false) forgetAsksScope(plane);
@@ -452,14 +473,16 @@ export function Inbox({
     updates?.rows === undefined
       ? undefined
       : part !== "updates"
-        ? updates.rows
+        ? updates.rows.filter((row) => aboutListed(row.update.session ?? undefined))
         : updateScope === "workspace"
           ? ofList.filter(updateInHere)
           : ofList;
   const updatesShown: Updates | undefined =
-    updates === undefined || part !== "updates"
-      ? updates
-      : heldBy(hold, updates, shownRows, from === "project" ? teammatesClear : undefined);
+    updates === undefined
+      ? undefined
+      : part !== "updates"
+        ? { ...updates, rows: shownRows }
+        : heldBy(hold, updates, shownRows, from === "project" ? teammatesClear : undefined);
   const listed = (unheld ?? []).filter(scopeHolds(scope, sets));
   /** This project's name, as its tab says it: every row is tagged with it and its workspace (ADR
    *  0121 decision 5, #6006). */
@@ -493,6 +516,8 @@ export function Inbox({
   // longest wait, one chat's asks together (`asksOrder.ts`).
   const groups = inOrder(listed, (ask) => ageOf(plane, ask), now);
   const recent = useAnswered(plane);
+  /** What answers said that the person must read, each under the scopes that hold its chat. */
+  const saidListed = recent.filter((one) => one.said !== undefined && aboutListed(one.session));
   // Read only while nothing waits, where the empty Inbox lists them (D-1700-7).
   const allowedLately = useAllowedLately(
     plane,
@@ -600,8 +625,8 @@ export function Inbox({
     }
     const button = buttonFor(row, key);
     if (button === null || button.hasAttribute("disabled")) return true;
-    // Go to chat leaves Asks for the chat; Go to project takes triage into that project's Asks.
-    if (key === "go" && row.dataset.source !== "here") endTriage();
+    // Go to chat leaves Asks for the chat, and triage ends there.
+    if (key === "go") endTriage();
     button.click();
     return true;
   };
@@ -630,7 +655,8 @@ export function Inbox({
     const at = lastRow.current >= 0 && lastRow.current < rows.length ? lastRow.current : 0;
     leadOf(rows[at]).focus();
   };
-  useLayoutEffect(() => {
+  /** Where the element the keyboard was on has gone, the keyboard comes back to the list. */
+  const backInTheList = () => {
     const was = lastOn.current;
     if (was === null || was.isConnected) return;
     lastOn.current = null;
@@ -646,7 +672,24 @@ export function Inbox({
       return;
     }
     list.querySelector<HTMLElement>('[role="row"][data-key]')?.focus();
+  };
+  /**
+   * **And where the list family takes a row away in a commit of its own** (#6346): a row that is
+   * not the first goes after this view's commit, so nothing here would run again. The list's
+   * own change is watched for, as the browser tells it.
+   */
+  const backInTheListNow = useRef(backInTheList);
+  useLayoutEffect(() => {
+    backInTheListNow.current = backInTheList;
+    backInTheList();
   });
+  useEffect(() => {
+    const list = listAt.current;
+    if (list === null) return;
+    const watch = new MutationObserver(() => backInTheListNow.current());
+    watch.observe(list, { childList: true, subtree: true });
+    return () => watch.disconnect();
+  }, []);
 
   const [noticed, setNoticed] = useState(0);
   /** What Dismiss all on the Notices does now (#5650): none while no Notice has a Dismiss. */
@@ -713,7 +756,7 @@ export function Inbox({
           as the Chats view's switch is: nothing to narrow otherwise, and an empty Asks is its one
           sentence. Each says its count above 0 only; Chat is greyed, with why, with no chat
           focused. */}
-      {drawsAsks && chips.length > 1 && counts.project > 0 && (
+      {chipsDrawn && (
         <div className="inbox-scope">
           <ScopeSwitch
             label={SCOPE_LABEL}
@@ -812,8 +855,7 @@ export function Inbox({
           // Leaving for somewhere else lets go; an element taken away is still remembered.
           if (event.relatedTarget !== null && !listAt.current?.contains(event.relatedTarget))
             lastOn.current = null;
-          // Leaving Asks for anywhere but another project's Asks ends triage (#6016): the
-          // person went somewhere of their own.
+          // Leaving Asks ends triage (#6016): the person went somewhere of their own.
           if (
             drawsAsks &&
             event.relatedTarget instanceof Element &&
@@ -825,11 +867,12 @@ export function Inbox({
         {/* **What an answer said that the person must read** (#5890): Keep blocked on a vault
             the chat's persona already holds does not stop its runs, and says where to. Above
             whatever waits, until dismissed, since the row it was pressed on has gone. Drawn with the
-            asks, under every scope filter, on purpose: it names its chat, and the person who
-            pressed must read it. */}
-        {drawsAsks && recent.some((one) => one.said !== undefined) && (
+            asks and narrowed by the chips (ADR 0121, amended 2026-11-12, decision 9): one about a
+            chat is listed in every scope that holds its chat, one about no chat only under
+            Project. */}
+        {drawsAsks && saidListed.length > 0 && (
           <NoticeList>
-            {recent.map((one) =>
+            {saidListed.map((one) =>
               one.said === undefined ? null : (
                 <Notice
                   key={`${one.at}:${chainSaid(one.chain)}:${one.says}`}
@@ -935,14 +978,14 @@ export function Inbox({
         {/* **A chat that cannot say it waits is the ✋'s** (#1695, FROM_THE_HAND): in Asks,
               where the hand lands, after what waits elsewhere (#5644). Never counted on the
               status line, so the Notices' count is the same wherever it is listed. */}
-        {part === "asks" && elsewhere !== undefined && quiet.length > 0 && (
+        {part === "asks" && elsewhere !== undefined && quietListed.length > 0 && (
           <NoticeList>
-            <QuietNotices plane={plane} quiet={quiet} onPress={elsewhere.onPress} />
+            <QuietNotices plane={plane} quiet={quietListed} onPress={elsewhere.onPress} />
           </NoticeList>
         )}
         {drawsNotices &&
           (notices !== undefined ||
-            (part === undefined && quiet.length > 0) ||
+            (part === undefined && quietListed.length > 0) ||
             windowLines !== undefined) && (
             <section
               className="inbox-notices"
@@ -997,9 +1040,9 @@ export function Inbox({
                   hold={part === "notices" ? hold : undefined}
                   onClear={setNoticesClear}
                 >
-                  {notices}
+                  {aboutListed(undefined) ? notices : null}
                   {elsewhere !== undefined && part === undefined && (
-                    <QuietNotices plane={plane} quiet={quiet} onPress={elsewhere.onPress} />
+                    <QuietNotices plane={plane} quiet={quietListed} onPress={elsewhere.onPress} />
                   )}
                 </NoticeList>
               </NoticeWayGuard>
