@@ -270,6 +270,7 @@ fn each_run_gets_a_checked_copy_of_its_own_that_goes_with_it() {
         tmp: None,
         runtime: None,
         system: Path::new("/nonexistent/docker.sock"),
+        forwarded: None,
     };
     let prepared = prepare(&source(None)).unwrap();
     let named = |prepared: &Prepared, name: &str| {
@@ -329,6 +330,7 @@ fn settings_that_cannot_be_read_are_taken_as_none() {
             tmp: None,
             runtime: None,
             system: Path::new("/nonexistent/docker.sock"),
+            forwarded: None,
         })
         .unwrap();
         let folder = PathBuf::from(
@@ -374,6 +376,7 @@ fn copies_older_than_a_day_are_swept_and_a_running_runs_never_is() {
         tmp: None,
         runtime: None,
         system: Path::new("/nonexistent/docker.sock"),
+        forwarded: None,
     };
     let day = std::time::Duration::from_secs(24 * 60 * 60);
     // A run still going, whose copy is two days old.

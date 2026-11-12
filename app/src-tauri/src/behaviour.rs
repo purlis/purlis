@@ -402,6 +402,7 @@ mod pool_journey;
 mod pool_setup;
 mod pool_setup_try;
 mod runs_on_order;
+mod ssh_reconnect;
 
 /// **A chat on a Docker pool's runner** (#2045, spec #2041): a pool added on this machine as
 /// the window adds one ([`a_pool_on`]). The window speaks to its own host, which relays to the
@@ -428,6 +429,34 @@ pub(crate) fn in_a_docker_pool() -> Option<Target> {
         std::env::var_os("DOCKER_POOL_TEST_DOCKER").unwrap_or("docker".into()),
     );
     Some(a_window_on_a_pool_of(&image, docker).0)
+}
+
+/// The variable naming the route of the Docker on another machine the remote parity job serves
+/// (#6266): `ssh://user@host:port`, its socket found as Connect finds it.
+const REMOTE_DOCKER_ROUTE: &str = "REMOTE_DOCKER_TEST_ROUTE";
+
+/// **A chat on the runner of a pool on another machine, reached over SSH** (#6266, ADR 0123): the
+/// Docker pool's target, its engine the one the remote parity job serves behind a dockerised sshd
+/// (with simulated latency and loss), connected and trusted as Connect does it, every run of
+/// `docker` for it through the pool's own forward. Elsewhere it runs nothing.
+pub(crate) fn in_a_remote_docker_pool() -> Option<Target> {
+    let (Ok(image), Ok(route)) = (
+        std::env::var(DOCKER_POOL_IMAGE),
+        std::env::var(REMOTE_DOCKER_ROUTE),
+    ) else {
+        return None;
+    };
+    let docker = purlis_core::dockerpool::Docker::at(
+        std::env::var_os("DOCKER_POOL_TEST_DOCKER").unwrap_or("docker".into()),
+    );
+    // Its forwards and settings beside this target's own config home, inside the test fence.
+    let folder = tempfile::tempdir().expect("a folder for the machine's settings");
+    let docker = docker.with_settings_in(folder.path().join("docker-settings"));
+    let met =
+        purlis_core::poolsetup::connecting::meet(&docker, &route).expect("the machine is met");
+    let remote = purlis_core::poolsetup::connecting::trust(&docker, &route, &met.key.fingerprint())
+        .expect("the machine is trusted");
+    Some(a_window_again_on_a_pool_on(&image, docker, Some(remote)).0)
 }
 
 /// A window on a pool of `image` it adds on a machine of its own through `docker`: the target,
@@ -569,6 +598,16 @@ pub(crate) fn a_window_again_on_a_pool_of(
     image: &str,
     docker: purlis_core::dockerpool::Docker,
 ) -> (Target, crate::runnerlinks::Machine, String, AWindowAgain) {
+    a_window_again_on_a_pool_on(image, docker, None)
+}
+
+/// [`a_window_again_on_a_pool_of`], its pool's engine on another machine where `remote` names one
+/// (#6266).
+pub(crate) fn a_window_again_on_a_pool_on(
+    image: &str,
+    docker: purlis_core::dockerpool::Docker,
+    remote: Option<purlis_core::runners::Remote>,
+) -> (Target, crate::runnerlinks::Machine, String, AWindowAgain) {
     let config = tempfile::tempdir().expect("the desktop's config home");
     let docker = docker.with_settings_in(config.path().join("docker-settings"));
     let machine = crate::runnerlinks::Machine {
@@ -578,10 +617,12 @@ pub(crate) fn a_window_again_on_a_pool_of(
             config.path().join("keyring.json"),
         )),
     };
-    let (name, removes) = a_pool_on(&machine, image);
+    let (name, removes) = a_pool_of(&machine, image, remote);
     let made = purlis_core::runners::runner_for(config.path(), &name)
         .expect("its runner is kept")
         .made;
+    // What this target reads of the runner by hand goes to the pool's own engine.
+    let docker = machine.for_pool(&name).expect("the pool's engine").docker;
     let inherited = environment_in(&docker, made.container.as_str());
     let WindowsHost {
         runtime,
@@ -664,6 +705,15 @@ async fn a_local_ui_link_to(
 /// ([`crate::dockerpools::add_on`]), its runner a container of `image` paired with this
 /// desktop: its name, and what removes it, its container and its home however the test ends.
 fn a_pool_on(machine: &crate::runnerlinks::Machine, image: &str) -> (String, RemovesThePool) {
+    a_pool_of(machine, image, None)
+}
+
+/// [`a_pool_on`], its engine on another machine where `remote` names one (#6266).
+fn a_pool_of(
+    machine: &crate::runnerlinks::Machine,
+    image: &str,
+    remote: Option<purlis_core::runners::Remote>,
+) -> (String, RemovesThePool) {
     use purlis_core::dockerpool::Image;
     use purlis_core::runners::{Pool, Set};
     let name = format!(
@@ -679,11 +729,12 @@ fn a_pool_on(machine: &crate::runnerlinks::Machine, image: &str) -> (String, Rem
         Image::pinned(image).expect("an image named by digest"),
         Set::default(),
     )
-    .expect("a pool");
+    .expect("a pool")
+    .on(remote);
     crate::dockerpools::add_on(machine, &pool).expect("the pool is added and its runner paired");
     let removes = RemovesThePool {
         config: machine.config.clone(),
-        docker: machine.docker.clone(),
+        docker: machine.for_pool(&name).expect("the pool's engine").docker,
         name: name.clone(),
     };
     (name, removes)
@@ -696,7 +747,7 @@ fn environment_in(
     container: &str,
 ) -> Vec<(OsString, OsString)> {
     use std::os::unix::ffi::OsStringExt;
-    let out = purlis_core::forklock::output(std::process::Command::new(docker.program()).args([
+    let out = purlis_core::forklock::output(docker.command().args([
         "exec",
         container,
         "cat",
@@ -730,14 +781,12 @@ impl Drop for RemovesThePool {
         if std::thread::panicking()
             && let Ok(kept) = purlis_core::runners::runner_for(&self.config, &self.name)
         {
-            let said = purlis_core::forklock::output(
-                std::process::Command::new(self.docker.program()).args([
-                    "logs",
-                    "--tail",
-                    "200",
-                    kept.made.container.as_str(),
-                ]),
-            );
+            let said = purlis_core::forklock::output(self.docker.command().args([
+                "logs",
+                "--tail",
+                "200",
+                kept.made.container.as_str(),
+            ]));
             if let Ok(said) = said {
                 use std::io::Write as _;
                 let _ = writeln!(
@@ -877,7 +926,7 @@ impl OnTheRunner {
         };
         match &self.reach {
             ReachedBy::Container { docker, container } => {
-                let mut command = std::process::Command::new(docker.program());
+                let mut command = docker.command();
                 command.arg("exec");
                 if interactive {
                     command.arg("--interactive");
@@ -983,7 +1032,7 @@ impl OnTheRunner {
     fn said(&self) -> String {
         let mut command = match &self.reach {
             ReachedBy::Container { docker, container } => {
-                let mut command = std::process::Command::new(docker.program());
+                let mut command = docker.command();
                 command.args(["logs", container.as_str()]);
                 command
             }
@@ -1021,7 +1070,8 @@ impl OnTheRunner {
         match &self.reach {
             ReachedBy::Container { docker, container } => {
                 let out = purlis_core::forklock::output(
-                    std::process::Command::new(docker.program())
+                    docker
+                        .command()
                         .arg("cp")
                         .arg(format!("{container}:{path}"))
                         .arg(&at),
@@ -4047,6 +4097,16 @@ macro_rules! on_every_target {
             $(#[$docker])*
             fn in_a_docker_pool() {
                 if let Some(target) = super::in_a_docker_pool() {
+                    super::$behaviour(&target);
+                }
+            }
+
+            /// Run by the remote parity job (#6266), which serves Docker behind an sshd;
+            /// elsewhere it runs nothing.
+            #[test]
+            $(#[$docker])*
+            fn in_a_remote_docker_pool() {
+                if let Some(target) = super::in_a_remote_docker_pool() {
                     super::$behaviour(&target);
                 }
             }

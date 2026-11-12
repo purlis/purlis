@@ -4691,15 +4691,18 @@ fn pool_sign_in(
     {
         return cluster_pool_sign_in(config, &record, pool, provider, &cluster, &kept);
     }
-    // Nothing reaches a runner, nor is read of one, before its engine is shown to be yours.
-    let engine = Docker::engine_on_this_machine();
-    purlis_core::poollogins::owned(engine.clone())?;
-    let engine = engine?;
+    // Nothing reaches a runner, nor is read of one, before its engine is shown to be yours: this
+    // machine's, or a pool's own on another machine through its pinned forward (#6266).
+    let local = Docker::engine_on_this_machine();
+    if !purlis_core::sshroute::pool::is_remote(config, pool) {
+        purlis_core::poollogins::owned(local.clone())?;
+    }
     let runner = runners::runner_for(config, pool)
         .map_err(|why| format!("{why}. Settings › Pools lists this machine's pools."))?;
     let path = purlis_core::envvar::var("PATH");
     let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
     let docker = Docker::on_this_machine(path.as_deref(), home.as_deref()).map_err(|why| why.0)?;
+    let (docker, engine) = purlis_core::sshroute::pool::reached(config, &docker, pool, local)?;
     // A runner on another version has no sign-in held to what drives it (#4043): refused in
     // words, as the window refuses it.
     this_commands_runner(
@@ -4842,16 +4845,19 @@ fn pool_sign_in_in_terminal(
             .ok()
             .flatten()
     } else {
-        // Nothing reaches a runner, nor is read of one, before its engine is shown to be yours.
-        let engine = Docker::engine_on_this_machine();
-        purlis_core::poollogins::owned(engine.clone())?;
-        let engine = engine?;
+        // Nothing reaches a runner, nor is read of one, before its engine is shown to be yours:
+        // this machine's, or a pool's own on another machine through its pinned forward (#6266).
+        let local = Docker::engine_on_this_machine();
+        if !purlis_core::sshroute::pool::is_remote(config, pool) {
+            purlis_core::poollogins::owned(local.clone())?;
+        }
         let runner = runners::runner_for(config, pool)
             .map_err(|why| format!("{why}. Settings › Pools lists this machine's pools."))?;
         let path = purlis_core::envvar::var("PATH");
         let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
         let docker =
             Docker::on_this_machine(path.as_deref(), home.as_deref()).map_err(|why| why.0)?;
+        let (docker, engine) = purlis_core::sshroute::pool::reached(config, &docker, pool, local)?;
         eprintln!("asking pool {pool}'s runner whether it keeps '{name}'…");
         kept_first(pool, name, || {
             docker

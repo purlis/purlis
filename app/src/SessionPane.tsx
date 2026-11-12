@@ -29,7 +29,14 @@ import { onScreenReaderMode, screenReaderMode } from "./screenReader";
 import { onAMac } from "./tabKeys";
 import { opensFind } from "./keys/findKeys";
 import { LINK_CORE } from "./paneLinkCore";
-import { linkPane, relayed, type LinkedPane, type LinkHands } from "./paneLinks";
+import {
+  linkPane,
+  openLink,
+  relayed,
+  type LinkedPane,
+  type LinkHands,
+  type ScreenLink,
+} from "./paneLinks";
 import { usePaneLinks } from "./PaneLinkSurfaces";
 import { isKey } from "./keys/registry";
 import { moveAlong } from "./tabSequence";
@@ -38,10 +45,16 @@ import {
   asksByPointer,
   asksForTheMenu,
   programHasTheMouse,
+  isLinkRow,
+  LINK_COPY_REFUSED,
+  linkRows,
   runTerminalRow,
   terminalRows,
   SHIFT_F10,
   underTheCursor,
+  type ClipboardOut,
+  type LinkRowId,
+  type LinkRows,
   type TerminalRow,
   type TerminalRowId,
 } from "./terminalRows";
@@ -138,6 +151,11 @@ export function SessionPane({
   /** The terminal's rows as they stood when its menu opened: whether anything was selected is
    *  read then, once, and not while the menu is up. */
   const [rows, setRows] = useState<TerminalRow[]>([]);
+  /** The link rows as they stood when the menu opened (#6219): over the link the pointer was on
+   *  as the menu was asked for, read then, once. */
+  const [linksRows, setLinksRows] = useState<LinkRows | undefined>(undefined);
+  /** The link the pointer was on as the menu was asked for: none from the keyboard (D4). */
+  const overLink = useRef<ScreenLink | undefined>(undefined);
   /** While the menu is being asked for from the keyboard, which the program's hold on the
    *  mouse does not stand in the way of. */
   const fromKeys = useRef(false);
@@ -181,16 +199,24 @@ export function SessionPane({
     taking.current = take;
   }, [take]);
 
+  /** Whether the pane has its Links list to open (#6220). */
+  const lists = openLinksList !== undefined;
   /** A menu about to open reads what is selected; one that closed leaves nothing behind. */
-  const menuOpens = useCallback((open: boolean) => {
-    if (open)
+  const menuOpens = useCallback(
+    (open: boolean) => {
+      if (!open) return;
       setRows(terminalRows({ selected: terminal.current?.hasSelection() ?? false, mac: onAMac() }));
-  }, []);
+      setLinksRows(linkRows({ link: overLink.current, mac: onAMac(), lists }));
+    },
+    [lists],
+  );
 
   /** **A click the program asked for is the program's** (`programHasTheMouse`): xterm has
    *  already reported the press, and preventing the default here opens no menu, this one or
    *  the panes'. Shift held, or the keyboard, is past that. */
   const asked = useCallback((event: ReactMouseEvent<HTMLElement>) => {
+    // The keyboard has no pointer, so no link under it (D4).
+    overLink.current = fromKeys.current ? undefined : shownLive.current?.links.under();
     const pane = terminal.current;
     if (!pane || fromKeys.current || event.shiftKey) return;
     if (programHasTheMouse(pane)) event.preventDefault();
@@ -200,16 +226,41 @@ export function SessionPane({
    *  a clipboard that refused, a Copy with nothing left to copy, a Paste with nothing to
    *  paste. **Paste's text is read by the core** (`commands.clipboardText`, the window's
    *  alone) and typed by the terminal's own paste. */
-  const run = useCallback((id: TerminalRowId) => {
-    const pane = terminal.current;
-    if (!pane) return;
-    void runTerminalRow(id, pane, {
-      out: navigator.clipboard,
-      read: commands.clipboardText,
-    }).then((trouble) => {
-      if (trouble !== undefined) saying.current(trouble);
-    });
-  }, []);
+  /**
+   * **A link row, on the link the menu opened over** (#6219). *Open link* goes the way ⌘-click
+   * does: the core is handed the candidate's text and answers, asks included. *Copy link* puts
+   * the target the core resolved on the clipboard. *Links in this pane…* opens the list (#6220).
+   */
+  const runLinkRow = useCallback(
+    (id: LinkRowId) => {
+      if (id === "terminal.links") return openLinksList?.();
+      const link = overLink.current;
+      if (link === undefined) return;
+      if (id === "terminal.openLink") {
+        if (linkHands !== undefined) void openLink(link.candidate, linkHands);
+        return;
+      }
+      const out = navigator.clipboard as ClipboardOut | undefined;
+      if (out === undefined) return saying.current(LINK_COPY_REFUSED);
+      out.writeText(link.seen.target).catch(() => saying.current(LINK_COPY_REFUSED));
+    },
+    [openLinksList, linkHands],
+  );
+
+  const run = useCallback(
+    (id: TerminalRowId) => {
+      if (isLinkRow(id)) return runLinkRow(id);
+      const pane = terminal.current;
+      if (!pane) return;
+      void runTerminalRow(id, pane, {
+        out: navigator.clipboard,
+        read: commands.clipboardText,
+      }).then((trouble) => {
+        if (trouble !== undefined) saying.current(trouble);
+      });
+    },
+    [runLinkRow],
+  );
 
   // **Its pane's head reaches it** (#4760): Copy and Paste on a right-click of the head run
   // here, as its own menu's do.
@@ -347,6 +398,7 @@ export function SessionPane({
     <>
       <TerminalMenu
         rows={rows}
+        links={linksRows}
         onRun={run}
         pane={menu}
         onAsked={asked}

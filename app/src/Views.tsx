@@ -111,7 +111,7 @@ import { SessionRecordTab } from "./SessionRecordTab";
 import { useSessionOffers } from "./sessionOffers";
 import { TodoTab } from "./TodoTab";
 import { TODO_VIEW, todoRefOf } from "./todos";
-import { pieceDiffOf, pieceOf } from "./pieceViews";
+import { PLANE_ROOT, outsideFileOf, pieceDiffOf, pieceOf } from "./pieceViews";
 import type { PieceFilesTab as FilesTab } from "./editor/PieceFiles";
 import { SESSION_VIEW, sessionTitle, sessionView } from "./sessions";
 import { ActivityTab } from "./ActivityTab";
@@ -390,6 +390,8 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   "piece-file": FileCode,
   /** One file of the plane root (issue 1916, `pieceViews.PLANE_FILE`). */
   "plane-file": FileCode,
+  /** A file outside the project a pane's link opened (#6216, `pieceViews.OUTSIDE_FILE`). */
+  "outside-file": FileCode,
   /** One file against its branch's base (FM-11). */
   "piece-diff": GitCompare,
   /** What one task changed (#1511, `taskChanges.ts`). */
@@ -659,12 +661,16 @@ export function ViewPane({
   const todoAt = view.from === null && view.view === TODO_VIEW ? todoRefOf(view.key) : undefined;
   const archiveAt = archiveOf(view);
   const piece = pieceOf(view);
+  const outside = outsideFileOf(view);
   const pieceDiff = pieceDiffOf(view);
   const taskChanges = taskChangesOf(view);
   /** Whether the view draws its own first row, with nothing above it (#3147). */
   const ownFirstRow =
     !holding &&
-    (settingsLevel !== undefined || piece?.path !== undefined || pieceDiff !== undefined);
+    (settingsLevel !== undefined ||
+      piece?.path !== undefined ||
+      outside !== undefined ||
+      pieceDiff !== undefined);
   return (
     <section
       className="view-pane"
@@ -817,6 +823,17 @@ export function ViewPane({
               split={split}
               onSplit={onSplit}
               onPress={onPress}
+            />
+          </Suspense>
+        ) : outside !== undefined ? (
+          /* A file outside the project a pane's link opened (#6216), read only. */
+          <Suspense fallback={OPENING}>
+            <PieceTab
+              key={`${plane}\u0000${view.key}`}
+              plane={plane}
+              cut={PLANE_ROOT}
+              outside={outside}
+              onOpenView={onOpenView}
             />
           </Suspense>
         ) : pieceDiff !== undefined ? (
@@ -1042,9 +1059,17 @@ function OfferButton({ offer, onPress }: { offer?: Offer; onPress?: (offer: Offe
  * in the page, hidden, under the new tab's name. One component suspends once per window.
  */
 const PieceTab = lazy(() =>
-  import("./editor/PieceFiles").then(({ PieceFilesTab, PieceFileTab }) => ({
-    default: function PieceTab(props: ComponentProps<typeof FilesTab> & { path?: string }) {
-      const { path, ...files } = props;
+  import("./editor/PieceFiles").then(({ OutsideFileTab, PieceFilesTab, PieceFileTab }) => ({
+    default: function PieceTab(
+      props: ComponentProps<typeof FilesTab> & {
+        path?: string;
+        outside?: { session: number | null; path: string };
+      },
+    ) {
+      const { path, outside, ...files } = props;
+      // A file outside the project (#6216), in the same chunk, so the first one suspends once.
+      if (outside !== undefined)
+        return <OutsideFileTab plane={files.plane} session={outside.session} path={outside.path} />;
       return path === undefined ? (
         <PieceFilesTab {...files} />
       ) : (

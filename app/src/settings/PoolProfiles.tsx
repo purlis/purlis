@@ -228,7 +228,7 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
         trail = (
           <Button
             size="sm"
-            aria-label={`Sign ${row.name} in on pool ${pool}`}
+            aria-label={`Sign in: ${row.name} on pool ${pool}`}
             isDisabled={out?.running === true}
             onPress={() => open(row)}
           >
@@ -244,7 +244,7 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
             <Button
               key={one.id}
               size="sm"
-              aria-label={`Sign ${row.name} in to ${one.title} on pool ${pool}`}
+              aria-label={`Sign in to ${one.title}: ${row.name} on pool ${pool}`}
               isDisabled={out?.running === true}
               onPress={() =>
                 drivenPlan(row.kind, one.id) ? open(row, one.id) : signIn(row, one.id)
@@ -259,7 +259,7 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
         trail = (
           <Button
             size="sm"
-            aria-label={`Sign ${row.name} in on pool ${pool}`}
+            aria-label={`Sign in: ${row.name} on pool ${pool}`}
             isDisabled={out?.running === true}
             onPress={() => signIn(row)}
           >
@@ -280,7 +280,7 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
             <Button
               variant="ghost"
               size="sm"
-              aria-label={`Sign out ${row.name} on pool ${pool} in a terminal`}
+              aria-label={`Sign out in a terminal: ${row.name} on pool ${pool}`}
               onPress={() => askProfileSignOut(plane, row.name, pool)}
             >
               Sign out in a terminal
@@ -294,7 +294,7 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
             <Button
               variant="danger"
               size="sm"
-              aria-label={`Yes, sign out ${row.name} on pool ${pool}`}
+              aria-label={`Yes, sign out: ${row.name} on pool ${pool}`}
               onPress={() => void signOut(row.name)}
             >
               Sign out
@@ -313,7 +313,7 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
           <Button
             variant="ghost"
             size="sm"
-            aria-label={`Sign out ${row.name} on pool ${pool}`}
+            aria-label={`Sign out: ${row.name} on pool ${pool}`}
             isDisabled={out?.running === true}
             onPress={() => {
               setRemoving(undefined);

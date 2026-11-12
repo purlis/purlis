@@ -873,6 +873,13 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* The ask for a file outside the workspace (#6216, the prototype's S7): the paths in the code
+   face, broken anywhere so a long one stays in the dialog. */
+.pane-link-path {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
 /* **A read-only terminal** (#3676, `ReadOnlyTerminal.tsx`): the words that say it is read-only,
    then the screen, one Tab stop with the ring on its edge, and the find bar over its corner. The
    grid's ground is the terminal's own, so the screen reads as a terminal that is over. */
@@ -7171,9 +7178,19 @@ nav.piece-files-head {
   color: var(--text-secondary);
 }
 
-.ui-settings-none {
-  margin: 0;
-  color: var(--text-muted);
+/* The search (#2920, N27): its box across the column, so its words are whole, and the "Set
+   here" toggle under it, at the column's start. */
+.ui-settings-search {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: flex-start;
+  min-inline-size: 0;
+}
+
+.ui-settings-search > .ui-settings-filter {
+  align-self: stretch;
+  min-inline-size: 0;
 }
 
 /* The left nav: the panel family's page navigation (`ViewNav`, #2930), which draws its
@@ -7536,6 +7553,12 @@ nav.piece-files-head {
 
 .ui-hosts-port {
   color: var(--text-quiet);
+}
+
+/* When and by what each was added (#6172, R65): in the muted words, its column one line wide. */
+.ui-hosts-added {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
 }
 
 /* **A record list, as the table family's** (#6301, after Your hosts): where a record is (a

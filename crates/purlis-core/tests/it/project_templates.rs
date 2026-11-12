@@ -337,9 +337,9 @@ fn repo_with(dir: &std::path::Path, name: &str, marker: &str) -> std::path::Path
 
 /// A profile `work` declared and approved in the project at `root`, running a stand-in.
 /// A `work` profile on a Claude Code stand-in, approved. The script is in `outside`, a folder
-/// no chat writes, run by `/bin/sh`, and answers `--version` as Claude Code does: a project charter makes runs its chats
-/// sandboxed (ADR 0067 §1), and a sandbox binds only that, never a file inside the project
-/// (ruling V87g).
+/// no chat writes, run by `/bin/sh`, and answers `--version` as Claude Code does: a project
+/// charter makes runs its chats at the floor (Q114, Q201), which is a sandbox, and a sandbox
+/// binds only that, never a file inside the project (ruling V87g).
 fn a_profile(root: &std::path::Path, outside: &std::path::Path) {
     let bin = stand_in::program(
         outside,

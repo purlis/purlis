@@ -8,6 +8,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { ForgeAccountRow } from "../bindings";
 import { accountsGroup } from "./accounts";
 import type { LiveSetting } from "./groups";
+import { findGrid } from "../ui/table/table.testkit";
 
 /**
  * **You › Accounts › Forge accounts, as a table** (#6301, after Your hosts in #2919): a row an
@@ -63,7 +64,7 @@ function Accounts() {
 describe("You › Accounts › Forge accounts", () => {
   it("draws the accounts as a table: login, host, how it signed in, then Sign out", async () => {
     render(<Accounts />);
-    const table = await screen.findByRole("grid", { name: "Forge accounts" });
+    const table = await findGrid(screen, "Forge accounts");
     expect(
       within(table)
         .getAllByRole("columnheader")
@@ -84,7 +85,7 @@ describe("You › Accounts › Forge accounts", () => {
 
   it("signs an account out from its row, and lists what is left", async () => {
     render(<Accounts />);
-    const table = await screen.findByRole("grid", { name: "Forge accounts" });
+    const table = await findGrid(screen, "Forge accounts");
     await userEvent.click(
       within(table).getByRole("button", { name: "Sign out of octocat on github.com" }),
     );

@@ -182,6 +182,9 @@ import {
 import { Explorer, type SearchKeyHere, type Spot } from "./Explorer";
 import { keptChanged } from "./branchFolders";
 import {
+  isPlaneRoot,
+  outsideFileTitle,
+  outsideFileView,
   pieceFileTitle,
   pieceFileView,
   pieceFilesTitle,
@@ -189,6 +192,7 @@ import {
   workspaceFiles,
   type Place,
 } from "./pieceViews";
+import { useOutsideFileAsks } from "./paneLinkFiles";
 import { searchFromFocus, searchOf, searchView } from "./contentSearch";
 import { ChangesView, reposGap, uncommitted } from "./ChangesView";
 import { SearchTab } from "./SearchTab";
@@ -234,7 +238,7 @@ import { Notice, NoticeInCentre, NoticeOf, type NoticesDot } from "./Notice";
 import { ReadOnlyLine, ReadOnlyMendable, ReadOnlySaid, useReadOnly } from "./ReadOnlyLine";
 import { LivesHere } from "./LivesHere";
 import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
-import { handCount, handSaid, theirAsks, type Elsewhere } from "./InboxElsewhere";
+import { elsewhereCount, handSaid, type Elsewhere } from "./InboxElsewhere";
 import type { AllChatsFilter } from "./InboxAsks";
 import { useAsksArrival } from "./asksArrival";
 import { sayAboutThisMachine, useAboutThisMachine } from "./windowprefs";
@@ -756,7 +760,6 @@ import {
   newUpdates,
   useChatOnScreenSeen,
   useSeen,
-  useSeenElsewhere,
   type SeenRows,
 } from "./seen";
 import { SeenRowsOf } from "./seenRows";
@@ -5448,6 +5451,14 @@ export const PlaneView = memo(function PlaneView({
     if (opened && inFront) rereadAlerts?.();
   }, [noticesShown, inFront, rereadAlerts]);
 
+  /** A file outside the project a pane's link opened (#6216), in a read-only tab of its own. */
+  const outsideFile = useCallback(
+    ({ session, path }: { session: number | null; path: string }) =>
+      showView(outsideFileView(session, path), outsideFileTitle(path)),
+    [showView],
+  );
+  useOutsideFileAsks(plane, outsideFile);
+
   /** A file ⌘P found here (FM-7), opened in its file tab the way the explorer opens one. */
   const fileHandled = useRef(fileAsked?.at);
   useEffect(() => {
@@ -5456,7 +5467,8 @@ export const PlaneView = memo(function PlaneView({
     // A jump to a line (a search hit) opens the branch's file tab, which picks the file and
     // lands on the line (`fileJump.ts`); a file ⌘P found opens in a tab of its own.
     const { place, path } = fileAsked;
-    const jump = fileAsked.line !== undefined;
+    // The plane root has no branch's file tab to land in: its file opens in a tab of its own.
+    const jump = fileAsked.line !== undefined && !isPlaneRoot(place);
     showView(
       jump ? pieceFilesView(place) : pieceFileView(place, path),
       jump ? pieceFilesTitle(place) : pieceFileTitle(place, path),
@@ -11333,8 +11345,6 @@ export const PlaneView = memo(function PlaneView({
   /** **What is New** (#6002, ADR 0121 decisions 10 and 11): seen, not received; the chat on
    *  screen in a focused window has nothing New. */
   const { seen, see, rows: seenRows } = useSeen(plane, waiting);
-  /** **The other projects' seen records** (#1921), for their asks listed in this one's Asks. */
-  const seenOf = useSeenElsewhere(theirAsks(plane, elsewhere).map((one) => one.plane));
   useChatOnScreenSeen(see, chatOnScreen, inFront, waiting, keptUpdates);
   const [noticeCauses, setNoticeCauses] = useState<readonly string[]>([]);
   useEffect(() => {
@@ -11569,11 +11579,13 @@ export const PlaneView = memo(function PlaneView({
    * its chat in a new session, and the pane moves on to it before the ask is read as gone.
    */
   const touchOnPane = useAnsweredWhenGone(plane, waiting);
-  /** The ✋'s count: every open project's asks, and how many are outside this one (#5999). */
-  const hand = handCount(plane, waiting?.length ?? 0, elsewhere);
+  /** **The ✋'s count: this project's asks alone** (#6341, ADR 0121 amended 2026-11-12,
+   *  decision 1). Another project's are on its own tab, and on the Dock badge's total. */
+  const hand = waiting?.length ?? 0;
   /** **A Blocking ask arriving** (ADR 0121 decisions 24 and 25, #6020): said once, politely,
-   *  and the first one on this machine that arrives while Asks is closed pulses the ✋. */
-  const arrival = useAsksArrival(waiting, hand.elsewhere, inFront && asksShown);
+   *  and the first one on this machine that arrives while Asks is closed pulses the ✋. One in
+   *  another project is still said, as its notification still comes. */
+  const arrival = useAsksArrival(waiting, elsewhereCount(plane, elsewhere), inFront && asksShown);
   /**
    * **Snooze all on Asks** (#5647): the core keeps what each chat held, and lists a snoozed
    * chat's asks apart until it asks something new, or until the time it was snoozed for runs out
@@ -12041,6 +12053,20 @@ export const PlaneView = memo(function PlaneView({
    *  chat last in front (`chatKept`, until its tab closes): its set is not read again for a new
    *  chat, and its cards are not drawn again. It is described as it is now, wherever it moved. */
   const skillsSession = chatNow ?? (frontTab !== undefined ? chatKept : undefined);
+  /** **The chat Asks' Chat lists** (ADR 0121, amended 2026-11-12, decision 2): the one in the
+   *  pane with the keyboard, never a shell's, and how many open tasks it holds, however deep. */
+  const asksChat =
+    chatNow === undefined
+      ? undefined
+      : {
+          session: chatNow,
+          name: nameOf(chatNow),
+          tasks: tasksBelow.get(chatNow)?.open.length ?? 0,
+        };
+  /** Whether the project has one place on the strip, so Workspace would list what Project does:
+   *  its workspaces, and the plane root while a chat is filed there. */
+  const oneWorkspace =
+    sidebar !== undefined && sidebar.workspaces.length + (sidebar.unfiled.length > 0 ? 1 : 0) <= 1;
   const skillsWorkspace = skillsSession === undefined ? undefined : filedIn(skillsSession);
   // The checkout it works in, as the core answered for its directory (#4851), in front or not.
   const skillsPiece = skillsSession === undefined ? undefined : worktreeOf(skillsSession);
@@ -12319,7 +12345,6 @@ export const PlaneView = memo(function PlaneView({
                       part="asks"
                       plane={plane}
                       seen={seenRows}
-                      seenOf={seenOf}
                       asks={waiting}
                       onGo={goToAsking}
                       elsewhere={elsewhere}
@@ -12327,6 +12352,11 @@ export const PlaneView = memo(function PlaneView({
                       here={focused}
                       workspaceOf={filedIn}
                       workspaceNamed={workspaceNamed}
+                      // **Chat** (ADR 0121, amended 2026-11-12): the chat in front and its tasks.
+                      chat={asksChat}
+                      askedBy={askedBy}
+                      oneWorkspace={oneWorkspace}
+                      shown={asksShown}
                       asked={chatAsked}
                       personaOf={personaOf}
                       onLeave={leaveInbox}
@@ -12361,7 +12391,6 @@ export const PlaneView = memo(function PlaneView({
                       part="updates"
                       plane={plane}
                       seen={seenRows}
-                      seenOf={seenOf}
                       asks={waiting}
                       onGo={goToAsking}
                       updates={inboxUpdates}
@@ -12381,7 +12410,6 @@ export const PlaneView = memo(function PlaneView({
                       part="notices"
                       plane={plane}
                       seen={seenRows}
-                      seenOf={seenOf}
                       onNoticeCauses={setNoticeCauses}
                       asks={waiting}
                       onGo={goToAsking}
@@ -12485,10 +12513,9 @@ export const PlaneView = memo(function PlaneView({
                       )}
                     </QueueRead>
                   ),
-                  // The ✋'s count (#1692, I-2; ADR 0121 decision 4): every open project's asks, in
-                  // its tone, on the bar, so it is there while the side is put away. Those outside
-                  // this project are said as "+N elsewhere"; Asks' scope never narrows it.
-                  asks: <ActivityCount count={hand.total} said={handSaid(hand)} tone="needs-you" />,
+                  // The ✋'s count (#1692, I-2; #6341): this project's asks, in its tone, on the
+                  // bar, so it is there while the side is put away. Asks' scope never narrows it.
+                  asks: <ActivityCount count={hand} said={handSaid(hand)} tone="needs-you" />,
                   // The unread lines From your chats (#5646, ADR 0119): the bell's count, in the plain
                   // colours, since a result is news of the person's own work and asks nothing.
                   // Project is never counted.

@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { widenAsks } from "./test-inbox";
 import { forgetLateAnswers, saidOfLate, timed } from "./answerWatch";
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -283,6 +284,14 @@ function last(listeners: Map<string, number[]>, event: string): number {
   return handlers[handlers.length - 1];
 }
 
+/** `plane`'s tab on the project rail, by the directory it carries: the rail's tablist owns its
+ *  tabs by `aria-owns`. */
+const railTab = (plane: string) => {
+  const tab = document.querySelector<HTMLElement>(`[role="tab"][data-directory="${plane}"]`);
+  if (tab === null) throw new Error(`no project tab for ${plane}`);
+  return tab;
+};
+
 /** The projects on the strip, and which one is in front. */
 const projectTabs = () =>
   within(stripNamed("Projects"))
@@ -439,7 +448,7 @@ describe("a window holding more than one project", () => {
     expect(screen.getByRole("button", { name: "1 chat needs you" })).toBeInTheDocument();
   });
 
-  it("goes from the title bar to a chat in a project behind the one in front (charter-app#249, #1695)", async () => {
+  it("reaches a chat that asks in a project behind the one in front from its tab, never from the Asks in front (charter-app#249, #1695)", async () => {
     const { move } = core({
       launch: ONE,
       asks: { [ONE]: [1] },
@@ -470,78 +479,27 @@ describe("a window holding more than one project", () => {
       refusals: [],
       children: [],
     });
-    const hand = await screen.findByRole("button", { name: "1 thing waits on you" });
-    expect(
-      within(screen.getByTestId("title-bar")).getByRole("button", { name: "1 thing waits on you" }),
-    ).toBe(hand);
+    // ONE's own tab counts it; the hand counts the project in front alone, where nothing waits,
+    // so the title bar draws none (#6341, ADR 0121 amended 2026-11-12, decision 1).
+    await waitFor(() => expect(railTab(ONE)).toHaveAccessibleDescription(/\b1 waiting\b/));
+    expect(screen.queryByTestId("needs-you-button")).toBeNull();
 
-    // The hand opens the Asks in front, which lists every project's (#1921): TWO stays in front,
-    // and ONE's ask is a row there, under ONE's chat.
-    await userEvent.click(hand);
+    // The Asks in front lists no other project's (ADR 0121, amended 2026-11-12): TWO stays in
+    // front. ONE's ask is reached from ONE's tab, in ONE's own Asks. The side opens on Asks (#5644).
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
-    const theirs = await waitFor(() => {
-      const group = inbox.querySelector<HTMLElement>(`[data-elsewhere="${ONE}#1"]`);
-      expect(group).not.toBeNull();
-      return group as HTMLElement;
-    });
+    expect(inbox.querySelector("[data-elsewhere]")).toBeNull();
     expect(projectTabs()).toEqual(["one", "two*"]);
-    await userEvent.click(within(theirs).getByRole("button", { name: /^Go to chat/ }));
-
+    await userEvent.click(projectTab("one"));
     await waitFor(() => expect(projectTabs()).toEqual(["one*", "two"]));
-    expect(
-      within(stripNamed("Tabs")).getByRole("tab", { selected: true }).querySelector(".tab-name")
-        ?.textContent,
-    ).toBe("one.1");
-  });
+    await widenAsks();
+    await userEvent.click(await screen.findByRole("button", { name: "Go to chat one.1" }));
 
-  it("lists in one project's Asks another project of the window's ask, and goes there (#1700, #1921)", async () => {
-    const { move } = core({
-      launch: ONE,
-      asks: { [ONE]: [1] },
-      chats: {
-        [ONE]: [chat({ session: 1, name: "one.1" })],
-        [TWO]: [chat({ session: 1, name: "two.1" })],
-      },
-    });
-    render(<App />);
-    await waitFor(() => expect(chatTabs()).toEqual(["one.1"]));
-    await userEvent.click(screen.getByRole("button", { name: "Open a project…" }));
-    await openByPath(TWO);
-    await waitFor(() => expect(chatTabs()).toEqual(["two.1"]));
-    move({
-      plane: ONE,
-      session: 1,
-      state: "waiting",
-      needs_you: true,
-      queue: [1],
-      moved_at: 1,
-      sequence: 1,
-      reports: [],
-      refusals: [],
-      children: [],
-    });
-    await screen.findByRole("button", { name: "1 thing waits on you" });
-
-    // TWO's own Asks, with nothing of its own waiting: ONE's ask is a row of its own, answered
-    // in place in ONE (#1921), with Go to chat. The side opens on Asks (#5644).
-    const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
-    // It opens on All projects (#5999, ADR 0121 decision 4), so ONE's ask is there at once.
-    const theirs = await waitFor(() => {
-      const group = inbox.querySelector<HTMLElement>(`[data-elsewhere="${ONE}#1"]`);
-      expect(group).not.toBeNull();
-      return group as HTMLElement;
-    });
-    expect(theirs.querySelector(".inbox-where")).toHaveTextContent("one");
-    // No line for ONE as well: its ask is drawn whole.
-    expect(
-      within(inbox).queryByRole("rowgroup", { name: "Other projects in this window" }),
-    ).toBeNull();
-
-    await userEvent.click(within(theirs).getByRole("button", { name: /^Go to chat/ }));
-    await waitFor(() => expect(projectTabs()).toEqual(["one*", "two"]));
-    const there = await screen.findByRole("tabpanel", { name: "Asks" });
-    await within(there).findByRole("button", { name: "Go to chat one.1" });
-    expect(there.querySelector(`[data-elsewhere="${ONE}#1"]`)).toBeNull();
+    await waitFor(() =>
+      expect(
+        within(stripNamed("Tabs")).getByRole("tab", { selected: true }).querySelector(".tab-name")
+          ?.textContent,
+      ).toBe("one.1"),
+    );
   });
 
   it("draws no queue in the Attention panel any more (charter-app#249)", async () => {

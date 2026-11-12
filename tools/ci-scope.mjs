@@ -221,7 +221,7 @@ export const GATES = {
   "confinement":
     "^(crates/studio-probe/|\\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|confined|egress|reach|wrapper|hosts|localport|door|tunnel|sshproxy)(\\.rs|/)|crates/purlis-core/src/hookwire/serve(\\.rs|/)|crates/purlis-core/src/secrets/(brokered|keyhold)(\\.rs|/)|crates/purlis-cli/src/listen/|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\\.rs|crates/purlis-cli/tests/it/a_chats_ssh_route_carries_from_inside_its_sandbox\\.rs|Cargo\\.lock$|rust-toolchain\\.toml$)",
   "parity":
-    "^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|pools|codelink|session)[^/]*(\\.rs$|/)|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\\.rs$|/)|runner-image/|tests/parity/|Cargo\\.lock$|rust-toolchain\\.toml$|\\.github/workflows/ci\\.yml$)",
+    "^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|pools|poolsetup|sshroute|codelink|session)[^/]*(\\.rs$|/)|crates/purlis-core/tests/it/a_remote_docker_pool_is_reached_over_ssh\\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\\.rs$|/)|runner-image/|tests/(parity|remote-docker)/|Cargo\\.lock$|rust-toolchain\\.toml$|\\.github/workflows/ci\\.yml$)",
   // No step of its own greps this one: the job's steps are the scenario legs'. What the Skill
   // studio's outcome bars measure, and the suite and its stand-ins (#4343).
   "outcome-bars":
@@ -229,7 +229,7 @@ export const GATES = {
   // No step of its own greps this one either: Pool setup's walk in the window on Docker (#4985),
   // what it presses and the pools and runner image it makes.
   "pool-setup":
-    "^(app/src/(poolsetup/|PoolSetup|AddDockerPool|pools\\.ts)|app/src-tauri/src/(poolsetuptab|dockerpools|runnerlinks|routedsessions)[^/]*(\\.rs$|/)|crates/purlis-core/src/(poolsetup|dockerpool|runners|pools)[^/]*(\\.rs$|/)|runner-image/|app/e2e/(pool-runner\\.Dockerfile$|wdio\\.pool\\.conf|specs/[^/]*\\.pool\\.e2e\\.ts$)|\\.github/workflows/ci\\.yml$)",
+    "^(app/src/(poolsetup/|PoolSetup|AddDockerPool|pools\\.ts)|app/src-tauri/src/(poolsetuptab|dockerpools|runnerlinks|routedsessions)[^/]*(\\.rs$|/)|crates/purlis-core/src/(poolsetup|dockerpool|runners|pools|sshroute)[^/]*(\\.rs$|/)|runner-image/|tests/remote-docker/|app/e2e/(pool-runner\\.Dockerfile$|wdio\\.pool\\.conf|poolsetup\\.ts$|specs/[^/]*\\.pool\\.e2e\\.ts$)|\\.github/workflows/ci\\.yml$)",
   "bench":
     "^(crates/session-protocol/|Cargo\\.toml$|Cargo\\.lock$|rust-toolchain\\.toml$|fixtures/corpora/|tools/bench\\.mjs$|tools/latency-gate\\.mjs$|\\.github/workflows/ci\\.yml$)",
 };

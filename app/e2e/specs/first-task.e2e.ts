@@ -43,9 +43,10 @@ import { ask } from "../switching.js";
  * (`theRunsStandIns`), because the first run offers the task only beside a harness this machine
  * has (FR-29): the local project declares no profile, so its chats run charter's built-in
  * Claude Code profile, which finds the stand-in by that search. The local project runs its
- * chats sandboxed (#1670), and a sandboxed start refuses a program a chat could write, which
- * the run's `$HOME`, in the temp directory, is; it also asks the program its version, which the
- * stand-in answers as Claude Code does. The stand-in reports its
+ * chats at the floor, the level a new project starts at (Q114, Q201), which is a sandbox
+ * (#1670), and a sandboxed start refuses a program a chat could write, which the run's `$HOME`,
+ * in the temp directory, is; it also asks the program its version, which the stand-in answers
+ * as Claude Code does. The stand-in reports its
  * `SessionStart` through the real `charter hook`, as Claude Code does, so the core types the
  * task once it is at its prompt; and it says in its own pane whether the briefing that hook
  * answered carries the first chat's lesson.
@@ -288,7 +289,7 @@ async function theCardLinkOpensItsTab(label: string): Promise<void> {
 type Chat = { session: number; cwd: string | null; label: string | null };
 
 // The local project is in the data home, where a sandboxed chat starts (#1670): both of the
-// task's chats run under the sandbox the local project turns on.
+// task's chats run at the floor, the sandbox a new project starts at (Q114, Q201).
 describe("the first task, from its tab", function () {
   this.timeout(600_000);
 
