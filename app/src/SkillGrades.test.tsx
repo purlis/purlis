@@ -568,7 +568,8 @@ describe("a skill's Grades tab (S6)", () => {
       },
     });
     renderTab();
-    // React Aria draws the grid before it fills in its columns (#4950): wait for the columns.
+    // React Aria fills in a grid after drawing it (#4950): findGrid waits for a row, and the
+    // columns are waited for in turn.
     const list = await findGrid(screen, "Grades of deploy");
     const names = (await within(list).findAllByRole("columnheader")).map((one) => one.textContent);
     expect(names).toEqual(

@@ -280,6 +280,16 @@ const CHOICE_SCOPES = ["checkbox", "radio", "switch", "segment", "option-card", 
   .map((scope) => `[data-scope="${scope}"]`)
   .join(", ");
 
+/** **A pen that writes in `element`'s font**: a canvas context whose `measureText` says how
+ *  much room the element's words take as the element draws them. */
+export function penFor(element: Element): CanvasRenderingContext2D {
+  const pen = document.createElement("canvas").getContext("2d");
+  if (pen === null) throw new Error("no canvas to measure words with");
+  const style = getComputedStyle(element);
+  pen.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+  return pen;
+}
+
 /** The points of a box a person looks at: its centre and a point just inside each corner, at
  *  least `round` px in for a box whose corners are rounded that far. */
 function pointsOf(box: DOMRect, round = 0): [number, number][] {
