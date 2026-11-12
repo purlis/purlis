@@ -157,15 +157,21 @@ fn the_table_says_what_came_later_and_what_no_release_has_shipped() {
 }
 
 /// What the manifest says `name` came in: a family's `since`, or a part's or a variant's of it
-/// (`family.part`), or that part's for one of its properties (`family.part.property`). None for a
-/// name the manifest does not hold.
+/// (`family.part`), or that part's for one of its properties (`family.part.property`); or, for a
+/// name no family has, a state's or a property's of the manifest's own lists. None for a name the
+/// manifest does not hold.
 fn since_of(manifest: &Value, name: &str) -> Option<u64> {
     let mut path = name.split('.');
     let first = path.next()?;
-    let family = manifest["families"]
-        .as_array()?
-        .iter()
-        .find(|one| one["name"] == first)?;
+    let named = |key: &str| {
+        manifest[key]
+            .as_array()
+            .and_then(|items| items.iter().find(|one| one["name"] == first))
+    };
+    let Some(family) = named("families") else {
+        let one = named("states").or_else(|| named("properties"))?;
+        return path.next().is_none().then(|| one["since"].as_u64())?;
+    };
     let Some(inner) = path.next() else {
         return family["since"].as_u64();
     };
@@ -185,10 +191,13 @@ fn since_of(manifest: &Value, name: &str) -> Option<u64> {
     }
 }
 
-/// Every version the page's prose gives a family, a part or a property (`` `tree`, manifest
-/// version 13 `` or `` `tooltip.shortcut`, since manifest version 13 ``), against the manifest:
-/// what a release shipped says the release's version, and only what none has shipped says
-/// "the next release's manifest version" (#6308). The family table is held by
+/// Every version the page's prose claims for something the manifest holds, against the manifest
+/// (#6308). A claim names it in code and then its version: `` `tree`, manifest version 13 ``,
+/// `` `invalid` (manifest version 13 `` or `` `tooltip.shortcut`, since manifest version 13 ``.
+/// What a release shipped gives that release's version, and only what none has shipped says "the
+/// next release's manifest version". That phrase, or "since NEXT", said of nothing named is
+/// refused too, since nothing would tell when a release shipped it. A version said any other way
+/// (as of a rewording) is not a claim and is not checked. The family table is held by
 /// [`the_docs_family_table_is_the_manifest_s`].
 fn versions_said_wrongly(page: &str, manifest: &Value) -> Vec<String> {
     const NEXT_SAID: &str = "the next release's manifest version";
@@ -198,7 +207,7 @@ fn versions_said_wrongly(page: &str, manifest: &Value) -> Vec<String> {
     );
     let prose = prose.split_whitespace().collect::<Vec<_>>().join(" ");
     let claim = regex::Regex::new(
-        r"`([a-z][a-z0-9.-]*)`, (?:since )?(?:manifest version (\d+)|the next release's manifest version)",
+        r"`([a-z][a-z0-9.-]*)`(?:, | \()(?:since )?(?:manifest version (\d+)|the next release's manifest version)",
     )
     .expect("the claim's pattern");
     let released = u64::from(parts::VERSION);
@@ -217,12 +226,15 @@ fn versions_said_wrongly(page: &str, manifest: &Value) -> Vec<String> {
             Some(_) => {}
         }
     }
-    let unclaimed = claim.replace_all(&prose, "").matches(NEXT_SAID).count();
-    if unclaimed > 0 {
-        wrong.push(format!(
-            "\"{NEXT_SAID}\" is said {unclaimed} time(s) without naming what it is about, as \
-             `name`, {NEXT_SAID}: nothing then tells when a release has shipped it"
-        ));
+    let rest = claim.replace_all(&prose, "");
+    for unreleased in [NEXT_SAID, "since NEXT"] {
+        let unclaimed = rest.matches(unreleased).count();
+        if unclaimed > 0 {
+            wrong.push(format!(
+                "\"{unreleased}\" is said {unclaimed} time(s) of nothing named, as `name`, \
+                 {NEXT_SAID}: nothing then tells when a release has shipped it"
+            ));
+        }
     }
     wrong
 }
@@ -242,7 +254,7 @@ fn every_version_the_docs_prose_gives_a_family_is_the_manifest_s_6308() {
 fn a_version_in_the_prose_is_checked_whichever_way_it_is_said() {
     let released = u64::from(parts::VERSION);
     let next = released + 1;
-    let manifest = serde_json::json!({ "families": [
+    let manifest = serde_json::json!({ "states": [{ "name": "refused", "since": 4 }], "families": [
         { "name": "old", "since": 2, "parts": [
             { "name": "root", "since": 2, "properties": ["fill"] },
             { "name": "late", "since": next, "properties": ["text"] },
@@ -253,15 +265,34 @@ fn a_version_in_the_prose_is_checked_whichever_way_it_is_said() {
     assert_eq!(since_of(&manifest, "old.root.fill"), Some(2));
     assert_eq!(since_of(&manifest, "old.late"), Some(next));
     assert_eq!(since_of(&manifest, "old.root.text"), None);
+    assert_eq!(since_of(&manifest, "refused"), Some(4));
+    assert_eq!(since_of(&manifest, "refused.root"), None);
     assert_eq!(since_of(&manifest, "new"), None);
 
     let ok = "**Old** (`old`, manifest version 2), its `quiet` (`old.quiet`, since manifest\n\
-              version 3) and (`old.late`, the next release's manifest version).";
+              version 3), `refused` (manifest version 4) and (`old.late`, the next release's manifest \
+              version).";
     assert_eq!(versions_said_wrongly(ok, &manifest), Vec::<String>::new());
     let stale = format!(
         "(`old`, the next release's manifest version) (`old.quiet`, manifest version 2) \
          (`old.late`, manifest version {next}) (`new`, manifest version 1) \
-         (the next release's manifest version)"
+         (the next release's manifest version) `refused` (since NEXT)"
     );
-    assert_eq!(versions_said_wrongly(&stale, &manifest).len(), 5);
+    let unnamed = |said: &str| {
+        format!(
+            "\"{said}\" is said 1 time(s) of nothing named, as `name`, the next release's \
+             manifest version: nothing then tells when a release has shipped it"
+        )
+    };
+    assert_eq!(
+        versions_said_wrongly(&stale, &manifest),
+        [
+            "`old` first shipped in manifest version 2".to_owned(),
+            "`old.quiet` first shipped in manifest version 3".to_owned(),
+            "`old.late` is in no release yet: say the next release's manifest version".to_owned(),
+            "`new` is in no family of the manifest".to_owned(),
+            unnamed("the next release's manifest version"),
+            unnamed("since NEXT"),
+        ]
+    );
 }

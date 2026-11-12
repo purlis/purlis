@@ -419,7 +419,7 @@ each option is a menu's row, so `menu.root.hover.fill` reaches an option too. A 
 held at 3:1 as an icon is; the placeholder and the chevron fall back to the quiet tier.
 
 A box a person gives a value to (`text-input`, `textarea`, `select`, `combobox`) is refused in
-`invalid` (since NEXT): `text-input.root.invalid.border-colour` reaches every refused one-line box.
+`invalid` (manifest version 13, #3110): `text-input.root.invalid.border-colour` reaches every refused one-line box.
 Its edge is what says a value is refused, so such a box keeps its edge's width (`border-width` 0
 on its root refuses the theme; a transparent `border-colour` draws no edge at rest, with
 `invalid.border-colour` the refused one), and in any
