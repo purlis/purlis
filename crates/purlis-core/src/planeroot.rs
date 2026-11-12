@@ -1564,7 +1564,14 @@ fn walk_line(
         );
         // Whether the segment is one of git's, which answers for itself below.
         let mut gits = false;
-        let call = shellwrap::split_env_chdir(&seg.argv);
+        // An unquoted substitution in the assignments before the program (#6327): the
+        // program is the first word after them, read from the segment with the
+        // substitution's words left out, or lost among them.
+        let assigned_splice = assignment_splice(&seg.argv);
+        let call = match &assigned_splice {
+            Some(AssignmentSplice::Program(argv)) => shellwrap::split_env_chdir(argv),
+            _ => shellwrap::split_env_chdir(&seg.argv),
+        };
         let (prog, env, args, chdir) = (call.prog, call.env, call.argv, call.chdir);
         // What this segment makes, read where it runs and taken in once it is read.
         let makes = Made::of(&seg.argv, &prog, &args, &here);
@@ -1676,7 +1683,11 @@ fn walk_line(
                     command_filled,
                 });
             }
-        } else if let Some(at) = spliced_before_program(&seg.argv, &prog) {
+        } else if let Some(at) = match &assigned_splice {
+            Some(AssignmentSplice::Lost(at)) => Some(*at),
+            Some(AssignmentSplice::Program(_)) => None,
+            None => spliced_before_program(&seg.argv, &prog),
+        } {
             // The program itself is lost in a substitution's words (#1354): `GIT_DIR=$(…) git …`
             // and `env -C $(…) git …` read as running the substitution's first word. A git
             // among what follows may be the one that runs, sent where the guard cannot name.
@@ -2151,6 +2162,72 @@ fn where_a_shell_runs(
         }
     }
     out
+}
+
+/// How a segment reads whose assignments before the program hold an unquoted substitution
+/// (#6327): `FOO=$(date) git commit`, `env A=$(x) git …`.
+///
+/// To the shell an assignment's value is one word, whatever it prints, so the program is the
+/// first word after the assignments. The reader spreads the substitution's words through the
+/// argv (#1354) and keeps no mark of where they end, so the guard asks which `git` words could
+/// be the program.
+#[derive(Debug, PartialEq, Eq)]
+enum AssignmentSplice {
+    /// One `git` follows the substitution, and every word between them is a plain word or an
+    /// assignment: whichever of them is the program, git runs as written, or is an operand of
+    /// a program that does not run what follows it. The segment re-read with the plain words
+    /// left out.
+    Program(Vec<String>),
+    /// Where a git that may be the program begins, lost among the substitution's words: more
+    /// than one `git` follows it (`FOO=$(git status) git checkout …`), or a word between may run
+    /// the rest (a wrapper, a keyword, a variable, a redirection).
+    Lost(usize),
+}
+
+/// The [`AssignmentSplice`] of a segment, or `None` for one whose assignments before the program
+/// hold no unquoted substitution, or that has no `git` after one.
+fn assignment_splice(argv: &[String]) -> Option<AssignmentSplice> {
+    let mut mark = None;
+    for (i, word) in argv.iter().enumerate() {
+        if shellwrap::is_env_assignment(word) {
+            if word.ends_with('$') {
+                mark = Some(i);
+                break;
+            }
+        } else if !(i == 0 && shellwrap::base_lower(word) == "env") {
+            return None;
+        }
+    }
+    let mark = mark?;
+    let after = mark + 1;
+    let mut gits = argv
+        .iter()
+        .enumerate()
+        .skip(after)
+        .filter(|(_, w)| shellwrap::base_lower(w) == "git")
+        .map(|(i, _)| i);
+    let first = gits.next()?;
+    let plain = |word: &String| {
+        shellwrap::is_env_assignment(word)
+            || !(word.contains('$')
+                || shellwrap::is_redirect_token(word)
+                || shellwrap::is_wrapper(&shellwrap::base_lower(word))
+                || shellwrap::SHELL_KEYWORDS.contains(&word.as_str()))
+    };
+    if gits.next().is_some() || !argv[after..first].iter().all(plain) {
+        return Some(AssignmentSplice::Lost(first));
+    }
+    let assignments = argv[after..first]
+        .iter()
+        .filter(|w| shellwrap::is_env_assignment(w));
+    Some(AssignmentSplice::Program(
+        argv[..after]
+            .iter()
+            .chain(assignments)
+            .chain(&argv[first..])
+            .cloned()
+            .collect(),
+    ))
 }
 
 /// Where a git invocation may begin in a segment whose PROGRAM was taken from a substitution's
