@@ -242,7 +242,8 @@ export function SessionPane({
       const link = overLink.current;
       if (link === undefined) return;
       if (id === "terminal.openLink") {
-        if (linkHands !== undefined) void openLink(link.candidate, linkHands);
+        // A chat's card stands at the link: the menu has gone with its row (#6442).
+        if (linkHands !== undefined) void openLink(link.candidate, linkHands, null, link.place);
         return;
       }
       const out = navigator.clipboard as ClipboardOut | undefined;

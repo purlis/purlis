@@ -354,11 +354,6 @@ export function repoSavable(repo: RepoSaving): boolean {
   );
 }
 
-/** A request's noun as a heading or a sentence starts with it: `Pull request`, `Merge request`. */
-export function capitalised(noun: string): string {
-  return noun.charAt(0).toUpperCase() + noun.slice(1);
-}
-
 /**
  * What a set of repos call their requests: their forge's noun when they share one, else the
  * glossary's own word, `request`, which names a pull request and a merge request both.
