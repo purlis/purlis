@@ -1,7 +1,6 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { chatNumberSaid } from "./chatNumber";
 import { QuizBand } from "./QuizBand";
 import {
   createContext,
@@ -18,6 +17,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
+import { chatNumberSaid } from "./chatNumber";
 import { Badge, Count } from "./ui/badge/Badge";
 import { inForce, tintVariables, type Token } from "./theme/theme";
 import { followTheme } from "./PersonaMark";
@@ -730,6 +730,12 @@ export function ChatFoot({
   );
 }
 
+/** **A chat's number on its pane's head** (#6212): `#641`, beside its name or the path to the task
+ *  it shows. Its stories draw this one, so the window's and theirs cannot drift apart. */
+export function PaneNumber({ session }: { session: number }) {
+  return <span className="pane-number">{chatNumberSaid(session)}</span>;
+}
+
 /**
  * **A pane's header** (#3142): one slim row under the band and over the terminal, the chat at a
  * glance at its start (its `children`, the `.pane-chips` line: its name or the
@@ -740,12 +746,6 @@ export function ChatFoot({
  * `children` it is the actions alone at the top right of a pane, as a view's pane draws them
  * (#3147).
  */
-/** **A chat's number on its pane's head** (#6212): `#641`, beside its name or the path to the task
- *  it shows. Its stories draw this one, so the window's and theirs cannot drift apart. */
-export function PaneNumber({ session }: { session: number }) {
-  return <span className="pane-number">{chatNumberSaid(session)}</span>;
-}
-
 export function PaneHead({
   doing,
   menu,

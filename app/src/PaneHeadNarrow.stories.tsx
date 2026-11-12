@@ -17,7 +17,7 @@ import { SkillRunsHere, fixedRuns } from "./skillRuns";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
 import { ChatPersonaState } from "./ChatPersonaState";
 import { ChatsHere, fixedChats, nothingKnown, type ChatStates } from "./chatState";
-import { PaneHead, PaneTasksWord, type TasksOn, PaneNumber } from "./LayoutPanes";
+import { PaneHead, PaneNumber, PaneTasksWord, type TasksOn } from "./LayoutPanes";
 import type { ChatHead } from "./paneHead";
 import { HEAD_DROPS, paneLinesOf } from "./paneHead";
 import { QuestionsHere } from "./QuestionsHere";

@@ -1192,6 +1192,26 @@ describe("the breadcrumb", () => {
     expect(crumbsSay()).toMatch(/^steward 1 › probe in beta · /);
   });
 
+  // #6213: a plain chat of another workspace, with no tab in this window, is found by its
+  // number as a task is, and its row shows it.
+  it("finds a plain chat of another workspace with no tab here by its number", async () => {
+    const open = [...withTasks(), chat(8, "beta", { label: "notes" })];
+    core(open, tabbed(withTasks()));
+    render(<App />);
+    // Its Chats list is this workspace's, so it lists the tasks and not chat 8.
+    const tree = await section();
+    await waitFor(() => expect(rows(tree)).toHaveLength(withTasks().length));
+    await userEvent.keyboard("{F2}");
+    const palette = await screen.findByRole("dialog", { name: "Command palette" });
+    await userEvent.type(within(palette).getByRole("combobox"), "#8");
+
+    const [first] = within(palette).getAllByRole("option");
+    expect(first.textContent).toContain("Show chat notes in beta");
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => expect(onScreen()).toEqual([8]));
+  });
+
   it("says nothing of a workspace for a task that works where its session does", async () => {
     const { tree } = await drawn(withTasks());
     await userEvent.click(row(tree, "talk"));

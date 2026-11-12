@@ -11,6 +11,7 @@
  * answer redraws its own marks and no row (SC-3).
  */
 import type { FinishedTask } from "./bindings";
+import { chatNumberIn } from "./chatNumber";
 import {
   failedUnseen,
   failuresUnseenOf,
@@ -243,6 +244,28 @@ function inFields(text: string, fields: readonly string[]): boolean {
 export function matches(row: ChatRow, shown: Shown | undefined, filter: Filter): boolean {
   if (filter.ranks.length > 0 && !filter.ranks.includes(rankOf(shown?.kind))) return false;
   return inFields(filter.text, [row.name, row.persona ?? "", row.workspace, shown?.word ?? ""]);
+}
+
+/**
+ * **What the filter asks of each row** (#6213): a query that is the number of a chat listed
+ * here, `641` or `#641`, asks for that chat alone (with the chips still narrowing it), so the
+ * number a coordinator named comes before every name that only holds those digits. A list
+ * that keeps its tree's order cannot put it first, so it is the only one found. Any other
+ * query is words ({@link matches}). `byNumber` says which, for the finished tasks, which no
+ * number finds.
+ */
+export function asking(
+  rows: readonly Pick<ChatRow, "session">[],
+  filter: Filter,
+): { byNumber: boolean; asks: (row: ChatRow, shown: Shown | undefined) => boolean } {
+  const number = chatNumberIn(filter.text);
+  if (number === undefined || !rows.some((row) => row.session === number))
+    return { byNumber: false, asks: (row, shown) => matches(row, shown, filter) };
+  const chips = { text: "", ranks: filter.ranks };
+  return {
+    byNumber: true,
+    asks: (row, shown) => row.session === number && matches(row, shown, chips),
+  };
 }
 
 /**

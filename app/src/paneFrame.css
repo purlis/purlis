@@ -531,7 +531,8 @@
 }
 
 /* **Its number beside its name** (#6212): `#641`, the chat's current number, in the line's muted
-   tier. Never cut and never dropped: it is short, and it is how a chat is found again. */
+   tier. Never cut: it is short, and it is how a chat is found again. A head under 500px drops
+   it before anything else (`HEAD_DROPS` in `paneHead.ts`); the tab's hover still says it. */
 .pane-chips > .pane-number {
   display: inline-flex;
   flex: none;

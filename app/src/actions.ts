@@ -29,7 +29,6 @@
  * gave travels to the operator as the core's own sentence rather than as whatever a `catch`
  * decided to say about it.
  */
-import { chatNumberIn } from "./chatNumber";
 import { splitRefused } from "./paneFold";
 import type { Size } from "./paneDrop";
 import type {
@@ -66,6 +65,7 @@ import {
 } from "./skillStudio";
 import { backSaid } from "./chatState";
 import { listed as namesListed } from "./chatMoves";
+import { chatNumberIn } from "./chatNumber";
 import { handedOff, tasksOf, type ListedChat } from "./chatsTree";
 import { MAIN } from "./here";
 import {
@@ -119,7 +119,7 @@ import {
   changesTitle,
   changesView,
   chatOf,
-  taskShownIn,
+  chatShownBy,
   contentsOf,
   hasOnePane,
   ONE_JOB_STAYS,
@@ -2374,9 +2374,8 @@ export function catalogue(now: Now): Offer[] {
   for (const tab of now.tabs.order) {
     const name = tabNameOf(now.tabs.byId[tab]);
     const title = `Switch to tab ${name}`;
-    // Found by the number of the chat it shows (#6213): a task shown in its chat's place, or
-    // its own chat.
-    const chat = taskShownIn(now.tabs, tab) ?? chatOf(now.tabs, tab);
+    // Found by the number of the chat it shows (#6213), as its tooltip says it (#6212).
+    const chat = chatShownBy(now.tabs, tab);
     const row =
       tab === now.tabs.inFront
         ? cannot(`tab.select:${tab}`, title, "It is already in front.", name)
@@ -3446,6 +3445,7 @@ export function catalogue(now: Now): Offer[] {
   );
   offers.push(...taskEndRows(now.listed ?? [], now.stopping ?? []));
   offers.push(...taskRows(now.listed ?? []));
+  offers.push(...tablessRows(now.listed ?? []));
   offers.push(...handedOffRows(now.listed ?? []));
   offers.push(...placeRows(now.tabs, now.listed ?? [], now.nameOf));
   offers.push(besideInFront(now.tabs, now.listed ?? [], now.nameOf));
@@ -4525,6 +4525,26 @@ export function taskRows(listed: readonly ListedChat[]): Offer[] {
         chat: chat.session,
       };
     });
+}
+
+/**
+ * **A row for each chat no tab of this window holds** (#6213): `chat.show:<session>`, as a
+ * task's, so a chat of any workspace of the project is found by its number, or its name, and
+ * shown where it works. A task has its own row ({@link taskRows}), and a chat with a tab here
+ * its `Switch to tab` row.
+ */
+export function tablessRows(listed: readonly ListedChat[]): Offer[] {
+  return listed
+    .filter((chat) => chat.mode !== "task" && !chat.tab)
+    .map((chat) => ({
+      ...can(
+        taskShowId(chat.session),
+        `Show chat ${chat.name} in ${chat.workspace}`,
+        { verb: "showChat", session: chat.session },
+        chat.name,
+      ),
+      chat: chat.session,
+    }));
 }
 
 /**

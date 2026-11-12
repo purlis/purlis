@@ -8,9 +8,9 @@
  * here by a press, as the window opens it, and drawn once it has the keyboard: a menu draws
  * outside its frame, so each picture is the page's.
  */
-import { PaneNumber } from "./LayoutPanes";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, screen, waitFor, within } from "storybook/test";
+import { PaneNumber } from "./LayoutPanes";
 import { ChatsHere, fixedChats, nothingKnown } from "./chatState";
 import type { ChatRow } from "./chatsTree";
 import { waitingOnTasks } from "./shownState";

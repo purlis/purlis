@@ -2193,6 +2193,16 @@ export function taskShownIn(tabs: Tabs, id: number): number | undefined {
 }
 
 /**
+ * **The chat tab `id` shows** (#1486): the task its first pane is switched to, and otherwise
+ * the tab's own chat. Nothing for a tab that opened on a view. What a thing dropped on the tab
+ * is handed to, since the tab reads as the chat it shows, and the number its tooltip says and
+ * the palette finds it by (#6212, #6213).
+ */
+export function chatShownBy(tabs: Tabs, id: number): number | undefined {
+  return taskShownIn(tabs, id) ?? chatOf(tabs, id);
+}
+
+/**
  * **A tab's layout as it is drawn** (#1486): each pane holding the chat it shows. The tab's
  * own layout, untouched, for a tab that shows no task.
  */
