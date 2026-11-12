@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794489203557,
+  "lastUpdate": 1794491391427,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -47376,6 +47376,48 @@ window.BENCHMARK_DATA = {
             "value": 101.7372595,
             "unit": "ms",
             "extra": "median of 5 runs: 100.354, 101.243, 101.737, 102.073, 102.649 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "62ef9c13090faf36e8feb799608dce1a9f94db2d",
+          "message": "A closed or finished chat found by its number opens its card (#6214) (#6243)\n\n* A chat looked up by its number: number, ULID, then its record (#6214)\n\npurlis_core::chatlookup::by_number_in answers whether a number names an open\nchat, one started again under another number, or one that ended (with its\nnewest dispatch record), and no chat for a number nothing names. One entry\npoint, for the palette now and a pane's chat links later (#6217).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74TZRF7VFPXEQJQKZYZD9C6\nPurlis-Persona: steward\n\n* Keep a dispatched task's last screen as its chat closes, for Read it (#6214)\n\nThe person's ruling of 2026-11-11: dispatched tasks only, kept at\n<state>/app/chat-screens/<ULID>.screen. It is never committed, the sandbox\ndenies it to every chat for reading and writing, it is capped like a grade's\nkept chat and it is collected with its dispatch record. [task_screens] keep\nin charter.local.toml turns it off (on by default), and turning it off\ndeletes every kept screen.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74TZRF7VFPXEQJQKZYZD9C6\nPurlis-Persona: steward\n\n* The window's chat_by_number and chat_screen, and the screen kept as a task's chat closes (#6214)\n\nchatcard.rs wraps purlis_core::chatlookup for the window: open, restarted,\nended with its card (its finished row, who started it, whether its screen was\nkept), or no chat. chat_screen reads a closed task's kept screen for Read it.\nBoth are on the allow-list (ADR 0052) and are the window's alone, never served\nto a link. Chats::close_as keeps a task chat's last screen as it closes for\ngood, read from the host as a grade's chat is.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74TZRF7VFPXEQJQKZYZD9C6\nPurlis-Persona: steward\n\n* The switcher's finished row opens a closed chat's card, with Read it and Reopen (#6214)\n\nTyping 641 or #641 in the command palette looks the number up\n(chat_by_number). A closed or finished chat's row opens its card beside the\nrow (ClosedChatCard, built from the accepted prototype). Read it opens the\nkept screen read-only in a view tab (ChatScreenTab), and Reopen reopens the\ntask (reopenTask). A chat started again is shown under its new number.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74TZRF7VFPXEQJQKZYZD9C6\nPurlis-Persona: steward\n\n* Stubs, NotRead's retry and a lookup that reads only a lookup (#6214)\n\nThe window's own Doing and the test Doing gain reopenTask. Read it's tab\nretries a refused read. An answer that is not a lookup names no chat, as an\nartifact search's does. Formatted.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74TZRF7VFPXEQJQKZYZD9C6\nPurlis-Persona: steward\n\n* CI's first run on #6214: guards, grounds, a record and the stories\n\n- The card's layout is in App.css, the window's own stylesheet, as the\n  stylesheet guard holds.\n- STANDS_ON names a popover on a dialog and a badge on a popover. The engine's\n  tint and floor tests hold a badge's words clear, so each still measures the\n  family it is about.\n- The recorded harness-list scenario says the local file carries [task_screens].\n- No colour-like literal in the tests; the stories wait for the popover and\n  read a disabled button by aria-disabled; rustfmt.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74TZRF7VFPXEQJQKZYZD9C6\nPurlis-Persona: steward\n\n* The window's registries know the closed chat's card and its view (#6214)\n\nThe overlay count takes the card's popover. The dialogs list opens the card.\nThe view states draw chat-screen where its screen was not kept (a kept one\nis xterm's, which jsdom cannot run).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74TZRF7VFPXEQJQKZYZD9C6\nPurlis-Persona: steward\n\n* Box the card in ChatLookup, as clippy asks; the story reads the note it means (#6214)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74TZRF7VFPXEQJQKZYZD9C6\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Review of #6243: the setting takes effect where it is read, a total cap, an age sweep, one writer (#6214)\n\n- keep = false: kept() and is_kept() serve nothing and delete every kept\n  screen; so do a keep, the close of a task's chat, set_keep and the\n  project's open. The module comment and the change note say so.\n- A total of 200 screens and 256 MiB, the oldest going first. The sweep and\n  forget_all look at every file (no 20,000 cap).\n- chatscreens::on_open runs at every project open, ahead of the reopen\n  record's check, and sweeps screens past retention's 30 days too.\n- keptscreen: one private writer and reader for this store and the grades'\n  kept chats. It writes a temp file and renames it into place (rewrite::replace).\n- A sandbox test: every harness denies chat-screens on macOS and Linux.\n- chatlookup: one open_under call and a public is(), which chatcard uses.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M74TZRF7VFPXEQJQKZYZD9C6\nPurlis-Persona: steward\n\n* Review of #6243: the card's words are written once, and say the result (#6214)\n\n- The card takes how a task ended from finished.ts (shownOf, qualifierOf), the\n  map a finished row reads, and why Reopen does nothing from whyNoReopen,\n  which FinishedTasks uses too.\n- Read it and Reopen are actions.ts offers (readItOffer, reopenTaskOffer), not\n  written inline in Palette.tsx.\n- The lookup's tag is is, read as lookup.is. The palette's row is\n  'Show closed chat #641 · ...'. The card's line says its chat has closed.\n- Read it's empty tab says why, under a headline it does not repeat.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M74TZRF7VFPXEQJQKZYZD9C6\nPurlis-Persona: steward\n\n* Review of #6243: a story for Read it's tab; the card stories name their own chat (#6214)\n\nChatScreenTab's stories cover the kept screen (one Tab stop, find, Esc) and a\nscreen not kept, with axe and baselines from CI. Each card story's stand-in\nrow is titled by its own card, so the not-kept one no longer says #641.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M74TZRF7VFPXEQJQKZYZD9C6\nPurlis-Persona: steward\n\n* Read it's tab names purlis.local.toml; its story finds the screen's words wherever they are drawn (#6214)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-12T12:38:20Z",
+          "tree_id": "21fe4ffe54eb7cfdf922af60f49ec8c0cf01c752",
+          "url": "https://github.com/purlis/purlis/commit/62ef9c13090faf36e8feb799608dce1a9f94db2d"
+        },
+        "date": 1794491386666,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5496354999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.540, 0.548, 0.550, 0.556, 0.557 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.259726,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.152, 16.222, 16.260, 16.285, 16.287 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.6010625,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.798, 101.115, 101.601, 101.697, 102.552 ms"
           }
         ]
       }
