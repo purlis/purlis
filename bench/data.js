@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794405629475,
+  "lastUpdate": 1794461324974,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -47040,6 +47040,48 @@ window.BENCHMARK_DATA = {
             "value": 101.4708795,
             "unit": "ms",
             "extra": "median of 5 runs: 101.213, 101.339, 101.471, 102.381, 102.577 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ca7a5594ec6cfaae7d615e9ac18076456efe8b24",
+          "message": "projectSwitch.cost: hold the window's clock, so a slow runner's switch is not a beat late (#6282)\n\nThe red on main (expected 23 to be <= 22) was no merge's: every commit from\n1864ff82 to 05d1fd88 counts 22 locally, and PR runs without the suspect merges\nwent red the same way. The 23rd command is plane_saving, read by useSaving's\ncatchUp (saving.ts) when a project's standing was asked SAVING_REREAD_MS (10 s)\nago or more, on performance.now. The test runs about 3 s locally and 11.7 s on\nCI, so on CI a switch could come a beat after its project's last read.\n\nThe test already holds the beat itself still (everyWhileShown); now it holds the\nwindow's monotonic clock too, and the testkit times syncMs on a clock of its own.\nSeen red with a 10.5 s wait before the measured switches (23), green with the\nclock held (22). The budget stays at 22.\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M75E3SQ76J5Q37450RK9XD6R\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-12T04:38:28Z",
+          "tree_id": "884d2cc344ec2e2445956e889da98f50bb97b904",
+          "url": "https://github.com/purlis/purlis/commit/ca7a5594ec6cfaae7d615e9ac18076456efe8b24"
+        },
+        "date": 1794461318269,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6909165,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.670, 0.690, 0.691, 0.693, 0.702 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.684995,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.659, 16.684, 16.685, 16.738, 16.871 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.7957695,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.383, 101.971, 102.796, 102.812, 103.027 ms"
           }
         ]
       }
