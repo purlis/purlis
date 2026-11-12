@@ -735,6 +735,7 @@ body {
   > :is(
     .pane-persona,
     .pane-name,
+    .pane-number,
     .tab-sandbox,
     .pane-state-mark,
     .pane-wrapping,

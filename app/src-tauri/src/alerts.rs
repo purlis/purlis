@@ -190,7 +190,9 @@ const BLOCKED_FOR: f64 = 600.0;
 /// core's alerts, and the Saving view is where this one is resolved.
 fn save_blocked(root: &Path, now: f64) -> Option<AlertRow> {
     use purlis_core::planegit;
-    let standing = planegit::shared_standing(root);
+    // At once from the last standing while a newer one is read (H6c): the alerts never wait on
+    // a busy plane's recomputation.
+    let standing = planegit::kept_standing(root);
     // A secret is said at once: that save never goes through without somebody. And said with
     // the file and line it is in, so the Notice names what to mend.
     let secret = standing.blocked.as_deref()? == planegit::SECRET_REFUSED;
@@ -272,7 +274,7 @@ fn requests_red(root: &Path) -> Vec<AlertRow> {
     let settings = Settings::read(root);
     let mut rows = Vec::new();
     if settings.plane.mode.value == Some(Mode::PrMerge) {
-        let saving = crate::saving::saving_of(root);
+        let saving = crate::saving::saving_kept(root);
         rows.extend(request_red(
             (None, None),
             &saving.request,

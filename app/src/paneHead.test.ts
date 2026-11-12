@@ -68,16 +68,25 @@ describe("the pane head's one state button (#4760)", () => {
 describe("a narrow pane head drops its parts in the ruled order (#4760, #4585 rule 4, #5206)", () => {
   it("drops nothing in a wide pane, or one not measured", () => {
     expect([...droppedAt(900)]).toEqual([]);
-    expect([...droppedAt(470)]).toEqual([]);
+    expect([...droppedAt(500)]).toEqual([]);
     expect([...droppedAt(undefined)]).toEqual([]);
   });
 
-  it("drops the mark's word, what the chat uses, the button's word, the mark and Split down, and no workspace", () => {
-    expect([...droppedAt(469)]).toEqual(["markWord"]);
-    expect([...droppedAt(449)]).toEqual(["markWord", "using"]);
-    expect([...droppedAt(419)]).toEqual(["markWord", "using", "buttonWord"]);
-    expect([...droppedAt(379)]).toEqual(["markWord", "using", "buttonWord", "mark"]);
-    expect([...droppedAt(299)]).toEqual(["markWord", "using", "buttonWord", "mark", "splitDown"]);
+  it("drops the chat's number, the mark's word, what the chat uses, the button's word, the mark and Split down, and no workspace", () => {
+    // The number first (#6212): its tab's hover says it too.
+    expect([...droppedAt(499)]).toEqual(["number"]);
+    expect([...droppedAt(469)]).toEqual(["number", "markWord"]);
+    expect([...droppedAt(449)]).toEqual(["number", "markWord", "using"]);
+    expect([...droppedAt(419)]).toEqual(["number", "markWord", "using", "buttonWord"]);
+    expect([...droppedAt(379)]).toEqual(["number", "markWord", "using", "buttonWord", "mark"]);
+    expect([...droppedAt(299)]).toEqual([
+      "number",
+      "markWord",
+      "using",
+      "buttonWord",
+      "mark",
+      "splitDown",
+    ]);
     expect(HEAD_DROPS.map((drop) => drop.part as string)).not.toContain("where");
   });
 
@@ -102,7 +111,9 @@ describe("a narrow pane's two lines (#5206, spec #5191 stories 28 to 32)", () =>
   const ORIGIN = ["from", "studio", "workItem"];
   const WARM = ["sandbox", "ctx", "cache"];
 
-  const chatHead = ["persona", "name", "mark", "markWord"];
+  const chatHead = ["persona", "name", "number", "mark", "markWord"];
+  /** Under 500 px the number has gone (#6212). */
+  const narrowHead = ["persona", "name", "mark", "markWord"];
   const ALL = ["state", "stateWord", "bell", "menu", "splitRight", "splitDown", "close"];
 
   it.each([
@@ -116,7 +127,7 @@ describe("a narrow pane's two lines (#5206, spec #5191 stories 28 to 32)", () =>
       ALL,
       ["harness", "workspace", ...ORIGIN, "skills", "sandbox", "ctx"],
     ],
-    [470, chatHead, ALL, ["harness", "workspace", ...ORIGIN, "skills", "sandbox", "ctx"]],
+    [470, narrowHead, ALL, ["harness", "workspace", ...ORIGIN, "skills", "sandbox", "ctx"]],
     [
       449,
       ["persona", "name", "mark"],
@@ -175,7 +186,9 @@ describe("a narrow pane's two lines (#5206, spec #5191 stories 28 to 32)", () =>
     [269, ["harness", "skillsMark", "sandbox", "ctx"]],
   ] as const)("a task's pane %s px wide", (width, foot) => {
     const lines = paneLinesOf("task", width, { ...full, closes: false });
-    expect(lines.head).toEqual(["persona", "crumbs"]);
+    expect(lines.head).toEqual(
+      width >= 500 ? ["persona", "crumbs", "number"] : ["persona", "crumbs"],
+    );
     expect(lines.foot).toEqual(foot);
     expect(lines.actions).not.toContain("close");
   });
@@ -264,11 +277,12 @@ describe("a narrow pane's two lines (#5206, spec #5191 stories 28 to 32)", () =>
       expect(paneLinesOf("chat", 900, uses).head).toEqual([
         "persona",
         "name",
+        "number",
         "mark",
         "markWord",
         "using",
       ]);
-      expect(paneLinesOf("task", 900, uses).head).toEqual(["persona", "crumbs", "using"]);
+      expect(paneLinesOf("task", 900, uses).head).toEqual(["persona", "crumbs", "number", "using"]);
       for (const kind of ["ended", "endedTask", "shell", "oneJob"] as const)
         expect(paneLinesOf(kind, 900, uses).head, kind).toContain("using");
       expect(paneLinesOf("chat", undefined, uses).head).toContain("using");
@@ -321,6 +335,7 @@ describe("the pane's two lines: what the head and the foot of a chat's pane draw
   const FOOTLESS_HEAD = [
     "persona",
     "name",
+    "number",
     "sandbox",
     "mark",
     "markWord",
@@ -331,9 +346,9 @@ describe("the pane's two lines: what the head and the foot of a chat's pane draw
 
   it.each([
     // kind, width, the head's line, the foot
-    ["chat", 900, ["persona", "name", "mark", "markWord"], WHOLE],
-    ["chat", undefined, ["persona", "name", "mark", "markWord"], WHOLE],
-    ["task", 900, ["persona", "crumbs"], WHOLE],
+    ["chat", 900, ["persona", "name", "number", "mark", "markWord"], WHOLE],
+    ["chat", undefined, ["persona", "name", "number", "mark", "markWord"], WHOLE],
+    ["task", 900, ["persona", "crumbs", "number"], WHOLE],
     ["shell", 900, FOOTLESS_HEAD, null],
     ["oneJob", 300, ["persona", "name"], null],
   ] as const)("a %s pane %s px wide", (kind, width, head, foot) => {
@@ -403,9 +418,9 @@ describe("the pane's two lines: what the head and the foot of a chat's pane draw
 
     it.each([
       // kind, the head's line, the foot
-      ["task", ["persona", "crumbs"], WHOLE],
-      ["ended", ["persona", "name", "mark", "markWord"], ENDED_FOOT],
-      ["endedTask", ["persona", "crumbs"], ENDED_FOOT],
+      ["task", ["persona", "crumbs", "number"], WHOLE],
+      ["ended", ["persona", "name", "number", "mark", "markWord"], ENDED_FOOT],
+      ["endedTask", ["persona", "crumbs", "number"], ENDED_FOOT],
       ["view", [], null],
       ["empty", [], null],
       ["folded", ["persona", "name"], null],

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen, untilStopped } from "./here";
 import type { Offer } from "./actions";
 import { placeOffer, type Goes } from "./artifactPlaces";
 import { commands } from "./bindings";
@@ -53,30 +53,14 @@ export function ArtifactLinks({
     press.current = onPress;
   }, [onPress]);
   useEffect(() => {
-    let stop: (() => void) | undefined;
-    let gone = false;
-    listen<ArtifactLinkFollowed>(ARTIFACT_LINK, (event) => {
-      if (event.payload.label !== label) return;
-      const goes = event.payload.goes;
-      if (goes !== null && goes !== undefined) press.current?.(placeOffer(goes));
-      else setLink(event.payload);
-    }).then(
-      (unlisten) => {
-        // Let go of quietly: a window going away may no longer have its events to let go of.
-        const letGo = () => void Promise.resolve(unlisten()).catch(() => undefined);
-        if (gone) letGo();
-        else stop = letGo;
-      },
-      () => {},
+    return untilStopped(
+      listen<ArtifactLinkFollowed>(ARTIFACT_LINK, (event) => {
+        if (event.payload.label !== label) return;
+        const goes = event.payload.goes;
+        if (goes !== null && goes !== undefined) press.current?.(placeOffer(goes));
+        else setLink(event.payload);
+      }),
     );
-    return () => {
-      gone = true;
-      try {
-        stop?.();
-      } catch {
-        // The window's event bridge went first: nothing is listening any more.
-      }
-    };
   }, [label]);
   if (link === null) return null;
   // Keyed by the link, so a second one followed starts afresh.
