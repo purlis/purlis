@@ -67,15 +67,15 @@ const MATRIX: [Row; 10] = [
         cells: [
             cell(
                 "enforced (Bash in the sandbox; file tools by deny rules; web tools denied)",
-                owed("ADR 0124 matrix: no requirement names it yet"),
+                owed("R-353"),
             ),
             cell(
                 "enforced (the whole process, its hooks and MCP servers, in purlis's wrap)",
-                owed("ADR 0124 matrix: no requirement names it yet"),
+                owed("R-353"),
             ),
             cell(
                 "enforced (the whole process in purlis's wrap)",
-                owed("ADR 0124 matrix: no requirement names it yet"),
+                owed("R-353"),
             ),
         ],
     },
@@ -109,7 +109,9 @@ const MATRIX: [Row; 10] = [
                 here("a_claude_code_permission_prompt_hook_line_raises_one_ask"),
             ),
             cell(
-                "Can't tell (rejected, never asked)",
+                "sandbox, permission and skill approvals: Can't tell (rejected, never asked); \
+                 rule prompts and MCP elicitations are still asked, and reach Asks through the \
+                 PermissionRequest hook (unmeasured for MCP elicitations)",
                 here("codex_start_arguments_carry_the_rejecting_approval_policy"),
             ),
             cell(
@@ -137,23 +139,18 @@ const MATRIX: [Row; 10] = [
             cell("enforced", owed("R-115, R-116")),
         ],
     },
-    // Until phase 3 brings the holds (R-165), each cell is confirmed by what ships: no purlis
-    // hook holds a non-purlis MCP tool, so the harness's own check judges it (R-164).
+    // Phase 3 brings these holds, and their tests (R-165). What ships until then, that no
+    // purlis hook holds a non-purlis MCP tool (R-164), is a requirement of its own, not a cell:
+    // `no_purlis_hook_holds_non_purlis_mcp_tools_before_phase_3` is its test.
     Row {
         layer: "A non-purlis MCP tool's hold (phase 3)",
         cells: [
             cell(
                 "enforced (the hook; the server runs outside the sandbox)",
-                here("no_purlis_hook_holds_non_purlis_mcp_tools_before_phase_3"),
+                owed("R-165"),
             ),
-            cell(
-                "unverified (the hook runs in the wrap)",
-                here("no_purlis_hook_holds_non_purlis_mcp_tools_before_phase_3"),
-            ),
-            cell(
-                "unverified (the hook runs in the wrap)",
-                here("no_purlis_hook_holds_non_purlis_mcp_tools_before_phase_3"),
-            ),
+            cell("unverified (the hook runs in the wrap)", owed("R-165")),
+            cell("unverified (the hook runs in the wrap)", owed("R-165")),
         ],
     },
     Row {
@@ -202,6 +199,11 @@ fn unconfirmed(matrix: &[Row], source: &dyn Fn(&str) -> Option<String>) -> Vec<S
                 Test::Owed { by } if by.trim().is_empty() => {
                     wrong.push(format!("{at}: names no test and nothing that owes one"));
                 }
+                Test::Owed { by } if !by.split(',').all(|id| requirement(id.trim())) => {
+                    wrong.push(format!(
+                        "{at}: owed by `{by}`, which is not a list of R-IDs"
+                    ));
+                }
                 Test::Owed { .. } => {}
                 Test::Named { file, name } => {
                     let found = source(file).is_some_and(|text| declares_test(&text, name));
@@ -213,6 +215,12 @@ fn unconfirmed(matrix: &[Row], source: &dyn Fn(&str) -> Option<String>) -> Vec<S
         }
     }
     wrong
+}
+
+/// Whether `id` is a requirement of the ledger by its id: `R-` and its number.
+fn requirement(id: &str) -> bool {
+    id.strip_prefix("R-")
+        .is_some_and(|number| !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// Whether `text` declares `name` as a `#[test]` function: the attribute, then the function,
@@ -250,6 +258,20 @@ fn every_harness_matrix_cell_names_a_test_that_exists() {
         [
             "The harness's prompts and asks reach Asks × Claude Code: names no test and nothing \
           that owes one"
+        ]
+    );
+    let mut prose = MATRIX;
+    prose[0].cells[0].test = owed("ADR 0124 matrix: no requirement names it yet");
+    prose[0].cells[1].test = owed("R-101, phase 3");
+    prose[0].cells[2].test = owed("R-");
+    assert_eq!(
+        unconfirmed(&prose, &crate_file),
+        [
+            "Sandbox: files and egress × Claude Code: owed by `ADR 0124 matrix: no requirement \
+             names it yet`, which is not a list of R-IDs",
+            "Sandbox: files and egress × Codex: owed by `R-101, phase 3`, which is not a list of \
+             R-IDs",
+            "Sandbox: files and egress × opencode: owed by `R-`, which is not a list of R-IDs",
         ]
     );
     let without = |path: &str| {
@@ -294,7 +316,9 @@ const OPENCODE_ASK: &str = r#"{"chat":8,"permission_request":"opencode","payload
 #[test]
 fn a_claude_code_permission_prompt_hook_line_raises_one_ask() {
     // R-093: Claude Code's permission prompt reaches purlis through its hook, as one ask held
-    // on that hook, the harness's own prompt answered back where it asked.
+    // on that hook, the harness's own prompt answered back where it asked. That the settings
+    // arm the hook is covered by the existing tests in `harness/tests.rs`
+    // (`the_settings_arm_only_the_permission_hook_so_no_hook_is_armed_twice`).
     let (hooks, waiting) = heard(CLAUDE_CODE_PROMPT);
     assert!(waiting.is_some(), "the host holds the hook");
     let pending = hooks.pending(std::time::Instant::now());
@@ -307,7 +331,9 @@ fn a_claude_code_permission_prompt_hook_line_raises_one_ask() {
 #[test]
 fn an_opencode_permission_ask_is_held_in_the_window_as_one_ask() {
     // R-096: opencode's ask is one ask in the window, and the window's answer reaches the
-    // hook that waits on it as opencode's own reply word.
+    // hook that waits on it as opencode's own reply word. That the shim arms the hook is covered
+    // by the existing tests (`opencode_s_permission_prompt_is_also_an_ask_answered_on_opencode_s_
+    // own_client`, in `opencode/tests.rs`).
     let (hooks, waiting) = heard(OPENCODE_ASK);
     let waiting = waiting.expect("the host holds the hook");
     let now = std::time::Instant::now();
@@ -336,10 +362,14 @@ fn codex_start_arguments_carry_the_rejecting_approval_policy() {
     // the profile's and the chat's (`a_sandboxed_codex_chat_is_handed_its_flags_after_its_hooks`
     // holds where), so nothing before them outranks them.
     let flags = crate::sandbox::codex::flags();
-    let policy = flags
+    // Exactly one: Codex honours the last of several, so a second would outrank this one.
+    let policies: Vec<&str> = flags
         .iter()
-        .find_map(|arg| arg.strip_prefix("approval_policy="))
-        .expect("an approval policy");
+        .filter_map(|arg| arg.strip_prefix("approval_policy="))
+        .collect();
+    let [policy] = policies[..] else {
+        panic!("one approval policy: {flags:?}");
+    };
     let policy: toml::Table = format!("v = {policy}").parse().expect("TOML");
     let granular = &policy["v"]["granular"];
     for rejected in ["sandbox_approval", "request_permissions", "skill_approval"] {
@@ -355,12 +385,51 @@ fn codex_start_arguments_carry_the_rejecting_approval_policy() {
     }
 }
 
-/// Every `mcp__…` tool a matcher names: its `|`-separated alternatives that are MCP tools.
-fn mcp_tools(matcher: &str) -> Vec<&str> {
+/// The events a hook group can name tools on.
+const TOOL_EVENTS: [&str; 4] = [
+    "PreToolUse",
+    "PostToolUse",
+    "PostToolUseFailure",
+    "PermissionRequest",
+];
+
+/// One group of hooks purlis arms on one harness: its event, its tool matcher (if any), and the
+/// `purlis hook` words its hooks run.
+struct Group {
+    harness: Harness,
+    event: String,
+    matcher: Option<String>,
+    words: Vec<String>,
+}
+
+impl Group {
+    fn at(&self) -> String {
+        format!("{} {}", self.harness.title(), self.event)
+    }
+}
+
+/// The `purlis hook` word a hook's command runs.
+fn word_of(command: &str) -> String {
+    command
+        .rsplit_once(" hook ")
+        .map_or(command, |(_, word)| word)
+        .to_owned()
+}
+
+/// The tools a matcher names, when it is a plain `|`-list of names; `None` when it is a
+/// pattern, which may catch any tool. An alternative under purlis's own prefix names only
+/// purlis's tools, a pattern (`caught`'s `mcp__purlis__.*`) or not.
+fn plain_names(matcher: &str) -> Option<Vec<&str>> {
     matcher
         .split('|')
         .map(str::trim)
-        .filter(|tool| tool.starts_with("mcp__"))
+        .map(|name| {
+            let plain = !name.is_empty()
+                && name
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-');
+            (plain || purlis_s_own(name)).then_some(name)
+        })
         .collect()
 }
 
@@ -369,11 +438,56 @@ fn purlis_s_own(tool: &str) -> bool {
     tool.starts_with("mcp__purlis__")
 }
 
-#[test]
-fn no_purlis_hook_holds_non_purlis_mcp_tools_before_phase_3() {
-    // R-164: until phase 3, every non-purlis MCP tool is judged by the harness's own check. No
-    // hook purlis arms on any harness names one.
-    let mut matchers: Vec<(String, String)> = Vec::new();
+/// Whether a group that names every tool holds none of them, and why.
+///
+/// - `PermissionRequest` to [`crate::harness::hooked::WORD`]: it relays the harness's own
+///   prompt to the window and answers back only what the person answered, so the harness's own
+///   check still judges the tool (R-093, R-096).
+/// - opencode's default route ([`crate::opencode::DEFAULT_PRE`]), where a tool with no route of
+///   its own goes, MCP tools included: the Bash guard, which can block a call carrying a
+///   `command` and never holds one (R-164's shipped exception, Q225).
+fn holds_nothing(group: &Group) -> bool {
+    let only = |word: &str| !group.words.is_empty() && group.words.iter().all(|w| w == word);
+    (group.event == "PermissionRequest" && only(crate::harness::hooked::WORD))
+        || (group.harness == Harness::Opencode
+            && group.event == "PreToolUse"
+            && group.matcher.is_none()
+            && crate::opencode::DEFAULT_PRE == "pretooluse"
+            && only(crate::opencode::DEFAULT_PRE))
+}
+
+/// The non-purlis MCP tools `groups` hold, one line each. A group on a tool-call event with no
+/// matcher, or with a pattern, names every MCP tool.
+fn held_mcp_tools(groups: &[Group]) -> Vec<String> {
+    let mut held = Vec::new();
+    for group in groups
+        .iter()
+        .filter(|g| TOOL_EVENTS.contains(&g.event.as_str()))
+    {
+        if holds_nothing(group) {
+            continue;
+        }
+        match group.matcher.as_deref().and_then(plain_names) {
+            None => held.push(format!(
+                "{}: every MCP tool (matcher {:?}, {:?})",
+                group.at(),
+                group.matcher,
+                group.words
+            )),
+            Some(names) => held.extend(
+                names
+                    .into_iter()
+                    .filter(|tool| tool.starts_with("mcp__") && !purlis_s_own(tool))
+                    .map(|tool| format!("{}: {tool}", group.at())),
+            ),
+        }
+    }
+    held
+}
+
+/// Every hook group purlis arms on each harness.
+fn armed_groups() -> Vec<Group> {
+    let mut groups = Vec::new();
 
     // Claude Code: the plugin's hooks, and the one its settings arm.
     let plugin: serde_json::Value =
@@ -383,11 +497,19 @@ fn no_purlis_hook_holds_non_purlis_mcp_tools_before_phase_3() {
     let settings: serde_json::Value =
         serde_json::from_str(super::settings_of(&args)).expect("settings");
     for hooks in [&plugin["hooks"], &settings["hooks"]] {
-        for (event, groups) in hooks.as_object().expect("hooks by event") {
-            for group in groups.as_array().expect("groups") {
-                if let Some(matcher) = group["matcher"].as_str() {
-                    matchers.push((format!("Claude Code {event}"), matcher.to_owned()));
-                }
+        for (event, list) in hooks.as_object().expect("hooks by event") {
+            for group in list.as_array().expect("groups") {
+                groups.push(Group {
+                    harness: Harness::ClaudeCode,
+                    event: event.clone(),
+                    matcher: group["matcher"].as_str().map(str::to_owned),
+                    words: group["hooks"]
+                        .as_array()
+                        .expect("hooks")
+                        .iter()
+                        .map(|hook| word_of(hook["command"].as_str().expect("a command")))
+                        .collect(),
+                });
             }
         }
     }
@@ -402,36 +524,80 @@ fn no_purlis_hook_holds_non_purlis_mcp_tools_before_phase_3() {
         panic!("armed per session");
     };
     for value in args.iter().filter_map(|arg| arg.strip_prefix("hooks.")) {
-        let (event, groups) = value.split_once('=').expect("an event");
-        let groups: toml::Table = format!("v = {groups}").parse().expect("TOML");
-        for group in groups["v"].as_array().expect("groups") {
-            if let Some(matcher) = group.get("matcher").and_then(toml::Value::as_str) {
-                matchers.push((format!("Codex {event}"), matcher.to_owned()));
-            }
+        let (event, list) = value.split_once('=').expect("an event");
+        let list: toml::Table = format!("v = {list}").parse().expect("TOML");
+        for group in list["v"].as_array().expect("groups") {
+            groups.push(Group {
+                harness: Harness::Codex,
+                event: event.to_owned(),
+                matcher: group
+                    .get("matcher")
+                    .and_then(toml::Value::as_str)
+                    .map(str::to_owned),
+                words: group["hooks"]
+                    .as_array()
+                    .expect("hooks")
+                    .iter()
+                    .map(|hook| word_of(hook["command"].as_str().expect("a command")))
+                    .collect(),
+            });
         }
     }
 
-    // opencode: the tools its shim routes by name. Any other tool, an MCP tool included, goes
-    // to the Bash guard, which judges a command and holds nothing.
+    // opencode: the tools its shim routes by id, and the route every other tool takes.
+    let route = |event: &str, matcher: Option<&str>, word: &str| Group {
+        harness: Harness::Opencode,
+        event: event.to_owned(),
+        matcher: matcher.map(str::to_owned),
+        words: vec![word.to_owned()],
+    };
     for tool in crate::opencode::TOOLS {
-        matchers.push(("opencode tool".to_owned(), tool.id.to_owned()));
-        matchers.push(("opencode tool".to_owned(), tool.name.to_owned()));
+        if let Some(word) = tool.pre {
+            groups.push(route("PreToolUse", Some(tool.id), word));
+        }
+        if let Some(word) = tool.post {
+            groups.push(route("PostToolUse", Some(tool.id), word));
+        }
     }
-    assert_eq!(crate::opencode::DEFAULT_PRE, "pretooluse");
-    assert_ne!(crate::opencode::DEFAULT_PRE, crate::harness::hooked::WORD);
+    groups.push(route("PreToolUse", None, crate::opencode::DEFAULT_PRE));
+    groups
+}
 
-    assert!(
-        matchers.iter().any(|(_, m)| !mcp_tools(m).is_empty()),
-        "purlis's own are read"
+#[test]
+fn no_purlis_hook_holds_non_purlis_mcp_tools_before_phase_3() {
+    // R-164: until phase 3, every non-purlis MCP tool is judged by the harness's own check. No
+    // hook purlis arms on any harness names one, by name or by catching every tool.
+    let groups = armed_groups();
+
+    // Each harness's tool matchers were read, so a parse that finds nothing goes red.
+    for harness in HARNESSES {
+        assert!(
+            groups.iter().any(|g| g.harness == harness
+                && TOOL_EVENTS.contains(&g.event.as_str())
+                && g.matcher.as_deref().and_then(plain_names).is_some()),
+            "no tool matcher read on {}",
+            harness.title()
+        );
+    }
+    assert_eq!(held_mcp_tools(&groups), Vec::<String>::new());
+
+    // The check itself: a guard on every tool, by no matcher or by a pattern, holds them all.
+    let every = |matcher: Option<&str>| Group {
+        harness: Harness::Codex,
+        event: "PreToolUse".to_owned(),
+        matcher: matcher.map(str::to_owned),
+        words: vec!["pretooluse".to_owned()],
+    };
+    assert_eq!(
+        held_mcp_tools(&[
+            every(None),
+            every(Some(".*")),
+            every(Some("Bash|mcp__github__x"))
+        ]),
+        [
+            r#"Codex PreToolUse: every MCP tool (matcher None, ["pretooluse"])"#,
+            r#"Codex PreToolUse: every MCP tool (matcher Some(".*"), ["pretooluse"])"#,
+            "Codex PreToolUse: mcp__github__x",
+        ]
     );
-    let held: Vec<String> = matchers
-        .iter()
-        .flat_map(|(at, matcher)| {
-            mcp_tools(matcher)
-                .into_iter()
-                .filter(|tool| !purlis_s_own(tool))
-                .map(move |tool| format!("{at}: {tool}"))
-        })
-        .collect();
-    assert_eq!(held, Vec::<String>::new());
 }
