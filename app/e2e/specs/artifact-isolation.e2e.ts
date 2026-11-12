@@ -461,6 +461,17 @@ describe(`an artifact, as purlis renders it, is isolated from the window and its
           }
         });
         seen.observe(document.body, { subtree: true, childList: true });
+        const real = HTMLElement.prototype.focus;
+        HTMLElement.prototype.focus = function (this: HTMLElement, ...args: [FocusOptions?]) {
+          if ((this.textContent ?? "").includes("New chat"))
+            notes.push(`focus(NewChat)@${Math.round(performance.now() - t0)} stack=${(new Error().stack ?? "").split("\n").slice(1, 9).map((l) => l.trim().slice(0, 140)).join(" <- ")}`);
+          return real.apply(this, args);
+        };
+        const fin = (e: FocusEvent) => {
+          if (e.target instanceof HTMLElement && (e.target.textContent ?? "").includes("New chat"))
+            notes.push(`focusin(NewChat)@${Math.round(performance.now() - t0)}`);
+        };
+        document.addEventListener("focusin", fin, true);
         seen.observe(el, { attributes: true, attributeFilter: ["data-open"] });
         const box = el.getBoundingClientRect();
         const ev = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: Math.round(box.left + box.width / 2), clientY: Math.round(box.top + box.height / 2) });
@@ -468,6 +479,8 @@ describe(`an artifact, as purlis renders it, is isolated from the window and its
         notes.push(`prevented=${ev.defaultPrevented} bar=${bar !== null} openNow=${el.getAttribute("data-open")}`);
         setTimeout(() => {
           seen.disconnect();
+          HTMLElement.prototype.focus = real;
+          document.removeEventListener("focusin", fin, true);
           notes.push(`after: connected=${el.isConnected} same=${el === document.querySelector(css)} menus=${document.querySelectorAll('[role="menu"]').length} active=${document.activeElement?.textContent?.slice(0, 30)}`);
           done(notes.join(" "));
         }, 1500);
