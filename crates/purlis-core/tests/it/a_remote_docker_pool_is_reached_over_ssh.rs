@@ -270,3 +270,105 @@ fn a_machine_that_isnt_there_is_said_so_before_ssh_is_asked() {
         Err(Finding::NoAnswer { port: 1, .. })
     ));
 }
+
+/// Puts the person's own SSH settings back, however the test ends.
+struct SettingsBack(PathBuf, Option<Vec<u8>>);
+
+impl Drop for SettingsBack {
+    fn drop(&mut self) {
+        match &self.1 {
+            Some(was) => {
+                let _ = std::fs::write(&self.0, was);
+            }
+            None => {
+                let _ = std::fs::remove_file(&self.0);
+            }
+        }
+    }
+}
+
+/// The person's `~/.ssh/config` with `block` before what it held, put back as the test ends.
+fn with_ssh_settings(block: &str) -> Option<SettingsBack> {
+    std::env::var_os("REMOTE_DOCKER_TEST_MAY_WRITE_KNOWN_HOSTS")?;
+    let home = PathBuf::from(std::env::var_os("HOME")?);
+    let config = home.join(".ssh/config");
+    std::fs::create_dir_all(config.parent()?).ok()?;
+    let was = std::fs::read(&config).ok();
+    let mut now = block.as_bytes().to_vec();
+    now.extend_from_slice(was.as_deref().unwrap_or_default());
+    std::fs::write(&config, now).ok()?;
+    Some(SettingsBack(config, was))
+}
+
+#[test]
+fn nothing_of_the_persons_ssh_settings_rides_on_the_forward() {
+    purlis_core::unsteered!();
+    let Some(fixture) = fixture() else { return };
+    let ran = fixture.folders.path().join("local-command-ran");
+    let block = format!(
+        "Host commanding\n  HostName {host}\n  Port {port}\n  User pool\n  \
+         RemoteCommand touch /tmp/remote-command-ran\n  PermitLocalCommand yes\n  \
+         LocalCommand touch {ran}\n  RequestTTY force\n\n\
+         Host carrying\n  HostName {host}\n  Port {port}\n  User pool\n  \
+         RemoteForward 127.0.0.1:2299 127.0.0.1:22\n  RemoteCommand touch /tmp/remote-command-ran\n\n",
+        host = fixture.route.host(),
+        port = fixture.route.port().unwrap_or(22),
+        ran = ran.display(),
+    );
+    let Some(_back) = with_ssh_settings(&block) else {
+        return;
+    };
+    let _ = exec_in(&fixture.sshd, "rm -f /tmp/remote-command-ran; true");
+    // A command, a local command and a terminal the settings ask for are not run: the forward
+    // opens and its engine answers.
+    let commanding = Fixture {
+        route: Route::parse("ssh://commanding").expect("a route"),
+        ..fixture
+    };
+    let remote = trusted(&commanding, "commanding");
+    let docker = through(&commanding, "commanding", &remote).expect("the forward opens");
+    assert!(docker.answers().is_ok(), "the engine answers through it");
+    forward::let_go("commanding");
+    assert!(!ran.exists(), "the settings' LocalCommand ran");
+    assert_eq!(
+        exec_in(
+            &commanding.sshd,
+            "test -e /tmp/remote-command-ran && echo ran || echo not"
+        ),
+        "not",
+        "the settings' RemoteCommand ran"
+    );
+    // A forward the settings add is refused, named, and opens nothing.
+    let carrying = Fixture {
+        route: Route::parse("ssh://carrying").expect("a route"),
+        ..commanding
+    };
+    let remote = Remote {
+        route: Route::parse(&format!(
+            "ssh://carrying{}",
+            remote.route.socket().expect("a socket")
+        ))
+        .expect("a route"),
+        pin: remote.pin,
+    };
+    match through(&carrying, "carrying", &remote) {
+        Err(Finding::Here(said)) => assert!(said.contains("RemoteForward"), "{said}"),
+        other => panic!("a forward the settings add is refused, not {other:?}"),
+    }
+    assert!(
+        !carrying
+            .engine_links()
+            .join("carrying")
+            .join("docker.sock")
+            .exists(),
+        "no forward stands"
+    );
+    assert_eq!(
+        exec_in(
+            &carrying.sshd,
+            "(command -v ss >/dev/null && ss -ltn | grep -c ':2299 ') || echo 0"
+        ),
+        "0",
+        "the settings' RemoteForward listens there"
+    );
+}

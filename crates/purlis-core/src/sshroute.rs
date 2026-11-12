@@ -436,6 +436,9 @@ fn common_options() -> Vec<String> {
         "ForwardX11=no".to_owned(),
         "PermitLocalCommand=no".to_owned(),
         "RequestTTY=no".to_owned(),
+        // Only the command purlis names runs there, and no tunnel opens.
+        "RemoteCommand=none".to_owned(),
+        "Tunnel=no".to_owned(),
         format!("ConnectTimeout={}", CONNECT_WITHIN.as_secs()),
         format!("ServerAliveInterval={ALIVE_EVERY_SECS}"),
         format!("ServerAliveCountMax={ALIVE_COUNT}"),
@@ -455,8 +458,8 @@ fn common_options() -> Vec<String> {
 pub const HELD_BY: &str = "read line";
 
 /// **The forward's arguments** (D-6257-1): `ssh -T -L <local>:<remote socket> -- <machine>
-/// read line`, pinned, with the forward required to succeed, held by a pipe from purlis
-/// ([`HELD_BY`]). Refused for a route whose socket isn't known yet.
+/// <`[`HELD_BY`]`>`, pinned, with the forward required to succeed, held by a pipe from purlis,
+/// and nothing else forwarded. Refused for a route whose socket isn't known yet.
 pub fn forward_args(
     route: &Route,
     pool: &str,
@@ -474,6 +477,10 @@ pub fn forward_args(
         "ExitOnForwardFailure=yes",
         "StreamLocalBindUnlink=yes",
         "StreamLocalBindMask=0177",
+        // Not `yes`, which clears this `-L` too: a `ClearAllForwardings yes` of the person's
+        // settings never takes it away. What those settings would add is refused before ssh runs
+        // ([`connect::not_carried`]).
+        "ClearAllForwardings=no",
     ] {
         args.push("-o".to_owned());
         args.push(option.to_owned());
@@ -503,6 +510,8 @@ pub fn contact_args(route: &Route, scratch: &Path) -> Vec<String> {
         "GSSAPIAuthentication=no".to_owned(),
         "HostbasedAuthentication=no".to_owned(),
         "NumberOfPasswordPrompts=0".to_owned(),
+        // It forwards nothing, whatever the person's settings add.
+        "ClearAllForwardings=yes".to_owned(),
     ] {
         args.push("-o".to_owned());
         args.push(option);
@@ -519,6 +528,8 @@ pub fn contact_args(route: &Route, scratch: &Path) -> Vec<String> {
 #[must_use]
 pub fn sign_in_args(route: &Route, pool: &str, known_hosts: &Path) -> Vec<String> {
     let mut args = pinned_options(known_hosts, &alias(pool));
+    // It forwards nothing, whatever the person's settings add.
+    args.extend(["-o".to_owned(), "ClearAllForwardings=yes".to_owned()]);
     args.extend(route.where_options());
     args.push("--".to_owned());
     args.push(route.destination());

@@ -102,6 +102,46 @@ pub fn resolved_from(printed: &str) -> Option<Resolved> {
     })
 }
 
+/// **The settings of the person's that would ride on purlis's forward**, from what `ssh -G`
+/// printed, each named once as ssh_config spells it.
+#[must_use]
+pub fn not_carried(printed: &str) -> Vec<&'static str> {
+    let mut named = Vec::new();
+    for (key, setting, harmless) in [
+        ("localforward", "LocalForward", None),
+        ("remoteforward", "RemoteForward", None),
+        ("dynamicforward", "DynamicForward", None),
+        ("tunnel", "Tunnel", Some("false")),
+        ("sessiontype", "SessionType", Some("default")),
+        ("stdinnull", "StdinNull", Some("no")),
+        (
+            "forkafterauthentication",
+            "ForkAfterAuthentication",
+            Some("no"),
+        ),
+    ] {
+        let set = printed.lines().any(|line| {
+            let (at, value) = line.split_once(' ').unwrap_or((line, ""));
+            at == key && Some(value.trim()) != harmless
+        });
+        if set {
+            named.push(setting);
+        }
+    }
+    named
+}
+
+/// **Why a route whose SSH settings add what [`not_carried`] names opens no forward**, in Pool
+/// setup's words.
+#[must_use]
+pub fn carried_refused(host: &str, settings: &[&str]) -> String {
+    format!(
+        "Your SSH settings for {host} add {}, which purlis won't carry on its connection to          Docker there. Give the machine a Host entry without {}.",
+        settings.join(", "),
+        if settings.len() == 1 { "it" } else { "them" },
+    )
+}
+
 /// **The `ssh-keygen` on `path`** (the person's `PATH`, where `None`).
 #[must_use]
 pub fn keygen_on(path: Option<&str>) -> Option<PathBuf> {
@@ -119,7 +159,8 @@ pub fn settings_args(route: &Route) -> Vec<String> {
     args
 }
 
-/// **What the person's own SSH settings say of the route** (`ssh -G`).
+/// **What the person's own SSH settings say of the route** (`ssh -G`). Refused where they add
+/// what purlis won't carry ([`not_carried`]).
 pub fn resolve(ssh: &Path, route: &Route) -> Result<Resolved, Finding> {
     let ran = super::run(ssh, &settings_args(route)).map_err(Finding::Here)?;
     if ran.code != Some(0) {
@@ -128,6 +169,11 @@ pub fn resolve(ssh: &Path, route: &Route) -> Result<Resolved, Finding> {
             route.host(),
             ran.said
         )));
+    }
+    // Refused before anything meets the machine: nothing of these rides on purlis's forward.
+    let carried = not_carried(&ran.printed);
+    if !carried.is_empty() {
+        return Err(Finding::Here(carried_refused(route.host(), &carried)));
     }
     resolved_from(&ran.printed).ok_or_else(|| {
         Finding::Here(format!(

@@ -312,3 +312,68 @@ fn ssh_keygen_is_the_one_path_names() {
         None
     );
 }
+
+#[test]
+fn the_forward_takes_no_command_tunnel_or_forward_clearing_from_the_persons_settings() {
+    let route = Route::parse("ssh://me@box/var/run/docker.sock").unwrap();
+    let args = forward_args(&route, "build", Path::new("/k"), Path::new("/s")).unwrap();
+    // On ssh's command line the first value wins over every ssh_config's.
+    for (name, value) in [
+        ("RemoteCommand", "none"),
+        ("Tunnel", "no"),
+        ("RequestTTY", "no"),
+        ("PermitLocalCommand", "no"),
+        // `yes` would clear the forward purlis asks for too.
+        ("ClearAllForwardings", "no"),
+    ] {
+        assert_eq!(option(&args, name), Some(value), "{name}");
+    }
+    assert_eq!(args.iter().filter(|arg| *arg == "-L").count(), 1);
+    assert!(
+        !args
+            .iter()
+            .any(|arg| arg == "-R" || arg == "-D" || arg == "-w")
+    );
+}
+
+#[test]
+fn a_sign_in_a_probe_and_a_first_contact_forward_nothing_and_run_only_their_command() {
+    let route = Route::parse("ssh://me@box").unwrap();
+    for args in [
+        sign_in_args(&route, "build", Path::new("/k")),
+        probe_args(&route, "build", Path::new("/k")),
+        contact_args(&route, Path::new("/scratch")),
+    ] {
+        assert_eq!(option(&args, "ClearAllForwardings"), Some("yes"));
+        assert_eq!(option(&args, "RemoteCommand"), Some("none"));
+        assert_eq!(option(&args, "Tunnel"), Some("no"));
+    }
+}
+
+#[test]
+fn settings_that_would_ride_on_the_forward_are_named_from_what_ssh_g_prints() {
+    let clean = "user me\nhostname box\ntunnel false\nsessiontype default\nstdinnull no\n\
+                 forkafterauthentication no\nclearallforwardings no\n";
+    assert!(connect::not_carried(clean).is_empty());
+    let carrying = "user me\nlocalforward [localhost]:8080 [localhost]:80\n\
+                    remoteforward [localhost]:9000 [localhost]:22\ndynamicforward [localhost]:1080\n\
+                    tunnel point-to-point\nsessiontype none\nstdinnull yes\n\
+                    forkafterauthentication yes\n";
+    assert_eq!(
+        connect::not_carried(carrying),
+        [
+            "LocalForward",
+            "RemoteForward",
+            "DynamicForward",
+            "Tunnel",
+            "SessionType",
+            "StdinNull",
+            "ForkAfterAuthentication",
+        ]
+    );
+    // Named once, however many lines.
+    assert_eq!(
+        connect::not_carried("localforward 1 2\nlocalforward 3 4\n"),
+        ["LocalForward"]
+    );
+}

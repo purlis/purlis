@@ -116,6 +116,9 @@ pub fn open(from: &Opening<'_>) -> Result<Held, String> {
             return Err(format!("purlis could not hold {}: {why}", folder.display()));
         }
     }
+    // What the person's settings add that would ride on it is refused before ssh runs.
+    super::connect::resolve(from.ssh, from.route)
+        .map_err(|finding| crate::poolsetup::connect_said(&finding))?;
     let settings =
         crate::dockerpool::settings::run_folder(from.settings_in).map_err(|why| why.0)?;
     let known_hosts = settings
