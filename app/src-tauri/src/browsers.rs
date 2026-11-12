@@ -438,6 +438,16 @@ mod hosted {
                      where the browser runs, then call browser_login again"
                 )));
             }
+            // A host before 1.86 would drop where the chat named the sign-in's start and open
+            // the login's page (#6291).
+            if login.start.is_some() && link.version() < session::KNOWS_LOGIN_START {
+                return Err(Refused::Said(
+                    "the purlis that runs this browser is too old to start a login where you \
+                     named it, so nothing was filled. Update purlis where the browser runs, or \
+                     call browser_login without `start`"
+                        .to_owned(),
+                ));
+            }
             let command = Command::LogIn {
                 program: program.to_owned(),
                 login: Box::new(login),

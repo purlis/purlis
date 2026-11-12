@@ -135,6 +135,8 @@ struct World {
     declared: purlis_core::sandbox::services::Declared,
     /// What the project knows that an ask's risk is read against (#6011).
     risk: purlis_core::askrisk::Facts,
+    /// The branch each chat's folder is on, by chat (#6178).
+    pushes: Vec<(u32, &'static str)>,
 }
 
 impl World {
@@ -178,6 +180,7 @@ impl World {
                 ["main".to_owned()],
                 Vec::new(),
             ),
+            pushes: Vec::new(),
         }
     }
 
@@ -278,6 +281,15 @@ impl World {
             held_open: self.held_open,
             runner_of: &|_| None,
             risk: &self.risk,
+            pushes: &|session, _| {
+                self.pushes
+                    .iter()
+                    .find(|(one, _)| *one == session)
+                    .map(|(_, branch)| purlis_core::askrisk::Pushes {
+                        current: Some((*branch).to_owned()),
+                        to: None,
+                    })
+            },
         })
     }
 }
@@ -3295,6 +3307,179 @@ fn an_ask_that_pushes_to_a_protected_branch_reaches_production_or_writes_outside
                 ))
             ),
             (7, None),
+        ]
+    );
+}
+
+// Delete, vault use and a push that names no branch (#6178).
+
+#[test]
+fn a_delete_and_a_push_of_a_chats_protected_branch_carry_their_risk() {
+    let asks_held = Asks::new();
+    let mut world = World::new();
+    let ask = |action: Action, risk: purlis_core::harness::model::Risk| Ask {
+        action,
+        risk,
+        ..a_hook_ask("")
+    };
+    use purlis_core::harness::model::Risk;
+    world.permissions = [
+        ask(
+            Action::Command {
+                line: "rm -rf build".to_owned(),
+            },
+            Risk::Delete,
+        ),
+        // ACP's own `delete` kind, on a file in the project.
+        ask(
+            Action::Edit {
+                path: "/work/plane/src/gone.rs".to_owned(),
+            },
+            Risk::Delete,
+        ),
+        ask(
+            Action::Edit {
+                path: "/work/plane/src/kept.rs".to_owned(),
+            },
+            Risk::Normal,
+        ),
+        ask(
+            Action::Command {
+                line: "git push".to_owned(),
+            },
+            Risk::Normal,
+        ),
+        ask(
+            Action::Command {
+                line: "git push".to_owned(),
+            },
+            Risk::Normal,
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(at, one)| {
+        asks_held
+            .raise(&(2 + at).to_string(), one, Instant::now())
+            .raised
+    })
+    .collect();
+    // Chat 5 is on main; chat 6 on a branch of its own.
+    world.pushes = vec![(5, "main"), (6, "6178-risk")];
+
+    let risks: Vec<_> = world
+        .asks()
+        .into_iter()
+        .map(|ask| (ask.session, ask.risk.map(|risk| (risk.class, risk.why))))
+        .collect();
+
+    assert_eq!(
+        risks,
+        [
+            (2, Some((RiskClass::Delete, "Deletes build".to_owned()))),
+            (
+                3,
+                Some((
+                    RiskClass::Delete,
+                    "Deletes /work/plane/src/gone.rs".to_owned()
+                ))
+            ),
+            (4, None),
+            (
+                5,
+                Some((
+                    RiskClass::ProtectedPush,
+                    "Pushes this chat's branch to main, a protected branch".to_owned()
+                ))
+            ),
+            (6, None),
+        ]
+    );
+}
+
+#[test]
+fn a_run_that_hands_a_vaults_values_to_a_program_is_a_vault_use_and_a_fill_is_not() {
+    use purlis_core::secrets::ask::run::Offer;
+    let none = Locks::none();
+    let risk = shown_run(&a_runs_notice(Offer::Program), &none)
+        .risk
+        .expect("a vault use");
+    assert_eq!(risk.class, RiskClass::VaultUse);
+    assert_eq!(
+        risk.why,
+        "Hands OTHER, TOKEN from vault team to /usr/bin/curl"
+    );
+    assert_eq!(risk.confirm, "Allow handing OTHER, TOKEN to /usr/bin/curl?");
+    let fill = shown_run(&a_runs_notice(Offer::Fill { no_allow: None }), &none);
+    assert_eq!(
+        fill.risk, None,
+        "a Fill stores a value, and hands none over"
+    );
+    let tag = shown_run(&a_runs_notice(Offer::Vault { no_allow: None }), &none);
+    assert_eq!(tag.risk, None, "a vault's own Allow hands no value over");
+}
+
+#[test]
+fn a_high_risk_ask_is_offered_no_rule() {
+    use purlis_core::secrets::ask::run::Offer;
+    let shown = shown_run(&a_runs_notice(Offer::Program), &Locks::none());
+    assert!(high_risk(&shown));
+    let mut plain = shown;
+    plain.risk = None;
+    assert!(!high_risk(&plain));
+}
+
+#[test]
+fn a_runner_chats_login_and_tool_are_vault_uses_naming_the_pool() {
+    let mut world = World::new();
+    let bound = purlis_core::poollogins::Bound {
+        pool: "builds".into(),
+        definition: "d".repeat(64),
+        image: "a".repeat(64),
+        runner: "01JB0RUNNER0000000000000000".into(),
+        runner_key: "ab".repeat(32),
+        runner_image: "a".repeat(64),
+        pod: String::new(),
+        engine: "this machine's Docker".into(),
+    };
+    world.pool_logins = vec![crate::chatbrowsers::PoolLoginWaits {
+        session: 6,
+        persona: "steward".into(),
+        bound: bound.clone(),
+        login: "shop-login".into(),
+        identity: "id-shop-login".into(),
+        since: 1_700_000_000,
+        changed: false,
+    }];
+    world.pool_tools = vec![crate::pooltools::PoolToolWaits {
+        session: 7,
+        run: 1,
+        persona: "devops".into(),
+        bound,
+        tool: "kubectl".into(),
+        vault: "team".into(),
+        since: 1_700_000_000,
+        waited: false,
+    }];
+
+    let whys: Vec<_> = world
+        .asks()
+        .into_iter()
+        .filter_map(|ask| ask.risk.map(|risk| (risk.class, risk.why)))
+        .collect();
+
+    assert_eq!(
+        whys,
+        [
+            (
+                RiskClass::VaultUse,
+                "Hands steward's shop-login from your vault to the runner of pool builds"
+                    .to_owned()
+            ),
+            (
+                RiskClass::VaultUse,
+                "Hands devops's values from vault team to kubectl on pool builds".to_owned()
+            ),
         ]
     );
 }

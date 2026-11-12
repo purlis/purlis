@@ -472,6 +472,9 @@ pub const PAIRS: &[Pair] = &[
     //   (`parts_pane_foot_tests.rs` reads which from `pane-foot.css`).
     p("state.waiting", "terminal.background", TEXT),
     p("state.failed", "terminal.background", TEXT),
+    // - A link in a pane under the pointer (#6215): its words in the link colour, on the
+    //   terminal's own fill (`paneLinks.ts`).
+    p("markdown.link", "terminal.background", TEXT),
     // - A chosen activity button: its icon in the accent's words on the accent's wash, laid on
     //   the window and the frame (#3177), held as words are, the icon being all it says.
     p("accent.text", "accent.wash", TEXT).over("surface.base"),

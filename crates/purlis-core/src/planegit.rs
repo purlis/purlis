@@ -1081,6 +1081,26 @@ pub fn shared_standing(root: &Path) -> Standing {
     PLANES.get(root, || standing(root))
 }
 
+/// [`shared_standing`], **answered at once** (H6c): while the shared answer is not current, the
+/// last one is answered and the plane is read again behind it, no sooner than
+/// [`crate::standings::SETTLE`] after the last read, so a burst of watcher batches costs one
+/// read. What [`tell_when_standing_moves`] names is told when that read differs.
+///
+/// For the window's readers only — the Saving rows and the alerts — which a busy plane's
+/// recomputation must not hold. A save, a push and auto-save's look decide from
+/// [`standing`] or [`shared_standing`], never from this.
+pub fn kept_standing(root: &Path) -> Standing {
+    let at = root.to_path_buf();
+    PLANES.kept(root, move || standing(&at))
+}
+
+/// Names who is told that the plane at `root`'s standing moved after a reader of
+/// [`kept_standing`] was answered from an older one, or (`None`) that nobody is: the app tells
+/// the window the plane's git answer changed, and the window reads it again.
+pub fn tell_when_standing_moves(root: &Path, told: Option<crate::standings::Told>) {
+    PLANES.tell(root, told);
+}
+
 /// A watch now hears every move in the plane at `root`'s working tree (`true`) and says so
 /// through [`tree_moved`], or no longer does (`false`). While it does, the plane's shared
 /// standing is read again on what moved and its git files, not on [`SHARED_FOR`]'s clock

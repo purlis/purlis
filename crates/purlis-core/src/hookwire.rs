@@ -1697,10 +1697,18 @@ pub enum Browsing {
     /// **`suggested`, for a login the persona doesn't declare** (#4595): the site, vault and keys
     /// the chat suggests. They're only a suggestion: the app shows them to the person, who
     /// confirms the site, and what's filled is what the person answered.
+    ///
+    /// **`start`, where the chat names the sign-in's start** (#6291, the operator's ruling of
+    /// 2026-11-12): an address on the login's page's site or its form's, its query as written,
+    /// for a login the persona declares or the person allowed, never beside a suggestion. The
+    /// app judges it against the login as read ([`crate::loginstart::start_of`]), and the host
+    /// again.
     LogIn {
         login: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         suggested: Option<crate::loginask::Suggested>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        start: Option<String>,
     },
     /// **Put the value of `key` in `vault` into field `target` of the browser named** (#5115,
     /// spec #5100): the field from the chat's last snapshot, and names alone. The app asks the

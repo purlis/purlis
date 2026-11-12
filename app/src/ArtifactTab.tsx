@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { ChartLine } from "lucide-react";
 import {
   commands,
@@ -32,6 +31,7 @@ import type { Offer } from "./actions";
 import { ArtifactQueries } from "./ArtifactQueries";
 import { ArtifactRegenerate } from "./ArtifactRegenerate";
 import { artifactDataIn, artifactsIn, useViewChanged } from "./planeChanged";
+import { listen, untilStopped } from "./here";
 import { DiscussButton } from "./artifactDiscuss";
 import { Button } from "./ui/button/Button";
 import { EmptyState } from "./ui/empty-state/EmptyState";
@@ -283,27 +283,15 @@ function standingSaid(opened: ArtifactOpened): string | null {
 /** How many times this machine's approval of this artifact changed, as any window heard it. */
 function useApprovalsHeard(workspace: string, folder: string): number {
   const [heard, setHeard] = useState(0);
-  useEffect(() => {
-    let stop: (() => void) | undefined;
-    let gone = false;
-    listen<ArtifactApprovalChanged>(APPROVALS_CHANGED, (event) => {
-      if (approvalOf(event.payload, workspace, folder)) setHeard((n) => n + 1);
-    }).then(
-      (unlisten) => {
-        if (gone) unlisten();
-        else stop = unlisten;
-      },
-      () => {},
-    );
-    return () => {
-      gone = true;
-      try {
-        stop?.();
-      } catch {
-        // The window's event bridge went first: nothing is listening any more.
-      }
-    };
-  }, [workspace, folder]);
+  useEffect(
+    () =>
+      untilStopped(
+        listen<ArtifactApprovalChanged>(APPROVALS_CHANGED, (event) => {
+          if (approvalOf(event.payload, workspace, folder)) setHeard((n) => n + 1);
+        }),
+      ),
+    [workspace, folder],
+  );
   return heard;
 }
 
@@ -577,41 +565,29 @@ export function ArtifactFrame({
   );
 
   // Esc and F6 pressed in the page come back here (`artifacts.rs`).
-  useEffect(() => {
-    let stop: (() => void) | undefined;
-    let gone = false;
-    listen<ArtifactKeyPressed>(ARTIFACT_KEY, (event) => {
-      const element = frame.current;
-      if (element === null || event.payload.label !== label.current) return;
-      element.focus();
-      if (event.payload.key !== "escape") {
-        // F6 goes on from the frame, as the window's own F6 does from anywhere.
-        element.dispatchEvent(
-          new KeyboardEvent("keydown", {
-            key: "F6",
-            code: "F6",
-            shiftKey: event.payload.key === "f6-back",
-            bubbles: true,
-            cancelable: true,
-          }),
-        );
-      }
-    }).then(
-      (unlisten) => {
-        if (gone) unlisten();
-        else stop = unlisten;
-      },
-      () => {},
-    );
-    return () => {
-      gone = true;
-      try {
-        stop?.();
-      } catch {
-        // The window's event bridge went first: nothing is listening any more.
-      }
-    };
-  }, []);
+  useEffect(
+    () =>
+      untilStopped(
+        listen<ArtifactKeyPressed>(ARTIFACT_KEY, (event) => {
+          const element = frame.current;
+          if (element === null || event.payload.label !== label.current) return;
+          element.focus();
+          if (event.payload.key !== "escape") {
+            // F6 goes on from the frame, as the window's own F6 does from anywhere.
+            element.dispatchEvent(
+              new KeyboardEvent("keydown", {
+                key: "F6",
+                code: "F6",
+                shiftKey: event.payload.key === "f6-back",
+                bubbles: true,
+                cancelable: true,
+              }),
+            );
+          }
+        }),
+      ),
+    [],
+  );
 
   if (failed !== null)
     return (

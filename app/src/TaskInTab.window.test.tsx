@@ -15,6 +15,7 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import { hoverTipOf } from "./ui/tooltip/tooltip.testkit";
 import { askToEnd, chatList, paneMore } from "./menus.testkit";
 import type {
   ChatBlocked,
@@ -655,6 +656,11 @@ describe("pressing a task", () => {
 
     await waitFor(() => expect(onScreen()).toEqual([7]));
     expect(tabNames()).toEqual(["deep", "steward 2"]);
+    // Its head and its tab's hover say the task's number, not its session's (#6212).
+    await waitFor(() =>
+      expect(document.querySelector(".pane-head .pane-number")?.textContent).toBe("#7"),
+    );
+    expect((await hoverTipOf(tab("deep")))?.split("\n")[0]).toBe("#7 · deep");
   });
 
   it("lands in the focused pane for a task whose session has closed, and adds no tab (#4757)", async () => {
@@ -1161,6 +1167,49 @@ describe("the breadcrumb", () => {
     // every workspace keeps its own (#4758).
     expect(tabNames()).toEqual(["probe"]);
     expect(crumbsSay()).toMatch(/^steward 1 › probe in beta · /);
+  });
+
+  // #6213: a coordinator names chats by number, so the palette finds one by it, `6` or `#6`,
+  // whichever workspace it works in, and goes there as its row's press does.
+  it("is found in the palette by its number, bare or with #, and shown in its own workspace", async () => {
+    await drawn(withTasks());
+    const found = async (query: string) => {
+      await userEvent.keyboard("{F2}");
+      const palette = await screen.findByRole("dialog", { name: "Command palette" });
+      const box = within(palette).getByRole("combobox");
+      await userEvent.clear(box);
+      await userEvent.type(box, query);
+      return within(palette).getAllByRole("option");
+    };
+
+    expect((await found("6"))[0].textContent).toContain("Show task probe in beta");
+    await userEvent.keyboard("{Escape}");
+    const options = await found("#6");
+    expect(options[0].textContent).toContain("Show task probe in beta");
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => expect(onScreen()).toEqual([6]));
+    expect(crumbsSay()).toMatch(/^steward 1 › probe in beta · /);
+  });
+
+  // #6213: a plain chat of another workspace, with no tab in this window, is found by its
+  // number as a task is, and its row shows it.
+  it("finds a plain chat of another workspace with no tab here by its number", async () => {
+    const open = [...withTasks(), chat(8, "beta", { label: "notes" })];
+    core(open, tabbed(withTasks()));
+    render(<App />);
+    // Its Chats list is this workspace's, so it lists the tasks and not chat 8.
+    const tree = await section();
+    await waitFor(() => expect(rows(tree)).toHaveLength(withTasks().length));
+    await userEvent.keyboard("{F2}");
+    const palette = await screen.findByRole("dialog", { name: "Command palette" });
+    await userEvent.type(within(palette).getByRole("combobox"), "#8");
+
+    const [first] = within(palette).getAllByRole("option");
+    expect(first.textContent).toContain("Show chat notes in beta");
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => expect(onScreen()).toEqual([8]));
   });
 
   it("says nothing of a workspace for a task that works where its session does", async () => {

@@ -11,6 +11,7 @@ import { expect, userEvent, waitFor, within } from "storybook/test";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { PoolSetupShown, PoolSetupStep } from "./bindings";
 import { PoolSetupTab } from "./PoolSetupTab";
+import { forgetPoolSetupStarts, startANewPoolSetup } from "./pools";
 import { expectFocusInSight } from "./stories.testkit";
 
 const step = (id: string, name: string, state: string, more: Partial<PoolSetupStep> = {}) =>
@@ -38,6 +39,7 @@ const WHERE = (where: Partial<PoolSetupStep>, state: string): PoolSetupShown => 
   name: null,
   at: "where",
   noticed: false,
+  recommended: "docker",
   others: [],
   steps: [step("where", "Where chats run", state, where), step("pool", "Pool", "later"), ...LATER],
 });
@@ -57,6 +59,7 @@ const POOL_FORM: PoolSetupShown = {
   name: null,
   at: "pool",
   noticed: false,
+  recommended: "docker",
   others: [],
   steps: [
     DONE_WHERE,
@@ -176,6 +179,44 @@ export const DockerIsStopped: Story = {
 };
 
 export const NameThePool: Story = { beforeEach: faked(POOL_FORM) };
+
+/** A second pool: the name box empty, and a name no pool has recommended (#6256). */
+export const NameASecondPool: Story = {
+  beforeEach: faked({ ...POOL_FORM, others: ["docker"], recommended: "docker-2" }),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const name = await canvas.findByRole("textbox", { name: /Name/ });
+    await expect(name).toHaveValue("");
+    await expect(name).toHaveAttribute("placeholder", "docker-2");
+    await canvas.findByText(/Recommended: docker-2\./);
+  },
+};
+
+/** Add a pool… went on with a new pool's unfinished setup: it says so, with Start over (#6256). */
+export const ContinuingThePoolYouStarted: Story = {
+  beforeEach: async () => {
+    mockIPC((cmd) => {
+      if (cmd === "pool_setup") return { ...POOL_FORM, name: "builds", others: ["docker"] };
+      if (cmd === "pool_setup_add") return true;
+      if (cmd === "runner_image_of_this_version") return { state: "ours", image: "img@sha256:a" };
+      if (cmd === "pool_setup_command") return "purlis pool add builds --image img@sha256:a";
+      return null;
+    });
+    await startANewPoolSetup();
+    return forgetPoolSetupStarts;
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByText("Continuing the pool you started");
+    const over = await canvas.findByRole("button", { name: "Start over" });
+    over.focus();
+    await expect(over).toHaveFocus();
+    await expectFocusInSight();
+    await userEvent.tab();
+    await expect(canvas.getByRole("textbox", { name: /Name/ })).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
 
 export const ThePoolWasRefused: Story = {
   beforeEach: faked(POOL_FORM),
@@ -307,6 +348,7 @@ export const MadeByHand: Story = {
     name: "dev-box",
     at: "signins",
     noticed: true,
+    recommended: "docker",
     others: [],
     steps: [
       DONE_WHERE,
@@ -333,6 +375,7 @@ export const ThePoolIsMade: Story = {
     name: "dev-box",
     at: "signins",
     noticed: false,
+    recommended: "docker",
     others: [],
     steps: [
       DONE_WHERE,
@@ -359,6 +402,7 @@ export const TheRunnerWasRemoved: Story = {
     name: "dev-box",
     at: "pool",
     noticed: false,
+    recommended: "docker",
     others: [],
     steps: [
       DONE_WHERE,
@@ -432,6 +476,7 @@ export const ARunnerBeingMade: Story = {
     name: "dev-box",
     at: "pool",
     noticed: false,
+    recommended: "docker",
     others: [],
     steps: [
       DONE_WHERE,

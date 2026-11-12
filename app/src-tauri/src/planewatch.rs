@@ -57,7 +57,9 @@
 //!
 //! A burst this cannot place — a path outside the plane, an event notify could not name a path
 //! for, a rescan, more paths than a burst holds — is told as `changes: null`, "anything may have moved", and every reader
-//! reads again, as each one did before there were kinds.
+//! reads again, as each one did before there were kinds. **At most one such burst is told each
+//! [`UNKNOWN_EVERY`]** for a plane: under a build's load FSEvents reports a rescan about once a
+//! second, and the ones inside that gap of the one told are told once at its end.
 //!
 //! **An access is not a change.** notify's inotify backend watches `IN_OPEN`, and reading a
 //! todo opens it — so a window that re-read on every event would re-read because it re-read,
@@ -256,6 +258,60 @@ const LONGEST: Duration = Duration::from_secs(1);
 /// [`LONGEST`] (256 a quarter second before #4741), so steady writes are no likelier to become
 /// everything for a burst lasting up to a second.
 const MOST_PATHS: usize = 1024;
+
+/// The least time between two `changes: null` of one plane (felt speed round 2). Under a
+/// build's load FSEvents drops events, and each rescan it reports was a burst that made every
+/// reader read again and every artifact tab ask for its page: one a second, while the build
+/// ran. A rescan inside this of the one told is owed, and told once at its end.
+const UNKNOWN_EVERY: Duration = Duration::from_secs(5);
+
+/// **When a burst whose changes are not known is told** ([`UNKNOWN_EVERY`]).
+#[derive(Debug, Default)]
+struct Unknowns {
+    /// When the last one was told.
+    told: Option<Instant>,
+    /// Whether one is owed, to be told at the end of the gap.
+    owed: bool,
+}
+
+/// What to do with a burst whose changes are not known.
+#[derive(Debug, PartialEq, Eq)]
+enum Unknown {
+    /// Tell it now.
+    Now,
+    /// Tell it after this long, once: nothing was owed before it.
+    After(Duration),
+    /// It is folded into the one already owed.
+    Folded,
+}
+
+impl Unknowns {
+    /// A burst whose changes are not known was heard at `now`.
+    fn heard(&mut self, now: Instant) -> Unknown {
+        if self.owed {
+            return Unknown::Folded;
+        }
+        match self.told {
+            Some(told) if now.saturating_duration_since(told) < UNKNOWN_EVERY => {
+                self.owed = true;
+                Unknown::After((told + UNKNOWN_EVERY).saturating_duration_since(now))
+            }
+            _ => {
+                self.told = Some(now);
+                Unknown::Now
+            }
+        }
+    }
+
+    /// The one owed is told at `now`: whether one was.
+    fn due(&mut self, now: Instant) -> bool {
+        if !std::mem::take(&mut self.owed) {
+            return false;
+        }
+        self.told = Some(now);
+        true
+    }
+}
 
 /// The watcher and the directories it is watching, behind one lock: the set is re-read on the
 /// watch's own thread after every burst.
@@ -781,6 +837,7 @@ impl<W: notify::Watcher + Send + 'static> Watch<W> {
         };
         let handle: Weak<Mutex<Inner<W>>> = Arc::downgrade(&inner);
         let at = root.to_path_buf();
+        let unknowns: Arc<Mutex<Unknowns>> = Arc::default();
         let tell = {
             let handle = handle.clone();
             let at = at.clone();
@@ -812,6 +869,54 @@ impl<W: notify::Watcher + Send + 'static> Watch<W> {
                         inner.forget(path);
                     }
                     inner.follow(&at);
+                }
+                if what.is_none() {
+                    let asked = unknowns
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .heard(Instant::now());
+                    match asked {
+                        Unknown::Now => {}
+                        Unknown::Folded => return,
+                        Unknown::After(wait) => {
+                            let handle = handle.clone();
+                            let folded = Arc::clone(&unknowns);
+                            let changed = Arc::clone(&changed);
+                            let (plane, at) = (plane.clone(), at.clone());
+                            let owed = move || {
+                                std::thread::sleep(wait);
+                                let alive = handle.upgrade().is_some_and(|inner| {
+                                    inner
+                                        .lock()
+                                        .unwrap_or_else(PoisonError::into_inner)
+                                        .watcher
+                                        .is_some()
+                                });
+                                let due = folded
+                                    .lock()
+                                    .unwrap_or_else(PoisonError::into_inner)
+                                    .due(Instant::now());
+                                if alive && due {
+                                    purlis_core::planegit::touch(&at);
+                                    changed(plane, None);
+                                }
+                            };
+                            if let Err(why) = std::thread::Builder::new()
+                                .name("charter-plane-owed".into())
+                                .spawn(owed)
+                            {
+                                tracing::warn!(
+                                    "purlis: a plane's change not known is told now ({why})"
+                                );
+                                unknowns
+                                    .lock()
+                                    .unwrap_or_else(PoisonError::into_inner)
+                                    .due(Instant::now());
+                            } else {
+                                return;
+                            }
+                        }
+                    }
                 }
                 // Before the window hears it, so the reads it makes on `plane-changed` are of
                 // the plane as it is now, not the shared standings from before (FD-11).
@@ -1706,6 +1811,32 @@ mod tests {
     }
 
     #[test]
+    fn a_burst_not_known_inside_the_gap_of_the_one_told_is_told_once_at_its_end() {
+        let start = Instant::now();
+        let at = |ms: u64| start + Duration::from_millis(ms);
+        let mut unknowns = Unknowns::default();
+        assert_eq!(unknowns.heard(at(0)), Unknown::Now);
+        assert_eq!(
+            unknowns.heard(at(1_000)),
+            Unknown::After(Duration::from_millis(4_000))
+        );
+        assert_eq!(unknowns.heard(at(2_000)), Unknown::Folded);
+        assert_eq!(unknowns.heard(at(4_900)), Unknown::Folded);
+        assert!(
+            unknowns.due(at(5_000)),
+            "the one owed is told at the gap's end"
+        );
+        assert!(!unknowns.due(at(5_000)), "and only once");
+        // The one told at the end starts the next gap.
+        assert_eq!(
+            unknowns.heard(at(6_000)),
+            Unknown::After(Duration::from_millis(4_000))
+        );
+        assert!(unknowns.due(at(10_000)));
+        assert_eq!(unknowns.heard(at(15_000)), Unknown::Now);
+    }
+
+    #[test]
     fn every_watch_is_dropped_on_inotify_only_and_at_most_once_a_second() {
         use notify::WatcherKind::{Inotify, PollWatcher};
         let start = Instant::now();
@@ -2187,6 +2318,41 @@ mod tests {
         assert!(
             told.recv_timeout(TOLD_BY_NOW).is_err(),
             "reconciled more than once"
+        );
+    }
+
+    #[test]
+    fn on_one_stream_a_rescan_soon_after_one_told_is_told_once_the_gap_is_over() {
+        use crate::watchset::raw::{Raw, event};
+        use notify::event::{EventKind, Flag};
+        let plane = plane_with_todos(&["m8-1"]);
+        let root = plane.path().canonicalize().expect("canonical");
+        let windows = Windows::new();
+        let (_watch, told) = looking_in::<Raw>(&root, &windows, SOON, Mode::OneStream);
+
+        event(notify::Event::new(EventKind::Other).set_flag(Flag::Rescan));
+        let first = told
+            .recv_timeout(PATIENCE)
+            .expect("the first is told at once");
+        assert_eq!(first.1, None);
+        let heard = Instant::now();
+        // Two more, each a burst of its own, both well inside the gap.
+        for _ in 0..2 {
+            std::thread::sleep(LONGEST);
+            event(notify::Event::new(EventKind::Other).set_flag(Flag::Rescan));
+        }
+        let (_, what) = told
+            .recv_timeout(UNKNOWN_EVERY + PATIENCE)
+            .expect("the ones folded are told");
+        assert_eq!(what, None);
+        assert!(
+            heard.elapsed() >= UNKNOWN_EVERY,
+            "told {:?} after the first, inside the gap",
+            heard.elapsed()
+        );
+        assert!(
+            told.recv_timeout(TOLD_BY_NOW).is_err(),
+            "the ones folded were told more than once"
         );
     }
 

@@ -63,6 +63,8 @@ pub struct PoolSetupShown {
     pub noticed: bool,
     /// Pools this machine keeps that this setup isn't on.
     pub others: Vec<String>,
+    /// The name a new pool is recommended, which no pool here has (#6256).
+    pub recommended: String,
 }
 
 /// What the Pool step's button did: nothing made, and why, where a team's image breaks the
@@ -88,11 +90,13 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
         setup,
         name,
         noticed,
+        recommended,
     } = found;
     PoolSetupShown {
         pool: setup.pool.clone(),
         name,
         noticed,
+        recommended,
         others: setup.others.clone(),
         at: setup.at.as_ref().map(word),
         steps: setup
@@ -226,6 +230,43 @@ pub async fn pool_setup_pool(name: String) -> Result<(), String> {
     #[cfg(not(unix))]
     {
         let _ = name;
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Add a pool** (#6256): starts a new pool's setup, unless one was started and not finished.
+/// `true` where setup goes on with that one, for the tab to say so with Start over.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_add() -> Result<bool, String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("starting a new pool", || {
+            purlis_core::poolsetup::start_adding(&config_root()?)
+                .map(|found| found == purlis_core::poolsetup::Adding::Continuing)
+                .map_err(|why| why.to_string())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Start over** (#6256): forgets the unfinished setup, and keeps any pool it made.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_start_over() -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("starting over", || {
+            purlis_core::poolsetup::start_over(&config_root()?).map_err(|why| why.to_string())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
         Err(crate::dockerpools::NOT_HERE.to_owned())
     }
 }

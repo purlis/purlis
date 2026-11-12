@@ -224,10 +224,24 @@ pub fn asked(name: &str, args: &Map<String, Value>) -> Result<Asked, String> {
                 return Err("give `login` the name of one of your persona's browser logins".into());
             }
             let suggested = suggested_login(args)?;
+            let start = optional(args, "start")?;
+            // A suggested login opens the page the person confirms, and nothing else (#6291).
+            if start.is_some() && suggested.is_some() {
+                return Err(
+                    "`start` is for a login your persona declares or one the person allowed: a \
+                     suggested login opens the page the person confirms. Leave out `start`, or \
+                     `site`, `vault` and `key`"
+                        .into(),
+                );
+            }
             return Ok(Asked {
                 browser,
                 call_id,
-                asked: Browsing::LogIn { login, suggested },
+                asked: Browsing::LogIn {
+                    login,
+                    suggested,
+                    start,
+                },
                 changes: false,
             });
         }
@@ -768,6 +782,16 @@ fn s_login() -> Value {
                 "type": "string",
                 "description": "For a login your persona doesn't declare: the vault key of the \
                                 password.",
+            },
+            "start": {
+                "type": "string",
+                "description": "For a login your persona declares or the person allowed: the \
+                                address its sign-in starts at, in place of its page, such as an \
+                                OAuth or OpenID Connect authorize address with its whole query \
+                                (client_id, redirect_uri, state, code_challenge), opened as you \
+                                write it. It must be on the login's page's site or the site it \
+                                signs in on, and any redirect_uri must be on the login's page's \
+                                site.",
             }
         }),
         &["login"],

@@ -282,41 +282,39 @@ fn a_runs_always_allow_is_a_rule_for_this_project() {
     );
 }
 
+/// **A run grant that allows a program is a vault use** (#6178): it hands the vault's values to
+/// the chat's run, so it is risky and, as every risky ask, is never offered a rule (#6177), what
+/// the same Allow was given before. Its own Always allow stays among its answers.
 #[test]
-fn the_same_allow_for_this_chat_from_two_chats_offers_always_allow_as_the_rule() {
+fn a_run_grant_that_hands_a_program_vault_values_is_never_offered_a_rule() {
     let ask = run_ask(3);
-    let record = Record {
+    assert_eq!(
+        ask.risk.as_ref().map(|risk| risk.class),
+        Some(RiskClass::VaultUse)
+    );
+    assert!(ask.options.iter().any(|one| one.id == RUN_ALLOW_ALWAYS));
+    let from_two_chats = Record {
         answered: vec![
             answered(&ask, 1, RUN_ALLOW_CHAT, true, NOW - 600),
             answered(&ask, 2, RUN_ALLOW_CHAT, true, NOW - 60),
         ],
         ..Record::default()
     };
-    assert_eq!(
-        offered_options(ask, &record),
-        Some(vec![RUN_ALLOW_ALWAYS.to_owned()])
-    );
-}
-
-#[test]
-fn allow_once_twice_in_one_chat_suggests_this_chat_before_always_allow() {
-    let ask = run_ask(1);
-    let record = Record {
+    let twice_in_one = Record {
         answered: vec![
-            answered(&ask, 1, RUN_ALLOW_ONCE, true, NOW - 600),
-            answered(&ask, 1, RUN_ALLOW_ONCE, true, NOW - 60),
+            answered(&ask, 3, RUN_ALLOW_ONCE, true, NOW - 600),
+            answered(&ask, 3, RUN_ALLOW_ONCE, true, NOW - 60),
         ],
         ..Record::default()
     };
-    assert_eq!(
-        offered_options(ask, &record),
-        Some(vec![RUN_ALLOW_CHAT.to_owned(), RUN_ALLOW_ALWAYS.to_owned()])
-    );
+    assert_eq!(offered_options(ask.clone(), &from_two_chats), None);
+    assert_eq!(offered_options(ask, &twice_in_one), None);
 }
 
+/// The same ask offered a rule unmarked offers none once it carries a risk, of every class.
 #[test]
 fn an_ask_marked_risky_is_never_offered_a_rule() {
-    let mut ask = host_ask(3);
+    let ask = host_ask(3);
     let record = Record {
         answered: vec![
             answered(&ask, 1, "chat", true, NOW - 600),
@@ -324,10 +322,23 @@ fn an_ask_marked_risky_is_never_offered_a_rule() {
         ],
         ..Record::default()
     };
-    ask.risk = Some(RiskShown {
-        class: RiskClass::ProductionHost,
-        why: "Looks like production".to_owned(),
-        confirm: "Allow a production host?".to_owned(),
-    });
-    assert_eq!(offered_options(ask, &record), None);
+    assert!(
+        offered_options(ask.clone(), &record).is_some(),
+        "unmarked, it is offered a rule"
+    );
+    for class in [
+        RiskClass::ProtectedPush,
+        RiskClass::ProductionHost,
+        RiskClass::OutsideProject,
+        RiskClass::Delete,
+        RiskClass::VaultUse,
+    ] {
+        let mut risky = ask.clone();
+        risky.risk = Some(RiskShown {
+            class,
+            why: "Risky".to_owned(),
+            confirm: "Allow it?".to_owned(),
+        });
+        assert_eq!(offered_options(risky, &record), None, "{class:?}");
+    }
 }

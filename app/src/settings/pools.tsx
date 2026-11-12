@@ -14,6 +14,7 @@ import {
   makeRunnerAgain,
   removedSaid,
   removePool,
+  openSetupOf,
   startAddingAPool,
   useHeldRunners,
   useNamedBy,
@@ -512,6 +513,16 @@ function PoolEntry({
         <span className="ui-machine-path">{limitsSaid(pool)}</span>
       </Tooltip>
       <Badge variant="accent">{linkSaid(link)}</Badge>
+      {/* A pool's own setup, each step as it stands (#4491): never reached from Add (#6256). */}
+      {plane !== undefined && (
+        <Button
+          size="sm"
+          aria-label={`Open setup of pool ${pool.name}`}
+          onPress={() => openSetupOf(pool.name)}
+        >
+          Open setup
+        </Button>
+      )}
       <Button
         size="sm"
         aria-label={removing ? `Removing pool ${pool.name}` : `Remove pool ${pool.name}`}

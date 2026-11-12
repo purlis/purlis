@@ -2208,7 +2208,13 @@ describe("where each family is drawn on a surface a theme fills (#3268)", () => 
    * not listed here, or listed and not found, fails as any other pair does.
    */
   const NOT_STANDING: ReadonlyMap<string, string> = new Map<string, string>([
-    // None: `list badge` is `STANDS_ON`'s `list.row badge` (#6149).
+    // `list badge` is `STANDS_ON`'s `list.row badge` (#6149).
+    [
+      "panel code",
+      "a pane link's answer (`PaneLinkSurfaces.tsx`, #6215) is a dialog a read-only terminal " +
+        "holds, and a read-only terminal stands in a panel (a grade's saved chat): its code " +
+        "blocks are drawn on the dialog's overlay, never on the panel",
+    ],
   ]);
 
   it("is, in the window, exactly what STANDS_ON says", () => {

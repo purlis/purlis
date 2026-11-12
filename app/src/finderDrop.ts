@@ -4,6 +4,7 @@
 import { useEffect, useRef } from "react";
 import { type DragDropEvent } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { untilStopped } from "./here";
 
 /**
  * **Files dropped from the file manager onto a workspace's own files** (#5378): where a drop
@@ -127,25 +128,15 @@ export function useFinderDrop(
       if (landed !== undefined) heard.current?.(landed.drop);
     };
     let stop: (() => void) | undefined;
-    let gone = false;
     try {
       // The window's, not its webview's: a window that holds an artifact's child webview is
       // told a drop as a window (#5952), and one that holds none is told it by its label, which
       // a window's listener hears too.
-      void getCurrentWindow()
-        .onDragDropEvent(hear)
-        .then(
-          (unlisten) => {
-            if (gone) unlisten();
-            else stop = unlisten;
-          },
-          () => {},
-        );
+      stop = untilStopped(getCurrentWindow().onDragDropEvent(hear));
     } catch {
       // No webview to hear: nothing is dropped here.
     }
     return () => {
-      gone = true;
       stop?.();
       draw(null);
     };

@@ -56,6 +56,7 @@ const meta = {
     changed: () => undefined,
     onGo: () => undefined,
     onOpenChat: () => undefined,
+    onAddAnother: () => undefined,
   },
   decorators: [
     (Story) => (
@@ -155,6 +156,10 @@ export const EverythingPassed: Story = {
     await untilFocused(() => open, "Open a chat");
     await expectFocusInSight();
     await userEvent.keyboard("{Enter}");
+    // The next control is Add another pool (#6256).
+    await userEvent.tab();
+    await expect(canvas.getByRole("button", { name: "Add another pool" })).toHaveFocus();
+    await expectFocusInSight();
   },
   args: {
     step: {

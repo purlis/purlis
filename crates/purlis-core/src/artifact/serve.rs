@@ -65,7 +65,7 @@ pub fn theme_sheet(appearance: &str, values: &BTreeMap<String, String>) -> Resul
 }
 
 /// An artifact folder's files, read once: by their path inside the folder, `/`-separated.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Snapshot {
     files: BTreeMap<String, Vec<u8>>,
     fingerprint: String,

@@ -220,12 +220,10 @@ not a token: words with no size of their own (a list row's, a paragraph's) follo
 No token reaches the title bar's height yet. **Corners are a family's parts.** The rail's
 project buttons, the title bar's workspace chips, the session tabs and their `×` are rounded
 through their parts ([Session tabs](#session-tabs)), a list's rows by `radius.control` (the list
-family, since manifest version 11; `radius.md` before #3177), and the tree family's rows by
-`radius.control` too (the Changes view's, since the next release's manifest version). The tree
-rows still drawn by hand (the Explorer's and the Chats list's) join when they move to the tree
-family (#2911); until then no key reaches their corners. **The focus ring tokens reach every
-focus ring**, a tab's `×` closer's among them; a ring that sits half as far out or in draws half
-the offset. Under
+family, since manifest version 11; `radius.md` before #3177), and every tree's rows by
+`radius.control` and the `tree` family's parts (`tree.root.corner-radius`, since manifest version
+13; [Component parts](#component-parts)). **The focus ring tokens reach every focus ring**, a
+tab's `×` closer's among them; a ring that sits half as far out or in draws half the offset. Under
 forced colours the ring is drawn in the system's `Highlight` at the theme's width and offset:
 forced colours replace colour, not geometry.
 
@@ -640,9 +638,6 @@ over a table that chooses.
 every property but `padding`, which is its indentation (each level one step in) and stays the
 family's; `body` is the tree that holds the rows; `twist` the chevron that opens and closes a
 row's rows, a mark; `lead` and `trail` its marks and its end; and `header` a group's name.
-
-The tree rows still drawn by hand are not a family with parts today: they are drawn as the note
-under [Geometry](#geometry) says.
 
 ### Session tabs
 

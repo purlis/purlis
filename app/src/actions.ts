@@ -65,6 +65,7 @@ import {
 } from "./skillStudio";
 import { backSaid } from "./chatState";
 import { listed as namesListed } from "./chatMoves";
+import { chatNumberIn } from "./chatNumber";
 import { handedOff, tasksOf, type ListedChat } from "./chatsTree";
 import { MAIN } from "./here";
 import {
@@ -118,6 +119,7 @@ import {
   changesTitle,
   changesView,
   chatOf,
+  chatShownBy,
   contentsOf,
   hasOnePane,
   ONE_JOB_STAYS,
@@ -782,6 +784,13 @@ export type Offer = {
    * own words are, never as a name.
    */
   also?: readonly string[];
+  /**
+   * **The chat this row goes to, by its current number** (#6213): on the rows that bring a chat
+   * on screen (Switch to tab, Show task), so typing `641` or `#641` finds chat 641 there, ahead
+   * of any row whose title merely holds those digits ({@link narrow}). Never drawn: the tab's
+   * hover and the pane's head say it (#6212).
+   */
+  chat?: number;
   /**
    * What this row does that its title cannot fit, for a row whose consequence is worth a
    * second sentence. Drawn beside the row in the palette, and as the tooltip of a button that
@@ -2365,11 +2374,13 @@ export function catalogue(now: Now): Offer[] {
   for (const tab of now.tabs.order) {
     const name = tabNameOf(now.tabs.byId[tab]);
     const title = `Switch to tab ${name}`;
-    offers.push(
+    // Found by the number of the chat it shows (#6213), as its tooltip says it (#6212).
+    const chat = chatShownBy(now.tabs, tab);
+    const row =
       tab === now.tabs.inFront
         ? cannot(`tab.select:${tab}`, title, "It is already in front.", name)
-        : can(`tab.select:${tab}`, title, { verb: "selectTab", tab }, name),
-    );
+        : can(`tab.select:${tab}`, title, { verb: "selectTab", tab }, name);
+    offers.push(chat === undefined ? row : { ...row, chat });
   }
 
   // **Rename…** (#5343): a tab's own, which its dialog says the meaning of: the chat of a tab
@@ -3434,6 +3445,7 @@ export function catalogue(now: Now): Offer[] {
   );
   offers.push(...taskEndRows(now.listed ?? [], now.stopping ?? []));
   offers.push(...taskRows(now.listed ?? []));
+  offers.push(...tablessRows(now.listed ?? []));
   offers.push(...handedOffRows(now.listed ?? []));
   offers.push(...placeRows(now.tabs, now.listed ?? [], now.nameOf));
   offers.push(besideInFront(now.tabs, now.listed ?? [], now.nameOf));
@@ -4502,13 +4514,37 @@ export function taskRows(listed: readonly ListedChat[]): Offer[] {
     .filter((chat) => chat.mode === "task")
     .map((chat) => {
       const asker = chat.from === null ? "" : `, asked by ${chat.from}`;
-      return can(
+      return {
+        ...can(
+          taskShowId(chat.session),
+          `Show task ${chat.name} in ${chat.workspace}${asker}`,
+          { verb: "showChat", session: chat.session },
+          chat.name,
+        ),
+        // Found by its number (#6213), in whichever workspace it works.
+        chat: chat.session,
+      };
+    });
+}
+
+/**
+ * **A row for each chat no tab of this window holds** (#6213): `chat.show:<session>`, as a
+ * task's, so a chat of any workspace of the project is found by its number, or its name, and
+ * shown where it works. A task has its own row ({@link taskRows}), and a chat with a tab here
+ * its `Switch to tab` row.
+ */
+export function tablessRows(listed: readonly ListedChat[]): Offer[] {
+  return listed
+    .filter((chat) => chat.mode !== "task" && !chat.tab)
+    .map((chat) => ({
+      ...can(
         taskShowId(chat.session),
-        `Show task ${chat.name} in ${chat.workspace}${asker}`,
+        `Show chat ${chat.name} in ${chat.workspace}`,
         { verb: "showChat", session: chat.session },
         chat.name,
-      );
-    });
+      ),
+      chat: chat.session,
+    }));
 }
 
 /**
@@ -5633,9 +5669,16 @@ export function inPalette(offers: readonly Offer[]): Offer[] {
  * `ss`. Both sides get the same treatment, so a row is never unfindable by its own text.
  */
 export function matches(query: string, offer: Offer): boolean {
+  if (isTheChat(query, offer)) return true;
   const want = query.toLowerCase();
   const verb = offer.id.split(":")[0].toLowerCase();
   return offer.title.toLowerCase().includes(want) || verb.includes(want) || isAlso(want, offer);
+}
+
+/** Whether `query` asks for a chat by its number, `641` or `#641`, and this row goes to it. */
+function isTheChat(query: string, offer: Offer): boolean {
+  const number = chatNumberIn(query);
+  return number !== undefined && offer.chat === number;
 }
 
 /** Whether `want`, lower-cased, is in one of the row's other words ({@link Offer.also}). */
@@ -5713,11 +5756,17 @@ export function narrow(query: string, offers: readonly Offer[]): Offer[] {
   const want = query.trim();
   if (want === "") return [...offers];
   const kept = offers.filter((offer) => matches(want, offer));
+  // **A chat asked for by its number comes before everything** (#6213): `641` is the chat a
+  // coordinator named, never the title that happens to hold those digits.
+  const numbered = kept.filter((offer) => isTheChat(want, offer));
   const whole = want.toLowerCase();
-  const exact = kept.filter((offer) => offer.title.toLowerCase() === whole);
-  const rest = kept.filter((offer) => !exact.includes(offer));
+  const exact = kept.filter(
+    (offer) => !numbered.includes(offer) && offer.title.toLowerCase() === whole,
+  );
+  const rest = kept.filter((offer) => !numbered.includes(offer) && !exact.includes(offer));
   const found = rest.filter((offer) => byItsWords(want, offer));
   return [
+    ...numbered,
     ...exact,
     ...found.filter(aboutWhatIsInFront),
     ...found.filter((offer) => !aboutWhatIsInFront(offer)),
