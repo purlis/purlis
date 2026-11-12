@@ -453,7 +453,7 @@ fn nothing_of_the_persons_ssh_settings_rides_on_the_forward() {
     assert_eq!(
         exec_in(
             &carrying.sshd,
-            "(command -v ss >/dev/null && ss -ltn | grep -c ':2299 ') || echo 0"
+            "if command -v ss >/dev/null; then ss -ltn | grep -c ':2299 ' || true; else echo 0; fi"
         ),
         "0",
         "the settings' RemoteForward listens there"

@@ -3,7 +3,7 @@
 
 //! **A chat on another machine comes back by itself once its SSH connection is killed** (#6266,
 //! ADR 0123 §8): a live chat on the remote parity job's runner, reached through the pool's SSH
-//! forward; every SSH session of the pool's user there is killed, as a lost connection ends it;
+//! forward; the ssh carrying that forward is killed outright, as a lost connection ends it;
 //! the chat reads as reconnecting, and then, with nobody pressing anything, is linked again and
 //! answers what is typed. Run by the remote parity job; elsewhere it runs nothing.
 
@@ -31,7 +31,6 @@ fn in_a_remote_docker_pool() {
     let Some(target) = super::in_a_remote_docker_pool() else {
         return;
     };
-    let sshd = std::env::var("REMOTE_DOCKER_TEST_SSHD").expect("the job names the sshd");
     let id = target
         .sessions
         .open(
@@ -43,16 +42,15 @@ fn in_a_remote_docker_pool() {
     let pane = Pane::on(&target, id);
     pane.shows("HARNESS-READY");
 
-    // Every SSH session of the pool's user there ends, as a lost connection ends it.
-    let killed = purlis_core::forklock::output(std::process::Command::new("docker").args([
-        "exec",
-        &sshd,
-        "sh",
-        "-c",
-        "pkill -u pool || true",
-    ]))
-    .expect("docker runs");
-    assert!(killed.status.success(), "{killed:?}");
+    // This pool's SSH connection ends, as a lost connection ends it: its ssh is killed outright.
+    // Only this pool's: the job's other tests run beside it over connections of their own.
+    let pool = &target.runner.as_ref().expect("a pool's runner").pool;
+    let ssh = purlis_core::sshroute::forward::ssh_of(pool).expect("this process holds the forward");
+    let killed = purlis_core::forklock::status(
+        std::process::Command::new("kill").args(["-KILL", &ssh.to_string()]),
+    )
+    .expect("kill runs");
+    assert!(killed.success(), "{killed:?}");
 
     until(
         NOTICED_WITHIN,
