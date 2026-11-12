@@ -76,6 +76,7 @@ const shown = (
   at,
   noticed: false,
   others: [],
+  recommended: "team",
   kind: "cluster",
   contexts,
   steps,

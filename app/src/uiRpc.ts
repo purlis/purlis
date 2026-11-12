@@ -1939,25 +1939,10 @@ export const commands = {
 	dockerPools: __WINDOW_ONLY_RESULT,
 	poolSetup: __WINDOW_ONLY_RESULT,
 	poolSetupChooseDocker: __WINDOW_ONLY_RESULT,
-	/**
-	 *  **Keeps that the person chose their team's cluster on Where**, through kubeconfig context
-	 *  `context` (#4492): its name alone. Nothing on the cluster changes. With no context, only the
-	 *  kind is kept, as Add a cluster pool… opens Pool setup: Where then recommends a context.
-	 */
-	poolSetupChooseCluster: (context: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_cluster", { context })),
-	/**
-	 *  **Applies one part of a cluster's install** (#4493), on that part's own button: `upstream`,
-	 *  `definitions`, `signing-key` or `operator`, to the cluster chosen on Where, with the person's
-	 *  own kubectl and sign-in.
-	 */
-	poolSetupInstall: (part: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_install", { part })),
-	/**  **Keeps the cluster operator's image named under Install's Options** (#4493), or none. */
-	poolSetupOperatorImage: (image: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_operator_image", { image })),
-	/**
-	 *  **Makes the Pool `name` in the cluster chosen on Where** (#4494), of runner image `image` by
-	 *  digest, on the Pool step's own button, with the person's own kubectl and sign-in.
-	 */
-	poolSetupClusterPool: (name: string, image: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_cluster_pool", { name, image })),
+	poolSetupChooseCluster: __WINDOW_ONLY_RESULT,
+	poolSetupInstall: __WINDOW_ONLY_RESULT,
+	poolSetupOperatorImage: __WINDOW_ONLY_RESULT,
+	poolSetupClusterPool: __WINDOW_ONLY_RESULT,
 	poolSetupName: __WINDOW_ONLY_RESULT,
 	poolSetupPool: __WINDOW_ONLY_RESULT,
 	poolSetupAdd: __WINDOW_ONLY_RESULT,

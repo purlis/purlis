@@ -502,3 +502,16 @@ fn the_pool_made_names_its_image_by_digest_and_nothing_else() {
     // Nothing reached the cluster.
     assert!(!dir.path().join("ran").exists());
 }
+
+#[test]
+fn a_new_setup_forgets_the_context_chosen_and_keeps_the_operators_image() {
+    let config = tempfile::tempdir().unwrap();
+    choose_cluster(config.path(), "kind-team").unwrap();
+    let image = "ghcr.io/purlis/purlis-cluster-operator@sha256:".to_owned() + &"d".repeat(64);
+    choose_operator_image(config.path(), Some(&image)).unwrap();
+    start_over(config.path()).unwrap();
+    let choices = read_choices(config.path()).unwrap();
+    assert_eq!(choices.kind, None);
+    assert_eq!(choices.context, None);
+    assert_eq!(choices.operator_image.as_deref(), Some(image.as_str()));
+}

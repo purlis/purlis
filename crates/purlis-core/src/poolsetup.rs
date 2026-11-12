@@ -1731,15 +1731,21 @@ pub fn start_over(config: &Path) -> Result<(), Refused> {
     forget_the_new_one(config, choices)
 }
 
-/// Forgets the kind, the name and the pool this setup chose, writing only where one was.
+/// Forgets the kind, the context, the name and the pool this setup chose, writing only where one
+/// was. The operator's image stays: it names what the person checked, whatever setup is next.
 fn forget_the_new_one(config: &Path, choices: Choices) -> Result<(), Refused> {
-    if choices.kind.is_none() && choices.name.is_none() && choices.pool.is_none() {
+    if choices.kind.is_none()
+        && choices.context.is_none()
+        && choices.name.is_none()
+        && choices.pool.is_none()
+    {
         return Ok(());
     }
     write_choices(
         config,
         Choices {
             kind: None,
+            context: None,
             name: None,
             name_free: false,
             pool: None,
