@@ -11,6 +11,15 @@
 //! - **a stall** of its own thread of 200 ms or longer (a gap between two frames), with how many
 //!   chats were in their turn, the tab in front and whether a view of a chat was opening.
 //!
+//! And the core writes two of its own (`app/src-tauri/src/mainwatch.rs`), so a slow answer can
+//! be told apart as waiting in line or work (felt speed round 2, H6b):
+//!
+//! - **a core stall**: the core's main thread, which every window command enters on, did not
+//!   run a ping for 200 ms or longer, with the command it was running when that was noticed;
+//! - **a core command**: a command that held the main thread for 100 ms or longer, with when
+//!   the core received it. An answer's `at` (asked) beside its command's `at` (received) is its
+//!   time in line; its `ms` here is its work there.
+//!
 //! # Where it lives
 //!
 //! [`FILE`] in the app's log folder ([`crate::applog`]'s, beside `panics.log` and the
@@ -57,6 +66,17 @@ pub enum Slow {
         front: Option<String>,
         opening: bool,
     },
+    /// The core's main thread ran a ping `ms` milliseconds after it was asked to, at `at`, and
+    /// `running` is the window command it was running when the wait passed 200 ms, or `None`
+    /// when it was busy with something that is not a command (an event, a terminal's output).
+    CoreStall {
+        ms: u32,
+        at: u64,
+        running: Option<String>,
+    },
+    /// The window command `command`, received on the core's main thread at `at`, held it for
+    /// `ms` milliseconds before it went back to the window's next ask.
+    CoreCommand { command: String, ms: u32, at: u64 },
 }
 
 /// Where the log is on this machine, or `None` with no home directory to keep it under.

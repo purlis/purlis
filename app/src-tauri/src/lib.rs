@@ -95,6 +95,7 @@ mod hooks;
 mod host;
 mod inboxupdates;
 mod machineprofiles;
+mod mainwatch;
 mod personaskills;
 mod regenerate;
 mod routergrade;
@@ -3915,7 +3916,8 @@ pub fn run() {
         .plugin(tauri_plugin_wdio::init())
         .plugin(tauri_plugin_wdio_webdriver::init());
 
-    app.invoke_handler(commands.invoke_handler())
+    // Each command named and timed while it holds the main thread (`mainwatch`, H6b).
+    app.invoke_handler(mainwatch::timed(commands.invoke_handler()))
         .menu(lifecycle::menu)
         .on_menu_event(|app, event| lifecycle::clicked(app, event.id().as_ref()))
         // A drop from the file manager (#5378): its files held for the window's import of them,
@@ -4010,6 +4012,8 @@ pub fn run() {
         })
         .setup(|app| {
             reached("setup");
+            // The main thread watched for stalls from here, its first moment (`mainwatch`).
+            mainwatch::start(app.handle());
             // The theme specimen's painter (#2330): hidden windows of this app's own.
             specimen::install(app.handle());
             // One charter per user even without a session bus (`instance.rs`). After the

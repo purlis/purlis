@@ -18092,7 +18092,18 @@ export type SlowMoment =
  *  A gap of `ms` between two of the window's frames, seen at `at`, while `hot` chats were
  *  working, with the tab in front (`front`) and whether a view of a chat was opening.
  */
-{ kind: "stall"; ms: number; at: number | null; hot: number; front: string | null; opening: boolean };
+{ kind: "stall"; ms: number; at: number | null; hot: number; front: string | null; opening: boolean } | 
+/**
+ *  The core's main thread ran a ping `ms` after it was asked to at `at`, busy with the
+ *  command `running` when the wait was noticed (`crate::mainwatch`). The core writes it; the
+ *  window only reads it back.
+ */
+{ kind: "core_stall"; ms: number; at: number | null; running: string | null } | 
+/**
+ *  The command `command`, received on the core's main thread at `at`, held it for `ms`
+ *  (`crate::mainwatch`). The core writes it; the window only reads it back.
+ */
+{ kind: "core_command"; command: string; ms: number; at: number | null };
 
 /**  What the window says about a slow launch: its line, and the relaunch that line suggests. */
 export type SlowStart = {
