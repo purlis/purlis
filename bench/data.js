@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794494322758,
+  "lastUpdate": 1794497301530,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -47460,6 +47460,48 @@ window.BENCHMARK_DATA = {
             "value": 102.21205900000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.926, 102.095, 102.212, 102.265, 102.516 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fa5441a73e63f8c9addf887efc363b86a5359e52",
+          "message": "Links in this pane…: the links on screen, for keyboard and screen readers (#6220) (#6312)\n\n* Links in this pane…: the links on screen, for keyboard and screen readers (#6220)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77B7726QTDZKD0QBNMD9FDZ\nPurlis-Persona: steward\n\n* Links in this pane…: the key in a leaf module, so the read-only terminal reaches no core; NoLinks waits for its own screen (#6220)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77B7726QTDZKD0QBNMD9FDZ\nPurlis-Persona: steward\n\n* Links in this pane… stories: no glyph in a test's text; wait for the dialog to come in before reading the empty line (#6220)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77B7726QTDZKD0QBNMD9FDZ\nPurlis-Persona: steward\n\n* Links in this pane…: usePaneLinks hands the list as `list`, the slot #6219's terminal menu reads (#6220)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77B7726QTDZKD0QBNMD9FDZ\nPurlis-Persona: steward\n\n* Links in this pane…: baselines for the list and a pick, drawn by CI and reviewed; no key summary over an empty list (#6220)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77B7726QTDZKD0QBNMD9FDZ\nPurlis-Persona: steward\n\n* Links in this pane…: the key is spelled ⇧⌘L, as the prototype's D5 has it (#6220)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77B7726QTDZKD0QBNMD9FDZ\nPurlis-Persona: steward\n\n* Links in this pane…: NoLinks baselines, drawn by CI and reviewed (#6220)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77B7726QTDZKD0QBNMD9FDZ\nPurlis-Persona: steward\n\n* Links in this pane…: review fixes: copy key registered (links.copy, Shift and Alt up), sentence in a leaf, one quick-picker helper in ui/list, one linkKey and keep(), kind icon, key hints as the description (#6220)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77B7726QTDZKD0QBNMD9FDZ\nPurlis-Persona: steward\n\n* Links in this pane…: baselines with the kind icons and the keys said in the description, drawn by CI and reviewed (#6220)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77B7726QTDZKD0QBNMD9FDZ\nPurlis-Persona: steward",
+          "timestamp": "2026-11-12T14:25:57Z",
+          "tree_id": "cf3a669bbe4bc5fe6485bc33fd22dc21140af802",
+          "url": "https://github.com/purlis/purlis/commit/fa5441a73e63f8c9addf887efc363b86a5359e52"
+        },
+        "date": 1794497294564,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5350545,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.517, 0.528, 0.535, 0.538, 0.551 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2760805,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.177, 16.235, 16.276, 16.391, 16.472 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.747565,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.669, 100.748, 101.748, 102.164, 102.286 ms"
           }
         ]
       }
