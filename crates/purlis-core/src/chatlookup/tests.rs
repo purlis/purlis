@@ -212,3 +212,68 @@ fn a_task_that_never_started_is_no_chat() {
     dispatchrecord::did_not_start(&root, &id, "no profile", 1, at("2026-11-11T10:01:00Z")).unwrap();
     assert_eq!(by_number_in(&root, 641, &[]), Found::NoChat);
 }
+
+// #6304: a chat no dispatch started, kept by the app as it closed (`chatrecords`).
+
+const ORDINARY_ID: &str = "01K6CHATS0000000000000000C";
+
+/// Chat 702, started by the person in the window and closed by them.
+fn closed_702() -> crate::chatrecords::ChatRecord {
+    crate::chatrecords::ChatRecord {
+        number: 702,
+        id: ORDINARY_ID.to_owned(),
+        title: "Tidy the changelog".to_owned(),
+        started: "2026-11-12T09:00:00Z".to_owned(),
+        ended: "2026-11-12T09:40:00Z".to_owned(),
+        started_by: crate::chatrecords::StartedBy::Person,
+        place: "smart-ide".to_owned(),
+    }
+}
+
+#[test]
+fn an_ordinary_chat_that_closed_is_found_closed_with_its_record() {
+    let (_dir, root) = project();
+    crate::chatrecords::keep(&root, &closed_702()).unwrap();
+    assert_eq!(
+        by_number_in(&root, 702, &[open_chat(3, ASKER_ID)]),
+        Found::Closed(Box::new(closed_702()))
+    );
+}
+
+#[test]
+fn an_ordinary_chat_open_again_is_found_under_its_new_number() {
+    let (_dir, root) = project();
+    crate::chatrecords::keep(&root, &closed_702()).unwrap();
+    assert_eq!(
+        by_number_in(&root, 702, &[open_chat(731, ORDINARY_ID)]),
+        Found::Restarted { now: 731 }
+    );
+}
+
+#[test]
+fn a_dispatch_record_answers_before_the_chat_record_of_its_number() {
+    // A task's chat is kept both ways as it closes: its dispatch record is the fuller card.
+    let (_dir, root) = project();
+    let id = task_641(&root);
+    dispatchrecord::close(&root, &id, report(Outcome::Done, "ok"), at("2026-11-11T11:08:00Z"))
+        .unwrap();
+    crate::chatrecords::keep(
+        &root,
+        &crate::chatrecords::ChatRecord {
+            number: 641,
+            id: WORKER_ID.to_owned(),
+            ..closed_702()
+        },
+    )
+    .unwrap();
+    assert!(matches!(by_number_in(&root, 641, &[]), Found::Ended(_)));
+}
+
+#[test]
+fn the_records_read_once_answer_as_one_read_does() {
+    let (_dir, root) = project();
+    crate::chatrecords::keep(&root, &closed_702()).unwrap();
+    let known = Known::read(&root);
+    assert_eq!(by_number(702, &[], &known), by_number_in(&root, 702, &[]));
+    assert_eq!(by_number(9999, &[], &known), Found::NoChat);
+}
