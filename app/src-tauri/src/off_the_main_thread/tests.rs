@@ -47,6 +47,8 @@ fn app_holding(root: &Path) -> (tauri::App<MockRuntime>, PlaneId) {
             crate::personas::persona_remove,
             crate::resize_session,
             crate::unwatch_session,
+            crate::taskchanges::tasks_sharing_a_folder,
+            crate::taskchanges::task_folder_shared,
         ])
         .build(tauri_context!(test = true))
         .expect("the app builds");
@@ -253,6 +255,37 @@ fn the_commands_that_read_the_plane_answer_off_the_thread_that_asked() {
         "persona_remove",
         json!({ "plane": plane, "name": "scribe" }),
     );
+
+    assert!(
+        on_the_asking_thread.is_empty(),
+        "answered on the thread that asked, which in the app is the window's: \
+         {on_the_asking_thread:?}"
+    );
+}
+
+#[test]
+fn a_tabs_shared_folder_warnings_resolve_their_folders_off_the_thread_that_asked() {
+    // H6b: each pane asks these, and each resolves every open task's folder on the disk
+    // (`taskchanges::real`), once per folder shared: on the window's thread that is one more
+    // wait in the line every other command stands in.
+    let dir = a_plane();
+    let (app, plane) = app_with_its_window(dir.path());
+    let asking = std::thread::current().id();
+
+    let on_the_asking_thread: Vec<&str> = [
+        (
+            "tasks_sharing_a_folder",
+            json!({ "plane": plane, "session": 1 }),
+        ),
+        (
+            "task_folder_shared",
+            json!({ "plane": plane, "session": 1, "place": null }),
+        ),
+    ]
+    .into_iter()
+    .filter(|(command, args)| answered(&app, command, args.clone()).0.answered_on == asking)
+    .map(|(command, _)| command)
+    .collect();
 
     assert!(
         on_the_asking_thread.is_empty(),
