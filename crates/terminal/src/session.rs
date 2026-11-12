@@ -916,7 +916,7 @@ impl Stopper {
         {
             let strays = strays(&self.child);
             interrupt(&self.child);
-            end_with(&self.child, &strays);
+            end_with(&self.child, strays);
         }
         #[cfg(not(unix))]
         {
@@ -1010,7 +1010,7 @@ const HANGUP_GRACE: Duration = Duration::from_millis(500);
 #[cfg(unix)]
 fn end(child: &Mutex<Held>) {
     let strays = strays(child);
-    end_with(child, &strays);
+    end_with(child, strays);
 }
 
 /// What the program, while it still runs, has started outside its process group (#5749):
@@ -1035,10 +1035,14 @@ fn strays(child: &Mutex<Held>) -> crate::process::Strays {
 
 /// [`end`], with `strays` read before anything was signalled.
 #[cfg(unix)]
-fn end_with(child: &Mutex<Held>, strays: &crate::process::Strays) {
+fn end_with(child: &Mutex<Held>, mut strays: crate::process::Strays) {
     use rustix::process::{Pid, Signal, kill_process_group};
 
     let mut child = lock(child);
+    // And what a note listed meanwhile (#6437): a host answers a note as its listing begins, so
+    // one may join its finds after `strays` was read and before this hold. One that finishes
+    // after it finds the program waited for and ends what it found itself.
+    strays.join(std::mem::take(&mut child.noted));
     // A program that has already ended has had its group ended as that was found ([`Held`]).
     let running = matches!(child.try_wait(), Ok(None));
     if !running && strays.is_empty() {

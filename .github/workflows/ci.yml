@@ -2267,6 +2267,9 @@ jobs:
         working-directory: app
       - if: failure()
         # Evidence only: a failed upload (a runner's DNS, 2026-11-11) never fails the job.
+        # The session host's own log is in it: the window keeps each line the host says, as
+        # `purlisd: …` in `charter.<date>.log`, among them each answer the host gave a second or
+        # more late and each time its one thread was held (#6437).
         continue-on-error: true
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
