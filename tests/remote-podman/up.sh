@@ -13,6 +13,11 @@
 # Podman and names it in `$GITHUB_ENV` as <variable>, beside what the tests read. It adds the
 # machine as a Podman connection too, as a person's `podman system connection add` would, for
 # Pool setup to offer. Nothing is published but the sshd's port, on loopback.
+#
+# The other machine's Podman binds its init (`--init`'s `catatonit`) from a folder of that
+# machine's own, `/opt/remote-podman-init`, which the sshd sees and a test run through
+# `tests/remote-podman/without-its-init.sh` does not: so what is judged of the other machine's
+# files is judged there, not here (#6269).
 set -euo pipefail
 image=${1:?the image, by digest, in the registry here}
 image_variable=${2:?the variable to name it in}
@@ -30,6 +35,18 @@ export XDG_RUNTIME_DIR=$runtime
 mkdir -p "$HOME/.config/containers"
 printf '%s\n' '[[registry]]' 'location = "localhost:5000"' 'insecure = true' \
   > "$HOME/.config/containers/registries.conf"
+# The other machine's init, where only it and its sshd see it: `init_path` for this account's
+# Podman, a copy of the catatonit Podman ships with.
+init_dir=/opt/remote-podman-init
+catatonit=
+for found in /usr/libexec/podman/catatonit /usr/bin/catatonit /usr/local/libexec/podman/catatonit; do
+  [ -e "$found" ] && { catatonit=$(readlink -f "$found"); break; }
+done
+[ -n "$catatonit" ] || { echo "no catatonit for Podman's --init" >&2; exit 1; }
+sudo install -d -m 0755 "$init_dir"
+sudo install -m 0755 "$catatonit" "$init_dir/catatonit"
+printf '%s\n' '[containers]' "init_path = \"$init_dir/catatonit\"" \
+  > "$HOME/.config/containers/containers.conf"
 podman pull --tls-verify=false "$image"
 podman info --format '{{.Host.Security.Rootless}} {{.Store.GraphRoot}} {{.Version.Version}}'
 graph_root=$(podman info --format '{{.Store.GraphRoot}}')
@@ -46,6 +63,7 @@ docker run --detach --name sshd-podman --cap-add NET_ADMIN --publish 127.0.0.1:2
   --env "ENGINE_SOCKET=$socket" \
   --volume "$runtime/podman:$runtime/podman" \
   --volume "$graph_root:$graph_root:ro" \
+  --volume "$init_dir:$init_dir:ro" \
   --volume "$ssh_dir/authorized:/etc/ssh/authorized-src:ro" \
   remote-podman-sshd
 for _ in $(seq 60); do
@@ -62,4 +80,5 @@ podman system connection list --format json
   echo "$image_variable=$image"
   echo "REMOTE_PODMAN_TEST_ROUTE=ssh://pool@127.0.0.1:2223"
   echo "REMOTE_PODMAN_TEST_SSHD=sshd-podman"
+  echo "REMOTE_PODMAN_TEST_INIT=$init_dir/catatonit"
 } >> "$GITHUB_ENV"

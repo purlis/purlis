@@ -12,7 +12,9 @@
 //!
 //! It needs the fixture: `REMOTE_PODMAN_TEST_ROUTE` (`ssh://pool@127.0.0.1:2223`), the runner
 //! image in `REMOTE_PODMAN_TEST_IMAGE`, this machine's `docker` and `podman`, and the agent the
-//! fixture's key is in. Without them it runs nothing and passes.
+//! fixture's key is in. Without them it runs nothing and passes. Its job runs it through
+//! `tests/remote-podman/without-its-init.sh`, so that machine's Podman's init
+//! (`REMOTE_PODMAN_TEST_INIT`) is not on this one and is judged there.
 
 #![cfg(unix)]
 
@@ -147,6 +149,13 @@ fn a_runner_made_on_rootless_podman_there_is_checked_as_rootless_podman_writes_i
     let image = Image::pinned(&fixture.image).expect("an image by digest");
     let (user, home) = docker.declared(&image).expect("its image is read there");
     let runner = Runner::new("pmake-runner", image, user, &home).expect("a runner");
+    // The other machine's init is that machine's alone (`without-its-init.sh`): judged there.
+    if let Ok(init) = std::env::var("REMOTE_PODMAN_TEST_INIT") {
+        assert!(
+            !std::path::Path::new(&init).exists(),
+            "the other machine's init {init} is not seen here"
+        );
+    }
     let made = docker
         .make(&runner)
         .expect("made, and checked as it was made");

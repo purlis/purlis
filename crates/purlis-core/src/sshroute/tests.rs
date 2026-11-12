@@ -567,6 +567,30 @@ fn a_pin_is_kept_as_its_engine_says_and_read_back_whole_or_not_at_all() {
     );
 }
 
+/// Podman's init is looked for there with `test -f` alone, pinned, and only at a plain path.
+#[test]
+fn a_file_is_looked_for_there_only_at_a_plain_path() {
+    let route = Route::parse("ssh://me@build-box/run/podman/podman.sock").unwrap();
+    let args = is_file_args(
+        &route,
+        "p",
+        Path::new("/k/known_hosts"),
+        "/usr/libexec/podman/catatonit",
+    )
+    .unwrap();
+    assert_eq!(
+        args.last().unwrap(),
+        "test -f /usr/libexec/podman/catatonit"
+    );
+    assert_eq!(option(&args, "StrictHostKeyChecking"), Some("yes"));
+    for bad in ["/a b", "/a;rm", "relative", "/a/../b", "/a$(x)"] {
+        assert!(
+            is_file_args(&route, "p", Path::new("/k"), bad).is_err(),
+            "{bad:?}"
+        );
+    }
+}
+
 #[test]
 fn a_file_is_read_there_only_where_it_is_a_plain_file_at_a_plain_path() {
     let route = Route::parse("ssh://me@build-box/run/podman/podman.sock").unwrap();

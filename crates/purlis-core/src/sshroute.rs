@@ -737,6 +737,28 @@ pub fn read_args(
     Ok(args)
 }
 
+/// **Whether a file is there, on the other machine** (#6269): [`sign_in_args`]'s, succeeding
+/// only where `path` is a regular file there. Refused for a path that isn't plain, as
+/// [`read_args`] refuses it.
+pub fn is_file_args(
+    route: &Route,
+    pool: &str,
+    known_hosts: &Path,
+    path: &str,
+) -> Result<Vec<String>, String> {
+    if !a_socket_path(path) {
+        return Err(format!(
+            "{} isn't a file's path purlis looks for on the other machine",
+            crate::shown::short(path)
+        ));
+    }
+    let mut args = sign_in_args(route, pool, known_hosts);
+    args.pop();
+    // Checked only: the path is one [`a_socket_path`] lets through, so it is a plain word.
+    args.push(format!("test -f {path}"));
+    Ok(args)
+}
+
 /// **The `ssh` this machine runs**: the system's own, in a folder only root writes, never one a
 /// `PATH` names. Refused where there is none.
 pub fn ssh_here() -> Result<PathBuf, String> {
@@ -876,13 +898,40 @@ pub struct Reach {
 }
 
 impl Reach {
-    /// **The file at `path` there**, up to `most` bytes, or why not.
-    pub fn read(&self, path: &Path, most: u64) -> Result<String, String> {
+    /// The pinned `known_hosts` for one of this reach's runs, in a run folder of its own.
+    fn known_hosts(&self) -> Result<(crate::dockerpool::settings::RunFolder, PathBuf), String> {
         let folder =
             crate::dockerpool::settings::run_folder(&self.settings_in).map_err(|why| why.0)?;
         let known_hosts = folder
             .keep("known_hosts", known_hosts(&self.pool, &self.key).as_bytes())
             .map_err(|why| format!("purlis could not write the host key: {why}"))?;
+        Ok((folder, known_hosts))
+    }
+
+    /// **Whether `path` is a regular file there**, or why that could not be asked; at most
+    /// `most` bytes of what ssh says are read.
+    pub fn is_file(&self, path: &Path, most: u64) -> Result<bool, String> {
+        let (_folder, known_hosts) = self.known_hosts()?;
+        let path = path.to_str().unwrap_or_default();
+        let ran = run_reading(
+            &self.ssh,
+            &is_file_args(&self.route, &self.pool, &known_hosts, path)?,
+            most,
+        )?;
+        match ran.code {
+            Some(0) => Ok(true),
+            Some(1) => Ok(false),
+            _ => Err(if ran.said.is_empty() {
+                format!("{} did not say", self.route.host())
+            } else {
+                ran.said
+            }),
+        }
+    }
+
+    /// **The file at `path` there**, up to `most` bytes, or why not.
+    pub fn read(&self, path: &Path, most: u64) -> Result<String, String> {
+        let (_folder, known_hosts) = self.known_hosts()?;
         let path = path.to_str().unwrap_or_default();
         let ran = run_reading(
             &self.ssh,

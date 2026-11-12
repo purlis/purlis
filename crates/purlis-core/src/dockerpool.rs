@@ -2209,14 +2209,16 @@ pub fn podman_store(store: &serde_json::Value) -> Result<PodmanStore, Refused> {
 /// container's own (`<graph root>/overlay-containers/<container>/userdata/config.json`); no
 /// device for the runtime; and every mount one of the runtime's own file systems where Podman
 /// puts it, one of the container's own files from exactly its own folder of Podman's storage or
-/// run state, or the home's volume from exactly Podman's own volumes. Anything else, a field
-/// missing included, is refused.
+/// run state, the home's volume from exactly Podman's own volumes, or Podman's init, a file on
+/// the engine's machine as `is_file_there` judges it there ([`is_file_here`] for this one).
+/// Anything else, a field missing included, is refused.
 pub fn check_oci(
     oci: &serde_json::Value,
     made: &Made,
     config: &std::path::Path,
     store: &PodmanStore,
     seccomp: Seccomp,
+    is_file_there: &dyn Fn(&std::path::Path) -> bool,
 ) -> Result<(), Refused> {
     let not = |what: &str| {
         refused(format!(
@@ -2278,7 +2280,7 @@ pub fn check_oci(
             || (to == "/dev/shm" && kind == "tmpfs")
             || (kind == "bind" && own_file)
             || (kind == "bind" && to == made.runner.home && from_path == home_volume)
-            || is_podmans_init(mount);
+            || is_podmans_init(mount, is_file_there);
         if !own {
             return Err(not(&format!(
                 "has {to} mounted from {from}, which is not the pool's own"
@@ -2289,17 +2291,27 @@ pub fn check_oci(
 }
 
 /// **Whether `mount` is Podman's own init, as `--init` binds it** (#3702): its `catatonit`, from
-/// where the machine's Podman keeps it (a regular file there), bound read-only at `/run/podman-init`, the runner's PID 1
-/// that reaps what a chat's programs leave behind. Measured on rootless Podman 2026-10-29.
-fn is_podmans_init(mount: &serde_json::Value) -> bool {
+/// where the engine's machine keeps it (a regular file there, as `is_file_there` judges on that
+/// machine, #6269), bound read-only at `/run/podman-init`, the runner's PID 1 that reaps what a
+/// chat's programs leave behind. Measured on rootless Podman 2026-10-29.
+fn is_podmans_init(
+    mount: &serde_json::Value,
+    is_file_there: &dyn Fn(&std::path::Path) -> bool,
+) -> bool {
     let field = |name: &str| mount.get(name).and_then(serde_json::Value::as_str);
     let from = std::path::Path::new(field("source").unwrap_or_default());
     field("destination") == Some("/run/podman-init")
         && field("type") == Some("bind")
         && from.is_absolute()
         && from.file_name().is_some_and(|name| name == "catatonit")
-        && std::fs::metadata(from).is_ok_and(|found| found.is_file())
         && mount.get("options") == Some(&serde_json::json!(["bind", "ro", "rprivate"]))
+        && is_file_there(from)
+}
+
+/// **Whether `path` is a regular file on this machine**: where a local engine's runtime binds
+/// from.
+pub fn is_file_here(path: &std::path::Path) -> bool {
+    std::fs::metadata(path).is_ok_and(|found| found.is_file())
 }
 
 /// Where Podman keeps its default seccomp profile, as `podman info` names it.
@@ -3687,13 +3699,26 @@ impl Docker {
             let store = self.json(&["info", "--format", "{{json .Store}}"], "podman info")?;
             let config = std::path::Path::new(path);
             let store = podman_store(&store)?;
-            let oci = match &self.reach {
-                // On another machine, the file is that machine's: read there, over the pool's
-                // pinned SSH, and only the container's own (#6269).
-                Some(reach) => read_oci_there(reach, config, made, &store)?,
-                None => read_oci(config)?,
-            };
-            check_oci(&oci, made, config, &store, seccomp)?;
+            match &self.reach {
+                // On another machine, its files are that machine's: its runtime config read
+                // there, over the pool's pinned SSH, and only the container's own, and Podman's
+                // init judged a file there too (#6269).
+                Some(reach) => {
+                    let oci = read_oci_there(reach, config, made, &store)?;
+                    let is_file_there = |path: &std::path::Path| {
+                        reach.is_file(path, MOST_INSPECTED).unwrap_or(false)
+                    };
+                    check_oci(&oci, made, config, &store, seccomp, &is_file_there)?;
+                }
+                None => check_oci(
+                    &read_oci(config)?,
+                    made,
+                    config,
+                    &store,
+                    seccomp,
+                    &is_file_here,
+                )?,
+            }
         }
         let volume = made.runner.volume();
         let inspected = self.json(&["volume", "inspect", &volume], "docker volume inspect")?;
