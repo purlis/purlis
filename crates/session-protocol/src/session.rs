@@ -551,9 +551,22 @@ use crate::view::{Limits, Views};
 /// or is found looping and the person is asked, and continued on their answer. The window's
 /// alone. An older host refuses it `unknown_command`, so it is not asked, and such a chat is
 /// asked about with its program left running.
+///
+/// 1.86 has a login's sign-in start where the chat named it (#6291, ADR 0067 as amended
+/// 2026-11-12): [`crate::browsing::LogIn::start`], an address on the login's page's site or its
+/// form's, opened as written in place of the login's page, the host judging it again before it
+/// opens. A host before 1.86 would drop it and open the login's page, so no login with one is
+/// sent to it, by a window or by a host that relays to a runner.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 85,
+    minor: 86,
+};
+
+/// The version that first starts a login's sign-in where the chat named it
+/// ([`crate::browsing::LogIn::start`], #6291): no login with a start is sent to a host before.
+pub const KNOWS_LOGIN_START: Version = Version {
+    major: 1,
+    minor: 86,
 };
 
 /// The version that first holds a confinement's live asks open while the person is Quiet

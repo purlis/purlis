@@ -1069,7 +1069,13 @@ fn not_taken(refusal: drive::Refusal) -> NotTaken {
 /// whose form is on another origin (#4995) fills on the form's alone, and is held to its page's
 /// site and its form's (#5152), the agent kept off the form's outside a sign-in.
 pub fn login_of(login: &wire::LogIn) -> Result<(drive::Login, LoginSites), String> {
-    let address = WebAddress::parse(&login.address)
+    // Where the chat named its sign-in's start (#6291), judged here again, as it opens: the
+    // login's page stays what the browser is held to.
+    let opens = match &login.start {
+        Some(start) => crate::loginstart::start_of(start, &login.address, login.form.as_deref())?,
+        None => login.address.clone(),
+    };
+    let address = WebAddress::parse(&opens)
         .map_err(|why| format!("the login's address is not one a browser opens: {why}"))?;
     // https, or plain http on this machine's loopback alone; a name in its ASCII spelling, as
     // the engine records a page's address.

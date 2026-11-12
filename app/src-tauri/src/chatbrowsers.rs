@@ -3695,6 +3695,29 @@ impl ChatBrowsers {
                         false,
                     );
                 }
+                // Where the chat named the sign-in's start (#6291, the operator's ruling of
+                // 2026-11-12), judged against the login as read: on its sites, and its way back
+                // to its page's. Refused before anything goes into the browser.
+                let mut login = login;
+                if let Browsing::LogIn {
+                    start: Some(start), ..
+                } = &browse.asked
+                {
+                    match purlis_core::loginstart::start_of(
+                        start,
+                        &login.address,
+                        login.form.as_deref(),
+                    ) {
+                        Ok(start) => login.start = Some(start),
+                        Err(why) => {
+                            self.not_run(browse.chat, &declared);
+                            return (
+                                no(&format!("login {declared} was not filled: {why}")),
+                                false,
+                            );
+                        }
+                    }
+                }
                 let reaches = reaches_said(&login.address, login.form.as_deref());
                 let session = LoggedIn {
                     persona: persona_now.clone(),
@@ -4686,7 +4709,10 @@ fn origin_asked(
     browse: &BrowseAsk,
     persona: Option<&str>,
 ) -> Option<String> {
-    let Browsing::LogIn { login, suggested } = &browse.asked else {
+    let Browsing::LogIn {
+        login, suggested, ..
+    } = &browse.asked
+    else {
         return None;
     };
     match suggested {
@@ -4711,7 +4737,10 @@ fn still_the_login(
     pool: Option<&str>,
     session: &LoggedIn,
 ) -> bool {
-    let Browsing::LogIn { login, suggested } = &browse.asked else {
+    let Browsing::LogIn {
+        login, suggested, ..
+    } = &browse.asked
+    else {
         return false;
     };
     let same_site = suggested.as_ref().is_none_or(|suggested| {

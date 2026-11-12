@@ -967,6 +967,7 @@ fn the_event_log_says_who_drives_a_browser_and_that_someone_typed_never_what() {
         identity: None,
         suggested: false,
         form: None,
+        start: None,
     };
     Driver::log_in(&browsers, &program, login).unwrap();
 
@@ -1095,6 +1096,7 @@ fn a_window_started_again_says_nothing_of_a_login_the_host_refuses_as_the_person
         identity: None,
         suggested: false,
         form: None,
+        start: None,
     };
     let refused = Driver::log_in(&again, &program, login);
 
@@ -1371,6 +1373,7 @@ fn typing_is_said_on_the_origin_of_the_page_and_the_log_holds_no_path_query_or_v
         identity: None,
         suggested: false,
         form: None,
+        start: None,
     };
     Driver::log_in(&browsers, &program, login).unwrap();
 
