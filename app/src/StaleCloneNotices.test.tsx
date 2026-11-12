@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { emit } from "@tauri-apps/api/event";
+import { AFTER_GIT_MOVED_MS } from "./afterGitMoved";
 import { StaleCloneNotices, staleCloneCause, useStaleClones } from "./StaleCloneNotices";
 import type { StaleClone } from "./bindings";
 
@@ -41,16 +43,19 @@ const BOTH: StaleClone = {
 function core(stale: StaleClone[], fixed?: string, unread: string[] = []) {
   let now = stale;
   const asked: { cmd: string; args: unknown }[] = [];
-  mockIPC((cmd, args) => {
-    asked.push({ cmd, args });
-    if (cmd === "stale_clones") return { stale: now, unread };
-    if (cmd === "fix_stale_clone") {
-      if (fixed !== undefined) throw fixed;
-      now = [];
-      return "widget is on main.";
-    }
-    return null;
-  });
+  mockIPC(
+    (cmd, args) => {
+      asked.push({ cmd, args });
+      if (cmd === "stale_clones") return { stale: now, unread };
+      if (cmd === "fix_stale_clone") {
+        if (fixed !== undefined) throw fixed;
+        now = [];
+        return "widget is on main.";
+      }
+      return null;
+    },
+    { shouldMockEvents: true },
+  );
   return asked;
 }
 
@@ -231,5 +236,41 @@ describe("a stale repo's Notice", () => {
     expect(await screen.findByRole("status")).toHaveTextContent(
       "could not read workspace 'beta' (gone).",
     );
+  });
+});
+
+describe("a move of the project's git standing (felt speed round 3, H8)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const asks = (asked: { cmd: string }[]) =>
+    asked.filter((one) => one.cmd === "stale_clones").length;
+
+  it("asks for the stale repos again at their own delay, and once for a burst of moves", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const asked = core([]);
+    shown();
+    await vi.waitFor(() => expect(asks(asked)).toBe(1));
+    // The window listens once its `listen` has answered.
+    await vi.advanceTimersByTimeAsync(0);
+
+    await emit("plane-changed", { plane: PLANE });
+    await emit("plane-changed", { plane: PLANE });
+    await vi.advanceTimersByTimeAsync(AFTER_GIT_MOVED_MS.staleClones - 1);
+    expect(asks(asked)).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(asks(asked)).toBe(2);
+    await vi.advanceTimersByTimeAsync(AFTER_GIT_MOVED_MS.staleClones);
+    expect(asks(asked)).toBe(2);
+  });
+});
+
+describe("the reads that follow a move of the project's git standing", () => {
+  it("start at least a second and a half apart, the title bar's first", () => {
+    const at = Object.values(AFTER_GIT_MOVED_MS).sort((a, b) => a - b);
+    expect(AFTER_GIT_MOVED_MS.planeSaving).toBe(0);
+    for (const [i, ms] of at.slice(1).entries()) expect(ms - at[i]).toBeGreaterThanOrEqual(1_500);
   });
 });

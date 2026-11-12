@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { dequal } from "dequal/lite";
 import { commands, type PlaneAlerts, type PlaneId } from "./bindings";
+import { AFTER_GIT_MOVED_MS } from "./afterGitMoved";
 import { GIT, usePlaneChanged } from "./planeChanged";
 import { STILL_LOADING_AFTER } from "./projectLoads";
 import { RETURN_FOLD_MS } from "./saving";
@@ -66,7 +67,8 @@ export function useAlerts(
   }, [settling]);
   const held = settling && !waited;
   const holding = planes.join("\n");
-  const changesOnDisk = usePlaneChanged(planes, GIT);
+  // At its own turn after a move (`afterGitMoved.ts`, H8).
+  const changesOnDisk = usePlaneChanged(planes, GIT, AFTER_GIT_MOVED_MS.alerts);
 
   // Written as `Extensions`'s first read is: the command's own promise, a `gone` flag, and the
   // state set inside the callback — so an answer that lands after a newer ask began, or after
