@@ -1,6 +1,6 @@
 ---
 name: purlis-workspace
-description: When the person wants a purlis workspace made, forked, renamed, chosen or shared, or saved (`purlis save`). Use when asked to create, fork, rename or share a workspace. Not for removing one (purlis-safe-remove), its memory (purlis-tidy-memory), a new chat (purlis-handoff) or a branch (purlis-repo-work).
+description: When the person wants a purlis workspace made, forked, renamed, chosen, shared or saved (`purlis save`). Use when asked to create, fork, rename or share a workspace. Not for removing one (purlis-safe-remove), its memory (purlis-tidy-memory), a new chat (purlis-handoff) or a branch (purlis-repo-work).
 ---
 
 # A workspace's life
