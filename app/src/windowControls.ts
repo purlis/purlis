@@ -11,10 +11,11 @@ import { useSyncExternalStore } from "react";
  * one Notice among hundreds, and nothing led to it. Each control a message names, and that
  * stands on a Notice, is listed here: what it says and the family of the Notice it stands on.
  * Where the window shows such a message (a result's words), it carries **Go to** that control:
- * the Notices view opens, filtered to that kind, with the keyboard on the control.
+ * the project's Notices view opens, showing that kind, with the keyboard on the control.
  *
- * `windowControls.test.ts` holds the list to the core: every core message that tells the person
- * to press a control on a Notice names one listed here.
+ * `windowControls.test.ts` finds every core message that names a window control: each is
+ * listed here, or held in its exact list of those that link nowhere yet (Q234), so a new one
+ * fails it until it is one or the other.
  */
 export type WindowControl = {
   /** The control's label, as the message names it and the Notice draws it. */
@@ -36,8 +37,19 @@ export const controlsNamedIn = (message: string): WindowControl[] =>
 /** The words of the way to `control` on a message that names it. */
 export const goToSays = (control: WindowControl): string => `Go to ${control.words}`;
 
-/** The control asked for, until the Notices view has put the keyboard on it. One per window. */
-let asked: WindowControl | undefined;
+/**
+ * **A Go to, asked for**: the control, the project whose Notices view goes to it, and the words
+ * of the message that named it, which say which of its Notices it is about (a clone's folder).
+ */
+export type ControlAsk = { control: WindowControl; project: string; names: string };
+
+/** How long an ask waits for its project's Notices view to reach it, before it is let go: a
+ *  view that opens later never jumps to it. */
+export const ASK_WAITS_MS = 2000;
+
+/** The control asked for, until its project's Notices view has reached it. One per window. */
+let asked: ControlAsk | undefined;
+let lapse: ReturnType<typeof setTimeout> | undefined;
 const listeners = new Set<() => void>();
 const told = () => listeners.forEach((listener) => listener());
 
@@ -46,19 +58,26 @@ const subscribe = (listener: () => void) => {
   return () => void listeners.delete(listener);
 };
 
-/** Asks the window for `control`: the Notices view shows it and puts the keyboard on it. */
-export function goToControl(control: WindowControl): void {
-  asked = control;
+/** Asks `project`'s Notices view for `control`, as a message whose words are `names` named it:
+ *  the view opens, shows it and puts the keyboard on it. Let go after {@link ASK_WAITS_MS}. */
+export function goToControl(control: WindowControl, project: string, names: string): void {
+  const ask = { control, project, names };
+  asked = ask;
+  clearTimeout(lapse);
+  lapse = setTimeout(() => controlReached(ask), ASK_WAITS_MS);
   told();
 }
 
-/** The Notices view has put the keyboard on the control asked for, or found none to put it on. */
-export function controlReached(): void {
-  if (asked === undefined) return;
+/** `ask` is done with: its Notices view reached it, or it waited too long. */
+export function controlReached(ask: ControlAsk): void {
+  if (asked !== ask) return;
   asked = undefined;
+  clearTimeout(lapse);
   told();
 }
 
-/** The control asked for and not reached yet, for what draws it or brings its view. */
-export const useAskedControl = (): WindowControl | undefined =>
-  useSyncExternalStore(subscribe, () => asked);
+/** The control asked for of `project`'s Notices view and not reached yet. */
+export const useAskedControl = (project: string | undefined): ControlAsk | undefined =>
+  useSyncExternalStore(subscribe, () =>
+    project !== undefined && asked?.project === project ? asked : undefined,
+  );

@@ -11564,12 +11564,23 @@ export const PlaneView = memo(function PlaneView({
   const showNotices = useCallback(() => showSideView("notices"), [showSideView]);
   /** **A control a message named, asked for** (R-333): the project in front shows its Notices,
    *  whose list puts the keyboard on it. */
-  const askedControl = useAskedControl();
+  const askedControl = useAskedControl(plane);
   useEffect(() => {
-    if (askedControl !== undefined && inFront) showNotices();
-  }, [askedControl, inFront, showNotices]);
+    if (askedControl === undefined || !inFront) return;
+    // Shown without its first stop taking the keyboard: its list puts it on the control.
+    showSide("notices");
+    // Not cancelled when the ask is reached: a frame on, the keyboard is on the control, or, where
+    // none stands to put it on, on the view's first stop, as its key leaves it.
+    requestAnimationFrame(() => {
+      const panel = document.querySelector('[role="tabpanel"][data-view="notices"]');
+      if (panel === null || !panel.contains(document.activeElement)) giveViewTheKeyboard("notices");
+    });
+  }, [askedControl, inFront, showSide]);
   /** **The Notices view, findable** (Q182, Q183): over this project's dismissals. */
-  const noticesFindable = useMemo(() => ({ dismissed, showAgain }), [dismissed, showAgain]);
+  const noticesFindable = useMemo(
+    () => ({ project: plane, dismissed, showAgain }),
+    [plane, dismissed, showAgain],
+  );
   /** A runner's branch ready to push, from the away summary (#2051): its workspace in front,
    *  and Changes, where it is taken here and pushed. */
   const showChangesOf = useCallback(

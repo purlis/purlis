@@ -3248,10 +3248,6 @@ body {
   padding: 0;
   list-style: none;
 }
-.notices-none {
-  margin: 0;
-  color: var(--text-secondary);
-}
 
 /* **A section's title, on either side of the window** — the side panels' sections and the
    Explorer's own: the panel family's (`ui/panel/panel.css`) draws it. It sits with no margin of

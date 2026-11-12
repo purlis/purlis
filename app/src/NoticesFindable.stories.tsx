@@ -25,14 +25,27 @@ const CLONES = [
   clone("repos/api", "github.com/acme/api"),
 ];
 
+/** The project the stories' Notices and results are of. */
+const PROJECT = "/home/dev/plane";
+
 /** What the core says when a workspace clone's save cannot push (`forge/gitcredential.rs`). */
 export const NOT_TRUSTED =
   "purlis did not clone this repository and you have not trusted it, so the save did not push with your purlis sign-in. If you made this clone yourself, press Trust this clone on its notice in the window, which names its remote, then save again";
 
 /** A project's Notices: two clones made outside purlis, a stale repo and a doctor finding, each
  *  dismissed by its cause as the window's dismissals keep them. */
-function TheNotices({ result = false }: { result?: boolean }) {
-  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
+function TheNotices({
+  result = false,
+  project = PROJECT,
+  dismissedFirst = [],
+  clones = CLONES,
+}: {
+  result?: boolean;
+  project?: string;
+  dismissedFirst?: readonly string[];
+  clones?: readonly CloneToVouch[];
+}) {
+  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set(dismissedFirst));
   const [said, setSaid] = useState("Nothing pressed");
   const dismiss = (cause: string) => setDismissed((was) => new Set(was).add(cause));
   const showAgain = (cause: string) =>
@@ -42,21 +55,24 @@ function TheNotices({ result = false }: { result?: boolean }) {
       {result && (
         <ActionResultNotice
           cause="result:save"
-          said={{ from: "story", refused: true, title: "web was not saved", words: NOT_TRUSTED }}
+          said={{ from: "story", refused: true, title: "api was not saved", words: NOT_TRUSTED }}
           onClose={() => undefined}
           onSettings={() => undefined}
+          project={PROJECT}
         />
       )}
-      <NoticeList findable={{ dismissed, showAgain }}>
-        {CLONES.filter((one) => !dismissed.has(cloneVouchCause(one))).map((one) => (
-          <CloneVouchNotice
-            key={one.folder}
-            clone={one}
-            busy={false}
-            onTrust={() => setSaid(`Trusted ${one.folder}`)}
-            onDismiss={() => dismiss(cloneVouchCause(one))}
-          />
-        ))}
+      <NoticeList findable={{ project, dismissed, showAgain }}>
+        {clones
+          .filter((one) => !dismissed.has(cloneVouchCause(one)))
+          .map((one) => (
+            <CloneVouchNotice
+              key={one.folder}
+              clone={one}
+              busy={false}
+              onTrust={() => setSaid(`Trusted ${one.folder}`)}
+              onDismiss={() => dismiss(cloneVouchCause(one))}
+            />
+          ))}
         {!dismissed.has("stale-clone:docs") && (
           <Notice
             cause="stale-clone:docs"
@@ -91,6 +107,7 @@ type Story = StoryObj<typeof meta>;
 export const Searched: Story = {
   play: async ({ canvas, userEvent }) => {
     const search = canvas.getByRole("searchbox", { name: "Search the notices" });
+    await expect(search).toHaveAttribute("placeholder", "Search the notices");
     await userEvent.click(search);
     await userEvent.type(search, "acme/api");
     await waitFor(() => expect(canvas.queryByText(/repos\/web/)).toBeNull());
@@ -98,7 +115,11 @@ export const Searched: Story = {
     await expect(canvas.queryByText(/hooks are not installed/)).toBeNull();
     await userEvent.clear(search);
     await userEvent.type(search, "nothing says this");
-    await expect(await canvas.findByText("No notice says “nothing says this”.")).toBeVisible();
+    await expect(await canvas.findByText("No notice matches “nothing says this”.")).toBeVisible();
+    // What it reads is what a Notice says, never a button's label.
+    await userEvent.clear(search);
+    await userEvent.type(search, "switch");
+    await expect(await canvas.findByText("No notice matches “switch”.")).toBeVisible();
     await userEvent.clear(search);
     await waitFor(() => expect(canvas.getByText(/repos\/web/)).toBeVisible());
     expectFocusInSight();
@@ -150,8 +171,16 @@ export const BroughtBack: Story = {
     await expect(list.getAllByRole("listitem")).toHaveLength(1);
     await expect(list.getByText("Clone made outside purlis")).toBeVisible();
     await expect(list.getByText("repos/web")).toBeVisible();
+    await expect(list.getByText("repos/web").closest("code")).toBeNull();
+    await expect(canvas.getByText(/purlis keeps dismissed until it changes/)).toBeVisible();
     await userEvent.click(list.getByRole("button", { name: "Show again" }));
     await expect(filters.getByRole("button", { name: "Dismissed (0)" })).toBeVisible();
+    // The keyboard never falls to the page: the row gone, it is on Dismissed.
+    await untilFocused(
+      () => filters.getByRole("button", { name: "Dismissed (0)" }),
+      "on Dismissed once its last row is shown again",
+    );
+    await expect(canvas.getByText("Nothing is kept dismissed here")).toBeVisible();
     await userEvent.click(filters.getByRole("button", { name: "All · 4" }));
     await expect(await canvas.findByText(/repos\/web/)).toBeVisible();
     expectFocusInSight();
@@ -170,9 +199,99 @@ export const ToTheControl: Story = {
         filters.getByRole("button", { name: "Clones made outside purlis · 2" }),
       ).toHaveAttribute("aria-pressed", "true"),
     );
+    // On the clone the result names (api), not the first one listed.
     await untilFocused(
-      () => canvas.getAllByRole("button", { name: "Trust this clone" })[0],
-      "on the first clone's Trust this clone",
+      () =>
+        canvas
+          .getAllByRole("button", { name: "Trust this clone" })
+          .find((one) => one.closest('[data-cause*="repos/api"]') !== null) ?? null,
+      "on api's Trust this clone",
+    );
+    expectFocusInSight();
+  },
+};
+
+/** **Go to never ends blank** (R-333): the clone it names was dismissed, so Go to shows
+ *  Dismissed with the keyboard on that clone's Show again. */
+export const ToADismissedControl: Story = {
+  args: {
+    result: true,
+    dismissedFirst: [`clone-vouch:repos/api|github.com/acme/api`],
+    clones: [CLONES[1]],
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Go to Trust this clone" }));
+    const filters = within(canvas.getByRole("group", { name: "Show notices of a kind" }));
+    await waitFor(() =>
+      expect(filters.getByRole("button", { name: "Dismissed (1)" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      ),
+    );
+    await untilFocused(
+      () => within(canvas.getByRole("list", { name: "Dismissed notices" })).getByRole("button"),
+      "on the dismissed clone's Show again",
+    );
+    expectFocusInSight();
+  },
+};
+
+/** **Go to never ends blank** (R-333): no Notice of its kind stands or is dismissed, so every
+ *  kind is shown, and what stands is listed. */
+export const ToAControlNoLongerThere: Story = {
+  args: { result: true, clones: [] },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Go to Trust this clone" }));
+    const filters = within(canvas.getByRole("group", { name: "Show notices of a kind" }));
+    await waitFor(() =>
+      expect(filters.getByRole("button", { name: "All · 2" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      ),
+    );
+    await expect(canvas.getByText(/hooks are not installed/)).toBeVisible();
+    await userEvent.tab();
+    expectFocusInSight();
+  },
+};
+
+/** **A Go to is its project's** (R-333): another project's Notices view leaves it alone. */
+export const AnotherProjectsGoTo: Story = {
+  args: { result: true, project: "/home/dev/other" },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Go to Trust this clone" }));
+    const filters = within(canvas.getByRole("group", { name: "Show notices of a kind" }));
+    await expect(filters.getByRole("button", { name: "All · 4" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(canvas.getByRole("button", { name: "Go to Trust this clone" })).toHaveFocus();
+    expectFocusInSight();
+  },
+};
+
+/** **Show again hands the keyboard on** (WCAG 2.4.3): with two dismissed, to the row that took
+ *  the place of the one shown again. The search finds in the Dismissed list too. */
+export const ShownAgainOneOfTwo: Story = {
+  args: {
+    dismissedFirst: [
+      `clone-vouch:repos/web|github.com/acme/web`,
+      `clone-vouch:repos/api|github.com/acme/api`,
+    ],
+  },
+  play: async ({ canvas, userEvent }) => {
+    const filters = within(canvas.getByRole("group", { name: "Show notices of a kind" }));
+    await userEvent.click(filters.getByRole("button", { name: "Dismissed (2)" }));
+    const list = () => within(canvas.getByRole("list", { name: "Dismissed notices" }));
+    const search = canvas.getByRole("searchbox", { name: "Search the notices" });
+    await userEvent.type(search, "api");
+    await waitFor(() => expect(list().getAllByRole("listitem")).toHaveLength(1));
+    await userEvent.clear(search);
+    await waitFor(() => expect(list().getAllByRole("listitem")).toHaveLength(2));
+    await userEvent.click(list().getAllByRole("button", { name: "Show again" })[0]);
+    await untilFocused(
+      () => list().getByRole("button", { name: "Show again" }),
+      "on the dismissed row that took its place",
     );
     expectFocusInSight();
   },

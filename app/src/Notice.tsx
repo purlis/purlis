@@ -50,6 +50,8 @@ import {
 import { Twist } from "./ui/disclosure/Disclosure";
 import { TextField } from "./ui/field/Field";
 import { PanelSectionTitle } from "./ui/panel/Panel";
+import { EmptyState } from "./ui/empty-state/EmptyState";
+import { KEPT } from "./dismissals";
 import { aboutOf, kindOf, searchFinds } from "./noticeKinds";
 import { controlReached, useAskedControl } from "./windowControls";
 import {
@@ -1336,16 +1338,35 @@ export function NoticeList({
     [entries, held],
   );
 
-  /** The Notices listed now that have a Dismiss of their own. */
-  const clearable = useMemo(
+  /** The Notices dismissed here and waiting for their Undo whose dismissal purlis keeps: they
+   *  are counted under Dismissed (N) from the press, not from when the Undo lapses (Q234). */
+  const heldKept = useMemo(
     () =>
       [...entries]
         .filter(
-          ([id, one]) => one.dismiss !== undefined && held?.has(heldKey(id, one.cause)) !== true,
+          ([id, one]) =>
+            held?.has(heldKey(id, one.cause)) === true && KEPT.has(familyOf(one.cause)),
         )
-        .map(([id]) => id),
+        .map(([, one]) => one.cause),
     [entries, held],
   );
+  const found = useFinding(ordered, findable, listAt, heldKept, hold?.undo);
+  const all = useMemo(() => ordered.map((one) => one.host), [ordered]);
+  const hosts = found?.hosts ?? all;
+
+  /** The Notices listed now that have a Dismiss of their own, and that the filter and the
+   *  search leave drawn: Dismiss all puts away only what is found. */
+  const clearable = useMemo(() => {
+    const drawn = new Set(hosts);
+    return [...entries]
+      .filter(
+        ([id, one]) =>
+          one.dismiss !== undefined &&
+          held?.has(heldKey(id, one.cause)) !== true &&
+          drawn.has(one.host),
+      )
+      .map(([id]) => id);
+  }, [entries, held, hosts]);
   useEffect(
     () =>
       onClear?.(
@@ -1356,21 +1377,20 @@ export function NoticeList({
     [onClear, clearable, outOf],
   );
 
-  const found = useFinding(ordered, findable);
-  const hosts = found?.hosts ?? ordered.map((one) => one.host);
-
-  // Before the frame is painted, so a Notice is never seen out of its place. Every drawing: what
-  // a search finds is read off the Notices' own words.
+  // Before the frame is painted, so a Notice is never seen out of its place.
   useLayoutEffect(() => {
     const at = listAt;
     if (at === null) return;
-    for (const child of [...at.children]) if (!hosts.includes(child as HTMLElement)) child.remove();
+    const kept = new Set<Element>(hosts);
+    for (const child of [...at.children]) if (!kept.has(child)) child.remove();
     hosts.forEach((host, index) => {
       const there = at.children.item(index);
       if (there !== host) at.insertBefore(host, there);
     });
-    found?.reach(at);
-  });
+  }, [hosts, listAt]);
+  // **A control a message asked for** (R-333), once its Notice is in its place above.
+  const reach = found?.reach;
+  useLayoutEffect(() => reach?.());
 
   const counted = ordered.filter((one) => countsInStatusBar(one.cause)).length;
   const dot = dotOf(ordered.map((one) => one.tone));
@@ -1409,10 +1429,12 @@ export function NoticeList({
 }
 
 /**
- * **What the Notices view's list finds by** (Q182, Q183): the causes dismissed in its project
- * (`dismissals.ts`), and the way to show one again.
+ * **What the Notices view's list finds by** (Q182, Q183): the project it lists (a Go to asks one
+ * project's view, `windowControls.ts`), the causes dismissed in it (`dismissals.ts`), and the way
+ * to show one again.
  */
 export type NoticesFindable = {
+  project: string;
   dismissed: ReadonlySet<string>;
   showAgain: (cause: string) => void;
 };
@@ -1420,74 +1442,162 @@ export type NoticesFindable = {
 /** The label of the Dismissed filter, with how many are dismissed (Q183). */
 export const dismissedSays = (count: number): string => `Dismissed (${count})`;
 
+/** **What Dismissed (N) lists** (Q234, R-334 as narrowed): the Notices whose dismissal purlis
+ *  keeps until their cause changes. Any other comes back by itself when it happens again. */
+export const DISMISSED_LISTS =
+  "Listed here: what purlis keeps dismissed until it changes. Any other notice you dismiss shows again the next time it happens.";
+
+/** What the Dismissed list says while it lists none. */
+export const NONE_DISMISSED = "Nothing is kept dismissed here";
+
+/** The search box's label and its placeholder: one, so what is read is what is shown. */
+export const SEARCH_THE_NOTICES = "Search the notices";
+
+/** The line a search that finds no Notice draws, as the window's other searches say it. */
+export const noNoticeMatches = (typed: string): string => `No notice matches “${typed}”.`;
+
 /** What the filters show: every kind, one kind (by its `many`), or what is dismissed. */
 type Showing = { all: true } | { kind: string } | { dismissed: true };
 
 const ALL: Showing = { all: true };
+const DISMISSED: Showing = { dismissed: true };
+const same = (a: Showing, b: Showing) =>
+  ("all" in a && "all" in b) ||
+  ("dismissed" in a && "dismissed" in b) ||
+  ("kind" in a && "kind" in b && a.kind === b.kind);
+
+/**
+ * **A Notice's words, as a search reads them**: what it says, not its buttons' labels, nor what
+ * is hidden (a closed Details), so "trust" finds the Notices that say it, not every one with
+ * Trust on a button.
+ */
+function wordsOf(host: HTMLElement): string {
+  const copy = host.cloneNode(true) as HTMLElement;
+  for (const gone of copy.querySelectorAll('button, [hidden], [aria-hidden="true"]')) gone.remove();
+  return copy.textContent ?? "";
+}
+
+/** Whether `names`, a message's words, names what the Notice of `cause` is about: its whole
+ *  `aboutOf`, or its last part as a word ("web" for `repos/web`). */
+function namesIt(names: string, cause: string): boolean {
+  const about = aboutOf(cause);
+  if (about === "") return false;
+  if (names.includes(about)) return true;
+  const last = about.split("/").pop() ?? "";
+  return (
+    last !== "" &&
+    new RegExp(`(^|\\W)${last.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\W|$)`).test(names)
+  );
+}
 
 /**
  * **A findable list's parts** (Q182, Q183; R-331 to R-334): the search box and the filters over
  * the list, the Notices it lists in their groups with each group's head before them (`hosts`,
  * in their order), and what stands under it: the line that says a search found nothing, or the
- * Dismissed list. `reach` puts the keyboard on a control a message asked for, once it is drawn
- * (`windowControls.ts`, R-333). `undefined` for a list that is not findable.
+ * Dismissed list. `reach` puts the keyboard on a control a message asked for, once its Notice
+ * is drawn (`windowControls.ts`, R-333). `undefined` for a list that is not findable.
  *
  * Groups take the place of their first Notice in the list's order, so the most important kind
- * leads; within one, the list's order holds. A search finds a Notice by its words as drawn.
+ * leads; within one, the list's order holds. A search finds a Notice by its words
+ * ({@link wordsOf}), and a dismissed one by its kind and what it was about.
+ *
+ * `heldKept` are the causes dismissed here and waiting for their Undo, listed under Dismissed
+ * from the press; Show again on one is that Undo (`undo`).
  */
 function useFinding(
   ordered: readonly Entry[],
   findable: NoticesFindable | undefined,
+  listAt: HTMLElement | null,
+  heldKept: readonly string[],
+  undo: (() => void) | undefined,
 ):
-  | { hosts: HTMLElement[]; bar: ReactNode; after: ReactNode; reach: (at: HTMLElement) => void }
+  | { hosts: readonly HTMLElement[]; bar: ReactNode; after: ReactNode; reach: () => void }
   | undefined {
   const [query, setQuery] = useState("");
   const [showing, setShowing] = useState<Showing>(ALL);
   /** Each group's head is drawn into an element of its own, which the list moves as a Notice. */
   const [heads] = useState(() => new Map<string, HTMLElement>());
-  const asked = useAskedControl();
-  // **A control a message asked for** (R-333): its kind is shown and the search let go, at once,
-  // as React's "information from previous renders" pattern does, so no frame draws another kind.
-  const [took, setTook] = useState<typeof asked>();
-  if (findable !== undefined && asked !== took) {
-    setTook(asked);
-    if (asked !== undefined) {
-      setShowing({ kind: kindOf(`${asked.family}:`).many });
-      setQuery("");
-    }
-  }
-  if (findable === undefined) return undefined;
+  const asked = useAskedControl(findable?.project);
+  const dismissedAt = useRef<HTMLUListElement>(null);
+  const dismissedFilter = useRef<HTMLButtonElement>(null);
+  /** Where the keyboard goes once a Show again's row has gone: the row now at that place. */
+  const refocusAt = useRef<number | undefined>(undefined);
 
-  const groups: { many: string; members: Entry[] }[] = [];
-  for (const one of ordered) {
-    const many = kindOf(one.cause).many;
-    const group = groups.find((each) => each.many === many);
-    if (group === undefined) groups.push({ many, members: [one] });
-    else group.members.push(one);
-  }
-  const drawn = groups
-    .filter(
-      (group) => !("dismissed" in showing) && !("kind" in showing && group.many !== showing.kind),
-    )
-    .map((group) => ({
-      ...group,
-      found: group.members.filter((one) => searchFinds(one.host.textContent ?? "", query)),
-    }))
-    .filter((group) => group.found.length > 0);
-  const headOf = (many: string) => {
-    const there = heads.get(many);
-    if (there !== undefined) return there;
-    const made = document.createElement("div");
-    heads.set(many, made);
-    return made;
-  };
-  const hosts = drawn.flatMap((group) => [
-    headOf(group.many),
-    ...group.found.map((one) => one.host),
-  ]);
-  const dismissed = [...findable.dismissed];
-  const pick = (next: Showing) => setShowing(next);
+  const kept = findable?.dismissed;
+  const dismissed = useMemo(() => [...new Set([...(kept ?? []), ...heldKept])], [kept, heldKept]);
   const typed = query.trim();
+
+  // **Where a Go to lands** (R-333, never on a blank view): its kind while a Notice of that
+  // family stands; Dismissed while one is dismissed; else every kind. Shown at once, the search
+  // let go, as React's "information from previous renders" pattern does, so no frame draws
+  // another kind.
+  const target: Showing | undefined =
+    findable === undefined || asked === undefined
+      ? undefined
+      : ordered.some((one) => familyOf(one.cause) === asked.control.family)
+        ? { kind: kindOf(`${asked.control.family}:`).many }
+        : dismissed.some((cause) => familyOf(cause) === asked.control.family)
+          ? DISMISSED
+          : ALL;
+  if (target !== undefined && !same(showing, target)) setShowing(target);
+  if (target !== undefined && query !== "") setQuery("");
+
+  const groups = useMemo(() => {
+    const made: { many: string; members: Entry[] }[] = [];
+    for (const one of ordered) {
+      const many = kindOf(one.cause).many;
+      const group = made.find((each) => each.many === many);
+      if (group === undefined) made.push({ many, members: [one] });
+      else group.members.push(one);
+    }
+    return made;
+  }, [ordered]);
+  const drawn = useMemo(
+    () =>
+      groups
+        .filter(
+          (group) =>
+            !("dismissed" in showing) && !("kind" in showing && group.many !== showing.kind),
+        )
+        .map((group) => ({
+          ...group,
+          found: group.members.filter((one) => searchFinds(wordsOf(one.host), typed)),
+        }))
+        .filter((group) => group.found.length > 0),
+    [groups, showing, typed],
+  );
+  const hosts = useMemo(() => {
+    const headOf = (many: string) => {
+      const there = heads.get(many);
+      if (there !== undefined) return there;
+      const made = document.createElement("div");
+      heads.set(many, made);
+      return made;
+    };
+    return drawn.flatMap((group) => [headOf(group.many), ...group.found.map((one) => one.host)]);
+  }, [drawn, heads]);
+  const listed = dismissed.filter((cause) => {
+    const kind = kindOf(cause);
+    return searchFinds(`${kind.one} ${kind.many} ${aboutSaid(cause) ?? ""}`, typed);
+  });
+
+  // **The keyboard never falls to the page after Show again** (WCAG 2.4.3): to the row that took
+  // its place, the one before where it was the last, or the Dismissed filter where none is left.
+  useLayoutEffect(() => {
+    const at = refocusAt.current;
+    if (at === undefined) return;
+    refocusAt.current = undefined;
+    const rows = dismissedAt.current?.querySelectorAll<HTMLElement>("button") ?? [];
+    (rows[Math.min(at, rows.length - 1)] ?? dismissedFilter.current)?.focus();
+  });
+
+  if (findable === undefined) return undefined;
+  const pick = (next: Showing) => setShowing(next);
+  const again = (cause: string, index: number) => {
+    refocusAt.current = index;
+    if (findable.dismissed.has(cause)) findable.showAgain(cause);
+    else undo?.();
+  };
 
   const bar = (
     <div className="notices-find">
@@ -1495,11 +1605,11 @@ function useFinding(
         type="search"
         size="sm"
         icon={<Search aria-hidden="true" />}
-        aria-label="Search the notices"
-        placeholder={`Search ${ordered.length} notices`}
+        aria-label={SEARCH_THE_NOTICES}
+        placeholder={SEARCH_THE_NOTICES}
         value={query}
         onChange={setQuery}
-        keepsFocus="notices-search"
+        keepsFocus={`notices-search:${findable.project}`}
       />
       <ButtonRow size="sm" role="group" aria-label="Show notices of a kind">
         <ToggleButton size="sm" isSelected={"all" in showing} onChange={() => pick(ALL)}>
@@ -1519,9 +1629,10 @@ function useFinding(
           );
         })}
         <ToggleButton
+          ref={dismissedFilter}
           size="sm"
           isSelected={"dismissed" in showing}
-          onChange={() => pick("dismissed" in showing ? ALL : { dismissed: true })}
+          onChange={() => pick("dismissed" in showing ? ALL : DISMISSED)}
         >
           {dismissedSays(dismissed.length)}
         </ToggleButton>
@@ -1531,7 +1642,7 @@ function useFinding(
           <PanelSectionTitle
             level={4}
           >{`${group.many} · ${group.found.length}`}</PanelSectionTitle>,
-          headOf(group.many),
+          heads.get(group.many) as HTMLElement,
           group.many,
         ),
       )}
@@ -1540,35 +1651,88 @@ function useFinding(
 
   const after =
     "dismissed" in showing ? (
-      <ul className="notices-dismissed" aria-label="Dismissed notices">
-        {dismissed.map((cause) => (
-          <MessageRow key={cause} tone="plain" icon={<CircleCheck />}>
-            <MessageTop title={kindOf(cause).one} />
-            <MessageBody>
-              <code>{aboutOf(cause)}</code>
-            </MessageBody>
-            <MessageLinks>
-              <Button size="sm" variant="quiet-link" onPress={() => findable.showAgain(cause)}>
-                Show again
-              </Button>
-            </MessageLinks>
-          </MessageRow>
-        ))}
-      </ul>
+      <div className="notices-find">
+        <p>{DISMISSED_LISTS}</p>
+        {listed.length === 0 ? (
+          <EmptyState
+            variant="panel"
+            headline={
+              typed !== "" && dismissed.length > 0 ? noNoticeMatches(typed) : NONE_DISMISSED
+            }
+          />
+        ) : (
+          <ul
+            ref={dismissedAt}
+            role="list"
+            className="notices-dismissed"
+            aria-label="Dismissed notices"
+          >
+            {listed.map((cause, index) => (
+              <MessageRow key={cause} data-cause={cause} tone="plain" icon={<CircleCheck />}>
+                <MessageTop title={kindOf(cause).one} />
+                {aboutSaid(cause) !== undefined && <MessageBody>{aboutSaid(cause)}</MessageBody>}
+                <MessageLinks>
+                  <Button size="sm" variant="quiet-link" onPress={() => again(cause, index)}>
+                    Show again
+                  </Button>
+                </MessageLinks>
+              </MessageRow>
+            ))}
+          </ul>
+        )}
+      </div>
     ) : typed !== "" && hosts.length === 0 && ordered.length > 0 ? (
-      <p className="notices-none">{`No notice says “${typed}”.`}</p>
+      <EmptyState variant="panel" headline={noNoticeMatches(typed)} />
     ) : null;
 
-  const reach = (at: HTMLElement) => {
-    if (asked === undefined || took !== asked) return;
-    const control = [...at.querySelectorAll<HTMLElement>("button")].find(
-      (button) => button.textContent?.trim() === asked.words,
-    );
-    // None drawn means none stands now: the kind is shown, and the keyboard stays where it is.
-    control?.focus();
-    controlReached();
+  const reach = () => {
+    if (asked === undefined || listAt === null || target === undefined) return;
+    // Not before its view is shown: a hidden view takes no keyboard (the Notices view opens a
+    // frame after the Go to).
+    if (listAt.parentElement?.closest("[hidden]") !== null) return;
+    if ("kind" in target) {
+      const controls = [...listAt.querySelectorAll<HTMLElement>("button")].filter(
+        (button) => button.textContent?.trim() === asked.control.words,
+      );
+      // Its Notice is not in its place yet: the next drawing reaches it.
+      if (controls.length === 0) return;
+      const named = controls.find((button) => {
+        const cause = button.closest("[data-cause]")?.getAttribute("data-cause");
+        return cause != null && namesIt(asked.names, cause);
+      });
+      (named ?? controls[0]).focus();
+    } else if ("dismissed" in target) {
+      const rows = [...(dismissedAt.current?.querySelectorAll<HTMLElement>("[data-cause]") ?? [])];
+      const row =
+        rows.find((one) => namesIt(asked.names, one.getAttribute("data-cause") ?? "")) ??
+        rows.find((one) => familyOf(one.getAttribute("data-cause") ?? "") === asked.control.family);
+      row?.querySelector<HTMLElement>("button")?.focus();
+    }
+    // Every kind, where none of its family stands or is dismissed: the view's own first stop
+    // takes the keyboard (`PlaneView`).
+    controlReached(asked);
   };
   return { hosts, bar, after, reach };
+}
+
+/** What a dismissed row says it was about, in plain words, where its cause says it plainly: a
+ *  clone's or a repo's folder, a workspace, a chat by its number. Not an id no one reads. */
+function aboutSaid(cause: string): string | undefined {
+  const about = aboutOf(cause);
+  switch (familyOf(cause)) {
+    case "clone-vouch":
+    case "stale-clone":
+    case "pin-dormant":
+    case "project-gone":
+      return about === "" ? undefined : about;
+    case "chat-resumed":
+    case "chat-guessed":
+    case "chat-fresh":
+    case "chat-untaken":
+      return /^\d+$/.test(about) ? `Chat ${about}` : undefined;
+    default:
+      return undefined;
+  }
 }
 
 /** **Whether a pane's row of Notices is drawn**: not while it shows none (the row's `data-empty`

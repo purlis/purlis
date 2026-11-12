@@ -34,7 +34,11 @@ export function ActionResultNotice({
   escape = true,
   opens,
   refocus,
+  project,
 }: {
+  /** **The project it is about** (R-333): a control its words name is gone to in that
+   *  project's Notices view. Without one, no Go to is offered. */
+  project?: string;
   /** **A way to the workspace it is about**, where that workspace has no chip to hang it from
    *  (#3651, D-3648-16): "Open X", drawn as its link, so it is never a notice about a workspace
    *  that offers no way there. */
@@ -77,8 +81,10 @@ export function ActionResultNotice({
     go: way.go,
   }));
   // **A control its words name** (R-333): Go to it, which shows its Notice with the keyboard on it.
-  for (const control of controlsNamedIn(`${said.words}\n${said.details ?? ""}`))
-    fixes.push({ label: goToSays(control), onPress: () => goToControl(control) });
+  const names = `${title ?? ""}\n${said.words}\n${said.details ?? ""}`;
+  if (project !== undefined)
+    for (const control of controlsNamedIn(names))
+      fixes.push({ label: goToSays(control), onPress: () => goToControl(control, project, names) });
   if (details !== undefined)
     fixes.push({
       label: "Details",
@@ -196,7 +202,8 @@ export function ResultsGroup({
 }: {
   /** The way to the workspace a result is about, where it has no chip (#3651). */
   openOf?: (said: Said) => NoticeAction | undefined;
-  kept: readonly { id: number; said: Said }[];
+  /** Each kept result, with the project that was in front when it was said. */
+  kept: readonly { id: number; said: Said; plane?: string }[];
   into: Element;
   onDrop: (id: number) => void;
   onSettings: (link: SettingsLink) => void;
@@ -212,6 +219,7 @@ export function ResultsGroup({
           onClose={() => onDrop(one.id)}
           onSettings={onSettings}
           opens={openOf?.(one.said)}
+          project={one.plane}
         />
       ))}
     </NoticeList>
