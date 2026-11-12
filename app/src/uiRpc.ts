@@ -1735,7 +1735,8 @@ export const commands = {
 	 *  mistake.
 	 * 
 	 *  On a blocking thread, because the plane-root alert asks git for a status per project and a
-	 *  window that waited on eight of them would miss its frame.
+	 *  window that waited on eight of them would miss its frame; each project read beside the
+	 *  others, from its kept standing (H6c).
 	 */
 	alertsEverywhere: () => typedError<PlaneAlerts[], string>(__TAURI_INVOKE("alerts_everywhere")),
 	/**
