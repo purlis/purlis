@@ -115,7 +115,7 @@ export function Tile({
   }, [report, id]);
   return (
     <div data-scope="card" data-part="tile">
-      <span data-scope="card" data-part="tile-label" className="ui-text-label">
+      <span data-scope="card" data-part="tile-label">
         {label}
       </span>
       <span data-scope="card" data-part="tile-value">

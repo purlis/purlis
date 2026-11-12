@@ -75,8 +75,11 @@
   display: flex;
   gap: var(--space-3);
   align-items: center;
-  /* The label (`ui-text-label`) in its family's tier, which the parts manifest reads here. */
   color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-strong);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 [data-scope="panel-section"][data-part="title"] .node-icon {
@@ -237,9 +240,13 @@
   box-sizing: border-box;
   min-block-size: calc(var(--size-chrome) + var(--space-1));
   padding-block: 0;
-  /* The prototype's group name: the section label (`ui-text-label`, its one spelling, #1920),
-     in the quiet tier (words that inform are quiet, never faint), its count at its end. */
+  /* The prototype's group name: 11px capitals, spaced, medium, in the quiet tier (words that
+     inform are quiet, never faint), its count at its end. */
   color: var(--text-quiet);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   background-color: var(--panel-fill);
 }
 

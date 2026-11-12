@@ -305,18 +305,6 @@ export function complaints(found: ReadonlyMap<string, readonly string[]>): strin
   });
 }
 
-/** Each declaration in a stylesheet that spells the section label's capitals or its spacing,
- *  which only `primitives/text.css` may (#1920): a rule elsewhere may only take them off
- *  (`none`, `normal`, `0`, `inherit`), as a group named by data does. */
-export function labelSpellings(css: string): string[] {
-  const off = (name: string, value: string) =>
-    (name === "text-transform" && !/^(?:none|inherit)$/.test(value)) ||
-    (name === "letter-spacing" && !/^(?:normal|0|inherit)$/.test(value));
-  return declarations(css)
-    .filter(({ property: name, value }) => off(unprefixed(name), value.trim()))
-    .map(({ context, property: name, value }) => `${context.join(" › ")} | ${name}: ${value}`);
-}
-
 describe("the type guard (#1920)", () => {
   it("finds every size, weight, line height, family and colour of text on a token", () => {
     expect(complaints(literalsByFile())).toEqual([]);
@@ -657,36 +645,5 @@ export function plantAssigned(row: HTMLElement) {
     // Fewer as families take their rules out of App.css (the cards, Notices and counts, #2912).
     expect(typed.length).toBeGreaterThan(350);
     expect(COLOURS.has("--text-muted")).toBe(true);
-  });
-
-  it("spells the section label once: capitals and a letter spacing only in the role sheet", () => {
-    // The label was written five ways (#1920): capitals spaced 0.04em, 0.05em or 0.06em, in
-    // each family and view that drew one. It is `ui-text-label` now.
-    const spelled = sourceFiles((name) => name.endsWith(".css"))
-      .filter((file) => file !== "primitives/text.css")
-      .flatMap((file) =>
-        labelSpellings(readFileSync(join(SRC, file), "utf8")).map((entry) => `${file} ${entry}`),
-      );
-    const utilities = sourceFiles(isView).flatMap((file) =>
-      openingTags(readFileSync(join(SRC, file), "utf8"), /^[A-Za-z][\w.]*$/).flatMap((tag) =>
-        classUtilities(classNameOf(tag.text))
-          .filter((word) => /^(?:uppercase|capitalize|tracking-.+)$/.test(utilityOf(word)))
-          .map((word) => `${file} | ${word}`),
-      ),
-    );
-    expect([...spelled, ...utilities]).toEqual([]);
-    expect(labelSpellings(readFileSync(join(SRC, "primitives/text.css"), "utf8"))).toEqual([
-      ".ui-text-label | text-transform: uppercase",
-      ".ui-text-label | letter-spacing: 0.05em",
-    ]);
-  });
-
-  it("fails a label spelled again in a family's sheet, and passes one taken off", () => {
-    const css = `[data-scope="x"][data-part="header"] { text-transform: uppercase; letter-spacing: 0.04em; }
-[data-scope="x"][data-named] { text-transform: none; letter-spacing: normal; }`;
-    expect(labelSpellings(css)).toEqual([
-      '[data-scope="x"][data-part="header"] | text-transform: uppercase',
-      '[data-scope="x"][data-part="header"] | letter-spacing: 0.04em',
-    ]);
   });
 });

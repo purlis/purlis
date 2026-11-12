@@ -134,7 +134,7 @@ export function SwitcherList({
   return (
     <PopoverList ref={scroller}>
       {header !== undefined && (
-        <div data-scope="titlebar" data-part="header" className="ui-text-label" aria-hidden="true">
+        <div data-scope="titlebar" data-part="header" aria-hidden="true">
           {header}
         </div>
       )}

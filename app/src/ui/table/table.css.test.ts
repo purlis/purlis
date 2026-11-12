@@ -57,9 +57,9 @@ const controls = (fixed = false) => `
   <div data-scope="table" data-part="frame" data-stacks="true">
     <table data-scope="table" data-part="body" data-controls="" data-stacks="true" ${fixed ? 'data-fixed="true"' : ""}>
       <thead data-scope="table" data-part="header"><tr>
-        <th scope="col" class="ui-text-label" data-scope="table" data-part="head" data-align="start">Level</th>
-        <th scope="col" class="ui-text-label" data-scope="table" data-part="head" data-align="start"><span data-part="head-tip">Tasks</span></th>
-        <th scope="col" class="ui-text-label" data-scope="table" data-part="head" data-align="start" data-actions="true"></th>
+        <th scope="col" data-scope="table" data-part="head" data-align="start">Level</th>
+        <th scope="col" data-scope="table" data-part="head" data-align="start"><span data-part="head-tip">Tasks</span></th>
+        <th scope="col" data-scope="table" data-part="head" data-align="start" data-actions="true"></th>
       </tr></thead>
       <tbody data-scope="table" data-part="rows">
         <tr data-scope="table" data-part="root"><th scope="row" data-scope="table" data-part="cell" data-names-row="">Project</th><td data-scope="table" data-part="cell" data-align="end">3</td><td data-scope="table" data-part="cell" data-actions="true"></td></tr>

@@ -1108,7 +1108,7 @@ export function StartChat({
           {/* Busy while each row's details are read (#4736): a screen reader, and a scenario
               spec, can tell the rows are not final yet. */}
           <div className="start-chat-section" aria-busy={pending} ref={cards}>
-            <h3 className="start-chat-label ui-text-label" id={harnessLabel}>
+            <h3 className="start-chat-label" id={harnessLabel}>
               Harness
             </h3>
             <OptionCards

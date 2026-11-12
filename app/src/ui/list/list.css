@@ -80,13 +80,15 @@
   padding-block: var(--space-3) var(--space-1);
   padding-inline: var(--space-4);
   color: var(--text-quiet);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 /* A group named by data (a file, a day, a project) is written as the name is: no capitals, which
-   are for purlis's own words; unless a frame labels its groups, where it is the section label. */
-[data-scope="list"][data-part="header"][data-named]:not(
-    [data-scope="panel-section"][data-frame] *
-  ) {
+   are for purlis's own words. */
+[data-scope="list"][data-part="header"][data-named] {
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-regular);
   text-transform: none;

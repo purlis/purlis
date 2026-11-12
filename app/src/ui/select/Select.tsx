@@ -298,13 +298,7 @@ function OptionList({
           data-scope="popover"
           data-part="group"
         >
-          <AriaHeader
-            // A group named by data: the secondary, written as the name is (#1920).
-            className="ui-text-secondary"
-            data-scope="popover"
-            data-part="header"
-            data-named=""
-          >
+          <AriaHeader data-scope="popover" data-part="header" data-named="">
             {group.name}
           </AriaHeader>
           {group.options.map((one) => (

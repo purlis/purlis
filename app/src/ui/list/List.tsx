@@ -462,12 +462,7 @@ export function ListSection<T extends object>({
       data-part="section"
     >
       {title !== undefined && (
-        <AriaHeader
-          className="ui-text-label"
-          data-scope="list"
-          data-part="header"
-          data-named={named || undefined}
-        >
+        <AriaHeader data-scope="list" data-part="header" data-named={named || undefined}>
           {title}
         </AriaHeader>
       )}
@@ -874,7 +869,6 @@ export function ListRowSection<T extends object>({
     >
       {title !== undefined && (
         <AriaGridListHeader
-          className="ui-text-label"
           data-scope="list"
           data-part="header"
           data-named={named || undefined}
