@@ -512,6 +512,7 @@ export const AuthorityChanged: Story = {
       canvas.getByRole("heading", { name: "Check lab.example.internal again" }),
     ).toBeVisible();
     await expect(canvas.getByText(/no longer holds the CA you trusted/)).toBeVisible();
+    await expect(canvas.getByText("The authority isn't the one you trusted")).toBeVisible();
     const again = canvas.getByRole("button", { name: "Check again" });
     again.focus();
     await expect(again).toHaveFocus();
@@ -533,7 +534,7 @@ export const TrustedOverTls: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByText("Docker's API over TLS")).toBeVisible();
-    await expect(canvas.getByText(CA)).toBeVisible();
+    await expect(canvas.getByText(`${CA.slice(0, 23)}…`)).toBeVisible();
     const go = canvas.getByRole("button", { name: "Continue" });
     go.focus();
     await expect(go).toHaveFocus();

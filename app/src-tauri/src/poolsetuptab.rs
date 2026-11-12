@@ -529,11 +529,15 @@ pub async fn pool_setup_tls_files(
             use purlis_core::tlsroute::{Files, KeyFrom};
             let config = config_root()?;
             let filled = |text: Option<String>| text.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty());
+            // A path typed from the home, as the fields suggest (`~/.docker/ca.pem`), is kept
+            // absolute: the core takes nothing else.
+            let env = purlis_core::secrets::Env::from_process();
+            let path = |typed: &str| purlis_core::secrets::expanduser(typed.trim(), &env);
             let files = if ca.trim().is_empty() {
                 None
             } else {
                 let key = match (filled(key), filled(key_vault), filled(key_name)) {
-                    (Some(key), None, None) => KeyFrom::File(key.into()),
+                    (Some(key), None, None) => KeyFrom::File(path(&key)),
                     (None, Some(vault), Some(key)) => KeyFrom::Vault {
                         plane: root.clone(),
                         vault,
@@ -546,7 +550,7 @@ pub async fn pool_setup_tls_files(
                         );
                     }
                 };
-                Some(Files::new(ca.trim().into(), cert.trim().into(), key)?)
+                Some(Files::new(path(&ca), path(&cert), key)?)
             };
             purlis_core::poolsetup::choose_tls_files(&config, files)
                 .map_err(|why| why.to_string())?;

@@ -195,7 +195,8 @@ function Chosen({ step, onChange }: { step: PoolSetupStep; onChange?: () => void
           <Fact label="Its authority">
             <span className="pool-setup-choice">
               <Badge variant="ok">Trusted</Badge>
-              {machine.trusted_ca}
+              {/* Its first eight pairs, as the prototype shows it: the whole is in the line. */}
+              {`${machine.trusted_ca.slice(0, 23)}…`}
             </span>
           </Fact>
         )}
@@ -323,6 +324,22 @@ function TlsPick({
     vault: keptFiles?.key_vault ?? "",
     name: keptFiles?.key_name ?? "",
   });
+  // Once kept, the fields show the files as purlis keeps them: a path typed from the home
+  // (`~/.docker/ca.pem`) is kept absolute.
+  const keptOnce = keptFiles === null ? null : JSON.stringify(keptFiles);
+  const [shownKept, setShownKept] = useState(keptOnce);
+  if (keptOnce !== shownKept) {
+    setShownKept(keptOnce);
+    if (keptFiles !== null)
+      setFiles({
+        ca: keptFiles.ca,
+        cert: keptFiles.cert,
+        keyIn: keptFiles.key_vault ? "vault" : "file",
+        key: keptFiles.key ?? "",
+        vault: keptFiles.key_vault ?? "",
+        name: keptFiles.key_name ?? "",
+      });
+  }
   const route = tcpRouteOf(typed);
   // The route is kept as it is typed, so coming back finds it. Nothing is contacted.
   useEffect(() => {
@@ -736,7 +753,11 @@ export function ConnectStep({
       {finding && (
         <Say
           tone="trouble"
-          title={TITLES[step.cause ?? "here"] ?? TITLES.here ?? ""}
+          title={
+            step.cause === "pool-pin-changed" && overOf(step.machine) === "tls"
+              ? "The authority isn't the one you trusted"
+              : (TITLES[step.cause ?? "here"] ?? TITLES.here ?? "")
+          }
           actions={
             <>
               <Button

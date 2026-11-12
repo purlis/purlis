@@ -366,4 +366,40 @@ describe("ConnectStep", () => {
     expect(screen.getByRole("radio", { name: /Docker's API over TLS/ })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Use SSH instead" })).toBeNull();
   });
+
+  it("shows a file typed from the home as purlis keeps it, and connects once kept", async () => {
+    const files = (ca: string) => ({
+      ca,
+      cert: "/home/me/cert.pem",
+      key: "/home/me/key.pem",
+      key_vault: null,
+      key_name: null,
+    });
+    const kept = step({
+      machine: tlsMachine({ tls: files("/home/me/ca.pem") }),
+      next: {
+        id: "connect-machine",
+        label: "Connect to lab",
+        does: "Reads the CA file.",
+        command: null,
+        url: null,
+      },
+    });
+    core({ pool_setup_tls_files: () => shown(kept) });
+    const props = { onShown: vi.fn(), changed: vi.fn(), onNext: vi.fn() };
+    const one = step({ machine: tlsMachine(), cause: "plain-tcp", state: "attention" });
+    const { rerender } = render(<ConnectStep step={one} shown={shown(one)} plane="p" {...props} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Use TLS instead" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Authority (CA) file" }), "~/ca.pem");
+    await userEvent.type(screen.getByRole("textbox", { name: "Certificate" }), "/home/me/cert.pem");
+    await userEvent.type(screen.getByRole("textbox", { name: "Key" }), "/home/me/key.pem");
+    await waitFor(() => expect(props.onShown).toHaveBeenCalled());
+    rerender(<ConnectStep step={kept} shown={shown(kept)} plane="p" {...props} />);
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Authority (CA) file" })).toHaveValue(
+        "/home/me/ca.pem",
+      ),
+    );
+    expect(screen.getByRole("button", { name: "Connect to lab" })).toBeEnabled();
+  });
 });
