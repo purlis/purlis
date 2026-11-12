@@ -4190,6 +4190,7 @@ const STANDS_ON: &[(&str, &[&str])] = &[
             "button",
             "card",
             "checkbox",
+            "disclosure",
             "field",
             "message",
             "notice",
