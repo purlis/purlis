@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794491391427,
+  "lastUpdate": 1794494322758,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -47418,6 +47418,48 @@ window.BENCHMARK_DATA = {
             "value": 101.6010625,
             "unit": "ms",
             "extra": "median of 5 runs: 100.798, 101.115, 101.601, 101.697, 102.552 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f1b6b930c78826f313034c2019698165759f20aa",
+          "message": "Theme tests round 5: Allow measure kept by what it reads, failing rule asked first, two sweeps split (#3597) (#6351)\n\n* Theme engine: keep Allow-against-primary by what it reads; search a tint's chroma failing rule first (#3597)\n\nallow_from_primary is kept per thread by the values of every token it reads\n(allow_reads, a static set from the default Allow/primary looks and the grant\nfamilies' grounds); a test holds that a theme cut down to those tokens measures\nas the whole theme for every built-in appearance and tint. tint::searched and\nalone_chroma_of ask the rule that failed the last chroma step first: every rule\nmust hold, so the order changes no answer. theme_answers_digest prints the same\n12 lines on base and head.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77NGA483FF9NFAE8HPK3V20\nPurlis-Persona: steward\n\n* Review: see-through reads in the Allow guard test, a kept answer observed, clearer names (#3597)\n\nThe cut-down test also draws every colour Allow reads at half alpha, so the\ngrounds are laid as see-through; the kept test asks a theme changed only where\nAllow reads nothing and gets the kept answer. KEPT_ALLOW is MOST_ALLOW_KEPT and\nevicts at >= as the other caches do; the search's index is last_failed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77NGA483FF9NFAE8HPK3V20\nPurlis-Persona: steward\n\n* Theme tests: the accent grid one test a Purlis appearance, the untinted-readers sweep in thirds (#3597)\n\nSame assertions: each appearance's grid holds no wrong mark, and a test holds\nthat the four named are every appearance of Purlis; each third of the sweep\nmisses nothing and catches more than 7 (17, 19 and 26 today), so the whole\ncatches more than 20 as before.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77NGA483FF9NFAE8HPK3V20\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-12T13:32:41Z",
+          "tree_id": "e3c80419429a91f2cfd74fe7e1439cdebd804b74",
+          "url": "https://github.com/purlis/purlis/commit/f1b6b930c78826f313034c2019698165759f20aa"
+        },
+        "date": 1794494316484,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6736055000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.643, 0.646, 0.674, 0.691, 0.694 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.621967499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.434, 16.575, 16.622, 16.672, 16.745 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.21205900000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.926, 102.095, 102.212, 102.265, 102.516 ms"
           }
         ]
       }
