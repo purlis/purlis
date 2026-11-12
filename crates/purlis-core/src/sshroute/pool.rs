@@ -8,6 +8,7 @@
 //! opens; a forward that will not open is looked at again to say why ([`diagnosed`]).
 
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use super::connect::{self, Finding};
 use super::forward::{self, Opening};
@@ -73,8 +74,33 @@ pub fn docker_through(
         engine_links,
         settings_in,
     };
-    let (socket, opened) = forward::hold_noting(&opening)
-        .map_err(|said| diagnosed(ssh, remote, pool, settings_in, said))?;
+    // A forward that keeps failing is tried at most once a wait, and looked at again at most
+    // once in [`FINDING_KEPT_FOR`]: each look meets the machine several times.
+    let kept = failing(pool, &remote.pin);
+    if let Some(Ask::Answer(finding)) = kept.as_ref().map(|kept| kept.ask(Instant::now())) {
+        return Err(finding);
+    }
+    let (socket, opened) = match forward::hold_noting(&opening) {
+        Ok(held) => {
+            if kept.is_some() {
+                forget_failing(pool);
+            }
+            held
+        }
+        Err(said) => {
+            let now = Instant::now();
+            let failed = match kept {
+                Some(kept) if !kept.looks_again(now) => kept.failed_again(now, None),
+                Some(kept) => {
+                    kept.failed_again(now, Some(diagnosed(ssh, remote, pool, settings_in, said)))
+                }
+                None => Failing::first(diagnosed(ssh, remote, pool, settings_in, said), now),
+            };
+            let finding = failed.finding.clone();
+            note_failing(pool, &remote.pin, failed);
+            return Err(finding);
+        }
+    };
     let through = docker.clone().through(socket);
     if opened || !checked_lately(pool, &remote.pin) {
         if let Err(finding) = connect::engine_holds(&through, &remote.route, &remote.pin) {
@@ -120,6 +146,45 @@ fn forget_checked(pool: &str) {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .remove(pool);
+}
+
+/// Each pool's failing forward, by the pin it was tried with, in this process.
+type FailingByPool = std::collections::BTreeMap<String, (crate::sshroute::Pin, Failing)>;
+static FAILING: std::sync::Mutex<FailingByPool> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+/// Pool `pool`'s failing forward, where it was tried with `pin`: a pin changed since is tried at
+/// once.
+fn failing(pool: &str, pin: &crate::sshroute::Pin) -> Option<Failing> {
+    FAILING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(pool)
+        .filter(|(tried, _)| tried == pin)
+        .map(|(_, failed)| failed.clone())
+}
+
+fn note_failing(pool: &str, pin: &crate::sshroute::Pin, failed: Failing) {
+    FAILING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert(pool.to_owned(), (pin.clone(), failed));
+}
+
+fn forget_failing(pool: &str) {
+    FAILING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .remove(pool);
+}
+
+/// **Every failing forward is tried again at its next ask, and looked at again from the start**:
+/// the person pressed Check again in Pool setup.
+pub fn look_again() {
+    FAILING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clear();
 }
 
 /// **Pool `name`'s `docker` and the socket of the engine it reaches**: for a pool on this
@@ -196,5 +261,154 @@ fn diagnosed(ssh: &Path, remote: &Remote, pool: &str, settings_in: &Path, said: 
             said,
         },
         Err(finding) => finding,
+    }
+}
+
+/// **How long the first failed forward waits before it is tried again**: each failure after
+/// doubles it, up to [`RETRY_MOST`].
+pub const RETRY_FIRST: Duration = Duration::from_secs(5);
+
+/// **The longest a failing forward waits between tries.**
+pub const RETRY_MOST: Duration = Duration::from_secs(120);
+
+/// **How long why a forward failed is taken as still why**: within it a failed try is not looked
+/// at again from the start ([`diagnosed`] meets the machine several times).
+pub const FINDING_KEPT_FOR: Duration = Duration::from_secs(300);
+
+/// **A pool's forward that failed, as this process remembers it**: why, when that was found, how
+/// many tries in a row have failed, and when the next may be made. Nothing is contacted before
+/// then; Check again in Pool setup forgets it ([`look_again`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Failing {
+    pub finding: Finding,
+    pub found_at: Instant,
+    pub failures: u32,
+    pub next_try: Instant,
+}
+
+/// What a forward's next ask does, from what is remembered of it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Ask {
+    /// Try the forward.
+    Try,
+    /// Answer with the remembered finding, contacting nothing.
+    Answer(Finding),
+}
+
+/// **The wait after `failures` failed tries in a row**: [`RETRY_FIRST`], doubled with each one
+/// after the first, never more than [`RETRY_MOST`].
+#[must_use]
+pub fn retry_after(failures: u32) -> Duration {
+    let doublings = failures.saturating_sub(1).min(31);
+    RETRY_FIRST
+        .checked_mul(1u32 << doublings)
+        .map_or(RETRY_MOST, |wait| wait.min(RETRY_MOST))
+}
+
+impl Failing {
+    /// The first failure of a forward, found `now`.
+    #[must_use]
+    pub fn first(finding: Finding, now: Instant) -> Failing {
+        Failing {
+            finding,
+            found_at: now,
+            failures: 1,
+            next_try: now + retry_after(1),
+        }
+    }
+
+    /// **What an ask made `now` does.**
+    #[must_use]
+    pub fn ask(&self, now: Instant) -> Ask {
+        if now < self.next_try {
+            Ask::Answer(self.finding.clone())
+        } else {
+            Ask::Try
+        }
+    }
+
+    /// **Whether a try that failed `now` is looked at again to say why**, rather than answered
+    /// with the finding kept.
+    #[must_use]
+    pub fn looks_again(&self, now: Instant) -> bool {
+        now.saturating_duration_since(self.found_at) >= FINDING_KEPT_FOR
+    }
+
+    /// **The same forward failed again `now`**, with `finding` where it was looked at again.
+    #[must_use]
+    pub fn failed_again(&self, now: Instant, finding: Option<Finding>) -> Failing {
+        let failures = self.failures.saturating_add(1);
+        let (finding, found_at) = match finding {
+            Some(finding) => (finding, now),
+            None => (self.finding.clone(), self.found_at),
+        };
+        Failing {
+            finding,
+            found_at,
+            failures,
+            next_try: now + retry_after(failures),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn silent() -> Finding {
+        Finding::EngineSilent {
+            host: "box".to_owned(),
+            said: "no".to_owned(),
+        }
+    }
+
+    #[test]
+    fn a_failing_forward_waits_twice_as_long_each_time_up_to_a_cap() {
+        assert_eq!(retry_after(1), RETRY_FIRST);
+        assert_eq!(retry_after(2), RETRY_FIRST * 2);
+        assert_eq!(retry_after(3), RETRY_FIRST * 4);
+        assert_eq!(retry_after(30), RETRY_MOST);
+        assert_eq!(retry_after(u32::MAX), RETRY_MOST);
+    }
+
+    #[test]
+    fn within_its_wait_a_failing_forward_is_answered_with_what_was_found_and_nothing_is_contacted()
+    {
+        let now = Instant::now();
+        let failing = Failing::first(silent(), now);
+        assert_eq!(failing.ask(now), Ask::Answer(silent()));
+        assert_eq!(
+            failing.ask(now + RETRY_FIRST - Duration::from_millis(1)),
+            Ask::Answer(silent())
+        );
+        assert_eq!(failing.ask(now + RETRY_FIRST), Ask::Try);
+    }
+
+    #[test]
+    fn a_try_that_fails_again_waits_longer_and_keeps_why_for_minutes() {
+        let now = Instant::now();
+        let failing = Failing::first(silent(), now);
+        let later = now + RETRY_FIRST;
+        assert!(
+            !failing.looks_again(later),
+            "why is kept, not looked at again"
+        );
+        let again = failing.failed_again(later, None);
+        assert_eq!(again.failures, 2);
+        assert_eq!(again.finding, silent());
+        assert_eq!(again.found_at, now);
+        assert_eq!(again.next_try, later + RETRY_FIRST * 2);
+        assert_eq!(again.ask(later + RETRY_FIRST), Ask::Answer(silent()));
+        // Past the minutes why is kept for, a failed try is looked at again, and what it finds
+        // is kept from then.
+        let much_later = now + FINDING_KEPT_FOR;
+        assert!(again.looks_again(much_later));
+        let refused = Finding::SignInRefused {
+            host: "box".to_owned(),
+        };
+        let looked = again.failed_again(much_later, Some(refused.clone()));
+        assert_eq!(looked.finding, refused);
+        assert_eq!(looked.found_at, much_later);
+        assert_eq!(looked.failures, 3);
     }
 }

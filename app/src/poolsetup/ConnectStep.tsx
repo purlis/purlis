@@ -26,7 +26,7 @@ import { Action, Busy, Say, SeeWhat, StepHead } from "./parts";
  */
 
 /** What the person may be doing on the page, beside what the core read. */
-type Pressing = "connecting" | "trusting" | undefined;
+type Pressing = "connecting" | "trusting" | "checking" | undefined;
 
 /** What Connect checks, in order, and the causes that fail each line. */
 const CHECKS: readonly { title: (host: string) => string; causes: readonly string[] }[] = [
@@ -309,6 +309,16 @@ export function ConnectStep({
       else onShown(answer.data);
     });
   };
+  /** A made pool's machine looked at again now, whatever wait a failing forward was in. */
+  const checkAgain = () => {
+    setPressing("checking");
+    setTrouble(undefined);
+    void commands.poolSetupCheckAgain(plane).then((answer) => {
+      setPressing(undefined);
+      if (answer.status === "error") setTrouble(answer.error);
+      else onShown(answer.data);
+    });
+  };
   const trust = (fingerprint: string) => {
     setPressing("trusting");
     setTrouble(undefined);
@@ -358,6 +368,7 @@ export function ConnectStep({
         <Confirm step={step} busy={pressing !== undefined} onTrust={trust} onNotIt={notIt} />
       )}
       {pressing === "trusting" && <Busy>{`Checking Docker on ${host}. This only reads.`}</Busy>}
+      {pressing === "checking" && <Busy>{`Checking ${host} again. This only reads.`}</Busy>}
       {refused && (
         <Say
           tone="attention"
@@ -388,7 +399,9 @@ export function ConnectStep({
             <>
               <Button
                 variant="primary"
-                onPress={step.next?.id === "change-machine" ? notIt : madePool ? changed : connect}
+                onPress={
+                  step.next?.id === "change-machine" ? notIt : madePool ? checkAgain : connect
+                }
               >
                 {step.next?.id === "change-machine" ? "Change the machine" : "Check again"}
               </Button>

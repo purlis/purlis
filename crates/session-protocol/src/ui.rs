@@ -964,6 +964,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     // in their window does either.
     "docker_pools",
     "pool_setup",
+    "pool_setup_check_again",
     "pool_setup_choose_docker",
     // A pool on another machine (#6266): contacting it, and trusting the key it shows, are the
     // person's own press in their window, as adding a pool is.

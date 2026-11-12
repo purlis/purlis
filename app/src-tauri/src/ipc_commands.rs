@@ -647,6 +647,7 @@ macro_rules! app_commands {
                 enginesandbox::use_this_machines_chrome,
                 dockerpools::docker_pools,
                 poolsetuptab::pool_setup,
+                poolsetuptab::pool_setup_check_again,
                 poolsetuptab::pool_setup_choose_docker,
                 poolsetuptab::pool_setup_choose_remote_docker,
                 poolsetuptab::pool_setup_machine,

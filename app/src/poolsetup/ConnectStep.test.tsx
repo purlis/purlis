@@ -144,6 +144,30 @@ describe("ConnectStep", () => {
     );
   });
 
+  it("checks a made pool's machine again now when Check again is pressed, and shows what it read", async () => {
+    const read = shown(step({ state: "done" }));
+    const calls = core({ pool_setup_check_again: () => read });
+    const failing = step({
+      state: "attention",
+      cause: "engine-silent",
+      findings: ["Docker didn't answer on build-box."],
+      next: null,
+    });
+    const props = { onShown: vi.fn(), changed: vi.fn(), onNext: vi.fn() };
+    render(
+      <ConnectStep
+        step={failing}
+        shown={{ ...shown(failing), pool: "build" }}
+        plane="p"
+        {...props}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Check again" }));
+    await waitFor(() => expect(props.onShown).toHaveBeenCalledWith(read));
+    expect(calls).toContainEqual({ cmd: "pool_setup_check_again", args: { plane: "p" } });
+    expect(props.changed).not.toHaveBeenCalled();
+  });
+
   it("marks the failing check, those before it passed and those after not reached", () => {
     expect(verdictsOf("not-allowed", false)).toEqual([
       "ok",

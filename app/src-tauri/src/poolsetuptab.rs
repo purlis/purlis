@@ -224,6 +224,18 @@ pub async fn pool_setup(
     }
 }
 
+/// **Check again** (#6266): [`pool_setup`], with every pool on another machine whose forward
+/// has been failing tried again and looked at again now, not after its wait.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_check_again(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<PoolSetupShown, String> {
+    purlis_core::sshroute::pool::look_again();
+    pool_setup(planes, plane).await
+}
+
 /// **Keeps that the person chose Docker on Where.** Nothing else changes.
 #[tauri::command]
 #[specta::specta]

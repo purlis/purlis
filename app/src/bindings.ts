@@ -4148,6 +4148,11 @@ export const commands = {
 	dockerPools: () => typedError<PoolsShown, string>(__TAURI_INVOKE("docker_pools")),
 	/**  **Each step's state, read now**: the pool this setup made, else a new one's. */
 	poolSetup: (plane: PlaneId) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup", { plane })),
+	/**
+	 *  **Check again** (#6266): [`pool_setup`], with every pool on another machine whose forward
+	 *  has been failing tried again and looked at again now, not after its wait.
+	 */
+	poolSetupCheckAgain: (plane: PlaneId) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup_check_again", { plane })),
 	/**  **Keeps that the person chose Docker on Where.** Nothing else changes. */
 	poolSetupChooseDocker: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_docker")),
 	/**
