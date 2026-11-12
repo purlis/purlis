@@ -10,6 +10,7 @@ import { MOVED_JUST_NOW } from "./InboxAsks";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 import { forgetInbox } from "./inboxRules";
 import { forgetProjectViews } from "./projectViews";
+import { forgetAsksScope } from "./asksScope";
 import type { Shown } from "./bindings";
 
 /**
@@ -146,5 +147,62 @@ describe("identical requests from several chats (#6009)", () => {
       expect(calls.find(({ cmd }) => cmd === "keep_sandbox_block")?.args.session).toBe(5),
     );
     expect(allowed(calls)).toEqual([]);
+  });
+});
+
+describe("within the scope in view (ADR 0121, amended 2026-11-12, decision 8)", () => {
+  /** Chat 3 has focus and dispatched 4; chat 6 is its sibling, in the same workspace. */
+  const PARENT: Record<number, number> = { 3: 1, 4: 3, 6: 1 };
+  const scoped = {
+    here: "alpha",
+    workspaceOf: () => "alpha",
+    chat: { session: 3, name: "steward 3", tasks: 1 },
+    askedBy: (session: number) => PARENT[session],
+  };
+
+  afterEach(() => forgetAsksScope(PLANE));
+
+  function drawScoped(asks: readonly Shown[]) {
+    render(<Inbox plane={PLANE} asks={asks} onGo={vi.fn()} onLeave={vi.fn()} {...scoped} />);
+  }
+
+  const pick = (name: string) =>
+    userEvent.click(
+      within(screen.getByRole("radiogroup", { name: "Show what needs you in" })).getByRole(
+        "radio",
+        { name: new RegExp(`^${name}`) },
+      ),
+    );
+
+  it("lists under Chat only the ask in its set, as its chat's own row, and groups both under Workspace", async () => {
+    const calls = core();
+    drawScoped([host(3), host(6)]);
+    expect(screen.queryByRole("row", { name: /chats want to reach/ })).toBeNull();
+    expect(screen.getByRole("group", { name: "Answers to steward 3" })).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Answers to steward 6" })).toBeNull();
+    await pick("Workspace");
+    const both = screen.getByRole("row", { name: "2 chats want to reach api.example.com" });
+    read();
+    await userEvent.click(within(both).getByRole("button", { name: "Allow for all" }));
+    await waitFor(() =>
+      expect(allowed(calls)).toEqual([
+        [3, "chat"],
+        [6, "chat"],
+      ]),
+    );
+  });
+
+  it("never answers on Allow for all an ask the scope does not list", async () => {
+    const calls = core();
+    drawScoped([host(3), host(4), host(6)]);
+    read();
+    const listed = screen.getByRole("row", { name: "2 chats want to reach api.example.com" });
+    await userEvent.click(within(listed).getByRole("button", { name: "Allow for all" }));
+    await waitFor(() =>
+      expect(allowed(calls)).toEqual([
+        [3, "chat"],
+        [4, "chat"],
+      ]),
+    );
   });
 });

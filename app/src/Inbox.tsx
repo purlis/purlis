@@ -625,8 +625,8 @@ export function Inbox({
     }
     const button = buttonFor(row, key);
     if (button === null || button.hasAttribute("disabled")) return true;
-    // Go to chat leaves Asks for the chat; Go to project takes triage into that project's Asks.
-    if (key === "go" && row.dataset.source !== "here") endTriage();
+    // Go to chat leaves Asks for the chat, and triage ends there.
+    if (key === "go") endTriage();
     button.click();
     return true;
   };
@@ -655,7 +655,8 @@ export function Inbox({
     const at = lastRow.current >= 0 && lastRow.current < rows.length ? lastRow.current : 0;
     leadOf(rows[at]).focus();
   };
-  useLayoutEffect(() => {
+  /** Where the element the keyboard was on has gone, the keyboard comes back to the list. */
+  const backInTheList = () => {
     const was = lastOn.current;
     if (was === null || was.isConnected) return;
     lastOn.current = null;
@@ -671,7 +672,24 @@ export function Inbox({
       return;
     }
     list.querySelector<HTMLElement>('[role="row"][data-key]')?.focus();
+  };
+  /**
+   * **And where the list family takes a row away in a commit of its own** (#6346): a row that is
+   * not the first goes after this view's commit, so nothing here would run again. The list's
+   * own change is watched for, as the browser tells it.
+   */
+  const backInTheListNow = useRef(backInTheList);
+  useLayoutEffect(() => {
+    backInTheListNow.current = backInTheList;
+    backInTheList();
   });
+  useEffect(() => {
+    const list = listAt.current;
+    if (list === null) return;
+    const watch = new MutationObserver(() => backInTheListNow.current());
+    watch.observe(list, { childList: true, subtree: true });
+    return () => watch.disconnect();
+  }, []);
 
   const [noticed, setNoticed] = useState(0);
   /** What Dismiss all on the Notices does now (#5650): none while no Notice has a Dismiss. */
@@ -837,8 +855,7 @@ export function Inbox({
           // Leaving for somewhere else lets go; an element taken away is still remembered.
           if (event.relatedTarget !== null && !listAt.current?.contains(event.relatedTarget))
             lastOn.current = null;
-          // Leaving Asks for anywhere but another project's Asks ends triage (#6016): the
-          // person went somewhere of their own.
+          // Leaving Asks ends triage (#6016): the person went somewhere of their own.
           if (
             drawsAsks &&
             event.relatedTarget instanceof Element &&

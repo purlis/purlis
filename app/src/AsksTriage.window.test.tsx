@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { Inbox, MOVED_JUST_NOW } from "./Inbox";
@@ -10,7 +10,8 @@ import type { Elsewhere } from "./InboxElsewhere";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 import { forgetInbox } from "./inboxRules";
 import { forgetProjectViews } from "./projectViews";
-import { chatGroup } from "./test-inbox";
+import { forgetAsksScope, pickAsksScope } from "./asksScope";
+import { chatGroup, chatGroupOrNone } from "./test-inbox";
 import { beginTriage, endTriage, landOnFirst, triaging } from "./asksTriage";
 import type { Shown } from "./bindings";
 import { onAMac } from "./mac";
@@ -34,6 +35,7 @@ afterEach(() => {
   forgetInbox();
   forgetProjectViews();
   endTriage();
+  forgetAsksScope(PLANE);
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
@@ -89,13 +91,17 @@ type Drawn = {
 };
 
 /** Draws Asks beside where the keyboard was, and begins triage as ⌘⇧I does. */
-function triage(asks: readonly Shown[], elsewhere?: Elsewhere): Drawn {
+function triage(
+  asks: readonly Shown[],
+  elsewhere?: Elsewhere,
+  more: Partial<Parameters<typeof Inbox>[0]> = {},
+): Drawn {
   const onGo = vi.fn();
   const onLeave = vi.fn();
   const onStop = vi.fn();
   const snooze = vi.fn(async () => undefined);
   const snoozing = { snooze, wake: vi.fn(), snoozed: [] } as unknown as Snoozing;
-  const props = { plane: PLANE, onGo, onLeave, onStop, snoozing };
+  const props = { plane: PLANE, onGo, onLeave, onStop, snoozing, ...more };
   const drawn = render(
     <>
       <textarea aria-label="Chat steward 1" />
@@ -205,6 +211,62 @@ describe("answering moves the keyboard to the next ask (#6016)", () => {
     again([], elsewhere);
     expect(focused()).toBe(before);
     expect(screen.queryByRole("button", { name: /^Go to project/ })).toBeNull();
+  });
+});
+
+describe("triage walks the scope in view (ADR 0121, amended 2026-11-12, decision 8)", () => {
+  /** Chat 3 has focus and dispatched 4; 6 and 7 are other chats of its workspace, 5 another's. */
+  const PARENT: Record<number, number> = { 3: 1, 4: 3, 6: 1, 7: 1, 5: 1 };
+  const scoped = {
+    here: "alpha",
+    workspaceOf: (session: number) => (session === 5 ? "beta" : "alpha"),
+    chat: { session: 3, name: "steward 3", tasks: 1 },
+    askedBy: (session: number) => PARENT[session],
+  };
+  const ask = (session: number) => permission(session, `01J0${session}`, `Run step ${session}`);
+  const inChat = () =>
+    ["steward 3", "steward 4", "steward 6"].find((name) =>
+      chatGroupOrNone(name)?.contains(focused()),
+    );
+
+  it("lands on Chat's first ask, walks only Chat's, and comes round to the first past the last", async () => {
+    core();
+    triage([ask(6), ask(3), ask(4)], undefined, scoped);
+    expect(inChat()).toBe("steward 3");
+    await key("L");
+    expect(inChat()).toBe("steward 4");
+    await key("L");
+    expect(inChat()).toBe("steward 3");
+  });
+
+  it("goes on from the last answered to the first of Chat's, never into the workspace's", async () => {
+    const calls = core();
+    const { again, before } = triage([ask(3), ask(4), ask(6)], undefined, scoped);
+    await key("L");
+    expect(inChat()).toBe("steward 4");
+    await userEvent.keyboard("{Enter}");
+    expect(answered(calls)).toHaveLength(1);
+    again([ask(3), ask(6)]);
+    await waitFor(() => expect(inChat()).toBe("steward 3"));
+    await userEvent.keyboard("{Enter}");
+    again([ask(6)]);
+    // Chat is empty: the keyboard goes back, and the workspace's ask is never landed on.
+    await waitFor(() => expect(focused()).toBe(before));
+  });
+
+  it("walks Workspace's asks where Chat has none and Workspace is picked", async () => {
+    core();
+    pickAsksScope(PLANE, "workspace");
+    triage([ask(5), ask(6), ask(7)], undefined, scoped);
+    const at = () =>
+      ["steward 5", "steward 6", "steward 7"].find((name) =>
+        chatGroupOrNone(name)?.contains(focused()),
+      );
+    expect(at()).toBe("steward 6");
+    await key("L");
+    expect(at()).toBe("steward 7");
+    await key("L");
+    expect(at()).toBe("steward 6");
   });
 });
 
