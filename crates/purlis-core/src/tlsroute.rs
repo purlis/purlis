@@ -731,6 +731,8 @@ pub fn engine_holds(
             host: route.host().to_owned(),
             pinned: pin.engine.clone(),
             now,
+            // Docker's API over TLS is Docker's: a Podman is reached over SSH alone (#6269).
+            podman: false,
         })
     }
 }

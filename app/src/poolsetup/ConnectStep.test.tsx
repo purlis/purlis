@@ -15,6 +15,7 @@ const CA =
 /** A tcp:// machine, reached over Docker's API over TLS (#6267). */
 const tlsMachine = (more: Partial<NonNullable<PoolSetupStep["machine"]>> = {}) => ({
   route: "tcp://lab:2376",
+  identity: null,
   host: "lab",
   key: null,
   known: null,
@@ -196,6 +197,11 @@ describe("ConnectStep", () => {
           trusted: null,
           now: null,
           engine: null,
+          over: "ssh",
+          tls: null,
+          ca: null,
+          trusted_ca: null,
+          ca_now: null,
         },
       }),
     );
@@ -226,6 +232,11 @@ describe("ConnectStep", () => {
           trusted: null,
           now: null,
           engine: null,
+          over: "ssh",
+          tls: null,
+          ca: null,
+          trusted_ca: null,
+          ca_now: null,
         },
       }),
     );
@@ -326,7 +337,7 @@ describe("ConnectStep", () => {
     await waitFor(() =>
       expect(calls).toContainEqual({
         cmd: "pool_setup_machine",
-        args: { route: "tcp://lab:2376" },
+        args: { route: "tcp://lab:2376", identity: null },
       }),
     );
     expect(calls.some((call) => call.cmd === "pool_setup_connect")).toBe(false);
