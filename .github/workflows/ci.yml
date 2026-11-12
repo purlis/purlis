@@ -2271,6 +2271,9 @@ jobs:
             extras: true
             specs: true
             sandbox: false
+    # [LOOP-6232] temporary: each leg loops artifact-queries.e2e.ts alone.
+    env:
+      PURLIS_LOOP: "12"
     runs-on: ${{ matrix.os }}
     steps: *scenario-steps
 
