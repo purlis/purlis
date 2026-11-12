@@ -67,6 +67,12 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
     ),
     (
         "app/src-tauri/src/hostedsessions.rs",
+        "A_CLOSE_WAITS_AT_MOST",
+        Internal,
+        "how long the window's thread waits for a close's answer, whose rest is heard off it (#6227)",
+    ),
+    (
+        "app/src-tauri/src/hostedsessions.rs",
         "LOOKS_FOR_A_CANCEL_EVERY",
         Internal,
         "how purlis waits or looks",

@@ -124,6 +124,79 @@ pub fn open(folder: &Path, path: &str) -> Result<Opened, String> {
     super::read_opened(file, meta.len(), path).map_err(|refused| refused.to_string())
 }
 
+/// **Which file a file is**: its device and inode, so a file read again is known to be the same
+/// one and not one put in its place.
+pub type Identity = (u64, u64);
+
+/// **A file anywhere on this machine, by its absolute path** (#6216): opened from `/` one folder
+/// at a time, following no link on the way or at the file itself, as a branch's file is opened.
+/// A path with a link anywhere on it, or with `..` or `.` in it, is refused, and so is anything
+/// but a regular file. Answered with the open file and its [`Identity`].
+pub fn open_absolute(path: &Path) -> Result<(std::fs::File, Identity), String> {
+    let refused = || format!("purlis could not open '{}'", path.display());
+    let (Some(folder), Some(leaf)) = (path.parent(), path.file_name()) else {
+        return Err(refused());
+    };
+    let plain = path.is_absolute()
+        && path.components().all(|part| {
+            matches!(
+                part,
+                std::path::Component::RootDir | std::path::Component::Normal(_)
+            )
+        });
+    if !plain {
+        return Err(refused());
+    }
+    let root = Path::new("/");
+    let held = super::hold_folder(root, folder).map_err(|_| refused())?;
+    let file = super::open_inside(&held, Path::new(leaf)).map_err(|_| refused())?;
+    let meta = file.metadata().map_err(|_| refused())?;
+    if !meta.is_file() {
+        return Err(format!("'{}' is not a file", path.display()));
+    }
+    Ok((file, identity(&meta)))
+}
+
+/// The [`Identity`] of the file at `path`, opened as [`open_absolute`] opens it.
+pub fn absolute_identity(path: &Path) -> Option<Identity> {
+    open_absolute(path).ok().map(|(_, identity)| identity)
+}
+
+/// **The file at `path`, read whole**, as [`open_absolute`] opens it, only while it is still the
+/// file `expected` names: one put in its place since reads nothing.
+pub fn read_absolute(path: &Path, expected: Identity) -> Result<Opened, String> {
+    let (file, found) = open_absolute(path)?;
+    if found != expected {
+        return Err(format!(
+            "'{}' is not the file that was opened from its link",
+            path.display()
+        ));
+    }
+    let bytes = file
+        .metadata()
+        .map_err(|e| format!("purlis could not read '{}': {e}", path.display()))?
+        .len();
+    super::read_opened(file, bytes, &path.display().to_string())
+        .map_err(|refused| refused.to_string())
+}
+
+#[cfg(unix)]
+fn identity(meta: &std::fs::Metadata) -> Identity {
+    use std::os::unix::fs::MetadataExt as _;
+    (meta.dev(), meta.ino())
+}
+
+#[cfg(not(unix))]
+fn identity(meta: &std::fs::Metadata) -> Identity {
+    // No inode here: the size and the time it was written stand in for one.
+    let written = meta
+        .modified()
+        .ok()
+        .and_then(|at| at.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_nanos() as u64);
+    (meta.len(), written)
+}
+
 #[cfg(test)]
 #[path = "folder/tests.rs"]
 mod tests;

@@ -228,6 +228,10 @@ struct OnDisk {
     /// grant anything ([`super::hosts::personal`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     hosts_mine: Vec<String>,
+    /// When, and by what, each of your own hosts was added on this machine (#6172, R65): Settings'
+    /// Add or a block's Allow. A host added before this record existed has none, and says so.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    hosts_added: Vec<HostAdded>,
     /// The folders you let every chat of this project on this machine write (#1342), each whole
     /// as [`super::grant::write`] took it: the only place a write grant of yours is kept.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1028,8 +1032,8 @@ pub fn confirmed_hosts(root: &Path) -> Vec<String> {
     read(root).hosts_mine
 }
 
-/// Records `host` as one you confirmed: Settings' Add and Confirm, never a chat (a sandboxed
-/// chat cannot write this file).
+/// Records `host` as one you confirmed: Settings' Confirm, never a chat (a sandboxed chat cannot
+/// write this file). Settings' Add and a block's Allow record it with when ([`add_host`]).
 pub fn confirm_host(root: &Path, host: &str) -> io::Result<()> {
     change(root, |held| {
         if !held.hosts_mine.iter().any(|one| one == host) {
@@ -1038,9 +1042,66 @@ pub fn confirm_host(root: &Path, host: &str) -> io::Result<()> {
     })
 }
 
-/// Takes `host` off the record: Settings' Remove.
+/// Takes `host` off the record, and when it was added with it: Settings' Remove.
 pub fn unconfirm_host(root: &Path, host: &str) -> io::Result<()> {
-    change(root, |held| held.hosts_mine.retain(|one| one != host))
+    change(root, |held| {
+        held.hosts_mine.retain(|one| one != host);
+        held.hosts_added.retain(|one| one.host != host);
+    })
+}
+
+/// **What added one of your own hosts** (#6172, R65).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AddedBy {
+    /// You, with Settings' Add.
+    You,
+    /// A block's Allow, in a chat.
+    Block,
+}
+
+impl AddedBy {
+    /// The word the record and the window say it by.
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::You => "you",
+            Self::Block => "block",
+        }
+    }
+}
+
+/// When, and by what, one of your own hosts was added on this machine (#6172).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct HostAdded {
+    /// The host, as [`super::hosts::Host`] spells it.
+    pub host: String,
+    /// When, in seconds since 1970.
+    pub at: u64,
+    /// What added it.
+    pub by: AddedBy,
+}
+
+/// **Records `host` as one you added now, by `by`**: confirmed ([`confirm_host`]) and when it was
+/// added, in one write, so a host is never confirmed without its when. An earlier record of when
+/// is replaced.
+pub fn add_host(root: &Path, host: &str, by: AddedBy) -> io::Result<()> {
+    let at = crate::halt::now();
+    change(root, |held| {
+        if !held.hosts_mine.iter().any(|one| one == host) {
+            held.hosts_mine.push(host.to_owned());
+        }
+        held.hosts_added.retain(|one| one.host != host);
+        held.hosts_added.push(HostAdded {
+            host: host.to_owned(),
+            at,
+            by,
+        });
+    })
+}
+
+/// When, and by what, each of your own hosts at `root` was added, where that is recorded.
+pub fn hosts_added(root: &Path) -> Vec<HostAdded> {
+    read(root).hosts_added
 }
 
 /// **Takes off the record each host of yours that `local`, this machine's settings file as
@@ -1067,13 +1128,20 @@ pub fn forget_hosts_not_in(root: &Path, local: Option<&str>) -> io::Result<usize
             .filter(|one| !listed.contains(one))
             .count()
     };
-    if goes(&read(root)) == 0 {
+    let held = read(root);
+    if goes(&held) == 0
+        && held
+            .hosts_added
+            .iter()
+            .all(|one| listed.contains(&one.host))
+    {
         return Ok(0);
     }
     let mut gone = 0;
     change(root, |held| {
         gone = goes(held);
         held.hosts_mine.retain(|one| listed.contains(one));
+        held.hosts_added.retain(|one| listed.contains(&one.host));
     })?;
     Ok(gone)
 }

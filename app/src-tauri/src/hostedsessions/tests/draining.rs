@@ -90,6 +90,7 @@ impl Pool {
             ),
             after,
             closed: Arc::default(),
+            close_takes: Arc::default(),
             next_hold_takes: Arc::default(),
             holds: Arc::default(),
             code_taken: Arc::default(),
@@ -714,6 +715,9 @@ struct SlowToStart<H> {
     inner: H,
     after: Duration,
     closed: Arc<Mutex<Vec<String>>>,
+    /// How long each Close takes to be answered, where it is slow: a host that does not answer
+    /// a close in time (#6227).
+    close_takes: Arc<Mutex<Option<Duration>>>,
     /// How long the next hold takes, which it says once: a runner coming back (#4415).
     next_hold_takes: Arc<Mutex<Option<Duration>>>,
     holds: Arc<AtomicU32>,
@@ -739,6 +743,10 @@ impl<H: session::Host + Clone + Send + Sync + 'static> session::Host for SlowToS
                 self.code_taken.fetch_add(1, Ordering::SeqCst);
             }
             session::Command::Close { program } => {
+                let takes = *self.close_takes.lock().unwrap();
+                if let Some(takes) = takes {
+                    tokio::time::sleep(takes).await;
+                }
                 self.closed.lock().unwrap().push(program.clone());
             }
             _ => {}
@@ -786,6 +794,7 @@ fn a_host_slow_by(after: Duration, runtime: &tokio::runtime::Runtime) -> SlowToS
         }),
         after,
         closed: Arc::default(),
+        close_takes: Arc::default(),
         next_hold_takes: Arc::default(),
         holds: Arc::default(),
         code_taken: Arc::default(),
@@ -954,6 +963,68 @@ fn a_cancelled_start_stops_waiting_and_a_late_chat_is_closed() {
     until("the chat that came up late is closed", || {
         closed.lock().unwrap().len() == 1
     });
+}
+
+/// **A close never waits long on a host that does not answer it** (#6227). The window asks it
+/// on its own thread, in order with what was typed to the chat, and the host's answer only says
+/// whether the host let go: the chat is already gone from here. On a slow macOS runner the host
+/// took the whole quick command's limit to answer, and the window and its WebDriver froze for
+/// those 30 s. The close is still sent, and lands.
+#[test]
+fn a_close_the_host_is_slow_to_answer_does_not_hold_the_window() {
+    let runtime = a_runtime();
+    let host = a_host_slow_by(Duration::ZERO, &runtime);
+    let closed = Arc::clone(&host.closed);
+    let close_takes = Arc::clone(&host.close_takes);
+    let connection = a_window_on(host, &runtime);
+    let (_dir, root) = a_project();
+    let sessions = HostedSessions::new(connection, &root);
+    let chat = started(&sessions).expect("it starts");
+    *close_takes.lock().unwrap() = Some(A_CLOSE_WAITS_AT_MOST * 5);
+
+    let asked = Instant::now();
+    sessions.close(chat).expect("a close is answered");
+
+    assert!(
+        asked.elapsed() < A_CLOSE_WAITS_AT_MOST * 3,
+        "a close waited {:?} on a host that does not answer it",
+        asked.elapsed()
+    );
+    assert!(
+        sessions.running().is_empty(),
+        "the chat is gone here at once"
+    );
+    until("the host is still told to close it", || {
+        closed.lock().unwrap().len() == 1
+    });
+}
+
+/// **What a close that waited only its second gives up** (#6227, ADR 0108 as amended
+/// 2026-11-12): a chat put back under the closed one's number while the host still holds the
+/// old program is numbered otherwise by the host, so its start is refused and closed, never run
+/// as a second chat under another number.
+#[test]
+fn a_chat_put_back_under_a_number_the_host_has_not_let_go_of_is_refused() {
+    let runtime = a_runtime();
+    let host = a_host_slow_by(Duration::ZERO, &runtime);
+    let close_takes = Arc::clone(&host.close_takes);
+    let connection = a_window_on(host, &runtime);
+    let (_dir, root) = a_project();
+    let sessions = HostedSessions::new(connection, &root);
+    let chat = started(&sessions).expect("it starts");
+    *close_takes.lock().unwrap() = Some(A_CLOSE_WAITS_AT_MOST * 5);
+    sessions.close(chat).expect("a close is answered");
+
+    let refused = sessions
+        .open_named(Some(chat), &by_its_names(), Default::default(), &|_| {})
+        .map(|composed| composed.number)
+        .expect_err("a number the host still holds is not taken");
+
+    assert!(refused.contains(&format!("not {chat}")), "{refused}");
+    assert!(
+        sessions.running().is_empty(),
+        "nothing runs under another number"
+    );
 }
 
 /// **A link that comes back during the wait still gets what a hold does after it** (#4403,

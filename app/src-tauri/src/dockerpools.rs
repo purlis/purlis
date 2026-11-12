@@ -87,6 +87,12 @@ pub struct PoolAdding {
     pub frames: Option<u32>,
     /// The widest frame its runner's browsers are watched at over the link, in pixels (#3297).
     pub width: Option<u32>,
+    /// The machine its engine is on, for a pool on another machine (#6266): Connect's route.
+    #[serde(default)]
+    pub on: Option<String>,
+    /// The fingerprint of the host key trusted at Connect for that machine (#6266).
+    #[serde(default)]
+    pub trust: Option<String>,
 }
 
 impl PoolAdding {
@@ -103,6 +109,8 @@ impl PoolAdding {
             suspend_after: self.suspend_after.clone(),
             frames: self.frames,
             width: self.width,
+            on: self.on.clone(),
+            trust: self.trust.clone(),
         }
     }
 }
@@ -385,7 +393,10 @@ pub async fn add_docker_pool(adding: PoolAdding) -> Result<PoolRow, String> {
 /// [`add_docker_pool`], on `machine`.
 pub fn add_on(machine: &Machine, pool: &Pool) -> Result<PoolRow, String> {
     let desktop = machine.desktop_made()?.pinned();
-    purlis_core::pools::add(&machine.config, &machine.docker, pool, &desktop)
+    // A pool on another machine is made there, through its own forward (#6266).
+    let docker = purlis_core::sshroute::pool::docker_of(&machine.docker, pool)
+        .map_err(|finding| purlis_core::poolsetup::connect_said(&finding))?;
+    purlis_core::pools::add(&machine.config, &docker, pool, &desktop)
         .map_err(|why| refused_said(&why.to_string()))?;
     Ok(row(pool))
 }
@@ -438,7 +449,8 @@ pub async fn remove_docker_pool(
 /// person agreed to: Docker moved since they were asked, or the row had not said yet (#4325).
 #[cfg(unix)]
 fn as_the_person_was_told(machine: &Machine, name: &str, elsewhere: bool) -> Result<(), String> {
-    if purlis_core::pools::on_another_engine(&machine.config, &machine.docker, name) == elsewhere {
+    let docker = machine.for_pool(name)?.docker;
+    if purlis_core::pools::on_another_engine(&machine.config, &docker, name) == elsewhere {
         return Ok(());
     }
     Err(format!(
@@ -504,9 +516,10 @@ pub fn remove_on(
         let to = ToARunner::of_kept(machine, kept)?;
         crate::runnerlinks::unpair(&to)
     };
+    let docker = machine.for_pool(name)?.docker;
     let removed = purlis_core::pools::remove_discarding(
         &machine.config,
-        &machine.docker,
+        &docker,
         name,
         Some(&unpair),
         discarding,
@@ -534,6 +547,11 @@ pub async fn docker_pool_link(name: String) -> Result<PoolLink, String> {
             let machine = Machine::here(&config)?;
             let kept = purlis_core::runners::runner_for(&machine.config, &name)
                 .map_err(|why| why.to_string())?;
+            // A pool on another machine whose forward or pin doesn't hold is down, saying why.
+            let machine = match machine.for_pool(&name) {
+                Ok(machine) => machine,
+                Err(why) => return Ok(PoolLink::Down { why }),
+            };
             match machine.running(&kept) {
                 // One that stopped on a full disk says so, not that it suspended (#6205).
                 Ok(false) => {
@@ -594,6 +612,8 @@ pub fn removed_on(machine: &Machine) -> Result<Vec<PoolRemoved>, String> {
         .filter_map(|pool| {
             let kept = purlis_core::runners::runner_for(&machine.config, pool.name()).ok()?;
             match machine
+                .for_pool(pool.name())
+                .ok()?
                 .docker
                 .missing(&kept.made, kept.engine.as_deref())
                 .ok()??
@@ -642,7 +662,8 @@ pub async fn docker_pool_make_again(
 /// [`docker_pool_make_again`], on `machine`.
 pub fn make_again_on(machine: &Machine, name: &str) -> Result<MadeAgain, String> {
     let desktop = machine.desktop()?.pinned();
-    let again = purlis_core::pools::make_again(&machine.config, &machine.docker, name, &desktop)
+    let docker = machine.for_pool(name)?.docker;
+    let again = purlis_core::pools::make_again(&machine.config, &docker, name, &desktop)
         .map_err(|why| refused_said(&why.to_string()))?;
     Ok(MadeAgain {
         sign_ins_kept: again.sign_ins_kept,
@@ -666,7 +687,8 @@ pub async fn docker_pool_replace_runner(name: String) -> Result<(), String> {
         crate::off_the_window("replacing a pool's runner", move || {
             let machine = Machine::here(&config_root()?)?;
             let desktop = machine.desktop()?.pinned();
-            purlis_core::pools::replace(&machine.config, &machine.docker, &name, &desktop)
+            let docker = machine.for_pool(&name)?.docker;
+            purlis_core::pools::replace(&machine.config, &docker, &name, &desktop)
                 .map(drop)
                 .map_err(|why| refused_said(&why.to_string()))
         })
@@ -698,13 +720,10 @@ pub async fn docker_pool_remove_held_runner(
                 .ok_or_else(|| format!("No runner {runner} is on this machine."))?;
             let to = crate::runnerlinks::ToARunner::of_kept(&machine, &kept)?;
             let unpair = |_: &purlis_core::runners::Kept| crate::runnerlinks::unpair(&to);
-            let removed = purlis_core::pools::remove_held(
-                &machine.config,
-                &machine.docker,
-                &runner,
-                Some(&unpair),
-            )
-            .map_err(|why| refused_said(&why.to_string()))?;
+            let docker = machine.for_pool(kept.pool())?.docker;
+            let removed =
+                purlis_core::pools::remove_held(&machine.config, &docker, &runner, Some(&unpair))
+                    .map_err(|why| refused_said(&why.to_string()))?;
             if removed.forgotten {
                 crate::poolfollow::forget_waiting_on(&machine.config, kept.pool(), &runner);
                 if let Some(host) =
@@ -780,13 +799,10 @@ pub async fn docker_pool_bring_back_held_runner(
                 .ok_or_else(|| format!("No runner {runner} is on this machine."))?;
             let to = crate::runnerlinks::ToARunner::of_kept(&machine, &kept)?;
             let unpair = |_: &purlis_core::runners::Kept| crate::runnerlinks::unpair(&to);
-            let brought = purlis_core::pools::bring_back(
-                &machine.config,
-                &machine.docker,
-                &runner,
-                Some(&unpair),
-            )
-            .map_err(|why| refused_said(&why.to_string()))?;
+            let docker = machine.for_pool(kept.pool())?.docker;
+            let brought =
+                purlis_core::pools::bring_back(&machine.config, &docker, &runner, Some(&unpair))
+                    .map_err(|why| refused_said(&why.to_string()))?;
             let Some(removed) = brought.removed else {
                 return Err(left_behind_said(
                     &runner,
@@ -927,9 +943,9 @@ pub fn version_on(
         named: crate::poolfollow::this_versions_image_named(),
         waiting: crate::poolfollow::waiting_on(&machine.config, name),
         suspends: machine
-            .docker
-            .made_suspending(&kept.made)
+            .for_pool(name)
             .ok()
+            .and_then(|on| on.docker.made_suspending(&kept.made).ok())
             .flatten()
             .map(suspends_shown),
         owed,
@@ -1458,7 +1474,8 @@ pub async fn pool_held_runners(name: String) -> Result<Vec<String>, String> {
     {
         crate::off_the_window("reading a pool's held runners", move || {
             let machine = Machine::here(&config_root()?)?;
-            purlis_core::pools::held_of(&machine.config, &machine.docker, &name)
+            let docker = machine.for_pool(&name)?.docker;
+            purlis_core::pools::held_of(&machine.config, &docker, &name)
                 .map_err(|why| refused_said(&why.to_string()))
         })
         .await

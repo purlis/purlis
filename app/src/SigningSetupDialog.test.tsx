@@ -17,6 +17,7 @@ import type {
 import { NEW_SIGNING_KEY_PAGE, SigningSetupDialog } from "./SigningSetupDialog";
 import { accountsGroup } from "./settings/accounts";
 import type { LiveSetting } from "./settings/groups";
+import { findGrid } from "./ui/table/table.testkit";
 
 /**
  * **Set up signing** (#5628, ADR 0116 §4): from the Signed commits card, a person with no key
@@ -693,7 +694,7 @@ describe("the Signed commits card", () => {
     expect(heading.nextElementSibling).toHaveTextContent(
       "Each signs that device's chat commits. Removing one here stops that device's commits showing as Verified until it sets up signing again.",
     );
-    const list = screen.getByRole("grid", { name: "Signing keys of your other devices" });
+    const list = await findGrid(screen, "Signing keys of your other devices");
     // A key a row of the table (#6301): its device, the account, then the day in its own column.
     const [laptop, mini] = within(list).getAllByRole("row").slice(1);
     const day = new Date(2026, 9, 1).toLocaleDateString(undefined, {
@@ -710,7 +711,7 @@ describe("the Signed commits card", () => {
   it("Remove on another device's key asks first, naming the device, and removes it only on the confirm's own Remove key (#5918)", async () => {
     state = structuredClone(ON);
     render(<Card />);
-    const list = await screen.findByRole("grid", { name: "Signing keys of your other devices" });
+    const list = await findGrid(screen, "Signing keys of your other devices");
     await userEvent.click(
       within(list).getByRole("button", {
         name: "Remove laptop's signing key from octocat on GitHub…",
@@ -734,7 +735,7 @@ describe("the Signed commits card", () => {
   it("closing the confirm removes nothing (#5918)", async () => {
     state = structuredClone(ON);
     render(<Card />);
-    const list = await screen.findByRole("grid", { name: "Signing keys of your other devices" });
+    const list = await findGrid(screen, "Signing keys of your other devices");
     await userEvent.click(
       within(list).getByRole("button", {
         name: "Remove laptop's signing key from octocat on GitHub…",
@@ -762,7 +763,7 @@ describe("the Signed commits card", () => {
   it("Remove signing confirms once, naming the accounts and that signed commits stay signed", async () => {
     state = structuredClone(ON);
     render(<Card />);
-    await screen.findByRole("grid", { name: "Signing keys of your other devices" });
+    await findGrid(screen, "Signing keys of your other devices");
     await userEvent.click(screen.getByRole("button", { name: "Remove signing…" }));
     const confirm = await screen.findByRole("dialog", { name: "Remove signing from this Mac?" });
     expect(

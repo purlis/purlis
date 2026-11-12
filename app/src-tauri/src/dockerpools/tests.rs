@@ -17,6 +17,8 @@ fn adding(name: &str) -> PoolAdding {
         suspend_after: None,
         frames: None,
         width: None,
+        on: None,
+        trust: None,
     }
 }
 

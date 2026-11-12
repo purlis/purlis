@@ -964,7 +964,15 @@ pub const WINDOW_ONLY: &[&str] = &[
     // in their window does either.
     "docker_pools",
     "pool_setup",
+    "pool_setup_check_again",
     "pool_setup_choose_docker",
+    // A pool on another machine (#6266): contacting it, and trusting the key it shows, are the
+    // person's own press in their window, as adding a pool is.
+    "pool_setup_choose_remote_docker",
+    "pool_setup_machine",
+    "pool_setup_ssh_hosts",
+    "pool_setup_connect",
+    "pool_setup_trust",
     "pool_setup_name",
     "pool_setup_pool",
     "pool_setup_add",
@@ -1189,6 +1197,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // the machine the window is on, so never served on a link, where it would open the host's.
     "pane_link_resolve",
     "pane_link_open",
+    // A file outside the project a pane link opened (#6216): read only after the person answered
+    // the window's ask, which a link has no way to show.
+    "pane_link_file",
     // A scenario test's stand-ins for the page's click and the browser (#5956): the `e2e` build
     // only, and its window alone.
     "artifact_link_follow",

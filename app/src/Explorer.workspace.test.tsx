@@ -17,6 +17,7 @@ import type {
 } from "./bindings";
 import { forgetProjectThemes } from "./projectTheme";
 import type { WorkspaceState } from "./workspaceState";
+import { findGrid } from "./ui/table/table.testkit";
 
 /**
  * **With the workspace picked, Explorer shows its folder** (#5375, ADR 0038 as amended
@@ -255,7 +256,7 @@ describe("Explorer, the workspace's own folder (#5375)", () => {
 
     await userEvent.type(screen.getByRole("searchbox", { name: "Filter files" }), "plan");
 
-    await screen.findByRole("grid", { name: "Files found" });
+    await findGrid(screen, "Files found");
     expect(finds.at(-1)).toMatchObject({
       kind: "branch",
       workspace: "alpha",
@@ -274,7 +275,7 @@ describe("Explorer, the workspace's own folder (#5375)", () => {
 
     await userEvent.type(screen.getByRole("searchbox", { name: "Filter files" }), "plan");
 
-    await screen.findByRole("grid", { name: "Files found" });
+    await findGrid(screen, "Files found");
     expect(finds.at(-1)).toEqual({ kind: "workspace-folder", plane: PLANE, workspace: "alpha" });
   });
 
@@ -288,7 +289,7 @@ describe("Explorer, the workspace's own folder (#5375)", () => {
 
     await userEvent.type(screen.getByRole("searchbox", { name: "Filter files" }), "plan");
 
-    const found = await screen.findByRole("grid", { name: "Files found" });
+    const found = await findGrid(screen, "Files found");
     expect(screen.getByRole("radio", { name: "Selected: alpha" })).toBeChecked();
     expect(finds.at(-1)).toMatchObject({ kind: "branch", repo: "", piece: null });
     expect(await within(found).findByRole("row", { name: /^plan\.md/ })).toHaveTextContent("notes");
@@ -300,7 +301,7 @@ describe("Explorer, the workspace's own folder (#5375)", () => {
 
     await userEvent.type(screen.getByRole("searchbox", { name: "Filter files" }), "plan");
 
-    const found = await screen.findByRole("grid", { name: "Files found" });
+    const found = await findGrid(screen, "Files found");
     const own = await within(found).findByRole("rowgroup", { name: /^alpha/ });
     const repo = within(found).getByRole("rowgroup", { name: /^api/ });
     expect(within(own).getByRole("row", { name: /^plan\.md/ })).toHaveTextContent("notes");
