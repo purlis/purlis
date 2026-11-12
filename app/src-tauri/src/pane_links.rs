@@ -27,6 +27,7 @@
 //! None of them reads a secret's value or hands one back.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
@@ -39,7 +40,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::chatcard::ChatCard;
 use crate::piecefiles::PieceFile;
-use crate::planes::{PlaneId, Planes};
+use crate::planes::{Held, PlaneId, Planes};
 
 /// **What the pane's pattern took a candidate for**: a hint, never trusted for more. The wire's
 /// half of the core's [`Kind`]; a kind's resolver is the core's `LinkKind`.
@@ -98,20 +99,23 @@ pub struct LinkFrom {
 /// **The pane `from` names, as the core resolves against it**: its project's folder, and the
 /// folder its chat started in. Its paths are this machine's only for a chat open here and not
 /// on a runner or a pool; every other pane (a saved chat's, one whose chat has closed, one with
-/// no project open) names files purlis cannot place, so they are [`Runs::Elsewhere`].
+/// no project open) names files purlis cannot place, so they are [`Runs::Elsewhere`]. A
+/// project the window does not hold is no project: nothing of it is read. Handed back with the
+/// pane, the project the window holds, which a chat's number is looked up in.
 // The folder is the one the chat started in: no hook reports the folder a chat has moved to.
-fn pane_of(planes: &Planes, from: LinkFrom) -> Pane {
+fn pane_of(planes: &Planes, from: LinkFrom) -> (Pane, Option<Arc<Held>>) {
     let held = from
         .plane
         .as_ref()
         .and_then(|plane| planes.held(plane).ok());
     let Some(held) = held else {
-        return Pane {
-            project: from.plane.map(|plane| PathBuf::from(plane.root())),
+        let pane = Pane {
+            project: None,
             session: from.session,
             folder: None,
             runs: Runs::Elsewhere,
         };
+        return (pane, None);
     };
     let chats = held.chats();
     let here = from.session.and_then(|session| {
@@ -119,7 +123,7 @@ fn pane_of(planes: &Planes, from: LinkFrom) -> Pane {
         let local = chats.runner_of(session).is_none() && chats.pool_of(session).is_none();
         local.then_some(at)
     });
-    Pane {
+    let pane = Pane {
         project: Some(held.root().to_path_buf()),
         session: from.session,
         runs: if here.is_some() {
@@ -128,7 +132,8 @@ fn pane_of(planes: &Planes, from: LinkFrom) -> Pane {
             Runs::Elsewhere
         },
         folder: here.and_then(|at| at.cwd),
-    }
+    };
+    (pane, Some(held))
 }
 
 /// **Where a link that opens without asking opens.**
@@ -252,7 +257,8 @@ impl ChatsHere<'_> {
                 self.title(at.number),
                 ChatSeen::ThisChat { number: at.number },
             ),
-            Goes::Open { now } => {
+            Goes::Open => {
+                let now = &at.number;
                 let theirs = self.named(*now).and_then(|one| one.workspace.clone());
                 let ours = mine
                     .and_then(|mine| self.named(mine))
@@ -281,7 +287,7 @@ impl ChatsHere<'_> {
     fn go(&self, at: &ChatAt) -> Option<ChatGo> {
         Some(match &at.goes {
             Goes::ThisChat => ChatGo::ThisChat,
-            Goes::Open { now } => ChatGo::Chat { session: *now },
+            Goes::Open => ChatGo::Chat { session: at.number },
             Goes::Ended(record) => ChatGo::Card {
                 card: Box::new((self.card)(at.number, record)?),
             },
@@ -579,13 +585,14 @@ pub const NOT_LOOKED: &str = "purlis could not look at that file in time, so it 
 /// **The resolver for a pane in `held`'s project, and what it knows of its chats**: every kind,
 /// the chat kind given the chats open there now. A pane in no project the window holds links no
 /// chat.
-fn for_project(held: Option<&crate::planes::Held>) -> (Resolver, ChatsHere<'_>) {
+fn for_project(held: Option<&Held>) -> (Resolver, ChatsHere<'_>) {
+    // With no project, the chat kind still reads a chat's number, and finds none: it says
+    // nothing on a hover.
+    let open = held.map(crate::chatcard::open_chats).unwrap_or_default();
+    let resolver = Resolver::default().with_kind(Box::new(ChatNumber::with_open(open.clone())));
     let Some(held) = held else {
-        // The chat kind still reads a chat's number, and finds none: it says nothing on a hover.
-        let resolver = Resolver::default().with_kind(Box::new(ChatNumber::with_open(Vec::new())));
         return (resolver, ChatsHere::none());
     };
-    let open = crate::chatcard::open_chats(held);
     let named = held
         .chats()
         .open_now()
@@ -596,19 +603,11 @@ fn for_project(held: Option<&crate::planes::Held>) -> (Resolver, ChatsHere<'_>) 
             workspace: chat.workspace,
         })
         .collect();
-    let resolver = Resolver::default().with_kind(Box::new(ChatNumber::with_open(open.clone())));
     let chats = ChatsHere {
         open: named,
         card: Box::new(move |number, record| crate::chatcard::card_of(held, number, record, &open)),
     };
     (resolver, chats)
-}
-
-/// The project a pane is in, where it is one the window holds.
-fn held_of(planes: &Planes, from: &LinkFrom) -> Option<std::sync::Arc<crate::planes::Held>> {
-    from.plane
-        .as_ref()
-        .and_then(|plane| planes.held(plane).ok())
 }
 
 /// **What each candidate on a line is**, in order: a link, or none. What a hover shows.
@@ -620,8 +619,7 @@ pub async fn pane_link_resolve(
     candidates: Vec<LinkCandidate>,
 ) -> Vec<Option<LinkSeen>> {
     use tauri::Manager as _;
-    let held = held_of(&app.state::<Planes>(), &from);
-    let pane = pane_of(&app.state::<Planes>(), from);
+    let (pane, held) = pane_of(&app.state::<Planes>(), from);
     let count = candidates.len();
     // A chat's number reads the project's dispatch records: looked at as a file is.
     let look = move || {
@@ -650,8 +648,7 @@ pub async fn pane_link_open(
     token: Option<String>,
 ) -> LinkOpened {
     use tauri::Manager as _;
-    let held = held_of(&app.state::<Planes>(), &from);
-    let pane = pane_of(&app.state::<Planes>(), from);
+    let (pane, held) = pane_of(&app.state::<Planes>(), from);
     let candidate: Candidate = candidate.into();
     if candidate.kind == Kind::Url {
         let asks = app.state::<PaneLinkAsks>();
@@ -709,7 +706,7 @@ pub async fn pane_link_file(
     path: String,
 ) -> Result<LinkFile, String> {
     use tauri::Manager as _;
-    let pane = pane_of(&app.state::<Planes>(), from);
+    let (pane, _) = pane_of(&app.state::<Planes>(), from);
     let path = PathBuf::from(path);
     let Some(identity) = app.state::<PaneLinkAsks>().0.opened(&pane, &path) else {
         return Ok(LinkFile::NotOpened);

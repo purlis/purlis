@@ -22,7 +22,7 @@ import {
   type PlaneId,
 } from "./bindings";
 import { qualifierOf, shownOf } from "./finished";
-import { endedAt } from "./chatEnded";
+import { capitalised, endedAt } from "./chatEnded";
 import { chatNumberIn, chatNumberSaid, numberedName } from "./chatNumber";
 import type { ViewRef } from "./tabs";
 import type { Offer } from "./actions";
@@ -52,12 +52,6 @@ export function outcomeOf(task: Pick<FinishedTask, "how" | "outcome">): CardOutc
     said: capitalised(more === undefined ? word : `${word} (${more})`),
   };
 }
-
-function capitalised(words: string): string {
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
-
-export { endedAt } from "./chatEnded";
 
 /** The card's title: `#641 · Signed commits #5607`. */
 export function cardTitle(card: ChatCard): string {
@@ -177,7 +171,8 @@ export function numberRows(byNumber: ByNumber | undefined): Offer[] {
         title: restartedRowTitle(number, lookup.now),
         available: true,
         reason: "",
-        does: { verb: "showChat", session: lookup.now },
+        // That chat, and nothing a needs-you item's Go does (#6217).
+        does: { verb: "focusChat", session: lookup.now },
         chat: number,
       },
     ];

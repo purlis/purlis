@@ -10,7 +10,7 @@ import type { LinkPlace } from "./paneLinks";
 
 /**
  * **What a pane's `chat 641` link shows when ⌘-clicked** (#6217): an open chat in its tab or
- * workspace, an ended chat's card beside the link (D7, `ClosedChatCard.tsx`), or nothing for the
+ * workspace, an ended chat's card beside the link (the prototype's D7, `ClosedChatCard.tsx`), or nothing for the
  * pane's own chat (the ruling on #6211's Q3).
  *
  * - **It runs as the pane's rows run** (`onRun`, the pane's menu's `onPress`): the chat is

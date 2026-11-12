@@ -237,7 +237,7 @@ describe("a chat link in a chat's pane", () => {
     click(drawn, 4, 0, { ctrlKey: true });
 
     await waitFor(() => expect(pressed).toHaveBeenCalledTimes(1));
-    expect((pressed.mock.calls[0][0] as Offer).does).toEqual({ verb: "showChat", session: 660 });
+    expect((pressed.mock.calls[0][0] as Offer).does).toEqual({ verb: "focusChat", session: 660 });
     expect(asked("pane_link_open")[0].args.candidate).toEqual({ kind: "chat", text: "chat 660" });
     expect(screen.queryByRole("dialog")).toBeNull();
   });

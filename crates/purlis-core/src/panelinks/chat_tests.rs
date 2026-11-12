@@ -133,10 +133,10 @@ fn an_open_chat_links_and_opening_it_shows_it() {
     let links = links(vec![open(652, MINE_ID), open(660, ELSEWHERE_ID)]);
 
     let resolved = links.resolve(&chat("chat 660"), &pane_of_652(&root));
-    assert_eq!(goes(resolved), (660, Goes::Open { now: 660 }));
+    assert_eq!(goes(resolved), (660, Goes::Open));
     assert!(matches!(
         links.open(&chat("chat 660"), &pane_of_652(&root), &Asks::default(), None),
-        Opening::Open(Target::Chat(at)) if matches!(at.goes, Goes::Open { now: 660 })
+        Opening::Open(Target::Chat(at)) if matches!(at.goes, Goes::Open)
     ));
 }
 
@@ -149,7 +149,7 @@ fn an_open_chat_in_another_workspace_of_the_project_links_the_same_way() {
 
     assert_eq!(
         goes(links.resolve(&chat("chat 641"), &pane_of_652(&root))),
-        (641, Goes::Open { now: 641 })
+        (641, Goes::Open)
     );
 }
 
@@ -179,7 +179,7 @@ fn a_restarted_chat_is_reached_through_its_ulid_under_its_number_now() {
     let links = links(vec![open(652, MINE_ID), open(700, WORKER_ID)]);
 
     let (number, goes) = goes(links.resolve(&chat("chat 641"), &pane_of_652(&root)));
-    assert_eq!((number, goes), (700, Goes::Open { now: 700 }));
+    assert_eq!((number, goes), (700, Goes::Open));
 }
 
 #[test]
@@ -290,7 +290,7 @@ fn only_the_word_chat_and_a_number_reads_as_one() {
     // The word as a sentence starts it is the same word.
     assert_eq!(
         goes(links.resolve(&chat("Chat 660"), &pane_of_652(&root))),
-        (660, Goes::Open { now: 660 })
+        (660, Goes::Open)
     );
 }
 
@@ -305,4 +305,27 @@ fn a_chat_link_is_shown_and_copied_as_its_words_with_its_number_now() {
     };
     assert_eq!(target.kind(), Kind::Chat);
     assert_eq!(target.shown(), "chat 700");
+}
+
+#[test]
+fn a_batch_reads_the_project_s_records_once() {
+    let (_dir, root) = project();
+    finished_641(&root);
+    let links = links(vec![open(652, MINE_ID)]);
+
+    assert!(matches!(
+        goes(links.resolve(&chat("chat 641"), &pane_of_652(&root))),
+        (641, Goes::Ended(_))
+    ));
+    // Gone from the disk after the first lookup: the batch still answers from what it read.
+    std::fs::remove_dir_all(dispatchrecord::dir(&root)).unwrap();
+    assert!(matches!(
+        goes(links.resolve(&chat("chat 641"), &pane_of_652(&root))),
+        (641, Goes::Ended(_))
+    ));
+    // A new batch reads again, and finds none.
+    assert_eq!(
+        self::links(vec![open(652, MINE_ID)]).resolve(&chat("chat 641"), &pane_of_652(&root)),
+        Resolved::Quiet
+    );
 }

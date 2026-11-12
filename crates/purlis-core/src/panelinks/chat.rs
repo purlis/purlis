@@ -13,10 +13,11 @@
 //!   opening it does nothing more. So is a number this chat had before it was started again.
 //! - **Opening never asks**: it shows a chat or a card, and runs nothing.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use crate::chatlookup::{self, Found, OpenChat};
-use crate::dispatchrecord::Record;
+use crate::dispatchrecord::{self, Record};
 
 use super::{Kind, LinkKind, Opening, Pane, Resolved, Target};
 
@@ -26,7 +27,8 @@ pub struct ChatAt {
     /// The number the chat answers to now: the one written, or the one a restart dealt it.
     pub number: u32,
     pub goes: Goes,
-    /// How it is shown and copied: `chat 641`, so a copy links again in a pane (D6).
+    /// How it is shown and copied: `chat 641`, so a copy links again in a pane (the
+    /// prototype's D6).
     shown: String,
 }
 
@@ -50,25 +52,44 @@ impl ChatAt {
 pub enum Goes {
     /// The chat the pane draws: opening it does nothing more.
     ThisChat,
-    /// Open, under `now`: opening it shows it in its tab or workspace.
-    Open { now: u32 },
+    /// Open, under [`ChatAt::number`]: opening it shows it in its tab or workspace.
+    Open,
     /// Ended: its newest dispatch record, which its card is drawn from.
     Ended(Box<Record>),
 }
 
-/// **The chat kind**, given the chats of the pane's project open now.
+/// **The chat kind**, given the chats of the pane's project open now. The project's dispatch
+/// records are read once, the first time a number no open chat answers to is looked up, and
+/// kept for the rest of the batch: one resolver is made for each line or open it answers.
 pub struct ChatNumber {
     open: Vec<OpenChat>,
+    records: OnceLock<(PathBuf, Vec<Record>)>,
 }
 
 impl ChatNumber {
     /// The kind, with the chats open now in the project the panes it reads are in.
     pub fn with_open(open: Vec<OpenChat>) -> Self {
-        Self { open }
+        Self {
+            open,
+            records: OnceLock::new(),
+        }
+    }
+
+    /// What `number` names in `project`: the records read once, where they are that project's.
+    fn lookup(&self, project: &Path, number: u32) -> Found {
+        let (read_in, records) = self
+            .records
+            .get_or_init(|| (project.to_owned(), dispatchrecord::list(project)));
+        if read_in == project {
+            chatlookup::by_number(number, &self.open, records)
+        } else {
+            chatlookup::by_number_in(project, number, &self.open)
+        }
     }
 }
 
-/// The most digits a chat's number is read from: a `u32` has ten.
+/// The most digits a chat's number is read from: a `u32` has ten. The pane's pattern
+/// (`app/src/paneLinks.ts`, `CHAT`: `[1-9]\d{0,8}`) reads no more, and no leading zero either.
 const MOST_DIGITS: usize = 9;
 
 /// The number `text` names, where it reads `chat 641` (or `Chat 641`) and nothing more.
@@ -117,13 +138,17 @@ impl ChatNumber {
             if Some(now) == mine {
                 ChatAt::new(now, Goes::ThisChat)
             } else {
-                ChatAt::new(now, Goes::Open { now })
+                ChatAt::new(now, Goes::Open)
             }
         };
         if Some(number) == mine {
             return Some(open_as(number));
         }
-        match chatlookup::by_number_in(project, number, &self.open) {
+        // An open chat is answered without reading a record.
+        if self.open.iter().any(|chat| chat.number == number) {
+            return Some(open_as(number));
+        }
+        match self.lookup(project, number) {
             Found::Open { number } => Some(open_as(number)),
             Found::Restarted { now } => Some(open_as(now)),
             Found::Ended(record) => Some(ChatAt::new(number, Goes::Ended(record))),

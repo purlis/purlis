@@ -12,7 +12,7 @@ import type {
   LinkSeen,
   OpensIn,
 } from "./bindings";
-import { endedAt } from "./chatEnded";
+import { capitalised, endedAt } from "./chatEnded";
 import { sentence } from "./coreSentence";
 import { onAMac } from "./mac";
 import {
@@ -95,10 +95,6 @@ export function chatSaid(chat: ChatSeen, click: string): string {
       return `${at === undefined ? how : `${how} ${at}`} · ${click} shows its card`;
     }
   }
-}
-
-function capitalised(words: string): string {
-  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 /** **A hovered link's tooltip**: where it goes (a file in the chat's workspace from the

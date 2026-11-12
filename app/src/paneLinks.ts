@@ -35,7 +35,8 @@ const WEB = /(?<![\p{L}\p{N}+.-])\p{L}[\p{L}\p{N}+.-]*:\/\/[^\s<>"'`\p{Cc}]+/giu
 /**
  * **A chat's number** (#6217): the word `chat` and a number, as a word of its own. A bare `#641`
  * is an issue's number and never a chat, and a title never links: the core looks the number up
- * in the pane's project, and one no chat there had is no link.
+ * in the pane's project, and one no chat there had is no link. At most nine digits and no leading
+ * zero, as the core reads one (`panelinks/chat.rs`, `MOST_DIGITS`).
  */
 const CHAT = /(?<![\p{L}\p{N}_#/.-])[Cc]hat [1-9]\d{0,8}(?![\p{L}\p{N}_])/gu;
 
