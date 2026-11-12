@@ -11,6 +11,10 @@ import { letGoOfKeptTerminals } from "./keptTerminals";
 import { useOutsideFileAsks, type OutsideAsk } from "./paneLinkFiles";
 import { FILE_ANSWER_LIFE, candidatesIn } from "./paneLinks";
 import { SessionPane } from "./SessionPane";
+import { PieceFileTab } from "./editor/PieceFiles";
+import { EditorView } from "@codemirror/view";
+import { isPlaneRoot, type Place } from "./pieceViews";
+import { useState } from "react";
 
 /**
  * **File paths in a pane's output** (#6216, spec #6208's seam 2): a real xterm is written a path,
@@ -68,6 +72,10 @@ const IN_THE_WORKSPACE = {
   column: 7,
 };
 
+/** A file at the project's root, outside any workspace (#6356), and what the core reads of it. */
+const AT_THE_ROOT = "README.md:3:5";
+const README = "# project\n\nthe third line\n";
+
 /** The core's ask for a file outside the workspace. */
 const ASKS = {
   answer: "ask",
@@ -110,17 +118,25 @@ beforeEach(() => {
               shown: SHORT,
               does: { does: "opens", into: "editor-tab" },
             }
-          : one.text === HOSTS
+          : one.text === AT_THE_ROOT
             ? {
                 kind: "file",
-                target: HOSTS,
-                shown: HOSTS,
-                does: { does: "asks", reason: "outside app" },
+                target: `/planes/one/${AT_THE_ROOT}`,
+                shown: AT_THE_ROOT,
+                does: { does: "opens", into: "editor-tab" },
               }
-            : null,
+            : one.text === HOSTS
+              ? {
+                  kind: "file",
+                  target: HOSTS,
+                  shown: HOSTS,
+                  does: { does: "asks", reason: "outside app" },
+                }
+              : null,
       );
     }
     if (cmd === "pane_link_open") return opens.shift() ?? { answer: "refused", reason: "no" };
+    if (cmd === "plane_file") return { kind: "text", text: README };
     return null;
   });
 });
@@ -183,6 +199,33 @@ function click(on: Element, col: number, row: number, init: MouseEventInit = {})
 }
 
 const asked = (cmd: string) => invoked.filter((one) => one.cmd === cmd);
+
+/**
+ * A pane, and the tab a jump into the project's root opens, as the project's view opens it: a
+ * file there has no branch's file tab, so it opens in a tab of its own (`PlaneView.tsx`).
+ */
+function PaneAndRootTab() {
+  const [tab, setTab] = useState<{ place: Place; path: string }>();
+  useJumpAsks((jump) => {
+    if (isPlaneRoot(jump.place)) setTab({ place: jump.place, path: jump.path });
+  });
+  return (
+    <>
+      <SessionPane plane="/planes/one" session={1} focused={false} onFocus={() => {}} />
+      {tab !== undefined && <PieceFileTab plane="/planes/one" cut={tab.place} path={tab.path} />}
+    </>
+  );
+}
+
+/** Where the cursor of the light editor in the page is: its line and column, from 1. */
+function cursorOf(): { line: number; column: number } | undefined {
+  const drawn = document.querySelector<HTMLElement>(".cm-editor");
+  const view = drawn === null ? null : EditorView.findFromDOM(drawn);
+  if (view === null) return undefined;
+  const head = view.state.selection.main.head;
+  const line = view.state.doc.lineAt(head);
+  return { line: line.number, column: head - line.from + 1 };
+}
 
 describe("a pane's file candidates", () => {
   it("are absolute, home and relative paths, with their line and column", () => {
@@ -254,6 +297,31 @@ describe("a file path in a chat's pane", () => {
     });
     expect(outside).toEqual([]);
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("opens a file at the project's root at its line and column (#6356)", async () => {
+    opens = [
+      {
+        answer: "file",
+        target: `/planes/one/${AT_THE_ROOT}`,
+        at: { in: "project", path: "README.md" },
+        line: 3,
+        column: 5,
+      },
+    ];
+    render(<PaneAndRootTab />);
+    const term = made[0];
+    await waitFor(() => expect(term.cols).toBe(80));
+    const drawn = term.element?.querySelector(".xterm-screen");
+    if (!drawn) throw new Error("the pane opened no terminal screen");
+    await write(term, `see ${AT_THE_ROOT} now`);
+    hover(drawn, 6, 0);
+    await waitFor(() => expect(asked("pane_link_resolve")).toHaveLength(1));
+
+    click(drawn, 6, 0, { ctrlKey: true });
+
+    await waitFor(() => expect(cursorOf()).toEqual({ line: 3, column: 5 }), { timeout: 3000 });
+    expect(screen.getByTestId("light-editor")).toHaveTextContent(/the third line/);
   });
 
   it("is no link when the core finds no file, and says nothing on its hover", async () => {
