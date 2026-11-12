@@ -103,6 +103,7 @@ impl PoolAdding {
             suspend_after: self.suspend_after.clone(),
             frames: self.frames,
             width: self.width,
+            ..Default::default()
         }
     }
 }

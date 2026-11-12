@@ -2539,6 +2539,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             data.join(crate::dockerpool::settings::DIR),
             Access::ReadWrite,
         );
+        // The local ends of the SSH forwards of pools on other machines (#6266, ADR 0123 §2):
+        // each is a Docker engine there, held from every chat as Docker's own sockets are.
+        deny(
+            Class::HumanPowers,
+            data.join(crate::sshroute::DIR),
+            Access::ReadWrite,
+        );
         // Which sign-ins this runner's logins wait for (#4044): a read could lock a record, so a
         // chat neither reads nor writes them.
         deny(

@@ -2539,6 +2539,9 @@ pub struct Docker {
     /// unless a caller holds it to another time ([`Docker::within`]). A run that changes
     /// something (a pull, a make, a start, a removal) takes as long as it takes.
     reads_within: std::time::Duration,
+    /// The socket of a pool's forward to an engine on another machine (#6266), where this
+    /// `docker` is that pool's: each run's engine.
+    forwarded: Option<std::path::PathBuf>,
 }
 
 /// **How long each `docker` run that only reads may take** (#3546): an inspect, an `info`, a
@@ -2688,6 +2691,7 @@ impl Docker {
             program: program.into(),
             settings_in: None,
             reads_within: READS_WITHIN,
+            forwarded: None,
         }
     }
 
@@ -2738,7 +2742,22 @@ impl Docker {
             tmp: tmp.as_deref(),
             runtime: runtime.as_deref(),
             system: std::path::Path::new(settings::SYSTEM_SOCKET),
+            forwarded: self.forwarded.as_deref(),
         })
+    }
+
+    /// **This `docker`, pointed at the forward of a pool on another machine** (#6266): each of
+    /// its runs reaches the engine at `socket` alone ([`crate::sshroute`]), never the window's
+    /// `DOCKER_HOST` or a context.
+    #[must_use]
+    pub fn through(mut self, socket: impl Into<std::path::PathBuf>) -> Docker {
+        self.forwarded = Some(socket.into());
+        self
+    }
+
+    /// The forward's socket this `docker` is pointed at, where it is a pool's on another machine.
+    pub fn forwarded(&self) -> Option<&std::path::Path> {
+        self.forwarded.as_deref()
     }
 
     /// **The socket of the Docker engine this machine's pools run on, where it is on this

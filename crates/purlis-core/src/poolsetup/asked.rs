@@ -28,6 +28,11 @@ pub struct Asked {
     pub suspend_after: Option<String>,
     pub frames: Option<u32>,
     pub width: Option<u32>,
+    /// **The machine its engine is on**, for a pool on another machine (#6266): an `ssh://`
+    /// route, as Connect has it.
+    pub on: Option<String>,
+    /// The fingerprint of the host key the person confirmed for that machine (`SHA256:…`).
+    pub trust: Option<String>,
 }
 
 /// What [`create`] did.
@@ -156,6 +161,17 @@ impl Asked {
         );
         with("--frames", number(self.frames));
         with("--width", number(self.width));
+        // Only a route and a fingerprint that read as one, so neither means more in a shell.
+        with(
+            "--on",
+            self.on
+                .clone()
+                .filter(|on| crate::sshroute::Route::parse(on).is_ok()),
+        );
+        with(
+            "--trust",
+            self.trust.clone().filter(|trust| a_fingerprint(trust)),
+        );
         words.join(" ")
     }
 
@@ -169,15 +185,81 @@ impl Asked {
     }
 }
 
+/// Whether `text` reads as an SSH key's SHA-256 fingerprint, as `ssh-keygen -l` prints it.
+fn a_fingerprint(text: &str) -> bool {
+    text.trim().strip_prefix("SHA256:").is_some_and(|rest| {
+        rest.len() == 43
+            && rest
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '/'))
+    })
+}
+
+/// **The machine a pool `asked` asks for is on, trusted** (#6266, ADR 0123 §3): what Connect
+/// kept where it is the same machine with the same key, else the machine met now and held to
+/// the fingerprint the person gave. With no fingerprint, refused with the one it shows, to check
+/// and give: nothing is trusted unseen. `None` for a pool on this machine.
+pub fn remote_of(
+    config: &Path,
+    docker: &Docker,
+    asked: &Asked,
+) -> Result<Option<crate::runners::Remote>, Refused> {
+    let Some(on) = asked
+        .on
+        .as_deref()
+        .map(str::trim)
+        .filter(|on| !on.is_empty())
+    else {
+        return Ok(None);
+    };
+    let route = crate::sshroute::Route::parse(on).map_err(Refused::Other)?;
+    let trust = asked.trust.as_deref().map(str::trim);
+    let kept = super::read_choices(config)?.connect.and_then(|chosen| {
+        let pin = chosen.trusted?;
+        let kept = crate::sshroute::Route::parse(&chosen.route).ok()?;
+        let same = kept == route
+            || (route.socket().is_none()
+                && route.clone().with_socket(kept.socket()?).ok()? == kept);
+        let confirmed = trust.is_none_or(|trust| trust == pin.host_key.fingerprint());
+        (same && confirmed).then_some(crate::runners::Remote { route: kept, pin })
+    });
+    if let Some(kept) = kept {
+        return Ok(Some(kept));
+    }
+    let said =
+        |finding: crate::sshroute::connect::Finding| Refused::Other(super::connect_said(&finding));
+    let Some(trust) = trust else {
+        let met = super::connecting::meet(on).map_err(said)?;
+        return Err(Refused::Other(format!(
+            "{} shows the key {} ({}). Check it on {}: ssh-keygen -lf \
+             /etc/ssh/ssh_host_ed25519_key.pub prints it there. If it is the same, run this \
+             again with --trust {}.",
+            route.host(),
+            met.key.fingerprint(),
+            met.key.algorithm(),
+            route.host(),
+            met.key.fingerprint()
+        )));
+    };
+    super::connecting::trust(docker, on, trust)
+        .map(Some)
+        .map_err(said)
+}
+
 /// **Makes the pool `asked` asks for**: the one way to it, from the button and from `purlis pool
-/// add`. A team's image is held to the contract first, so one that breaks it makes nothing.
+/// add`. A team's image is held to the contract first, so one that breaks it makes nothing. A
+/// pool on another machine is made there, through its own forward (#6266).
 pub fn create(
     config: &Path,
     docker: &Docker,
     asked: &Asked,
     desktop: &Pinned,
 ) -> Result<Created, Refused> {
-    let pool = asked.pool().map_err(Refused::Other)?;
+    let remote = remote_of(config, docker, asked)?;
+    let pool = asked.pool().map_err(Refused::Other)?.on(remote);
+    let through = crate::sshroute::pool::docker_of(docker, &pool)
+        .map_err(|finding| Refused::Other(super::connect_said(&finding)))?;
+    let docker = &through;
     if !asked.is_ours() {
         let problems = docker
             .contract_problems(pool.image())
@@ -187,6 +269,10 @@ pub fn create(
         }
     }
     crate::pools::add(config, docker, &pool, desktop)?;
+    if pool.remote().is_some() {
+        // What Connect kept is the pool's now.
+        super::forget_machine(config)?;
+    }
     Ok(Created::Added)
 }
 
