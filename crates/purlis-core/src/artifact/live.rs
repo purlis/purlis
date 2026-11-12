@@ -96,12 +96,32 @@ struct Feed<W> {
 /// each subscriber a `W`.
 pub struct Hub<K, W> {
     feeds: HashMap<K, Feed<W>>,
+    /// The feeds whose answer is handed on only when it says something new
+    /// ([`Self::handing_on_only_changes`]).
+    changes_only: fn(&K) -> bool,
 }
 
 impl<K, W> Default for Hub<K, W> {
     fn default() -> Self {
         Self {
             feeds: HashMap::new(),
+            changes_only: |_| false,
+        }
+    }
+}
+
+impl<K, W> Hub<K, W> {
+    /// **A hub whose feeds `which` names hand an answer on only when it says something the
+    /// feed's last did not**, whenever each was read (#6235): the `purlis.chats` feeds. A chats
+    /// feed is asked again at every move of any board of the project, and most moves change
+    /// nothing of its workspace's chats, so handing each answer on would redraw every page of
+    /// it at every move. Every other core feed is asked again only when the plane changed what
+    /// it reads, and its answer's time is the "as of" a page shows: one read again with the
+    /// same data is still news of that time, so it is handed on.
+    pub fn handing_on_only_changes(which: fn(&K) -> bool) -> Self {
+        Self {
+            feeds: HashMap::new(),
+            changes_only: which,
         }
     }
 }
@@ -164,16 +184,18 @@ impl<K: Clone + Eq + Hash, W: Clone + PartialEq> Hub<K, W> {
     }
 
     /// **Feed `key`'s run answered `answer`**: handed to every subscriber it has now, and run
-    /// again when it is due if something moved it meanwhile. An answer that says what the
-    /// feed's last one said, whenever it was read, is handed to no one (#6235): every page of
-    /// the feed already holds it. A feed with a freshness hands each one on, since its time is
-    /// what is fresh.
+    /// again when it is due if something moved it meanwhile. On a feed that hands on only
+    /// changes ([`Self::handing_on_only_changes`]), an answer that says what the feed's last one
+    /// said, whenever it was read, is handed to no one (#6235): every page of the feed already
+    /// holds it. A feed with a freshness hands each one on, since its time is what is fresh.
     pub fn finished(&mut self, key: &K, answer: Answer, now: Instant) -> Vec<Do<K, W>> {
+        let changes_only = (self.changes_only)(key);
         let Some(feed) = self.feeds.get_mut(key) else {
             return Vec::new();
         };
         feed.running = false;
-        let unchanged = feed.every.is_none()
+        let unchanged = changes_only
+            && feed.every.is_none()
             && feed
                 .last
                 .as_ref()
@@ -513,7 +535,7 @@ mod tests {
     fn a_run_that_answers_what_the_feed_last_answered_hands_nothing_on() {
         // #6235: a board's move asks every chats feed again; most answer as they did.
         let t = Instant::now();
-        let mut hub = Hub::default();
+        let mut hub = Hub::handing_on_only_changes(|key| *key == "chats");
         hub.subscribe("chats", ("page-a", 1), t);
         assert_eq!(
             handed(&hub.finished(&"chats", answer(1), t)),
@@ -531,6 +553,22 @@ mod tests {
         assert_eq!(
             handed(&hub.finished(&"chats", answer(2), again)),
             [("page-a", 1), ("page-b", 1)]
+        );
+    }
+
+    #[test]
+    fn a_core_feed_other_than_chats_hands_on_each_answer_it_is_asked_again_for() {
+        // Its answer's time is the "as of" a page shows, so the same data read again is news.
+        let t = Instant::now();
+        let mut hub = Hub::default();
+        hub.subscribe("todos", ("page-a", 1), t);
+        hub.finished(&"todos", answer(1), t);
+        let later = t + MIN_INTERVAL;
+        assert_eq!(runs(&hub.moved(later, |_| true)), ["todos"]);
+        let same = Answer::data(json!({ "n": 1 }), chrono::Utc::now());
+        assert_eq!(
+            handed(&hub.finished(&"todos", same, later)),
+            [("page-a", 1)]
         );
     }
 

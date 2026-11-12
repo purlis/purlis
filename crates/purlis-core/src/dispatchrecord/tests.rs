@@ -3334,3 +3334,52 @@ fn the_drawn_records_are_read_again_only_after_the_store_changed() {
     assert!(close(&root, &opened.id, ending, at("2026-10-07T12:01:00Z")).unwrap());
     assert_eq!(ids(&mut drawing, settled(&root)), [(opened.id, false)]);
 }
+
+#[test]
+fn a_drawing_hands_history_a_task_once_it_ended_after_it_was_drawn_running() {
+    // #6235's review: a `purlis.chats` page drew the task while it ran, which history leaves
+    // out, and its end through the store makes it a row of history at the next look.
+    let (_d, root) = project();
+    let mut drawing = Drawing::default();
+    let task = open(
+        &root,
+        Opening {
+            mode: Mode::Task,
+            ..a_handoff()
+        },
+        at("2026-10-07T12:00:00Z"),
+    )
+    .unwrap();
+    let asked = crate::catalogue::chats::Asked {
+        history: true,
+        limit: crate::catalogue::chats::HISTORY_DEFAULT,
+    };
+    let listed = |drawing: &mut Drawing, now| -> Vec<(String, String)> {
+        let records = &drawing.drawn_at(&root, now).records;
+        crate::catalogue::chats::answer(&[], records, "beta", asked)["chats"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| {
+                (
+                    c["id"].as_str().unwrap().to_owned(),
+                    c["state"].as_str().unwrap().to_owned(),
+                )
+            })
+            .collect()
+    };
+    assert_eq!(
+        listed(&mut drawing, settled(&root)),
+        [],
+        "a running task is no history"
+    );
+    let ending = Ending {
+        report: Some(done("healthy")),
+        usage: None,
+    };
+    assert!(close(&root, &task.id, ending, at("2026-10-07T12:01:00Z")).unwrap());
+    assert_eq!(
+        listed(&mut drawing, settled(&root)),
+        [(devops().id.unwrap(), "ended".to_owned())]
+    );
+}

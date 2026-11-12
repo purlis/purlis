@@ -11,7 +11,8 @@
 //! that has not moved since the app started says none.
 //!
 //! **History is read from the dispatch records once they change** ([`Drawing`]), not at each
-//! move of a board.
+//! move of a board, and what it drew is let go of when the project closes
+//! ([`project_closed`]).
 //!
 //! [`Ask::Chats`]: purlis_core::hookwire::Ask::Chats
 
@@ -54,6 +55,14 @@ pub fn closed(plane: &PlaneId, session: u32) {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .remove(&(plane.clone(), session));
+}
+
+/// **Project `plane` closed**: its dispatch records, as history last drew them, are let go of.
+pub fn project_closed(plane: &PlaneId) {
+    drawings()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .remove(plane);
 }
 
 fn last_moved(plane: &PlaneId, session: u32) -> Option<i64> {
@@ -265,6 +274,36 @@ mod tests {
         assert!(last_moved(&plane, 4).is_some());
         closed(&plane, 4);
         assert_eq!(last_moved(&plane, 4), None);
+    }
+
+    #[test]
+    fn a_project_that_closed_no_longer_holds_its_drawn_records() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let root = dir.path().join("project");
+        std::fs::create_dir_all(root.join("workspaces").join("alpha")).expect("a workspace");
+        std::fs::write(purlis_core::names::manifest(&root), "schema = 1\n").expect("the project");
+        let planes = crate::planes::Planes::telling(
+            std::sync::Arc::new(|_| {}),
+            crate::Shipped::default(),
+            None,
+        );
+        let id = planes.open(&root);
+        let held = planes.held(&id).expect("held");
+        let history = Asked {
+            history: true,
+            limit: chats::HISTORY_DEFAULT,
+        };
+        answer(&held, &id, "alpha", history);
+        let drawn = || {
+            drawings()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .contains_key(&id)
+        };
+        assert!(drawn(), "history drew the project's records");
+        drop(held);
+        planes.close(&id).expect("it closes");
+        assert!(!drawn(), "and let go of them when it closed");
     }
 
     fn ask(chat: u32, limit: Option<u32>) -> purlis_core::hookwire::ChatsAsk {
