@@ -7896,6 +7896,16 @@ nav.piece-files-head {
   margin: 0;
 }
 
+/* A signing table's cell of words and a mark side by side (#6301): a device and its Older
+   setup, a Verified badge and who it commits as. */
+.signing-device,
+.signing-verified {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
 /* **A pool's limits, folded under its row** (#4285, `PoolLimits.tsx`): the groups of what they
    affect, each limit a row with its box, its unit and a line under it. */
 .pool-limits {

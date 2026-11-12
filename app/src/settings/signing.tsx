@@ -23,6 +23,7 @@ import { Badge } from "../ui/badge/Badge";
 import { Button } from "../ui/button/Button";
 import { Dialog } from "../ui/dialog/Dialog";
 import { Disclosure } from "../ui/disclosure/Disclosure";
+import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "../ui/table/Table";
 
 type Read =
   | { state: "reading" }
@@ -219,42 +220,57 @@ function On({
         <Badge variant="ok">On</Badge> Chat commits on this Mac are signed with its signing key.
       </p>
       {accounts.length > 0 ? (
-        <ul className="ui-machine-list">
-          {accounts.map((account) => {
-            const held = keysOf(account);
-            const forge = { kind: account.kind, host: account.host };
-            return (
-              <li className="ui-machine-entry" key={keyOf(account)}>
-                <span className="ui-machine-name">{account.login}</span>
-                <span className="ui-machine-path">{account.host}</span>
-                {!account.verifies ? (
-                  <span className="ui-setting-help">{cantVerify(account)}</span>
-                ) : held?.has_key === false ? (
-                  <Button
-                    size="sm"
-                    aria-label={`Add to this account: ${account.login} on ${account.forge}`}
-                    onPress={() => onSetUp(forge)}
-                  >
-                    Add to this account
-                  </Button>
-                ) : account.verified_as ? (
-                  <>
-                    <Badge variant="ok">Verified on {account.forge} ✓</Badge>
-                    <span className="ui-setting-help">Commits as {account.verified_as}</span>
-                  </>
-                ) : (
-                  <Button
-                    size="sm"
-                    aria-label={`Check signing on ${account.login} on ${account.forge}`}
-                    onPress={() => onSetUp(forge)}
-                  >
-                    Check
-                  </Button>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+        // **A table of the accounts' signing** (#6301, as Your hosts is, #2919 R65): a row an
+        // account, its login heading it, its host, and where its signing stands.
+        <Table aria-label="Signing on your accounts" stacks>
+          <TableHeader>
+            <TableColumn id="login" isRowHeader>
+              Account
+            </TableColumn>
+            <TableColumn id="host">Host</TableColumn>
+            <TableColumn id="signing">Signing</TableColumn>
+          </TableHeader>
+          <TableBody>
+            {accounts.map((account) => {
+              const held = keysOf(account);
+              const forge = { kind: account.kind, host: account.host };
+              return (
+                <TableRow key={keyOf(account)} id={keyOf(account)} textValue={account.login}>
+                  <TableCell>{account.login}</TableCell>
+                  <TableCell heading="Host">
+                    <span className="ui-record-where">{account.host}</span>
+                  </TableCell>
+                  <TableCell heading="Signing">
+                    {!account.verifies ? (
+                      <span className="ui-setting-help">{cantVerify(account)}</span>
+                    ) : held?.has_key === false ? (
+                      <Button
+                        size="sm"
+                        aria-label={`Add to this account: ${account.login} on ${account.forge}`}
+                        onPress={() => onSetUp(forge)}
+                      >
+                        Add to this account
+                      </Button>
+                    ) : account.verified_as ? (
+                      <span className="signing-verified">
+                        <Badge variant="ok">Verified on {account.forge} ✓</Badge>
+                        <span className="ui-setting-help">Commits as {account.verified_as}</span>
+                      </span>
+                    ) : (
+                      <Button
+                        size="sm"
+                        aria-label={`Check signing on ${account.login} on ${account.forge}`}
+                        onPress={() => onSetUp(forge)}
+                      >
+                        Check
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
       ) : (
         <p className="ui-setting-help">
           Sign in to GitHub or GitLab above to add the key to your account.
@@ -338,7 +354,8 @@ export function RemoveSigningConfirm({
 
 /**
  * **The other devices' keys** (#5918): a heading, one line on what removing one does, and the
- * list it names.
+ * table it names (#6301, as Your hosts is, #2919 R65, R67): a row a key, its device heading it,
+ * the account it is on, the day it was added, and its Remove… at the row's end.
  */
 function OtherKeys({ children }: { children: ReactNode }) {
   const heading = useId();
@@ -349,9 +366,19 @@ function OtherKeys({ children }: { children: ReactNode }) {
         Each signs that device&apos;s chat commits. Removing one here stops that device&apos;s
         commits showing as Verified until it sets up signing again.
       </p>
-      <ul className="ui-machine-list" aria-labelledby={heading}>
-        {children}
-      </ul>
+      <Table aria-labelledby={heading} stacks>
+        <TableHeader>
+          <TableColumn id="device" isRowHeader>
+            Device
+          </TableColumn>
+          <TableColumn id="account">Account</TableColumn>
+          <TableColumn id="added">Added</TableColumn>
+          <TableColumn id="remove" align="end" hideName>
+            Remove
+          </TableColumn>
+        </TableHeader>
+        <TableBody>{children}</TableBody>
+      </Table>
     </section>
   );
 }
@@ -390,46 +417,52 @@ function OtherKey({
   const [confirming, setConfirming] = useState(false);
   const device = other.device;
   return (
-    <li className="ui-machine-entry">
-      <span className="ui-machine-name">{device}</span>
-      {other.older_setup && <Badge variant="neutral">Older setup</Badge>}
-      <span className="ui-machine-path">
-        {where}
-        {other.added ? ` · added ${addedOn(other.added)}` : ""}
-      </span>
-      {mayRemove ? (
-        <Button
-          size="sm"
-          aria-label={`Remove ${device}'s signing key from ${where}…`}
-          onPress={() => setConfirming(true)}
-        >
-          Remove…
-        </Button>
-      ) : (
-        <Button size="sm" onPress={() => void openUrl(keysPage)}>
-          Remove it on the forge
-        </Button>
-      )}
-      {why !== undefined && (
-        <span className="ui-setting-help" role="alert">
-          {why}
+    <TableRow id={`${where}:${other.id}`} textValue={device}>
+      <TableCell>
+        <span className="signing-device">
+          {device}
+          {other.older_setup && <Badge variant="neutral">Older setup</Badge>}
         </span>
-      )}
-      {confirming && (
-        <RemoveOtherKeyConfirm
-          device={device}
-          where={where}
-          onClose={() => setConfirming(false)}
-          onRemove={() => {
-            setConfirming(false);
-            void commands.signingRemoveOther(forge, other.id).then((done) => {
-              if (done.status === "ok") onRemoved();
-              else setWhy(done.error);
-            });
-          }}
-        />
-      )}
-    </li>
+      </TableCell>
+      <TableCell heading="Account">
+        <span className="ui-record-where">{where}</span>
+      </TableCell>
+      <TableCell heading="Added">{other.added ? addedOn(other.added) : ""}</TableCell>
+      <TableCell align="end">
+        {mayRemove ? (
+          <Button
+            size="sm"
+            aria-label={`Remove ${device}'s signing key from ${where}…`}
+            onPress={() => setConfirming(true)}
+          >
+            Remove…
+          </Button>
+        ) : (
+          <Button size="sm" onPress={() => void openUrl(keysPage)}>
+            Remove it on the forge
+          </Button>
+        )}
+        {why !== undefined && (
+          <span className="ui-setting-help" role="alert">
+            {why}
+          </span>
+        )}
+        {confirming && (
+          <RemoveOtherKeyConfirm
+            device={device}
+            where={where}
+            onClose={() => setConfirming(false)}
+            onRemove={() => {
+              setConfirming(false);
+              void commands.signingRemoveOther(forge, other.id).then((done) => {
+                if (done.status === "ok") onRemoved();
+                else setWhy(done.error);
+              });
+            }}
+          />
+        )}
+      </TableCell>
+    </TableRow>
   );
 }
 
