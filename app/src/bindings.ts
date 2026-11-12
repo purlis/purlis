@@ -7785,11 +7785,12 @@ export type ChatSkills = {
 	 */
 	repos: string[],
 	/**
-	 *  Why the chat gets no skills, where its harness is a declared one skills are not supported
-	 *  on (SK-30), or where it is not running now (#6196): said in place of the words for a tool
-	 *  purlis does not know.
+	 *  Why the chat is offered no skills, where that is not that it runs a tool purlis does not
+	 *  know: its harness is a declared one skills are not supported on (SK-30), its runner said
+	 *  none (#4218), or it is not running now (#6196). Said in place of the words for a tool purlis
+	 *  does not know, which are what the list says where this is null (#6302).
 	 */
-	not_supported: string | null,
+	none_because: string | null,
 	/**
 	 *  How its router extension did at its start (SK-15b): null for a chat routed by the
 	 *  built-in router, which is asked nothing.
