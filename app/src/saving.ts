@@ -13,7 +13,7 @@ import {
   type SaveMerge,
 } from "./bindings";
 import { followPlaneChanged, GIT, usePlaneChanged } from "./planeChanged";
-import { everyWhileShown } from "./whileShown";
+import { aBeatSince, everyWhileShown } from "./whileShown";
 
 /** The window event a finished save sends, so every reader of the save standing reads again —
  *  the title bar after the Saving tab's button, and the tab after the title bar's. */
@@ -190,8 +190,7 @@ export function usePlaneSaving(
   // as its project was opened or its git standing moved, is the one the beat would have read.
   // A switch to a project read a moment ago asks nothing more (`projectSwitch.cost.test.tsx`).
   const catchUp = useCallback(() => {
-    const at = askedAt.current;
-    if (at === undefined || performance.now() - at >= SAVING_REREAD_MS) readAgain.current();
+    if (aBeatSince(askedAt.current, SAVING_REREAD_MS)) readAgain.current();
   }, []);
   useRereads(reread, beat, catchUp);
 
