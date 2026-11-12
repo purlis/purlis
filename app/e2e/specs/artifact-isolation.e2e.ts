@@ -477,7 +477,18 @@ describe(`an artifact, as purlis renders it, is isolated from the window and its
         const ev = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: Math.round(box.left + box.width / 2), clientY: Math.round(box.top + box.height / 2) });
         el.dispatchEvent(ev);
         notes.push(`prevented=${ev.defaultPrevented} bar=${bar !== null} openNow=${el.getAttribute("data-open")}`);
-        setTimeout(() => {
+        setTimeout(async () => {
+          const frame = notes.join(" ").match(/(tauri:\/\/localhost\/assets\/[^:]+\.js):(\d+):(\d+)/);
+          if (frame !== null) {
+            try {
+              const lines = (await (await fetch(frame[1])).text()).split("\n");
+              const line = lines[Number(frame[2]) - 1] ?? "";
+              const col = Number(frame[3]);
+              notes.push(`SOURCE[${line.slice(Math.max(0, col - 900), col + 300)}]`);
+            } catch (why) {
+              notes.push(`source-unread ${String(why)}`);
+            }
+          }
           seen.disconnect();
           HTMLElement.prototype.focus = real;
           document.removeEventListener("focusin", fin, true);
