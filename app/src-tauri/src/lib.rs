@@ -99,6 +99,7 @@ mod mainwatch;
 mod personaskills;
 mod regenerate;
 mod routergrade;
+mod scriptless;
 mod signingsetup;
 mod signinwatch;
 mod skillchange;
@@ -3904,7 +3905,9 @@ pub fn run() {
         // No webview navigates off the app, whatever a page it draws links to (FM-2 review).
         .plugin(navguard::plugin())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_notification::init())
+        // Its commands and setup, but no page script in any webview (#6120): purlis sends
+        // notifications from Rust, and an artifact's page would run the shim its ACL refuses.
+        .plugin(scriptless::notification())
         // Registered in every build so a broken updater config fails CI's app build, and
         // inert until asked: nothing checks unless `updates::watch` or a command does.
         .plugin(tauri_plugin_updater::Builder::new().build());
