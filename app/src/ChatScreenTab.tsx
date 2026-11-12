@@ -22,7 +22,7 @@ const SCREEN_ROWS = 40;
 /** Why a closed task's screen may not be there: what the empty tab says under its headline. */
 export const NOT_KEPT_WHY =
   "A task's screen is kept only while its record is, and only where this machine keeps them " +
-  "([task_screens] keep in charter.local.toml).";
+  "([task_screens] keep in purlis.local.toml).";
 
 /** What the tab says of itself beside the screen. */
 export const CHAT_SCREEN_NOTE = "What this task's chat showed as it closed. It takes no input.";

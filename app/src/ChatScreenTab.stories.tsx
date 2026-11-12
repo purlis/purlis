@@ -56,7 +56,10 @@ export const KeptScreen: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const region = await canvas.findByRole("region", { name: "The chat's last screen" });
-    await waitFor(() => expect(within(region).getByText(/Commits are signed/)).toBeTruthy());
+    // Its text is the list beside the grid, line by line, and the grid draws it too.
+    await waitFor(() =>
+      expect(within(region).getAllByText(/Commits are signed/).length).toBeGreaterThan(0),
+    );
     await userEvent.tab();
     await untilFocused(() => region, "Tab to the screen");
     expectFocusInSight();
