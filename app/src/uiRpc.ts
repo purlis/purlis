@@ -1946,6 +1946,8 @@ export const commands = {
 	poolSetupOperatorImage: __WINDOW_ONLY_RESULT,
 	poolSetupClusterPool: __WINDOW_ONLY_RESULT,
 	poolSetupPinAgain: __WINDOW_ONLY_RESULT,
+	poolSetupAskAdmin: __WINDOW_ONLY_RESULT,
+	poolSetupStopWaiting: __WINDOW_ONLY_RESULT,
 	poolSetupName: __WINDOW_ONLY_RESULT,
 	poolSetupPool: __WINDOW_ONLY_RESULT,
 	poolSetupAdd: __WINDOW_ONLY_RESULT,
@@ -3081,6 +3083,11 @@ export type AnswerPath =
  */
 { via: "signing" } | 
 /**
+ *  Open Pool setup sends `pool_setup_stop_waiting` and opens the project's Pool setup tab;
+ *  Dismiss sends `pool_setup_stop_waiting` alone (#4496).
+ */
+{ via: "pool-setup" } | 
+/**
  *  `allow_chat_browser`, with the open web for `open-web`, and `keep_chat_browser_off` for
  *  Keep off, with the person's reason (#2013).
  */
@@ -3630,7 +3637,12 @@ export type AskSource =
  *  **A chat paused as looping** (#6015, ADR 0121 decision 20): the same command failing
  *  again and again, or its asks refused again and again. It's fine, continue, or Stop.
  */
-"looping";
+"looping" | 
+/**
+ *  **Pool setup's cluster is ready** (#4496): the admin the person asked has given what
+ *  the install couldn't, and Pool setup goes on. Said once, about no chat.
+ */
+"pool-setup";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -10685,6 +10697,11 @@ export type PoolSetupStep = {
 	also: PoolSetupAction | null,
 	/**  Install's parts, each with its own button (#4493). */
 	parts: PoolSetupPart[],
+	/**
+	 *  The words for the person's cluster's admin (#4496), where doctor shows they can't
+	 *  install. Held free of secrets by the core.
+	 */
+	admin: string | null,
 	/**  How the step is undone by hand, never by a button: uninstalling from a cluster. */
 	undo: PoolSetupSee | null,
 };

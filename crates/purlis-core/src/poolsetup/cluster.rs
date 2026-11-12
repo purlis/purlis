@@ -928,7 +928,7 @@ pub(super) fn see_of(id: super::StepId, facts: &Facts, choices: &Choices) -> Opt
 }
 
 /// The questions doctor asks, as kubectl commands.
-fn doctor_by_hand(on: &str) -> String {
+pub(super) fn doctor_by_hand(on: &str) -> String {
     let (namespace, controller) = doctor::AGENT_SANDBOX_CONTROLLER;
     let mut lines = vec![format!("kubectl{on} version")];
     for (name, _) in doctor::AGENT_SANDBOX_DEFINITIONS {

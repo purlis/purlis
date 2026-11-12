@@ -741,3 +741,76 @@ export const TheKeyPinnedHereForTeammates: Story = {
     await expectFocusInSight();
   },
 };
+
+/** Doctor's lines on a cluster where the person may not apply the install (#4496). */
+const REFUSED_CHECKS = [
+  { about: "cluster", verdict: "ok", title: "asked context kind-team", more: null },
+  { about: "cluster", verdict: "ok", title: "Kubernetes v1.36.4", more: null },
+  {
+    about: "cluster",
+    verdict: "missing",
+    title: "you may not apply the install's cluster-scoped definitions",
+    more: "Next: ask your cluster's admin to install purlis, or for the rights.",
+  },
+] as PoolSetupStep["checks"];
+
+const ADMIN_WORDS =
+  "Hello. I'd like to run purlis chats on our Kubernetes cluster, and purlis's check found it lacks what I can't add with my own sign-in. Could you have a look?\n\nWhat the check found, in its own words:\nok: asked context kind-team\nok: Kubernetes v1.36.4\nmissing: you may not apply the install's cluster-scoped definitions.\n\nThe check only reads. Run it with your own sign-in:\nkubectl version\nkubectl auth can-i create namespaces\n\nSent from purlis. It holds no password, token, key or credential.";
+
+const onCheck = (state: string, also: PoolSetupAction) =>
+  shown("check", [
+    DONE_WHERE,
+    step("check", "Check the cluster", state, {
+      line: state === "waiting" ? "Waiting for your admin" : null,
+      findings: [
+        "The cluster lacks something the install doesn't add, so nothing changes until it has it. Each line says what to do, and this step checks again.",
+      ],
+      checks: REFUSED_CHECKS,
+      next: act("check-again", "Check again", "Asks the cluster again. It changes nothing."),
+      also,
+      admin: ADMIN_WORDS,
+    }),
+    ...AFTER_CHECK(1),
+  ]);
+
+export const SendToYourAdmin: Story = {
+  beforeEach: faked(
+    onCheck(
+      "attention",
+      act(
+        "send-to-admin",
+        "Send to your admin",
+        "Shows the words to send your cluster's admin: what's missing, what purlis needs and the commands. They hold no password, token, key or credential.",
+      ),
+    ),
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const send = await canvas.findByRole("button", { name: "Send to your admin" });
+    send.focus();
+    await expect(send).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
+export const WaitingForYourAdmin: Story = {
+  beforeEach: faked(
+    onCheck(
+      "waiting",
+      act(
+        "stop-waiting",
+        "Stop waiting",
+        "Forgets that you asked your admin. Nothing on the cluster changes.",
+      ),
+    ),
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findAllByText("Waiting for your admin");
+    const copy = await canvas.findByRole("button", { name: /Copy/ });
+    copy.focus();
+    await expect(copy).toHaveFocus();
+    await userEvent.tab();
+    await expectFocusInSight();
+  },
+};

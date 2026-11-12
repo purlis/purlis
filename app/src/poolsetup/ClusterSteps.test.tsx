@@ -6,7 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PoolSetupPart, PoolSetupStep } from "../bindings";
-import { ClusterPoolStep, InstallStep } from "./ClusterSteps";
+import { CheckStep, ClusterPoolStep, InstallStep } from "./ClusterSteps";
 
 afterEach(() => {
   cleanup();
@@ -41,6 +41,7 @@ const install = (parts: PoolSetupPart[], undo = true): PoolSetupStep => ({
   checks: [],
   also: null,
   parts,
+  admin: null,
   undo: undo
     ? {
         note: "purlis never uninstalls from a cluster: 3 claims by 2 people would end.",
@@ -331,5 +332,71 @@ describe("A changed key asks again (#4495)", () => {
       cmd: "pool_setup_pin_again",
       args: { pool: "team", key: NEW },
     });
+  });
+});
+
+describe("Send to your admin, and waiting (#4496)", () => {
+  const WORDS = "Hello. I'd like to run purlis chats on our Kubernetes cluster.";
+  const check = (state: string, also: { id: string; label: string }): PoolSetupStep => ({
+    ...install([]),
+    id: "check",
+    name: "Check the cluster",
+    state,
+    undo: null,
+    see: null,
+    admin: WORDS,
+    line: state === "waiting" ? "Waiting for your admin" : null,
+    next: {
+      id: "check-again",
+      label: "Check again",
+      does: "Asks again.",
+      command: null,
+      url: null,
+    },
+    also: { ...also, does: "Shows the words.", command: null, url: null },
+  });
+
+  it("keeps that the person asked their admin, from this project, on Send to your admin", async () => {
+    const sent: { cmd: string; args: unknown }[] = [];
+    mockIPC((cmd, args) => {
+      sent.push({ cmd, args });
+      return null;
+    });
+    const recheck = vi.fn();
+    render(
+      <CheckStep
+        step={check("attention", { id: "send-to-admin", label: "Send to your admin" })}
+        plane="/home/ada/team"
+        onNext={() => {}}
+        onRecheck={recheck}
+      />,
+    );
+    expect(screen.queryByText(WORDS)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Send to your admin" }));
+    await waitFor(() => expect(recheck).toHaveBeenCalled());
+    expect(sent).toContainEqual({ cmd: "pool_setup_ask_admin", args: { plane: "/home/ada/team" } });
+  });
+
+  it("shows the words to copy while it waits, and stops waiting on its own press", async () => {
+    const sent: { cmd: string; args: unknown }[] = [];
+    mockIPC((cmd, args) => {
+      sent.push({ cmd, args });
+      return null;
+    });
+    const recheck = vi.fn();
+    render(
+      <CheckStep
+        step={check("waiting", { id: "stop-waiting", label: "Stop waiting" })}
+        plane="/home/ada/team"
+        onNext={() => {}}
+        onRecheck={recheck}
+      />,
+    );
+    expect(screen.getByText("Waiting for your admin")).toBeInTheDocument();
+    expect(screen.getByText(WORDS)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Copy/ })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Stop waiting" }));
+    await waitFor(() => expect(recheck).toHaveBeenCalled());
+    expect(sent.map((one) => one.cmd)).toContain("pool_setup_stop_waiting");
   });
 });

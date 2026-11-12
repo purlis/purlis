@@ -34,6 +34,7 @@ use crate::forge::agentidentity::HostFound;
 use crate::profilestore::sign_in::Standing;
 use crate::runners::{self, Refused};
 
+pub mod admin;
 pub mod asked;
 pub mod cluster;
 pub mod install;
@@ -169,6 +170,10 @@ pub enum ActionId {
     AddClusterPool,
     /// A cluster pool is marked as the person's own on its row, in Settings › Pools (#4071).
     MarkAsOwn,
+    /// Doctor shows the person can't install: the words for their cluster's admin (#4496).
+    SendToAdmin,
+    /// The person stops waiting for their admin (#4496).
+    StopWaiting,
     /// A cluster pool's Pool names a key its pin never vouched for: the person checks the new
     /// one with their admin and pins it again (#4495).
     CheckKeyAgain,
@@ -258,6 +263,9 @@ pub struct Step {
     pub parts: Vec<install::Part>,
     /// What undoes the step by hand, where only that does (uninstalling from a cluster, story 56).
     pub undo: Option<See>,
+    /// The words for the person's cluster's admin, where doctor shows they can't install
+    /// (#4496): Check the cluster's alone, and held free of secrets.
+    pub admin: Option<String>,
 }
 
 /// The whole answer.
@@ -425,6 +433,8 @@ pub struct Choices {
     /// When a real chat was last seen to start on each pool, from Try it (#4483), in seconds
     /// since the epoch: the proof setup ends on, which nothing else could read back.
     pub tried: BTreeMap<String, u64>,
+    /// That the person sent the words to their cluster's admin, and waits (#4496).
+    pub admin: Option<admin::Asked>,
 }
 
 /// What this machine calls itself in a sentence.
@@ -894,6 +904,9 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
     let mut at = None;
     let mut steps = Vec::with_capacity(kind.steps().len());
     for &id in kind.steps() {
+        let waits = id == StepId::Check
+            && kind == Kind::Cluster
+            && admin::waiting_on(choices, facts.cluster.chosen.as_deref());
         let reading = match (kind, id) {
             (Kind::Cluster, StepId::Where) => cluster::where_reading(facts, choices),
             (_, StepId::Where) => where_reading(facts, choices),
@@ -913,18 +926,27 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
             StepState::Later
         } else {
             at = Some(id);
-            if reading.attention {
+            if reading.attention && waits {
+                StepState::Waiting
+            } else if reading.attention {
                 StepState::Attention
             } else {
                 StepState::Current
             }
         };
         let says = !matches!(state, StepState::Later | StepState::Skipped);
+        let words = (id == StepId::Check && says)
+            .then(|| admin::text(facts, choices))
+            .flatten();
         steps.push(Step {
             id,
             name: id.name(),
             state,
-            line: reading.line,
+            line: if state == StepState::Waiting {
+                Some("Waiting for your admin".to_owned())
+            } else {
+                reading.line
+            },
             findings: if says { reading.findings } else { Vec::new() },
             next: if says { reading.next } else { None },
             skippable: id.skippable(),
@@ -942,9 +964,23 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
             },
             also: if id == StepId::Where && state != StepState::Done && facts.pool.is_none() {
                 cluster::also(kind, facts)
+            } else if words.is_some() && state == StepState::Waiting {
+                action(
+                    ActionId::StopWaiting,
+                    "Stop waiting",
+                    "Forgets that you asked your admin. Nothing on the cluster changes.",
+                )
+            } else if words.is_some() {
+                action(
+                    ActionId::SendToAdmin,
+                    "Send to your admin",
+                    "Shows the words to send your cluster's admin: what's missing, what purlis \
+                     needs and the commands. They hold no password, token, key or credential.",
+                )
             } else {
                 None
             },
+            admin: words,
         });
     }
     if let (Some(name), Some(at)) = (
@@ -1486,6 +1522,7 @@ pub fn read_choices(config: &Path) -> Result<Choices, Refused> {
         pool: held.pool,
         skipped: held.skipped,
         tried: held.tried,
+        admin: held.admin,
     })
 }
 
@@ -1510,6 +1547,8 @@ struct Held {
     skipped: BTreeMap<String, Vec<StepId>>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     tried: BTreeMap<String, u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    admin: Option<admin::Asked>,
 }
 
 fn write_choices(config: &Path, choices: Choices) -> Result<(), Refused> {
@@ -1523,6 +1562,7 @@ fn write_choices(config: &Path, choices: Choices) -> Result<(), Refused> {
         pool: choices.pool,
         skipped: choices.skipped,
         tried: choices.tried,
+        admin: choices.admin,
     };
     let text = serde_json::to_string_pretty(&held)
         .map_err(|why| Refused::Other(format!("your Pool setup choices: {why}")))?;

@@ -59,6 +59,8 @@ import { STEP_STATES, StepList, type StepState } from "./ui/steps/Steps";
 
 /** How often the tab asks again while it waits on Docker. */
 const RECHECK_MS = 5000;
+/** How often a step waiting for an admin is checked again while the tab is open (#4496). */
+const ADMIN_RECHECK_MS = 30_000;
 
 const STATES: readonly string[] = STEP_STATES;
 
@@ -328,6 +330,15 @@ function PoolSetupGuide({
     }, RECHECK_MS);
     return () => clearInterval(every);
   }, [waiting, reread]);
+  // Waiting for an admin (#4496): doctor asks the cluster, so slower than a Docker that starts.
+  const onTheAdmin = shown?.steps.some((step) => step.state === "waiting") ?? false;
+  useEffect(() => {
+    if (!onTheAdmin) return;
+    const every = setInterval(() => {
+      if (reading.current === 0) reread();
+    }, ADMIN_RECHECK_MS);
+    return () => clearInterval(every);
+  }, [onTheAdmin, reread]);
 
   if (read.state === "reading")
     return (
@@ -438,7 +449,7 @@ function PoolSetupGuide({
               }}
             />
           ) : step?.id === "check" ? (
-            <CheckStep step={step} onNext={() => after("check")} onRecheck={reread} />
+            <CheckStep step={step} plane={plane} onNext={() => after("check")} onRecheck={reread} />
           ) : step?.id === "install" ? (
             <InstallStep step={step} onNext={() => after("install")} changed={reread} />
           ) : step?.id === "pool" && setup.kind === "cluster" ? (

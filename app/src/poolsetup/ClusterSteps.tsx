@@ -65,19 +65,50 @@ export function ContextOptions({
 const CHECK_LEAD =
   "Doctor looks at what the cluster has before anything changes. It only reads, with your own sign-in.";
 
-/** **Check the cluster** (#4492): doctor's findings first, and a cluster that lacks something stops here. */
+/** What the waiting step says of its rechecks, held to the tab's and the background's pace. */
+const WAITING_SAYS =
+  "purlis checks the cluster again by itself, every half minute while this is open and every ten minutes while it's closed. Needs you gets one entry when it's ready.";
+
+/**
+ * **Check the cluster** (#4492): doctor's findings first, and a cluster that lacks something stops
+ * here. Where doctor shows the person can't install (#4496), Send to your admin gives the words
+ * to send, with what's missing and the commands, and the step then waits for the admin, across a
+ * close, checking again by itself.
+ */
 export function CheckStep({
   step,
+  plane,
   onNext,
   onRecheck,
 }: {
   step: PoolSetupStep;
+  /** The project the tab is in: where the ready entry is listed. */
+  plane?: string;
   onNext: () => void;
   onRecheck: () => void;
 }) {
+  const [refused, setRefused] = useState<string>();
+  const waiting = step.state === "waiting";
+  const press = (id: string) => {
+    setRefused(undefined);
+    const done =
+      id === "send-to-admin"
+        ? commands.poolSetupAskAdmin(plane ?? null)
+        : commands.poolSetupStopWaiting();
+    void done.then((answer) => {
+      if (answer.status === "error") setRefused(answer.error);
+      onRecheck();
+    });
+  };
+  const also = step.also;
   return (
     <>
       <StepHead title="Check the cluster" lead={CHECK_LEAD} />
+      {waiting && (
+        <Say tone="news" title="Waiting for your admin">
+          {WAITING_SAYS}
+        </Say>
+      )}
       {step.findings.map((finding) => (
         <p key={finding} className="pool-setup-p">
           {finding}
@@ -92,9 +123,29 @@ export function CheckStep({
           ))}
         </CheckList>
       )}
+      {waiting && step.admin && (
+        <>
+          <p className="pool-setup-p">
+            Send these words to your cluster&apos;s admin, by chat or email. They hold no password,
+            token, key or credential.
+          </p>
+          <CodeBlock label="For your admin" text={step.admin} />
+        </>
+      )}
+      {refused && (
+        <Say tone="trouble" title="That didn't work">
+          {refused}
+        </Say>
+      )}
       {step.see && <SeeWhat text={step.see.text} note={step.see.note} />}
       {step.next ? (
-        <Action does={step.next.does} main={step.next.label} onMain={onRecheck} />
+        <Action does={also?.does ?? step.next.does} main={step.next.label} onMain={onRecheck}>
+          {also && (also.id === "send-to-admin" || also.id === "stop-waiting") && (
+            <Button variant="secondary" onPress={() => press(also.id)}>
+              {also.label}
+            </Button>
+          )}
+        </Action>
       ) : (
         step.state === "done" && <Action main="Continue" onMain={onNext} />
       )}

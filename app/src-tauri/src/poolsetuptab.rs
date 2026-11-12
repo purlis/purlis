@@ -51,6 +51,9 @@ pub struct PoolSetupStep {
     pub also: Option<PoolSetupAction>,
     /// Install's parts, each with its own button (#4493).
     pub parts: Vec<PoolSetupPart>,
+    /// The words for the person's cluster's admin (#4496), where doctor shows they can't
+    /// install. Held free of secrets by the core.
+    pub admin: Option<String>,
     /// How the step is undone by hand, never by a button: uninstalling from a cluster.
     pub undo: Option<PoolSetupSee>,
 }
@@ -179,6 +182,7 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
                         next: part.next.as_ref().map(action_shown),
                     })
                     .collect(),
+                admin: step.admin.clone(),
                 undo: step.undo.as_ref().map(|undo| PoolSetupSee {
                     note: undo.note.clone(),
                     text: undo.text.clone(),
@@ -350,6 +354,105 @@ pub async fn pool_setup_pin_again(pool: String, key: String) -> Result<(), Strin
             .map_err(|why| crate::devices::shown_safely(&why.to_string()))
     })
     .await
+}
+
+/// **Keeps that the person sent Send to your admin's words** (#4496), about the cluster chosen
+/// on Where, from the project `plane` the tab is in: Check the cluster then waits for their
+/// admin, across a close, and is checked again by itself. Nothing is sent anywhere by purlis.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_ask_admin(plane: Option<String>) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("keeping that you asked your admin", move || {
+            let project = plane.map(std::path::PathBuf::from);
+            purlis_core::poolsetup::admin::asked(&config_root()?, project.as_deref(), seconds_now())
+                .map_err(|why| why.to_string())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = plane;
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Forgets that the person waits for their admin** (#4496): Stop waiting, or the ready Ask
+/// answered.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_stop_waiting(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        let forgot = crate::off_the_window("forgetting that you asked your admin", move || {
+            purlis_core::poolsetup::admin::forget(&config_root()?).map_err(|why| why.to_string())
+        })
+        .await;
+        let _ = tauri::Emitter::emit(&app, POOL_SETUP_READY, ());
+        forgot
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = app;
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// Now, in seconds since the epoch.
+#[cfg(unix)]
+fn seconds_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs())
+}
+
+/// The event every window hears when Pool setup's ready Ask comes or goes (#4496).
+pub const POOL_SETUP_READY: &str = "pool-setup-ready";
+
+/// How often the wait for an admin is checked again in the background: a low rate, since only
+/// a person changes it, and the open tab checks far oftener (spec #4469, Rechecks).
+const RECHECK_EVERY: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// **Checks the wait for an admin again now and then** (#4496), on a thread of its own: only where
+/// the person waits, through this machine's kubectl with their own sign-in. Once it is ready,
+/// every window hears it, and the ready Ask shows.
+pub fn recheck_now_and_then(app: &tauri::AppHandle) {
+    #[cfg(unix)]
+    {
+        let app = app.clone();
+        let _ = std::thread::Builder::new()
+            .name("pool-setup-recheck".into())
+            .spawn(move || {
+                loop {
+                    std::thread::sleep(RECHECK_EVERY);
+                    let Ok(config) = config_root() else { continue };
+                    let waits = purlis_core::poolsetup::read_choices(&config)
+                        .ok()
+                        .and_then(|choices| choices.admin)
+                        .is_some_and(|asked| asked.ready.is_none());
+                    if !waits {
+                        continue;
+                    }
+                    let kubectl = purlis_core::poolsetup::cluster::kubectl_here();
+                    let now = seconds_now();
+                    if matches!(
+                        purlis_core::poolsetup::admin::recheck(
+                            &config,
+                            kubectl.as_ref().map_err(Clone::clone),
+                            now
+                        ),
+                        Ok(true)
+                    ) {
+                        let _ = tauri::Emitter::emit(&app, POOL_SETUP_READY, ());
+                    }
+                }
+            });
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = app;
+    }
 }
 
 /// **Keeps the cluster operator's image named under Install's Options** (#4493), or none.

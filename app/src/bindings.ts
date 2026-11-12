@@ -4185,6 +4185,17 @@ export const commands = {
 	 *  Anything else pins nothing ([`purlis_core::pools::pin_again`]).
 	 */
 	poolSetupPinAgain: (pool: string, key: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_pin_again", { pool, key })),
+	/**
+	 *  **Keeps that the person sent Send to your admin's words** (#4496), about the cluster chosen
+	 *  on Where, from the project `plane` the tab is in: Check the cluster then waits for their
+	 *  admin, across a close, and is checked again by itself. Nothing is sent anywhere by purlis.
+	 */
+	poolSetupAskAdmin: (plane: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_ask_admin", { plane })),
+	/**
+	 *  **Forgets that the person waits for their admin** (#4496): Stop waiting, or the ready Ask
+	 *  answered.
+	 */
+	poolSetupStopWaiting: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_stop_waiting")),
 	/**  **Keeps the name typed on the Pool step**, or none, so coming back finds it. */
 	poolSetupName: (name: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_name", { name })),
 	/**  **Keeps that this setup goes on with pool `name`**, once it has made it. */
@@ -6184,6 +6195,11 @@ export type AnswerPath =
  */
 { via: "signing" } | 
 /**
+ *  Open Pool setup sends `pool_setup_stop_waiting` and opens the project's Pool setup tab;
+ *  Dismiss sends `pool_setup_stop_waiting` alone (#4496).
+ */
+{ via: "pool-setup" } | 
+/**
  *  `allow_chat_browser`, with the open web for `open-web`, and `keep_chat_browser_off` for
  *  Keep off, with the person's reason (#2013).
  */
@@ -6733,7 +6749,12 @@ export type AskSource =
  *  **A chat paused as looping** (#6015, ADR 0121 decision 20): the same command failing
  *  again and again, or its asks refused again and again. It's fine, continue, or Stop.
  */
-"looping";
+"looping" | 
+/**
+ *  **Pool setup's cluster is ready** (#4496): the admin the person asked has given what
+ *  the install couldn't, and Pool setup goes on. Said once, about no chat.
+ */
+"pool-setup";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -13788,6 +13809,11 @@ export type PoolSetupStep = {
 	also: PoolSetupAction | null,
 	/**  Install's parts, each with its own button (#4493). */
 	parts: PoolSetupPart[],
+	/**
+	 *  The words for the person's cluster's admin (#4496), where doctor shows they can't
+	 *  install. Held free of secrets by the core.
+	 */
+	admin: string | null,
 	/**  How the step is undone by hand, never by a button: uninstalling from a cluster. */
 	undo: PoolSetupSee | null,
 };
