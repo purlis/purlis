@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
@@ -10,6 +10,7 @@ import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
 import { forgetGroups } from "./links";
 import type { EntryWritten, SettingsFile, SettingsWhich } from "../bindings";
+import type { HostAdded } from "./groups";
 import { pickIn } from "../ui/select/select.testkit";
 
 /**
@@ -23,10 +24,14 @@ const PLANE = "/home/dev/plane";
 
 const NAMES: Record<SettingsWhich, string> = { shared: "hosts", local: "myHosts" };
 
+/** When and by what each host of yours was added, as the core records it. */
+type Added = Record<string, HostAdded>;
+
 function fileOf(
   which: SettingsWhich,
   hosts: readonly string[],
   unconfirmed: readonly string[] = [],
+  added: Added = {},
 ): SettingsFile {
   const text =
     which === "shared"
@@ -58,6 +63,12 @@ function fileOf(
         ...(which === "local"
           ? [{ field: "confirmed", value: unconfirmed.includes(host) ? "no" : "yes" }]
           : []),
+        ...(which === "local" && added[host]
+          ? [
+              { field: "added_at", value: String(added[host].at) },
+              { field: "added_by", value: added[host].by },
+            ]
+          : []),
       ],
     })),
   };
@@ -87,15 +98,17 @@ function core({
   check,
   local = [],
   unconfirmed = [],
+  added = {},
 }: {
   refuse?: (host: string) => string | undefined;
   check?: (host: string) => string | null | Promise<string | null>;
   local?: string[];
   unconfirmed?: string[];
+  added?: Added;
 } = {}) {
   const hosts: Record<SettingsWhich, string[]> = { shared: ["10.100.39.145:6443"], local };
   let waiting = [...unconfirmed];
-  const local_ = () => fileOf("local", hosts.local, waiting);
+  const local_ = () => fileOf("local", hosts.local, waiting, added);
   const asked: Asked[] = [];
   const checked: string[] = [];
   mockIPC(
@@ -394,6 +407,33 @@ describe("Settings › Your hosts, the table", () => {
     expect(within(table).getAllByText(":8443")[0]).toHaveClass("ui-hosts-port");
     expect(within(table).getAllByRole("button", { name: /^Confirm / })).toHaveLength(2);
     expect(within(table).getAllByRole("button", { name: /^Remove / })).toHaveLength(9);
+  });
+
+  it("says when and by what each host was added, and that one from before the record was added earlier (R65, #6172)", async () => {
+    const now = Date.UTC(2026, 10, 12, 12, 0, 0) / 1000;
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(now * 1000);
+    try {
+      core({
+        local: ["docs.github.com", "zed.dev", "crates.io", "pypi.org"],
+        added: {
+          "docs.github.com": { at: now - 3 * 86_400, by: "you" },
+          "zed.dev": { at: now - 20 * 60, by: "block" },
+          "pypi.org": { at: now - 90 * 86_400, by: "you" },
+        },
+      });
+      await at("Your hosts");
+      const table = await screen.findByRole("grid", { name: "Your hosts" });
+      expect(within(table).getByRole("columnheader", { name: "Added" })).toBeInTheDocument();
+      expect(rowsOf(table).map((cells) => [cells[0], cells[2]])).toEqual([
+        ["docs.github.com:443", "3 days ago · you"],
+        ["zed.dev:443", "20 minutes ago · a chat's block"],
+        ["crates.io:443", "Earlier"],
+        ["pypi.org:443", "14 Aug 2026 · you"],
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("filters by any part of a host, and says so when none is left (R69, R73)", async () => {

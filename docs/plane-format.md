@@ -6384,7 +6384,12 @@ down rather than read off the code.
   recorded as seen too (#5648). A change saved in this machine's own Settings is recorded as seen as it is
   written;
   `hosts_mine` — your own `charter.local.toml` hosts you added or confirmed in Settings on this
-  machine (#1341), the only ones of that file that grant anything; `writes_mine` — the
+  machine (#1341), the only ones of that file that grant anything; `hosts_added` — when, and by
+  what, each of those was added on this machine (#6172, R65): `[{"host", "at", "by"}]`, `at` in
+  seconds since 1970 and `by` `"you"` (Settings' Add) or `"block"` (a block's Allow), replaced as
+  the host is added again and taken off with it; a host added before this record existed has
+  none, and Settings › Sandbox › Your hosts says it was added earlier. A build before it reads
+  past the key, and its next write leaves it out; `writes_mine` — the
   folders you let every chat of this project write on this machine from a block's Notice
   (#1342), each as the kernel names it, judged again at every start and dropped once it no
   longer passes or no longer resolves to itself; `vaults_mine` — the vaults you let a
