@@ -799,6 +799,12 @@ export type Offer = {
    */
   also?: readonly string[];
   /**
+   * **Listed only once words are typed** (#2920): a row among a hundred alike, every setting's,
+   * which a person finds by what they want to change. With nothing typed the palette lists what
+   * the window does, and these would bury it.
+   */
+  whenTyped?: true;
+  /**
    * **The chat this row goes to, by its current number** (#6213): on the rows that bring a chat
    * on screen (Switch to tab, Show task), so typing `641` or `#641` finds chat 641 there, ahead
    * of any row whose title merely holds those digits ({@link narrow}). Never drawn: the tab's
@@ -2770,13 +2776,6 @@ export function catalogue(now: Now): Offer[] {
     ),
   );
   offers.push(...profilePageRows(now.plane, now.profiles));
-  offers.push(
-    ...settingRows(
-      now.plane,
-      now.focused === OUTSIDE ? undefined : now.focused,
-      now.skillStudio ?? false,
-    ),
-  );
 
   // **A finished task's Merge… and Discard branch…, on its row's menu** (#1534): for a task
   // that worked on a branch purlis cut for it. Each opens the task's Changes tab's own
@@ -3618,6 +3617,16 @@ export function catalogue(now: Now): Offer[] {
 
   offers.push(can("charter.quit", "Quit purlis", { verb: "quit" }));
 
+  // **Every setting, last** (#2920): a hundred rows a person finds by typing what they want to
+  // change, listed only then (`whenTyped`).
+  offers.push(
+    ...settingRows(
+      now.plane,
+      now.focused === OUTSIDE ? undefined : now.focused,
+      now.skillStudio ?? false,
+    ),
+  );
+
   return readOnlyOffers(offers, now.readOnly);
 }
 
@@ -4188,6 +4197,7 @@ function settingRows(
           } satisfies Does,
         ),
         ...(setting.help === "" ? {} : { note: setting.help }),
+        whenTyped: true as const,
       })),
     ),
   );
@@ -5822,7 +5832,7 @@ function aboutWhatIsInFront(offer: Offer): boolean {
  */
 export function narrow(query: string, offers: readonly Offer[]): Offer[] {
   const want = query.trim();
-  if (want === "") return [...offers];
+  if (want === "") return offers.filter((offer) => offer.whenTyped !== true);
   const kept = offers.filter((offer) => matches(want, offer));
   // **A chat asked for by its number comes before everything** (#6213): `641` is the chat a
   // coordinator named, never the title that happens to hold those digits.

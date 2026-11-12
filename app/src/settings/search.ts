@@ -56,7 +56,24 @@ export function everySetting({
   plane?: string;
   workspace?: string;
   skillStudio?: boolean;
-}): LevelGroups[] {
+}): readonly LevelGroups[] {
+  // The palette asks each time it lists its rows: the last list is kept while nothing it is
+  // built from has changed.
+  const poolsKept = anyPoolKept();
+  const key = JSON.stringify([plane, workspace, skillStudio, poolsKept]);
+  if (last?.key !== key) last = { key, levels: built(plane, workspace, skillStudio, poolsKept) };
+  return last.levels;
+}
+
+/** The last list {@link everySetting} built, and what it was built from. */
+let last: { key: string; levels: readonly LevelGroups[] } | undefined;
+
+function built(
+  plane: string | undefined,
+  workspace: string | undefined,
+  skillStudio: boolean,
+  poolsKept: boolean,
+): LevelGroups[] {
   return offeredLevels(plane, workspace).map((level) => ({
     level,
     groups:
@@ -88,7 +105,7 @@ export function everySetting({
                 },
                 extensions: NO_EXTENSIONS,
                 theme: undefined,
-                poolsKept: anyPoolKept(),
+                poolsKept,
               },
               () => {},
               skillStudio,

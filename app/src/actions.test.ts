@@ -871,6 +871,10 @@ describe("the one list of actions", () => {
       /^Everything but the terminals\./,
     );
     expect(rows.every((one) => one.available)).toBe(true);
+    // Listed once words are typed, never with nothing typed, where they would bury what the
+    // window does.
+    expect(narrow("", offers).some((one) => one.id.startsWith("settings.setting:"))).toBe(false);
+    expect(narrow("", offers).some((one) => one.id.startsWith("settings.group:"))).toBe(true);
     // Found by the setting's own words.
     expect(narrow("window text size", offers).map((one) => one.title)).toContain(
       "Your settings: Text › Window text size",
