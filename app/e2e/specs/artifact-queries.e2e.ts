@@ -25,6 +25,31 @@ import { closeTabOf, iconFor, iconOf } from "../artifactTabs.js";
  * `purlis_core::artifact::calls` and `purlis_core::extension::queries`.
  */
 
+const NAME = "Todo board";
+const DECLARED = `{"api":1,"queries":{"purlis.todo_list@1":["done"],"purlis.change_status@1":[]}}`;
+const PAGE = `<!doctype html><title>${NAME}</title><script type="application/json" id="purlis">${DECLARED}</script><ul id=todos></ul><script src=app.js></script>`;
+const OFFERS = `[role="group"][aria-label="Offered by ${NAME}"]`;
+/** The todo of this spec's own the page finds in its answer. */
+const TODO = "Queried by the board";
+/**
+ * The page's script: its two calls, and each answer said as an offer (see above). The offers
+ * answer on the port too, under id 99, which it passes over.
+ */
+const SCRIPT = `const said = {};
+purlis.port.onmessage = (event) => {
+  const answer = event.data;
+  if (answer.id === 1) {
+    const mine = ((answer.data && answer.data.todos) || []).find((one) => one.title === ${JSON.stringify(TODO)});
+    said[1] = { does: "todo.done", subject: mine ? mine.slug : "declared-" + (answer.error ? answer.error.kind : "no-todo") };
+  } else if (answer.id === 2) {
+    said[2] = { does: "todo.done", subject: "undeclared-" + (answer.error ? answer.error.kind : "answered") };
+  } else return;
+  purlis.port.postMessage({ id: 99, offers: Object.values(said) });
+};
+purlis.port.postMessage({ id: 1, query: "purlis.todo_list@1" });
+purlis.port.postMessage({ id: 2, query: "purlis.session_record_list@1" });
+`;
+
 /** What the app answered a command with, insisting it answered at all. */
 async function ask<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
   const answer = await browser.executeAsync(
@@ -54,34 +79,7 @@ async function inFront(): Promise<string | null> {
   );
 }
 
-// [LOOP-6232] temporary: runs the describe LOOP times, a new page, pin and todo each pass.
-for (const pass of Array.from({ length: Number(process.env.PURLIS_LOOP ?? "1") }, (_, i) => i + 1)) {
-const NAME = `Todo board ${pass}`;
-const DECLARED = `{"api":1,"queries":{"purlis.todo_list@1":["done"],"purlis.change_status@1":[]}}`;
-const PAGE = `<!doctype html><title>${NAME}</title><script type="application/json" id="purlis">${DECLARED}</script><ul id=todos></ul><script src=app.js></script>`;
-const OFFERS = `[role="group"][aria-label="Offered by ${NAME}"]`;
-/** The todo of this spec's own the page finds in its answer. */
-const TODO = ["Walrus amber", "Falcon cobalt", "Otter maple", "Heron quartz", "Badger saffron", "Lynx willow", "Marten indigo", "Osprey juniper", "Bison coral", "Ibex sorrel", "Tapir garnet", "Raven thistle", "Gecko umber", "Puffin cedar", "Koala jasper", "Narwhal ochre", "Quokka basil", "Vulture pewter", "Wombat fennel", "Yak cinnabar", "Zebu lichen", "Dingo russet", "Egret mallow", "Ferret topaz", "Gibbon hazel", "Hyena plum", "Jackal sage"][pass - 1];
-/**
- * The page's script: its two calls, and each answer said as an offer (see above). The offers
- * answer on the port too, under id 99, which it passes over.
- */
-const SCRIPT = `const said = {};
-purlis.port.onmessage = (event) => {
-  const answer = event.data;
-  if (answer.id === 1) {
-    const mine = ((answer.data && answer.data.todos) || []).find((one) => one.title === ${JSON.stringify(TODO)});
-    said[1] = { does: "todo.done", subject: mine ? mine.slug : "declared-" + (answer.error ? answer.error.kind : "no-todo") };
-  } else if (answer.id === 2) {
-    said[2] = { does: "todo.done", subject: "undeclared-" + (answer.error ? answer.error.kind : "answered") };
-  } else return;
-  purlis.port.postMessage({ id: 99, offers: Object.values(said) });
-};
-purlis.port.postMessage({ id: 1, query: "purlis.todo_list@1" });
-purlis.port.postMessage({ id: 2, query: "purlis.session_record_list@1" });
-`;
-
-describe(`a pinned artifact that calls purlis's queries (pass ${pass})`, function () {
+describe("a pinned artifact that calls purlis's queries", function () {
   this.timeout(180_000);
 
   let at = "";
@@ -90,7 +88,7 @@ describe(`a pinned artifact that calls purlis's queries (pass ${pass})`, functio
   before(async () => {
     const plane = (await ask<string[]>("open_planes"))[0];
     at = join(plane, "workspaces", "alpha", "artifacts");
-    const folder = join(at, `todo-board-${pass}`);
+    const folder = join(at, "todo-board");
     mkdirSync(folder, { recursive: true });
     writeFileSync(join(folder, "index.html"), PAGE);
     writeFileSync(join(folder, "app.js"), SCRIPT);
@@ -99,7 +97,7 @@ describe(`a pinned artifact that calls purlis's queries (pass ${pass})`, functio
       join(at, "pins.toml"),
       `version = 1
 pin = [
-  { id = "e2e0000003${String(pass).padStart(2, "0")}", folder = "todo-board-${pass}", name = "${NAME}", icon = "chart", order = 1 },
+  { id = "e2e000000003", folder = "todo-board", name = "${NAME}", icon = "chart", order = 1 },
 ]
 `,
     );
@@ -164,4 +162,3 @@ pin = [
     );
   });
 });
-}
