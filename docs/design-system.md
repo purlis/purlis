@@ -2011,7 +2011,12 @@ window differ, the window was kept and the difference is recorded here for the m
   title and drawn by nothing.** The table puts the title on `lg` and the heading on `base`.
   Today's titles are `1rem` (14px) and its section headings `0.85rem` to `0.95rem`, so each
   steps up when its surface moves, which is a change to see in a screenshot first. `xl` has no
-  role.
+  role, and since the migrations no word reads it (#1920): the Welcome's heading, a settings
+  page's, a pool's setup and the agent identity flow's wear the title. What still reads it is
+  two marks, icons sized by the text around them (a persona's mark in Start a chat, a door
+  card's mark), and Tailwind's `text-xl`, pointed at it so it has no value of its own.
+  `primitives/text.test.ts` holds that list. Taking `font-size.xl` out of the theme format is
+  the operator's call, since a theme may set it.
 - **The Welcome page's `h1` is `1.5rem` (21px)**, above the scale's top step.
 - **Counts and matches were weight 700** (five rules), which no token names. The geometry snap
   rule (#2313, 2026-10-17) takes a weight with no token to the nearest one, so the counts on the
@@ -2073,7 +2078,8 @@ One change each, each checked against a screenshot (#1920):
    `.pending` sentences wear `ui-text-secondary`, and `.view-body`'s muted goes (#3938).
 
 Along the way the section label gets one spelling (`ui-text-label`, which is `.sidebar-title`'s
-type today), and the two largest size tokens are each read by a role or removed.
+type today), and the two largest size tokens are each read by a role or removed (`lg` is the
+title's; `xl` is read by no word, [above](#where-todays-pixels-and-the-table-disagree)).
 
 ### The Welcome, on the roles
 

@@ -8865,8 +8865,6 @@ nav.piece-files-head {
 }
 .pool-setup-title {
   margin: 0;
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-strong);
   line-height: var(--line-height-tight);
   outline: none;
 }
@@ -9040,8 +9038,6 @@ nav.piece-files-head {
 }
 .agent-identity-title {
   margin: 0;
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-strong);
   line-height: var(--line-height-tight);
   outline: none;
 }
