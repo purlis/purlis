@@ -10,7 +10,7 @@ use crate::chatlookup::OpenChat;
 use crate::dispatchrecord::{
     self, Asker, ChatRef, Ending, Mode, Opening as Dispatch, Outcome, Place, Report, Worker,
 };
-use crate::panelinks::{Candidate, Hover, Kind, Opening, Pane, Resolved, Resolver, Target};
+use crate::panelinks::{Asks, Candidate, Hover, Kind, Opening, Pane, Resolved, Resolver, Target};
 
 fn project() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
@@ -108,6 +108,7 @@ fn pane_of_652(root: &Path) -> Pane {
     Pane {
         project: Some(root.to_owned()),
         session: Some(652),
+        ..Pane::default()
     }
 }
 
@@ -134,7 +135,7 @@ fn an_open_chat_links_and_opening_it_shows_it() {
     let resolved = links.resolve(&chat("chat 660"), &pane_of_652(&root));
     assert_eq!(goes(resolved), (660, Goes::Open { now: 660 }));
     assert!(matches!(
-        links.open(&chat("chat 660"), &pane_of_652(&root), None),
+        links.open(&chat("chat 660"), &pane_of_652(&root), &Asks::default(), None),
         Opening::Open(Target::Chat(at)) if matches!(at.goes, Goes::Open { now: 660 })
     ));
 }
@@ -165,7 +166,7 @@ fn an_ended_chat_links_to_its_record_and_opening_it_shows_its_card() {
     };
     assert_eq!(record.id, id);
     assert!(matches!(
-        links.open(&chat("chat 641"), &pane_of_652(&root), None),
+        links.open(&chat("chat 641"), &pane_of_652(&root), &Asks::default(), None),
         Opening::Open(Target::Chat(at)) if matches!(at.goes, Goes::Ended(_))
     ));
 }
@@ -189,24 +190,38 @@ fn a_number_from_another_project_is_not_a_link() {
     let links = links(vec![open(652, MINE_ID)]);
 
     // Chat 641 is the other project's: this pane's project has none.
-    assert!(matches!(
+    assert_eq!(
         links.resolve(&chat("chat 641"), &pane_of_652(&root)),
-        Resolved::NotALink(_)
-    ));
+        Resolved::Quiet
+    );
     assert!(matches!(
-        links.open(&chat("chat 641"), &pane_of_652(&root), None),
+        links.open(
+            &chat("chat 641"),
+            &pane_of_652(&root),
+            &Asks::default(),
+            None
+        ),
         Opening::Refused(_)
     ));
 }
 
 #[test]
-fn an_unknown_number_is_not_a_link_and_a_hover_says_nothing_links() {
+fn an_unknown_number_is_not_a_link_and_a_hover_says_nothing() {
     let (_dir, root) = project();
     let links = links(vec![open(652, MINE_ID)]);
 
-    assert!(matches!(
+    assert_eq!(
         links.hover(&chat("chat 9999"), &pane_of_652(&root)),
-        Hover::NotALink(why) if why.contains("9999")
+        Hover::Quiet
+    );
+    assert!(matches!(
+        links.open(
+            &chat("chat 9999"),
+            &pane_of_652(&root),
+            &Asks::default(),
+            None
+        ),
+        Opening::Refused(_)
     ));
 }
 
@@ -220,7 +235,7 @@ fn its_own_number_is_this_chat_and_opening_it_does_nothing_more() {
         (652, Goes::ThisChat)
     );
     assert!(matches!(
-        links.open(&chat("chat 652"), &pane_of_652(&root), None),
+        links.open(&chat("chat 652"), &pane_of_652(&root), &Asks::default(), None),
         Opening::Open(Target::Chat(at)) if matches!(at.goes, Goes::ThisChat)
     ));
 }
@@ -242,10 +257,10 @@ fn its_own_old_number_after_a_restart_is_this_chat_too() {
 fn a_pane_with_no_project_links_no_chat() {
     let links = links(vec![open(652, MINE_ID)]);
 
-    assert!(matches!(
+    assert_eq!(
         links.resolve(&chat("chat 652"), &Pane::default()),
-        Resolved::NotALink(_)
-    ));
+        Resolved::Quiet
+    );
 }
 
 #[test]

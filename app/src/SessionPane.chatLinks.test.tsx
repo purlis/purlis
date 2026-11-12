@@ -77,20 +77,23 @@ const CARD: ChatCard = {
 const SEEN: Record<string, LinkSeen> = {
   "chat 652": {
     kind: "chat",
-    target: "#652 · Grill #5820: chat links",
-    does: { does: "opens" },
+    target: "chat 652",
+    shown: "#652 · Grill #5820: chat links",
+    does: { does: "opens", into: "window" },
     chat: { is: "this_chat", number: 652 },
   },
   "chat 660": {
     kind: "chat",
-    target: "#660 · Docs site: the setup page",
-    does: { does: "opens" },
+    target: "chat 660",
+    shown: "#660 · Docs site: the setup page",
+    does: { does: "opens", into: "window" },
     chat: { is: "open", number: 660, workspace: "docs" },
   },
   "chat 641": {
     kind: "chat",
-    target: "#641 · Signed commits #5607",
-    does: { does: "opens" },
+    target: "chat 641",
+    shown: "#641 · Signed commits #5607",
+    does: { does: "opens", into: "window" },
     chat: { is: "ended", card: CARD },
   },
 };

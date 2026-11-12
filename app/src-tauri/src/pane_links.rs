@@ -32,8 +32,8 @@ use std::time::Duration;
 
 use purlis_core::dispatchrecord::Record;
 use purlis_core::panelinks::{
-    ChatAt, ChatNumber, Goes, Asks, Candidate, FileAt, Home, HomeIs, Hover, Kind, Opening, Pane, ReadFrom, Resolver, Runs,
-    Target, NOT_A_LINK, UNASKABLE,
+    Asks, Candidate, ChatAt, ChatNumber, FileAt, Goes, Home, HomeIs, Hover, Kind, NOT_A_LINK,
+    Opening, Pane, ReadFrom, Resolver, Runs, Target, UNASKABLE,
 };
 use serde::{Deserialize, Serialize};
 
@@ -580,7 +580,9 @@ pub const NOT_LOOKED: &str = "purlis could not look at that file in time, so it 
 /// chat.
 fn for_project(held: Option<&crate::planes::Held>) -> (Resolver, ChatsHere<'_>) {
     let Some(held) = held else {
-        return (Resolver::default(), ChatsHere::none());
+        // The chat kind still reads a chat's number, and finds none: it says nothing on a hover.
+        let resolver = Resolver::default().with_kind(Box::new(ChatNumber::with_open(Vec::new())));
+        return (resolver, ChatsHere::none());
     };
     let open = crate::chatcard::open_chats(held);
     let named = held
@@ -1303,14 +1305,10 @@ mod tests {
     }
 
     #[test]
-    fn a_pane_in_no_project_links_no_chat() {
+    fn a_pane_in_no_project_links_no_chat_and_says_nothing_on_its_hover() {
+        let (links, chats) = for_project(None);
         assert_eq!(
-            seen_in(
-                &Resolver::default(),
-                &Pane::default(),
-                &chat("chat 652"),
-                &ChatsHere::none()
-            ),
+            seen_in(&links, &Pane::default(), &chat("chat 652"), &chats),
             None
         );
     }

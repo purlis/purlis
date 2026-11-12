@@ -134,22 +134,22 @@ const meta = {
           one.kind === "chat"
             ? chatSeen(one.text)
             : one.kind === "file"
-            ? one.text === FILE
-              ? {
-                  kind: "file",
-                  target: FILE_IN_FULL,
-                  shown: FILE,
-                  does: { does: "opens", into: "editor-tab" },
+              ? one.text === FILE
+                ? {
+                    kind: "file",
+                    target: FILE_IN_FULL,
+                    shown: FILE,
+                    does: { does: "opens", into: "editor-tab" },
+                    chat: null,
+                  }
+                : null
+              : {
+                  kind: "url",
+                  target: one.text,
+                  shown: one.text,
+                  does: { does: "opens", into: "browser" },
                   chat: null,
-                }
-              : null
-            : {
-                kind: "url",
-                target: one.text,
-                shown: one.text,
-                does: { does: "opens", into: "browser" },
-                chat: null,
-              },
+                },
         );
       }
       if (cmd === "pane_link_open") {

@@ -27,7 +27,7 @@ mod file;
 pub use asks::{Asks, Identity};
 pub use file::{FileAt, Home, HomeIs, LocalFile, ReadFrom, home_of};
 mod chat;
-pub use chat::{ChatAt, ChatNumber, Goes, number_in as chat_number_in};
+pub use chat::{ChatAt, ChatNumber, Goes};
 
 /// **What the pane thinks a candidate is**: a hint that picks the kind that reads it, never
 /// trusted for more.

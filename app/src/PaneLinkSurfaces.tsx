@@ -60,6 +60,8 @@ export const modifierSaid = (mac: boolean) => (mac ? "⌘-click" : "Ctrl-click")
 const OPENS_IN: Record<OpensIn, string> = {
   browser: "in your browser",
   "editor-tab": "in an editor tab",
+  // A chat link says its own second line (`chatSaid`): this is never shown for one.
+  window: "in purlis",
 };
 
 /** **What ⌘-click on a link does**, the tooltip's second line. A file says where it is first

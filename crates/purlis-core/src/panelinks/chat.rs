@@ -7,7 +7,8 @@
 //! - **The number is looked up in the pane's own project** ([`chatlookup::by_number_in`]), the
 //!   lookup the window's `chat_by_number` asks: an open chat, one started again under another
 //!   number (reached through its ULID), or one that ended, with the record its card is drawn
-//!   from. A number no chat of this project had is not a link.
+//!   from. A number no chat of this project had is not a link, and says nothing on a hover
+//!   ([`Resolved::Quiet`]): a harness that prints `chat 12` of another project is not wrong.
 //! - **Its own number is this chat** (the ruling on #6211's Q3): a link whose hover says so, and
 //!   opening it does nothing more. So is a number this chat had before it was started again.
 //! - **Opening never asks**: it shows a chat or a card, and runs nothing.
@@ -94,12 +95,13 @@ impl LinkKind for ChatNumber {
         let Some(number) = number_in(text) else {
             return Resolved::NotALink("that is not a chat's number".into());
         };
+        // A pane in no project (a saved chat's screen) has no chats to find.
         let Some(project) = pane.project.as_deref() else {
-            return Resolved::NotALink("this pane is in no project to find a chat in".into());
+            return Resolved::Quiet;
         };
         match self.found(project, number, pane.session) {
             Some(at) => Resolved::Link(Target::Chat(Box::new(at))),
-            None => Resolved::NotALink(format!("no chat {number} in this project")),
+            None => Resolved::Quiet,
         }
     }
 
