@@ -501,12 +501,13 @@ fn signing_key_of_its_secret(admin: &Kubectl) -> purlis_core::clusterpool::Opera
     let pem = base64::engine::general_purpose::STANDARD
         .decode(answer.printed.trim())
         .expect("the Secret's key.pem in base64");
-    let mut openssl = std::process::Command::new("openssl")
-        .args(["pkey", "-pubout", "-outform", "DER"])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .spawn()
-        .expect("openssl on PATH");
+    let mut openssl = purlis_core::forklock::spawn(
+        std::process::Command::new("openssl")
+            .args(["pkey", "-pubout", "-outform", "DER"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped()),
+    )
+    .expect("openssl on PATH");
     std::io::Write::write_all(&mut openssl.stdin.take().unwrap(), &pem).unwrap();
     let der = openssl.wait_with_output().unwrap();
     assert!(der.status.success(), "openssl read no public key");

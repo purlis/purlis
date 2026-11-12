@@ -2652,11 +2652,11 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
     // `KUBECONFIG` names, as kubectl reads them.
     if policy::held_from_clusters() {
         let named = machine.env.get(kubeconfig::ENV).unwrap_or_default();
-        let kubeconfigs = machine.home.iter().map(|home| home.join(".kube")).chain(
-            std::env::split_paths(&named)
-                .filter(|path| path.is_absolute())
-                .map(PathBuf::from),
-        );
+        let kubeconfigs = machine
+            .home
+            .iter()
+            .map(|home| home.join(".kube"))
+            .chain(std::env::split_paths(&named).filter(|path| path.is_absolute()));
         for path in kubeconfigs {
             if !paths.iter().any(|kept| kept.path == path) {
                 paths.push(Denial {
