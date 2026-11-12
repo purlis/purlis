@@ -6,9 +6,28 @@ import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PoolSetupShown, PoolSetupStep } from "../bindings";
-import { ConnectStep, routeOf, verdictsOf } from "./ConnectStep";
+import { ConnectStep, overOf, routeOf, tcpRouteOf, verdictsOf } from "./ConnectStep";
 
 const FINGERPRINT = "SHA256:dmeCC9oOb+c7VYVBSUAdgQchZHZQyXKWgKnGQxfh2rA";
+const CA =
+  "7A:3F:91:0C:5E:D2:84:B6:19:EE:47:2A:C0:6D:F3:58:91:0B:7C:AA:E4:32:6F:1D:88:C5:09:B7:2E:64:D1:3F";
+
+/** A tcp:// machine, reached over Docker's API over TLS (#6267). */
+const tlsMachine = (more: Partial<NonNullable<PoolSetupStep["machine"]>> = {}) => ({
+  route: "tcp://lab:2376",
+  host: "lab",
+  key: null,
+  known: null,
+  trusted: null,
+  now: null,
+  engine: null,
+  over: "tls",
+  tls: null,
+  ca: null,
+  trusted_ca: null,
+  ca_now: null,
+  ...more,
+});
 
 const step = (more: Partial<PoolSetupStep>): PoolSetupStep => ({
   id: "connect",
@@ -35,6 +54,11 @@ const step = (more: Partial<PoolSetupStep>): PoolSetupStep => ({
     trusted: null,
     now: null,
     engine: null,
+    over: "ssh",
+    tls: null,
+    ca: null,
+    trusted_ca: null,
+    ca_now: null,
   },
   cause: null,
   also: null,
@@ -100,6 +124,11 @@ describe("ConnectStep", () => {
           trusted: null,
           now: null,
           engine: null,
+          over: "ssh",
+          tls: null,
+          ca: null,
+          trusted_ca: null,
+          ca_now: null,
         },
       }),
     );
@@ -136,6 +165,11 @@ describe("ConnectStep", () => {
           trusted: null,
           now: null,
           engine: null,
+          over: "ssh",
+          tls: null,
+          ca: null,
+          trusted_ca: null,
+          ca_now: null,
         },
       }),
     );
@@ -190,5 +224,126 @@ describe("ConnectStep", () => {
     expect(routeOf(" sam@build-box ")).toBe("ssh://sam@build-box");
     expect(routeOf("ssh://build-box")).toBe("ssh://build-box");
     expect(routeOf("")).toBe("");
+  });
+
+  it("offers SSH first, and over TLS keeps the machine as a tcp:// route, contacting nothing", async () => {
+    const calls = core();
+    draw(step({ machine: null }));
+    const ssh = await screen.findByRole("radio", { name: /SSH/ });
+    expect(ssh).toBeChecked();
+    await userEvent.click(screen.getByRole("radio", { name: /Docker's API over TLS/ }));
+    await userEvent.type(
+      await screen.findByRole("textbox", { name: "The machine's address" }),
+      "lab:2376",
+    );
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "pool_setup_machine",
+        args: { route: "tcp://lab:2376" },
+      }),
+    );
+    expect(calls.some((call) => call.cmd === "pool_setup_connect")).toBe(false);
+  });
+
+  it("keeps the TLS files once all are named, the key from a vault by its names alone", async () => {
+    const calls = core({ pool_setup_tls_files: () => shown(step({})) });
+    draw(step({ machine: tlsMachine(), cause: "plain-tcp", state: "attention" }));
+    await userEvent.type(
+      await screen.findByRole("textbox", { name: "Authority (CA) file" }),
+      "/home/me/ca.pem",
+    );
+    await userEvent.type(screen.getByRole("textbox", { name: "Certificate" }), "/home/me/cert.pem");
+    await userEvent.click(screen.getByRole("radio", { name: /In a vault entry/ }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Vault" }), "docker-box");
+    await userEvent.type(screen.getByRole("textbox", { name: "Key in the vault" }), "TLS_KEY");
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "pool_setup_tls_files",
+        args: {
+          plane: "p",
+          ca: "/home/me/ca.pem",
+          cert: "/home/me/cert.pem",
+          key: null,
+          keyVault: "docker-box",
+          keyName: "TLS_KEY",
+        },
+      }),
+    );
+    // Connect to waits until what is typed is what is kept.
+    expect(screen.getByRole("button", { name: /Connect/ })).toBeDisabled();
+  });
+
+  it("connects to a tcp:// machine once its files are kept", async () => {
+    const calls = core({ pool_setup_connect: () => shown(step({})) });
+    draw(
+      step({
+        machine: tlsMachine({
+          tls: {
+            ca: "/ca.pem",
+            cert: "/cert.pem",
+            key: "/key.pem",
+            key_vault: null,
+            key_name: null,
+          },
+        }),
+        next: {
+          id: "connect-machine",
+          label: "Connect to lab",
+          does: "Reads the CA file.",
+          command: null,
+          url: null,
+        },
+      }),
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "Connect to lab" }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({ cmd: "pool_setup_connect", args: { plane: "p" } }),
+    );
+  });
+
+  it("trusts a tcp:// machine by the fingerprint of the authority it showed", async () => {
+    const calls = core();
+    draw(
+      step({
+        next: {
+          id: "trust-machine",
+          label: "Trust this machine",
+          does: "Keeps this CA for the pool.",
+          command: null,
+          url: null,
+        },
+        machine: tlsMachine({
+          ca: { fingerprint: CA, subject: "CN=lab CA", file: "/ca.pem" },
+        }),
+      }),
+    );
+    expect(await screen.findByText("CN=lab CA")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Trust this machine" }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "pool_setup_trust",
+        args: { plane: "p", fingerprint: CA },
+      }),
+    );
+  });
+
+  it("checks a TLS machine's certificate in place of a sign-in", () => {
+    expect(verdictsOf("tls-wrong-name", false, "tls")).toEqual([
+      "ok",
+      "ok",
+      "ok",
+      "missing",
+      "todo",
+      "todo",
+    ]);
+    expect(verdictsOf("tls-client-refused", false, "tls")[3]).toBe("missing");
+  });
+
+  it("spells a TLS machine as tcp:// and tells the routes apart", () => {
+    expect(tcpRouteOf(" lab:2376 ")).toBe("tcp://lab:2376");
+    expect(tcpRouteOf("tcp://lab")).toBe("tcp://lab");
+    expect(overOf("tcp://lab:2376")).toBe("tls");
+    expect(overOf("ssh://lab")).toBe("ssh");
+    expect(overOf(null)).toBe("ssh");
   });
 });
