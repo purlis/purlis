@@ -80,6 +80,17 @@ export default tseslint.config(
           ],
         },
       ],
+      // A window's or webview's own listen (`getCurrentWindow().onDragDropEvent(…)`) has the
+      // same async stop, so it is held with `untilStopped` (#6274).
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "CallExpression[callee.object.callee.name=/^getCurrent(Window|Webview|WebviewWindow)$/][callee.property.name=/^(listen|once|on[A-Z]\\w*)$/]:not(CallExpression[callee.name='untilStopped'] > CallExpression)",
+          message:
+            "Hold a window's or webview's own listen with `./here`'s `untilStopped`: its stop can reject unhandled once the window has gone.",
+        },
+      ],
     },
   },
   // The stories' own lint (#3535, `eslint.story-rules.js`): what a `play` function must not
