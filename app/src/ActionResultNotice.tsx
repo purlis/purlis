@@ -14,6 +14,7 @@ import { resultOf } from "./actionResult";
 import { Notice, NoticeList, type NoticeAction } from "./Notice";
 import type { SettingsLink } from "./settings/links";
 import { ProgressBar } from "./ui/meter/Meter";
+import { controlsNamedIn, goToControl, goToSays } from "./windowControls";
 
 /**
  * **What an action answered, as a closable notice** (#3344, the sidebar-views prototype's Q3 A):
@@ -75,6 +76,9 @@ export function ActionResultNotice({
     primary: way.primary,
     go: way.go,
   }));
+  // **A control its words name** (R-333): Go to it, which shows its Notice with the keyboard on it.
+  for (const control of controlsNamedIn(`${said.words}\n${said.details ?? ""}`))
+    fixes.push({ label: goToSays(control), onPress: () => goToControl(control) });
   if (details !== undefined)
     fixes.push({
       label: "Details",

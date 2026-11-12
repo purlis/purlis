@@ -44,10 +44,21 @@ import {
   CircleCheck,
   CircleQuestionMark,
   LoaderCircle,
+  Search,
   X,
 } from "lucide-react";
 import { Twist } from "./ui/disclosure/Disclosure";
-import { Button, ButtonRow, IconButton, type ButtonVariant } from "./ui/button/Button";
+import { TextField } from "./ui/field/Field";
+import { PanelSectionTitle } from "./ui/panel/Panel";
+import { aboutOf, kindOf, searchFinds } from "./noticeKinds";
+import { controlReached, useAskedControl } from "./windowControls";
+import {
+  Button,
+  ButtonRow,
+  IconButton,
+  ToggleButton,
+  type ButtonVariant,
+} from "./ui/button/Button";
 import {
   MessageBody,
   MessageForm,
@@ -1231,8 +1242,13 @@ export function NoticeList({
   hold,
   onClear,
   onCauses,
+  findable,
 }: {
   children: ReactNode;
+  /** **The Notices view's list, made findable** (Q182, Q183): drawn under its search box and
+   *  its filters by kind, grouped by kind, and with Dismissed (N), which lists what is dismissed
+   *  here and brings any of it back ({@link NoticesFindable}). */
+  findable?: NoticesFindable;
   onCount?: (counted: number, listed: number, dot: NoticesDot) => void;
   /** Hears the causes of the Notices it lists, whenever they change: what is New of them
    *  (#6002) is counted where its view's icon is drawn. */
@@ -1340,17 +1356,21 @@ export function NoticeList({
     [onClear, clearable, outOf],
   );
 
-  // Before the frame is painted, so a Notice is never seen out of its place.
+  const found = useFinding(ordered, findable);
+  const hosts = found?.hosts ?? ordered.map((one) => one.host);
+
+  // Before the frame is painted, so a Notice is never seen out of its place. Every drawing: what
+  // a search finds is read off the Notices' own words.
   useLayoutEffect(() => {
     const at = listAt;
     if (at === null) return;
-    const hosts = ordered.map((one) => one.host);
     for (const child of [...at.children]) if (!hosts.includes(child as HTMLElement)) child.remove();
     hosts.forEach((host, index) => {
       const there = at.children.item(index);
       if (there !== host) at.insertBefore(host, there);
     });
-  }, [ordered, listAt]);
+    found?.reach(at);
+  });
 
   const counted = ordered.filter((one) => countsInStatusBar(one.cause)).length;
   const dot = dotOf(ordered.map((one) => one.tone));
@@ -1369,13 +1389,186 @@ export function NoticeList({
     if (arrived) onAnswer?.();
   }, [ordered, onAnswer]);
 
-  const drawn = <NoticeListBox at={at} ref={setListAt} hidden={ordered.length === 0} />;
+  const box = <NoticeListBox at={at} ref={setListAt} hidden={hosts.length === 0} />;
+  const drawn =
+    found === undefined ? (
+      box
+    ) : (
+      <>
+        {found.bar}
+        {box}
+        {found.after}
+      </>
+    );
   return (
     <Listed.Provider value={list}>
       {children}
       {into ? createPortal(drawn, into) : drawn}
     </Listed.Provider>
   );
+}
+
+/**
+ * **What the Notices view's list finds by** (Q182, Q183): the causes dismissed in its project
+ * (`dismissals.ts`), and the way to show one again.
+ */
+export type NoticesFindable = {
+  dismissed: ReadonlySet<string>;
+  showAgain: (cause: string) => void;
+};
+
+/** The label of the Dismissed filter, with how many are dismissed (Q183). */
+export const dismissedSays = (count: number): string => `Dismissed (${count})`;
+
+/** What the filters show: every kind, one kind (by its `many`), or what is dismissed. */
+type Showing = { all: true } | { kind: string } | { dismissed: true };
+
+const ALL: Showing = { all: true };
+
+/**
+ * **A findable list's parts** (Q182, Q183; R-331 to R-334): the search box and the filters over
+ * the list, the Notices it lists in their groups with each group's head before them (`hosts`,
+ * in their order), and what stands under it: the line that says a search found nothing, or the
+ * Dismissed list. `reach` puts the keyboard on a control a message asked for, once it is drawn
+ * (`windowControls.ts`, R-333). `undefined` for a list that is not findable.
+ *
+ * Groups take the place of their first Notice in the list's order, so the most important kind
+ * leads; within one, the list's order holds. A search finds a Notice by its words as drawn.
+ */
+function useFinding(
+  ordered: readonly Entry[],
+  findable: NoticesFindable | undefined,
+):
+  | { hosts: HTMLElement[]; bar: ReactNode; after: ReactNode; reach: (at: HTMLElement) => void }
+  | undefined {
+  const [query, setQuery] = useState("");
+  const [showing, setShowing] = useState<Showing>(ALL);
+  /** Each group's head is drawn into an element of its own, which the list moves as a Notice. */
+  const [heads] = useState(() => new Map<string, HTMLElement>());
+  const asked = useAskedControl();
+  // **A control a message asked for** (R-333): its kind is shown and the search let go, at once,
+  // as React's "information from previous renders" pattern does, so no frame draws another kind.
+  const [took, setTook] = useState<typeof asked>();
+  if (findable !== undefined && asked !== took) {
+    setTook(asked);
+    if (asked !== undefined) {
+      setShowing({ kind: kindOf(`${asked.family}:`).many });
+      setQuery("");
+    }
+  }
+  if (findable === undefined) return undefined;
+
+  const groups: { many: string; members: Entry[] }[] = [];
+  for (const one of ordered) {
+    const many = kindOf(one.cause).many;
+    const group = groups.find((each) => each.many === many);
+    if (group === undefined) groups.push({ many, members: [one] });
+    else group.members.push(one);
+  }
+  const drawn = groups
+    .filter(
+      (group) => !("dismissed" in showing) && !("kind" in showing && group.many !== showing.kind),
+    )
+    .map((group) => ({
+      ...group,
+      found: group.members.filter((one) => searchFinds(one.host.textContent ?? "", query)),
+    }))
+    .filter((group) => group.found.length > 0);
+  const headOf = (many: string) => {
+    const there = heads.get(many);
+    if (there !== undefined) return there;
+    const made = document.createElement("div");
+    heads.set(many, made);
+    return made;
+  };
+  const hosts = drawn.flatMap((group) => [
+    headOf(group.many),
+    ...group.found.map((one) => one.host),
+  ]);
+  const dismissed = [...findable.dismissed];
+  const pick = (next: Showing) => setShowing(next);
+  const typed = query.trim();
+
+  const bar = (
+    <div className="notices-find">
+      <TextField
+        type="search"
+        size="sm"
+        icon={<Search aria-hidden="true" />}
+        aria-label="Search the notices"
+        placeholder={`Search ${ordered.length} notices`}
+        value={query}
+        onChange={setQuery}
+        keepsFocus="notices-search"
+      />
+      <ButtonRow size="sm" role="group" aria-label="Show notices of a kind">
+        <ToggleButton size="sm" isSelected={"all" in showing} onChange={() => pick(ALL)}>
+          {`All · ${ordered.length}`}
+        </ToggleButton>
+        {groups.map((group) => {
+          const on = "kind" in showing && showing.kind === group.many;
+          return (
+            <ToggleButton
+              key={group.many}
+              size="sm"
+              isSelected={on}
+              onChange={() => pick(on ? ALL : { kind: group.many })}
+            >
+              {`${group.many} · ${group.members.length}`}
+            </ToggleButton>
+          );
+        })}
+        <ToggleButton
+          size="sm"
+          isSelected={"dismissed" in showing}
+          onChange={() => pick("dismissed" in showing ? ALL : { dismissed: true })}
+        >
+          {dismissedSays(dismissed.length)}
+        </ToggleButton>
+      </ButtonRow>
+      {drawn.map((group) =>
+        createPortal(
+          <PanelSectionTitle
+            level={4}
+          >{`${group.many} · ${group.found.length}`}</PanelSectionTitle>,
+          headOf(group.many),
+          group.many,
+        ),
+      )}
+    </div>
+  );
+
+  const after =
+    "dismissed" in showing ? (
+      <ul className="notices-dismissed" aria-label="Dismissed notices">
+        {dismissed.map((cause) => (
+          <MessageRow key={cause} tone="plain" icon={<CircleCheck />}>
+            <MessageTop title={kindOf(cause).one} />
+            <MessageBody>
+              <code>{aboutOf(cause)}</code>
+            </MessageBody>
+            <MessageLinks>
+              <Button size="sm" variant="quiet-link" onPress={() => findable.showAgain(cause)}>
+                Show again
+              </Button>
+            </MessageLinks>
+          </MessageRow>
+        ))}
+      </ul>
+    ) : typed !== "" && hosts.length === 0 && ordered.length > 0 ? (
+      <p className="notices-none">{`No notice says “${typed}”.`}</p>
+    ) : null;
+
+  const reach = (at: HTMLElement) => {
+    if (asked === undefined || took !== asked) return;
+    const control = [...at.querySelectorAll<HTMLElement>("button")].find(
+      (button) => button.textContent?.trim() === asked.words,
+    );
+    // None drawn means none stands now: the kind is shown, and the keyboard stays where it is.
+    control?.focus();
+    controlReached();
+  };
+  return { hosts, bar, after, reach };
 }
 
 /** **Whether a pane's row of Notices is drawn**: not while it shows none (the row's `data-empty`
