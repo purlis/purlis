@@ -299,7 +299,7 @@ const listed = (plane: string | undefined): LiveSetting => ({
                 aria-describedby={ids.describedBy}
               >
                 <ControlHead>
-                  <ControlColumn minWidth={200}>Profile</ControlColumn>
+                  <ControlColumn>Profile</ControlColumn>
                   <ControlColumn minWidth={160}>Sign-in</ControlColumn>
                   <ControlColumn>Pin</ControlColumn>
                   <ControlColumn actions hideName>
@@ -315,7 +315,7 @@ const listed = (plane: string | undefined): LiveSetting => ({
                             <HarnessIcon icon={profile.icon} kind={profile.kind} />
                             {profile.name}
                           </span>
-                          <Badge variant="accent">{note(profile)}</Badge>
+                          <span className="ui-setting-help">{note(profile)}</span>
                           <span className="ui-record-where">{profile.folder}</span>
                         </span>
                       </ControlRowHeading>
