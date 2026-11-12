@@ -141,6 +141,9 @@ export function onItsPane(asks: readonly Shown[], session: number): Shown[] {
 export type Answered = {
   /** When, in ms since the epoch. */
   at: number;
+  /** The chat that asked: what the chips list its Notice under (ADR 0121, amended 2026-11-12,
+   *  decision 9). Left out, it is listed only under Project. */
+  session?: number;
   chain: readonly string[];
   says: string;
   /** The answer as its button read, or a reply's words. */
