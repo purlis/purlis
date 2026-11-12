@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794466098717,
+  "lastUpdate": 1794469564142,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -47124,6 +47124,48 @@ window.BENCHMARK_DATA = {
             "value": 101.22188299999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.770, 100.830, 101.222, 101.782, 101.790 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ebd7d9e9078f07faa816c7fceed966d379473e9c",
+          "message": "Web addresses in every pane are links, decided by the core (#6215) (#6236)\n\n* Web addresses in every pane are links, decided by the core (#6215)\n\nThe pane-links tracer bullet (spec #6208): one link hook on each xterm\npane finds http(s) candidates through xterm's link provider and sends the\ncore only their text, kind hint and pane. purlis_core::panelinks resolves\nthem through a pluggable LinkKind (web addresses first); pane_link_resolve\nanswers hovers and pane_link_open, on ADR 0052's list and the window's\nalone, resolves the text again and answers opened, ask or refused. Cmd+click\n(Ctrl+click off a Mac) opens through the opener plugin; a plain click\nselects. Under the pointer the link is underlined in markdown.link, now\nheld at AA on the terminal's fill.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74V01B5BRM5BDXJ3BA7MQRR\nPurlis-Persona: steward\n\n* Pane links: the hook is handed its core, so the theme specimen reaches none (#6215)\n\nThe read-only terminal imported the link hook, which imported the\nbindings, and the theme specimen draws read-only terminals: it must load\nnothing that reaches the core. The hook now takes a LinkCore (resolve,\nopen) from its owner; SessionPane and a grade's saved chat hand it the\nwindow's (paneLinkCore.ts), and a read-only terminal handed none draws no\nlinks.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74V01B5BRM5BDXJ3BA7MQRR\nPurlis-Persona: steward\n\n* Pane links: the stories' baselines, drawn by CI (#6215)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74V01B5BRM5BDXJ3BA7MQRR\nPurlis-Persona: steward\n\n* Pane links: say why a pane link's code blocks stand on no panel (#6215)\n\nThe grounds walk follows a read-only terminal into its link answer dialog\nand finds its code blocks inside a grade's panel; the dialog draws them on\nits own overlay.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M74V01B5BRM5BDXJ3BA7MQRR\nPurlis-Persona: steward\n\n* Pane links: the review's findings (#6215)\n\n- purlis stays lowercase where a sentence starts with it (docs/ui-copy.md).\n- An address of another scheme (scheme://...) is a candidate; its hover says why purlis won't\n  open it, drawn as no link, and Cmd+click does nothing.\n- A hover resolves once (Resolver::hover); a web address's target is read once (url::Url).\n- The app's wire kind is KindHint, apart from the core's LinkKind trait.\n- usePaneLinks takes a LinkFrom, the core and the colour, and returns the pane's hands; a chat's\n  kept terminal relays to whichever pane shows it. No exhaustive-deps disables.\n- A rejected open says a sentence and logs the detail; the ask's answer is Open link.\n- Stories: the ask, and Esc and focus-in-sight on both answers.\n- A cost guard: the buffer lines the hook reads while output streams.\n- Emphasis around an address is not its; one past the rows a line is read across is no link.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M74V01B5BRM5BDXJ3BA7MQRR\nPurlis-Persona: steward\n\n* Pane links: the ftp candidate's place, and no colour literal in the relay (#6215)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M74V01B5BRM5BDXJ3BA7MQRR\nPurlis-Persona: steward\n\n* Pane links: the Asks story's baselines and Refused's in lowercase purlis, drawn by CI; xhttps is one scheme (#6215)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M74V01B5BRM5BDXJ3BA7MQRR\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-12T07:01:14Z",
+          "tree_id": "744e10ca8730f7259a50558fa80bcc448fd78cf6",
+          "url": "https://github.com/purlis/purlis/commit/ebd7d9e9078f07faa816c7fceed966d379473e9c"
+        },
+        "date": 1794469558618,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.689181,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.668, 0.680, 0.689, 0.694, 0.712 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6577195,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.518, 16.543, 16.658, 16.787, 16.817 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.63071649999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.343, 102.627, 102.631, 102.880, 103.069 ms"
           }
         ]
       }
