@@ -7856,22 +7856,7 @@ nav.piece-files-head {
   grid-column: 2 / -1;
 }
 
-/* You › This machine (ST-2): one line per thing the machine store holds, with its action at
-   the end of the line. */
-.ui-machine-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.ui-machine-entry {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) 0;
-}
-
+/* Where a record is, in the quiet words (Add a pool's image). */
 .ui-machine-path {
   flex: 1 1 auto;
   min-width: 0;
@@ -7880,12 +7865,8 @@ nav.piece-files-head {
   color: var(--text-quiet);
 }
 
-.ui-machine-entry .ui-setting-reset {
-  margin-inline-start: auto;
-}
-
 /* **The other devices' signing keys** (#5918, `settings/signing.tsx`): a heading and the line on
-   what removing one does, above their list. */
+   what removing one does, above their table. */
 .signing-others h3 {
   margin: var(--space-3) 0 var(--space-1);
   font-size: var(--font-size-base);
