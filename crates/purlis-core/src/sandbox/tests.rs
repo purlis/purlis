@@ -3569,7 +3569,14 @@ fn a_claude_code_chat_is_not_started_where_the_search_for_repositories_is_crowde
     let path = Path::new("/p/notes");
     let said = NotStarted::RepositoriesUnfound(path.to_path_buf()).to_string();
     assert!(said.contains("/p/notes"), "{said}");
-    assert!(said.contains("Move what fills that folder"), "{said}");
+    assert!(
+        said.contains("Move some of what that folder holds"),
+        "{said}"
+    );
+    assert!(
+        said.contains("holds more than purlis looks through"),
+        "{said}"
+    );
     assert!(said.contains("nothing was started"), "{said}");
 }
 
