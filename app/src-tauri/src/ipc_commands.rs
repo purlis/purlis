@@ -649,6 +649,8 @@ macro_rules! app_commands {
                 poolsetuptab::pool_setup,
                 poolsetuptab::pool_setup_choose_docker,
                 poolsetuptab::pool_setup_choose_cluster,
+                poolsetuptab::pool_setup_install,
+                poolsetuptab::pool_setup_operator_image,
                 poolsetuptab::pool_setup_name,
                 poolsetuptab::pool_setup_pool,
                 poolsetuptab::pool_setup_add,

@@ -36,6 +36,8 @@ const READY: PoolSetupStep = {
   },
   skippable: false,
   also: null,
+  parts: [],
+  undo: null,
   see: null,
   checks: [
     check("todo", "A chat starts on dev-box"),

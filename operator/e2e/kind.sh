@@ -374,9 +374,10 @@ kubectl --context "$context" get crd/pools.runners.purlis.dev crd/claims.runners
   validatingadmissionpolicybinding/purlis-operator-changes-only-a-sandboxs-mode >/dev/null
 
 step "Pool setup on a bare cluster of its own"
-# Pool setup's cluster path (#4492): its state read through kubectl on a second cluster, with
-# nothing of purlis on it, apart from the one the chart installed above. Its nodes pull from the
-# same registry.
+# Pool setup's cluster path (#4492, #4493): its state read through kubectl on a second cluster,
+# with nothing of purlis on it, apart from the one the chart installed above, then its Install
+# pressed a part at a time, with the operator's image of this run. Its nodes pull from the same
+# registry.
 setup_cluster=$cluster-setup
 printf 'kind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\n' |
   kind create cluster --name "$setup_cluster" --image "$node" --wait 120s --config -
@@ -385,6 +386,6 @@ for n in $(kind get nodes --name "$setup_cluster"); do
   printf '[host."http://%s:5000"]\n' "$registry" |
     docker exec -i "$n" cp /dev/stdin "/etc/containerd/certs.d/localhost:$port/hosts.toml"
 done
-POOL_SETUP_TEST_CONTEXT=kind-$setup_cluster \
+POOL_SETUP_TEST_CONTEXT=kind-$setup_cluster POOL_SETUP_TEST_OPERATOR_IMAGE=$operator \
   "$repo/tools/tests-ran.sh" -- cargo test --manifest-path "$repo/Cargo.toml" --locked -p purlis-core \
   --test it -- pool_setup_on_a_kind_cluster:: --ignored --test-threads=1 --nocapture

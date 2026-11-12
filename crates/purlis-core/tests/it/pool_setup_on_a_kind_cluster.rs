@@ -1,21 +1,25 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **Pool setup's cluster path on a real cluster** (#4492, spec #4469): the state module read
-//! against a kind cluster with nothing of purlis on it, through `kubectl` with the run's own
+//! **Pool setup's cluster path on a real cluster** (#4492, #4493, spec #4469): the state module
+//! read against a kind cluster with nothing of purlis on it, through `kubectl` with the run's own
 //! kubeconfig, as a person's own sign-in. Where is done on the context chosen, Check the cluster
 //! is doctor's own report, and the set-up stands at Install, since only upstream agent-sandbox is
-//! missing and the install adds it.
+//! missing and the install adds it. Then Install's parts are pressed one after another, each
+//! read back done, a signing key that is there is kept when its part runs again, and the
+//! operator runs.
 //!
-//! It needs a bare cluster's context in `POOL_SETUP_TEST_CONTEXT`, its kubeconfig in
-//! `KUBECONFIG` and `kubectl` on `PATH`: `operator/e2e/kind.sh` makes one, apart from the cluster
+//! It needs a bare cluster's context in `POOL_SETUP_TEST_CONTEXT`, the operator's image by its
+//! digest in `POOL_SETUP_TEST_OPERATOR_IMAGE`, its kubeconfig in `KUBECONFIG` and `kubectl` on
+//! `PATH`: `operator/e2e/kind.sh` makes one, apart from the cluster
 //! its other tests install by the chart, and runs this with `--ignored`. It is ignored anywhere
 //! else, and fails when any is missing.
 
 #![cfg(unix)]
 
 use purlis_core::clusterpool::Kubectl;
-use purlis_core::poolsetup::{self, CheckOf, Here, Kind, StepId, StepState, Verdict};
+use purlis_core::poolsetup::install::PartId;
+use purlis_core::poolsetup::{self, CheckOf, Here, Kind, Setup, StepId, StepState, Verdict};
 
 fn needed(name: &str) -> String {
     std::env::var(name).unwrap_or_else(|_| panic!("{name} names nothing: run operator/e2e/kind.sh"))
@@ -33,7 +37,7 @@ fn kubectl() -> Kubectl {
 
 #[test]
 #[ignore = "needs a bare kind cluster: operator/e2e/kind.sh runs it"]
-fn a_bare_cluster_passes_the_check_and_stands_at_the_install() {
+fn a_bare_cluster_passes_the_check_then_is_installed_a_part_at_a_time() {
     let context = needed("POOL_SETUP_TEST_CONTEXT");
     let config = tempfile::tempdir().unwrap();
     poolsetup::choose_cluster(config.path(), &context).unwrap();
@@ -60,15 +64,107 @@ fn a_bare_cluster_passes_the_check_and_stands_at_the_install() {
         .map(|line| (line.verdict, line.title.as_str()))
         .collect();
     assert!(
-        lines.contains(&(Verdict::Todo, "upstream agent-sandbox v1.0.6: not installed")),
+        lines.contains(&(
+            Verdict::Todo,
+            "upstream agent-sandbox v1.0.6: not installed"
+        )),
         "{lines:?}"
     );
-    assert!(lines.contains(&(Verdict::Ok, "Kubernetes v1.36.4")), "{lines:?}");
     assert!(
-        lines.contains(&(Verdict::Ok, "you may apply the install's cluster-scoped definitions")),
+        lines.contains(&(Verdict::Ok, "Kubernetes v1.36.4")),
         "{lines:?}"
     );
-    // Only the context's name was kept.
+    assert!(
+        lines.contains(&(
+            Verdict::Ok,
+            "you may apply the install's cluster-scoped definitions"
+        )),
+        "{lines:?}"
+    );
+
+    // Install, a part at a time, each read back done before the next is offered.
+    poolsetup::choose_operator_image(
+        config.path(),
+        Some(&needed("POOL_SETUP_TEST_OPERATOR_IMAGE")),
+    )
+    .unwrap();
+    let part_done = |setup: &Setup, id: PartId| {
+        setup
+            .step(StepId::Install)
+            .unwrap()
+            .parts
+            .iter()
+            .find(|part| part.id == id)
+            .is_some_and(|part| part.done)
+    };
+    for id in PartId::ALL {
+        let before = poolsetup::read(&here, None).unwrap();
+        assert!(
+            !part_done(&before, id),
+            "{id:?} was done before it ran: {before:#?}"
+        );
+        let offered = before
+            .step(StepId::Install)
+            .unwrap()
+            .parts
+            .iter()
+            .find(|part| part.id == id);
+        assert!(
+            offered.unwrap().next.is_some(),
+            "{id:?} has no button: {before:#?}"
+        );
+        poolsetup::install_part(config.path(), &kubectl, id)
+            .unwrap_or_else(|why| panic!("{id:?}: {why}"));
+        let after = poolsetup::read(&here, None).unwrap();
+        assert!(
+            part_done(&after, id),
+            "{id:?} wasn't read done after it ran: {after:#?}"
+        );
+    }
+    // A key that is there is kept: the part runs again, and the Secret is the one made above.
+    let made = secret_uid(&kubectl, &context);
+    poolsetup::install_part(config.path(), &kubectl, PartId::SigningKey).unwrap();
+    assert_eq!(
+        secret_uid(&kubectl, &context),
+        made,
+        "the signing key was replaced"
+    );
+
+    let installed = poolsetup::read(&here, None).unwrap();
+    assert_eq!(
+        installed.step(StepId::Install).unwrap().state,
+        StepState::Done,
+        "{installed:#?}"
+    );
+    assert_eq!(
+        installed.step(StepId::Check).unwrap().line.as_deref(),
+        Some("purlis's cluster operator runs here")
+    );
+    assert_eq!(installed.at, Some(StepId::Pool), "{installed:#?}");
+
+    // Only the context's name and the image were kept.
     let kept = std::fs::read_dir(config.path()).unwrap().count();
     assert!(kept <= 1, "{kept} things kept");
+}
+
+/// The signing key's Secret by its uid alone: what it holds is never asked.
+fn secret_uid(kubectl: &Kubectl, context: &str) -> String {
+    let answer = kubectl
+        .clone()
+        .with_context(context)
+        .asked(
+            &[
+                "get",
+                "secrets",
+                "purlis-cluster-operator-signing-key",
+                "--namespace",
+                "purlis-system",
+                "--output",
+                "jsonpath={.metadata.uid}",
+            ],
+            None,
+        )
+        .unwrap();
+    assert!(answer.ok, "{}", answer.said);
+    answer.printed
 }

@@ -13,7 +13,7 @@ import {
   type PoolSetupStep,
 } from "./bindings";
 import { Notice } from "./Notice";
-import { CheckStep, ContextOptions } from "./poolsetup/ClusterSteps";
+import { CheckStep, ContextOptions, InstallStep } from "./poolsetup/ClusterSteps";
 import { Action, Say, SeeWhat, StepHead } from "./poolsetup/parts";
 import { IdentityStep } from "./poolsetup/IdentityStep";
 import { NOTHING_CHOSEN, PoolStep, type Chosen } from "./poolsetup/PoolStep";
@@ -420,6 +420,8 @@ function PoolSetupGuide({
             />
           ) : step?.id === "check" ? (
             <CheckStep step={step} onNext={() => after("check")} onRecheck={reread} />
+          ) : step?.id === "install" ? (
+            <InstallStep step={step} onNext={() => after("install")} changed={reread} />
           ) : step?.id === "pool" ? (
             <PoolStep
               step={step}

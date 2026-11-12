@@ -25,6 +25,8 @@ const step = (id: string, name: string, state: string, more: Partial<PoolSetupSt
     see: null,
     checks: [],
     also: null,
+    parts: [],
+    undo: null,
     ...more,
   }) as PoolSetupStep;
 
@@ -307,5 +309,133 @@ export const AnOperatorIsInstalled: Story = {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: /Check the cluster/ }));
     await canvas.findByText("purlis's cluster operator runs");
+  },
+};
+
+const part = (
+  id: string,
+  name: string,
+  done: boolean,
+  line: string,
+  next: PoolSetupAction | null = null,
+) => ({ id, name, done, line, next });
+
+const DONE_CHECK = step("check", "Check the cluster", "done", { line: "Ready for the install" });
+
+const INSTALL_SEE = {
+  note: "These are the install's commands, a part after another, as each button runs them.",
+  text: "# agent-sandbox\nkubectl --context kind-team apply --server-side -k operator/vendor/agent-sandbox/v1.0.6",
+};
+
+const UNDO = {
+  note: "purlis never uninstalls from a cluster: other people's chats run there. 3 claims by 2 people would end, with every chat on their runners. Ask them first. Run these yourself, in order.",
+  text: "kubectl --context kind-team delete claims.runners.purlis.dev --all-namespaces --all\nkubectl --context kind-team delete --ignore-not-found -f operator/deploy/operator.yaml",
+};
+
+const installing = (parts: ReturnType<typeof part>[], undo: typeof UNDO | null = null) =>
+  shown("install", [
+    DONE_WHERE,
+    DONE_CHECK,
+    step("install", "Install", "current", {
+      findings: [
+        "Install puts purlis's cluster operator on the cluster, a part at a time. Each button says what it applies, and nothing changes until you press it.",
+      ],
+      parts,
+      see: INSTALL_SEE,
+      undo,
+    }),
+    ...AFTER_CHECK(3),
+  ]);
+
+export const InstallTheFirstPart: Story = {
+  beforeEach: faked(
+    installing([
+      part(
+        "upstream",
+        "agent-sandbox",
+        false,
+        "The project purlis's runners are built on, at the release it is tested on, v1.0.6.",
+        act(
+          "install-upstream",
+          "Install agent-sandbox",
+          "Applies agent-sandbox v1.0.6 to the cluster, its controller named by digest, and waits for it to start.",
+        ),
+      ),
+      part(
+        "definitions",
+        "purlis's definitions",
+        false,
+        "The kinds a team's pools and people's claims are.",
+      ),
+      part(
+        "signing-key",
+        "Signing key",
+        false,
+        "The key the operator vouches for each runner with.",
+      ),
+      part(
+        "operator",
+        "Cluster operator",
+        false,
+        "The controller that makes each person's runners.",
+      ),
+    ]),
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const main = await canvas.findByRole("button", { name: "Install agent-sandbox" });
+    main.focus();
+    await expect(main).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
+export const TheOperatorWaitsForItsImage: Story = {
+  beforeEach: faked(
+    installing(
+      [
+        part("upstream", "agent-sandbox", true, "agent-sandbox v1.0.6, which purlis is tested on"),
+        part(
+          "definitions",
+          "purlis's definitions",
+          true,
+          "pools.runners.purlis.dev, claims.runners.purlis.dev and their policies",
+        ),
+        part(
+          "signing-key",
+          "Signing key",
+          true,
+          "Kept in purlis-system/purlis-cluster-operator-signing-key. purlis never replaces it.",
+        ),
+        part(
+          "operator",
+          "Cluster operator",
+          false,
+          "The controller that makes each person's runners. Its image is public, so the cluster needs no pull secret.",
+          act(
+            "choose-operator-image",
+            "Name the operator's image",
+            "Give the operator's image by its digest under Options, ghcr.io/purlis/purlis-cluster-operator@sha256:… See what this does says how to find and check it.",
+          ),
+        ),
+      ],
+      UNDO,
+    ),
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const field = await canvas.findByRole("textbox", { name: "Operator image" });
+    field.focus();
+    await expect(field).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
+export const UninstallingIsCommandsOnly: Story = {
+  beforeEach: TheOperatorWaitsForItsImage.beforeEach,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Uninstalling" }));
+    await canvas.findByText(/3 claims by 2 people would end/);
   },
 };

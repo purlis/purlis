@@ -681,21 +681,20 @@ pub fn checks_of(facts: &Facts) -> Vec<super::Check> {
         .collect()
 }
 
-/// **Install** (#4493): done once the cluster holds every part of it, and the operator runs.
-pub(super) fn install_reading(facts: &Facts) -> Reading {
+/// **Install** (#4493): done once the cluster holds every part of it and the operator runs; else
+/// the next part's own button.
+pub(super) fn install_reading(facts: &Facts, choices: &Choices) -> Reading {
     let cluster = &facts.cluster;
     match &cluster.installed {
-        Some(Ok(installed)) => {
-            if let Operator::Running { .. } = installed.operator
-                && installed.definitions
-                && installed.key
-            {
+        Some(Ok(_)) => {
+            let parts = parts_of(facts, choices);
+            if parts.iter().all(|part| part.done) {
                 return Reading::done("Installed");
             }
             Reading::to_do(
-                "Install puts purlis's cluster operator on the cluster, a part at a time, each on \
-                 its own button.",
-                None,
+                "Install puts purlis's cluster operator on the cluster, a part at a time. Each \
+                 button says what it applies, and nothing changes until you press it.",
+                parts.iter().find_map(|part| part.next.clone()),
             )
         }
         Some(Err(why)) => Reading::attention(
@@ -706,18 +705,48 @@ pub(super) fn install_reading(facts: &Facts) -> Reading {
     }
 }
 
-/// **What a cluster's step does by hand** (Q30): the commands behind its See what this does.
-pub(super) fn see_of(id: super::StepId, facts: &Facts) -> Option<super::See> {
-    use super::{See, StepId};
-    let context = facts
+/// The words that point a command by hand at the context chosen (` --context <name>`).
+fn on_of(facts: &Facts) -> String {
+    facts
         .cluster
         .chosen
         .as_deref()
         .or(facts.cluster.recommended())
-        .map(crate::shellseg::shell_quote);
-    let on = context
-        .as_ref()
-        .map_or_else(String::new, |context| format!(" --context {context}"));
+        .map(crate::shellseg::shell_quote)
+        .map_or_else(String::new, |context| format!(" --context {context}"))
+}
+
+/// **Install's parts as the cluster holds them** (#4493).
+pub(super) fn parts_of(facts: &Facts, choices: &Choices) -> Vec<super::install::Part> {
+    match &facts.cluster.installed {
+        Some(Ok(installed)) => super::install::parts(
+            facts.cluster.upstream_installed(),
+            installed,
+            choices.operator_image.as_deref(),
+            &on_of(facts),
+        ),
+        _ => Vec::new(),
+    }
+}
+
+/// **How the install is undone, never by a button** (story 56): where something of it is there.
+pub(super) fn undo_of(facts: &Facts) -> Option<super::See> {
+    match &facts.cluster.installed {
+        Some(Ok(installed))
+            if installed.definitions
+                || installed.key
+                || !matches!(installed.operator, Operator::Absent) =>
+        {
+            Some(super::install::uninstall(installed, &on_of(facts)))
+        }
+        _ => None,
+    }
+}
+
+/// **What a cluster's step does by hand** (Q30): the commands behind its See what this does.
+pub(super) fn see_of(id: super::StepId, facts: &Facts, choices: &Choices) -> Option<super::See> {
+    use super::{See, StepId};
+    let on = on_of(facts);
     match id {
         StepId::Where => Some(See {
             note: "This is how purlis lists your kubeconfig's contexts. It only reads, and \
@@ -731,6 +760,13 @@ pub(super) fn see_of(id: super::StepId, facts: &Facts) -> Option<super::See> {
                    purlis-cluster-operator doctor asks the same, from a checkout of purlis."
                 .to_owned(),
             text: doctor_by_hand(&on),
+        }),
+        StepId::Install => Some(See {
+            note: "These are the install's commands, a part after another, as each button runs \
+                   them, from a checkout of purlis at this version. Run them yourself if you \
+                   prefer, and purlis marks each part done."
+                .to_owned(),
+            text: super::install::all_by_hand(choices.operator_image.as_deref(), &on),
         }),
         _ => None,
     }

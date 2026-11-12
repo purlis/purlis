@@ -49,6 +49,21 @@ pub struct PoolSetupStep {
     pub checks: Vec<PoolSetupCheck>,
     /// The choice purlis didn't recommend, where there is one (Where's other place, #4492).
     pub also: Option<PoolSetupAction>,
+    /// Install's parts, each with its own button (#4493).
+    pub parts: Vec<PoolSetupPart>,
+    /// How the step is undone by hand, never by a button: uninstalling from a cluster.
+    pub undo: Option<PoolSetupSee>,
+}
+
+/// One part of a cluster's install (#4493): `upstream`, `definitions`, `signing-key` or
+/// `operator`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolSetupPart {
+    pub id: String,
+    pub name: String,
+    pub done: bool,
+    pub line: String,
+    pub next: Option<PoolSetupAction>,
 }
 
 /// The kubeconfig's contexts, by name alone, for Where's Options on a cluster (#4492).
@@ -140,6 +155,21 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
                 findings: step.findings.clone(),
                 next: step.next.as_ref().map(action_shown),
                 also: step.also.as_ref().map(action_shown),
+                parts: step
+                    .parts
+                    .iter()
+                    .map(|part| PoolSetupPart {
+                        id: word(&part.id),
+                        name: part.name.to_owned(),
+                        done: part.done,
+                        line: part.line.clone(),
+                        next: part.next.as_ref().map(action_shown),
+                    })
+                    .collect(),
+                undo: step.undo.as_ref().map(|undo| PoolSetupSee {
+                    note: undo.note.clone(),
+                    text: undo.text.clone(),
+                }),
                 skippable: step.skippable,
                 see: step.see.as_ref().map(|see| PoolSetupSee {
                     note: see.note.clone(),
@@ -245,6 +275,49 @@ pub async fn pool_setup_choose_cluster(context: Option<String>) -> Result<(), St
     #[cfg(not(unix))]
     {
         let _ = context;
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Applies one part of a cluster's install** (#4493), on that part's own button: `upstream`,
+/// `definitions`, `signing-key` or `operator`, to the cluster chosen on Where, with the person's
+/// own kubectl and sign-in.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_install(part: String) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("installing on your cluster", move || {
+            use purlis_core::poolsetup::{self, install::PartId};
+            let part: PartId = serde_json::from_value(serde_json::Value::String(part.clone()))
+                .map_err(|_| format!("there is no part of the install called {part}"))?;
+            let kubectl = poolsetup::cluster::kubectl_here()?;
+            poolsetup::install_part(&config_root()?, &kubectl, part).map_err(|why| why.to_string())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = part;
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Keeps the cluster operator's image named under Install's Options** (#4493), or none.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_operator_image(image: Option<String>) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("keeping your choice", move || {
+            purlis_core::poolsetup::choose_operator_image(&config_root()?, image.as_deref())
+                .map_err(|why| why.to_string())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = image;
         Err(crate::dockerpools::NOT_HERE.to_owned())
     }
 }

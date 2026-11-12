@@ -1945,6 +1945,14 @@ export const commands = {
 	 *  kind is kept, as Add a cluster pool… opens Pool setup: Where then recommends a context.
 	 */
 	poolSetupChooseCluster: (context: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_cluster", { context })),
+	/**
+	 *  **Applies one part of a cluster's install** (#4493), on that part's own button: `upstream`,
+	 *  `definitions`, `signing-key` or `operator`, to the cluster chosen on Where, with the person's
+	 *  own kubectl and sign-in.
+	 */
+	poolSetupInstall: (part: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_install", { part })),
+	/**  **Keeps the cluster operator's image named under Install's Options** (#4493), or none. */
+	poolSetupOperatorImage: (image: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_operator_image", { image })),
 	poolSetupName: __WINDOW_ONLY_RESULT,
 	poolSetupPool: __WINDOW_ONLY_RESULT,
 	poolSetupAdd: __WINDOW_ONLY_RESULT,
@@ -10562,6 +10570,18 @@ export type PoolSetupOver = {
 	older_runner: OlderRunner | null,
 };
 
+/**
+ *  One part of a cluster's install (#4493): `upstream`, `definitions`, `signing-key` or
+ *  `operator`.
+ */
+export type PoolSetupPart = {
+	id: string,
+	name: string,
+	done: boolean,
+	line: string,
+	next: PoolSetupAction | null,
+};
+
 /**  One of this machine's profiles against a pool's limit (#4482). */
 export type PoolSetupProfileSize = {
 	name: string,
@@ -10622,6 +10642,10 @@ export type PoolSetupStep = {
 	checks: PoolSetupCheck[],
 	/**  The choice purlis didn't recommend, where there is one (Where's other place, #4492). */
 	also: PoolSetupAction | null,
+	/**  Install's parts, each with its own button (#4493). */
+	parts: PoolSetupPart[],
+	/**  How the step is undone by hand, never by a button: uninstalling from a cluster. */
+	undo: PoolSetupSee | null,
 };
 
 /**  What Try it found. */

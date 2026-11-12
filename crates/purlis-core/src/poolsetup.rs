@@ -36,6 +36,7 @@ use crate::runners::{self, Refused};
 
 pub mod asked;
 pub mod cluster;
+pub mod install;
 pub mod signins;
 pub mod trying;
 
@@ -155,6 +156,13 @@ pub enum ActionId {
     UseCluster,
     /// kubectl isn't on this machine: its own install page.
     GetKubectl,
+    /// The install's parts, each on its own button (#4493).
+    InstallUpstream,
+    InstallDefinitions,
+    MakeSigningKey,
+    InstallOperator,
+    /// The operator's image, by its digest, is named under Options first.
+    ChooseOperatorImage,
     CreatePool,
     MakeRunnerAgain,
     UseOtherDocker,
@@ -237,6 +245,10 @@ pub struct Step {
     pub checks: Vec<Check>,
     /// The choice purlis didn't recommend, for the person to take instead (story 4 of #4469).
     pub also: Option<Action>,
+    /// Install's parts, each with its own button (#4493).
+    pub parts: Vec<install::Part>,
+    /// What undoes the step by hand, where only that does (uninstalling from a cluster, story 56).
+    pub undo: Option<See>,
 }
 
 /// The whole answer.
@@ -376,6 +388,8 @@ pub struct Choices {
     /// The kubeconfig context chosen on Where for a cluster (#4492): its name, nothing of what it
     /// signs in with.
     pub context: Option<String>,
+    /// The cluster operator's image, by its digest, named under Install's Options (#4493).
+    pub operator_image: Option<String>,
     /// The name typed on the Pool step, for the box to hold.
     pub name: Option<String>,
     /// That no pool had `name` when it was typed: one that has it now was made since, by hand.
@@ -845,7 +859,7 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
             (Kind::Cluster, StepId::Where) => cluster::where_reading(facts, choices),
             (_, StepId::Where) => where_reading(facts, choices),
             (_, StepId::Check) => cluster::check_reading(facts),
-            (_, StepId::Install) => cluster::install_reading(facts),
+            (_, StepId::Install) => cluster::install_reading(facts, choices),
             (Kind::Cluster, StepId::Pool) => cluster::pool_reading(facts),
             (_, StepId::Pool) => pool_reading(facts),
             (_, StepId::Signins) => sign_ins_reading(facts),
@@ -875,8 +889,18 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
             findings: if says { reading.findings } else { Vec::new() },
             next: if says { reading.next } else { None },
             skippable: id.skippable(),
-            see: see_of(kind, id, facts),
+            see: see_of(kind, id, facts, choices),
             checks: Vec::new(),
+            parts: if id == StepId::Install && says {
+                cluster::parts_of(facts, choices)
+            } else {
+                Vec::new()
+            },
+            undo: if id == StepId::Install {
+                cluster::undo_of(facts)
+            } else {
+                None
+            },
             also: if id == StepId::Where && state != StepState::Done && facts.pool.is_none() {
                 cluster::also(kind, facts)
             } else {
@@ -998,9 +1022,9 @@ fn try_checks(steps: &[Step], pool: &str, tried: bool, repos: bool) -> Vec<Check
 
 /// **What `id` does by hand**, where it has commands of its own. The Pool step's, before there is
 /// a pool, depend on what the person chose, so they are [`asked::Asked::command`]'s.
-fn see_of(kind: Kind, id: StepId, facts: &Facts) -> Option<See> {
+fn see_of(kind: Kind, id: StepId, facts: &Facts, choices: &Choices) -> Option<See> {
     if kind == Kind::Cluster
-        && let Some(see) = cluster::see_of(id, facts)
+        && let Some(see) = cluster::see_of(id, facts, choices)
     {
         return Some(see);
     }
@@ -1400,6 +1424,7 @@ pub fn read_choices(config: &Path) -> Result<Choices, Refused> {
     Ok(Choices {
         kind: held.kind,
         context: held.context,
+        operator_image: held.operator_image,
         name: held.name,
         name_free: held.name_free,
         pool: held.pool,
@@ -1418,6 +1443,8 @@ struct Held {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     context: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    operator_image: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     name: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     name_free: bool,
@@ -1434,6 +1461,7 @@ fn write_choices(config: &Path, choices: Choices) -> Result<(), Refused> {
         version: 1,
         kind: choices.kind,
         context: choices.context,
+        operator_image: choices.operator_image,
         name: choices.name,
         name_free: choices.name_free,
         pool: choices.pool,
@@ -1473,6 +1501,44 @@ pub fn choose_cluster(config: &Path, context: &str) -> Result<(), Refused> {
     let mut choices = read_choices(config)?;
     choices.kind = Some(Kind::Cluster);
     choices.context = Some(context.to_owned());
+    write_choices(config, choices)
+}
+
+/// **Applies part `part` of the install to the cluster chosen on Where** (#4493), with the
+/// person's own sign-in through `kubectl`, on Install's own button. Refused where no cluster was
+/// chosen, so nothing is applied to a context the person didn't pick.
+pub fn install_part(
+    config: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    part: install::PartId,
+) -> Result<(), Refused> {
+    let choices = read_choices(config)?;
+    let (Some(Kind::Cluster), Some(context)) = (choices.kind, choices.context.as_deref()) else {
+        return Err(Refused::Other(
+            "nothing was applied: choose your team's cluster on Where first".to_owned(),
+        ));
+    };
+    install::apply(
+        &kubectl.clone().with_context(context),
+        part,
+        choices.operator_image.as_deref(),
+    )
+}
+
+/// **Keeps the cluster operator's image named under Install's Options** (#4493), or none. Refused
+/// for an image not named by its digest, so the operator runs only what was checked.
+pub fn choose_operator_image(config: &Path, image: Option<&str>) -> Result<(), Refused> {
+    if let Some(image) = image
+        && !install::is_by_digest(image)
+    {
+        return Err(Refused::Other(format!(
+            "name the operator's image by its digest, {}@sha256: and 64 hex digits",
+            install::OPERATOR_REPOSITORY
+        )));
+    }
+    let _locked = runners::lock(config);
+    let mut choices = read_choices(config)?;
+    choices.operator_image = image.map(str::to_owned);
     write_choices(config, choices)
 }
 

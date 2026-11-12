@@ -26,6 +26,8 @@ const step = (id: string, name: string, state: string, more: Partial<PoolSetupSt
     see: null,
     checks: [],
     also: null,
+    parts: [],
+    undo: null,
     ...more,
   }) as PoolSetupStep;
 
