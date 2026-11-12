@@ -1553,15 +1553,13 @@ body {
 
 /* **A tab that shows a task says so** (#1486, V100-35): `steward 4 › talk`, the task's name
    dimmer than the session's, since the tab is the session's. Both names give way to an
-   ellipsis as a tab's name always did; the task's goes first. The task's name is read after the
-   session's, so it is in the meta's colour (`text.quiet`, #1920) at the tab's body size: under
-   the pointer and on the chosen tab the session's name turns primary and the task's stays. */
+   ellipsis as a tab's name always did; the task's goes first. */
 .tab-task {
   flex: 0 100 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--text-quiet);
+  color: var(--text-muted);
 }
 
 .tab-task-sep {
@@ -4584,13 +4582,17 @@ body {
   margin-block-start: var(--space-8);
 }
 
-/* A sentence on these pages is the page's own words, not a strip across a pane. */
+/* A sentence on these pages is the page's own words, not a strip across a pane. Not on a role
+   yet (#6389): every door page's lines share the window-wide `.came-back`, so it is moved with
+   that class, not page by page. */
 .welcome-pane .came-back {
   padding: 0;
   margin-block-end: var(--space-3);
   background: none;
   border: 0;
+  font-size: var(--font-size-base);
   line-height: var(--line-height-body);
+  color: var(--text-secondary);
 }
 
 .git-missing h3 {
@@ -4658,9 +4660,6 @@ body {
 .welcome-pane .harness-setup {
   padding: 0;
 }
-
-/* The recent projects are rows of the list family (`ui/list`, #2911); a project's path is its
-   description, cut to one line. */
 
 /* The first run's list of what this machine has (FR-4): statuses, not controls. */
 .first-run-found {

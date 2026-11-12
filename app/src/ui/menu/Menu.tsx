@@ -727,7 +727,9 @@ export function MenuSection<T extends object = object>({
     <AriaMenuSection {...(rest as AriaMenuSectionProps<T>)} data-scope="popover" data-part="group">
       {title !== undefined && (
         <AriaHeader
-          className="ui-text-label"
+          // purlis's own words are the section label; a group named by data (a persona's name)
+          // is the secondary, written as the name is (#1920).
+          className={named ? "ui-text-secondary" : "ui-text-label"}
           data-scope="popover"
           data-part="header"
           data-named={named ? "" : undefined}

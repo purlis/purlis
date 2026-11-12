@@ -83,19 +83,6 @@ describe("the tab strips' words, each on its text role", () => {
       colour: ROLES.meta.colour,
     });
   });
-
-  it("says a task's name after the session's in the meta's colour, at the tab's size", () => {
-    render(
-      <TabCell variant="chat" selected data-testid="tab">
-        <span className="tab-name">
-          steward 4<span className="tab-task">talk</span>
-        </span>
-      </TabCell>,
-    );
-    const task = screen.getByText("talk");
-    expect(drawnWith(task, "color")).toBe("var(--text-quiet)");
-    sizedAs(task, "body", "a task's name in its tab");
-  });
 });
 
 describe("the status bar's words, each on its text role", () => {

@@ -85,7 +85,7 @@ describe("the Welcome's words, each on its text role", () => {
 
   it("writes no size, weight or colour of words of its own for what now wears a role", () => {
     const worn =
-      /^\.welcome-(?:brand|lede|next|elsewhere)$|^\.welcome-pane (?:h1|h2|\.came-back)$|^\.recents (?:\.where|\.value|code)$/;
+      /^\.welcome-(?:brand|lede|next|elsewhere)$|^\.welcome-pane (?:h1|h2)$|^\.recents (?:\.where|\.value|code)$/;
     const typed = declarations(readFileSync(join(process.cwd(), "src", "App.css"), "utf8"))
       .filter(({ context }) => worn.test(context[context.length - 1] ?? ""))
       .filter(({ property }) => ["font-size", "font-weight", "color"].includes(property))

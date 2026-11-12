@@ -7,7 +7,11 @@
 
    **A surface wears a role and writes no size, weight or colour of its own.** The audit behind
    #1920 counted 152 font sizes in 25 values and one section label written five ways, because
-   each surface ranked its own words. `type.guard.test.ts` refuses a new one.
+   each surface ranked its own words. `type.guard.test.ts` refuses a new one. The one colour a
+   word keeps beside its role is its state's: a family's part (a tab, a status item, a group
+   header) wears the role, and the family's rule for its tier (quiet at rest, primary chosen; a
+   tone), which outranks one class in this layer, tints it, as a theme's parts do from the layer
+   above.
 
    **Only tokens.** A size, a weight and the monospace family are core (`theme/geometry.css`),
    so they are the same in every theme; a colour is the theme's (`theme.ts`). Colour follows the

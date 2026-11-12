@@ -112,8 +112,6 @@
   border-radius: var(--radius-lg);
 }
 
-/* Its label: the label role, in capitals. */
-
 [data-scope="card"][data-part="tile-value"] {
   color: var(--text-primary);
   font-size: var(--font-size-lg);

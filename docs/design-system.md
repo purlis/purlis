@@ -2094,8 +2094,9 @@ letter spacing anywhere else.
 - **A family keeps its tier.** The label's colour is `text.secondary`; a tree's, a list's and
   the title bar's group headers keep the quiet tier and a table's column names the muted, by the
   family's own rule, which outranks the role's colour.
-- **A group named by data is written as its name** (a project, a day): the family's
-  `[data-named]` rule takes the capitals off. A frame that labels its groups (the Chats list's
+- **A group named by data is written as its name** (a project, a day): a menu's and a select's
+  wears the secondary instead of the label; a tree's and a list's take the capitals off in the
+  family's `[data-named]` rule. A frame that labels its groups (the Chats list's
   workspaces, #3484) is the exception, and labels them as any group: the frame's group heads move
   from the medium weight spaced `0.06em` to the label's strong, spaced `0.05em`.
 
@@ -2110,7 +2111,7 @@ its lede, its next steps and its section headings in rules of its own. Now (#192
 | the wordmark at the side                                               | `ui-text-title`                     | 20px, strong              | 16px, strong             |
 | the lede under the heading                                             | `ui-text-body`                      | 14px, secondary           | 13px, primary            |
 | a section's heading: "Recent projects", "On this machine", …          | `ui-text-label`                     | 13px, strong, secondary   | 11px, strong, capitals   |
-| a first run's next steps; "Run purlis elsewhere"; a recents refusal    | `ui-text-secondary`                 | 14px or 12px, secondary   | 12px, secondary          |
+| a first run's next steps; "Run purlis elsewhere"                       | `ui-text-secondary`                 | 14px or 12px, secondary   | 12px, secondary          |
 | a recent project's path; "purlis will ask about this one"              | `ui-text-meta ui-text-code`; `ui-text-meta` | 11px; 12px muted  | 11px, quiet              |
 
 What it settled:
@@ -2119,6 +2120,9 @@ What it settled:
   20px; it is the title every view and dialog wears.
 - **A section of a door page is labelled as any group is**, with the section label, so its
   headings read as the Explorer's and the Panel's do.
+
+Not moved with it: a door page's sentences (`.welcome-pane .came-back`), which share the
+window-wide `.came-back` with lines in many dialogs and tabs, and move with that class (#6389).
 
 ### Notices and dialogs, on the roles
 
@@ -2189,7 +2193,6 @@ tier its state gives the words (#1920):
 | a tab's words, on every strip (the tabs family's `tab`)      | `ui-text-body`, in the tab's tier          | 13px; quiet, primary chosen | the same    |
 | a page tab's words (`page-tabs`)                             | `ui-text-body`, in the tab's tier          | 13px; muted, primary chosen | the same    |
 | a page tab's count                                           | `ui-text-meta`                             | 11px, quiet                 | the same    |
-| the task a chat's tab shows, after its name (`.tab-task`)    | none: the meta's colour, at the tab's size | 13px, muted                 | 13px, quiet |
 | a status item's words, a cell's and a pill's (`status-item`) | `ui-text-secondary`, in the item's tier    | 12px, primary               | the same    |
 | the status bar itself                                        | `ui-text-secondary`                        | 12px                        | the same    |
 
@@ -2200,14 +2203,13 @@ What it settled:
   class in the same layer), and a theme's parts are a layer above both. A role on the part
   gives the size and the weight; the family's tier, a tone or a theme gives the colour. That is
   the Explorer's rule for a tree row's name, on a family's part.
-- **What a tab says after its name is quieter by colour only**: it sits in the tab's line, so it
-  keeps the tab's size, and in the meta's colour it stays quiet while the name turns primary.
 - **A count on a status item keeps its pill's colour**: the count pill's ground is the control's,
   and the meta's colour is measured on the window's.
 
 Not moved with it, and still on their own rules: a pane's breadcrumbs and its header's words
 (`.pane-crumbs`, `paneFrame.css`), the title bar's own words (`titlebar.css`), and the editor's
-toolbar over a file, which a chosen file tab joins.
+toolbar over a file, which a chosen file tab joins, and the task a chat's tab names after its
+own (`.tab-task`), muted: a word read after the name with no role of its own (#6389).
 
 ### The Explorer and the Panel's halves, on the roles
 
