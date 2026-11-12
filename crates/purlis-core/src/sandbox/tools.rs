@@ -2077,7 +2077,7 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // A host value that reaches the client's flags or a DBI address (#6185): `mysqlaccess` splits
     // its command line, `--host=` and the host among it, on white space into the client's
     // arguments; `mytop`, `mysql_convert_table_format` and `mysql_setpermission` join the host
-    // into a `DBI:MariaDB:` address its driver splits at each `;` into attributes, among them
+    // into a `DBI:MariaDB:` address its driver splits at each `:` or `;` into attributes, among them
     // a file of settings the client library reads. Percona Server's `ps-admin` `source`s its
     // `--config-file` as a shell file and expands its user and host unquoted into the client's
     // command line.
@@ -2094,11 +2094,14 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // `mysqltest_safe_process` runs the program it is given after `--`; `myrocks_hotbackup` hands
     // `os.system` a command its `--extra_wdt_sender_options` is formatted into, and ssh its
     // `--destination` first. `rcmysql`, a link to the server's init script, starts the server
-    // (and is judged by its target's folder too, [`an_init_script`]).
+    // (and is judged by its target's folder too, [`an_init_script`]). MySQL's own SLES packages
+    // link `rcmysql` to `service` instead, which runs the init script it is named, or has
+    // `systemctl` act on the unit, so every `rc*` link to it is refused by its target's name.
     "mysqlxtest",
     "mysqltest_safe_process",
     "myrocks_hotbackup",
     "rcmysql",
+    "service",
     // The client and its test built with the server inside them: what `--server-arg` hands the
     // server (`--plugin-load`, `--plugin-dir`) loads code from a file it names.
     "mysql_embedded",

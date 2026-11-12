@@ -2929,7 +2929,7 @@ fn mysqlaccess_splits_its_host_into_the_clients_flags_so_it_is_offered_no_run_gr
 /// `mysql_convert_table_format` and `mysql_setpermission` join it, unquoted, into a
 /// `DBI:MariaDB:` or `DBI:mysql:` address (MariaDB's `scripts/mytop.sh`,
 /// `scripts/mysql_convert_table_format.sh`, `scripts/mysql_setpermission.sh`), whose driver
-/// splits it at each `;` into its attributes (`parse_dsn` in DBD::MariaDB, `_OdbcParse` in
+/// splits it at each `:` or `;` into its attributes (`parse_dsn` in DBD::MariaDB, `_OdbcParse` in
 /// DBD::mysql). A host of `x;mariadb_read_default_file=…` names a file of settings the client
 /// library reads, which can name a plugin folder and an authentication plugin from it. None of
 /// the client's own flags is in the command, so no row read the value.
@@ -2984,6 +2984,15 @@ fn myrocks_hotbackup_hands_a_shell_its_options_so_it_is_offered_no_run_grant() {
 #[test]
 fn rcmysql_starts_the_server_so_it_is_offered_no_run_grant() {
     refused_as_running_others("rcmysql");
+}
+
+/// `service`, which MySQL's own SLES packages link `rcmysql` to (`packaging/rpm-sles/mysql.spec.in`,
+/// review of #6187): it runs the init script it is named, `/etc/init.d/<name>`, or has
+/// `systemctl` act on the unit (Debian's init-system-helpers, `script/service`). Every `rc*` link
+/// to it resolves to `service`, so refusing it refuses them.
+#[test]
+fn service_runs_the_init_script_it_is_named_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("service");
 }
 
 /// A link to a service's init script, by whatever name (#6187): the script's own file name is the

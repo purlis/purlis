@@ -17,7 +17,7 @@ against the tool's own source, not recalled:
 - **`mytop`**, in the same package: it joins its `--host` value into
   `DBI:MariaDB:database=…;mariadb_read_default_group=mytop;host=<host>` (or `DBI:mysql:…`), and
   its `--db` value into the same address (`scripts/mytop.sh`). DBD::MariaDB's `parse_dsn` and
-  DBD::mysql's `_OdbcParse` split the address at each `;` and take every `name=value` part as an
+  DBD::mysql's `_OdbcParse` split the address at each `:` or `;` and take every `name=value` part as an
   attribute of the connection (github.com/perl5-dbi/DBD-MariaDB, `lib/DBD/MariaDB.pm`;
   github.com/perl5-dbi/DBD-mysql, `lib/DBD/mysql.pm`), and `mariadb_read_default_file` hands the
   client library a file of settings to read (`mysql_options(…, MYSQL_READ_DEFAULT_FILE, …)`,
@@ -78,3 +78,12 @@ The same reviews raised four more tools (#6187), each checked against its source
   starts and stops the service it is named for, and is named as that service is, so its name
   says nothing about what it runs. A declared tool is not judged by its folder; a person who
   declares one chose it.
+
+The review of this amendment's pull request found that MySQL's own SLES packages link
+`/usr/sbin/rcmysql` to **`service`** instead (`ln -sf %{_sbindir}/service …/rcmysql`,
+`packaging/rpm-sles/mysql.spec.in`, mysql-server 8.0), which a Run grant judges by its target's
+name. `service` runs `/etc/init.d/<name>` with the action it is given, or has `systemctl` act on
+the unit (`script/service`, Debian's init-system-helpers), so it is refused too, and with it every
+`rc*` link to it. `systemctl` itself, `start-stop-daemon`, an init script reached through a link
+that points on out of `init.d`, and RocksDB's `ldb` and `sst_dump` were raised but are not
+verified here; they are filed as #6320, #6321 and #6322.
