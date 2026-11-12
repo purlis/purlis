@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794507533055,
+  "lastUpdate": 1794510518719,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -47670,6 +47670,48 @@ window.BENCHMARK_DATA = {
             "value": 102.4017195,
             "unit": "ms",
             "extra": "median of 5 runs: 101.493, 102.006, 102.402, 102.764, 102.811 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "2b74a483502bfa9ab8fd1d040c276fd01e94e6a6",
+          "message": "Your hosts say when and by what each was added (#6172) (#6363)\n\n* Your hosts: record when and by what each host of yours was added (#6172)\n\nSettings' Add records 'you', a block's Allow 'block', in hosts_added beside\nhosts_mine; Remove and the prune take it off. listed_at hands each myHosts\nentry added_at and added_by; a host from before the record has neither.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77YPBM9T790P2SKKKTK7X72\nPurlis-Persona: steward\n\n* Your hosts: the Added column, when and by what each host was added (#6172, R65)\n\n'<when> · you' or '<when> · a chat's block', an age up to a month then the\nday; a host from before the record says Earlier. The stories hold their\nclock still so the pictures are.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77YPBM9T790P2SKKKTK7X72\nPurlis-Persona: steward\n\n* Changelog fragment for the Your hosts Added column (#6172)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77YPBM9T790P2SKKKTK7X72\nPurlis-Persona: steward\n\n* Your hosts' Added: review fixes (#6172)\n\nConfirmed and when it was added go in one write (add_host), the prune\ntakes a stray when, halt::now for the clock; one age wording (agoSaid)\nfor a skill source's check and a host's add; HostAdded named once; the\nhosts collection's doc comment back on its function.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77YPBM9T790P2SKKKTK7X72\nPurlis-Persona: steward\n\n* Your hosts: the host column gives way, so Added never pushes Remove off the page (#6172)\n\nThe stories run drew the table wider than the page, Remove cut at the\nframe. Host fills and cuts (the family's choices, its whole words in the\ntooltip); Added fits its widest cell.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77YPBM9T790P2SKKKTK7X72\nPurlis-Persona: steward\n\n* Table: a lone control's cell keeps its target box on its line, so a narrow column never makes the row taller (#6172)\n\nThe stories run showed Your hosts' rows grown and Confirm and Remove riding\nhigh: the 24px box kept beside a cell's only control (WCAG 2.5.8) wrapped\nunder it once the Added column narrowed the action columns. Host keeps a\nleast width of 16rem where it gives way.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77YPBM9T790P2SKKKTK7X72\nPurlis-Persona: steward\n\n* Your hosts: a long host is cut at 16rem rather than the column filling; baselines of the tables whose controls now sit on their rows (#6172)\n\nWebKit did not hold a filling column's least width, and the host's words ran\nover Status. Host now cuts at a most width, as the table family's own story\ndoes. The family's fix in 00e5c2cc3e drew SkillBudget, SkillGrades,\nSkillPage and SkillStudioHarnessRouting again: each row's lone button now\nsits on the row's middle, its 24px room beside it rather than wrapped under.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M77YPBM9T790P2SKKKTK7X72\nPurlis-Persona: steward\n\n* Your hosts' pictures with the Added column, drawn by #6363's stories run (#6172)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M77YPBM9T790P2SKKKTK7X72\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-12T18:29:08Z",
+          "tree_id": "17e7d8b1d8a83d95202a42980ca2f0609a399281",
+          "url": "https://github.com/purlis/purlis/commit/2b74a483502bfa9ab8fd1d040c276fd01e94e6a6"
+        },
+        "date": 1794510513288,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.548976,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.528, 0.536, 0.549, 0.549, 0.556 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.172229,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.117, 16.160, 16.172, 16.177, 16.548 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.7926445,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.226, 100.358, 101.793, 102.311, 105.841 ms"
           }
         ]
       }
