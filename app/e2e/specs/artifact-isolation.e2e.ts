@@ -432,6 +432,36 @@ describe(`an artifact, as purlis renders it, is isolated from the window and its
     expect(await keptByTheWindow()).toEqual([]);
   });
 
+  // [LOOP-6232] temporary: the changed-template step and the menu after it, over and over.
+  it("6b. hammer: changed template, then the pin's menu", async () => {
+    let menuMiss = 0;
+    let storeMiss = 0;
+    const CYCLES = Number(process.env.PURLIS_HAMMER ?? "25");
+    for (let cycle = 1; cycle <= CYCLES; cycle += 1) {
+      writeFileSync(join(at, `isolation-store-a-${pass}`, "app.js"), `${STORE}\n// hammer ${cycle}\n`);
+      await openApproved(STORES.a);
+      const word = await heard("store-");
+      if (stored(word).seen.length !== 0) {
+        storeMiss += 1;
+        console.log(`[DEBUG-6232] STORE-MISS cycle ${cycle} word=${word} rows=${JSON.stringify(await refusedRows())}`);
+      }
+      await closeTabOf(STORES.a);
+      const sent = Date.now();
+      await sendContextMenu(iconOf(STORES.a));
+      const shown = await browser
+        .waitUntil(async () => (await $('[role="menu"]').isDisplayed()), { timeout: 5_000 })
+        .then(() => true, () => false);
+      if (!shown) {
+        menuMiss += 1;
+        console.log(`[DEBUG-6232] MENU-MISS cycle ${cycle} sent=${sent} menus=${await browser.execute(() => document.querySelectorAll('[role="menu"]').length)} active=${await browser.execute(() => document.activeElement?.outerHTML.slice(0, 160) ?? "")} open=${await browser.execute((css: string) => document.querySelector(css)?.getAttribute("data-open"), iconOf(STORES.a))}`);
+      } else {
+        await browser.keys("Escape");
+        await $('[role="menu"]').waitForDisplayed({ reverse: true, timeout: 5_000 });
+      }
+    }
+    console.log(`[DEBUG-6232] HAMMER pass ${pass}: menu misses ${menuMiss}/${CYCLES}, store misses ${storeMiss}/${CYCLES}`);
+  });
+
   it("2. loop: an endless loop in a page leaves the window answering", async () => {
     await openApproved(LOOP);
     await browser.waitUntil(
