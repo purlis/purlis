@@ -33,6 +33,7 @@ export function TryStep({
   changed,
   onGo,
   onOpenChat,
+  onAddAnother,
 }: {
   step: PoolSetupStep;
   pool: string;
@@ -45,6 +46,8 @@ export function TryStep({
   /** Opens a chat on the pool, in the window's own start: in `workspace`, where Try it's chat
    *  started, once it has here. */
   onOpenChat: (workspace?: string) => void;
+  /** Starts a new pool's setup, once this one is finished (#6256). */
+  onAddAnother?: () => void;
 }) {
   const [trying, setTrying] = useState(false);
   /** A try under way, so leaving the step cancels it rather than leave it running unseen. */
@@ -122,11 +125,12 @@ export function TryStep({
           >
             {`Open a chat on ${pool}`}
           </Button>
+          {onAddAnother && <Button onPress={onAddAnother}>Add another pool</Button>}
         </ButtonRow>
         <p className="pool-setup-does">
           {except
-            ? "Finish the rest any time: Pool setup in the palette comes back to this pool."
-            : "Change anything later from Pool setup in the palette."}
+            ? `Finish the rest any time: Open setup on ${pool}, in Settings under Pools, comes back to it.`
+            : `Change anything later from Open setup on ${pool}, in Settings under Pools.`}
         </p>
       </>
     );

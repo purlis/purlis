@@ -36,6 +36,7 @@ const setup = (at: string, steps: PoolSetupStep[], pool: string | null = null): 
   at,
   steps,
   noticed: false,
+  recommended: "docker",
   others: [],
 });
 
