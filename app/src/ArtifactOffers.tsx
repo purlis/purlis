@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen, untilStopped } from "./here";
 import type { Offer } from "./actions";
 import { resolve, type PageOffer, type Resolved } from "./pageOffers";
 import { Button } from "./ui/button/Button";
@@ -149,27 +149,11 @@ export function OfferAsks({
 function useOffered(label: string): PageOffer[] {
   const [offered, setOffered] = useState<PageOffer[]>([]);
   useEffect(() => {
-    let stop: (() => void) | undefined;
-    let gone = false;
-    listen<ArtifactOffersHeard>(ARTIFACT_OFFERS, (event) => {
-      if (event.payload.label === label) setOffered(event.payload.offers);
-    }).then(
-      (unlisten) => {
-        // Let go of quietly: a window going away may no longer have its events to let go of.
-        const letGo = () => void Promise.resolve(unlisten()).catch(() => undefined);
-        if (gone) letGo();
-        else stop = letGo;
-      },
-      () => {},
+    return untilStopped(
+      listen<ArtifactOffersHeard>(ARTIFACT_OFFERS, (event) => {
+        if (event.payload.label === label) setOffered(event.payload.offers);
+      }),
     );
-    return () => {
-      gone = true;
-      try {
-        stop?.();
-      } catch {
-        // The window's event bridge went first: nothing is listening any more.
-      }
-    };
   }, [label]);
   return offered;
 }

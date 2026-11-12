@@ -57,6 +57,31 @@ export default tseslint.config(
       ...Object.fromEntries(Object.keys(purlisUi.rules).map((name) => [`purlis/${name}`, "error"])),
     },
   },
+  // The window listens for the core's events only through `src/here.ts` (charter#126, #6274):
+  // its `listen` names this window as the target, and its stop never fails. Tauri's own stop is
+  // `async` and rejects unhandled once the window's event bridge has gone. Everything the core
+  // sends the window is addressed by the window's label, which `here.ts`'s listener hears,
+  // events sent to the window's own webview included. A test may listen as it likes: it
+  // listens to watch what the window sends.
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/here.ts", "**/*.test.{ts,tsx}"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@tauri-apps/api/event",
+              importNames: ["listen", "once"],
+              message:
+                "Listen through `./here`'s `listen` (held with `untilStopped`): a direct listen hears other windows' events, and its stop can reject unhandled once the window has gone.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   // The stories' own lint (#3535, `eslint.story-rules.js`): what a `play` function must not
   // write, each rule an error.
   {

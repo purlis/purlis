@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { ChartLine } from "lucide-react";
 import {
   commands,
@@ -32,7 +31,7 @@ import type { Offer } from "./actions";
 import { ArtifactQueries } from "./ArtifactQueries";
 import { ArtifactRegenerate } from "./ArtifactRegenerate";
 import { artifactDataIn, artifactsIn, useViewChanged } from "./planeChanged";
-import { untilStopped } from "./here";
+import { listen, untilStopped } from "./here";
 import { DiscussButton } from "./artifactDiscuss";
 import { Button } from "./ui/button/Button";
 import { EmptyState } from "./ui/empty-state/EmptyState";

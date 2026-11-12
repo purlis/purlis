@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen, untilStopped } from "./here";
 import {
   commands,
   ROUTER_GRADE,
@@ -83,15 +83,16 @@ export function useRouterGradeRunning(
     told.current = onEnded;
   });
   useEffect(() => {
-    const listening = listen<RouterGradeStep>(ROUTER_GRADE, (event) => {
-      const now = event.payload;
-      if (now.plane !== plane) return;
-      if (now.ended !== null) {
-        setStep(undefined);
-        told.current();
-      } else if (now.workspace === workspace && now.persona === persona) setStep(now);
-    }).catch(() => undefined);
-    return () => void listening.then((stop) => stop?.()).catch(() => undefined);
+    return untilStopped(
+      listen<RouterGradeStep>(ROUTER_GRADE, (event) => {
+        const now = event.payload;
+        if (now.plane !== plane) return;
+        if (now.ended !== null) {
+          setStep(undefined);
+          told.current();
+        } else if (now.workspace === workspace && now.persona === persona) setStep(now);
+      }),
+    );
   }, [plane, workspace, persona]);
   return step;
 }
@@ -221,10 +222,11 @@ export function RouterGradePlanPage({
     readNow.current = () => read(picked, pickedModel, true);
   });
   useEffect(() => {
-    const listening = listen<SkillGradeStep>(SKILL_GRADE, (event) => {
-      if (event.payload.plane === plane && event.payload.ended !== null) readNow.current();
-    }).catch(() => undefined);
-    return () => void listening.then((stop) => stop?.()).catch(() => undefined);
+    return untilStopped(
+      listen<SkillGradeStep>(SKILL_GRADE, (event) => {
+        if (event.payload.plane === plane && event.payload.ended !== null) readNow.current();
+      }),
+    );
   }, [plane]);
 
   // Whether the grade running in the project is this scope's of this router, so Show it can open
