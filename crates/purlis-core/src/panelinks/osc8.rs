@@ -350,6 +350,8 @@ fn differs(reads: &Reads, target: &Target, pane: &Pane) -> Option<String> {
         (Reads::Name { written, .. }, Target::File(file)) => (file.path.file_name()
             != Some(std::ffi::OsStr::new(written.as_str())))
         .then(|| written.clone()),
+        // A marked link's target is read only as a web address or a file, never as a chat.
+        (_, Target::Chat(_)) => None,
     }
 }
 
