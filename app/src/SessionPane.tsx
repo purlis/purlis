@@ -29,7 +29,7 @@ import { onScreenReaderMode, screenReaderMode } from "./screenReader";
 import { onAMac } from "./tabKeys";
 import { opensFind } from "./keys/findKeys";
 import { LINK_CORE } from "./paneLinkCore";
-import { linkPane, relayed, type LinkHands } from "./paneLinks";
+import { linkPane, openLink, relayed, type LinkHands, type LinkUnder } from "./paneLinks";
 import { usePaneLinks } from "./PaneLinkSurfaces";
 import { isKey } from "./keys/registry";
 import { moveAlong } from "./tabSequence";
@@ -38,10 +38,16 @@ import {
   asksByPointer,
   asksForTheMenu,
   programHasTheMouse,
+  isLinkRow,
+  LINK_COPY_REFUSED,
+  linkRows,
   runTerminalRow,
   terminalRows,
   SHIFT_F10,
   underTheCursor,
+  type ClipboardOut,
+  type LinkRowId,
+  type LinkRows,
   type TerminalRow,
   type TerminalRowId,
 } from "./terminalRows";
@@ -136,13 +142,24 @@ export function SessionPane({
   /** The terminal's rows as they stood when its menu opened: whether anything was selected is
    *  read then, once, and not while the menu is up. */
   const [rows, setRows] = useState<TerminalRow[]>([]);
+  /** The link rows as they stood when the menu opened (#6219): over the link the pointer was on
+   *  as the menu was asked for, read then, once. */
+  const [linksRows, setLinksRows] = useState<LinkRows | undefined>(undefined);
+  /** The link the pointer was on as the menu was asked for: none from the keyboard (D4). */
+  const overLink = useRef<LinkUnder | undefined>(undefined);
+  /** The link the terminal's link hook says the pointer is on now. */
+  const linkUnder = useRef<() => LinkUnder | undefined>(() => undefined);
   /** While the menu is being asked for from the keyboard, which the program's hold on the
    *  mouse does not stand in the way of. */
   const fromKeys = useRef(false);
   /** **Its links' surfaces** (`PaneLinkSurfaces.tsx`, #6215): a hovered link's tooltip, and the
    *  window's answer to one ⌘-clicked that did not simply open. An ask accepted opens the
    *  target it showed, resolved again by the core. */
-  const { hands: linkHands, surfaces: linkSurfaces } = usePaneLinks({
+  const {
+    hands: linkHands,
+    surfaces: linkSurfaces,
+    list: linkList,
+  } = usePaneLinks({
     from: { plane, session },
     core: LINK_CORE,
     colour: () => linkColour(inForce()),
@@ -173,16 +190,24 @@ export function SessionPane({
     taking.current = take;
   }, [take]);
 
+  /** Whether the pane has its Links list to open (#6220). */
+  const lists = linkList !== undefined;
   /** A menu about to open reads what is selected; one that closed leaves nothing behind. */
-  const menuOpens = useCallback((open: boolean) => {
-    if (open)
+  const menuOpens = useCallback(
+    (open: boolean) => {
+      if (!open) return;
       setRows(terminalRows({ selected: terminal.current?.hasSelection() ?? false, mac: onAMac() }));
-  }, []);
+      setLinksRows(linkRows({ link: overLink.current, mac: onAMac(), lists: lists }));
+    },
+    [lists],
+  );
 
   /** **A click the program asked for is the program's** (`programHasTheMouse`): xterm has
    *  already reported the press, and preventing the default here opens no menu, this one or
    *  the panes'. Shift held, or the keyboard, is past that. */
   const asked = useCallback((event: ReactMouseEvent<HTMLElement>) => {
+    // The keyboard has no pointer, so no link under it (D4).
+    overLink.current = fromKeys.current ? undefined : linkUnder.current();
     const pane = terminal.current;
     if (!pane || fromKeys.current || event.shiftKey) return;
     if (programHasTheMouse(pane)) event.preventDefault();
@@ -192,16 +217,41 @@ export function SessionPane({
    *  a clipboard that refused, a Copy with nothing left to copy, a Paste with nothing to
    *  paste. **Paste's text is read by the core** (`commands.clipboardText`, the window's
    *  alone) and typed by the terminal's own paste. */
-  const run = useCallback((id: TerminalRowId) => {
-    const pane = terminal.current;
-    if (!pane) return;
-    void runTerminalRow(id, pane, {
-      out: navigator.clipboard,
-      read: commands.clipboardText,
-    }).then((trouble) => {
-      if (trouble !== undefined) saying.current(trouble);
-    });
-  }, []);
+  /**
+   * **A link row, on the link the menu opened over** (#6219). *Open link* goes the way ⌘-click
+   * does: the core is handed the candidate's text and answers, asks included. *Copy link* puts
+   * the target the core resolved on the clipboard. *Links in this pane…* opens the list (#6220).
+   */
+  const runLinkRow = useCallback(
+    (id: LinkRowId) => {
+      if (id === "terminal.links") return linkList?.();
+      const link = overLink.current;
+      if (link === undefined) return;
+      if (id === "terminal.openLink") {
+        if (linkHands !== undefined) void openLink(link.candidate, linkHands);
+        return;
+      }
+      const out = navigator.clipboard as ClipboardOut | undefined;
+      if (out === undefined) return saying.current(LINK_COPY_REFUSED);
+      out.writeText(link.seen.target).catch(() => saying.current(LINK_COPY_REFUSED));
+    },
+    [linkList, linkHands],
+  );
+
+  const run = useCallback(
+    (id: TerminalRowId) => {
+      const pane = terminal.current;
+      if (!pane) return;
+      if (isLinkRow(id)) return runLinkRow(id);
+      void runTerminalRow(id, pane, {
+        out: navigator.clipboard,
+        read: commands.clipboardText,
+      }).then((trouble) => {
+        if (trouble !== undefined) saying.current(trouble);
+      });
+    },
+    [runLinkRow],
+  );
 
   // **Its pane's head reaches it** (#4760): Copy and Paste on a right-click of the head run
   // here, as its own menu's do.
@@ -261,6 +311,7 @@ export function SessionPane({
       where.appendChild(pane.element);
     terminal.current = pane;
     saying.current = live.say;
+    linkUnder.current = live.linkUnder;
     // **A terminal started again takes the keyboard its last one had** (`noEcho.ts`): it is
     // started while its person types, and their next key goes to it.
     if (hadTheKeyboard.current) pane.focus();
@@ -313,6 +364,7 @@ export function SessionPane({
       unqueue();
       live.owner = undefined;
       terminal.current = undefined;
+      linkUnder.current = () => undefined;
       setFinding(null);
       // **Kept if the chat is one of the last shown**, off the window and still taking what
       // its program writes; let go of otherwise, its view closed.
@@ -336,6 +388,7 @@ export function SessionPane({
     <>
       <TerminalMenu
         rows={rows}
+        links={linksRows}
         onRun={run}
         pane={menu}
         onAsked={asked}
@@ -422,6 +475,8 @@ type Live = KeptTerminal & {
   say: (trouble: string) => void;
   /** Fits it to the pane it is in, while it is in the window. */
   fit: () => void;
+  /** The link the pointer is on now (`paneLinks.ts`), which the terminal's menu offers. */
+  linkUnder: () => LinkUnder | undefined;
 };
 
 /**
@@ -491,6 +546,7 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
     say: () => {},
     fit,
     release: () => {},
+    linkUnder: () => links.under(),
   };
   // **The two keys a chat's terminal answers itself** (SI-4), decided before xterm encodes
   // them. Each is swallowed on every phase — keydown, keypress, keyup — so xterm sends

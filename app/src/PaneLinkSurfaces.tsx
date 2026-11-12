@@ -74,6 +74,9 @@ export function usePaneLinks({
 }): {
   hands: LinkHands | undefined;
   surfaces: ReactNode;
+  /** **Opens the pane's *Links in this pane…* list** (#6220), where the pane has one. The
+   *  terminal's menu draws its row only then (#6219). None yet: #6220 fills this. */
+  list: (() => void) | undefined;
 } {
   const mac = onAMac();
   const now = useRef({ from, colour });
@@ -159,7 +162,7 @@ export function usePaneLinks({
       )}
     </>
   );
-  return { hands, surfaces };
+  return { hands, surfaces, list: undefined };
 }
 
 /** **The window's answer to a link that did not open**: why not, or the question first. */

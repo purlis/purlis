@@ -4,6 +4,7 @@
 import type { Terminal } from "@xterm/xterm";
 import type { Offer } from "./actions";
 import type { GroupDrawn } from "./menuModel";
+import type { LinkUnder } from "./paneLinks";
 
 /**
  * **What a right-click on a chat's or a shell's terminal offers of the terminal's own**: Copy,
@@ -20,8 +21,11 @@ import type { GroupDrawn } from "./menuModel";
  *
  * **No Clear.** xterm's `clear()` empties the screen as well as the history, and the session's
  * history is the core's, which a pane drawn again is sent whole: a row that seemed to clear it
- * would be undone by switching tabs. **No Open link or Copy link** either: a pane registers no
- * link provider, so there is no link the terminal knows it was clicked on.
+ * would be undone by switching tabs.
+ *
+ * **Over a link, Open link and Copy link come first** ({@link linkRows}, #6219), each with its
+ * target under its words, so the menu tells a keyboard or screen-reader user what the tooltip
+ * tells the pointer.
  */
 export type TerminalRow = {
   id: TerminalRowId;
@@ -29,14 +33,34 @@ export type TerminalRow = {
   title: string;
   /** The key that does the same, where this window has one: drawn at the row's end. */
   keys?: string;
+  /** What the row acts on, said under its words: a link's target. */
+  target?: string;
   available: boolean;
   /** Why it cannot run: non-empty exactly when `available` is false. */
   reason: string;
 };
 
-export type TerminalRowId = "terminal.copy" | "terminal.paste" | "terminal.selectAll";
+/** The rows about what is selected and the clipboard, which {@link runTerminalRow} carries out. */
+export type ClipboardRowId = "terminal.copy" | "terminal.paste" | "terminal.selectAll";
 
-const IDS: readonly string[] = ["terminal.copy", "terminal.paste", "terminal.selectAll"];
+/** The rows about the pane's links, which the pane carries out with its link hands (#6219). */
+export type LinkRowId = "terminal.openLink" | "terminal.copyLink" | "terminal.links";
+
+export type TerminalRowId = ClipboardRowId | LinkRowId;
+
+const IDS: readonly string[] = [
+  "terminal.copy",
+  "terminal.paste",
+  "terminal.selectAll",
+  "terminal.openLink",
+  "terminal.copyLink",
+  "terminal.links",
+];
+
+/** Whether `id` is one of the link rows, and not a clipboard row. */
+export function isLinkRow(id: TerminalRowId): id is LinkRowId {
+  return id === "terminal.openLink" || id === "terminal.copyLink" || id === "terminal.links";
+}
 
 /** Whether `id` is one of the terminal's own rows, and not a row of the pane's. */
 export function isTerminalRow(id: string): id is TerminalRowId {
@@ -64,6 +88,7 @@ export function terminalGroup(rows: readonly TerminalRow[]): GroupDrawn {
       said: row.title,
       danger: false,
       keys: row.keys,
+      target: row.target,
     })),
   };
 }
@@ -104,6 +129,74 @@ export function terminalRows(now: { selected: boolean; mac: boolean }): Terminal
   ];
 }
 
+/** **The link rows of the terminal's menu** (#6219, the prototype's S3 and S4, D3 and D4). */
+export type LinkRows = {
+  /** Drawn first, above Copy, Paste and Select all. */
+  first: TerminalRow[];
+  /** Drawn first among the pane's rows. */
+  pane: TerminalRow[];
+};
+
+/** The words of the row that opens the pane's Links list (#6220). */
+export const LINKS_IN_THIS_PANE = "Links in this pane…";
+
+/**
+ * **The link rows as they stand when the menu opens**: `link` is the link under the pointer, none
+ * where the menu was opened from the keyboard, which has no pointer (D4). `lists` is whether the
+ * pane has its Links list to open (#6220).
+ *
+ * - **Over a link**: *Open link*, with ⌘-click (Ctrl-click off a Mac) at its end, and *Copy link*,
+ *   each with its target under its words. An address the core refuses offers *Copy link* alone:
+ *   there is nothing to open, and its text can still be copied. *Links in this pane…* moves down
+ *   among the pane's rows.
+ * - **Over no link**: *Links in this pane…* takes their place.
+ */
+export function linkRows(now: {
+  link: LinkUnder | undefined;
+  mac: boolean;
+  lists: boolean;
+}): LinkRows {
+  const list: TerminalRow[] = now.lists
+    ? [
+        {
+          id: "terminal.links",
+          title: LINKS_IN_THIS_PANE,
+          keys: now.mac ? "⇧⌘L" : "Ctrl+Shift+L",
+          available: true,
+          reason: "",
+        },
+      ]
+    : [];
+  const { link } = now;
+  if (link === undefined) return { first: list, pane: [] };
+  const target = link.seen.target;
+  const copy: TerminalRow = {
+    id: "terminal.copyLink",
+    title: "Copy link",
+    target,
+    available: true,
+    reason: "",
+  };
+  if (link.seen.does.does === "refused") return { first: [copy], pane: list };
+  return {
+    first: [
+      {
+        id: "terminal.openLink",
+        title: "Open link",
+        keys: now.mac ? "⌘-click" : "Ctrl-click",
+        target,
+        available: true,
+        reason: "",
+      },
+      copy,
+    ],
+    pane: list,
+  };
+}
+
+/** What the pane says of a Copy link the clipboard refused. */
+export const LINK_COPY_REFUSED = "the link could not be put on the clipboard.";
+
 /** Where Copy puts text: the page's clipboard, as the Brief's Copy and a Notice's do. */
 export type ClipboardOut = { writeText: (text: string) => Promise<void> };
 
@@ -141,7 +234,7 @@ export const NOTHING_TO_PASTE = "the clipboard holds no text, so nothing was pas
  * sent. A clipboard with no text, and a read the core refused, paste nothing and are said.
  */
 export async function runTerminalRow(
-  id: TerminalRowId,
+  id: ClipboardRowId,
   terminal: Pick<Terminal, "getSelection" | "selectAll" | "paste">,
   clipboard: { out: ClipboardOut | undefined; read: ClipboardIn },
 ): Promise<string | undefined> {

@@ -483,6 +483,11 @@ describe("a key as a row draws it, named for aria-keyshortcuts (#6043)", () => {
     expect(ariaKeysOfSaid("Ctrl+K Ctrl+S")).toBeUndefined();
     expect(ariaKeysOfSaid("")).toBeUndefined();
   });
+
+  it("names no key for a click with a key held: it is the pointer's (#6219)", () => {
+    expect(ariaKeysOfSaid("⌘-click")).toBeUndefined();
+    expect(ariaKeysOfSaid("Ctrl-click")).toBeUndefined();
+  });
 });
 
 describe("a menu row's key (#6043)", () => {

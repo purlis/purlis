@@ -75,6 +75,9 @@ export type RowDrawn = {
   checked?: boolean;
   /** The key that does the same from the thing itself, said at the row's end. */
   keys?: string;
+  /** What the row acts on, under its words where nothing else stands there: a link's target on
+   *  the terminal's Open link and Copy link (#6219). */
+  target?: string;
   /** A row of a submenu whose own tooltip already says what every row of it does. */
   untipped?: true;
 };

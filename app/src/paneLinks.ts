@@ -137,6 +137,16 @@ export type LinkCore = {
   open: (from: LinkFrom, candidate: LinkCandidate, confirmed: string | null) => Promise<LinkOpened>;
 };
 
+/** **The link under the pointer**: what the pane found, and what the core said it is. */
+export type LinkUnder = { candidate: LinkCandidate; seen: LinkSeen };
+
+/** A pane's registered link hook: disposed to let go of it. */
+export type PaneLinked = IDisposable & {
+  /** **The link the pointer is on now**, which the terminal's menu offers to open and copy
+   *  (#6219): xterm keeps a link hovered only while the pointer is in its range. */
+  under: () => LinkUnder | undefined;
+};
+
 /** What a pane does with a link's hover, and with the open command's answer. */
 export type LinkHands = {
   /** The core that decides what its links are and opens them. */
@@ -219,7 +229,7 @@ function placeOf(pane: Terminal, x: number, y: number, width: number): LinkPlace
  * **Registers the link hook on `pane`**: its links are found, resolved by the core and opened
  * as {@link LinkHands} says. Disposing it lets go of the provider and of the colour drawn.
  */
-export function linkPane(pane: Terminal, hands: LinkHands): IDisposable {
+export function linkPane(pane: Terminal, hands: LinkHands): PaneLinked {
   /** The core's answers, per pane, by kind and text: a line hovered again asks nothing. */
   const kept = new Map<string, Promise<LinkSeen | null>>();
   const seenOf = (found: Found): Promise<LinkSeen | null> => {
@@ -250,6 +260,8 @@ export function linkPane(pane: Terminal, hands: LinkHands): IDisposable {
   };
   /** The link the pointer is on, by where it is and what it says. */
   let on: string | undefined;
+  /** The link the pointer is on, as the terminal's menu reads it. */
+  let current: LinkUnder | undefined;
   /**
    * **A leave is let happen a moment later.** Drawing the colour redraws the link's row, and
    * xterm lets go of a link on a row it redraws and finds it again at once: a leave and a hover
@@ -261,6 +273,7 @@ export function linkPane(pane: Terminal, hands: LinkHands): IDisposable {
     clearTimeout(leaving);
     leaving = undefined;
     on = undefined;
+    current = undefined;
     undraw();
     hands.hovered(null);
   };
@@ -338,6 +351,7 @@ export function linkPane(pane: Terminal, hands: LinkHands): IDisposable {
                 leave();
               }
               on = here;
+              current = { candidate, seen };
               const lines = [...rows.values()];
               if (opens) draw(lines);
               const top = lines[0];
@@ -358,6 +372,7 @@ export function linkPane(pane: Terminal, hands: LinkHands): IDisposable {
     },
   });
   return {
+    under: () => current,
     dispose() {
       clearTimeout(leaving);
       undraw();
