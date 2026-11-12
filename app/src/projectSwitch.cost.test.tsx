@@ -77,8 +77,11 @@ const COMMANDS_AT_ONCE = 10;
  *  is painted. It sends 22: since #5375 the project in front draws its workspace's own folder,
  *  so that folder is read again (`workspace_tree`) and watched (`files_watch`, one for every
  *  tree the switch changed) behind the paint, as a one-repo workspace's tree always was. With
- *  more panes it sends more, after the paint: two reads a pane. */
-const COMMANDS = 22;
+ *  more panes it sends more, after the paint: two reads a pane. And one more where the switches
+ *  took longer than a beat (`SAVING_REREAD_MS`, 10 s): a project that comes to the front with a
+ *  save standing older than that reads it once (`plane_saving`, #6246), which a slow runner's run
+ *  of switches always reaches (#6264). */
+const COMMANDS = 23;
 /** The most times React may commit for it, the reads' answers among them. It commits 5 times
  *  now, two of them small ones after the paint. */
 const COMMITS = 6;
