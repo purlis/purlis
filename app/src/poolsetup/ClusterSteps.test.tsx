@@ -144,6 +144,9 @@ const CONTEXTS = (pools: string[]) => ({
   recommended: "kind-team",
   chosen: "kind-team",
   pools,
+  joining: false,
+  pinned: null,
+  named_now: null,
 });
 
 const KEY = "ed25519:" + "b".repeat(64);
@@ -215,5 +218,118 @@ describe("The Pool step on a cluster (#4494)", () => {
       },
     });
     expect(sent).toContainEqual({ cmd: "pool_setup_pool", args: { name: "team" } });
+  });
+});
+
+const JOINING = (pools: string[]) => ({ ...CONTEXTS(pools), joining: true });
+const PASTED = "B".repeat(32) + " " + "B".repeat(32);
+
+describe("Joining a team's pool (#4495)", () => {
+  it("asks for the pool's name where the pools can't be listed, and reads that pool's key", async () => {
+    const sent = cluster();
+    render(
+      <ClusterPoolStep
+        step={poolStep("add-cluster-pool")}
+        contexts={JOINING([])}
+        image={IMAGE}
+        onNext={() => {}}
+        changed={() => {}}
+      />,
+    );
+    await userEvent.type(screen.getByRole("textbox", { name: "Pool's name" }), "team");
+    await userEvent.click(screen.getByRole("button", { name: "Add the pool here" }));
+    expect(await screen.findByText(KEY)).toBeInTheDocument();
+    expect(sent).toContainEqual({
+      cmd: "cluster_pool_key",
+      args: { kubeconfig: null, context: "kind-team", pool: "team" },
+    });
+  });
+
+  it("pins nothing until the teammate pastes their admin's key, then sends that key to be compared", async () => {
+    const sent = cluster();
+    const changed = vi.fn();
+    render(
+      <ClusterPoolStep
+        step={poolStep("add-cluster-pool")}
+        contexts={JOINING(["team"])}
+        image={IMAGE}
+        onNext={() => {}}
+        changed={changed}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Add the pool here" }));
+    const box = await screen.findByRole("textbox", { name: "Key your admin gave you" });
+    await userEvent.click(screen.getByRole("button", { name: "Pin the key and add the pool" }));
+    expect(
+      await screen.findByText(/Paste the key your cluster's admin gave you first/),
+    ).toBeInTheDocument();
+    expect(sent.map((one) => one.cmd)).not.toContain("add_cluster_pool");
+    await userEvent.type(box, PASTED);
+    await userEvent.click(screen.getByRole("button", { name: "Pin the key and add the pool" }));
+    await waitFor(() => expect(changed).toHaveBeenCalled());
+    const added = sent.find((one) => one.cmd === "add_cluster_pool");
+    // The pasted key, as pasted: the core reads it and compares it with the Pool's.
+    expect(added?.args).toMatchObject({ adding: { key: PASTED } });
+  });
+
+  it("shows the key pinned here once the pool is added, for teammates to check theirs against", () => {
+    cluster();
+    render(
+      <ClusterPoolStep
+        step={{ ...poolStep("add-cluster-pool"), state: "done", next: null, line: "team" }}
+        contexts={{ ...CONTEXTS(["team"]), pinned: KEY }}
+        image={IMAGE}
+        onNext={() => {}}
+        changed={() => {}}
+      />,
+    );
+    expect(screen.getByText(KEY)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Teammates who join this pool check theirs against it/),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("A changed key asks again (#4495)", () => {
+  const NEW = "ed25519:" + "d".repeat(64);
+  const again: PoolSetupStep = {
+    ...poolStep("add-cluster-pool"),
+    state: "attention",
+    next: {
+      id: "check-key-again",
+      label: "Check the new key",
+      does: "Shows the key.",
+      command: null,
+      url: null,
+    },
+  };
+
+  it("shows the pinned and the new key, and pins the new one only with the admin's pasted", async () => {
+    const sent = cluster();
+    const changed = vi.fn();
+    render(
+      <ClusterPoolStep
+        step={again}
+        contexts={{ ...CONTEXTS(["team"]), pinned: KEY, named_now: NEW }}
+        image={IMAGE}
+        pool="team"
+        onNext={() => {}}
+        changed={changed}
+      />,
+    );
+    expect(screen.getByText(KEY)).toBeInTheDocument();
+    expect(screen.getByText(NEW)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Pin the new key" }));
+    expect(
+      await screen.findByText(/Paste the key your cluster's admin gave you first/),
+    ).toBeInTheDocument();
+    expect(sent.map((one) => one.cmd)).not.toContain("pool_setup_pin_again");
+    await userEvent.type(screen.getByRole("textbox", { name: "Key your admin gave you" }), NEW);
+    await userEvent.click(screen.getByRole("button", { name: "Pin the new key" }));
+    await waitFor(() => expect(changed).toHaveBeenCalled());
+    expect(sent).toContainEqual({
+      cmd: "pool_setup_pin_again",
+      args: { pool: "team", key: NEW },
+    });
   });
 });

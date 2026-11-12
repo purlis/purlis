@@ -76,6 +76,10 @@ pub struct ClusterFacts {
     pub installed: Option<Result<Installed, String>>,
     /// The cluster's Pools, by name, where its operator runs and they could be listed (#4494).
     pub pools: Option<Vec<String>>,
+    /// **Whether the person joins their team's install** (#4495): purlis's definitions are served
+    /// on the chosen context's cluster, and their sign-in may not read the install itself. Then
+    /// nothing of the install is read or offered, and doctor isn't asked: those are an admin's.
+    pub joining: bool,
 }
 
 /// **What this machine keeps of a cluster pool** (#4494): where it reaches its cluster, and the
@@ -89,6 +93,11 @@ pub struct KeptHere {
     pub owned: bool,
     /// Whether the cluster's Pool mints the agent's GitHub App tokens there (#4204).
     pub mints: bool,
+    /// The cluster operator key pinned here, spelled `ed25519:<64 hex>`: no secret, and what a
+    /// teammate checks theirs against as they join (#4495).
+    pub pinned: String,
+    /// How that pin stands against what the Pool names now (#4495).
+    pub now: crate::pools::PinNow,
 }
 
 impl ClusterFacts {
@@ -504,7 +513,13 @@ pub fn read(kubectl: Result<&Kubectl, String>, chosen: Option<&str>, deep: bool)
         .clone()
         .with_context(&context)
         .all_within(READ_WITHIN);
-    facts.installed = Some(installed(&on));
+    let read = installed(&on);
+    if read.is_err() && joins(&on) {
+        facts.joining = true;
+        facts.pools = pools_of(&on);
+        return facts;
+    }
+    facts.installed = Some(read);
     if facts.operator_runs() {
         facts.pools = pools_of(&on);
     }
@@ -516,6 +531,50 @@ pub fn read(kubectl: Result<&Kubectl, String>, chosen: Option<&str>, deep: bool)
         }));
     }
     facts
+}
+
+/// **Whether the person behind `kubectl` joins their team's install** (#4495), asked only once the
+/// install couldn't be read: purlis's definitions are served there, as discovery (which every
+/// signed-in person may ask) says, and the cluster answers no to whether they may read the
+/// operator's deployment. A read that failed for any other reason is no join: it stays a failure
+/// to read, with its own words.
+fn joins(kubectl: &Kubectl) -> bool {
+    let served = kubectl
+        .asked(
+            &[
+                "api-resources",
+                "--api-group",
+                "runners.purlis.dev",
+                "--output",
+                "name",
+            ],
+            None,
+        )
+        .ok()
+        .filter(|answer| answer.ok)
+        .is_some_and(|answer| {
+            answer
+                .printed
+                .lines()
+                .any(|line| line.trim() == DEFINITIONS[0])
+        });
+    if !served {
+        return false;
+    }
+    matches!(
+        kubectl.asked(
+            &[
+                "auth",
+                "can-i",
+                "get",
+                "deployments.apps",
+                "--namespace",
+                SYSTEM_NAMESPACE,
+            ],
+            None,
+        ),
+        Ok(answer) if !answer.ok && answer.printed.trim() == "no"
+    )
 }
 
 /// The API server the context of `kubectl` names, as kubectl's own view of it says.
@@ -656,6 +715,15 @@ pub(super) fn check_reading(facts: &Facts) -> Reading {
         )];
         return reading;
     }
+    if cluster.joining {
+        let mut reading = Reading::done("Installed by your team");
+        reading.findings = vec![
+            "purlis is on this cluster already, installed by your team, so there's nothing to \
+             check or install. Your sign-in doesn't need to read the install itself."
+                .to_owned(),
+        ];
+        return reading;
+    }
     let Some(report) = &cluster.doctor else {
         return Reading::to_do(
             "Doctor checks what the cluster lacks for purlis, before anything changes.",
@@ -734,6 +802,15 @@ pub fn checks_of(facts: &Facts) -> Vec<super::Check> {
 /// the next part's own button.
 pub(super) fn install_reading(facts: &Facts, choices: &Choices) -> Reading {
     let cluster = &facts.cluster;
+    if cluster.joining {
+        let mut reading = Reading::done("Installed by your team");
+        reading.findings = vec![
+            "purlis's cluster operator is on this cluster, installed by your team. Installing, \
+             changing and uninstalling it are your cluster admin's, so there's nothing to do here."
+                .to_owned(),
+        ];
+        return reading;
+    }
     match &cluster.installed {
         Some(Ok(_)) => {
             let parts = parts_of(facts, choices);
@@ -797,6 +874,11 @@ pub(super) fn undo_of(facts: &Facts) -> Option<super::See> {
 pub(super) fn see_of(id: super::StepId, facts: &Facts, choices: &Choices) -> Option<super::See> {
     use super::{See, StepId};
     let on = on_of(facts);
+    // A teammate is shown no admin's commands: doctor's, the install's, making a Pool or the
+    // minting opt-in (#4495).
+    if facts.cluster.joining && id != StepId::Where {
+        return None;
+    }
     match id {
         StepId::Where => Some(See {
             note: "This is how purlis lists your kubeconfig's contexts. It only reads, and \
@@ -947,6 +1029,16 @@ pub(super) fn pool_kept(
             pool: pool.pool().to_owned(),
             owned: pool.owned(),
             mints: pool.mints_in_cluster(),
+            pinned: pool.operator().spelled(),
+            now: match here.kubectl {
+                Ok(kubectl) => crate::pools::pin_now(
+                    here.config,
+                    &kubectl.clone().all_within(READ_WITHIN),
+                    name,
+                    runners::now(),
+                ),
+                Err(why) => crate::pools::PinNow::Unread(why.to_owned()),
+            },
         }),
     }))
 }
@@ -954,8 +1046,65 @@ pub(super) fn pool_kept(
 /// **The Pool step on a cluster** (#4494): with no pool here yet, a Pool of the cluster's to
 /// claim a runner of, or one to make there first; with one, what it is.
 pub(super) fn pool_reading(facts: &Facts) -> Reading {
-    if facts.pool.is_some() {
+    if let Some(pool) = &facts.pool {
+        if let Some(kept) = &pool.cluster {
+            match &kept.now {
+                crate::pools::PinNow::Changed { .. } => {
+                    return Reading::attention(
+                        format!(
+                            "Your cluster's pool {} now names another cluster operator key than \
+                             the one pinned on this machine, and the pinned key didn't vouch for \
+                             it. purlis refuses every link to your runner until you check the \
+                             new key with your cluster's admin and pin it.",
+                            kept.pool
+                        ),
+                        action(
+                            ActionId::CheckKeyAgain,
+                            "Check the new key",
+                            "Shows the key the pool names now beside the one pinned. Nothing is \
+                             pinned until you paste the key your admin gives you.",
+                        ),
+                    );
+                }
+                crate::pools::PinNow::OtherCluster => {
+                    return Reading::attention(
+                        format!(
+                            "Your cluster's pool {} now says it is in another cluster than the one \
+                             pinned on this machine, so purlis refuses every link to your runner \
+                             and pins nothing of it. If your team moved it, remove the pool here \
+                             and add it again.",
+                            kept.pool
+                        ),
+                        action(
+                            ActionId::RemovePool,
+                            "Open Pools",
+                            "Opens Settings › Pools, where the pool is removed. Nothing changes \
+                             until you press Remove there.",
+                        ),
+                    );
+                }
+                crate::pools::PinNow::Holds | crate::pools::PinNow::Unread(_) => {}
+            }
+        }
         return super::pool_reading(facts);
+    }
+    if facts.cluster.joining
+        && facts
+            .cluster
+            .pools
+            .as_ref()
+            .is_none_or(|pools| pools.is_empty())
+    {
+        return Reading::to_do(
+            "A pool is a named place your chats run. Your sign-in can't list your team's pools, \
+             so type the pool's name your cluster's admin gave you. purlis reads the key it \
+             names, for you to check against the one your admin gave you too.",
+            action(
+                ActionId::AddClusterPool,
+                "Read the pool's key",
+                "Reads the cluster operator key the pool names. Nothing is pinned or claimed yet.",
+            ),
+        );
     }
     match &facts.cluster.pools {
         None => Reading::to_do(

@@ -614,8 +614,9 @@ kubectl get pools.runners.purlis.dev <pool> --output jsonpath='{.status.signingK
 prints it. Add pool pins it and makes the person's one kept Claim, `<pool>-<a label of their
 desktop>`, marked `runners.purlis.dev/desktop: <that label>`, in the namespace their context
 names (`default` where it names none). Removing the pool deletes only that Claim. A Pool that
-later names another key refuses every link to that desktop's runner, and the window asks the
-person to check it and add the pool again.
+later names another key refuses every link to that desktop's runner. The pool's Pool step in Pool
+setup then shows the key pinned and the key named now, and pins the new one only once the person
+pastes the key their admin gives them, in the same cluster (#4495); the runner stays the one paired.
 
 A runner is paired once, and **its pairing is its Claim's, not its pod's** (#2057, ruled
 2026-10-28). The pairing lives in the runner's home: a kept Claim's runner keeps it on its

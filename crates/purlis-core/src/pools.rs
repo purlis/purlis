@@ -2485,6 +2485,102 @@ pub fn before_cluster_link(
     checked
 }
 
+/// **How a cluster pool's pin stands against what its Pool names now** (#4495), as Pool setup
+/// shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PinNow {
+    /// The Pool names the pinned key, or one the pinned key vouches for its next.
+    Holds,
+    /// The Pool names `named`, a key the pinned one never vouched for: every link to its runner
+    /// is refused until the person checks that key and pins it again ([`pin_again`]).
+    Changed { named: String },
+    /// The Pool says it is in another cluster than the one pinned: no key of it is pinned again.
+    OtherCluster,
+    /// The Pool couldn't be read, or names no key, and why: nothing is said of its key.
+    Unread(String),
+}
+
+/// **[`PinNow`] for the cluster pool `name`** at `now`, read through its own copy of its context.
+/// Only reads: a roll the pinned key vouches for is followed where a link checks it
+/// ([`before_cluster_link`]), never here.
+pub fn pin_now(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    name: &str,
+    now: u64,
+) -> PinNow {
+    let unread = |why: String| PinNow::Unread(crate::shown::short(&why));
+    let pool = match runners::cluster_pools(config_root) {
+        Ok(pools) => match pools.into_iter().find(|pool| pool.name() == name) {
+            Some(pool) => pool,
+            None => return unread(format!("no cluster pool named {name} is on this machine")),
+        },
+        Err(why) => return unread(why.to_string()),
+    };
+    let pinned = match pool.pin() {
+        Ok(pinned) => pinned,
+        Err(why) => return unread(why.to_string()),
+    };
+    let seen = match pool.kubectl(kubectl).pool(pool.pool()) {
+        Ok(seen) => seen,
+        Err(why) => return unread(why.to_string()),
+    };
+    if seen.cluster.as_deref() != Some(pinned.cluster.as_str()) {
+        return PinNow::OtherCluster;
+    }
+    match pinned.followed(&seen, now) {
+        Ok(_) => PinNow::Holds,
+        Err(why) => match seen.signing_key {
+            Some(named) if crate::clusterpool::OperatorKey::from_spelled(&named).is_ok() => {
+                PinNow::Changed { named }
+            }
+            _ => unread(why.to_string()),
+        },
+    }
+}
+
+/// **Pins the cluster pool `name`'s key again** (#4495, F on #4469): the key its Pool names now,
+/// and only where it is `pasted`, the key the person confirmed with their cluster's admin, and the
+/// Pool is still in the cluster pinned. Anything else leaves the pin as it was. Its runner is
+/// still the one paired: the next link checks the operator's word for it with the new key.
+pub fn pin_again(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    name: &str,
+    pasted: &str,
+) -> Result<(), Refused> {
+    let pool = runners::cluster_pools(config_root)?
+        .into_iter()
+        .find(|pool| pool.name() == name)
+        .ok_or_else(|| {
+            Refused::Other(format!("no cluster pool named {name} is on this machine"))
+        })?;
+    let confirmed = crate::clusterpool::OperatorKey::from_pasted(pasted)
+        .map_err(|why| Refused::Other(why.to_string()))?;
+    let was = pool.pin()?;
+    let seen = pool
+        .kubectl(kubectl)
+        .pool(pool.pool())
+        .map_err(|why| Refused::Other(why.to_string()))?;
+    let named = crate::clusterpool::PoolPin::first(pool.pool(), &seen)
+        .map_err(|why| Refused::Other(why.to_string()))?;
+    if named.cluster != was.cluster {
+        return Err(Refused::Other(format!(
+            "the cluster's pool {} says it is in another cluster than the one pinned when the pool \
+             was added, so nothing was pinned; remove the pool and add it again",
+            pool.pool()
+        )));
+    }
+    if named.key != confirmed {
+        return Err(Refused::Other(format!(
+            "the key you pasted isn't the one the cluster's pool {} names, so nothing was pinned; \
+             stop here and check with your cluster's admin: you may be reaching another cluster",
+            pool.pool()
+        )));
+    }
+    runners::keep_cluster_pin(config_root, name, &named)
+}
+
 /// **What each cluster pool's kept runner is told of its deletion** (#3981): each pool's name and
 /// its operator's words, where its Claim has been given notice. A cluster that does not answer
 /// says nothing here: this only tells, and each kubectl run is held to a time.

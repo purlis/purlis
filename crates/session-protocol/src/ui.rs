@@ -990,6 +990,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_install",
     "pool_setup_operator_image",
     "pool_setup_cluster_pool",
+    // Pinning a cluster pool's changed key again (#4495), only as the person confirmed it.
+    "pool_setup_pin_again",
     "add_docker_pool",
     "remove_docker_pool",
     "docker_pool_link",

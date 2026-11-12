@@ -270,6 +270,44 @@ fn an_operator_key_is_read_only_in_its_one_spelling() {
     }
 }
 
+/// **A key a person pastes from their admin** (#4495): read as the same key however it was
+/// copied, with the spelling's prefix or without, in capitals, wrapped or spaced, and refused
+/// where anything is left once those are put aside.
+#[test]
+fn a_key_pasted_from_an_admin_is_read_however_it_was_copied_and_never_as_another() {
+    let spelled = fixture("operator-key.txt");
+    let key = OperatorKey::from_spelled(spelled.trim()).unwrap();
+    let hex = spelled.trim().trim_start_matches("ed25519:").to_owned();
+    for pasted in [
+        spelled.clone(),
+        hex.clone(),
+        hex.to_uppercase(),
+        format!("  ED25519:{hex}\n"),
+        format!("{}\n{}", &hex[..32], &hex[32..]),
+        hex.as_bytes()
+            .chunks(4)
+            .map(|four| std::str::from_utf8(four).unwrap())
+            .collect::<Vec<_>>()
+            .join(" "),
+    ] {
+        assert_eq!(
+            OperatorKey::from_pasted(&pasted).as_ref(),
+            Ok(&key),
+            "{pasted}"
+        );
+    }
+    for bad in [
+        String::new(),
+        hex[..63].to_owned(),
+        format!("{hex}0"),
+        format!("rsa:{hex}"),
+        format!("ed25519:ed25519:{hex}"),
+        hex.replacen('7', "g", 1),
+    ] {
+        assert!(OperatorKey::from_pasted(&bad).is_err(), "{bad}");
+    }
+}
+
 #[test]
 fn a_runner_answering_another_key_than_the_vouched_one_is_refused_as_a_changed_key() {
     let ours = LinkKey::generate().unwrap().public();

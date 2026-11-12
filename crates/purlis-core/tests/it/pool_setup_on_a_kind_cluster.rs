@@ -8,7 +8,8 @@
 //! missing and the install adds it. Then Install's parts are pressed one after another, each
 //! read back done, a signing key that is there is kept when its part runs again, and the
 //! operator runs. Then the Pool step makes a Pool, of this build's runner image, and a Claim on
-//! it becomes ready (#4494): what the window's Add the pool here claims, and pairs, after.
+//! it becomes ready (#4494): what the window's Add the pool here claims, and pairs, after. Then
+//! a teammate holding the guide's rights alone joins (#4495), and reads the key the admin sees.
 //!
 //! It needs a bare cluster's context in `POOL_SETUP_TEST_CONTEXT`, the operator's image by its
 //! digest in `POOL_SETUP_TEST_OPERATOR_IMAGE`, the runner image by its digest in
@@ -220,6 +221,187 @@ fn a_bare_cluster_passes_the_check_then_is_installed_a_part_at_a_time() {
     // Only the context's name and the image were kept.
     let kept = std::fs::read_dir(config.path()).unwrap().count();
     assert!(kept <= 1, "{kept} things kept");
+
+    a_teammate_with_the_guides_rights_joins_and_reads_the_key_the_admin_sees(
+        &kubectl,
+        &context,
+        "setup-team",
+    );
+}
+
+/// **A teammate joins** (#4495), on the cluster the admin just installed: a sign-in holding the
+/// guide's rights alone (`get` and `use` on one Pool, Claims in a namespace of their own), as
+/// `docs/cluster-pool-setup.md` grants them. Their Pool setup passes Check and Install as their
+/// team's, asks doctor nothing, shows no admin's commands, asks for the pool's name since they
+/// can't list the pools, and reads the same key through their sign-in as the admin sees through
+/// theirs: the key the admin gives them, which pasted as an admin's chat wraps it, reads the same.
+fn a_teammate_with_the_guides_rights_joins_and_reads_the_key_the_admin_sees(
+    admin: &Kubectl,
+    context: &str,
+    pool: &str,
+) {
+    let on = admin.clone().with_context(context);
+    let ran = |args: &[&str], input: Option<&str>| {
+        let answer = on.asked(args, input).unwrap();
+        assert!(answer.ok, "kubectl {args:?}: {}", answer.said);
+        answer.printed
+    };
+    let (namespace, account) = ("setup-teammate", "teammate");
+    let name = format!("system:serviceaccount:{namespace}:{account}");
+    ran(&["create", "namespace", namespace], None);
+    ran(
+        &[
+            "create",
+            "serviceaccount",
+            account,
+            "--namespace",
+            namespace,
+        ],
+        None,
+    );
+    let rights = format!(
+        "apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: purlis-pool-{pool}
+rules:
+  - apiGroups: [runners.purlis.dev]
+    resources: [pools]
+    resourceNames: [{pool}]
+    verbs: [get, use]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: purlis-pool-{pool}-{namespace}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: purlis-pool-{pool}
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: {name}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: makes-claims
+  namespace: {namespace}
+rules:
+  - apiGroups: [runners.purlis.dev]
+    resources: [claims]
+    verbs: [create, get, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: makes-claims
+  namespace: {namespace}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: makes-claims
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: {name}
+"
+    );
+    ran(&["apply", "-f", "-"], Some(&rights));
+    let token = ran(
+        &[
+            "create",
+            "token",
+            account,
+            "--namespace",
+            namespace,
+            "--duration",
+            "1h",
+        ],
+        None,
+    );
+    // The teammate's own kubeconfig: the cluster's server and authority, their token, their
+    // namespace. Nothing of the admin's sign-in.
+    let mut view: serde_json::Value = serde_json::from_str(&ran(
+        &[
+            "config",
+            "view",
+            "--minify",
+            "--raw",
+            "--flatten",
+            "--output",
+            "json",
+        ],
+        None,
+    ))
+    .unwrap();
+    view["users"] = serde_json::json!([{"name": "teammate", "user": {"token": token.trim()}}]);
+    view["contexts"] = serde_json::json!([{"name": "teammate", "context": {
+        "cluster": view["clusters"][0]["name"], "user": "teammate", "namespace": namespace,
+    }}]);
+    view["current-context"] = "teammate".into();
+    let theirs = tempfile::tempdir().unwrap();
+    let kubeconfig = theirs.path().join("config");
+    std::fs::write(&kubeconfig, view.to_string()).unwrap();
+    let teammate = Kubectl::at(admin.program()).with_kubeconfig(&kubeconfig);
+
+    let config = tempfile::tempdir().unwrap();
+    poolsetup::choose_cluster(config.path(), "teammate").unwrap();
+    let here = Here {
+        config: config.path(),
+        plane: None,
+        docker: None,
+        engine: Err("this test asks no Docker".into()),
+        kubectl: Ok(&teammate),
+    };
+    let setup = poolsetup::read(&here, None).unwrap();
+    assert!(setup.contexts.joining, "{setup:#?}");
+    for id in [StepId::Where, StepId::Check, StepId::Install] {
+        assert_eq!(setup.step(id).unwrap().state, StepState::Done, "{setup:#?}");
+    }
+    let install = setup.step(StepId::Install).unwrap();
+    assert_eq!(install.line.as_deref(), Some("Installed by your team"));
+    assert!(install.parts.is_empty() && install.undo.is_none() && install.see.is_none());
+    assert!(
+        setup.step(StepId::Check).unwrap().checks.is_empty(),
+        "doctor was asked"
+    );
+    assert!(setup.contexts.pools.is_empty(), "{setup:#?}");
+    assert_eq!(setup.at, Some(StepId::Pool), "{setup:#?}");
+    assert_eq!(
+        setup
+            .step(StepId::Pool)
+            .unwrap()
+            .next
+            .as_ref()
+            .map(|next| next.id),
+        Some(poolsetup::ActionId::AddClusterPool),
+        "{setup:#?}"
+    );
+
+    let admins = ran(
+        &[
+            "get",
+            "pools.runners.purlis.dev",
+            pool,
+            "--output",
+            "jsonpath={.status.signingKey}",
+        ],
+        None,
+    );
+    let read = teammate
+        .clone()
+        .with_context("teammate")
+        .pool_pin(pool)
+        .unwrap();
+    assert_eq!(read.key.spelled(), admins.trim());
+    let hex = admins.trim().trim_start_matches("ed25519:").to_uppercase();
+    let pasted = format!("{}\n{}", &hex[..32], &hex[32..]);
+    assert_eq!(
+        purlis_core::clusterpool::OperatorKey::from_pasted(&pasted).unwrap(),
+        read.key
+    );
 }
 
 /// The signing key's Secret by its uid alone: what it holds is never asked.

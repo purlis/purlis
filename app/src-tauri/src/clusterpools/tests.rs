@@ -277,3 +277,43 @@ fn a_release_that_failed_says_its_work_is_here_only_on_proof() {
     assert!(!discarded.contains("all here"), "{discarded}");
     assert!(discarded.contains("no route"), "{discarded}");
 }
+
+/// **Adding a cluster pool pins only the key the person checked** (#4495), shown or pasted from
+/// their cluster's admin: a pasted key that isn't the Pool's refuses the add before anything is
+/// kept or claimed, and says to stop.
+#[cfg(unix)]
+#[test]
+fn an_add_with_a_pasted_key_that_isnt_the_pools_is_refused_before_anything_is_kept() {
+    let (config, dir) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let kubectl = kubectl_answering(
+        dir.path(),
+        &serde_json::json!({"status": {"signingKey": OPERATOR, "cluster": CLUSTER}}).to_string(),
+    );
+    let adding = |key: &str| ClusterPoolAdding {
+        name: "team".into(),
+        kubeconfig: Some("/home/ada/.kube/config".into()),
+        context: "team".into(),
+        pool: "team".into(),
+        key: key.into(),
+        vouch_wait: None,
+    };
+    let within = std::time::Duration::ZERO;
+    let home = Some(Path::new("/home/ada"));
+    let why = add_on(config.path(), &kubectl, &adding(OTHER), home, within).unwrap_err();
+    assert!(why.contains("Stop here"), "{why}");
+    let why = add_on(config.path(), &kubectl, &adding("not a key"), home, within).unwrap_err();
+    assert!(why.contains("isn't a cluster operator's key"), "{why}");
+    assert!(
+        purlis_core::runners::cluster_pools(config.path())
+            .unwrap()
+            .is_empty()
+    );
+    // The Pool's own key, pasted as an admin's chat wraps it, passes the check: the add goes
+    // on, and stops later at what this stand-in can't answer, never at the key.
+    let pasted = OPERATOR.trim_start_matches("ed25519:").to_uppercase();
+    let wrapped = format!("{}\n{}", &pasted[..32], &pasted[32..]);
+    if let Err(why) = add_on(config.path(), &kubectl, &adding(&wrapped), home, within) {
+        assert!(!why.contains("Stop here"), "{why}");
+        assert!(!why.contains("isn't a cluster operator's key"), "{why}");
+    }
+}

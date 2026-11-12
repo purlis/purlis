@@ -169,6 +169,9 @@ pub enum ActionId {
     AddClusterPool,
     /// A cluster pool is marked as the person's own on its row, in Settings › Pools (#4071).
     MarkAsOwn,
+    /// A cluster pool's Pool names a key its pin never vouched for: the person checks the new
+    /// one with their admin and pins it again (#4495).
+    CheckKeyAgain,
     CreatePool,
     MakeRunnerAgain,
     UseOtherDocker,
@@ -277,6 +280,14 @@ pub struct Contexts {
     pub names: Vec<String>,
     pub recommended: Option<String>,
     pub chosen: Option<String>,
+    /// Whether the person joins their team's install (#4495): the window then asks for the key
+    /// their admin gave them before anything is pinned.
+    pub joining: bool,
+    /// The cluster operator key a kept cluster pool pinned here, for teammates to check theirs
+    /// against (#4495).
+    pub pinned: Option<String>,
+    /// The key its Pool names now, where the pin never vouched for it (#4495).
+    pub named_now: Option<String>,
     /// The chosen cluster's Pools, by name, where its operator runs (#4494).
     pub pools: Vec<String>,
 }
@@ -948,6 +959,7 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
     {
         check.checks = cluster::checks_of(facts);
     }
+    let kept = facts.pool.as_ref().and_then(|pool| pool.cluster.as_ref());
     Setup {
         kind,
         pool,
@@ -958,6 +970,12 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
             names: facts.cluster.contexts.clone(),
             recommended: facts.cluster.recommended().map(str::to_owned),
             chosen: facts.cluster.chosen.clone(),
+            joining: facts.cluster.joining,
+            pinned: kept.map(|kept| kept.pinned.clone()),
+            named_now: kept.and_then(|kept| match &kept.now {
+                crate::pools::PinNow::Changed { named } => Some(named.clone()),
+                _ => None,
+            }),
             pools: facts.cluster.pools.clone().unwrap_or_default(),
         },
     }

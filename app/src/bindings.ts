@@ -4179,6 +4179,12 @@ export const commands = {
 	 *  digest, on the Pool step's own button, with the person's own kubectl and sign-in.
 	 */
 	poolSetupClusterPool: (name: string, image: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_cluster_pool", { name, image })),
+	/**
+	 *  **Pins the cluster pool `pool`'s key again** (#4495), on the Pool step's own press: the key its
+	 *  Pool names now, only where it is `key`, the one the person pasted from their cluster's admin.
+	 *  Anything else pins nothing ([`purlis_core::pools::pin_again`]).
+	 */
+	poolSetupPinAgain: (pool: string, key: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_pin_again", { pool, key })),
 	/**  **Keeps the name typed on the Pool step**, or none, so coming back finds it. */
 	poolSetupName: (name: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_name", { name })),
 	/**  **Keeps that this setup goes on with pool `name`**, once it has made it. */
@@ -13670,6 +13676,15 @@ export type PoolSetupContexts = {
 	chosen: string | null,
 	/**  The chosen cluster's Pools, by name, where its operator runs (#4494). */
 	pools: string[],
+	/**
+	 *  Whether the person joins their team's install (#4495): the key is then confirmed by
+	 *  pasting the one their admin gave them.
+	 */
+	joining: boolean,
+	/**  The cluster operator key a kept cluster pool pinned here (#4495). */
+	pinned: string | null,
+	/**  The key its Pool names now, where the pin never vouched for it (#4495). */
+	named_now: string | null,
 };
 
 /**

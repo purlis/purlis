@@ -285,8 +285,15 @@ kubectl auth can-i get pools.runners.purlis.dev/team --as <their name>
 kubectl auth can-i create claims.runners.purlis.dev --namespace <their namespace> --as <their name>
 ```
 
-You should see `yes` three times at the end. Give them the pool's key too, so they can check it in step 7.
-They only need step 7, and the operator gives them a namespace of their own for their runners.
+You should see `yes` three times at the end. Give them the pool's name and its key, the one step 6
+printed, through a channel of your own such as your team's chat: Pool setup's Pool step shows it on
+your machine too, once you've added the pool. They only need step 7, and the operator gives them a
+namespace of their own for their runners.
+
+In Pool setup (the palette's Add a cluster pool…), a teammate whose sign-in holds only these rights
+sees Check the cluster and Install as installed by your team, types the pool's name, and pastes the
+key you gave them. purlis pins it only if it is the key the pool names, so a teammate whose
+kubeconfig reaches another cluster is stopped there.
 
 ## If something goes wrong
 

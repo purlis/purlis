@@ -311,6 +311,25 @@ impl OperatorKey {
             })
     }
 
+    /// **The key a person pasted**, as their cluster's admin gave it to them (#4495): read as
+    /// the one spelling once what copying adds is put aside (spaces, line breaks, capitals, and
+    /// the `ed25519:` prefix, which may be left off). Anything else refuses it.
+    pub fn from_pasted(pasted: &str) -> Result<OperatorKey, Refused> {
+        let plain: String = pasted
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<String>()
+            .to_ascii_lowercase();
+        let hex = plain.strip_prefix(ED25519).unwrap_or(&plain);
+        bytes_of(hex).map(OperatorKey).ok_or_else(|| {
+            Refused::Other(
+                "that isn't a cluster operator's key: paste it as your cluster's admin gave it, \
+                 ed25519: and 64 hex digits"
+                    .into(),
+            )
+        })
+    }
+
     /// Its spelling, `ed25519:<64 hex>`.
     pub fn spelled(&self) -> String {
         format!("{ED25519}{}", hex_of(&self.0))

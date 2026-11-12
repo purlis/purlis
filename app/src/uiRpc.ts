@@ -1945,6 +1945,7 @@ export const commands = {
 	poolSetupInstall: __WINDOW_ONLY_RESULT,
 	poolSetupOperatorImage: __WINDOW_ONLY_RESULT,
 	poolSetupClusterPool: __WINDOW_ONLY_RESULT,
+	poolSetupPinAgain: __WINDOW_ONLY_RESULT,
 	poolSetupName: __WINDOW_ONLY_RESULT,
 	poolSetupPool: __WINDOW_ONLY_RESULT,
 	poolSetupAdd: __WINDOW_ONLY_RESULT,
@@ -10572,6 +10573,15 @@ export type PoolSetupContexts = {
 	chosen: string | null,
 	/**  The chosen cluster's Pools, by name, where its operator runs (#4494). */
 	pools: string[],
+	/**
+	 *  Whether the person joins their team's install (#4495): the key is then confirmed by
+	 *  pasting the one their admin gave them.
+	 */
+	joining: boolean,
+	/**  The cluster operator key a kept cluster pool pinned here (#4495). */
+	pinned: string | null,
+	/**  The key its Pool names now, where the pin never vouched for it (#4495). */
+	named_now: string | null,
 };
 
 /**

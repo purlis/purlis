@@ -523,12 +523,16 @@ pub fn add_on(
         .pointed_at(&kubeconfig, adding.context.trim());
     let said =
         |why: purlis_core::clusterpool::Refused| crate::devices::shown_safely(&why.to_string());
-    // The key and cluster the Pool names now: pinned only where the key is the one checked.
+    // The key and cluster the Pool names now: pinned only where the key is the one checked,
+    // as shown or as pasted from the cluster's admin, however it was copied (#4495).
+    let checked = purlis_core::clusterpool::OperatorKey::from_pasted(&adding.key)
+        .map_err(|why| why.to_string())?;
     let pin = pointed.pool_pin(adding.pool.trim()).map_err(said)?;
-    if pin.key.spelled() != adding.key.trim() {
+    if pin.key != checked {
         return Err(format!(
-            "The cluster's pool {} now names another cluster operator key than the one you \
-             checked, so nothing was added. Check its key again.",
+            "The cluster's pool {} names another cluster operator key than the one you \
+             checked, so nothing was added. Stop here and check with your cluster's admin: you \
+             may be reaching another cluster.",
             adding.pool.trim()
         ));
     }

@@ -74,6 +74,13 @@ pub struct PoolSetupContexts {
     pub chosen: Option<String>,
     /// The chosen cluster's Pools, by name, where its operator runs (#4494).
     pub pools: Vec<String>,
+    /// Whether the person joins their team's install (#4495): the key is then confirmed by
+    /// pasting the one their admin gave them.
+    pub joining: bool,
+    /// The cluster operator key a kept cluster pool pinned here (#4495).
+    pub pinned: Option<String>,
+    /// The key its Pool names now, where the pin never vouched for it (#4495).
+    pub named_now: Option<String>,
 }
 
 /// What the tab draws.
@@ -145,6 +152,9 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
             recommended: setup.contexts.recommended.clone(),
             chosen: setup.contexts.chosen.clone(),
             pools: setup.contexts.pools.clone(),
+            joining: setup.contexts.joining,
+            pinned: setup.contexts.pinned.clone(),
+            named_now: setup.contexts.named_now.clone(),
         },
         at: setup.at.as_ref().map(word),
         steps: setup
@@ -325,6 +335,21 @@ pub async fn pool_setup_cluster_pool(name: String, image: String) -> Result<(), 
         let _ = (name, image);
         Err(crate::dockerpools::NOT_HERE.to_owned())
     }
+}
+
+/// **Pins the cluster pool `pool`'s key again** (#4495), on the Pool step's own press: the key its
+/// Pool names now, only where it is `key`, the one the person pasted from their cluster's admin.
+/// Anything else pins nothing ([`purlis_core::pools::pin_again`]).
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_pin_again(pool: String, key: String) -> Result<(), String> {
+    crate::off_the_window("pinning the cluster operator's key", move || {
+        let config = config_root()?;
+        let kubectl = crate::clusterpools::kubectl(&config)?;
+        purlis_core::pools::pin_again(&config, &kubectl, &pool, &key)
+            .map_err(|why| crate::devices::shown_safely(&why.to_string()))
+    })
+    .await
 }
 
 /// **Keeps the cluster operator's image named under Install's Options** (#4493), or none.

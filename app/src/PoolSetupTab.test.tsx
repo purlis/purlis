@@ -42,7 +42,15 @@ const setup = (at: string, steps: PoolSetupStep[], pool: string | null = null): 
   recommended: "docker",
   others: [],
   kind: "docker",
-  contexts: { names: [], recommended: null, chosen: null, pools: [] },
+  contexts: {
+    names: [],
+    recommended: null,
+    chosen: null,
+    pools: [],
+    joining: false,
+    pinned: null,
+    named_now: null,
+  },
 });
 
 const READY = setup("where", [
@@ -554,6 +562,9 @@ describe("Where, on a cluster (#4492)", () => {
       recommended: "kind-team",
       chosen: null,
       pools: [],
+      joining: false,
+      pinned: null,
+      named_now: null,
     },
   });
 

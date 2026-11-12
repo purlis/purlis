@@ -446,6 +446,8 @@ function PoolSetupGuide({
               step={step}
               contexts={setup.contexts}
               image={releaseImage}
+              pool={setup.pool}
+              onOpenPools={onOpenPools}
               onNext={() => after("pool")}
               changed={() => {
                 setShowing(undefined);
