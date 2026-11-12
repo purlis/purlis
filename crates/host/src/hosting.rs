@@ -2918,8 +2918,7 @@ impl Hosting {
             .map_err(not_acted)
     }
 
-    /// One of the person's commands on browser `program` (#2014), or a hold of a program (#6437),
-    /// carried out off the runtime.
+    /// One of the person's commands on browser `program` (#2014), carried out off the runtime.
     async fn driving(
         &self,
         program: &str,
@@ -3213,11 +3212,11 @@ impl Hosting {
     /// thread, which a hold waiting there would take from every link (#6437). Answered once it
     /// is done, so a stop after it keeps its order.
     async fn hold_still(&self, program: &str, still: bool) -> Result<Answer, Refusal> {
-        self.driving(program, move |running| {
-            running.hold(still);
-            Ok(Answer::Done)
-        })
-        .await
+        let running = self.running(program)?;
+        tokio::task::spawn_blocking(move || running.hold(still))
+            .await
+            .map_err(|why| not_started(why.to_string()))?;
+        Ok(Answer::Done)
     }
 
     async fn stop(&self, program: &str) -> Result<Answer, Refusal> {
@@ -4028,9 +4027,7 @@ impl Hosting {
 impl session::Host for Hosting {
     /// Said in this host's log where it came late (#6437).
     fn answered(&self, word: &'static str, waited: Duration, ran: Duration) {
-        if let Some(said) = crate::lateness::answered_late(word, waited, ran) {
-            crate::say(&said);
-        }
+        crate::lateness::say_if_late(word, waited, ran);
     }
 
     async fn call(&self, command: Command, peer: &Peer) -> Result<Answer, Refusal> {

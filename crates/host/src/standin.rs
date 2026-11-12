@@ -39,7 +39,7 @@ pub struct Seen {
     watching: Vec<mpsc::UnboundedSender<Bytes>>,
     ends: Option<Box<dyn FnOnce(Exit) + Send>>,
     /// What a note of its strays and a hold wait on before they return ([`StandIn::waits`]).
-    gate: Option<Shut>,
+    gate: Option<Latch>,
     /// How many notes of its strays and holds have begun waiting on the gate.
     pub waiting: usize,
 }
@@ -47,9 +47,9 @@ pub struct Seen {
 /// What a stand-in's note of its strays and its hold wait on until it is opened: as a terminal's
 /// program waits on `ps`, or on the lock its end holds while it hangs up and reaps (#6437).
 #[derive(Clone, Default)]
-pub struct Shut(Arc<(Mutex<bool>, std::sync::Condvar)>);
+pub struct Latch(Arc<(Mutex<bool>, std::sync::Condvar)>);
 
-impl Shut {
+impl Latch {
     /// Lets every wait on it go, now and from now on.
     pub fn open(&self) {
         *self.0.0.lock().unwrap() = true;
@@ -84,7 +84,7 @@ impl StandIn {
     }
 
     /// Its notes of its strays and its holds wait from now on until `gate` is opened.
-    pub fn waits(&self, gate: &Shut) {
+    pub fn waits(&self, gate: &Latch) {
         self.seen().gate = Some(gate.clone());
     }
 

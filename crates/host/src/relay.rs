@@ -1452,9 +1452,7 @@ fn refused(why: &CallError) -> Refusal {
 impl session::Host for Relay {
     /// Said in this host's log where it came late (#6437).
     fn answered(&self, word: &'static str, waited: std::time::Duration, ran: std::time::Duration) {
-        if let Some(said) = crate::lateness::answered_late(word, waited, ran) {
-            crate::say(&said);
-        }
+        crate::lateness::say_if_late(word, waited, ran);
     }
 
     async fn call(&self, command: Command, peer: &Peer) -> Result<Answer, Refusal> {

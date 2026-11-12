@@ -41,6 +41,14 @@ pub fn answered_late(word: &str, waited: Duration, ran: Duration) -> Option<Stri
     })
 }
 
+/// Says [`answered_late`]'s line in this host's log, where it has one: what a host's
+/// `session::Host::answered` does.
+pub fn say_if_late(word: &str, waited: Duration, ran: Duration) {
+    if let Some(said) = answered_late(word, waited, ran) {
+        crate::say(&said);
+    }
+}
+
 /// What the host says of a look at its thread that came `late` past when it was due: nothing
 /// for one under [`SAID_FROM`].
 pub fn thread_held(late: Duration) -> Option<String> {

@@ -16,7 +16,7 @@
 
 use std::time::{Duration, Instant};
 
-use purlis_host::standin::{Shut, StandIns};
+use purlis_host::standin::{Latch, StandIns};
 use purlis_host::{Compose, Hosting, ToCompose};
 use purlis_session_protocol::auth::{Credentials, Scope};
 use purlis_session_protocol::link;
@@ -26,8 +26,8 @@ use tokio::io::duplex;
 use tokio::time::timeout;
 
 const PROJECT: &str = "01J9PRJCT00000000000000000";
-/// Far below the window's own bound on a close (`A_CLOSE_WAITS_AT_MOST`, 1 s), and far above
-/// what an answer from a host that is not waiting on anything takes.
+/// Half the second a window waits on a close on its own thread (#6385), and far above what an
+/// answer from a host that is not waiting on anything takes.
 const PROMPTLY: Duration = Duration::from_millis(500);
 /// How long the gate stays shut at the most, so a host that waits on it is not waited on for
 /// good: well past [`PROMPTLY`].
@@ -87,8 +87,8 @@ async fn a_chat(client: &Client) -> String {
 }
 
 /// A gate that opens by itself after [`SHUT_AT_MOST`].
-fn a_gate() -> Shut {
-    let gate = Shut::default();
+fn a_gate() -> Latch {
+    let gate = Latch::default();
     let opens = gate.clone();
     std::thread::spawn(move || {
         std::thread::sleep(SHUT_AT_MOST);
