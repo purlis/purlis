@@ -300,8 +300,8 @@ const listed = (plane: string | undefined): LiveSetting => ({
               >
                 <ControlHead>
                   <ControlColumn>Profile</ControlColumn>
-                  <ControlColumn minWidth={160}>Sign-in</ControlColumn>
-                  <ControlColumn>Pin</ControlColumn>
+                  <ControlColumn size="fill">Sign-in</ControlColumn>
+                  <ControlColumn size="fit">Pin</ControlColumn>
                   <ControlColumn actions hideName>
                     Actions
                   </ControlColumn>
