@@ -77,7 +77,7 @@ describe("the Welcome's words, each on its text role", () => {
       "label",
       "the recents' heading",
     );
-    const where = drawn.querySelector(".recents .where");
+    const where = drawn.querySelector(".recents code");
     wears(where, "meta", "a project's path");
     expect(where).toHaveClass("ui-text-code");
     wears(screen.getByText("purlis will ask about this one"), "meta", "a project's note");
@@ -85,7 +85,7 @@ describe("the Welcome's words, each on its text role", () => {
 
   it("writes no size, weight or colour of words of its own for what now wears a role", () => {
     const worn =
-      /^\.welcome-(?:brand|lede|next|elsewhere)$|^\.welcome-pane (?:h1|h2|\.came-back)$|^\.recents \.(?:where|value)$/;
+      /^\.welcome-(?:brand|lede|next|elsewhere)$|^\.welcome-pane (?:h1|h2|\.came-back)$|^\.recents (?:\.where|\.value|code)$/;
     const typed = declarations(readFileSync(join(process.cwd(), "src", "App.css"), "utf8"))
       .filter(({ context }) => worn.test(context[context.length - 1] ?? ""))
       .filter(({ property }) => ["font-size", "font-weight", "color"].includes(property))

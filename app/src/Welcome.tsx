@@ -500,12 +500,12 @@ export function Welcome({
               <ListRow key={plane.path} id={plane.path} textValue={plane.name}>
                 <RowLabel className="tab-name">{plane.name}</RowLabel>
                 <RowDescription>
-                  <code className="where ui-text-meta ui-text-code">{plane.path}</code>
+                  <code className="ui-text-meta ui-text-code">{plane.path}</code>
                 </RowDescription>
                 {/* What the store holds, and nothing more: whether this project still
                     contributes what was approved is asked when it is opened. */}
                 {!plane.approved && (
-                  <RowTrail className="value ui-text-meta">purlis will ask about this one</RowTrail>
+                  <RowTrail className="ui-text-meta">purlis will ask about this one</RowTrail>
                 )}
               </ListRow>
             ))}
