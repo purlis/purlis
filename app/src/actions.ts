@@ -3619,13 +3619,7 @@ export function catalogue(now: Now): Offer[] {
 
   // **Every setting, last** (#2920): a hundred rows a person finds by typing what they want to
   // change, listed only then (`whenTyped`).
-  offers.push(
-    ...settingRows(
-      now.plane,
-      now.focused === OUTSIDE ? undefined : now.focused,
-      now.skillStudio ?? false,
-    ),
-  );
+  offers.push(...settingRows(now.plane, now.focused === OUTSIDE ? undefined : now.focused));
 
   return readOnlyOffers(offers, now.readOnly);
 }
@@ -4173,12 +4167,8 @@ const LEVEL_ROWS: Readonly<Record<Level, string>> = {
  * the same list the Settings search finds in, at the same levels as the group rows: You always,
  * the project in front's, and the focused workspace's.
  */
-function settingRows(
-  plane: string | undefined,
-  workspace: string | undefined,
-  skillStudio: boolean,
-): Offer[] {
-  return everySetting({ plane, workspace, skillStudio }).flatMap(({ level, groups }) =>
+function settingRows(plane: string | undefined, workspace: string | undefined): Offer[] {
+  return everySetting({ plane, workspace }).flatMap(({ level, groups }) =>
     groups.flatMap((group) =>
       group.settings.map((setting) => ({
         ...can(

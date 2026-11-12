@@ -478,15 +478,14 @@ function Shown({
       : (landsOn(groups, shown?.group) ?? groups[0]);
   /** The group on screen, once the level is read and no file's text is in its place. */
   const drawn = waiting === undefined && editing === undefined ? group?.id : undefined;
-  const skillStudio = useSkillStudioOn();
   /** The other levels' settings, found by the same words (#2920): none for Set here, which is
    *  this level's. */
   const elsewhere = useMemo(
     () =>
-      everySetting({ plane, workspace, skillStudio }).filter(
+      everySetting({ plane, workspace }).filter(
         (one) => one.level !== level && levels.some((offered) => offered.id === one.level),
       ),
-    [plane, workspace, skillStudio, level, levels],
+    [plane, workspace, level, levels],
   );
   const foundElsewhere = setHere ? [] : found(elsewhere, filter);
   /** This level's matches, the set ones alone for Set here: a row drawn by a hook of its own

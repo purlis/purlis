@@ -2934,7 +2934,8 @@ describe("the palette at fifty chats", () => {
     // Since #2786: the Skill studio is always on, with no Previews group (-1): Open
     // Skill studio and Show the Skills view (+2), the studio and its Needs you on each of the six
     // workspaces (+12) and the eight personas (+16), and the Skills group at the project and at
-    // the focused workspace (+2).
+    // the focused workspace (+2); and among #2920's rows, the Skills groups' settings at the project
+    // (+1) and at the focused workspace (+2) without the Previews switch (-1).
     expect(offers).toHaveLength(1486);
     // Fifty tabs of one chat each: the palette has their chats' Rename chat rows instead.
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.rename:"))).toHaveLength(0);
