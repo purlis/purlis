@@ -8740,10 +8740,19 @@ fn a_chat_may_read_the_folder_its_last_run_kept_but_not_write_it() {
 // ---- R-032: until "purlis decides" is confirmed, every level keeps the harness's own check ----
 
 /// R-032 (S13, a pin): at the full sandbox, at the floor and with the person's confirmed off,
-/// on each harness, the words a chat starts with switch none of its harness's own checks off:
-/// they name no permission mode, approval policy or bypass that asks nobody
-/// ([`crate::dispatchunattended::bypass_in`]), so the harness's own checking mode is the one
-/// it starts in.
+/// on each harness, nothing a chat starts with switches its harness's own check off, so the
+/// harness's own checking mode is the one it starts in:
+///
+/// - its words name no approval policy or bypass that asks nobody
+///   ([`crate::dispatchunattended::bypass_in`]), and no `--permission-mode` at all: no level
+///   sets one;
+/// - Claude Code's `--settings` sets no `permissions.defaultMode` but its own `"default"`;
+/// - opencode's config (`OPENCODE_CONFIG_CONTENT`) allows nothing but purlis's own tools, by
+///   name.
+///
+/// The words purlis arms a chat with are checked for every cell first ([`own_check_kept`]):
+/// a cell whose traffic goes through purlis's proxy starts it on a local port, which a
+/// sandboxed run of the tests may refuse.
 #[test]
 fn a_chat_at_every_level_starts_with_its_harness_own_check() {
     use crate::dispatchunattended::bypass_in;
@@ -8764,6 +8773,7 @@ fn a_chat_at_every_level_starts_with_its_harness_own_check() {
         runs_a_shell: false,
         own: &[],
     };
+    let mut cells = Vec::new();
     for harness in [Harness::ClaudeCode, Harness::Codex, Harness::Opencode] {
         for level in ["on", "floor", "off"] {
             let plane = plane_saying(if level == "on" {
@@ -8796,44 +8806,121 @@ fn a_chat_at_every_level_starts_with_its_harness_own_check() {
                 },
                 "{harness:?} at {level}"
             );
-            let armed = match harness.adapter().arm(
+            let (armed, env) = match harness.adapter().arm(
                 kit,
                 Some(&root),
                 &crate::harness_plugin::Chosen::new(),
                 applied.as_ref(),
             ) {
-                crate::harness::StateHooks::ThisSessionOnly { args, .. } => args,
+                crate::harness::StateHooks::ThisSessionOnly { args, env, .. } => (args, env),
                 crate::harness::StateHooks::None => panic!("{harness:?} at {level}: unarmed"),
             };
-            let line = match &applied {
-                None => crate::start::Ready::line(Vec::new(), armed, Vec::new()),
-                Some(applied) => {
-                    // As a start does: a chat whose traffic goes through purlis's proxy is
-                    // confined first, which starts that proxy on a local port.
-                    let confinement = if applied.through_purlis_proxy() {
-                        applied.confine().expect("confined")
-                    } else {
-                        None
-                    };
-                    let line = applied
-                        .line(
-                            Words {
-                                program: harness.name().to_owned(),
-                                command: Vec::new(),
-                                armed,
-                                charters: Vec::new(),
-                            },
-                            &At {
-                                cwd: Some(&root),
-                                confinement: confinement.as_ref(),
-                                ..At::default()
-                            },
-                        )
-                        .unwrap_or_else(|why| panic!("{harness:?} at {level}: {why}"));
-                    line.args
+            own_check_kept(harness, level, &armed, &env);
+            cells.push((harness, level, plane, root, applied, armed));
+        }
+    }
+    for (harness, level, _plane, root, applied, armed) in cells {
+        let line = match &applied {
+            None => crate::start::Ready::line(Vec::new(), armed, Vec::new()),
+            Some(applied) => {
+                // As a start does: a chat whose traffic goes through purlis's proxy is
+                // confined first, which starts that proxy on a local port.
+                let confinement = if applied.through_purlis_proxy() {
+                    applied.confine().expect("confined")
+                } else {
+                    None
+                };
+                let line = applied
+                    .line(
+                        Words {
+                            program: harness.name().to_owned(),
+                            command: Vec::new(),
+                            armed,
+                            charters: Vec::new(),
+                        },
+                        &At {
+                            cwd: Some(&root),
+                            confinement: confinement.as_ref(),
+                            ..At::default()
+                        },
+                    )
+                    .unwrap_or_else(|why| panic!("{harness:?} at {level}: {why}"));
+                line.args
+            }
+        };
+        assert_eq!(bypass_in(&line), None, "{harness:?} at {level}: {line:?}");
+        assert!(
+            !names_a_permission_mode(&line),
+            "{harness:?} at {level}: {line:?}"
+        );
+    }
+}
+
+/// Whether `words` name Claude Code's `--permission-mode`, spaced or attached.
+fn names_a_permission_mode(words: &[String]) -> bool {
+    words
+        .iter()
+        .any(|word| word == "--permission-mode" || word.starts_with("--permission-mode="))
+}
+
+/// R-032's checks on the words and variables purlis arms a chat with: no `--permission-mode`,
+/// no `permissions.defaultMode` in Claude Code's `--settings`, and nothing but purlis's own tools
+/// allowed in opencode's config.
+fn own_check_kept(harness: Harness, level: &str, armed: &[String], env: &[(String, String)]) {
+    let cell = format!("{harness:?} at {level}");
+    assert!(!names_a_permission_mode(armed), "{cell}: {armed:?}");
+    let settings: Vec<serde_json::Value> = armed
+        .iter()
+        .zip(armed.iter().skip(1))
+        .filter(|(flag, _)| *flag == "--settings")
+        .map(|(_, json)| serde_json::from_str(json).expect("--settings is JSON"))
+        .collect();
+    if harness == Harness::ClaudeCode {
+        assert_eq!(settings.len(), 1, "{cell}: one --settings");
+    }
+    for settings in &settings {
+        // Claude Code's own checking mode, `"default"`, is the one tightening a level may set.
+        let mode = settings.pointer("/permissions/defaultMode");
+        assert!(
+            mode.is_none_or(|mode| mode == "default"),
+            "{cell}: {settings}"
+        );
+    }
+    let config: Vec<serde_json::Value> = env
+        .iter()
+        .filter(|(name, _)| name == crate::opencode::CONFIG_ENV)
+        .map(|(_, json)| serde_json::from_str(json).expect("opencode's config is JSON"))
+        .collect();
+    if harness == Harness::Opencode {
+        assert_eq!(
+            config.len(),
+            1,
+            "{cell}: one {}",
+            crate::opencode::CONFIG_ENV
+        );
+    }
+    let own = format!("{}_", crate::chattools::SERVER);
+    for config in &config {
+        match config.get("permission") {
+            None => {}
+            Some(serde_json::Value::Object(permission)) => {
+                for (key, rule) in permission {
+                    assert!(
+                        rule.is_object()
+                            || rule == "deny"
+                            || rule == "ask"
+                            || key.starts_with(&own),
+                        "{cell}: opencode's {key} is {rule}, in {config}"
+                    );
+                    if let Some(rules) = rule.as_object() {
+                        assert!(
+                            rules.values().all(|one| one != "allow"),
+                            "{cell}: opencode's {key} allows, in {config}"
+                        );
+                    }
                 }
-            };
-            assert_eq!(bypass_in(&line), None, "{harness:?} at {level}: {line:?}");
+            }
+            Some(other) => panic!("{cell}: opencode's permission is {other}, in {config}"),
         }
     }
 }

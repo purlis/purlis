@@ -8,13 +8,13 @@ import { Notice } from "./Notice";
 
 /**
  * **The one-time offer of the sandbox to a project made before it existed** (ADR 0067 §1,
- * ruling V21 1). A project charter makes now runs every chat sandboxed; one made earlier keeps
- * running as it did, and the first time it is opened after the upgrade this asks once whether
- * to turn it on. Nothing flips on by itself.
+ * ruling V21 1). Such a project keeps running as it did, and the first time it is opened after
+ * the upgrade this asks once whether to turn it on. Nothing flips on by itself.
  *
  * **A notice, never a dialog.** It sits in the project view like "Session saved" does, asks
  * nothing until the person goes to it, and costs nothing of the first run's interrupt budget
- * (DS-9, W10). A new project never shows it: it has the sandbox on already.
+ * (DS-9, W10). A project purlis made never shows it (Q231): it starts at the floor, and its
+ * protection is chosen at setup or in Settings (Q115).
  *
  * **Answered once, either way.** "Turn the sandbox on" writes `[sandbox] mode = "on"` into the
  * project's `charter.toml`; "Keep it off" changes nothing in the project. Either answer is kept

@@ -463,6 +463,16 @@ impl Plane {
         self.missing
     }
 
+    /// Whether it has a `[sandbox]` table that names no `mode`: the shape [`scaffold_block`]
+    /// writes, and that no project made before the sandbox existed has (Q231).
+    pub fn leaves_the_level_to_each_person(&self) -> bool {
+        self.top
+            .as_ref()
+            .and_then(|top| top.get(TABLE))
+            .and_then(toml::Value::as_table)
+            .is_some_and(|table| !table.contains_key("mode"))
+    }
+
     /// What it says about the sandbox.
     pub fn said(&self) -> Said {
         Said::of(self.top.as_ref())

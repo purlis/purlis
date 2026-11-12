@@ -640,8 +640,17 @@ pub enum Answer {
 /// Whether the project at `root` is offered the sandbox: it is a project, no sandbox is in
 /// force in it (it has not turned the sandbox on, and no policy requires it here, D-1423-1:
 /// an offer to turn on what is on already would ask nothing), and nobody on this machine has
-/// answered the offer. A project charter makes leaves the level to the person (Q114, Q201), so
-/// it is offered too, as one made before the sandbox existed is.
+/// answered the offer. So only a project made before the sandbox existed is offered it.
+///
+/// **A project charter makes is not** (Q231): it leaves the level to each person (Q114, Q201),
+/// and its protection is chosen at setup or in Settings (Q115). It is known by its own
+/// `charter.toml`, whose `[sandbox]` table names no `mode`
+/// ([`Plane::leaves_the_level_to_each_person`]): no project made before the sandbox has a
+/// `[sandbox]` table, and one made between wrote `mode = "on"`. The mark is in the committed file
+/// rather than on this machine, because a mark kept on this machine is keyed by the clone's
+/// `.git` ([`clone_key`]), which the app makes only after the scaffold (`createproject`), and it
+/// would not follow a clone to another machine. No sandboxed chat writes the project's manifest
+/// ([`super::manifests_held`]), so none can mark a project to keep the offer from its person.
 ///
 /// A `charter.toml` charter cannot read is never offered anything: what it says about the
 /// sandbox is unknown, and every chat in it is refused until it is fixed.
@@ -649,6 +658,7 @@ pub fn offer_due(root: &Path) -> bool {
     let plane = Plane::read(root);
     crate::names::has_manifest(root)
         && !plane.unreadable()
+        && !plane.leaves_the_level_to_each_person()
         && plane.in_force(&super::policy::Locks::of(root)).is_none()
         && read(root).offer.is_empty()
 }
