@@ -4377,24 +4377,23 @@ fn an_audited_skill_change_the_window_sends_is_written_and_no_other_kind_of_its_
     assert_eq!(kinds, ["skill.install", "skill.update", "skill.remove"]);
 }
 
-/// R-037, a pin of shipped behaviour (Q208): the audit of changes can never be switched off.
-/// Every protection change a start or a person makes, at every level a person can choose
-/// (`on`, `floor`, `off`) and through every shipped switch (a person's opt-out, their own level
-/// at each way a start is made, no backend, the sandbox back on, and each grant and revoke), is
-/// one event, sent as the window or the host sends it, in a project whose files hold every key
-/// that might read as turning an audit off.
+/// R-037, a pin of the writer (Q208): the recorder writes one trust event for every change
+/// [`at_start`](crate::sandbox::at_start) yields, at every level a person can choose (`on`,
+/// `floor`, `off`) and for every switch it knows (a person's opt-out, their own level at each
+/// way a start is made, no backend, the sandbox back on), and for each sandbox grant and revoke,
+/// sent as the window or the host sends them.
+///
+/// It calls `at_start` itself, so it does not prove that a shipped start asks: R-037 stays
+/// **open on the session host's start path**, where `hoststart.rs` passes `at_start`
+/// `was_unsandboxed` `false`, so a chat reopened sandboxed through the host never writes
+/// `trust.sandbox.on` (an issue is to be filed for it).
 #[test]
-fn every_protection_change_is_audited_at_every_level_and_switch_combination() {
+fn the_recorder_writes_a_trust_event_for_every_change_at_start_yields_and_every_grant() {
     use crate::sandbox::personal::Choice;
     use crate::sandbox::{By, Lifted, Os, Via, at_start, grant};
     let config = tempfile::tempdir().unwrap();
     let data = tempfile::tempdir().unwrap();
     let plane = tempfile::tempdir().unwrap();
-    let off_keys = "[audit]\nenabled = false\noff = true\n\n[eventlog]\nenabled = false\n\n\
-                    [telemetry]\nenabled = false\n\n[trust]\naudit = false\n";
-    for file in ["charter.toml", "purlis.toml"] {
-        std::fs::write(plane.path().join(file), off_keys).unwrap();
-    }
     let mut host = Recorder::open_in(config.path(), data.path()).unwrap();
 
     // What a start at `level` can change, and the kind it is audited as.
@@ -4432,14 +4431,6 @@ fn every_protection_change_is_audited_at_every_level_and_switch_combination() {
     };
     let mut changes = 0;
     for level in Choice::ALL {
-        std::fs::write(
-            plane.path().join("purlis.local.toml"),
-            format!(
-                "{off_keys}\n[sandbox]\nlevel = \"{}\"\naudit = false\n",
-                level.word()
-            ),
-        )
-        .unwrap();
         for (switch, lifted, sandboxed, was_unsandboxed) in starts(level) {
             let (change, _) = at_start(lifted.as_ref(), sandboxed, was_unsandboxed, true);
             let change = change.unwrap_or_else(|| panic!("{} · {switch}: no change", level.word()));

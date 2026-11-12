@@ -59,35 +59,196 @@ pub enum Qualifier {
 }
 
 /// **The short summary of what a stop was aimed at** (Q206): a host, a folder, a service or a
-/// guard's arm, and nothing else: never a command, its arguments or its output. Clipped to one
-/// short line as it is written ([`TARGET_CHARS`]).
+/// guard's arm, and nothing else: never a command, its arguments or its output. Each value is
+/// checked as it is built and as it is read off the wire ([`Host`], [`Folder`], [`Token`]), so
+/// text shaped like a command or an address with a query is refused, never clipped into the
+/// log; what passes is clipped to one short line as it is written ([`TARGET_CHARS`]).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Target {
-    Host(String),
-    Folder(String),
-    Service(String),
-    GuardArm(String),
+    Host(Host),
+    Folder(Folder),
+    Service(Token),
+    GuardArm(Token),
 }
 
-/// The most characters of a target summary written.
+/// The most characters of a target summary, or of a tool's name, written: past it, what is
+/// written is the first 120 characters of its escaped form and `...`.
 pub const TARGET_CHARS: usize = 120;
 
+/// The most characters of a [`Token`].
+pub const TOKEN_CHARS: usize = 64;
+
+/// The most characters of a [`Folder`] as it is given; it is clipped to [`TARGET_CHARS`] as it
+/// is written.
+pub const FOLDER_CHARS: usize = 1024;
+
+/// **A value refused as a stop's target.** It names the kind of target and never the value,
+/// which may be the very secret it was refused for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("this is not a {0} a stop can name")]
+pub struct InvalidTarget(&'static str);
+
+/// **A host**: a hostname or an address, with a port where there is one (`api.example.com`,
+/// `localhost:8080`, `[::1]:443`), and nothing else: no path, query, user, fragment or space.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct Host(String);
+
+/// **A folder, relative to the project** (ADR 0075 §4: the audit holds a path relative to a
+/// repo or a project, never an absolute one): `.` for the project itself, else its path inside
+/// it. Never absolute (`/`, `\`, `~` or a drive), never with a `..` part, and with no control
+/// character or any of `' " ` $ ; | & < > ? # *`, so a command cannot pass for one.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct Folder(String);
+
+/// **A short token**: a service's or a guard's arm's name, 1 to [`TOKEN_CHARS`] of
+/// `A-Z a-z 0-9 . _ : -`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct Token(String);
+
+macro_rules! checked {
+    ($type:ident, $what:literal, $check:path) => {
+        impl TryFrom<String> for $type {
+            type Error = InvalidTarget;
+            fn try_from(value: String) -> Result<Self, InvalidTarget> {
+                if $check(&value) {
+                    Ok(Self(value))
+                } else {
+                    Err(InvalidTarget($what))
+                }
+            }
+        }
+
+        impl TryFrom<&str> for $type {
+            type Error = InvalidTarget;
+            fn try_from(value: &str) -> Result<Self, InvalidTarget> {
+                Self::try_from(value.to_owned())
+            }
+        }
+
+        impl From<$type> for String {
+            fn from(value: $type) -> String {
+                value.0
+            }
+        }
+
+        impl $type {
+            /// The value, as checked.
+            pub fn as_str(&self) -> &str {
+                &self.0
+            }
+        }
+    };
+}
+
+checked!(Host, "host", is_host);
+checked!(Folder, "folder", is_folder);
+checked!(Token, "service or guard arm", is_token);
+
+fn is_host(value: &str) -> bool {
+    let (name, port) = if let Some(rest) = value.strip_prefix('[') {
+        let Some((address, after)) = rest.split_once(']') else {
+            return false;
+        };
+        let port = match after {
+            "" => None,
+            _ => match after.strip_prefix(':') {
+                Some(port) => Some(port),
+                None => return false,
+            },
+        };
+        if address.is_empty()
+            || !address
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() || c == ':' || c == '.')
+        {
+            return false;
+        }
+        (None, port)
+    } else {
+        let (name, port) = match value.split_once(':') {
+            Some((name, port)) => (name, Some(port)),
+            None => (value, None),
+        };
+        (Some(name), port)
+    };
+    let name_ok = name.is_none_or(|name| {
+        !name.is_empty()
+            && name.len() <= 253
+            && name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+    });
+    let port_ok = port.is_none_or(|port| {
+        !port.is_empty()
+            && port.len() <= 5
+            && port.chars().all(|c| c.is_ascii_digit())
+            && port.parse::<u16>().is_ok()
+    });
+    name_ok && port_ok
+}
+
+fn is_folder(value: &str) -> bool {
+    const REFUSED: &[char] = &['\'', '"', '`', '$', ';', '|', '&', '<', '>', '?', '#', '*'];
+    let absolute = value.starts_with(['/', '\\', '~'])
+        || value.as_bytes().get(1) == Some(&b':') && value.as_bytes()[0].is_ascii_alphabetic();
+    !value.is_empty()
+        && value.chars().count() <= FOLDER_CHARS
+        && !absolute
+        && !value.split(['/', '\\']).any(|part| part == "..")
+        && !value
+            .chars()
+            .any(|c| c.is_control() || REFUSED.contains(&c))
+}
+
+fn is_token(value: &str) -> bool {
+    (1..=TOKEN_CHARS).contains(&value.len())
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | ':' | '-'))
+}
+
 impl Target {
+    /// A host's target ([`Host`]).
+    pub fn host(value: &str) -> Result<Self, InvalidTarget> {
+        Host::try_from(value).map(Self::Host)
+    }
+
+    /// A folder's target, relative to the project ([`Folder`]).
+    pub fn folder(value: &str) -> Result<Self, InvalidTarget> {
+        Folder::try_from(value).map(Self::Folder)
+    }
+
+    /// A service's target ([`Token`]).
+    pub fn service(value: &str) -> Result<Self, InvalidTarget> {
+        Token::try_from(value).map(Self::Service)
+    }
+
+    /// A guard's arm's target ([`Token`]).
+    pub fn guard_arm(value: &str) -> Result<Self, InvalidTarget> {
+        Token::try_from(value).map(Self::GuardArm)
+    }
+
+    /// The target as it is written: one short line. Only a folder can be longer than that;
+    /// clipping a checked value never makes it another kind of text.
     fn shortened(&self) -> Self {
         let short = |value: &str| crate::shown::readable(value, TARGET_CHARS);
         match self {
-            Self::Host(value) => Self::Host(short(value)),
-            Self::Folder(value) => Self::Folder(short(value)),
-            Self::Service(value) => Self::Service(short(value)),
-            Self::GuardArm(value) => Self::GuardArm(short(value)),
+            Self::Host(Host(value)) => Self::Host(Host(short(value))),
+            Self::Folder(Folder(value)) => Self::Folder(Folder(short(value))),
+            Self::Service(Token(value)) => Self::Service(Token(short(value))),
+            Self::GuardArm(Token(value)) => Self::GuardArm(Token(short(value))),
         }
     }
 }
 
-/// **A block** (R-169, R-220): the tool, who refused it, how much the report is worth, what it
-/// was aimed at, and the hash of its arguments as the hook sent it (`args`, a SHA-256 hex,
-/// [`super::args_hash`]), written as this device's keyed digest: the target the loop matches on.
+/// **A block** (R-169, R-220): the tool (written as one short line, as a target is), who
+/// refused it, how much the report is worth, what it was aimed at, and the hash of its
+/// arguments as the hook sent it (`args`, a SHA-256 hex, [`super::args_hash`]), written as this
+/// device's keyed digest: the target the loop matches on.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Block {
     pub tool: String,
@@ -187,16 +348,18 @@ impl Recorder {
     /// before it answers: a block or a hold with its target shortened and its arguments' hash
     /// keyed by this device, never as the hook sent it.
     pub fn stop(&mut self, plane: &Path, number: Option<u32>, stop: &Stop) -> io::Result<Event> {
+        let tool = |tool: &str| crate::shown::readable(tool, TARGET_CHARS);
         let body = match stop {
             Stop::Block(block) => serde_json::to_value(Block {
+                tool: tool(&block.tool),
                 target: block.target.as_ref().map(Target::shortened),
                 args: block.args.as_deref().map(|hash| self.key.digest(hash)),
                 ..block.clone()
             }),
             Stop::Hold(hold) => serde_json::to_value(Hold {
+                tool: tool(&hold.tool),
                 target: hold.target.as_ref().map(Target::shortened),
                 args: hold.args.as_deref().map(|hash| self.key.digest(hash)),
-                ..hold.clone()
             }),
             Stop::LoopPause(pause) => serde_json::to_value(pause),
             Stop::AskAnswered(answered) => serde_json::to_value(answered),
