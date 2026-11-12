@@ -1026,7 +1026,7 @@ describe("values an administrator's policy locks (#1343)", () => {
 
     const status = await within(page).findByRole("group", { name: "Sandbox" });
     expect(status).toHaveTextContent(
-      "Not turned on in this project, so chats here start at the floor.",
+      "Not turned on in this project, so chats here start in the basic sandbox.",
     );
     expect(within(status).getByRole("button", { name: "Turn the sandbox on" })).toBeInTheDocument();
   });

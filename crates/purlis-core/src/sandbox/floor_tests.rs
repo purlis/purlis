@@ -274,9 +274,9 @@ fn where_the_floor_cannot_be_applied_the_chat_starts_as_before_and_says_why() {
         // Its reason alone: not the refusal's "nothing starts", which is not so here.
         Ok(Some(Decided::Floorless(why))) => assert_eq!(
             why,
-            "This chat runs with no sandbox: purlis could not apply the floor here, because \
-             this machine cannot apply the sandbox: purlis's sandbox needs Landlock version 6 \
-             (Linux 6.12 or later), and this kernel does not have it."
+            "This chat runs with no sandbox: purlis could not apply the basic sandbox here, \
+             because this machine cannot apply the sandbox: purlis's sandbox needs Landlock \
+             version 6 (Linux 6.12 or later), and this kernel does not have it."
         ),
         other => panic!("{other:?}"),
     }

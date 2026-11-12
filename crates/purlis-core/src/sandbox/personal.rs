@@ -79,7 +79,7 @@ impl Choice {
     pub fn said(self) -> &'static str {
         match self {
             Self::On => "full sandbox",
-            Self::Floor => "floor",
+            Self::Floor => "basic sandbox",
             Self::Off => "no sandbox",
         }
     }

@@ -417,8 +417,8 @@ fn a_chat_at_its_next_level_says_only_why_and_one_behind_it_says_a_restart_appli
     assert_eq!(
         answer.said(Choice::Floor),
         format!(
-            "This chat started with the floor, and its next start has no sandbox. Restart chat \
-             applies it. {}",
+            "This chat started with the basic sandbox, and its next start has no sandbox. \
+             Restart chat applies it. {}",
             Why::Chosen.said()
         )
     );
