@@ -383,25 +383,27 @@ const listed = (plane: string | undefined): LiveSetting => ({
                         </span>
                       </ControlCell>
                       <ControlCell actions>
-                        {profile.origin === "made" && !profile.sandbox_only && (
+                        <span className="profiles-actions">
+                          {profile.origin === "made" && !profile.sandbox_only && (
+                            <EntryButton
+                              label="Import again"
+                              spoken={`Import again: ${profile.name}`}
+                              disabled={now.busy}
+                              onClick={() =>
+                                void acting(
+                                  () => commands.machineProfileImport(profile.name),
+                                  (done) => importedSays(profile.name, done),
+                                )
+                              }
+                            />
+                          )}
                           <EntryButton
-                            label="Import again"
-                            spoken={`Import again: ${profile.name}`}
+                            label="Remove…"
+                            spoken={`Remove ${profile.name}`}
                             disabled={now.busy}
-                            onClick={() =>
-                              void acting(
-                                () => commands.machineProfileImport(profile.name),
-                                (done) => importedSays(profile.name, done),
-                              )
-                            }
+                            onClick={() => void askRemove(profile)}
                           />
-                        )}
-                        <EntryButton
-                          label="Remove…"
-                          spoken={`Remove ${profile.name}`}
-                          disabled={now.busy}
-                          onClick={() => void askRemove(profile)}
-                        />
+                        </span>
                       </ControlCell>
                     </ControlRow>
                   ))}
