@@ -455,3 +455,18 @@ fn taking_the_browser_over_keeps_the_ask_until_done_and_marks_it_driven() {
     assert!(waiting[0].taken);
     assert!(project.needs.handed_back("program-1").is_some());
 }
+
+/// #6290: a browser its chat asked the person to take over is theirs to send to an address,
+/// for that chat alone, while the Ask waits; once they hand it back, it is not.
+#[test]
+fn a_browser_its_chat_handed_the_person_names_that_chat_until_they_hand_it_back() {
+    let project = Project::new();
+    assert_eq!(project.needs.handed_to_the_person("program-1"), None);
+
+    project.call(&browse(CHAT, Some("b1"), needs_you()));
+    assert_eq!(project.needs.handed_to_the_person("program-1"), Some(CHAT));
+    assert_eq!(project.needs.handed_to_the_person("program-2"), None);
+
+    project.needs.handed_back("program-1");
+    assert_eq!(project.needs.handed_to_the_person("program-1"), None);
+}

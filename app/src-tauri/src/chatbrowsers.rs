@@ -977,6 +977,12 @@ pub struct SitesWait {
     pub sites: Vec<Site>,
 }
 
+/// What an address the person typed into a chat's browser is refused with where the browser is
+/// no longer that chat's (#6290).
+pub const GONE_FOR_THE_PERSON: &str = "This browser is no longer its chat's, so it went \
+                                       nowhere: open a browser of your own from the palette to \
+                                       go somewhere.";
+
 /// What a chat whose browser the person kept off is told.
 pub const KEPT_OFF: &str = "The person kept this chat's browser off: don't retry or work around \
                             it.";
@@ -2638,6 +2644,48 @@ impl ChatBrowsers {
             }
             _ => false,
         }
+    }
+
+    /// **What an address the person types into chat `session`'s browser `program` is judged
+    /// by** (#6290): what the chat's own next act would be told it reaches (`answer_now`), its
+    /// sandbox's listing (`reach`), its open web or not, the sites allowed it alone and those
+    /// the person allowed when asked. Never more: refused where `program` is not one of that
+    /// chat's browsers, or the chat was never allowed one.
+    pub fn reach_for_the_person(
+        &self,
+        session: u32,
+        program: &str,
+        root: &Path,
+        reach: impl FnOnce() -> BrowserReach,
+    ) -> Result<BrowserReach, String> {
+        // Read before the lock, as every act's is.
+        let listed = reach();
+        let chats = self.lock();
+        let chat = chats
+            .get(&session)
+            .filter(|chat| {
+                !chat.ended.iter().any(|one| one == program)
+                    && chat.browsers.iter().any(|(_, one)| one == program)
+            })
+            .ok_or_else(|| GONE_FOR_THE_PERSON.to_owned())?;
+        let Posture::Allowed { open_web } = chat.posture else {
+            return Err(GONE_FOR_THE_PERSON.to_owned());
+        };
+        let mut reach = with_sites(
+            listed,
+            open_web,
+            &chat.sites,
+            &purlis_core::sandbox::policy::Locks::of(root),
+        );
+        reach.answered = chat.sites_answered.iter().map(Site::to_string).collect();
+        Ok(reach)
+    }
+
+    /// **The sites new to the project that an address the person typed into chat `session`'s
+    /// browser held back** (#6290) wait on the person as the chat's own sites ask, as its act's
+    /// would (#2018).
+    pub fn person_held_back(&self, session: u32, sites: &[String], now: u64) {
+        self.asked_about(session, &sites_of(sites), now);
     }
 
     /// Keeps `sites` waiting on the person for chat `session`'s browser (#2018), each once. A

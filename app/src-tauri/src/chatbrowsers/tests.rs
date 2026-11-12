@@ -3728,3 +3728,71 @@ fn a_login_whose_browser_ended_before_it_went_in_never_ran() {
     assert!(hosted.logins.lock().unwrap().is_empty(), "nothing was sent");
     assert!(browsers.login_never_ran(3, "shop-login"));
 }
+
+/// #6290: an address the person types into a chat's browser it handed them is judged by what the
+/// chat's own next act would be told it reaches: its sandbox's listing, its open web or not, and
+/// the sites allowed for it alone, never more.
+#[test]
+fn an_address_the_person_types_into_a_chats_browser_reaches_what_its_chats_act_reaches() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, click()));
+    assert!(browsers.allow(3, false));
+    *hosted.asks.lock().unwrap() = vec!["news.example.org:443".into()];
+    answered(&browsers, &hosted, &ask(3, click()));
+    hosted.asks.lock().unwrap().clear();
+    browsers
+        .sites_answered(3, &[site("news.example.org:443")], true)
+        .unwrap();
+    let program = browsers.program_named(3, None).unwrap();
+
+    answered(&browsers, &hosted, &ask(3, click()));
+    let the_chats = hosted.reached.lock().unwrap().last().cloned().unwrap();
+    let the_persons = browsers
+        .reach_for_the_person(3, &program, Path::new("/p"), reach)
+        .unwrap();
+
+    assert_eq!(the_persons, the_chats);
+}
+
+/// #6290: only the chat a browser is of lends it its reach; a browser of no chat's, or one
+/// whose chat was never allowed a browser, has none.
+#[test]
+fn a_browser_lends_the_person_no_reach_but_its_own_chats() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, click()));
+    assert!(browsers.allow(3, false));
+    answered(&browsers, &hosted, &ask(3, click()));
+    let program = browsers.program_named(3, None).unwrap();
+
+    assert!(
+        browsers
+            .reach_for_the_person(4, &program, Path::new("/p"), reach)
+            .is_err(),
+        "another chat's"
+    );
+    assert!(
+        browsers
+            .reach_for_the_person(3, "no-such-program", Path::new("/p"), reach)
+            .is_err(),
+        "none of its chat's"
+    );
+}
+
+/// #6290: a site new to the project that the person's address went to in a chat's browser is
+/// held back and waits as the chat's own sites ask, as the chat's act would have it.
+#[test]
+fn a_site_the_persons_address_held_back_waits_as_its_chats_sites_ask() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, click()));
+    assert!(browsers.allow(3, false));
+
+    browsers.person_held_back(3, &["example.com:443".to_owned()], 1000);
+
+    let waits = browsers.sites_waiting();
+    assert_eq!(waits.len(), 1);
+    assert_eq!(waits[0].session, 3);
+    assert_eq!(waits[0].sites, [site("example.com:443")]);
+}

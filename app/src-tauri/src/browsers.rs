@@ -1779,8 +1779,15 @@ pub async fn open_browser(
 /// **The person sends browser `program` of project `plane` to the address they typed** (#2176),
 /// from its view tab: http and https only, any other scheme refused in words, and an address
 /// the browser's reach refuses outright said so before it loads. A site new to the project is
-/// held back as an address the agent writes is, and the answer names it to ask about. Never a
-/// chat's browser, which its chat drives. The window's alone (`ui::WINDOW_ONLY`).
+/// held back as an address the agent writes is, and the answer names it to ask about. The
+/// window's alone (`ui::WINDOW_ONLY`).
+///
+/// **A chat's browser goes where its chat sends it**, except one the chat handed the person
+/// through `ask_operator` (#6290): while that Ask waits, the chat's own acts on it are refused,
+/// so the person may send it on. It is judged by the chat's reach, exactly as the chat's next
+/// `browser_navigate` would be (`ChatBrowsers::reach_for_the_person`); a site new to the project
+/// is held back and waits as the chat's own sites ask; and the browser stays the person's, the
+/// Ask waiting on their Done.
 #[tauri::command]
 #[specta::specta]
 pub async fn go_browser(
@@ -1791,11 +1798,14 @@ pub async fn go_browser(
     address: String,
 ) -> Result<Went, String> {
     let held = planes.held(&plane)?;
-    // Never a chat's browser, in this project or any other the window holds.
-    if planes
-        .every_held()
-        .iter()
-        .any(|one| one.browsers().is_in_use(&program))
+    // The chat of this project that handed it to the person, if one did.
+    let handed = held.needs_you().handed_to_the_person(&program);
+    // Otherwise never a chat's browser, in this project or any other the window holds.
+    let projects = planes.every_held();
+    if handed.is_none()
+        && projects
+            .iter()
+            .any(|one| one.browsers().is_in_use(&program))
     {
         return Err(A_CHATS_BROWSER.to_owned());
     }
@@ -1808,33 +1818,62 @@ pub async fn go_browser(
         }
         crate::off_the_window("sending a browser to an address", move || {
             let address = purlis_core::browsers::typed::address_of(&address)?;
-            let reach = crate::chatbrowsers::person_reach(&held);
+            let reach = match handed {
+                Some(session) => {
+                    held.browsers()
+                        .reach_for_the_person(session, &program, held.root(), || {
+                            crate::chatbrowsers::reach_of(&held, session)
+                        })?
+                }
+                None => crate::chatbrowsers::person_reach(&held),
+            };
             if let Some(why) = purlis_core::browsers::typed::refused_by(&reach, &address) {
                 return Err(why);
             }
-            let went = browsers.go(&program, &address, &reach)?;
-            // What it held back waits on the person, and only what the ask names whole, with
-            // the answers the scopes policy leaves open offer (#2176).
-            Ok(match went {
-                Went::Asks { sites, .. } => {
-                    let (named, answers) =
-                        crate::chatbrowsers::theirs_asked(&held, &program, &sites);
-                    Went::Asks {
-                        sites: named,
-                        answers,
+            let went = browsers.go(&program, &address, &reach);
+            let Some(session) = handed else {
+                // What it held back waits on the person, and only what the ask names whole,
+                // with the answers the scopes policy leaves open offer (#2176).
+                return Ok(match went? {
+                    Went::Asks { sites, .. } => {
+                        let (named, answers) =
+                            crate::chatbrowsers::theirs_asked(&held, &program, &sites);
+                        Went::Asks {
+                            sites: named,
+                            answers,
+                        }
                     }
-                }
-                went @ Went::Went { .. } => {
-                    held.browsers().theirs_asked(&program, &[]);
-                    went
-                }
-            })
+                    went @ Went::Went { .. } => {
+                        held.browsers().theirs_asked(&program, &[]);
+                        went
+                    }
+                });
+            };
+            // `go` took an address on the agent's lane: the person drives it again at once,
+            // whatever became of it, and their Ask waits on.
+            let again = browsers.take_over(&program);
+            crate::browserneedsyou::taken_over(&projects, &program);
+            crate::chatbrowsers::person_drove(&projects, &program, true);
+            again?;
+            let went = went?;
+            if let Went::Asks { sites, .. } = &went {
+                // Asked about as the chat's own act's would be (#2018), on the chat's pane and in
+                // the Inbox, with its answers.
+                held.browsers()
+                    .person_held_back(session, sites, crate::sandboxing::now_secs());
+                held.chats().asks_may_have_moved();
+                return Ok(Went::Asks {
+                    sites: sites.clone(),
+                    answers: Vec::new(),
+                });
+            }
+            Ok(went)
         })
         .await
     }
     #[cfg(not(unix))]
     {
-        let _ = (app, held, program, address);
+        let _ = (app, held, program, address, handed, projects);
         Err("browsers run on macOS and Linux only".to_owned())
     }
 }

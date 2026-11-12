@@ -191,6 +191,16 @@ impl NeedsYou {
         true
     }
 
+    /// **The chat that handed browser `program` to the person** (#6290): the one whose Ask
+    /// waits on it, until their Done. While it waits, that chat's acts on it are refused
+    /// ([`answered_first`]), so an address the person sends it to is theirs alone.
+    pub fn handed_to_the_person(&self, program: &str) -> Option<u32> {
+        self.lock()
+            .iter()
+            .find(|one| one.program == program)
+            .map(|one| one.session)
+    }
+
     /// **The person handed browser `program` back** (Done): the Ask that waited on it ends, and
     /// is answered, so it leaves no Update. None where none waited.
     pub fn handed_back(&self, program: &str) -> Option<Waiting> {
