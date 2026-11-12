@@ -45,7 +45,7 @@ const WHERE = (where: Partial<PoolSetupStep>, state: string): PoolSetupShown => 
   recommended: "docker",
   others: [],
   kind: "docker",
-  contexts: { names: [], recommended: null, chosen: null },
+  contexts: { names: [], recommended: null, chosen: null, pools: [] },
   steps: [step("where", "Where chats run", state, where), step("pool", "Pool", "later"), ...LATER],
 });
 
@@ -67,7 +67,7 @@ const POOL_FORM: PoolSetupShown = {
   recommended: "docker",
   others: [],
   kind: "docker",
-  contexts: { names: [], recommended: null, chosen: null },
+  contexts: { names: [], recommended: null, chosen: null, pools: [] },
   steps: [
     DONE_WHERE,
     step("pool", "Pool", "current", {
@@ -358,7 +358,7 @@ export const MadeByHand: Story = {
     recommended: "docker",
     others: [],
     kind: "docker",
-    contexts: { names: [], recommended: null, chosen: null },
+    contexts: { names: [], recommended: null, chosen: null, pools: [] },
     steps: [
       DONE_WHERE,
       step("pool", "Pool", "done", { line: "dev-box" }),
@@ -387,7 +387,7 @@ export const ThePoolIsMade: Story = {
     recommended: "docker",
     others: [],
     kind: "docker",
-    contexts: { names: [], recommended: null, chosen: null },
+    contexts: { names: [], recommended: null, chosen: null, pools: [] },
     steps: [
       DONE_WHERE,
       step("pool", "Pool", "done", { line: "dev-box" }),
@@ -416,7 +416,7 @@ export const TheRunnerWasRemoved: Story = {
     recommended: "docker",
     others: [],
     kind: "docker",
-    contexts: { names: [], recommended: null, chosen: null },
+    contexts: { names: [], recommended: null, chosen: null, pools: [] },
     steps: [
       DONE_WHERE,
       step("pool", "Pool", "attention", {
@@ -492,7 +492,7 @@ export const ARunnerBeingMade: Story = {
     recommended: "docker",
     others: [],
     kind: "docker",
-    contexts: { names: [], recommended: null, chosen: null },
+    contexts: { names: [], recommended: null, chosen: null, pools: [] },
     steps: [
       DONE_WHERE,
       step("pool", "Pool", "attention", {

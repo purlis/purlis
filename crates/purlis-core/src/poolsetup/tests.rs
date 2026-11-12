@@ -20,6 +20,7 @@ fn on_a_pool(runner: Runner, sign_ins: SignIns) -> Facts {
             name: "dev-box".into(),
             runner,
             sign_ins,
+            cluster: None,
         }),
         ..facts(Engine::Ready)
     }

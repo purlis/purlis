@@ -163,6 +163,12 @@ pub enum ActionId {
     InstallOperator,
     /// The operator's image, by its digest, is named under Options first.
     ChooseOperatorImage,
+    /// Makes a Pool in the cluster, of purlis's runner image (#4494).
+    CreateClusterPool,
+    /// Claims this person's runner of a Pool in the cluster and pairs it here (#4494).
+    AddClusterPool,
+    /// A cluster pool is marked as the person's own on its row, in Settings › Pools (#4071).
+    MarkAsOwn,
     CreatePool,
     MakeRunnerAgain,
     UseOtherDocker,
@@ -271,6 +277,8 @@ pub struct Contexts {
     pub names: Vec<String>,
     pub recommended: Option<String>,
     pub chosen: Option<String>,
+    /// The chosen cluster's Pools, by name, where its operator runs (#4494).
+    pub pools: Vec<String>,
 }
 
 impl Setup {
@@ -331,6 +339,9 @@ pub enum SignIns {
     CannotTell(String),
     /// Each profile chosen for the pool.
     Read(Vec<(String, Profile)>),
+    /// A cluster pool the person hasn't marked as their own: no profile of theirs goes there
+    /// (#4071), so nothing is asked of its runner.
+    NotYours,
 }
 
 /// An agent's forge identity, as this plane's personas declare one.
@@ -365,6 +376,8 @@ pub struct PoolFacts {
     pub name: String,
     pub runner: Runner,
     pub sign_ins: SignIns,
+    /// Where the pool is a cluster's, what this machine keeps of it (#4494).
+    pub cluster: Option<cluster::KeptHere>,
 }
 
 /// Everything read, before it means anything.
@@ -642,6 +655,21 @@ fn sign_ins_reading(facts: &Facts) -> Reading {
             );
         }
         SignIns::Read(profiles) => profiles,
+        SignIns::NotYours => {
+            return Reading::to_do(
+                format!(
+                    "Pool {name} isn't marked as your own, so purlis keeps no profile of yours on \
+                     its runner. Your cluster's admins, and whoever holds its nodes, can read \
+                     what a runner holds. Mark it on its row once you accept that."
+                ),
+                action(
+                    ActionId::MarkAsOwn,
+                    "Open Settings › Pools",
+                    "Opens your pools, where This is my own is on the pool's row. Only you can \
+                     turn it on.",
+                ),
+            );
+        }
     };
     if profiles.is_empty() {
         return Reading::to_do(
@@ -930,6 +958,7 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
             names: facts.cluster.contexts.clone(),
             recommended: facts.cluster.recommended().map(str::to_owned),
             chosen: facts.cluster.chosen.clone(),
+            pools: facts.cluster.pools.clone().unwrap_or_default(),
         },
     }
 }
@@ -1114,11 +1143,15 @@ pub fn read(here: &Here<'_>, pool: Option<&str>) -> Result<Setup, Refused> {
         choices.context.as_deref(),
         false,
     );
-    let kind = kind_of(&choices, engine, pool.is_some(), &contexts);
+    let on_a_cluster = pool.as_ref().map(|pool| pool.cluster.is_some());
+    let kind = kind_of(&choices, engine, on_a_cluster, &contexts);
     let cluster = if kind == Kind::Cluster {
         cluster::read(
             here.kubectl.map_err(str::to_owned),
-            choices.context.as_deref(),
+            pool.as_ref()
+                .and_then(|pool| pool.cluster.as_ref())
+                .map(|kept| kept.context.as_str())
+                .or(choices.context.as_deref()),
             true,
         )
     } else {
@@ -1136,9 +1169,16 @@ pub fn read(here: &Here<'_>, pool: Option<&str>) -> Result<Setup, Refused> {
 
 /// **The kind a setup is on** (#4492): a pool's own, else the one chosen on Where, else the one
 /// purlis recommends: Docker where it is ready or no cluster is named, else the cluster.
-fn kind_of(choices: &Choices, engine: Engine, pool: bool, cluster: &cluster::ClusterFacts) -> Kind {
-    if pool {
-        return Kind::Docker;
+fn kind_of(
+    choices: &Choices,
+    engine: Engine,
+    on_a_cluster: Option<bool>,
+    cluster: &cluster::ClusterFacts,
+) -> Kind {
+    match on_a_cluster {
+        Some(true) => return Kind::Cluster,
+        Some(false) => return Kind::Docker,
+        None => {}
     }
     choices
         .kind
@@ -1169,15 +1209,12 @@ fn pool_facts(here: &Here<'_>, name: &str, engine: Engine) -> Result<PoolFacts, 
         .iter()
         .any(|pool| pool.name() == name)
     {
-        return Err(Refused::Other(
-            if runners::profiles_of(here.config, name).is_ok() {
-                format!(
-                    "pool {name} is on a cluster, and Pool setup reads only Docker pools so far"
-                )
-            } else {
-                format!("there is no pool named {name} on this machine")
-            },
-        ));
+        return match cluster::pool_kept(here, name)? {
+            Some(facts) => Ok(facts),
+            None => Err(Refused::Other(format!(
+                "there is no pool named {name} on this machine"
+            ))),
+        };
     }
     let docker = here.docker.filter(|_| engine == Engine::Ready);
     let runner = runner_of(here.config, docker, name);
@@ -1195,6 +1232,7 @@ fn pool_facts(here: &Here<'_>, name: &str, engine: Engine) -> Result<PoolFacts, 
         name: name.to_owned(),
         runner,
         sign_ins,
+        cluster: None,
     })
 }
 
@@ -1525,6 +1563,24 @@ pub fn install_part(
     )
 }
 
+/// **Makes the Pool `name` in the cluster chosen on Where** (#4494), of runner image `image` by
+/// digest, with the person's own sign-in, on the Pool step's own button. Refused where no
+/// cluster was chosen.
+pub fn create_cluster_pool(
+    config: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    name: &str,
+    image: &str,
+) -> Result<(), Refused> {
+    let choices = read_choices(config)?;
+    let (Some(Kind::Cluster), Some(context)) = (choices.kind, choices.context.as_deref()) else {
+        return Err(Refused::Other(
+            "nothing was made: choose your team's cluster on Where first".to_owned(),
+        ));
+    };
+    cluster::create_pool(&kubectl.clone().with_context(context), name, image)
+}
+
 /// **Keeps the cluster operator's image named under Install's Options** (#4493), or none. Refused
 /// for an image not named by its digest, so the operator runs only what was checked.
 pub fn choose_operator_image(config: &Path, image: Option<&str>) -> Result<(), Refused> {
@@ -1557,11 +1613,25 @@ pub fn choose_name(config: &Path, name: Option<&str>) -> Result<(), Refused> {
     write_choices(config, choices)
 }
 
+/// The names of the pools this machine keeps, Docker's and clusters' (#4494).
+fn kept_pools(config: &Path) -> Result<Vec<String>, Refused> {
+    let mut names: Vec<String> = runners::pools(config)?
+        .iter()
+        .map(|pool| pool.name().to_owned())
+        .collect();
+    names.extend(
+        runners::cluster_pools(config)?
+            .iter()
+            .map(|pool| pool.name().to_owned()),
+    );
+    Ok(names)
+}
+
 /// **Keeps that this setup goes on with pool `name`**, once it has made it. Refused for a pool
 /// this machine doesn't keep.
 pub fn choose_pool(config: &Path, name: &str) -> Result<(), Refused> {
     let _locked = runners::lock(config);
-    if !runners::pools(config)?.iter().any(|one| one.name() == name) {
+    if !kept_pools(config)?.iter().any(|one| one == name) {
         return Err(Refused::Other(format!(
             "there is no pool named {name} on this machine"
         )));
@@ -1591,20 +1661,20 @@ pub struct Resumed {
 /// A name typed never picks a pool that was already there: only one that came after it does.
 pub fn resumed(here: &Here<'_>) -> Result<Resumed, Refused> {
     let choices = read_choices(here.config)?;
-    let kept = runners::pools(here.config)?;
+    let kept = kept_pools(here.config)?;
     let on = pool_of(&choices, &kept);
     let mut setup = read(here, on)?;
     let noticed = on.is_some() && on != choices.pool.as_deref();
+    let recommended = recommended_name(&kept);
     setup.others = kept
-        .iter()
-        .map(|pool| pool.name().to_owned())
+        .into_iter()
         .filter(|name| setup.pool.as_ref() != Some(name))
         .collect();
     Ok(Resumed {
         setup,
         name: choices.name,
         noticed,
-        recommended: recommended_name(&kept),
+        recommended,
     })
 }
 
@@ -1619,8 +1689,8 @@ pub enum Adding {
 
 /// The pool a setup is on, from what was chosen: the one it made where that is still kept, else
 /// one made since, by hand, under the name typed ([`resumed`]).
-fn pool_of<'a>(choices: &'a Choices, kept: &[runners::Pool]) -> Option<&'a str> {
-    let is_kept = |name: &&str| kept.iter().any(|pool| pool.name() == *name);
+fn pool_of<'a>(choices: &'a Choices, kept: &[String]) -> Option<&'a str> {
+    let is_kept = |name: &&str| kept.iter().any(|pool| pool == name);
     let chosen = choices.pool.as_deref().filter(is_kept);
     chosen.or_else(|| {
         choices
@@ -1641,7 +1711,7 @@ fn pool_of<'a>(choices: &'a Choices, kept: &[runners::Pool]) -> Option<&'a str> 
 pub fn start_adding(config: &Path) -> Result<Adding, Refused> {
     let _locked = runners::lock(config);
     let choices = read_choices(config)?;
-    let kept = runners::pools(config)?;
+    let kept = kept_pools(config)?;
     let unfinished = match pool_of(&choices, &kept) {
         Some(pool) => !choices.tried.contains_key(pool),
         None => choices.name.is_some(),
@@ -1680,8 +1750,8 @@ fn forget_the_new_one(config: &Path, choices: Choices) -> Result<(), Refused> {
 
 /// **The name a new pool is recommended** (#6256): `docker`, else the first `docker-<n>` no pool
 /// here has.
-fn recommended_name(kept: &[runners::Pool]) -> String {
-    let taken = |name: &str| kept.iter().any(|pool| pool.name() == name);
+fn recommended_name(kept: &[String]) -> String {
+    let taken = |name: &str| kept.iter().any(|pool| pool == name);
     std::iter::once("docker".to_owned())
         .chain((2..).map(|n| format!("docker-{n}")))
         .find(|name| !taken(name))
@@ -1705,7 +1775,7 @@ pub fn skip(config: &Path, pool: &str, step: StepId) -> Result<(), Refused> {
         )));
     }
     let _locked = runners::lock(config);
-    if !runners::pools(config)?.iter().any(|one| one.name() == pool) {
+    if !kept_pools(config)?.iter().any(|one| one == pool) {
         return Err(Refused::Other(format!(
             "there is no pool named {pool} on this machine"
         )));
@@ -1722,7 +1792,7 @@ pub fn skip(config: &Path, pool: &str, step: StepId) -> Result<(), Refused> {
 /// on. Refused for a pool this machine doesn't keep.
 pub fn tried(config: &Path, pool: &str, at: u64) -> Result<(), Refused> {
     let _locked = runners::lock(config);
-    if !runners::pools(config)?.iter().any(|one| one.name() == pool) {
+    if !kept_pools(config)?.iter().any(|one| one == pool) {
         return Err(Refused::Other(format!(
             "there is no pool named {pool} on this machine"
         )));

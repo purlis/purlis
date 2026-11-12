@@ -15,6 +15,7 @@ import { Radio, RadioGroup } from "../ui/choice/Radio";
 import { CodeBlock } from "../ui/code/CodeBlock";
 import { Disclosure } from "../ui/disclosure/Disclosure";
 import { TextField } from "../ui/field/Field";
+import { addClusterPool, checkClusterPoolKey } from "../pools";
 import { Action, Busy, Options, Recommended, Say, SeeWhat, StepHead } from "./parts";
 
 /**
@@ -248,6 +249,185 @@ export function InstallStep({
         <Action does={step.next.does} main={step.next.label} onMain={changed} />
       ) : (
         step.state === "done" && <Action main="Continue" onMain={onNext} />
+      )}
+    </>
+  );
+}
+
+const POOL_LEAD =
+  "A pool is a named place your chats run. On a cluster, each chat's runner is a pod the cluster operator makes for you alone.";
+
+/** Where the Pool step on a cluster has got to, held above its screen so leaving loses nothing. */
+type Claiming =
+  | { state: "idle" }
+  | { state: "busy"; said: string }
+  | { state: "keyed"; pool: string; key: string; namespace: string }
+  | { state: "refused"; why: string };
+
+/**
+ * **The Pool step on a cluster** (#4494): makes a Pool in the cluster where it has none, on its
+ * own button, then claims this person's runner of one: it reads the cluster operator key the Pool
+ * names and shows it whole, and only a second press pins it and claims the runner, which then
+ * becomes the pool this setup goes on with.
+ */
+export function ClusterPoolStep({
+  step,
+  contexts,
+  image,
+  onNext,
+  changed,
+}: {
+  step: PoolSetupStep;
+  contexts: PoolSetupContexts;
+  /** The runner image this build names, by digest, where it names one. */
+  image: string | undefined;
+  onNext: () => void;
+  changed: () => void;
+}) {
+  const pools = contexts.pools;
+  const [name, setName] = useState("");
+  const [teamImage, setTeamImage] = useState("");
+  const [chosen, choose] = useState<string | undefined>(pools[0]);
+  const [claiming, setClaiming] = useState<Claiming>({ state: "idle" });
+  const context = contexts.chosen ?? contexts.recommended ?? undefined;
+  const next = step.next;
+  const busy = claiming.state === "busy";
+  const making = next?.id === "create-cluster-pool";
+  const named = name.trim() === "" ? "team" : name.trim();
+  const runnerImage = teamImage.trim() === "" ? image : teamImage.trim();
+
+  const create = async () => {
+    if (runnerImage === undefined) {
+      setClaiming({
+        state: "refused",
+        why: "This build of purlis names no runner image, so give one by its digest under Options.",
+      });
+      return;
+    }
+    setClaiming({ state: "busy", said: "Making the pool in your cluster." });
+    const made = await commands.poolSetupClusterPool(named, runnerImage);
+    if (made.status === "error") setClaiming({ state: "refused", why: made.error });
+    else {
+      choose(named);
+      setClaiming({ state: "idle" });
+      changed();
+    }
+  };
+
+  const readKey = async () => {
+    const pool = chosen ?? pools[0];
+    if (pool === undefined || context === undefined) return;
+    setClaiming({ state: "busy", said: "Reading the cluster operator key the pool names." });
+    const key = await checkClusterPoolKey("", context, pool);
+    if ("trouble" in key) setClaiming({ state: "refused", why: key.trouble });
+    else setClaiming({ state: "keyed", pool, key: key.key, namespace: key.namespace });
+  };
+
+  const claim = async (keyed: Extract<Claiming, { state: "keyed" }>) => {
+    if (context === undefined) return;
+    setClaiming({ state: "busy", said: "Claiming your runner. This can take a few minutes." });
+    const refused = await addClusterPool({
+      name: keyed.pool,
+      kubeconfig: null,
+      context,
+      pool: keyed.pool,
+      key: keyed.key,
+      vouch_wait: null,
+    });
+    if (refused !== undefined) {
+      setClaiming({ state: "refused", why: refused.words });
+      return;
+    }
+    const kept = await commands.poolSetupPool(keyed.pool);
+    if (kept.status === "error") setClaiming({ state: "refused", why: kept.error });
+    else {
+      setClaiming({ state: "idle" });
+      changed();
+    }
+  };
+
+  return (
+    <>
+      <StepHead title="Pool" lead={POOL_LEAD} />
+      {step.state === "done" ? (
+        <p className="pool-setup-p">
+          <strong>Chats will run on:</strong> {step.line}.
+        </p>
+      ) : (
+        step.findings.map((finding) => (
+          <p key={finding} className="pool-setup-p">
+            {finding}
+          </p>
+        ))
+      )}
+      {!making && pools.length > 1 && step.state !== "done" && (
+        <RadioGroup aria-label="Pool" value={chosen ?? null} onChange={choose}>
+          {pools.map((pool, at) => (
+            <Radio key={pool} value={pool}>
+              <span className="pool-setup-choice">
+                {pool}
+                {at === 0 && <Recommended />}
+              </span>
+            </Radio>
+          ))}
+        </RadioGroup>
+      )}
+      {making && (
+        <Options>
+          <TextField
+            label="Name"
+            value={name}
+            onChange={setName}
+            placeholder="team"
+            help="Lower-case letters, digits and dashes. Recommended: team."
+          />
+          <TextField
+            label="Runner image"
+            value={teamImage}
+            onChange={setTeamImage}
+            placeholder={image}
+            help={
+              image === undefined
+                ? "By its digest. This build of purlis names none."
+                : "By its digest. Recommended: purlis's image of this version, shown in the box."
+            }
+          />
+        </Options>
+      )}
+      {claiming.state === "busy" && <Busy>{claiming.said}</Busy>}
+      {claiming.state === "keyed" && (
+        <Say tone="attention" title="Check the cluster operator key">
+          <p className="pool-setup-does">
+            Pool {claiming.pool} names this key. If your cluster&apos;s admin gave you one, check it
+            is the same. Your runner is claimed in namespace {claiming.namespace}.
+          </p>
+          <CodeBlock label="Cluster operator key" text={claiming.key} />
+        </Say>
+      )}
+      {claiming.state === "refused" && (
+        <Say tone="trouble" title="That didn't work">
+          {claiming.why}
+        </Say>
+      )}
+      {step.see && <SeeWhat text={step.see.text} note={step.see.note} />}
+      {step.state === "done" ? (
+        <Action main="Continue" onMain={onNext} />
+      ) : claiming.state === "keyed" ? (
+        <Action
+          does="Pins this key on this machine, claims your runner of the pool and pairs it here."
+          main="Pin the key and add the pool"
+          onMain={() => void claim(claiming)}
+          busy={busy}
+        />
+      ) : next && (next.id === "create-cluster-pool" || next.id === "add-cluster-pool") ? (
+        <Action
+          does={next.does}
+          main={next.label}
+          busy={busy}
+          onMain={() => void (making ? create() : readKey())}
+        />
+      ) : (
+        next && <Action does={next.does} />
       )}
     </>
   );

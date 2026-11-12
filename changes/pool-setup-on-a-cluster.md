@@ -11,3 +11,9 @@
   never replaced, and a new one is made in memory and handed to the cluster alone. Uninstalling
   is never a button: Install shows the commands, and how many people and claims they would end
   (#4493).
+- **Pool setup goes on to a working chat on a cluster pool.** The Pool step makes a Pool in your
+  cluster where it has none, then shows the cluster operator key it names and claims your runner
+  only once you press again. A teammate on a cluster that has pools is offered them, and passes
+  Check the cluster and Install. Sign-ins asks you to mark the pool as your own first, Agent
+  identity shows the commands that let the cluster mint the agent's tokens, with a key of the
+  App's own, and Try it starts a real chat there (#4494).

@@ -6,7 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PoolSetupPart, PoolSetupStep } from "../bindings";
-import { InstallStep } from "./ClusterSteps";
+import { ClusterPoolStep, InstallStep } from "./ClusterSteps";
 
 afterEach(() => {
   cleanup();
@@ -121,5 +121,99 @@ describe("Install (#4493)", () => {
     expect(only).toHaveAttribute("aria-expanded", "false");
     await userEvent.click(only);
     expect(screen.getByText(/3 claims by 2 people would end/)).toBeInTheDocument();
+  });
+});
+
+const poolStep = (next: string): PoolSetupStep => ({
+  ...install([]),
+  id: "pool",
+  name: "Pool",
+  undo: null,
+  see: null,
+  next: {
+    id: next,
+    label: next === "create-cluster-pool" ? "Create the pool" : "Add the pool here",
+    does: "What it does.",
+    command: null,
+    url: null,
+  },
+});
+
+const CONTEXTS = (pools: string[]) => ({
+  names: ["kind-team"],
+  recommended: "kind-team",
+  chosen: "kind-team",
+  pools,
+});
+
+const KEY = "ed25519:" + "b".repeat(64);
+const IMAGE = "ghcr.io/purlis/purlis-runner@sha256:" + "c".repeat(64);
+
+function cluster() {
+  const sent: { cmd: string; args: unknown }[] = [];
+  mockIPC((cmd, args) => {
+    sent.push({ cmd, args });
+    if (cmd === "cluster_pool_key") return { key: KEY, namespace: "purlis-runners-ab12" };
+    if (cmd === "add_cluster_pool") return { name: "team" };
+    if (cmd === "docker_pools")
+      return { pools: [], clusters: [], defaults: null, suspend_after: null, yours: true };
+    return null;
+  });
+  return sent;
+}
+
+describe("The Pool step on a cluster (#4494)", () => {
+  it("makes the Pool in the cluster on its own button, of this build's runner image", async () => {
+    const sent = cluster();
+    const changed = vi.fn();
+    render(
+      <ClusterPoolStep
+        step={poolStep("create-cluster-pool")}
+        contexts={CONTEXTS([])}
+        image={IMAGE}
+        onNext={() => {}}
+        changed={changed}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Create the pool" }));
+    await waitFor(() => expect(changed).toHaveBeenCalled());
+    expect(sent).toContainEqual({
+      cmd: "pool_setup_cluster_pool",
+      args: { name: "team", image: IMAGE },
+    });
+  });
+
+  it("shows the operator's key before anything is pinned, and pins it only on the second press", async () => {
+    const sent = cluster();
+    const changed = vi.fn();
+    render(
+      <ClusterPoolStep
+        step={poolStep("add-cluster-pool")}
+        contexts={CONTEXTS(["team"])}
+        image={IMAGE}
+        onNext={() => {}}
+        changed={changed}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Add the pool here" }));
+    expect(await screen.findByText("Check the cluster operator key")).toBeInTheDocument();
+    expect(screen.getByText(KEY)).toBeInTheDocument();
+    expect(sent.map((one) => one.cmd)).not.toContain("add_cluster_pool");
+    await userEvent.click(screen.getByRole("button", { name: "Pin the key and add the pool" }));
+    await waitFor(() => expect(changed).toHaveBeenCalled());
+    expect(sent).toContainEqual({
+      cmd: "add_cluster_pool",
+      args: {
+        adding: {
+          name: "team",
+          kubeconfig: null,
+          context: "kind-team",
+          pool: "team",
+          key: KEY,
+          vouch_wait: null,
+        },
+      },
+    });
+    expect(sent).toContainEqual({ cmd: "pool_setup_pool", args: { name: "team" } });
   });
 });

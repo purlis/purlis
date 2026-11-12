@@ -72,6 +72,8 @@ pub struct PoolSetupContexts {
     pub names: Vec<String>,
     pub recommended: Option<String>,
     pub chosen: Option<String>,
+    /// The chosen cluster's Pools, by name, where its operator runs (#4494).
+    pub pools: Vec<String>,
 }
 
 /// What the tab draws.
@@ -142,6 +144,7 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
             names: setup.contexts.names.clone(),
             recommended: setup.contexts.recommended.clone(),
             chosen: setup.contexts.chosen.clone(),
+            pools: setup.contexts.pools.clone(),
         },
         at: setup.at.as_ref().map(word),
         steps: setup
@@ -299,6 +302,28 @@ pub async fn pool_setup_install(part: String) -> Result<(), String> {
     #[cfg(not(unix))]
     {
         let _ = part;
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Makes the Pool `name` in the cluster chosen on Where** (#4494), of runner image `image` by
+/// digest, on the Pool step's own button, with the person's own kubectl and sign-in.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_cluster_pool(name: String, image: String) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("making a pool in your cluster", move || {
+            use purlis_core::poolsetup;
+            let kubectl = poolsetup::cluster::kubectl_here()?;
+            poolsetup::create_cluster_pool(&config_root()?, &kubectl, &name, &image)
+                .map_err(|why| why.to_string())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (name, image);
         Err(crate::dockerpools::NOT_HERE.to_owned())
     }
 }
@@ -1095,7 +1120,7 @@ fn try_on(
         plane: Some(&root),
         docker,
         engine: purlis_core::dockerpool::Docker::engine_on_this_machine(),
-        // A Docker pool's runner is asked nothing of a cluster.
+        // Try it asks nothing of a cluster: a cluster pool's chat start answers for its runner.
         kubectl: Err("not asked"),
     };
     let facts = poolsetup::read_pool(&here, pool).map_err(|why| why.to_string())?;

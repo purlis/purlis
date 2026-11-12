@@ -145,13 +145,10 @@ fn a_docker_setup_offers_the_cluster_its_kubeconfig_names_as_the_other_choice() 
 fn the_cluster_is_recommended_where_docker_isnt_ready_and_a_context_is_found() {
     let found = contexts(&["kind-team"], Some("kind-team"));
     let none = Choices::default();
+    assert_eq!(kind_of(&none, Engine::Missing, None, &found), Kind::Cluster);
+    assert_eq!(kind_of(&none, Engine::Ready, None, &found), Kind::Docker);
     assert_eq!(
-        kind_of(&none, Engine::Missing, false, &found),
-        Kind::Cluster
-    );
-    assert_eq!(kind_of(&none, Engine::Ready, false, &found), Kind::Docker);
-    assert_eq!(
-        kind_of(&none, Engine::Missing, false, &contexts(&[], None)),
+        kind_of(&none, Engine::Missing, None, &contexts(&[], None)),
         Kind::Docker
     );
     // What the person chose wins over what purlis recommends.
@@ -160,7 +157,7 @@ fn the_cluster_is_recommended_where_docker_isnt_ready_and_a_context_is_found() {
         ..Choices::default()
     };
     assert_eq!(
-        kind_of(&docker, Engine::Missing, false, &found),
+        kind_of(&docker, Engine::Missing, None, &found),
         Kind::Docker
     );
 }
@@ -364,4 +361,144 @@ fn a_setup_on_docker_asks_the_cluster_nothing() {
         ran.lines().collect::<Vec<_>>(),
         ["config view --output json"]
     );
+}
+
+fn operator_runs(pools: &[&str]) -> ClusterFacts {
+    ClusterFacts {
+        chosen: Some("kind-team".into()),
+        installed: Some(Ok(Installed {
+            definitions: true,
+            key: true,
+            operator: Operator::Running {
+                image: "ghcr.io/purlis/purlis-cluster-operator@sha256:abc".into(),
+            },
+            claims: Some((0, 0)),
+        })),
+        pools: Some(pools.iter().map(|pool| (*pool).to_owned()).collect()),
+        ..contexts(&["kind-team"], Some("kind-team"))
+    }
+}
+
+fn a_cluster_pool(owned: bool, mints: bool, sign_ins: SignIns) -> PoolFacts {
+    PoolFacts {
+        name: "team".into(),
+        runner: Runner::Running,
+        sign_ins,
+        cluster: Some(KeptHere {
+            context: "kind-team".into(),
+            pool: "team".into(),
+            owned,
+            mints,
+        }),
+    }
+}
+
+#[test]
+fn a_cluster_with_no_pool_offers_to_create_one() {
+    let facts = on_a_cluster(operator_runs(&[]));
+    let setup = of(Kind::Cluster, &facts, &chose("kind-team"));
+    assert_eq!(setup.at, Some(StepId::Pool));
+    let pool = setup.step(StepId::Pool).unwrap();
+    assert_eq!(pool.next.as_ref().unwrap().id, ActionId::CreateClusterPool);
+    let see = pool.see.as_ref().unwrap();
+    assert!(see.text.contains("kind: Pool"), "{see:?}");
+    assert!(
+        see.text
+            .starts_with("kubectl --context kind-team apply --server-side"),
+        "{see:?}"
+    );
+}
+
+#[test]
+fn a_teammate_on_a_cluster_with_pools_is_offered_to_add_one_and_passes_install() {
+    let facts = on_a_cluster(operator_runs(&["team", "gpu"]));
+    let setup = of(Kind::Cluster, &facts, &chose("kind-team"));
+    assert_eq!(states(&setup)[..4], [Done, Done, Done, Current]);
+    let pool = setup.step(StepId::Pool).unwrap();
+    assert!(
+        pool.findings[0].contains("these pools: team, gpu"),
+        "{pool:?}"
+    );
+    assert_eq!(pool.next.as_ref().unwrap().id, ActionId::AddClusterPool);
+}
+
+#[test]
+fn a_cluster_pool_not_marked_as_yours_asks_to_be_marked_before_any_sign_in() {
+    let facts = Facts {
+        pool: Some(a_cluster_pool(false, false, SignIns::NotYours)),
+        ..on_a_cluster(operator_runs(&["team"]))
+    };
+    let setup = of(Kind::Cluster, &facts, &chose("kind-team"));
+    assert_eq!(setup.step(StepId::Pool).unwrap().state, Done);
+    let sign_ins = setup.step(StepId::Signins).unwrap();
+    assert_eq!(sign_ins.state, Current);
+    assert!(
+        sign_ins.findings[0].contains("isn't marked as your own"),
+        "{sign_ins:?}"
+    );
+    assert_eq!(sign_ins.next.as_ref().unwrap().id, ActionId::MarkAsOwn);
+}
+
+#[test]
+fn a_cluster_pool_that_doesnt_mint_shows_the_opt_in_by_hand_and_never_a_vaults_key() {
+    let facts = Facts {
+        pool: Some(a_cluster_pool(true, false, SignIns::Read(Vec::new()))),
+        ..on_a_cluster(operator_runs(&["team"]))
+    };
+    let setup = of(Kind::Cluster, &facts, &chose("kind-team"));
+    let see = setup.step(StepId::Identity).unwrap().see.clone().unwrap();
+    assert!(see.text.contains("mintInCluster\":true"), "{}", see.text);
+    assert!(
+        see.text.contains("<the key GitHub gave you>.pem"),
+        "{}",
+        see.text
+    );
+    assert!(!see.text.contains("purlis secret"), "{}", see.text);
+    assert!(!see.text.contains("vault "), "{}", see.text);
+    // One that mints already shows no opt-in.
+    let minting = Facts {
+        pool: Some(a_cluster_pool(true, true, SignIns::Read(Vec::new()))),
+        ..facts
+    };
+    let setup = of(Kind::Cluster, &minting, &chose("kind-team"));
+    assert!(setup.step(StepId::Identity).unwrap().see.is_none());
+}
+
+#[test]
+fn a_cluster_pools_setup_is_on_the_cluster_kind_whatever_was_chosen() {
+    let docker = Choices {
+        kind: Some(Kind::Docker),
+        ..Choices::default()
+    };
+    assert_eq!(
+        kind_of(&docker, Engine::Ready, Some(true), &ClusterFacts::default()),
+        Kind::Cluster
+    );
+    assert_eq!(
+        kind_of(
+            &chose("x"),
+            Engine::Ready,
+            Some(false),
+            &ClusterFacts::default()
+        ),
+        Kind::Docker
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn the_pool_made_names_its_image_by_digest_and_nothing_else() {
+    let image = "ghcr.io/purlis/purlis-runner@sha256:".to_owned() + &"a".repeat(64);
+    assert_eq!(
+        pool_definition("team", &image),
+        format!(
+            "apiVersion: runners.purlis.dev/v1alpha1\nkind: Pool\nmetadata:\n  name: team\nspec:\n  image: {image}\n"
+        )
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let kubectl = fresh_kind(dir.path());
+    assert!(create_pool(&kubectl, "team", "ghcr.io/purlis/purlis-runner:latest").is_err());
+    assert!(create_pool(&kubectl, "Team!", &image).is_err());
+    // Nothing reached the cluster.
+    assert!(!dir.path().join("ran").exists());
 }

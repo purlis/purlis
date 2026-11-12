@@ -74,6 +74,21 @@ pub struct ClusterFacts {
     pub doctor: Option<doctor::Report>,
     /// What the chosen context's cluster holds of the install, where it was read.
     pub installed: Option<Result<Installed, String>>,
+    /// The cluster's Pools, by name, where its operator runs and they could be listed (#4494).
+    pub pools: Option<Vec<String>>,
+}
+
+/// **What this machine keeps of a cluster pool** (#4494): where it reaches its cluster, and the
+/// person's own mark. Nothing of a credential.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeptHere {
+    pub context: String,
+    /// The cluster's Pool it claims its runner of.
+    pub pool: String,
+    /// The person's mark that it is their own (#4071).
+    pub owned: bool,
+    /// Whether the cluster's Pool mints the agent's GitHub App tokens there (#4204).
+    pub mints: bool,
 }
 
 impl ClusterFacts {
@@ -429,6 +444,31 @@ pub fn installed(kubectl: &Kubectl) -> Result<Installed, String> {
     })
 }
 
+/// The cluster's Pools, by name; `None` where they couldn't be listed.
+fn pools_of(kubectl: &Kubectl) -> Option<Vec<String>> {
+    let answer = kubectl
+        .asked(
+            &["get", "pools.runners.purlis.dev", "--output", "json"],
+            None,
+        )
+        .ok()
+        .filter(|answer| answer.ok)?;
+    let listed: serde_json::Value = serde_json::from_str(&answer.printed).ok()?;
+    Some(
+        listed
+            .get("items")?
+            .as_array()?
+            .iter()
+            .filter_map(|item| {
+                item.pointer("/metadata/name")
+                    .and_then(serde_json::Value::as_str)
+            })
+            .filter(|name| crate::clusterpool::is_subdomain(name))
+            .map(str::to_owned)
+            .collect(),
+    )
+}
+
 /// **Reads a cluster for Pool setup**: the kubeconfig's contexts, and on the chosen one, what the
 /// cluster holds of the install and, before an operator runs there, doctor. `deep` is whether the
 /// cluster itself is asked: only where the setup is on a cluster.
@@ -465,6 +505,9 @@ pub fn read(kubectl: Result<&Kubectl, String>, chosen: Option<&str>, deep: bool)
         .with_context(&context)
         .all_within(READ_WITHIN);
     facts.installed = Some(installed(&on));
+    if facts.operator_runs() {
+        facts.pools = pools_of(&on);
+    }
     if !facts.operator_runs() {
         facts.doctor = Some(doctor(&Asked {
             kubectl: &on,
@@ -540,6 +583,12 @@ pub(super) fn where_reading(facts: &Facts, choices: &Choices) -> Reading {
                 "Saves your choice. Nothing on this machine changes yet.",
             ),
         );
+    }
+    if let Some(kept) = facts.pool.as_ref().and_then(|pool| pool.cluster.as_ref()) {
+        return Reading::done(format!(
+            "Your team's cluster, through context {}",
+            kept.context
+        ));
     }
     if choices.kind == Some(Kind::Cluster)
         && let Some(context) = &cluster.chosen
@@ -761,6 +810,29 @@ pub(super) fn see_of(id: super::StepId, facts: &Facts, choices: &Choices) -> Opt
                 .to_owned(),
             text: doctor_by_hand(&on),
         }),
+        StepId::Pool if facts.pool.is_none() => Some(See {
+            note:
+                "Creating the pool applies this, with your own sign-in. Adding it here then pins \
+                   the operator's key and claims your runner, which only the window does: \
+                   there's no command for it."
+                    .to_owned(),
+            text: format!(
+                "kubectl{on} apply --server-side -f - <<'POOL'\n{}POOL",
+                pool_definition("<name>", "ghcr.io/purlis/purlis-runner@sha256:<digest>")
+            ),
+        }),
+        StepId::Identity => facts
+            .pool
+            .as_ref()
+            .and_then(|pool| pool.cluster.as_ref())
+            .filter(|kept| !kept.mints)
+            .map(|kept| See {
+                note: "Your cluster can mint the agent's tokens itself, so its chats go on while \
+                       this machine is away. Recommended once Try it has proved the identity. \
+                       Your cluster's admin runs these."
+                    .to_owned(),
+                text: minting_by_hand(&on, &kept.pool),
+            }),
         StepId::Install => Some(See {
             note: "These are the install's commands, a part after another, as each button runs \
                    them, from a checkout of purlis at this version. Run them yourself if you \
@@ -801,15 +873,185 @@ fn doctor_by_hand(on: &str) -> String {
     lines.join("\n")
 }
 
-/// **The Pool step on a cluster, before #4494's screen**: what comes once the install is done.
+/// **The cluster pool `name` this machine keeps, read as Pool setup reads a pool** (#4494):
+/// `None` where there is no cluster pool of that name. Its runner is what this machine keeps of
+/// its claim, and nothing is asked of the cluster for it; its sign-ins are asked of the runner
+/// only where the person marked the pool as their own, through the gate a profile passes there.
+pub(super) fn pool_kept(
+    here: &super::Here<'_>,
+    name: &str,
+) -> Result<Option<super::PoolFacts>, crate::runners::Refused> {
+    use super::{PoolFacts, Profile, Runner, SignIns};
+    use crate::runners;
+    let Some(pool) = runners::cluster_pools(here.config)?
+        .into_iter()
+        .find(|pool| pool.name() == name)
+    else {
+        return Ok(None);
+    };
+    let kept = runners::cluster_runner_for(here.config, name)?;
+    let runner = if kept.is_some() {
+        Runner::Running
+    } else {
+        Runner::None
+    };
+    let sign_ins = match (&kept, here.kubectl) {
+        _ if !pool.owned() => SignIns::NotYours,
+        _ if crate::runnertaint::pool_ran_unsandboxed(here.config, name) => SignIns::Tainted,
+        (None, _) | (_, Err(_)) => SignIns::NotAsked,
+        (Some((cluster, kept)), Ok(kubectl)) => {
+            let default = here
+                .plane
+                .and_then(|root| crate::profiles::current(root).default);
+            match crate::pools::cluster_runner_yours(
+                here.config,
+                name,
+                cluster,
+                kept,
+                &crate::pools::vouched_now,
+            ) {
+                Err(why) => SignIns::CannotTell(crate::shown::short(&why)),
+                Ok(judged) => {
+                    let mut read = Vec::new();
+                    let mut unread = None;
+                    for profile in pool.profiles_kept(default.as_deref()) {
+                        match crate::pools::cluster_standing(
+                            here.config,
+                            kubectl,
+                            name,
+                            &judged,
+                            &profile,
+                        ) {
+                            Ok(standing) => read.push((
+                                profile,
+                                standing.map_or(Profile::NotKept, Profile::Standing),
+                            )),
+                            Err(why) => {
+                                unread = Some(crate::shown::short(&why));
+                                break;
+                            }
+                        }
+                    }
+                    unread.map_or(SignIns::Read(read), SignIns::CannotTell)
+                }
+            }
+        }
+    };
+    Ok(Some(PoolFacts {
+        name: name.to_owned(),
+        runner,
+        sign_ins,
+        cluster: Some(KeptHere {
+            context: pool.context().to_owned(),
+            pool: pool.pool().to_owned(),
+            owned: pool.owned(),
+            mints: pool.mints_in_cluster(),
+        }),
+    }))
+}
+
+/// **The Pool step on a cluster** (#4494): with no pool here yet, a Pool of the cluster's to
+/// claim a runner of, or one to make there first; with one, what it is.
 pub(super) fn pool_reading(facts: &Facts) -> Reading {
     if facts.pool.is_some() {
         return super::pool_reading(facts);
     }
-    Reading::to_do(
-        "A pool is a named place your chats run. On a cluster, each chat's runner is a pod the \
-         cluster operator makes from it.",
-        None,
+    match &facts.cluster.pools {
+        None => Reading::to_do(
+            "A pool is a named place your chats run. On a cluster, each chat's runner is a pod the \
+             cluster operator makes from it.",
+            None,
+        ),
+        Some(pools) if pools.is_empty() => Reading::to_do(
+            "A pool is a named place your chats run. Your cluster has none yet, so this makes \
+             one, from purlis's runner image, and then claims your runner of it.",
+            action(
+                ActionId::CreateClusterPool,
+                "Create the pool",
+                "Applies a Pool to the cluster with your own sign-in. Anyone your cluster lets \
+                 use it can claim a runner of it.",
+            ),
+        ),
+        Some(pools) => Reading::to_do(
+            format!(
+                "Your team has {} on this cluster. Adding one here claims a runner of it for you \
+                 and pairs it with this machine.",
+                match pools.as_slice() {
+                    [one] => format!("the pool {one}"),
+                    more => format!("these pools: {}", more.join(", ")),
+                }
+            ),
+            action(
+                ActionId::AddClusterPool,
+                "Add the pool here",
+                "Pins the cluster operator key the pool names, then claims your runner of it and \
+                 pairs it with this machine. Nothing else on the cluster changes.",
+            ),
+        ),
+    }
+}
+
+/// **The Pool a set-up makes in a cluster** (#4494): named `name`, its runners of `image`, by
+/// digest. Every other field is the operator's default.
+#[must_use]
+pub fn pool_definition(name: &str, image: &str) -> String {
+    format!(
+        "apiVersion: runners.purlis.dev/v1alpha1\n\
+         kind: Pool\n\
+         metadata:\n  name: {name}\n\
+         spec:\n  image: {image}\n"
+    )
+}
+
+/// **Makes the Pool `name` in the cluster `kubectl` is pointed at**, of runner image `image` by
+/// digest, with the person's own sign-in. Refused for a name or an image the cluster would refuse.
+pub fn create_pool(
+    kubectl: &Kubectl,
+    name: &str,
+    image: &str,
+) -> Result<(), crate::runners::Refused> {
+    use crate::runners::Refused;
+    if !crate::clusterpool::is_subdomain(name) {
+        return Err(Refused::Other(format!(
+            "nothing was made: \"{}\" isn't a pool's name; use lower-case letters, digits, \
+             dashes and dots",
+            crate::shown::short(name)
+        )));
+    }
+    if !super::install::is_by_digest(image) {
+        return Err(Refused::Other(
+            "nothing was made: name the runner image by its digest, <repository>@sha256:…".into(),
+        ));
+    }
+    let answer = kubectl
+        .asked(
+            &["apply", "--server-side", "-f", "-"],
+            Some(&pool_definition(name, image)),
+        )
+        .map_err(|why| Refused::Other(why.to_string()))?;
+    if !answer.ok {
+        return Err(Refused::Other(format!(
+            "the cluster didn't take the pool: {}",
+            crate::shown::short(&answer.said)
+        )));
+    }
+    Ok(())
+}
+
+/// **What making the agent's tokens in the cluster takes, by hand** (#4494, B on #4469): the
+/// App's own key, made on GitHub by the admin for this cluster, never a vault's.
+fn minting_by_hand(on: &str, pool: &str) -> String {
+    format!(
+        "# Opt-in: the cluster mints the agent's GitHub App tokens, so chats go on while this\n\
+         # machine is away. Make a key for the App on GitHub for this cluster alone; no vault's\n\
+         # key ever moves here. docs/cluster-operator.md, \"Minting GitHub App tokens in the\n\
+         # cluster\", has the Role a plain install adds for it.\n\
+         kubectl{on} --namespace {SYSTEM_NAMESPACE} create secret generic agent-app \\\n  \
+         --from-literal=app=<the App's client id> --from-file=key=<the key GitHub gave you>.pem\n\
+         kubectl{on} annotate pools.runners.purlis.dev {pool} --overwrite \\\n  \
+         runners.purlis.dev/forge-writer=\"$(kubectl{on} auth whoami -o jsonpath='{{.status.userInfo.username}}')\"\n\
+         kubectl{on} patch pools.runners.purlis.dev {pool} --type merge \\\n  \
+         -p '{{\"spec\":{{\"forge\":{{\"appKeySecretRef\":{{\"name\":\"agent-app\"}},\"repos\":[\"<owner>/*\"],\"mintInCluster\":true}}}}}}'"
     )
 }
 

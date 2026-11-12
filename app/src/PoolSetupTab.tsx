@@ -13,13 +13,18 @@ import {
   type PoolSetupStep,
 } from "./bindings";
 import { Notice } from "./Notice";
-import { CheckStep, ContextOptions, InstallStep } from "./poolsetup/ClusterSteps";
+import { CheckStep, ClusterPoolStep, ContextOptions, InstallStep } from "./poolsetup/ClusterSteps";
 import { Action, Say, SeeWhat, StepHead } from "./poolsetup/parts";
 import { IdentityStep } from "./poolsetup/IdentityStep";
 import { NOTHING_CHOSEN, PoolStep, type Chosen } from "./poolsetup/PoolStep";
 import { SignInsStep } from "./poolsetup/SignInsStep";
 import { TryStep } from "./poolsetup/TryStep";
-import { startANewPoolSetup, startPoolSetupOver, usePoolSetupStart } from "./pools";
+import {
+  readReleaseImage,
+  startANewPoolSetup,
+  startPoolSetupOver,
+  usePoolSetupStart,
+} from "./pools";
 import { Button } from "./ui/button/Button";
 import { Card } from "./ui/card/Card";
 import { STEP_STATES, StepList, type StepState } from "./ui/steps/Steps";
@@ -221,6 +226,8 @@ type TabProps = {
   onOpenIdentity?: () => void;
   /** Opens the project's Settings, where a persona's tool is allowed. */
   onOpenSettings?: () => void;
+  /** Opens Your settings, where a cluster pool is marked as the person's own (#4071). */
+  onOpenPools?: () => void;
 };
 
 export function PoolSetupTab(props: TabProps) {
@@ -234,6 +241,7 @@ function PoolSetupGuide({
   onOpenChat,
   onOpenIdentity,
   onOpenSettings,
+  onOpenPools,
   continuing,
 }: TabProps & {
   /** Add went on with a new pool's unfinished setup: the tab says so, with Start over. */
@@ -249,6 +257,17 @@ function PoolSetupGuide({
   }>({ making: false });
   const [typed, setTyped] = useState<string>();
   const [chosen, choose] = useState<Chosen>(NOTHING_CHOSEN);
+  // The runner image this build names, for a Pool made in a cluster (#4494).
+  const [releaseImage, setReleaseImage] = useState<string>();
+  useEffect(() => {
+    let gone = false;
+    void readReleaseImage().then((read) => {
+      if (!gone && "image" in read) setReleaseImage(read.image);
+    });
+    return () => {
+      gone = true;
+    };
+  }, []);
   const reads = useRef(0);
   /** The read on its way, so a slow Docker is waited for and never asked twice at once. */
   const reading = useRef(0);
@@ -422,6 +441,23 @@ function PoolSetupGuide({
             <CheckStep step={step} onNext={() => after("check")} onRecheck={reread} />
           ) : step?.id === "install" ? (
             <InstallStep step={step} onNext={() => after("install")} changed={reread} />
+          ) : step?.id === "pool" && setup.kind === "cluster" ? (
+            <ClusterPoolStep
+              step={step}
+              contexts={setup.contexts}
+              image={releaseImage}
+              onNext={() => after("pool")}
+              changed={() => {
+                setShowing(undefined);
+                reread();
+              }}
+            />
+          ) : step?.id === "signins" && step.next?.id === "mark-as-own" ? (
+            <>
+              <StepHead title={step.name} />
+              <Findings step={step} />
+              <Action does={step.next.does} main={step.next.label} onMain={onOpenPools} />
+            </>
           ) : step?.id === "pool" ? (
             <PoolStep
               step={step}

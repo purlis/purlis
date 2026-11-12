@@ -59,7 +59,12 @@ const USE_DOCKER = act(
   "Saves your choice. Nothing on this machine changes yet.",
 );
 
-const CONTEXTS = { names: ["kind-team", "prod-eu"], recommended: "kind-team", chosen: null };
+const CONTEXTS = {
+  names: ["kind-team", "prod-eu"],
+  recommended: "kind-team",
+  chosen: null,
+  pools: [],
+};
 
 const shown = (
   at: string,
@@ -171,7 +176,7 @@ export const NoClusterInTheKubeconfig: Story = {
         }),
         ...AFTER_CHECK(0),
       ],
-      { names: [], recommended: null, chosen: null },
+      { names: [], recommended: null, chosen: null, pools: [] },
     ),
   ),
 };
@@ -195,7 +200,7 @@ export const NoKubectl: Story = {
         }),
         ...AFTER_CHECK(0),
       ],
-      { names: [], recommended: null, chosen: null },
+      { names: [], recommended: null, chosen: null, pools: [] },
     ),
   ),
 };
@@ -438,4 +443,100 @@ export const UninstallingIsCommandsOnly: Story = {
     await userEvent.click(await canvas.findByRole("button", { name: "Uninstalling" }));
     await canvas.findByText(/3 claims by 2 people would end/);
   },
+};
+
+const INSTALLED = [
+  DONE_WHERE,
+  step("check", "Check the cluster", "done", { line: "purlis's cluster operator runs here" }),
+  step("install", "Install", "done", { line: "Installed" }),
+];
+
+const AFTER_POOL = [
+  step("signins", "Sign-ins", "later"),
+  step("identity", "Agent identity", "later"),
+  step("try", "Try it", "later"),
+];
+
+const onPool = (findings: string, next: PoolSetupAction, pools: string[]) =>
+  shown(
+    "pool",
+    [...INSTALLED, step("pool", "Pool", "current", { findings: [findings], next }), ...AFTER_POOL],
+    { names: ["kind-team"], recommended: "kind-team", chosen: "kind-team", pools },
+  );
+
+const KEY = "ed25519:9f2c4e6a8b0d1f3e5a7c9b1d3f5e7a9c1b3d5f7e9a1c3b5d7f9e1a3c5b7d9f1e";
+
+export const CreateTheClustersPool: Story = {
+  beforeEach: faked(
+    onPool(
+      "A pool is a named place your chats run. Your cluster has none yet, so this makes one, from purlis's runner image, and then claims your runner of it.",
+      act(
+        "create-cluster-pool",
+        "Create the pool",
+        "Applies a Pool to the cluster with your own sign-in. Anyone your cluster lets use it can claim a runner of it.",
+      ),
+      [],
+    ),
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const main = await canvas.findByRole("button", { name: "Create the pool" });
+    main.focus();
+    await expect(main).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
+export const TheKeyToCheckBeforeAdding: Story = {
+  beforeEach: () => {
+    mockIPC((cmd) => {
+      if (cmd === "pool_setup")
+        return onPool(
+          "Your team has these pools on this cluster: team, gpu. Adding one here claims a runner of it for you and pairs it with this machine.",
+          act(
+            "add-cluster-pool",
+            "Add the pool here",
+            "Pins the cluster operator key the pool names, then claims your runner of it and pairs it with this machine. Nothing else on the cluster changes.",
+          ),
+          ["team", "gpu"],
+        );
+      if (cmd === "cluster_pool_key") return { key: KEY, namespace: "purlis-runners-3f9a1c2b" };
+      return null;
+    });
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Add the pool here" }));
+    const pin = await canvas.findByRole("button", { name: "Pin the key and add the pool" });
+    await canvas.findByText(KEY);
+    pin.focus();
+    await expect(pin).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
+export const MarkThePoolAsYourOwn: Story = {
+  beforeEach: faked(
+    shown(
+      "signins",
+      [
+        ...INSTALLED,
+        step("pool", "Pool", "done", { line: "team" }),
+        step("signins", "Sign-ins", "current", {
+          findings: [
+            "Pool team isn't marked as your own, so purlis keeps no profile of yours on its runner. Your cluster's admins, and whoever holds its nodes, can read what a runner holds. Mark it on its row once you accept that.",
+          ],
+          next: act(
+            "mark-as-own",
+            "Open Settings › Pools",
+            "Opens your pools, where This is my own is on the pool's row. Only you can turn it on.",
+          ),
+          skippable: true,
+        }),
+        step("identity", "Agent identity", "later"),
+        step("try", "Try it", "later"),
+      ],
+      { names: ["kind-team"], recommended: "kind-team", chosen: "kind-team", pools: ["team"] },
+    ),
+  ),
 };

@@ -4164,6 +4164,11 @@ export const commands = {
 	poolSetupInstall: (part: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_install", { part })),
 	/**  **Keeps the cluster operator's image named under Install's Options** (#4493), or none. */
 	poolSetupOperatorImage: (image: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_operator_image", { image })),
+	/**
+	 *  **Makes the Pool `name` in the cluster chosen on Where** (#4494), of runner image `image` by
+	 *  digest, on the Pool step's own button, with the person's own kubectl and sign-in.
+	 */
+	poolSetupClusterPool: (name: string, image: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_cluster_pool", { name, image })),
 	/**  **Keeps the name typed on the Pool step**, or none, so coming back finds it. */
 	poolSetupName: (name: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_name", { name })),
 	/**  **Keeps that this setup goes on with pool `name`**, once it has made it. */
@@ -13616,6 +13621,8 @@ export type PoolSetupContexts = {
 	names: string[],
 	recommended: string | null,
 	chosen: string | null,
+	/**  The chosen cluster's Pools, by name, where its operator runs (#4494). */
+	pools: string[],
 };
 
 /**
