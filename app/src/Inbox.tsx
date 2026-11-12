@@ -756,7 +756,7 @@ export function Inbox({
           as the Chats view's switch is: nothing to narrow otherwise, and an empty Asks is its one
           sentence. Each says its count above 0 only; Chat is greyed, with why, with no chat
           focused. */}
-      {drawsAsks && chips.length > 1 && counts.project > 0 && (
+      {chipsDrawn && (
         <div className="inbox-scope">
           <ScopeSwitch
             label={SCOPE_LABEL}
@@ -867,8 +867,9 @@ export function Inbox({
         {/* **What an answer said that the person must read** (#5890): Keep blocked on a vault
             the chat's persona already holds does not stop its runs, and says where to. Above
             whatever waits, until dismissed, since the row it was pressed on has gone. Drawn with the
-            asks, under every scope filter, on purpose: it names its chat, and the person who
-            pressed must read it. */}
+            asks and narrowed by the chips (ADR 0121, amended 2026-11-12, decision 9): one about a
+            chat is listed in every scope that holds its chat, one about no chat only under
+            Project. */}
         {drawsAsks && saidListed.length > 0 && (
           <NoticeList>
             {saidListed.map((one) =>

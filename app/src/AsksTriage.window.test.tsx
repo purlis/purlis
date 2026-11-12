@@ -248,6 +248,8 @@ describe("triage walks the scope in view (ADR 0121, amended 2026-11-12, decision
     expect(answered(calls)).toHaveLength(1);
     again([ask(3), ask(6)]);
     await waitFor(() => expect(inChat()).toBe("steward 3"));
+    // On the next ask's lead, as after the first row (#6346), never only its row.
+    expect(focused()).toHaveAccessibleName("Deny");
     await userEvent.keyboard("{Enter}");
     again([ask(6)]);
     // Chat is empty: the keyboard goes back, and the workspace's ask is never landed on.

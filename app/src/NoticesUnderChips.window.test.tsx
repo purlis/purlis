@@ -153,6 +153,11 @@ describe("Notices under the chips", () => {
     expect(listedUnder(quietSaid(5))).toEqual(PROJECT_ONLY);
   });
 
+  it("lists another project's quiet chat in the Asks view only under Project, though its number is the focused chat's", () => {
+    draw({ part: "asks", elsewhere: elsewhere([quiet(3, "/home/dev/ops", "ops")]) });
+    expect(listedUnder(quietSaid(3))).toEqual(PROJECT_ONLY);
+  });
+
   it("lists what an answer said under the scopes that hold its chat", () => {
     noteAnswered(PLANE, {
       at: Date.now(),
