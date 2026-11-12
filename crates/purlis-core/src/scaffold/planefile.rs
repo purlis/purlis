@@ -112,8 +112,8 @@ fn toml_str(s: &str) -> String {
 }
 
 /// `commands._render_charter_toml`: what `init` writes into a fresh plane, and then the
-/// `[sandbox]` block the Python charter never wrote: every project charter makes runs its chats
-/// sandboxed (ADR 0067 §1, ruling V21).
+/// `[sandbox]` block the Python charter never wrote: the default egress, and no `mode`, so a
+/// new project's chats start at the person's own default, Basic sandbox (Q114, Q201).
 pub fn render(forge: &str, owner: &str, host: Option<&str>) -> String {
     let mut lines = vec![
         format!("schema = {WRITTEN}"),
@@ -133,7 +133,7 @@ pub fn render(forge: &str, owner: &str, host: Option<&str>) -> String {
         "share = \"local\"".to_owned(),
         String::new(),
     ]);
-    lines.push(crate::sandbox::on_block());
+    lines.push(crate::sandbox::scaffold_block());
     lines.join("\n")
 }
 
@@ -300,9 +300,9 @@ pub(crate) fn edited(body: &str, section: &str, key: &str, value: &str) -> Strin
 mod tests {
     use super::*;
 
-    /// The block every new project ends with (ADR 0067 §1, ruling V21 5).
-    const SANDBOX_ON: &str =
-        "\n[sandbox]\nmode = \"on\"\negress = [\"model-providers\", \"forge\", \"toolchains\"]\n";
+    /// The block every new project ends with: the default egress and no `mode` (Q114, Q201).
+    const SANDBOX: &str =
+        "\n[sandbox]\negress = [\"model-providers\", \"forge\", \"toolchains\"]\n";
 
     /// Verified against CPython 3.14: `commands._render_charter_toml(...)`, and then the
     /// `[sandbox]` block the Python charter never wrote (ADR 0067 §1).
@@ -311,13 +311,13 @@ mod tests {
         assert_eq!(
             render("github", "acme", None),
             format!(
-                "schema = 1\n\n[[forge]]\nkind = \"github\"\nowner = \"acme\"\n\n[memory]\nshare = \"local\"\n{SANDBOX_ON}"
+                "schema = 1\n\n[[forge]]\nkind = \"github\"\nowner = \"acme\"\n\n[memory]\nshare = \"local\"\n{SANDBOX}"
             )
         );
         assert_eq!(
             render("gitlab", "", Some("git.example.com")),
             format!(
-                "schema = 1\n\n[[forge]]\nkind = \"gitlab\"\nhost = \"git.example.com\"\n\n[memory]\nshare = \"local\"\n{SANDBOX_ON}"
+                "schema = 1\n\n[[forge]]\nkind = \"gitlab\"\nhost = \"git.example.com\"\n\n[memory]\nshare = \"local\"\n{SANDBOX}"
             )
         );
         assert_eq!(
@@ -326,14 +326,16 @@ mod tests {
         );
     }
 
-    /// A project charter makes runs every chat sandboxed, with the default egress (ADR 0067
-    /// §1, ruling V21 5), and the file says nothing charter would refuse.
+    /// A new project leaves the level to the person (Q201): no policy is in force, and the
+    /// default egress is what the full sandbox uses where a person or a policy turns it on. The
+    /// file says nothing charter would refuse.
     #[test]
-    fn a_new_project_turns_the_sandbox_on_with_the_default_egress() {
+    fn a_new_project_leaves_the_level_to_the_person_with_the_default_egress() {
         let said = crate::sandbox::Plane::of(Some(&render("github", "acme", None))).said();
 
+        assert_eq!(said.policy, None);
         assert_eq!(
-            said.policy,
+            said.unset,
             Some(crate::sandbox::Policy {
                 egress: crate::sandbox::Preset::DEFAULT.to_vec(),
                 hosts: vec![],
@@ -343,6 +345,21 @@ mod tests {
             })
         );
         assert!(said.refused.is_empty(), "{:?}", said.refused);
+    }
+
+    /// R-014 (Q114, Q201): a new project gets the person's own default, Basic sandbox (the
+    /// floor), not a level nobody chose, so its `charter.toml` never says `mode = "on"`.
+    #[test]
+    fn a_scaffolded_charter_toml_has_no_mode_on_line() {
+        for written in [
+            render("github", "acme", None),
+            render("gitlab", "", Some("git.example.com")),
+        ] {
+            assert!(
+                !written.lines().any(|line| line.trim() == "mode = \"on\""),
+                "{written}"
+            );
+        }
     }
 
     fn set(body: &str) -> String {

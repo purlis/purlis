@@ -8736,3 +8736,104 @@ fn a_chat_may_read_the_folder_its_last_run_kept_but_not_write_it() {
         );
     }
 }
+
+// ---- R-032: until "purlis decides" is confirmed, every level keeps the harness's own check ----
+
+/// R-032 (S13, a pin): at the full sandbox, at the floor and with the person's confirmed off,
+/// on each harness, the words a chat starts with switch none of its harness's own checks off:
+/// they name no permission mode, approval policy or bypass that asks nobody
+/// ([`crate::dispatchunattended::bypass_in`]), so the harness's own checking mode is the one
+/// it starts in.
+#[test]
+fn a_chat_at_every_level_starts_with_its_harness_own_check() {
+    use crate::dispatchunattended::bypass_in;
+    // The app's plugin, with the shim an opencode chat loads: without it, opencode is not armed.
+    let plugin = tempfile::tempdir().expect("a plugin");
+    let shim = crate::opencode::shim_in(plugin.path());
+    std::fs::create_dir_all(shim.parent().expect("its folder")).expect("its folder");
+    std::fs::write(&shim, "").expect("the shim");
+    let kit = crate::harness::Kit {
+        skills: None,
+        laid_out: None,
+        binary: std::path::Path::new("/app/purlis"),
+        plugin: Some(plugin.path()),
+        persona: None,
+        graded: false,
+        judging: false,
+        writes_its_piece: false,
+        runs_a_shell: false,
+        own: &[],
+    };
+    for harness in [Harness::ClaudeCode, Harness::Codex, Harness::Opencode] {
+        for level in ["on", "floor", "off"] {
+            let plane = plane_saying(if level == "on" {
+                ON_WITHOUT_CACHES
+            } else {
+                "schema = 1\n"
+            });
+            if level == "off" {
+                std::fs::write(
+                    plane.path().join(crate::profiles::LOCAL_FILE),
+                    "[sandbox]\nlevel = \"off\"\n",
+                )
+                .expect("the local file");
+                personal::set_by_you(plane.path(), None, Some(personal::Choice::Off))
+                    .expect("your off");
+            }
+            let root = plane.path().canonicalize().expect("a real folder");
+            let decided = decide(harness, &root, &machine(Os::MacOs), &|_| true, None, None);
+            let applied = match decided {
+                Ok(Some(Decided::Sandboxed(applied))) => Some(applied),
+                Ok(Some(Decided::Unsandboxed(_))) if level == "off" => None,
+                other => panic!("{harness:?} at {level}: {other:?}"),
+            };
+            assert_eq!(
+                applied.as_ref().map(Applied::level),
+                match level {
+                    "on" => Some(Level::Full),
+                    "floor" => Some(Level::Floor),
+                    _ => None,
+                },
+                "{harness:?} at {level}"
+            );
+            let armed = match harness.adapter().arm(
+                kit,
+                Some(&root),
+                &crate::harness_plugin::Chosen::new(),
+                applied.as_ref(),
+            ) {
+                crate::harness::StateHooks::ThisSessionOnly { args, .. } => args,
+                crate::harness::StateHooks::None => panic!("{harness:?} at {level}: unarmed"),
+            };
+            let line = match &applied {
+                None => crate::start::Ready::line(Vec::new(), armed, Vec::new()),
+                Some(applied) => {
+                    // As a start does: a chat whose traffic goes through purlis's proxy is
+                    // confined first, which starts that proxy on a local port.
+                    let confinement = if applied.through_purlis_proxy() {
+                        applied.confine().expect("confined")
+                    } else {
+                        None
+                    };
+                    let line = applied
+                        .line(
+                            Words {
+                                program: harness.name().to_owned(),
+                                command: Vec::new(),
+                                armed,
+                                charters: Vec::new(),
+                            },
+                            &At {
+                                cwd: Some(&root),
+                                confinement: confinement.as_ref(),
+                                ..At::default()
+                            },
+                        )
+                        .unwrap_or_else(|why| panic!("{harness:?} at {level}: {why}"));
+                    line.args
+                }
+            };
+            assert_eq!(bypass_in(&line), None, "{harness:?} at {level}: {line:?}");
+        }
+    }
+}

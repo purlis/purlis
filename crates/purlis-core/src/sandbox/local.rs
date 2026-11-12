@@ -640,8 +640,8 @@ pub enum Answer {
 /// Whether the project at `root` is offered the sandbox: it is a project, no sandbox is in
 /// force in it (it has not turned the sandbox on, and no policy requires it here, D-1423-1:
 /// an offer to turn on what is on already would ask nothing), and nobody on this machine has
-/// answered the offer. A project charter made
-/// turned it on already, so only one made before the sandbox existed is ever offered it.
+/// answered the offer. A project charter makes leaves the level to the person (Q114, Q201), so
+/// it is offered too, as one made before the sandbox existed is.
 ///
 /// A `charter.toml` charter cannot read is never offered anything: what it says about the
 /// sandbox is unknown, and every chat in it is refused until it is fixed.

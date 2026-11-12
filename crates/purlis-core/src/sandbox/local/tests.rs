@@ -27,10 +27,12 @@ fn an_existing_project_without_the_sandbox_is_offered_it() {
     assert!(offer_due(project.path()));
 }
 
+/// A project charter makes leaves the level to the person (Q114, Q201), so it starts at the floor
+/// and is offered the full sandbox once, as any project at the floor is (Q78).
 #[test]
-fn a_project_charter_made_is_never_offered_what_it_already_has() {
+fn a_project_charter_made_is_offered_the_full_sandbox_as_any_at_the_floor_is() {
     let project = a_project(&crate::scaffold::planefile::render("github", "acme", None));
-    assert!(!offer_due(project.path()));
+    assert!(offer_due(project.path()));
 }
 
 #[test]
