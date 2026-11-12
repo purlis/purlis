@@ -366,15 +366,16 @@ pub enum LinkOpened {
     Refused { reason: String },
 }
 
-/// **What `candidate` is, for a hover**, resolved once: a link and what opening it does, or
-/// text that is no link and why not (`ftp://…` says purlis opens only http and https). `None` for
-/// text that says nothing on a hover: a path that names no file, a number no chat had, an ended
-/// chat with no card.
+/// `seen_in` for a pane that knows no chats: the tests' way to ask about every other kind.
+#[cfg(test)]
 pub(crate) fn seen(resolver: &Resolver, pane: &Pane, candidate: &Candidate) -> Option<LinkSeen> {
     seen_in(resolver, pane, candidate, &ChatsHere::none())
 }
 
-/// [`seen`], with what the window knows of the pane's project's chats.
+/// **What `candidate` is, for a hover**, resolved once, given what the window knows of the
+/// pane's project's chats: a link and what opening it does, or text that is no link and why not
+/// (`ftp://…` says purlis opens only http and https). `None` for text that says nothing on a
+/// hover: a path that names no file, a number no chat had, an ended chat with no card.
 pub(crate) fn seen_in(
     resolver: &Resolver,
     pane: &Pane,
