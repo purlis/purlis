@@ -298,6 +298,7 @@ fn a_login(identity: Option<&str>) -> purlis_session_protocol::browsing::LogIn {
         identity: identity.map(str::to_owned),
         suggested: false,
         form: None,
+        start: None,
     }
 }
 

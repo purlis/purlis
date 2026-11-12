@@ -21,7 +21,7 @@ import { catalogued, type Offer } from "./actions";
 import { BriefButton, BriefOpener, type BriefAsk } from "./Brief";
 import { HarnessChip } from "./HarnessCard";
 import { ChatGauge } from "./ChatGauge";
-import { PaneActions, PaneActionsOf, PaneBellOf, PaneHead } from "./LayoutPanes";
+import { PaneActions, PaneActionsOf, PaneBellOf, PaneHead, PaneNumber } from "./LayoutPanes";
 import { paneLinesOf } from "./paneHead";
 import { PaneFoot, PaneFootEnd, PaneFootSeparator, PaneFootStart } from "./ui/pane-foot/PaneFoot";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
@@ -97,6 +97,7 @@ function PaneLine() {
               >
                 <div className="pane-chips">
                   <span className="pane-crumbs">steward 2 › fix-login</span>
+                  <PaneNumber session={SESSION} />
                 </div>
               </PaneHead>
             </PaneActionsOf.Provider>

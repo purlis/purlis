@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useSyncExternalStore } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen, untilStopped } from "./here";
 
 /**
  * **The window changed what a chat's sandbox is compiled from** (#1428, D-1428-10): one of its
@@ -65,10 +65,7 @@ export function runGrantsMoved(): void {
  * dropped, or the grants of a chat that closed. Any project's word reads the list again.
  */
 export function useRunGrantsMoved(): number {
-  useEffect(() => {
-    const stop = listen(RUN_GRANTS_MOVED, runGrantsMoved).catch(() => undefined);
-    return () => void stop.then((off) => off?.()).catch(() => undefined);
-  }, []);
+  useEffect(() => untilStopped(listen(RUN_GRANTS_MOVED, runGrantsMoved)), []);
   return useSyncExternalStore(
     (listener) => {
       grantListeners.add(listener);

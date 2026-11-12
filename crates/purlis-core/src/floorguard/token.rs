@@ -11,6 +11,26 @@
 
 use super::merge::{forge_words, opaque};
 
+/// The opening of every refusal this module gives ([`super::TOKEN_FLOOR_FIX`], #6314): what is
+/// refused, the supported way to hand a credential to the one command that needs it, and the
+/// attended way.
+///
+/// The way through is `purlis secret exec`, which hands the vault's value to the command it runs
+/// and never to the run. In a sandboxed chat that command is brokered by the app and must be a
+/// tool the chat's persona declares; git is one only with the `args` it may take
+/// (`docs/plane-format.md`, `[sandbox.personas.<persona>].tools`).
+pub(super) const FIX: &str = "A stored credential is on purlis's floor: a run with nobody \
+     watching may not print one into its own reach. To hand a token to one command, keep it in a \
+     vault and run that command through it, `purlis secret exec <vault> --env NAME=<key> -- \
+     <command>`, so the run never holds the value; in a sandboxed chat the command must be a tool \
+     your persona declares (`[sandbox.personas.<persona>] tools`, and `git` only with the `args` \
+     it may take). Re-run this step **attended**, or have a person do it. ";
+
+/// A whole refusal: [`FIX`], then why this command is refused.
+fn refusal(why: &str) -> String {
+    format!("{FIX}{why}")
+}
+
 /// The sentence a refusal of a token-printing command ends with.
 const PRINTS_TOKEN: &str = "This prints the forge token, and a run that holds it can land code \
      where no guard sees what it does.";
@@ -48,7 +68,7 @@ pub(super) fn forge_reason(args: &[String]) -> Option<String> {
         ["config", "get", ref rest @ ..] => gets_a_token_key(rest),
         _ => false,
     };
-    prints.then(|| PRINTS_TOKEN.to_owned())
+    prints.then(|| refusal(PRINTS_TOKEN))
 }
 
 /// The refusal for a git command that prints a stored credential: `git credential fill`, or a
@@ -61,7 +81,7 @@ pub(super) fn git_reason(base: &str, args: &[String], sub: Option<&str>) -> Opti
         _ if helper => args.iter().any(|a| a == "get"),
         _ => false,
     };
-    prints.then(|| PRINTS_TOKEN.to_owned())
+    prints.then(|| refusal(PRINTS_TOKEN))
 }
 
 /// The sentence a refusal of a command that reads a stored secret ends with.
@@ -81,7 +101,7 @@ const PASS_QUIET: &[&str] = &[
 /// The refusal for a command that reads a secret from the operating system's or a password
 /// manager's store: the macOS keychain asked for a password or dumped, the freedesktop secret
 /// service looked up, or a `pass`/`gopass` entry shown (#866).
-pub(super) fn keychain_read_reason(prog: &str, argv: &[String]) -> Option<&'static str> {
+pub(super) fn keychain_read_reason(prog: &str, argv: &[String]) -> Option<String> {
     let base = crate::shellwrap::base_lower(prog);
     let args = argv.get(1..).unwrap_or(&[]);
     let first = args
@@ -106,5 +126,5 @@ pub(super) fn keychain_read_reason(prog: &str, argv: &[String]) -> Option<&'stat
         "pass" | "gopass" => first.is_some_and(|w| !PASS_QUIET.contains(&w)),
         _ => false,
     };
-    reads.then_some(READS_A_STORE)
+    reads.then(|| refusal(READS_A_STORE))
 }

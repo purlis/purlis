@@ -605,3 +605,43 @@ fn during_a_sign_in_a_page_held_to_its_form_still_asks_before_any_site_but_the_l
         Leaving::No { .. }
     ));
 }
+
+/// #6291 (the operator's ruling of 2026-11-12): a redirect refused during a sign-in is said by
+/// its site alone. The address, which may hold the code or the token the identity provider
+/// handed back, never reaches the chat in the refusal, whichever way it is refused.
+#[test]
+fn a_refused_redirect_names_its_site_and_never_its_address() {
+    let code = "c0de-from-the-provider";
+    let auth = Site::of("auth.example.com", 443);
+    let elsewhere = format!("https://elsewhere.example.com/cb?code={code}&state=s");
+    let said = |leaving: Leaving| match leaving {
+        Leaving::No { why } => why,
+        Leaving::Ask { site } => site,
+        Leaving::Go => panic!("it went"),
+    };
+
+    // Kept off by the login: the browser reaches its sites alone.
+    let judge = sites(&["app.example.com", "elsewhere.example.com"], false);
+    judge
+        .bound()
+        .to(&LoginSites {
+            page: Site::of("app.example.com", 443),
+            form: Some(auth.clone()),
+        })
+        .unwrap();
+    let why = said(judge.may_leave_from(&auth, &elsewhere, false));
+    assert!(!why.contains(code) && !why.contains("/cb"), "{why}");
+
+    // Asked about, then refused once asked.
+    let judge = sites(&["elsewhere.example.com"], false);
+    for _ in 0..2 {
+        let why = said(judge.may_leave_for(&elsewhere, false));
+        assert!(!why.contains(code) && !why.contains("/cb"), "{why}");
+    }
+
+    // Outside what the browser reaches at all.
+    let judge = sites(&[], false);
+    let private = format!("https://10.0.0.5/cb?code={code}");
+    let why = said(judge.may_leave_for(&private, true));
+    assert!(!why.contains(code), "{why}");
+}

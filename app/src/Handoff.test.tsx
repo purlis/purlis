@@ -177,7 +177,10 @@ describe("a chat a handoff opened, named for its task (charter-app#258)", () => 
     render(<App />);
 
     await waitFor(() => expect(tabNames()).toEqual(["drop commons"]));
-    expect(tipOf(tabNamed("drop commons"))).toEqual("↳ from steward 3 · platform-next");
+    // Under the chat's number and name (#6212).
+    expect(tipOf(tabNamed("drop commons"))).toEqual(
+      "#1 · drop commons\n↳ from steward 3 · platform-next",
+    );
     expect(document.querySelector(".pane-from")).toHaveTextContent(
       "↳ from steward 3 · platform-next",
     );
@@ -209,7 +212,8 @@ describe("a chat a handoff opened, named for its task (charter-app#258)", () => 
     render(<App />);
 
     await waitFor(() => expect(tabNames()).toEqual(["ide.1"]));
-    expect(tipOf(tabNamed("ide.1"))).toBeNull();
+    // Its number and name alone (#6212): nothing of where it came from.
+    expect(tipOf(tabNamed("ide.1"))).toBe("#1 · ide.1");
     expect(document.querySelector(".pane-from")).toBeNull();
   });
 });

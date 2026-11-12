@@ -235,7 +235,7 @@ pub async fn plane_saving(
     plane: PlaneId,
 ) -> Result<PlaneSaving, String> {
     let root = planes.held(&plane)?.root().to_path_buf();
-    tauri::async_runtime::spawn_blocking(move || saving_of(&root))
+    tauri::async_runtime::spawn_blocking(move || saving_kept(&root))
         .await
         .map_err(|err| format!("reading the project's save state did not finish: {err}"))
 }
@@ -315,9 +315,20 @@ pub fn choose_mode(root: &Path, mode: &str) -> Result<PlaneSaving, String> {
     Ok(saving_of(root))
 }
 
-/// [`plane_saving`], without a runtime.
+/// [`plane_saving`], without a runtime: answered at once from the last standing while a newer
+/// one is read ([`planegit::kept_standing`], H6c), and the window told when it differs.
+pub fn saving_kept(root: &Path) -> PlaneSaving {
+    saving_from(root, planegit::kept_standing(root))
+}
+
+/// The plane's save standing as it is now: after an act of the person's — a mode chosen, a look
+/// at the request — whose answer must already say what that act did.
 pub fn saving_of(root: &Path) -> PlaneSaving {
-    let standing = planegit::shared_standing(root);
+    saving_from(root, planegit::shared_standing(root))
+}
+
+/// The plane's save standing, from `standing`.
+fn saving_from(root: &Path, standing: planegit::Standing) -> PlaneSaving {
     let plane = planesave::Settings::read(root).plane;
     let mode_from = if plane.from_share {
         "[memory] share".to_owned()

@@ -12,7 +12,9 @@
 //! `crates/purlis-cli/tests/it/the_floor_refuses_an_unattended_merge_through_the_hook.rs` puts the
 //! same command lines through the real `charter hook pretooluse`.
 
-use purlis_core::floorguard::{MAX_DEPTH, release_floor_reason};
+use purlis_core::floorguard::{
+    MAX_DEPTH, RELEASE_FLOOR_FIX, TOKEN_FLOOR_FIX, release_floor_reason,
+};
 
 /// Each command is refused unattended and allowed attended.
 fn refused_unattended_only(cmds: &[&str]) {
@@ -567,4 +569,50 @@ fn a_substitution_inside_a_push_option_value_is_unreadable() {
         "git push -o \"merge_request.title=$(cat t)\" origin feat",
         "git push -o \"ci.variable=`cat v`\" origin feat",
     ]);
+}
+
+/// **A token refusal says what it is and how through** (#6314). Refusing it is the floor (#866)
+/// and stays; opening it with the release floor's sentence, about cutting a release, and naming
+/// no way to hand a registry token to one command, sent a run the wrong way.
+#[test]
+fn a_token_refusal_opens_with_its_own_sentence_and_names_the_way_through() {
+    purlis_core::unsteered!();
+    for cmd in [
+        "NPM_CONFIG_TOKEN=\"$(gh auth token)\" git commit -m x",
+        "export NPM_CONFIG_TOKEN=\"$(gh auth token)\"; git commit -m x",
+        "env NPM_CONFIG_TOKEN=\"$(gh auth token)\" git commit -m x",
+        "gh auth token",
+        "glab auth status -t",
+        "git credential fill",
+        "security find-generic-password -s github.com -w",
+    ] {
+        let said = release_floor_reason(cmd, true).expect(cmd);
+        assert!(said.starts_with(TOKEN_FLOOR_FIX), "{cmd}: {said}");
+        assert!(!said.contains(RELEASE_FLOOR_FIX), "{cmd}: {said}");
+        assert!(
+            said.contains("purlis secret exec <vault> --env NAME=<key> -- "),
+            "{cmd}: {said}"
+        );
+        assert!(
+            said.contains("Re-run this step **attended**"),
+            "{cmd}: {said}"
+        );
+    }
+}
+
+/// Every other refusal of the floor keeps the release floor's opening (#6314).
+#[test]
+fn a_publish_refusal_keeps_the_release_floors_opening() {
+    purlis_core::unsteered!();
+    for cmd in [
+        "gh pr merge 12",
+        "git tag v1.2.3",
+        "git push --tags",
+        "gh api -X PUT repos/o/r/pulls/12/merge",
+        "x=\"$(gh pr merge 12)\"",
+    ] {
+        let said = release_floor_reason(cmd, true).expect(cmd);
+        assert!(said.starts_with(RELEASE_FLOOR_FIX), "{cmd}: {said}");
+        assert!(!said.contains(TOKEN_FLOOR_FIX), "{cmd}: {said}");
+    }
 }

@@ -8,7 +8,7 @@
  * touches Accept: it is what the person weighs, never a gate.
  */
 import { useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen, untilStopped } from "./here";
 import {
   commands,
   SKILL_GRADE,
@@ -227,16 +227,17 @@ export function useDraftGrade(
   const [step, setStep] = useState<SkillGradeStep>();
   const { data } = useRead(() => commands.skillDraftGrade(plane, id), [plane, id, changed, again]);
   useEffect(() => {
-    const listening = listen<SkillGradeStep>(SKILL_GRADE, (event) => {
-      const now = event.payload;
-      if (now.plane !== plane || now.draft !== id) return;
-      if (now.ended === null) setStep(now);
-      else {
-        setStep(undefined);
-        setAgain((n) => n + 1);
-      }
-    }).catch(() => undefined);
-    return () => void listening.then((stop) => stop?.()).catch(() => undefined);
+    return untilStopped(
+      listen<SkillGradeStep>(SKILL_GRADE, (event) => {
+        const now = event.payload;
+        if (now.plane !== plane || now.draft !== id) return;
+        if (now.ended === null) setStep(now);
+        else {
+          setStep(undefined);
+          setAgain((n) => n + 1);
+        }
+      }),
+    );
   }, [plane, id]);
   // Anything that is no grade is no grade: the page, and Accept on it, stands without one.
   if (typeof data !== "object" || data === null || !("only_evals" in data)) return undefined;

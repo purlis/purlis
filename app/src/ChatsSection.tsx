@@ -44,10 +44,10 @@ import { sameList, useChatsHere, useChatsSelect, type ChatStates } from "./chatS
 import { useTokensOnHover } from "./tasksUsed";
 import {
   arranged,
+  asking,
   filters,
   found,
   liveBelow,
-  matches,
   matchesFinished,
   sessionOrder,
   rowTimeSaid,
@@ -478,10 +478,13 @@ export function ChatsSection({
     (states) => {
       if (!filtering) return null;
       const stood = standingOfRows(states, rows);
+      // A chat's number asks for it alone (#6213); words find finished tasks too.
+      const { byNumber, asks } = asking(rows, filter);
       return rows
         .filter(
           (row) =>
-            matches(row, stood.get(row.session)?.shown, filter) || finishedFound.has(row.session),
+            asks(row, stood.get(row.session)?.shown) ||
+            (!byNumber && finishedFound.has(row.session)),
         )
         .map((row) => row.session);
     },
@@ -494,12 +497,10 @@ export function ChatsSection({
     chats,
     (states) => {
       const stood = standingOfRows(states, rows);
-      return CHIPS.map(
-        (chip) =>
-          rows.filter((row) =>
-            matches(row, stood.get(row.session)?.shown, { text, ranks: [chip.rank] }),
-          ).length,
-      );
+      return CHIPS.map((chip) => {
+        const { asks } = asking(rows, { text, ranks: [chip.rank] });
+        return rows.filter((row) => asks(row, stood.get(row.session)?.shown)).length;
+      });
     },
     sameList,
   );

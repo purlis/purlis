@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
   arranged,
+  asking,
   filters,
   found,
   isLive,
@@ -198,6 +199,29 @@ describe("the filter (V100-49)", () => {
     expect(matches(row, unheard, { text: "", ranks: [1] })).toBe(true);
     expect(matches(row, asking, { text: "", ranks: [1] })).toBe(true);
     expect(matches(row, undefined, { text: "", ranks: [1] })).toBe(false);
+  });
+
+  // #6213: a coordinator names a chat by its number, so `41` or `#41` finds chat 41, and only
+  // it, ahead of a name that holds those digits. A number no chat has is read as words.
+  it("finds a chat by its number, bare or with #, before any name holding those digits", () => {
+    const rows = chatsTree([
+      listed(41, null, "alpha", { name: "notes" }),
+      listed(7, null, "alpha", { name: "build 41" }),
+      listed(8, null, "alpha", { name: "build 52" }),
+    ]);
+    const found = (text: string, ranks: Rank[] = []) =>
+      rows
+        .filter((one) => asking(rows, { text, ranks }).asks(one, working))
+        .map((one) => one.session);
+
+    expect(found("41")).toEqual([41]);
+    expect(found(" #41 ")).toEqual([41]);
+    expect(asking(rows, { text: "#41", ranks: [] }).byNumber).toBe(true);
+    // Chips still narrow it: chat 41 is working, not waiting on the person.
+    expect(found("41", [0])).toEqual([]);
+    // No chat 52, so the digits are words, and name the build.
+    expect(found("52")).toEqual([8]);
+    expect(asking(rows, { text: "52", ranks: [] }).byNumber).toBe(false);
   });
 
   it("asks for nothing while nothing is typed and no chip is pressed", () => {

@@ -401,8 +401,12 @@ pub struct Found {
 }
 
 /// Every stale repo of the plane at `plane`, workspace by workspace, and what could not be read.
+///
+/// Each clone is read from its shared standing ([`read_shared`]), [`AT_ONCE`] clones at a time
+/// (H6c): a project of many clones once ran a fresh `status` in each, one after another.
 pub fn found(plane: &Path) -> Findings {
     let mut out = Findings::default();
+    let mut every: Vec<(String, repos::Repo)> = Vec::new();
     let names = match crate::workspaces::Plane::open(plane).workspaces() {
         Ok(names) => names,
         Err(why) => {
@@ -423,28 +427,87 @@ pub fn found(plane: &Path) -> Findings {
         for (name, why) in clones.refused {
             out.unread.push(format!("{ws}/{name}: {why}."));
         }
-        for repo in clones.repos {
-            let stale = judged(&read(&ws, &repo));
-            if !stale.is_empty() {
-                out.found.push(Found {
-                    workspace: ws.clone(),
-                    repo: repo.name,
-                    stale,
-                });
-            }
+        every.extend(clones.repos.into_iter().map(|repo| (ws.clone(), repo)));
+    }
+    let seen = each_at_most(&every, AT_ONCE, |(ws, repo)| read_shared(plane, ws, repo));
+    for ((ws, repo), seen) in every.into_iter().zip(seen) {
+        let stale = judged(&seen);
+        if !stale.is_empty() {
+            out.found.push(Found {
+                workspace: ws,
+                repo: repo.name,
+                stale,
+            });
         }
     }
     out
 }
 
-/// What git says about `repo` of workspace `ws`.
+/// How many clones [`found`] reads at once: one slow clone does not hold the rest, and a
+/// project of many does not start git in all of them together.
+const AT_ONCE: usize = 4;
+
+/// `read` of each of `items`, in their order, on at most `at_once` threads.
+fn each_at_most<T: Sync, R: Send>(
+    items: &[T],
+    at_once: usize,
+    read: impl Fn(&T) -> R + Sync,
+) -> Vec<R> {
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let mut out: Vec<(usize, R)> = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..at_once.min(items.len()))
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut mine = Vec::new();
+                    loop {
+                        let at = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let Some(item) = items.get(at) else {
+                            return mine;
+                        };
+                        mine.push((at, read(item)));
+                    }
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .flat_map(|worker| match worker.join() {
+                Ok(mine) => mine,
+                Err(panic) => std::panic::resume_unwind(panic),
+            })
+            .collect()
+    });
+    out.sort_by_key(|(at, _)| *at);
+    out.into_iter().map(|(_, read)| read).collect()
+}
+
+/// What git says about `repo` of workspace `ws`, its tree read with a `status` of its own: what a
+/// fix decides from.
 pub fn read(ws: &str, repo: &repos::Repo) -> Seen {
-    let at = &repo.path;
-    let state = repos::state_of(at).ok();
+    let state = repos::state_of(&repo.path).ok();
     let branch = state.as_ref().and_then(|state| match &state.head {
         Head::Branch(branch) => Some(branch.clone()),
         Head::Unborn(_) | Head::Detached(_) => None,
     });
+    let clean = state.as_ref().map(repos::TreeState::clean);
+    seen(ws, repo, branch, clean)
+}
+
+/// [`read`], with the branch and whether the tree is clean taken from the clone's shared standing
+/// ([`crate::reposave::shared_standing`], H6c): what the Saving rows and auto-save already read,
+/// so a look at the project's stale clones runs no `status` of its own where one is held.
+pub fn read_shared(plane: &Path, ws: &str, repo: &repos::Repo) -> Seen {
+    let standing = crate::reposave::shared_standing(plane, ws, repo);
+    // On a branch with a commit: a detached HEAD names no branch, and an unborn one has no HEAD.
+    let branch = standing.branch.clone().filter(|_| standing.head.is_some());
+    // A tree git could not read names no branch, so it is never judged clean.
+    let clean = branch.is_some().then_some(standing.changed == 0);
+    seen(ws, repo, branch, clean)
+}
+
+/// What git says about `repo`, its `branch` and whether its tree is `clean_tree` already read.
+fn seen(ws: &str, repo: &repos::Repo, branch: Option<String>, clean_tree: Option<bool>) -> Seen {
+    let at = &repo.path;
     let default = asked(
         at,
         &[
@@ -461,8 +524,8 @@ pub fn read(ws: &str, repo: &repos::Repo) -> Seen {
         .as_ref()
         .filter(|branch| default.is_some() && default.as_ref() != Some(*branch));
     let clean = judged_on
-        .and(state.as_ref())
-        .map(|state| state.clean() && crate::gitstate::stopped(at).is_none());
+        .and(clean_tree)
+        .map(|clean| clean && crate::gitstate::stopped(at).is_none());
     let only_here = judged_on.and_then(|branch| worktree::unique_commits_of(at, Some(branch)));
     Seen {
         workspace: ws.to_owned(),
