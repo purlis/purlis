@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794505916172,
+  "lastUpdate": 1794507533055,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -47628,6 +47628,48 @@ window.BENCHMARK_DATA = {
             "value": 101.746101,
             "unit": "ms",
             "extra": "median of 5 runs: 100.881, 101.562, 101.746, 102.531, 102.571 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "336cd599068700a5bcd1bdbcaf85098358d3e884",
+          "message": "The search for repositories counts folders and names the fullest subtree (#6280) (#6377)\n\n* The search for repositories counts folders, skips caches, and names the fullest subtree (#6280)\n\nA file is never a repository, so the first pass is bounded by the folders it\nlooks at (50,000), with a guard of 1,000,000 entries on time alone. A folder\nholding a CACHEDIR.TAG with its signature, or a Go build cache's README, is\nnever entered. Crowded out, it names the folder in the one searched whose tree\nheld the most, not the single fullest folder. The pass inside repositories\nkeeps the reach it had (50,000 entries in all), so it is never slower.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M75GF76SMC3Y0GF3TCTVXJHM\nPurlis-Persona: steward\n\n* The search for repositories enters every folder, whatever it says of itself (#6280)\n\nReview of #6377 found skipping a folder by its CACHEDIR.TAG or Go README fails\nopen: a chat can write one beside a repository and un-hold its git folder from\nthe next start. Counting folders alone passes the tree #6280 measured, so the\nskip is gone. The pass inside repositories now has its own count of 50,000\nentries, so a heavy first pass no longer leaves it no reach. Crowded out by\nfolders, the search names the subtree of most folders, the root on a tie. The\nentries guard is 500,000.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M75GF76SMC3Y0GF3TCTVXJHM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-12T17:35:35Z",
+          "tree_id": "ad34863daf30f50acf104e62f9c03831e36ae8db",
+          "url": "https://github.com/purlis/purlis/commit/336cd599068700a5bcd1bdbcaf85098358d3e884"
+        },
+        "date": 1794507527468,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7267785,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.704, 0.713, 0.727, 0.729, 0.733 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.42664,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.287, 16.421, 16.427, 16.478, 16.566 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.4017195,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.493, 102.006, 102.402, 102.764, 102.811 ms"
           }
         ]
       }
