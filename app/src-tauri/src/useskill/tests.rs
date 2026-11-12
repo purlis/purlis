@@ -292,8 +292,9 @@ fn a_runners_chat_is_offered_what_its_runner_said_or_told_its_runner_said_nothin
 }
 
 /// #6196: a session that is not among the core's open chats (its chat restarted, ended, or was
-/// replaced on resume) is told that it isn't running, by Use skill… and by the list it offers,
-/// never that it runs no tool purlis knows: it ran one, and its run is what ended.
+/// replaced on resume) is told that it isn't running, by Use skill…'s refusal and by the list it
+/// offers, each in words true where they are said, never that it runs no tool purlis knows: it
+/// ran one, and its run is what ended.
 #[test]
 fn a_chat_no_longer_open_is_told_it_is_not_running_never_that_it_runs_no_tool_6196() {
     let dir = tempfile::tempdir().expect("a directory");
@@ -317,5 +318,6 @@ fn a_chat_no_longer_open_is_told_it_is_not_running_never_that_it_runs_no_tool_61
 
     let shown = skills_shown(&held, ended);
     assert!(shown.on && !shown.known);
-    assert_eq!(shown.not_supported.as_deref(), Some(NOT_RUNNING));
+    // Nothing is picked yet where the list says it: it says nothing of what was typed.
+    assert_eq!(shown.not_supported.as_deref(), Some(NOT_RUNNING_LISTED));
 }

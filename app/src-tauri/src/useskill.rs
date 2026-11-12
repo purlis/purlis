@@ -303,6 +303,11 @@ const NO_TOOL: &str = "This chat runs no tool purlis knows, so it has no skills 
 const NOT_RUNNING: &str = "This chat isn't running now, so nothing was typed. Pick the skill \
      again in the chat's tab.";
 
+/// Why chat_skills lists no skills for a chat that is no longer among the open ones (#6196), as
+/// [`NOT_RUNNING`] says it of a pick, before anything is picked.
+const NOT_RUNNING_LISTED: &str = "This chat isn't running now, so it has no skills to offer. \
+     Open Use skill… again from the chat's tab.";
+
 /// Why a runner's chat is offered no skills where its runner did not say which it armed it with
 /// (#4218): the words Use skill… and the chip say.
 const NOT_SAID_BY_ITS_RUNNER: &str = "This chat's runner runs an older purlis, which doesn't say \
@@ -477,7 +482,7 @@ pub(crate) async fn chat_skills(
 fn skills_shown(held: &Held, session: u32) -> ChatSkills {
     let Some(chat) = held.chats().skills_of(session) else {
         return ChatSkills {
-            not_supported: Some(NOT_RUNNING.to_owned()),
+            not_supported: Some(NOT_RUNNING_LISTED.to_owned()),
             ..shown(None)
         };
     };
