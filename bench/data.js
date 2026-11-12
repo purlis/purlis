@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794518584224,
+  "lastUpdate": 1794522314513,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -47838,6 +47838,48 @@ window.BENCHMARK_DATA = {
             "value": 102.12895900000001,
             "unit": "ms",
             "extra": "median of 5 runs: 102.000, 102.099, 102.129, 102.491, 102.633 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ab6936cf4268b1fcf44264d6b1783c925c6175e5",
+          "message": "A close waits on no strays listing or hold; the host says what held a late answer (#6437) (#6441)\n\n* A close waits on no listing of a chat's strays and no hold; the host says what held a late answer (#6437)\n\nA window gave up on the session host's answer to a Close after 30 s on a\nloaded macOS runner (run 43275135641), and the host's log, which the\nwindow keeps in charter.log, said nothing about it.\n\n- A note of a chat's strays (NoteStrays) is answered as its listing\n  begins: it ran /bin/ps and held the chat's lane until done, so a Close\n  sent after it waited for ps. Nothing after it needs it done.\n- A hold of a chat (Hold) runs off the host's runtime. The host's runtime\n  is one thread, and a hold takes the lock a program's end holds while it\n  hangs up and reaps, so one hold could stop every link.\n- serve tells its Host each call's wait behind its lane and its own run\n  time (Host::answered). The host says in its log an answer a second or\n  more late, split into the two, and each time its thread was held a\n  second or more.\n\nRed first: a_close_is_answered_whatever_its_chat_waits_on failed with\na close waiting 10 s behind each; the session-protocol test failed with\na lane wait of 0 ns when serve passed none.\n\nWhich of these held the 30 s close is not proven: the run's host log\nsaid nothing. The next slow close will say whether its lane or the\nhost's thread held it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M78NXVMED4KCK9HJN98QMBHK\nPurlis-Persona: steward\n\n* Review fixes: a stop ends what a note listed meanwhile; one say_if_late; Latch (#6437)\n\n- A host now answers a note of a chat's strays as its listing begins,\n  so a listing could join its finds to the program's notes after a stop\n  had read them and before the stop held the program, and nothing read\n  them again. end_with now also takes what was noted by the time it\n  holds the program; a listing that ends after that finds the program\n  waited for and ends what it found itself, as before.\n- Hosting and Relay say a late answer through lateness::say_if_late.\n- Hold carries its own spawn_blocking instead of stretching driving's\n  doc; the stand-in's gate is Latch; the test cites #6385's 1 s.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M78NXVMED4KCK9HJN98QMBHK\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-12T21:19:43Z",
+          "tree_id": "8f693ea6518efb8d5d41441f7f44a09edef988da",
+          "url": "https://github.com/purlis/purlis/commit/ab6936cf4268b1fcf44264d6b1783c925c6175e5"
+        },
+        "date": 1794522308542,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6817329999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.669, 0.681, 0.682, 0.685, 0.690 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.761523500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.511, 16.704, 16.762, 16.773, 16.796 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.412915,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.368, 102.283, 102.413, 102.557, 102.595 ms"
           }
         ]
       }
