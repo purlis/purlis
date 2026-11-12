@@ -758,7 +758,7 @@ jobs:
         run: tests/parity/build-images.sh
       - name: Docker on another machine, behind an sshd, with latency and loss
         if: steps.scope.outputs.run == 'true'
-        run: tests/remote-docker/up.sh
+        run: tests/remote-docker/up.sh localhost:5000/purlis-runner-parity:candidate DOCKER_POOL_TEST_IMAGE
       - name: The SSH route against that machine
         if: steps.scope.outputs.run == 'true'
         run: >-
@@ -2022,6 +2022,13 @@ jobs:
           image=$(docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/purlis-runner-scenario:candidate)
           echo "image $image"
           echo "PURLIS_E2E_POOL_IMAGE=$image" >> "$GITHUB_ENV"
+      # **Docker on another machine, behind an sshd, for Pool setup's walk there** (#6266): the
+      # same runner image copied into docker:dind, reached over a dockerised sshd with latency
+      # and loss (`tests/remote-docker/up.sh`), as the remote parity job serves it.
+      - name: Docker on another machine, for Pool setup's run
+        if: matrix.pool
+        timeout-minutes: 10
+        run: tests/remote-docker/up.sh localhost:5000/purlis-runner-scenario:candidate PURLIS_E2E_REMOTE_POOL_IMAGE
       # What sccache found, as a notice: whether the experiment pays, without the log.
       - name: sccache's hits and misses
         if: runner.os == 'macOS' && !cancelled() && steps.sccache.outcome == 'success'

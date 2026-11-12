@@ -1,10 +1,20 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { $, browser, expect } from "@wdio/globals";
+import { $, expect } from "@wdio/globals";
 import process from "node:process";
 import { openThroughTheTrustQuestion } from "../opening.js";
-import { TABS, closeTheViewTabsOpenedSince, runFromThePalette, tabNames } from "../reach.js";
+import {
+  MAKING,
+  TRYING,
+  on,
+  press,
+  pressTheOneOf,
+  tabsAdded,
+  theStepSays,
+  watchTheTabs,
+} from "../poolsetup.js";
+import { closeTheViewTabsOpenedSince, runFromThePalette, tabNames } from "../reach.js";
 
 /**
  * **Pool setup's Docker path, walked in the real window** (#4985, #4484's first acceptance
@@ -23,93 +33,6 @@ import { TABS, closeTheViewTabsOpenedSince, runFromThePalette, tabNames } from "
 const POOL = "scenario-pool";
 /** The runner image, by digest, in the job's own registry (`wdio.pool.conf.ts`). */
 const IMAGE = process.env.PURLIS_E2E_POOL_IMAGE ?? "";
-const RAIL = '[aria-label="Steps of Pool setup"]';
-
-/** A runner made from the job's registry, and a profile kept on it: a minute or two on CI. */
-const MAKING = 300_000;
-/** Try it waits two minutes for its chat's start, and its runner may be woken first. */
-const TRYING = 420_000;
-
-/** The step Pool setup is showing, by the name its rail gives it. */
-async function showing(): Promise<string> {
-  return browser.execute(
-    (rail: string) =>
-      document.querySelector(`${rail} [aria-current="step"] [data-part="name"]`)?.textContent ?? "",
-    RAIL,
-  );
-}
-
-/** What the step on show says, for a failure to name. */
-async function theStepSays(): Promise<string> {
-  return browser.execute(
-    () => document.querySelector(".pool-setup-page")?.textContent?.replace(/\s+/g, " ") ?? "",
-  );
-}
-
-/** Waits until Pool setup shows step `name`, at most `timeout`. */
-async function on(name: string, timeout = 60_000): Promise<void> {
-  await browser
-    .waitUntil(async () => (await showing()) === name, { timeout, interval: 500 })
-    .catch(async () => {
-      throw new Error(
-        `Pool setup never reached ${name}; it shows ${await showing()}: ${await theStepSays()}`,
-      );
-    });
-}
-
-/** Presses the control named `name` once it can be pressed, at most `timeout`. */
-async function press(name: string, timeout = 30_000): Promise<void> {
-  const control = await $(`aria/${name}`);
-  await control.waitForClickable({ timeout }).catch(async () => {
-    throw new Error(`no ${name} to press: ${await theStepSays()}`);
-  });
-  await control.click();
-}
-
-/** Presses whichever control named one of `names` can be pressed first, at most `timeout`. */
-async function pressTheOneOf(names: readonly string[], timeout = 30_000): Promise<void> {
-  const look = async () => {
-    for (const name of names) {
-      const control = await $(`aria/${name}`);
-      if (await control.isClickable().catch(() => false)) {
-        await control.click();
-        return true;
-      }
-    }
-    return false;
-  };
-  await browser.waitUntil(look, { timeout, interval: 500 }).catch(async () => {
-    throw new Error(`none of ${names.join(", ")} to press: ${await theStepSays()}`);
-  });
-}
-
-/** The name of every tab the strip has added since `watchTheTabs` began, in order. */
-async function tabsAdded(): Promise<string[]> {
-  return browser.execute(
-    () => (window as unknown as { poolSetupTabsAdded?: string[] }).poolSetupTabsAdded ?? [],
-  );
-}
-
-/**
- * Notes every tab the strip adds from now on, however briefly, each once: a second tab of a name
- * already there counts, as a tab of its own.
- */
-async function watchTheTabs(): Promise<void> {
-  await browser.execute((strip: string) => {
-    const tabs = () => document.querySelectorAll(`${strip} [role="tab"]`);
-    const known = new WeakSet<Element>(tabs());
-    const added: string[] = [];
-    (window as unknown as { poolSetupTabsAdded: string[] }).poolSetupTabsAdded = added;
-    new MutationObserver(() => {
-      for (const tab of tabs()) {
-        if (known.has(tab)) continue;
-        known.add(tab);
-        added.push(tab.querySelector(".tab-name")?.textContent ?? "");
-      }
-    }).observe(document.body, { subtree: true, childList: true });
-  }, TABS);
-}
-
 describe("Pool setup on Docker", () => {
   let wereOpen: string[] | null = null;
 

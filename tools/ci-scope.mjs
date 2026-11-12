@@ -229,7 +229,7 @@ export const GATES = {
   // No step of its own greps this one either: Pool setup's walk in the window on Docker (#4985),
   // what it presses and the pools and runner image it makes.
   "pool-setup":
-    "^(app/src/(poolsetup/|PoolSetup|AddDockerPool|pools\\.ts)|app/src-tauri/src/(poolsetuptab|dockerpools|runnerlinks|routedsessions)[^/]*(\\.rs$|/)|crates/purlis-core/src/(poolsetup|dockerpool|runners|pools)[^/]*(\\.rs$|/)|runner-image/|app/e2e/(pool-runner\\.Dockerfile$|wdio\\.pool\\.conf|specs/[^/]*\\.pool\\.e2e\\.ts$)|\\.github/workflows/ci\\.yml$)",
+    "^(app/src/(poolsetup/|PoolSetup|AddDockerPool|pools\\.ts)|app/src-tauri/src/(poolsetuptab|dockerpools|runnerlinks|routedsessions)[^/]*(\\.rs$|/)|crates/purlis-core/src/(poolsetup|dockerpool|runners|pools|sshroute)[^/]*(\\.rs$|/)|runner-image/|tests/remote-docker/|app/e2e/(pool-runner\\.Dockerfile$|wdio\\.pool\\.conf|poolsetup\\.ts$|specs/[^/]*\\.pool\\.e2e\\.ts$)|\\.github/workflows/ci\\.yml$)",
   "bench":
     "^(crates/session-protocol/|Cargo\\.toml$|Cargo\\.lock$|rust-toolchain\\.toml$|fixtures/corpora/|tools/bench\\.mjs$|tools/latency-gate\\.mjs$|\\.github/workflows/ci\\.yml$)",
 };
