@@ -199,7 +199,7 @@ fn hosts_that_are_not_a_list_grant_nothing() {
 // The denial classes (ADR 0067 §5): each one on its own, and none a plane can remove
 // -------------------------------------------------------------------------------------
 
-/// A plane on a machine whose home is `/home/op`, with `vaults` as its committed registry.
+/// A plane on a machine whose home is `/nonexistent-home/op`, with `vaults` as its committed registry.
 fn denied_with(vaults: Option<&str>, os: Os) -> (tempfile::TempDir, Denied) {
     let plane = tempfile::tempdir().expect("a plane");
     if let Some(vaults) = vaults {
@@ -252,9 +252,9 @@ fn a_chat_never_reads_or_writes_a_vaults_storage() {
             root.join(".purlis/fingerprint.key"),
             root.join(".purlis/vault-links.json"),
             root.join("secrets/dev.json"),
-            std::path::PathBuf::from("/home/op/.config/op"),
-            std::path::PathBuf::from("/home/op/.op"),
-            std::path::PathBuf::from("/home/op/.vault-token"),
+            std::path::PathBuf::from("/nonexistent-home/op/.config/op"),
+            std::path::PathBuf::from("/nonexistent-home/op/.op"),
+            std::path::PathBuf::from("/nonexistent-home/op/.vault-token"),
         ]
     );
 }
@@ -267,8 +267,9 @@ fn a_sandboxed_chat_may_read_and_run_charters_git_hooks_and_never_rewrite_them()
     // directory, which is all Claude Code's sandbox lets a command write — so a chat reads and
     // runs it and cannot rewrite it.
     let (_plane, denied) = denied_with(None, Os::MacOs);
-    let hooks =
-        std::path::PathBuf::from("/home/op/Library/Application Support/dev.charter.app/git-hooks");
+    let hooks = std::path::PathBuf::from(
+        "/nonexistent-home/op/Library/Application Support/dev.charter.app/git-hooks",
+    );
     for denial in &denied.paths {
         assert!(
             denial.access == Access::Write || !hooks.starts_with(&denial.path),
@@ -378,7 +379,9 @@ fn the_persona_mcp_approvals_are_held_where_purlis_home_puts_them() {
     let plane = tempfile::tempdir().expect("a plane");
     let machine = Machine {
         env: crate::secrets::Env::of(&[("PURLIS_HOME", "/srv/purlis-state")]),
-        home: Some(std::path::PathBuf::from("/home/op")),
+        // Not under `/home`: on macOS that is an autofs mount, where every name that is not there
+        // costs a trip to the automounter, and a start resolves hundreds of them (T1-46).
+        home: Some(std::path::PathBuf::from("/nonexistent-home/op")),
         os: Os::Linux,
     };
     let denied = Denied::of(plane.path(), &machine);
@@ -1412,7 +1415,9 @@ fn machine_with_state(os: Os, state: Option<&str>) -> Machine {
     let env: Vec<(&str, &str)> = state.map(|it| ("PURLIS_HOME", it)).into_iter().collect();
     Machine {
         env: crate::secrets::Env::of(&env),
-        home: Some(std::path::PathBuf::from("/home/op")),
+        // Not under `/home`: on macOS that is an autofs mount, where every name that is not there
+        // costs a trip to the automounter, and a start resolves hundreds of them (T1-46).
+        home: Some(std::path::PathBuf::from("/nonexistent-home/op")),
         os,
     }
 }
@@ -1806,11 +1811,15 @@ fn a_chat_never_writes_the_approvals_a_person_gave() {
         // use (#3446).
         // …and this machine's policy (#1343), as the kernel names it.
         [
-            std::path::PathBuf::from("/home/op/.config/purlis"),
-            std::path::PathBuf::from("/home/op/.config/charter"),
-            std::path::PathBuf::from("/home/op/.local/share/charter/engines/chrome-for-testing"),
-            std::path::PathBuf::from("/home/op/.local/share/purlis/engines/chrome-for-testing"),
-            std::path::PathBuf::from("/home/op/.local/share/charter/harnesses"),
+            std::path::PathBuf::from("/nonexistent-home/op/.config/purlis"),
+            std::path::PathBuf::from("/nonexistent-home/op/.config/charter"),
+            std::path::PathBuf::from(
+                "/nonexistent-home/op/.local/share/charter/engines/chrome-for-testing"
+            ),
+            std::path::PathBuf::from(
+                "/nonexistent-home/op/.local/share/purlis/engines/chrome-for-testing"
+            ),
+            std::path::PathBuf::from("/nonexistent-home/op/.local/share/charter/harnesses"),
             super::real(&super::policy::machine_folder()),
         ]
     );
@@ -1826,27 +1835,27 @@ fn a_chat_never_reads_or_writes_the_forge_answers_the_humans_token_fetched() {
         [
             // The human client scopes' credentials (FD-27), under every name the folder and
             // the config home have (RN-5).
-            std::path::PathBuf::from("/home/op/.config/purlis/purlisd"),
-            std::path::PathBuf::from("/home/op/.config/purlis/charterd"),
+            std::path::PathBuf::from("/nonexistent-home/op/.config/purlis/purlisd"),
+            std::path::PathBuf::from("/nonexistent-home/op/.config/purlis/charterd"),
             // A runner's one peer (ADR 0078 §8, #2044).
-            std::path::PathBuf::from("/home/op/.config/purlis/peers.json"),
+            std::path::PathBuf::from("/nonexistent-home/op/.config/purlis/peers.json"),
             // The runners this desktop pinned (#2525).
-            std::path::PathBuf::from("/home/op/.config/purlis/runners.json"),
+            std::path::PathBuf::from("/nonexistent-home/op/.config/purlis/runners.json"),
             // The runners a removal left on another engine (#2587).
-            std::path::PathBuf::from("/home/op/.config/purlis/runners-left.json"),
+            std::path::PathBuf::from("/nonexistent-home/op/.config/purlis/runners-left.json"),
             // When each of them ran (#3492).
-            std::path::PathBuf::from("/home/op/.config/purlis/runner-hours.jsonl"),
+            std::path::PathBuf::from("/nonexistent-home/op/.config/purlis/runner-hours.jsonl"),
             // Each cluster pool's own copy of its kubeconfig's context (#3292).
-            std::path::PathBuf::from("/home/op/.config/purlis/cluster-kubeconfigs"),
-            std::path::PathBuf::from("/home/op/.config/purlis/forge-etags"),
-            std::path::PathBuf::from("/home/op/.config/charter/purlisd"),
-            std::path::PathBuf::from("/home/op/.config/charter/charterd"),
-            std::path::PathBuf::from("/home/op/.config/charter/peers.json"),
-            std::path::PathBuf::from("/home/op/.config/charter/runners.json"),
-            std::path::PathBuf::from("/home/op/.config/charter/runners-left.json"),
-            std::path::PathBuf::from("/home/op/.config/charter/runner-hours.jsonl"),
-            std::path::PathBuf::from("/home/op/.config/charter/cluster-kubeconfigs"),
-            std::path::PathBuf::from("/home/op/.config/charter/forge-etags"),
+            std::path::PathBuf::from("/nonexistent-home/op/.config/purlis/cluster-kubeconfigs"),
+            std::path::PathBuf::from("/nonexistent-home/op/.config/purlis/forge-etags"),
+            std::path::PathBuf::from("/nonexistent-home/op/.config/charter/purlisd"),
+            std::path::PathBuf::from("/nonexistent-home/op/.config/charter/charterd"),
+            std::path::PathBuf::from("/nonexistent-home/op/.config/charter/peers.json"),
+            std::path::PathBuf::from("/nonexistent-home/op/.config/charter/runners.json"),
+            std::path::PathBuf::from("/nonexistent-home/op/.config/charter/runners-left.json"),
+            std::path::PathBuf::from("/nonexistent-home/op/.config/charter/runner-hours.jsonl"),
+            std::path::PathBuf::from("/nonexistent-home/op/.config/charter/cluster-kubeconfigs"),
+            std::path::PathBuf::from("/nonexistent-home/op/.config/charter/forge-etags"),
             // This machine's profiles' folders (#2034).
             Homes::charter_data(&machine(Os::Linux))
                 .expect("a data home")
@@ -2102,7 +2111,7 @@ fn a_chats_sandbox_finds_the_data_home_where_the_profile_store_does() {
 
 #[test]
 fn claude_code_and_codex_both_deny_a_chat_the_forge_etag_store() {
-    let etags = "/home/op/.config/charter/forge-etags";
+    let etags = "/nonexistent-home/op/.config/charter/forge-etags";
     let (_plane, denied) = denied_with(None, Os::Linux);
     let settings = claude::settings(&compiled(denied.clone(), Os::Linux)).expect("compiles");
     let read_denied = settings.sandbox["filesystem"]["denyRead"].clone();
@@ -2672,9 +2681,9 @@ fn a_codex_command_that_would_drop_or_widen_the_sandbox_is_named() {
             "--dangerously-bypass-approvals-and-sandbox",
         ),
         ("codex --yolo", "--yolo"),
-        ("codex --add-dir /home/op", "--add-dir"),
-        ("codex -C /home/op", "-C"),
-        ("codex --cd=/home/op", "--cd"),
+        ("codex --add-dir /nonexistent-home/op", "--add-dir"),
+        ("codex -C /nonexistent-home/op", "-C"),
+        ("codex --cd=/nonexistent-home/op", "--cd"),
         ("codex -a on-request", "-a"),
         ("codex --ask-for-approval untrusted", "--ask-for-approval"),
         ("codex --approve-for-me", "--approve-for-me"),
@@ -2820,7 +2829,9 @@ fn plane_saying(toml: &str) -> tempfile::TempDir {
 fn machine(os: Os) -> Machine {
     Machine {
         env: crate::secrets::Env::of(&[]),
-        home: Some(std::path::PathBuf::from("/home/op")),
+        // Not under `/home`: on macOS that is an autofs mount, where every name that is not there
+        // costs a trip to the automounter, and a start resolves hundreds of them (T1-46).
+        home: Some(std::path::PathBuf::from("/nonexistent-home/op")),
         os,
     }
 }
@@ -3164,7 +3175,9 @@ fn a_later_letter_s_value_in_the_project_s_cache_home_is_denied() {
     // `XDG_DATA_HOME` can move out of the home folder; a chat writes it.
     let machine = Machine {
         env: crate::secrets::Env::of(&[("XDG_DATA_HOME", "/srv/data")]),
-        home: Some(std::path::PathBuf::from("/home/op")),
+        // Not under `/home`: on macOS that is an autofs mount, where every name that is not there
+        // costs a trip to the automounter, and a start resolves hundreds of them (T1-46).
+        home: Some(std::path::PathBuf::from("/nonexistent-home/op")),
         os: Os::Linux,
     };
     let plane = tempfile::tempdir().expect("a plane");
@@ -4663,7 +4676,7 @@ fn ground_of(cwd: &str) -> Vec<std::path::PathBuf> {
         .ancestors()
         .map(std::path::Path::to_path_buf)
         .collect();
-    ground.push(std::path::PathBuf::from("/home/op"));
+    ground.push(std::path::PathBuf::from("/nonexistent-home/op"));
     ground
 }
 
@@ -4672,7 +4685,7 @@ fn a_denial_that_covers_the_chat_s_ground_refuses_it_naming_the_file_and_the_wor
     let ground = ground_of("/plane/ws/repo");
     for path in [
         "/",
-        "/home/op",
+        "/nonexistent-home/op",
         "/plane",
         "/plane/ws",
         "/plane/ws/repo",
@@ -4710,13 +4723,13 @@ fn a_denial_that_covers_the_chat_s_ground_refuses_it_naming_the_file_and_the_wor
     );
     assert_eq!(
         covering(
-            &[one(Class::Vaults, "/home/op", Access::ReadWrite)],
+            &[one(Class::Vaults, "/nonexistent-home/op", Access::ReadWrite)],
             &ground
         )
         .map(|it| it.to_string()),
         Some(
             "this project runs every chat sandboxed, and its vaults rules would keep the chat \
-             from writing /home/op, so nothing was started. Start this chat without the \
+             from writing /nonexistent-home/op, so nothing was started. Start this chat without the \
              sandbox from the new-chat picker."
                 .to_owned()
         )
@@ -4729,7 +4742,7 @@ fn a_denial_below_or_beside_the_chat_s_ground_is_kept() {
     let denied = [
         later_code("/plane/ws/repo/scripts/x.sh", "/f", "./scripts/x.sh"),
         later_code("/plane/other", "/f", "../other"),
-        later_code("/home/op/.config/x", "/f", "~/.config/x"),
+        later_code("/nonexistent-home/op/.config/x", "/f", "~/.config/x"),
         one(Class::Integrity, "/plane/.charter/app", Access::Write),
     ];
     assert_eq!(covering(&denied, &ground), None);
@@ -4753,8 +4766,10 @@ fn what_a_wrap_adds_is_held_to_the_same_ground() {
     // `CODEX_HOME` is the home directory.
     let compiled = Compiled {
         homes: Homes {
-            home: Some(std::path::PathBuf::from("/home/op")),
-            codex: Some(std::path::PathBuf::from("/home/op")),
+            // Not under `/home`: on macOS that is an autofs mount, where every name that is not there
+            // costs a trip to the automounter, and a start resolves hundreds of them (T1-46).
+            home: Some(std::path::PathBuf::from("/nonexistent-home/op")),
+            codex: Some(std::path::PathBuf::from("/nonexistent-home/op")),
             codex_project: Some(std::path::PathBuf::from("/data/codex-homes/x")),
             ..Homes::default()
         },
@@ -4767,7 +4782,7 @@ fn what_a_wrap_adds_is_held_to_the_same_ground() {
             &ground_of("/plane/ws/repo")
         ),
         Some(NotStarted::CoversItsGround {
-            path: std::path::PathBuf::from("/home/op"),
+            path: std::path::PathBuf::from("/nonexistent-home/op"),
             class: Class::LaterCode,
             named: None,
             within: None,
@@ -4780,13 +4795,13 @@ fn a_codex_home_that_is_the_home_directory_refuses_the_chat() {
     let plane = plane_saying(ON);
     let root = plane.path().canonicalize().expect("the plane");
     let machine = Machine {
-        env: crate::secrets::Env::of(&[("CODEX_HOME", "/home/op")]),
+        env: crate::secrets::Env::of(&[("CODEX_HOME", "/nonexistent-home/op")]),
         ..machine(Os::MacOs)
     };
     assert_eq!(
         for_start(Harness::Codex, &root, &machine, &|_| true),
         Err(NotStarted::CoversItsGround {
-            path: std::path::PathBuf::from("/home/op"),
+            path: std::path::PathBuf::from("/nonexistent-home/op"),
             class: Class::LaterCode,
             named: None,
             within: None,
@@ -5032,7 +5047,11 @@ fn skipping_the_second_covering_pass_for_claude_code_changes_no_byte_of_its_prof
     let root = std::path::Path::new("/plane");
     let machine = machine(Os::MacOs);
     let denials = vec![
-        one(Class::Vaults, "/home/op/.ssh", Access::ReadWrite),
+        one(
+            Class::Vaults,
+            "/nonexistent-home/op/.ssh",
+            Access::ReadWrite,
+        ),
         one(Class::Vaults, "/plane/.purlis/vaults", Access::ReadWrite),
         later_code("/plane/ws/.git/hooks", "/plane/ws/.git/config", "hooksPath"),
         one(Class::HumanPowers, "/elsewhere/keys", Access::Write),
@@ -5057,7 +5076,7 @@ fn skipping_the_second_covering_pass_for_claude_code_changes_no_byte_of_its_prof
         Denied {
             paths: [
                 denials,
-                vec![one(Class::HumanPowers, "/home", Access::Write)],
+                vec![one(Class::HumanPowers, "/nonexistent-home", Access::Write)],
             ]
             .concat(),
             ..Denied::default()
@@ -8524,7 +8543,7 @@ fn a_chat_writes_none_of_the_programs_a_cluster_pools_kubectl_runs_nor_their_pac
     let folder =
         purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config.path())).unwrap();
     let file = serde_json::json!({ "version": 1, "runners": [], "pools": [{
-        "name": "team", "kind": "cluster", "kubeconfig": "/home/op/.kube/config",
+        "name": "team", "kind": "cluster", "kubeconfig": "/nonexistent-home/op/.kube/config",
         "context": "team", "pool": "default", "namespace": "ada",
         "operatorKey": format!("ed25519:{}", "ab".repeat(32)),
         "cluster": "3e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b",
@@ -8535,7 +8554,9 @@ fn a_chat_writes_none_of_the_programs_a_cluster_pools_kubectl_runs_nor_their_pac
         .unwrap();
     let machine = Machine {
         env: crate::secrets::Env::of(&[("XDG_CONFIG_HOME", &config.path().display().to_string())]),
-        home: Some(std::path::PathBuf::from("/home/op")),
+        // Not under `/home`: on macOS that is an autofs mount, where every name that is not there
+        // costs a trip to the automounter, and a start resolves hundreds of them (T1-46).
+        home: Some(std::path::PathBuf::from("/nonexistent-home/op")),
         os: Os::Linux,
     };
     let plane = tempfile::tempdir().expect("a plane");
@@ -8579,7 +8600,7 @@ fn a_cluster_pools_program_whose_package_is_inside_the_project_is_held_with_its_
     let folder =
         purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config.path())).unwrap();
     let file = serde_json::json!({ "version": 1, "runners": [], "pools": [{
-        "name": "team", "kind": "cluster", "kubeconfig": "/home/op/.kube/config",
+        "name": "team", "kind": "cluster", "kubeconfig": "/nonexistent-home/op/.kube/config",
         "context": "team", "pool": "default", "namespace": "ada",
         "operatorKey": format!("ed25519:{}", "ab".repeat(32)),
         "cluster": "3e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b",
@@ -8628,7 +8649,7 @@ fn a_cluster_pools_program_whose_package_would_be_the_home_or_above_it_is_held_a
     let folder =
         purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config.path())).unwrap();
     let file = serde_json::json!({ "version": 1, "runners": [], "pools": [{
-        "name": "team", "kind": "cluster", "kubeconfig": "/home/op/.kube/config",
+        "name": "team", "kind": "cluster", "kubeconfig": "/nonexistent-home/op/.kube/config",
         "context": "team", "pool": "default", "namespace": "ada",
         "operatorKey": format!("ed25519:{}", "ab".repeat(32)),
         "cluster": "3e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b",
