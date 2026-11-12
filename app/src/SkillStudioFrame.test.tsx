@@ -24,6 +24,7 @@ import { closeTab, noTabs, openView } from "./tabs";
 import { openViewAt } from "./ui/panel/viewHistory";
 import { pickIn } from "./ui/select/select.testkit";
 import type { Studio } from "./bindings";
+import { findGrid } from "./ui/table/table.testkit";
 
 afterEach(() => {
   cleanup();
@@ -230,7 +231,7 @@ describe("the Skill studio's frame", () => {
     await openSkill("skill-deploy", user);
     expect(screen.queryByRole("grid", { name: "Skills" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Back to Library" }));
-    expect(await screen.findByRole("grid", { name: "Skills" })).toBeInTheDocument();
+    expect(await findGrid(screen, "Skills")).toBeInTheDocument();
   });
 });
 

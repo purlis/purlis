@@ -6,7 +6,7 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { VaultTab } from "./VaultTab";
-import { cellsOf } from "./ui/table/table.testkit";
+import { cellsOf, findGrid } from "./ui/table/table.testkit";
 import { saidOfTheOldExport } from "./VaultSignIn";
 import type { UnreadFor, VaultContents, VaultSecret } from "./bindings";
 
@@ -930,7 +930,7 @@ describe("a 1Password vault's token", () => {
     core(contents([secret("API_TOKEN")]));
     draw();
 
-    await screen.findByRole("grid", { name: "Secrets in ops" });
+    await findGrid(screen, "Secrets in ops");
     expect(
       screen.queryByRole("button", { name: "Put this vault's token in your system keychain" }),
     ).not.toBeInTheDocument();
@@ -1009,7 +1009,7 @@ describe("a 1Password vault's token", () => {
       cmd: "vault_identity_put",
       args: { plane: PLANE, vault: "ops", token: PUT },
     });
-    expect(await screen.findByRole("grid", { name: "Secrets in ops" })).toBeInTheDocument();
+    expect(await findGrid(screen, "Secrets in ops")).toBeInTheDocument();
     expect(rows()).toEqual([["DEPLOY", "—", "—", "", ""]]);
     expect(screen.getByText(/reads \$OP_TEAM_TOKEN from your system keychain/)).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent(
@@ -1209,7 +1209,7 @@ describe("a 1Password vault's token", () => {
   it("does not read again for a store elsewhere when it is read through no token", async () => {
     const asked = core(contents([secret("API_TOKEN")]));
     draw();
-    await screen.findByRole("grid", { name: "Secrets in ops" });
+    await findGrid(screen, "Secrets in ops");
 
     act(() => {
       window.dispatchEvent(
@@ -1269,7 +1269,7 @@ describe("how a 1Password vault signs in, from its tab (#1527)", () => {
   it("offers the change for a 1Password vault only", async () => {
     core(contents([secret("K")]));
     draw();
-    await screen.findByRole("grid", { name: "Secrets in ops" });
+    await findGrid(screen, "Secrets in ops");
     expect(
       screen.queryByRole("button", { name: "Change how this vault signs in" }),
     ).not.toBeInTheDocument();
@@ -1354,7 +1354,7 @@ describe("how a 1Password vault signs in, from its tab (#1527)", () => {
       },
     });
     // The vault is read at once, with no restart, and the person is told what was skipped.
-    expect(await screen.findByRole("grid", { name: "Secrets in ops" })).toBeInTheDocument();
+    expect(await findGrid(screen, "Secrets in ops")).toBeInTheDocument();
     expect(
       screen.getByText("purlis reads this vault's token from your system keychain."),
     ).toBeVisible();
@@ -1501,7 +1501,7 @@ describe("a vault's tab put back by a launch (#1660)", () => {
     await userEvent.click(read);
     expect(onAsk).toHaveBeenCalledOnce();
     view.rerender(<VaultTab plane={PLANE} vault="ops" onChanged={vi.fn()} onAsk={onAsk} />);
-    await screen.findByRole("grid", { name: "Secrets in ops" });
+    await findGrid(screen, "Secrets in ops");
     expect(asked.map((one) => one.cmd)).toEqual(["vault_list", "vault_open"]);
   });
 
@@ -1509,7 +1509,7 @@ describe("a vault's tab put back by a launch (#1660)", () => {
     const asked = core(contents([secret("API_TOKEN")]), { vault_list: listed("keyring", false) });
     drawPutBack();
 
-    await screen.findByRole("grid", { name: "Secrets in ops" });
+    await findGrid(screen, "Secrets in ops");
     expect(screen.queryByTestId("vault-waits")).not.toBeInTheDocument();
     expect(asked.map((one) => one.cmd)).toEqual(["vault_list", "vault_open"]);
   });
@@ -1518,7 +1518,7 @@ describe("a vault's tab put back by a launch (#1660)", () => {
     // A provider this window has never heard of, which the core says reads nothing: read at once.
     const asked = core(contents([secret("API_TOKEN")]), { vault_list: listed("newcomer", false) });
     const first = drawPutBack();
-    await screen.findByRole("grid", { name: "Secrets in ops" });
+    await findGrid(screen, "Secrets in ops");
     expect(asked.map((one) => one.cmd)).toEqual(["vault_list", "vault_open"]);
     first.view.unmount();
 
