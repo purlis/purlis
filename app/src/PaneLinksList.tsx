@@ -115,7 +115,10 @@ export function PaneLinksList({
       onClose={onClose}
       title="Links in this pane"
       subtitle="On screen, newest first"
-      summary={<>⏎ opens · {mac ? "⌘C" : "Ctrl+C"} copies its target</>}
+      // What the keys do, only where there is something to do it to.
+      summary={
+        all.length > 0 ? <>⏎ opens · {mac ? "⌘C" : "Ctrl+C"} copies its target</> : undefined
+      }
       className="pane-links-list"
       data-testid="pane-links-list"
     >
