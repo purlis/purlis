@@ -2134,17 +2134,20 @@ family's rule outranked. Now (#1920):
 | word                                       | role                              | before                 | after                 |
 | ------------------------------------------ | --------------------------------- | ---------------------- | --------------------- |
 | a dialog's title                           | `ui-text-title`                   | 16px, strong           | the same              |
-| a dialog's subtitle                        | `ui-text-secondary`               | 12px, muted            | 12px, secondary       |
-| a dialog's description                     | `ui-text-body`                    | 14px, secondary        | 13px, primary         |
-| a dialog's summary, before its answers     | `ui-text-secondary`               | 12px, quiet            | 12px, secondary       |
+| a dialog's subtitle | `ui-text-secondary` | 12px, muted | 12px, muted: the same |
+| a dialog's description | `ui-text-body` | 14px, secondary | 13px, secondary |
+| a dialog's summary, before its answers | `ui-text-secondary` | 12px, quiet | 12px, quiet: the same |
 | a Notice card's title                      | `ui-text-body ui-text-strong`     | 13px, medium           | 13px, strong          |
 | whose a Notice is                          | `ui-text-strong`                  | strong                 | the same              |
 | a Notice row's sub-line                    | `ui-text-meta`                    | 12px, muted            | 11px, quiet           |
 
 What it settled:
 
-- **A dialog's description is what it asks**, so it is the body, as an ask's words are, and not
-  a quieter line under the title: the subtitle is that.
+- **A dialog's description is what it asks**, so it is the body's size, as an ask's words are.
+- **A dialog's parts keep the dialog's tiers** (the subtitle muted, the description secondary,
+  the summary quiet): the parts manifest measures each on the dialog's fill (`DIALOG_TIERS`,
+  `parts_dialog.rs`) and reads it from `dialog.css`, so the colour stays the family's and the
+  role gives the size and weight, as a tab's does.
 - **A role a family's rule outranked was no role.** The Notice's sub-line wore the meta and was
   drawn by the family at 12px muted; the family's rule is gone.
 

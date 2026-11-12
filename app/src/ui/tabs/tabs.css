@@ -474,6 +474,8 @@
    one width, so 9 to 10 widens nothing. */
 [data-scope="page-tabs"][data-part="count"] {
   min-inline-size: 3ch;
+  /* The meta's own colour, said again in the family: the parts manifest reads it here. */
+  color: var(--text-quiet);
   font-variant-numeric: tabular-nums;
   text-align: start;
 }

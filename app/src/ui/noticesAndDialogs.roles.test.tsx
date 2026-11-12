@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { declarations } from "../guards.testkit";
-import { typeOf, wears } from "../textRoles.testkit";
+import { ROLES, typeOf, wears, type Role } from "../textRoles.testkit";
 import { Dialog } from "./dialog/Dialog";
 import { NoticeSub, NoticeTitle, NoticeWhose } from "./notice/Notice";
 
@@ -22,7 +22,7 @@ import { NoticeSub, NoticeTitle, NoticeWhose } from "./notice/Notice";
 afterEach(cleanup);
 
 describe("a dialog's words, each on its text role", () => {
-  it("titles it with the title, says its subtitle and summary as secondary, its description as the body", () => {
+  it("titles it with the title; its subtitle and summary are the secondary's size, its description the body's, each in its tier", () => {
     render(
       <Dialog
         onClose={() => {}}
@@ -37,9 +37,22 @@ describe("a dialog's words, each on its text role", () => {
     );
     const dialog = screen.getByRole("dialog", { name: "New workspace" });
     wears(dialog.querySelector('[data-part="title"]'), "title", "the dialog's title");
-    wears(dialog.querySelector('[data-part="subtitle"]'), "secondary", "its subtitle");
-    wears(dialog.querySelector('[data-part="description"]'), "body", "its description");
-    wears(dialog.querySelector('[data-part="summary"]'), "secondary", "its summary");
+    // The rest wear their role's size and weight in the dialog's own tiers, which the parts
+    // manifest measures each on the dialog's fill (`DIALOG_TIERS`, `parts_dialog.rs`).
+    const tiered: [part: string, role: Role, tier: string][] = [
+      ["subtitle", "secondary", "--text-muted"],
+      ["description", "body", "--text-secondary"],
+      ["summary", "secondary", "--text-quiet"],
+    ];
+    for (const [part, role, tier] of tiered) {
+      const word = dialog.querySelector(`[data-part="${part}"]`);
+      expect(word, part).toHaveClass(ROLES[role].class);
+      expect(typeOf(word as Element), part).toEqual({
+        size: ROLES[role].size,
+        weight: ROLES[role].weight,
+        colour: tier,
+      });
+    }
   });
 });
 
@@ -61,13 +74,14 @@ describe("a Notice's words, each on its text role", () => {
 });
 
 describe("the families' own sheets", () => {
-  it("write no size, weight or colour for a word that now wears a role", () => {
+  it("write no size or weight for a word that now wears a role", () => {
     const worn =
       /\[data-scope="(?:dialog|notice)"\]\[data-part="(?:title|subtitle|description|summary|sub|whose)"\]$/;
     const typed = ["ui/dialog/dialog.css", "ui/notice/notice.css"].flatMap((file) =>
       declarations(readFileSync(join(process.cwd(), "src", file), "utf8"))
         .filter(({ context }) => worn.test(context[context.length - 1] ?? ""))
-        .filter(({ property }) => ["font-size", "font-weight", "color"].includes(property))
+        // A colour is a family's tier, which the parts manifest reads from its sheet.
+        .filter(({ property }) => ["font-size", "font-weight"].includes(property))
         .map(
           ({ context, property, value }) => `${file} ${context.join(" ")} | ${property}: ${value}`,
         ),
