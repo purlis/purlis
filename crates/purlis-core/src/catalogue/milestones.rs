@@ -193,7 +193,7 @@ fn recorded(root: &Path, name: &str) -> Option<Repo> {
         .find(|row| row.get("name").and_then(Value::as_str) == Some(name))?;
     let record = crate::inventory::read(&row)?;
     let forge = crate::forge::resolve_host(&record.ssh_url, root)?;
-    (forge.kind == record.forge && !record.path_with_namespace.is_empty()).then(|| Repo {
+    (forge.kind == record.forge && !record.path_with_namespace.is_empty()).then_some(Repo {
         forge,
         path: record.path_with_namespace,
     })
