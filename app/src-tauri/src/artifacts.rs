@@ -198,6 +198,9 @@ struct Served {
     declared: Option<data::Declared>,
     /// The word of the load whose port is open, if one is.
     load: Option<String>,
+    /// How many loads its document was served for whose commit the webview has not told yet
+    /// (#6232): such a commit revokes nothing, since the document's request already did.
+    begun: u32,
 }
 
 /// The artifact a webview shows, as it was read when it was opened, or last read again.
@@ -233,6 +236,8 @@ pub(crate) struct Answered {
     /// Whether the request came from a page purlis serves, at the origin it serves it from
     /// now: only then may its link reports and offers be heard (#6120).
     pub(crate) matched: bool,
+    /// Whether it was the page's document, asked for as a load of it begins (#6232).
+    pub(crate) began: bool,
 }
 
 impl Served {
@@ -307,6 +312,7 @@ impl Artifacts {
         let matched = own.is_some();
         let mut key = None;
         let mut ask = None;
+        let mut began = false;
         let runs = own.as_ref().is_some_and(|one| one.of.standing.runs());
         let (status, body, kind) = match own {
             None => (StatusCode::NOT_FOUND, Vec::new(), "text/plain"),
@@ -329,7 +335,17 @@ impl Artifacts {
                     match serve::key(path)
                         .and_then(|key| Some((one.snapshot.served(&key)?.to_vec(), key)))
                     {
-                        Some((bytes, key)) => (StatusCode::OK, bytes, serve::content_type(&key)),
+                        Some((bytes, key)) => {
+                            // The page's document is asked for as a load of it begins, always
+                            // before its script can open the new load's port: so this, not the
+                            // webview's commit told later, ends the last load's port (#6232).
+                            if key == artifact::PAGE {
+                                one.load = None;
+                                one.begun = one.begun.saturating_add(1);
+                                began = true;
+                            }
+                            (StatusCode::OK, bytes, serve::content_type(&key))
+                        }
                         None => (StatusCode::NOT_FOUND, Vec::new(), "text/plain"),
                     }
                 }
@@ -349,6 +365,7 @@ impl Artifacts {
             key,
             ask,
             matched,
+            began,
         }
     }
 
@@ -359,6 +376,26 @@ impl Artifacts {
             one.load = None;
         }
         self.unsubscribe_label(label);
+    }
+
+    /// **Webview `label` told that a load committed** (wry's `PageLoadEvent::Started`), which it
+    /// tells the main thread only after the page has begun, its script maybe already on its new
+    /// port (#6232). A load whose document this scheme served was revoked then, so its commit
+    /// revokes nothing; a commit no document began (the back-forward cache) revokes as a reload
+    /// does. Whether it revoked, so its offers go too.
+    pub(crate) fn committed(&self, label: &str) -> bool {
+        {
+            let mut served = self.served();
+            let Some(one) = served.get_mut(label) else {
+                return false;
+            };
+            if one.begun > 0 {
+                one.begun -= 1;
+                return false;
+            }
+        }
+        self.reloaded(label);
+        true
     }
 
     /// Whether `load` is still the load of webview `label` whose port is open.
@@ -514,6 +551,12 @@ pub(crate) fn serve<R: Runtime>(
             .unwrap_or_else(|_| Response::new(Vec::new()));
     };
     let answered = artifacts.answer(label, request);
+    // A load begins: what the last one subscribed to and offered goes with its port (#6232),
+    // before the new page can ask or offer anything.
+    if answered.began {
+        artifacts.unsubscribe_label(label);
+        offers::withdrawn(app, label);
+    }
     if let Some(ask) = answered.ask {
         if ask.live.is_some() {
             live::asked(app.clone(), ask);
@@ -1048,6 +1091,7 @@ pub async fn artifact_open(
         theme: sheet,
         declared,
         load: None,
+        begun: 0,
     };
     let label = lay(&window, &artifacts, served, place)?;
     Ok(ArtifactOpened {
@@ -1327,6 +1371,7 @@ pub async fn artifact_preview_open(
         theme: sheet,
         declared: None,
         load: None,
+        begun: 0,
     };
     Ok(ArtifactOpened {
         label: lay(&window, &artifacts, served, place)?,
@@ -1633,6 +1678,7 @@ mod tests {
                     theme: format!(":root {{ color-scheme: dark; }} /* {host} */"),
                     declared: None,
                     load: None,
+                    begun: 0,
                 },
             );
         }
@@ -1998,6 +2044,65 @@ mod tests {
         );
     }
 
+    /// **The webview reports a load's commit after its page already opened its port** (#6232):
+    /// wry's `PageLoadEvent::Started` is the commit (WebKitGTK's `Committed`, WKWebView's
+    /// `didCommitNavigation`), told to the main thread after the web process has begun the
+    /// page, whose script opens its port at once. The document's own request is the reload's
+    /// edge, since it always comes before the page's script; a commit told late revokes nothing.
+    #[test]
+    fn a_reload_s_port_outlives_a_commit_told_after_the_page_opened_it() {
+        let artifacts = served(&[("artifact-1", "main", "aaa")]);
+        said(
+            &artifacts,
+            "artifact-1",
+            &format!("/.purlis/port/{LOAD_A}/open"),
+        );
+        let asked = said(&artifacts, "artifact-1", &read_path(LOAD_A, 1, "data.json")).unwrap();
+
+        // The page loads again: its document is asked for first, which ends the last load.
+        let document = artifacts.answer("artifact-1", &get(&at("aaa", "/")));
+        assert_eq!(document.response.status(), StatusCode::OK);
+        assert!(document.began, "the document's request begins a load");
+        assert!(!artifacts.still_open("artifact-1", LOAD_A));
+        assert!(artifacts.for_ask(&asked).is_none());
+
+        // Its script opens the new load's port, and only then is the commit told.
+        said(
+            &artifacts,
+            "artifact-1",
+            &format!("/.purlis/port/{LOAD_B}/open"),
+        );
+        assert!(!artifacts.committed("artifact-1"), "nothing left to revoke");
+        assert!(artifacts.still_open("artifact-1", LOAD_B));
+        assert!(said(&artifacts, "artifact-1", &read_path(LOAD_B, 2, "data.json")).is_some());
+
+        // A commit no document of this scheme began (a page restored from the back-forward
+        // cache) still revokes the port, as it did.
+        assert!(artifacts.committed("artifact-1"));
+        assert!(!artifacts.still_open("artifact-1", LOAD_B));
+
+        // Two documents begun before either commit is told: each commit answers its own.
+        said(
+            &artifacts,
+            "artifact-1",
+            &format!("/.purlis/port/{LOAD_A}/open"),
+        );
+        artifacts.answer("artifact-1", &get(&at("aaa", "/index.html")));
+        artifacts.answer("artifact-1", &get(&at("aaa", "/")));
+        assert!(!artifacts.committed("artifact-1"));
+        said(
+            &artifacts,
+            "artifact-1",
+            &format!("/.purlis/port/{LOAD_B}/open"),
+        );
+        assert!(!artifacts.committed("artifact-1"));
+        assert!(artifacts.still_open("artifact-1", LOAD_B));
+        // Nor is anything but the page's document a beginning.
+        let picture = artifacts.answer("artifact-1", &get(&at("aaa", "/img/a.png")));
+        assert!(!picture.began);
+        assert!(artifacts.still_open("artifact-1", LOAD_B));
+    }
+
     #[test]
     fn a_port_is_its_own_webview_s_never_another_artifact_s() {
         let artifacts = served(&[("artifact-1", "main", "aaa"), ("artifact-2", "main", "bbb")]);
@@ -2188,6 +2293,7 @@ mod tests {
                 theme: String::new(),
                 declared: None,
                 load: None,
+                begun: 0,
             },
         );
         artifacts

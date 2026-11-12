@@ -298,6 +298,7 @@ mod tests {
                 theme: String::new(),
                 declared: None,
                 load: None,
+                begun: 0,
             },
         );
         assert!(artifacts.offering("artifact-1", LOAD).is_none());

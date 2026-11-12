@@ -4017,12 +4017,13 @@ pub fn run() {
                 if windows::is_charter_window(webview.label()) {
                     artifacts::close_window_children(webview.app_handle(), webview.label());
                 }
-                // An artifact's page that loads again loses the port its last load had (#5961).
+                // An artifact's page that loads again loses the port its last load had (#5961),
+                // and the actions it offered (#5972). This is the commit, told after the page
+                // began: a load whose document the scheme served was revoked there (#6232).
                 if artifacts::is_artifact(webview.label())
                     && let Some(served) = webview.try_state::<artifacts::Artifacts>()
+                    && served.committed(webview.label())
                 {
-                    served.reloaded(webview.label());
-                    // And the actions it offered (#5972).
                     artifacts::offers::withdrawn(webview.app_handle(), webview.label());
                 }
             }
