@@ -7178,9 +7178,19 @@ nav.piece-files-head {
   color: var(--text-secondary);
 }
 
-.ui-settings-none {
-  margin: 0;
-  color: var(--text-muted);
+/* The search (#2920, N27): its box across the column, so its words are whole, and the "Set
+   here" toggle under it, at the column's start. */
+.ui-settings-search {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: flex-start;
+  min-inline-size: 0;
+}
+
+.ui-settings-search > .ui-settings-filter {
+  align-self: stretch;
+  min-inline-size: 0;
 }
 
 /* The left nav: the panel family's page navigation (`ViewNav`, #2930), which draws its

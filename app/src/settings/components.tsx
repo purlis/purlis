@@ -10,10 +10,10 @@ import {
   type ReactNode,
   type Ref,
 } from "react";
-import { Ellipsis, ListFilter } from "lucide-react";
+import { Ellipsis, Search } from "lucide-react";
 import { Select } from "../ui/select/Select";
 import { ViewNav, type ViewPage } from "../ui/panel/ViewNav";
-import { Button, IconButton } from "../ui/button/Button";
+import { Button, IconButton, ToggleButton } from "../ui/button/Button";
 import { Menu, MenuItem, MenuSeparator, MenuTrigger } from "../ui/menu/Menu";
 import { Checkbox, CheckboxGroup, RovingCheckbox } from "../ui/choice/Checkbox";
 import {
@@ -105,6 +105,19 @@ function navPages(
   return pages;
 }
 
+/** **The nav's page of every match at every level** (#2920): no group's address can be it. */
+export const FOUND_PAGE = "\u0000found";
+
+/** **What a search that finds nothing says** (#2920), by what it searched for: its words, the
+ *  values set at this level, or both. */
+export function noneFound(words: string, setHere: boolean): string {
+  const said = words.trim();
+  if (said === "") return "No setting is set at this level.";
+  return setHere
+    ? `No setting set at this level matches “${said}”.`
+    : `No setting matches “${said}”.`;
+}
+
 /** The page that heads the group `id` is a page of, if it is one. */
 function headOf(groups: readonly GroupOffer[], id: string): string | undefined {
   const at = groups.findIndex((one) => one.id === id);
@@ -127,11 +140,12 @@ function headOf(groups: readonly GroupOffer[], id: string): string | undefined {
  * Tab stop, moved through with the arrow keys, Home and End, chosen with Enter, Space or a press,
  * and the chosen group says so with `aria-current="page"` and the family's mark.
  *
- * **The filter** (SE-21, V89c) sits above the nav: a search box, labelled, whose words the
- * caller narrows its groups by — the layout draws what it is handed. While it holds words, a
- * polite live region under it says how many settings match (`found`), and when none do, the
- * right column says so where the group would be — above what the level's files refuse, which
- * stays on screen whatever the filter. Escape in the box clears it.
+ * **The search** (SE-21, V89c; one search across every level, #2920, N27) sits above the nav: a
+ * search box, labelled, and the "Set here" toggle under it, whose words and toggle the caller
+ * searches by — the layout draws what it is handed. While either holds (`searching`), the nav's
+ * first page is every match at every level ({@link FOUND_PAGE}, "All results"), apart from the
+ * caller's narrowed groups under it, and a polite live region under the box says how many
+ * settings match (`found`), or that none does. Escape in the box clears its words.
  *
  * **The foot of the nav** (`foot`, SE-19, V89d) is the caller's: the Project level's "Edit as
  * TOML" link per file. It is under the groups and not one of them, so the filter leaves it be.
@@ -146,6 +160,8 @@ export function SettingsLayout({
   onGroupChange,
   filter,
   onFilterChange,
+  setHere = false,
+  onSetHereChange,
   found,
   foot,
   children,
@@ -163,10 +179,13 @@ export function SettingsLayout({
   groups: readonly GroupOffer[];
   group: string;
   onGroupChange: (group: string) => void;
-  /** The words in the filter box, as typed. */
+  /** The words in the search box, as typed. */
   filter: string;
   onFilterChange: (to: string) => void;
-  /** How many settings the filter leaves, while it holds words; unset while the level is still
+  /** Whether "Set here" narrows the search to the values set at this level (#2920). */
+  setHere?: boolean;
+  onSetHereChange?: (to: boolean) => void;
+  /** How many settings the search finds, while it searches; unset while the level is still
    *  being read, so nothing is said yet. */
   found?: number;
   /** What sits under the nav, whatever the filter. */
@@ -181,24 +200,33 @@ export function SettingsLayout({
   // lands in a folded group leaves the person's fold as they made it.
   const head = headOf(groups, group);
   const setOpen = folds?.setOpen;
-  const pages = navPages(
+  const words = filter.trim();
+  const searching = words !== "" || setHere;
+  const narrowedPages = navPages(
     groups,
     folds === undefined ? undefined : (id) => folds.isOpen(id) || id === head,
-    filter.trim() !== "",
+    searching,
   );
+  // While it searches, every match at every level is the nav's first page, apart from this
+  // level's pages under it.
+  const pages: ViewPage[] = searching
+    ? [
+        { id: FOUND_PAGE, label: "All results", count: found },
+        ...narrowedPages.map((one, at) => (at === 0 ? { ...one, startsGroup: true } : one)),
+      ]
+    : narrowedPages;
   useLayoutEffect(() => {
     if (arrowedTo !== level) return;
     arrowedTo = undefined;
     const shown = switcher.current?.querySelector<HTMLElement>('input[type="radio"]:checked');
     if (shown && document.activeElement !== shown) shown.focus();
   }, [level]);
-  const words = filter.trim();
-  const none =
-    words !== "" && found === 0 ? `No setting at this level matches “${words}”.` : undefined;
   const said =
-    words === "" || found === undefined
+    !searching || found === undefined
       ? ""
-      : (none ?? `${found} ${found === 1 ? "setting matches" : "settings match"}`);
+      : found === 0
+        ? noneFound(words, setHere)
+        : `${found} ${found === 1 ? "setting matches" : "settings match"}`;
   return (
     <div className="ui-settings" ref={holder}>
       {/* **The side column** (R37, R38): the level switcher, whose settings these are, the
@@ -233,24 +261,34 @@ export function SettingsLayout({
           ))}
         </SegmentedControl>
         {about !== undefined && <p className="ui-settings-about">{about}</p>}
-        <TextField
-          className="ui-settings-filter"
-          type="search"
-          icon={<ListFilter aria-hidden="true" />}
-          keepsFocus="settings-filter"
-          value={filter}
-          aria-label="Filter settings"
-          placeholder="Filter settings"
-          onChange={onFilterChange}
-          onKeyDown={(event) => {
-            if (event.key !== "Escape" || filter === "") return;
-            // Taken here: an Escape that cleared the box has done its job, and nothing
-            // behind the tab should act on it too.
-            event.preventDefault();
-            event.stopPropagation();
-            onFilterChange("");
-          }}
-        />
+        <div className="ui-settings-search">
+          <TextField
+            className="ui-settings-filter"
+            type="search"
+            icon={<Search aria-hidden="true" />}
+            keepsFocus="settings-filter"
+            value={filter}
+            aria-label="Search settings"
+            placeholder="Search every setting, every level"
+            onChange={onFilterChange}
+            onKeyDown={(event) => {
+              if (event.key !== "Escape" || filter === "") return;
+              // Taken here: an Escape that cleared the box has done its job, and nothing
+              // behind the tab should act on it too.
+              event.preventDefault();
+              event.stopPropagation();
+              onFilterChange("");
+            }}
+          />
+          <ToggleButton
+            size="sm"
+            variant="ghost"
+            isSelected={setHere}
+            onChange={(to) => onSetHereChange?.(to)}
+          >
+            Set here
+          </ToggleButton>
+        </div>
         <p className="sr-only" role="status" aria-live="polite" aria-label="Settings found">
           {said}
         </p>
@@ -274,7 +312,6 @@ export function SettingsLayout({
       {/* **The page** (R37): it scrolls on its own beside the side column, at most 860 px wide. */}
       <div className="ui-settings-body">
         <div className="ui-settings-page">
-          {none && <p className="ui-settings-none">{none}</p>}
           <OnPage.Provider value={true}>{children}</OnPage.Provider>
         </div>
       </div>

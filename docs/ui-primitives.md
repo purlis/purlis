@@ -82,9 +82,10 @@ operator amended it there on 2026-10-04 (V89f; the spec on #558):
 What keeps it from becoming the library this file forbids:
 
 - **Six pieces, named here, and no more.** `SettingsLayout` (since #2919 prototype A of
-  `prototype/settings-page`: a side column with the level switcher, the filter box and the nav of
-  groups, which folds a page's own pages, and no title of its own (#3147), and the chosen page
-  beside it, its rows scrolling under its header), `SettingGroup` (on a
+  `prototype/settings-page`: a side column with the level switcher, the search box with its Set
+  here toggle (one search across every level, #2920, whose matches are the nav's first page) and
+  the nav of groups, which folds a page's own pages, and no title of its own (#3147), and the
+  chosen page beside it, its rows scrolling under its header), `SettingGroup` (on a
   settings page the page's header — its title, its blurb and "Kept in ‹file› · Edit as TOML" —
   and its rows, and at `level` 3 one of the page's own groups, a heading and its one line, a
   rarely used one (`rarely`) folded as "‹title› · ‹count›"; in a dialog a heading and one help
