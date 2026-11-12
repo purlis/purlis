@@ -1159,10 +1159,9 @@ pub fn apart_chroma_of(rules: &[Rule<'_>], hue: f64) -> Option<f64> {
 /// accent gives way as far as its kin could go, and past that it keeps the colour it was written
 /// in, which the floors vouch for, rather than a grey at a chroma the kin could not take (#3388).
 pub fn alone_chroma_of(rules: &[Rule<'_>], kin: &[Rule<'_>], shared: f64, hue: f64) -> Option<f64> {
-    let whole = |most: f64| {
-        kin.iter()
-            .all(|rule| rule.holds(hue, Some(most), Some(most)))
-    };
+    let failed = std::cell::Cell::new(0);
+    let whole =
+        |most: f64| all_failing_first(kin, &failed, |rule| rule.holds(hue, Some(most), Some(most)));
     searched(rules, hue, shared, |alone| alone, whole)
 }
 
@@ -1206,12 +1205,16 @@ fn searched(
     moves: impl Fn(bool) -> bool,
     offered: impl Fn(f64) -> bool,
 ) -> Option<f64> {
+    // The rule that last failed is asked first: it is the likeliest to fail at the next step
+    // down, and a step one rule fails is answered without turning the sides of the rest. Every
+    // rule must hold, so the order asked in changes no answer (#3597).
+    let failed = std::cell::Cell::new(0);
     let far = |most: f64| {
         let chroma = |alone: bool| Some(if moves(alone) { most } else { ceiling });
         offered(most)
-            && rules
-                .iter()
-                .all(|rule| rule.holds(hue, chroma(rule.token_alone), chroma(rule.from_alone)))
+            && all_failing_first(rules, &failed, |rule| {
+                rule.holds(hue, chroma(rule.token_alone), chroma(rule.from_alone))
+            })
     };
     if far(ceiling) {
         return Some(ceiling);
@@ -1237,6 +1240,29 @@ fn searched(
         .map(|step| f64::from(step) * CHROMA_STEP)
         .filter(|most| *most < had && *most < ceiling)
         .find(|most| far(*most))
+}
+
+/// Whether `holds` holds for every one of `rules`, the one at `failed` asked first, and `failed`
+/// moved to the rule that does not hold when one does not: the same answer as `all` in order.
+fn all_failing_first(
+    rules: &[Rule<'_>],
+    failed: &std::cell::Cell<usize>,
+    holds: impl Fn(&Rule<'_>) -> bool,
+) -> bool {
+    let first = failed.get();
+    if rules.get(first).is_some_and(|rule| !holds(rule)) {
+        return false;
+    }
+    match (0..rules.len())
+        .filter(|at| *at != first)
+        .find(|at| !holds(&rules[*at]))
+    {
+        Some(at) => {
+            failed.set(at);
+            false
+        }
+        None => true,
+    }
 }
 
 /// The OKLab distance between two colours, written out so the window's sum is the same sum:
