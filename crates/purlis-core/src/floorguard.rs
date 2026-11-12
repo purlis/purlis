@@ -127,10 +127,17 @@ pub const TAG_HARMLESS: [&str; 11] = [
     "--verify",
 ];
 
-/// The remedy, identical for every trigger — the opening of every denial this guard returns.
+/// The remedy, identical for every trigger — the opening of every denial this guard returns but
+/// one of a command that prints a stored credential, which opens with [`TOKEN_FLOOR_FIX`] (#6314).
 pub const RELEASE_FLOOR_FIX: &str = "Publishing is on purlis's floor: a run with nobody watching may not cut a release. \
      `bypassPermissions` means *stop asking me*, not *stop knowing things*. Re-run this step \
      **attended**, or have a person do it. ";
+
+/// **The opening of a refusal of a command that prints a stored credential** (#6314): the forge
+/// token, or a secret from the keychain or a password manager. Refused for the same reason a
+/// publish is, but it is no release, so it opens with what it is and names the way through:
+/// the credential goes from a vault to the one command that needs it, and the run never holds it.
+pub const TOKEN_FLOOR_FIX: &str = token::FIX;
 
 /// `v?\d+\.\d+(?:\.\d+)?[\w.-]*`, full-match — what a version tag looks like.
 ///
@@ -266,8 +273,8 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
                 return Some(said);
             }
         }
-        if let Some(why) = token::keychain_read_reason(&prog, &argv) {
-            return Some(format!("{fix}{why}"));
+        if let Some(said) = token::keychain_read_reason(&prog, &argv) {
+            return Some(said);
         }
         // `GIT tag v1` is a tag — see A2's fold.
         let base = base_lower(&prog);
@@ -314,8 +321,11 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
             }
             // A push option that sets auto-merge, an alias that would publish, or a command that
             // prints the forge token (#866).
-            let why = token::git_reason(&base, args, sub.as_deref())
-                .or_else(|| merge::git_reason(args, &env, sub.as_deref(), unattended, depth));
+            // A token refusal is whole: it opens with its own sentence (#6314).
+            if let Some(said) = token::git_reason(&base, args, sub.as_deref()) {
+                return Some(said);
+            }
+            let why = merge::git_reason(args, &env, sub.as_deref(), unattended, depth);
             if let Some(why) = why {
                 return Some(format!("{fix}{why}"));
             }
@@ -357,8 +367,10 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
                 }
             }
             if forge {
-                let why = token::forge_reason(args)
-                    .or_else(|| merge::forge_reason(&name, args, cmd, unattended, depth));
+                if let Some(said) = token::forge_reason(args) {
+                    return Some(said);
+                }
+                let why = merge::forge_reason(&name, args, cmd, unattended, depth);
                 if let Some(why) = why {
                     return Some(format!("{fix}{why}"));
                 }
