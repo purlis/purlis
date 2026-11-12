@@ -2755,6 +2755,12 @@ impl Docker {
         self
     }
 
+    /// The folder each run's copy of Docker's settings is made in, where one was named
+    /// ([`Docker::with_settings_in`]): a test's. `None` is `<data>/docker-settings`.
+    pub fn settings_folder(&self) -> Option<&std::path::Path> {
+        self.settings_in.as_deref()
+    }
+
     /// The forward's socket this `docker` is pointed at, where it is a pool's on another machine.
     pub fn forwarded(&self) -> Option<&std::path::Path> {
         self.forwarded.as_deref()

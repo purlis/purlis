@@ -390,10 +390,10 @@ pub fn by_hand(route: Option<&str>) -> super::See {
 
 /// **What Connect to finds**: the key the machine at `route` shows, met with nothing signed in,
 /// and the one the person's own ssh knows for it. Nothing is kept.
-pub fn meet(route: &str) -> Result<Met, Finding> {
+pub fn meet(docker: &crate::dockerpool::Docker, route: &str) -> Result<Met, Finding> {
     let route = Route::parse(route).map_err(Finding::Here)?;
     let ssh = crate::sshroute::ssh_here().map_err(Finding::Here)?;
-    let (_, settings_in) = crate::sshroute::pool::folders()?;
+    let (_, settings_in) = crate::sshroute::pool::folders_for(docker)?;
     let resolved = crate::sshroute::connect::resolve(&ssh, &route)?;
     crate::sshroute::connect::reachable(&route, &resolved)?;
     let key = crate::sshroute::connect::meet(&ssh, &route, &settings_in)?;
@@ -413,7 +413,7 @@ pub fn trust(
 ) -> Result<Remote, Finding> {
     let route = Route::parse(route).map_err(Finding::Here)?;
     let ssh = crate::sshroute::ssh_here().map_err(Finding::Here)?;
-    let (engine_links, settings_in) = crate::sshroute::pool::folders()?;
+    let (engine_links, settings_in) = crate::sshroute::pool::folders_for(docker)?;
     let resolved = crate::sshroute::connect::resolve(&ssh, &route)?;
     crate::sshroute::connect::reachable(&route, &resolved)?;
     let key = crate::sshroute::connect::meet(&ssh, &route, &settings_in)?;

@@ -448,7 +448,11 @@ pub(crate) fn in_a_remote_docker_pool() -> Option<Target> {
     let docker = purlis_core::dockerpool::Docker::at(
         std::env::var_os("DOCKER_POOL_TEST_DOCKER").unwrap_or("docker".into()),
     );
-    let met = purlis_core::poolsetup::connecting::meet(&route).expect("the machine is met");
+    // Its forwards and settings beside this target's own config home, inside the test fence.
+    let folder = tempfile::tempdir().expect("a folder for the machine's settings");
+    let docker = docker.with_settings_in(folder.path().join("docker-settings"));
+    let met =
+        purlis_core::poolsetup::connecting::meet(&docker, &route).expect("the machine is met");
     let remote = purlis_core::poolsetup::connecting::trust(&docker, &route, &met.key.fingerprint())
         .expect("the machine is trusted");
     Some(a_window_again_on_a_pool_on(&image, docker, Some(remote)).0)

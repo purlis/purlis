@@ -14,6 +14,18 @@ use super::forward::{self, Opening};
 use crate::dockerpool::Docker;
 use crate::runners::{Pool, Remote};
 
+/// **Where `docker`'s pools keep their forwards' sockets and each run's settings**: beside the
+/// settings folder it names (a test's), else `<data>/engine-links` and `<data>/docker-settings`.
+pub fn folders_for(docker: &Docker) -> Result<(PathBuf, PathBuf), Finding> {
+    match docker.settings_folder() {
+        Some(settings_in) => Ok((
+            settings_in.parent().unwrap_or(settings_in).join(super::DIR),
+            settings_in.to_path_buf(),
+        )),
+        None => folders(),
+    }
+}
+
 /// Where this machine keeps the forwards' sockets and each run's settings: `<data>/engine-links`
 /// and `<data>/docker-settings`.
 pub fn folders() -> Result<(PathBuf, PathBuf), Finding> {
@@ -32,7 +44,7 @@ pub fn docker_of(docker: &Docker, pool: &Pool) -> Result<Docker, Finding> {
     let Some(remote) = pool.remote() else {
         return Ok(docker.clone());
     };
-    let (engine_links, settings_in) = folders()?;
+    let (engine_links, settings_in) = folders_for(docker)?;
     let ssh = super::ssh_here().map_err(Finding::Here)?;
     docker_through(
         docker,
@@ -137,8 +149,8 @@ pub fn is_remote(config: &Path, name: &str) -> bool {
 }
 
 /// **Where pool `pool`'s forward has its socket on this machine**, whether or not it is open.
-pub fn socket_for(pool: &str) -> Result<PathBuf, Finding> {
-    let (engine_links, _) = folders()?;
+pub fn socket_for(docker: &Docker, pool: &str) -> Result<PathBuf, Finding> {
+    let (engine_links, _) = folders_for(docker)?;
     super::socket_of(&engine_links, pool).map_err(Finding::Here)
 }
 

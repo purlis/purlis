@@ -325,7 +325,9 @@ pub async fn pool_setup_connect(
                 .connect
                 .map(|chosen| chosen.route)
                 .ok_or_else(|| "Pick the machine first.".to_owned())?;
-            let pressed = match poolsetup::connecting::meet(&route) {
+            let docker = poolsetup::docker_here()
+                .ok_or_else(|| "purlis found no docker command on this machine.".to_owned())?;
+            let pressed = match poolsetup::connecting::meet(&docker, &route) {
                 Ok(met) => Pressed::Met(met),
                 Err(finding) => Pressed::Found(finding),
             };

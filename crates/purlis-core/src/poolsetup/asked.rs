@@ -229,7 +229,7 @@ pub fn remote_of(
     let said =
         |finding: crate::sshroute::connect::Finding| Refused::Other(super::connect_said(&finding));
     let Some(trust) = trust else {
-        let met = super::connecting::meet(on).map_err(said)?;
+        let met = super::connecting::meet(docker, on).map_err(said)?;
         return Err(Refused::Other(format!(
             "{} shows the key {} ({}). Check it on {}: ssh-keygen -lf \
              /etc/ssh/ssh_host_ed25519_key.pub prints it there. If it is the same, run this \

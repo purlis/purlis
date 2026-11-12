@@ -56,7 +56,8 @@ fn fixture() -> Option<Fixture> {
         sshd,
         dind,
         ssh: sshroute::ssh_here().expect("the system's ssh"),
-        docker: Docker::at(std::env::var_os("DOCKER_POOL_TEST_DOCKER").unwrap_or("docker".into())),
+        docker: Docker::at(std::env::var_os("DOCKER_POOL_TEST_DOCKER").unwrap_or("docker".into()))
+            .with_settings_in(folders.path().join("s")),
         folders,
     })
 }

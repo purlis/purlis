@@ -185,7 +185,7 @@ impl ToARunner {
         let remote = purlis_core::sshroute::pool::is_remote(&machine.config, kept.pool());
         let local = machine.docker.clone();
         let docker = match remote
-            .then(|| purlis_core::sshroute::pool::socket_for(kept.pool()).ok())
+            .then(|| purlis_core::sshroute::pool::socket_for(&machine.docker, kept.pool()).ok())
             .flatten()
         {
             Some(socket) => local.clone().through(socket),
