@@ -49,18 +49,18 @@ pub enum Found {
 /// **What `number` names in the project at `root`**, given the chats open now: one read of its
 /// dispatch records.
 pub fn by_number_in(root: &Path, number: u32, open: &[OpenChat]) -> Found {
-    if let Some(found) = open_under(number, open) {
-        return found;
-    }
-    by_number(number, open, &dispatchrecord::list(root))
+    // An open chat is answered without reading a record.
+    open_under(number, open).unwrap_or_else(|| not_open(number, open, &dispatchrecord::list(root)))
 }
 
 /// [`by_number_in`], from `records` read already, newest first as [`dispatchrecord::list`] lists
 /// them.
 pub fn by_number(number: u32, open: &[OpenChat], records: &[Record]) -> Found {
-    if let Some(found) = open_under(number, open) {
-        return found;
-    }
+    open_under(number, open).unwrap_or_else(|| not_open(number, open, records))
+}
+
+/// What `number` names where no open chat answers to it.
+fn not_open(number: u32, open: &[OpenChat], records: &[Record]) -> Found {
     let Some(record) = records.iter().find(|record| {
         record.worker.chat.chat == number
             && !dispatchrecord::never_a_chat(record)
@@ -84,9 +84,10 @@ fn open_under(number: u32, open: &[OpenChat]) -> Option<Found> {
         .then_some(Found::Open { number })
 }
 
-/// Whether the recorded chat is the open chat `chat`: **by its ULID alone**. A record that names
-/// none matched the open chats by its number already ([`open_under`]).
-fn is(recorded: &ChatRef, chat: &OpenChat) -> bool {
+/// **Whether the chat a record names is the open chat `chat`**: by its ULID alone, which a
+/// restart and a relaunch keep. A record that names no ULID is no open chat's: a number is
+/// only the way in ([`by_number_in`]).
+pub fn is(recorded: &ChatRef, chat: &OpenChat) -> bool {
     recorded.id.is_some() && recorded.id == chat.id
 }
 

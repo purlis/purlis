@@ -7,5 +7,7 @@
   again as an ordinary chat. A chat started again under another number is found under its new one.
 - **A dispatched task's last screen is kept when its chat closes**, on this machine and never in
   the committed project, so *Read it* can show it. No chat can read it. It goes when the task's
-  dispatch record is collected. Set `[task_screens] keep = false` in `charter.local.toml` to stop
-  keeping them. Turning it off deletes every kept screen.
+  dispatch record is collected, or after 30 days, and at most 200 screens (256 MiB) are kept, the
+  oldest going first. Set `[task_screens] keep = false` in `charter.local.toml` to stop keeping
+  them: from then on no screen is kept or shown, and the screens already kept are deleted the next
+  time purlis reads the setting, at the latest when the project is opened.

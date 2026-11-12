@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use std::time::{Duration, SystemTime};
 
 fn project() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
@@ -82,7 +83,7 @@ fn the_sweep_takes_the_screens_no_record_names() {
     let (_dir, root) = project();
     keep(&root, CHAT, "kept").unwrap();
     keep(&root, OTHER, "gone").unwrap();
-    assert_eq!(sweep(&root, |id| id == CHAT), 1);
+    assert_eq!(sweep(&root, |id| id == CHAT, SystemTime::now()), 1);
     assert!(is_kept(&root, CHAT));
     assert!(!is_kept(&root, OTHER));
 }
@@ -98,6 +99,8 @@ fn forgetting_all_takes_every_screen() {
 
 #[test]
 fn a_project_s_open_keeps_the_screens_its_records_name_and_takes_the_rest() {
+    // With no record of open chats at all, which skips the rest of the open's sweep: a screen
+    // is swept whatever that record says.
     use crate::dispatchrecord::{self, ChatRef, Mode, Opening, Worker};
     let (_dir, root) = project();
     let opening = Opening {
@@ -120,7 +123,7 @@ fn a_project_s_open_keeps_the_screens_its_records_name_and_takes_the_rest() {
     dispatchrecord::open(&root, opening, chrono::Utc::now()).unwrap();
     keep(&root, CHAT, "named").unwrap();
     keep(&root, OTHER, "named by nothing").unwrap();
-    crate::retention::sweep(&root, std::time::SystemTime::now(), &[]);
+    crate::retention::on_open(&root, std::time::SystemTime::now());
     assert!(is_kept(&root, CHAT));
     assert!(!is_kept(&root, OTHER));
 }
@@ -154,7 +157,7 @@ fn a_hand_edit_that_turns_it_off_is_caught_by_the_sweep() {
         "[task_screens]\nkeep = false\n",
     )
     .unwrap();
-    assert_eq!(sweep(&root, |_| true), 1);
+    assert_eq!(sweep(&root, |_| true, SystemTime::now()), 1);
     assert!(!is_kept(&root, CHAT));
 }
 
@@ -184,4 +187,87 @@ fn the_setting_in_the_committed_file_is_refused() {
         .len(),
         1
     );
+}
+
+#[test]
+fn off_by_a_hand_edit_a_read_shows_nothing_and_deletes_every_screen() {
+    let (_dir, root) = project();
+    keep(&root, CHAT, "a").unwrap();
+    std::fs::write(
+        root.join(crate::settings::Which::Local.file_at(&root)),
+        "[task_screens]\nkeep = false\n",
+    )
+    .unwrap();
+    assert!(!is_kept(&root, CHAT));
+    assert_eq!(kept(&root, CHAT), None);
+    assert!(!dir(&root).join(format!("{CHAT}.screen")).exists());
+}
+
+#[test]
+fn off_by_a_hand_edit_the_project_s_open_deletes_every_screen() {
+    let (_dir, root) = project();
+    keep(&root, CHAT, "a").unwrap();
+    std::fs::write(
+        root.join(crate::settings::Which::Local.file_at(&root)),
+        "[task_screens]\nkeep = false\n",
+    )
+    .unwrap();
+    crate::retention::on_open(&root, SystemTime::now());
+    assert!(!dir(&root).join(format!("{CHAT}.screen")).exists());
+}
+
+/// A ULID for the `n`th screen, each its own.
+fn nth(n: usize) -> String {
+    let mut id = format!("01K6W0RKER{n:016}");
+    id.truncate(26);
+    id
+}
+
+#[test]
+fn past_the_total_count_the_oldest_screens_go_first() {
+    let (_dir, root) = project();
+    for n in 0..MOST_KEPT {
+        keep(&root, &nth(n), "x").unwrap();
+        let old = SystemTime::now() - Duration::from_secs(10_000 - n as u64);
+        std::fs::File::options()
+            .write(true)
+            .open(dir(&root).join(format!("{}.screen", nth(n))))
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+    }
+    keep(&root, CHAT, "newest").unwrap();
+    assert!(!is_kept(&root, &nth(0)), "the oldest went");
+    assert!(is_kept(&root, &nth(1)));
+    assert!(is_kept(&root, CHAT));
+}
+
+#[test]
+fn a_screen_not_written_for_its_record_s_age_goes_whatever_names_it() {
+    let (_dir, root) = project();
+    keep(&root, CHAT, "old").unwrap();
+    keep(&root, OTHER, "new").unwrap();
+    let old = SystemTime::now() - crate::retention::KEEP_FOR - Duration::from_secs(60);
+    std::fs::File::options()
+        .write(true)
+        .open(dir(&root).join(format!("{CHAT}.screen")))
+        .unwrap()
+        .set_modified(old)
+        .unwrap();
+    assert_eq!(sweep(&root, |_| true, SystemTime::now()), 1);
+    assert!(!is_kept(&root, CHAT));
+    assert!(is_kept(&root, OTHER));
+}
+
+#[test]
+fn a_screen_is_replaced_whole_and_leaves_no_temp_file() {
+    let (_dir, root) = project();
+    keep(&root, CHAT, "first").unwrap();
+    keep(&root, CHAT, "second").unwrap();
+    assert_eq!(kept(&root, CHAT).as_deref(), Some("second"));
+    let names: Vec<String> = std::fs::read_dir(dir(&root))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect();
+    assert_eq!(names, vec![format!("{CHAT}.screen")]);
 }

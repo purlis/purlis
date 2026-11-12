@@ -7648,13 +7648,13 @@ export type ChatHeld = {
 /**  What a number names, as the window is sent it. */
 export type ChatLookup = 
 /**  An open chat answers to it: the window shows that chat. */
-{ found: "open"; number: number } | 
+{ is: "open"; number: number } | 
 /**  The chat it was is open now under `now`: started again, or reopened. */
-{ found: "restarted"; now: number } | 
+{ is: "restarted"; now: number } | 
 /**  The chat has ended: its card, boxed as it is the one large answer. */
-{ found: "ended"; card: ChatCard } | 
+{ is: "ended"; card: ChatCard } | 
 /**  No chat had it, or none purlis kept a record of. */
-{ found: "no_chat" };
+{ is: "no_chat" };
 
 /**
  *  **A chat's move as the window draws it** (#2048): what `chat-move` tells, and each row of

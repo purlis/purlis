@@ -312,6 +312,9 @@ fn ephemeral_of(session: &held::Dir, now: SystemTime) -> Option<Vec<Held>> {
 /// record (Resume) rather than reopened at this launch. And a `.charter/` copied or synced
 /// from another device carries that device's ages and that device's chats.
 pub fn on_open(plane: &Path, now: SystemTime) -> Swept {
+    // A task's kept screen goes with its record and at the record's age (#6214), whatever the
+    // record of open chats says: no screen outlives what it was kept for.
+    crate::chatscreens::on_open(plane, now);
     let Some(record) = returning(plane) else {
         return Swept {
             reports: sweep_reports(plane, now),
@@ -545,10 +548,6 @@ fn dispatches(plane: &Path, now: SystemTime, chats: &[crate::dispatchrecord::Liv
     if gone > 0 {
         crate::dispatchrecord::ended::in_step(plane);
     }
-    // A task's kept screen goes with the last record that names its chat (#6214).
-    let ledger = crate::dispatchrecord::ledger(plane);
-    let workers: std::collections::HashSet<&str> = ledger.workers().collect();
-    crate::chatscreens::sweep(plane, |id| workers.contains(id));
     gone
 }
 

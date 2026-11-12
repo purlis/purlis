@@ -20,7 +20,7 @@ use crate::planes::{Held, PlaneId, Planes};
 
 /// What a number names, as the window is sent it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
-#[serde(tag = "found", rename_all = "snake_case")]
+#[serde(tag = "is", rename_all = "snake_case")]
 pub(crate) enum ChatLookup {
     /// An open chat answers to it: the window shows that chat.
     Open { number: u32 },
@@ -72,7 +72,7 @@ pub(crate) fn lookup(held: &Held, number: u32) -> ChatLookup {
         Found::Ended(record) => {
             let asker = open
                 .iter()
-                .find(|one| record.asker.chat.id.is_some() && one.id == record.asker.chat.id)
+                .find(|one| chatlookup::is(&record.asker.chat, one))
                 .map_or(0, |one| one.number);
             let (Some(chat), Some(task)) = (
                 record.worker.chat.id.clone(),
@@ -109,7 +109,9 @@ pub(crate) fn keep_screen_on_close(
     session: u32,
     id: &str,
 ) {
+    // Where this machine keeps none, nothing is kept, and what was kept goes now.
     if !purlis_core::chatscreens::keeps(root) {
+        purlis_core::chatscreens::forget_all(root);
         return;
     }
     let me = dispatchrecord::ChatRef {

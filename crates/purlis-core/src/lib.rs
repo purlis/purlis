@@ -147,6 +147,7 @@ pub mod humanedit;
 pub mod inboxupdates;
 pub mod instructions;
 pub mod inventory;
+pub(crate) mod keptscreen;
 pub mod layer;
 pub mod leakguard;
 pub mod leftovers;
