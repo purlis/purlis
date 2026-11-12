@@ -4,12 +4,12 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { namedWithoutItsWords } from "./a11y.testkit";
 import type { Offer } from "./actions";
 import type { Shown } from "./bindings";
 import { LayoutPanes } from "./LayoutPanes";
 import { PaneRail } from "./PaneRail";
 import { RAIL } from "./paneHeld";
-import { namedWithoutItsWords } from "./a11y.testkit";
 import type { Content, Layout } from "./tabs";
 import { ChatMark } from "./ui/chat-mark/ChatMark";
 

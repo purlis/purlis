@@ -3,6 +3,7 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render } from "@testing-library/react";
+import { VisuallyHidden } from "react-aria";
 import {
   expectEveryControlNamed,
   namedWithoutItsWords,
@@ -118,6 +119,10 @@ describe("a control's name holds the words it shows (WCAG 2.5.3 Label in Name, #
         </button>
         <button type="button">
           devops 2,<span className="hidden-words"> 3 notices, folded</span>
+        </button>
+        <button type="button">
+          Pin
+          <VisuallyHidden> ide in plane</VisuallyHidden>
         </button>
         <button type="button" aria-label="Close tab">
           <svg aria-hidden="true" />
