@@ -155,6 +155,15 @@ pub(crate) const ANSWER_WITHIN: Duration = Duration::from_secs(30);
 /// What a command no host answered in time says.
 const NOT_IN_TIME: &str = "the session host did not answer in time";
 
+/// **How long a chat's close waits for the host on the thread that asked it** (#6227): the
+/// window's, where `close_session` stays synchronous to keep its order with what was typed to
+/// the chat. The host answers a close at once, before its program has ended, so this is only
+/// ever reached by a host that is not answering, and a host that took [`ANSWER_WITHIN`] froze
+/// the window, and the WebDriver inside it, for those 30 s. Past it the close is still waited
+/// for, off that thread, and what it refuses is still said. The same second a turn in a chat's
+/// lane waits for at most ([`crate::inputlanes::A_TURN_WAITS_AT_MOST`]).
+pub(crate) const A_CLOSE_WAITS_AT_MOST: Duration = Duration::from_secs(1);
+
 /// **What one send of code is held to** (spec #4275): the most bytes, the longest time, what the
 /// host is told of them, and the limit a send that ran out of time hit.
 struct SendHeld {
@@ -1858,6 +1867,36 @@ impl HostLink {
                 ))
             }
         }
+    }
+
+    /// **`command`, whose answer changes nothing here, waited for at most `within` by the
+    /// thread that sends it** (#6227), and past that on the link's runtime, up to
+    /// [`ANSWER_WITHIN`]: what the host refuses, or its not answering at all, is handed to
+    /// `unanswered` there, whenever it is known.
+    fn call_heard_late(
+        &self,
+        command: Command,
+        within: Duration,
+        unanswered: impl FnOnce(String) + Send + 'static,
+    ) {
+        let (answered, answer) = std::sync::mpsc::channel::<()>();
+        let client = Arc::clone(&self.client);
+        self.runtime.spawn(async move {
+            let why = match tokio::time::timeout(ANSWER_WITHIN, client.call(command)).await {
+                Ok(Ok(_)) => None,
+                Ok(Err(why)) => Some(
+                    why.refusal()
+                        .map(|refused| refused.why.clone())
+                        .unwrap_or_else(|| why.to_string()),
+                ),
+                Err(_) => Some(NOT_IN_TIME.to_owned()),
+            };
+            if let Some(why) = why {
+                unanswered(why);
+            }
+            let _ = answered.send(());
+        });
+        let _ = answer.recv_timeout(within);
     }
 
     /// [`Self::call`], waiting at most `within`.
@@ -5056,12 +5095,17 @@ impl SessionHost for HostedSessions {
                 link.undraw(*view);
             }
             // Answered once the host has let go of it, before its program has ended: its
-            // number is free for a chat put back under it.
-            if let Err(why) = link.call(Command::Close {
-                program: program.id,
-            }) {
-                tracing::warn!("purlis: the session host did not close chat {id}: {why}");
-            }
+            // number is free for a chat put back under it. Never waited for long here, on the
+            // window's thread (#6227): past [`A_CLOSE_WAITS_AT_MOST`] it is heard off it.
+            link.call_heard_late(
+                Command::Close {
+                    program: program.id,
+                },
+                A_CLOSE_WAITS_AT_MOST,
+                move |why| {
+                    tracing::warn!("purlis: the session host did not close chat {id}: {why}")
+                },
+            );
         }
         Ok(())
     }

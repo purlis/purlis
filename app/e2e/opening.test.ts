@@ -9,6 +9,7 @@ import {
   FIRST_ASK,
   STARTS_WITHOUT_THE_SANDBOX,
   aDialogOffers,
+  pressEndChat,
   pressTheAnswer,
   pressTheCloseAnswer,
   pressClearPane,
@@ -503,6 +504,38 @@ describe("a press that holds no node", () => {
     expect(sent(pressClearPane)('[data-cause="chat-ended:4"]')).toBe(true);
     const closed = clicks(aQuestion("End chat steward 4?", "Close")[0]);
     expect(sent(pressTheAnswer)("steward 4", "Close")).toBe(true);
-    expect([cleared(), closed()]).toEqual([1, 1]);
+    const ended = clicks(aRow("chat.end:5", "End chat steward 5")[0]);
+    expect(sent(pressEndChat)()).toBe("End chat steward 5");
+    expect([cleared(), closed(), ended()]).toEqual([1, 1, 1]);
+  });
+
+  /** The palette's row `id`, titled `title`, as the palette draws it. */
+  function aRow(id: string, title: string): HTMLElement[] {
+    const row = document.createElement("div");
+    row.id = `palette-row-${id}`;
+    row.setAttribute("role", "option");
+    const titled = document.createElement("span");
+    titled.className = "palette-title";
+    titled.textContent = title;
+    row.append(titled);
+    document.body.append(row);
+    return [row];
+  }
+
+  // The question is waited for by the title of the row pressed (#6227): with no name, any
+  // question offering Close was "the question about " in a red run's words.
+  it("presses the first End chat row the palette offers and answers its title", () => {
+    const pressed = clicks(aRow("chat.end:4", "End chat steward 4")[0]);
+    const after = clicks(aRow("chat.end:5", "End chat steward 5")[0]);
+    expect(pressEndChat()).toBe("End chat steward 4");
+    expect([pressed(), after()]).toEqual([1, 0]);
+  });
+
+  it("presses no End chat row that is off, and answers null with none left", () => {
+    const [off] = aRow("chat.end:4", "End chat steward 4");
+    off.setAttribute("aria-disabled", "true");
+    const pressed = clicks(off);
+    expect(pressEndChat()).toBeNull();
+    expect(pressed()).toBe(0);
   });
 });

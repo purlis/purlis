@@ -5,11 +5,13 @@ import { $, browser, expect } from "@wdio/globals";
 import { openMenuOn } from "../acting.js";
 import { wcagFound } from "../axe.js";
 import {
+  aDialogOffers,
   answerTheAsk,
   endEveryChat,
   noDialogIsLeftUp,
   openThePicker,
   pressAndStart,
+  pressEndChat,
   showView,
 } from "../opening.js";
 import { closesTheTabsItOpens } from "../reach.js";
@@ -220,24 +222,27 @@ describe("the window, held to WCAG 2.2 AA by axe", function () {
     await browser.keys(["F2"]);
     await $("#palette-query").waitForDisplayed({ timeout: 20_000 });
     await $("#palette-query").addValue("End chat");
+    // The row's title is the question's (#6227): the question is waited for, and answered, by
+    // that name, never by whichever alert dialog is up.
+    let ending: string | null = null;
     await browser.waitUntil(
-      async () =>
-        browser.execute(() => {
-          const row = document.querySelector<HTMLElement>(
-            '[id^="palette-row-chat.end:"]:not([aria-disabled="true"])',
-          );
-          row?.click();
-          return row !== null;
-        }),
+      async () => {
+        ending = await browser.execute(pressEndChat);
+        return ending !== null;
+      },
       { timeout: 20_000, interval: 250, timeoutMsg: "the palette offered no End chat" },
     );
-    await $('[role="alertdialog"]').waitForDisplayed({ timeout: 20_000 });
+    const asked = ending ?? "";
+    await browser.waitUntil(
+      async () => browser.execute(aDialogOffers, "alertdialog", asked, "Close", false),
+      { timeout: 20_000, timeoutMsg: `the question about ${asked} was never asked` },
+    );
     await settled();
     try {
       await passes();
     } finally {
       // Ended, as the question asked: the split's other chat is ended in `after`.
-      await answerTheAsk("");
+      await answerTheAsk(asked);
     }
   });
 

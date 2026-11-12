@@ -366,12 +366,27 @@ export async function answerTheAsk(ending: string): Promise<void> {
     { timeout: 20_000, timeoutMsg: `the question about ${ending} was never asked` },
   );
   // Found and pressed in one look in the page (#6227): a button held from a look before is one
-  // the question may have drawn again since.
-  await browser.waitUntil(async () => browser.execute(pressTheAnswer, ending, word), {
-    timeout: 20_000,
-    interval: 200,
-    timeoutMsg: `the question about ${ending} never offered ${word}`,
-  });
+  // the question may have drawn again since. A look the window answers late is said apart: a
+  // window whose main thread is held (a close waiting on its host, `slow.jsonl`'s
+  // `core_stall`) answers the look that pressed only once it lets go, and that is no question
+  // left without its answer.
+  let slowest = 0;
+  await browser.waitUntil(
+    async () => {
+      const asked = Date.now();
+      const pressed = await browser.execute(pressTheAnswer, ending, word);
+      slowest = Math.max(slowest, Date.now() - asked);
+      return pressed;
+    },
+    {
+      timeout: 20_000,
+      interval: 200,
+      timeoutMsg: () =>
+        slowest >= 5_000
+          ? `the window took ${Math.round(slowest / 1000)} s to answer one look at the question about ${ending}: its main thread was held`
+          : `the question about ${ending} never offered ${word}`,
+    },
+  );
   await theDialogHasGone("alertdialog", ending, `the question about ${ending} never went`);
 }
 
@@ -411,20 +426,14 @@ export async function endEveryChat(most = 200): Promise<void> {
   for (let pressed = 0; pressed < most; pressed++) {
     await openThePalette();
     await $("#palette-query").addValue("End chat");
-    const row = await browser.execute(() => {
-      const found = document.querySelector<HTMLElement>(
-        '[id^="palette-row-chat.end:"]:not([aria-disabled="true"])',
-      );
-      found?.click();
-      return found?.id ?? null;
-    });
-    if (row === null) {
+    const ending = await browser.execute(pressEndChat);
+    if (ending === null) {
       await browser.keys(["Escape"]);
       await $(PALETTE).waitForDisplayed({ reverse: true, timeout: 10_000 });
       await clearEndedPanes(undefined, most);
       return;
     }
-    await answerTheAsk("");
+    await answerTheAsk(ending);
   }
   throw new Error(`${most} presses did not end every chat`);
 }
@@ -488,6 +497,22 @@ export function pressClearPane(cause: string): boolean {
     return true;
   }
   return false;
+}
+
+/**
+ * **Presses the palette's first End chat row that can run, and answers its title** (#6227), or
+ * `null` with none left. The question it asks is titled the row's title and a `?`, so the title
+ * is what the spec waits for: with no name, any question offering Close was "the question
+ * about " in a red run's words. **Run in the page**, as {@link aDialogOffers} is.
+ */
+export function pressEndChat(): string | null {
+  const row = document.querySelector<HTMLElement>(
+    '[id^="palette-row-chat.end:"]:not([aria-disabled="true"])',
+  );
+  if (row === null) return null;
+  const title = (row.querySelector(".palette-title")?.textContent ?? "").trim();
+  row.click();
+  return title;
 }
 
 /**
