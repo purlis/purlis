@@ -9,7 +9,12 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, within } from "storybook/test";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import type { PoolSetupMachine, PoolSetupShown, PoolSetupStep } from "../bindings";
+import type {
+  PoolSetupMachine,
+  PoolSetupPodmanConnection,
+  PoolSetupShown,
+  PoolSetupStep,
+} from "../bindings";
 import { expectFocusInSight } from "../stories.testkit";
 import { ConnectStep } from "./ConnectStep";
 
@@ -23,6 +28,7 @@ const SEE = {
 
 const machine = (more: Partial<PoolSetupMachine> = {}): PoolSetupMachine => ({
   route: "ssh://sam@build-box",
+  identity: null,
   host: "build-box",
   key: null,
   known: null,
@@ -114,16 +120,20 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** The core faked: the SSH hosts it reads, and a press held. */
-const faked = (hosts: readonly string[]) => () => {
-  mockIPC((cmd) =>
-    cmd === "pool_setup_ssh_hosts"
-      ? hosts
-      : cmd === "pool_setup_connect" || cmd === "pool_setup_trust"
-        ? new Promise(() => undefined)
-        : null,
-  );
-};
+/** The core faked: the SSH hosts and Podman connections it reads, and a press held. */
+const faked =
+  (hosts: readonly string[], podmans: readonly PoolSetupPodmanConnection[] = []) =>
+  () => {
+    mockIPC((cmd) =>
+      cmd === "pool_setup_ssh_hosts"
+        ? hosts
+        : cmd === "pool_setup_podman_connections"
+          ? podmans
+          : cmd === "pool_setup_connect" || cmd === "pool_setup_trust"
+            ? new Promise(() => undefined)
+            : null,
+    );
+  };
 
 /** The machines the person's SSH settings name, and another one, with Connect to it. */
 export const PickFromYourSshHosts: Story = {
@@ -137,6 +147,39 @@ export const PickFromYourSshHosts: Story = {
     await expect(first).toBeChecked();
     first.focus();
     await userEvent.keyboard("{ArrowDown}");
+    await expect(canvas.getByRole("radio", { name: /gpu/ })).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
+/** The person's Podman connections beside their SSH hosts (#6269), each its own machine. */
+export const PickFromYourPodmanConnections: Story = {
+  beforeEach: faked(
+    ["gpu"],
+    [
+      {
+        name: "build-box",
+        route: "ssh://sam@build-box:22/run/user/1000/podman/podman.sock",
+        identity: "/home/sam/.ssh/id_ed25519",
+      },
+    ],
+  ),
+  args: {
+    step: connect({
+      ...PICK,
+      machine: machine({
+        route: "ssh://sam@build-box:22/run/user/1000/podman/podman.sock",
+        identity: "/home/sam/.ssh/id_ed25519",
+      }),
+    }),
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    const podman = await canvas.findByRole("radio", { name: /build-box/ });
+    await expect(podman).toBeChecked();
+    await expect(canvas.getByText("From your Podman connections")).toBeVisible();
+    podman.focus();
+    await userEvent.keyboard("{ArrowUp}");
     await expect(canvas.getByRole("radio", { name: /gpu/ })).toHaveFocus();
     await expectFocusInSight();
   },
@@ -202,6 +245,31 @@ export const NotAllowedToUseDocker: Story = {
     const canvas = within(canvasElement);
     const list = within(canvas.getByRole("list", { name: "What purlis checked on build-box" }));
     await expect(list.getAllByRole("listitem")).toHaveLength(7);
+    const again = canvas.getByRole("button", { name: "Check again" });
+    again.focus();
+    await userEvent.tab();
+    await expect(canvas.getByRole("button", { name: "Change the machine" })).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
+const NEEDS_PODMAN = connect({
+  state: "attention",
+  cause: "needs-podman",
+  machine: machine({ route: "ssh://sam@build-box/run/user/1000/podman/podman.sock" }),
+  findings: [
+    "build-box runs Podman, and purlis reaches Podman with Podman's own client. Install Podman on this machine, then check again.",
+  ],
+  next: action("check-again", "Check again", "Contacts the machine again. It changes nothing."),
+});
+
+/** Podman there, and no Podman here to reach it with (#6269): the engine's line fails. */
+export const PodmanThereNeedsPodmanHere: Story = {
+  beforeEach: faked([]),
+  args: { step: NEEDS_PODMAN, shown: shown(NEEDS_PODMAN) },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText("purlis needs Podman on this machine too")).toBeVisible();
     const again = canvas.getByRole("button", { name: "Check again" });
     again.focus();
     await userEvent.tab();
