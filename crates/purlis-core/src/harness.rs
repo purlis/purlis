@@ -179,6 +179,15 @@ impl Harness {
         &self.declared().name
     }
 
+    /// **Whether a guard's report from this harness comes from outside the chat's reach**
+    /// (R-101, Q96; ADR 0124's harness matrix): Claude Code runs its hooks itself, outside the
+    /// sandbox its chat's commands run in, so under that sandbox nothing the chat runs can speak
+    /// for its guard. Codex and opencode run theirs inside the process purlis wraps whole, so what
+    /// they report is the chat's side of the channel, and is tagged unverified.
+    pub fn guard_reports_from_outside_the_chats_reach(self) -> bool {
+        matches!(self, Self::ClaudeCode)
+    }
+
     /// Whether this harness tells a hook which process it is running under.
     ///
     /// Claude Code sets `$CLAUDE_PID` in every hook's environment, and that is the whole of

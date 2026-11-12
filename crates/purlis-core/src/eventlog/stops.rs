@@ -13,10 +13,10 @@
 //! There is no field for a command, its arguments or output, or the harness's `reason` text:
 //! the reason is held in memory for the row's detail while the app runs, and never written.
 //!
-//! **What writes them comes later**: the guard denies, the harness's own check, the sandbox
-//! refusals, the merge hold, the loop rule and the asks each write their kind in their own
-//! slice. Here the kinds exist, with their shapes, and the window's entry carries them
-//! ([`super::Entry::Stop`]).
+//! **What writes them**: a guard's deny is written as a block by the recorder, beside the tool
+//! event of the refused call (R-316, [`Recorder::guard_block`]). The harness's own check, the
+//! sandbox refusals, the merge hold, the loop rule and the asks each write their kind in their
+//! own slice; the window's entry carries them ([`super::Entry::Stop`]).
 
 use std::io;
 use std::path::Path;
@@ -367,8 +367,63 @@ impl Recorder {
         .map_err(io::Error::other)?;
         self.audited(plane, number, stop.kind(), body)
     }
+
+    /// **The block a guard's deny is** (R-316, R-101, R-102): for a tool call purlis's hook
+    /// refused, its `stop.block` body, source guard, with the gate's arm as its target where the
+    /// line names one the gate has, and the arguments' hash keyed as the tool event's is; none
+    /// for a call that was not refused. `unverified` unless the chat ran on a harness whose hooks
+    /// report from outside its reach and the host knows it was sandboxed (`attributes`, none for
+    /// a chat of no run): at No sandbox the chat can reach whatever reports for it.
+    ///
+    /// Written beside the line's own tool event and as durable as it is (the hook lines' one
+    /// `fsync`), never under the recorder's lock as a person's act is: denies come at hook pace.
+    pub(super) fn guard_block(
+        &self,
+        call: &crate::hookwire::ToolCall,
+        attributes: Option<&super::Attributes>,
+    ) -> Option<serde_json::Value> {
+        if call.decision != crate::hookwire::Decision::Deny {
+            return None;
+        }
+        let block = Block {
+            tool: crate::shown::readable(
+                call.tool.as_deref().unwrap_or(super::UNKNOWN),
+                TARGET_CHARS,
+            ),
+            source: Source::Guard,
+            qualifier: (!attributes.is_some_and(reported_from_outside_its_reach))
+                .then_some(Qualifier::Unverified),
+            target: call
+                .arm
+                .as_deref()
+                .and_then(crate::toolgate::Arm::of_id)
+                .and_then(|arm| Target::guard_arm(arm.id()).ok()),
+            args: call.args.as_deref().map(|hash| self.key.digest(hash)),
+        };
+        serde_json::to_value(block).ok()
+    }
+}
+
+/// Whether a run with `attributes` reports from outside the chat's reach: a harness whose hooks
+/// run outside it ([`crate::harness::Harness::guard_reports_from_outside_the_chats_reach`]), under
+/// a sandbox the host recorded. A sandbox not known (`unknown`, or no attribute) is not one.
+fn reported_from_outside_its_reach(attributes: &super::Attributes) -> bool {
+    let sandboxed = attributes
+        .sandbox
+        .as_deref()
+        .is_some_and(|word| !word.is_empty() && word != super::NONE && word != super::UNKNOWN);
+    let outside = attributes
+        .harness
+        .as_deref()
+        .and_then(crate::harness::Harness::of_kind)
+        .is_some_and(crate::harness::Harness::guard_reports_from_outside_the_chats_reach);
+    sandboxed && outside
 }
 
 #[cfg(test)]
 #[path = "stops/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "stops/guard_tests.rs"]
+mod guard_tests;

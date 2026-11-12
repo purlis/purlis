@@ -1978,9 +1978,14 @@ impl Recorder {
     ) -> io::Result<Event> {
         let Some(top) = self.identity(plane, call.chat)? else {
             let body = spooled_as(self.tool_body(call), spooled);
-            return self.of_no_run(call.chat, &tool_kind(call), body);
+            let event = self.of_no_run(call.chat, &tool_kind(call), body)?;
+            if let Some(block) = self.guard_block(call, None) {
+                self.of_no_run(call.chat, stops::BLOCK, block)?;
+            }
+            return Ok(event);
         };
         let who = Who::of(&top.attributes);
+        let block = self.guard_block(call, Some(&top.attributes));
         let under = self.under(top, call.agent.as_deref())?;
         self.skills_heard_of_a_call(plane, &under, &who, call)?;
         let phase = phase(&call.tool_hook);
@@ -1993,7 +1998,11 @@ impl Recorder {
                 body["tool_ms"] = ms.into();
             }
         }
-        self.append(&under, &tool_kind(call), body)
+        let event = self.append(&under, &tool_kind(call), body)?;
+        if let Some(block) = block {
+            self.append(&under, stops::BLOCK, block)?;
+        }
+        Ok(event)
     }
 
     /// What a tool event's body says of its call, before any duration.
@@ -2080,10 +2089,14 @@ impl Recorder {
                     format!("hook.{}", report.event.word()),
                     spooled_as(serde_json::json!({}), Some(seq)),
                 ),
-                (Spooled::Tool(call), None) => (
-                    tool_kind(&call),
-                    spooled_as(self.tool_body(&call), Some(seq)),
-                ),
+                (Spooled::Tool(call), None) => {
+                    let body = spooled_as(self.tool_body(&call), Some(seq));
+                    let event = self.of_no_run(number, &tool_kind(&call), body)?;
+                    if let Some(block) = self.guard_block(&call, None) {
+                        self.of_no_run(number, stops::BLOCK, block)?;
+                    }
+                    return Ok(event);
+                }
                 (Spooled::Refused(_), None) => (
                     COMMIT_REFUSED.to_owned(),
                     spooled_as(serde_json::json!({}), Some(seq)),

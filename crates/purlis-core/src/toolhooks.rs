@@ -262,6 +262,7 @@ fn targets(input: &Value) -> Vec<String> {
 /// A `PreToolUse` refusal with charter's words around it.
 fn deny(reason: String) -> Answer {
     Answer::Deny(Verdict {
+        arm: None,
         reason: reason.chars().take(70).collect(),
         shape: None,
         denial: reason,

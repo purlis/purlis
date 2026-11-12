@@ -675,6 +675,76 @@ fn the_bash_guard_refuses_by_printing_and_exits_cleanly() {
     );
 }
 
+/// R-021: **guard A, the leak guard, is never switchable.** Every setting phase 1 has that could
+/// loosen what a chat may do, each at its loosest at once: the project's files (the manifest's
+/// and the machine file's sandbox keys, a `[guards]` table turning each arm off, the harness's
+/// own settings allowing every Bash call in bypass mode), the chat's environment (each
+/// harness, a sandbox given or not, a guard switch's would-be names), and the chat-only facts
+/// on the payload (bypass permissions, a sub-agent). A still denies the read of a vault, in a
+/// plane and outside one.
+#[test]
+fn the_leak_guard_denies_whatever_any_setting_says() {
+    const LOOSEST: &str = "schema = 1\n\
+        [sandbox]\nlevel = \"off\"\nproposed-changes = \"off\"\nrun-grants = true\n\
+        undeclared-secret-asks = true\npersona-tools = true\n\
+        [guards]\nA = \"off\"\nleak = \"off\"\nleak-guard = false\nall = \"off\"\n";
+    let plane = tempfile::tempdir().expect("a directory");
+    let bare = tempfile::tempdir().expect("a directory");
+    for dir in [plane.path(), bare.path()] {
+        // The vault itself is not made: a chat's sandbox refuses a folder of that name, and
+        // the leak guard refuses the read by its path.
+        std::fs::create_dir_all(dir.join(".charter")).expect("the state directory");
+        std::fs::create_dir_all(dir.join(".claude")).expect(".claude");
+        std::fs::write(
+            dir.join(".claude/settings.json"),
+            r#"{"permissions": {"allow": ["Bash(*)", "Read(*)"], "defaultMode": "bypassPermissions"}}"#,
+        )
+        .expect("the harness's settings");
+    }
+    for name in ["charter.toml", "purlis.toml", "purlis.local.toml"] {
+        std::fs::write(plane.path().join(name), LOOSEST).expect("a manifest at its loosest");
+    }
+    let payload = |agent: Option<&str>| {
+        let mut call: serde_json::Value =
+            serde_json::from_str(&bash("cat .charter/vaults/db.json")).unwrap();
+        call["permission_mode"] = "bypassPermissions".into();
+        if let Some(agent) = agent {
+            call["agent_id"] = agent.into();
+        }
+        call.to_string()
+    };
+    // The fence the hook holds a plane to is the temporary folder the fixture is in.
+    let tmp = std::env::temp_dir().display().to_string();
+    let switches = [
+        ("CHARTER_GUARDS", "off"),
+        ("PURLIS_GUARDS", "off"),
+        ("PURLIS_LEAK_GUARD", "off"),
+        ("PURLIS_NO_GUARD", "1"),
+    ];
+    for dir in [plane.path(), bare.path()] {
+        for harness in ["claude-code", "codex", "opencode"] {
+            for sandboxed in ["0", "1"] {
+                for agent in [None, Some("sub-1")] {
+                    let mut env = vec![
+                        ("CHARTER_HARNESS", harness),
+                        (purlis_core::hookwire::SANDBOXED_ENV, sandboxed),
+                    ];
+                    env.extend(switches);
+                    env.push(("TMPDIR", &tmp));
+                    let (code, out, err) = guard(dir, &payload(agent), &env);
+                    let said = decision(&out).unwrap_or_else(|| {
+                        panic!("{harness}, sandboxed {sandboxed}, {agent:?}: {code} {out:?} {err}")
+                    });
+                    assert!(
+                        said.contains("reads a vault/secret file directly"),
+                        "{harness}, sandboxed {sandboxed}, {agent:?}: {said}"
+                    );
+                }
+            }
+        }
+    }
+}
+
 /// What makes a debug build's `charter hook <word>` panic before it answers (#349).
 const PANICS: (&str, &str) = ("CHARTER_TEST_HOOK_PANICS", "1");
 

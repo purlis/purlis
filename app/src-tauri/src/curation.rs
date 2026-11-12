@@ -2050,6 +2050,7 @@ mod tests {
                 args: None,
                 decision: purlis_core::hookwire::Decision::None,
                 rule: None,
+                arm: None,
                 hook_ms: 1,
                 agent: None,
                 at_ms: 0,

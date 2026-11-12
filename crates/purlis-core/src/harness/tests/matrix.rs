@@ -60,6 +60,13 @@ const fn cell(value: &'static str, test: Test) -> Cell {
     Cell { value, test }
 }
 
+/// R-101: a guard's block from each harness, plain from Claude Code's and unverified from
+/// Codex's and opencode's.
+const GUARD_REPORTED: Test = Test::Named {
+    file: "src/eventlog/stops/guard_tests.rs",
+    name: "a_guard_report_from_codex_or_opencode_is_tagged_unverified",
+};
+
 /// ADR 0124's table, for Basic and Full sandbox (at No sandbox every report is unverified).
 const MATRIX: [Row; 10] = [
     Row {
@@ -84,10 +91,10 @@ const MATRIX: [Row; 10] = [
         cells: [
             cell(
                 "enforced (the hook runs outside the chat's reach)",
-                owed("R-101"),
+                GUARD_REPORTED,
             ),
-            cell("unverified", owed("R-101")),
-            cell("unverified", owed("R-101")),
+            cell("unverified", GUARD_REPORTED),
+            cell("unverified", GUARD_REPORTED),
         ],
     },
     Row {
