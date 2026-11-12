@@ -148,14 +148,15 @@ export const commands = {
 	paneLinkResolve: (from: LinkFrom, candidates: LinkCandidate[]) => __TAURI_INVOKE<(LinkSeen | null)[]>("pane_link_resolve", { from, candidates }),
 	/**
 	 *  **Opens a link a pane found** (⌘-click, Ctrl+click off a Mac): the candidate's text,
-	 *  resolved again here. `token` is the one-use token of the ask the person accepted.
+	 *  resolved again here. `token` is the one-use token of the ask the window was handed.
 	 */
 	paneLinkOpen: (from: LinkFrom, candidate: LinkCandidate, token: string | null) => __TAURI_INVOKE<LinkOpened>("pane_link_open", { from, candidate, token }),
 	/**
-	 *  **A file outside the project, read for its editor tab**: only one the person opened by
-	 *  answering the ask that showed it, in this run of the app. Refused for every other path.
+	 *  **A file outside the project, read for its editor tab**: only one opened in the pane `from`
+	 *  names by an answered ask, in this run of the app and within the hour, and only while it is
+	 *  still the file it was then. Read from `/` one folder at a time with no link followed.
 	 */
-	paneLinkFile: (path: string) => typedError<PieceFile, string>(__TAURI_INVOKE("pane_link_file", { path })),
+	paneLinkFile: (from: LinkFrom, path: string) => typedError<LinkFile, string>(__TAURI_INVOKE("pane_link_file", { from, path })),
 	/**
 	 *  **The pinned artifacts of project `plane`, in every workspace, that say any word of
 	 *  `query`**, best first: at most [`MOST`].
@@ -11139,11 +11140,8 @@ export type LinesShown = {
 export type LinkAsk = 
 /**  A link, asked about in general words. */
 { about: "link" } | 
-/**
- *  A file outside the chat's workspace (the prototype's S7): what the chat counts as its own
- *  (a workspace's name, or "the project") and that folder.
- */
-{ about: "file-outside"; within: string; folder: string };
+/**  A file outside the chat's home (the prototype's S7), and that home where it has one. */
+{ about: "file-outside"; home: LinkHome | null };
 
 /**  **Text a pane found that may be a link**: the words as printed, and the pattern's hint. */
 export type LinkCandidate = {
@@ -11153,12 +11151,18 @@ export type LinkCandidate = {
 
 /**  **What ⌘-click on a link would do**, said on its hover. */
 export type LinkDoes = 
-/**  It opens, without asking. */
-{ does: "opens" } | 
-/**  It asks first, and why. */
+/**  It opens, without asking, `into` the browser or an editor tab. */
+{ does: "opens"; into: OpensIn } | 
+/**  It asks first, and why: where it is, in the window's words ("outside smart-ide"). */
 { does: "asks"; reason: string } | 
 /**  It will not open, and the sentence that says why. */
 { does: "refused"; reason: string };
+
+/**
+ *  **A file outside the project, as its tab reads it**: the file, or that no answered ask in
+ *  this pane opened it (the window says how to open it again).
+ */
+export type LinkFile = { read: "file"; file: PieceFile } | { read: "not-opened" };
 
 /**
  *  **Where the window reads a file a link opens**: the place its light editor reads it by and
@@ -11183,6 +11187,9 @@ export type LinkFrom = {
 	session: number | null,
 };
 
+/**  **What a chat counts as its own**, for the ask that says a file is not in it, with its folder. */
+export type LinkHome = { is: "workspace"; name: string; folder: string } | { is: "project"; folder: string };
+
 /**  **The open command's answer.** */
 export type LinkOpened = 
 /**  Opened: `target` is what was opened. */
@@ -11193,8 +11200,8 @@ export type LinkOpened =
  */
 { answer: "file"; target: string; at: LinkFileAt; line: number | null; column: number | null } | 
 /**
- *  Not opened yet: the person is asked, shown its text and where it goes. Accepted, the
- *  same candidate is sent again with `token`, which opens it once.
+ *  Not opened yet: the window asks, showing its text and where it goes. Answered, the same
+ *  candidate is sent again with `token`, which opens it once.
  */
 { answer: "ask"; reason: string; shown: string; target: string; token: string; about: LinkAsk } | 
 /**  Not opened, and the sentence the window shows. */
@@ -11202,11 +11209,13 @@ export type LinkOpened =
 
 /**
  *  **What a hover over a candidate shows**: its kind, its target in full (its own text, where it
- *  is no link) and what opening it does.
+ *  is no link), what the hover's first line says (`shown`: a file in the chat's workspace from
+ *  the workspace, D2) and what opening it does.
  */
 export type LinkSeen = {
 	kind: KindHint,
 	target: string,
+	shown: string,
 	does: LinkDoes,
 };
 
@@ -12392,6 +12401,13 @@ export type OpenedRepo = {
 	 */
 	forge_said?: string | null,
 };
+
+/**  **Where a link that opens without asking opens.** */
+export type OpensIn = 
+/**  The person's browser. */
+"browser" | 
+/**  One of purlis's editor tabs. */
+"editor-tab";
 
 /**  One file that goes. */
 export type OutgoingFile = {

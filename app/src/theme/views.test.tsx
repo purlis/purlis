@@ -1932,8 +1932,10 @@ const STATES: State[] = [
   },
   {
     name: "a file outside the project a pane's link opened (#6216)",
-    view: { from: null, view: "outside-file", key: "/etc/hosts" },
-    answers: { pane_link_file: { kind: "text", text: "127.0.0.1 localhost\n" } },
+    view: { from: null, view: "outside-file", key: "7//etc/hosts" },
+    answers: {
+      pane_link_file: { read: "file", file: { kind: "text", text: "127.0.0.1 localhost\n" } },
+    },
     drawn: /127\.0\.0\.1 localhost/,
   },
   {

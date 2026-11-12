@@ -8,19 +8,26 @@
 //!   the answers itself, per pane, so hovering a line again asks nothing.
 //! - [`pane_link_open`]: the one open command (ADR 0052's list). It is handed the candidate's
 //!   text again, never a target, and resolves it again, so a pane can never name what opens. It
-//!   answers [`LinkOpened`]: opened, a file for the window's light editor, ask the person first
-//!   (with the ask's one-use token, [`Asks`]), or refused with the window's sentence. A web
-//!   address goes out through the opener plugin; a file never does: the window shows it in an
-//!   editor tab, so a click never runs anything.
-//! - [`pane_link_file`]: a file outside the project, read for its tab only once the person
-//!   answered the ask that showed it.
+//!   answers [`LinkOpened`]: opened, a file for the window's light editor, ask first (with the
+//!   ask's one-use token, [`Asks`]), or refused with the window's sentence. A web address goes
+//!   out through the opener plugin; a file never does: the window shows it in an editor tab, so
+//!   a click never runs anything.
+//! - [`pane_link_file`]: a file outside the project, read for its tab only once an ask for it
+//!   was answered in that pane, and only while it is still the file it was then.
+//!
+//! **A file's answer looks at the disk, so it is looked at on a thread of its own, for at most
+//! [`LOOK_FOR`]** ([`looked`]): a path on a stalled mount answers "no link" in time, and holds
+//! none of the app's shared threads. At most [`MOST_LOOKING`] looks are under way at once.
 //!
 //! None of them reads a secret's value or hands one back.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use purlis_core::panelinks::{
-    Answer, Asks, Candidate, FileAt, Hover, Kind, Opening, Pane, Resolver, Runs, Target, Within,
+    Asks, Candidate, FileAt, Home, HomeIs, Hover, Kind, Opening, Pane, ReadFrom, Resolver, Runs,
+    Target, UNASKABLE,
 };
 use serde::{Deserialize, Serialize};
 
@@ -79,7 +86,10 @@ pub struct LinkFrom {
 }
 
 /// **The pane `from` names, as the core resolves against it**: its project's folder, and the
-/// folder its chat works in, on this machine or a runner's.
+/// folder its chat started in. Its paths are this machine's only for a chat open here and not
+/// on a runner or a pool; every other pane (a saved chat's, one whose chat has closed, one with
+/// no project open) names files purlis cannot place, so they are [`Runs::Elsewhere`].
+// The folder is the one the chat started in: no hook reports the folder a chat has moved to.
 fn pane_of(planes: &Planes, from: LinkFrom) -> Pane {
     let held = from
         .plane
@@ -89,26 +99,44 @@ fn pane_of(planes: &Planes, from: LinkFrom) -> Pane {
         return Pane {
             project: from.plane.map(|plane| PathBuf::from(plane.root())),
             session: from.session,
-            ..Pane::default()
+            folder: None,
+            runs: Runs::Elsewhere,
         };
     };
     let chats = held.chats();
-    let folder = from
-        .session
-        .and_then(|session| chats.chat_at(session))
-        .and_then(|at| at.cwd);
-    let elsewhere = from.session.is_some_and(|session| {
-        chats.runner_of(session).is_some() || chats.pool_of(session).is_some()
+    let here = from.session.and_then(|session| {
+        let at = chats.chat_at(session)?;
+        let local = chats.runner_of(session).is_none() && chats.pool_of(session).is_none();
+        local.then_some(at)
     });
     Pane {
         project: Some(held.root().to_path_buf()),
         session: from.session,
-        folder,
-        runs: if elsewhere {
-            Runs::Elsewhere
-        } else {
+        runs: if here.is_some() {
             Runs::Here
+        } else {
+            Runs::Elsewhere
         },
+        folder: here.and_then(|at| at.cwd),
+    }
+}
+
+/// **Where a link that opens without asking opens.**
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum OpensIn {
+    /// The person's browser.
+    Browser,
+    /// One of purlis's editor tabs.
+    EditorTab,
+}
+
+impl OpensIn {
+    fn of(target: &Target) -> Self {
+        match target {
+            Target::Url(_) => OpensIn::Browser,
+            Target::File(_) => OpensIn::EditorTab,
+        }
     }
 }
 
@@ -116,20 +144,22 @@ fn pane_of(planes: &Planes, from: LinkFrom) -> Pane {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
 #[serde(tag = "does", rename_all = "lowercase")]
 pub enum LinkDoes {
-    /// It opens, without asking.
-    Opens,
-    /// It asks first, and why.
+    /// It opens, without asking, `into` the browser or an editor tab.
+    Opens { into: OpensIn },
+    /// It asks first, and why: where it is, in the window's words ("outside smart-ide").
     Asks { reason: String },
     /// It will not open, and the sentence that says why.
     Refused { reason: String },
 }
 
 /// **What a hover over a candidate shows**: its kind, its target in full (its own text, where it
-/// is no link) and what opening it does.
+/// is no link), what the hover's first line says (`shown`: a file in the chat's workspace from
+/// the workspace, D2) and what opening it does.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
 pub struct LinkSeen {
     pub kind: KindHint,
     pub target: String,
+    pub shown: String,
     pub does: LinkDoes,
 }
 
@@ -153,15 +183,32 @@ pub enum LinkFileAt {
     Outside { path: String },
 }
 
+/// **What a chat counts as its own**, for the ask that says a file is not in it, with its folder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(tag = "is", rename_all = "lowercase")]
+pub enum LinkHome {
+    Workspace { name: String, folder: String },
+    Project { folder: String },
+}
+
+impl From<Home> for LinkHome {
+    fn from(home: Home) -> Self {
+        let folder = home.folder.display().to_string();
+        match home.is {
+            HomeIs::Workspace(name) => LinkHome::Workspace { name, folder },
+            HomeIs::Project => LinkHome::Project { folder },
+        }
+    }
+}
+
 /// **What an ask is about**, which picks the window's question.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
 #[serde(tag = "about", rename_all = "kebab-case")]
 pub enum LinkAsk {
     /// A link, asked about in general words.
     Link,
-    /// A file outside the chat's workspace (the prototype's S7): what the chat counts as its own
-    /// (a workspace's name, or "the project") and that folder.
-    FileOutside { within: String, folder: String },
+    /// A file outside the chat's home (the prototype's S7), and that home where it has one.
+    FileOutside { home: Option<LinkHome> },
 }
 
 /// **The open command's answer.**
@@ -178,8 +225,8 @@ pub enum LinkOpened {
         line: Option<u32>,
         column: Option<u32>,
     },
-    /// Not opened yet: the person is asked, shown its text and where it goes. Accepted, the
-    /// same candidate is sent again with `token`, which opens it once.
+    /// Not opened yet: the window asks, showing its text and where it goes. Answered, the same
+    /// candidate is sent again with `token`, which opens it once.
     Ask {
         reason: String,
         shown: String,
@@ -199,8 +246,14 @@ pub(crate) fn seen(resolver: &Resolver, pane: &Pane, candidate: &Candidate) -> O
         Hover::Link { target, opening } => LinkSeen {
             kind: target.kind().into(),
             target: target.shown().to_owned(),
-            does: match opening {
-                Opening::Open(_) => LinkDoes::Opens,
+            shown: match &target {
+                Target::File(file) => file.short().to_owned(),
+                Target::Url(url) => url.as_str().to_owned(),
+            },
+            does: match *opening {
+                Opening::Open(_) => LinkDoes::Opens {
+                    into: OpensIn::of(&target),
+                },
                 Opening::Ask { reason, .. } => LinkDoes::Asks { reason },
                 Opening::Refused(reason) => LinkDoes::Refused { reason },
             },
@@ -208,6 +261,7 @@ pub(crate) fn seen(resolver: &Resolver, pane: &Pane, candidate: &Candidate) -> O
         Hover::NotALink(reason) => LinkSeen {
             kind: candidate.kind.into(),
             target: candidate.text.clone(),
+            shown: candidate.text.clone(),
             does: LinkDoes::Refused { reason },
         },
         Hover::Quiet => return None,
@@ -216,8 +270,8 @@ pub(crate) fn seen(resolver: &Resolver, pane: &Pane, candidate: &Candidate) -> O
 
 /// Where the window reads `file`.
 fn file_at(file: &FileAt) -> LinkFileAt {
-    match &file.within {
-        Within::Branch {
+    match &file.read_from {
+        ReadFrom::Branch {
             ws,
             repo,
             piece,
@@ -228,12 +282,12 @@ fn file_at(file: &FileAt) -> LinkFileAt {
             piece: piece.clone(),
             path: path.clone(),
         },
-        Within::Workspace { ws, path } => LinkFileAt::Workspace {
+        ReadFrom::Workspace { ws, path } => LinkFileAt::Workspace {
             workspace: ws.clone(),
             path: path.clone(),
         },
-        Within::Project { path } => LinkFileAt::Project { path: path.clone() },
-        Within::Outside => LinkFileAt::Outside {
+        ReadFrom::Project { path } => LinkFileAt::Project { path: path.clone() },
+        ReadFrom::Outside => LinkFileAt::Outside {
             path: file.path.display().to_string(),
         },
     }
@@ -242,22 +296,16 @@ fn file_at(file: &FileAt) -> LinkFileAt {
 /// What an ask for `target` in `pane` is about.
 fn ask_about(target: &Target, pane: &Pane) -> LinkAsk {
     match target {
-        Target::File(_) => {
-            let home = purlis_core::panelinks::home_of(pane);
-            LinkAsk::FileOutside {
-                within: home
-                    .as_ref()
-                    .map_or_else(|| "the project".to_owned(), |home| home.name.clone()),
-                folder: home.map_or_else(String::new, |home| home.folder.display().to_string()),
-            }
-        }
+        Target::File(_) => LinkAsk::FileOutside {
+            home: purlis_core::panelinks::home_of(pane).map(LinkHome::from),
+        },
         Target::Url(_) => LinkAsk::Link,
     }
 }
 
 /// **Opens `candidate`, resolved again from its text**: `open_url` is handed the core's target
-/// and nothing the window said, and a file is handed to nothing. `token` is the one-use token of
-/// the ask the person accepted.
+/// and nothing the window said, and a file is handed to nothing. `token` is the one-use token the
+/// window sent back for the ask it was handed.
 pub(crate) fn answer(
     resolver: &Resolver,
     pane: &Pane,
@@ -267,31 +315,24 @@ pub(crate) fn answer(
     open_url: impl FnOnce(&str) -> Result<(), String>,
 ) -> LinkOpened {
     match resolver.open(candidate, pane, asks, token) {
-        Answer::Open(Target::File(file)) => LinkOpened::File {
+        Opening::Open(Target::File(file)) => LinkOpened::File {
             target: file.shown().to_owned(),
             at: file_at(&file),
             line: file.line,
             column: file.column,
         },
-        Answer::Open(target) => {
-            let kind = target.kind().into();
-            let opened = match &target {
-                Target::Url(url) => open_url(url.as_str()),
-                Target::File(_) => Err("purlis opens a file only in an editor tab".to_owned()),
-            };
-            match opened {
-                Ok(()) => LinkOpened::Opened {
-                    kind,
-                    target: target.shown().to_owned(),
-                },
-                Err(reason) => LinkOpened::Refused { reason },
-            }
-        }
-        Answer::Ask {
+        Opening::Open(Target::Url(url)) => match open_url(url.as_str()) {
+            Ok(()) => LinkOpened::Opened {
+                kind: KindHint::Url,
+                target: url.as_str().to_owned(),
+            },
+            Err(reason) => LinkOpened::Refused { reason },
+        },
+        Opening::Ask {
             reason,
             shown,
             target,
-            token,
+            token: Some(token),
         } => LinkOpened::Ask {
             about: ask_about(&target, pane),
             reason,
@@ -299,14 +340,55 @@ pub(crate) fn answer(
             target: target.shown().to_owned(),
             token,
         },
-        Answer::Refused(reason) => LinkOpened::Refused { reason },
+        Opening::Ask { token: None, .. } => LinkOpened::Refused {
+            reason: UNASKABLE.to_owned(),
+        },
+        Opening::Refused(reason) => LinkOpened::Refused { reason },
     }
 }
 
-/// **The asks the window was shown**, and the files outside the project the person opened
-/// ([`Asks`]): one per app, so a token is answered only in the window run that issued it.
+/// **The asks the window was handed**, and the files outside the project opened on one
+/// ([`Asks`]): one per app, so a token is answered only in the window run that was handed it.
 #[derive(Debug, Default)]
 pub struct PaneLinkAsks(pub Asks);
+
+/// The longest a link's look at the disk is waited for.
+pub const LOOK_FOR: Duration = Duration::from_secs(2);
+
+/// The most looks at the disk under way at once; one more answers at once that it did not look.
+pub const MOST_LOOKING: usize = 4;
+
+/// The looks under way now.
+static LOOKING: AtomicUsize = AtomicUsize::new(0);
+
+/// **`look`, run on a thread of its own and waited for at most `wait`**: `None` where it took
+/// longer, or where [`MOST_LOOKING`] looks are under way already. A look that never ends holds
+/// only its own thread, and one place in the count while it lasts.
+pub(crate) fn looked<T: Send + 'static>(
+    wait: Duration,
+    look: impl FnOnce() -> T + Send + 'static,
+) -> Option<T> {
+    if LOOKING.fetch_add(1, Ordering::SeqCst) >= MOST_LOOKING {
+        LOOKING.fetch_sub(1, Ordering::SeqCst);
+        return None;
+    }
+    let (told, heard) = std::sync::mpsc::sync_channel(1);
+    let started = std::thread::Builder::new()
+        .name("pane-link-look".into())
+        .spawn(move || {
+            let answer = look();
+            LOOKING.fetch_sub(1, Ordering::SeqCst);
+            let _ = told.send(answer);
+        });
+    if started.is_err() {
+        LOOKING.fetch_sub(1, Ordering::SeqCst);
+        return None;
+    }
+    heard.recv_timeout(wait).ok()
+}
+
+/// What opening a link answers when the look at its file did not end in time.
+pub const NOT_LOOKED: &str = "purlis could not look at that file in time, so it is not opened";
 
 /// **What each candidate on a line is**, in order: a link, or none. What a hover shows.
 #[tauri::command]
@@ -318,19 +400,24 @@ pub async fn pane_link_resolve(
 ) -> Vec<Option<LinkSeen>> {
     use tauri::Manager as _;
     let pane = pane_of(&app.state::<Planes>(), from);
-    // A file's answer reads the disk: off the window's thread.
-    let read = tauri::async_runtime::spawn_blocking(move || {
+    let count = candidates.len();
+    let look = move || {
         let resolver = Resolver::default();
         candidates
             .into_iter()
             .map(|candidate| seen(&resolver, &pane, &candidate.into()))
             .collect::<Vec<_>>()
-    });
-    read.await.unwrap_or_default()
+    };
+    // Waited for off the window's thread; a look that did not end in time is no link.
+    tauri::async_runtime::spawn_blocking(move || looked(LOOK_FOR, look))
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| vec![None; count])
 }
 
 /// **Opens a link a pane found** (⌘-click, Ctrl+click off a Mac): the candidate's text,
-/// resolved again here. `token` is the one-use token of the ask the person accepted.
+/// resolved again here. `token` is the one-use token of the ask the window was handed.
 #[tauri::command]
 #[specta::specta]
 pub async fn pane_link_open(
@@ -341,41 +428,71 @@ pub async fn pane_link_open(
 ) -> LinkOpened {
     use tauri::Manager as _;
     let pane = pane_of(&app.state::<Planes>(), from);
-    let asks = app.state::<PaneLinkAsks>();
-    answer(
-        &Resolver::default(),
-        &pane,
-        &asks.0,
-        &candidate.into(),
-        token.as_deref(),
-        |url| open_in_browser(&app, url),
-    )
+    let candidate: Candidate = candidate.into();
+    if candidate.kind == Kind::Url {
+        let asks = app.state::<PaneLinkAsks>();
+        return answer(
+            &Resolver::default(),
+            &pane,
+            &asks.0,
+            &candidate,
+            token.as_deref(),
+            |url| open_in_browser(&app, url),
+        );
+    }
+    // A file is looked at on a thread of its own; it opens nothing there, only answers.
+    let handle = app.clone();
+    let look = move || {
+        let asks = handle.state::<PaneLinkAsks>();
+        answer(
+            &Resolver::default(),
+            &pane,
+            &asks.0,
+            &candidate,
+            token.as_deref(),
+            |_| Err("purlis opens a file only in an editor tab".to_owned()),
+        )
+    };
+    tauri::async_runtime::spawn_blocking(move || looked(LOOK_FOR, look))
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| LinkOpened::Refused {
+            reason: NOT_LOOKED.to_owned(),
+        })
 }
 
-/// **A file outside the project, read for its editor tab**: only one the person opened by
-/// answering the ask that showed it, in this run of the app. Refused for every other path.
+/// **A file outside the project, as its tab reads it**: the file, or that no answered ask in
+/// this pane opened it (the window says how to open it again).
+#[derive(Debug, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(tag = "read", rename_all = "kebab-case")]
+pub enum LinkFile {
+    File { file: PieceFile },
+    NotOpened,
+}
+
+/// **A file outside the project, read for its editor tab**: only one opened in the pane `from`
+/// names by an answered ask, in this run of the app and within the hour, and only while it is
+/// still the file it was then. Read from `/` one folder at a time with no link followed.
 #[tauri::command]
 #[specta::specta]
-pub async fn pane_link_file(app: tauri::AppHandle, path: String) -> Result<PieceFile, String> {
+pub async fn pane_link_file(
+    app: tauri::AppHandle,
+    from: LinkFrom,
+    path: String,
+) -> Result<LinkFile, String> {
     use tauri::Manager as _;
+    let pane = pane_of(&app.state::<Planes>(), from);
     let path = PathBuf::from(path);
-    if !app.state::<PaneLinkAsks>().0.opened(&path) {
-        return Err(NOT_OPENED.to_owned());
-    }
-    crate::off_the_window("reading the file", move || outside_file(&path)).await
-}
-
-/// What a file outside the project's tab says when nobody opened it from its link here.
-pub const NOT_OPENED: &str = "purlis shows a file outside the project only after you open it \
-                              from its link: ⌘-click it in the chat again";
-
-/// The file at `path`, read as the light editor reads one: no link followed on the way.
-fn outside_file(path: &Path) -> Result<PieceFile, String> {
-    let (Some(folder), Some(name)) = (path.parent(), path.file_name().and_then(|n| n.to_str()))
-    else {
-        return Err(NOT_OPENED.to_owned());
+    let Some(identity) = app.state::<PaneLinkAsks>().0.opened(&pane, &path) else {
+        return Ok(LinkFile::NotOpened);
     };
-    purlis_core::files::folder::open(folder, name).map(PieceFile::from)
+    crate::off_the_window("reading the file", move || {
+        purlis_core::files::folder::read_absolute(&path, identity).map(|opened| LinkFile::File {
+            file: PieceFile::from(opened),
+        })
+    })
+    .await
 }
 
 /// Opens `url` in the person's browser; a scenario test's build opens nothing.
@@ -503,7 +620,10 @@ mod tests {
             Some(LinkSeen {
                 kind: KindHint::Url,
                 target: "https://purlis.dev/".into(),
-                does: LinkDoes::Opens,
+                shown: "https://purlis.dev/".into(),
+                does: LinkDoes::Opens {
+                    into: OpensIn::Browser
+                },
             })
         );
     }
@@ -519,6 +639,7 @@ mod tests {
             Some(LinkSeen {
                 kind: KindHint::Url,
                 target: "ftp://x.example/".into(),
+                shown: "ftp://x.example/".into(),
                 does: LinkDoes::Refused {
                     reason: "purlis opens only http and https addresses, so it will not open \
                              this ftp: one"
@@ -560,6 +681,13 @@ mod tests {
         assert_eq!(
             serde_json::to_value(LinkDoes::Asks { reason: "r".into() }).expect("serialises"),
             serde_json::json!({"does": "asks", "reason": "r"})
+        );
+        assert_eq!(
+            serde_json::to_value(LinkDoes::Opens {
+                into: OpensIn::EditorTab
+            })
+            .expect("serialises"),
+            serde_json::json!({"does": "opens", "into": "editor-tab"})
         );
     }
 
@@ -656,8 +784,10 @@ mod tests {
         assert_eq!(
             about,
             LinkAsk::FileOutside {
-                within: "smart-ide".into(),
-                folder: folder.display().to_string(),
+                home: Some(LinkHome::Workspace {
+                    name: "smart-ide".into(),
+                    folder: folder.display().to_string(),
+                }),
             }
         );
         // The target the ask showed is no answer: only its token is.
@@ -665,7 +795,7 @@ mod tests {
             opened_file(&here.pane, &asks, &text, Some(&target)),
             LinkOpened::Ask { .. }
         ));
-        assert!(!asks.opened(&here.hosts));
+        assert_eq!(asks.opened(&here.pane, &here.hosts), None);
 
         let LinkOpened::Ask { token, .. } = opened_file(&here.pane, &asks, &text, None) else {
             panic!("expected an ask");
@@ -681,7 +811,7 @@ mod tests {
                 column: None,
             }
         );
-        assert!(asks.opened(&here.hosts));
+        assert!(asks.opened(&here.pane, &here.hosts).is_some());
         assert!(matches!(
             opened_file(&here.pane, &asks, &text, Some(&token)),
             LinkOpened::Ask { .. }
@@ -701,27 +831,49 @@ mod tests {
             Some(LinkSeen {
                 kind: KindHint::File,
                 target: here.notes.display().to_string(),
-                does: LinkDoes::Opens,
+                // In the chat's workspace: said from the workspace (D2).
+                shown: "notes.md".into(),
+                does: LinkDoes::Opens {
+                    into: OpensIn::EditorTab
+                },
             })
         );
     }
 
     #[test]
-    fn a_file_outside_the_project_is_read_only_once_opened_from_its_ask() {
+    fn a_file_outside_the_project_reads_only_in_the_pane_its_ask_was_answered_in() {
         let here = here();
-
-        let read = outside_file(&here.hosts).expect("read");
-        assert_eq!(
-            read,
-            PieceFile::Text {
-                text: "127.0.0.1 localhost\n".into()
-            }
-        );
-        // The command's gate: what was not opened from its ask is refused, read or not.
         let asks = Asks::default();
-        assert!(!asks.opened(&here.hosts));
-        asks.keep_opened(&here.hosts);
-        assert!(asks.opened(&here.hosts));
+        let text = here.hosts.display().to_string();
+        let LinkOpened::Ask { token, .. } = opened_file(&here.pane, &asks, &text, None) else {
+            panic!("expected an ask");
+        };
+        opened_file(&here.pane, &asks, &text, Some(&token));
+
+        let identity = asks.opened(&here.pane, &here.hosts).expect("opened");
+        assert_eq!(
+            purlis_core::files::folder::read_absolute(&here.hosts, identity).map(PieceFile::from),
+            Ok(PieceFile::Text {
+                text: "127.0.0.1 localhost\n".into()
+            })
+        );
+        let another_chat = Pane {
+            session: Some(4),
+            ..here.pane.clone()
+        };
+        assert_eq!(asks.opened(&another_chat, &here.hosts), None);
+    }
+
+    #[test]
+    fn a_look_that_does_not_end_in_time_answers_none_and_so_does_one_past_the_most() {
+        assert_eq!(looked(Duration::from_secs(5), || 7), Some(7));
+        assert_eq!(
+            looked(Duration::from_millis(20), || {
+                std::thread::sleep(Duration::from_millis(400));
+                7
+            }),
+            None
+        );
     }
 
     #[test]
@@ -751,14 +903,17 @@ mod tests {
                 target: "/etc/hosts".into(),
                 token: "t".into(),
                 about: LinkAsk::FileOutside {
-                    within: "w".into(),
-                    folder: "/p/workspaces/w".into()
+                    home: Some(LinkHome::Workspace {
+                        name: "w".into(),
+                        folder: "/p/workspaces/w".into()
+                    }),
                 },
             }),
             serde_json::json!({
                 "answer": "ask", "reason": "outside w", "shown": "/etc/hosts",
                 "target": "/etc/hosts", "token": "t",
-                "about": {"about": "file-outside", "within": "w", "folder": "/p/workspaces/w"}
+                "about": {"about": "file-outside",
+                          "home": {"is": "workspace", "name": "w", "folder": "/p/workspaces/w"}}
             })
         );
     }

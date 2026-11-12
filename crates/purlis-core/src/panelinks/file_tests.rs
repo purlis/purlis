@@ -3,10 +3,8 @@
 
 use std::path::{Path, PathBuf};
 
-use super::super::{
-    Answer, Asks, Candidate, Hover, Kind, Opening, Pane, Resolved, Resolver, Runs, Target,
-};
-use super::{FileAt, LocalFile, Within, home_of};
+use super::super::{Asks, Candidate, Hover, Kind, Opening, Pane, Resolved, Resolver, Runs, Target};
+use super::{FileAt, HomeIs, LocalFile, ReadFrom, home_of};
 
 /// A project on disk: workspace `smart-ide` with repo `app` (its clone and a branch folder
 /// `feature`) and notes of its own, workspace `docs`, the project's own README, and a home
@@ -67,9 +65,10 @@ impl Fixture {
     }
 
     fn links(&self) -> Resolver {
-        Resolver::with(vec![Box::new(LocalFile::with_home(Some(
-            self.home.clone(),
-        )))])
+        Resolver::with(vec![Box::new(LocalFile::with(
+            Some(self.home.clone()),
+            Vec::new(),
+        ))])
     }
 }
 
@@ -102,15 +101,15 @@ fn a_relative_path_is_read_from_the_chat_s_working_folder_at_its_line_and_column
     assert_eq!((at.line, at.column), (Some(12), Some(7)));
     assert_eq!(at.shown(), format!("{}:12:7", lib.display()));
     assert_eq!(
-        at.within,
-        Within::Branch {
+        at.read_from,
+        ReadFrom::Branch {
             ws: "smart-ide".into(),
             repo: "app".into(),
             piece: Some("feature".into()),
             path: "src/lib.rs".into(),
         }
     );
-    assert!(at.home);
+    assert!(at.in_home);
 
     let at = resolved(&links, "src/lib.rs:12", &pane);
     assert_eq!((at.line, at.column), (Some(12), None));
@@ -132,8 +131,8 @@ fn an_absolute_path_links_with_and_without_a_line() {
     let at = resolved(&here.links(), &format!("{text}:2"), &here.chat());
     assert_eq!((at.path.as_path(), at.line), (main.as_path(), Some(2)));
     assert_eq!(
-        at.within,
-        Within::Branch {
+        at.read_from,
+        ReadFrom::Branch {
             ws: "smart-ide".into(),
             repo: "app".into(),
             piece: None,
@@ -151,7 +150,7 @@ fn a_home_path_is_read_from_the_home_folder() {
     let at = resolved(&here.links(), "~/notes.md:1", &here.chat());
     assert_eq!(at.path, here.home.join("notes.md"));
     assert_eq!(at.line, Some(1));
-    assert_eq!(at.within, Within::Outside);
+    assert_eq!(at.read_from, ReadFrom::Outside);
     // Another person's home is never looked up.
     assert_eq!(
         here.links().resolve(&file("~root/notes.md"), &here.chat()),
@@ -185,7 +184,7 @@ fn a_path_to_no_file_is_no_link_and_says_nothing() {
         assert!(
             matches!(
                 links.open(&file(text), &here.chat(), &Asks::default(), None),
-                Answer::Refused(_)
+                Opening::Refused(_)
             ),
             "{text:?}"
         );
@@ -230,27 +229,27 @@ fn where_each_file_is_read_from() {
     let at = |rel: &str| resolved(&links, &here.project.join(rel).display().to_string(), &pane);
 
     assert_eq!(
-        at("workspaces/smart-ide/workspace.md").within,
-        Within::Workspace {
+        at("workspaces/smart-ide/workspace.md").read_from,
+        ReadFrom::Workspace {
             ws: "smart-ide".into(),
             path: "workspace.md".into()
         }
     );
     assert_eq!(
-        at("workspaces/docs/guide.md").within,
-        Within::Workspace {
+        at("workspaces/docs/guide.md").read_from,
+        ReadFrom::Workspace {
             ws: "docs".into(),
             path: "guide.md".into()
         }
     );
     assert_eq!(
-        at("README.md").within,
-        Within::Project {
+        at("README.md").read_from,
+        ReadFrom::Project {
             path: "README.md".into()
         }
     );
     let outside = resolved(&links, &here.outside.display().to_string(), &pane);
-    assert_eq!(outside.within, Within::Outside);
+    assert_eq!(outside.read_from, ReadFrom::Outside);
 }
 
 #[test]
@@ -262,11 +261,11 @@ fn a_file_in_the_chat_s_workspace_opens_and_one_outside_it_asks_first() {
 
     assert!(matches!(
         links.open(&file("src/lib.rs:4"), &pane, &asks, None),
-        Answer::Open(Target::File(at)) if at.line == Some(4)
+        Opening::Open(Target::File(at)) if at.line == Some(4)
     ));
     assert!(matches!(
         links.open(&file("../../../workspace.md"), &pane, &asks, None),
-        Answer::Open(_)
+        Opening::Open(_)
     ));
 
     for outside in [
@@ -279,7 +278,7 @@ fn a_file_in_the_chat_s_workspace_opens_and_one_outside_it_asks_first() {
         "~/notes.md".to_owned(),
     ] {
         match links.open(&file(&outside), &pane, &asks, None) {
-            Answer::Ask {
+            Opening::Ask {
                 reason,
                 shown,
                 token,
@@ -287,16 +286,13 @@ fn a_file_in_the_chat_s_workspace_opens_and_one_outside_it_asks_first() {
             } => {
                 assert_eq!(reason, "outside smart-ide", "{outside}");
                 assert_eq!(shown, outside);
-                assert!(!token.is_empty());
+                assert!(token.is_some_and(|token| !token.is_empty()));
             }
             other => panic!("{outside}: expected an ask, got {other:?}"),
         }
         assert!(matches!(
             links.hover(&file(&outside), &pane),
-            Hover::Link {
-                opening: Opening::Ask { .. },
-                ..
-            }
+            Hover::Link { opening, .. } if matches!(*opening, Opening::Ask { .. })
         ));
     }
 }
@@ -306,11 +302,11 @@ fn a_chat_at_the_project_s_root_counts_the_project_as_its_own() {
     let here = fixture();
     let pane = here.pane_in("");
 
-    assert_eq!(home_of(&pane).expect("a home").name, "the project");
+    assert_eq!(home_of(&pane).expect("a home").is, HomeIs::Project);
     assert!(matches!(
         here.links()
             .open(&file("README.md:1"), &pane, &Asks::default(), None),
-        Answer::Open(_)
+        Opening::Open(_)
     ));
     assert!(matches!(
         here.links().open(
@@ -319,7 +315,7 @@ fn a_chat_at_the_project_s_root_counts_the_project_as_its_own() {
             &Asks::default(),
             None
         ),
-        Answer::Ask { reason, .. } if reason == "outside the project"
+        Opening::Ask { reason, .. } if reason == "outside the project"
     ));
 }
 
@@ -331,19 +327,34 @@ fn accepting_the_ask_opens_the_file_once_and_keeps_one_outside_the_project_as_op
     let asks = Asks::default();
     let hosts = format!("{}:3", here.outside.display());
 
-    let Answer::Ask { token, .. } = links.open(&file(&hosts), &pane, &asks, None) else {
+    let Opening::Ask {
+        token: Some(token), ..
+    } = links.open(&file(&hosts), &pane, &asks, None)
+    else {
         panic!("expected an ask");
     };
-    assert!(!asks.opened(&here.outside));
+    assert_eq!(asks.opened(&pane, &here.outside), None);
     assert!(matches!(
         links.open(&file(&hosts), &pane, &asks, Some(&token)),
-        Answer::Open(Target::File(at)) if at.line == Some(3)
+        Opening::Open(Target::File(at)) if at.line == Some(3)
     ));
-    assert!(asks.opened(&here.outside));
+    let identity = asks.opened(&pane, &here.outside).expect("kept as opened");
+    // For that pane alone, and as the file it was.
+    let other_chat = Pane {
+        session: Some(8),
+        ..pane.clone()
+    };
+    assert_eq!(asks.opened(&other_chat, &here.outside), None);
+    assert_eq!(
+        crate::files::folder::read_absolute(&here.outside, identity).ok(),
+        Some(crate::files::Opened::Text {
+            text: "127.0.0.1 localhost\n".into()
+        })
+    );
     // Declined, nothing is sent: the next ⌘-click asks again.
     assert!(matches!(
         links.open(&file(&hosts), &pane, &asks, None),
-        Answer::Ask { .. }
+        Opening::Ask { .. }
     ));
 }
 
@@ -361,7 +372,7 @@ fn a_file_address_on_this_machine_is_a_file_link_and_one_naming_another_host_is_
     ] {
         let at = resolved(&links, &text, &pane);
         assert_eq!(at.path, here.outside, "{text}");
-        assert_eq!(at.within, Within::Outside);
+        assert_eq!(at.read_from, ReadFrom::Outside);
     }
     assert_eq!(
         resolved(&links, &format!("file://{hosts}:3"), &pane).line,
@@ -381,7 +392,7 @@ fn a_file_address_on_this_machine_is_a_file_link_and_one_naming_another_host_is_
     assert!(why.contains("build-box"), "{why}");
     assert!(matches!(
         links.open(&file("file://build-box/etc/hosts"), &pane, &Asks::default(), None),
-        Answer::Refused(why) if why.contains("build-box")
+        Opening::Refused(why) if why.contains("build-box")
     ));
 }
 
@@ -395,8 +406,8 @@ fn a_link_on_the_way_is_resolved_and_judged_where_it_leads() {
 
     let at = resolved(&here.links(), "hosts", &here.chat());
     assert_eq!(at.path, here.outside);
-    assert_eq!(at.within, Within::Outside);
-    assert!(!at.home);
+    assert_eq!(at.read_from, ReadFrom::Outside);
+    assert!(!at.in_home);
 }
 
 #[test]
@@ -421,4 +432,84 @@ fn the_window_s_resolver_links_files() {
         Resolver::default().resolve(&file(&text), &here.chat()),
         Resolved::Link(Target::File(_))
     ));
+}
+
+#[test]
+fn a_hover_shows_a_file_in_the_workspace_from_the_workspace_and_one_outside_in_full() {
+    let here = fixture();
+    let links = here.links();
+    let pane = here.pane_in("workspaces/smart-ide");
+
+    let at = resolved(&links, "repos/app/src/main.rs:2", &pane);
+    assert_eq!(at.short(), "repos/app/src/main.rs:2");
+    assert!(
+        at.shown()
+            .ends_with("/workspaces/smart-ide/repos/app/src/main.rs:2")
+    );
+    let outside = resolved(&links, &format!("{}:3", here.outside.display()), &pane);
+    assert_eq!(outside.short(), outside.shown());
+}
+
+#[test]
+fn a_guarded_folder_is_never_looked_in_unless_it_holds_the_chat_s_project() {
+    let here = fixture();
+    let pane = here.chat();
+    let guarded = here.home.clone();
+    let links = Resolver::with(vec![Box::new(LocalFile::with(
+        Some(here.home.clone()),
+        vec![guarded.clone()],
+    ))]);
+
+    // In it, and through a link into it: no link, and no look inside.
+    assert_eq!(links.resolve(&file("~/notes.md"), &pane), Resolved::Quiet);
+    let link = here
+        .project
+        .join("workspaces/smart-ide/.worktrees/app/feature/notes");
+    std::os::unix::fs::symlink(here.home.join("notes.md"), &link).expect("a link");
+    assert_eq!(links.resolve(&file("notes"), &pane), Resolved::Quiet);
+
+    // A guarded folder that holds the chat's project is read as the project is.
+    let holds_the_project = Resolver::with(vec![Box::new(LocalFile::with(
+        None,
+        vec![here.project.parent().expect("a parent").to_path_buf()],
+    ))]);
+    assert!(matches!(
+        holds_the_project.resolve(&file("src/lib.rs"), &pane),
+        Resolved::Link(_)
+    ));
+}
+
+#[test]
+fn a_path_through_too_many_links_is_no_link() {
+    let here = fixture();
+    let folder = here
+        .project
+        .join("workspaces/smart-ide/.worktrees/app/feature");
+    std::os::unix::fs::symlink(folder.join("loop-b"), folder.join("loop-a")).expect("a link");
+    std::os::unix::fs::symlink(folder.join("loop-a"), folder.join("loop-b")).expect("a link");
+
+    assert_eq!(
+        here.links().resolve(&file("loop-a"), &here.chat()),
+        Resolved::Quiet
+    );
+}
+
+#[test]
+fn a_file_outside_the_project_reads_nothing_once_another_is_put_in_its_place() {
+    let here = fixture();
+    let identity = crate::files::folder::absolute_identity(&here.outside).expect("opened");
+    std::fs::remove_file(&here.outside).expect("removed");
+    write(&here.outside, "another file\n");
+
+    assert!(crate::files::folder::read_absolute(&here.outside, identity).is_err());
+}
+
+#[test]
+fn a_file_outside_the_project_is_not_read_through_a_link_on_its_way() {
+    let here = fixture();
+    let through = here.home.join("etc-link");
+    std::os::unix::fs::symlink(here.outside.parent().expect("a parent"), &through).expect("a link");
+
+    assert!(crate::files::folder::open_absolute(&through.join("hosts")).is_err());
+    assert!(crate::files::folder::open_absolute(&here.outside).is_ok());
 }

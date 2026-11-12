@@ -95,13 +95,21 @@ describe("a piece's files and one of its files are views named by data", () => {
 });
 
 describe("a file outside the project, as a view (#6216)", () => {
-  it("is keyed by its absolute path, is a file tab, and is no piece's", () => {
-    const view = outsideFileView("/etc/hosts");
-    expect(outsideFileOf(view)).toBe("/etc/hosts");
+  it("is keyed by its chat and its absolute path, is a file tab, and is no piece's", () => {
+    const view = outsideFileView(7, "/etc/hosts");
+    expect(view.key).toBe("7//etc/hosts");
+    expect(outsideFileOf(view)).toEqual({ session: 7, path: "/etc/hosts" });
+    expect(outsideFileOf(outsideFileView(null, "/etc/hosts"))).toEqual({
+      session: null,
+      path: "/etc/hosts",
+    });
     expect(isFileView(view)).toBe(true);
     expect(pieceOf(view)).toBeUndefined();
     expect(outsideFileTitle("/etc/hosts")).toBe("hosts · Outside the project");
-    // A key that is no absolute path is no such view.
-    expect(outsideFileOf({ from: null, view: "outside-file", key: "etc/hosts" })).toBeUndefined();
+    // A key whose path is no absolute path, or whose chat is no number, is no such view.
+    expect(outsideFileOf({ from: null, view: "outside-file", key: "7/etc/hosts" })).toBeUndefined();
+    expect(
+      outsideFileOf({ from: null, view: "outside-file", key: "x//etc/hosts" }),
+    ).toBeUndefined();
   });
 });

@@ -56,6 +56,8 @@ let there = true;
 const PATH = "src/main.rs:42:7";
 const FULL = "/planes/one/workspaces/app/repos/app/src/main.rs:42:7";
 const HOSTS = "/etc/hosts:3";
+/** The file in the workspace as its hover says it: from the workspace (D2). */
+const SHORT = "repos/app/src/main.rs:42:7";
 
 /** The core's answer for the file in the workspace. */
 const IN_THE_WORKSPACE = {
@@ -73,7 +75,10 @@ const ASKS = {
   shown: HOSTS,
   target: HOSTS,
   token: "one-use-token",
-  about: { about: "file-outside", within: "app", folder: "/planes/one/workspaces/app" },
+  about: {
+    about: "file-outside",
+    home: { is: "workspace", name: "app", folder: "/planes/one/workspaces/app" },
+  },
 };
 
 beforeEach(() => {
@@ -99,9 +104,19 @@ beforeEach(() => {
       const { candidates } = args as { candidates: { kind: string; text: string }[] };
       return candidates.map((one) =>
         one.text === PATH && there
-          ? { kind: "file", target: FULL, does: { does: "opens" } }
+          ? {
+              kind: "file",
+              target: FULL,
+              shown: SHORT,
+              does: { does: "opens", into: "editor-tab" },
+            }
           : one.text === HOSTS
-            ? { kind: "file", target: HOSTS, does: { does: "asks", reason: "outside app" } }
+            ? {
+                kind: "file",
+                target: HOSTS,
+                shown: HOSTS,
+                does: { does: "asks", reason: "outside app" },
+              }
             : null,
       );
     }
@@ -199,13 +214,14 @@ describe("a file path in a chat's pane", () => {
     });
   });
 
-  it("shows the file in full and that ⌘-click opens it in an editor tab", async () => {
+  it("shows the file from the workspace and that ⌘-click opens it in an editor tab", async () => {
     Object.defineProperty(navigator, "platform", { configurable: true, get: () => "MacIntel" });
     const { drawn } = await pane(`at ${PATH} now`);
     hover(drawn, 6, 0);
 
     const tip = await screen.findByRole("tooltip", {}, { timeout: 2000 });
-    expect(tip).toHaveTextContent(FULL);
+    expect(tip).toHaveTextContent(SHORT);
+    expect(tip).not.toHaveTextContent("/planes/one");
     expect(tip).toHaveTextContent("⌘-click opens it in an editor tab");
   });
 
@@ -318,7 +334,7 @@ describe("a file outside the workspace", () => {
     await userEvent.click(screen.getByRole("button", { name: "Open file" }));
 
     await waitFor(() => expect(outside).toHaveLength(1));
-    expect(outside[0]).toEqual({ plane: "/planes/one", path: "/etc/hosts", line: 3 });
+    expect(outside[0]).toEqual({ plane: "/planes/one", session: 1, path: "/etc/hosts", line: 3 });
     expect(asked("pane_link_open")[1].args).toEqual({
       from: { plane: "/planes/one", session: 1 },
       candidate: { kind: "file", text: HOSTS },

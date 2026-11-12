@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { LinkCandidate, LinkFrom, LinkOpened, LinkSeen } from "./bindings";
+import type { LinkCandidate, LinkFrom, LinkHome, LinkOpened, LinkSeen, OpensIn } from "./bindings";
 import { onAMac } from "./mac";
 import { UNASKED, openLink, type HoveredLink, type LinkCore, type LinkHands } from "./paneLinks";
 import { openFileLink } from "./paneLinkFiles";
@@ -33,28 +33,32 @@ import {
 /** The modifier word a link opens with, in the window's words (D12). */
 export const modifierSaid = (mac: boolean) => (mac ? "⌘-click" : "Ctrl-click");
 
+/** Where a link that opens without asking opens, as the tooltip says it. */
+const OPENS_IN: Record<OpensIn, string> = {
+  browser: "in your browser",
+  "editor-tab": "in an editor tab",
+};
+
 /** **What ⌘-click on a link does**, the tooltip's second line. A file says where it is first
  *  (D2): "Outside smart-ide · ⌘-click asks first". */
 export function linkDoesSaid(seen: LinkSeen, mac: boolean): string {
   const click = modifierSaid(mac);
-  const file = seen.kind === "file";
   switch (seen.does.does) {
     case "opens":
-      return file ? `${click} opens it in an editor tab` : `${click} opens it in your browser`;
+      return `${click} opens it ${OPENS_IN[seen.does.into]}`;
     case "asks":
-      return file
-        ? `${sentence(seen.does.reason)} · ${click} asks first`
-        : `${click} asks first: ${seen.does.reason}`;
+      return `${sentence(seen.does.reason)} · ${click} asks first`;
     case "refused":
       return `${sentence(seen.does.reason)}.`;
   }
 }
 
-/** **A hovered link's tooltip**: its target in full, then what ⌘-click does. */
+/** **A hovered link's tooltip**: where it goes (a file in the chat's workspace from the
+ *  workspace, D2; everything else in full), then what ⌘-click does. */
 export function LinkTip({ seen, mac }: { seen: LinkSeen; mac: boolean }) {
   return (
     <span className="pane-link-tip">
-      <code className="pane-link-target">{seen.target}</code>
+      <code className="pane-link-target">{seen.shown}</code>
       <TooltipDetail>{linkDoesSaid(seen, mac)}</TooltipDetail>
     </span>
   );
@@ -107,8 +111,8 @@ export function usePaneLinks({
     if (answer.answer === "opened") return;
     // A file opens in an editor tab of the pane's project (#6216); with none, it cannot.
     if (answer.answer === "file") {
-      const plane = now.current.from.plane;
-      if (plane !== null) return openFileLink(plane, answer);
+      const { plane, session } = now.current.from;
+      if (plane !== null) return openFileLink(plane, session, answer);
       setAnswering({ answer: { answer: "refused", reason: UNASKED }, candidate });
       return;
     }
@@ -190,8 +194,7 @@ export function LinkAnswer({
     return (
       <FileOutsideAsk
         target={answer.target}
-        within={answer.about.within}
-        folder={answer.about.folder}
+        home={answer.about.home}
         onClose={onClose}
         onOpen={() => onConfirm(answer.token)}
       />
@@ -229,22 +232,23 @@ export function LinkAnswer({
  * **The ask for a file outside the workspace** (#6216, the prototype's S7, D9): the file and the
  * workspace, and *Don't open*, *Copy path* and *Open file*. It starts on *Open file*, and Return
  * opens it: opening only shows it in an editor tab, so the ask is a notice more than a guard.
- * `within` is the workspace's name, or "the project" for a chat at its root.
+ * That starting place is the person's ruling on the prototype (D9, accepted on #6211), over
+ * the family's rule that an ask starts on its safe answer. `home` is the chat's workspace, or
+ * the project for a chat at its root; with none, its row is left out.
  */
 export function FileOutsideAsk({
   target,
-  within,
-  folder,
+  home,
   onClose,
   onOpen,
 }: {
   target: string;
-  within: string;
-  folder: string;
+  home: LinkHome | null;
   onClose: () => void;
   onOpen: () => void;
 }) {
-  const workspace = within !== "the project";
+  const workspace = home?.is === "workspace";
+  const within = home?.is === "workspace" ? home.name : "the project";
   return (
     <Dialog
       title={workspace ? "Open a file outside this workspace?" : "Open a file outside the project?"}
@@ -266,9 +270,11 @@ export function FileOutsideAsk({
         <Fact label="File">
           <span className="pane-link-path">{target}</span>
         </Fact>
-        <Fact label={workspace ? "Workspace" : "Project"}>
-          <span className="pane-link-path">{folder}</span>
-        </Fact>
+        {home !== null && (
+          <Fact label={workspace ? "Workspace" : "Project"}>
+            <span className="pane-link-path">{home.folder}</span>
+          </Fact>
+        )}
       </Facts>
       <p className="ui-text-secondary">It opens in an editor tab. Nothing is run.</p>
     </Dialog>

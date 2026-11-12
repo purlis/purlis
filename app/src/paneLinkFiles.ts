@@ -15,21 +15,31 @@ import { PLANE_ROOT, workspaceFiles, type Place } from "./pieceViews";
  * - **A file of the project** goes the one way every surface that names a file at a line goes,
  *   a jump ({@link jumpTo}): the branch's file tab at the line, or the file's own tab.
  * - **A file outside the project** opens its own read-only tab (`pieceViews.outsideFileView`),
- *   asked of the project's view ({@link useOutsideFileAsks}). Its line and column wait here for
- *   the tab to land on ({@link outsideLanding}).
+ *   asked of the project's view ({@link useOutsideFileAsks}), for the chat whose pane opened it:
+ *   the core reads it only for that pane. Its line and column wait here for the tab to land on
+ *   ({@link outsideLanding}).
  */
 
 /** The open command's answer for a file. */
 export type FileOpened = Extract<LinkOpened, { answer: "file" }>;
 
-/** A file outside the project, to open: in which project's tabs, and where to land. */
-export type OutsideAsk = { plane: PlaneId; path: string; line?: number; column?: number };
+/** A file outside the project, to open: in which project's tabs, for which chat, and where. */
+export type OutsideAsk = {
+  plane: PlaneId;
+  session: number | null;
+  path: string;
+  line?: number;
+  column?: number;
+};
 
 const projects = new Set<(ask: OutsideAsk) => void>();
 const landings = new Map<string, { line?: number; column?: number }>();
 
-/** The place a file of the project is read by, or `undefined` outside it. */
-export function placeOf(at: FileOpened["at"]): { place: Place; path: string } | undefined {
+/** Where a file of the project is read from: the place and the path in it. */
+type InTheProject = Exclude<FileOpened["at"], { in: "outside" }>;
+
+/** The place a file of the project is read by, and its path there. */
+export function readPlaceOf(at: InTheProject): { place: Place; path: string } {
   switch (at.in) {
     case "branch":
       return { place: { workspace: at.workspace, repo: at.repo, piece: at.piece }, path: at.path };
@@ -37,24 +47,22 @@ export function placeOf(at: FileOpened["at"]): { place: Place; path: string } | 
       return { place: workspaceFiles(at.workspace), path: at.path };
     case "project":
       return { place: PLANE_ROOT, path: at.path };
-    case "outside":
-      return undefined;
   }
 }
 
 /** **Opens the file `opened` names**, in `plane`'s tabs, at its line and column. */
-export function openFileLink(plane: PlaneId, opened: FileOpened): void {
+export function openFileLink(plane: PlaneId, session: number | null, opened: FileOpened): void {
   const line = opened.line ?? undefined;
   const column = opened.column ?? undefined;
-  const of = placeOf(opened.at);
-  if (of !== undefined) {
-    jumpTo({ plane, place: of.place, path: of.path, line, column });
+  const { at } = opened;
+  if (at.in === "outside") {
+    const ask = { plane, session, path: at.path, line, column };
+    landings.set(at.path, { line, column });
+    for (const told of projects) told(ask);
     return;
   }
-  if (opened.at.in !== "outside") return;
-  const ask = { plane, path: opened.at.path, line, column };
-  landings.set(ask.path, { line, column });
-  for (const told of projects) told(ask);
+  const { place, path } = readPlaceOf(at);
+  jumpTo({ plane, place, path, line, column });
 }
 
 /** A project's view hears each file outside the project asked to open in its tabs. */

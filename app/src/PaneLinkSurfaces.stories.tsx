@@ -68,9 +68,19 @@ const meta = {
         return candidates.map((one) =>
           one.kind === "file"
             ? one.text === FILE
-              ? { kind: "file", target: FILE_IN_FULL, does: { does: "opens" } }
+              ? {
+                  kind: "file",
+                  target: FILE_IN_FULL,
+                  shown: FILE,
+                  does: { does: "opens", into: "editor-tab" },
+                }
               : null
-            : { kind: "url", target: one.text, does: { does: "opens" } },
+            : {
+                kind: "url",
+                target: one.text,
+                shown: one.text,
+                does: { does: "opens", into: "browser" },
+              },
         );
       }
       if (cmd === "pane_link_open") return { answer: "opened", kind: "url", target: ADDRESS };
@@ -124,7 +134,7 @@ export const HoverAUrl: StoryObj<typeof meta> = {
 };
 
 /** **Hovering a file at a line** (#6216, the prototype's `HoverAFileLine`): underlined, the file
- *  in full with its line, and that ⌘-click opens it in an editor tab. */
+ *  from the workspace with its line (D2), and that ⌘-click opens it in an editor tab. */
 export const HoverAFileLine: StoryObj<typeof meta> = {
   render: () => <Pane screen={FILE_TURN} />,
   play: async ({ canvasElement }) => {
@@ -136,7 +146,8 @@ export const HoverAFileLine: StoryObj<typeof meta> = {
     const { screen, init } = cellOf(canvasElement, 12, 1);
     screen.dispatchEvent(new MouseEvent("mousemove", init));
     const tip = await page.findByRole("tooltip", {}, { timeout: 3000 });
-    await expect(tip).toHaveTextContent(FILE_IN_FULL);
+    // A file in the chat's workspace is said from the workspace (D2).
+    await expect(tip).toHaveTextContent(FILE);
     await expect(tip).toHaveTextContent(/-click opens it in an editor tab/);
   },
 };
@@ -237,8 +248,11 @@ export const FileOutsideTheWorkspace: StoryObj<typeof meta> = {
         token: "a-one-use-token",
         about: {
           about: "file-outside",
-          within: "smart-ide",
-          folder: "/Users/you/projects/plane/workspaces/smart-ide",
+          home: {
+            is: "workspace",
+            name: "smart-ide",
+            folder: "/Users/you/projects/plane/workspaces/smart-ide",
+          },
         },
       }}
       candidate={{ kind: "file", text: "/etc/hosts:3" }}

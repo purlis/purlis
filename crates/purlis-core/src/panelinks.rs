@@ -13,7 +13,8 @@
 //! - **The answer is one of three** ([`Opening`]): open it, ask the person first (showing what
 //!   it is and where it goes), or refuse it with the sentence the window shows.
 //! - **An ask is answered with its token** ([`Asks`], #6216): the core issues a one-use token
-//!   bound to the pane and the target an ask showed, and only that token opens it.
+//!   bound to the pane and the target an ask showed, and only that token opens it. It proves
+//!   the window was handed that ask, not that a person read it.
 //! - **A file path** ([`Kind::File`], [`LocalFile`]) links only once the core finds the file,
 //!   and opens in the light editor at its line; one outside the chat's workspace asks first.
 
@@ -21,8 +22,8 @@ use std::path::PathBuf;
 
 mod asks;
 mod file;
-pub use asks::Asks;
-pub use file::{FileAt, Home, LocalFile, Within, home_of};
+pub use asks::{Asks, Identity};
+pub use file::{FileAt, Home, HomeIs, LocalFile, ReadFrom, home_of};
 
 /// **What the pane thinks a candidate is**: a hint that picks the kind that reads it, never
 /// trusted for more.
@@ -105,9 +106,10 @@ pub enum Resolved {
 /// once; or not a link, and why not.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Hover {
+    /// Boxed: the answer holds the target again, as an ask shows it.
     Link {
         target: Target,
-        opening: Opening,
+        opening: Box<Opening>,
     },
     NotALink(String),
     /// Nothing to show: [`Resolved::Quiet`].
@@ -119,27 +121,14 @@ pub enum Hover {
 pub enum Opening {
     /// Open it now.
     Open(Target),
-    /// Ask the person first: why, what it shows (its text), and where it goes.
+    /// Ask the person first: why, what it shows (its text), and where it goes. `token` is what
+    /// the answer is sent back with ([`Asks`]): `None` as a kind or a hover says it, and the
+    /// token [`Resolver::open`] issued in its answer.
     Ask {
         reason: String,
         shown: String,
         target: Target,
-    },
-    /// Not opened, and the sentence the window shows.
-    Refused(String),
-}
-
-/// **The open command's answer**: [`Opening`], with the token an ask is answered by.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Answer {
-    /// Open it now.
-    Open(Target),
-    /// Ask the person first; `token` is what their answer is sent back with ([`Asks`]).
-    Ask {
-        reason: String,
-        shown: String,
-        target: Target,
-        token: String,
+        token: Option<String>,
     },
     /// Not opened, and the sentence the window shows.
     Refused(String),
@@ -154,6 +143,9 @@ pub trait LinkKind: Send + Sync {
     fn resolve(&self, text: &str, pane: &Pane) -> Resolved;
     /// What opening `target`, resolved from `text` in `pane`, does.
     fn opening(&self, target: Target, text: &str, pane: &Pane) -> Opening;
+    /// An ask for `target` in `pane` was answered with its token, and it opens now: what the
+    /// kind keeps of that, in `asks`. Nothing, unless the kind says so.
+    fn accepted(&self, _target: &Target, _pane: &Pane, _asks: &Asks) {}
 }
 
 /// **The core's link resolver**: the kinds it knows, each reading the candidates of its hint.
@@ -211,7 +203,7 @@ impl Resolver {
     pub fn hover(&self, candidate: &Candidate, pane: &Pane) -> Hover {
         match self.read(candidate, pane) {
             Ok((kind, target)) => Hover::Link {
-                opening: kind.opening(target.clone(), &candidate.text, pane),
+                opening: Box::new(kind.opening(target.clone(), &candidate.text, pane)),
                 target,
             },
             Err(Resolved::NotALink(why)) => Hover::NotALink(why),
@@ -219,47 +211,49 @@ impl Resolver {
         }
     }
 
-    /// **What opening `candidate` does**, resolved again from its text. An ask is issued a
-    /// token in `asks`; `answer` is the token of the ask the person accepted, which opens the
-    /// target that ask showed, in that pane, once.
+    /// **What opening `candidate` does**, resolved again from its text. An ask is answered
+    /// with a token issued in `asks`; `answer` is the token the window sent back for the ask it
+    /// was handed, which opens the target that ask showed, in that pane, once.
     pub fn open(
         &self,
         candidate: &Candidate,
         pane: &Pane,
         asks: &Asks,
         answer: Option<&str>,
-    ) -> Answer {
+    ) -> Opening {
         let (kind, target) = match self.read(candidate, pane) {
             Ok(read) => read,
-            Err(Resolved::NotALink(why)) => return Answer::Refused(why),
-            Err(_) => return Answer::Refused(NOT_A_LINK.into()),
+            Err(Resolved::NotALink(why)) => return Opening::Refused(why),
+            Err(_) => return Opening::Refused(NOT_A_LINK.into()),
         };
         match kind.opening(target, &candidate.text, pane) {
-            Opening::Open(target) => Answer::Open(target),
-            Opening::Refused(why) => Answer::Refused(why),
             Opening::Ask { target, .. }
                 if answer.is_some_and(|token| asks.accepted(token, pane, &target)) =>
             {
-                if let Target::File(file) = &target
-                    && file.within == Within::Outside
-                {
-                    asks.keep_opened(&file.path);
-                }
-                Answer::Open(target)
+                kind.accepted(&target, pane, asks);
+                Opening::Open(target)
             }
             Opening::Ask {
                 reason,
                 shown,
                 target,
-            } => Answer::Ask {
-                token: asks.issue(pane, &target),
-                reason,
-                shown,
-                target,
+                ..
+            } => match asks.issue(pane, &target) {
+                Some(token) => Opening::Ask {
+                    reason,
+                    shown,
+                    target,
+                    token: Some(token),
+                },
+                None => Opening::Refused(UNASKABLE.into()),
             },
+            other => other,
         }
     }
 }
+
+/// What opening a link that asks first answers where no token can be issued for its ask.
+pub const UNASKABLE: &str = "purlis could not ask about that link, so it is not opened";
 
 /// What opening text that is no link answers, where its kind says nothing more.
 pub const NOT_A_LINK: &str = "that is not a link purlis can open";
@@ -333,9 +327,9 @@ mod tests {
         }
     }
 
-    fn refused(answer: Answer) -> String {
+    fn refused(answer: Opening) -> String {
         match answer {
-            Answer::Refused(why) => why,
+            Opening::Refused(why) => why,
             other => panic!("expected a refusal, got {other:?}"),
         }
     }
@@ -351,7 +345,7 @@ mod tests {
         );
         assert_eq!(
             links.open(&pr, &here(), &Asks::default(), None),
-            Answer::Open(web("https://github.com/purlis/purlis/pull/6148"))
+            Opening::Open(web("https://github.com/purlis/purlis/pull/6148"))
         );
     }
 
@@ -364,7 +358,7 @@ mod tests {
             None,
         );
 
-        assert_eq!(opening, Answer::Open(web("http://localhost:5173/a?b=c#d")));
+        assert_eq!(opening, Opening::Open(web("http://localhost:5173/a?b=c#d")));
     }
 
     #[test]
@@ -439,6 +433,7 @@ mod tests {
                 reason: "its text names another address".into(),
                 shown: text.to_owned(),
                 target,
+                token: None,
             }
         }
     }
@@ -447,7 +442,7 @@ mod tests {
     fn a_kind_is_a_seam_another_kind_can_take() {
         let links = Resolver::with(vec![Box::new(AlwaysAsks)]);
 
-        let Answer::Ask {
+        let Opening::Ask {
             reason,
             shown,
             target,
@@ -459,13 +454,16 @@ mod tests {
         assert_eq!(reason, "its text names another address");
         assert_eq!(shown, "setup");
         assert_eq!(target, web("https://real.example/setup"));
+        let token = token.expect("an ask from open carries its token");
         assert_eq!(token.len(), 32, "{token}");
     }
 
     /// The token an ask in `pane` was issued, from `asks`.
     fn asked(links: &Resolver, pane: &Pane, asks: &Asks) -> String {
         match links.open(&url("setup"), pane, asks, None) {
-            Answer::Ask { token, .. } => token,
+            Opening::Ask {
+                token: Some(token), ..
+            } => token,
             other => panic!("expected an ask, got {other:?}"),
         }
     }
@@ -478,12 +476,12 @@ mod tests {
 
         assert_eq!(
             links.open(&url("setup"), &here(), &asks, Some(&token)),
-            Answer::Open(web("https://real.example/setup"))
+            Opening::Open(web("https://real.example/setup"))
         );
         // Spent: the same token asks again.
         assert!(matches!(
             links.open(&url("setup"), &here(), &asks, Some(&token)),
-            Answer::Ask { .. }
+            Opening::Ask { .. }
         ));
     }
 
@@ -501,7 +499,7 @@ mod tests {
                 &asks,
                 Some("https://real.example/setup")
             ),
-            Answer::Ask { .. }
+            Opening::Ask { .. }
         ));
     }
 
@@ -516,29 +514,29 @@ mod tests {
         let token = asked(&links, &here(), &asks);
         assert!(matches!(
             links.open(&url("setup"), &other_chat, &asks, Some(&token)),
-            Answer::Ask { .. }
+            Opening::Ask { .. }
         ));
         assert!(matches!(
             links.open(&url("setup"), &here(), &asks, Some(&token)),
-            Answer::Ask { .. }
+            Opening::Ask { .. }
         ));
 
         let token = asked(&links, &here(), &asks);
         assert!(matches!(
             links.open(&url("elsewhere"), &here(), &asks, Some(&token)),
-            Answer::Ask { .. }
+            Opening::Ask { .. }
         ));
     }
 
     #[test]
     fn a_token_past_its_life_opens_nothing() {
         let links = Resolver::with(vec![Box::new(AlwaysAsks)]);
-        let asks = Asks::with_life(std::time::Duration::ZERO);
+        let asks = Asks::with_lives(std::time::Duration::ZERO, asks::OPENED_LIFE);
         let token = asked(&links, &here(), &asks);
 
         assert!(matches!(
             links.open(&url("setup"), &here(), &asks, Some(&token)),
-            Answer::Ask { .. }
+            Opening::Ask { .. }
         ));
     }
 
@@ -550,7 +548,7 @@ mod tests {
             links.hover(&url("https://purlis.dev"), &here()),
             Hover::Link {
                 target: web("https://purlis.dev/"),
-                opening: Opening::Open(web("https://purlis.dev/")),
+                opening: Box::new(Opening::Open(web("https://purlis.dev/"))),
             }
         );
         assert!(matches!(

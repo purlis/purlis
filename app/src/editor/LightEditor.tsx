@@ -110,9 +110,10 @@ export function linesSelected(
 }
 
 /** One file, read only. `line`, when given, is brought into view (a jump from a diff, a
- *  record or the knowledge graph), with the cursor at `column` on it (a pane's file link). `onLine` hears the line the cursor moves to, which is the
- *  line *Open in your editor* hands on (RC-20); `onLines` hears the lines selected, which a
- *  reference to part of the file names (FM-9). */
+ *  record or the knowledge graph), with the cursor at `column` on it (a pane's file link).
+ *  `onLine` hears the line the cursor moves to, which is the line *Open in your editor* hands
+ *  on (RC-20); `onLines` hears the lines selected, which a reference to part of the file names
+ *  (FM-9). */
 export function LightEditor({
   path,
   text,

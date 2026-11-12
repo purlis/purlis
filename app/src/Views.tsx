@@ -1044,11 +1044,15 @@ function OfferButton({ offer, onPress }: { offer?: Offer; onPress?: (offer: Offe
 const PieceTab = lazy(() =>
   import("./editor/PieceFiles").then(({ OutsideFileTab, PieceFilesTab, PieceFileTab }) => ({
     default: function PieceTab(
-      props: ComponentProps<typeof FilesTab> & { path?: string; outside?: string },
+      props: ComponentProps<typeof FilesTab> & {
+        path?: string;
+        outside?: { session: number | null; path: string };
+      },
     ) {
       const { path, outside, ...files } = props;
       // A file outside the project (#6216), in the same chunk, so the first one suspends once.
-      if (outside !== undefined) return <OutsideFileTab path={outside} />;
+      if (outside !== undefined)
+        return <OutsideFileTab plane={files.plane} session={outside.session} path={outside.path} />;
       return path === undefined ? (
         <PieceFilesTab {...files} />
       ) : (

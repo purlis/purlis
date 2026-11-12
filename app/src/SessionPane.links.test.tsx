@@ -75,9 +75,19 @@ beforeEach(() => {
       const { candidates } = args as { candidates: { kind: string; text: string }[] };
       return candidates.map((one) =>
         one.text.startsWith("https://")
-          ? { kind: "url", target: one.text, does: { does: "opens" } }
+          ? {
+              kind: "url",
+              target: one.text,
+              shown: one.text,
+              does: { does: "opens", into: "browser" },
+            }
           : one.text.startsWith("ftp://")
-            ? { kind: "url", target: one.text, does: { does: "refused", reason: FTP } }
+            ? {
+                kind: "url",
+                target: one.text,
+                shown: one.text,
+                does: { does: "refused", reason: FTP },
+              }
             : null,
       );
     }

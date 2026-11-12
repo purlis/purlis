@@ -62,6 +62,8 @@ import type { ViewRef } from "../tabs";
 import { BranchTree } from "./BranchTree";
 import { LightEditor } from "./LightEditor";
 import { settleJump, usePendingJump } from "../fileJump";
+import { onAMac } from "../mac";
+import { modifierSaid } from "../PaneLinkSurfaces";
 import { outsideLanding } from "../paneLinkFiles";
 import { DragHandle, PickAChat, StartAChatHere, type Referenced } from "../references";
 import { useBranchMoved } from "./branchMoved";
@@ -692,14 +694,33 @@ export function PieceFileTab({
 }
 
 /**
- * **A file outside the project, in a tab of its own** (#6216): one a pane's link opened after
- * the person answered its ask, read only, at the line and column the link named. The core reads
- * it only then (`pane_link_file`); a tab brought back at a launch says to open it from its link
- * again.
+ * **A file outside the project, in a tab of its own** (#6216): one a pane's link opened after its
+ * ask was answered, read only, at the line and column the link named. The core reads it only for
+ * the chat whose pane opened it, within the hour, and while it is still the file it was then
+ * (`pane_link_file`); otherwise the tab says to open it from its link again.
  */
-export function OutsideFileTab({ path }: { path: string }) {
+export function OutsideFileTab({
+  plane,
+  session,
+  path,
+}: {
+  plane: PlaneId;
+  session: number | null;
+  path: string;
+}) {
   const [landing] = useState(() => outsideLanding(path));
-  const read = useFileRead(path, (path) => commands.paneLinkFile(path), []) ?? READING;
+  const read =
+    useFileRead(
+      path,
+      (path) =>
+        commands.paneLinkFile({ plane, session }, path).then((said) => {
+          if (said.status === "error") return said;
+          if (said.data.read === "not-opened")
+            return { status: "error" as const, error: notOpenedSaid(onAMac()) };
+          return { status: "ok" as const, data: said.data.file };
+        }),
+      [plane, session],
+    ) ?? READING;
   return (
     <div className="piece-file">
       <header className="piece-files-head" {...editorToolbar}>
@@ -714,6 +735,11 @@ export function OutsideFileTab({ path }: { path: string }) {
       />
     </div>
   );
+}
+
+/** What a file outside the project's tab says when the core will not read it for this chat. */
+export function notOpenedSaid(mac: boolean): string {
+  return `purlis shows a file outside the project only after you open it from its link: ${modifierSaid(mac)} it in the chat again.`;
 }
 
 /** *Show what changed*: the file's comparison against the branch's base, in a view tab. */

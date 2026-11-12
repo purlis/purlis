@@ -5454,7 +5454,8 @@ export const PlaneView = memo(function PlaneView({
 
   /** A file outside the project a pane's link opened (#6216), in a read-only tab of its own. */
   const outsideFile = useCallback(
-    ({ path }: { path: string }) => showView(outsideFileView(path), outsideFileTitle(path)),
+    ({ session, path }: { session: number | null; path: string }) =>
+      showView(outsideFileView(session, path), outsideFileTitle(path)),
     [showView],
   );
   useOutsideFileAsks(plane, outsideFile);
