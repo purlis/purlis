@@ -3,8 +3,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { LinkCandidate, LinkFrom, LinkOpened, LinkSeen } from "./bindings";
+import { sentence } from "./coreSentence";
 import { onAMac } from "./mac";
-import { UNASKED, openLink, type HoveredLink, type LinkCore, type LinkHands } from "./paneLinks";
+import {
+  UNASKED,
+  openLink,
+  type HoveredLink,
+  type LinkCore,
+  type LinkHands,
+  type ScreenLink,
+} from "./paneLinks";
+import { PaneLinksList } from "./PaneLinksList";
 import { CodeBlock } from "./ui/code/CodeBlock";
 import { Dialog } from "./ui/dialog/Dialog";
 import {
@@ -62,24 +71,55 @@ type Answering = { answer: LinkOpened; candidate: LinkCandidate };
  * decides its links, found `from` where it is, drawn in `colour`. With no core there are no
  * hands, and so no links. The hands are made once per core: `from` and `colour` are read as
  * they are when asked.
+ *
+ * **`list` opens *Links in this pane…*** (#6220, `PaneLinksList.tsx`): the links `onScreen`
+ * reads, newest first. Its key (`pane.links`) and the terminal menu's row (#6219) call it. A
+ * pane with no core has no links, and so no list (`undefined`).
  */
 export function usePaneLinks({
   from,
   core,
   colour,
+  onScreen,
 }: {
   from: LinkFrom;
   core: LinkCore | undefined;
   colour: () => string;
+  /** The links on the pane's screen, newest first (`LinkedPane.onScreen`). */
+  onScreen?: () => Promise<ScreenLink[]>;
 }): {
   hands: LinkHands | undefined;
   surfaces: ReactNode;
+  /** **Opens the pane's *Links in this pane…* list** (#6220), where the pane has one. */
+  list: (() => void) | undefined;
 } {
   const mac = onAMac();
-  const now = useRef({ from, colour });
+  const now = useRef({ from, colour, onScreen });
   useEffect(() => {
-    now.current = { from, colour };
+    now.current = { from, colour, onScreen };
   });
+  /** The list while it is up: the links read, or `undefined` while they are read. */
+  const [listing, setListing] = useState<{ links: ScreenLink[] | undefined } | null>(null);
+  /** Which opening of the list a read answers, so one closed before it is read stays closed. */
+  const listed = useRef(0);
+  const openLinksList = useCallback(() => {
+    const read = now.current.onScreen;
+    listed.current += 1;
+    const asked = listed.current;
+    setListing({ links: read === undefined ? [] : undefined });
+    if (read === undefined) return;
+    read().then(
+      (links) => listed.current === asked && setListing({ links }),
+      (why: unknown) => {
+        console.warn("purlis could not read the links on screen", why);
+        if (listed.current === asked) setListing({ links: [] });
+      },
+    );
+  }, []);
+  const closeLinksList = useCallback(() => {
+    listed.current += 1;
+    setListing(null);
+  }, []);
   const [shown, setShown] = useState<HoveredLink | null>(null);
   const [answering, setAnswering] = useState<Answering | null>(null);
   const pending = useRef<HoveredLink | null>(null);
@@ -147,6 +187,21 @@ export function usePaneLinks({
           </AnchoredTooltip>
         </>
       )}
+      {listing !== null && (
+        <PaneLinksList
+          links={listing.links}
+          onClose={closeLinksList}
+          onPick={(link) => {
+            closeLinksList();
+            if (hands !== undefined) void openLink(link.candidate, hands);
+          }}
+          onCopy={(link) => {
+            void navigator.clipboard?.writeText(link.seen.target).catch((why: unknown) => {
+              console.warn("purlis could not copy a link", why);
+            });
+          }}
+        />
+      )}
       {answering !== null && (
         <LinkAnswer
           answering={answering}
@@ -159,7 +214,7 @@ export function usePaneLinks({
       )}
     </>
   );
-  return { hands, surfaces };
+  return { hands, surfaces, list: core === undefined ? undefined : openLinksList };
 }
 
 /** **The window's answer to a link that did not open**: why not, or the question first. */
@@ -201,11 +256,4 @@ export function LinkAnswer({
   );
 }
 
-/**
- * A sentence the core said, as the window starts one: its first letter capital, but purlis's
- * name, which is lowercase wherever it stands (`docs/ui-copy.md`).
- */
-export function sentence(said: string): string {
-  if (/^purlis\b/u.test(said)) return said;
-  return said.charAt(0).toUpperCase() + said.slice(1);
-}
+export { sentence };
