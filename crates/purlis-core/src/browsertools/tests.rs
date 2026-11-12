@@ -465,3 +465,43 @@ fn a_download_is_said_by_its_name_size_and_origin_and_never_where_it_is_held() {
     );
     assert!(!text.contains("GUID"), "{text}");
 }
+
+/// #6291 (the operator's ruling of 2026-11-12): a declared login's sign-in may start where the
+/// chat names it, the address carried as written, percent-encoding included; a suggested login
+/// opens the page the person confirms and takes no start.
+#[test]
+fn a_login_carries_the_start_the_chat_names_as_written_but_never_beside_a_suggestion() {
+    let start = "https://auth.example.com/authorize?client_id=app\
+                 &redirect_uri=https%3A%2F%2Fapp.example.com%2Fcb&state=a%2Bb";
+    let login = asked(
+        "browser_login",
+        &args(json!({ "login": "app-login", "start": start })),
+    )
+    .expect("a login the tools take");
+    assert_eq!(
+        login.asked,
+        Browsing::LogIn {
+            login: "app-login".into(),
+            suggested: None,
+            start: Some(start.into()),
+        }
+    );
+    let refused = asked(
+        "browser_login",
+        &args(json!({
+            "login": "app-login",
+            "start": start,
+            "site": "https://app.example.com/login",
+            "vault": "qa",
+            "key": "app-password",
+        })),
+    )
+    .unwrap_err();
+    assert!(refused.contains("start"), "{refused}");
+    let schema = TOOLS
+        .iter()
+        .find(|tool| tool.name == "browser_login")
+        .map(|tool| (tool.schema)())
+        .expect("offered");
+    assert!(schema["properties"].get("start").is_some());
+}

@@ -512,6 +512,12 @@ pub struct LogIn {
     /// page's origin alone.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub form: Option<String>,
+    /// **Where this sign-in starts, where the chat named it** (1.86, #6291): an address on the
+    /// login's page's origin or its form's, its query and fragment as written, opened in place
+    /// of [`Self::address`] for this one login. The address stays the login's page, which the
+    /// browser is held to. A host before 1.86 is sent no login with one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<String>,
 }
 
 /// **A kept login** (1.27, #2021, the person's rulings of 2026-10-18): a profile, the persona

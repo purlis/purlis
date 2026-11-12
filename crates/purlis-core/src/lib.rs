@@ -160,6 +160,7 @@ pub mod linkkey;
 pub mod livesub;
 pub mod localproject;
 pub mod loginask;
+pub mod loginstart;
 pub mod looping;
 pub mod machine;
 pub mod manifest;

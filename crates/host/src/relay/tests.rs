@@ -87,6 +87,7 @@ fn no_login_is_sent_on_to_a_runner_that_starts_none_clean() {
             identity: None,
             suggested: false,
             form: None,
+            start: None,
         }),
     };
     let before = purlis_session_protocol::version::Version {
@@ -97,6 +98,36 @@ fn no_login_is_sent_on_to_a_runner_that_starts_none_clean() {
     assert!(why.contains("nothing was filled"), "{why}");
     assert_eq!(no_login_for(&login, session::KNOWS_CLEAN_LOGINS), None);
     assert_eq!(no_login_for(&Command::List, before), None);
+}
+
+/// #6291: a runner before 1.86 would drop a login's start and open its page, so no login with one
+/// is sent on to it; one without still is.
+#[test]
+fn no_login_with_a_start_is_sent_on_to_a_runner_that_would_drop_it() {
+    use purlis_session_protocol::browsing::{LogIn, Secret};
+    let login = |start: Option<&str>| Command::LogIn {
+        program: "p".to_owned(),
+        login: Box::new(LogIn {
+            address: "https://app.example.test/".to_owned(),
+            user: None,
+            password: Secret::new("fixture-word".to_owned()),
+            keep: None,
+            identity: None,
+            suggested: false,
+            form: Some("https://auth.example.test".to_owned()),
+            start: start.map(str::to_owned),
+        }),
+    };
+    let before = purlis_session_protocol::version::Version {
+        minor: session::KNOWS_LOGIN_START.minor - 1,
+        ..session::KNOWS_LOGIN_START
+    };
+    let started = login(Some("https://auth.example.test/authorize?client_id=app"));
+    let why = no_login_for(&started, before).expect("refused");
+    assert!(why.contains("nothing was filled"), "{why}");
+    assert!(!why.contains("client_id"), "{why}");
+    assert_eq!(no_login_for(&started, session::KNOWS_LOGIN_START), None);
+    assert_eq!(no_login_for(&login(None), before), None);
 }
 
 #[test]
