@@ -3,7 +3,6 @@
 
 import { execFileSync } from "node:child_process";
 import {
-  chmodSync,
   cpSync,
   existsSync,
   lstatSync,
@@ -22,6 +21,7 @@ import { tmpdir } from "node:os";
 import { basename, delimiter, dirname, join } from "node:path";
 import process from "node:process";
 import { LOGS } from "./processes.js";
+import { writtenWhole } from "./writtenWhole.js";
 
 /**
  * What the app runs when a pane asks for a new session.
@@ -252,8 +252,7 @@ export function writeAHarnessOnlyAShellWouldFind(fakeHarness: string): string {
   const home = mkdtempSync(join(THE_RUNS_TREE, "finder-home-"));
   const bin = join(home, ".local", "bin");
   mkdirSync(bin, { recursive: true });
-  writeFileSync(join(bin, "claude"), theProfilesProgram(fakeHarness));
-  chmodSync(join(bin, "claude"), 0o755);
+  writtenWhole(join(bin, "claude"), theProfilesProgram(fakeHarness), 0o755);
   return home;
 }
 
@@ -283,7 +282,7 @@ export function launchedUnderLaunchdsLimit(app: string): string {
   const where = join(THE_RUNS_TREE, "launchers");
   mkdirSync(where, { recursive: true });
   const launcher = join(where, "app-under-launchds-limit");
-  writeFileSync(
+  writtenWhole(
     launcher,
     [
       "#!/bin/sh",
@@ -293,8 +292,8 @@ export function launchedUnderLaunchdsLimit(app: string): string {
       `exec ${singleQuoted(app)} "$@"`,
       "",
     ].join("\n"),
+    0o755,
   );
-  chmodSync(launcher, 0o755);
   return launcher;
 }
 
@@ -355,7 +354,7 @@ export function writeShell(fakeHarness: string): string {
     '"$CLAUDE_CODE_SESSION_ID"',
     `| CLAUDE_PID=$PPID ${singleQuoted(built("charter"))} hook userpromptsubmit >/dev/null; }`,
   ].join(" ");
-  writeFileSync(
+  writtenWhole(
     shell,
     [
       "#!/bin/sh",
@@ -368,8 +367,8 @@ export function writeShell(fakeHarness: string): string {
       "  --interactive",
       "",
     ].join("\n"),
+    0o755,
   );
-  chmodSync(shell, 0o755);
   return shell;
 }
 
@@ -409,7 +408,7 @@ export function writeAPluginHookingShell(fakeHarness: string): string {
     "| CLAUDE_PID=$PPID charter hook sessionstart >/dev/null",
     `|| echo "charter-app#136: this chat's PATH has no charter on it (exit $?)"`,
   ].join(" ");
-  writeFileSync(
+  writtenWhole(
     shell,
     [
       "#!/bin/sh",
@@ -422,8 +421,8 @@ export function writeAPluginHookingShell(fakeHarness: string): string {
       "  --interactive",
       "",
     ].join("\n"),
+    0o755,
   );
-  chmodSync(shell, 0o755);
   return shell;
 }
 
@@ -513,7 +512,7 @@ export function writeReportingShell(
   const where = join(THE_RUNS_TREE, "shells");
   mkdirSync(where, { recursive: true });
   const shell = join(where, "reporting-harness-as-a-shell");
-  writeFileSync(
+  writtenWhole(
     shell,
     [
       "#!/bin/sh",
@@ -549,8 +548,8 @@ export function writeReportingShell(
       "  --interactive",
       "",
     ].join("\n"),
+    0o755,
   );
-  chmodSync(shell, 0o755);
   return shell;
 }
 
@@ -872,8 +871,7 @@ function oneMoment(dir: string, at: Date): void {
 export function declareAProfile(plane: string, program: string, kind = "claude"): void {
   const wrapper = theProfilesWrapper(plane);
   mkdirSync(dirname(wrapper), { recursive: true });
-  writeFileSync(wrapper, theProfilesProgram(program));
-  chmodSync(wrapper, 0o755);
+  writtenWhole(wrapper, theProfilesProgram(program), 0o755);
   const declared = (name: string) => [
     `[harness.${name}]`,
     `kind = ${JSON.stringify(kind)}`,
@@ -982,13 +980,12 @@ export function declareASandboxOnlyProfile(
 ): string {
   const wrapper = theProfilesWrapper(plane);
   mkdirSync(dirname(wrapper), { recursive: true });
-  writeFileSync(wrapper, theProfilesProgram(program));
-  chmodSync(wrapper, 0o755);
+  writtenWhole(wrapper, theProfilesProgram(program), 0o755);
   const bin = theSandboxOnlyProgramsOf(plane, harness);
   mkdirSync(bin, { recursive: true });
   const shim = join(bin, harness);
   const standIn = harness === "claude" ? join(theRunsStandIns(), "claude") : undefined;
-  writeFileSync(
+  writtenWhole(
     shim,
     [
       "#!/bin/sh",
@@ -1000,8 +997,8 @@ export function declareASandboxOnlyProfile(
       `exec ${JSON.stringify(wrapper)} "$@"`,
       "",
     ].join("\n"),
+    0o755,
   );
-  chmodSync(shim, 0o755);
   const folder = join(dataHome, "profiles", "scenario", "config");
   mkdirSync(folder, { recursive: true, mode: 0o700 });
   if (harness === "claude") theChatsMarksIn(plane, folder);

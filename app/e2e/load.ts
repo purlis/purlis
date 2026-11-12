@@ -1,9 +1,10 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { writtenWhole } from "./writtenWhole.js";
 
 /**
  * What each session the benchmark opens runs.
@@ -23,7 +24,7 @@ function quoted(arg: string): string {
 export function writeBenchShell(fakeHarness: string): string {
   mkdirSync(where, { recursive: true });
   const shell = join(where, "harness-as-a-shell");
-  writeFileSync(
+  writtenWhole(
     shell,
     [
       "#!/bin/sh",
@@ -31,8 +32,8 @@ export function writeBenchShell(fakeHarness: string): string {
       `eval "exec ${quoted(fakeHarness).split('"').join('\\"')} $(cat ${quoted(loadFile)})"`,
       "",
     ].join("\n"),
+    0o755,
   );
-  chmodSync(shell, 0o755);
   nextLoad(["--interactive"]);
   return shell;
 }
@@ -40,7 +41,8 @@ export function writeBenchShell(fakeHarness: string): string {
 /** The arguments the next session's fake harness runs with. */
 export function nextLoad(args: string[]): void {
   mkdirSync(where, { recursive: true });
-  writeFileSync(loadFile, args.map(quoted).join(" "));
+  // Read by `cat` as each chat starts, so never half written (#6283).
+  writtenWhole(loadFile, args.map(quoted).join(" "));
 }
 
 /** A file of `lines` plain lines that scroll, for filling a session's history. */
