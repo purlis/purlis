@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794461324974,
+  "lastUpdate": 1794466098717,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -47082,6 +47082,48 @@ window.BENCHMARK_DATA = {
             "value": 102.7957695,
             "unit": "ms",
             "extra": "median of 5 runs: 101.383, 101.971, 102.796, 102.812, 103.027 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4fffb653cd619677ae612fe139cbda0fefce55a0",
+          "message": "Three M66 flakes: ArtifactTab's unlisten, the axe spec's stale click, the fake forge's whole page (#6194, #6227, #6197) (#6273)\n\n* An artifact's tab stops listening without an unhandled error when the event bridge went first (#6194)\n\nArtifactTab's two listens called Tauri's unlisten as they answered after\nthe tab went, and in its cleanup. That unlisten is async, so with the\nwindow's event bridge gone (a test's mock torn down) it rejected where no\ntry could catch it, and vitest failed the web job on the unhandled error\nfrom views.test.tsx.\n\nhere.ts's listen now hands back a stop that never fails (quietly), which\ncovers every listener that goes through it, planeChanged's among them;\nuntilStopped holds a listen until its stop, stopping it as it answers if\nthe stop came first. ArtifactTab's direct listens (artifact-key is sent to\na webview, so they keep their Any target) use it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M758NW5HTRHMGXZYAQQ6WR4B\nPurlis-Persona: steward\n\n* The axe spec's last step presses what is drawn now, not a node from before (#6227)\n\nThe stale click in the merge queue was in axe.e2e.ts's after-all hook,\nafter the Theme state: endEveryChat ends the split's last chat and clears\nthe ended bands. Clearing one pane of a split draws the tab again, the\nother pane's band with it, and clearEndedPanes clicked a Clear pane found\nbefore that. answerTheAsk held its answer button the same way.\n\nBoth now find and press their button in one look in the page\n(pressClearPane, pressTheAnswer), as press() and pressTheCloseAnswer do,\nso there is no node to go stale.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M758NW5HTRHMGXZYAQQ6WR4B\nPurlis-Persona: steward\n\n* The fake forge's sign-in page is written whole, renamed into place (#6197)\n\nBrowserForge::open wrote the page in place, so the file existed empty\nbefore it was filled. It now writes through purlis_core::layer::write_whole:\na file beside it, renamed in, so a reader sees the last page or the next.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M758NW5HTRHMGXZYAQQ6WR4B\nPurlis-Persona: steward\n\n* Review of #6194: one helper holds the unhandled-rejection watch, and quietly stays in here.ts\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M758NW5HTRHMGXZYAQQ6WR4B\nPurlis-Persona: steward\n\n* Review of #6227: presses ask for a button by its role, the answer is the named question's, and showView holds no tab\n\npressClearPane and pressTheAnswer look for button and [role=\"button\"]\n(CLAUDE.md: a control by its role, never its tag). pressTheAnswer presses\nonly the question that says what answerTheAsk waited for. showView reads\nand presses its tab afresh at each look: it read aria-selected on a tab\nheld for up to 10 s after pressing it, the node opening.ts warns of.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M758NW5HTRHMGXZYAQQ6WR4B\nPurlis-Persona: steward\n\n* The in-page presses carry everything they need: browser.execute sends a script's text alone (#6227)\n\npressClearPane and pressTheAnswer named BUTTONS and pressable from their\nmodule. WebdriverIO sends a script as its source, so the page had neither,\nand every spec that ended a chat failed with \"Can't find variable:\nBUTTONS\". Both are inlined, and a test rebuilds each press from its text,\nas the driver sends it, which fails on that error.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M758NW5HTRHMGXZYAQQ6WR4B\nPurlis-Persona: steward\n\n* showView presses its tab with the driver again, looked up just before (#6227)\n\nAn in-page click() selects an activity-bar tab without moving its strip's\none Tab stop to it, and keyboard-reach.e2e.ts failed on the Panel's right\nhalf. The press is the driver's again, on the tab looked up right before\nit; the waits still read it afresh in the page.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M758NW5HTRHMGXZYAQQ6WR4B\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-12T05:26:18Z",
+          "tree_id": "c03c9978da0832f5df085189ac3ebc77494cd362",
+          "url": "https://github.com/purlis/purlis/commit/4fffb653cd619677ae612fe139cbda0fefce55a0"
+        },
+        "date": 1794466092066,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.32760049999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.316, 0.323, 0.328, 0.333, 0.338 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.567304,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.530, 16.560, 16.567, 16.620, 16.647 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.22188299999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.770, 100.830, 101.222, 101.782, 101.790 ms"
           }
         ]
       }
