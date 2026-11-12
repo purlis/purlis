@@ -148,9 +148,8 @@ tighter: `font-size.md` 14 fits comfortable (14 × 1.4 = 19.6, within 21) and fa
 **Corners are a family's parts.** The rail's project buttons (`rail.*`), the title bar's workspace
 chips (`titlebar.*`) and the strip's tabs (each a layout of panes holding chats, views or files) and
 their `×` (`tabs.*`, below) are rounded through their parts, a list's rows by `radius.control` and
-the `list` family's parts, and a tree's rows (the Changes view's, the Explorer's and the Chats
-list's) by `radius.control` and the `tree` family's parts (`tree.*`, below). The focus ring tokens
-reach every focus ring, the closer's among them.
+the `list` family's parts, and every tree's rows by `radius.control` and the `tree` family's parts
+(`tree.*`, below). The focus ring tokens reach every focus ring, the closer's among them.
 
 **One part of one control** is a component part, in a top-level `parts` object:
 `"button.root.corner-radius": "full"` rounds every button to a pill, and

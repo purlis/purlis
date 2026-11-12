@@ -4,7 +4,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ratchet, sourceFiles, SRC, withoutComments } from "./guards.testkit";
+import { isScript, ratchet, sourceFiles, SRC, withoutComments } from "./guards.testkit";
 
 /**
  * **Settings' hand-drawn record lists only get fewer** (#2911, #2919). A record list is a list
@@ -46,14 +46,19 @@ const CEILING: Record<string, number> = {
   "settings/thisMachine.tsx": 1,
 };
 
-/** Each file's hand-drawn lists, named in source order by its `LEFT` entries where it has them. */
+/** The class as a whole word: `ui-machine-list`, not `ui-machine-listing`. */
+const HAND_DRAWN_WORD = new RegExp(String.raw`(?<![\w-])${HAND_DRAWN}(?![\w-])`, "g");
+
+/**
+ * Each file's hand-drawn lists, labelled by its `LEFT` entries **by position only**: the
+ * labels are for reading, and the count is what is held. When one of a file's two lists moves,
+ * the stale line it asks for is the last, whichever list moved.
+ */
 function found(read: (file: string) => string): Map<string, string[]> {
-  const files = sourceFiles(
-    (name) => /\.tsx?$/.test(name) && !/\.(test|stories|testkit)\.tsx?$/.test(name),
-  );
+  const files = sourceFiles((name) => isScript(name) && !name.includes(".stories."));
   const lists = new Map<string, string[]>();
   for (const file of files) {
-    const count = withoutComments(read(file), "ts").split(HAND_DRAWN).length - 1;
+    const count = withoutComments(read(file), "ts").match(HAND_DRAWN_WORD)?.length ?? 0;
     if (count === 0) continue;
     const names = LEFT[file] ?? [];
     lists.set(

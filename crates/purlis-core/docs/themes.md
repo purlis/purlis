@@ -220,11 +220,10 @@ not a token: words with no size of their own (a list row's, a paragraph's) follo
 No token reaches the title bar's height yet. **Corners are a family's parts.** The rail's
 project buttons, the title bar's workspace chips, the session tabs and their `×` are rounded
 through their parts ([Session tabs](#session-tabs)), a list's rows by `radius.control` (the list
-family, since manifest version 11; `radius.md` before #3177), and a tree's rows (the Changes
-view's, the Explorer's and the Chats list's) by `radius.control` and the `tree` family's parts
-(`tree.root.corner-radius`, since manifest version 13; [Component parts](#component-parts)).
-**The focus ring tokens reach every focus ring**, a tab's `×` closer's among them; a ring that sits half as far out or in draws half
-the offset. Under
+family, since manifest version 11; `radius.md` before #3177), and every tree's rows by
+`radius.control` and the `tree` family's parts (`tree.root.corner-radius`, since manifest version
+13; [Component parts](#component-parts)). **The focus ring tokens reach every focus ring**, a
+tab's `×` closer's among them; a ring that sits half as far out or in draws half the offset. Under
 forced colours the ring is drawn in the system's `Highlight` at the theme's width and offset:
 forced colours replace colour, not geometry.
 
