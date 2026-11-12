@@ -4376,3 +4376,140 @@ fn an_audited_skill_change_the_window_sends_is_written_and_no_other_kind_of_its_
         .collect();
     assert_eq!(kinds, ["skill.install", "skill.update", "skill.remove"]);
 }
+
+/// R-037, a pin of shipped behaviour (Q208): the audit of changes can never be switched off.
+/// Every protection change a start or a person makes, at every level a person can choose
+/// (`on`, `floor`, `off`) and through every shipped switch (a person's opt-out, their own level
+/// at each way a start is made, no backend, the sandbox back on, and each grant and revoke), is
+/// one event, sent as the window or the host sends it, in a project whose files hold every key
+/// that might read as turning an audit off.
+#[test]
+fn every_protection_change_is_audited_at_every_level_and_switch_combination() {
+    use crate::sandbox::personal::Choice;
+    use crate::sandbox::{By, Lifted, Os, Via, at_start, grant};
+    let config = tempfile::tempdir().unwrap();
+    let data = tempfile::tempdir().unwrap();
+    let plane = tempfile::tempdir().unwrap();
+    let off_keys = "[audit]\nenabled = false\noff = true\n\n[eventlog]\nenabled = false\n\n\
+                    [telemetry]\nenabled = false\n\n[trust]\naudit = false\n";
+    for file in ["charter.toml", "purlis.toml"] {
+        std::fs::write(plane.path().join(file), off_keys).unwrap();
+    }
+    let mut host = Recorder::open_in(config.path(), data.path()).unwrap();
+
+    // What a start at `level` can change, and the kind it is audited as.
+    let starts = |level: Choice| -> Vec<(String, Option<Lifted>, bool, bool)> {
+        let lifted = |by| Some(Lifted { by, reason: None });
+        let mut rows = vec![(
+            "no backend".to_owned(),
+            lifted(By::NoBackend(Os::Windows)),
+            false,
+            false,
+        )];
+        match level {
+            Choice::On | Choice::Floor => {
+                rows.push(("opt-out".to_owned(), lifted(By::Person), false, false));
+                rows.push(("back on".to_owned(), None, true, true));
+            }
+            Choice::Off => {
+                for via in [
+                    Via::Window,
+                    Via::Resume,
+                    Via::Relaunch,
+                    Via::Dispatch,
+                    Via::Handoff,
+                ] {
+                    rows.push((
+                        format!("your level, {}", via.word()),
+                        lifted(By::YourLevel(via)),
+                        false,
+                        false,
+                    ));
+                }
+            }
+        }
+        rows
+    };
+    let mut changes = 0;
+    for level in Choice::ALL {
+        std::fs::write(
+            plane.path().join("purlis.local.toml"),
+            format!(
+                "{off_keys}\n[sandbox]\nlevel = \"{}\"\naudit = false\n",
+                level.word()
+            ),
+        )
+        .unwrap();
+        for (switch, lifted, sandboxed, was_unsandboxed) in starts(level) {
+            let (change, _) = at_start(lifted.as_ref(), sandboxed, was_unsandboxed, true);
+            let change = change.unwrap_or_else(|| panic!("{} · {switch}: no change", level.word()));
+            let before = audits(host.dir());
+            let written = host
+                .apply(Entry::Trust {
+                    chat: CHAT.to_owned(),
+                    run: RUN.to_owned(),
+                    kind: change.kind().to_owned(),
+                    body: change.body(Some(crate::harness::Harness::ClaudeCode), None),
+                })
+                .unwrap();
+            assert_eq!(written.len(), 1, "{} · {switch}", level.word());
+            assert_eq!(
+                written[0].kind,
+                change.kind(),
+                "{} · {switch}",
+                level.word()
+            );
+            assert_eq!(audits(host.dir()), before + 1, "on disk");
+            changes += 1;
+        }
+        for granted in [true, false] {
+            for (what, target) in [("host", "api.example.com"), ("write", "/opt/cache")] {
+                for scope in [grant::Level::Chat, grant::Level::You, grant::Level::Project] {
+                    let audited = grant::Audited {
+                        granted,
+                        what,
+                        target,
+                        level: scope,
+                    };
+                    for number in [Some(3), None] {
+                        let before = audits(host.dir());
+                        let written = host
+                            .apply(Entry::Audited {
+                                plane: plane.path().to_path_buf(),
+                                number,
+                                kind: audited.kind().to_owned(),
+                                body: audited.body(),
+                            })
+                            .unwrap();
+                        assert_eq!(
+                            (
+                                written.len(),
+                                written.first().map(|event| event.kind.as_str())
+                            ),
+                            (1, Some(audited.kind())),
+                            "{} · {what} {}",
+                            level.word(),
+                            audited.kind()
+                        );
+                        assert_eq!(audits(host.dir()), before + 1, "on disk");
+                        changes += 1;
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(
+        changes,
+        3 * 24 + 3 + 3 + 6,
+        "every row of the table was a change"
+    );
+}
+
+/// How many of the log's events in `dir` are trust events.
+fn audits(dir: &Path) -> usize {
+    read(dir)
+        .unwrap()
+        .iter()
+        .filter(|event| event.kind.starts_with("trust."))
+        .count()
+}
