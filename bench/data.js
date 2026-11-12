@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794502370286,
+  "lastUpdate": 1794505916172,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -47586,6 +47586,48 @@ window.BENCHMARK_DATA = {
             "value": 101.859138,
             "unit": "ms",
             "extra": "median of 5 runs: 100.482, 101.745, 101.859, 102.219, 102.651 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "27c71816b10bb74295775baf0ddb76a00f7703ac",
+          "message": "Test flakes: Compared story waits for its dialog, table tests wait for rows, Label in Name check that can fail (#6360, #6372, #6371) (#6376)\n\n* ArtifactHistory's Compared story waits for the dialog to settle before reading what it compared (#6360)\n\nCompare is pressed while the History dialog may still be fading in, so in\nWebKit the comparison's line could be found at opacity 0. The play now waits\nfor the dialog to settle and then reads visibility until it holds, the way\nNoneYet already does. Nothing is redrawn.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M787KTYPB3XEB11244BC9XE1\nPurlis-Persona: steward\n\n* Settings' table tests wait for a grid's rows before reading them (#6372)\n\nReact Aria draws a grid a render before it fills in its collection, so a\ngrid found by findByRole could still be empty, and the tests read its\nheaders and cells at once: seen with a MutationObserver, 'Signing on your\naccounts' is in the document with no rows before its two arrive. The table\nfamily's testkit gets findGrid, which finds the grid by its name and waits\ninside act until a cell of a row is in it; every test #6361 moved onto the\nfamily that read a grid straight after finding it now finds it that way,\nand ThisMachine's lists read after load are waited for.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M787KTYPB3XEB11244BC9XE1\nPurlis-Persona: steward\n\n* PaneFold's Label in Name check asks the button itself, as axe in jsdom cannot fail it (#6371)\n\naxe's label-content-name-mismatch has no layout in jsdom, so it reports the\nrule incomplete and never a violation; and it only looks at a control named\nby aria-label or aria-labelledby. a11y.testkit gets namedWithoutItsWords: each\ncontrol whose accessible name does not hold, in order and unbroken, the words\nit shows (its text less .hidden-words and sr-only). a11y.names.test holds it\non its own cases, a planted mismatch of each kind among them, and the folded\npane's test uses it in place of axe. Seen red with an aria-label planted on\nthe rail's button: 'button \"Pane 2, folded, asks you\" shows \"devops 2,\"'.\nNo other jsdom test runs the rule.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M787KTYPB3XEB11244BC9XE1\nPurlis-Persona: steward\n\n* Compared and NoneYet share one wait for words in a fading dialog (#6360)\n\nReview: the two stories held the same scrim lookup, settle and visibility\nwait line for line. stories.testkit gets untilSeenInDialog, and both use it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M787KTYPB3XEB11244BC9XE1\nPurlis-Persona: steward\n\n* findGrid's doc says it waits for a row, not every row (#6372)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M787KTYPB3XEB11244BC9XE1\nPurlis-Persona: steward\n\n* Label in Name check: React Aria's VisuallyHidden and hidden words are not shown (#6371)\n\nReview: words hidden by VisuallyHidden's inline style or by hidden counted\nas shown, so a correct button using them would have been flagged; a case\nwith VisuallyHidden is added. The unused role parameter is dropped,\nshownWordsOf is the module's own, wordsIn is tokensOf, and PaneFold's\nimport sits in order.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M787KTYPB3XEB11244BC9XE1\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-12T17:02:46Z",
+          "tree_id": "585465337e9b8ef2b9d53814197dda1aa79243e8",
+          "url": "https://github.com/purlis/purlis/commit/27c71816b10bb74295775baf0ddb76a00f7703ac"
+        },
+        "date": 1794505909017,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6969945,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.678, 0.696, 0.697, 0.702, 0.728 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7829045,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.476, 16.747, 16.783, 16.905, 16.919 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.746101,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.881, 101.562, 101.746, 102.531, 102.571 ms"
           }
         ]
       }
