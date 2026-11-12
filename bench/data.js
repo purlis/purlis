@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794513403461,
+  "lastUpdate": 1794515894265,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -47754,6 +47754,48 @@ window.BENCHMARK_DATA = {
             "value": 102.0419445,
             "unit": "ms",
             "extra": "median of 5 runs: 101.582, 101.912, 102.042, 102.186, 102.616 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "482d2a1d9a06c5cb182a3105068408aa7070d8f2",
+          "message": "A close never holds the window on a slow host; the axe spec answers the question by name (#6227) (#6385)\n\n* A close waits at most a second for its host on the window's thread; the axe spec names the question it answers (#6227)\n\nclose_session is synchronous, for its order with what was typed to the chat, and\nwaited ANSWER_WITHIN (30 s) for the session host's answer on the main thread. On a\nslow macOS runner the host took all of it: the app's own watch logged a 29.9 s\ncore_stall running close_session, and the embedded WebDriver's execute that had\npressed Close came back after the spec's 20 s wait, which then said 'the question\nabout  never offered Close'. The host's answer only says it let go; the chat is\nalready gone here. So the close waits at most A_CLOSE_WAITS_AT_MOST (1 s) on the\nasking thread and is heard off it after, its refusal still logged.\n\nThe specs now press End chat with pressEndChat, which answers the row's title, and\nwait for and answer the question by that name; a look the window answers late is\nsaid as a held main thread, not as a missing answer.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M78GANNX8HDHMD8EB82FHW5C\nPurlis-Persona: steward\n\n* Changelog fragment: a close never freezes the window (#6227)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M78GANNX8HDHMD8EB82FHW5C\nPurlis-Persona: steward\n\n* Review fixes for #6227: ADR 0108 amended for the close's bounded wait; pool wait and shared refusal mapping; the put-back trade pinned\n\n- docs/adr/0108/2026-11-12-a-close-waits-a-second-for-its-host.md, linked from the record.\n- call_heard_late waits as long as call would (a pool's answer wait) and shares refusal_of\n  with call_timed.\n- a_chat_put_back_under_a_number_the_host_has_not_let_go_of_is_refused pins what the bound\n  gives up; the slow-close test drops a line that did nothing and waits 5 s, not 10.\n- pressEndChat refuses a row with no title; the axe spec takes the title from waitUntil;\n  answerTheAsk counts the look still out when it says the window held a look.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M78GANNX8HDHMD8EB82FHW5C\nPurlis-Persona: steward\n\n* ADR 0108's amendment of 2026-11-12: a close waits a second for its host (#6227)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M78GANNX8HDHMD8EB82FHW5C\nPurlis-Persona: steward\n\n* A_CLOSE_WAITS_AT_MOST sorted among a runner path's limits: purlis's own tuning (#6227, #4275)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M78GANNX8HDHMD8EB82FHW5C\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-12T19:58:55Z",
+          "tree_id": "2d28ee374c6c3df79cad4c01ed5c9f9f14f40651",
+          "url": "https://github.com/purlis/purlis/commit/482d2a1d9a06c5cb182a3105068408aa7070d8f2"
+        },
+        "date": 1794515887816,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6837070000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.662, 0.673, 0.684, 0.702, 0.711 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6469995,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.393, 16.598, 16.647, 16.668, 16.708 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.046774,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.502, 101.980, 102.047, 102.102, 102.485 ms"
           }
         ]
       }
