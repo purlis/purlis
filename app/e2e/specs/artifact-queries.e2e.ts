@@ -61,7 +61,7 @@ const DECLARED = `{"api":1,"queries":{"purlis.todo_list@1":["done"],"purlis.chan
 const PAGE = `<!doctype html><title>${NAME}</title><script type="application/json" id="purlis">${DECLARED}</script><ul id=todos></ul><script src=app.js></script>`;
 const OFFERS = `[role="group"][aria-label="Offered by ${NAME}"]`;
 /** The todo of this spec's own the page finds in its answer. */
-const TODO = `Queried by the board ${pass}`;
+const TODO = ["Walrus amber", "Falcon cobalt", "Otter maple", "Heron quartz", "Badger saffron", "Lynx willow", "Marten indigo", "Osprey juniper", "Bison coral", "Ibex sorrel", "Tapir garnet", "Raven thistle", "Gecko umber", "Puffin cedar", "Koala jasper"][pass - 1];
 /**
  * The page's script: its two calls, and each answer said as an offer (see above). The offers
  * answer on the port too, under id 99, which it passes over.
