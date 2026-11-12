@@ -164,8 +164,10 @@ jobs:
   kind:
     name: operator on a kind cluster
     runs-on: ubuntu-24.04
-    # It also builds and runs the desktop's side of a cluster runner from the root workspace.
-    timeout-minutes: 60
+    # It also builds and runs the desktop's side of a cluster runner from the root workspace, and
+    # Pool setup's cluster path on a second, bare cluster (#4492): about 50 minutes on main before
+    # that stage, which adds a cluster, an install and a Claim.
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
