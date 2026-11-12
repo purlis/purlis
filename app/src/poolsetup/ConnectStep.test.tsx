@@ -47,6 +47,7 @@ const shown = (one: PoolSetupStep): PoolSetupShown => ({
   at: "connect",
   noticed: false,
   others: [],
+  recommended: "build-box",
   steps: [one],
 });
 
