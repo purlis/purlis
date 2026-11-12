@@ -875,6 +875,13 @@ describe("the one list of actions", () => {
     // window does.
     expect(narrow("", offers).some((one) => one.id.startsWith("settings.setting:"))).toBe(false);
     expect(narrow("", offers).some((one) => one.id.startsWith("settings.group:"))).toBe(true);
+    // Found by its key, as the row's Copy key gives it, and by its group's other words.
+    expect(narrow("plane.mode", offers).map((one) => one.title)).toContain(
+      "Project settings: Saving › Mode",
+    );
+    expect(narrow("telemetry", offers).map((one) => one.title)).toContain(
+      "Your settings: Reports › Crash reports",
+    );
     // Found by the setting's own words.
     expect(narrow("window text size", offers).map((one) => one.title)).toContain(
       "Your settings: Text › Window text size",

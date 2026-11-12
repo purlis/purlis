@@ -88,6 +88,12 @@ describe("what a search finds", () => {
     ]);
   });
 
+  it("finds a file setting by its key, as Copy key gives it", () => {
+    expect(found(levels, "plane.autosave_after").flatMap((one) => ids(one.groups))).toEqual([
+      "project.saving.plane.autosave_after",
+    ]);
+  });
+
   it("leaves out a level where nothing matches, and finds nothing for words nothing holds", () => {
     expect(found(levels, "window text size").map((one) => one.level)).toEqual(["you"]);
     expect(found(levels, "zzz no such words")).toEqual([]);

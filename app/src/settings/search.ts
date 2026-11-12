@@ -116,7 +116,7 @@ function built(
 /**
  * **The groups and settings a search's words leave** (SE-21, V89c): a group whose own label or
  * help holds the words, or one of its other words (`also`, #5688), keeps every setting; any
- * other group keeps the settings whose label or help holds them, and is left out when none does.
+ * other group keeps the settings whose label, help, home or key holds them, and is left out when none does.
  * Case is ignored, and so is space around the words; with none, every group is left as it is.
  */
 export function narrowed(
@@ -130,13 +130,21 @@ export function narrowed(
   return groups.flatMap((one) => {
     if (holds(one.label, one.help, ...(one.also ?? []))) return [one];
     // Where a value is kept is said once in its group's header (DS-8), and still finds it.
+    // So is the key a file setting is at, as its row's Copy key gives it (`plane.mode`).
     const settings = one.settings.filter((setting) =>
-      holds(setting.label, setting.help, (inAFile(setting) && setting.kept) || ""),
+      inAFile(setting)
+        ? holds(setting.label, setting.help, setting.kept ?? "", keyOf(setting))
+        : holds(setting.label, setting.help),
     );
     const after = one.after?.filter((setting) => holds(setting.label, setting.help));
     // A group a search finds only by what it explains is found too (#1340).
     return settings.length > 0 || (after?.length ?? 0) > 0 ? [{ ...one, settings, after }] : [];
   });
+}
+
+/** **The key a file setting is at**, dotted as TOML writes it: `plane.mode`, `forge.0.owner`. */
+export function keyOf(setting: FileSetting): string {
+  return setting.key.map((step) => ("key" in step ? step.key : String(step.index))).join(".");
 }
 
 /** {@link narrowed} at every level: the levels where something is left, in their order. */

@@ -111,8 +111,8 @@ import {
 import { RESTORING_HAS_NO_CLOSE } from "./restoringChats";
 import { SIDE_KEYS_SAID } from "./sideKeys";
 import { SETTINGS_GROUPS } from "./settings/catalogue";
-import { everySetting } from "./settings/search";
-import type { Level } from "./settings/groups";
+import { everySetting, keyOf } from "./settings/search";
+import { inAFile, type Level } from "./settings/groups";
 
 /** The Workspace level's Skills group (#2767), behind the Skill studio's flag. */
 const WORKSPACE_SKILLS = "workspace.skills";
@@ -4197,6 +4197,8 @@ function settingRows(
           } satisfies Does,
         ),
         ...(setting.help === "" ? {} : { note: setting.help }),
+        // Found by its key too, as Copy key gives it, and by its group's other words (#5688).
+        also: [...(inAFile(setting) ? [keyOf(setting)] : []), ...(group.also ?? [])],
         whenTyped: true as const,
       })),
     ),

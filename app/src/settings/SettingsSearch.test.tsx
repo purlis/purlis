@@ -153,6 +153,27 @@ describe("searching every setting from Settings", () => {
     expect(box()).toHaveValue("");
   });
 
+  it("draws a setting of a page that holds a list with its control, not as a way there", async () => {
+    render(<Tab at="project" plane={PLANE} />);
+    await waitFor(() => expect(page("General")).toBeInTheDocument());
+
+    // Harness & profiles holds the list of profiles; its default harness is a setting like any,
+    // found by its key.
+    // In one change, as a paste is: no page a part of the key matches is drawn on the way.
+    await userEvent.click(box());
+    await userEvent.paste("harness.default");
+
+    await waitFor(() => expect(sections()).toEqual(["Project › Harness & profiles"]));
+    expect(
+      screen.queryByRole("button", { name: /^Go to Harness & profiles: Default harness/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      document.querySelector(
+        '[data-setting="project.harness.harness.default"] .ui-setting-control [data-scope]',
+      ),
+    ).not.toBeNull();
+  });
+
   it("says how many it found, at every level, and when nothing matches", async () => {
     render(<Tab plane={PLANE} />);
 

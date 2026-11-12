@@ -39,8 +39,9 @@ async function found() {
         setHere: row.querySelector('[role="img"][aria-label="Set at this level"]') !== null,
       })),
       first: (() => {
+        // The nav's first page, asked for by its role: a native button's own, or one said.
         const nav = document.querySelector('nav[aria-label="Groups"]');
-        const one = nav?.querySelector("button");
+        const one = nav?.querySelector('[role="button"], button:not([role])');
         return {
           words: one?.textContent ?? "",
           current: one?.getAttribute("aria-current") ?? "",
@@ -57,20 +58,19 @@ async function focusedSetting(): Promise<string> {
   );
 }
 
-/** Presses the Set here toggle, asked for by its role and name, and says what it is now. */
+/** Presses the Set here toggle, asked for by its role and its accessible name, and says what it
+ *  is now. A toggle button is a button with `aria-pressed`, its name its words. */
 async function pressSetHere(): Promise<string> {
-  await browser.execute(() => {
-    const toggle = [...document.querySelectorAll<HTMLElement>('[role="button"], button')].find(
-      (one) => one.textContent?.trim() === "Set here",
-    );
-    toggle?.click();
+  return browser.execute(() => {
+    const toggle = () =>
+      [
+        ...document.querySelectorAll<HTMLElement>(
+          '[role="button"][aria-pressed], button:not([role])[aria-pressed]',
+        ),
+      ].find((one) => (one.getAttribute("aria-label") ?? one.textContent)?.trim() === "Set here");
+    toggle()?.click();
+    return toggle()?.getAttribute("aria-pressed") ?? "";
   });
-  return browser.execute(
-    () =>
-      [...document.querySelectorAll<HTMLElement>('[role="button"], button')]
-        .find((one) => one.textContent?.trim() === "Set here")
-        ?.getAttribute("aria-pressed") ?? "",
-  );
 }
 
 /** Types `words` into the search box, from empty. */

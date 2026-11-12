@@ -553,8 +553,16 @@ function Shown({
       (rawFile.id === "shared" && mendable));
   const readOnly = useReadOnlySaid();
   const howMany = waiting === undefined ? (onFound ? (counted ?? estimate) : counted) : undefined;
-  /** A group's matches at this level, among every match: each with its control, but a
-   *  collection's entries, which are changed in its page's list and are a way there. */
+  /** **What the search looks for changes** (`change`): the group on screen is the one shown
+   *  again once it is done, and every match is shown again. */
+  const searchFor = (change: () => void) => {
+    if (group && !searching) choose(group.id);
+    setEditing(undefined);
+    setSearchPage(FOUND_PAGE);
+    change();
+  };
+  /** A group's matches at this level, among every match: each with its control, but the fields
+   *  of a collection's entries, which are changed in its page's list and are a way there. */
   const hereRows = (one: SettingsGroup): ReactNode[] => {
     const row = drawRow({
       level,
@@ -564,17 +572,21 @@ function Shown({
       onlySet: setHere,
       onAction: plane === undefined ? undefined : (action) => askSettingsAction(plane, action),
     });
+    const ofAnEntry = new Set(one.collection?.entries.flatMap((entry) => entry.settings) ?? []);
     return [
-      ...(one.collection !== undefined
-        ? one.settings.map((setting) => (
-            <ElsewhereRow
-              key={setting.id}
-              setting={setting}
-              page={one.label}
-              onGo={() => land(level, one.id, setting.id)}
-            />
-          ))
-        : one.settings.map(row)),
+      ...one.settings.map((setting) =>
+        ofAnEntry.has(setting.id) ? (
+          <ElsewhereRow
+            key={setting.id}
+            setting={setting}
+            page={one.label}
+            modified={inAFile(setting) && driver !== undefined && isSetHere(setting, driver.files)}
+            onGo={() => land(level, one.id, setting.id)}
+          />
+        ) : (
+          row(setting)
+        ),
+      ),
       ...(one.after ?? []).map(row),
     ];
   };
@@ -632,20 +644,9 @@ function Shown({
         if (to !== FOUND_PAGE) choose(to);
       }}
       filter={filter}
-      onFilterChange={(to) => {
-        // The group on screen is the one shown again once the box is cleared.
-        if (group && !searching) choose(group.id);
-        setEditing(undefined);
-        setSearchPage(FOUND_PAGE);
-        setFilter(to);
-      }}
+      onFilterChange={(to) => searchFor(() => setFilter(to))}
       setHere={setHere}
-      onSetHereChange={(to) => {
-        if (group && !searching) choose(group.id);
-        setEditing(undefined);
-        setSearchPage(FOUND_PAGE);
-        setSetHere(to);
-      }}
+      onSetHereChange={(to) => searchFor(() => setSetHere(to))}
       found={rawFile ? undefined : howMany}
       foot={
         raw.length > 0 && waiting === undefined ? (
@@ -1079,15 +1080,19 @@ function FoundSection({ label, children }: { label: string; children: ReactNode 
 function ElsewhereRow({
   setting,
   page,
+  modified = false,
   onGo,
 }: {
   setting: Setting;
   page: string;
+  /** Set at this level (R53): marked, as its own row is. */
+  modified?: boolean;
   onGo: () => void;
 }) {
   return (
     <SettingRow
       setting={setting.id}
+      modified={modified}
       label={setting.label}
       help={setting.help}
       grouped
