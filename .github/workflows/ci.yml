@@ -1764,7 +1764,9 @@ jobs:
           shared-key: ${{ matrix.pool && 'scenario-linux' || '' }}
           # The outcome bars build `dev-release` (#4351): a cache of their own, since main's
           # debug one would be an exact hit, and rust-cache writes nothing over an exact hit.
-          key: ${{ matrix.outcome && 'dev-release' || '' }}
+          # `-no-line-tables` since the build below drops them: rust-cache writes nothing over an
+          # exact hit, so the old key's dependencies, built with them, would be rebuilt every run.
+          key: ${{ matrix.outcome && 'dev-release-no-line-tables' || '' }}
       # **sccache for the workspace's own crates, on macOS** (2026-10-12, an experiment kept only
       # if it pays). rust-cache keeps the dependencies but never the workspace's crates, so each
       # macOS part compiled purlis-core and the app afresh: 3.5 to 4 of its minutes on the
