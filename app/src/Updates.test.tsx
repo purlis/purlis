@@ -507,15 +507,13 @@ describe("useUpdates", () => {
       return null;
     });
     const hook = renderHook(() => useUpdates());
-    await waitFor(() => expect(answer.length).toBeGreaterThan(0));
+    await waitFor(() => expect(answer).toHaveLength(3));
     hook.unmount();
 
-    // Each listen answers only once it is gone, and the next is asked as one answers.
+    // Every listen answers only once the hook is gone.
     await act(async () => {
-      for (let turn = 0; turn < 10; turn++) {
-        for (const now of answer.splice(0)) now();
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      }
+      for (const now of answer.splice(0)) now();
+      await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
     expect(stopped.sort()).toEqual(["update://checked", "update://failed", "update://installed"]);
