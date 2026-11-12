@@ -20,6 +20,7 @@ import { doneWithTheAddedPool, stopAddingAPool } from "../pools";
 import { forgetThisLaunch } from "../regions";
 import { leftSaid, owedSaid } from "./pools";
 import { GLOBAL } from "../windowprefs";
+import { findGrid } from "../ui/table/table.testkit";
 
 /**
  * **Settings › You › This machine › Pools** (#2679), in the whole window: the group is always
@@ -312,9 +313,7 @@ describe("You › This machine › Pools", () => {
     // What is said about the pool is the row under it, across the table, its profiles in it.
     const about = builds.nextElementSibling as HTMLElement;
     expect(about.querySelector("td")?.colSpan).toBe(3);
-    expect(
-      await within(about).findByRole("grid", { name: "Profiles on pool builds" }),
-    ).toBeInTheDocument();
+    expect(await findGrid(within(about), "Profiles on pool builds")).toBeInTheDocument();
   });
 
   it("asks before the row's Remove removes a pool", async () => {
@@ -462,7 +461,7 @@ describe("You › This machine › Pools", () => {
     expect(within(choose).getByRole("checkbox", { name: "work" })).toBeChecked();
     expect(within(choose).getByRole("checkbox", { name: "home" })).not.toBeChecked();
     await userEvent.click(within(signIn).getByRole("button", { name: "Not now" }));
-    const list = await within(signIn).findByRole("grid", { name: "Profiles on pool builds" });
+    const list = await findGrid(within(signIn), "Profiles on pool builds");
     expect(within(list).getByText(/Not signed in on pool builds/)).toBeInTheDocument();
     expect(within(list).getByText("Signed in on pool builds.")).toBeInTheDocument();
     expect(profilesAsked).toEqual(["builds"]);
@@ -483,7 +482,7 @@ describe("You › This machine › Pools", () => {
     const nav = await yourSettings();
     await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
     const group = await screen.findByRole("region", { name: "Pools" });
-    const list = await within(group).findByRole("grid", { name: "Profiles on pool builds" });
+    const list = await findGrid(within(group), "Profiles on pool builds");
     expect(within(list).getByText("work")).toBeInTheDocument();
     expect(within(list).queryByText("claude")).toBeNull();
 
@@ -537,7 +536,7 @@ describe("You › This machine › Pools", () => {
     });
     await within(signIn).findByRole("group", { name: "Profiles that sign in on pool builds" });
     await userEvent.click(within(signIn).getByRole("button", { name: "Not now" }));
-    const list = await within(signIn).findByRole("grid", { name: "Profiles on pool builds" });
+    const list = await findGrid(within(signIn), "Profiles on pool builds");
     expect(within(list).getByText("Fetching Claude Code for this runner…")).toBeInTheDocument();
     expect(
       await within(list).findByText("Signed in on pool builds.", {}, { timeout: 6000 }),
@@ -1367,7 +1366,7 @@ describe("A cluster pool (#3292)", () => {
     expect(within(group).queryByRole("grid", { name: "Profiles on pool team" })).toBeNull();
     expect(profilesAsked).toEqual([]);
     await userEvent.click(within(group).getByRole("switch", { name: "This is my own" }));
-    const profiles = await within(group).findByRole("grid", { name: "Profiles on pool team" });
+    const profiles = await findGrid(within(group), "Profiles on pool team");
     expect(profilesAsked).toContain("team");
     expect(
       within(profiles).getByRole("button", { name: "Sign work in on pool team" }),
