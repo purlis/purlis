@@ -269,7 +269,7 @@ export function SettingsLayout({
             keepsFocus="settings-filter"
             value={filter}
             aria-label="Search settings"
-            placeholder="Search every setting, every level"
+            placeholder="Search all levels"
             onChange={onFilterChange}
             onKeyDown={(event) => {
               if (event.key !== "Escape" || filter === "") return;

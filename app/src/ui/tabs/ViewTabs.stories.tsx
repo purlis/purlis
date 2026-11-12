@@ -422,6 +422,18 @@ type Story = StoryObj<typeof meta>;
 
 const boxOf = (el: Element | null | undefined): DOMRect => (el as Element).getBoundingClientRect();
 
+/** The pixels a field has left over once `words` are drawn in its font, inside its padding:
+ *  below 0, its words are cut. */
+function spareRoom(field: HTMLInputElement, words: string): number {
+  const style = getComputedStyle(field);
+  const pen = document.createElement("canvas").getContext("2d");
+  if (pen === null) throw new Error("no canvas to measure the words with");
+  pen.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+  const room =
+    field.clientWidth - parseFloat(style.paddingInlineStart) - parseFloat(style.paddingInlineEnd);
+  return room - pen.measureText(words).width;
+}
+
 /** Whether the tabs are docked on the panel in the cell's theme (Purlis), not on a strip of
  *  their own (Purlis Classic): only then does the chosen tab join what is under it. */
 function docked(canvas: HTMLElement): boolean {
@@ -579,6 +591,11 @@ export const Settings: Story = {
     const actions = boxOf(canvasElement.querySelector(".pane-actions"));
     expect(boxOf(project).top).toBeLessThan(actions.bottom);
     await nothingScrollsUnderTheActions(canvasElement);
+    // **The search's words are whole in the narrow column** (#6378): its placeholder fits the
+    // box's room for text, in every pictured theme.
+    const search = canvas.getByRole<HTMLInputElement>("searchbox", { name: "Search settings" });
+    expect(search.placeholder).not.toBe("");
+    expect(spareRoom(search, search.placeholder)).toBeGreaterThanOrEqual(0);
     canvas.getByRole("button", { name: "Close this view" }).focus();
     await userEvent.tab();
     await untilFocused(() => project, "Tab reaches the project");

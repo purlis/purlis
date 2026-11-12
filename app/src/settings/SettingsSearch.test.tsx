@@ -99,7 +99,7 @@ describe("searching every setting from Settings", () => {
     render(<Tab />);
 
     expect(box()).toHaveValue("");
-    expect(box()).toHaveAttribute("placeholder", "Search every setting, every level");
+    expect(box()).toHaveAttribute("placeholder", "Search all levels");
     expect(setHere()).toHaveAttribute("aria-pressed", "false");
     expect(box().compareDocumentPosition(nav()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
