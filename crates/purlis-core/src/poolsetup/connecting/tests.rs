@@ -21,6 +21,7 @@ fn remote_facts(connect: Connecting) -> Facts {
         pool: None,
         identity: Identity::None,
         repos: true,
+        cluster: super::super::cluster::ClusterFacts::default(),
     }
 }
 
@@ -288,12 +289,66 @@ fn where_offers_the_other_kind_beside_its_own() {
 }
 
 #[test]
+fn where_offers_another_machine_and_a_cluster_each_by_its_own_way_and_neither_twice() {
+    let with_a_cluster = || super::super::cluster::ClusterFacts {
+        contexts: vec!["team".to_owned()],
+        ..super::super::cluster::ClusterFacts::default()
+    };
+    // This machine's Docker: another machine beside it, and the team's cluster instead.
+    let docker = of(
+        Kind::Docker,
+        &Facts {
+            connect: None,
+            cluster: with_a_cluster(),
+            ..remote_facts(Connecting::default())
+        },
+        &Choices::default(),
+    );
+    let where_ = docker.step(StepId::Where).unwrap();
+    assert_eq!(
+        where_.other.as_ref().map(|one| one.id),
+        Some(ActionId::UseRemoteDocker)
+    );
+    assert_eq!(
+        where_.also.as_ref().map(|one| one.id),
+        Some(ActionId::UseCluster)
+    );
+    // Another machine's: back to this machine's Docker, and no cluster beside it.
+    let remote = of(
+        Kind::RemoteDocker,
+        &Facts {
+            cluster: with_a_cluster(),
+            ..remote_facts(routed("ssh://sam@build-box"))
+        },
+        &Choices {
+            kind: Some(Kind::RemoteDocker),
+            ..Choices::default()
+        },
+    );
+    let where_ = remote.step(StepId::Where).unwrap();
+    assert!(where_.also.is_none(), "{where_:?}");
+    // A cluster's: back to Docker, and no other machine beside it.
+    let cluster = of(
+        Kind::Cluster,
+        &Facts {
+            connect: None,
+            cluster: with_a_cluster(),
+            ..remote_facts(Connecting::default())
+        },
+        &Choices::default(),
+    );
+    let where_ = cluster.step(StepId::Where).unwrap();
+    assert!(where_.other.is_none(), "{where_:?}");
+}
+
+#[test]
 fn a_pool_on_another_machines_sign_ins_are_a_docker_pools() {
     let facts = Facts {
         pool: Some(PoolFacts {
             name: "build-box".into(),
             runner: Runner::Running,
             sign_ins: SignIns::Read(Vec::new()),
+            cluster: None,
         }),
         ..remote_facts(Connecting {
             trusted: Some(Pin {

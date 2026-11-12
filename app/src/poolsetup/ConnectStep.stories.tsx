@@ -45,6 +45,9 @@ const connect = (more: Partial<PoolSetupStep>): PoolSetupStep => ({
   other: null,
   machine: machine(),
   cause: null,
+  also: null,
+  parts: [],
+  undo: null,
   ...more,
 });
 
@@ -85,6 +88,7 @@ const shown = (step: PoolSetupStep, pool: string | null = null): PoolSetupShown 
   noticed: false,
   others: [],
   recommended: "build-box",
+  contexts: { names: [], recommended: null, chosen: null, pools: [] },
   steps: [step],
 });
 

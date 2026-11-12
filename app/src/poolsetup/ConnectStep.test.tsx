@@ -37,6 +37,9 @@ const step = (more: Partial<PoolSetupStep>): PoolSetupStep => ({
     engine: null,
   },
   cause: null,
+  also: null,
+  parts: [],
+  undo: null,
   ...more,
 });
 
@@ -48,6 +51,7 @@ const shown = (one: PoolSetupStep): PoolSetupShown => ({
   noticed: false,
   others: [],
   recommended: "build-box",
+  contexts: { names: [], recommended: null, chosen: null, pools: [] },
   steps: [one],
 });
 
