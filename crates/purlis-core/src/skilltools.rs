@@ -318,7 +318,7 @@ fn load(
 ) -> Result<String, String> {
     let effective = purlis_skills::by_name(set, name).ok_or_else(|| {
         // A built-in purlis retired (#5725): said so, and where what it said is now.
-        if let Some((skill, now)) = Reference::parse(name).as_ref().and_then(Reference::retired) {
+        if let Some((skill, now)) = Reference::written_retired(name) {
             return format!("`{skill}` was removed from purlis, so no chat can load it: {now}");
         }
         format!(

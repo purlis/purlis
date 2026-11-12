@@ -458,8 +458,8 @@ impl<'a> Linter<'a> {
     }
 
     /// **The entries of `name`'s own `skills:` list** (#2934): one that names nothing, one naming
-    /// a built-in skill purlis retired (#5725), one written
-    /// by a built-in skill's name from before a rename (#5724), one written with the old
+    /// a built-in skill purlis retired (#5725), one written by a built-in skill's name from
+    /// before a rename (#5724), one written with the old
     /// `charter:` prefix, and one its chats start without
     /// ([`crate::skills::persona::unresolved`]), each with its fix. Read through
     /// [`Reference`](crate::skills::Reference), as a chat's start reads the list. With the
@@ -478,15 +478,14 @@ impl<'a> Linter<'a> {
         let mut issues = Vec::new();
         for entry in &written {
             let shown = crate::personas::one_line(entry);
-            let parsed = Reference::parse(entry);
-            if let Some((skill, now)) = parsed.as_ref().and_then(Reference::retired) {
+            if let Some((skill, now)) = Reference::written_retired(entry) {
                 issues.push(Issue::warn(format!(
-                    "`skills:` entry '{shown}' names `{skill}`, which purlis no longer ships: it \
-                     was removed, and {now}. Take the entry off the list"
+                    "`skills:` entry '{shown}' names `{skill}`, which purlis removed: {now}. Take \
+                     the entry off the list"
                 )));
                 continue;
             }
-            match parsed {
+            match Reference::parse(entry) {
                 None => issues.push(Issue::warn(format!(
                     "`skills:` entry '{shown}' names no skill, so its chats load nothing for \
                      it. Write `purlis:<name>` for a built-in skill, `<plugin>:<name>` for a \

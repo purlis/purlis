@@ -869,9 +869,8 @@ fn a_skills_entry_naming_the_retired_building_skill_says_it_was_removed_5725() {
     let home = tempfile::tempdir().unwrap();
     let removed = |shown: &str| {
         format!(
-            "`skills:` entry '{shown}' names `purlis-building-ui`, which purlis no longer ships: \
-             it was removed, and its guide is `docs/building-ui.md` in the purlis repository. \
-             Take the entry off the list"
+            "`skills:` entry '{shown}' names `purlis-building-ui`, which purlis removed: its \
+             guide is `docs/building-ui.md` in the purlis repository. Take the entry off the list"
         )
     };
     for written in [

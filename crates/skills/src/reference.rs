@@ -17,7 +17,9 @@ pub const OLD_BUILT_IN_PREFIX: &str = BUILT_IN_PREFIXES[1];
 /// name each had and the one it has (ADR 0099 as amended 2026-11-01). The old one is purlis's as
 /// the prefix is, so it means this skill even bare. The four of #5724 (spec #5714 Q32, Q33) took
 /// names that say what each is for; their runs, grades and misses carry over by this table, and
-/// no stub keeps an old name in the bundle.
+/// no stub keeps an old name in the bundle. A name a skill took may itself have been retired
+/// since ([`RETIRED`]): [`old_names_in`] then says nothing of the rename, and
+/// [`retired_names_in`] says it was removed.
 pub const RENAMED: &[(&str, &str)] = &[
     ("purlis-building-purlis-ui", "purlis-building-ui"),
     ("purlis-compact", "purlis-tidy-memory"),
@@ -143,6 +145,12 @@ impl Reference {
         RETIRED.iter().find(|(old, _)| *old == name).copied()
     }
 
+    /// **The retired built-in skill the entry `written` names ([`Self::retired`])**, read as
+    /// [`Self::parse`] reads it, with where what it said is now.
+    pub fn written_retired(written: &str) -> Option<(&'static str, &'static str)> {
+        Self::parse(written).as_ref().and_then(Self::retired)
+    }
+
     /// Whether it names the plane skill `name`: only a bare name can.
     pub fn names_plane(&self, name: &str) -> bool {
         matches!(self, Self::Named(named) if named == name)
@@ -200,18 +208,43 @@ pub fn name_now(name: &str) -> &str {
 pub fn old_names_in(text: &str) -> Vec<(&'static str, &'static str)> {
     RENAMED
         .iter()
-        .filter(|(old, _)| {
-            let short = &old[crate::RESERVED_PREFIX.len()..];
-            [
-                (*old).to_owned(),
-                format!("{}:{short}", BUILT_IN_PREFIXES[0]),
-                format!("{}:{short}", BUILT_IN_PREFIXES[1]),
-            ]
-            .iter()
-            .any(|needle| named_whole(text, needle))
+        .filter(|(old, new)| !is_retired(new) && names_built_in(text, old))
+        .copied()
+        .collect()
+}
+
+/// **Every retired built-in skill ([`RETIRED`]) that `text` names**, by any name it had, as
+/// [`old_names_in`] reads one, with where what it said is now, each once, in the table's order.
+/// What the persona lint warns of in a curation action's prompt (#5725).
+pub fn retired_names_in(text: &str) -> Vec<(&'static str, &'static str)> {
+    RETIRED
+        .iter()
+        .filter(|(skill, _)| {
+            names_built_in(text, skill)
+                || RENAMED
+                    .iter()
+                    .any(|(old, new)| new == skill && names_built_in(text, old))
         })
         .copied()
         .collect()
+}
+
+/// Whether `name` is a retired built-in skill's ([`RETIRED`]).
+fn is_retired(name: &str) -> bool {
+    RETIRED.iter().any(|(skill, _)| *skill == name)
+}
+
+/// Whether `text` names the built-in skill `own` as a whole word: by its own name
+/// (`purlis-compact`) or by a command's (`purlis:compact`, `charter:compact`).
+fn names_built_in(text: &str, own: &str) -> bool {
+    let short = &own[crate::RESERVED_PREFIX.len()..];
+    [
+        own.to_owned(),
+        format!("{}:{short}", BUILT_IN_PREFIXES[0]),
+        format!("{}:{short}", BUILT_IN_PREFIXES[1]),
+    ]
+    .iter()
+    .any(|needle| named_whole(text, needle))
 }
 
 /// Whether `text` holds `name` with no letter, digit, `-` or `_` on either side of it.

@@ -687,7 +687,9 @@ fn a_load_of_the_retired_building_skill_says_it_was_removed_and_opens_no_run_572
         "purlis-building-ui",
         "purlis:purlis-building-ui",
         "purlis:building-ui",
+        "charter:purlis-building-ui",
         "purlis-building-purlis-ui",
+        "charter:building-purlis-ui",
     ] {
         let (said, started) = called(
             &chat(p.path(), Some("claude-code")),

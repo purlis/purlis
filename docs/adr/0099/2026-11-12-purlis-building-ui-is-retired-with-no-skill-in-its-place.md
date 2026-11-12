@@ -9,9 +9,10 @@ Spec #5714 (Q35) planned to move the window-building guide out of the bundle and
 ## What holds now
 
 - **purlis no longer ships `purlis-building-ui`.** Its facts are [`docs/building-ui.md`](../../building-ui.md) in the purlis repository, held to the code by `app/src/ui/buildingDoc.test.ts`, the test that held the skill. The repository's `AGENTS.md` points to the doc. No skill, built-in or plane, takes its place.
-- **Every name it had still reads as it**: `purlis-building-ui` bare, under `purlis:` or `charter:`, and `purlis:building-ui`, and `purlis-building-purlis-ui` and its forms (`RENAMED`). `purlis_skills::RETIRED` lists it, with where its facts went, and `Reference::retired` reads an entry as a retired skill. So:
+- **Every name it had still reads as it**: `purlis-building-ui` bare, under `purlis:` or `charter:`, and `purlis:building-ui`, and `purlis-building-purlis-ui` and its forms (`RENAMED`). `purlis_skills::RETIRED` lists it, with where its facts went, and `Reference::retired` (`Reference::written_retired` for an entry as written) reads an entry as a retired skill. A skill's own text is not checked for it, as it is not for a renamed one. So:
   - **the persona lint says it was removed**, with where its guide is, and does not also say that its chats start without it;
   - **`skill_load` says it was removed**, with where its guide is, rather than that the chat has no skill of that name;
+  - **a curation action's prompt naming it by any of its names is warned that it was removed** (`purlis_skills::retired_names_in`), and is never sent to write `purlis-building-ui` for `purlis-building-purlis-ui` (`old_names_in` skips a rename to a retired name);
   - **a run recorded under any of its names keeps the name `purlis-building-ui`** (`run_name`), so its history stays where it was.
 - **No stub skill keeps the name.** `/purlis:purlis-building-ui` typed in Claude Code gets its unknown-command answer, as the 2026-11-01 amendment accepted for every rename.
 - A later retirement is one more row of `RETIRED`.
