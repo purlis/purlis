@@ -308,6 +308,12 @@ fn a_host(host: &str) -> bool {
                 .is_ok_and(|address| !address.is_unspecified()))
 }
 
+/// `path`, owned, where it is one [`a_socket_path`] lets through: a path of the other machine's
+/// that a pin keeps.
+fn plain_path(path: &str) -> Option<String> {
+    a_socket_path(path).then(|| path.to_owned())
+}
+
 /// An absolute path of the other machine's, with nothing a forward's `local:remote` spelling or
 /// a shell word would split.
 fn a_socket_path(path: &str) -> bool {
@@ -448,16 +454,10 @@ impl Pin {
                 if podman.len() != 2 {
                     return None;
                 }
-                let plain = |key: &str| {
-                    podman
-                        .get(key)?
-                        .as_str()
-                        .filter(|path| a_socket_path(path))
-                        .map(str::to_owned)
-                };
+                let path = |key: &str| plain_path(podman.get(key)?.as_str()?);
                 EnginePin::Podman {
-                    socket: plain("socket")?,
-                    graph_root: plain("graphRoot")?,
+                    socket: path("socket")?,
+                    graph_root: path("graphRoot")?,
                 }
             }
             _ => return None,
@@ -494,8 +494,7 @@ impl EnginePin {
             value
                 .and_then(serde_json::Value::as_str)
                 .map(|path| path.strip_prefix("unix://").unwrap_or(path))
-                .filter(|path| a_socket_path(path))
-                .map(str::to_owned)
+                .and_then(plain_path)
                 .ok_or_else(|| format!("Podman there didn't say its {what}"))
         };
         Some((|| {

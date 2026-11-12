@@ -226,13 +226,17 @@ pub fn remote_of(
     let kept = super::read_choices(config)?.connect.and_then(|chosen| {
         let kept = chosen.route_read().ok()?;
         let pin = chosen.trusted?;
-        // The same machine, signed in to the same way, whether or not the socket was named.
-        let same = kept == route
-            || (route.socket().is_none()
-                && route.clone().with_socket(kept.socket()?).ok()? == kept)
-            || (identity.is_none()
-                && kept.identity().is_some()
-                && kept.spelled() == route.spelled());
+        // The same machine, as the same user and port; a socket or a key file asked for must be
+        // the kept one's, and one left out is the kept one's.
+        let same = kept.host() == route.host()
+            && kept.user() == route.user()
+            && kept.port() == route.port()
+            && route
+                .socket()
+                .is_none_or(|socket| kept.socket() == Some(socket))
+            && route
+                .identity()
+                .is_none_or(|identity| kept.identity() == Some(identity));
         let confirmed = trust.is_none_or(|trust| trust == pin.host_key.fingerprint());
         (same && confirmed).then_some(crate::runners::Remote { route: kept, pin })
     });

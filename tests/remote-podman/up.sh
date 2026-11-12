@@ -14,7 +14,7 @@
 # machine as a Podman connection too, as a person's `podman system connection add` would, for
 # Pool setup to offer. Nothing is published but the sshd's port, on loopback.
 set -euo pipefail
-image=${1:?the image, by digest, in this machine's registry}
+image=${1:?the image, by digest, in the registry here}
 image_variable=${2:?the variable to name it in}
 here=$(cd "$(dirname "$0")" && pwd)
 ssh_dir="$RUNNER_TEMP/remote-ssh"

@@ -3856,16 +3856,15 @@ impl Docker {
             return podman.map(EngineSaid::Pin).map_err(refused);
         }
         let id = engine_id_in(&printed)?;
-        let components = self
-            .read(
-                &[
-                    "version".into(),
-                    "--format".into(),
-                    "{{json .Server.Components}}".into(),
-                ],
-                MOST_INSPECTED,
-            )
-            .unwrap_or_default();
+        // Asked, not guessed: a Docker pin taken from a Podman would hold for no ask after.
+        let components = self.read(
+            &[
+                "version".into(),
+                "--format".into(),
+                "{{json .Server.Components}}".into(),
+            ],
+            MOST_INSPECTED,
+        )?;
         if is_podman_engine(&components) {
             return Ok(EngineSaid::PodmanOverDocker);
         }
@@ -4324,7 +4323,6 @@ impl Docker {
     }
 }
 
-/// What rootless Podman asked its runtime for, read up to [`MOST_INSPECTED`].
 /// **A rootless Podman's runtime config for `made`, read on the other machine** (#6269): only
 /// the container's own (`<graph root>/overlay-containers/<container>/userdata/config.json`, as
 /// [`check_oci`] holds it), checked before anything is read there.
@@ -4342,7 +4340,8 @@ fn read_oci_there(
         .join("config.json");
     if path != own {
         return Err(refused(format!(
-            "runner {}'s container has a runtime config that is not its own, so purlis does not              link to it; {ADD_AGAIN}",
+            "runner {}'s container has a runtime config that is not its own, so purlis does not \
+             link to it; {ADD_AGAIN}",
             made.runner.name
         )));
     }
@@ -4360,6 +4359,7 @@ fn read_oci_there(
     })
 }
 
+/// What rootless Podman asked its runtime for, read up to [`MOST_INSPECTED`].
 fn read_oci(path: &std::path::Path) -> Result<serde_json::Value, Refused> {
     use std::io::Read;
     use std::os::unix::fs::OpenOptionsExt;

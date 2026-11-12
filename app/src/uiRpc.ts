@@ -1946,11 +1946,7 @@ export const commands = {
 	poolSetupChooseRemoteDocker: __WINDOW_ONLY_RESULT,
 	poolSetupMachine: __WINDOW_ONLY_RESULT,
 	poolSetupSshHosts: __WINDOW_ONLY_RESULT,
-	/**
-	 *  **The person's Podman connections** (`podman system connection list`), for Connect to offer
-	 *  (#6269). It contacts no machine: this machine's `podman` lists what it keeps.
-	 */
-	poolSetupPodmanConnections: () => typedError<PoolSetupPodmanConnection[], string>(__TAURI_INVOKE("pool_setup_podman_connections")),
+	poolSetupPodmanConnections: __WINDOW_ONLY_RESULT,
 	poolSetupConnect: __WINDOW_ONLY_RESULT,
 	poolSetupTrust: __WINDOW_ONLY_RESULT,
 	poolSetupChooseCluster: __WINDOW_ONLY_RESULT,
@@ -10659,6 +10655,8 @@ export type PoolSetupKey = {
 /**  The machine of a pool on another machine, as Connect shows it (#6266). */
 export type PoolSetupMachine = {
 	route: string | null,
+	/**  The key file the route signs in with, where a Podman connection names one (#6269). */
+	identity: string | null,
 	host: string | null,
 	/**  The key it showed at Connect to, to confirm. */
 	key: PoolSetupKey | null,

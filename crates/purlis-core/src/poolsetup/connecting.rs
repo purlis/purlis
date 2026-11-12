@@ -21,6 +21,8 @@ use crate::sshroute::{HostKey, Pin, Route};
 pub struct Connecting {
     /// The machine picked or typed: Docker's spelling, as the person gave it.
     pub route: Option<String>,
+    /// The key file it signs in with, where it was picked from a Podman connection (#6269).
+    pub identity: Option<String>,
     /// The key the machine showed at the last press of Connect to, in this read only.
     pub met: Option<Met>,
     /// The pin the person trusted, or the pool's.
@@ -57,6 +59,8 @@ impl From<&HostKey> for KeyShown {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct Machine {
     pub route: Option<String>,
+    /// The key file the route signs in with, where a Podman connection names one (#6269).
+    pub identity: Option<String>,
     pub host: Option<String>,
     /// The key it showed, to confirm before trusting it.
     pub key: Option<KeyShown>,
@@ -83,6 +87,7 @@ pub(super) fn reading(connect: &Connecting) -> (Reading, Machine, Option<&'stati
     let host = host_of(connect.route.as_deref());
     let mut machine = Machine {
         route: connect.route.clone(),
+        identity: connect.identity.clone(),
         host: connect.route.as_ref().map(|_| host.clone()),
         trusted: connect.trusted.as_ref().map(|pin| (&pin.host_key).into()),
         engine: connect.trusted.as_ref().map(|pin| pin.engine.shown()),
@@ -357,7 +362,8 @@ fn said_with_next(finding: &Finding) -> (String, Option<Action>) {
         ),
         Finding::NeedsPodman { host } => (
             format!(
-                "{host} runs Podman, and purlis reaches Podman with Podman's own client. Install                  Podman on {}, then check again.",
+                "{host} runs Podman, and purlis reaches Podman with Podman's own client. Install \
+                 Podman on {}, then check again.",
                 super::this_machine()
             ),
             check_again(),

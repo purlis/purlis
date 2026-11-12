@@ -64,7 +64,7 @@ const TITLES: Record<string, string> = {
   "engine-silent": "Docker didn't answer there",
   "not-allowed": "Your account can't use Docker there",
   "pool-engine-changed": "Docker there isn't the one you trusted",
-  "needs-podman": "Podman there needs Podman here",
+  "needs-podman": "purlis needs Podman on this machine too",
   "not-a-route": "That isn't an address purlis can read",
   here: "That didn't work",
 };
@@ -162,8 +162,11 @@ function Pick({
   onConnect: () => void;
 }) {
   const kept = step.machine?.route ?? "";
-  const keptHost = hosts.find((host) => routeOf(host) === kept);
-  const keptPodman = podmans.find((one) => one.route === kept);
+  const keptIdentity = step.machine?.identity ?? null;
+  const keptHost = keptIdentity === null ? hosts.find((host) => routeOf(host) === kept) : undefined;
+  const keptPodman = podmans.find(
+    (one) => one.route === kept && (one.identity ?? null) === keptIdentity,
+  );
   const offered = [...hosts, ...podmans.map((one) => PODMAN + one.name)];
   // Until the person picks, the pick follows what is kept and what the SSH settings and Podman
   // name, which are read after the step is drawn.
@@ -181,12 +184,14 @@ function Pick({
     : undefined;
   const route = podman ? podman.route : picked === "typed" ? routeOf(typed) : routeOf(picked);
   const identity = podman?.identity ?? null;
-  // What is picked is kept as it is picked, so coming back finds it. Nothing is contacted.
+  // What is picked is kept as it is picked, so coming back finds it: the route and the key file
+  // it signs in with, either of which may change alone. Nothing is contacted.
+  const asKept = route === kept && identity === keptIdentity;
   useEffect(() => {
-    if (route === kept) return;
+    if (asKept) return;
     const later = setTimeout(() => onPick(route === "" ? null : route, identity), 400);
     return () => clearTimeout(later);
-  }, [route, identity, kept, onPick]);
+  }, [asKept, route, identity, onPick]);
   const next = step.next;
   const host = step.machine?.host;
   return (
@@ -226,7 +231,7 @@ function Pick({
         does={next?.does}
         main={route !== "" && route === kept && host ? `Connect to ${host}` : "Connect"}
         onMain={onConnect}
-        busy={busy || route === "" || route !== kept}
+        busy={busy || route === "" || !asKept}
       />
     </>
   );

@@ -140,7 +140,8 @@ pub fn not_carried(printed: &str) -> Vec<&'static str> {
 #[must_use]
 pub fn carried_refused(host: &str, settings: &[&str]) -> String {
     format!(
-        "Your SSH settings for {host} add {}, which purlis won't carry on its connection to          Docker there. Give the machine a Host entry without {}.",
+        "Your SSH settings for {host} add {}, which purlis won't carry on its connection to \
+         Docker there. Give the machine a Host entry without {}.",
         settings.join(", "),
         if settings.len() == 1 { "it" } else { "them" },
     )

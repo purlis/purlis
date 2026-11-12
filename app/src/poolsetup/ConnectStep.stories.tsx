@@ -28,6 +28,7 @@ const SEE = {
 
 const machine = (more: Partial<PoolSetupMachine> = {}): PoolSetupMachine => ({
   route: "ssh://sam@build-box",
+  identity: null,
   host: "build-box",
   key: null,
   known: null,
@@ -166,7 +167,10 @@ export const PickFromYourPodmanConnections: Story = {
   args: {
     step: connect({
       ...PICK,
-      machine: machine({ route: "ssh://sam@build-box:22/run/user/1000/podman/podman.sock" }),
+      machine: machine({
+        route: "ssh://sam@build-box:22/run/user/1000/podman/podman.sock",
+        identity: "/home/sam/.ssh/id_ed25519",
+      }),
     }),
   },
   play: async ({ canvasElement, userEvent }) => {
@@ -265,7 +269,7 @@ export const PodmanThereNeedsPodmanHere: Story = {
   args: { step: NEEDS_PODMAN, shown: shown(NEEDS_PODMAN) },
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByText("Podman there needs Podman here")).toBeVisible();
+    await expect(canvas.getByText("purlis needs Podman on this machine too")).toBeVisible();
     const again = canvas.getByRole("button", { name: "Check again" });
     again.focus();
     await userEvent.tab();

@@ -72,6 +72,8 @@ pub struct PoolSetupKey {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct PoolSetupMachine {
     pub route: Option<String>,
+    /// The key file the route signs in with, where a Podman connection names one (#6269).
+    pub identity: Option<String>,
     pub host: Option<String>,
     /// The key it showed at Connect to, to confirm.
     pub key: Option<PoolSetupKey>,
@@ -210,6 +212,7 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
                 other: step.other.as_ref().map(action_shown),
                 machine: step.machine.as_ref().map(|machine| PoolSetupMachine {
                     route: machine.route.clone(),
+                    identity: machine.identity.clone(),
                     host: machine.host.clone(),
                     key: machine.key.as_ref().map(key),
                     known: machine.known,

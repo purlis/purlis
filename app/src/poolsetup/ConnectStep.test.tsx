@@ -29,6 +29,7 @@ const step = (more: Partial<PoolSetupStep>): PoolSetupStep => ({
   other: null,
   machine: {
     route: "ssh://sam@build-box",
+    identity: null,
     host: "build-box",
     key: null,
     known: null,
@@ -95,6 +96,7 @@ describe("ConnectStep", () => {
       step({
         machine: {
           route: "ssh://build-box",
+          identity: null,
           host: "build-box",
           key: null,
           known: null,
@@ -147,6 +149,36 @@ describe("ConnectStep", () => {
     expect(calls.some((call) => call.cmd === "pool_setup_connect")).toBe(false);
   });
 
+  it("keeps a Podman connection's key file even where its route was kept without one", async () => {
+    const route = "ssh://me@build-box/run/podman/podman.sock";
+    const calls = core({
+      pool_setup_podman_connections: () => [
+        { name: "build-box", route, identity: "/home/me/.ssh/id_ed25519" },
+      ],
+    });
+    draw(
+      step({
+        machine: {
+          route,
+          identity: null,
+          host: "build-box",
+          key: null,
+          known: null,
+          trusted: null,
+          now: null,
+          engine: null,
+        },
+      }),
+    );
+    await userEvent.click(await screen.findByRole("radio", { name: /build-box/ }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "pool_setup_machine",
+        args: { route, identity: "/home/me/.ssh/id_ed25519" },
+      }),
+    );
+  });
+
   it("picks the Podman connection kept once Podman lists it", async () => {
     core({
       pool_setup_podman_connections: () => [
@@ -158,6 +190,7 @@ describe("ConnectStep", () => {
       step({
         machine: {
           route: "ssh://me@build-box/run/podman/podman.sock",
+          identity: null,
           host: "build-box",
           key: null,
           known: null,
@@ -183,6 +216,7 @@ describe("ConnectStep", () => {
         },
         machine: {
           route: "ssh://sam@build-box",
+          identity: null,
           host: "build-box",
           key: { algorithm: "ssh-ed25519", fingerprint: FINGERPRINT },
           known: null,

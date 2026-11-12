@@ -1330,6 +1330,10 @@ pub fn read_pressed(
         (_, Some((kept, remote))) => {
             let connect = connecting::Connecting {
                 route: Some(remote.route.spelled()),
+                identity: remote
+                    .route
+                    .identity()
+                    .map(|path| path.display().to_string()),
                 trusted: Some(remote.pin.clone()),
                 ..connecting::Connecting::default()
             };
@@ -1351,6 +1355,11 @@ pub fn read_pressed(
         (Kind::RemoteDocker, None) => {
             let connect = connecting::Connecting {
                 route: choices.connect.as_ref().map(|chosen| chosen.route.clone()),
+                identity: choices
+                    .connect
+                    .as_ref()
+                    .and_then(|chosen| chosen.identity.as_ref())
+                    .map(|path| path.display().to_string()),
                 trusted: choices
                     .connect
                     .as_ref()

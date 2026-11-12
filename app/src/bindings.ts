@@ -13787,6 +13787,8 @@ export type PoolSetupKey = {
 /**  The machine of a pool on another machine, as Connect shows it (#6266). */
 export type PoolSetupMachine = {
 	route: string | null,
+	/**  The key file the route signs in with, where a Podman connection names one (#6269). */
+	identity: string | null,
 	host: string | null,
 	/**  The key it showed at Connect to, to confirm. */
 	key: PoolSetupKey | null,

@@ -437,3 +437,40 @@ fn the_machine_connect_reads_is_kept_and_a_pin_only_once_trusted() {
     choose_kind(config.path(), Kind::Docker).unwrap();
     assert_eq!(read_choices(config.path()).unwrap().connect, None);
 }
+
+/// A machine picked from a Podman connection keeps its key file, and a Podman's pin, socket and
+/// graph root, is kept as trusted and read back whole (#6269), as the Pool step makes the pool
+/// with it.
+#[test]
+fn a_podman_connections_key_file_and_a_podmans_pin_are_kept_and_read_back() {
+    let config = tempfile::tempdir().unwrap();
+    let identity = std::path::Path::new("/home/me/.ssh/id_ed25519");
+    let route = "ssh://me@build-box/run/user/1000/podman/podman.sock";
+    choose_machine(config.path(), Some(route), Some(identity)).unwrap();
+    let kept = read_choices(config.path()).unwrap().connect.unwrap();
+    assert_eq!(kept.identity.as_deref(), Some(identity));
+    assert_eq!(kept.route_read().unwrap().identity(), Some(identity));
+    let remote = crate::runners::Remote {
+        route: kept.route_read().unwrap(),
+        pin: Pin {
+            host_key: key(KEY),
+            engine: crate::sshroute::EnginePin::Podman {
+                socket: "/run/user/1000/podman/podman.sock".into(),
+                graph_root: "/home/me/.local/share/containers/storage".into(),
+            },
+        },
+    };
+    crate::poolsetup::trusted(config.path(), &remote).unwrap();
+    let kept = read_choices(config.path()).unwrap().connect.unwrap();
+    assert_eq!(kept.trusted.as_ref(), Some(&remote.pin));
+    assert_eq!(kept.route_read().unwrap(), remote.route);
+    // A key file no route can sign in with is never kept.
+    assert!(
+        choose_machine(
+            config.path(),
+            Some(route),
+            Some(std::path::Path::new("keys/%h"))
+        )
+        .is_err()
+    );
+}
