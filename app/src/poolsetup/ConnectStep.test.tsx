@@ -84,6 +84,24 @@ describe("ConnectStep", () => {
     await waitFor(() => expect(props.onShown).toHaveBeenCalledWith(met));
   });
 
+  it("picks the machine kept once the SSH settings that name it are read", async () => {
+    core({ pool_setup_ssh_hosts: () => ["gpu", "build-box"] });
+    draw(
+      step({
+        machine: {
+          route: "ssh://build-box",
+          host: "build-box",
+          key: null,
+          known: null,
+          trusted: null,
+          now: null,
+          engine: null,
+        },
+      }),
+    );
+    await waitFor(() => expect(screen.getByRole("radio", { name: /build-box/ })).toBeChecked());
+  });
+
   it("keeps a machine typed as Docker's ssh:// route, and contacts nothing", async () => {
     const calls = core();
     const props = draw(step({ machine: null }));

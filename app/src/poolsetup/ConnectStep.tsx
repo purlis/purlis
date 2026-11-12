@@ -145,10 +145,14 @@ function Pick({
 }) {
   const kept = step.machine?.route ?? "";
   const keptHost = hosts.find((host) => routeOf(host) === kept);
-  const [picked, setPicked] = useState<string>(
-    keptHost ?? (kept === "" && hosts.length > 0 ? (hosts[0] ?? "typed") : "typed"),
+  // Until the person picks, the pick follows what is kept and what the SSH settings name, which
+  // are read after the step is drawn.
+  const [chosen, setPicked] = useState<string>();
+  const picked =
+    chosen ?? keptHost ?? (kept === "" && hosts.length > 0 ? (hosts[0] ?? "typed") : "typed");
+  const [typed, setTyped] = useState(
+    hosts.some((host) => routeOf(host) === kept) ? "" : kept.replace(/^ssh:\/\//, ""),
   );
-  const [typed, setTyped] = useState(keptHost === undefined ? kept.replace(/^ssh:\/\//, "") : "");
   const route = picked === "typed" ? routeOf(typed) : routeOf(picked);
   // What is picked is kept as it is picked, so coming back finds it. Nothing is contacted.
   useEffect(() => {
