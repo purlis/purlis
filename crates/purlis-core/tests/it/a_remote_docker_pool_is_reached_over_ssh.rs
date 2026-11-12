@@ -271,6 +271,93 @@ fn a_machine_that_isnt_there_is_said_so_before_ssh_is_asked() {
     ));
 }
 
+/// What the holder below names: the ssh holding its forward, and the `docker exec` it keeps open.
+const HOLDER_MARKER: &str = "REMOTE_DOCKER_TEST_HOLDER_MARKER";
+
+/// **A process holding a pool's forward with a `docker exec` open over it**, run by
+/// [`the_forward_ends_with_the_process_holding_it_even_with_a_docker_exec_open`] as a process of
+/// its own. Without its marker it runs nothing.
+#[test]
+fn holder_of_a_forward_with_an_exec_open() {
+    purlis_core::unsteered!();
+    let Ok(marker) = std::env::var(HOLDER_MARKER) else {
+        return;
+    };
+    let Some(fixture) = fixture() else { return };
+    let remote = trusted(&fixture, "held");
+    let docker = through(&fixture, "held", &remote).expect("the forward opens");
+    let socket = docker.forwarded().expect("a forward").to_path_buf();
+    let ssh = forward::ssh_of("held").expect("this process holds the forward");
+    // A channel of the connection's own, open for as long as `sleep` runs there.
+    // Left running as this process is killed: the test ends it.
+    #[allow(clippy::zombie_processes)]
+    let exec = purlis_core::forklock::spawn(
+        std::process::Command::new("docker")
+            .env("DOCKER_HOST", format!("unix://{}", socket.display()))
+            .env_remove("DOCKER_CONTEXT")
+            .args(["exec", "registry", "sleep", "297"])
+            .stdin(std::process::Stdio::null()),
+    )
+    .expect("docker exec runs");
+    let until = Instant::now() + Duration::from_secs(60);
+    while !exec_in(&fixture.dind, "docker top registry").contains("sleep 297") {
+        assert!(Instant::now() < until, "the exec started there");
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    std::fs::write(&marker, format!("{ssh} {}\n", exec.id())).expect("the marker");
+    // Held until the test kills this process outright.
+    std::thread::sleep(Duration::from_secs(300));
+}
+
+#[test]
+fn the_forward_ends_with_the_process_holding_it_even_with_a_docker_exec_open() {
+    purlis_core::unsteered!();
+    let Some(fixture) = fixture() else { return };
+    let marker = fixture.folders.path().join("held");
+    let mut holder = purlis_core::forklock::spawn(
+        std::process::Command::new(std::env::current_exe().expect("the test binary"))
+            .args([
+                "--exact",
+                "a_remote_docker_pool_is_reached_over_ssh::holder_of_a_forward_with_an_exec_open",
+                "--nocapture",
+                "--test-threads",
+                "1",
+            ])
+            .env(HOLDER_MARKER, &marker),
+    )
+    .expect("the holder runs");
+    let ssh = stand_in::pid_named_in(&marker, Duration::from_secs(120))
+        .expect("the holder named its ssh");
+    let exec: u32 = std::fs::read_to_string(&marker)
+        .expect("the marker")
+        .split_whitespace()
+        .nth(1)
+        .and_then(|pid| pid.parse().ok())
+        .expect("the holder named its exec");
+    // However it goes: killed outright, with nothing run as it goes.
+    holder.kill().expect("the holder is killed");
+    holder.wait().expect("the holder ended");
+    let gone = stand_in::is_gone(ssh, Duration::from_secs(30));
+    // The exec the holder left behind, ended here whatever was found.
+    let _ = purlis_core::forklock::status(
+        std::process::Command::new("kill").args(["-9", &exec.to_string()]),
+    );
+    assert!(gone, "ssh {ssh} outlived the process holding its forward");
+}
+
+#[test]
+fn every_forward_this_process_holds_ends_as_it_lets_go_of_all() {
+    purlis_core::unsteered!();
+    let Some(fixture) = fixture() else { return };
+    let remote = trusted(&fixture, "ending");
+    let docker = through(&fixture, "ending", &remote).expect("the forward opens");
+    let socket = docker.forwarded().expect("a forward").to_path_buf();
+    let ssh = forward::ssh_of("ending").expect("this process holds it");
+    forward::let_go_of_all();
+    assert!(stand_in::is_gone(ssh, Duration::from_secs(10)), "ssh ended");
+    assert!(!socket.exists(), "its socket went with it");
+}
+
 /// Puts the person's own SSH settings back, however the test ends.
 struct SettingsBack(PathBuf, Option<Vec<u8>>);
 

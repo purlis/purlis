@@ -5031,6 +5031,10 @@ pub fn run() {
                 if let Some(host) = app.try_state::<sessionhost::SessionHost>() {
                     host.end();
                 }
+                // Once no chat links over them: every SSH forward to a pool on another machine
+                // ends now, with nothing left to the other machine to end (ADR 0123 §8, as
+                // amended 2026-11-12).
+                purlis_core::sshroute::forward::let_go_of_all();
                 // A secret a vault's Copy put on the clipboard does not outlive the app: its
                 // clear was waiting on a timer that ends here.
                 app.state::<vaults::SystemClipboard>().clear_at_exit();

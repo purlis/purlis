@@ -452,10 +452,12 @@ fn common_options() -> Vec<String> {
 
 /// **What the forward's session runs on the other machine**: it waits on a line from purlis, which
 /// never sends one. When the process holding the forward goes, however it goes, its end of the
-/// pipe closes, `read` returns, the session ends and ssh with it, so no forward outlives what
-/// opened it (`-N` would: nothing but a kill ends it). POSIX `sh`, `bash`, `zsh` and `fish` read
-/// it alike.
-pub const HELD_BY: &str = "read line";
+/// pipe closes and `read` returns. It then ends the session's own sshd process, its parent once
+/// `exec` has replaced the login shell, so the whole connection ends with every channel on it
+/// (a `docker exec` still open too, which would otherwise keep ssh here waiting), and ssh here
+/// ends with it. No forward outlives what opened it (`-N` would: nothing but a kill ends it).
+/// POSIX `sh`, `bash`, `zsh` and `fish` read it alike; ADR 0123's amendment of 2026-11-12.
+pub const HELD_BY: &str = "exec sh -c 'read line; [ \"$PPID\" -gt 1 ] && kill -HUP \"$PPID\"'";
 
 /// **The forward's arguments** (D-6257-1): `ssh -T -L <local>:<remote socket> -- <machine>
 /// <`[`HELD_BY`]`>`, pinned, with the forward required to succeed, held by a pipe from purlis,

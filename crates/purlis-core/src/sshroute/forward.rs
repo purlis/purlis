@@ -10,6 +10,10 @@
 //! process keeps rather than opening a forward over it, and takes it over once that process
 //! has let go. **A forward that dropped is opened again** by the next [`hold`], before anything
 //! links over it, and ssh checks the pinned key as it does.
+//!
+//! **It ends with the process holding it**: the window ends every forward as it quits
+//! ([`let_go_of_all`]), and a process that goes any other way closes the pipe its forward's
+//! session waits on, which ends the whole connection there ([`super::HELD_BY`]).
 
 use std::collections::BTreeMap;
 use std::io::Read as _;
@@ -76,6 +80,12 @@ impl Forward {
     #[must_use]
     pub fn socket(&self) -> &Path {
         &self.socket
+    }
+
+    /// The process id of the ssh holding it.
+    #[must_use]
+    pub fn ssh(&self) -> u32 {
+        self.child.id()
     }
 }
 
@@ -274,4 +284,28 @@ pub fn let_go(pool: &str) {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     held.remove(pool);
+}
+
+/// **The process id of the ssh holding pool `pool`'s forward**, where this process holds it.
+#[must_use]
+pub fn ssh_of(pool: &str) -> Option<u32> {
+    let held = HELD_HERE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    match held.get(pool) {
+        Some(Held::Own(forward)) => Some(forward.ssh()),
+        _ => None,
+    }
+}
+
+/// **Ends every forward this process holds**, at once: what the window does as it quits, so none
+/// is left to its session's own ending ([`super::HELD_BY`]). Held in a static, a forward is
+/// otherwise never dropped.
+pub fn let_go_of_all() {
+    let all = std::mem::take(
+        &mut *HELD_HERE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+    );
+    drop(all);
 }

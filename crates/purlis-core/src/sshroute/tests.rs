@@ -277,43 +277,6 @@ fn the_machines_ssh_settings_name_are_offered_once_each_and_patterns_never() {
 }
 
 #[test]
-fn the_unspecified_address_is_no_machine_to_reach() {
-    for route in [
-        "ssh://me@[::]",
-        "ssh://me@[::]:22",
-        "ssh://me@::",
-        "ssh://me@[0:0:0:0:0:0:0:0]",
-    ] {
-        assert!(Route::parse(route).is_err(), "{route}");
-    }
-    // Nor is a string of colons that is no address.
-    assert!(Route::parse("ssh://me@[:::]").is_err());
-    assert!(Route::parse("ssh://me@[1::2::3]").is_err());
-    let loopback = Route::parse("ssh://me@[::1]:2222").unwrap();
-    assert_eq!(loopback.host(), "::1");
-    assert!(Route::parse("ssh://me@[fe80::1]").is_ok());
-}
-
-#[test]
-fn ssh_keygen_is_the_one_path_names() {
-    let dir = tempfile::tempdir().unwrap();
-    let keygen = dir.path().join("ssh-keygen");
-    std::fs::write(&keygen, "#!/bin/sh\n").unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        std::fs::set_permissions(&keygen, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
-    let path = dir.path().display().to_string();
-    assert_eq!(connect::keygen_on(Some(&path)), Some(keygen));
-    let empty = tempfile::tempdir().unwrap();
-    assert_eq!(
-        connect::keygen_on(Some(&empty.path().display().to_string())),
-        None
-    );
-}
-
-#[test]
 fn the_forward_takes_no_command_tunnel_or_forward_clearing_from_the_persons_settings() {
     let route = Route::parse("ssh://me@box/var/run/docker.sock").unwrap();
     let args = forward_args(&route, "build", Path::new("/k"), Path::new("/s")).unwrap();
@@ -376,4 +339,50 @@ fn settings_that_would_ride_on_the_forward_are_named_from_what_ssh_g_prints() {
         connect::not_carried("localforward 1 2\nlocalforward 3 4\n"),
         ["LocalForward"]
     );
+}
+
+#[test]
+fn the_unspecified_address_is_no_machine_to_reach() {
+    for route in [
+        "ssh://me@[::]",
+        "ssh://me@[::]:22",
+        "ssh://me@::",
+        "ssh://me@[0:0:0:0:0:0:0:0]",
+    ] {
+        assert!(Route::parse(route).is_err(), "{route}");
+    }
+    // Nor is a string of colons that is no address.
+    assert!(Route::parse("ssh://me@[:::]").is_err());
+    assert!(Route::parse("ssh://me@[1::2::3]").is_err());
+    let loopback = Route::parse("ssh://me@[::1]:2222").unwrap();
+    assert_eq!(loopback.host(), "::1");
+    assert!(Route::parse("ssh://me@[fe80::1]").is_ok());
+}
+
+#[test]
+fn ssh_keygen_is_the_one_path_names() {
+    let dir = tempfile::tempdir().unwrap();
+    let keygen = dir.path().join("ssh-keygen");
+    std::fs::write(&keygen, "#!/bin/sh\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&keygen, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let path = dir.path().display().to_string();
+    assert_eq!(connect::keygen_on(Some(&path)), Some(keygen));
+    let empty = tempfile::tempdir().unwrap();
+    assert_eq!(
+        connect::keygen_on(Some(&empty.path().display().to_string())),
+        None
+    );
+}
+
+#[test]
+fn the_forwards_session_ends_the_whole_connection_once_purlis_lets_go() {
+    // It waits on purlis's pipe, then ends the session's own sshd process, which takes every
+    // channel the connection holds with it (a `docker exec` too), so ssh here ends.
+    assert!(HELD_BY.contains("read line"), "{HELD_BY}");
+    assert!(HELD_BY.contains("kill -HUP \"$PPID\""), "{HELD_BY}");
+    assert!(HELD_BY.starts_with("exec sh -c '"), "{HELD_BY}");
 }
