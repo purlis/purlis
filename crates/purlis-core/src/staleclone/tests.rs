@@ -436,6 +436,9 @@ fn plane_with_a_clone_off_its_default()
         assert!(done.ok(), "git {args:?} failed: {done:?}");
     };
     git(&["init", "-q", "-b", "main", "."]);
+    // Its own identity: a CI runner has none of its own to commit with.
+    git(&["config", "user.email", "t@e.invalid"]);
+    git(&["config", "user.name", "t"]);
     std::fs::write(clone.join("README.md"), "one\n").unwrap();
     git(&["add", "-A"]);
     git(&["commit", "-q", "-m", "one"]);
