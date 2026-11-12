@@ -2074,6 +2074,21 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "mariadb-dumpslow",
     "mysql_find_rows",
     "mariadb-find-rows",
+    // A host value that reaches the client's flags or a DBI address (#6185): `mysqlaccess` splits
+    // its command line, `--host=` and the host among it, on white space into the client's
+    // arguments; `mytop`, `mysql_convert_table_format` and `mysql_setpermission` join the host
+    // into a `DBI:MariaDB:` address its driver splits at each `;` into attributes, among them
+    // a file of settings the client library reads. Percona Server's `ps-admin` `source`s its
+    // `--config-file` as a shell file and expands its user and host unquoted into the client's
+    // command line.
+    "mysqlaccess",
+    "mariadb-access",
+    "mytop",
+    "mysql_convert_table_format",
+    "mariadb-convert-table-format",
+    "mysql_setpermission",
+    "mariadb-setpermission",
+    "ps-admin",
     // The client and its test built with the server inside them: what `--server-arg` hands the
     // server (`--plugin-load`, `--plugin-dir`) loads code from a file it names.
     "mysql_embedded",

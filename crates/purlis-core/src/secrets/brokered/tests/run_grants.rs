@@ -2897,6 +2897,48 @@ fn innotop_loads_the_perl_plugins_its_configuration_names_so_it_is_offered_no_ru
     refused_as_running_others("innotop");
 }
 
+/// `mysqlaccess` (`mariadb-access` on Debian, #6185): it appends `--host=` and its `--rhost`
+/// value to the client's command line and splits the line on white space into the client's
+/// arguments (MariaDB's `scripts/mysqlaccess.sh`, its `Connect` and its dump of the grant
+/// tables), so a host value of `x --plugin-dir=… --default-auth=…` has the client load a plugin
+/// from a folder it names. Its prefix took it to the tools' row, which reads no `-H`.
+#[test]
+fn mysqlaccess_splits_its_host_into_the_clients_flags_so_it_is_offered_no_run_grant() {
+    for name in ["mysqlaccess", "mariadb-access"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The tools that build a Perl DBI address from their host value (#6185): `mytop`,
+/// `mysql_convert_table_format` and `mysql_setpermission` join it, unquoted, into a
+/// `DBI:MariaDB:` or `DBI:mysql:` address (MariaDB's `scripts/mytop.sh`,
+/// `scripts/mysql_convert_table_format.sh`, `scripts/mysql_setpermission.sh`), whose driver
+/// splits it at each `;` into its attributes (`parse_dsn` in DBD::MariaDB, `_OdbcParse` in
+/// DBD::mysql). A host of `x;mariadb_read_default_file=…` names a file of settings the client
+/// library reads, which can name a plugin folder and an authentication plugin from it. None of
+/// the client's own flags is in the command, so no row read the value.
+#[test]
+fn the_tools_that_put_their_host_in_a_dbi_address_are_offered_no_run_grant() {
+    for name in [
+        "mytop",
+        "mysql_convert_table_format",
+        "mariadb-convert-table-format",
+        "mysql_setpermission",
+        "mariadb-setpermission",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// Percona Server's `ps-admin` (#6185): its `--config-file` is `source`d as a shell file, and its
+/// `--user` and `--host` values are expanded unquoted into the client's command line
+/// (`scripts/ps-admin.sh`, Percona Server 8.0). Its name starts with neither `mysql` nor
+/// `mariadb`, so no row read it.
+#[test]
+fn ps_admin_runs_its_configuration_file_as_a_shell_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("ps-admin");
+}
+
 /// The client built with the server inside it: what `--server-arg` hands the embedded server
 /// (`--plugin-load`, `--plugin-dir`) loads code from a file it names.
 #[test]
