@@ -22,6 +22,7 @@ import {
   type PlaneId,
 } from "./bindings";
 import { qualifierOf, shownOf } from "./finished";
+import { endedAt } from "./chatEnded";
 import { chatNumberIn, chatNumberSaid, numberedName } from "./chatNumber";
 import type { ViewRef } from "./tabs";
 import type { Offer } from "./actions";
@@ -56,13 +57,7 @@ function capitalised(words: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-/** When it ended, as a clock says it: `11:08`. Nothing where the record keeps no end. */
-export function endedAt(ended: string | null): string | undefined {
-  if (ended === null) return undefined;
-  const at = new Date(ended);
-  if (Number.isNaN(at.getTime())) return undefined;
-  return at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
-}
+export { endedAt } from "./chatEnded";
 
 /** The card's title: `#641 · Signed commits #5607`. */
 export function cardTitle(card: ChatCard): string {

@@ -108,7 +108,6 @@ fn pane_of_652(root: &Path) -> Pane {
     Pane {
         project: Some(root.to_owned()),
         session: Some(652),
-        ..Pane::default()
     }
 }
 
