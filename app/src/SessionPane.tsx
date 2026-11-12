@@ -29,7 +29,7 @@ import { onScreenReaderMode, screenReaderMode } from "./screenReader";
 import { onAMac } from "./tabKeys";
 import { opensFind } from "./keys/findKeys";
 import { LINK_CORE } from "./paneLinkCore";
-import { linkPane, relayed, type LinkHands } from "./paneLinks";
+import { linkPane, relayed, type LinkedPane, type LinkHands } from "./paneLinks";
 import { usePaneLinks } from "./PaneLinkSurfaces";
 import { isKey } from "./keys/registry";
 import { moveAlong } from "./tabSequence";
@@ -126,6 +126,8 @@ export function SessionPane({
 }) {
   const holder = useRef<HTMLDivElement>(null);
   const terminal = useRef<Terminal | undefined>(undefined);
+  /** The terminal and its view this pane draws now, while it draws one. */
+  const shownLive = useRef<Live | undefined>(undefined);
   /** **How many times the terminal was started again** (`noEcho.ts`): its view was stuck. */
   const [started, setStarted] = useState(0);
   /** Set as the terminal is to be let go of, not kept, as it leaves the pane. */
@@ -142,10 +144,16 @@ export function SessionPane({
   /** **Its links' surfaces** (`PaneLinkSurfaces.tsx`, #6215): a hovered link's tooltip, and the
    *  window's answer to one ⌘-clicked that did not simply open. An ask accepted opens the
    *  target it showed, resolved again by the core. */
-  const { hands: linkHands, surfaces: linkSurfaces } = usePaneLinks({
+  const {
+    hands: linkHands,
+    surfaces: linkSurfaces,
+    openLinksList,
+  } = usePaneLinks({
     from: { plane, session },
     core: LINK_CORE,
     colour: () => linkColour(inForce()),
+    // *Links in this pane…* (#6220) reads the screen of the terminal this pane draws now.
+    onScreen: () => shownLive.current?.links.onScreen() ?? Promise.resolve([]),
   });
   /** Says something in the pane, in the terminal's own hand, while it is up. */
   const saying = useRef<(trouble: string) => void>(() => {});
@@ -251,6 +259,7 @@ export function SessionPane({
       holder: where,
       fromKeys,
       links: linkHands,
+      listLinks: openLinksList,
       find: (search) => setFinding((open) => ({ search, asked: (open?.asked ?? 0) + 1 })),
       startAgain: () => {
         lettingGo.current = true;
@@ -260,6 +269,7 @@ export function SessionPane({
     if (pane.element !== undefined && pane.element.parentElement !== where)
       where.appendChild(pane.element);
     terminal.current = pane;
+    shownLive.current = live;
     saying.current = live.say;
     // **A terminal started again takes the keyboard its last one had** (`noEcho.ts`): it is
     // started while its person types, and their next key goes to it.
@@ -313,6 +323,7 @@ export function SessionPane({
       unqueue();
       live.owner = undefined;
       terminal.current = undefined;
+      shownLive.current = undefined;
       setFinding(null);
       // **Kept if the chat is one of the last shown**, off the window and still taking what
       // its program writes; let go of otherwise, its view closed.
@@ -324,7 +335,7 @@ export function SessionPane({
       if (!lettingGoOf && keepTerminal(key, live)) pane.element?.remove();
       else live.release();
     };
-  }, [plane, session, started, linkHands]);
+  }, [plane, session, started, linkHands, openLinksList]);
   // **An ended chat's last screen takes no input** (#4756): xterm sends nothing typed, and the
   // screen is read, scrolled, found in and copied from as before. After the effect above, which
   // made the terminal it is set on.
@@ -408,6 +419,8 @@ type Owner = {
   startAgain: () => void;
   /** What its links' hover and answers are drawn by (`PaneLinkSurfaces.tsx`). */
   links: LinkHands | undefined;
+  /** Opens *Links in this pane…* (#6220). */
+  listLinks: () => void;
 };
 
 /**
@@ -422,6 +435,8 @@ type Live = KeptTerminal & {
   say: (trouble: string) => void;
   /** Fits it to the pane it is in, while it is in the window. */
   fit: () => void;
+  /** Its link hook (`paneLinks.ts`): what *Links in this pane…* reads its screen by. */
+  links: LinkedPane;
 };
 
 /**
@@ -487,6 +502,7 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
   let newline: string | undefined;
   const live: Live = {
     pane,
+    links,
     owner: undefined,
     say: () => {},
     fit,
@@ -496,6 +512,14 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
   // them. Each is swallowed on every phase — keydown, keypress, keyup — so xterm sends
   // nothing of its own for it, and acted on once, at keydown.
   pane.attachCustomKeyEventHandler((event) => {
+    // **Links in this pane…** (#6220): ⌘⇧L, Ctrl+Shift+L off a Mac.
+    if (isKey(event, "pane.links")) {
+      if (event.type === "keydown" && !event.repeat) {
+        event.preventDefault();
+        live.owner?.listLinks();
+      }
+      return false;
+    }
     if (isKey(event, "chat.find")) {
       if (event.type === "keydown") {
         event.preventDefault();

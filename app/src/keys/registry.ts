@@ -197,6 +197,8 @@ const sideSaid = (which: keyof ReturnType<typeof sideKeysSaid>) => (mac: boolean
   sideKeysSaid(mac)[which] ?? "";
 /** Use skill…'s chords (#3954): ⌘⇧S, and Ctrl+Shift+S off a Mac. */
 const USE_SKILL = { mac: cmd("S", { shift: true }), other: ctl("S", { shift: true }) };
+/** Links in this pane…'s chords (#6220): ⇧⌘L, and Ctrl+Shift+L off a Mac. */
+const PANE_LINKS = { mac: cmd("L", { shift: true }), other: ctl("L", { shift: true }) };
 /** No modifier held. */
 const plain = (e: KeyboardEvent) => !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey;
 /** Asks' triage keys (`asksTriage.ts`), each with what the cheat sheet says it does. */
@@ -754,6 +756,19 @@ export const SHORTCUTS: readonly Shortcut[] = [
     said: (mac) => (mac ? "⌘F" : "Ctrl+Shift+F"),
     yields: [],
     matches: opensFind,
+  },
+  {
+    id: "pane.links",
+    does: "The links on the pane's screen: Links in this pane…",
+    group: "Tabs and chats",
+    where: "terminal",
+    kind: "key",
+    // `L` for links (#6220, D5). ⌘⇧L was no key of the window's; Ctrl with Shift and a letter is
+    // no byte to a terminal's program, so it is the pane's off a Mac, as Ctrl+Shift+F is.
+    chords: { mac: [PANE_LINKS.mac], other: [PANE_LINKS.other] },
+    said: (mac) => (mac ? "⌘⇧L" : "Ctrl+Shift+L"),
+    yields: [],
+    matches: (e, mac) => isChord(e, mac ? PANE_LINKS.mac : PANE_LINKS.other),
   },
   {
     id: "chat.menu",
