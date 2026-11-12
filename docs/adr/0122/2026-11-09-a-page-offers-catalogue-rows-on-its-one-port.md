@@ -4,7 +4,8 @@
 
 - **An offer names a catalogue row; it never words one.** The page posts the whole set it
   offers now, `{ id, offers: [{ does, subject }] }`, on `purlis.port`, carried as
-  `/.purlis/port/<load>/offers/<id>?<{offers}>`. `does` is the part of an `actions.ts` row id
+  `/.purlis/port/<load>/offers/<id>/<n>?<{offers}>`, `<n>` counting the load's sets from 1, so
+  the set said last is the one drawn however the sets are gated (#6232). `does` is the part of an `actions.ts` row id
   before its colon and `subject` the part after it, so `todo.done` with `fix-login` names the row
   `todo.done:fix-login`. Each set replaces the last; an empty one withdraws them all, and so
   does the page loading again. At most 8, each in closed types: a field more (a title of the
