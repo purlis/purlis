@@ -135,7 +135,14 @@ export type CollectionEntry = {
   /** A host's own words, as the file writes it, without what its label adds ("not yet
    *  confirmed"): what a hosts table shows and finds it by (R65). */
   host?: string;
+  /** When, in seconds since 1970, and by what one of your own hosts was added on this machine,
+   *  where the core records it (#6172, R65): Settings' Add (`you`) or a block's Allow (`block`).
+   *  None for a host added before the record existed. */
+  added?: HostAdded;
 };
+
+/** When, in seconds since 1970, and by what one of your own hosts was added (#6172). */
+export type HostAdded = { at: number; by: "you" | "block" };
 
 /** One field of a collection's Add form, written to the entry's key `field`. */
 export type EntryField = {

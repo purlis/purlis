@@ -354,13 +354,18 @@ describe("the Project level", () => {
     await atProject();
 
     await userEvent.type(
-      screen.getByRole("searchbox", { name: "Filter settings" }),
+      screen.getByRole("searchbox", { name: "Search settings" }),
       "colour of the moon",
     );
 
-    expect(within(nav()).queryAllByRole("button")).toEqual([]);
+    // Only the page of every match, which found none (#2920).
     expect(
-      screen.getByText("No setting at this level matches “colour of the moon”.", {
+      within(nav())
+        .queryAllByRole("button")
+        .map((one) => one.textContent),
+    ).toEqual(["All results"]);
+    expect(
+      screen.getByText("No setting matches “colour of the moon”.", {
         ignore: "[role=status]",
       }),
     ).toBeVisible();

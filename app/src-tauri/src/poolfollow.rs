@@ -464,9 +464,9 @@ pub fn let_go(
         ));
     }
     let unpair = |_: &purlis_core::runners::Kept| crate::runnerlinks::unpair(&to);
-    let removed =
-        purlis_core::pools::drain(&machine.config, &machine.docker, kept.name(), Some(&unpair))
-            .map_err(|why| why.to_string())?;
+    let docker = machine.for_pool(kept.pool())?.docker;
+    let removed = purlis_core::pools::drain(&machine.config, &docker, kept.name(), Some(&unpair))
+        .map_err(|why| why.to_string())?;
     forget_waiting_on(&machine.config, kept.pool(), kept.name());
     removed.left().map_or(Ok(()), Err)
 }
@@ -489,10 +489,13 @@ pub enum NotChecked {
 /// container runs, or of which Docker says nothing sure, which is asked as before.
 #[cfg(unix)]
 fn unasked(machine: &Machine, kept: &purlis_core::runners::Kept) -> Option<NotChecked> {
+    // A pool on another machine that can't be reached now says nothing of its runner here.
     if kept.engine.is_some()
         && matches!(
-            machine.docker.missing(&kept.made, kept.engine.as_deref()),
-            Ok(Some(purlis_core::dockerpool::Missing::Removed(_)))
+            machine
+                .for_pool(kept.pool())
+                .map(|on| on.docker.missing(&kept.made, kept.engine.as_deref())),
+            Ok(Ok(Some(purlis_core::dockerpool::Missing::Removed(_))))
         )
     {
         return Some(NotChecked::HomeOnly);
@@ -557,10 +560,12 @@ fn let_go_unasked(
         NotChecked::Stopped => {
             let to = ToARunner::of_kept(machine, kept)?;
             let unpair = |_: &purlis_core::runners::Kept| crate::runnerlinks::unpair(&to);
-            purlis_core::pools::drain(&machine.config, &machine.docker, runner, Some(&unpair))
+            let docker = machine.for_pool(kept.pool())?.docker;
+            purlis_core::pools::drain(&machine.config, &docker, runner, Some(&unpair))
         }
         NotChecked::HomeOnly => {
-            purlis_core::pools::drain_removed(&machine.config, &machine.docker, runner)
+            let docker = machine.for_pool(kept.pool())?.docker;
+            purlis_core::pools::drain_removed(&machine.config, &docker, runner)
         }
     }
     .map_err(|why| why.to_string())?;
@@ -635,14 +640,10 @@ pub fn follow_and_drain(
             .filter(|pool| pool.image() != image && pool.image().is_purlis_own())
         {
             let moved = desktop.clone().and_then(|desktop| {
-                purlis_core::pools::follow(
-                    &machine.config,
-                    &machine.docker,
-                    pool.name(),
-                    image,
-                    &desktop,
-                )
-                .map_err(|why| why.to_string())
+                // A pool on another machine follows on its own engine (ADR 0123 §1).
+                let docker = machine.for_pool(pool.name())?.docker;
+                purlis_core::pools::follow(&machine.config, &docker, pool.name(), image, &desktop)
+                    .map_err(|why| why.to_string())
             });
             said.push(match moved {
                 Ok(Some(kept)) => format!(
@@ -660,6 +661,12 @@ pub fn follow_and_drain(
         }
     }
     for kept in purlis_core::runners::draining(&machine.config).unwrap_or_default() {
+        // A runner of a pool on another machine that can't be reached now is looked at next
+        // time, on its own engine: never on this machine's (#6266).
+        let Ok(on) = machine.for_pool(kept.pool()) else {
+            continue;
+        };
+        let machine = &on;
         // A held runner is the person's now, what a Docker prune left of it too. Told once.
         if kept.held {
             lock_waiting().remove(&(
@@ -908,7 +915,15 @@ fn kept_for_its_conversations(
     how: &str,
 ) -> Option<String> {
     let name = kept.name();
-    match purlis_core::pools::held_for_its_conversations(&machine.config, &machine.docker, name) {
+    let docker = match machine.for_pool(kept.pool()) {
+        Ok(on) => on.docker,
+        Err(why) => {
+            return Some(format!(
+                "draining runner {name} {how}, and stays until its home is read: {why}"
+            ));
+        }
+    };
+    match purlis_core::pools::held_for_its_conversations(&machine.config, &docker, name) {
         Ok(false) => None,
         Ok(true) => Some(format!(
             "draining runner {name} {how}, and its home holds its chats' conversations, so it \

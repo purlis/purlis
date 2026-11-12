@@ -21,6 +21,9 @@ const STEP: PoolSetupStep = {
   admin: null,
   undo: null,
   see: null,
+  other: null,
+  machine: null,
+  cause: null,
   checks: [],
 };
 

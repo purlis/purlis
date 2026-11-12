@@ -20,7 +20,7 @@ import type { Place } from "./pieceViews";
  * A record is a file a chat wrote, so what it names is a request, never a trusted path: the
  * core places and refuses it, and this only decides which spans are worth a button.
  */
-export type RecordRef = Omit<Jump, "plane">;
+export type RecordRef = Omit<Jump, "plane"> & { line: number };
 
 const SEGMENT = /^[A-Za-z0-9._@+-]+$/;
 const REF = /^([^:]+)(?::([1-9][0-9]*))?$/;

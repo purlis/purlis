@@ -14,7 +14,8 @@ import {
 } from "./bindings";
 import { Notice } from "./Notice";
 import { CheckStep, ClusterPoolStep, ContextOptions, InstallStep } from "./poolsetup/ClusterSteps";
-import { Action, Say, SeeWhat, StepHead } from "./poolsetup/parts";
+import { ConnectStep } from "./poolsetup/ConnectStep";
+import { Action, Recommended, Say, SeeWhat, StepHead } from "./poolsetup/parts";
 import { GET_HELP_SAYS, GetHelp, PoolSetupPlane } from "./poolsetup/GetHelp";
 import { IdentityStep } from "./poolsetup/IdentityStep";
 import { NOTHING_CHOSEN, PoolStep, type Chosen } from "./poolsetup/PoolStep";
@@ -28,6 +29,8 @@ import {
 } from "./pools";
 import { Button } from "./ui/button/Button";
 import { Card } from "./ui/card/Card";
+import { OptionCard, OptionCards } from "./ui/choice/Radio";
+import { Server } from "lucide-react";
 import { STEP_STATES, StepList, type StepState } from "./ui/steps/Steps";
 
 /**
@@ -110,19 +113,23 @@ function Where({
   contexts,
   onNext,
   onChose,
+  onChoseRemote,
   onChoseCluster,
   onRecheck,
   said,
 }: {
   step: PoolSetupStep;
+  /** Where the chats of this setup run: `docker`, `cluster` or `remote-docker` (#6266). */
   kind: string;
   contexts: PoolSetupContexts;
   onNext: () => void;
   onChose: () => void;
+  onChoseRemote: () => void;
   onChoseCluster: (context: string) => void;
   onRecheck: () => void;
   said: (trouble: string) => void;
 }) {
+  const [picking, pick] = useState(kind === "remote-docker" ? "remote" : "local");
   const next = step.next;
   const [context, setContext] = useState<string | undefined>(
     contexts.chosen ?? contexts.recommended ?? undefined,
@@ -147,6 +154,60 @@ function Where({
       {also.label}
     </Button>
   );
+  // **This machine, or another one with Docker** (ADR 0123 §6, #6265): offered while there is no
+  // pool, the core's own next for each.
+  if (step.other && step.state !== "attention") {
+    const local = kind === "docker" ? next : step.other;
+    const remote = kind === "remote-docker" ? next : step.other;
+    const chosen = picking === "remote" ? remote : local;
+    const here = kind === "docker" && step.state !== "attention";
+    // The core's own words for each way on, and Continue where it is already the one chosen.
+    const chosenAlready =
+      step.state === "done" && picking === (kind === "docker" ? "local" : "remote");
+    const mainLabel = chosenAlready ? "Continue" : (chosen?.label ?? "Continue");
+    return (
+      <>
+        <StepHead title={WHERE_TITLE} lead={WHERE_LEAD} />
+        <OptionCards aria-label="Where your chats run" value={picking} onChange={pick}>
+          <OptionCard
+            value="local"
+            icon={<Server size={18} />}
+            title={
+              <span className="pool-setup-choice">This machine {here && <Recommended />}</span>
+            }
+            detail="Docker on this machine runs your chats, each in its own container."
+          />
+          <OptionCard
+            value="remote"
+            icon={<Server size={18} />}
+            title={<span className="pool-setup-choice">Another machine with Docker</span>}
+            detail="A second Mac, a Linux box or a server, reached over SSH. Your chats keep running there while this machine sleeps."
+          />
+        </OptionCards>
+        {step.see && <SeeWhat text={step.see.text} note={step.see.note} />}
+        <Action
+          does={
+            step.state === "done" && picking === (kind === "docker" ? "local" : "remote")
+              ? undefined
+              : chosen?.does
+          }
+          main={mainLabel}
+          reserve={[local?.label, remote?.label, "Continue"].filter(
+            (one): one is string => one !== undefined,
+          )}
+          onMain={() => {
+            if (picking === "remote") {
+              if (kind === "remote-docker" && step.state === "done") onNext();
+              else onChoseRemote();
+            } else if (kind === "docker" && step.state === "done") onNext();
+            else onChose();
+          }}
+        >
+          {picking === "local" && other}
+        </Action>
+      </>
+    );
+  }
   // Nothing here can do it for the person: the words say what to do, and the recheck notices.
   const onlySaid = next?.id === "use-local-docker";
   return (
@@ -432,6 +493,14 @@ function PoolSetupGuide({
               key={setup.kind}
               step={step}
               kind={setup.kind}
+              onChoseRemote={() => {
+                setTrouble(undefined);
+                setShowing(undefined);
+                void commands.poolSetupChooseRemoteDocker().then((answer) => {
+                  if (answer.status === "error") setTrouble(answer.error);
+                  else reread();
+                });
+              }}
               contexts={setup.contexts}
               said={setTrouble}
               onChoseCluster={(context) => {
@@ -469,6 +538,18 @@ function PoolSetupGuide({
                 setShowing(undefined);
                 reread();
               }}
+            />
+          ) : step?.id === "connect" ? (
+            <ConnectStep
+              step={step}
+              shown={setup}
+              plane={plane}
+              onShown={(now) => setRead({ state: "read", shown: now })}
+              changed={() => {
+                setShowing(undefined);
+                reread();
+              }}
+              onNext={() => after("connect")}
             />
           ) : step?.id === "signins" && step.next?.id === "mark-as-own" ? (
             <>

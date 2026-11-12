@@ -41,6 +41,7 @@ const QUIET: readonly string[] = [
   ".search-line-number",
   ".search-summary",
   ".ui-machine-path",
+  ".ui-record-where",
   ".activity-at",
   ".memory-meta",
   ...FAMILY_THEMES.flatMap((family) => family.quiet ?? []),

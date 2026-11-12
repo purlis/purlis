@@ -172,7 +172,7 @@ describe("the level switcher and the arrow keys (D-626-4)", () => {
     expect(level("You")).toHaveFocus();
     expect(onLevelChange).not.toHaveBeenCalled();
     await user.tab();
-    expect(screen.getByRole("searchbox", { name: "Filter settings" })).toHaveFocus();
+    expect(screen.getByRole("searchbox", { name: "Search settings" })).toHaveFocus();
   });
 
   it("keeps the keyboard on the switcher when the level is drawn by a layout of its own", async () => {

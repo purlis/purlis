@@ -193,7 +193,7 @@ describe("Locate… for a remembered project that moved", function () {
 /** What This machine's rows and any alert or status line say, for a failure's message. */
 async function windowSays(): Promise<string> {
   return browser.execute(() =>
-    [...document.querySelectorAll<HTMLElement>('.ui-machine-entry,[role="alert"],[role="status"]')]
+    [...document.querySelectorAll<HTMLElement>('[role="row"],[role="alert"],[role="status"]')]
       .map((one) => one.innerText.trim())
       .filter(Boolean)
       .join(" | "),

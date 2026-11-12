@@ -33,6 +33,9 @@ const TO_SET_UP: PoolSetupStep = {
   admin: null,
   undo: null,
   see: null,
+  other: null,
+  machine: null,
+  cause: null,
   checks: [],
 };
 

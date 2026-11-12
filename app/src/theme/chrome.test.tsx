@@ -42,6 +42,7 @@ import { ApprovePlane } from "../ApprovePlane";
 import { HistoryDialog } from "../ArtifactHistory";
 import { ArtifactLinkDialog } from "../ArtifactLinks";
 import { LinkAnswer } from "../PaneLinkSurfaces";
+import { PaneLinksList } from "../PaneLinksList";
 import { OfferAsks } from "../ArtifactOffers";
 import { AskPersona } from "../AskPersona";
 import { UseSkill } from "../UseSkill";
@@ -1572,11 +1573,45 @@ const DIALOGS: Opened[] = [
               reason: "its text names another address",
               shown: "docs.purlis.dev/setup",
               target: "https://purlis-setup.example.net/s",
+              token: "a-one-use-token",
+              about: { about: "link" },
             },
             candidate: { kind: "url", text: "docs.purlis.dev/setup" },
           }}
           onClose={nothing}
           onConfirm={nothing}
+        />,
+      ),
+  },
+  {
+    name: "a pane's links, listed (#6220)",
+    file: "PaneLinksList.tsx",
+    open: async () =>
+      render(
+        <PaneLinksList
+          links={[
+            {
+              candidate: { kind: "url", text: "https://purlis.dev/setup" },
+              seen: {
+                kind: "url",
+                target: "https://purlis.dev/setup",
+                shown: "https://purlis.dev/setup",
+                does: { does: "opens", into: "browser" },
+              },
+            },
+            {
+              candidate: { kind: "url", text: "ftp://purlis.dev/old" },
+              seen: {
+                kind: "url",
+                target: "ftp://purlis.dev/old",
+                shown: "ftp://purlis.dev/old",
+                does: { does: "refused", reason: "purlis opens only http and https addresses" },
+              },
+            },
+          ]}
+          onPick={nothing}
+          onCopy={nothing}
+          onClose={nothing}
         />,
       ),
   },

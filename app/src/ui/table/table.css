@@ -147,7 +147,14 @@
 /* **A cell that holds only a control** (a check, the ⋯, a row's own button) is a target of its own
    too, since the grid's arrows focus it: a room 24 CSS px wide is kept beside its control, where
    the pointer lands on the cell and not the control (WCAG 2.5.8), so neither stands in the
-   other's way. A box of no height after the control, so no padding changes. */
+   other's way. A box of no height after the control, so no padding changes, and on its line:
+   where the column is narrow it never wraps under the control and makes the row taller (#6172). */
+[data-scope="table"][data-part="cell"]:has(> :is([data-scope="button"], [data-part="select"])):not(
+    :has(> :not([data-scope="button"], [data-part="select"], [data-part="rule"]))
+  ) {
+  white-space: nowrap;
+}
+
 [data-scope="table"][data-part="cell"]:has(> :is([data-scope="button"], [data-part="select"])):not(
     :has(> :not([data-scope="button"], [data-part="select"], [data-part="rule"]))
   )::after {

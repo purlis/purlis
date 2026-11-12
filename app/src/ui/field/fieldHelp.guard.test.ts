@@ -28,6 +28,10 @@ const HELPED: Record<string, { grounds: string[]; where: string }> = {
     where:
       "Pool setup on a cluster: the operator's image under Install's Options, and a Pool's name and runner image under the Pool step's, on a view tab's page (.pane.view)",
   },
+  "poolsetup/ConnectStep.tsx": {
+    grounds: ["surface.raised"],
+    where: "Pool setup's Connect: the address of a machine not in your SSH settings (#6266)",
+  },
   "poolsetup/PoolStep.tsx": {
     grounds: ["surface.raised"],
     where:
