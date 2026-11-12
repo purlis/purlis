@@ -59,6 +59,8 @@ const meta = {
     forgetGroups();
     mockIPC((cmd) => {
       if (cmd === "project_settings") return { shared: SHARED, local: LOCAL };
+      // The Network page's lists say they could not be read: they are not what is held here.
+      if (cmd === "sandbox_network") throw new Error("not in this story");
       return null;
     });
     return () => clearMocks();
@@ -91,7 +93,8 @@ export const EveryLevel: Story = {
     await read(canvas);
 
     await userEvent.click(box(canvas));
-    await userEvent.keyboard("theme");
+    // In one change, as a paste is: the core is faked only for the pages the words find.
+    await userEvent.paste("theme");
     await waitFor(() =>
       expect(canvas.getByRole("heading", { level: 3, name: "You › Theme" })).toBeVisible(),
     );
@@ -124,7 +127,8 @@ export const GoToAnotherLevel: Story = {
     await read(canvas);
 
     await userEvent.click(box(canvas));
-    await userEvent.keyboard("window text size");
+    // In one change, as a paste is: the core is faked only for the pages the words find.
+    await userEvent.paste("window text size");
     const go = await waitFor(() =>
       canvas.getByRole("button", { name: "Go to Text: Window text size" }),
     );
@@ -175,7 +179,8 @@ export const NothingFound: Story = {
     await read(canvas);
 
     await userEvent.click(box(canvas));
-    await userEvent.keyboard("colour of the moon");
+    // In one change, as a paste is: the core is faked only for the pages the words find.
+    await userEvent.paste("colour of the moon");
     await waitFor(() =>
       expect(canvas.getByRole("region", { name: "No setting found" })).toBeVisible(),
     );
