@@ -682,6 +682,10 @@ export const NothingIsPinnedBeforeThePaste: Story = {
     check.focus();
     await userEvent.keyboard("{Enter}");
     await canvas.findByText(/Paste the key your cluster's admin gave you first/);
+    // The picture is taken with the press's button still focused, as a keyboard user is left.
+    const after = canvas.getByRole("button", { name: "Check the key" });
+    after.focus();
+    await expect(after).toHaveFocus();
   },
 };
 
