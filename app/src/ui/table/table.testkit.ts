@@ -5,7 +5,7 @@ import { act, waitFor, type screen } from "@testing-library/react";
 import { tipOf } from "../tooltip/tooltip.testkit";
 
 /**
- * **A data table found by its name once its rows are in it** (#6372): React Aria draws the grid
+ * **A data table found by its name once a row is in it** (#6372): React Aria draws the grid
  * a render before it fills in its collection, so a grid that `findByRole` returns may hold no
  * rows yet, and a test that reads its headers or cells at once reads an empty grid. This finds
  * the grid, then waits, inside `act`, until a cell of a row is in it: a table's rows are headed
