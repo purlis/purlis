@@ -96,7 +96,9 @@ export const AsksBeforeDeleting: Story = {
     });
     await expect(ask).toHaveTextContent("purlis deletes the 3 kept screens now.");
     await expect(ask).toHaveTextContent("Its report stays.");
-    await expect(within(ask).getByRole("button", { name: "Delete kept screens" })).toBeVisible();
+    // Once the ask has finished coming in: it appears with the dialog family's motion.
+    const remove = within(ask).getByRole("button", { name: "Delete kept screens" });
+    await waitFor(() => expect(remove).toBeVisible());
   },
 };
 
