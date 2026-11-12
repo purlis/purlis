@@ -226,8 +226,13 @@ export const OnManaged: Story = {
     await expect(
       within(canvasElement).getByRole("grid", { name: "Signing keys of your other devices" }),
     ).toHaveTextContent("Studio Mac mini");
-    add.focus();
-    await expect(add).toHaveFocus();
+    // The accounts are a table (#6301): its second row, then → along it to Add to this account.
+    const table = within(canvasElement).getByRole("grid", { name: "Signing on your accounts" });
+    const rows = () => within(table).getAllByRole("row").slice(1) as HTMLElement[];
+    rows()[0]?.focus();
+    await untilFocused(() => rows()[0] as HTMLElement, "the first account's row");
+    await userEvent.keyboard("{ArrowDown}{ArrowRight}{ArrowRight}{ArrowRight}");
+    await untilFocused(() => add, "↓ and → reach the second account's Add to this account");
     expectFocusInSight();
   },
 };
@@ -261,8 +266,12 @@ export const OtherDevicesKeys: Story = {
     const remove = within(table).getByRole("button", {
       name: "Remove old-mini's signing key from octocat on GitHub…",
     });
-    remove.focus();
-    await expect(remove).toHaveFocus();
+    // A key a row (#6301): its second row, then → along it to Remove….
+    const rows = () => within(table).getAllByRole("row").slice(1) as HTMLElement[];
+    rows()[0]?.focus();
+    await untilFocused(() => rows()[0] as HTMLElement, "the first key's row");
+    await userEvent.keyboard("{ArrowDown}{ArrowRight}{ArrowRight}{ArrowRight}{ArrowRight}");
+    await untilFocused(() => remove, "↓ and → reach the second key's Remove…");
     expectFocusInSight();
   },
 };
