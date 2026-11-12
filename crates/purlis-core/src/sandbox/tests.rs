@@ -8747,3 +8747,35 @@ fn a_chat_may_read_the_folder_its_last_run_kept_but_not_write_it() {
         );
     }
 }
+
+/// **A chat held from clusters reads no kubeconfig of the person's** (Pool setup's Get help,
+/// #4497): `~/.kube` and every file `KUBECONFIG` names are denied, read and write, so the chat
+/// holds no sign-in to change a pool with. Any other chat is left as it was.
+#[test]
+fn a_chat_held_from_clusters_reads_no_kubeconfig_of_the_persons() {
+    let plane = tempfile::tempdir().expect("a plane");
+    let machine = Machine {
+        env: crate::secrets::Env::of(&[(
+            "KUBECONFIG",
+            "/home/op/work/team.yaml:/srv/kube/admin.conf",
+        )]),
+        home: Some(std::path::PathBuf::from("/home/op")),
+        os: Os::Linux,
+    };
+    let kubeconfigs = [
+        std::path::PathBuf::from("/home/op/.kube"),
+        std::path::PathBuf::from("/home/op/work/team.yaml"),
+        std::path::PathBuf::from("/srv/kube/admin.conf"),
+    ];
+    let held = super::policy::holding_from_clusters(|| Denied::of(plane.path(), &machine));
+    let denied = paths(&held, Class::HumanPowers, Access::ReadWrite);
+    for kubeconfig in &kubeconfigs {
+        assert!(denied.contains(kubeconfig), "{kubeconfig:?}: {denied:?}");
+    }
+    let unheld = paths(
+        &Denied::of(plane.path(), &machine),
+        Class::HumanPowers,
+        Access::ReadWrite,
+    );
+    assert!(!unheld.contains(&kubeconfigs[0]), "{unheld:?}");
+}

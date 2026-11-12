@@ -759,7 +759,8 @@ fn sent(
     };
     let ready = match why {
         SentFor::Grade => purlis_core::skills::grades::ready_to_grade_on(&start, &root, model),
-        SentFor::FixASave | SentFor::PoolSetupHelp => purlis_core::start::ready(&start, &root),
+        SentFor::FixASave => purlis_core::start::ready(&start, &root),
+        SentFor::PoolSetupHelp => purlis_core::poolsetup::help::ready_to_help(&start, &root),
     }
     .and_then(|ready| crate::handoff::told_first(ready, &chat.profile, &chat.prompt))?;
     if let Some(why) = unsandboxed_help(why, ready.sandbox.is_some()) {

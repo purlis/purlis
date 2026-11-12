@@ -25,6 +25,17 @@ pub const MOST: usize = 8192;
 /// What a cut quote ends with.
 const CUT: &str = "> [cut here: the rest is in Pool setup]";
 
+/// **How a help chat starts** (#4497, story 60): as [`crate::start::ready`] starts any chat, held
+/// from every cluster ([`crate::sandbox::policy::holding_from_clusters`]): its sandbox grants it
+/// no host, so no cluster's API server, and denies it the person's kubeconfigs, so it holds no
+/// sign-in to change a pool with.
+pub fn ready_to_help(
+    start: &crate::start::Start,
+    root: &std::path::Path,
+) -> Result<crate::start::Ready, String> {
+    crate::sandbox::policy::holding_from_clusters(|| crate::start::ready(start, root))
+}
+
 /// **The tab label of a help chat about `step`.**
 #[must_use]
 pub fn label(step: StepId) -> String {
