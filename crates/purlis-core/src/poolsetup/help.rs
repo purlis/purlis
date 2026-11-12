@@ -106,8 +106,7 @@ pub fn opening(setup: &Setup, step: StepId, error: Option<&str>) -> Result<Strin
         step = shown.name,
         state = shown.state.word(),
     );
-    let tail = "\nThe step's own documentation: \
-                https://github.com/purlis/purlis/blob/main/docs/cluster-pool-setup.md";
+    let tail = format!("\nThe step's own documentation: {}", super::admin::GUIDE);
     let mut text = head;
     let room = MOST.saturating_sub(text.len() + tail.len() + CUT.len() + 2);
     let mut body = String::new();
@@ -123,7 +122,7 @@ pub fn opening(setup: &Setup, step: StepId, error: Option<&str>) -> Result<Strin
     text.push_str(&body);
     if setup.kind == super::Kind::Cluster {
         text.push('\n');
-        text.push_str(tail);
+        text.push_str(&tail);
     }
     Ok(super::admin::held_free_of_secrets(&text))
 }

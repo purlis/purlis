@@ -5,6 +5,7 @@ import { GetHelp } from "./GetHelp";
 import { useEffect, useRef, useState } from "react";
 import {
   commands,
+  type PlaneId,
   type PoolSetupCheck,
   type PoolSetupContexts,
   type PoolSetupPart,
@@ -84,7 +85,7 @@ export function CheckStep({
 }: {
   step: PoolSetupStep;
   /** The project the tab is in: where the ready entry is listed. */
-  plane?: string;
+  plane: PlaneId;
   onNext: () => void;
   onRecheck: () => void;
 }) {
@@ -93,9 +94,7 @@ export function CheckStep({
   const press = (id: string) => {
     setRefused(undefined);
     const done =
-      id === "send-to-admin"
-        ? commands.poolSetupAskAdmin(plane ?? null)
-        : commands.poolSetupStopWaiting();
+      id === "send-to-admin" ? commands.poolSetupAskAdmin(plane) : commands.poolSetupStopWaiting();
     void done.then((answer) => {
       if (answer.status === "error") setRefused(answer.error);
       onRecheck();

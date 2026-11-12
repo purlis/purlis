@@ -4671,12 +4671,14 @@ pub mod pauses;
 #[cfg(test)]
 mod tests;
 
-/// Whether this Mac has a signing key, asked of the keychain's attributes only, never its value.
 /// [`pool_setup_ready`], on this machine's config home, where it has one.
 fn pool_setup_ready_here(root: &std::path::Path) -> Option<Shown> {
     #[cfg(unix)]
     {
-        pool_setup_ready(root, &purlis_core::machine::config_root()?)
+        // Read only where a config home is there, and never past a test build's fence: every
+        // project's Asks are listed through here, so a fenced run reads one outside it as none.
+        let config = purlis_core::machine::config_root_read_in(&purlis_core::envvar::var)?;
+        pool_setup_ready(root, &config)
     }
     #[cfg(not(unix))]
     {
@@ -4685,6 +4687,7 @@ fn pool_setup_ready_here(root: &std::path::Path) -> Option<Shown> {
     }
 }
 
+/// Whether this Mac has a signing key, asked of the keychain's attributes only, never its value.
 fn signing_on() -> bool {
     let Some(config) = purlis_core::machine::config_root() else {
         return false;

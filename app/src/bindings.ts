@@ -4227,7 +4227,7 @@ export const commands = {
 	 *  on Where, from the project `plane` the tab is in: Check the cluster then waits for their
 	 *  admin, across a close, and is checked again by itself. Nothing is sent anywhere by purlis.
 	 */
-	poolSetupAskAdmin: (plane: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_ask_admin", { plane })),
+	poolSetupAskAdmin: (plane: PlaneId) => typedError<null, string>(__TAURI_INVOKE("pool_setup_ask_admin", { plane })),
 	/**
 	 *  **Get help** on Pool setup's step `step` (#4497): a chat on the project's default profile, at
 	 *  the project's root, started on the core's message about the step and `error`, the words the

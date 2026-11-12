@@ -561,19 +561,23 @@ pub async fn pool_setup_get_help(
 /// admin, across a close, and is checked again by itself. Nothing is sent anywhere by purlis.
 #[tauri::command]
 #[specta::specta]
-pub async fn pool_setup_ask_admin(plane: Option<String>) -> Result<(), String> {
+pub async fn pool_setup_ask_admin(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<(), String> {
+    // The project as the registry holds it, never a path the caller names (charter-app#127).
+    let project = planes.held(&plane)?.root().to_path_buf();
     #[cfg(unix)]
     {
         crate::off_the_window("keeping that you asked your admin", move || {
-            let project = plane.map(std::path::PathBuf::from);
-            purlis_core::poolsetup::admin::asked(&config_root()?, project.as_deref(), seconds_now())
+            purlis_core::poolsetup::admin::asked(&config_root()?, Some(&project), seconds_now())
                 .map_err(|why| why.to_string())
         })
         .await
     }
     #[cfg(not(unix))]
     {
-        let _ = plane;
+        let _ = project;
         Err(crate::dockerpools::NOT_HERE.to_owned())
     }
 }
