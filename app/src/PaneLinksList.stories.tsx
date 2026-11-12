@@ -73,7 +73,7 @@ async function listed(canvasElement: HTMLElement) {
   const page = within(canvasElement.ownerDocument.body);
   const region = await page.findByRole("region", { name: "A saved chat's last screen" });
   await waitFor(() =>
-    expect(canvasElement.querySelector(".xterm-screen")?.textContent ?? "").toContain("setup"),
+    expect(canvasElement.querySelector(".xterm-screen")?.textContent ?? "").toContain("●"),
   );
   region.focus();
   await userEvent.keyboard(

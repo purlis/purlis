@@ -43,6 +43,7 @@ import { asksForAMenu } from "../ui/menu/ContextMenu";
 import { asksForTheMenu } from "../terminalRows";
 import { fileKeyOf, fileKeySaid, opensIt } from "./paletteKeys";
 import { opensFind, opensFindInAFile } from "./findKeys";
+import { linksListKeySaid, opensTheLinksList } from "../paneLinksKey";
 import { viewHistoryKeyOf } from "./viewKeys";
 import { focusKeySaid, opensTheShortcuts, shortcutsKeySaid, togglesFocus } from "./ownKeys";
 import { TRIAGE_LETTER, triageKeyOf, triageKeySaid, type TriageKey } from "../asksTriage";
@@ -766,9 +767,9 @@ export const SHORTCUTS: readonly Shortcut[] = [
     // `L` for links (#6220, D5). ⌘⇧L was no key of the window's; Ctrl with Shift and a letter is
     // no byte to a terminal's program, so it is the pane's off a Mac, as Ctrl+Shift+F is.
     chords: { mac: [PANE_LINKS.mac], other: [PANE_LINKS.other] },
-    said: (mac) => (mac ? "⌘⇧L" : "Ctrl+Shift+L"),
+    said: linksListKeySaid,
     yields: [],
-    matches: (e, mac) => isChord(e, mac ? PANE_LINKS.mac : PANE_LINKS.other),
+    matches: opensTheLinksList,
   },
   {
     id: "chat.menu",

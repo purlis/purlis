@@ -34,7 +34,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { FindBar } from "./FindBar";
 import { opensFindInAFile } from "./keys/findKeys";
 import { onAMac } from "./mac";
-import { isKey } from "./keys/registry";
+import { opensTheLinksList } from "./paneLinksKey";
 import { linkPane, type LinkCore, type LinkedPane } from "./paneLinks";
 import { usePaneLinks } from "./PaneLinkSurfaces";
 import {
@@ -218,7 +218,7 @@ export function ReadOnlyTerminal({
     if (!now || event.defaultPrevented) return;
     const mac = onAMac();
     // **Links in this pane…** (#6220): ⌘⇧L, Ctrl+Shift+L off a Mac, on a screen that links.
-    if (linkedNow.current !== undefined && isKey(event.nativeEvent, "pane.links", mac)) {
+    if (linkedNow.current !== undefined && opensTheLinksList(event, mac)) {
       event.preventDefault();
       openLinksList();
     } else if (opensFindInAFile(event, mac)) {
