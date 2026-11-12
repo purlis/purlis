@@ -134,6 +134,7 @@ export const RightClickOverARefusedLink: Story = {
     await expect(
       within(menu).getByRole("menuitem", { name: "Copy link" }),
     ).toHaveAccessibleDescription(REFUSED.seen.target);
+    await pictureNow();
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
   },
