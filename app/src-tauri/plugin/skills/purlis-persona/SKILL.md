@@ -1,6 +1,6 @@
 ---
 name: purlis-persona
-description: When work needs a purlis persona, a role with its own charter, memory and vault — act as one, make one or dispatch work to another. Use when asked to dispatch, ask another persona or report back. Not for a new chat (purlis-handoff), a credential (purlis-secrets) or removal (purlis-safe-remove).
+description: When work needs a purlis persona, a role with its own charter, memory and vault — act as one, create one, or dispatch work to another. Use when asked to dispatch, ask another persona or report back. Not for a new chat (purlis-handoff), a credential (purlis-secrets) or removal (purlis-safe-remove).
 ---
 
 # Personas

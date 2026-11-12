@@ -205,13 +205,13 @@ pub fn built_in_names(dir: Option<&Path>) -> Vec<String> {
 }
 
 /// **The most characters every built-in's description may come to together** (spec #5714's Q37;
-/// ADR 0102, amended 2026-11-13): 5,000, so Codex's and opencode's 8,000 keep about 3,000 for the
-/// plane's own skills. A longer description takes its characters from another built-in's.
+/// ADR 0102, amended 2026-11-13). Why, and how a description fits it: the house style in
+/// `docs/development.md`.
 pub const BUILT_IN_DESCRIPTIONS_MOST: usize = 5_000;
 
 /// **The least of Codex's listing the built-ins leave for the plane's own skills**, in
-/// characters (spec #5714's Q38; ADR 0102, amended 2026-11-13), beside
-/// [`BUILT_IN_DESCRIPTIONS_MOST`].
+/// characters (spec #5714's Q38; ADR 0102, amended 2026-11-13): what Codex's 8,000 keep once
+/// the built-ins take their [`BUILT_IN_DESCRIPTIONS_MOST`] and their names and paths.
 pub const CODEX_LEFT_FOR_THE_PLANE: usize = 2_800;
 
 /// **The skills purlis ships**, by name: the bundle's `plugin/skills/<name>/SKILL.md`, each
