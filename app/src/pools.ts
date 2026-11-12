@@ -67,6 +67,8 @@ export type Held = {
   adding: boolean;
   /** Which kind of pool it adds, as last chosen there (#3292). */
   kind: PoolKind;
+  /** The pool whose own setup Open setup asked for, rather than a new pool's (#6256). */
+  setupOf: string | undefined;
   /** What each pool's runner answered, or that it is being asked, by the pool's name. */
   links: Readonly<Record<string, PoolLink | "asking">>;
   /** Which version each pool's runner runs, by the pool's name, once it said (#2749). */
@@ -95,6 +97,7 @@ const START: Held = {
   read: { state: "reading" },
   adding: false,
   kind: "docker",
+  setupOf: undefined,
   links: {},
   versions: {},
   profiles: {},
@@ -140,7 +143,13 @@ export async function rereadPools() {
 
 function subscribe(listener: () => void) {
   if (listeners.size === 0) {
-    held = { ...START, adding: held.adding, added: held.added, kind: held.kind };
+    held = {
+      ...START,
+      adding: held.adding,
+      added: held.added,
+      kind: held.kind,
+      setupOf: held.setupOf,
+    };
     void rereadPools();
   }
   listeners.add(listener);
@@ -164,7 +173,13 @@ export function anyPoolKept(): boolean {
 
 /** Opens the add pool dialog, on a Docker pool unless `kind` says otherwise. */
 export function startAddingAPool(kind: PoolKind = "docker") {
-  set((was) => ({ ...was, adding: true, kind }));
+  set((was) => ({ ...was, adding: true, kind, setupOf: undefined }));
+}
+
+/** Opens Docker pool `pool`'s own setup, from its Open setup (#4491, #6256): the one way to a
+ *  finished pool's setup. */
+export function openSetupOf(pool: string) {
+  set((was) => ({ ...was, adding: true, kind: "docker", setupOf: pool }));
 }
 
 /** Chooses which kind of pool the dialog adds (#3292). */
@@ -174,7 +189,61 @@ export function choosePoolKind(kind: PoolKind) {
 
 /** Closes it. */
 export function stopAddingAPool() {
-  set((was) => ({ ...was, adding: false }));
+  set((was) => ({ ...was, adding: false, setupOf: undefined }));
+}
+
+/**
+ * **Which setup the Pool setup tab draws** (#6256): a count that moves each time Add a pool…,
+ * Add another pool, Start over or a pool's Open setup starts it again, so a tab already open
+ * starts from its first read, and whether Add went on with a new pool's unfinished setup, for the
+ * tab to say so with Start over.
+ */
+export type SetupStart = { count: number; continuing: boolean };
+
+let setupStart: SetupStart = { count: 0, continuing: false };
+const startListeners = new Set<() => void>();
+
+function startedSetup(continuing: boolean) {
+  setupStart = { count: setupStart.count + 1, continuing };
+  for (const one of startListeners) one();
+}
+
+/** Back to no start asked, for a test or story that asked one: the next draws no Continuing. */
+export function forgetPoolSetupStarts() {
+  startedSetup(false);
+}
+
+export function usePoolSetupStart(): SetupStart {
+  return useSyncExternalStore(
+    (listener) => {
+      startListeners.add(listener);
+      return () => {
+        startListeners.delete(listener);
+      };
+    },
+    () => setupStart,
+  );
+}
+
+/** **Add a pool**, in Pool setup: a new pool's setup, unless a new one was started and not
+ *  finished, which it goes on with. A finished pool's setup is never resumed here. */
+export async function startANewPoolSetup(): Promise<void> {
+  const said = await caught(commands.poolSetupAdd());
+  startedSetup(said.status === "ok" && said.data === true);
+}
+
+/** **Start over**: the unfinished setup is forgotten, and a pool it made stays. Why not, if not. */
+export async function startPoolSetupOver(): Promise<string | undefined> {
+  const said = await caught(commands.poolSetupStartOver());
+  if (said.status === "error") return said.error;
+  startedSetup(false);
+  return undefined;
+}
+
+/** **Pool `pool`'s own setup**, from its Open setup: each step as it stands, nothing redone. */
+export async function goOnWithPoolSetupOf(pool: string): Promise<void> {
+  await caught(commands.poolSetupPool(pool));
+  startedSetup(false);
 }
 
 /** The runner image a new pool is offered, as purlis said it, or why it could not say. */

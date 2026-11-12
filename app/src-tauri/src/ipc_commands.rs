@@ -648,6 +648,8 @@ macro_rules! app_commands {
                 poolsetuptab::pool_setup_choose_docker,
                 poolsetuptab::pool_setup_name,
                 poolsetuptab::pool_setup_pool,
+                poolsetuptab::pool_setup_add,
+                poolsetuptab::pool_setup_start_over,
                 poolsetuptab::pool_setup_command,
                 poolsetuptab::pool_setup_create,
                 poolsetuptab::pool_setup_sign_ins_by_hand,

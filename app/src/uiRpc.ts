@@ -1938,6 +1938,8 @@ export const commands = {
 	poolSetupChooseDocker: __WINDOW_ONLY_RESULT,
 	poolSetupName: __WINDOW_ONLY_RESULT,
 	poolSetupPool: __WINDOW_ONLY_RESULT,
+	poolSetupAdd: __WINDOW_ONLY_RESULT,
+	poolSetupStartOver: __WINDOW_ONLY_RESULT,
 	poolSetupCommand: __WINDOW_ONLY_RESULT,
 	poolSetupCreate: __WINDOW_ONLY_RESULT,
 	poolSetupSignInsByHand: __WINDOW_ONLY_RESULT,
@@ -10524,6 +10526,8 @@ export type PoolSetupShown = {
 	noticed: boolean,
 	/**  Pools this machine keeps that this setup isn't on. */
 	others: string[],
+	/**  The name a new pool is recommended, which no pool here has (#6256). */
+	recommended: string,
 };
 
 /**  This machine's profiles against pool `pool`'s limits (#4482). */

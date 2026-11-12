@@ -4147,6 +4147,13 @@ export const commands = {
 	/**  **Keeps that this setup goes on with pool `name`**, once it has made it. */
 	poolSetupPool: (name: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_pool", { name })),
 	/**
+	 *  **Add a pool** (#6256): starts a new pool's setup, unless one was started and not finished.
+	 *  `true` where setup goes on with that one, for the tab to say so with Start over.
+	 */
+	poolSetupAdd: () => typedError<boolean, string>(__TAURI_INVOKE("pool_setup_add")),
+	/**  **Start over** (#6256): forgets the unfinished setup, and keeps any pool it made. */
+	poolSetupStartOver: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_start_over")),
+	/**
 	 *  **The command that does what the Pool step's button would do with `adding`**: See what this
 	 *  does, from the value the button sends (Q30). It reads nothing and changes nothing.
 	 */
@@ -13589,6 +13596,8 @@ export type PoolSetupShown = {
 	noticed: boolean,
 	/**  Pools this machine keeps that this setup isn't on. */
 	others: string[],
+	/**  The name a new pool is recommended, which no pool here has (#6256). */
+	recommended: string,
 };
 
 /**  This machine's profiles against pool `pool`'s limits (#4482). */
