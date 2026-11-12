@@ -117,19 +117,43 @@ impl crate::hookwire::Report {
     }
 }
 
-/// **The words a chat on `harness` is started with for `level`**, after its profile's own
-/// `command`: its adapter's ([`crate::harness::HarnessAdapter::task_mode_words`]), and none for
-/// a grade's chat (`graded`), whose mode its grade pins and which a flag would outrank.
-pub fn task_words(
+/// **How a task on `harness` starts for `level`**: the words after its profile's own `command`,
+/// and a line its pane says from its start, if any.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TaskStart {
+    /// Its adapter's words ([`crate::harness::HarnessAdapter::task_mode_words`]).
+    pub words: Vec<String>,
+    /// Why it starts asking where its level was the classifier's (#6315).
+    pub said: Option<String>,
+}
+
+/// **How a chat on `harness` is started for `level`**, after its profile's own `command`, under
+/// the chat's environment `env`: its adapter's words, and none for a grade's chat (`graded`),
+/// whose mode its grade pins and which a flag would outrank. **A task its adapter says may not
+/// run at the classifier's level** ([`crate::harness::HarnessAdapter::auto_kept_from_a_task`],
+/// #6315) starts at the default, asking, and says why.
+pub fn task_start(
     harness: crate::harness::Harness,
     level: Level,
     command: &[String],
     graded: bool,
-) -> Vec<String> {
+    env: &crate::harness_plugin::Env<'_>,
+) -> TaskStart {
     if graded {
-        return Vec::new();
+        return TaskStart::default();
     }
-    harness.adapter().task_mode_words(level, command)
+    let adapter = harness.adapter();
+    let words = adapter.task_mode_words(level, command);
+    if level != Level::Classifier || words.is_empty() {
+        return TaskStart { words, said: None };
+    }
+    match adapter.auto_kept_from_a_task(env) {
+        Some(said) => TaskStart {
+            words: adapter.task_mode_words(Level::Asks, command),
+            said: Some(said),
+        },
+        None => TaskStart { words, said: None },
+    }
 }
 
 /// **The app's record of one chat's mode**: the last mode its harness reported.
