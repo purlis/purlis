@@ -37,16 +37,41 @@ export function hostOf(entry: CollectionEntry): string {
 }
 
 /**
+ * **When, and by what, a host was added** (#6172, R65): "‹when› · ‹by›", by "you" (Settings' Add)
+ * or "a chat's block" (its Allow); the when an age up to a month, then the day. A host added before
+ * the core kept the record says it was added earlier, never a guess. An add after now (a clock that
+ * moved) is just now.
+ */
+export function addedSaid(added: CollectionEntry["added"], now: Date): string {
+  if (added === undefined) return "Earlier";
+  const seconds = Math.max(0, Math.floor(now.getTime() / 1000) - added.at);
+  const by = added.by === "you" ? "you" : "a chat's block";
+  const ago = (count: number, one: string) => `${count} ${one}${count === 1 ? "" : "s"} ago`;
+  let when: string;
+  if (seconds < 60) when = "just now";
+  else if (seconds < 3600) when = ago(Math.floor(seconds / 60), "minute");
+  else if (seconds < 86_400) when = ago(Math.floor(seconds / 3600), "hour");
+  else if (seconds < 30 * 86_400) when = ago(Math.floor(seconds / 86_400), "day");
+  else
+    when = new Date(added.at * 1000).toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  return `${when} · ${by}`;
+}
+
+/**
  * **Your hosts, as a table** (#2919, prototype A of `prototype/settings-page`, R65, R67–R74): the
  * table family's, in its rounded frame, which keeps its least width and scrolls sideways. A row
  * per host, the ones waiting for your Confirm first (R68): a check, the host in mono with its
- * port in the quiet words, its status, and at its end Confirm (only while it waits) and Remove,
+ * port in the quiet words, its status, when and by what it was added ([`addedSaid`]), and at its
+ * end Confirm (only while it waits) and Remove,
  * in columns of their own so they stand in one place on every row (R67). Over it the bar: the
  * filter, by any part of a host, from eight hosts (R69, R164); then Confirm all and Add host, or,
  * while rows are chosen, how many, Confirm and Remove (R70); the head's check chooses every row
  * or none (R71). A filter that leaves none says so in the table (R73).
  *
- * The rows say no Added column: the core keeps no record of when, or by what, a host was added.
  */
 export function HostsTable({
   label,
@@ -58,6 +83,7 @@ export function HostsTable({
   onRemoveAll,
   onAdd,
   addRef,
+  now = new Date(),
 }: {
   /** What the table and its bar are called: the page's name. */
   label: string;
@@ -74,6 +100,8 @@ export function HostsTable({
   onAdd: () => void;
   /** Add host, where the keyboard comes back to from the form it opens. */
   addRef: Ref<HTMLButtonElement>;
+  /** The moment each Added age is told from: now, unless a story holds it still. */
+  now?: Date;
 }) {
   const { query, setQuery, shown, filtered } = useListFilter(entries, hostOf);
   const [chosen, setChosen] = useState<Selection>(new Set());
@@ -152,6 +180,7 @@ export function HostsTable({
             Host
           </TableColumn>
           <TableColumn id="status">Status</TableColumn>
+          <TableColumn id="added">Added</TableColumn>
           <TableColumn id="confirm" align="end" hideName>
             Confirm
           </TableColumn>
@@ -173,6 +202,9 @@ export function HostsTable({
                 </TableCell>
                 <TableCell>
                   <HostStatus waiting={one.status === "waiting"} />
+                </TableCell>
+                <TableCell>
+                  <span className="ui-hosts-added">{addedSaid(one.added, now)}</span>
                 </TableCell>
                 <TableCell align="end">
                   {one.status === "waiting" && (

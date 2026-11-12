@@ -278,6 +278,17 @@ export const SECRET_ASKS = "project.sandbox.secretAsks";
  * (`myHosts`), on this machine only. A host the core refuses is said under the field, with why:
  * as it is typed (`check_sandbox_host`, the core's parser, #1405), and again when Add is pressed.
  */
+/** When and by what one of your own hosts was added, as the core lists it (#6172): none where it
+ *  records neither, or says either in a way this window does not read. */
+function addedOf(
+  at: string | undefined,
+  by: string | undefined,
+): CollectionEntry["added"] | undefined {
+  const seconds = Number(at);
+  if (at === undefined || !Number.isSafeInteger(seconds)) return undefined;
+  return by === "you" || by === "block" ? { at: seconds, by } : undefined;
+}
+
 function hostsCollection(file: SettingsFile, name: "hosts" | "myHosts"): Collection {
   return {
     name,
@@ -291,10 +302,12 @@ function hostsCollection(file: SettingsFile, name: "hosts" | "myHosts"): Collect
         const waits = one.values.some(
           (value) => value.field === "confirmed" && value.value === "no",
         );
+        const valueOf = (field: string) => one.values.find((value) => value.field === field)?.value;
         return {
           id: one.id,
           label: one.label,
-          host: one.values.find((value) => value.field === "host")?.value,
+          host: valueOf("host"),
+          added: addedOf(valueOf("added_at"), valueOf("added_by")),
           settings: [],
           confirm: waits,
           // Your own hosts say whether each waits for your Confirm (R66); the project's are the

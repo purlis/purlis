@@ -25,8 +25,8 @@ use super::Step;
 use super::Which;
 use super::collection::{FieldRefusal, Listed, Refusal};
 use crate::sandbox::TABLE;
-use crate::sandbox::local::AddedBy;
 use crate::sandbox::hosts::{Host, KEY};
+use crate::sandbox::local::AddedBy;
 
 /// The collection's name in each file, as the window sends it back.
 pub fn collection(which: Which) -> &'static str {
@@ -446,9 +446,15 @@ fn now(root: &Path, which: Which) -> Result<Option<String>, String> {
 /// confirmed on this machine as it is added). Answers why not, in a sentence.
 pub fn grant(root: &Path, which: Which, host: &Host) -> Result<(), String> {
     let base = now(root, which)?;
-    added(root, which, base.as_deref(), &host.to_string(), AddedBy::Block)
-        .map(|_| ())
-        .map_err(|refusal| said(refusal.named_at(root)))
+    added(
+        root,
+        which,
+        base.as_deref(),
+        &host.to_string(),
+        AddedBy::Block,
+    )
+    .map(|_| ())
+    .map_err(|refusal| said(refusal.named_at(root)))
 }
 
 /// **Revokes `host`** at `which`'s level (#1348): [`remove`] of every entry naming it, against
