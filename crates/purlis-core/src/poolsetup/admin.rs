@@ -79,7 +79,7 @@ pub fn text(facts: &Facts, choices: &Choices) -> Option<String> {
     let report = facts.cluster.doctor.as_ref()?;
     let version = env!("CARGO_PKG_VERSION");
     let words = format!(
-        "Hello. I'd like to run purlis chats on our Kubernetes cluster, and purlis's check \
+        "Hello. I'd like our Kubernetes cluster to run my purlis chats, and purlis's check \
          found it lacks what I can't add with my own sign-in. Could you have a look?\n\
          \n\
          What the check found, in its own words:\n\
