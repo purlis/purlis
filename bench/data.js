@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794500442800,
+  "lastUpdate": 1794502370286,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -47544,6 +47544,48 @@ window.BENCHMARK_DATA = {
             "value": 102.754586,
             "unit": "ms",
             "extra": "median of 5 runs: 101.372, 102.176, 102.755, 102.822, 104.309 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e440c10cbbe51f05e03c641a18368508e37d50c9",
+          "message": "Pane links: file paths open in the editor tab at their line, asks answered by a one-use token (#6216) (#6316)\n\n* Pane links: file paths open in the editor tab at their line, and an ask is answered by a one-use token (#6216)\n\nA path a chat prints (absolute, ~/, relative to the chat's working folder,\nor a file:// address on this machine) links once the core finds the file,\nwith an optional :line[:col]. purlis_core::panelinks gains the LocalFile\nkind, Within places for the light editor's readers, Resolved/Hover::Quiet\nfor paths that name no file, and Asks: a one-use token bound to the pane\nand target, issued with every ask and the only answer that opens it. A\nfile outside the chat's workspace asks first (the prototype's S7); one\noutside the project opens, after the ask, in a read-only outside-file tab\nread through pane_link_file, which serves only files opened from an ask.\nA file is never handed to the system's opener. The pane hook keeps a\nfile's answer 5 s, so a deleted file stops linking.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77B6HCTW5ADNTHB7JGM522N\nPurlis-Persona: steward\n\n* Pane links: the file target boxed for clippy, the outside-file view's state, purlis names in the stories (#6216)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77B6HCTW5ADNTHB7JGM522N\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Pane links: the review's findings (#6216)\n\n- Files outside the project open from / one folder at a time with no link\n  followed, and are read only for the pane whose ask was answered, within\n  the hour, while the file is still the one opened then.\n- A path is walked one part at a time; a hover does not look in folders\n  the system asks the person about before an app reads them, nor in\n  removable, network or automounted volumes, unless the chat's project or\n  folder is there. A file's look runs on a thread of its own, at most four\n  at once, waited for two seconds.\n- A pane purlis cannot place (a saved chat's, a closed chat's, a runner's)\n  names files elsewhere.\n- One Opening type carries the ask's token; a kind keeps what an answered\n  ask opens (LinkKind::accepted); Asks::issue answers an Option.\n- The ask's token is described as what it proves: the window was handed\n  the ask.\n- The chat's home is a discriminant (HomeIs, LinkHome); Within is ReadFrom,\n  home is in_home; readPlaceOf takes only places in the project.\n- A hover shows a file in the chat's workspace from the workspace (D2)\n  (LinkSeen.shown); the tooltip says where a link opens from its OpensIn,\n  with no per-kind wording.\n- A file outside the project's tab says how to open it again with the\n  platform's own key.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M77B6HCTW5ADNTHB7JGM522N\nPurlis-Persona: steward\n\n* Pane links: a file put in another's place is told apart while the one it replaced still exists (#6216)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M77B6HCTW5ADNTHB7JGM522N\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Pane links: the Links list takes file links and the ask's token (#6216, after #6220)\n\nThe list names a file link's kind (File) with its icon, its tests and\nstories speak the hover's new shape (shown, opens into), and an ask from\nthe list is answered with its token. The pane's kept answers expire a\nfile's after FILE_ANSWER_LIFE for the hover and the list alike.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M77B6HCTW5ADNTHB7JGM522N\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-12T16:01:24Z",
+          "tree_id": "46467285f53a9b86afae30024592db1c226a0f56",
+          "url": "https://github.com/purlis/purlis/commit/e440c10cbbe51f05e03c641a18368508e37d50c9"
+        },
+        "date": 1794502364295,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5521345,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.540, 0.542, 0.552, 0.566, 0.583 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2108615,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.128, 16.192, 16.211, 16.281, 16.376 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.859138,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.482, 101.745, 101.859, 102.219, 102.651 ms"
           }
         ]
       }
