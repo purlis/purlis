@@ -331,7 +331,8 @@ describe("the gallery by keyboard", () => {
     expect(await tabOrder(user)).toEqual([
       // The level is one choice of a few, so one stop; the nav is one stop too.
       "radio You",
-      "input Filter settings",
+      "input Search settings",
+      "button Set here",
       "button Look",
       // The badge is a stop of its own, so the keyboard reads its tooltip (DS-8); the row's
       // help is a line under its label and no stop (R52). The row ends in its ⋯ menu, which
@@ -394,7 +395,7 @@ describe("the gallery by keyboard", () => {
     // The nav goes to a group on Enter.
     expect(await doing(() => press("button", "Look", "{Enter}"))).toEqual(["group=look"]);
     // A field is typed into; a text field commits on Enter, and again when it is left.
-    expect(await doing(() => press("searchbox", "Filter settings", "k"))).toEqual(["filter=k"]);
+    expect(await doing(() => press("searchbox", "Search settings", "k"))).toEqual(["filter=k"]);
     expect(await doing(() => press("textbox", "Name", "A{Enter}"))).toEqual(["text=A", "commit"]);
     expect(await doing(() => press("textbox", "Hosts", "h"))).toEqual(["commit", "list=h"]);
     // A row's reset, from its ⋯ menu, and its Undo, on Enter.

@@ -102,7 +102,10 @@ export function everySetting({
  * other group keeps the settings whose label or help holds them, and is left out when none does.
  * Case is ignored, and so is space around the words; with none, every group is left as it is.
  */
-export function narrowed(groups: readonly SettingsGroup[], filter: string): readonly SettingsGroup[] {
+export function narrowed(
+  groups: readonly SettingsGroup[],
+  filter: string,
+): readonly SettingsGroup[] {
   const words = filter.trim().toLocaleLowerCase();
   if (words === "") return groups;
   const holds = (...texts: string[]) =>

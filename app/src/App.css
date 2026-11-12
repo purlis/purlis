@@ -7171,9 +7171,17 @@ nav.piece-files-head {
   color: var(--text-secondary);
 }
 
-.ui-settings-none {
-  margin: 0;
-  color: var(--text-muted);
+/* The search (#2920, N27): its box, and the "Set here" toggle beside it. */
+.ui-settings-search {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  min-inline-size: 0;
+}
+
+.ui-settings-search > .ui-settings-filter {
+  flex: 1 1 auto;
+  min-inline-size: 0;
 }
 
 /* The left nav: the panel family's page navigation (`ViewNav`, #2930), which draws its

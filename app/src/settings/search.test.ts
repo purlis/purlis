@@ -30,13 +30,13 @@ describe("every setting at every level", () => {
     const levels = everySetting({ plane: "p", workspace: "w" });
 
     expect(levels.map((one) => one.level)).toEqual(["you", "project", "workspace"]);
-    const [you, project, workspace] = levels.map((one) => ids(one.groups));
+    const [you = [], project = [], workspace = []] = levels.map((one) => ids(one.groups));
     expect(you).toContain("you.text.window");
     expect(project).toContain("project.saving.plane.mode");
     expect(project).toContain("project.sandbox.sandbox.mode");
     expect(workspace).toContain("workspace.live.live");
     // Every setting once, at one address.
-    const all = [...you!, ...project!, ...workspace!];
+    const all = [...you, ...project, ...workspace];
     expect(new Set(all).size).toBe(all.length);
   });
 
@@ -68,7 +68,7 @@ describe("what a search finds", () => {
   it("finds a setting at every level by its label, whatever its case", () => {
     const hits = found(levels, "THEME");
     expect(hits.map((one) => one.level)).toEqual(["you", "project", "workspace"]);
-    expect(ids(hits.find((one) => one.level === "workspace")!.groups)).toContain(
+    expect(ids(hits.find((one) => one.level === "workspace")?.groups ?? [])).toContain(
       "workspace.appearance.theme.use",
     );
   });
@@ -99,9 +99,10 @@ describe("what a search finds", () => {
 });
 
 describe("what is set here", () => {
-  const setting = everySetting({ plane: "p" })
-    .find((one) => one.level === "project")!
-    .groups.flatMap((one) => one.settings)
+  const setting = (
+    everySetting({ plane: "p" }).find((one) => one.level === "project")?.groups ?? []
+  )
+    .flatMap((one) => one.settings)
     .find((one) => one.id === "project.saving.plane.mode") as FileSetting;
   const file = (which: "shared" | "local", text: string) => ({
     which,
@@ -111,18 +112,19 @@ describe("what is set here", () => {
     refusals: [],
     parsed: true,
     fields:
-      text === ""
-        ? []
-        : [{ path: [{ key: "plane" }, { key: "mode" }], value: "manual", line: 1 }],
+      text === "" ? [] : [{ path: [{ key: "plane" }, { key: "mode" }], value: "manual", line: 1 }],
     entries: null,
   });
 
   it("is a file setting this level's files hold a value of", () => {
     expect(
-      isSetHere(setting, { shared: file("shared", "[plane]\nmode = 'manual'"), local: file("local", "") } as never),
+      isSetHere(setting, {
+        shared: file("shared", "[plane]\nmode = 'manual'"),
+        local: file("local", ""),
+      } as never),
     ).toBe(true);
-    expect(isSetHere(setting, { shared: file("shared", ""), local: file("local", "") } as never)).toBe(
-      false,
-    );
+    expect(
+      isSetHere(setting, { shared: file("shared", ""), local: file("local", "") } as never),
+    ).toBe(false);
   });
 });

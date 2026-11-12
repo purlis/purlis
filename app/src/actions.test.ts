@@ -854,9 +854,9 @@ describe("the one list of actions", () => {
     const every = everySetting({ plane: "/p/one", workspace: "web" }).flatMap((level) =>
       level.groups.flatMap((group) => group.settings.map((setting) => setting.id)),
     );
-    expect(rows.map((one) => one.id.replace(/^settings\.setting:/, "").replace(/:web$/, ""))).toEqual(
-      every,
-    );
+    expect(
+      rows.map((one) => one.id.replace(/^settings\.setting:/, "").replace(/:web$/, "")),
+    ).toEqual(every);
     expect(by(offers, "settings.setting:you.text.window")?.title).toBe(
       "Your settings: Text › Window text size",
     );
