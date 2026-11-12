@@ -16,7 +16,9 @@
 //!   run, and the page is never left on an answer older than the last change.
 //! - **An extension's query is asked again once its `fresh_seconds` has passed**, while someone
 //!   subscribes ([`Hub::subscribe_every`], #5971): extensions are never long-running and push
-//!   nothing (ADR 0053), so its freshness is what keeps a page on it live.
+//!   nothing (ADR 0053), so its freshness is what keeps a page on it live. **So is a core
+//!   query with a `fresh_seconds`** (`purlis.forge_milestones`, #6233), which reads what no
+//!   change of the plane moves.
 //!
 //! The hub holds no clock and starts nothing itself: it says what to do ([`Do`]), and its
 //! caller runs the query, hands the answers and wakes it, so it is tested with the instants it
@@ -43,6 +45,9 @@ fn read_from(name: &str) -> Option<&'static [Kind]> {
         "session_record_list" | "session_record_read" => Some(&[Kind::Sessions]),
         // `workspaces/<ws>/changes/` is a plain folder of the workspace to the watch.
         "change_status" => Some(&[Kind::Workspace]),
+        // Read from the forge, which no change of the plane moves: it is asked again on its
+        // `fresh_seconds` instead (#6233).
+        crate::catalogue::milestones::NAME => Some(&[]),
         _ => None,
     }
 }

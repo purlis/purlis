@@ -9,7 +9,7 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 
 use super::graphql::work_item;
-use crate::forge::backend::{Caller, ForgeRef};
+use crate::forge::backend::{Caller, ForgeRef, MilestoneProgress};
 use crate::forge::pr::Pr;
 use crate::forge::recorded::Recorded;
 use crate::forge::{Failure, Forge, ForgeBackend, Kind};
@@ -329,4 +329,51 @@ fn an_issue_graphql_cannot_find_is_not_found() {
         matches!(refused.failure(), Failure::NotFound),
         "{refused:?}"
     );
+}
+
+#[test]
+fn a_repo_s_milestones_are_read_with_their_progress_open_ones_by_default() {
+    let (github, recorded) = over(json!([
+        rest(
+            "repos/acme/api/milestones?state=open&per_page=100&page=1",
+            json!([{
+                "number": 4, "title": "M4", "description": null, "due_on": "2026-12-01T08:00:00Z",
+                "state": "open", "open_issues": 3, "closed_issues": 9,
+                "html_url": "https://github.com/acme/api/milestone/4",
+                "updated_at": "2026-11-10T09:00:00Z", "node_id": "MI_4"
+            }])
+        ),
+        rest(
+            "repos/acme/api/milestones?state=all&per_page=100&page=1",
+            json!([{
+                "number": 1, "title": "M1", "description": "The first.", "due_on": null,
+                "state": "closed", "open_issues": 0, "closed_issues": 2,
+                "html_url": "https://github.com/acme/api/milestone/1",
+                "updated_at": "2026-01-02T03:04:05Z"
+            }])
+        ),
+    ]));
+    let open = github
+        .milestone_progress(&Caller::window(), "acme/api", false)
+        .unwrap();
+    assert_eq!(
+        open,
+        vec![MilestoneProgress {
+            number: 4,
+            title: "M4".into(),
+            description: String::new(),
+            due_on: Some("2026-12-01T08:00:00Z".into()),
+            state: "open".into(),
+            open_issues: 3,
+            closed_issues: 9,
+            url: "https://github.com/acme/api/milestone/4".into(),
+            updated_at: "2026-11-10T09:00:00Z".into(),
+        }]
+    );
+    let all = github
+        .milestone_progress(&Caller::window(), "acme/api", true)
+        .unwrap();
+    assert_eq!(all[0].description, "The first.");
+    assert_eq!(all[0].due_on, None);
+    assert_eq!(recorded.unspent(), Vec::new());
 }
