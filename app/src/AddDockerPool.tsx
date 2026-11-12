@@ -602,7 +602,11 @@ function AddClusterPool({ kinds }: { kinds: boolean }) {
           label="Cluster operator key"
           help={`Check it against the key your cluster's admin gives you before you add the pool. Its runner is claimed in namespace ${checked.namespace}.`}
           control={(ids) => (
-            <output id={ids.id} aria-describedby={ids.describedBy} className="ui-machine-path">
+            <output
+              id={ids.id}
+              aria-describedby={ids.describedBy}
+              className="ui-machine-path ui-text-meta"
+            >
               <code>{checked.key}</code>
             </output>
           )}

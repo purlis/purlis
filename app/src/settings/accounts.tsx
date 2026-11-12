@@ -167,15 +167,19 @@ const forgeAccounts: LiveSetting = {
       error: now.refused === undefined ? undefined : [now.refused],
       control: (ids) => (
         <div role="group" aria-labelledby={ids.labelledBy} aria-describedby={ids.describedBy}>
-          {now.read.state === "reading" && <p className="ui-setting-help">Reading…</p>}
+          {now.read.state === "reading" && (
+            <p className="ui-setting-help ui-text-secondary">Reading…</p>
+          )}
           {now.read.state === "trouble" && (
-            <p className="ui-setting-help" role="alert">
+            <p className="ui-setting-help ui-text-secondary" role="alert">
               {now.read.trouble}
             </p>
           )}
           {now.read.state === "read" &&
             (now.read.accounts.length === 0 ? (
-              <p className="ui-setting-help">No forge account is signed in on this machine.</p>
+              <p className="ui-setting-help ui-text-secondary">
+                No forge account is signed in on this machine.
+              </p>
             ) : (
               // **A table of the accounts** (#6301, as Your hosts is, #2919 R65, R67): a row
               // an account, its login heading it, and Sign out in one place on every row.
@@ -200,7 +204,7 @@ const forgeAccounts: LiveSetting = {
                     <TableRow key={account.id} id={account.id} textValue={account.login}>
                       <TableCell>{account.login}</TableCell>
                       <TableCell heading="Host">
-                        <span className="ui-record-where">{account.host}</span>
+                        <span className="ui-record-where ui-text-meta">{account.host}</span>
                       </TableCell>
                       <TableCell heading="Signed in with">
                         <Badge variant="accent">{note(account)}</Badge>
@@ -220,7 +224,7 @@ const forgeAccounts: LiveSetting = {
               </Table>
             ))}
           {now.said !== undefined && (
-            <p className="ui-setting-help" role="status">
+            <p className="ui-setting-help ui-text-secondary" role="status">
               {now.said}
             </p>
           )}

@@ -2066,7 +2066,7 @@ One change each, each checked against a screenshot (#1920):
 3. the Explorer, with the Panel's Repos and Memory halves (moved:
    [below](#the-explorer-and-the-panels-halves-on-the-roles));
 4. the tab strips and the status bar (moved: [below](#the-tab-strips-and-the-status-bar-on-the-roles));
-5. Settings;
+5. Settings (moved: [below](#settings-on-the-roles));
 6. Notices and dialogs;
 7. Welcome;
 8. the view tabs (Todos, Memory, a task's changes, the skills' pages): their `.none` and
@@ -2074,6 +2074,35 @@ One change each, each checked against a screenshot (#1920):
 
 Along the way the section label gets one spelling (`ui-text-label`, which is `.sidebar-title`'s
 type today), and the two largest size tokens are each read by a role or removed.
+
+### Settings, on the roles
+
+Settings ranked its words in rules of its own, on the aligned form of #2919: a page's title at
+`--font-size-xl`, help lines at 11px in one place and 12px in another, in the muted and the quiet
+greys. Now (#1920):
+
+| word                                                                  | role                    | before                          | after                     |
+| --------------------------------------------------------------------- | ----------------------- | ------------------------------- | ------------------------- |
+| a page's title (`.ui-setting-head h2`)                                | `ui-text-title`         | 20px, strong                    | 16px, strong              |
+| a page's blurb                                                        | `ui-text-secondary`     | 14px, muted                     | 12px, secondary           |
+| where a page is kept; its file                                        | `ui-text-secondary`; `ui-text-code` | 12px, quiet; mono, secondary | 12px, secondary; mono |
+| a group's heading on a page; in a dialog                              | `ui-text-heading`       | 14px, strong; 13px              | 14px, strong              |
+| a group's line and a row's help (`.ui-setting-help`, everywhere)      | `ui-text-secondary`     | 12px quiet on a page, 11px muted elsewhere | 12px, secondary |
+| the level's about line                                                | `ui-text-secondary`     | 12px, secondary                 | the same                  |
+| a collection entry's name (`.ui-collection-head h3`)                  | `ui-text-heading`       | 12px, primary                   | 14px, strong              |
+| a collection's "done" line; where a record is; a machine's path       | `ui-text-meta`          | 11px; secondary, quiet, quiet   | 11px, quiet               |
+| "Edit as TOML" over the files' links (`.ui-settings-raw-label`)       | `ui-text-label`         | 11px, muted                     | 11px, strong, capitals    |
+| a host in the hosts table; a key on a row's ⋯ menu                    | `ui-text-code`          | mono                            | the same                  |
+| a row's label (`.ui-setting-label`)                                   | none: the medium weight | 14px, medium                    | the same                  |
+| a refused write, under its row                                        | none: `danger.text`     | 11px                            | the same                  |
+
+What it settled:
+
+- **A help line is the secondary, wherever it is.** The same class drew 12px quiet words on a
+  page and 11px muted ones in a dialog; it is one role now, in both.
+- **A form's label keeps the medium weight** (#2317) and wears no role, since no role is medium.
+  Whether a label should be the body (13px, regular) is open for the operator's ruling.
+- **A page's title is the title.** It was the one user of `--font-size-xl` in Settings.
 
 ### The tab strips and the status bar, on the roles
 
