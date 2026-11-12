@@ -8,6 +8,7 @@ import type { DevicesShown, DiskHeld, PoolNamedBy, RunnerAsked } from "./binding
 import { DevicesView } from "./DevicesView";
 import { answerWithinForTests, forgetDevicesForTests } from "./devices";
 import { userEvent } from "@testing-library/user-event";
+import { findGrid } from "./ui/table/table.testkit";
 
 /**
  * **Devices** (#2052): this machine and every runner, each with its chats and browsers, its
@@ -220,7 +221,7 @@ describe("DevicesView", () => {
 
   it("shows each pool's use per person with its hours this week, and no money", async () => {
     render(<DevicesView />);
-    const table = await screen.findByRole("grid", { name: "Use per pool and person" });
+    const table = await findGrid(screen, "Use per pool and person");
     await waitFor(() => expect(within(table).getAllByRole("row")).toHaveLength(3));
     const builds = within(table).getByRole("row", { name: /builds/ });
     expect(
@@ -242,7 +243,7 @@ describe("DevicesView", () => {
   it("shows money this week only for a pool that declares a price per hour, in its currency", async () => {
     shown.pools[0].price = { amount: "0.40", currency: "EUR" };
     render(<DevicesView />);
-    const table = await screen.findByRole("grid", { name: "Use per pool and person" });
+    const table = await findGrid(screen, "Use per pool and person");
     expect(
       within(table).getByRole("columnheader", { name: "Money this week" }),
     ).toBeInTheDocument();
@@ -371,7 +372,7 @@ describe("DevicesView", () => {
   it("names the person only where this machine's runners are shown to be theirs", async () => {
     shown.owned = false;
     render(<DevicesView />);
-    const table = await screen.findByRole("grid", { name: "Use per pool and person" });
+    const table = await findGrid(screen, "Use per pool and person");
     await waitFor(() =>
       expect(within(table).getAllByText("Not known to be yours")).toHaveLength(2),
     );
@@ -380,7 +381,7 @@ describe("DevicesView", () => {
   it("shows the disk each pool's runners hold, and says why where Docker could not read it", async () => {
     disk = { state: "not_read", why: "Cannot connect to the Docker daemon" };
     render(<DevicesView />);
-    const table = await screen.findByRole("grid", { name: "Use per pool and person" });
+    const table = await findGrid(screen, "Use per pool and person");
     expect(within(table).getByRole("columnheader", { name: "Disk held" })).toBeInTheDocument();
     await waitFor(() =>
       expect(

@@ -7,6 +7,7 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { PoolProfileRow, PoolSignInStep } from "../bindings";
+import { namedWithoutItsWords } from "../a11y.testkit";
 import { askProfiles } from "../pools";
 import { PoolProfiles } from "./PoolProfiles";
 import { PROFILE_SIGN_IN, PROFILE_SIGN_OUT, type ProfileSignInAsk } from "./links";
@@ -710,33 +711,6 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
 });
 
 describe("A pool profile's buttons (#6319)", () => {
-  /**
-   * What WCAG 2.5.3, Label in Name, asks of each button drawn: that the words it shows come, in
-   * order and unbroken, among the words of its name. Close to axe's `label-content-name-mismatch`
-   * (which also drops what is in brackets and reads only the text on screen), which holds it in a
-   * browser in the Pools story's run. In jsdom axe sees no words on screen and only reports the
-   * rule incomplete, so this asks it of each button itself: each one whose name does not, by its
-   * name.
-   */
-  function namedWithoutItsWords(container: HTMLElement) {
-    const words = (text: string | null) =>
-      (text ?? "")
-        .normalize("NFKD")
-        .toLowerCase()
-        .split(/[^\p{L}\p{N}]+/u)
-        .filter((one) => one !== "");
-    const holds = (name: string[], shown: string[]) =>
-      name.some((_, at) => shown.every((word, i) => name[at + i] === word));
-    return within(container)
-      .getAllByRole("button")
-      .filter((button) => {
-        const shown = words(button.textContent);
-        const label = button.getAttribute("aria-label");
-        return shown.length > 0 && label !== null && !holds(words(label), shown);
-      })
-      .map((button) => `${button.getAttribute("aria-label")} shows ${button.textContent}`);
-  }
-
   it("names each Sign in by the words it shows, then whose and where", async () => {
     const { container } = render(<PoolProfiles pool="builds" plane="/home/op/project" />);
     await screen.findByRole("button", { name: "Sign in: work on pool builds" });

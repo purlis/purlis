@@ -12,6 +12,7 @@ import { forgetGroups } from "./links";
 import type { EntryWritten, SettingsFile, SettingsWhich } from "../bindings";
 import type { HostAdded } from "./groups";
 import { pickIn } from "../ui/select/select.testkit";
+import { findGrid } from "../ui/table/table.testkit";
 
 /**
  * **Settings › Sandbox's hosts** (#1341): the project's own hosts, kept in `charter.toml` and
@@ -370,7 +371,7 @@ describe("Settings › Your hosts, the table", () => {
   async function hostsTable() {
     const made = core({ local: [...MINE], unconfirmed: [...WAITING] });
     await at("Your hosts");
-    const table = await screen.findByRole("grid", { name: "Your hosts" });
+    const table = await findGrid(screen, "Your hosts");
     return { ...made, table, user: userEvent.setup() };
   }
 

@@ -38,7 +38,7 @@ import {
 } from "../table/ControlTable";
 import { panelRoot } from "../panel/Panel";
 import { editorToolbar, TabCell, tabPart, tabsPart, ToolbarFile } from "./Tabs";
-import { expectFocusInSight, untilFocused } from "../../stories.testkit";
+import { expectFocusInSight, penFor, untilFocused } from "../../stories.testkit";
 
 /** The view a story shows. */
 type Shown = "settings" | "vault" | "persona" | "memory" | "file";
@@ -422,6 +422,19 @@ type Story = StoryObj<typeof meta>;
 
 const boxOf = (el: Element | null | undefined): DOMRect => (el as Element).getBoundingClientRect();
 
+/** The pixels a field has left over once `words` are drawn in its font and letter spacing,
+ *  inside its padding: below 0, its words are cut. */
+function spareRoom(field: HTMLInputElement, words: string): number {
+  const style = getComputedStyle(field);
+  const room =
+    field.clientWidth - parseFloat(style.paddingInlineStart) - parseFloat(style.paddingInlineEnd);
+  const spacing = (parseFloat(style.letterSpacing) || 0) * words.length;
+  return room - penFor(field).measureText(words).width - spacing;
+}
+
+/** Settings' side column at its narrowest (#2919 D18): `clamp(180px, …)` in `App.css`. */
+const NARROWEST_SIDE = 180;
+
 /** Whether the tabs are docked on the panel in the cell's theme (Purlis), not on a strip of
  *  their own (Purlis Classic): only then does the chosen tab join what is under it. */
 function docked(canvas: HTMLElement): boolean {
@@ -579,6 +592,17 @@ export const Settings: Story = {
     const actions = boxOf(canvasElement.querySelector(".pane-actions"));
     expect(boxOf(project).top).toBeLessThan(actions.bottom);
     await nothingScrollsUnderTheActions(canvasElement);
+    // **The search's words are whole in the narrowest column** (#6378): its placeholder fits
+    // the box's room for text, in every pictured theme. The box spans the column, so it loses
+    // what the column would lose at its floor; the words are measured once the fonts are in.
+    await document.fonts.ready;
+    const search = canvas.getByRole<HTMLInputElement>("searchbox", { name: "Search settings" });
+    expect(search.placeholder).not.toBe("");
+    const side = boxOf(canvasElement.querySelector(".ui-settings-side")).width;
+    expect(side).toBeGreaterThanOrEqual(NARROWEST_SIDE);
+    expect(spareRoom(search, search.placeholder) - (side - NARROWEST_SIDE)).toBeGreaterThanOrEqual(
+      0,
+    );
     canvas.getByRole("button", { name: "Close this view" }).focus();
     await userEvent.tab();
     await untilFocused(() => project, "Tab reaches the project");
