@@ -25,6 +25,9 @@ const step = (id: string, name: string, state: string, more: Partial<PoolSetupSt
     skippable: id === "signins" || id === "identity",
     see: null,
     checks: [],
+    other: null,
+    machine: null,
+    cause: null,
     ...more,
   }) as PoolSetupStep;
 
@@ -35,6 +38,7 @@ const LATER = [
 ];
 
 const WHERE = (where: Partial<PoolSetupStep>, state: string): PoolSetupShown => ({
+  kind: "docker",
   pool: null,
   name: null,
   at: "where",
@@ -55,6 +59,7 @@ const CREATE = {
 };
 
 const POOL_FORM: PoolSetupShown = {
+  kind: "docker",
   pool: null,
   name: null,
   at: "pool",
@@ -344,6 +349,7 @@ export const ThatNameIsTaken: Story = {
 /** Made by hand from See what this does: purlis noticed, and setup follows it. */
 export const MadeByHand: Story = {
   beforeEach: faked({
+    kind: "docker",
     pool: "dev-box",
     name: "dev-box",
     at: "signins",
@@ -371,6 +377,7 @@ export const NoRunnerImageNamed: Story = {
 
 export const ThePoolIsMade: Story = {
   beforeEach: faked({
+    kind: "docker",
     pool: "dev-box",
     name: "dev-box",
     at: "signins",
@@ -398,6 +405,7 @@ export const ThePoolIsMade: Story = {
 
 export const TheRunnerWasRemoved: Story = {
   beforeEach: faked({
+    kind: "docker",
     pool: "dev-box",
     name: "dev-box",
     at: "pool",
@@ -472,6 +480,7 @@ export const ReadingFailed: Story = {
 
 export const ARunnerBeingMade: Story = {
   beforeEach: faked({
+    kind: "docker",
     pool: "dev-box",
     name: "dev-box",
     at: "pool",

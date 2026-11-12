@@ -25,6 +25,9 @@ const TO_SET_UP: PoolSetupStep = {
   },
   skippable: true,
   see: null,
+  other: null,
+  machine: null,
+  cause: null,
   checks: [],
 };
 

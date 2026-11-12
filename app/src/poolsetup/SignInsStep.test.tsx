@@ -17,6 +17,9 @@ const STEP: PoolSetupStep = {
   next: { id: "choose-profiles", label: "Choose profiles", does: "", command: null, url: null },
   skippable: true,
   see: null,
+  other: null,
+  machine: null,
+  cause: null,
   checks: [],
 };
 

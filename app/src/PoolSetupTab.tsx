@@ -12,7 +12,8 @@ import {
   type PoolSetupStep,
 } from "./bindings";
 import { Notice } from "./Notice";
-import { Action, Say, SeeWhat, StepHead } from "./poolsetup/parts";
+import { Action, Recommended, Say, SeeWhat, StepHead } from "./poolsetup/parts";
+import { ConnectStep } from "./poolsetup/ConnectStep";
 import { IdentityStep } from "./poolsetup/IdentityStep";
 import { NOTHING_CHOSEN, PoolStep, type Chosen } from "./poolsetup/PoolStep";
 import { SignInsStep } from "./poolsetup/SignInsStep";
@@ -20,6 +21,8 @@ import { TryStep } from "./poolsetup/TryStep";
 import { startANewPoolSetup, startPoolSetupOver, usePoolSetupStart } from "./pools";
 import { Button } from "./ui/button/Button";
 import { Card } from "./ui/card/Card";
+import { OptionCard, OptionCards } from "./ui/choice/Radio";
+import { Server } from "lucide-react";
 import { STEP_STATES, StepList, type StepState } from "./ui/steps/Steps";
 
 /**
@@ -93,18 +96,69 @@ const WHERE_LEAD =
 /** The Where step: what purlis found of Docker, and the one thing to do about it. */
 function Where({
   step,
+  kind,
   onNext,
   onChose,
+  onChoseRemote,
   onRecheck,
   said,
 }: {
   step: PoolSetupStep;
+  /** Where the chats of this setup run: `docker` or `remote-docker` (#6266). */
+  kind: string;
   onNext: () => void;
   onChose: () => void;
+  onChoseRemote: () => void;
   onRecheck: () => void;
   said: (trouble: string) => void;
 }) {
+  const [picking, pick] = useState(kind === "remote-docker" ? "remote" : "local");
   const next = step.next;
+  // **This machine, or another one with Docker** (ADR 0123 §6, #6265): offered while there is no
+  // pool, the core's own next for each.
+  if (step.other && step.state !== "attention") {
+    const local = kind === "docker" ? next : step.other;
+    const remote = kind === "remote-docker" ? next : step.other;
+    const chosen = picking === "remote" ? remote : local;
+    const here = kind === "docker" && step.state !== "attention";
+    return (
+      <>
+        <StepHead title={WHERE_TITLE} lead={WHERE_LEAD} />
+        <OptionCards aria-label="Where your chats run" value={picking} onChange={pick}>
+          <OptionCard
+            value="local"
+            icon={<Server size={18} />}
+            title={
+              <span className="pool-setup-choice">This machine {here && <Recommended />}</span>
+            }
+            detail="Docker on this machine runs your chats, each in its own container."
+          />
+          <OptionCard
+            value="remote"
+            icon={<Server size={18} />}
+            title={<span className="pool-setup-choice">Another machine with Docker</span>}
+            detail="A second Mac, a Linux box or a server, reached over SSH. Your chats keep running there while this machine sleeps."
+          />
+        </OptionCards>
+        {step.see && <SeeWhat text={step.see.text} note={step.see.note} />}
+        <Action
+          does={
+            step.state === "done" && picking === (kind === "docker" ? "local" : "remote")
+              ? undefined
+              : chosen?.does
+          }
+          main="Continue"
+          onMain={() => {
+            if (picking === "remote") {
+              if (kind === "remote-docker" && step.state === "done") onNext();
+              else onChoseRemote();
+            } else if (kind === "docker" && step.state === "done") onNext();
+            else onChose();
+          }}
+        />
+      </>
+    );
+  }
   const press = (action: PoolSetupAction) => {
     if (action.url) void openUrl(action.url);
     else if (action.id === "start-docker") {
@@ -363,6 +417,15 @@ function PoolSetupGuide({
           {step?.id === "where" ? (
             <Where
               step={step}
+              kind={setup.kind}
+              onChoseRemote={() => {
+                setTrouble(undefined);
+                setShowing(undefined);
+                void commands.poolSetupChooseRemoteDocker().then((answer) => {
+                  if (answer.status === "error") setTrouble(answer.error);
+                  else reread();
+                });
+              }}
               said={setTrouble}
               onNext={() => after("where")}
               onRecheck={reread}
@@ -374,6 +437,18 @@ function PoolSetupGuide({
                   else reread();
                 });
               }}
+            />
+          ) : step?.id === "connect" ? (
+            <ConnectStep
+              step={step}
+              shown={setup}
+              plane={plane}
+              onShown={(now) => setRead({ state: "read", shown: now })}
+              changed={() => {
+                setShowing(undefined);
+                reread();
+              }}
+              onNext={() => after("connect")}
             />
           ) : step?.id === "pool" ? (
             <PoolStep

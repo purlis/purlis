@@ -36,6 +36,9 @@ const READY: PoolSetupStep = {
   },
   skippable: false,
   see: null,
+  other: null,
+  machine: null,
+  cause: null,
   checks: [
     check("todo", "A chat starts on dev-box"),
     check("ok", "work is signed in"),
