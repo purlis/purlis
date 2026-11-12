@@ -224,7 +224,7 @@ pub(crate) fn closed_record(
     now: chrono::DateTime<chrono::Utc>,
 ) -> Option<purlis_core::chatrecords::ChatRecord> {
     use purlis_core::chatrecords::{ChatRecord, StartedBy};
-    let minted = ulid::Ulid::from_string(id).ok()?.timestamp_ms();
+    let minted = purlis_core::eventlog::written_at_ms(id)?;
     let started =
         chrono::DateTime::<chrono::Utc>::from_timestamp_millis(i64::try_from(minted).ok()?)?;
     let stamp =
