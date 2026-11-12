@@ -759,6 +759,66 @@ pub fn is_file_args(
     Ok(args)
 }
 
+/// The name of a folder purlis keeps a file in on the other machine ([`keep_args`]), before
+/// what `mktemp` makes it unique with.
+const KEPT: &str = "purlis-kept.";
+
+/// **A file kept on the other machine** (#6269): [`sign_in_args`]'s, making a folder of this
+/// user's alone beside `beside` (the engine's socket's folder, which its engine reads), writing
+/// standard input to `name` in it, and printing that file's path. Refused for a folder or a name
+/// that isn't plain.
+pub fn keep_args(
+    route: &Route,
+    pool: &str,
+    known_hosts: &Path,
+    beside: &str,
+    name: &str,
+) -> Result<Vec<String>, String> {
+    let plain_name = !name.is_empty()
+        && name.len() <= 255
+        && !name.starts_with('.')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'));
+    if !a_socket_path(beside) || !plain_name {
+        return Err(format!(
+            "{} isn't a place purlis keeps a file on the other machine",
+            crate::shown::short(&format!("{beside}/{name}"))
+        ));
+    }
+    let mut args = sign_in_args(route, pool, known_hosts);
+    args.pop();
+    // Checked only: both are plain words, as checked above.
+    args.push(format!(
+        "umask 077 && d=$(mktemp -d -p {beside} {KEPT}XXXXXXXX) && cat > \"$d/{name}\" && \
+         printf '%s\\n' \"$d/{name}\""
+    ));
+    Ok(args)
+}
+
+/// **A folder [`keep_args`] made, removed** with what is in it. Refused for any other path.
+pub fn let_go_args(
+    route: &Route,
+    pool: &str,
+    known_hosts: &Path,
+    folder: &str,
+) -> Result<Vec<String>, String> {
+    let kept = Path::new(folder)
+        .file_name()
+        .and_then(std::ffi::OsStr::to_str)
+        .is_some_and(|name| name.starts_with(KEPT) && name.len() > KEPT.len());
+    if !a_socket_path(folder) || !kept {
+        return Err(format!(
+            "{} isn't a folder purlis kept on the other machine",
+            crate::shown::short(folder)
+        ));
+    }
+    let mut args = sign_in_args(route, pool, known_hosts);
+    args.pop();
+    args.push(format!("rm -rf -- {folder}"));
+    Ok(args)
+}
+
 /// **The `ssh` this machine runs**: the system's own, in a folder only root writes, never one a
 /// `PATH` names. Refused where there is none.
 pub fn ssh_here() -> Result<PathBuf, String> {
@@ -809,9 +869,19 @@ pub fn run(ssh: &Path, args: &[String]) -> Result<Ran, String> {
 
 /// [`run`], reading up to `most` bytes of what it prints: a file read there ([`read_args`]).
 pub fn run_reading(ssh: &Path, args: &[String], most: u64) -> Result<Ran, String> {
+    run_giving(ssh, args, None, most)
+}
+
+/// [`run_reading`], with `input` on its standard input: a file kept there ([`keep_args`]).
+pub fn run_giving(
+    ssh: &Path,
+    args: &[String],
+    input: Option<&str>,
+    most: u64,
+) -> Result<Ran, String> {
     let mut command = std::process::Command::new(ssh);
     command.args(args);
-    let ran = crate::boundedrun::run_within(&mut command, None, most, MOST_SAID, Some(RUN_WITHIN))
+    let ran = crate::boundedrun::run_within(&mut command, input, most, MOST_SAID, Some(RUN_WITHIN))
         .map_err(|why| match why {
             crate::boundedrun::Unanswered::NotStarted(why) => {
                 format!("{} could not be run: {why}", ssh.display())
@@ -926,6 +996,68 @@ impl Reach {
             } else {
                 ran.said
             }),
+        }
+    }
+
+    /// **`contents` kept there as `name`**, in a folder of its own beside the engine's socket,
+    /// which that engine reads: the file's path there, or why not. [`Reach::let_go`] removes it.
+    pub fn keep(&self, name: &str, contents: &str) -> Result<PathBuf, String> {
+        let beside = self
+            .route
+            .socket()
+            .and_then(|socket| Path::new(socket).parent())
+            .and_then(Path::to_str)
+            .ok_or_else(|| {
+                format!(
+                    "{} has no engine's socket to keep a file beside",
+                    self.route.host()
+                )
+            })?
+            .to_owned();
+        let (_folder, known_hosts) = self.known_hosts()?;
+        let ran = run_giving(
+            &self.ssh,
+            &keep_args(&self.route, &self.pool, &known_hosts, &beside, name)?,
+            Some(contents),
+            MOST_SAID,
+        )?;
+        let kept = PathBuf::from(ran.printed.trim_end_matches('\n'));
+        let in_its_folder = kept.parent().is_some_and(|folder| {
+            folder.parent() == Some(Path::new(&beside))
+                && folder
+                    .file_name()
+                    .and_then(std::ffi::OsStr::to_str)
+                    .is_some_and(|it| it.starts_with(KEPT))
+        });
+        if ran.code != Some(0)
+            || !a_socket_path(ran.printed.trim_end_matches('\n'))
+            || !in_its_folder
+            || kept.file_name().and_then(std::ffi::OsStr::to_str) != Some(name)
+        {
+            return Err(if ran.said.is_empty() {
+                format!("{} did not keep {name}", self.route.host())
+            } else {
+                ran.said
+            });
+        }
+        Ok(kept)
+    }
+
+    /// **The folder [`Reach::keep`] kept `kept` in, removed** there.
+    pub fn let_go(&self, kept: &Path) -> Result<(), String> {
+        let folder = kept
+            .parent()
+            .and_then(Path::to_str)
+            .ok_or_else(|| "no folder kept there".to_owned())?;
+        let (_folder, known_hosts) = self.known_hosts()?;
+        let ran = run(
+            &self.ssh,
+            &let_go_args(&self.route, &self.pool, &known_hosts, folder)?,
+        )?;
+        if ran.code == Some(0) {
+            Ok(())
+        } else {
+            Err(ran.said)
         }
     }
 

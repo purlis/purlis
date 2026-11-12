@@ -1228,6 +1228,60 @@ impl FakeDocker {
     }
 }
 
+/// **A Podman on another machine reads the runner's profile there** (#6269): Podman's client
+/// sends the profile's path, not its contents, and the engine reads it on its own machine. So the
+/// profile is kept there first, over the pinned SSH, in a folder of its own beside the engine's
+/// socket, the run names that path, and the folder is removed once the run has read it.
+#[test]
+fn a_podman_on_another_machine_is_given_the_runners_profile_there() {
+    let fake = FakeDocker::new(&inspected());
+    let there = "/run/user/1000/podman/purlis-kept.Ab12Cd34";
+    let ssh_dir = tempfile::tempdir().unwrap();
+    let at = |name: &str| ssh_dir.path().join(name).display().to_string();
+    let script = format!(
+        "#!/bin/sh\necho \"$*\" >> '{log}'\ncase \"$*\" in *mktemp*) cat > '{given}'; \
+         echo '{there}/{SECCOMP_FILE}' ;; esac\n",
+        log = at("log"),
+        given = at("given"),
+    );
+    stand_in::program(ssh_dir.path(), "ssh", &script);
+    let reach = crate::sshroute::Reach {
+        ssh: ssh_dir.path().join("ssh"),
+        route: crate::sshroute::Route::parse("ssh://me@build-box/run/user/1000/podman/podman.sock")
+            .unwrap(),
+        pool: "far".to_owned(),
+        key: crate::sshroute::HostKey::parse(
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiGzfjDDJsgYLYCmdkf8Fel9sE6Ma14Y2+c33Y/qZ2n",
+        )
+        .unwrap(),
+        settings_in: fake.file_path("settings"),
+    };
+    let _ = fake.docker().reaching(reach).make(&runner());
+    let log = fake.file("log");
+    let run = log
+        .lines()
+        .find(|line| line.starts_with("run --detach"))
+        .unwrap_or_else(|| panic!("a run: {log}"));
+    assert!(
+        run.contains(&format!("seccomp={there}/{SECCOMP_FILE} ")),
+        "the run names the profile kept there: {run}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(at("given")).unwrap_or_default(),
+        SECCOMP_PROFILE,
+        "the profile is given there as it is"
+    );
+    let ssh_log = std::fs::read_to_string(at("log")).unwrap_or_default();
+    assert!(
+        ssh_log.contains("mktemp -d -p /run/user/1000/podman purlis-kept.XXXXXXXX"),
+        "kept beside the engine's socket: {ssh_log}"
+    );
+    assert!(
+        ssh_log.contains(&format!("rm -rf -- {there}")),
+        "the folder there is removed once the run has read it: {ssh_log}"
+    );
+}
+
 #[test]
 fn a_runner_is_not_made_on_a_home_volume_that_is_already_there() {
     let fake = FakeDocker::new(&inspected());

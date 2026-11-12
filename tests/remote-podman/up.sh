@@ -16,8 +16,9 @@
 #
 # The other machine's Podman binds its init (`--init`'s `catatonit`) from a folder of that
 # machine's own, `/opt/remote-podman-init`, which the sshd sees and a test run through
-# `tests/remote-podman/without-its-init.sh` does not: so what is judged of the other machine's
-# files is judged there, not here (#6269).
+# `tests/remote-podman/as-another-machine.sh` does not, and that test's `/tmp` is its own: so
+# what is judged of the other machine's files is judged there, and what its engine reads is kept
+# there through the sshd, beside the socket it shares (#6269).
 set -euo pipefail
 image=${1:?the image, by digest, in the registry here}
 image_variable=${2:?the variable to name it in}

@@ -567,6 +567,64 @@ fn a_pin_is_kept_as_its_engine_says_and_read_back_whole_or_not_at_all() {
     );
 }
 
+/// A file is kept there in a folder of its own beside the engine's socket, from standard input,
+/// and only that folder is ever removed.
+#[test]
+fn a_file_is_kept_there_in_a_folder_of_its_own_and_only_that_folder_let_go() {
+    let route = Route::parse("ssh://me@build-box/run/user/1000/podman/podman.sock").unwrap();
+    let args = keep_args(
+        &route,
+        "p",
+        Path::new("/k/known_hosts"),
+        "/run/user/1000/podman",
+        "runner-seccomp-engine.json",
+    )
+    .unwrap();
+    assert_eq!(
+        args.last().unwrap(),
+        "umask 077 && d=$(mktemp -d -p /run/user/1000/podman purlis-kept.XXXXXXXX) && cat > \
+         \"$d/runner-seccomp-engine.json\" && printf '%s\\n' \"$d/runner-seccomp-engine.json\""
+    );
+    assert_eq!(option(&args, "StrictHostKeyChecking"), Some("yes"));
+    for (beside, name) in [
+        ("/a b", "f.json"),
+        ("relative", "f.json"),
+        ("/a/../b", "f.json"),
+        ("/run", "a/b"),
+        ("/run", "$(x)"),
+        ("/run", ".hidden"),
+        ("/run", ""),
+    ] {
+        assert!(
+            keep_args(&route, "p", Path::new("/k"), beside, name).is_err(),
+            "{beside:?} {name:?}"
+        );
+    }
+    let args = let_go_args(
+        &route,
+        "p",
+        Path::new("/k"),
+        "/run/user/1000/podman/purlis-kept.Ab12Cd34",
+    )
+    .unwrap();
+    assert_eq!(
+        args.last().unwrap(),
+        "rm -rf -- /run/user/1000/podman/purlis-kept.Ab12Cd34"
+    );
+    for bad in [
+        "/run/user/1000/podman",
+        "/home/me",
+        "/run/purlis-kept.",
+        "/run/purlis-kept.a b",
+        "purlis-kept.x",
+    ] {
+        assert!(
+            let_go_args(&route, "p", Path::new("/k"), bad).is_err(),
+            "{bad:?}"
+        );
+    }
+}
+
 /// Podman's init is looked for there with `test -f` alone, pinned, and only at a plain path.
 #[test]
 fn a_file_is_looked_for_there_only_at_a_plain_path() {

@@ -775,12 +775,13 @@ jobs:
           tests/remote-podman/up.sh
           "$(docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/purlis-runner-parity:candidate)"
           REMOTE_PODMAN_TEST_IMAGE
-      # Run where the other machine's init is not seen (`without-its-init.sh`), as from a Mac:
-      # what is judged of that machine's files is judged there.
+      # Run as from another machine (`as-another-machine.sh`): the other machine's init is not
+      # seen here, and this side's `/tmp` is not seen there, so what is judged of that machine's
+      # files is judged there and what its engine reads is kept there.
       - name: The SSH route against that Podman
         if: steps.scope.outputs.run == 'true'
         run: >-
-          tests/remote-podman/without-its-init.sh
+          tests/remote-podman/as-another-machine.sh
           cargo nextest run --locked -p purlis-core --profile ci --retries 0 --no-tests fail
           --test-threads 1 --test it -E 'test(/^a_remote_podman_pool_is_reached_over_ssh::/)'
       - name: The behaviour suite on its remote Docker pool target

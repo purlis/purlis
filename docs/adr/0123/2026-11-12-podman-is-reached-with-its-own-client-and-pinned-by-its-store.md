@@ -31,7 +31,19 @@ The check of a rootless Podman's container reads the runtime config Podman wrote
 Podman writes a device it was given nowhere `inspect` shows. On another machine that file is that
 machine's. purlis reads it there with the pool's pinned ssh, as a sign-in runs (`test -f <path>
 && exec cat -- <path>`), and only once the path is exactly that container's own under the graph
-root `podman info` names. Nothing else of that machine's is read.
+root `podman info` names. The init that config binds (`--init`'s `catatonit`, #3702) is that
+machine's too, so whether it is a file is asked there (`test -f <path>`), never here, where a Mac
+has none and another Linux keeps it elsewhere. Nothing else of that machine's is read.
+
+## The runner's seccomp profile is kept on that machine for the run
+
+Docker's client reads `--security-opt seccomp=<file>` and sends the profile. Podman's client sends
+only the path, and the engine reads it on its own machine (`config_linux_seccomp.go`, built only
+for the engine). So for a Podman there, purlis keeps the profile on that machine first, over the
+pinned ssh, in a folder of its own beside the engine's socket (`umask 077`, `mktemp -d`, the
+profile on standard input), names that path in the run, and removes the folder once the run has
+read it. The check holds the path to the profile's file name and, rootless, holds what Podman
+compiled to the profile itself, as it does here.
 
 ## The pin's engine is a Docker's id or a Podman's socket and graph root
 
@@ -46,7 +58,8 @@ words: its store is somewhere else now. #6270 builds the whole change flow.
 A Podman connection names the key file it signs in with. Docker's `ssh://` spelling has no place
 for one, so the pool keeps it beside its route (`identity`), and every ssh for the pool is handed
 it as `-i`, beside the person's agent and SSH settings. Only its path is kept, never the key
-(§4 stands).
+(§4 stands). A path ssh would expand is refused: one holding a `%` token, or `${`, an
+environment variable OpenSSH 8.4 and later expand in a key file's path.
 
 ## Left for later
 

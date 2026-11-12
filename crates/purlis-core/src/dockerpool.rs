@@ -3232,14 +3232,30 @@ impl Docker {
                 "purlis could not keep the runner's seccomp profile for docker: {why}"
             ))
         })?;
+        // Podman's client sends the profile's path, which its engine reads on its own machine:
+        // on another machine, the profile is kept there for the run, and let go once it is read
+        // (#6269). Docker's client sends the profile itself.
+        let there = match &self.reach {
+            Some(reach) => Some(reach.keep(file, profile).map_err(|why| {
+                refused(format!(
+                    "purlis could not keep the runner's seccomp profile on {}: {why}",
+                    reach.route.host()
+                ))
+            })?),
+            None => None,
+        };
         let made = self.run_prepared(
             &prepared,
-            &runner.create_args_for(desktop, &seccomp),
+            &runner.create_args_for(desktop, there.as_deref().unwrap_or(&seccomp)),
             None,
             MOST_INSPECTED,
             None,
         );
         drop(prepared);
+        if let (Some(reach), Some(there)) = (&self.reach, &there) {
+            // Read as the container was made; what is left there is only a copy of it.
+            let _ = reach.let_go(there);
+        }
         let out = match made {
             Ok(out) => out,
             Err(why) => return Err(self.and_removed(full_disk_or(why), &container, &volume)),
