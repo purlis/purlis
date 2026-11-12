@@ -129,6 +129,30 @@ function Row({ at, plane = "/p" }: { at: number; plane?: string | null }) {
 }
 
 describe("Settings › You › Profiles", () => {
+  it("draws the profiles as a table of controls: a row a profile, its actions at its end (#6301)", async () => {
+    profiles = [row("work"), row("mine", { origin: "adopted", imported_at: null })];
+    render(<Row at={0} />);
+    const table = await screen.findByRole("table", { name: "This machine's profiles" });
+    expect(
+      within(table)
+        .getAllByRole("columnheader")
+        .map((one) => one.getAttribute("aria-label") ?? one.textContent),
+    ).toEqual(["Profile", "Harness", "Sign-in", "Pin", "Actions"]);
+    expect(
+      within(table)
+        .getAllByRole("rowheader")
+        .map((one) => one.textContent),
+      // The icon's monogram first, kept from a reader; then the name and the folder.
+    ).toEqual(["Cwork/data/profiles/work/config", "Cmine/data/profiles/mine/config"]);
+    const work = within(table).getAllByRole("row")[1] as HTMLElement;
+    const actions = work.querySelector("[data-actions]") as HTMLElement;
+    expect(
+      within(actions)
+        .getAllByRole("button")
+        .map((one) => one.textContent),
+    ).toEqual(["Import again", "Remove…"]);
+  });
+
   it("says each profile's pinned version and offers another major version installed", async () => {
     profiles = [
       row("work", { pinned: "2.1.283", installed: "3.0.0", offered: "3.0.0" }),
@@ -174,9 +198,11 @@ describe("Settings › You › Profiles", () => {
     expect(screen.getByRole("button", { name: "Import the settings of work again" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Import the settings of mine again" })).toBeNull();
     // Each profile's icon is drawn beside its name (#2922), hidden from assistive technology.
-    const icons = document.querySelectorAll(".ui-machine-entry .harness-icon");
+    const icons = within(screen.getByRole("table", { name: "This machine's profiles" }))
+      .getAllByRole("rowheader")
+      .map((heading) => heading.querySelector(".harness-icon"));
     expect(icons).toHaveLength(2);
-    for (const icon of icons) expect(icon.getAttribute("aria-hidden")).toBe("true");
+    for (const icon of icons) expect(icon?.getAttribute("aria-hidden")).toBe("true");
   });
 
   it("warns plainly on a profile whose sign-in the commands its chats run can read (#2037)", async () => {

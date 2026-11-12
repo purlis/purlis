@@ -13,6 +13,15 @@ import { Button } from "../ui/button/Button";
 import { AlertDialog } from "../ui/dialog/Dialog";
 import { Form } from "../ui/field/Field";
 import { Badge } from "../ui/badge/Badge";
+import {
+  ControlBody,
+  ControlCell,
+  ControlColumn,
+  ControlHead,
+  ControlRow,
+  ControlRowHeading,
+  ControlTable,
+} from "../ui/table/ControlTable";
 
 /**
  * **You › Profiles** (#2034, ADR 0095): this machine's own profiles, each available in every
@@ -278,86 +287,128 @@ const listed = (plane: string | undefined): LiveSetting => ({
             (now.read.profiles.length === 0 ? (
               <p className="ui-setting-help">This machine keeps no profile of its own yet.</p>
             ) : (
-              <ul className="ui-machine-list">
-                {now.read.profiles.map((profile) => (
-                  <li key={profile.name} className="ui-machine-entry">
-                    <HarnessIcon icon={profile.icon} kind={profile.kind} />
-                    <span className="ui-machine-name">{profile.name}</span>
-                    <span className="ui-machine-path">{profile.folder}</span>
-                    <Badge variant="accent">{note(profile)}</Badge>
-                    <span className="ui-setting-help">{signedIn(profile)}</span>
-                    {onPools(profile.name).map((line) => (
-                      <span key={line} className="ui-setting-help">
-                        {line}
-                      </span>
-                    ))}
-                    {profile.origin === "made" &&
-                      (plane === undefined ? (
-                        <span className="ui-setting-help">
-                          Open a project to sign in from its window, or run{" "}
-                          <code>purlis profile sign-in {profile.name}</code> in your terminal.
+              // **A table of the profiles** (#6301, as Your hosts is, #2919 R65, R67): a table of
+              // controls, since a row holds several buttons, each its own Tab stop. A row a
+              // profile: its icon and name heading it, its folder under them; its harness; how
+              // and where it signs in; its pin; and its own actions at its end.
+              <ControlTable
+                className="profiles-table"
+                stacks
+                aria-label="This machine's profiles"
+                aria-describedby={ids.describedBy}
+              >
+                <ControlHead>
+                  <ControlColumn>Profile</ControlColumn>
+                  <ControlColumn>Harness</ControlColumn>
+                  <ControlColumn>Sign-in</ControlColumn>
+                  <ControlColumn>Pin</ControlColumn>
+                  <ControlColumn actions hideName>
+                    Actions
+                  </ControlColumn>
+                </ControlHead>
+                <ControlBody>
+                  {now.read.profiles.map((profile) => (
+                    <ControlRow key={profile.name}>
+                      <ControlRowHeading>
+                        <span className="profiles-lines">
+                          <span className="profiles-name">
+                            <HarnessIcon icon={profile.icon} kind={profile.kind} />
+                            {profile.name}
+                          </span>
+                          <span className="ui-record-where">{profile.folder}</span>
                         </span>
-                      ) : profile.plans.length > 0 ? (
-                        // A harness that serves several plans is signed in to the one purlis
-                        // names (opencode: ChatGPT or GitHub Copilot, never a Claude plan).
-                        profile.plans.map((plan) => (
+                      </ControlRowHeading>
+                      <ControlCell heading="Harness">
+                        <Badge variant="accent">{note(profile)}</Badge>
+                      </ControlCell>
+                      <ControlCell heading="Sign-in">
+                        <span className="profiles-lines">
+                          <span className="ui-setting-help">{signedIn(profile)}</span>
+                          {onPools(profile.name).map((line) => (
+                            <span key={line} className="ui-setting-help">
+                              {line}
+                            </span>
+                          ))}
+                          {profile.origin === "made" &&
+                            (plane === undefined ? (
+                              <span className="ui-setting-help">
+                                Open a project to sign in from its window, or run{" "}
+                                <code>purlis profile sign-in {profile.name}</code> in your terminal.
+                              </span>
+                            ) : profile.plans.length > 0 ? (
+                              // A harness that serves several plans is signed in to the one purlis
+                              // names (opencode: ChatGPT or GitHub Copilot, never a Claude plan).
+                              profile.plans.map((plan) => (
+                                <EntryButton
+                                  key={plan.id}
+                                  label={`Sign in to ${plan.title}`}
+                                  spoken={`Sign ${profile.name} in to ${plan.title}`}
+                                  disabled={now.busy}
+                                  onClick={() => askProfileSignIn(plane, profile.name, plan.id)}
+                                />
+                              ))
+                            ) : (
+                              <EntryButton
+                                label={
+                                  profile.standing === "signed-in" ? "Sign in again" : "Sign in"
+                                }
+                                spoken={`Sign ${profile.name} in`}
+                                disabled={now.busy}
+                                onClick={() => askProfileSignIn(plane, profile.name)}
+                              />
+                            ))}
+                          {profile.commands_can_read_sign_in !== null && (
+                            <span className="ui-setting-help">
+                              {profile.commands_can_read_sign_in}
+                            </span>
+                          )}
+                        </span>
+                      </ControlCell>
+                      <ControlCell heading="Pin">
+                        <span className="profiles-lines">
+                          <Badge variant="accent">{pinNote(profile)}</Badge>
+                          {offeredVersion(profile) !== undefined && (
+                            <EntryButton
+                              label="Update the pin"
+                              spoken={`Update the pin of ${profile.name} to ${offeredVersion(profile)}`}
+                              disabled={now.busy}
+                              onClick={() => {
+                                const version = offeredVersion(profile) ?? "";
+                                void acting(
+                                  () => commands.machineProfilePin(profile.name, version),
+                                  () =>
+                                    `${profile.name}: its chats run on ${profile.harness} ${version} from now on.`,
+                                );
+                              }}
+                            />
+                          )}
+                        </span>
+                      </ControlCell>
+                      <ControlCell actions>
+                        {profile.origin === "made" && !profile.sandbox_only && (
                           <EntryButton
-                            key={plan.id}
-                            label={`Sign in to ${plan.title}`}
-                            spoken={`Sign ${profile.name} in to ${plan.title}`}
+                            label="Import again"
+                            spoken={`Import the settings of ${profile.name} again`}
                             disabled={now.busy}
-                            onClick={() => askProfileSignIn(plane, profile.name, plan.id)}
+                            onClick={() =>
+                              void acting(
+                                () => commands.machineProfileImport(profile.name),
+                                (done) => importedSays(profile.name, done),
+                              )
+                            }
                           />
-                        ))
-                      ) : (
+                        )}
                         <EntryButton
-                          label={profile.standing === "signed-in" ? "Sign in again" : "Sign in"}
-                          spoken={`Sign ${profile.name} in`}
+                          label="Remove…"
+                          spoken={`Remove ${profile.name}`}
                           disabled={now.busy}
-                          onClick={() => askProfileSignIn(plane, profile.name)}
+                          onClick={() => void askRemove(profile)}
                         />
-                      ))}
-                    <Badge variant="accent">{pinNote(profile)}</Badge>
-                    {offeredVersion(profile) !== undefined && (
-                      <EntryButton
-                        label="Update the pin"
-                        spoken={`Update the pin of ${profile.name} to ${offeredVersion(profile)}`}
-                        disabled={now.busy}
-                        onClick={() => {
-                          const version = offeredVersion(profile) ?? "";
-                          void acting(
-                            () => commands.machineProfilePin(profile.name, version),
-                            () =>
-                              `${profile.name}: its chats run on ${profile.harness} ${version} from now on.`,
-                          );
-                        }}
-                      />
-                    )}
-                    {profile.commands_can_read_sign_in !== null && (
-                      <span className="ui-setting-help">{profile.commands_can_read_sign_in}</span>
-                    )}
-                    {profile.origin === "made" && !profile.sandbox_only && (
-                      <EntryButton
-                        label="Import again"
-                        spoken={`Import the settings of ${profile.name} again`}
-                        disabled={now.busy}
-                        onClick={() =>
-                          void acting(
-                            () => commands.machineProfileImport(profile.name),
-                            (done) => importedSays(profile.name, done),
-                          )
-                        }
-                      />
-                    )}
-                    <EntryButton
-                      label="Remove…"
-                      spoken={`Remove ${profile.name}`}
-                      disabled={now.busy}
-                      onClick={() => void askRemove(profile)}
-                    />
-                  </li>
-                ))}
-              </ul>
+                      </ControlCell>
+                    </ControlRow>
+                  ))}
+                </ControlBody>
+              </ControlTable>
             ))}
           {now.said !== undefined && (
             <p className="ui-setting-help" role="status">
