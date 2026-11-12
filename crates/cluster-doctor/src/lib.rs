@@ -41,7 +41,7 @@ pub const MANAGED_BY: (&str, &str) = ("app.kubernetes.io/managed-by", "purlis-cl
 pub const MINIMUM: (u32, u32) = (1, 36);
 
 /// The definitions the pinned upstream release installs, each with the version purlis uses.
-pub const UPSTREAM_DEFINITIONS: &[(&str, &str)] = &[
+pub const AGENT_SANDBOX_DEFINITIONS: &[(&str, &str)] = &[
     ("sandboxes.agents.x-k8s.io", "v1beta1"),
     ("sandboxtemplates.extensions.agents.x-k8s.io", "v1beta1"),
     ("sandboxwarmpools.extensions.agents.x-k8s.io", "v1beta1"),
@@ -49,7 +49,8 @@ pub const UPSTREAM_DEFINITIONS: &[(&str, &str)] = &[
 ];
 
 /// Where upstream's controller runs, as its vendored manifest installs it.
-pub const UPSTREAM_CONTROLLER: (&str, &str) = ("agent-sandbox-system", "agent-sandbox-controller");
+pub const AGENT_SANDBOX_CONTROLLER: (&str, &str) =
+    ("agent-sandbox-system", "agent-sandbox-controller");
 
 /// Every cluster-scoped kind the install applies, as (API group, resource): the admin needs to
 /// create and patch each (`kubectl apply --server-side`), and [`ROLE_RIGHTS`] besides.
@@ -87,7 +88,7 @@ pub struct Version {
     pub git_version: String,
 }
 
-/// Upstream's controller ([`UPSTREAM_CONTROLLER`]), as its deployment shows it.
+/// Upstream's controller ([`AGENT_SANDBOX_CONTROLLER`]), as its deployment shows it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Controller {
     /// The images of its pod's containers.
@@ -300,7 +301,7 @@ async fn upstream(report: &mut Report, cluster: &impl Cluster) {
     let wanted = format!("upstream agent-sandbox {VERSION}");
     let mut present = 0;
     let mut absent = Vec::new();
-    for &(name, version) in UPSTREAM_DEFINITIONS {
+    for &(name, version) in AGENT_SANDBOX_DEFINITIONS {
         match cluster.definition(name).await {
             Ok(Some(served)) => {
                 present += 1;
@@ -322,7 +323,7 @@ async fn upstream(report: &mut Report, cluster: &impl Cluster) {
             }
         }
     }
-    let (namespace, name) = UPSTREAM_CONTROLLER;
+    let (namespace, name) = AGENT_SANDBOX_CONTROLLER;
     let controller = match cluster.controller().await {
         Ok(controller) => controller,
         Err(Unanswered::Forbidden) => {

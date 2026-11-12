@@ -267,11 +267,10 @@ pub async fn pool_setup_choose_cluster(context: Option<String>) -> Result<(), St
         crate::off_the_window("keeping your choice", move || {
             use purlis_core::poolsetup::{self, Kind};
             let config = config_root()?;
-            match context {
-                Some(context) => poolsetup::choose_cluster(&config, &context),
-                None => poolsetup::choose_kind(&config, Kind::Cluster),
+            if let Some(context) = context {
+                return poolsetup::choose_cluster(&config, &context).map_err(|why| why.to_string());
             }
-            .map_err(|why| why.to_string())
+            poolsetup::choose_kind(&config, Kind::Cluster).map_err(|why| why.to_string())
         })
         .await
     }

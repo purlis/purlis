@@ -84,7 +84,7 @@ impl Cluster for Kube {
     }
 
     async fn controller(&self) -> Result<Option<Controller>, Unanswered> {
-        let (namespace, name) = UPSTREAM_CONTROLLER;
+        let (namespace, name) = AGENT_SANDBOX_CONTROLLER;
         let deployments = Api::<Deployment>::namespaced(self.client.clone(), namespace);
         let found = deployments.get_opt(name).await.map_err(unanswered)?;
         Ok(found.map(|deployment| Controller {

@@ -396,13 +396,13 @@ export function ClusterPoolStep({
       )}
       {claiming.state === "busy" && <Busy>{claiming.said}</Busy>}
       {claiming.state === "keyed" && (
-        <Say tone="attention" title="Check the cluster operator key">
-          <p className="pool-setup-does">
-            Pool {claiming.pool} names this key. If your cluster&apos;s admin gave you one, check it
-            is the same. Your runner is claimed in namespace {claiming.namespace}.
-          </p>
+        <>
+          <Say tone="attention" title="Check the cluster operator key">
+            Pool {claiming.pool} names the key below. If your cluster&apos;s admin gave you one,
+            check it is the same. Your runner is claimed in namespace {claiming.namespace}.
+          </Say>
           <CodeBlock label="Cluster operator key" text={claiming.key} />
-        </Say>
+        </>
       )}
       {claiming.state === "refused" && (
         <Say tone="trouble" title="That didn't work">

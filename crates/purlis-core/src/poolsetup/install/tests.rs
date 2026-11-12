@@ -236,5 +236,5 @@ fn upstream_is_applied_from_the_release_this_build_carries_and_waited_on() {
         "{ran}"
     );
     // The kustomization names the controller by the digest doctor checks for.
-    assert!(UPSTREAM_KUSTOMIZATION.contains(purlis_cluster_doctor::CONTROLLER_DIGEST));
+    assert!(RELEASE_KUSTOMIZATION.contains(purlis_cluster_doctor::CONTROLLER_DIGEST));
 }

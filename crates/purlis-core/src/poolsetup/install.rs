@@ -26,9 +26,9 @@ use crate::runners::Refused;
 
 /// The vendored upstream release, byte for byte, and the kustomization that names its
 /// controller by digest: what `kubectl apply -k operator/vendor/agent-sandbox/<version>` applies.
-const UPSTREAM_MANIFEST: &str =
+const RELEASE_MANIFEST: &str =
     include_str!("../../../../operator/vendor/agent-sandbox/v1.0.6/sandbox-with-extensions.yaml");
-const UPSTREAM_KUSTOMIZATION: &str =
+const RELEASE_KUSTOMIZATION: &str =
     include_str!("../../../../operator/vendor/agent-sandbox/v1.0.6/kustomization.yaml");
 /// The policies, then purlis's definitions, then the operator, as `operator/deploy/` renders them
 /// from the chart.
@@ -258,11 +258,9 @@ pub fn by_hand(id: PartId, image: Option<&str>, on: &str) -> String {
                 str::to_owned,
             );
             format!(
-                "# Find the image and check its signature first:\n\
+                "# Find the image, and check its signature first with the cosign command\n\
+                 # docs/cluster-operator.md gives under \"Its image\":\n\
                  # docker buildx imagetools inspect {OPERATOR_REPOSITORY}:main\n\
-                 # cosign verify {OPERATOR_REPOSITORY}@sha256:<digest> \\\n\
-                 #   --certificate-identity https://github.com/purlis/purlis/.github/workflows/operator-image.yml@refs/heads/main \\\n\
-                 #   --certificate-oidc-issuer https://token.actions.githubusercontent.com\n\
                  kubectl{on} apply --server-side -f operator/deploy/operator.yaml\n\
                  kubectl{on} --namespace {SYSTEM_NAMESPACE} set image deployment/{OPERATOR_DEPLOYMENT} operator={image}\n\
                  kubectl{on} --namespace {SYSTEM_NAMESPACE} rollout status deployment/{OPERATOR_DEPLOYMENT} {ROLLOUT}"
@@ -345,12 +343,12 @@ pub fn apply(kubectl: &Kubectl, id: PartId, image: Option<&str>) -> Result<(), R
             })?;
             std::fs::write(
                 folder.path().join("sandbox-with-extensions.yaml"),
-                UPSTREAM_MANIFEST,
+                RELEASE_MANIFEST,
             )
             .and_then(|()| {
                 std::fs::write(
                     folder.path().join("kustomization.yaml"),
-                    UPSTREAM_KUSTOMIZATION,
+                    RELEASE_KUSTOMIZATION,
                 )
             })
             .map_err(|why| Refused::Other(format!("the release's files: {why}")))?;

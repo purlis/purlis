@@ -252,7 +252,7 @@ impl Cluster for Asked<'_> {
     }
 
     async fn controller(&self) -> Result<Option<Controller>, Unanswered> {
-        let (namespace, name) = doctor::UPSTREAM_CONTROLLER;
+        let (namespace, name) = doctor::AGENT_SANDBOX_CONTROLLER;
         let found = self.object("deployments.apps", name, Some(namespace))?;
         Ok(found.map(|deployment| Controller {
             ready: ready_of(&deployment),
@@ -846,9 +846,9 @@ pub(super) fn see_of(id: super::StepId, facts: &Facts, choices: &Choices) -> Opt
 
 /// The questions doctor asks, as kubectl commands.
 fn doctor_by_hand(on: &str) -> String {
-    let (namespace, controller) = doctor::UPSTREAM_CONTROLLER;
+    let (namespace, controller) = doctor::AGENT_SANDBOX_CONTROLLER;
     let mut lines = vec![format!("kubectl{on} version")];
-    for (name, _) in doctor::UPSTREAM_DEFINITIONS {
+    for (name, _) in doctor::AGENT_SANDBOX_DEFINITIONS {
         lines.push(format!("kubectl{on} get customresourcedefinitions {name}"));
     }
     lines.push(format!(

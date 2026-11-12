@@ -42,6 +42,7 @@ fn kubectl() -> Kubectl {
 #[test]
 #[ignore = "needs a bare kind cluster: operator/e2e/kind.sh runs it"]
 fn a_bare_cluster_passes_the_check_then_is_installed_a_part_at_a_time() {
+    purlis_core::unsteered!();
     let context = needed("POOL_SETUP_TEST_CONTEXT");
     let config = tempfile::tempdir().unwrap();
     poolsetup::choose_cluster(config.path(), &context).unwrap();
