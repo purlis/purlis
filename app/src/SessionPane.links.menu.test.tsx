@@ -53,6 +53,9 @@ const TEXT = "HTTPS://Purlis.dev/setup";
 const TARGET = "https://purlis.dev/setup";
 const FTP_TEXT = "ftp://files.example/a";
 const FTP = "purlis opens only http and https addresses, so it will not open this ftp: one";
+/** A file the chat printed, which the core resolves to its path in full (#6216). */
+const FILE_TEXT = "src/main.rs:42";
+const FILE = "/planes/one/workspaces/app/src/main.rs";
 
 let invoked: { cmd: string; args: Record<string, unknown> }[] = [];
 let opens: unknown = { answer: "opened", kind: "url", target: TARGET };
@@ -90,10 +93,22 @@ beforeEach(() => {
       const { candidates } = args as { candidates: { kind: string; text: string }[] };
       return candidates.map((one) =>
         one.text === TEXT
-          ? { kind: "url", target: TARGET, does: { does: "opens" } }
+          ? { kind: "url", target: TARGET, shown: TARGET, does: { does: "opens", into: "browser" } }
           : one.text === FTP_TEXT
-            ? { kind: "url", target: one.text, does: { does: "refused", reason: FTP } }
-            : null,
+            ? {
+                kind: "url",
+                target: one.text,
+                shown: one.text,
+                does: { does: "refused", reason: FTP },
+              }
+            : one.text === FILE_TEXT
+              ? {
+                  kind: "file",
+                  target: FILE,
+                  shown: "src/main.rs",
+                  does: { does: "opens", into: "editor-tab" },
+                }
+              : null,
       );
     }
     if (cmd === "pane_link_open") return opens;
@@ -176,7 +191,7 @@ describe("a right-click over a link", () => {
     expect(asked("pane_link_open")[0].args).toEqual({
       from: { plane: "/planes/one", session: 1 },
       candidate: { kind: "url", text: TEXT },
-      confirmed: null,
+      token: null,
     });
   });
 
@@ -186,6 +201,8 @@ describe("a right-click over a link", () => {
       reason: "its text names another address",
       shown: TEXT,
       target: TARGET,
+      token: "a-one-use-token",
+      about: { about: "link" },
     };
     const { drawn } = await restingOn(TEXT);
     rightClick(drawn, 8, 0);
@@ -194,9 +211,10 @@ describe("a right-click over a link", () => {
     fireEvent.click(within(menu).getByRole("menuitem", { name: "Open link" }));
 
     const ask = await screen.findByRole("dialog", { name: "Open this link?" });
+    opens = { answer: "opened", kind: "url", target: TARGET };
     fireEvent.click(within(ask).getByRole("button", { name: "Open link" }));
     await waitFor(() => expect(asked("pane_link_open")).toHaveLength(2));
-    expect(asked("pane_link_open")[1].args.confirmed).toBe(TARGET);
+    expect(asked("pane_link_open")[1].args.token).toBe("a-one-use-token");
   });
 
   it("copies the resolved target on Copy link, and opens nothing", async () => {
@@ -207,6 +225,17 @@ describe("a right-click over a link", () => {
     fireEvent.click(within(menu).getByRole("menuitem", { name: "Copy link" }));
 
     await waitFor(() => expect(copied).toEqual([TARGET]));
+    expect(asked("pane_link_open")).toHaveLength(0);
+  });
+
+  it("copies a file's path in full on Copy link, not the hover's shorter one", async () => {
+    const { drawn } = await restingOn(FILE_TEXT);
+    rightClick(drawn, 8, 0);
+    const menu = await screen.findByRole("menu", { name: "Terminal" });
+
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Copy link" }));
+
+    await waitFor(() => expect(copied).toEqual([FILE]));
     expect(asked("pane_link_open")).toHaveLength(0);
   });
 
