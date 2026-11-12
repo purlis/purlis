@@ -6,7 +6,20 @@
     "url": "https://github.com/purlis/purlis/issues/9001",
     "body": "Promoted from the Report intake by the steward's daily routine (#5701, ADR 0118).\n\n<!-- purlis-intake fingerprints=0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a sentry-issues=7001 events=e0000000000000000000000000000000 -->",
     "comments": [
-      {"body": "1 more report from the Report intake, from 0.42.0 (stable):\n- https://purlis-inc-ff.sentry.io/issues/7001/events/e7000000000000000000000000000007/\n\n<!-- purlis-intake fingerprints=0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a sentry-issues=7001 events=e7000000000000000000000000000007 -->"}
+      {
+        "body": "1 more report from the Report intake, from 0.42.0 (stable):\n- https://purlis-inc-ff.sentry.io/issues/7001/events/e7000000000000000000000000000007/\n\n<!-- purlis-intake fingerprints=0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a sentry-issues=7001 events=e7000000000000000000000000000007 -->"
+      }
+    ],
+    "labels": [
+      {
+        "name": "reported"
+      },
+      {
+        "name": "priority:p2"
+      },
+      {
+        "name": "area:core"
+      }
     ]
   },
   {
@@ -15,6 +28,11 @@
     "state": "CLOSED",
     "url": "https://github.com/purlis/purlis/issues/9002",
     "body": "Promoted from the Report intake by the steward's daily routine (#5701, ADR 0118).\n\n<!-- purlis-intake sentry-issues=7006 events=e0000000000000000000000000000099 -->",
-    "comments": []
+    "comments": [],
+    "labels": [
+      {
+        "name": "reported"
+      }
+    ]
   }
 ]

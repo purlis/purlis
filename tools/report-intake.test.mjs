@@ -19,11 +19,14 @@ import {
   hasToken,
   isoWeek,
   markersIn,
+  merge,
+  milestoneFor,
   nextPage,
   nextPageOf,
   parseArgs,
   plan,
   readPages,
+  readShortIds,
   reportOf,
   summary,
   weekly,
@@ -34,7 +37,8 @@ const fixture = (name) => JSON.parse(readFileSync(join(fixtures, name), "utf8"))
 const saved = (name) => readFileSync(join(fixtures, name), "utf8");
 const tool = fileURLToPath(new URL("./report-intake.mjs", import.meta.url));
 
-const reports = readPages(join(fixtures, "pages")).map(reportOf);
+const shortIds = readShortIds(join(fixtures, "pages"));
+const reports = readPages(join(fixtures, "pages")).map((event) => reportOf(event, shortIds));
 const issues = fixture("reported-issues.json");
 const byAction = (steps, action) => steps.filter((step) => step.action === action);
 
@@ -48,7 +52,7 @@ test("no new events: nothing to file or add, and the summary says so", () => {
 
 test("a new report becomes an issue labelled reported, with a link back to each of its events", () => {
   const [filed] = byAction(plan(reports, issues), "file").filter((step) => step.title.includes("window failed"));
-  assert.equal(filed.label, "reported");
+  assert.deepEqual(filed.labels, ["reported", "priority:p0"], "every issue the routine files is urgent");
   assert.equal(filed.reports, 2, "the same device fingerprint twice is one issue");
   assert.equal(filed.versions, "0.42.1 (dev)");
   assert.match(filed.body, /https:\/\/purlis-inc-ff\.sentry\.io\/issues\/7002\/events\/e2000000000000000000000000000002\//);
@@ -202,7 +206,7 @@ test("a missing token says to run the Sentry setup wizard (#5687), exits 2 and r
   assert.deepEqual([listed.status, listed.stdout, listed.stderr], [0, "", ""]);
 });
 
-test("options are whole numbers above 0, plan reads saved pages, and only the four commands run", () => {
+test("options are whole numbers above 0, plan reads saved pages, and only its six commands run", () => {
   assert.deepEqual(parseArgs(["plan", "--from", "d"]), { command: "plan", from: "d", sinceHours: 26, weeks: 4 });
   assert.deepEqual(parseArgs(["plan", "--from", "d", "--since-hours", "48", "--weeks", "8"]), { command: "plan", from: "d", sinceHours: 48, weeks: 8 });
   assert.deepEqual(parseArgs(["url", "--weeks", "2"]), { command: "url", sinceHours: 26, weeks: 2 });
@@ -212,4 +216,67 @@ test("options are whole numbers above 0, plan reads saved pages, and only the fo
   assert.throws(() => parseArgs(["plan"]), /usage/, "a plan never fetches, so it wants the saved pages");
   assert.throws(() => parseArgs(["url", "--since-hours", "4"]), /unknown option/);
   assert.throws(() => parseArgs(["file"]), /usage/);
+});
+
+test("each event is listed by its Sentry short id where the intake's issues page names one", () => {
+  const [filed] = byAction(plan(reports, issues), "file").filter((step) => step.title.includes("window failed"));
+  assert.match(filed.body, /^- PURLIS-APP-2: https:\/\/purlis-inc-ff\.sentry\.io\/issues\/7002\/events\/e2/m);
+  assert.deepEqual(filed.shortIds, ["PURLIS-APP-2"]);
+  const [closed] = byAction(plan(reports, issues), "closed");
+  assert.match(closed.comment, /^- https:\/\/purlis-inc-ff\.sentry\.io\/issues\/7006\//m, "no short id known: the link alone");
+  assert.equal(readShortIds(join(fixtures, "refused")).size, 0, "no issues page saved: no short ids, nothing refused");
+});
+
+test("a duplicate raises the issue it is added to to priority:p0, taking off the lower priority it had", () => {
+  const [added] = byAction(plan(reports, issues), "add");
+  assert.deepEqual(added.priority, { add: "priority:p0", remove: ["priority:p2"] });
+  const [closed] = byAction(plan(reports, issues), "closed");
+  assert.deepEqual(closed.priority, { add: "priority:p0", remove: [] }, "no priority at all is lower too");
+  const urgent = issues.map((issue) => ({ ...issue, labels: [{ name: "reported" }, { name: "priority:p0" }] }));
+  assert.equal(byAction(plan(reports, urgent), "add")[0].priority, null, "already p0: nothing to change");
+});
+
+test("reports of one underlying bug merge into one issue that lists every Sentry short id and keeps every event's marker", () => {
+  const steps = plan(reports, issues);
+  const files = steps.map((step, i) => [step, i + 1]).filter(([step]) => step.action === "file");
+  assert.equal(files.length, 2);
+  const merged = merge(steps, files.map(([, n]) => n), { title: "One bug, reported twice" });
+  assert.equal(merged.action, "file");
+  assert.equal(merged.title, "One bug, reported twice");
+  assert.deepEqual(merged.labels, ["reported", "priority:p0"]);
+  assert.equal(merged.reports, 4);
+  assert.deepEqual(merged.shortIds, ["PURLIS-APP-2", "PURLIS-APP-4", "PURLIS-APP-5"]);
+  const named = markersIn(merged.body);
+  assert.deepEqual([...named.sentryIssues].sort(), ["7002", "7004", "7005"]);
+  assert.equal(named.events.size, 4);
+  assert.ok(merged.texts.every((text) => !merged.body.includes(text)), "still never a report's words (ADR 0118)");
+  const applied = [...issues, { number: 9200, title: merged.title, state: "OPEN", body: merged.body, comments: [], labels: [] }];
+  assert.deepEqual(byAction(plan(reports, applied), "file"), [], "tomorrow's run knows every merged event");
+  assert.throws(() => merge(steps, [files[0][1]]), /two or more/);
+  const add = steps.findIndex((step) => step.action === "add") + 1;
+  assert.throws(() => merge(steps, [files[0][1], add]), /step \d+ is not one to file/);
+  assert.throws(() => merge(steps, [files[0][1], 99]), /no step 99/);
+});
+
+test("the milestone is the one holding the most open issues of the area, or none to say the closest is the steward's call", () => {
+  const open = [
+    { number: 1, milestone: { title: "0.6: Browser" } },
+    { number: 2, milestone: { title: "0.5.2" } },
+    { number: 3, milestone: { title: "0.6: Browser" } },
+    { number: 4, milestone: null },
+  ];
+  assert.equal(milestoneFor(open), "0.6: Browser");
+  assert.equal(milestoneFor([{ number: 4, milestone: null }]), null);
+  assert.equal(milestoneFor([]), null);
+  assert.equal(milestoneFor([{ milestone: { title: "B" } }, { milestone: { title: "A" } }]), "B", "a tie: the first listed, which the skill says to name");
+});
+
+test("the issues page is asked for on the intake's host, for the same window of weeks", () => {
+  const run = spawnSync(process.execPath, [tool, "url", "--issues", "--weeks", "1"], { encoding: "utf8" });
+  assert.equal(run.status, 0);
+  assert.equal(run.stdout, "https://de.sentry.io/api/0/projects/purlis-inc-ff/purlis-app/issues/?statsPeriod=&query=lastSeen%3A-168h&limit=100\n");
+  assert.deepEqual(parseArgs(["milestone", "--area", "area:browser"]), { command: "milestone", area: "area:browser" });
+  assert.throws(() => parseArgs(["milestone", "--area", "browser"]), /area:/);
+  assert.deepEqual(parseArgs(["merge", "--plan", "p.json", "--steps", "1,3", "--title", "T"]), { command: "merge", plan: "p.json", steps: [1, 3], title: "T" });
+  assert.throws(() => parseArgs(["merge", "--plan", "p.json", "--steps", "1,x"]), /whole numbers/);
 });
