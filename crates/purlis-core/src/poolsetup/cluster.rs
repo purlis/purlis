@@ -632,6 +632,8 @@ pub(super) fn also(kind: Kind, facts: &Facts) -> Option<Action> {
             "Saves your choice of context. Nothing on the cluster changes yet.",
         ),
         Kind::Docker => None,
+        // Docker on another machine goes back to this machine's by its own way (`other`).
+        Kind::RemoteDocker => None,
     }
 }
 

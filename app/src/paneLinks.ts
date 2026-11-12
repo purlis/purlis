@@ -53,17 +53,57 @@ function balanced(text: string): string {
 }
 
 /**
- * **The candidates in `line`**, left to right: addresses (`scheme://…`), with the punctuation a
- * sentence puts after one left out. Later kinds (files, chats) add their patterns here.
+ * **A path as a harness prints it** (#6216): absolute, `~/`, `./`, `../` or relative, with an
+ * optional `:line[:col]`. Not after a letter, a digit or a path's own characters, so the middle
+ * of a word or an address is no start.
+ */
+const PATH =
+  /(?<![\p{L}\p{N}_./~@+-])(?:~\/|\.{1,2}\/|\/)?(?:[\p{L}\p{N}_.@+-]+\/)*[\p{L}\p{N}_.@+-]+(?::\d+(?::\d+)?)?/gu;
+
+/** A file name and its extension, what makes a word with no `/` in it read as a file's name:
+ *  two characters of name at least, so `e.g` and `i.e` are none. */
+const EXTENSION = /[\p{L}\p{N}_-]{2}\.[\p{L}][\p{L}\p{N}]{0,11}$/u;
+
+/** Full stops after a path, which end its sentence. */
+const TRAILING_DOTS = /\.+$/u;
+
+/** The most paths one line is asked about: each is a look at the disk. */
+const MOST_PATHS = 32;
+
+/** Whether `text`, a path's words, reads as a file's path: it has a `/`, or a name and extension. */
+function readsAsAPath(text: string): boolean {
+  const words = text.replace(/(?::\d+){1,2}$/u, "");
+  return words.includes("/") ? /[\p{L}\p{N}]/u.test(words) : EXTENSION.test(words);
+}
+
+/**
+ * **The candidates in `line`**, left to right: addresses (`scheme://…`, a `file://` one a file),
+ * then file paths outside them, with the punctuation a sentence puts after one left out. Later
+ * kinds (chats) add their patterns here.
  */
 export function candidatesIn(line: string): Found[] {
   const found: Found[] = [];
   for (const match of line.matchAll(WEB)) {
     const text = balanced(match[0].replace(TRAILING, ""));
     if (text.length === 0) continue;
-    found.push({ kind: "url", text, start: match.index, end: match.index + text.length });
+    // A `file:` address names a file, under a file's rules (#6216, spec Q2).
+    const kind = /^file:/iu.test(text) ? "file" : "url";
+    found.push({ kind, text, start: match.index, end: match.index + text.length });
   }
-  return found;
+  const addresses = [...found];
+  let paths = 0;
+  for (const match of line.matchAll(PATH)) {
+    if (paths >= MOST_PATHS) break;
+    const start = match.index;
+    // A sentence's full stop after a path is not the path's.
+    const text = match[0].replace(TRAILING_DOTS, "");
+    const end = start + text.length;
+    if (text.length === 0 || !readsAsAPath(text)) continue;
+    if (addresses.some((one) => start < one.end && end > one.start)) continue;
+    found.push({ kind: "file", text, start, end });
+    paths += 1;
+  }
+  return found.sort((a, b) => a.start - b.start);
 }
 
 /**
@@ -75,8 +115,29 @@ const MOST_ROWS = 24;
 /** The most answers a pane keeps: the oldest goes first. */
 const MOST_KEPT = 256;
 
+/**
+ * **How long a file's answer is kept** (#6216): a file is made and deleted while a chat works,
+ * so a path hovered or listed again after this is asked again, and a deleted file stops linking.
+ */
+export const FILE_ANSWER_LIFE = 5_000;
+
 /** A pane's kept answers, by {@link linkKey}. */
 type Kept = Map<string, Promise<LinkSeen | null>>;
+
+/** When each kept file answer stops counting: {@link FILE_ANSWER_LIFE} after it was asked. */
+const lives = new WeakMap<Promise<LinkSeen | null>, number>();
+
+/** The start of a file candidate's {@link linkKey}. */
+const FILE_KEY = "file\u0000";
+
+/** **The answer kept for `key`**, while it still counts: a file's for {@link FILE_ANSWER_LIFE}. */
+function held(kept: Kept, key: string): Promise<LinkSeen | null> | undefined {
+  const had = kept.get(key);
+  if (had === undefined) return undefined;
+  if ((lives.get(had) ?? Infinity) > Date.now()) return had;
+  kept.delete(key);
+  return undefined;
+}
 
 /** **What a link is kept and listed by**: its kind and its text. */
 export const linkKey = (link: Pick<LinkCandidate, "kind" | "text">) =>
@@ -91,6 +152,7 @@ function keep(kept: Kept, key: string, asked: Promise<LinkSeen | null>): Promise
     if (kept.get(key) === answer) kept.delete(key);
     return null;
   });
+  if (key.startsWith(FILE_KEY)) lives.set(answer, Date.now() + FILE_ANSWER_LIFE);
   if (!kept.has(key) && kept.size >= MOST_KEPT) {
     const oldest = kept.keys().next().value;
     if (oldest !== undefined) kept.delete(oldest);
@@ -157,8 +219,9 @@ export type HoveredLink = { seen: LinkSeen; text: string; place: LinkPlace };
 export type LinkCore = {
   /** What each candidate on a line is: `pane_link_resolve`. */
   resolve: (from: LinkFrom, candidates: LinkCandidate[]) => Promise<(LinkSeen | null)[]>;
-  /** Opens a candidate, resolved again: `pane_link_open`. */
-  open: (from: LinkFrom, candidate: LinkCandidate, confirmed: string | null) => Promise<LinkOpened>;
+  /** Opens a candidate, resolved again: `pane_link_open`. `token` answers an ask: the one-use
+   *  token the core issued with it (#6216). */
+  open: (from: LinkFrom, candidate: LinkCandidate, token: string | null) => Promise<LinkOpened>;
 };
 
 /** What a pane does with a link's hover, and with the open command's answer. */
@@ -194,8 +257,8 @@ export function relayed(to: () => LinkHands | undefined): LinkHands {
     core: {
       resolve: (from, candidates) =>
         to()?.core.resolve(from, candidates) ?? Promise.resolve(candidates.map(() => null)),
-      open: (from, candidate, confirmed) =>
-        to()?.core.open(from, candidate, confirmed) ??
+      open: (from, candidate, token) =>
+        to()?.core.open(from, candidate, token) ??
         Promise.reject(new Error("no pane shows this terminal")),
     },
     from: () => to()?.from() ?? { plane: null, session: null },
@@ -207,22 +270,21 @@ export function relayed(to: () => LinkHands | undefined): LinkHands {
   };
 }
 
-/** **Opens `candidate`**, resolved again by the core, and hands on its answer. */
+/** **Opens `candidate`**, resolved again by the core, and hands on its answer. `token` is the
+ *  token of the ask the person accepted. */
 export function openLink(
   candidate: LinkCandidate,
   hands: Pick<LinkHands, "core" | "from" | "answered">,
-  confirmed: string | null = null,
+  token: string | null = null,
 ): Promise<void> {
-  return hands.core
-    .open(hands.from(), { kind: candidate.kind, text: candidate.text }, confirmed)
-    .then(
-      (answer) => hands.answered(answer, candidate),
-      (why: unknown) => {
-        // The detail is the log's: the window says it in a sentence.
-        console.warn("purlis could not ask the core to open a link", why);
-        hands.answered({ answer: "refused", reason: UNASKED }, candidate);
-      },
-    );
+  return hands.core.open(hands.from(), { kind: candidate.kind, text: candidate.text }, token).then(
+    (answer) => hands.answered(answer, candidate),
+    (why: unknown) => {
+      // The detail is the log's: the window says it in a sentence.
+      console.warn("purlis could not ask the core to open a link", why);
+      hands.answered({ answer: "refused", reason: UNASKED }, candidate);
+    },
+  );
 }
 
 /** Where cells `x`..`x + width` of buffer row `y` are drawn in the window's viewport. */
@@ -239,8 +301,8 @@ function placeOf(pane: Terminal, x: number, y: number, width: number): LinkPlace
   };
 }
 
-/** **A link on screen**, as *Links in this pane…* lists it (#6220): its candidate and the
- *  core's answer for it. */
+/** **A link on screen**, as *Links in this pane…* lists it (#6220) and the terminal's menu
+ *  offers the one under the pointer (#6219): its candidate and the core's answer for it. */
 export type ScreenLink = { candidate: LinkCandidate; seen: LinkSeen };
 
 /** **A pane with its link hook registered**: let go of by `dispose`. */
@@ -252,6 +314,9 @@ export type LinkedPane = IDisposable & {
    * answered yet are asked in one call. Text the core says nothing of (`null`) is left out.
    */
   onScreen: () => Promise<ScreenLink[]>;
+  /** **The link the pointer is on now**, which the terminal's menu offers to open and copy
+   *  (#6219): xterm keeps a link hovered only while the pointer is in its range. */
+  under: () => ScreenLink | undefined;
 };
 
 /**
@@ -259,11 +324,12 @@ export type LinkedPane = IDisposable & {
  * as {@link LinkHands} says. Disposing it lets go of the provider and of the colour drawn.
  */
 export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
-  /** The core's answers, per pane, by kind and text: a line hovered again asks nothing. */
+  /** The core's answers, per pane, by kind and text: a line hovered again asks nothing, until a
+   *  file's answer is past {@link FILE_ANSWER_LIFE}. */
   const kept: Kept = new Map();
   const seenOf = (found: Found): Promise<LinkSeen | null> => {
     const key = linkKey(found);
-    const had = kept.get(key);
+    const had = held(kept, key);
     if (had !== undefined) return had;
     return keep(
       kept,
@@ -282,6 +348,8 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
   };
   /** The link the pointer is on, by where it is and what it says. */
   let on: string | undefined;
+  /** The link the pointer is on, as the terminal's menu reads it. */
+  let current: ScreenLink | undefined;
   /**
    * **A leave is let happen a moment later.** Drawing the colour redraws the link's row, and
    * xterm lets go of a link on a row it redraws and finds it again at once: a leave and a hover
@@ -293,6 +361,7 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
     clearTimeout(leaving);
     leaving = undefined;
     on = undefined;
+    current = undefined;
     undraw();
     hands.hovered(null);
   };
@@ -370,6 +439,7 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
                 leave();
               }
               on = here;
+              current = { candidate, seen };
               const lines = [...rows.values()];
               if (opens) draw(lines);
               const top = lines[0];
@@ -390,6 +460,7 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
     },
   });
   return {
+    under: () => current,
     dispose() {
       clearTimeout(leaving);
       undraw();
@@ -440,7 +511,7 @@ async function screenLinks(
   const answerOf = new Map<string, Promise<LinkSeen | null>>();
   const unasked: Found[] = [];
   for (const one of found) {
-    const had = kept.get(linkKey(one));
+    const had = held(kept, linkKey(one));
     if (had === undefined) unasked.push(one);
     else answerOf.set(linkKey(one), had);
   }

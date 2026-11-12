@@ -1859,6 +1859,10 @@ fn a_chat_never_reads_or_writes_the_forge_answers_the_humans_token_fetched() {
             Homes::charter_data(&machine(Os::Linux))
                 .expect("a data home")
                 .join(crate::dockerpool::settings::DIR),
+            // The local ends of the SSH forwards of pools on other machines (#6266).
+            Homes::charter_data(&machine(Os::Linux))
+                .expect("a data home")
+                .join(crate::sshroute::DIR),
             // Which sign-ins a runner's logins wait for (#4044).
             crate::profilestore::sign_in::waiting::in_data_home(
                 &Homes::charter_data(&machine(Os::Linux)).expect("a data home"),
@@ -3565,7 +3569,14 @@ fn a_claude_code_chat_is_not_started_where_the_search_for_repositories_is_crowde
     let path = Path::new("/p/notes");
     let said = NotStarted::RepositoriesUnfound(path.to_path_buf()).to_string();
     assert!(said.contains("/p/notes"), "{said}");
-    assert!(said.contains("Move what fills that folder"), "{said}");
+    assert!(
+        said.contains("Move some of what that folder holds"),
+        "{said}"
+    );
+    assert!(
+        said.contains("holds more than purlis looks through"),
+        "{said}"
+    );
     assert!(said.contains("nothing was started"), "{said}");
 }
 

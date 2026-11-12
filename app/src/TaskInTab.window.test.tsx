@@ -36,7 +36,7 @@ import { REFERENCE_TYPE } from "./references";
 import { forgetThisLaunch } from "./regions";
 import { chipSays, rowSays, stripNamed } from "./test-strips";
 import { askOfBlock, askOfDispatch, askOfVault } from "./test-asks";
-import { forgetInboxOpen, inboxAwayAtLaunch } from "./test-inbox";
+import { forgetInboxOpen, inboxAwayAtLaunch, widenAsks } from "./test-inbox";
 import { findResult } from "./actionResult.testkit";
 import { heard } from "./frame.testkit";
 import { onTheWire } from "./chatEvents.testkit";
@@ -1331,6 +1331,7 @@ describe("a task that needs you and is not on screen", () => {
       await screen.findByRole("button", { name: /^1 (thing waits|chat needs)/ }),
     );
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
+    await widenAsks(inbox);
     await userEvent.click(
       await within(inbox).findByRole("button", { name: /^Go to chat .*sweep/ }),
     );

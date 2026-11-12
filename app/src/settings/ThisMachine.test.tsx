@@ -10,6 +10,7 @@ import type { GoneProject, MachineProject, ThisMachine } from "../bindings";
 import { forgetThisLaunch } from "../regions";
 import { machineChanged } from "./thisMachine";
 import { GLOBAL } from "../windowprefs";
+import { findGrid } from "../ui/table/table.testkit";
 
 /**
  * **Settings › You › This machine** (ST-2, #1226), in the whole window: the machine store's
@@ -174,11 +175,7 @@ describe("You › This machine", () => {
   it("draws each list as a table: a row a project, its name heading the row (#6301)", async () => {
     await thisMachine();
 
-    const table = await waitFor(() => {
-      const found = tableOf("Recent projects");
-      expect(found).not.toBeNull();
-      return found as HTMLElement;
-    });
+    const table = await findGrid(screen, "Recent projects");
     expect(
       within(table)
         .getAllByRole("columnheader")
@@ -192,7 +189,7 @@ describe("You › This machine", () => {
     expect(within(table).getByRole("button", { name: "Locate old" })).toBeTruthy();
     // Pins name a workspace, which has no folder of its own; approvals offer no Locate….
     expect(
-      within(tableOf("Approved projects") as HTMLElement)
+      within(await findGrid(screen, "Approved projects"))
         .getAllByRole("columnheader")
         .map((one) => one.textContent),
     ).toEqual(["Project", "Where", "Revoke"]);
@@ -207,13 +204,16 @@ describe("You › This machine", () => {
         "old/mnt/usb/oldgoneLocate…Forget",
       ]),
     );
-    expect(entries("Pins")).toEqual([
-      `plane${PLANE}Unpin`,
-      "ide in planeUnpin",
-      "renamed in planegone, kept dormantForget",
-      "docs in planeUnpin",
-    ]);
-    expect(entries("Approved projects")).toEqual([`plane${PLANE}Revoke`]);
+    // Each table fills in its rows on its own render (#6372), so each is waited for.
+    await waitFor(() =>
+      expect(entries("Pins")).toEqual([
+        `plane${PLANE}Unpin`,
+        "ide in planeUnpin",
+        "renamed in planegone, kept dormantForget",
+        "docs in planeUnpin",
+      ]),
+    );
+    await waitFor(() => expect(entries("Approved projects")).toEqual([`plane${PLANE}Revoke`]));
     expect(await screen.findByRole("radio", { name: "stable" })).toBeChecked();
   });
 

@@ -9,6 +9,7 @@ import {
   isShiftF10,
   isTerminalRow,
   terminalGroup,
+  type LinkRows,
   type TerminalRow,
   type TerminalRowId,
 } from "./terminalRows";
@@ -59,6 +60,7 @@ export type PaneMenu = {
  */
 export function TerminalMenu({
   rows,
+  links,
   onRun,
   pane,
   onAsked,
@@ -69,6 +71,9 @@ export function TerminalMenu({
 }: {
   /** The terminal's rows, as they stood when the menu opened. */
   rows: readonly TerminalRow[];
+  /** **The link rows** (`linkRows`, #6219): *Open link* and *Copy link* first over a link, or
+   *  *Links in this pane…* in their place; that row goes first among the pane's rows over one. */
+  links?: LinkRows;
   onRun: (id: TerminalRowId) => void;
   /** The pane's own rows, where the window has a catalogue to read them from. */
   pane?: PaneMenu;
@@ -83,9 +88,23 @@ export function TerminalMenu({
   /** The element the terminal is drawn in. One element: it is the trigger itself. */
   children: ReactNode;
 }) {
+  const paneGroups = pane ? menuOf({ on: "pane", tab: pane.tab }, pane.offers).groups : [];
+  const first = links?.first ?? [];
+  const inPane = links?.pane ?? [];
+  const [paneFirst, ...paneRest] = paneGroups;
   const groups: GroupDrawn[] = [
+    ...(first.length > 0 ? [terminalGroup(first)] : []),
     terminalGroup(rows),
-    ...(pane ? menuOf({ on: "pane", tab: pane.tab }, pane.offers).groups : []),
+    // The pane's row about its links leads the pane's own (the prototype's S3), or stands under
+    // a line of its own where the pane has none.
+    ...(inPane.length === 0
+      ? paneGroups
+      : paneFirst === undefined
+        ? [terminalGroup(inPane)]
+        : [
+            { ...paneFirst, entries: [...terminalGroup(inPane).entries, ...paneFirst.entries] },
+            ...paneRest,
+          ]),
   ];
   /** Whether this close gives the keyboard to the terminal, and whether it owes the key. */
   const closing = useRef({ giveBack: false, passKey: false });

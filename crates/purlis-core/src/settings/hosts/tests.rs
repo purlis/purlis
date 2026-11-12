@@ -414,3 +414,57 @@ fn a_persona_host_policy_forbids_is_refused_by_a_whole_file_save_and_one_kept_st
     assert!(refused[0].contains("10.0.0.6:6443"), "{refused:?}");
     other_edit.expect("saved");
 }
+
+// ---- when, and by what, each of yours was added (#6172, R65) ----
+
+fn value<'a>(entry: &'a Listed, field: &str) -> Option<&'a str> {
+    entry
+        .values
+        .iter()
+        .find(|(one, _)| *one == field)
+        .map(|(_, value)| value.as_str())
+}
+
+#[test]
+fn your_host_says_when_and_by_what_it_was_added_and_one_from_before_the_record_says_nothing() {
+    let dir = project(ON);
+    // Written into the file before the record existed, then confirmed: no when, no by.
+    let earlier = "[sandbox]\nhosts = [\"old.example\"]\n";
+    fs::write(dir.path().join("charter.local.toml"), earlier).unwrap();
+    crate::sandbox::local::confirm_host(dir.path(), "old.example").unwrap();
+    let before = crate::halt::now();
+    let base = text(dir.path(), "charter.local.toml");
+    add(dir.path(), Which::Local, base.as_deref(), "typed.example").expect("added");
+    grant(dir.path(), Which::Local, &host("allowed.example")).expect("granted");
+    let after = crate::halt::now();
+
+    let local = text(dir.path(), "charter.local.toml").unwrap();
+    let shown = listed_at(dir.path(), Which::Local, &local);
+    let of = |name: &str| shown.iter().find(|one| one.label == name).unwrap();
+
+    assert_eq!(value(of("old.example"), "added_at"), None);
+    assert_eq!(value(of("old.example"), "added_by"), None);
+    assert_eq!(value(of("typed.example"), "added_by"), Some("you"));
+    assert_eq!(value(of("allowed.example"), "added_by"), Some("block"));
+    for one in ["typed.example", "allowed.example"] {
+        let at: u64 = value(of(one), "added_at").unwrap().parse().unwrap();
+        assert!((before..=after).contains(&at), "{one} added at {at}");
+    }
+}
+
+#[test]
+fn a_removed_host_takes_when_it_was_added_with_it() {
+    let dir = project(ON);
+    add(dir.path(), Which::Local, None, "gone.example").expect("added");
+    let base = text(dir.path(), "charter.local.toml");
+    let id = listed(base.as_deref().unwrap())[0].id.clone();
+    remove(dir.path(), Which::Local, base.as_deref(), &id).expect("removed");
+
+    // Written back by hand and confirmed, not added: this machine keeps no when for it.
+    let back = "[sandbox]\nhosts = [\"gone.example\"]\n";
+    fs::write(dir.path().join("charter.local.toml"), back).unwrap();
+    crate::sandbox::local::confirm_host(dir.path(), "gone.example").unwrap();
+    let shown = listed_at(dir.path(), Which::Local, back);
+    assert_eq!(value(&shown[0], "added_at"), None);
+    assert_eq!(value(&shown[0], "added_by"), None);
+}

@@ -15,6 +15,7 @@ import { AT_THE_ROOT, inWorkspace } from "./skillStudio";
 import { need, skill, studio } from "./skillsListing.testkit";
 import type { NeedsYou, Studio } from "./bindings";
 import { OPEN_PROPOSAL_ASK } from "./proposedChangeOpen";
+import { findGrid } from "./ui/table/table.testkit";
 
 afterEach(() => {
   cleanup();
@@ -78,7 +79,7 @@ describe("Needs you", () => {
     core(studio([DEPLOY], { needs: NEEDS }));
     renderStudio(AT_THE_ROOT, "needs");
 
-    const list = await screen.findByRole("grid", { name: "What needs you" });
+    const list = await findGrid(screen, "What needs you");
     const groups = within(list)
       .getAllByRole("rowgroup")
       .map((one) => one.getAttribute("aria-label"));

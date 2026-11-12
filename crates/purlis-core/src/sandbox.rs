@@ -1772,8 +1772,8 @@ pub fn git_folder_pins_of(root: &Path) -> Vec<PathBuf> {
     planted::git_folder_pins(&git_folders_searched(root))
 }
 
-/// [`git_folder_pins_of`], or the folder that held more entries than the search for
-/// repositories looks at, where one did ([`planted::Repositories::crowded`]).
+/// [`git_folder_pins_of`], or the folder that held the most where the search for repositories
+/// was crowded out ([`planted::Repositories::crowded`]).
 pub fn git_folder_pins_whole_of(root: &Path) -> Result<Vec<PathBuf>, PathBuf> {
     planted::git_folder_pins_whole(&git_folders_searched(root))
 }
@@ -2563,6 +2563,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         deny(
             Class::HumanPowers,
             data.join(crate::dockerpool::settings::DIR),
+            Access::ReadWrite,
+        );
+        // The local ends of the SSH forwards of pools on other machines (#6266, ADR 0123 §2):
+        // each is a Docker engine there, held from every chat as Docker's own sockets are.
+        deny(
+            Class::HumanPowers,
+            data.join(crate::sshroute::DIR),
             Access::ReadWrite,
         );
         // Which sign-ins this runner's logins wait for (#4044): a read could lock a record, so a
@@ -6717,9 +6724,10 @@ pub enum NotStarted {
     /// ([`PATTERN_CHARACTERS`]), so no rule purlis writes holds it as written.
     GitFolderUnheld(PathBuf),
     /// The folders a Claude Code chat's sandbox searches for repositories, to hold each one's git
-    /// folder as a whole ([`Denied::git_folder_pins`]), held more entries outside every
-    /// repository than the search looks at ([`planted::REPOSITORIES_LOOKED_AT`]): a repository
-    /// beyond them would not be held. The folder that held the most.
+    /// folder as a whole ([`Denied::git_folder_pins`]), held more folders (or entries) outside
+    /// every repository than the search looks at ([`planted::REPOSITORIES_LOOKED_AT`]): a
+    /// repository beyond them would not be held. The folder in the one searched whose tree held
+    /// the most ([`planted::Repositories::crowded`]).
     RepositoriesUnfound(PathBuf),
     /// What purlis keeps from a chat could not be told whole ([`Denied::untold`]), and why:
     /// a sandbox compiled from a list that may be short would keep less than purlis means to,
@@ -6933,9 +6941,9 @@ impl NotStarted {
                 }
             ),
             Self::RepositoriesUnfound(path) => format!(
-                "{lead}, and {} holds more files and folders than purlis looks through to find \
-                 every repository in the project, so it cannot hold each one's git folder, and \
-                 nothing was started. Move what fills that folder out of the project{}",
+                "{lead}, and {} holds more than purlis looks through to find every repository \
+                 in the project, so it cannot hold each one's git folder, and nothing \
+                 was started. Move some of what that folder holds out of the project{}",
                 path.display(),
                 if opt_out {
                     ", or start this chat without the sandbox from the new-chat picker."

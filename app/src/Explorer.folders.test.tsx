@@ -21,6 +21,7 @@ import type {
 } from "./bindings";
 import { forgetProjectThemes } from "./projectTheme";
 import type { WorkspaceState } from "./workspaceState";
+import { findGrid } from "./ui/table/table.testkit";
 
 /**
  * **Explorer opens straight to the files** (#3343, the sidebar-views prototype's Q2 A, "Repos as
@@ -271,7 +272,7 @@ describe("Explorer, repos as folders (#3343)", () => {
 
     await userEvent.type(screen.getByRole("searchbox", { name: "Filter files" }), "main");
 
-    const found = await screen.findByRole("grid", { name: "Files found" });
+    const found = await findGrid(screen, "Files found");
     expect(finds.at(-1)).toMatchObject({ kind: "branch", repo: "", piece: null });
     // One place's files are no group: no name over them, as in the prototype.
     expect(found.querySelector('[data-part="header"]')).toBeNull();
@@ -404,7 +405,7 @@ describe("Explorer, repos as folders (#3343)", () => {
     draw(["svc", "web"]);
     const box = screen.getByRole("searchbox", { name: "Filter files" });
     await userEvent.type(box, "main");
-    const found = await screen.findByRole("grid", { name: "Files found" });
+    const found = await findGrid(screen, "Files found");
     await within(found).findByRole("row", { name: /main\.rs/ });
 
     await userEvent.keyboard("{ArrowDown}");
