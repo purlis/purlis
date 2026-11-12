@@ -47,6 +47,16 @@ pub struct PoolSetupStep {
     pub skippable: bool,
     pub see: Option<PoolSetupSee>,
     pub checks: Vec<PoolSetupCheck>,
+    /// The choice purlis didn't recommend, where there is one (Where's other place, #4492).
+    pub also: Option<PoolSetupAction>,
+}
+
+/// The kubeconfig's contexts, by name alone, for Where's Options on a cluster (#4492).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolSetupContexts {
+    pub names: Vec<String>,
+    pub recommended: Option<String>,
+    pub chosen: Option<String>,
 }
 
 /// What the tab draws.
@@ -65,6 +75,9 @@ pub struct PoolSetupShown {
     pub others: Vec<String>,
     /// The name a new pool is recommended, which no pool here has (#6256).
     pub recommended: String,
+    /// `docker` or `cluster`: the kind of pool this setup makes.
+    pub kind: String,
+    pub contexts: PoolSetupContexts,
 }
 
 /// What the Pool step's button did: nothing made, and why, where a team's image breaks the
@@ -83,6 +96,17 @@ fn word(value: &impl serde::Serialize) -> String {
         .unwrap_or_default()
 }
 
+#[cfg(unix)]
+fn action_shown(next: &purlis_core::poolsetup::Action) -> PoolSetupAction {
+    PoolSetupAction {
+        id: word(&next.id),
+        label: next.label.clone(),
+        does: next.does.clone(),
+        command: next.command.clone(),
+        url: next.url.clone(),
+    }
+}
+
 /// What the core answered, as the window takes it.
 #[cfg(unix)]
 pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
@@ -98,6 +122,12 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
         noticed,
         recommended,
         others: setup.others.clone(),
+        kind: word(&setup.kind),
+        contexts: PoolSetupContexts {
+            names: setup.contexts.names.clone(),
+            recommended: setup.contexts.recommended.clone(),
+            chosen: setup.contexts.chosen.clone(),
+        },
         at: setup.at.as_ref().map(word),
         steps: setup
             .steps
@@ -108,13 +138,8 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
                 state: word(&step.state),
                 line: step.line.clone(),
                 findings: step.findings.clone(),
-                next: step.next.as_ref().map(|next| PoolSetupAction {
-                    id: word(&next.id),
-                    label: next.label.clone(),
-                    does: next.does.clone(),
-                    command: next.command.clone(),
-                    url: next.url.clone(),
-                }),
+                next: step.next.as_ref().map(action_shown),
+                also: step.also.as_ref().map(action_shown),
                 skippable: step.skippable,
                 see: step.see.as_ref().map(|see| PoolSetupSee {
                     note: see.note.clone(),
@@ -156,11 +181,13 @@ pub async fn pool_setup(
             use purlis_core::poolsetup::{self, Here};
             let config = config_root()?;
             let docker = poolsetup::docker_here();
+            let kubectl = poolsetup::cluster::kubectl_here();
             let here = Here {
                 config: &config,
                 plane: Some(&root),
                 docker: docker.as_ref(),
                 engine: Docker::engine_on_this_machine(),
+                kubectl: kubectl.as_ref().map_err(String::as_str),
             };
             Ok(shown(
                 poolsetup::resumed(&here).map_err(|why| why.to_string())?,
@@ -192,6 +219,32 @@ pub async fn pool_setup_choose_docker() -> Result<(), String> {
     }
     #[cfg(not(unix))]
     {
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Keeps that the person chose their team's cluster on Where**, through kubeconfig context
+/// `context` (#4492): its name alone. Nothing on the cluster changes. With no context, only the
+/// kind is kept, as Add a cluster pool… opens Pool setup: Where then recommends a context.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_choose_cluster(context: Option<String>) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("keeping your choice", move || {
+            use purlis_core::poolsetup::{self, Kind};
+            let config = config_root()?;
+            match context {
+                Some(context) => poolsetup::choose_cluster(&config, &context),
+                None => poolsetup::choose_kind(&config, Kind::Cluster),
+            }
+            .map_err(|why| why.to_string())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = context;
         Err(crate::dockerpools::NOT_HERE.to_owned())
     }
 }
@@ -969,6 +1022,8 @@ fn try_on(
         plane: Some(&root),
         docker,
         engine: purlis_core::dockerpool::Docker::engine_on_this_machine(),
+        // A Docker pool's runner is asked nothing of a cluster.
+        kubectl: Err("not asked"),
     };
     let facts = poolsetup::read_pool(&here, pool).map_err(|why| why.to_string())?;
     let (set, _check) = purlis_core::profiles::for_launch(&root);

@@ -61,6 +61,11 @@ on:
       - crates/purlis-core/src/forge/mintport*
       - crates/purlis-cli/src/bridge.rs
       - fixtures/runner-link-key/**
+      # Pool setup's cluster path, which the kind run walks on a bare cluster (#4492), and the
+      # doctor's checks the operator and Pool setup share.
+      - crates/cluster-doctor/**
+      - crates/purlis-core/src/poolsetup*
+      - crates/purlis-core/tests/it/pool_setup_on_a_kind_cluster.rs
   push:
     branches: [main]
     paths:
@@ -103,6 +108,11 @@ on:
       - crates/purlis-core/src/forge/mintport*
       - crates/purlis-cli/src/bridge.rs
       - fixtures/runner-link-key/**
+      # Pool setup's cluster path, which the kind run walks on a bare cluster (#4492), and the
+      # doctor's checks the operator and Pool setup share.
+      - crates/cluster-doctor/**
+      - crates/purlis-core/src/poolsetup*
+      - crates/purlis-core/tests/it/pool_setup_on_a_kind_cluster.rs
   # Nightly, so a new advisory against the operator's own lock, or a change elsewhere that
   # breaks the runner image the kind run builds, is reported though nothing here changed.
   schedule:

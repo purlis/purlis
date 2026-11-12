@@ -1939,6 +1939,12 @@ export const commands = {
 	dockerPools: __WINDOW_ONLY_RESULT,
 	poolSetup: __WINDOW_ONLY_RESULT,
 	poolSetupChooseDocker: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **Keeps that the person chose their team's cluster on Where**, through kubeconfig context
+	 *  `context` (#4492): its name alone. Nothing on the cluster changes. With no context, only the
+	 *  kind is kept, as Add a cluster pool… opens Pool setup: Where then recommends a context.
+	 */
+	poolSetupChooseCluster: (context: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_cluster", { context })),
 	poolSetupName: __WINDOW_ONLY_RESULT,
 	poolSetupPool: __WINDOW_ONLY_RESULT,
 	poolSetupAdd: __WINDOW_ONLY_RESULT,
@@ -10522,6 +10528,13 @@ export type PoolSetupCheck = {
 	more: string | null,
 };
 
+/**  The kubeconfig's contexts, by name alone, for Where's Options on a cluster (#4492). */
+export type PoolSetupContexts = {
+	names: string[],
+	recommended: string | null,
+	chosen: string | null,
+};
+
 /**
  *  What the Pool step's button did: nothing made, and why, where a team's image breaks the
  *  contract; none where the pool was made.
@@ -10584,6 +10597,9 @@ export type PoolSetupShown = {
 	others: string[],
 	/**  The name a new pool is recommended, which no pool here has (#6256). */
 	recommended: string,
+	/**  `docker` or `cluster`: the kind of pool this setup makes. */
+	kind: string,
+	contexts: PoolSetupContexts,
 };
 
 /**  This machine's profiles against pool `pool`'s limits (#4482). */
@@ -10604,6 +10620,8 @@ export type PoolSetupStep = {
 	skippable: boolean,
 	see: PoolSetupSee | null,
 	checks: PoolSetupCheck[],
+	/**  The choice purlis didn't recommend, where there is one (Where's other place, #4492). */
+	also: PoolSetupAction | null,
 };
 
 /**  What Try it found. */

@@ -35,6 +35,7 @@ use crate::profilestore::sign_in::Standing;
 use crate::runners::{self, Refused};
 
 pub mod asked;
+pub mod cluster;
 pub mod signins;
 pub mod trying;
 
@@ -49,15 +50,27 @@ const FORGE_PROGRAMS: [&str; 2] = ["gh", "glab"];
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
     Docker,
+    /// A team's Kubernetes cluster, through purlis's cluster operator (#4492).
+    Cluster,
 }
 
 impl Kind {
-    /// **The steps of this kind, in order** (Q35).
+    /// **The steps of this kind, in order** (Q35): a kind is its list, and a later kind (an SSH
+    /// host, Docker on another machine) adds its list and the readings of any step of its own.
     #[must_use]
     pub fn steps(self) -> &'static [StepId] {
         match self {
             Kind::Docker => &[
                 StepId::Where,
+                StepId::Pool,
+                StepId::Signins,
+                StepId::Identity,
+                StepId::Try,
+            ],
+            Kind::Cluster => &[
+                StepId::Where,
+                StepId::Check,
+                StepId::Install,
                 StepId::Pool,
                 StepId::Signins,
                 StepId::Identity,
@@ -72,6 +85,10 @@ impl Kind {
 #[serde(rename_all = "lowercase")]
 pub enum StepId {
     Where,
+    /// A cluster's: doctor's findings, before anything changes (#4492).
+    Check,
+    /// A cluster's: upstream, definitions, signing key and operator, each on its own button (#4493).
+    Install,
     Pool,
     Signins,
     Identity,
@@ -84,6 +101,8 @@ impl StepId {
     pub fn name(self) -> &'static str {
         match self {
             StepId::Where => "Where chats run",
+            StepId::Check => "Check the cluster",
+            StepId::Install => "Install",
             StepId::Pool => "Pool",
             StepId::Signins => "Sign-ins",
             StepId::Identity => "Agent identity",
@@ -132,6 +151,10 @@ pub enum ActionId {
     GetDocker,
     StartDocker,
     UseDocker,
+    /// Keeps the cluster, on the context chosen, as where chats run (#4492).
+    UseCluster,
+    /// kubectl isn't on this machine: its own install page.
+    GetKubectl,
     CreatePool,
     MakeRunnerAgain,
     UseOtherDocker,
@@ -190,6 +213,8 @@ pub struct Check {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CheckOf {
+    /// One of doctor's lines, on Check the cluster (#4492).
+    Cluster,
     Chat,
     Signins,
     Identity,
@@ -210,6 +235,8 @@ pub struct Step {
     pub see: Option<See>,
     /// What it checks, for Try it: a skipped step reads "works, except for this" (Q32).
     pub checks: Vec<Check>,
+    /// The choice purlis didn't recommend, for the person to take instead (story 4 of #4469).
+    pub also: Option<Action>,
 }
 
 /// The whole answer.
@@ -222,6 +249,16 @@ pub struct Setup {
     pub steps: Vec<Step>,
     /// Pools this machine keeps that this setup isn't on, for a person to go on with by pressing.
     pub others: Vec<String>,
+    /// The kubeconfig's contexts, the one recommended and the one chosen, for Where's Options.
+    pub contexts: Contexts,
+}
+
+/// **The contexts a cluster can be reached by** (#4492): names only, never what they sign in with.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct Contexts {
+    pub names: Vec<String>,
+    pub recommended: Option<String>,
+    pub chosen: Option<String>,
 }
 
 impl Setup {
@@ -327,6 +364,8 @@ pub struct Facts {
     /// Whether the project's clones have a remote on a forge: with none, gh and git push have
     /// nothing to be checked against (C on #4469).
     pub repos: bool,
+    /// The cluster the person can reach, as far as it was read (#4492).
+    pub cluster: cluster::ClusterFacts,
 }
 
 /// **A person's choices, the only thing stored** (tier: Machine, device-bound).
@@ -334,6 +373,9 @@ pub struct Facts {
 pub struct Choices {
     /// The kind chosen on Where, before there is a pool.
     pub kind: Option<Kind>,
+    /// The kubeconfig context chosen on Where for a cluster (#4492): its name, nothing of what it
+    /// signs in with.
+    pub context: Option<String>,
     /// The name typed on the Pool step, for the box to hold.
     pub name: Option<String>,
     /// That no pool had `name` when it was typed: one that has it now was made since, by hand.
@@ -799,12 +841,16 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
     let mut at = None;
     let mut steps = Vec::with_capacity(kind.steps().len());
     for &id in kind.steps() {
-        let reading = match id {
-            StepId::Where => where_reading(facts, choices),
-            StepId::Pool => pool_reading(facts),
-            StepId::Signins => sign_ins_reading(facts),
-            StepId::Identity => identity_reading(facts),
-            StepId::Try => try_reading(facts, choices),
+        let reading = match (kind, id) {
+            (Kind::Cluster, StepId::Where) => cluster::where_reading(facts, choices),
+            (_, StepId::Where) => where_reading(facts, choices),
+            (_, StepId::Check) => cluster::check_reading(facts),
+            (_, StepId::Install) => cluster::install_reading(facts),
+            (Kind::Cluster, StepId::Pool) => cluster::pool_reading(facts),
+            (_, StepId::Pool) => pool_reading(facts),
+            (_, StepId::Signins) => sign_ins_reading(facts),
+            (_, StepId::Identity) => identity_reading(facts),
+            (_, StepId::Try) => try_reading(facts, choices),
         };
         let state = if reading.finished {
             StepState::Done
@@ -829,8 +875,13 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
             findings: if says { reading.findings } else { Vec::new() },
             next: if says { reading.next } else { None },
             skippable: id.skippable(),
-            see: see_of(id, facts),
+            see: see_of(kind, id, facts),
             checks: Vec::new(),
+            also: if id == StepId::Where && state != StepState::Done && facts.pool.is_none() {
+                cluster::also(kind, facts)
+            } else {
+                None
+            },
         });
     }
     if let (Some(name), Some(at)) = (
@@ -840,12 +891,22 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
         let checks = try_checks(&steps, name, choices.tried.contains_key(name), facts.repos);
         steps[at].checks = checks;
     }
+    if let Some(check) = steps.iter_mut().find(|step| step.id == StepId::Check)
+        && check.state != StepState::Later
+    {
+        check.checks = cluster::checks_of(facts);
+    }
     Setup {
         kind,
         pool,
         at,
         steps,
         others: Vec::new(),
+        contexts: Contexts {
+            names: facts.cluster.contexts.clone(),
+            recommended: facts.cluster.recommended().map(str::to_owned),
+            chosen: facts.cluster.chosen.clone(),
+        },
     }
 }
 
@@ -937,7 +998,12 @@ fn try_checks(steps: &[Step], pool: &str, tried: bool, repos: bool) -> Vec<Check
 
 /// **What `id` does by hand**, where it has commands of its own. The Pool step's, before there is
 /// a pool, depend on what the person chose, so they are [`asked::Asked::command`]'s.
-fn see_of(id: StepId, facts: &Facts) -> Option<See> {
+fn see_of(kind: Kind, id: StepId, facts: &Facts) -> Option<See> {
+    if kind == Kind::Cluster
+        && let Some(see) = cluster::see_of(id, facts)
+    {
+        return Some(see);
+    }
     let pool = facts.pool.as_ref();
     if let (
         StepId::Identity,
@@ -957,7 +1023,7 @@ fn see_of(id: StepId, facts: &Facts) -> Option<See> {
         });
     }
     match (id, pool) {
-        (StepId::Where, _) => Some(See {
+        (StepId::Where, _) if kind == Kind::Docker => Some(See {
             note: "This is how purlis asks after Docker. It only reads.".to_owned(),
             text: "docker version".to_owned(),
         }),
@@ -1000,6 +1066,9 @@ pub struct Here<'a> {
     pub docker: Option<&'a Docker>,
     /// The socket of this machine's engine, or why it isn't on this machine.
     pub engine: Result<PathBuf, String>,
+    /// This machine's kubectl, through which a cluster is reached with the person's own
+    /// sign-in, or why there is none ([`cluster::kubectl_here`]).
+    pub kubectl: Result<&'a crate::clusterpool::Kubectl, &'a str>,
 }
 
 /// **Reads pool `pool`'s setup, or a new Docker pool's where `pool` is `None`.** Reads everything
@@ -1015,13 +1084,45 @@ pub fn read(here: &Here<'_>, pool: Option<&str>) -> Result<Setup, Refused> {
         .plane
         .map(crate::forge::agentidentity::hosts_of_the_project)
         .unwrap_or_default();
+    // Contexts are read from the kubeconfig alone; the cluster itself only on a cluster's setup.
+    let contexts = cluster::read(
+        here.kubectl.map_err(str::to_owned),
+        choices.context.as_deref(),
+        false,
+    );
+    let kind = kind_of(&choices, engine, pool.is_some(), &contexts);
+    let cluster = if kind == Kind::Cluster {
+        cluster::read(
+            here.kubectl.map_err(str::to_owned),
+            choices.context.as_deref(),
+            true,
+        )
+    } else {
+        contexts
+    };
     let facts = Facts {
         engine,
         pool,
         identity: identity_in(here.plane, &hosts),
         repos: !hosts.is_empty(),
+        cluster,
     };
-    Ok(of(Kind::Docker, &facts, &choices))
+    Ok(of(kind, &facts, &choices))
+}
+
+/// **The kind a setup is on** (#4492): a pool's own, else the one chosen on Where, else the one
+/// purlis recommends: Docker where it is ready or no cluster is named, else the cluster.
+fn kind_of(choices: &Choices, engine: Engine, pool: bool, cluster: &cluster::ClusterFacts) -> Kind {
+    if pool {
+        return Kind::Docker;
+    }
+    choices
+        .kind
+        .unwrap_or(if engine == Engine::Ready || cluster.contexts.is_empty() {
+            Kind::Docker
+        } else {
+            Kind::Cluster
+        })
 }
 
 fn engine_of(here: &Here<'_>) -> Engine {
@@ -1298,6 +1399,7 @@ pub fn read_choices(config: &Path) -> Result<Choices, Refused> {
     }
     Ok(Choices {
         kind: held.kind,
+        context: held.context,
         name: held.name,
         name_free: held.name_free,
         pool: held.pool,
@@ -1314,6 +1416,8 @@ struct Held {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     kind: Option<Kind>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    context: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     name: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     name_free: bool,
@@ -1329,6 +1433,7 @@ fn write_choices(config: &Path, choices: Choices) -> Result<(), Refused> {
     let held = Held {
         version: 1,
         kind: choices.kind,
+        context: choices.context,
         name: choices.name,
         name_free: choices.name_free,
         pool: choices.pool,
@@ -1351,6 +1456,23 @@ pub fn choose_kind(config: &Path, kind: Kind) -> Result<(), Refused> {
     let _locked = runners::lock(config);
     let mut choices = read_choices(config)?;
     choices.kind = Some(kind);
+    write_choices(config, choices)
+}
+
+/// **Keeps that the person chose their team's cluster on Where, through kubeconfig context
+/// `context`** (#4492): its name alone, nothing of what it signs in with. Refused for a name no
+/// context could have.
+pub fn choose_cluster(config: &Path, context: &str) -> Result<(), Refused> {
+    if !crate::clusterpool::is_context(context) {
+        return Err(Refused::Other(format!(
+            "\"{}\" isn't a kubeconfig context's name",
+            crate::shown::short(context)
+        )));
+    }
+    let _locked = runners::lock(config);
+    let mut choices = read_choices(config)?;
+    choices.kind = Some(Kind::Cluster);
+    choices.context = Some(context.to_owned());
     write_choices(config, choices)
 }
 

@@ -25,6 +25,7 @@ const step = (id: string, name: string, state: string, more: Partial<PoolSetupSt
     skippable: id === "signins" || id === "identity",
     see: null,
     checks: [],
+    also: null,
     ...more,
   }) as PoolSetupStep;
 
@@ -41,6 +42,8 @@ const WHERE = (where: Partial<PoolSetupStep>, state: string): PoolSetupShown => 
   noticed: false,
   recommended: "docker",
   others: [],
+  kind: "docker",
+  contexts: { names: [], recommended: null, chosen: null },
   steps: [step("where", "Where chats run", state, where), step("pool", "Pool", "later"), ...LATER],
 });
 
@@ -61,6 +64,8 @@ const POOL_FORM: PoolSetupShown = {
   noticed: false,
   recommended: "docker",
   others: [],
+  kind: "docker",
+  contexts: { names: [], recommended: null, chosen: null },
   steps: [
     DONE_WHERE,
     step("pool", "Pool", "current", {
@@ -350,6 +355,8 @@ export const MadeByHand: Story = {
     noticed: true,
     recommended: "docker",
     others: [],
+    kind: "docker",
+    contexts: { names: [], recommended: null, chosen: null },
     steps: [
       DONE_WHERE,
       step("pool", "Pool", "done", { line: "dev-box" }),
@@ -377,6 +384,8 @@ export const ThePoolIsMade: Story = {
     noticed: false,
     recommended: "docker",
     others: [],
+    kind: "docker",
+    contexts: { names: [], recommended: null, chosen: null },
     steps: [
       DONE_WHERE,
       step("pool", "Pool", "done", { line: "dev-box" }),
@@ -404,6 +413,8 @@ export const TheRunnerWasRemoved: Story = {
     noticed: false,
     recommended: "docker",
     others: [],
+    kind: "docker",
+    contexts: { names: [], recommended: null, chosen: null },
     steps: [
       DONE_WHERE,
       step("pool", "Pool", "attention", {
@@ -478,6 +489,8 @@ export const ARunnerBeingMade: Story = {
     noticed: false,
     recommended: "docker",
     others: [],
+    kind: "docker",
+    contexts: { names: [], recommended: null, chosen: null },
     steps: [
       DONE_WHERE,
       step("pool", "Pool", "attention", {

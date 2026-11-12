@@ -8,10 +8,12 @@ import {
   commands,
   type PlaneId,
   type PoolSetupAction,
+  type PoolSetupContexts,
   type PoolSetupShown,
   type PoolSetupStep,
 } from "./bindings";
 import { Notice } from "./Notice";
+import { CheckStep, ContextOptions } from "./poolsetup/ClusterSteps";
 import { Action, Say, SeeWhat, StepHead } from "./poolsetup/parts";
 import { IdentityStep } from "./poolsetup/IdentityStep";
 import { NOTHING_CHOSEN, PoolStep, type Chosen } from "./poolsetup/PoolStep";
@@ -90,21 +92,34 @@ const WHERE_TITLE = "Where should your chats run?";
 const WHERE_LEAD =
   "Right now your chats run directly on this machine. A pool gives each chat a separate machine, so it can work on its own.";
 
-/** The Where step: what purlis found of Docker, and the one thing to do about it. */
+/**
+ * The Where step: what purlis found of Docker or of the person's cluster, the one thing to do
+ * about it, and the place purlis didn't recommend, to take instead (#4492).
+ */
 function Where({
   step,
+  kind,
+  contexts,
   onNext,
   onChose,
+  onChoseCluster,
   onRecheck,
   said,
 }: {
   step: PoolSetupStep;
+  kind: string;
+  contexts: PoolSetupContexts;
   onNext: () => void;
   onChose: () => void;
+  onChoseCluster: (context: string) => void;
   onRecheck: () => void;
   said: (trouble: string) => void;
 }) {
   const next = step.next;
+  const [context, setContext] = useState<string | undefined>(
+    contexts.chosen ?? contexts.recommended ?? undefined,
+  );
+  const cluster = kind === "cluster";
   const press = (action: PoolSetupAction) => {
     if (action.url) void openUrl(action.url);
     else if (action.id === "start-docker") {
@@ -112,8 +127,18 @@ function Where({
         if (answer.status === "error") said(answer.error);
       });
     } else if (action.id === "use-docker") onChose();
-    else onRecheck();
+    else if (action.id === "use-cluster") {
+      const to = context ?? contexts.recommended ?? contexts.names[0];
+      if (to === undefined) said("Choose a context under Options first.");
+      else onChoseCluster(to);
+    } else onRecheck();
   };
+  const also = step.also;
+  const other = also && (
+    <Button variant="secondary" onPress={() => press(also)}>
+      {also.label}
+    </Button>
+  );
   // Nothing here can do it for the person: the words say what to do, and the recheck notices.
   const onlySaid = next?.id === "use-local-docker";
   return (
@@ -137,6 +162,8 @@ function Where({
         <p className="pool-setup-p">
           <strong>Chats will run on:</strong> {step.line}.
         </p>
+      ) : cluster ? (
+        <Findings step={step} />
       ) : (
         <>
           <Findings step={step} />
@@ -146,16 +173,21 @@ function Where({
           </p>
         </>
       )}
+      {cluster && step.state !== "done" && (
+        <ContextOptions contexts={contexts} value={context} onChange={setContext} />
+      )}
       {step.see && <SeeWhat text={step.see.text} note={step.see.note} />}
       {next && onlySaid ? (
-        <Action does={next.does} />
+        <Action does={next.does}>{other}</Action>
       ) : next ? (
         <Action
           does={next.does}
           main={next.label}
           icon={next.url ? <ExternalLink aria-hidden size={14} /> : undefined}
           onMain={() => press(next)}
-        />
+        >
+          {other}
+        </Action>
       ) : (
         <Action main="Continue" onMain={onNext} />
       )}
@@ -362,8 +394,19 @@ function PoolSetupGuide({
           )}
           {step?.id === "where" ? (
             <Where
+              key={setup.kind}
               step={step}
+              kind={setup.kind}
+              contexts={setup.contexts}
               said={setTrouble}
+              onChoseCluster={(context) => {
+                setTrouble(undefined);
+                setShowing(undefined);
+                void commands.poolSetupChooseCluster(context).then((answer) => {
+                  if (answer.status === "error") setTrouble(answer.error);
+                  else reread();
+                });
+              }}
               onNext={() => after("where")}
               onRecheck={reread}
               onChose={() => {
@@ -375,6 +418,8 @@ function PoolSetupGuide({
                 });
               }}
             />
+          ) : step?.id === "check" ? (
+            <CheckStep step={step} onNext={() => after("check")} onRecheck={reread} />
           ) : step?.id === "pool" ? (
             <PoolStep
               step={step}

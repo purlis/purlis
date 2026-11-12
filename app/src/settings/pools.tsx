@@ -28,7 +28,6 @@ import { Tooltip } from "../ui/tooltip/Tooltip";
 import { AlertDialog } from "../ui/dialog/Dialog";
 import { Badge } from "../ui/badge/Badge";
 import { Switch } from "../ui/choice/Switch";
-import { ClusterSetupGuide } from "./ClusterSetupGuide";
 import { PoolLimits } from "./PoolLimits";
 import { PoolProfiles } from "./PoolProfiles";
 import { notCheckedPoolSaid } from "../notChecked";
@@ -842,7 +841,6 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
             <Button onPress={() => startAddingAPool()}>Add a pool…</Button>
             <Button onPress={() => startAddingAPool("cluster")}>Add a cluster pool…</Button>
           </ButtonRow>
-          <ClusterSetupGuide />
         </div>
       ),
     };

@@ -89,6 +89,7 @@ end() {
   fi
   if [ "${KEEP:-}" != 1 ]; then
     kind delete cluster --name "$cluster" >/dev/null 2>&1 || true
+    kind delete cluster --name "$cluster-setup" >/dev/null 2>&1 || true
     docker rm -f "$registry" >/dev/null 2>&1 || true
     rm -f "$KUBECONFIG"
     rm -rf "$helm_home"
@@ -371,3 +372,19 @@ kubectl --context "$context" get crd/pools.runners.purlis.dev crd/claims.runners
   validatingadmissionpolicybinding/purlis-operator-writes-what-its-pool-says \
   validatingadmissionpolicy/purlis-operator-changes-only-a-sandboxs-mode \
   validatingadmissionpolicybinding/purlis-operator-changes-only-a-sandboxs-mode >/dev/null
+
+step "Pool setup on a bare cluster of its own"
+# Pool setup's cluster path (#4492): its state read through kubectl on a second cluster, with
+# nothing of purlis on it, apart from the one the chart installed above. Its nodes pull from the
+# same registry.
+setup_cluster=$cluster-setup
+printf 'kind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\n' |
+  kind create cluster --name "$setup_cluster" --image "$node" --wait 120s --config -
+for n in $(kind get nodes --name "$setup_cluster"); do
+  docker exec "$n" mkdir -p "/etc/containerd/certs.d/localhost:$port"
+  printf '[host."http://%s:5000"]\n' "$registry" |
+    docker exec -i "$n" cp /dev/stdin "/etc/containerd/certs.d/localhost:$port/hosts.toml"
+done
+POOL_SETUP_TEST_CONTEXT=kind-$setup_cluster \
+  "$repo/tools/tests-ran.sh" -- cargo test --manifest-path "$repo/Cargo.toml" --locked -p purlis-core \
+  --test it -- pool_setup_on_a_kind_cluster:: --ignored --test-threads=1 --nocapture

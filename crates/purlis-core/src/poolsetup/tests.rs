@@ -10,6 +10,7 @@ fn facts(engine: Engine) -> Facts {
         pool: None,
         identity: Identity::None,
         repos: true,
+        cluster: cluster::ClusterFacts::default(),
     }
 }
 
@@ -45,6 +46,9 @@ fn signed_in() -> SignIns {
 }
 
 use StepState::{Attention, Current, Done, Later, Skipped};
+
+/// What a test machine has instead of kubectl.
+const NO_KUBECTL: &str = "purlis found no kubectl on this machine";
 
 #[test]
 fn docker_has_the_five_steps_of_the_ruling_in_order() {
@@ -482,6 +486,7 @@ fn read_tells_docker_missing_from_docker_not_answering_from_docker_ready() {
             plane: None,
             docker,
             engine: Ok("/var/run/docker.sock".into()),
+            kubectl: Err(NO_KUBECTL),
         };
         let setup = read(&here, None).unwrap();
         assert_eq!(next(&setup, StepId::Where), expected);
@@ -497,6 +502,7 @@ fn read_refuses_a_pool_this_machine_has_not() {
         plane: None,
         docker: None,
         engine: Err("none".into()),
+        kubectl: Err(NO_KUBECTL),
     };
     let why = read(&here, Some("nowhere")).unwrap_err().to_string();
     assert!(why.contains("no pool named nowhere"), "{why}");
@@ -512,6 +518,7 @@ fn read_picks_up_a_choice_made_since_the_last_read() {
         plane: None,
         docker: Some(&docker),
         engine: Ok("/var/run/docker.sock".into()),
+        kubectl: Err(NO_KUBECTL),
     };
     assert_eq!(read(&here, None).unwrap().at, Some(StepId::Where));
     choose_kind(config.path(), Kind::Docker).unwrap();
@@ -542,6 +549,7 @@ fn a_docker_that_answers_and_is_not_on_this_machine_reads_as_elsewhere() {
         plane: None,
         docker: Some(&docker),
         engine: Err("tcp://user:secret@host".into()),
+        kubectl: Err(NO_KUBECTL),
     };
     let setup = read(&here, None).unwrap();
     assert_eq!(next(&setup, StepId::Where), ActionId::UseLocalDocker);
@@ -590,6 +598,7 @@ fn coming_back_finds_the_name_given_before_the_pool_is_made() {
         plane: None,
         docker: None,
         engine: Err("none".into()),
+        kubectl: Err(NO_KUBECTL),
     };
     let found = resumed(&here).unwrap();
     assert_eq!((found.setup.pool, found.name), (None, None));
@@ -609,6 +618,7 @@ fn a_name_typed_never_picks_a_pool_and_the_pool_made_is_gone_on_with() {
         plane: None,
         docker: None,
         engine: Err("none".into()),
+        kubectl: Err(NO_KUBECTL),
     };
     runners::record_pool(
         config.path(),
@@ -674,6 +684,7 @@ fn here(config: &Path) -> Here<'_> {
         plane: None,
         docker: None,
         engine: Err("no engine here".to_owned()),
+        kubectl: Err(NO_KUBECTL),
     }
 }
 

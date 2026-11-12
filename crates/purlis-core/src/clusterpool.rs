@@ -802,6 +802,16 @@ pub struct Kubectl {
     until: Option<std::time::Instant>,
 }
 
+/// What a run of kubectl answered ([`Kubectl::answered`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Answered {
+    /// Whether it exited 0.
+    pub ok: bool,
+    pub printed: String,
+    /// What it said on standard error, trimmed.
+    pub said: String,
+}
+
 /// The variables a run of kubectl is never handed from this process: the kubeconfig is named,
 /// never inherited (#3292).
 pub const CLEARED: [&str; 1] = ["KUBECONFIG"];
@@ -1135,6 +1145,30 @@ impl Kubectl {
     /// Runs kubectl with `args`, handing it `input`, and answers what it printed, up to `most`
     /// bytes. What it says on standard error is only shown, never read to decide anything.
     pub fn run(&self, args: &[String], input: Option<&str>, most: u64) -> Result<String, Refused> {
+        let answered = self.answered(args, input, most)?;
+        if !answered.ok {
+            let what = args
+                .iter()
+                .find(|arg| !arg.starts_with('-') && !self.pointed().contains(arg))
+                .cloned()
+                .unwrap_or_default();
+            return Err(Refused::Other(format!(
+                "kubectl {what} failed: {}",
+                answered.said
+            )));
+        }
+        Ok(answered.printed)
+    }
+
+    /// **What a run of kubectl with `args` printed, and whether it succeeded** (#4492): for a
+    /// question whose answer is its exit, as `auth can-i`'s is, or a read whose failure is asked
+    /// about again rather than read. Refused only where kubectl gave no answer at all.
+    pub fn answered(
+        &self,
+        args: &[String],
+        input: Option<&str>,
+        most: u64,
+    ) -> Result<Answered, Refused> {
         let what = || {
             args.iter()
                 .find(|arg| !arg.starts_with('-') && !self.pointed().contains(arg))
@@ -1172,15 +1206,20 @@ impl Kubectl {
                 }
             })
         })?;
-        if !ran.status.success() {
-            return Err(Refused::Other(format!(
-                "kubectl {} failed: {}",
-                what(),
-                String::from_utf8_lossy(&ran.said).trim()
-            )));
-        }
-        String::from_utf8(ran.printed)
-            .map_err(|_| Refused::Other("kubectl answered with something that is not text".into()))
+        let printed = String::from_utf8(ran.printed).map_err(|_| {
+            Refused::Other("kubectl answered with something that is not text".into())
+        })?;
+        Ok(Answered {
+            ok: ran.status.success(),
+            printed,
+            said: String::from_utf8_lossy(&ran.said).trim().to_owned(),
+        })
+    }
+
+    /// [`Kubectl::answered`] for `args` after the words that point it at its cluster, with what
+    /// it reads of one object.
+    pub fn asked(&self, args: &[&str], input: Option<&str>) -> Result<Answered, Refused> {
+        self.answered(&self.args(args), input, MOST_PRINTED)
     }
 
     fn json(&self, args: &[&str], input: Option<&str>) -> Result<serde_json::Value, Refused> {
