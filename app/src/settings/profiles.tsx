@@ -342,7 +342,7 @@ const listed = (plane: string | undefined): LiveSetting => ({
                                 <EntryButton
                                   key={plan.id}
                                   label={`Sign in to ${plan.title}`}
-                                  spoken={`Sign ${profile.name} in to ${plan.title}`}
+                                  spoken={`Sign in to ${plan.title}: ${profile.name}`}
                                   disabled={now.busy}
                                   onClick={() => askProfileSignIn(plane, profile.name, plan.id)}
                                 />
@@ -352,7 +352,7 @@ const listed = (plane: string | undefined): LiveSetting => ({
                                 label={
                                   profile.standing === "signed-in" ? "Sign in again" : "Sign in"
                                 }
-                                spoken={`Sign ${profile.name} in`}
+                                spoken={`${profile.standing === "signed-in" ? "Sign in again" : "Sign in"}: ${profile.name}`}
                                 disabled={now.busy}
                                 onClick={() => askProfileSignIn(plane, profile.name)}
                               />
@@ -388,7 +388,7 @@ const listed = (plane: string | undefined): LiveSetting => ({
                         {profile.origin === "made" && !profile.sandbox_only && (
                           <EntryButton
                             label="Import again"
-                            spoken={`Import the settings of ${profile.name} again`}
+                            spoken={`Import again: ${profile.name}`}
                             disabled={now.busy}
                             onClick={() =>
                               void acting(
