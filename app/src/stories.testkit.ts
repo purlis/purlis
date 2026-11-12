@@ -264,6 +264,17 @@ export async function untilSettled(inside: Element): Promise<void> {
   );
 }
 
+/**
+ * **Words in a dialog, once they are seen** (#6360): a dialog fades in as it opens, so words it
+ * shows can be found while it is still transparent. This waits for the dialog's scrim to settle
+ * (`untilSettled`), then reads whether the words are seen until they are, as the fade's end is
+ * the engine's (stories run 42857403995).
+ */
+export async function untilSeenInDialog(words: Element): Promise<void> {
+  await untilSettled(words.closest('[data-scope="dialog"][data-part="scrim"]') ?? words);
+  await waitFor(() => expect(words).toBeVisible(), { timeout: SETTLES_WITHIN_MS });
+}
+
 /** The families whose native input is hidden inside the part that draws it (#2907). */
 const CHOICE_SCOPES = ["checkbox", "radio", "switch", "segment", "option-card", "slider"]
   .map((scope) => `[data-scope="${scope}"]`)

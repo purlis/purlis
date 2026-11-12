@@ -140,3 +140,59 @@ export function paidDebts(debt: readonly string[], drawn: Iterable<string>): str
   const seen = new Set(drawn);
   return debt.filter((one) => !seen.has(one));
 }
+
+/** **Words kept off the screen**: App.css's `.hidden-words`, Tailwind's
+ *  `sr-only`, and React Aria's `VisuallyHidden`, which clips a 1px box by its inline style, and anything `hidden`.
+ *  jsdom lays nothing out, so these are how a test tells the words shown from those only heard. */
+function unseen(element: Element): boolean {
+  if (element.matches(".hidden-words, .sr-only, [hidden]")) return true;
+  const style = (element as HTMLElement).style as CSSStyleDeclaration | undefined;
+  return style?.width === "1px" && style.height === "1px" && style.overflow === "hidden";
+}
+
+/** A text's words as a voice user says them: letters and digits, case and marks dropped. */
+const tokensOf = (text: string) =>
+  text
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((one) => one !== "");
+
+/** **The words a control shows**: its text, less what is drawn for a screen reader alone. Words
+ *  inside `aria-hidden` still count, as they are on screen (axe counts them too). */
+function shownWordsOf(element: Element): string {
+  const copy = element.cloneNode(true) as Element;
+  Array.from(copy.querySelectorAll("*"))
+    .filter(unseen)
+    .forEach((one) => one.remove());
+  return copy.textContent ?? "";
+}
+
+/**
+ * **Each button whose name does not hold the words it shows** (WCAG 2.5.3, Label in Name,
+ * #6371): the words shown must come, in order and unbroken, among the words of its accessible
+ * name (the one the role queries compute), so a voice user who says what they see reaches it.
+ * axe's `label-content-name-mismatch` holds this only in a browser: in jsdom it sees no words on
+ * screen and reports the rule incomplete, never a violation, and it looks only at a control named
+ * by `aria-label` or `aria-labelledby`. This asks it of every button in `root`, however it is
+ * named, and says each that fails as `button "its name" shows "its words"`.
+ */
+export function namedWithoutItsWords(root: HTMLElement): string[] {
+  const named: [Element, string][] = [];
+  queryAllByRole(root, "button", {
+    name: (name, element) => {
+      named.push([element, name]);
+      return true;
+    },
+  });
+  return named
+    .filter(([element, name]) => {
+      const shown = tokensOf(shownWordsOf(element));
+      const heard = tokensOf(name);
+      return (
+        shown.length > 0 && !heard.some((_, at) => shown.every((word, i) => heard[at + i] === word))
+      );
+    })
+    .map(([element, name]) => `button "${name}" shows "${shownWordsOf(element).trim()}"`);
+}
