@@ -17,13 +17,17 @@
 //!   the window was handed that ask, not that a person read it.
 //! - **A file path** ([`Kind::File`], [`LocalFile`]) links only once the core finds the file,
 //!   and opens in the light editor at its line; one outside the chat's workspace asks first.
+//! - **A runner chat's path** is mapped through its container's mounts first ([`Mounts`],
+//!   #6221): one that maps to nothing is not a link.
 
 use std::path::PathBuf;
 
 mod asks;
 mod file;
+mod mounts;
 pub use asks::{Asks, Identity};
 pub use file::{FileAt, Home, HomeIs, LocalFile, ReadFrom, home_of};
+pub use mounts::{Mount, Mounts};
 
 /// **What the pane thinks a candidate is**: a hint that picks the kind that reads it, never
 /// trusted for more.
@@ -56,13 +60,14 @@ pub struct Pane {
     pub runs: Runs,
 }
 
-/// **Whose filesystem a pane's paths name**: this machine's, or a runner's, whose paths are not
-/// this machine's files until they are mapped through its mounts (#6221).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// **Whose filesystem a pane's paths name**: this machine's, or a runner's. A runner's paths
+/// name this machine's files only through the mounts its runner kind supplies (#6221). Any pane
+/// purlis cannot place maps through none ([`Mounts::none`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum Runs {
     #[default]
     Here,
-    Elsewhere,
+    Mapped(Mounts),
 }
 
 /// **Where a link goes**, as the core resolved it.

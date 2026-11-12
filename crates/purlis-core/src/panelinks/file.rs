@@ -23,6 +23,8 @@
 //!   ([`super::Asks::keep_opened`]), as the file it was then.
 //! - **A `file://` address is a file link** under these same rules when it names this machine
 //!   (`file:///…`, `file://localhost/…`, spec Q2). One naming another host is not, and says why.
+//! - **A runner chat's path is mapped first** through its container's mounts ([`super::Mounts`],
+//!   #6221), and kept only where its walk ends inside the mount's folder.
 
 use std::collections::VecDeque;
 use std::ffi::OsString;
@@ -291,19 +293,36 @@ impl LinkKind for LocalFile {
                 None => return Resolved::Quiet,
             },
         };
-        // A chat on a runner, or one purlis cannot place, names its own machine's files: mapped
-        // through its mounts (#6221), never read as this one's.
-        if pane.runs != Runs::Here {
-            return Resolved::Quiet;
-        }
+        // A chat on a runner names its own machine's files: mapped through its container's
+        // mounts (#6221), never read as this one's.
+        let (named, within) = match &pane.runs {
+            Runs::Here => (named, None),
+            Runs::Mapped(mounts) => match mounts.mapped(&named) {
+                Some((path, source)) => (path, Some(source.to_path_buf())),
+                None => return Resolved::Quiet,
+            },
+        };
         let project = pane
             .project
             .as_ref()
             .and_then(|project| std::fs::canonicalize(project).ok());
         let allowed: Vec<PathBuf> = project.iter().chain(pane.folder.iter()).cloned().collect();
+        if let Some(source) = &within
+            && self.walked(source, &allowed).as_ref() != Some(source)
+        {
+            // The mount's folder is not its own real path: it may lead elsewhere now.
+            return Resolved::Quiet;
+        }
         let Some(path) = self.walked(&named, &allowed) else {
             return Resolved::Quiet;
         };
+        // A link in a mount that leads out of it names no file the container sees there.
+        if within
+            .as_ref()
+            .is_some_and(|source| !path.starts_with(source))
+        {
+            return Resolved::Quiet;
+        }
         if !std::fs::symlink_metadata(&path).is_ok_and(|meta| meta.is_file()) {
             return Resolved::Quiet;
         }
@@ -370,6 +389,10 @@ impl LocalFile {
     /// `words` as a path on this machine: from `/`, from the home folder for `~/`, and from the
     /// folder the chat started in otherwise. `None` where there is no folder to start from.
     fn joined(&self, words: &str, pane: &Pane) -> Option<PathBuf> {
+        // A runner chat's `~/` is its runner's home, which no mount names.
+        if words.starts_with('~') && pane.runs != Runs::Here {
+            return None;
+        }
         if let Some(rest) = words.strip_prefix("~/") {
             return Some(self.home.as_ref()?.join(rest));
         }

@@ -56,6 +56,12 @@ let there = true;
 const PATH = "src/main.rs:42:7";
 const FULL = "/planes/one/workspaces/app/repos/app/src/main.rs:42:7";
 const HOSTS = "/etc/hosts:3";
+/**
+ * A path a Docker chat prints, which the core maps through its container's mounts to `FULL`
+ * (#6221), and one it maps to nothing.
+ */
+const IN_THE_CONTAINER = "/work/src/main.rs:42:7";
+const UNMOUNTED = "/opt/tool/lib.rs:3";
 /** The file in the workspace as its hover says it: from the workspace (D2). */
 const SHORT = "repos/app/src/main.rs:42:7";
 
@@ -103,7 +109,7 @@ beforeEach(() => {
     if (cmd === "pane_link_resolve") {
       const { candidates } = args as { candidates: { kind: string; text: string }[] };
       return candidates.map((one) =>
-        one.text === PATH && there
+        (one.text === PATH || one.text === IN_THE_CONTAINER) && there
           ? {
               kind: "file",
               target: FULL,
@@ -282,6 +288,54 @@ describe("a file path in a chat's pane", () => {
     hover(drawn, 40, 3);
     hover(drawn, 6, 0);
     await waitFor(() => expect(asked("pane_link_resolve")).toHaveLength(2));
+  });
+});
+
+describe("a path a Docker chat prints (#6221)", () => {
+  it("is sent as printed: the core maps it, never the window", async () => {
+    const { drawn } = await pane(`at ${IN_THE_CONTAINER} now`);
+    hover(drawn, 6, 0);
+
+    await waitFor(() => expect(asked("pane_link_resolve")).toHaveLength(1));
+    expect(asked("pane_link_resolve")[0].args).toEqual({
+      from: { plane: "/planes/one", session: 1 },
+      candidates: [{ kind: "file", text: IN_THE_CONTAINER }],
+    });
+  });
+
+  it("shows the local file its mount maps it to, and opens that at its line", async () => {
+    Object.defineProperty(navigator, "platform", { configurable: true, get: () => "MacIntel" });
+    opens = [IN_THE_WORKSPACE];
+    const { drawn, jumps } = await pane(`at ${IN_THE_CONTAINER} now`);
+    hover(drawn, 6, 0);
+
+    const tip = await screen.findByRole("tooltip", {}, { timeout: 2000 });
+    expect(tip).toHaveTextContent(SHORT);
+    expect(tip).not.toHaveTextContent("/work/");
+
+    click(drawn, 6, 0, { metaKey: true });
+    await waitFor(() => expect(jumps).toHaveLength(1));
+    expect(jumps[0]).toMatchObject({
+      place: { workspace: "app", repo: "app", piece: null },
+      path: "src/main.rs",
+      line: 42,
+      column: 7,
+    });
+    expect(asked("pane_link_open")[0].args).toMatchObject({
+      candidate: { kind: "file", text: IN_THE_CONTAINER },
+    });
+  });
+
+  it("is no link when it maps through no mount, and says nothing on its hover", async () => {
+    const { drawn } = await pane(`at ${UNMOUNTED} now`);
+    hover(drawn, 6, 0);
+    await waitFor(() => expect(asked("pane_link_resolve")).toHaveLength(1));
+    await new Promise((settle) => setTimeout(settle, 700));
+
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    click(drawn, 6, 0, { ctrlKey: true });
+    await new Promise((settle) => setTimeout(settle, 20));
+    expect(asked("pane_link_open")).toHaveLength(0);
   });
 });
 

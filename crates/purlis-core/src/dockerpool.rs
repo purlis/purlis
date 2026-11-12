@@ -596,6 +596,40 @@ pub fn suspend_after(duration: std::time::Duration) -> Result<std::time::Duratio
     }
 }
 
+/// **One mount of a runner's container**: what it mounts, and where in the container.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Mounted {
+    pub from: MountedFrom,
+    /// Where it is mounted in the container: an absolute path.
+    pub target: String,
+}
+
+/// **What a mount mounts**: a volume of Docker's own, which is no folder of this machine, or a
+/// folder of this machine.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MountedFrom {
+    Volume(String),
+    Bind(std::path::PathBuf),
+}
+
+impl Mounted {
+    /// As `docker run --mount` is handed it.
+    fn spelled(&self) -> String {
+        match &self.from {
+            MountedFrom::Volume(volume) => {
+                format!("type=volume,source={volume},target={}", self.target)
+            }
+            MountedFrom::Bind(folder) => {
+                format!(
+                    "type=bind,source={},target={}",
+                    folder.display(),
+                    self.target
+                )
+            }
+        }
+    }
+}
+
 /// One runner of the pool, as it is made: its name, its image, its user, its home, its
 /// pool's limits, and how long it is left without a link before it suspends itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -701,6 +735,16 @@ impl Runner {
         format!("{PREFIX}{}-home", self.name)
     }
 
+    /// **What the runner's container mounts**, as purlis makes it: its home's volume, and no
+    /// folder of this machine. [`Runner::create_args`] mounts exactly these, and a chat's paths
+    /// are mapped through them ([`crate::panelinks::Mounts::docker`], #6221).
+    pub fn mounts(&self) -> Vec<Mounted> {
+        vec![Mounted {
+            from: MountedFrom::Volume(self.volume()),
+            target: self.home.clone(),
+        }]
+    }
+
     /// `docker`'s arguments that make and start the runner's container, confined as the
     /// module says, with [`SECCOMP_PROFILE`] read from `seccomp`. Its id is what `docker`
     /// prints.
@@ -738,10 +782,9 @@ impl Runner {
         pair("--ipc", "private".into());
         pair("--shm-size", format!("{}m", self.limits.shm_mib()));
         pair("--cgroupns", "private".into());
-        pair(
-            "--mount",
-            format!("type=volume,source={},target={}", self.volume(), self.home),
-        );
+        for mounted in self.mounts() {
+            pair("--mount", mounted.spelled());
+        }
         pair("--tmpfs", format!("/tmp:{}", self.limits.tmp_options()));
         pair("--cpus", self.limits.cpus());
         pair("--memory", format!("{}m", self.limits.memory_mib));

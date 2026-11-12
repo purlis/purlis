@@ -26,8 +26,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use purlis_core::panelinks::{
-    Asks, Candidate, FileAt, Home, HomeIs, Hover, Kind, Opening, Pane, ReadFrom, Resolver, Runs,
-    Target, UNASKABLE,
+    Asks, Candidate, FileAt, Home, HomeIs, Hover, Kind, Mounts, Opening, Pane, ReadFrom, Resolver,
+    Runs, Target, UNASKABLE,
 };
 use serde::{Deserialize, Serialize};
 
@@ -87,8 +87,10 @@ pub struct LinkFrom {
 
 /// **The pane `from` names, as the core resolves against it**: its project's folder, and the
 /// folder its chat started in. Its paths are this machine's only for a chat open here and not
-/// on a runner or a pool; every other pane (a saved chat's, one whose chat has closed, one with
-/// no project open) names files purlis cannot place, so they are [`Runs::Elsewhere`].
+/// on a runner or a pool. A chat on a Docker pool's runner maps its paths through the mounts
+/// purlis made the runner's container with (#6221). Every other pane (a saved chat's, one whose
+/// chat has closed, a cluster's or another machine's runner, one with no project open) names
+/// files purlis cannot place, so it maps through none ([`Mounts::none`], #6224).
 // The folder is the one the chat started in: no hook reports the folder a chat has moved to.
 fn pane_of(planes: &Planes, from: LinkFrom) -> Pane {
     let held = from
@@ -100,25 +102,38 @@ fn pane_of(planes: &Planes, from: LinkFrom) -> Pane {
             project: from.plane.map(|plane| PathBuf::from(plane.root())),
             session: from.session,
             folder: None,
-            runs: Runs::Elsewhere,
+            runs: Runs::Mapped(Mounts::none()),
         };
     };
     let chats = held.chats();
-    let here = from.session.and_then(|session| {
-        let at = chats.chat_at(session)?;
-        let local = chats.runner_of(session).is_none() && chats.pool_of(session).is_none();
-        local.then_some(at)
-    });
+    let open = from
+        .session
+        .and_then(|session| Some((session, chats.chat_at(session)?)));
+    let (runs, folder) = match open {
+        None => (Runs::Mapped(Mounts::none()), None),
+        Some((session, at)) => match (chats.pool_of(session), chats.runner_of(session)) {
+            (None, None) => (Runs::Here, at.cwd),
+            (Some(pool), _) => (Runs::Mapped(docker_mounts(&pool)), None),
+            (None, Some(_)) => (Runs::Mapped(Mounts::none()), None),
+        },
+    };
     Pane {
         project: Some(held.root().to_path_buf()),
         session: from.session,
-        runs: if here.is_some() {
-            Runs::Here
-        } else {
-            Runs::Elsewhere
-        },
-        folder: here.and_then(|at| at.cwd),
+        runs,
+        folder,
     }
+}
+
+/// **The mounts of a Docker pool's runner** that a chat on `pool` runs on, as purlis made its
+/// container ([`Mounts::docker`]): read from the runners this machine keeps, never from what
+/// the chat prints. None for a cluster pool's, or a pool this machine does not keep.
+fn docker_mounts(pool: &str) -> Mounts {
+    // A fresh claim is named `<pool>/<claim>`, and its runner is made as the pool's is.
+    let pool = pool.split_once('/').map_or(pool, |(pool, _)| pool);
+    purlis_core::machine::config_root()
+        .and_then(|config| purlis_core::runners::runner_for(&config, pool).ok())
+        .map_or_else(Mounts::none, |kept| Mounts::docker(&kept.made.runner))
 }
 
 /// **Where a link that opens without asking opens.**

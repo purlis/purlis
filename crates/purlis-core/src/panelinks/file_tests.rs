@@ -209,7 +209,7 @@ fn a_relative_path_with_no_working_folder_is_no_link() {
 fn a_chat_on_a_runner_names_its_own_machine_s_files_which_are_no_link_here() {
     let here = fixture();
     let pane = Pane {
-        runs: Runs::Elsewhere,
+        runs: Runs::Mapped(super::super::Mounts::none()),
         ..here.chat()
     };
     let text = here.outside.display().to_string();
