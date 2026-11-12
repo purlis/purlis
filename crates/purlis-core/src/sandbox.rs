@@ -3629,7 +3629,7 @@ impl Level {
     pub fn title(self) -> &'static str {
         match self {
             Self::Full => "full sandbox",
-            Self::Floor => "floor",
+            Self::Floor => "basic sandbox",
         }
     }
 }
@@ -7832,7 +7832,8 @@ pub fn floorless_said(why: &NotStarted) -> String {
         .map_or(reason, |(reason, _)| reason)
         .trim_end_matches('.');
     format!(
-        "This chat runs with no sandbox: purlis could not apply the floor here, because {reason}."
+        "This chat runs with no sandbox: purlis could not apply the basic sandbox here, \
+         because {reason}."
     )
 }
 
@@ -8101,8 +8102,8 @@ pub fn decide_granted(
         }
         if !machine.os.has_backend() {
             return Ok(Some(Decided::Floorless(
-                "This chat runs with no sandbox: purlis could not apply the floor here, because \
-                 purlis has no sandbox backend on this system."
+                "This chat runs with no sandbox: purlis could not apply the basic sandbox here, \
+                 because purlis has no sandbox backend on this system."
                     .to_owned(),
             )));
         }
@@ -8112,8 +8113,9 @@ pub fn decide_granted(
                 // The floor is always compiled where no policy is in force, so this is not met;
                 // said all the same rather than started with nothing said.
                 Ok(None) => Decided::Floorless(
-                    "This chat runs with no sandbox: purlis did not compile the floor for it."
-                        .to_owned(),
+                    "This chat runs with no sandbox: purlis did not compile the basic sandbox for \
+                     it."
+                    .to_owned(),
                 ),
                 Err(not) => Decided::Floorless(floorless_said(&not)),
             },
