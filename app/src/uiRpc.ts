@@ -1932,13 +1932,8 @@ export const commands = {
 	poolSetupChooseDocker: __WINDOW_ONLY_RESULT,
 	poolSetupName: __WINDOW_ONLY_RESULT,
 	poolSetupPool: __WINDOW_ONLY_RESULT,
-	/**
-	 *  **Add a pool** (#6256): starts a new pool's setup, unless one was started and not finished.
-	 *  `true` where setup goes on with that one, for the tab to say so with Start over.
-	 */
-	poolSetupAdd: () => typedError<boolean, string>(__TAURI_INVOKE("pool_setup_add")),
-	/**  **Start over** (#6256): forgets the unfinished setup, and keeps any pool it made. */
-	poolSetupStartOver: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_start_over")),
+	poolSetupAdd: __WINDOW_ONLY_RESULT,
+	poolSetupStartOver: __WINDOW_ONLY_RESULT,
 	poolSetupCommand: __WINDOW_ONLY_RESULT,
 	poolSetupCreate: __WINDOW_ONLY_RESULT,
 	poolSetupSignInsByHand: __WINDOW_ONLY_RESULT,
