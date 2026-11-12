@@ -25,6 +25,7 @@ use super::Step;
 use super::Which;
 use super::collection::{FieldRefusal, Listed, Refusal};
 use crate::sandbox::TABLE;
+use crate::sandbox::local::AddedBy;
 use crate::sandbox::hosts::{Host, KEY};
 
 /// The collection's name in each file, as the window sends it back.
@@ -158,10 +159,16 @@ fn without(which: Which, text: &str, at: usize) -> Result<String, Refusal> {
 /// ([`crate::sandbox::policy::Locks::refuses`], #1423), one already listed here, or (for yours)
 /// one the project already lets every chat reach.
 pub fn add(root: &Path, which: Which, base: Option<&str>, typed: &str) -> Result<String, Refusal> {
-    added(root, which, base, typed).map_err(|refusal| refusal.named_at(root))
+    added(root, which, base, typed, AddedBy::You).map_err(|refusal| refusal.named_at(root))
 }
 
-fn added(root: &Path, which: Which, base: Option<&str>, typed: &str) -> Result<String, Refusal> {
+fn added(
+    root: &Path,
+    which: Which,
+    base: Option<&str>,
+    typed: &str,
+    by: AddedBy,
+) -> Result<String, Refusal> {
     super::unchanged(root, which, base).map_err(Refusal::file)?;
     let text = base.unwrap_or_default();
     let field = |why: String| Refusal {
@@ -215,6 +222,10 @@ fn added(root: &Path, which: Which, base: Option<&str>, typed: &str) -> Result<S
                 crate::shown::short(&e.to_string())
             )])
         })?;
+        // Best effort: a host whose when is lost says it was added earlier, and still grants.
+        if let Err(why) = crate::sandbox::local::record_host_added(root, &host.to_string(), by) {
+            tracing::warn!("purlis: {host} was added without when it was added ({why})");
+        }
     }
     // Where the set put it.
     listed(&after)
@@ -379,6 +390,7 @@ pub fn listed_at(root: &Path, which: Which, text: &str) -> Vec<Listed> {
         return entries;
     }
     let confirmed = crate::sandbox::local::confirmed_hosts(root);
+    let when = crate::sandbox::local::hosts_added(root);
     for one in &mut entries {
         let written = one
             .values
@@ -392,6 +404,12 @@ pub fn listed_at(root: &Path, which: Which, text: &str) -> Vec<Listed> {
         }
         one.values
             .push(("confirmed", if mine { "yes" } else { "no" }.to_owned()));
+        if let Ok(host) = Host::parse(&written)
+            && let Some(added) = when.iter().find(|it| it.host == host.to_string())
+        {
+            one.values.push(("added_at", added.at.to_string()));
+            one.values.push(("added_by", added.by.word().to_owned()));
+        }
     }
     entries
 }
@@ -428,9 +446,9 @@ fn now(root: &Path, which: Which) -> Result<Option<String>, String> {
 /// confirmed on this machine as it is added). Answers why not, in a sentence.
 pub fn grant(root: &Path, which: Which, host: &Host) -> Result<(), String> {
     let base = now(root, which)?;
-    add(root, which, base.as_deref(), &host.to_string())
+    added(root, which, base.as_deref(), &host.to_string(), AddedBy::Block)
         .map(|_| ())
-        .map_err(said)
+        .map_err(|refusal| said(refusal.named_at(root)))
 }
 
 /// **Revokes `host`** at `which`'s level (#1348): [`remove`] of every entry naming it, against

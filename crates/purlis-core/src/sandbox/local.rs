@@ -228,6 +228,10 @@ struct OnDisk {
     /// grant anything ([`super::hosts::personal`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     hosts_mine: Vec<String>,
+    /// When, and by what, each of your own hosts was added on this machine (#6172, R65): Settings'
+    /// Add or a block's Allow. A host added before this record existed has none, and says so.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    hosts_added: Vec<HostAdded>,
     /// The folders you let every chat of this project on this machine write (#1342), each whole
     /// as [`super::grant::write`] took it: the only place a write grant of yours is kept.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1038,9 +1042,63 @@ pub fn confirm_host(root: &Path, host: &str) -> io::Result<()> {
     })
 }
 
-/// Takes `host` off the record: Settings' Remove.
+/// Takes `host` off the record, and when it was added with it: Settings' Remove.
 pub fn unconfirm_host(root: &Path, host: &str) -> io::Result<()> {
-    change(root, |held| held.hosts_mine.retain(|one| one != host))
+    change(root, |held| {
+        held.hosts_mine.retain(|one| one != host);
+        held.hosts_added.retain(|one| one.host != host);
+    })
+}
+
+/// **What added one of your own hosts** (#6172, R65).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AddedBy {
+    /// You, with Settings' Add.
+    You,
+    /// A block's Allow, in a chat.
+    Block,
+}
+
+impl AddedBy {
+    /// The word the record and the window say it by.
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::You => "you",
+            Self::Block => "block",
+        }
+    }
+}
+
+/// When, and by what, one of your own hosts was added on this machine (#6172).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct HostAdded {
+    /// The host, as [`super::hosts::Host`] spells it.
+    pub host: String,
+    /// When, in seconds since 1970.
+    pub at: u64,
+    /// What added it.
+    pub by: AddedBy,
+}
+
+/// Records that `host` was added now, by `by`, replacing an earlier record of it.
+pub fn record_host_added(root: &Path, host: &str, by: AddedBy) -> io::Result<()> {
+    let at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs());
+    change(root, |held| {
+        held.hosts_added.retain(|one| one.host != host);
+        held.hosts_added.push(HostAdded {
+            host: host.to_owned(),
+            at,
+            by,
+        });
+    })
+}
+
+/// When, and by what, each of your own hosts at `root` was added, where that is recorded.
+pub fn hosts_added(root: &Path) -> Vec<HostAdded> {
+    read(root).hosts_added
 }
 
 /// **Takes off the record each host of yours that `local`, this machine's settings file as
@@ -1074,6 +1132,7 @@ pub fn forget_hosts_not_in(root: &Path, local: Option<&str>) -> io::Result<usize
     change(root, |held| {
         gone = goes(held);
         held.hosts_mine.retain(|one| listed.contains(one));
+        held.hosts_added.retain(|one| listed.contains(&one.host));
     })?;
     Ok(gone)
 }
