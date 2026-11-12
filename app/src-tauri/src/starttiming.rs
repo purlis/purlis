@@ -4,6 +4,10 @@
 //! **How long each phase of a chat put back at a launch took** (#4988): one line in the app's
 //! log per start, and one more when its harness first reports.
 //!
+//! The wait for a place at the restore gate is its own field, measured from the start's own
+//! ask, and not counted in how long the start took (felt speed round 2, H4). Measured from the
+//! launch, as it was, it read as a slow start where it was only a place in the queue.
+//!
 //! A launch that takes minutes to bring its chats back said only "N of M chats back" per
 //! project, once every start had been tried, so nobody could tell which phase held them. A
 //! start is timed on the thread that makes it ([`timed`]), and each phase it passes marks the
@@ -18,8 +22,6 @@ use std::time::{Duration, Instant};
 /// The phases a start passes, in the order it passes them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Phase {
-    /// The restore gate let it go ahead (`crate::restoring`).
-    Gate,
     /// The core read what it starts as: its profile, persona and plan (`purlis_core::start`).
     Ready,
     /// What its sandbox needs beside it, the egress proxy among them, is running.
@@ -33,7 +35,6 @@ pub(crate) enum Phase {
 impl Phase {
     fn word(self) -> &'static str {
         match self {
-            Self::Gate => "gate",
             Self::Ready => "ready",
             Self::Proxy => "proxy",
             Self::Line => "line",
@@ -42,17 +43,20 @@ impl Phase {
     }
 }
 
-/// One start's clock: when it was asked for, and when it passed each phase.
+/// One start's clock: when it was asked for, when the restore gate let it go ahead
+/// (`crate::restoring`), and when it passed each phase.
 #[derive(Debug)]
 pub(crate) struct Clock {
     asked: Instant,
+    placed: Instant,
     passed: Vec<(Phase, Instant)>,
 }
 
 impl Clock {
-    pub(crate) fn asked_at(asked: Instant) -> Self {
+    pub(crate) fn asked_at(asked: Instant, placed: Instant) -> Self {
         Self {
             asked,
+            placed,
             passed: Vec::new(),
         }
     }
@@ -61,10 +65,11 @@ impl Clock {
         self.passed.push((phase, at));
     }
 
-    /// The line the log is told: each phase with the time since the one before it, and the
-    /// whole start, in milliseconds. `outcome` is the chat's number, or why it did not start.
+    /// The line the log is told: the whole start from its place at the gate, the wait for that
+    /// place, and each phase with the time since the one before it, in milliseconds. `outcome`
+    /// is the chat's number, or why it did not start.
     pub(crate) fn line(&self, name: &str, outcome: &Result<u32, String>, ended: Instant) -> String {
-        let mut since = self.asked;
+        let mut since = self.placed;
         let phases: Vec<String> = self
             .passed
             .iter()
@@ -74,14 +79,14 @@ impl Clock {
                 format!("{} +{took}", phase.word())
             })
             .collect();
-        let total = ms(ended.saturating_duration_since(self.asked));
+        let total = ms(ended.saturating_duration_since(self.placed));
+        let gate = ms(self.placed.saturating_duration_since(self.asked));
         let ended = match outcome {
             Ok(session) => format!("live as chat {session}"),
             Err(_) => "did not start".to_owned(),
         };
         format!(
-            "purlis: start of {name}: {} ms ({}); {ended}",
-            total,
+            "purlis: start of {name}: {total} ms after {gate} ms at the gate ({}); {ended}",
             if phases.is_empty() {
                 "no phase passed".to_owned()
             } else {
@@ -99,17 +104,16 @@ thread_local! {
     static CLOCK: RefCell<Option<Clock>> = const { RefCell::new(None) };
 }
 
-/// Runs `start` with a clock on this thread, asked for at `asked`, and logs its line once it
-/// answers. A chat that started is remembered until its harness first reports ([`heard`]).
+/// Runs `start` with a clock on this thread, asked for at `asked` and let through the gate at
+/// `placed`, and logs its line once it answers. A chat that started is remembered until its
+/// harness first reports ([`heard`]).
 pub(crate) fn timed(
     name: &str,
     asked: Instant,
-    gate: Instant,
+    placed: Instant,
     start: impl FnOnce() -> Result<u32, String>,
 ) -> Result<u32, String> {
-    let mut clock = Clock::asked_at(asked);
-    clock.passed(Phase::Gate, gate);
-    CLOCK.set(Some(clock));
+    CLOCK.set(Some(Clock::asked_at(asked, placed)));
     let started = start();
     let ended = Instant::now();
     if let Some(clock) = CLOCK.take() {
