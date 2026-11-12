@@ -162,6 +162,15 @@ type Story = StoryObj<typeof meta>;
  */
 export const ATasksLine: Story = {
   play: async ({ canvas, canvasElement, userEvent }) => {
+    // **The number is drawn at the path's size** (#6297): "#7" beside the path is its small
+    // text, not a step larger.
+    const path = canvasElement.querySelector(".pane-crumbs");
+    const number = canvasElement.querySelector(".pane-number");
+    await expect(path).not.toBeNull();
+    await expect(number).not.toBeNull();
+    await expect(getComputedStyle(number as Element).fontSize).toBe(
+      getComputedStyle(path as Element).fontSize,
+    );
     const status = canvas.getByRole("status");
     const harness = canvas.getByRole("button", { name: "What Claude Code can do here" });
     const brief = canvas.getByRole("button", { name: "Brief of fix-login" });
