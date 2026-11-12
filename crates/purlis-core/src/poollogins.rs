@@ -302,6 +302,11 @@ impl Bound {
             .into_iter()
             .find(|one| one.name() == pool)
             .ok_or_else(|| NotSent::NotYours(format!("no pool named {pool} is on this machine")))?;
+        // No vault value reaches a pool on another machine without the person's mark (#6266,
+        // ADR 0123 §5; the mark is #6271): this machine's engine says nothing of that one.
+        if kept.remote().is_some() {
+            return Err(NotSent::NotYours(on_another_machine_said(pool)));
+        }
         let runner = match reached {
             Some(reached) => {
                 let Some((of, name)) = reached.split_once('/').filter(|(of, _)| *of == pool) else {
@@ -411,6 +416,16 @@ pub fn owned(engine: Result<std::path::PathBuf, String>) -> Result<String, Strin
              there, for a browser login or a tool, and signs no profile in there"
         )),
     }
+}
+
+/// **What a pool on another machine is refused a vault value with** (#6266, ADR 0123 §5): its
+/// runner is not this machine, and this version has no mark to say it is the person's own
+/// (#6271). Its profiles, sign-ins and moves are a Docker pool's (§1).
+pub fn on_another_machine_said(pool: &str) -> String {
+    format!(
+        "pool {pool} is on another machine, which purlis can't show is yours alone, so purlis \
+         sends its runner no vault value, for a browser login or a tool"
+    )
 }
 
 /// What an unmarked cluster pool is refused with (#4071): how to mark it, and only the person can.

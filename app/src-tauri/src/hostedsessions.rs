@@ -155,6 +155,28 @@ pub(crate) const ANSWER_WITHIN: Duration = Duration::from_secs(30);
 /// What a command no host answered in time says.
 const NOT_IN_TIME: &str = "the session host did not answer in time";
 
+/// What a call the host did not carry out comes to: the host's own refusal where it gave one,
+/// else what went wrong on the link, in this window's words.
+fn refusal_of(
+    why: &purlis_session_protocol::session::CallError,
+) -> purlis_session_protocol::session::Refusal {
+    why.refusal()
+        .cloned()
+        .unwrap_or_else(|| purlis_session_protocol::session::Refusal {
+            code: String::new(),
+            why: why.to_string(),
+        })
+}
+
+/// **How long a chat's close waits for the host on the thread that asked it** (#6227): the
+/// window's, where `close_session` stays synchronous to keep its order with what was typed to
+/// the chat. The host answers a close at once, before its program has ended, so this is only
+/// ever reached by a host that is not answering, and a host that took [`ANSWER_WITHIN`] froze
+/// the window, and the WebDriver inside it, for those 30 s. Past it the close is still waited
+/// for, off that thread, and what it refuses is still said. The same second a turn in a chat's
+/// lane waits for at most ([`crate::inputlanes::A_TURN_WAITS_AT_MOST`]).
+pub(crate) const A_CLOSE_WAITS_AT_MOST: Duration = Duration::from_secs(1);
+
 /// **What one send of code is held to** (spec #4275): the most bytes, the longest time, what the
 /// host is told of them, and the limit a send that ran out of time hit.
 struct SendHeld {
@@ -1860,6 +1882,39 @@ impl HostLink {
         }
     }
 
+    /// **`command`, whose answer changes nothing here, waited for at most `within` by the
+    /// thread that sends it** (#6227), and past that on the link's runtime, as long as
+    /// [`Self::call`] would wait (a pool's answer wait on a runner's link): what the host
+    /// refuses, or its not answering at all, is handed to `unanswered` there, whenever it is
+    /// known.
+    fn call_heard_late(
+        &self,
+        command: Command,
+        within: Duration,
+        unanswered: impl FnOnce(String) + Send + 'static,
+    ) {
+        use purlis_core::poollimits::LimitId::AnswerWait;
+        let at_most = if self.pool.is_none() {
+            ANSWER_WITHIN
+        } else {
+            Duration::from_secs(self.limits().in_force(AnswerWait))
+        };
+        let (answered, answer) = std::sync::mpsc::channel::<()>();
+        let client = Arc::clone(&self.client);
+        self.runtime.spawn(async move {
+            let why = match tokio::time::timeout(at_most, client.call(command)).await {
+                Ok(Ok(_)) => None,
+                Ok(Err(why)) => Some(refusal_of(&why).why),
+                Err(_) => Some(NOT_IN_TIME.to_owned()),
+            };
+            if let Some(why) = why {
+                unanswered(why);
+            }
+            let _ = answered.send(());
+        });
+        let _ = answer.recv_timeout(within);
+    }
+
     /// [`Self::call`], waiting at most `within`.
     fn call_within(&self, command: Command, within: Duration) -> Result<Answer, String> {
         self.call_refused_within(command, within)
@@ -1892,19 +1947,14 @@ impl HostLink {
         self.runtime.spawn(async move {
             let _ = answered.send(client.call(command).await);
         });
-        let unanswered = |why: String| purlis_session_protocol::session::Refusal {
-            code: String::new(),
-            why,
-        };
         match answer.recv_timeout(within) {
-            Ok(answered) => Some(answered.map_err(|why| {
-                why.refusal()
-                    .cloned()
-                    .unwrap_or_else(|| unanswered(why.to_string()))
-            })),
+            Ok(answered) => Some(answered.map_err(|why| refusal_of(&why))),
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => None,
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                Some(Err(unanswered("the session host's link ended".to_owned())))
+                Some(Err(purlis_session_protocol::session::Refusal {
+                    code: String::new(),
+                    why: "the session host's link ended".to_owned(),
+                }))
             }
         }
     }
@@ -5056,12 +5106,19 @@ impl SessionHost for HostedSessions {
                 link.undraw(*view);
             }
             // Answered once the host has let go of it, before its program has ended: its
-            // number is free for a chat put back under it.
-            if let Err(why) = link.call(Command::Close {
-                program: program.id,
-            }) {
-                tracing::warn!("purlis: the session host did not close chat {id}: {why}");
-            }
+            // number is free for a chat put back under it. Never waited for long here, on the
+            // window's thread (#6227): past [`A_CLOSE_WAITS_AT_MOST`] it is heard off it, and a
+            // start under its number before the host lets go is numbered otherwise and refused
+            // (ADR 0108, amended 2026-11-12).
+            link.call_heard_late(
+                Command::Close {
+                    program: program.id,
+                },
+                A_CLOSE_WAITS_AT_MOST,
+                move |why| {
+                    tracing::warn!("purlis: the session host did not close chat {id}: {why}")
+                },
+            );
         }
         Ok(())
     }

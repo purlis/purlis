@@ -34,6 +34,7 @@ import {
   type RadioGroupProps as AriaRadioGroupProps,
   type RadioProps as AriaRadioProps,
 } from "react-aria-components";
+import { VisuallyHidden } from "react-aria";
 import { Check } from "lucide-react";
 import { Tooltip, type Tip } from "../tooltip/Tooltip";
 
@@ -155,11 +156,16 @@ export interface SegmentProps extends Option {
   /** How many things it stands for, after its words: the `count` part. Never the only thing that
    *  tells two segments apart, and said in its name too. */
   count?: number;
+  /** What a screen reader reads after its name, never drawn: why one `isDisabled` is out of
+   *  reach, as a radio's `description` says it. A disabled segment takes no focus, so its
+   *  tooltip alone would tell only a pointer (`ui/unavailable.ts`). */
+  description?: ReactNode;
 }
 
 /** **One segment** of a segmented control. */
-export function Segment({ children, count, tooltip, ...rest }: SegmentProps) {
+export function Segment({ children, count, tooltip, description, ...rest }: SegmentProps) {
   const id = useId();
+  const described = description === undefined || description === null ? undefined : `${id}-says`;
   return tipped(
     tooltip,
     <AriaRadio
@@ -170,6 +176,9 @@ export function Segment({ children, count, tooltip, ...rest }: SegmentProps) {
           ? (rest["aria-labelledby"] ??
             (count === undefined ? `${id}-label` : `${id}-label ${id}-count`))
           : undefined
+      }
+      aria-describedby={
+        [rest["aria-describedby"], described].filter(Boolean).join(" ") || undefined
       }
       data-scope="segment"
       data-part="root"
@@ -182,6 +191,7 @@ export function Segment({ children, count, tooltip, ...rest }: SegmentProps) {
           {count}
         </span>
       )}
+      {described !== undefined && <VisuallyHidden id={described}>{description}</VisuallyHidden>}
     </AriaRadio>,
   );
 }

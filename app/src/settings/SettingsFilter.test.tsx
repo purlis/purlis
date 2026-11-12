@@ -10,11 +10,12 @@ import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
 
 /**
- * **Filter settings by name** (SE-21, #1171; the spec on #558, V89c): the box above the nav
- * narrows the nav to the groups that match and the right column to the settings that match, by
- * their labels and help text, case-insensitively, and says so when nothing does. Driven at the
- * You level, whose groups are Text (two sizes) and Editor (your editor), by typing in the box
- * the way a person does and reading what is on screen.
+ * **Filter settings by name** (SE-21, #1171; the spec on #558, V89c), as the search across every
+ * level keeps it (#2920): the box above the nav narrows the nav to this level's groups that match
+ * and each of them to the settings that match, by their labels and help text, case-insensitively,
+ * and says so when nothing does. The nav's first page while it holds words is every match
+ * (`SettingsSearch.test.tsx`); these are its pages under it. Driven at the You level by typing in
+ * the box the way a person does and reading what is on screen.
  */
 
 beforeEach(() => {
@@ -36,14 +37,16 @@ afterEach(() => {
   Reflect.deleteProperty(globalThis, GLOBAL);
 });
 
-const box = () => screen.getByRole("searchbox", { name: "Filter settings" });
+const box = () => screen.getByRole("searchbox", { name: "Search settings" });
 const nav = () => screen.getByRole("navigation", { name: "Groups" });
 const inNav = () =>
   within(nav())
     .queryAllByRole("button")
-    // A group's toggle is no page (R42).
+    // A group's toggle is no page (R42), and every match is the search's own page (#2920).
     .filter((one) => !one.hasAttribute("aria-expanded"))
-    .map((one) => one.textContent);
+    .map((one) => one.textContent)
+    .filter((one) => !one?.startsWith("All results"));
+const allResults = () => within(nav()).getByRole("button", { name: /^All results/ });
 const group = (name: string) => within(nav()).getByRole("button", { name });
 const shown = () => screen.getByRole("region", { name: /./ });
 const sliders = () =>
@@ -51,7 +54,7 @@ const sliders = () =>
 const count = () => screen.getByRole("status", { name: "Settings found" });
 
 describe("filtering the Settings tab by name", () => {
-  it("has a labelled filter box, empty, with the whole nav under it", () => {
+  it("has a labelled search box, empty, with the whole nav under it", () => {
     render(<SettingsTab />);
 
     expect(box()).toHaveValue("");
@@ -81,6 +84,7 @@ describe("filtering the Settings tab by name", () => {
     await userEvent.type(box(), "TERMINAL TEXT");
 
     expect(inNav()).toEqual(["Text"]);
+    await userEvent.click(group("Text"));
     expect(screen.getByRole("slider", { name: /terminal text size/i })).toBeInTheDocument();
     expect(screen.queryByRole("slider", { name: /window text size/i })).not.toBeInTheDocument();
   });
@@ -91,6 +95,7 @@ describe("filtering the Settings tab by name", () => {
     await userEvent.type(box(), "the line you are reading");
 
     expect(inNav()).toEqual(["Editor"]);
+    await userEvent.click(group("Editor"));
     expect(group("Editor")).toHaveAttribute("aria-current", "page");
     expect(shown()).toHaveAccessibleName("Editor");
     expect(screen.getByRole("radiogroup", { name: "Your editor" })).toBeInTheDocument();
@@ -103,6 +108,7 @@ describe("filtering the Settings tab by name", () => {
     await userEvent.type(box(), "how big");
 
     expect(inNav()).toEqual(["Text"]);
+    await userEvent.click(group("Text"));
     expect(screen.getByRole("slider", { name: /window text size/i })).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: /terminal text size/i })).toBeInTheDocument();
   });
@@ -123,17 +129,17 @@ describe("filtering the Settings tab by name", () => {
     expect(screen.queryByText(/telemetry/i)).not.toBeInTheDocument();
   });
 
-  it("says in a sentence when nothing matches, and the nav is empty", async () => {
+  it("says in a sentence when nothing matches, and the nav holds no page of the level", async () => {
     render(<SettingsTab />);
 
     await userEvent.type(box(), "colour of the moon");
 
     expect(inNav()).toEqual([]);
-    expect(screen.queryByRole("region", { name: /./ })).not.toBeInTheDocument();
-    // Said in the right column, where the group would be; the live region says it once more,
-    // to a screen reader only.
+    // Said on the page of every match, where the group would be; the live region says it once
+    // more, to a screen reader only.
+    expect(screen.getByRole("region", { name: "No setting found" })).toBeInTheDocument();
     expect(
-      screen.getByText("No setting at this level matches “colour of the moon”.", {
+      screen.getByText("No setting matches “colour of the moon”.", {
         ignore: "[role=status]",
       }),
     ).toBeVisible();
@@ -152,14 +158,15 @@ describe("filtering the Settings tab by name", () => {
     expect(count()).toHaveTextContent("1 setting matches");
 
     await userEvent.type(box(), "zzz");
-    expect(count()).toHaveTextContent("No setting at this level matches “terminal textzzz”.");
+    expect(count()).toHaveTextContent("No setting matches “terminal textzzz”.");
   });
 
-  it("puts the whole nav back when the box is cleared, at the group that was shown", async () => {
+  it("puts the whole nav back when the box is cleared, at the group picked while it searched", async () => {
     render(<SettingsTab />);
 
     await userEvent.type(box(), "your editor");
     expect(inNav()).toEqual(["Editor"]);
+    await userEvent.click(group("Editor"));
     await userEvent.clear(box());
 
     expect(inNav()).toEqual([
@@ -181,6 +188,16 @@ describe("filtering the Settings tab by name", () => {
     ]);
     expect(group("Editor")).toHaveAttribute("aria-current", "page");
     expect(count()).toHaveTextContent(/^$/);
+  });
+
+  it("puts back the group shown before, when nothing was picked while it searched", async () => {
+    render(<SettingsTab />);
+    await userEvent.click(group("Editor"));
+
+    await userEvent.type(box(), "text size");
+    await userEvent.clear(box());
+
+    expect(group("Editor")).toHaveAttribute("aria-current", "page");
   });
 
   it("clears the box at Escape", async () => {
@@ -210,12 +227,15 @@ describe("filtering the Settings tab by name", () => {
 });
 
 describe("the filtered nav, by keyboard", () => {
-  it("is reached by Tab from the box at the first group still in it", async () => {
+  it("is reached by Tab from the box, past Set here, at every match, its first page", async () => {
     render(<SettingsTab />);
 
     await userEvent.type(box(), "your editor");
     await userEvent.tab();
+    await userEvent.tab();
 
+    expect(allResults()).toHaveFocus();
+    await userEvent.keyboard("{ArrowDown}");
     expect(group("Editor")).toHaveFocus();
   });
 

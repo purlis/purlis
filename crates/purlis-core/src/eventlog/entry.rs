@@ -144,6 +144,14 @@ pub enum Entry {
         number: Option<u32>,
         step: super::secretasks::Step,
     },
+    /// A stop of chat `number`'s, or of no chat where none: a block, a hold, a loop pause or
+    /// an answer to an ask ([`Recorder::stop`]).
+    Stop {
+        plane: PathBuf,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        number: Option<u32>,
+        stop: super::stops::Stop,
+    },
 }
 
 impl Entry {
@@ -259,6 +267,11 @@ impl Recorder {
                 number,
                 step,
             } => one(self.secret_ask(&plane, number, step)),
+            Entry::Stop {
+                plane,
+                number,
+                stop,
+            } => one(self.stop(&plane, number, &stop)),
             Entry::SkillTyped {
                 plane,
                 number,

@@ -35,32 +35,34 @@ import {
   built,
   copyFixturePlane,
 } from "../harness.js";
-import { endEveryChat, pressAndStart } from "../opening.js";
+import { endEveryChat, pressAndStart, showView } from "../opening.js";
 import { PROJECTS, ask, inFront, keepTheNotices, openFromTheStrip } from "../switching.js";
 
 /**
- * **Every kind of Blocking ask is found from the ✋ alone** (#6001, spec #5997, ADR 0121
- * decisions 2 and 4, Consequences). The specs that shipped ADR 0119 opened their views directly,
- * so none of them checked that a request can be seen from the ✋, and asks went unseen.
+ * **Every kind of Blocking ask is found from its project's tab** (#6001, spec #5997, ADR 0121
+ * decisions 2 and 4, Consequences, amended 2026-11-12). The specs that shipped ADR 0119 opened
+ * their views directly, so none of them checked that a request can be seen from where it is
+ * counted, and asks went unseen. (The file keeps its name from when the ✋ counted every project.)
  *
  * Here each kind is raised **in another project and another workspace** than the one in front:
  * projects of the spec's own, opened beside the launch's, their chats started in their `beta`
  * workspace. One keeps its sandbox at the floor, as the run's own project does, and its chats ask;
  * the other has it in force (`[sandbox] mode = "on"`), which its consent needs. The launch's
- * project is then brought to the front, and from there, with **no view opened by the test**, each
- * kind must be:
+ * project is then brought to the front, and from there, opening nothing but Asks, each kind
+ * must be:
  *
- * - **counted** by the ✋, as "+N elsewhere", and that N is how many rows Asks lists for the
- *   other projects;
- * - **listed** by Asks, which opens on all projects, as a row of its own under its project's
- *   chat, saying what it asks (#1921);
- * - **answerable in place**: its row is titled as its kind is, and a decision's options stand on
+ * - **counted** on its own project's tab on the rail; the ✋ counts the project in front alone
+ *   (#6341, ADR 0121 amended 2026-11-12, decision 1), so it never counts it, and the Asks in
+ *   front lists no other project's ask (#6340, decision 4);
+ * - **reached from that tab**: pressed, its project is in front, and its own Asks, on Project,
+ *   lists it as a row of its own, saying what it asks;
+ * - **answerable on its row**: its row is titled as its kind is, and a decision's options stand on
  *   it (ADR 0121 amended 2026-11-09), or a typed ask keeps its Answer.
  *
- * Each is then answered there, in the project in front, with its refusal or the cheapest safe
- * answer: the answer goes to the project that holds it (#1921). The asking project is then
- * brought forward, and **the asker is told**: the chat's pane, or the command's own ending, says
- * so. Each kind is a test of its own, so a failure names its kind.
+ * Each is then answered there, in its own project, with its refusal or the cheapest safe answer,
+ * and **the asker is told**: the chat's pane, or the command's own ending, says so. Each kind is a
+ * test of its own, so a failure names its kind. Reaching an ask from its notification is held by
+ * `AsksEveryProject.window.test.tsx`: the click comes from the desktop, which no spec presses.
  *
  * **Nothing is faked past the harness.** The reporting harness (`wdio.state.conf.ts`) raises
  * each chat's ask through the real `charter` (`harness.ts`): a permission through its hook, a
@@ -82,14 +84,12 @@ import { PROJECTS, ask, inFront, keepTheNotices, openFromTheStrip } from "../swi
  * is ended, its projects are closed, and the launch's project is in front.
  */
 
-/** The title bar's hand. */
-const HAND = '[data-testid="title-bar"] [data-testid="needs-you-button"]';
 /** The Asks view, wherever the right side's bar draws it. */
 const INBOX = '[role="tabpanel"][data-view="asks"]';
-/** The right bar's ✋: its count is in its name, after "Asks". */
-const ASKS_TAB = '[role="tablist"][aria-label="Attention"] [role="tab"][aria-label="Asks"]';
-/** The rows of `root`'s asks in the Asks of another project (#1921): under its chats' groups. */
-const theirRows = (root: string) => `${INBOX} [data-elsewhere^="${root}#"] .inbox-ask[role="row"]`;
+/** The rows of the asks in an Asks view. */
+const ROWS = `${INBOX} .inbox-ask[role="row"]`;
+/** Any row or line of another project's asks, which no Asks draws since #6340. */
+const ELSEWHERE = `${INBOX} [data-elsewhere], ${INBOX} [role="rowgroup"][data-others]`;
 
 /** One of the spec's own projects: its folder, which is the name Asks gives it. */
 type Project = { root: string; name: string };
@@ -151,43 +151,66 @@ async function toFront(plane: string): Promise<void> {
   );
 }
 
-/** What Asks lists of the window's other projects, project by project, and what the ✋ counts
- *  elsewhere; one pass. */
-async function elsewhere(roots: readonly string[]): Promise<{
-  counted: number | null;
-  lines: { root: string; count: number; says: string[]; texts: string[] }[];
+/** What each of `roots`' tabs on the rail counts (null where it has no tab), and how many rows or
+ *  lines of another project's asks are drawn anywhere in sight (#6340, #6341); one pass. */
+async function counted(roots: readonly string[]): Promise<{
+  tabs: (number | null)[];
+  elsewhere: number;
 }> {
   return browser.execute(
-    (tab: string, inbox: string, all: string[]) => {
-      const [, badge] = (document.querySelector(tab)?.getAttribute("aria-labelledby") ?? "").split(
-        /\s+/,
-      );
-      const said = badge ? (document.getElementById(badge)?.textContent ?? "") : "";
-      const counted = /\+(\d+) elsewhere/.exec(said);
+    (strip: string, elsewhere: string, all: string[]) => {
+      // Each project's tab says its count in its description: "1 waiting".
+      const tabSays = (root: string) => {
+        const tab = [...document.querySelectorAll<HTMLElement>(`${strip} [role="tab"]`)].find(
+          (one) => one.getAttribute("data-directory") === root,
+        );
+        if (tab === undefined) return null;
+        const said = (tab.getAttribute("aria-describedby") ?? "")
+          .split(/\s+/)
+          .map((id) => document.getElementById(id)?.textContent ?? "")
+          .join(" ");
+        return Number(/\b(\d+) waiting\b/.exec(said)?.[1] ?? 0);
+      };
       return {
-        counted: counted ? Number(counted[1]) : null,
-        lines: all.map((root) => {
-          const rows = [
-            ...document.querySelectorAll<HTMLElement>(
-              `${inbox} [data-elsewhere^="${root}#"] .inbox-ask[role="row"]`,
-            ),
-          ];
-          return {
-            root,
-            count: rows.length,
-            says: rows.map((row) => row.querySelector(".ask-says")?.textContent?.trim() ?? ""),
-            texts: rows.map((row) => row.innerText.replace(/\s+/g, " ").trim()),
-          };
-        }),
+        tabs: all.map(tabSays),
+        elsewhere: [...document.querySelectorAll<HTMLElement>(elsewhere)].filter(
+          (one) => one.getClientRects().length > 0,
+        ).length,
       };
     },
-    ASKS_TAB,
-    INBOX,
+    PROJECTS,
+    ELSEWHERE,
     [...roots],
   );
 }
 
-/** Asks's own words, for a failure to say what it showed. */
+/** **Puts the Asks in sight on Project**, the whole project's asks: Asks opens on Chat (#6340),
+ *  and a sandbox consent or a command confirmation is no chat's. */
+async function onProject(): Promise<void> {
+  await showView("Asks");
+  await browser
+    .waitUntil(
+      () =>
+        browser.execute((inbox: string) => {
+          const view = [...document.querySelectorAll<HTMLElement>(inbox)].find(
+            (one) => one.getClientRects().length > 0,
+          );
+          const group = view?.querySelector('[role="radiogroup"]');
+          const project = [
+            ...(group?.querySelectorAll<HTMLInputElement>('input[type="radio"]') ?? []),
+          ].find((one) => (one.getAttribute("aria-label") ?? "").startsWith("Project"));
+          if (project === undefined) return false;
+          if (!project.checked) project.click();
+          return project.checked;
+        }, INBOX),
+      { timeout: 20_000, interval: 250 },
+    )
+    .catch(async () => {
+      throw new Error(`Asks never listed Project; it says: ${await asksSaid()}`);
+    });
+}
+
+/** Asks's own words, for a failure to say what it showed. */ /** Asks's own words, for a failure to say what it showed. */
 async function asksSaid(): Promise<string> {
   return browser.execute((inbox: string) => {
     // Every project's view keeps its Asks drawn behind the one in front: each is said, and
@@ -219,7 +242,7 @@ type Kind = {
   waits?: string;
   /** Raises it. */
   raise: () => Promise<void>;
-  /** Answers it on its row in the Asks of the project in front, with the row in hand (#1921). */
+  /** Answers it on its row in its own project's Asks, with the row in hand. */
   answer: (row: string) => Promise<void>;
   /** Waits until the asker was told; throws, saying what it saw, if it never was. */
   told: () => Promise<void>;
@@ -269,8 +292,7 @@ async function panesTell(kind: string, words: string | RegExp): Promise<void> {
     });
 }
 
-/** **Waits for `row` to stand**, and says what Asks shows where it never does: a row of another
- *  project's is drawn again as that project's window tells its asks again (#1921). */
+/** **Waits for `row` to stand**, and says what Asks shows where it never does. */
 async function rowNow(row: string): Promise<void> {
   await $(row)
     .waitForExist({ timeout: 20_000, interval: 250 })
@@ -473,7 +495,7 @@ const KINDS: Kind[] = [
   },
 ];
 
-describe("every Blocking ask, found from the ✋ alone (#6001)", function () {
+describe("every Blocking ask, found from its project's tab (#6001, #6341)", function () {
   // A chat's start, the walk between two projects, and the asker's wait to be told.
   this.timeout(300_000);
 
@@ -544,58 +566,51 @@ describe("every Blocking ask, found from the ✋ alone (#6001)", function () {
   });
 
   for (const kind of KINDS) {
-    it(`finds and answers a ${kind.name} from the ✋ alone`, async () => {
+    it(`finds and answers a ${kind.name} from its project's tab`, async () => {
       await kind.raise();
       expect(await inFront()).toBe(front);
 
-      // **From the ✋ alone**: the hand is the one thing pressed, and only if Asks is not open.
-      if (!(await $(INBOX).isDisplayed())) await $(HAND).click();
-      await $(INBOX)
-        .waitForDisplayed({ timeout: 20_000 })
-        .catch(() => {
-          throw new Error(`${kind.name}: the ✋ did not open Asks`);
-        });
-
-      // **Counted and listed** (#1921): the asking project's ask is a row of its own here, saying
-      // what it asks, and the ✋ counts, elsewhere, every row another project has here.
+      // **Counted on its own project's tab** (#6341), and listed in no Asks of the project in
+      // front (#6340), with Asks open there.
+      await showView("Asks");
       const roots = [mine.root, walled.root];
-      let seen = await elsewhere(roots);
-      const listed = () => {
-        const line = seen.lines.find((one) => one.root === kind.from.root);
-        const { waits } = kind;
-        return (
-          line !== undefined &&
-          (line.says.some((said) => kind.says.test(said)) ||
-            (waits !== undefined && line.texts.some((text) => text.includes(waits))))
-        );
-      };
+      let seen = await counted(roots);
       await browser
         .waitUntil(
           async () => {
-            seen = await elsewhere(roots);
-            return listed() && seen.counted === seen.lines.reduce((all, one) => all + one.count, 0);
+            seen = await counted(roots);
+            return (seen.tabs[roots.indexOf(kind.from.root)] ?? 0) > 0;
           },
           { timeout: 90_000, interval: 500 },
         )
         .catch(async () => {
           const kept = await keepTheNotices(`every-ask-${kind.source}`);
           throw new Error(
-            `${kind.name}: not counted or not listed from the ✋. The ✋ counts ${seen.counted} elsewhere; ` +
-              `the rows say ${JSON.stringify(seen.lines)}; Asks says: ${await asksSaid()} (kept: ${kept})`,
+            `${kind.name}: not counted on its project's tab. The tabs count ${JSON.stringify(seen.tabs)}; ` +
+              `Asks says: ${await asksSaid()} (kept: ${kept})`,
           );
         });
+      expect(seen.elsewhere).toBe(0);
 
-      // The ✋ brought no project forward: the Asks in front lists every project's (#1921).
-      expect(await inFront()).toBe(front);
-      // **Answerable in place** (#1921): its row, in the Asks in front, under its own project.
-      const row = `${theirRows(kind.from.root)}[data-source="${kind.source}"]`;
+      // **Reached from its tab**: pressed, its project is in front, and its own Asks lists it.
+      await toFront(kind.from.root);
+      await onProject();
+      const row = `${ROWS}[data-source="${kind.source}"]`;
       await $(row)
         .waitForDisplayed({ timeout: 20_000 })
         .catch(async () => {
           throw new Error(
-            `${kind.name}: Asks has no row for it here; it says: ${await asksSaid()}`,
+            `${kind.name}: its project's Asks has no row for it; it says: ${await asksSaid()}`,
           );
         });
+      // Saying what it asks.
+      const says = (await $(row).$(".ask-says").isExisting())
+        ? await $(row).$(".ask-says").getText()
+        : "";
+      expect(
+        kind.says.test(says.trim()) ||
+          (kind.waits !== undefined && (await $(row).getText()).includes(kind.waits)),
+      ).toBe(true);
       if (kind.decision) {
         await expect($(row).$(".inbox-question")).toHaveText(kind.decision.title);
         // **Its options stand on its row**, nothing behind Answer.
@@ -608,22 +623,20 @@ describe("every Blocking ask, found from the ✋ alone (#6001)", function () {
         await expect($(row).$("button=Answer")).toBeExisting();
       }
 
-      // Answered here, in the project in front: the answer goes to the project that holds it.
+      // Answered in its own project, whose panes are drawn, so the asker is told there.
       await kind.answer(row);
-      // The asker is told in its own project, whose panes are drawn once it is in front.
-      await toFront(kind.from.root);
       await kind.told();
     });
   }
 
   // A chat's browser holds a site back inside the real browser engine, which this run has not:
   // pending until a spec of the browser run drives a chat's browser.
-  it("finds and answers a browser site from the ✋ alone (needs the browser run's engine)");
+  it("finds and answers a browser site from its project's tab (needs the browser run's engine)");
 
   // A host is asked about only where the project's sandbox is in force, and there purlis starts
   // no chat whose program lives where a chat may write: this run's harness lives in the run's
   // own temporary folder. Pending until the run keeps its harness outside it.
   it(
-    "finds and answers a sandbox host block from the ✋ alone (needs a harness outside what a chat may write)",
+    "finds and answers a sandbox host block from its project's tab (needs a harness outside what a chat may write)",
   );
 });

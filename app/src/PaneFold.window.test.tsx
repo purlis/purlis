@@ -4,6 +4,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { namedWithoutItsWords } from "./a11y.testkit";
 import type { Offer } from "./actions";
 import type { Shown } from "./bindings";
 import { LayoutPanes } from "./LayoutPanes";
@@ -242,8 +243,7 @@ describe("Split right and Split down below the minimum (#4766)", () => {
 });
 
 describe("a folded pane's name (#4766)", () => {
-  it("is its own words, so what is seen is what is heard", async () => {
-    const { default: axe } = await import("axe-core");
+  it("is its own words, so what is seen is what is heard", () => {
     const { container } = render(
       <PaneRail
         as="bar"
@@ -263,9 +263,7 @@ describe("a folded pane's name (#4766)", () => {
     expect(
       screen.getByRole("button", { name: "devops 2, 3 notices, folded, asks you" }),
     ).toBeInTheDocument();
-    const found = await axe.run(container, {
-      runOnly: { type: "rule", values: ["label-content-name-mismatch", "button-name"] },
-    });
-    expect(found.violations).toEqual([]);
+    // Label in Name, asked of the button itself: axe's rule cannot fail in jsdom (#6371).
+    expect(namedWithoutItsWords(container)).toEqual([]);
   });
 });

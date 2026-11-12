@@ -108,7 +108,21 @@ pub struct Pool {
     profiles: Option<Vec<String>>,
     /// Values in its row its limits can't be, kept as they were typed (#4381).
     refused_limits: Vec<crate::poollimits::RefusedValue>,
+    /// **Where its engine is, where it is on another machine** (#6266, ADR 0123): kind
+    /// `remote-docker`, its route and pin. `None` is this machine's own Docker.
+    remote: Option<Remote>,
 }
+
+/// **The engine of a pool on another machine** (#6266, ADR 0123 §2–§3): the SSH route to it, and
+/// the host key and engine id it is pinned to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Remote {
+    pub route: crate::sshroute::Route,
+    pub pin: crate::sshroute::Pin,
+}
+
+/// The kind of a pool on another machine, in its row (#6266).
+pub const REMOTE_DOCKER: &str = "remote-docker";
 
 /// **What one hour of a pool's runner costs, as the pool declares it** (#3491, the person's
 /// ruling of 2026-10-28): `pricePerHour {amount, currency}`. The amount is kept as the decimal
@@ -193,7 +207,19 @@ impl Pool {
             price: None,
             profiles: None,
             refused_limits: Vec::new(),
+            remote: None,
         })
+    }
+
+    /// **This pool, its engine on another machine** (`remote`, #6266), or this machine's (`None`).
+    #[must_use]
+    pub fn on(self, remote: Option<Remote>) -> Pool {
+        Pool { remote, ..self }
+    }
+
+    /// Where its engine is, where it is on another machine (#6266).
+    pub fn remote(&self) -> Option<&Remote> {
+        self.remote.as_ref()
     }
 
     /// **How its runner's browsers are watched over the link** (#3297): what the person set,
@@ -285,6 +311,7 @@ impl Pool {
             price: self.price.clone(),
             profiles: self.profiles.clone(),
             refused_limits: self.refused_limits.clone(),
+            remote: self.remote.clone(),
             ..Pool::new(&self.name, self.image.clone(), set)?
         })
     }
@@ -1858,8 +1885,16 @@ fn pool_to_row(pool: &Pool) -> serde_json::Value {
     let mut row = serde_json::json!({
         "name": pool.name(),
         "kind": "docker",
-        "image": pool.image().as_str(),
     });
+    if let Some(remote) = pool.remote() {
+        row["kind"] = REMOTE_DOCKER.into();
+        row["route"] = remote.route.spelled().into();
+        row["pin"] = serde_json::json!({
+            "hostKey": remote.pin.host_key.spelled(),
+            "engine": remote.pin.engine,
+        });
+    }
+    row["image"] = pool.image().as_str().into();
     let set = pool.set();
     if let Some(millicpus) = set.millicpus {
         row["cpus"] = if millicpus % 1000 == 0 {
@@ -1980,6 +2015,8 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         "frames",
         "width",
         "profiles",
+        "route",
+        "pin",
     ];
     if fields
         .keys()
@@ -1988,9 +2025,11 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         return None;
     }
     let text = |key: &str| fields.get(key).and_then(serde_json::Value::as_str);
-    if text("kind")? != "docker" {
-        return None;
-    }
+    let remote = match text("kind")? {
+        "docker" if !fields.contains_key("route") && !fields.contains_key("pin") => None,
+        REMOTE_DOCKER => Some(remote_from_row(fields)?),
+        _ => return None,
+    };
     // A key that is there must be a number of its kind; one left out is the default.
     fn count<T: TryFrom<u64>>(value: Option<&serde_json::Value>) -> Option<Option<T>> {
         match value {
@@ -2037,8 +2076,32 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         .ok()
         .map(|pool| Pool {
             refused_limits,
+            remote,
             ..pool
         })
+}
+
+/// A `remote-docker` row's `route` and `pin` (#6266): a route that names its socket, and both
+/// halves of the pin. Anything else is not as purlis writes it.
+fn remote_from_row(fields: &serde_json::Map<String, serde_json::Value>) -> Option<Remote> {
+    let route = crate::sshroute::Route::parse(fields.get("route")?.as_str()?).ok()?;
+    route.socket()?;
+    let pin = fields.get("pin")?.as_object()?;
+    if pin.len() != 2 {
+        return None;
+    }
+    let host_key = crate::sshroute::HostKey::parse(pin.get("hostKey")?.as_str()?).ok()?;
+    let engine = pin.get("engine")?.as_str()?;
+    if !usable_noted(engine) {
+        return None;
+    }
+    Some(Remote {
+        route,
+        pin: crate::sshroute::Pin {
+            host_key,
+            engine: engine.to_owned(),
+        },
+    })
 }
 
 /// The kind a cluster pool's row, and its runner's, are of (#3292).
