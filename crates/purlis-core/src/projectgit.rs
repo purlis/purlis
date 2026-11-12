@@ -112,7 +112,9 @@ pub fn refusal(cmd: &str, cwd: &str, root: &str, chat_dir: &Path) -> Option<(Str
         return None;
     }
     let project_git = real_git_dir(&root_real)?;
-    let segments = shellseg::joined_argv(cmd)?;
+    // A heredoc body nothing runs is data, and only the substitutions of one the shell
+    // expands run (#6293).
+    let segments = shellseg::joined_argv(&crate::heredoc::commands_a_shell_runs(cmd))?;
     let argvs: Vec<Vec<String>> = segments.iter().map(|s| s.argv.clone()).collect();
     let exported = shellwrap::exported_env(&argvs);
     for (segment, before) in segments.iter().zip(exported.iter()) {
@@ -293,6 +295,28 @@ mod tests {
             "ls",
         ] {
             assert_eq!(p.asked_from_workspace(cmd, &p.workspace()), None, "{cmd}");
+        }
+    }
+
+    /// A heredoc body nothing runs is data (#6293), and what a shell does run is still read.
+    #[test]
+    fn a_heredoc_body_nothing_runs_takes_no_lock() {
+        let p = Project::new();
+        for cmd in [
+            "cat >> ledger.md <<'EOF'\ngit push\nEOF",
+            "cat > p.sh <<-'EOF'\n\tgit commit -am x\n\tEOF",
+            "cat > notes.md <<EOF\ngit fetch for $USER\nEOF",
+        ] {
+            assert_eq!(p.asked_from_workspace(cmd, &p.workspace()), None, "{cmd}");
+        }
+        for cmd in [
+            "cat > f <<'EOF'\nnotes\nEOF\ngit push",
+            "cat > f <<EOF\n$(git push)\nEOF",
+        ] {
+            assert!(
+                p.asked_from_workspace(cmd, &p.workspace()).is_some(),
+                "{cmd} was let through"
+            );
         }
     }
 
