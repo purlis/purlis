@@ -1788,8 +1788,15 @@ export const commands = {
 	 *  **The person sends browser `program` of project `plane` to the address they typed** (#2176),
 	 *  from its view tab: http and https only, any other scheme refused in words, and an address
 	 *  the browser's reach refuses outright said so before it loads. A site new to the project is
-	 *  held back as an address the agent writes is, and the answer names it to ask about. Never a
-	 *  chat's browser, which its chat drives. The window's alone (`ui::WINDOW_ONLY`).
+	 *  held back as an address the agent writes is, and the answer names it to ask about. The
+	 *  window's alone (`ui::WINDOW_ONLY`).
+	 * 
+	 *  **A chat's browser goes where its chat sends it**, except one the chat handed the person
+	 *  through `ask_operator` (#6290): while that Ask waits, the chat's own acts on it are refused,
+	 *  so the person may send it on. It is judged by the chat's reach, exactly as the chat's next
+	 *  `browser_navigate` would be (`ChatBrowsers::reach_for_the_person`); a site new to the project
+	 *  is held back and waits as the chat's own sites ask; and the browser stays the person's, the
+	 *  Ask waiting on their Done.
 	 */
 	goBrowser: (plane: PlaneId, program: string, address: string) => typedError<Went, string>(__TAURI_INVOKE("go_browser", { plane, program, address })),
 	/**  The sessions that are running, in the order they were opened. */
