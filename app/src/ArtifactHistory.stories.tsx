@@ -105,7 +105,12 @@ export const Compared: Story = {
     const page = within(canvasElement.ownerDocument.body);
     const compare = await page.findByRole("button", { name: "Compare" });
     await userEvent.click(compare);
-    await expect(await page.findByText(/data\.json › open/)).toBeVisible();
+    const said = await page.findByText(/data\.json › open/);
+    // Compare is pressed while the dialog may still be fading in, so its answer can arrive
+    // unseen (#6360): whether it is seen is read once the dialog has arrived, and read again
+    // until it is, as the fade's end is the engine's (as NoneYet does).
+    await untilSettled(said.closest('[data-scope="dialog"][data-part="scrim"]') ?? said);
+    await waitFor(() => expect(said).toBeVisible());
   },
 };
 
