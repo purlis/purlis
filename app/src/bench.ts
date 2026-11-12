@@ -275,6 +275,49 @@ function heldOnScreen(
   });
 }
 
+/**
+ * How long the window must go on showing a project in front with nothing to open before a
+ * switch ends on it (#6200). A chat's pane is drawn in the commit that draws its tab in front,
+ * so this only covers a view drawn with an empty pane for a moment before its chat's comes.
+ */
+const NOTHING_TO_OPEN_MS = 500;
+
+/** What the tab in front draws when it is not a chat (#6200), or `undefined` if the window
+ *  shows a pane, or nothing yet: an empty pane, which a project with no chats shows, or a view. */
+function frontThatIsNotAChat(): string | undefined {
+  if (document.querySelector('[data-testid="pane"]') !== null) return undefined;
+  const view = document.querySelector('[role="tabpanel"][data-view]');
+  if (view !== null) return `the ${view.getAttribute("data-view")} view`;
+  if (document.querySelector('[data-testid="empty-pane"]') !== null) return "an empty pane";
+  return undefined;
+}
+
+/**
+ * **The window's own sign that the project in front has nothing to open** (#6200): no pane in
+ * the window, and its tab in front drawn as an empty pane or a view, for
+ * {@link NOTHING_TO_OPEN_MS} on end, with no pane of the project opened meanwhile (`opened`).
+ * Answers what the tab in front is. Looked for every frame while `looking` says so.
+ */
+function nothingToOpen(looking: () => boolean, opened: () => boolean): Promise<string> {
+  return new Promise((found) => {
+    let since: number | undefined;
+    const look = () => {
+      if (!looking()) return;
+      // Not the frame's own timestamp: an engine may count it from elsewhere.
+      const now = performance.now();
+      const front = opened() ? undefined : frontThatIsNotAChat();
+      if (front === undefined) since = undefined;
+      else if (since === undefined) since = now;
+      else if (now - since >= NOTHING_TO_OPEN_MS) {
+        found(front);
+        return;
+      }
+      requestAnimationFrame(look);
+    };
+    look();
+  });
+}
+
 /** What the panes of `plane` in the window show, for a job that never saw `needle` there:
  *  how many there are, and for each whether it holds the text and what it had been sent. */
 function whatTheWindowShowed(
@@ -287,7 +330,8 @@ function whatTheWindowShowed(
     (one) =>
       `session ${one.session} (${one === armed ? "opened for the switch" : "already open"}, ` +
       `${holds(one.terminal, needle) ? "holds it" : "does not hold it"}, ` +
-      `sent ${one.chunks} pieces, ${one.characters} characters)`,
+      `sent ${one.chunks} pieces, ${one.characters} characters, ` +
+      `its screen ends ${JSON.stringify(lastLine(one.terminal))})`,
   );
   const lost =
     armed !== undefined && !inTheWindow(armed) ? "the pane opened for it is not in the window" : "";
@@ -296,6 +340,17 @@ function whatTheWindowShowed(
     .filter((part) => part !== "")
     .join("; ");
   return { panes: panes.length, said };
+}
+
+/** The last line `terminal` shows with anything on it, at most 80 characters of it: where a
+ *  program that never printed a sentinel stopped (#6237). */
+function lastLine(terminal: Terminal): string {
+  const buffer = terminal.buffer.active;
+  for (let y = buffer.length - 1; y >= 0; y--) {
+    const line = buffer.getLine(y)?.translateToString(true) ?? "";
+    if (line.trim() !== "") return line.slice(0, 80);
+  }
+  return "";
 }
 
 /** Whether `terminal` holds `needle` on its screen or in its history. */
@@ -560,16 +615,28 @@ async function work(plan: Plan): Promise<unknown> {
       // the window before the press, nor by its session** (#6198): the project being left may
       // hold the same sentinel for a frame or two, and a session number is only half of which
       // chat it is. `built` says whether the pane that painted was opened for the switch.
+      // **Or the project's tab in front is not a chat** (#6200): a view, or the empty pane of a
+      // project with no chats, which nothing will ever paint, said as soon as the window shows it.
       let looking = true;
       const arrived = await Promise.race([
         opened,
         heldOnScreen(plan.sentinel, plan.plane, () => looking),
+        nothingToOpen(
+          () => looking,
+          () => armed !== undefined,
+        ).then((front) => ({ front })),
         sleep(plan.patienceMs ?? 60_000).then(() => undefined),
       ]);
       looking = false;
       awaited = undefined;
       // Whichever won, the pane armed is waiting for nothing now.
       if (armed !== undefined) armed.waiting = undefined;
+      if (arrived !== undefined && "front" in arrived) {
+        drawnMs();
+        throw new Error(
+          `project ${plan.plane} is in front with no pane to open: its tab in front is ${arrived.front}`,
+        );
+      }
       if (arrived === undefined) {
         const showed = whatTheWindowShowed(plan.plane, plan.sentinel, armed);
         const why = showed.said === "" ? "" : `: ${showed.said}`;
