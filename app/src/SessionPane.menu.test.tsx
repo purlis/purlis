@@ -208,16 +208,17 @@ describe("a right-click on a terminal", () => {
     const menu = await screen.findByRole("menu");
     expect(asked.defaultPrevented).toBe(true);
     expect(within(menu).getAllByRole("menuitem").map(rowName)).toEqual([
+      "Links in this pane…",
       "Copy",
       "Paste",
       "Select all",
       "Split right",
       "End chat 1",
     ]);
-    // The terminal's rows are the first group, and the pane's follow in the groups every
-    // menu on the panes has (`menuModel.menuOf`), a line before each: how it is split, and
-    // last what ends the chat.
-    expect(within(menu).getAllByRole("separator")).toHaveLength(2);
+    // Away from a link, *Links in this pane…* leads under a line of its own (#6219). The
+    // terminal's rows follow, and the pane's come after in the groups every menu on the panes
+    // has (`menuModel.menuOf`), a line before each: how it is split, and last what ends the chat.
+    expect(within(menu).getAllByRole("separator")).toHaveLength(3);
     // What the menu is about is said once, on the menu, and by no row.
     expect(menu.getAttribute("aria-label")).toBe("Terminal");
     expect(written).toEqual([]);
@@ -247,7 +248,8 @@ describe("a right-click on a terminal", () => {
       expect(
         within(menu)
           .getAllByRole("menuitem")
-          .slice(0, 3)
+          // After *Links in this pane…* (#6219).
+          .slice(1, 4)
           .map((item) => [
             rowName(item),
             item.querySelector('[data-part="label"]')?.textContent,
@@ -742,8 +744,11 @@ describe("the menu from the keyboard", () => {
     const menu = await screen.findByRole("menu");
     await waitFor(() => expect(document.activeElement).toBe(menu));
 
-    // The first arrow goes to the first row that can run, the last to the last.
+    // The first arrow goes to the first row that can run, the last to the last: *Links in this
+    // pane…* (#6219), then past Copy, off with nothing selected, to Paste.
     fireEvent.keyDown(menu, { key: "ArrowDown" });
+    await waitFor(() => expect(document.activeElement).toBe(row(menu, "Links in this pane…")));
+    fireEvent.keyDown(document.activeElement ?? menu, { key: "ArrowDown" });
     await waitFor(() => expect(document.activeElement).toBe(row(menu, "Paste")));
     fireEvent.keyDown(document.activeElement ?? menu, { key: "ArrowDown" });
     await waitFor(() => expect(document.activeElement).toBe(row(menu, "Select all")));

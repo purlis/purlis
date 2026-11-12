@@ -768,6 +768,8 @@ export const SHORTCUTS: readonly Shortcut[] = [
     // no byte to a terminal's program, so it is the pane's off a Mac, as Ctrl+Shift+F is.
     chords: { mac: [PANE_LINKS.mac], other: [PANE_LINKS.other] },
     said: linksListKeySaid,
+    // The terminal's menu row that opens the list (#6219) says this key, drawn and to a reader.
+    rows: ["terminal.links"],
     yields: [],
     matches: opensTheLinksList,
   },
