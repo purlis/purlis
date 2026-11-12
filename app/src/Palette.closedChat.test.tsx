@@ -73,7 +73,7 @@ const ready = (id: string, title: string) =>
 
 describe("a closed chat found by its number in the palette", () => {
   it("finds the finished row by 641, opens its card, and Read it opens its screen's tab", async () => {
-    const asked = core((n) => (n === 641 ? { found: "ended", card: CARD } : { found: "no_chat" }));
+    const asked = core((n) => (n === 641 ? { is: "ended", card: CARD } : { is: "no_chat" }));
     const ran: Offer[] = [];
     const onRun = vi.fn((offer: Offer): Ran => {
       ran.push(offer);
@@ -85,7 +85,7 @@ describe("a closed chat found by its number in the palette", () => {
     const palette = await open();
     await userEvent.keyboard("641");
     const row = await within(palette).findByRole("option", {
-      name: /Finished chat #641 · Signed commits #5607/,
+      name: /Show closed chat #641 · Signed commits #5607/,
     });
     expect(asked).toContain(641);
     await userEvent.click(row);
@@ -101,7 +101,7 @@ describe("a closed chat found by its number in the palette", () => {
   });
 
   it("Reopen on the card reopens its task", async () => {
-    core(() => ({ found: "ended", card: CARD }));
+    core(() => ({ is: "ended", card: CARD }));
     const ran: Offer[] = [];
     render(
       <Palette
@@ -116,7 +116,7 @@ describe("a closed chat found by its number in the palette", () => {
     const palette = await open();
     await userEvent.keyboard(`#${641}`);
     await userEvent.click(
-      await within(palette).findByRole("option", { name: /Finished chat #641/ }),
+      await within(palette).findByRole("option", { name: /Show closed chat #641/ }),
     );
     const card = await screen.findByRole("dialog", { name: "#641 · Signed commits #5607" });
     await userEvent.click(within(card).getByRole("button", { name: "Reopen" }));
@@ -125,12 +125,12 @@ describe("a closed chat found by its number in the palette", () => {
   });
 
   it("Escape takes the card down first, and the palette stays", async () => {
-    core(() => ({ found: "ended", card: CARD }));
+    core(() => ({ is: "ended", card: CARD }));
     render(<Palette offers={[]} chats={{ plane: PLANE }} onRun={() => ({ ok: true })} />);
     const palette = await open();
     await userEvent.keyboard("641");
     await userEvent.click(
-      await within(palette).findByRole("option", { name: /Finished chat #641/ }),
+      await within(palette).findByRole("option", { name: /Show closed chat #641/ }),
     );
     await screen.findByRole("dialog", { name: "#641 · Signed commits #5607" });
     await userEvent.keyboard("{Escape}");
@@ -141,14 +141,14 @@ describe("a closed chat found by its number in the palette", () => {
   });
 
   it("a number no chat had adds no row, and words are never looked up", async () => {
-    const asked = core(() => ({ found: "no_chat" }));
+    const asked = core(() => ({ is: "no_chat" }));
     render(<Palette offers={[]} chats={{ plane: PLANE }} onRun={() => ({ ok: true })} />);
     const palette = await open();
     await userEvent.keyboard("tab");
     await userEvent.clear(within(palette).getByRole("combobox"));
     await userEvent.keyboard("9999");
     await waitFor(() => expect(asked).toContain(9999));
-    expect(within(palette).queryByRole("option", { name: /Finished chat/ })).toBeNull();
+    expect(within(palette).queryByRole("option", { name: /Show closed chat/ })).toBeNull();
     expect(asked.every((n) => Number.isInteger(n))).toBe(true);
   });
 });

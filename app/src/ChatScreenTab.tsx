@@ -14,11 +14,15 @@ import { ReadOnlyTerminal } from "./ReadOnlyTerminal";
 import { NotRead, ReadingRows, useRead } from "./SkillPanels";
 import { textSizes } from "./textSize";
 import { EmptyState } from "./ui/empty-state/EmptyState";
-import { SCREEN_NOT_KEPT } from "./closedChat";
 
 /** The size a kept screen is drawn at: a chat's own pane's, wide. */
 const SCREEN_COLUMNS = 120;
 const SCREEN_ROWS = 40;
+
+/** Why a closed task's screen may not be there: what the empty tab says under its headline. */
+export const NOT_KEPT_WHY =
+  "A task's screen is kept only while its record is, and only where this machine keeps them " +
+  "([task_screens] keep in charter.local.toml).";
 
 /** What the tab says of itself beside the screen. */
 export const CHAT_SCREEN_NOTE = "What this task's chat showed as it closed. It takes no input.";
@@ -55,13 +59,13 @@ export function ChatScreenTab({
         <EmptyState
           variant="panel"
           headline="This chat's screen is not kept"
-          body={SCREEN_NOT_KEPT}
+          body={NOT_KEPT_WHY}
           testid="chat-screen-not-kept"
         />
       ) : (
         <ReadOnlyTerminal
           screen={screen.data}
-          label={title}
+          label="The chat's last screen"
           note={CHAT_SCREEN_NOTE}
           cols={SCREEN_COLUMNS}
           rows={SCREEN_ROWS}

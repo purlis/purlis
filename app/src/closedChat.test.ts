@@ -34,22 +34,22 @@ const CARD: ChatCard = {
 };
 
 describe("a chat found by its number in the palette (#6214)", () => {
-  it("a finished chat is one row, titled by its outcome, its number and its name, that opens its card", () => {
-    const rows = numberRows({ number: 641, found: { found: "ended", card: CARD } });
-    expect(rows.map((row) => row.title)).toEqual(["Finished chat #641 · Signed commits #5607"]);
+  it("a closed chat is one row, titled by its number and its name, that opens its card", () => {
+    const rows = numberRows({ number: 641, lookup: { is: "ended", card: CARD } });
+    expect(rows.map((row) => row.title)).toEqual(["Show closed chat #641 · Signed commits #5607"]);
     expect(opensACard(rows[0])).toBe(true);
     expect(rows[0].id).toBe(cardRowId(641));
   });
 
   it("the finished row is found by 641 and by #641, and not by another number", () => {
-    const rows = numberRows({ number: 641, found: { found: "ended", card: CARD } });
+    const rows = numberRows({ number: 641, lookup: { is: "ended", card: CARD } });
     expect(narrow("641", rows)).toHaveLength(1);
     expect(narrow(`#${641}`, rows)).toHaveLength(1);
     expect(narrow("642", rows)).toHaveLength(0);
   });
 
   it("a chat started again shows the chat under its new number", () => {
-    const rows = numberRows({ number: 641, found: { found: "restarted", now: 668 } });
+    const rows = numberRows({ number: 641, lookup: { is: "restarted", now: 668 } });
     expect(rows).toHaveLength(1);
     expect(rows[0].title).toBe("Show chat #668, started again from #641");
     expect(rows[0].does).toEqual({ verb: "showChat", session: 668 });
@@ -57,18 +57,24 @@ describe("a chat found by its number in the palette (#6214)", () => {
   });
 
   it("an open chat and no chat add no row: an open one's own rows find it", () => {
-    expect(numberRows({ number: 641, found: { found: "open", number: 641 } })).toEqual([]);
-    expect(numberRows({ number: 9999, found: { found: "no_chat" } })).toEqual([]);
+    expect(numberRows({ number: 641, lookup: { is: "open", number: 641 } })).toEqual([]);
+    expect(numberRows({ number: 9999, lookup: { is: "no_chat" } })).toEqual([]);
     expect(numberRows(undefined)).toEqual([]);
   });
 
-  it("the card says how and when it ended, and that it is no open chat now", () => {
-    expect(cardWhen(CARD)).toBe("Finished at 11:08 · it is in no list of open chats now");
+  it("the card says how and when it ended, and that its chat has closed", () => {
+    expect(cardWhen(CARD)).toBe("Done at 11:08 · its chat has closed");
   });
 
-  it("a task the person closed reads Closed, and one blocked reads Blocked", () => {
-    expect(outcomeOf("closed_by_person").badge).toBe("Closed");
-    expect(outcomeOf("blocked").badge).toBe("Blocked");
-    expect(outcomeOf("failed").badge).toBe("Failed");
+  it("says each end in the words a finished row says, coloured by how it went", () => {
+    const of = (how: ChatCard["task"]["how"], outcome: string) => outcomeOf({ how, outcome });
+    expect(of("done", "done")).toMatchObject({ badge: "Done", variant: "ok" });
+    expect(of("closed_by_person", "closed by you")).toMatchObject({
+      badge: "Closed by you",
+      variant: "neutral",
+    });
+    expect(of("failed", "failed")).toMatchObject({ badge: "Failed", variant: "waiting" });
+    // A blocked task is said as a failed one with the core's own word beside it.
+    expect(of("blocked", "blocked").said).toBe("Failed (blocked)");
   });
 });

@@ -14,42 +14,46 @@
  *   another number.
  */
 import { useEffect, useRef, useState } from "react";
-import { commands, type ChatCard, type ChatLookup, type How, type PlaneId } from "./bindings";
+import {
+  commands,
+  type ChatCard,
+  type ChatLookup,
+  type FinishedTask,
+  type PlaneId,
+} from "./bindings";
+import { qualifierOf, shownOf } from "./finished";
 import { chatNumberIn, chatNumberSaid, numberedName } from "./chatNumber";
 import type { ViewRef } from "./tabs";
 import type { Offer } from "./actions";
 
-/** The badge on a card, and the words that say how it ended: Finished, Blocked, Failed, or
- *  Closed where the person or purlis ended it (D8 of the prototype's map). */
+/** The badge on a card, and the words that say how it ended. */
 export type CardOutcome = { badge: string; variant: "ok" | "waiting" | "neutral"; said: string };
 
-/** How a card says each end. Only a task the person closed reads "Closed"; one purlis stopped
- *  at a limit says so in its words. */
-export function outcomeOf(how: How): CardOutcome {
-  switch (how) {
-    case "done":
-      return { badge: "Finished", variant: "ok", said: "Finished" };
-    case "cancelled":
-      return { badge: "Cancelled", variant: "neutral", said: "Cancelled by the chat that asked" };
-    case "blocked":
-      return { badge: "Blocked", variant: "waiting", said: "Stopped blocked" };
-    case "failed":
-      return { badge: "Failed", variant: "waiting", said: "Failed" };
-    case "unreported":
-      return { badge: "Failed", variant: "waiting", said: "Ended without a report" };
-    case "last_message":
-      return { badge: "Finished", variant: "neutral", said: "Ended on its last message" };
-    case "stopped_by_person":
-      return { badge: "Closed", variant: "neutral", said: "Stopped by you" };
-    case "closed_by_person":
-      return { badge: "Closed", variant: "neutral", said: "Closed by you" };
-    case "stopped_at_limit":
-      return { badge: "Stopped", variant: "waiting", said: "Stopped at its time limit" };
-    case "stopped_with_above":
-      return { badge: "Stopped", variant: "waiting", said: "Stopped with the task above it" };
-    case "stopped_at_token_limit":
-      return { badge: "Stopped", variant: "waiting", said: "Stopped at its token limit" };
-  }
+/**
+ * **How a card says its task ended**: the words a finished row says (`finished.ts`, `shownOf`
+ * and `qualifierOf`, one map for the window), capitalised for a badge and a sentence. A badge is
+ * the success colour for a task done, the waiting colour for one that failed or was stopped, and
+ * plain otherwise.
+ */
+export function outcomeOf(task: Pick<FinishedTask, "how" | "outcome">): CardOutcome {
+  const shown = shownOf(task);
+  const word = shown?.word ?? task.outcome;
+  const more = qualifierOf(task);
+  const variant =
+    shown?.kind === "done"
+      ? "ok"
+      : shown?.token === "state.failed" || shown?.shape === "square"
+        ? "waiting"
+        : "neutral";
+  return {
+    badge: capitalised(word),
+    variant,
+    said: capitalised(more === undefined ? word : `${word} (${more})`),
+  };
+}
+
+function capitalised(words: string): string {
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 /** When it ended, as a clock says it: `11:08`. Nothing where the record keeps no end. */
@@ -65,11 +69,11 @@ export function cardTitle(card: ChatCard): string {
   return numberedName(card.number, card.task.name);
 }
 
-/** The card's line under its title: "Finished at 11:08 · it is in no list of open chats now". */
+/** The card's line under its title: "Done at 11:08 · its chat has closed". */
 export function cardWhen(card: ChatCard): string {
   const at = endedAt(card.task.ended);
-  const how = outcomeOf(card.task.how).said;
-  return `${at === undefined ? how : `${how} at ${at}`} · it is in no list of open chats now`;
+  const how = outcomeOf(card.task).said;
+  return `${at === undefined ? how : `${how} at ${at}`} · its chat has closed`;
 }
 
 /** What *Read it* says where nothing was kept: the person's ruling of 2026-11-11. */
@@ -96,9 +100,9 @@ export function cardRowId(number: number): string {
   return `chat.card:${number}`;
 }
 
-/** The palette's finished row's title: "Finished chat #641 · Signed commits #5607". */
+/** The palette's row for a closed chat: "Show closed chat #641 · Signed commits #5607". */
 export function cardRowTitle(card: ChatCard): string {
-  return `${outcomeOf(card.task.how).badge} chat ${cardTitle(card)}`;
+  return `Show closed chat ${cardTitle(card)}`;
 }
 
 /** The palette's row for a chat open again under `now`, found by its old number `was`. */
@@ -111,12 +115,9 @@ export function restartedRowTitle(was: number, now: number): string {
  * newest answer to the query typed now, none while the query is no number or there is no project
  * to ask. An answer to an older query is never shown, and a refusal names nothing.
  */
-export function useChatByNumber(
-  plane: PlaneId | undefined,
-  query: string,
-): { number: number; found: ChatLookup } | undefined {
+export function useChatByNumber(plane: PlaneId | undefined, query: string): ByNumber | undefined {
   const number = chatNumberIn(query);
-  const [found, setFound] = useState<{ asked: string; found: ChatLookup }>();
+  const [answered, setAnswered] = useState<{ asked: string; lookup: ChatLookup }>();
   const newest = useRef(0);
   const asked = `${plane ?? ""}\n${number ?? ""}`;
   useEffect(() => {
@@ -128,19 +129,24 @@ export function useChatByNumber(
         if (ask !== newest.current) return;
         // Only a lookup is an answer: anything else names nothing.
         const data: unknown = said.status === "ok" ? said.data : undefined;
-        const answer =
-          typeof data === "object" && data !== null && "found" in data
+        const lookup =
+          typeof data === "object" && data !== null && "is" in data
             ? (data as ChatLookup)
-            : ({ found: "no_chat" } as const);
-        setFound({ asked, found: answer });
+            : NO_CHAT;
+        setAnswered({ asked, lookup });
       })
       .catch(() => {
-        if (ask === newest.current) setFound({ asked, found: { found: "no_chat" } });
+        if (ask === newest.current) setAnswered({ asked, lookup: NO_CHAT });
       });
   }, [plane, number, asked]);
-  if (plane === undefined || number === undefined || found?.asked !== asked) return undefined;
-  return { number, found: found.found };
+  if (plane === undefined || number === undefined || answered?.asked !== asked) return undefined;
+  return { number, lookup: answered.lookup };
 }
+
+const NO_CHAT: ChatLookup = { is: "no_chat" };
+
+/** What a number the palette was asked for names: the number, and the core's lookup of it. */
+export type ByNumber = { number: number; lookup: ChatLookup };
 
 /** Whether palette row `offer` is a finished chat's, which opens its card in place. */
 export function opensACard(offer: Offer): boolean {
@@ -153,30 +159,30 @@ export function opensACard(offer: Offer): boolean {
  * another number, which shows it. None for an open chat (its own rows are found already) and
  * for no chat. Each carries the number, so the search ranks it with the chat's own rows.
  */
-export function numberRows(byNumber: { number: number; found: ChatLookup } | undefined): Offer[] {
+export function numberRows(byNumber: ByNumber | undefined): Offer[] {
   if (byNumber === undefined) return [];
-  const { number, found } = byNumber;
-  if (found.found === "ended")
+  const { number, lookup } = byNumber;
+  if (lookup.is === "ended")
     return [
       {
         id: cardRowId(number),
-        title: cardRowTitle(found.card),
+        title: cardRowTitle(lookup.card),
         available: true,
         reason: "",
         does: { verb: "nothing" },
-        name: found.card.task.name,
-        note: "Shows its card: how it ended, its report, Read it and Reopen.",
+        name: lookup.card.task.name,
+        note: `${cardWhen(lookup.card)}. Shows its card, with Read it and Reopen.`,
         chat: number,
       },
     ];
-  if (found.found === "restarted")
+  if (lookup.is === "restarted")
     return [
       {
         id: `chat.restarted:${number}`,
-        title: restartedRowTitle(number, found.now),
+        title: restartedRowTitle(number, lookup.now),
         available: true,
         reason: "",
-        does: { verb: "showChat", session: found.now },
+        does: { verb: "showChat", session: lookup.now },
         chat: number,
       },
     ];

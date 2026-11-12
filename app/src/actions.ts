@@ -29,9 +29,11 @@
  * gave travels to the operator as the core's own sentence rather than as whatever a `catch`
  * decided to say about it.
  */
+import { chatScreenTitle, chatScreenView } from "./closedChat";
 import { splitRefused } from "./paneFold";
 import type { Size } from "./paneDrop";
 import type {
+  ChatCard,
   ChatWorktree,
   Curations,
   ExtensionCommand,
@@ -6603,3 +6605,23 @@ export function pinToWorkspaceRow(at: BranchPath): Offer {
 /** Why a page of the plane root offers no Pin to workspace. */
 const PLANE_ROOT_PAGE =
   "A page is pinned to a workspace. Open it from that workspace's files to pin it there.";
+
+/** ***Read it* on a closed chat's card** (#6214): its kept last screen, read-only, in a view tab
+ *  named by the card's title. */
+export function readItOffer(card: ChatCard): Offer {
+  const title = chatScreenTitle(card);
+  return can(`chat.read:${card.chat}`, title, {
+    verb: "openView",
+    view: chatScreenView(card),
+    title,
+  });
+}
+
+/** ***Reopen* on a closed chat's card** (#6214): its task's conversation started again as an
+ *  ordinary chat, as Reopen on its finished row does. */
+export function reopenTaskOffer(card: ChatCard): Offer {
+  return can(`chat.reopen:${card.task.id}`, `Reopen ${card.task.name}`, {
+    verb: "reopenTask",
+    id: card.task.id,
+  });
+}

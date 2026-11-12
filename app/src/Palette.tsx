@@ -10,6 +10,8 @@ import {
   aim,
   inPalette,
   narrow,
+  readItOffer,
+  reopenTaskOffer,
   PASS_THROUGH_ID,
   PASS_THROUGH_KEY,
   revealSaid,
@@ -26,13 +28,7 @@ import {
 } from "./bindings";
 import { useArtifactFind } from "./artifactFind";
 import { ClosedChatCardPopover } from "./ClosedChatCard";
-import {
-  chatScreenTitle,
-  chatScreenView,
-  numberRows,
-  opensACard,
-  useChatByNumber,
-} from "./closedChat";
+import { numberRows, opensACard, useChatByNumber } from "./closedChat";
 import { hitSaid, scopeSaid, useFileFind, type Part } from "./fileFind";
 import { isKey, noteWithoutKey, pressed, rowAriaKeys, rowKey } from "./keys/registry";
 import {
@@ -450,6 +446,9 @@ export function Palette({
   const byNumber = useChatByNumber(open && scope === "actions" ? chats?.plane : undefined, query);
   const listing =
     scope === "projects" ? projectRows : [...numberRows(byNumber), ...inPalette(offers)];
+  /** The closed chat whose card is open beside its row, where one is. */
+  const card =
+    byNumber?.lookup.is === "ended" && carded !== undefined ? byNumber.lookup.card : undefined;
   const rows = open ? narrow(query, listing) : [];
   const ladder = files?.ladder ?? [];
   const finding = open && scope === "projects" && ladder.length > 0;
@@ -899,9 +898,9 @@ export function Palette({
         />
       )}
       {/* A finished chat's card (#6214), beside its row. */}
-      {byNumber?.found.found === "ended" && carded !== undefined && (
+      {card !== undefined && (
         <ClosedChatCardPopover
-          card={byNumber.found.card}
+          card={card}
           triggerRef={cardAt}
           isOpen
           onOpenChange={(isOpen) => {
@@ -909,29 +908,10 @@ export function Palette({
             setCarded(undefined);
             box.current?.focus();
           }}
-          onRead={() => {
-            const card = byNumber.found.found === "ended" ? byNumber.found.card : undefined;
-            if (card === undefined) return;
-            const title = chatScreenTitle(card);
-            runOffer({
-              id: `chat.read:${card.chat}`,
-              title,
-              available: true,
-              reason: "",
-              does: { verb: "openView", view: chatScreenView(card), title },
-            });
-          }}
+          onRead={() => runOffer(readItOffer(card))}
           onReopen={() => {
-            const card = byNumber.found.found === "ended" ? byNumber.found.card : undefined;
-            if (card === undefined) return;
             setCarded(undefined);
-            runOffer({
-              id: `chat.reopen:${card.task.id}`,
-              title: `Reopen ${card.task.name}`,
-              available: true,
-              reason: "",
-              does: { verb: "reopenTask", id: card.task.id },
-            });
+            runOffer(reopenTaskOffer(card));
           }}
         />
       )}

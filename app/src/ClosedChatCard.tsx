@@ -22,6 +22,7 @@ import { Button, ButtonRow } from "./ui/button/Button";
 import { Fact, Facts } from "./ui/card/Facts";
 import { HeldPopover } from "./ui/popover/Popover";
 import { NO_REPORT, SCREEN_NOT_KEPT, cardTitle, cardWhen, outcomeOf } from "./closedChat";
+import { whyNoReopen } from "./finished";
 
 /** Why *Reopen* does nothing on a card whose task names no conversation. */
 export const NO_CONVERSATION =
@@ -40,10 +41,8 @@ export function ClosedChatCard({
   onRead: () => void;
   onReopen: () => void;
 }) {
-  const outcome = outcomeOf(card.task.how);
-  const cannotReopen = card.task.reopens
-    ? (card.task.not_reopened ?? undefined)
-    : (card.task.not_reopened ?? NO_CONVERSATION);
+  const outcome = outcomeOf(card.task);
+  const cannotReopen = whyNoReopen(card.task);
   return (
     <div className="closed-chat-card" data-testid="closed-chat-card">
       <div className="closed-chat-card-head">
