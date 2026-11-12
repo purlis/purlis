@@ -48,6 +48,7 @@ mod browsers;
 mod changes;
 mod chatbrowsers;
 mod chatevents;
+mod chatlisting;
 mod chatmoves;
 mod chats;
 mod clipath;
@@ -543,6 +544,9 @@ pub(crate) const PLUGIN_DIR: &str = "plugin";
 /// background agents is not in the queue (#1626), so it raises none.
 fn told(app: &tauri::AppHandle, moved: Moved) {
     asknotify::moved(app, &moved);
+    // A page on `purlis.chats` is a reader of the board too (#6235).
+    chatlisting::moved(&moved.plane, moved.session);
+    artifacts::live::chats_moved(app, &moved.plane, moved.session);
     if let Some(batches) = app.try_state::<chatevents::Batches>() {
         batches.tell(chatevents::ChatEvent::Moved(moved));
     }

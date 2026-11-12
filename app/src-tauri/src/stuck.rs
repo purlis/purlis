@@ -176,6 +176,14 @@ impl Noticed {
         self.look(chat);
     }
 
+    /// **What the window was last told of chat `chat`** (#6235): whether it reads Stuck?, and
+    /// whether its folder holds work left behind, where that is known. A read.
+    pub fn told_of(&self, chat: u32) -> (bool, Option<bool>) {
+        held_lock(&self.said)
+            .get(&chat)
+            .map_or((false, None), |said| (said.stuck.is_some(), said.left_work))
+    }
+
     /// Chat `chat` began or got back a command, or its turn put something out.
     pub fn heard(&self, chat: u32) {
         held_lock(&self.watch).heard(chat, now());

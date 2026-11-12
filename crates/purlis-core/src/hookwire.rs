@@ -1524,6 +1524,10 @@ pub enum Ask {
     /// running as its persona (#1450). The app answers [`Answer::Working`] from its own record
     /// of its open chats, or [`Answer::No`] with the refusal.
     WhereWorking(WhereWorking),
+    /// The chats of this chat's workspace, as the window's Chats tree has them (#6235): the
+    /// `chats` tool. The app answers [`Answer::Chats`] from its own record of its open chats
+    /// and, with `history`, the workspace's dispatch records, or [`Answer::No`].
+    Chats(ChatsAsk),
     /// Spend a ticket: dispatch a task to a persona (#1436). The app answers
     /// [`Answer::Dispatched`], [`Answer::NeedsGrant`], or [`Answer::No`] with the refusal.
     /// Boxed for `Open`'s reason.
@@ -1829,6 +1833,24 @@ pub struct RemovalAsk {
 pub enum Removing {
     /// A workspace of this project, by the name the command was given.
     Workspace { name: String },
+}
+
+/// A chat asking for its workspace's chats ([`crate::catalogue::chats`], #6235).
+///
+/// **It names no chat but itself and no workspace, and that is the guard**, as
+/// [`WhereWorking`]'s: the workspace is the app's record of the chat whose token the line
+/// carries, so a line can only list the chats of the workspace that chat works in. No ticket,
+/// for a record's reason: nothing is made or moved by the answer.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ChatsAsk {
+    /// The chat asking, from [`CHAT_ENV`].
+    pub chat: u32,
+    /// Also the workspace's ended dispatches.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub history: bool,
+    /// How many of those, where it was given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
 }
 
 /// A chat asking where it is working ([`crate::awareness`], #1450).
@@ -2420,6 +2442,9 @@ pub enum Answer {
     /// Where the chat is working (#1450): names, tasks and states from the app's own record,
     /// and what changed since the chat was last told. Boxed: it is the largest answer.
     Working(Box<crate::awareness::Working>),
+    /// The chats of the asking chat's workspace ([`Ask::Chats`], #6235): the `purlis.chats`
+    /// answer's data, names, states and times only.
+    Chats { data: serde_json::Value },
     /// What a chat's router points its prompt at (SK-15c): the text its hook adds to the turn's
     /// context, in purlis's own words, or none.
     Pointed {
@@ -2667,6 +2692,7 @@ impl Ask {
             Self::Vaults { chat } | Self::Keys { chat, .. } => *chat,
             Self::Secret(asked) => asked.chat,
             Self::WhereWorking(asks) => asks.chat,
+            Self::Chats(asks) => asks.chat,
             Self::Dispatch(dispatch) => dispatch.chat,
             Self::Task(asked) => asked.chat,
             Self::Removal(removal) => removal.chat,
