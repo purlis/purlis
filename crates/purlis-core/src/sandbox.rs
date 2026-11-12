@@ -393,17 +393,26 @@ impl CertificateChecks {
 }
 
 /// The `[sandbox]` block that turns the sandbox on with the default egress, as charter writes it
-/// into a new project's `charter.toml` and into an existing one whose operator took the offer
-/// (ADR 0067 §1, ruling V21 1 and 5). It ends with a newline.
+/// into a project's `charter.toml` whose operator took the offer (ADR 0067 §1, ruling V21 1 and 5).
+/// A new project is scaffolded with [`scaffold_block`] instead. It ends with a newline.
 pub fn on_block() -> String {
+    format!("[{TABLE}]\nmode = \"on\"\n{}", default_egress_line())
+}
+
+/// The `[sandbox]` block a new project's `charter.toml` is scaffolded with: the default egress
+/// and no `mode`, so its chats start at the person's own default, Basic sandbox (the floor),
+/// rather than at a level nobody chose (Q114, Q201). It ends with a newline.
+pub fn scaffold_block() -> String {
+    format!("[{TABLE}]\n{}", default_egress_line())
+}
+
+/// `egress = [...]` with the default presets, and a newline.
+fn default_egress_line() -> String {
     let egress: Vec<String> = Preset::DEFAULT
         .iter()
         .map(|preset| format!("\"{}\"", preset.word()))
         .collect();
-    format!(
-        "[{TABLE}]\nmode = \"on\"\negress = [{}]\n",
-        egress.join(", ")
-    )
+    format!("egress = [{}]\n", egress.join(", "))
 }
 
 /// A plane's `charter.toml`, read and parsed once for everything the sandbox asks of it: the
@@ -452,6 +461,16 @@ impl Plane {
     /// Whether there is no file at all.
     pub fn missing(&self) -> bool {
         self.missing
+    }
+
+    /// Whether it has a `[sandbox]` table that names no `mode`: the shape [`scaffold_block`]
+    /// writes, and that no project made before the sandbox existed has (Q231).
+    pub fn leaves_the_level_to_each_person(&self) -> bool {
+        self.top
+            .as_ref()
+            .and_then(|top| top.get(TABLE))
+            .and_then(toml::Value::as_table)
+            .is_some_and(|table| !table.contains_key("mode"))
     }
 
     /// What it says about the sandbox.
