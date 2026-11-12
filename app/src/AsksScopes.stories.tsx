@@ -11,7 +11,7 @@ import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, within } from "storybook/test";
 import type { Shown } from "./bindings";
-import { Inbox } from "./Inbox";
+import { Inbox, NO_CHAT_FOCUSED } from "./Inbox";
 import { forgetAsksScope } from "./asksScope";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
 
@@ -142,12 +142,15 @@ export const OneWorkspace: Story = {
   },
 };
 
-/** **No chat focused**: Chat is greyed and out of the keyboard's way; Asks lists Workspace. */
+/** **No chat focused**: Chat is greyed and out of the keyboard's way, its reason its description
+ *  for a screen reader; Asks lists Workspace. */
 export const NoChatFocused: Story = {
   args: { focused: false },
   play: async ({ canvasElement }) => {
     const scopes = chips(canvasElement);
-    await expect(scopes.getByRole("radio", { name: "Chat" })).toBeDisabled();
+    const chat = scopes.getByRole("radio", { name: "Chat" });
+    await expect(chat).toBeDisabled();
+    await expect(chat).toHaveAccessibleDescription(NO_CHAT_FOCUSED);
     await userEvent.tab();
     await untilFocused(
       () => scopes.getByRole("radio", { name: /^Workspace/ }),

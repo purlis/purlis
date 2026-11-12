@@ -11,6 +11,7 @@ import App from "./App";
 import type { OpenChat, Shown } from "./bindings";
 import { forgetInbox } from "./inboxRules";
 import { forgetProjectViews } from "./projectViews";
+import { keepInboxScope } from "./inboxScope";
 
 /**
  * **The ✋ counts the project in front; the Dock badge counts every open project** (#6341, ADR
@@ -266,23 +267,27 @@ describe("the ✋ counts the project in front (#6341)", () => {
     expect(badge.every((value) => value === null)).toBe(true);
   });
 
-  it("opens the Asks in front when the Asks tab is pressed, and brings no other project forward", async () => {
+  it("opens the Asks in front when the title bar's hand is pressed, and brings no other project forward, whatever scope was kept", async () => {
+    // A scope kept from before Asks stopped keeping one (#6340): the press never reads it.
+    keepInboxScope(ONE, "project");
+    const quiet = { ...chat(ONE, 1), unreported: "a shell cannot say it waits" };
     open({
-      [ONE]: { chats: [chat(ONE, 1)], asks: [], snoozed: [] },
+      [ONE]: { chats: [quiet], asks: [], snoozed: [] },
       [TWO]: { chats: [chat(TWO, 1)], asks: [permission(1, "b-1", "Run npm test")], snoozed: [] },
     });
     await waitFor(() => expect(tab("two")).toHaveAccessibleDescription(/1 waiting/));
-    const was = front();
-    expect(was).toBe("one");
+    expect(front()).toBe("one");
     // Asks put away, so the press is what opens it.
     if (screen.queryByRole("tabpanel", { name: "Asks" }) !== null) await userEvent.click(hand());
     await waitFor(() => expect(screen.queryByRole("tabpanel", { name: "Asks" })).toBeNull());
 
-    await userEvent.click(hand());
+    // Nothing waits in ONE, but its quiet chat draws the faint hand in the title bar.
+    await userEvent.click(await screen.findByTestId("needs-you-button"));
 
-    // Its Asks opens, and ONE stays in front. TWO's ask is answered in TWO's own Asks.
-    await screen.findByRole("tabpanel", { name: "Asks" });
-    expect(front()).toBe(was);
+    // ONE's own Asks opens and ONE stays in front. TWO's ask is reached from TWO's tab.
+    const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
+    expect(front()).toBe("one");
+    expect(within(inbox).queryByText("Run npm test")).toBeNull();
   });
 
   it("brings another project forward with its ask open when its notification is clicked", async () => {

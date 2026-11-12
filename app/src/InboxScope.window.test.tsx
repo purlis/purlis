@@ -175,6 +175,14 @@ describe("the scope chips (ADR 0121, amended 2026-11-12)", () => {
     expect(chats()).toEqual(["steward 3", "steward 4", "steward 8", "steward 6"]);
   });
 
+  it("says why Chat is greyed to the keyboard and a screen reader, with no pointer over it", () => {
+    draw(ALL, { ...strip("alpha"), askedBy });
+    const chat = scopes().getByRole("radio", { name: "Chat" });
+    expect(chat).toBeDisabled();
+    // Its description, read where the radio is (ADR 0104, `ui/unavailable.ts`): no hover needed.
+    expect(chat).toHaveAccessibleDescription(NO_CHAT_FOCUSED);
+  });
+
   it("lists Project for Chat with no chat focused and one workspace", () => {
     draw(ALL, { ...strip("alpha"), askedBy, oneWorkspace: true });
     expect(picked()).toBe("Project, 6 waiting on you");

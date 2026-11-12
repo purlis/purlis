@@ -100,7 +100,6 @@ import {
 } from "./InboxAlerts";
 import { useAlertFix } from "./alertFix";
 import { showOffer, type Elsewhere, type WaitingHere } from "./InboxElsewhere";
-import { keptInboxScope } from "./inboxScope";
 import { fleetStore, type EveryChat, type FleetDoes } from "./AllChats";
 import type { FleetChat } from "./everyChat";
 import { ApprovePlane } from "./ApprovePlane";
@@ -2502,25 +2501,18 @@ function App() {
   );
 
   /**
-   * **The ✋ opens the Inbox** (#1692, I-2): the project in front's, where something waits there,
-   * and otherwise the first project along the strip with something waiting, brought to the
-   * front. With nothing waiting anywhere, the Inbox in front, which says so.
-   *
-   * **Where the Asks in front lists every project's** (its scope All projects, the default), it
-   * is the one opened, and no project is brought forward (#1921): it lists and answers every
-   * open project's asks in place, so a press of the ✋ moves nothing under the person.
+   * **The ✋ opens the Asks of the project in front** (#1692, #6341), and only that: it counts
+   * that project alone (ADR 0121 amended 2026-11-12, decision 1), so a press brings no other
+   * project forward, whatever waits elsewhere. Another project's asks are reached from its own
+   * tab or its notification. Asks keeps no scope of its own (#6340, decision 4), so nothing kept
+   * under `inbox.scope` is read here.
    */
   const openInbox = useCallback(() => {
-    const front = inFrontNow.current;
-    const waits = (plane: PlaneId) => (registry.held[plane]?.length ?? 0) > 0;
-    const plane =
-      front !== undefined && (waits(front) || keptInboxScope(front) === "all")
-        ? front
-        : (planesNow.current.find(waits) ?? front);
+    const plane = inFrontNow.current;
     if (plane === undefined) return;
     setShowing({ at: "plane", plane });
     setInboxAsk((was) => ({ plane, at: (was?.at ?? 0) + 1 }));
-  }, [registry.held]);
+  }, []);
   /**
    * **A clicked notification lands on the Inbox at its chat's group** (#1694, I-7): its project
    * brought to the front, at the first chat it counted that still has something waiting there
@@ -2865,7 +2857,9 @@ function App() {
       drawn.map((project) => ({
         plane: project.plane,
         name: calledOn(project.plane),
-        waiting: registry.held[project.plane]?.length ?? askingIn(project),
+        // One count per project, the rail's (#6341): `asked`, then the registry, then its view.
+        waiting:
+          asked?.get(project.plane) ?? registry.held[project.plane]?.length ?? askingIn(project),
         workspaces: reports[project.plane]?.workspaces,
         cannotCreate: (() => {
           const create = reports[project.plane]?.offers.find(
@@ -2876,7 +2870,7 @@ function App() {
       })),
     // `calledOn` and `askingIn` read `drawn`, `reports` and the registry, named here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [drawn, registry.held, reports],
+    [asked, drawn, registry.held, reports],
   );
   /** What the title bar's switchers do (#2916): each is a row of the project's own catalogue,
    *  run by the project, so the words, the refusals and the pins are the catalogue's. */
