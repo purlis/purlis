@@ -1091,7 +1091,8 @@ fn a_sign_in_on_a_runner_runs_docker_with_settings_of_purliss_own_and_no_hooks()
     assert_eq!(
         line,
         format!(
-            "/usr/bin/env -u DOCKER_CONTEXT DOCKER_CONFIG=/data/purlis/docker-settings/sign-in \
+            "/usr/bin/env -u DOCKER_CONTEXT -u CONTAINER_CONNECTION \
+             DOCKER_CONFIG=/data/purlis/docker-settings/sign-in \
              DOCKER_CLI_HOOKS=false /usr/local/bin/docker --config \
              /data/purlis/docker-settings/sign-in --host unix:///var/run/docker.sock exec -it \
              --user 10001:10001 {ID} {PURLIS} profile sign-in work\n"
@@ -4257,4 +4258,20 @@ fn docker_infos_server_errors_are_said_and_its_id_read_only_where_it_answered() 
     );
     assert!(engine_id_in(r#"{"ID":""}"#).is_err());
     assert!(engine_id_in("not json").is_err());
+}
+
+/// A Podman reached by Docker's client says so in its components (#6269): its id is drawn anew
+/// at every ask, so it is never taken as Docker's.
+#[test]
+fn a_podman_answering_dockers_client_is_told_by_its_engines_name() {
+    assert!(is_podman_engine(
+        r#"[{"Name":"Podman Engine","Version":"4.9.3","Details":{"APIVersion":"4.9.3"}}]"#
+    ));
+    assert!(!is_podman_engine(
+        r#"[{"Name":"Engine","Version":"28.0.1"},{"Name":"containerd","Version":"1.7"}]"#
+    ));
+    assert!(!is_podman_engine(""));
+    assert!(!is_podman_engine(
+        "template: :1: can't evaluate field Components"
+    ));
 }

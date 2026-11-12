@@ -386,3 +386,205 @@ fn the_forwards_session_ends_the_whole_connection_once_purlis_lets_go() {
     assert!(HELD_BY.contains("kill -HUP \"$PPID\""), "{HELD_BY}");
     assert!(HELD_BY.starts_with("exec sh -c '"), "{HELD_BY}");
 }
+
+// --- Podman over SSH (#6269) ------------------------------------------------------------------
+
+/// What `podman system connection list --format json` prints, as Podman 4 and 5 write it.
+const CONNECTIONS: &str = r#"[
+  {"Name": "build-box", "URI": "ssh://me@build-box:22/run/user/1000/podman/podman.sock",
+   "Identity": "/home/me/.ssh/id_ed25519", "IsMachine": false, "Default": true, "ReadWrite": true},
+  {"Name": "podman-machine-default", "URI": "ssh://core@127.0.0.1:50123/run/user/501/podman/podman.sock",
+   "Identity": "/home/me/.local/share/containers/podman/machine/machine", "IsMachine": true,
+   "Default": false, "ReadWrite": true},
+  {"Name": "rootful", "URI": "ssh://root@build-box/run/podman/podman.sock", "Identity": "",
+   "IsMachine": false, "Default": false, "ReadWrite": true},
+  {"Name": "here", "URI": "unix:///run/podman/podman.sock", "Identity": "", "IsMachine": false},
+  {"Name": "odd-key", "URI": "ssh://me@build-box/run/podman/podman.sock",
+   "Identity": "keys/%h", "IsMachine": false}
+]"#;
+
+#[test]
+fn a_podman_connection_is_read_into_the_ssh_route_to_its_socket_with_its_key_file() {
+    let read = podman_connections_in(CONNECTIONS);
+    let names: Vec<&str> = read.iter().map(|one| one.name.as_str()).collect();
+    // A Podman machine of this machine's own is this machine; a socket here is no route; a key
+    // file ssh would read tokens in is no key file.
+    assert_eq!(names, ["build-box", "rootful"]);
+    let first = &read[0].route;
+    assert_eq!(
+        first.spelled(),
+        "ssh://me@build-box:22/run/user/1000/podman/podman.sock"
+    );
+    assert_eq!(first.socket(), Some("/run/user/1000/podman/podman.sock"));
+    assert_eq!(
+        first.identity(),
+        Some(Path::new("/home/me/.ssh/id_ed25519"))
+    );
+    assert_eq!(read[1].route.identity(), None);
+    assert!(podman_connections_in("not json").is_empty());
+}
+
+#[test]
+fn a_routes_key_file_is_handed_to_every_ssh_it_runs() {
+    let route = Route::parse("ssh://me@build-box:2222/run/user/1000/podman/podman.sock")
+        .unwrap()
+        .with_identity(Path::new("/home/me/.ssh/id_ed25519"))
+        .unwrap();
+    let identity = |args: &[String]| {
+        args.windows(2)
+            .find(|two| two[0] == "-i")
+            .map(|two| two[1].clone())
+    };
+    let known = Path::new("/k/known_hosts");
+    for args in [
+        forward_args(&route, "p", known, Path::new("/l/docker.sock")).unwrap(),
+        sign_in_args(&route, "p", known),
+        probe_args(&route, "p", known),
+        contact_args(&route, Path::new("/k/scratch")),
+        connect::settings_args(&route),
+    ] {
+        assert_eq!(
+            identity(&args).as_deref(),
+            Some("/home/me/.ssh/id_ed25519"),
+            "{args:?}"
+        );
+        // Before the destination, where ssh reads it as an option.
+        let at = args.iter().position(|arg| arg == "--").unwrap();
+        assert!(args.iter().position(|arg| arg == "-i").unwrap() < at);
+    }
+    // Not part of Docker's spelling, which has no place for it.
+    assert!(!route.spelled().contains("id_ed25519"));
+}
+
+#[test]
+fn a_key_file_ssh_could_misread_is_refused() {
+    let route = Route::parse("ssh://me@build-box").unwrap();
+    for bad in [
+        "relative/key",
+        "/home/me/%d/key",
+        "/home/me/key\nHost *",
+        "",
+    ] {
+        assert!(
+            route.clone().with_identity(Path::new(bad)).is_err(),
+            "{bad:?}"
+        );
+    }
+}
+
+/// What rootless Podman's `podman info --format '{{json .}}'` says of itself, in part.
+fn podman_info(socket: &str, graph_root: &str) -> serde_json::Value {
+    serde_json::json!({
+        "host": {"remoteSocket": {"exists": true, "path": socket}, "security": {"rootless": true}},
+        "store": {"graphRoot": graph_root, "runRoot": "/run/user/1000/containers"},
+        "version": {"Version": "4.9.3"}
+    })
+}
+
+#[test]
+fn a_podmans_pin_is_its_socket_and_graph_root_as_podman_info_says_them() {
+    let pin = EnginePin::podman_in(&podman_info(
+        "/run/user/1000/podman/podman.sock",
+        "/home/me/.local/share/containers/storage",
+    ))
+    .expect("a Podman's")
+    .expect("read");
+    assert_eq!(
+        pin,
+        EnginePin::Podman {
+            socket: "/run/user/1000/podman/podman.sock".into(),
+            graph_root: "/home/me/.local/share/containers/storage".into(),
+        }
+    );
+    // A remote client may name the socket by its URL.
+    assert_eq!(
+        EnginePin::podman_in(&podman_info("unix:///run/podman/podman.sock", "/var/lib/c"))
+            .unwrap()
+            .unwrap(),
+        EnginePin::Podman {
+            socket: "/run/podman/podman.sock".into(),
+            graph_root: "/var/lib/c".into(),
+        }
+    );
+    // Docker's info names no store: not a Podman's.
+    assert!(EnginePin::podman_in(&serde_json::json!({"ID": "ABCD"})).is_none());
+    // A Podman that doesn't say where, or says what no path is, is refused.
+    assert!(
+        EnginePin::podman_in(&podman_info("", "/var/lib/c"))
+            .unwrap()
+            .is_err()
+    );
+    assert!(
+        EnginePin::podman_in(&podman_info("/run/podman/podman.sock", "relative"))
+            .unwrap()
+            .is_err()
+    );
+}
+
+#[test]
+fn a_different_graph_root_under_the_same_socket_is_another_engine() {
+    let at = |graph_root: &str| EnginePin::Podman {
+        socket: "/run/user/1000/podman/podman.sock".into(),
+        graph_root: graph_root.into(),
+    };
+    assert_ne!(
+        at("/home/me/.local/share/containers/storage"),
+        at("/srv/other")
+    );
+    assert!(at("/srv/other").shown().contains("/srv/other"));
+}
+
+#[test]
+fn a_pin_is_kept_as_its_engine_says_and_read_back_whole_or_not_at_all() {
+    for engine in [
+        EnginePin::Docker("ABCD:EFGH".into()),
+        EnginePin::Podman {
+            socket: "/run/user/1000/podman/podman.sock".into(),
+            graph_root: "/home/me/.local/share/containers/storage".into(),
+        },
+    ] {
+        let pin = Pin {
+            host_key: key(),
+            engine,
+        };
+        let kept = pin.to_json();
+        assert_eq!(
+            Pin::from_json(kept.as_object().unwrap()).as_ref(),
+            Some(&pin)
+        );
+    }
+    let read = |value: serde_json::Value| Pin::from_json(value.as_object().unwrap());
+    // Both kinds at once, neither, a third key, or a Podman missing a half: not as purlis writes.
+    assert!(read(serde_json::json!({"hostKey": KEY, "engine": "A", "podman": {}})).is_none());
+    assert!(read(serde_json::json!({"hostKey": KEY})).is_none());
+    assert!(read(serde_json::json!({"hostKey": KEY, "podman": {"socket": "/s"}})).is_none());
+    assert!(
+        read(serde_json::json!({"hostKey": KEY, "podman": {"socket": "/s", "graphRoot": "g"}}))
+            .is_none()
+    );
+}
+
+#[test]
+fn a_file_is_read_there_only_where_it_is_a_plain_file_at_a_plain_path() {
+    let route = Route::parse("ssh://me@build-box/run/podman/podman.sock").unwrap();
+    let args = read_args(
+        &route,
+        "p",
+        Path::new("/k/known_hosts"),
+        "/var/lib/c/overlay-containers/abc/userdata/config.json",
+    )
+    .unwrap();
+    assert_eq!(
+        args.last().unwrap(),
+        "test -f /var/lib/c/overlay-containers/abc/userdata/config.json && exec cat -- \
+         /var/lib/c/overlay-containers/abc/userdata/config.json"
+    );
+    // Pinned, as a sign-in is.
+    assert_eq!(option(&args, "StrictHostKeyChecking"), Some("yes"));
+    for bad in ["/a b", "/a;rm", "relative", "/a/../b"] {
+        assert!(
+            read_args(&route, "p", Path::new("/k"), bad).is_err(),
+            "{bad:?}"
+        );
+    }
+}

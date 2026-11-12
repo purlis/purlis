@@ -101,7 +101,27 @@ pub fn docker_through(
             return Err(finding);
         }
     };
-    let through = docker.clone().through(socket);
+    let through = match &remote.pin.engine {
+        // A Podman is reached with Podman's own client, and the files its check reads there
+        // over the pool's pinned SSH (#6269).
+        super::EnginePin::Podman { .. } => {
+            let podman = super::podman_here().ok_or_else(|| Finding::NeedsPodman {
+                host: remote.route.host().to_owned(),
+            })?;
+            docker
+                .clone()
+                .as_program(podman)
+                .through(socket)
+                .reaching(super::Reach {
+                    ssh: ssh.to_path_buf(),
+                    route: remote.route.clone(),
+                    pool: pool.to_owned(),
+                    key: remote.pin.host_key.clone(),
+                    settings_in: settings_in.to_path_buf(),
+                })
+        }
+        super::EnginePin::Docker(_) => docker.clone().through(socket),
+    };
     if opened || !checked_lately(pool, &remote.pin) {
         if let Err(finding) = connect::engine_holds(&through, &remote.route, &remote.pin) {
             // Nothing more goes over a forward to an engine that isn't the pinned one.

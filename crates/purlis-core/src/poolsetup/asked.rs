@@ -33,6 +33,9 @@ pub struct Asked {
     pub on: Option<String>,
     /// The fingerprint of the host key the person confirmed for that machine (`SHA256:…`).
     pub trust: Option<String>,
+    /// The key file ssh signs in to that machine with, where a Podman connection names one
+    /// (#6269).
+    pub identity: Option<String>,
 }
 
 /// What [`create`] did.
@@ -212,14 +215,24 @@ pub fn remote_of(
     else {
         return Ok(None);
     };
-    let route = crate::sshroute::Route::parse(on).map_err(Refused::Other)?;
+    let identity = asked
+        .identity
+        .as_deref()
+        .map(str::trim)
+        .filter(|identity| !identity.is_empty());
+    let route = super::connecting::route_of(on, identity.map(Path::new))
+        .map_err(|finding| Refused::Other(super::connect_said(&finding)))?;
     let trust = asked.trust.as_deref().map(str::trim);
     let kept = super::read_choices(config)?.connect.and_then(|chosen| {
+        let kept = chosen.route_read().ok()?;
         let pin = chosen.trusted?;
-        let kept = crate::sshroute::Route::parse(&chosen.route).ok()?;
+        // The same machine, signed in to the same way, whether or not the socket was named.
         let same = kept == route
             || (route.socket().is_none()
-                && route.clone().with_socket(kept.socket()?).ok()? == kept);
+                && route.clone().with_socket(kept.socket()?).ok()? == kept)
+            || (identity.is_none()
+                && kept.identity().is_some()
+                && kept.spelled() == route.spelled());
         let confirmed = trust.is_none_or(|trust| trust == pin.host_key.fingerprint());
         (same && confirmed).then_some(crate::runners::Remote { route: kept, pin })
     });
@@ -229,7 +242,7 @@ pub fn remote_of(
     let said =
         |finding: crate::sshroute::connect::Finding| Refused::Other(super::connect_said(&finding));
     let Some(trust) = trust else {
-        let met = super::connecting::meet(docker, on).map_err(said)?;
+        let met = super::connecting::meet(docker, &route).map_err(said)?;
         return Err(Refused::Other(format!(
             "{} shows the key {} ({}). Check it on {}: ssh-keygen -lf \
              /etc/ssh/ssh_host_ed25519_key.pub prints it there. If it is the same, run this \
@@ -241,7 +254,7 @@ pub fn remote_of(
             met.key.fingerprint()
         )));
     };
-    super::connecting::trust(docker, on, trust)
+    super::connecting::trust(docker, &route, trust)
         .map(Some)
         .map_err(said)
 }
