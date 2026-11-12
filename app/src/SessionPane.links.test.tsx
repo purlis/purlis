@@ -149,8 +149,9 @@ describe("a pane's link candidates", () => {
     expect(candidatesIn("__https://x.com/a_b__").map((one) => one.text)).toEqual([
       "https://x.com/a_b",
     ]);
-    // A scheme is not read out of the middle of a word.
-    expect(candidatesIn("xhttps://x.com")).toEqual([]);
+    // A scheme is the whole word before `://`, never its end: `xhttps` is no https, and the
+    // core says it will not open it.
+    expect(candidatesIn("xhttps://x.com").map((one) => one.text)).toEqual(["xhttps://x.com"]);
     expect(candidatesIn("https://en.wikipedia.org/wiki/Foo_(bar)")[0].text).toBe(
       "https://en.wikipedia.org/wiki/Foo_(bar)",
     );
