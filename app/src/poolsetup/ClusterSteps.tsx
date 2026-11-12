@@ -102,9 +102,6 @@ export function CheckStep({
   );
 }
 
-const INSTALL_LEAD =
-  "Install puts purlis's cluster operator on your cluster with your own sign-in. Each part has its own button, and nothing changes until you press it.";
-
 /** How long typing rests before the operator's image is kept. */
 const KEEP_IMAGE_MS = 400;
 
@@ -206,7 +203,7 @@ export function InstallStep({
   const naming = step.parts.some((part) => part.next?.id === "choose-operator-image");
   return (
     <>
-      <StepHead title="Install" lead={INSTALL_LEAD} />
+      <StepHead title="Install" />
       {step.findings.map((finding) => (
         <p key={finding} className="pool-setup-p">
           {finding}

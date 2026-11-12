@@ -232,7 +232,7 @@ export const ReadyForTheInstall: Story = {
           "Install puts purlis's cluster operator on the cluster, a part at a time, each on its own button.",
         ],
       }),
-      ...AFTER_CHECK(3),
+      ...AFTER_CHECK(2),
     ]),
   ),
   play: async ({ canvasElement }) => {
@@ -307,7 +307,7 @@ export const AnOperatorIsInstalled: Story = {
           "A pool is a named place your chats run. On a cluster, each chat's runner is a pod the cluster operator makes from it.",
         ],
       }),
-      ...AFTER_CHECK(4),
+      ...AFTER_CHECK(3),
     ]),
   ),
   play: async ({ canvasElement }) => {
@@ -343,13 +343,13 @@ const installing = (parts: ReturnType<typeof part>[], undo: typeof UNDO | null =
     DONE_CHECK,
     step("install", "Install", "current", {
       findings: [
-        "Install puts purlis's cluster operator on the cluster, a part at a time. Each button says what it applies, and nothing changes until you press it.",
+        "Install puts purlis's cluster operator on the cluster with your own sign-in, a part at a time. Each button says what it applies, and nothing changes until you press it.",
       ],
       parts,
       see: INSTALL_SEE,
       undo,
     }),
-    ...AFTER_CHECK(3),
+    ...AFTER_CHECK(2),
   ]);
 
 export const InstallTheFirstPart: Story = {

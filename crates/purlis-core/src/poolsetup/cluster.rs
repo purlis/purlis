@@ -741,8 +741,9 @@ pub(super) fn install_reading(facts: &Facts, choices: &Choices) -> Reading {
                 return Reading::done("Installed");
             }
             Reading::to_do(
-                "Install puts purlis's cluster operator on the cluster, a part at a time. Each \
-                 button says what it applies, and nothing changes until you press it.",
+                "Install puts purlis's cluster operator on the cluster with your own sign-in, a \
+                 part at a time. Each button says what it applies, and nothing changes until you \
+                 press it.",
                 parts.iter().find_map(|part| part.next.clone()),
             )
         }
