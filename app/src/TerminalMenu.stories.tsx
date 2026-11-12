@@ -24,7 +24,7 @@ const ADDRESS = "https://github.com/purlis/purlis/pull/6148";
 
 const OPENS: ScreenLink = {
   candidate: { kind: "url", text: ADDRESS },
-  seen: { kind: "url", target: ADDRESS, does: { does: "opens" } },
+  seen: { kind: "url", target: ADDRESS, shown: ADDRESS, does: { does: "opens", into: "browser" } },
 };
 
 const REFUSED: ScreenLink = {
@@ -32,6 +32,7 @@ const REFUSED: ScreenLink = {
   seen: {
     kind: "url",
     target: "ftp://files.example/build.log",
+    shown: "ftp://files.example/build.log",
     does: { does: "refused", reason: "purlis opens only http and https addresses" },
   },
 };
