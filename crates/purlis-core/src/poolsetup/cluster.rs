@@ -1061,8 +1061,8 @@ pub(super) fn pool_reading(facts: &Facts) -> Reading {
                         action(
                             ActionId::CheckKeyAgain,
                             "Check the new key",
-                            "Shows the key the pool names now beside the one pinned. Nothing is \
-                             pinned until you paste the key your admin gives you.",
+                            "Asks for the key your admin gives you, and pins the pool's new key \
+                             only if it is the same.",
                         ),
                     );
                 }
@@ -1102,7 +1102,8 @@ pub(super) fn pool_reading(facts: &Facts) -> Reading {
             action(
                 ActionId::AddClusterPool,
                 "Read the pool's key",
-                "Reads the cluster operator key the pool names. Nothing is pinned or claimed yet.",
+                "Asks for the key your admin gave you, to check the pool's against. Nothing is \
+                 pinned or claimed yet.",
             ),
         );
     }
@@ -1134,8 +1135,9 @@ pub(super) fn pool_reading(facts: &Facts) -> Reading {
             action(
                 ActionId::AddClusterPool,
                 "Add the pool here",
-                "Pins the cluster operator key the pool names, then claims your runner of it and \
-                 pairs it with this machine. Nothing else on the cluster changes.",
+                "Checks the cluster operator key the pool names against the one your admin gave \
+                 you, pins it, then claims your runner of it and pairs it with this machine. \
+                 Nothing else on the cluster changes.",
             ),
         ),
     }

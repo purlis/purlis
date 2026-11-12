@@ -50,7 +50,7 @@ const FINISHED: PoolSetupShown = {
     pools: [],
     joining: false,
     pinned: null,
-    named_now: null,
+    key_changed: false,
   },
   steps: [
     step("where", "Where chats run", "done", { line: "Docker on this Mac" }),
@@ -77,7 +77,7 @@ const NEW: PoolSetupShown = {
     pools: [],
     joining: false,
     pinned: null,
-    named_now: null,
+    key_changed: false,
   },
   steps: [
     step("where", "Where chats run", "current", {

@@ -49,7 +49,7 @@ const setup = (at: string, steps: PoolSetupStep[], pool: string | null = null): 
     pools: [],
     joining: false,
     pinned: null,
-    named_now: null,
+    key_changed: false,
   },
 });
 
@@ -564,7 +564,7 @@ describe("Where, on a cluster (#4492)", () => {
       pools: [],
       joining: false,
       pinned: null,
-      named_now: null,
+      key_changed: false,
     },
   });
 

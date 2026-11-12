@@ -2578,7 +2578,12 @@ pub fn pin_again(
             pool.pool()
         )));
     }
-    runners::keep_cluster_pin(config_root, name, &named)
+    runners::keep_cluster_pin_confirmed(
+        config_root,
+        name,
+        &named,
+        crate::clusterpool::Confirmed::Pasted,
+    )
 }
 
 /// **What each cluster pool's kept runner is told of its deletion** (#3981): each pool's name and

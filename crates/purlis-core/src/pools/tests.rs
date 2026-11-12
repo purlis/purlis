@@ -2152,6 +2152,11 @@ mod cluster {
             .to_uppercase();
         pin_again(config.path(), &kubectl, "team", &pasted).unwrap();
         assert_eq!(pinned().key, new.key());
+        // How it was confirmed is kept with the pin.
+        assert_eq!(
+            runners::cluster_pools(config.path()).unwrap()[0].confirmed(),
+            Some(crate::clusterpool::Confirmed::Pasted)
+        );
         assert_eq!(
             pin_now(config.path(), &kubectl, "team", runners::now()),
             PinNow::Holds

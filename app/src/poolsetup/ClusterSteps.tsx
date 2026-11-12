@@ -15,7 +15,7 @@ import { Radio, RadioGroup } from "../ui/choice/Radio";
 import { CodeBlock } from "../ui/code/CodeBlock";
 import { Disclosure } from "../ui/disclosure/Disclosure";
 import { TextField } from "../ui/field/Field";
-import { addClusterPool, checkClusterPoolKey } from "../pools";
+import { addClusterPool, checkClusterPoolKey, keyNotConfirmed } from "../pools";
 import { Action, Busy, Options, Recommended, Say, SeeWhat, StepHead } from "./parts";
 
 /**
@@ -309,35 +309,38 @@ const POOL_LEAD =
 type Claiming =
   | { state: "idle" }
   | { state: "busy"; said: string }
-  | { state: "keyed"; pool: string; key: string; namespace: string }
+  /** The pool is chosen: its key is shown only once it is confirmed (#4495). */
+  | { state: "keyed"; pool: string; namespace: string; key: string | null; madeHere: boolean }
   | { state: "refused"; why: string };
 
 /** The main button's words as a key is pinned. */
 const PIN_AND_ADD = "Pin the key and add the pool";
 const PIN_AGAIN = "Pin the new key";
+const CHECK_THE_KEY = "Check the key";
 const PASTE_FIRST =
-  "Paste the key your cluster's admin gave you first. purlis pins nothing it can't check against it.";
+  "Paste the key your cluster's admin gave you first. purlis pins the pool's key only if it is the same.";
 
 /**
- * **The key a person checks before it is pinned** (#4495, F on #4469): the key the Pool names,
- * shown whole, and a box for the key their cluster's admin gave them. A teammate must paste it:
- * the core compares the two and pins nothing else. An admin who set the cluster up may leave it
- * empty, and pins the key their own cluster shows them.
+ * **The key a person confirms before it is pinned** (#4495, F on #4469): a box for the key their
+ * cluster's admin gave them, and the key the Pool names only once the core found it the same,
+ * so the box is never filled from what the cluster says. A key this machine made in this setup
+ * is shown at once, and needs no paste.
  */
 function KeyToCheck({
   pool,
   named,
+  madeHere,
   pinned,
-  joining,
   pasted,
   paste,
   error,
 }: {
   pool: string;
-  named: string;
+  /** The key the Pool names, once confirmed. */
+  named: string | null;
+  madeHere: boolean;
   /** The key pinned before, where the Pool names another now. */
   pinned?: string;
-  joining: boolean;
   pasted: string;
   paste: (pasted: string) => void;
   /** Why nothing was pinned yet, said on the box. */
@@ -345,37 +348,38 @@ function KeyToCheck({
 }) {
   return (
     <>
-      <Say tone="attention" title="Check the cluster operator key">
-        {pinned === undefined
-          ? `Pool ${pool} names the key below. purlis pins it on this machine and links only to runners its operator vouches for with it.`
-          : `Pool ${pool} now names the key below, and not the one pinned here. Your cluster's admin knows whether they changed it.`}{" "}
-        {joining
-          ? "Paste the key your admin gave you, and purlis pins it only if it is the same."
-          : "If someone else set this cluster up, paste the key they gave you, and purlis pins it only if it is the same."}
+      <Say tone={named === null ? "attention" : "news"} title="Check the cluster operator key">
+        {pinned !== undefined
+          ? `Pool ${pool} now names another key than the one pinned here. Your cluster's admin knows whether they changed it. Paste the key they give you, and purlis pins it only if it is the same.`
+          : madeHere
+            ? `Pool ${pool} names the key this machine made in this setup. purlis pins it and links only to runners its operator vouches for with it.`
+            : named === null
+              ? `Paste the key your cluster's admin gave you. purlis compares it with the key pool ${pool} names, and shows that key only if it is the same.`
+              : `Pool ${pool} names the key your admin gave you. purlis pins it and links only to runners its operator vouches for with it.`}
       </Say>
       {pinned !== undefined && <CodeBlock label="Key pinned here" text={pinned} />}
-      <CodeBlock
-        label={pinned === undefined ? "Key the pool names" : "Key the pool names now"}
-        text={named}
-      />
-      <TextField
-        label={joining ? "Key your admin gave you" : "Key your admin gave you (optional)"}
-        value={pasted}
-        onChange={paste}
-        help="Spaces, line breaks and capitals don't matter."
-        error={error}
-      />
+      {!madeHere && (
+        <TextField
+          label="Key your admin gave you"
+          value={pasted}
+          onChange={paste}
+          help="Spaces, line breaks and capitals don't matter."
+          error={error}
+        />
+      )}
+      {named !== null && <CodeBlock label="Key the pool names" text={named} />}
     </>
   );
 }
 
 /**
  * **The Pool step on a cluster** (#4494, #4495): makes a Pool in the cluster where it has none, on
- * its own button, then claims this person's runner of one: it reads the cluster operator key the
- * Pool names and shows it whole, and only a second press pins it and claims the runner, which then
- * becomes the pool this setup goes on with. A teammate joining types the pool's name where they
- * can't list the pools, and pastes their admin's key before anything is pinned. A key that changed
- * since it was pinned is checked the same way, and pinned again.
+ * its own button, then claims this person's runner of one. The key the Pool names is confirmed
+ * against the one the cluster's admin gave, pasted, and shown only once it is the same; only a
+ * key this machine made in this setup needs no paste. Then a press pins it and claims the runner,
+ * which becomes the pool this setup goes on with. A teammate joining types the pool's name where
+ * they can't list the pools. A key that changed since it was pinned is pinned again only against
+ * a paste, and the new key isn't shown before it.
  */
 export function ClusterPoolStep({
   step,
@@ -405,15 +409,18 @@ export function ClusterPoolStep({
   const paste = (typed: string) => {
     setPasted(typed);
     setPasteWhy(undefined);
+    // A key shown for one paste is checked again for another.
+    setClaiming((was) => (was.state === "keyed" && !was.madeHere ? { ...was, key: null } : was));
   };
   const [chosen, choose] = useState<string | undefined>(pools[0]);
   const [claiming, setClaiming] = useState<Claiming>({ state: "idle" });
+  const [checkingKey, setCheckingKey] = useState(false);
   const context = contexts.chosen ?? contexts.recommended ?? undefined;
   const next = step.next;
-  const busy = claiming.state === "busy";
+  const busy = claiming.state === "busy" || checkingKey;
   const making = next?.id === "create-cluster-pool";
   const typing = next?.id === "add-cluster-pool" && pools.length === 0;
-  const checkingAgain = next?.id === "check-key-again" && contexts.named_now !== null;
+  const checkingAgain = next?.id === "check-key-again" && contexts.key_changed;
   const named = name.trim() === "" ? "team" : name.trim();
   const runnerImage = teamImage.trim() === "" ? image : teamImage.trim();
 
@@ -445,18 +452,36 @@ export function ClusterPoolStep({
       });
       return;
     }
-    setClaiming({ state: "busy", said: "Reading the cluster operator key the pool names." });
-    const key = await checkClusterPoolKey("", context, pool);
-    if ("trouble" in key) setClaiming({ state: "refused", why: key.trouble });
-    else setClaiming({ state: "keyed", pool, key: key.key, namespace: key.namespace });
+    await check(pool);
   };
 
-  const needsPaste = contexts.joining && pasted.trim() === "";
+  /** Asks the core whether the key pasted is the one `pool` names: shown only if it is. */
+  const check = async (pool: string) => {
+    if (context === undefined) return;
+    // Checking a paste keeps its box where it is, with the person's focus in it.
+    if (claiming.state === "keyed") setCheckingKey(true);
+    else setClaiming({ state: "busy", said: "Reading the cluster operator key the pool names." });
+    const key = await checkClusterPoolKey("", context, pool, pasted);
+    setCheckingKey(false);
+    if ("trouble" in key) {
+      setClaiming({ state: "refused", why: key.trouble });
+      return;
+    }
+    setClaiming({
+      state: "keyed",
+      pool,
+      namespace: key.namespace,
+      key: key.key,
+      madeHere: key.made_here,
+    });
+    if (key.matches === false) setPasteWhy(keyNotConfirmed(key, pool));
+  };
 
   const claim = async (keyed: Extract<Claiming, { state: "keyed" }>) => {
     if (context === undefined) return;
-    if (needsPaste) {
-      setPasteWhy(PASTE_FIRST);
+    if (keyed.key === null) {
+      if (pasted.trim() === "") setPasteWhy(PASTE_FIRST);
+      else await check(keyed.pool);
       return;
     }
     setClaiming({ state: "busy", said: "Claiming your runner. This can take a few minutes." });
@@ -465,7 +490,7 @@ export function ClusterPoolStep({
       kubeconfig: null,
       context,
       pool: keyed.pool,
-      key: pasted.trim() === "" ? keyed.key : pasted,
+      pasted: keyed.madeHere ? null : pasted,
       vouch_wait: null,
     });
     if (refused !== undefined) {
@@ -567,7 +592,7 @@ export function ClusterPoolStep({
           <KeyToCheck
             pool={claiming.pool}
             named={claiming.key}
-            joining={contexts.joining}
+            madeHere={claiming.madeHere}
             pasted={pasted}
             paste={paste}
             error={pasteWhy}
@@ -575,12 +600,12 @@ export function ClusterPoolStep({
           <p className="pool-setup-p">Your runner is claimed in namespace {claiming.namespace}.</p>
         </>
       )}
-      {checkingAgain && contexts.named_now !== null && (
+      {checkingAgain && (
         <KeyToCheck
           pool={kept ?? ""}
-          named={contexts.named_now}
+          named={null}
+          madeHere={false}
           pinned={contexts.pinned ?? undefined}
-          joining
           pasted={pasted}
           paste={paste}
           error={pasteWhy}
@@ -597,11 +622,11 @@ export function ClusterPoolStep({
       ) : claiming.state === "keyed" ? (
         <Action
           does={
-            pasted.trim() === ""
-              ? "Pins the key shown on this machine, claims your runner of the pool and pairs it here."
-              : "Pins the key only if it is the one you pasted, then claims your runner of the pool and pairs it here."
+            claiming.key === null
+              ? "Compares the key you pasted with the one the pool names. Nothing is pinned yet."
+              : "Pins the key shown on this machine, claims your runner of the pool and pairs it here."
           }
-          main={PIN_AND_ADD}
+          main={claiming.key === null ? CHECK_THE_KEY : PIN_AND_ADD}
           onMain={() => void claim(claiming)}
           busy={busy}
         />

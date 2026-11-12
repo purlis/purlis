@@ -121,7 +121,7 @@ fn uninstalling_is_commands_that_say_how_many_people_and_claims_they_end() {
 
 #[test]
 fn a_new_signing_key_is_an_ed25519_key_in_pkcs8_pem() {
-    let key = signing_key().unwrap();
+    let (key, public) = signing_key().unwrap();
     let body: String = key
         .lines()
         .filter(|line| !line.starts_with("-----"))
@@ -132,8 +132,18 @@ fn a_new_signing_key_is_an_ed25519_key_in_pkcs8_pem() {
         .decode(body)
         .unwrap();
     // As the operator reads it (vouch.rs).
-    ring::signature::Ed25519KeyPair::from_pkcs8_maybe_unchecked(&der).unwrap();
-    assert_ne!(signing_key().unwrap(), key, "each key is new");
+    let pair = ring::signature::Ed25519KeyPair::from_pkcs8_maybe_unchecked(&der).unwrap();
+    // Its public half is the key the operator's Pools will name (#4495).
+    assert_eq!(
+        public,
+        crate::clusterpool::OperatorKey::of_public(
+            ring::signature::KeyPair::public_key(&pair)
+                .as_ref()
+                .try_into()
+                .unwrap()
+        )
+    );
+    assert_ne!(signing_key().unwrap().0, key, "each key is new");
 }
 
 /// A stand-in kubectl recording each run's words and what it was handed, which says a Secret is
@@ -173,7 +183,11 @@ esac
 #[test]
 fn a_signing_key_that_is_there_is_kept_and_no_key_is_made() {
     let dir = tempfile::tempdir().unwrap();
-    apply(&recording(dir.path(), true), PartId::SigningKey, None).unwrap();
+    assert_eq!(
+        apply(&recording(dir.path(), true), PartId::SigningKey, None).unwrap(),
+        None,
+        "a key that is there was made by no one here"
+    );
     let ran = std::fs::read_to_string(dir.path().join("ran")).unwrap();
     assert!(!ran.contains("create secret"), "{ran}");
     assert!(!dir.path().join("handed").exists());
@@ -183,7 +197,8 @@ fn a_signing_key_that_is_there_is_kept_and_no_key_is_made() {
 #[test]
 fn a_new_signing_key_goes_to_the_cluster_on_stdin_and_nowhere_else() {
     let dir = tempfile::tempdir().unwrap();
-    apply(&recording(dir.path(), false), PartId::SigningKey, None).unwrap();
+    let made = apply(&recording(dir.path(), false), PartId::SigningKey, None).unwrap();
+    assert!(made.is_some(), "the key made here is said");
     let ran = std::fs::read_to_string(dir.path().join("ran")).unwrap();
     let create = ran
         .lines()

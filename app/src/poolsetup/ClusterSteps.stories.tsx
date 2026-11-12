@@ -66,7 +66,7 @@ const CONTEXTS = {
   pools: [],
   joining: false,
   pinned: null,
-  named_now: null,
+  key_changed: false,
 };
 
 const shown = (
@@ -187,7 +187,7 @@ export const NoClusterInTheKubeconfig: Story = {
         pools: [],
         joining: false,
         pinned: null,
-        named_now: null,
+        key_changed: false,
       },
     ),
   ),
@@ -219,7 +219,7 @@ export const NoKubectl: Story = {
         pools: [],
         joining: false,
         pinned: null,
-        named_now: null,
+        key_changed: false,
       },
     ),
   ),
@@ -488,7 +488,7 @@ const onPool = (findings: string, next: PoolSetupAction, pools: string[]) =>
       pools,
       joining: false,
       pinned: null,
-      named_now: null,
+      key_changed: false,
     },
   );
 
@@ -524,11 +524,13 @@ export const TheKeyToCheckBeforeAdding: Story = {
           act(
             "add-cluster-pool",
             "Add the pool here",
-            "Pins the cluster operator key the pool names, then claims your runner of it and pairs it with this machine. Nothing else on the cluster changes.",
+            "Checks the cluster operator key the pool names against the one your admin gave you, pins it, then claims your runner of it and pairs it with this machine. Nothing else on the cluster changes.",
           ),
           ["team", "gpu"],
         );
-      if (cmd === "cluster_pool_key") return { key: KEY, namespace: "purlis-runners-3f9a1c2b" };
+      // The admin made the signing key in this setup, so its key is shown at once (#4495).
+      if (cmd === "cluster_pool_key")
+        return { key: KEY, made_here: true, matches: null, namespace: "purlis-runners-3f9a1c2b" };
       return null;
     });
   },
@@ -571,7 +573,7 @@ export const MarkThePoolAsYourOwn: Story = {
         pools: ["team"],
         joining: false,
         pinned: null,
-        named_now: null,
+        key_changed: false,
       },
     ),
   ),
@@ -601,14 +603,14 @@ const TEAMMATE = {
   pools: [],
   joining: true,
   pinned: null,
-  named_now: null,
+  key_changed: false,
 };
 
 const ADMINS_KEY = "ed25519:4b7e1a9c3d5f7b2e8a0c6d4f1b3e5a7c9d2f4b6e8a1c3d5f7b9e2a4c6d8f0b1e";
 
 export const ATeammateTypesThePoolsName: Story = {
   beforeEach: () => {
-    mockIPC((cmd) => {
+    mockIPC((cmd, args) => {
       if (cmd === "pool_setup")
         return shown(
           "pool",
@@ -621,15 +623,24 @@ export const ATeammateTypesThePoolsName: Story = {
               next: act(
                 "add-cluster-pool",
                 "Read the pool's key",
-                "Reads the cluster operator key the pool names. Nothing is pinned or claimed yet.",
+                "Asks for the key your admin gave you, to check the pool's against. Nothing is pinned or claimed yet.",
               ),
             }),
             ...AFTER_POOL,
           ],
           TEAMMATE,
         );
-      if (cmd === "cluster_pool_key")
-        return { key: ADMINS_KEY, namespace: "purlis-runners-7c2e9a41" };
+      // Shown only once the key pasted is the pool's (#4495).
+      if (cmd === "cluster_pool_key") {
+        const pasted = (args as { pasted: string | null }).pasted;
+        const matches = pasted === null ? null : pasted.trim().toLowerCase() === ADMINS_KEY;
+        return {
+          key: matches === true ? ADMINS_KEY : null,
+          made_here: false,
+          matches,
+          namespace: "purlis-runners-7c2e9a41",
+        };
+      }
       return null;
     });
   },
@@ -649,10 +660,14 @@ export const ATeammatePastesTheirAdminsKey: Story = {
     const canvas = within(canvasElement);
     await userEvent.type(await canvas.findByRole("textbox", { name: "Pool's name" }), "team");
     await userEvent.click(canvas.getByRole("button", { name: "Read the pool's key" }));
-    await canvas.findByText(ADMINS_KEY);
     const box = await canvas.findByRole("textbox", { name: "Key your admin gave you" });
-    box.focus();
-    await expect(box).toHaveFocus();
+    await expect(canvas.queryByText(ADMINS_KEY)).toBeNull();
+    await userEvent.type(box, ADMINS_KEY);
+    await userEvent.click(canvas.getByRole("button", { name: "Check the key" }));
+    await canvas.findByText(ADMINS_KEY);
+    const pin = await canvas.findByRole("button", { name: "Pin the key and add the pool" });
+    pin.focus();
+    await expect(pin).toHaveFocus();
     await expectFocusInSight();
   },
 };
@@ -663,8 +678,8 @@ export const NothingIsPinnedBeforeThePaste: Story = {
     const canvas = within(canvasElement);
     await userEvent.type(await canvas.findByRole("textbox", { name: "Pool's name" }), "team");
     await userEvent.click(canvas.getByRole("button", { name: "Read the pool's key" }));
-    const pin = await canvas.findByRole("button", { name: "Pin the key and add the pool" });
-    pin.focus();
+    const check = await canvas.findByRole("button", { name: "Check the key" });
+    check.focus();
     await userEvent.keyboard("{Enter}");
     await canvas.findByText(/Paste the key your cluster's admin gave you first/);
   },
@@ -685,7 +700,7 @@ export const AChangedKeyAsksAgain: Story = {
           next: act(
             "check-key-again",
             "Check the new key",
-            "Shows the key the pool names now beside the one pinned. Nothing is pinned until you paste the key your admin gives you.",
+            "Asks for the key your admin gives you, and pins the pool's new key only if it is the same.",
           ),
         }),
         ...AFTER_POOL,
@@ -697,15 +712,16 @@ export const AChangedKeyAsksAgain: Story = {
         pools: ["team"],
         joining: false,
         pinned: KEY,
-        named_now: NEW_KEY,
+        key_changed: true,
       },
     ),
     pool: "team",
   }),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByText(NEW_KEY);
     await canvas.findByText(KEY);
+    // The new key isn't shown before the paste (#4495).
+    await expect(canvas.queryByText(NEW_KEY)).toBeNull();
     const box = await canvas.findByRole("textbox", { name: "Key your admin gave you" });
     box.focus();
     await expect(box).toHaveFocus();
@@ -727,7 +743,7 @@ export const TheKeyPinnedHereForTeammates: Story = {
         pools: ["team"],
         joining: false,
         pinned: KEY,
-        named_now: null,
+        key_changed: false,
       },
     ),
     pool: "team",

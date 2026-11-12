@@ -435,6 +435,8 @@ pub struct Choices {
     pub tried: BTreeMap<String, u64>,
     /// That the person sent the words to their cluster's admin, and waits (#4496).
     pub admin: Option<admin::Asked>,
+    /// The signing key this setup made, by its public half (#4495).
+    pub made: Option<MadeKey>,
 }
 
 /// What this machine calls itself in a sentence.
@@ -1523,6 +1525,7 @@ pub fn read_choices(config: &Path) -> Result<Choices, Refused> {
         skipped: held.skipped,
         tried: held.tried,
         admin: held.admin,
+        made: held.made,
     })
 }
 
@@ -1549,6 +1552,8 @@ struct Held {
     tried: BTreeMap<String, u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     admin: Option<admin::Asked>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    made: Option<MadeKey>,
 }
 
 fn write_choices(config: &Path, choices: Choices) -> Result<(), Refused> {
@@ -1563,6 +1568,7 @@ fn write_choices(config: &Path, choices: Choices) -> Result<(), Refused> {
         skipped: choices.skipped,
         tried: choices.tried,
         admin: choices.admin,
+        made: choices.made,
     };
     let text = serde_json::to_string_pretty(&held)
         .map_err(|why| Refused::Other(format!("your Pool setup choices: {why}")))?;
@@ -1614,11 +1620,80 @@ pub fn install_part(
             "nothing was applied: choose your team's cluster on Where first".to_owned(),
         ));
     };
-    install::apply(
+    let made = install::apply(
         &kubectl.clone().with_context(context),
         part,
         choices.operator_image.as_deref(),
-    )
+    )?;
+    // The signing key this setup made (#4495): its own Pools' key is then pinned without a paste.
+    let Some(key) = made else {
+        return Ok(());
+    };
+    let context = context.to_owned();
+    let _locked = runners::lock(config);
+    let mut choices = read_choices(config)?;
+    choices.made = Some(MadeKey {
+        context,
+        key: key.spelled(),
+    });
+    write_choices(config, choices)
+}
+
+/// **The signing key this setup made** (#4495): on which context, and its public half, as
+/// `ed25519:` and 64 hex digits. Only the public half: the key itself went to the cluster alone.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MadeKey {
+    pub context: String,
+    pub key: String,
+}
+
+/// **How the cluster operator key `named` is confirmed before it is pinned** (#4495): by the key
+/// the person `pasted`, as their cluster's admin gave it, which must be the same; or, with
+/// nothing pasted, only where this machine made the signing key in this setup, on `context`, and
+/// `named` is its public half. Anything else pins nothing.
+pub fn confirm_key(
+    config: &Path,
+    context: &str,
+    named: &crate::clusterpool::OperatorKey,
+    pasted: Option<&str>,
+) -> Result<crate::clusterpool::Confirmed, Refused> {
+    use crate::clusterpool::{Confirmed, OperatorKey};
+    if let Some(pasted) = pasted.filter(|pasted| !pasted.trim().is_empty()) {
+        let pasted =
+            OperatorKey::from_pasted(pasted).map_err(|why| Refused::Other(why.to_string()))?;
+        return if &pasted == named {
+            Ok(Confirmed::Pasted)
+        } else {
+            Err(Refused::Other(
+                "the key you pasted isn't the one the cluster's pool names, so nothing was \
+                 pinned. Stop here and check with your cluster's admin: you may be reaching \
+                 another cluster."
+                    .to_owned(),
+            ))
+        };
+    }
+    if made_here(config, context, named) {
+        return Ok(Confirmed::MadeHere);
+    }
+    Err(Refused::Other(
+        "nothing was pinned: paste the key your cluster's admin gave you, and purlis pins the \
+         pool's key only if it is the same."
+            .to_owned(),
+    ))
+}
+
+/// **Whether this machine made the signing key whose public half is `named`, in this setup, on
+/// `context`** (#4495): then no paste is asked for.
+#[must_use]
+pub fn made_here(config: &Path, context: &str, named: &crate::clusterpool::OperatorKey) -> bool {
+    read_choices(config)
+        .ok()
+        .and_then(|choices| choices.made)
+        .is_some_and(|made| {
+            made.context == context
+                && crate::clusterpool::OperatorKey::from_spelled(&made.key)
+                    .is_ok_and(|key| &key == named)
+        })
 }
 
 /// **Makes the Pool `name` in the cluster chosen on Where** (#4494), of runner image `image` by
@@ -1796,6 +1871,7 @@ fn forget_the_new_one(config: &Path, choices: Choices) -> Result<(), Refused> {
         && choices.context.is_none()
         && choices.name.is_none()
         && choices.pool.is_none()
+        && choices.made.is_none()
     {
         return Ok(());
     }
@@ -1807,6 +1883,8 @@ fn forget_the_new_one(config: &Path, choices: Choices) -> Result<(), Refused> {
             name: None,
             name_free: false,
             pool: None,
+            // A key made in this setup confirms nothing in the next one.
+            made: None,
             ..choices
         },
     )
@@ -1900,5 +1978,8 @@ pub(crate) fn forget_pool_locked(config: &Path, pool: &str) -> Result<(), Refuse
     Ok(())
 }
 
+#[cfg(test)]
+#[path = "poolsetup/confirm_tests.rs"]
+mod confirm_tests;
 #[cfg(test)]
 mod tests;

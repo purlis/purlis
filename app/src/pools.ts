@@ -305,14 +305,28 @@ export async function checkClusterPoolKey(
   kubeconfig: string,
   context: string,
   pool: string,
+  pasted: string,
 ): Promise<ClusterPoolKey | { trouble: string }> {
   const said = await caught(
-    commands.clusterPoolKey(kubeconfig.trim() === "" ? null : kubeconfig, context, pool),
+    commands.clusterPoolKey(
+      kubeconfig.trim() === "" ? null : kubeconfig,
+      context,
+      pool,
+      pasted.trim() === "" ? null : pasted,
+    ),
   );
   if (said.status === "error") return { trouble: said.error };
-  return typeof said.data === "object" && said.data !== null && typeof said.data.key === "string"
+  return typeof said.data === "object" && said.data !== null && "made_here" in said.data
     ? said.data
-    : { trouble: "purlis did not say which key the cluster's pool names." };
+    : { trouble: "purlis did not say whether the key is the cluster's pool's." };
+}
+
+/** What a key check that showed no key says (#4495): a paste that isn't it, or none yet. */
+export function keyNotConfirmed(checked: ClusterPoolKey, pool: string): string | undefined {
+  if (checked.key !== null) return undefined;
+  return checked.matches === false
+    ? `The key you pasted isn't the one pool ${pool} names, so nothing was pinned. Stop here and check with your cluster's admin: you may be reaching another cluster.`
+    : "Paste the key your cluster's admin gave you. purlis pins the pool's key only if it is the same.";
 }
 
 /** A refused ask as the window draws it: Tauri itself refuses a command in a bare sentence, whatever

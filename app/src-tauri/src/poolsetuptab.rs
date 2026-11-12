@@ -82,8 +82,9 @@ pub struct PoolSetupContexts {
     pub joining: bool,
     /// The cluster operator key a kept cluster pool pinned here (#4495).
     pub pinned: Option<String>,
-    /// The key its Pool names now, where the pin never vouched for it (#4495).
-    pub named_now: Option<String>,
+    /// Whether its Pool names a key now that the pin never vouched for (#4495). The key itself
+    /// isn't sent: it is shown only once the key pasted from the admin matched it.
+    pub key_changed: bool,
 }
 
 /// What the tab draws.
@@ -157,7 +158,7 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
             pools: setup.contexts.pools.clone(),
             joining: setup.contexts.joining,
             pinned: setup.contexts.pinned.clone(),
-            named_now: setup.contexts.named_now.clone(),
+            key_changed: setup.contexts.named_now.is_some(),
         },
         at: setup.at.as_ref().map(word),
         steps: setup

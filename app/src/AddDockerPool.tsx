@@ -14,6 +14,7 @@ import {
   addClusterPool,
   addPool,
   checkClusterPoolKey,
+  keyNotConfirmed,
   choosePoolKind,
   doneWithTheAddedPool,
   goOnWithPoolSetupOf,
@@ -417,8 +418,10 @@ function AddDockerPool({
 }
 
 /**
- * **Add a pool, of Kind Cluster** (#3292): Kind, Name, Kubeconfig, Context and Pool, then Check
- * its key, which shows the cluster operator key the Pool names, then Add pool, which pins it.
+ * **Add a pool, of Kind Cluster** (#3292): Kind, Name, Kubeconfig, Context and Pool, and the key
+ * the cluster's admin gave, then Check its key, which compares it with the cluster operator key
+ * the Pool names and shows that key only where it is the same (#4495), then Add pool, which pins
+ * it.
  */
 function AddClusterPool({ kinds }: { kinds: boolean }) {
   const [name, setName] = useDrafted("cluster", "name");
@@ -431,6 +434,7 @@ function AddClusterPool({ kinds }: { kinds: boolean }) {
   const [defaultKubeconfig, setDefaultKubeconfig] = useState<string | undefined>();
   const [context, setContext] = useState<string | undefined>();
   const [pool, setPool] = useDrafted("cluster", "pool");
+  const [pasted, setPasted] = useState("");
   const [checked, setChecked] = useState<ClusterPoolKey | undefined>();
   const [trouble, setTrouble] = useState<string | undefined>();
   const [busy, setBusy] = useState<"checking" | "adding" | undefined>();
@@ -484,9 +488,11 @@ function AddClusterPool({ kinds }: { kinds: boolean }) {
     }
     setTrouble(undefined);
     setBusy("checking");
-    const read = await checkClusterPoolKey(kubeconfig, context, pool);
+    const read = await checkClusterPoolKey(kubeconfig, context, pool, pasted);
     setBusy(undefined);
     if ("trouble" in read) setTrouble(read.trouble);
+    else if (keyNotConfirmed(read, pool.trim()) !== undefined)
+      setTrouble(keyNotConfirmed(read, pool.trim()));
     else setChecked(read);
   };
 
@@ -500,7 +506,7 @@ function AddClusterPool({ kinds }: { kinds: boolean }) {
       kubeconfig: kubeconfig.trim() === "" ? null : kubeconfig,
       context,
       pool,
-      key: checked.key,
+      pasted: pasted.trim() === "" ? null : pasted,
       vouch_wait: vouchWait,
     });
     setBusy(undefined);
@@ -597,10 +603,23 @@ function AddClusterPool({ kinds }: { kinds: boolean }) {
           />
         )}
       />
-      {checked !== undefined && (
+      <SettingRow
+        label="Key from your admin"
+        help="The cluster operator key your cluster's admin gave you. Spaces, line breaks and capitals don't matter."
+        control={(ids) => (
+          <Field
+            kind="text"
+            ids={ids}
+            value={pasted}
+            disabled={busy !== undefined}
+            onChange={changing(setPasted)}
+          />
+        )}
+      />
+      {checked?.key && (
         <SettingRow
           label="Cluster operator key"
-          help={`Check it against the key your cluster's admin gives you before you add the pool. Its runner is claimed in namespace ${checked.namespace}.`}
+          help={`${checked.made_here ? "The key this machine made in Pool setup." : "The same as the key your admin gave you."} Its runner is claimed in namespace ${checked.namespace}.`}
           control={(ids) => (
             <output id={ids.id} aria-describedby={ids.describedBy} className="ui-machine-path">
               <code>{checked.key}</code>

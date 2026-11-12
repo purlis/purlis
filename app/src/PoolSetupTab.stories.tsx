@@ -52,7 +52,7 @@ const WHERE = (where: Partial<PoolSetupStep>, state: string): PoolSetupShown => 
     pools: [],
     joining: false,
     pinned: null,
-    named_now: null,
+    key_changed: false,
   },
   steps: [step("where", "Where chats run", state, where), step("pool", "Pool", "later"), ...LATER],
 });
@@ -82,7 +82,7 @@ const POOL_FORM: PoolSetupShown = {
     pools: [],
     joining: false,
     pinned: null,
-    named_now: null,
+    key_changed: false,
   },
   steps: [
     DONE_WHERE,
@@ -381,7 +381,7 @@ export const MadeByHand: Story = {
       pools: [],
       joining: false,
       pinned: null,
-      named_now: null,
+      key_changed: false,
     },
     steps: [
       DONE_WHERE,
@@ -418,7 +418,7 @@ export const ThePoolIsMade: Story = {
       pools: [],
       joining: false,
       pinned: null,
-      named_now: null,
+      key_changed: false,
     },
     steps: [
       DONE_WHERE,
@@ -455,7 +455,7 @@ export const TheRunnerWasRemoved: Story = {
       pools: [],
       joining: false,
       pinned: null,
-      named_now: null,
+      key_changed: false,
     },
     steps: [
       DONE_WHERE,
@@ -539,7 +539,7 @@ export const ARunnerBeingMade: Story = {
       pools: [],
       joining: false,
       pinned: null,
-      named_now: null,
+      key_changed: false,
     },
     steps: [
       DONE_WHERE,

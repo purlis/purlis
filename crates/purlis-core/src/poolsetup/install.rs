@@ -318,8 +318,13 @@ pub fn uninstall(installed: &Installed, on: &str) -> See {
 
 /// **Applies part `id` to the cluster `kubectl` is pointed at**, with the person's own sign-in.
 /// Each part can be run again on its own: the applies are server-side, and a signing key that is
-/// there is kept.
-pub fn apply(kubectl: &Kubectl, id: PartId, image: Option<&str>) -> Result<(), Refused> {
+/// there is kept. The public half of a signing key it made, where it made one (#4495): what lets
+/// this setup pin its own key without a paste.
+pub fn apply(
+    kubectl: &Kubectl,
+    id: PartId,
+    image: Option<&str>,
+) -> Result<Option<crate::clusterpool::OperatorKey>, Refused> {
     let run = |args: &[&str], input: Option<&str>| {
         kubectl
             .asked(args, input)
@@ -409,9 +414,9 @@ pub fn apply(kubectl: &Kubectl, id: PartId, image: Option<&str>) -> Result<(), R
                 None,
             )?;
             if !there.trim().is_empty() {
-                return Ok(());
+                return Ok(None);
             }
-            let key = signing_key()?;
+            let (key, public) = signing_key()?;
             // `create` refuses a Secret that is there: one made since the look is kept too.
             run(
                 &[
@@ -425,6 +430,7 @@ pub fn apply(kubectl: &Kubectl, id: PartId, image: Option<&str>) -> Result<(), R
                 ],
                 Some(&key),
             )?;
+            return Ok(Some(public));
         }
         PartId::Operator => {
             let Some(image) = image.filter(|image| is_by_digest(image)) else {
@@ -459,27 +465,37 @@ pub fn apply(kubectl: &Kubectl, id: PartId, image: Option<&str>) -> Result<(), R
             )?;
         }
     }
-    Ok(())
+    Ok(None)
 }
 
 /// **A new Ed25519 key in PKCS#8 PEM**, the form the operator reads (`vouch.rs`, which takes
 /// PKCS#8 v1, as `openssl genpkey -algorithm ed25519` makes it, or v2, as `ring` makes it): held
-/// in memory only, for the one `kubectl create secret` that keeps it in the cluster.
-fn signing_key() -> Result<String, Refused> {
+/// in memory only, for the one `kubectl create secret` that keeps it in the cluster. With its
+/// public half, the key the operator's Pools will name.
+fn signing_key() -> Result<(String, crate::clusterpool::OperatorKey), Refused> {
     let rng = ring::rand::SystemRandom::new();
     let der = ring::signature::Ed25519KeyPair::generate_pkcs8(&rng)
         .map_err(|_| Refused::Other("no new key could be made on this machine".into()))?;
+    let pair = ring::signature::Ed25519KeyPair::from_pkcs8(der.as_ref())
+        .map_err(|_| Refused::Other("the new key could not be read back".into()))?;
+    let public: [u8; 32] = ring::signature::KeyPair::public_key(&pair)
+        .as_ref()
+        .try_into()
+        .map_err(|_| Refused::Other("the new key's public half isn't 32 bytes".into()))?;
     let body = base64::engine::general_purpose::STANDARD.encode(der.as_ref());
     let lines: Vec<String> = body
         .as_bytes()
         .chunks(64)
         .map(|chunk| String::from_utf8_lossy(chunk).into_owned())
         .collect();
-    Ok(format!(
-        "{}\n{}\n{}\n",
-        pem_line("BEGIN"),
-        lines.join("\n"),
-        pem_line("END")
+    Ok((
+        format!(
+            "{}\n{}\n{}\n",
+            pem_line("BEGIN"),
+            lines.join("\n"),
+            pem_line("END")
+        ),
+        crate::clusterpool::OperatorKey::of_public(public),
     ))
 }
 

@@ -15,7 +15,8 @@
 //!   A background recheck ([`recheck`]) marks it ready once, which is what raises its one
 //!   needs-you entry; answering that entry, or choosing again, forgets it.
 
-use super::{Choices, Facts, Kind, Refused, read_choices, write_choices};
+use super::{Choices, Facts, Kind, read_choices, write_choices};
+use crate::runners::Refused;
 
 /// The guide a team's admin installs purlis on a cluster by.
 pub const GUIDE: &str = "https://github.com/purlis/purlis/blob/main/docs/cluster-pool-setup.md";

@@ -296,6 +296,36 @@ pub struct OperatorKey([u8; 32]);
 /// The prefix of an operator key's spelling.
 const ED25519: &str = "ed25519:";
 
+/// **How the person confirmed the cluster operator key a pool pins** (#4495), kept with the pin
+/// (`keyConfirmed` in `runners.json`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Confirmed {
+    /// The key they pasted, as their cluster's admin gave it to them, was the Pool's.
+    Pasted,
+    /// This machine made the signing key in the same Pool setup, and the Pool names its key.
+    MadeHere,
+}
+
+impl Confirmed {
+    /// Its word, as `runners.json` keeps it.
+    #[must_use]
+    pub fn word(self) -> &'static str {
+        match self {
+            Confirmed::Pasted => "pasted",
+            Confirmed::MadeHere => "made-here",
+        }
+    }
+
+    /// The confirmation `word` names, or none.
+    #[must_use]
+    pub fn of_word(word: &str) -> Option<Confirmed> {
+        [Confirmed::Pasted, Confirmed::MadeHere]
+            .into_iter()
+            .find(|one| one.word() == word)
+    }
+}
+
 impl OperatorKey {
     /// The key `spelled` names, or a refusal saying it is not one.
     pub fn from_spelled(spelled: &str) -> Result<OperatorKey, Refused> {
@@ -328,6 +358,12 @@ impl OperatorKey {
                     .into(),
             )
         })
+    }
+
+    /// The key whose 32 bytes are `public`: the public half of a key this machine made.
+    #[must_use]
+    pub fn of_public(public: [u8; 32]) -> OperatorKey {
+        OperatorKey(public)
     }
 
     /// Its spelling, `ed25519:<64 hex>`.

@@ -218,9 +218,21 @@ fn a_bare_cluster_passes_the_check_then_is_installed_a_part_at_a_time() {
         on.claim_said("default", "setup-claim")
     );
 
-    // Only the context's name and the image were kept.
+    // Only the context's name, the image and the made key's public half were kept.
     let kept = std::fs::read_dir(config.path()).unwrap().count();
     assert!(kept <= 1, "{kept} things kept");
+
+    // This setup made the signing key, so its own Pool's key is pinned without a paste (#4495).
+    let named = kubectl
+        .clone()
+        .with_context(&context)
+        .pool_pin("setup-team")
+        .unwrap()
+        .key;
+    assert_eq!(
+        poolsetup::confirm_key(config.path(), &context, &named, None).unwrap(),
+        purlis_core::clusterpool::Confirmed::MadeHere
+    );
 
     a_teammate_with_the_guides_rights_joins_and_reads_the_key_the_admin_sees(
         &kubectl,
@@ -401,6 +413,12 @@ subjects:
     assert_eq!(
         purlis_core::clusterpool::OperatorKey::from_pasted(&pasted).unwrap(),
         read.key
+    );
+    // The teammate's machine made no key: nothing is pinned without the admin's, pasted (#4495).
+    assert!(poolsetup::confirm_key(config.path(), "teammate", &read.key, None).is_err());
+    assert_eq!(
+        poolsetup::confirm_key(config.path(), "teammate", &read.key, Some(&pasted)).unwrap(),
+        purlis_core::clusterpool::Confirmed::Pasted
     );
 }
 

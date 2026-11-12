@@ -209,9 +209,12 @@ in `a_chat_runs_on_a_cluster_runner_through_kubectl_exec`._
    palette.
 2. Set **Kind** to Cluster.
 3. Give it a **Name**, leave **Kubeconfig** empty unless yours is somewhere unusual, choose the
-   **Context** and type `team` as the **Pool**.
-4. Press **Check its key**. The key shown must be the one step 6 printed. If it isn't, stop: you
-   may be talking to another cluster.
+   **Context**, type `team` as the **Pool**, and paste the key step 6 printed as **Key from your
+   admin**.
+4. Press **Check its key**. purlis compares the key you pasted with the one the pool names, and
+   shows it only if they are the same. If they aren't, stop: you may be talking to another
+   cluster. In Pool setup, where this machine made the signing key in the same setup, no paste
+   is needed.
 5. Press **Add pool**. Its runner is claimed and paired, which can take a few minutes while the
    node pulls the image.
 6. Sign your profiles in when the dialog offers it. A chat on the runner needs a profile signed in

@@ -604,8 +604,10 @@ Secrets in the operator's namespace is the power to vouch for any runner.
 
 **Adding the pool in a person's window** (#3292): the add pool dialog (the palette's Add a Docker
 pool…, or Add a pool… in Settings › This machine › Pools once one is kept), Kind Cluster, their
-kubeconfig's context for the cluster and the Pool's name. Check its key shows
-the operator key the Pool's status names; give your people that key to check it against, as
+kubeconfig's context for the cluster, the Pool's name and the operator key their admin gave
+them. Check its key compares that key with the one the Pool's status names, and shows it only
+where they are the same (#4495); nothing is pinned otherwise. Only Pool setup on the machine that
+made the signing key in that same setup pins without a paste. Give your people the key, as
 
 ```bash
 kubectl get pools.runners.purlis.dev <pool> --output jsonpath='{.status.signingKey}'
@@ -615,8 +617,9 @@ prints it. Add pool pins it and makes the person's one kept Claim, `<pool>-<a la
 desktop>`, marked `runners.purlis.dev/desktop: <that label>`, in the namespace their context
 names (`default` where it names none). Removing the pool deletes only that Claim. A Pool that
 later names another key refuses every link to that desktop's runner. The pool's Pool step in Pool
-setup then shows the key pinned and the key named now, and pins the new one only once the person
-pastes the key their admin gives them, in the same cluster (#4495); the runner stays the one paired.
+setup then shows the key pinned, not the one named now, and pins the new one only once the person
+pastes the key their admin gives them and it is the same, in the same cluster (#4495); the runner
+stays the one paired. How each pin was confirmed, pasted or made here, is kept with it.
 
 A runner is paired once, and **its pairing is its Claim's, not its pod's** (#2057, ruled
 2026-10-28). The pairing lives in the runner's home: a kept Claim's runner keeps it on its

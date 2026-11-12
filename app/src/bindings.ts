@@ -4356,7 +4356,7 @@ export const commands = {
 	 *  **Check its key**: the cluster operator key the cluster's Pool `pool` names, through
 	 *  `context` of `kubeconfig`, for the person to check before the pool is added (#3292).
 	 */
-	clusterPoolKey: (kubeconfig: string | null, context: string, pool: string) => typedError<ClusterPoolKey, string>(__TAURI_INVOKE("cluster_pool_key", { kubeconfig, context, pool })),
+	clusterPoolKey: (kubeconfig: string | null, context: string, pool: string, pasted: string | null) => typedError<ClusterPoolKey, string>(__TAURI_INVOKE("cluster_pool_key", { kubeconfig, context, pool, pasted })),
 	/**
 	 *  **Where the runner of a chat being started has got to** (#3709), read from the cluster, for the
 	 *  window's Start while it waits. Nothing where there is no stage to say.
@@ -8151,8 +8151,11 @@ export type ClusterPoolAdding = {
 	context: string,
 	/**  The cluster's Pool. */
 	pool: string,
-	/**  The cluster operator key Check its key showed, spelled as it showed it. */
-	key: string,
+	/**
+	 *  The cluster operator key the person pasted, as their cluster's admin gave it (#4495).
+	 *  None only where this machine made the signing key in this Pool setup.
+	 */
+	pasted: string | null,
 	/**
 	 *  The longest wait for its runner to be vouched for, in minutes, where the person raised it
 	 *  after an add that ran out (spec #4275): saved to the pool. None is purlis's default.
@@ -8162,8 +8165,15 @@ export type ClusterPoolAdding = {
 
 /**  What Check its key read of a cluster's Pool. */
 export type ClusterPoolKey = {
-	/**  The cluster operator key the Pool's status names, spelled as it gives it. */
-	key: string,
+	/**
+	 *  The cluster operator key the Pool's status names, spelled as it gives it: only once it is
+	 *  confirmed (#4495), by the key pasted from the admin, or as the one this setup made.
+	 */
+	key: string | null,
+	/**  Whether this machine made that key in this Pool setup, so no paste is asked for (#4495). */
+	made_here: boolean,
+	/**  Whether the key pasted is the Pool's, where one was pasted (#4495). */
+	matches: boolean | null,
 	/**  The namespace the context names, where the pool's claim would be made. */
 	namespace: string,
 };
@@ -13704,8 +13714,11 @@ export type PoolSetupContexts = {
 	joining: boolean,
 	/**  The cluster operator key a kept cluster pool pinned here (#4495). */
 	pinned: string | null,
-	/**  The key its Pool names now, where the pin never vouched for it (#4495). */
-	named_now: string | null,
+	/**
+	 *  Whether its Pool names a key now that the pin never vouched for (#4495). The key itself
+	 *  isn't sent: it is shown only once the key pasted from the admin matched it.
+	 */
+	key_changed: boolean,
 };
 
 /**
