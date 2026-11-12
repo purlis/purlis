@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { appendFileSync } from "node:fs";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 import { clearMocks } from "@tauri-apps/api/mocks";
 import { switches, type Shape, type Switch } from "./projectSwitch.testkit";
@@ -50,9 +50,22 @@ vi.mock("./whileShown", async (actual) => ({
   everyWhileShown: () => () => {},
 }));
 
+// Nor does a beat's catch-up: a project whose save standing was asked a beat ago or more is
+// read again as it comes back (`plane_saving`, `useSaving`'s `catchUp` in `saving.ts`), for what
+// the beat would have read meanwhile. That is measured on the window's monotonic clock, so on a
+// runner slow enough that a switch came 10 s after its project's last read, it read once more:
+// 23 commands where a switch sends 22. The window's clock is held still here, so each switch is
+// the one this test is about, to a project read a moment ago. The testkit times `syncMs` on a
+// clock of its own.
+beforeEach(() => {
+  const now = performance.now();
+  vi.spyOn(performance, "now").mockReturnValue(now);
+});
+
 afterEach(() => {
   cleanup();
   clearMocks();
+  vi.restoreAllMocks();
 });
 
 const line = (shape: Shape, one: Switch) =>

@@ -53,6 +53,10 @@ export type Shape = {
   panes?: number;
 };
 
+/** The test's own clock, read for `syncMs`: the real one, taken before a test can hold the
+ *  window's still (`projectSwitch.cost.test.tsx`). */
+const clock = performance.now.bind(performance);
+
 export const rootOf = (n: number) => `/home/dev/project-${n}`;
 export const nameOf = (n: number) => `project-${n}`;
 
@@ -464,11 +468,11 @@ export async function switches(shape: Shape, visits: readonly number[]): Promise
     reads.clear();
     const from = asked.length;
 
-    const pressed = performance.now();
+    const pressed = clock();
     act(() => {
       fireEvent.click(tab);
     });
-    const syncMs = performance.now() - pressed;
+    const syncMs = clock() - pressed;
     const invokedAtOnce = asked.length - from;
     const paintedAtOnce =
       inFront() === nameOf(to) &&
