@@ -144,6 +144,26 @@ pub(crate) fn keep_screen_on_close(
     }
 }
 
+/// **Keeps the last screens of the task chats `chats` as the app quits** (#6305), by number and
+/// id: the ones the next launch leaves out of its put back, having finished
+/// (`finished::left_out`), which never close through `Chats::close_as`. Read while their
+/// sessions are still there, before every program is ended, each on a thread of its own, so a
+/// quit waits for one screen's read at most rather than one after another.
+pub(crate) fn keep_screens_at_quit(
+    root: &std::path::Path,
+    host: &dyn crate::host::SessionHost,
+    chats: &[(u32, String)],
+) {
+    if chats.is_empty() {
+        return;
+    }
+    std::thread::scope(|scope| {
+        for (session, id) in chats {
+            scope.spawn(move || keep_screen_on_close(root, host, *session, id));
+        }
+    });
+}
+
 /// **What `number` names** (#6214): an open chat, one open again under another number, a
 /// closed one's card, or no chat. On a blocking thread, as it reads the dispatch records.
 #[tauri::command]

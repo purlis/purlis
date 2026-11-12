@@ -2081,6 +2081,9 @@ impl Held {
                 ..record.clone()
             });
         });
+        // A task that had finished is left out of the next launch's put back, so its screen is
+        // kept now, while its session still shows it (#6305).
+        self.chats.keep_finished_screens();
         self.chats.end_all();
         self.hooks.stop();
         drop(
