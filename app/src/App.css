@@ -7897,6 +7897,21 @@ nav.piece-files-head {
 
 /* A signing table's cell of words and a mark side by side (#6301): a device and its Older
    setup, a Verified badge and who it commits as. */
+/* **This machine's profiles, a table of controls** (#6301): a cell's lines one under another
+   (how it signs in, where, its buttons), each as wide as its words; the profile's icon beside
+   its name. */
+.profiles-lines {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+}
+
+.profiles-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
 .signing-device,
 .signing-verified {
   display: inline-flex;

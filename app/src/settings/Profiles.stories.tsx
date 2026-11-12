@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **You › Profiles** (#2034, #6301): this machine's profiles on the aligned page: one signed in
+ * **You › Profiles** (#2034, #6301): this machine's profiles, a table of controls of the table
+ * family on the aligned page (#2919, R65, R67): one signed in
  * and pinned, one whose pin can move to the major version installed, and one adopted, each with
  * what it says and its actions; and the page with none yet. Drawn, held to axe, walked by the
  * keyboard and pictured in every pictured theme cell (`docs/component-stories.md`). The core is
@@ -98,6 +99,9 @@ export const ThreeProfiles: Story = {
       name: "Update the pin of personal to 3.0.0",
     });
     await expect(canvas.getAllByRole("button", { name: /^Update the pin of / })).toHaveLength(1);
+    // A table of controls (#6301): a row a profile, each of its buttons a Tab stop of its own.
+    const table = canvas.getByRole("table", { name: "This machine's profiles" });
+    await expect(within(table).getAllByRole("rowheader")).toHaveLength(3);
     await expect(canvas.getByRole("button", { name: "Remove codex" })).toBeVisible();
     update.focus();
     await untilFocused(() => update, "Update the pin");
