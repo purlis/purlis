@@ -293,15 +293,18 @@ const listed = (plane: string | undefined): LiveSetting => ({
               // another, so four columns fit the page.
               <ControlTable
                 className="profiles-table ui-record-table"
+                // Its columns as the view sizes them, as the dispatch grants' are: Pin and the
+                // actions as wide as their buttons, the profile and its sign-in sharing the rest.
+                fixed
                 stacks
                 aria-label="This machine's profiles"
                 aria-describedby={ids.describedBy}
               >
                 <ControlHead>
                   <ControlColumn>Profile</ControlColumn>
-                  <ControlColumn minWidth={160}>Sign-in</ControlColumn>
-                  <ControlColumn>Pin</ControlColumn>
-                  <ControlColumn actions hideName>
+                  <ControlColumn>Sign-in</ControlColumn>
+                  <ControlColumn width="10rem">Pin</ControlColumn>
+                  <ControlColumn actions hideName width="8.5rem">
                     Actions
                   </ControlColumn>
                 </ControlHead>
