@@ -234,7 +234,7 @@ import { Notice, NoticeInCentre, NoticeOf, type NoticesDot } from "./Notice";
 import { ReadOnlyLine, ReadOnlyMendable, ReadOnlySaid, useReadOnly } from "./ReadOnlyLine";
 import { LivesHere } from "./LivesHere";
 import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
-import { handCount, handSaid, type Elsewhere } from "./InboxElsewhere";
+import { elsewhereCount, handSaid, type Elsewhere } from "./InboxElsewhere";
 import type { AllChatsFilter } from "./InboxAsks";
 import { useAsksArrival } from "./asksArrival";
 import { sayAboutThisMachine, useAboutThisMachine } from "./windowprefs";
@@ -11556,11 +11556,13 @@ export const PlaneView = memo(function PlaneView({
    * its chat in a new session, and the pane moves on to it before the ask is read as gone.
    */
   const touchOnPane = useAnsweredWhenGone(plane, waiting);
-  /** The ✋'s count: every open project's asks, and how many are outside this one (#5999). */
-  const hand = handCount(plane, waiting?.length ?? 0, elsewhere);
+  /** **The ✋'s count: this project's asks alone** (#6341, ADR 0121 amended 2026-11-12,
+   *  decision 1). Another project's are on its own tab, and on the Dock badge's total. */
+  const hand = waiting?.length ?? 0;
   /** **A Blocking ask arriving** (ADR 0121 decisions 24 and 25, #6020): said once, politely,
-   *  and the first one on this machine that arrives while Asks is closed pulses the ✋. */
-  const arrival = useAsksArrival(waiting, hand.elsewhere, inFront && asksShown);
+   *  and the first one on this machine that arrives while Asks is closed pulses the ✋. One in
+   *  another project is still said, as its notification still comes. */
+  const arrival = useAsksArrival(waiting, elsewhereCount(plane, elsewhere), inFront && asksShown);
   /**
    * **Snooze all on Asks** (#5647): the core keeps what each chat held, and lists a snoozed
    * chat's asks apart until it asks something new, or until the time it was snoozed for runs out
@@ -12488,10 +12490,9 @@ export const PlaneView = memo(function PlaneView({
                       )}
                     </QueueRead>
                   ),
-                  // The ✋'s count (#1692, I-2; ADR 0121 decision 4): every open project's asks, in
-                  // its tone, on the bar, so it is there while the side is put away. Those outside
-                  // this project are said as "+N elsewhere"; Asks' scope never narrows it.
-                  asks: <ActivityCount count={hand.total} said={handSaid(hand)} tone="needs-you" />,
+                  // The ✋'s count (#1692, I-2; #6341): this project's asks, in its tone, on the
+                  // bar, so it is there while the side is put away. Asks' scope never narrows it.
+                  asks: <ActivityCount count={hand} said={handSaid(hand)} tone="needs-you" />,
                   // The unread lines From your chats (#5646, ADR 0119): the bell's count, in the plain
                   // colours, since a result is news of the person's own work and asks nothing.
                   // Project is never counted.

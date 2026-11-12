@@ -752,7 +752,8 @@ describe("the title bar in the window, and the project rail below it (#2915)", (
       expect(within(strip()).getByRole("tab", { name: "two" })).toBeInTheDocument(),
     );
 
-    move(TWO, "waiting", 1);
+    // In the project in front: the hand counts it alone (#6341).
+    move(ONE, "waiting", 1);
 
     expect(
       await within(bar()).findByRole("button", { name: "1 chat needs you" }),

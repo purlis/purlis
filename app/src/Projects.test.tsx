@@ -284,6 +284,14 @@ function last(listeners: Map<string, number[]>, event: string): number {
   return handlers[handlers.length - 1];
 }
 
+/** `plane`'s tab on the project rail, by the directory it carries: the rail's tablist owns its
+ *  tabs by `aria-owns`. */
+const railTab = (plane: string) => {
+  const tab = document.querySelector<HTMLElement>(`[role="tab"][data-directory="${plane}"]`);
+  if (tab === null) throw new Error(`no project tab for ${plane}`);
+  return tab;
+};
+
 /** The projects on the strip, and which one is in front. */
 const projectTabs = () =>
   within(stripNamed("Projects"))
@@ -471,14 +479,13 @@ describe("a window holding more than one project", () => {
       refusals: [],
       children: [],
     });
-    const hand = await screen.findByRole("button", { name: "1 thing waits on you" });
-    expect(
-      within(screen.getByTestId("title-bar")).getByRole("button", { name: "1 thing waits on you" }),
-    ).toBe(hand);
+    // ONE's own tab counts it; the hand counts the project in front alone, where nothing waits,
+    // so the title bar draws none (#6341, ADR 0121 amended 2026-11-12, decision 1).
+    await waitFor(() => expect(railTab(ONE)).toHaveAccessibleDescription(/\b1 waiting\b/));
+    expect(screen.queryByTestId("needs-you-button")).toBeNull();
 
-    // The hand opens the Asks in front, which lists no other project's (ADR 0121, amended
-    // 2026-11-12): TWO stays in front. ONE's ask is reached from ONE's tab, in ONE's own Asks.
-    await userEvent.click(hand);
+    // The Asks in front lists no other project's (ADR 0121, amended 2026-11-12): TWO stays in
+    // front. ONE's ask is reached from ONE's tab, in ONE's own Asks. The side opens on Asks (#5644).
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
     expect(inbox.querySelector("[data-elsewhere]")).toBeNull();
     expect(projectTabs()).toEqual(["one", "two*"]);
