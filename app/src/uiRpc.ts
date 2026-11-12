@@ -1939,32 +1939,11 @@ export const commands = {
 	dockerPools: __WINDOW_ONLY_RESULT,
 	poolSetup: __WINDOW_ONLY_RESULT,
 	poolSetupChooseDocker: __WINDOW_ONLY_RESULT,
-	/**
-	 *  **Keeps that the person chose Docker on another machine on Where** (#6266). Nothing else
-	 *  changes, here or there.
-	 */
-	poolSetupChooseRemoteDocker: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_remote_docker")),
-	/**
-	 *  **Keeps the machine picked or typed on Connect**, or forgets it (#6266). It contacts
-	 *  nothing.
-	 */
-	poolSetupMachine: (route: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_machine", { route })),
-	/**
-	 *  **The machines the person's SSH settings name**, for Connect to offer (#6266). It contacts
-	 *  nothing.
-	 */
-	poolSetupSshHosts: () => typedError<string[], string>(__TAURI_INVOKE("pool_setup_ssh_hosts")),
-	/**
-	 *  **Connect to <machine>** (#6266, ADR 0123 §3): the key the machine Connect keeps shows, met
-	 *  with nothing signed in, and what is read, with it laid over Connect. Nothing is kept.
-	 */
-	poolSetupConnect: (plane: PlaneId) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup_connect", { plane })),
-	/**
-	 *  **Trust this machine** (#6266, ADR 0123 §3): the machine met again, its key held to
-	 *  `fingerprint`, the one the person saw, the sign-in and the engine checked, and the pin kept
-	 *  for the Pool step. What went wrong is laid over Connect, and nothing is kept then.
-	 */
-	poolSetupTrust: (plane: PlaneId, fingerprint: string) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup_trust", { plane, fingerprint })),
+	poolSetupChooseRemoteDocker: __WINDOW_ONLY_RESULT,
+	poolSetupMachine: __WINDOW_ONLY_RESULT,
+	poolSetupSshHosts: __WINDOW_ONLY_RESULT,
+	poolSetupConnect: __WINDOW_ONLY_RESULT,
+	poolSetupTrust: __WINDOW_ONLY_RESULT,
 	poolSetupName: __WINDOW_ONLY_RESULT,
 	poolSetupPool: __WINDOW_ONLY_RESULT,
 	poolSetupAdd: __WINDOW_ONLY_RESULT,

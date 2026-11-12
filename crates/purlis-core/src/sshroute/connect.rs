@@ -275,19 +275,12 @@ pub fn engine_id(
     let host = || opening.route.host().to_owned();
     let held = super::forward::open(opening)
         .map_err(|said| Finding::EngineSilent { host: host(), said })?;
-    let read = docker.clone().through(held.socket()).engine_id();
+    let read = docker.clone().through(held.socket()).engine_id_said();
     drop(held);
-    match read {
-        Ok(Some(id)) => Ok(id),
-        Ok(None) => Err(Finding::EngineSilent {
-            host: host(),
-            said: "it printed no engine id".to_owned(),
-        }),
-        Err(why) => Err(Finding::EngineSilent {
-            host: host(),
-            said: why.0,
-        }),
-    }
+    read.map_err(|why| Finding::EngineSilent {
+        host: host(),
+        said: why.0,
+    })
 }
 
 /// **Whether `pin` still holds for the engine `docker` reaches through the pool's forward**: the
@@ -299,12 +292,11 @@ pub fn engine_holds(
     pin: &Pin,
 ) -> Result<(), Finding> {
     let now = docker
-        .engine_id()
+        .engine_id_said()
         .map_err(|why| Finding::EngineSilent {
             host: route.host().to_owned(),
             said: why.0,
-        })?
-        .unwrap_or_default();
+        })?;
     if now == pin.engine {
         return Ok(());
     }

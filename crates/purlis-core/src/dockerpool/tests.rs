@@ -4237,3 +4237,24 @@ fn a_container_made_the_pools_way_passes_with_every_field_its_engine_writes() {
         assert!(passed.is_ok(), "{host}: {passed:?}");
     }
 }
+
+/// **An engine that didn't answer is never read as one with no id** (#6266): `docker info`
+/// exits 0 with its server half failed, so its errors are what is said.
+#[test]
+fn docker_infos_server_errors_are_said_and_its_id_read_only_where_it_answered() {
+    assert_eq!(
+        engine_id_in(r#"{"ID":"1c50e52b-f50b-4376-924e-1af9245eb420","ServerErrors":null}"#)
+            .unwrap(),
+        "1c50e52b-f50b-4376-924e-1af9245eb420"
+    );
+    let why = engine_id_in(
+        r#"{"ID":"","ServerErrors":["Cannot connect to the Docker daemon at unix:///x.sock"]}"#,
+    )
+    .unwrap_err();
+    assert!(
+        why.0.contains("Cannot connect to the Docker daemon"),
+        "{why}"
+    );
+    assert!(engine_id_in(r#"{"ID":""}"#).is_err());
+    assert!(engine_id_in("not json").is_err());
+}

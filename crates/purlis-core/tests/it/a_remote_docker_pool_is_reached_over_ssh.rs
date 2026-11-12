@@ -124,6 +124,7 @@ fn through(fixture: &Fixture, pool: &str, remote: &Remote) -> Result<Docker, Fin
 
 #[test]
 fn a_machine_is_met_by_the_key_its_sshd_holds_and_trusted_with_its_engine() {
+    purlis_core::unsteered!();
     let Some(fixture) = fixture() else { return };
     let remote = trusted(&fixture, "met");
     assert_eq!(remote.pin.host_key, sshd_key(&fixture));
@@ -155,6 +156,7 @@ impl Drop for KeyBack<'_> {
 
 #[test]
 fn a_host_key_other_than_the_pinned_one_is_refused_even_from_the_persons_known_hosts() {
+    purlis_core::unsteered!();
     let Some(fixture) = fixture() else { return };
     let remote = trusted(&fixture, "rotated");
     forward::let_go("rotated");
@@ -203,6 +205,7 @@ fn a_host_key_other_than_the_pinned_one_is_refused_even_from_the_persons_known_h
 
 #[test]
 fn an_engine_other_than_the_pinned_one_is_refused_before_anything_runs() {
+    purlis_core::unsteered!();
     let Some(fixture) = fixture() else { return };
     let mut remote = trusted(&fixture, "engine");
     forward::let_go("engine");
@@ -215,6 +218,7 @@ fn an_engine_other_than_the_pinned_one_is_refused_before_anything_runs() {
 
 #[test]
 fn a_killed_connection_is_noticed_and_opened_again() {
+    purlis_core::unsteered!();
     let Some(fixture) = fixture() else { return };
     let remote = trusted(&fixture, "dropped");
     through(&fixture, "dropped", &remote).expect("the forward opens");
@@ -232,6 +236,7 @@ fn a_killed_connection_is_noticed_and_opened_again() {
 
 #[test]
 fn an_account_that_may_not_use_docker_there_is_told_so() {
+    purlis_core::unsteered!();
     let Some(fixture) = fixture() else { return };
     let Ok(outsider) = std::env::var("REMOTE_DOCKER_TEST_OUTSIDER_ROUTE") else {
         return;
@@ -253,6 +258,7 @@ fn an_account_that_may_not_use_docker_there_is_told_so() {
 
 #[test]
 fn a_machine_that_isnt_there_is_said_so_before_ssh_is_asked() {
+    purlis_core::unsteered!();
     if fixture().is_none() {
         return;
     }

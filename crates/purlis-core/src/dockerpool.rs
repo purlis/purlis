@@ -2525,6 +2525,33 @@ fn is_no_new_privileges(option: &str) -> bool {
     )
 }
 
+/// **The engine's id in what `docker info --format '{{json .}}'` printed** (#6266), or why there
+/// is none: the server's own errors where it printed some, shown escaped.
+pub fn engine_id_in(printed: &str) -> Result<String, Refused> {
+    let info: serde_json::Value = serde_json::from_str(printed.trim())
+        .map_err(|_| refused("docker info did not answer JSON"))?;
+    let errors: Vec<String> = info
+        .get("ServerErrors")
+        .and_then(serde_json::Value::as_array)
+        .map(|errors| {
+            errors
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(crate::shown::short)
+                .collect()
+        })
+        .unwrap_or_default();
+    if !errors.is_empty() {
+        return Err(refused(errors.join("; ")));
+    }
+    info.get("ID")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|id| crate::runners::usable_noted(id))
+        .map(str::to_owned)
+        .ok_or_else(|| refused("the engine there prints no id"))
+}
+
 /// The `docker` command this machine runs (or a command that answers as it does, such as
 /// Podman's), by its path. purlis runs it directly, never through a shell, and never with the
 /// person's own Docker settings: each run is given a checked copy of them and the engine pinned
@@ -3748,6 +3775,18 @@ impl Docker {
             MOST_INSPECTED,
         )?;
         Ok(Some(printed.trim().to_owned()).filter(|id| crate::runners::usable_noted(id)))
+    }
+
+    /// **Which engine this `docker` reaches, or why it can't say** (#6266): the id `docker info`
+    /// prints, refused with what Docker said where the engine did not answer. `docker info`
+    /// prints its client's half and exits 0 when the server half fails, so an empty id is read
+    /// with the server's own errors, never taken as an engine.
+    pub fn engine_id_said(&self) -> Result<String, Refused> {
+        let printed = self.read(
+            &["info".into(), "--format".into(), "{{json .}}".into()],
+            MOST_INSPECTED,
+        )?;
+        engine_id_in(&printed)
     }
 
     /// **`made`'s home volume's `CreatedAt`, exactly as Docker printed it** (#4167): the same

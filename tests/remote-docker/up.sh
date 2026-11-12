@@ -17,7 +17,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 docker volume create dind-run >/dev/null
 # No TLS port: the engine is reached only through its socket, as a machine's own Docker is.
 docker run --detach --privileged --name dind --env DOCKER_TLS_CERTDIR= \
-  --volume dind-run:/var/run docker:28-dind --host unix:///var/run/docker.sock
+  --volume dind-run:/var/run docker:28-dind@sha256:2a232a42256f70d78e3cc5d2b5d6b3276710a0de0596c145f627ecfae90282ac --host unix:///var/run/docker.sock
 docker build --file "$here/sshd.Dockerfile" --tag remote-docker-sshd "$here"
 mkdir -p "$RUNNER_TEMP/remote-ssh/authorized"
 ssh-keygen -q -t ed25519 -N '' -C remote-parity -f "$RUNNER_TEMP/remote-ssh/id"
@@ -33,7 +33,6 @@ for _ in $(seq 60); do
   sleep 1
 done
 docker exec dind docker info --format '{{.ID}} {{.ServerVersion}}'
-docker image inspect --format '{{index .RepoDigests 0}}' docker:28-dind alpine:3.22 || true
 # Latency and loss on the other machine's side of every connection to it (QA-15, #598).
 docker exec sshd tc qdisc add dev eth0 root netem delay 40ms 10ms loss 1%
 # The parity image, by digest, in a registry inside dind.
