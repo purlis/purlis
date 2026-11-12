@@ -1302,7 +1302,7 @@ pub fn read_pressed(
     // On another machine where the pool is, or a new pool's choice on Where says so; the other
     // kinds are told apart below, once the pool and the contexts are read ([`kind_of`]).
     let remote = match (&kept, pool) {
-        (Some(kept), _) => kept.remote().is_some(),
+        (Some(kept), _) => kept.on_another_machine(),
         (None, None) => choices.kind == Some(Kind::RemoteDocker),
         (None, Some(_)) => false,
     };
@@ -1451,7 +1451,9 @@ pub fn read_pool(here: &Here<'_>, name: &str) -> Result<PoolFacts, Refused> {
     let kept = runners::pools(here.config)?
         .into_iter()
         .find(|one| one.name() == name);
-    if let (Some(kept), Some(docker)) = (kept.filter(|kept| kept.remote().is_some()), here.docker) {
+    if let (Some(kept), Some(docker)) =
+        (kept.filter(runners::Pool::on_another_machine), here.docker)
+    {
         return match crate::sshroute::pool::docker_of(docker, &kept) {
             Ok(through) => pool_facts(here, name, Engine::Ready, Some(&through)),
             Err(_) => pool_facts(here, name, Engine::NotAnswering, None),

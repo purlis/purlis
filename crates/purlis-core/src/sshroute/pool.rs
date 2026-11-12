@@ -41,9 +41,16 @@ pub fn folders() -> Result<(PathBuf, PathBuf), Finding> {
 
 /// **`docker` as pool `pool`'s runs are given it**: itself for a pool on this machine, else
 /// pointed at the pool's forward, held open, its engine checked against the pin.
+///
+/// **Over Docker's TLS API** (#6267), the same program pointed at the pool's route, its files
+/// checked against the pinned CA before every run ([`crate::tlsroute::pool::docker_over`]).
 pub fn docker_of(docker: &Docker, pool: &Pool) -> Result<Docker, Finding> {
-    let Some(remote) = pool.remote() else {
-        return Ok(docker.clone());
+    let remote = match pool.remote_engine() {
+        None => return Ok(docker.clone()),
+        Some(crate::runners::RemoteEngine::Tls(remote)) => {
+            return crate::tlsroute::pool::docker_over(docker, pool.name(), remote);
+        }
+        Some(crate::runners::RemoteEngine::Ssh(remote)) => remote,
     };
     let (engine_links, settings_in) = folders_for(docker)?;
     let ssh = super::ssh_here().map_err(Finding::Here)?;
@@ -181,6 +188,7 @@ fn forget_failing(pool: &str) {
 /// **Every failing forward is tried again at its next ask, and looked at again from the start**:
 /// the person pressed Check again in Pool setup.
 pub fn look_again() {
+    crate::tlsroute::pool::look_again();
     FAILING
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -198,6 +206,12 @@ pub fn reached(
     local: Result<PathBuf, String>,
 ) -> Result<(Docker, PathBuf), String> {
     let through = docker_of_named(config, docker, name)?;
+    // Over TLS there is no socket here: a sign-in is bound to the pool's route, the one engine it
+    // reaches (#6267).
+    if let Some(tls) = through.over_tls_to() {
+        let route = PathBuf::from(tls.route.spelled());
+        return Ok((through, route));
+    }
     match through.forwarded().map(Path::to_path_buf) {
         Some(socket) => Ok((through, socket)),
         None => Ok((through, local?)),
@@ -210,7 +224,27 @@ pub fn is_remote(config: &Path, name: &str) -> bool {
     crate::runners::pools(config)
         .ok()
         .and_then(|pools| pools.into_iter().find(|pool| pool.name() == name))
-        .is_some_and(|pool| pool.remote().is_some())
+        .is_some_and(|pool| pool.on_another_machine())
+}
+
+/// **`docker` pointed at the engine of the pool named `name`**, contacting nothing: through its
+/// forward's socket for SSH (opened by [`docker_of_named`] before each link), over its route for
+/// TLS (#6267, its files checked as each run is prepared), and itself for a pool on this machine
+/// or one not kept. What a link that reconnects runs each `docker exec` with.
+pub fn pointed_at(config: &Path, docker: &Docker, name: &str) -> Docker {
+    let pool = crate::runners::pools(config)
+        .ok()
+        .and_then(|pools| pools.into_iter().find(|pool| pool.name() == name));
+    match pool.as_ref().and_then(Pool::remote_engine) {
+        Some(crate::runners::RemoteEngine::Tls(remote)) => docker
+            .clone()
+            .over_tls(crate::tlsroute::Through::of(remote)),
+        Some(crate::runners::RemoteEngine::Ssh(_)) => match socket_for(docker, name) {
+            Ok(socket) => docker.clone().through(socket),
+            Err(_) => docker.clone(),
+        },
+        None => docker.clone(),
+    }
 }
 
 /// **Where pool `pool`'s forward has its socket on this machine**, whether or not it is open.

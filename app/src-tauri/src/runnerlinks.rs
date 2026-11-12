@@ -182,15 +182,12 @@ impl ToARunner {
         // `docker` for it is pointed at the forward's socket, which the check before every
         // connection opens again where it dropped, its engine checked against the pin first
         // (ADR 0123 §8). A dropped forward drops the link, and the reconnect comes back here.
+        // Over Docker's TLS API (#6267) it is pointed at the pool's route, its files checked
+        // against the pinned CA as each run is prepared.
         let remote = purlis_core::sshroute::pool::is_remote(&machine.config, kept.pool());
         let local = machine.docker.clone();
-        let docker = match remote
-            .then(|| purlis_core::sshroute::pool::socket_for(&machine.docker, kept.pool()).ok())
-            .flatten()
-        {
-            Some(socket) => local.clone().through(socket),
-            None => local.clone(),
-        };
+        let docker =
+            purlis_core::sshroute::pool::pointed_at(&machine.config, &machine.docker, kept.pool());
         let made = kept.made.clone();
         let checking = docker.clone();
         let preparing = docker.clone();

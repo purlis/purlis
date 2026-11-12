@@ -269,7 +269,7 @@ pub fn create(
         }
     }
     crate::pools::add(config, docker, &pool, desktop)?;
-    if pool.remote().is_some() {
+    if pool.on_another_machine() {
         // What Connect kept is the pool's now.
         super::forget_machine(config)?;
     }

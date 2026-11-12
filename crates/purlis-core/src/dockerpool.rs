@@ -2569,6 +2569,9 @@ pub struct Docker {
     /// The socket of a pool's forward to an engine on another machine (#6266), where this
     /// `docker` is that pool's: each run's engine.
     forwarded: Option<std::path::PathBuf>,
+    /// **The engine of a pool on another machine reached over Docker's TLS API** (#6267), where
+    /// this `docker` is that pool's: each run's engine, with the files it is handed checked first.
+    tls: Option<Box<crate::tlsroute::Through>>,
 }
 
 /// **How long each `docker` run that only reads may take** (#3546): an inspect, an `info`, a
@@ -2719,6 +2722,7 @@ impl Docker {
             settings_in: None,
             reads_within: READS_WITHIN,
             forwarded: None,
+            tls: None,
         }
     }
 
@@ -2770,6 +2774,7 @@ impl Docker {
             runtime: runtime.as_deref(),
             system: std::path::Path::new(settings::SYSTEM_SOCKET),
             forwarded: self.forwarded.as_deref(),
+            tls: self.tls.as_deref(),
         })
     }
 
@@ -2779,7 +2784,23 @@ impl Docker {
     #[must_use]
     pub fn through(mut self, socket: impl Into<std::path::PathBuf>) -> Docker {
         self.forwarded = Some(socket.into());
+        self.tls = None;
         self
+    }
+
+    /// **This `docker`, pointed at the engine of a pool reached over Docker's TLS API** (#6267):
+    /// each of its runs reaches `tls`'s route alone, with the pool's files checked against its
+    /// pinned CA and written into the run's own folder ([`settings::prepare`]).
+    #[must_use]
+    pub fn over_tls(mut self, tls: crate::tlsroute::Through) -> Docker {
+        self.tls = Some(Box::new(tls));
+        self.forwarded = None;
+        self
+    }
+
+    /// The TLS engine this `docker` is pointed at, where it is a pool's reached over TLS.
+    pub fn over_tls_to(&self) -> Option<&crate::tlsroute::Through> {
+        self.tls.as_deref()
     }
 
     /// The folder each run's copy of Docker's settings is made in, where one was named
@@ -2802,6 +2823,20 @@ impl Docker {
         if let Some(socket) = &self.forwarded {
             command.env("DOCKER_HOST", format!("unix://{}", socket.display()));
             command.env_remove("DOCKER_CONTEXT");
+        }
+        // Over TLS, the files where they are, named on the line: a bare command holds no run's
+        // folder to copy them into, so a key kept in a vault is not reached by one.
+        if let Some(tls) = &self.tls {
+            command.env("DOCKER_HOST", tls.route.spelled());
+            command.env_remove("DOCKER_CONTEXT");
+            command.env_remove("DOCKER_CERT_PATH");
+            command.env_remove("DOCKER_TLS_VERIFY");
+            command.arg("--tlsverify");
+            command.arg("--tlscacert").arg(&tls.files.ca);
+            command.arg("--tlscert").arg(&tls.files.cert);
+            if let Some(key) = tls.files.key_file() {
+                command.arg("--tlskey").arg(key);
+            }
         }
         command
     }
@@ -3595,6 +3630,56 @@ impl Docker {
                 .ok_or_else(|| format!("{what} is not at a path purlis can type"))
         };
         let settings = typed(settings, "docker's settings for the sign-in")?;
+        // Over Docker's TLS API (#6267), the pool's files, checked against its pinned CA, are
+        // written into a run folder this login holds for as long as it lives, and named on its
+        // line. A login holding one is pinned, so it is never typed into a shell, where the
+        // folder, key and all, would outlive what purlis can see of it.
+        if let Some(tls) = &self.tls {
+            let prepared = self.prepared().map_err(|why| why.0)?;
+            let folder = prepared
+                .env
+                .iter()
+                .find(|(name, _)| *name == "DOCKER_CERT_PATH")
+                .map(|(_, value)| std::path::PathBuf::from(value))
+                .ok_or_else(|| "docker's TLS files were not written for the sign-in".to_owned())?;
+            let file = |name: &str| typed(&folder.join(name), "docker's TLS files");
+            let mut args = vec![
+                "--config".to_owned(),
+                settings.clone(),
+                "--host".to_owned(),
+                tls.route.spelled(),
+                "--tlsverify".to_owned(),
+                "--tlscacert".to_owned(),
+                file(crate::tlsroute::CA_PEM)?,
+                "--tlscert".to_owned(),
+                file(crate::tlsroute::CERT_PEM)?,
+                "--tlskey".to_owned(),
+                file(crate::tlsroute::KEY_PEM)?,
+            ];
+            args.extend(words);
+            let held = std::sync::Mutex::new(Some(prepared));
+            return Ok(crate::profilestore::sign_in::Login {
+                program: typed(&self.program, "this machine's docker")?,
+                args,
+                env: vec![
+                    ("DOCKER_CONFIG".to_owned(), settings),
+                    ("DOCKER_CLI_HOOKS".to_owned(), "false".to_owned()),
+                ],
+                cleared: [
+                    settings::CLEARED,
+                    &["DOCKER_HOST", "DOCKER_CERT_PATH", "DOCKER_TLS_VERIFY"],
+                ]
+                .concat()
+                .iter()
+                .map(|name| (*name).to_owned())
+                .collect(),
+                pin: Some(crate::profilestore::sign_in::Pin::new(move || {
+                    // The folder is the login's: it goes with the last copy of the login.
+                    let _held = &held;
+                    Ok(())
+                })),
+            });
+        }
         let mut args = vec![
             "--config".to_owned(),
             settings.clone(),

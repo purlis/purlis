@@ -222,6 +222,13 @@ pub fn cause(finding: &Finding) -> &'static str {
         Finding::NotAllowed { .. } => "not-allowed",
         Finding::EngineSilent { .. } => "engine-silent",
         Finding::EngineChanged { .. } => "pool-engine-changed",
+        Finding::TlsFile { .. } => "tls-file",
+        Finding::CaChanged { .. } => "pool-pin-changed",
+        Finding::NotSignedByCa { .. } => "tls-not-signed",
+        Finding::ServerExpired { .. } => "tls-expired",
+        Finding::WrongName { .. } => "tls-wrong-name",
+        Finding::ClientRefused { .. } => "tls-client-refused",
+        Finding::ClientExpired { .. } => "tls-client-expired",
         Finding::Here(_) => "here",
     }
 }
@@ -344,6 +351,71 @@ fn said_with_next(finding: &Finding) -> (String, Option<Action>) {
                 command: None,
                 url: None,
             }),
+        ),
+        Finding::TlsFile { file, why, .. } => (
+            format!("{file} {why}. Check the file named under Options, then check again."),
+            check_again(),
+        ),
+        Finding::CaChanged {
+            host,
+            pinned,
+            now,
+            file,
+        } => (
+            format!(
+                "{file} no longer holds the CA you trusted for {host} ({now} now, {pinned} \
+                 trusted). This happens when the CA is replaced, and can mean something else is \
+                 answering in its place, so purlis connects to nothing there until you check it \
+                 and trust it again."
+            ),
+            Some(Action {
+                id: ActionId::CheckAndTrustAgain,
+                label: "Check and trust again".to_owned(),
+                does: "Shows the CA the file holds now, for you to check and trust.".to_owned(),
+                command: None,
+                url: None,
+            }),
+        ),
+        Finding::NotSignedByCa { host, ca } => (
+            format!(
+                "{host}'s certificate isn't signed by the CA you chose. Check {ca}: it must be \
+                 the CA Docker's certificates on {host} are signed with."
+            ),
+            check_again(),
+        ),
+        Finding::ServerExpired { host } => (
+            format!(
+                "{host}'s certificate has expired. Make Docker a new one on {host}, the file its \
+                 --tlscert names there, then check again."
+            ),
+            check_again(),
+        ),
+        Finding::WrongName { host, name } => (
+            if name.is_empty() {
+                format!(
+                    "{host}'s certificate is for another name. Connect by the name it is for, or \
+                     check the file Docker's --tlscert names on {host}."
+                )
+            } else {
+                format!(
+                    "{host}'s certificate is for another name ({name}). Connect by that name, or \
+                     check the file Docker's --tlscert names on {host}."
+                )
+            },
+            change(),
+        ),
+        Finding::ClientRefused { host, cert } => (
+            format!(
+                "Docker on {host} didn't accept your client certificate. Check {cert}: it must \
+                 be signed by the CA Docker on {host} trusts, the file its --tlscacert names."
+            ),
+            check_again(),
+        ),
+        Finding::ClientExpired { cert, .. } => (
+            format!(
+                "Your client certificate has expired. Check {cert}, make a new one, then check again."
+            ),
+            check_again(),
         ),
         Finding::Here(why) => (why.clone(), check_again()),
     }
