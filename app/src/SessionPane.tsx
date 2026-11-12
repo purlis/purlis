@@ -29,7 +29,7 @@ import { onScreenReaderMode, screenReaderMode } from "./screenReader";
 import { onAMac } from "./tabKeys";
 import { opensFind } from "./keys/findKeys";
 import { LINK_CORE } from "./paneLinkCore";
-import { linkPane, type LinkHands } from "./paneLinks";
+import { linkPane, relayed, type LinkHands } from "./paneLinks";
 import { usePaneLinks } from "./PaneLinkSurfaces";
 import { isKey } from "./keys/registry";
 import { moveAlong } from "./tabSequence";
@@ -142,12 +142,11 @@ export function SessionPane({
   /** **Its links' surfaces** (`PaneLinkSurfaces.tsx`, #6215): a hovered link's tooltip, and the
    *  window's answer to one ⌘-clicked that did not simply open. An ask accepted opens the
    *  target it showed, resolved again by the core. */
-  const { hands: linkHands, surfaces: linkSurfaces } = usePaneLinks(
-    onAMac(),
-    plane,
-    session,
-    LINK_CORE,
-  );
+  const { hands: linkHands, surfaces: linkSurfaces } = usePaneLinks({
+    from: { plane, session },
+    core: LINK_CORE,
+    colour: () => linkColour(inForce()),
+  });
   /** Says something in the pane, in the terminal's own hand, while it is up. */
   const saying = useRef<(trouble: string) => void>(() => {});
   /** The find bar, while it is open: the terminal's search, and how many times it has been
@@ -325,9 +324,7 @@ export function SessionPane({
       if (!lettingGoOf && keepTerminal(key, live)) pane.element?.remove();
       else live.release();
     };
-    // The link hands are made once for the pane's life (`usePaneLinks`).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plane, session, started]);
+  }, [plane, session, started, linkHands]);
   // **An ended chat's last screen takes no input** (#4756): xterm sends nothing typed, and the
   // screen is read, scrolled, found in and copied from as before. After the effect above, which
   // made the terminal it is set on.
@@ -410,7 +407,7 @@ type Owner = {
   /** Lets go of the terminal and its view and starts both again (`noEcho.ts`). */
   startAgain: () => void;
   /** What its links' hover and answers are drawn by (`PaneLinkSurfaces.tsx`). */
-  links: Pick<LinkHands, "hovered" | "answered">;
+  links: LinkHands | undefined;
 };
 
 /**
@@ -481,14 +478,10 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
   pane.loadAddon(search);
   // **Its links** (#6215, `paneLinks.ts`): found under the pointer, decided by the core, drawn
   // by the pane showing it, whichever that is now.
-  const links = linkPane(pane, {
-    core: LINK_CORE,
-    from: () => ({ plane, session }),
-    hovered: (link) => live.owner?.links.hovered(link),
-    answered: (answer, candidate) => live.owner?.links.answered(answer, candidate),
-    colour: () => linkColour(inForce()),
-    mac: onAMac,
-  });
+  const links = linkPane(
+    pane,
+    relayed(() => live.owner?.links),
+  );
   /** What Shift+Enter sends, once the view says which harness this is — none for a shell,
    *  which keeps the terminal's own Enter (`Harness::newline`). */
   let newline: string | undefined;

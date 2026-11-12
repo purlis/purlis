@@ -51,6 +51,7 @@ let invoked: { cmd: string; args: Record<string, unknown> }[] = [];
 let opens: unknown = { answer: "opened", kind: "url", target: "https://purlis.dev/setup" };
 
 const ADDRESS = "https://purlis.dev/setup";
+const FTP = "purlis opens only http and https addresses, so it will not open this ftp: one";
 
 beforeEach(() => {
   made.length = 0;
@@ -75,7 +76,9 @@ beforeEach(() => {
       return candidates.map((one) =>
         one.text.startsWith("https://")
           ? { kind: "url", target: one.text, does: { does: "opens" } }
-          : null,
+          : one.text.startsWith("ftp://")
+            ? { kind: "url", target: one.text, does: { does: "refused", reason: FTP } }
+            : null,
       );
     }
     if (cmd === "pane_link_open") return opens;
@@ -132,13 +135,22 @@ async function hovered() {
 }
 
 describe("a pane's link candidates", () => {
-  it("are its http(s) addresses, without the punctuation a sentence puts after one", () => {
+  it("are its addresses, without the punctuation a sentence puts after one", () => {
     expect(
       candidatesIn("Read https://a.example/x, then (see http://b.example/y). Not ftp://c.example"),
     ).toEqual([
       { kind: "url", text: "https://a.example/x", start: 5, end: 24 },
       { kind: "url", text: "http://b.example/y", start: 36, end: 54 },
+      // Another scheme is a candidate too: the core says why it will not open it.
+      { kind: "url", text: "ftp://c.example", start: 60, end: 75 },
     ]);
+    // Markdown's emphasis around one is not its.
+    expect(candidatesIn("**https://x.com**").map((one) => one.text)).toEqual(["https://x.com"]);
+    expect(candidatesIn("__https://x.com/a_b__").map((one) => one.text)).toEqual([
+      "https://x.com/a_b",
+    ]);
+    // A scheme is not read out of the middle of a word.
+    expect(candidatesIn("xhttps://x.com")).toEqual([]);
     expect(candidatesIn("https://en.wikipedia.org/wiki/Foo_(bar)")[0].text).toBe(
       "https://en.wikipedia.org/wiki/Foo_(bar)",
     );
@@ -236,7 +248,7 @@ describe("a link in a chat's pane", () => {
 
     const said = await screen.findByRole("dialog", { name: "Link not opened" });
     expect(said).toHaveTextContent(
-      "Purlis will not open an address that carries a name or a password.",
+      "purlis will not open an address that carries a name or a password.",
     );
   });
 
@@ -253,7 +265,7 @@ describe("a link in a chat's pane", () => {
     const ask = await screen.findByRole("dialog", { name: "Open this link?" });
     expect(ask).toHaveTextContent("https://purlis-setup.example.net/s");
     opens = { answer: "opened", kind: "url", target: "https://purlis-setup.example.net/s" };
-    screen.getByRole("button", { name: "Open" }).click();
+    screen.getByRole("button", { name: "Open link" }).click();
 
     await waitFor(() => expect(asked("pane_link_open")).toHaveLength(2));
     expect(asked("pane_link_open")[1].args).toEqual({
@@ -261,6 +273,51 @@ describe("a link in a chat's pane", () => {
       candidate: { kind: "url", text: ADDRESS },
       confirmed: "https://purlis-setup.example.net/s",
     });
+  });
+
+  it("says in a sentence, not the error's words, when the core could not be asked", async () => {
+    const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { drawn } = await hovered();
+    mockIPC((cmd, args) => {
+      invoked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
+      if (cmd === "pane_link_open") throw new Error("ipc: channel closed (raw detail)");
+      return null;
+    });
+
+    click(drawn, 8, 0, { ctrlKey: true });
+
+    const said = await screen.findByRole("dialog", { name: "Link not opened" });
+    expect(said).toHaveTextContent("purlis could not open that link.");
+    expect(said).not.toHaveTextContent("raw detail");
+    expect(warned).toHaveBeenCalled();
+  });
+
+  it("says why another scheme won't open on its hover, and ⌘-click does nothing", async () => {
+    const { term, drawn } = await opened();
+    await write(term, "see ftp://mirror.example.org/pub now");
+
+    hover(drawn, 8, 0);
+    const tip = await screen.findByRole("tooltip", {}, { timeout: 2000 });
+    expect(tip).toHaveTextContent("ftp://mirror.example.org/pub");
+    expect(tip).toHaveTextContent(`${FTP}.`);
+    expect(tip).not.toHaveTextContent("-click");
+    click(drawn, 8, 0, { ctrlKey: true });
+    await new Promise((settle) => setTimeout(settle, 50));
+
+    expect(asked("pane_link_open")).toHaveLength(0);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("is no link where it runs on past the rows a line is read across", async () => {
+    const { term, drawn } = await opened();
+    // An address over 30 rows: read in part, it would open cut short.
+    await write(term, `https://purlis.dev/${"a".repeat(80 * 30)}`);
+    term.scrollToTop();
+
+    hover(drawn, 8, 0);
+    await new Promise((settle) => setTimeout(settle, 50));
+
+    expect(asked("pane_link_resolve")).toHaveLength(0);
   });
 
   it("is not a link where the core says it is none", async () => {

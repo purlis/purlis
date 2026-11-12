@@ -15,30 +15,31 @@
 
 use std::path::PathBuf;
 
-use purlis_core::panelinks::{Candidate, Kind, Opening, Pane, Resolved, Resolver, Target};
+use purlis_core::panelinks::{Candidate, Hover, Kind, Opening, Pane, Resolver, Target};
 use serde::{Deserialize, Serialize};
 
 use crate::planes::PlaneId;
 
-/// **What the pane's pattern took a candidate for**: a hint, never trusted for more.
+/// **What the pane's pattern took a candidate for**: a hint, never trusted for more. The wire's
+/// half of the core's [`Kind`]; a kind's resolver is the core's `LinkKind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "lowercase")]
-pub enum LinkKind {
+pub enum KindHint {
     Url,
 }
 
-impl From<LinkKind> for Kind {
-    fn from(kind: LinkKind) -> Self {
+impl From<KindHint> for Kind {
+    fn from(kind: KindHint) -> Self {
         match kind {
-            LinkKind::Url => Kind::Url,
+            KindHint::Url => Kind::Url,
         }
     }
 }
 
-impl From<Kind> for LinkKind {
+impl From<Kind> for KindHint {
     fn from(kind: Kind) -> Self {
         match kind {
-            Kind::Url => LinkKind::Url,
+            Kind::Url => KindHint::Url,
         }
     }
 }
@@ -46,7 +47,7 @@ impl From<Kind> for LinkKind {
 /// **Text a pane found that may be a link**: the words as printed, and the pattern's hint.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, specta::Type)]
 pub struct LinkCandidate {
-    pub kind: LinkKind,
+    pub kind: KindHint,
     pub text: String,
 }
 
@@ -88,10 +89,11 @@ pub enum LinkDoes {
     Refused { reason: String },
 }
 
-/// **A candidate that is a link**: its kind, its target in full and what opening it does.
+/// **What a hover over a candidate shows**: its kind, its target in full (its own text, where it
+/// is no link) and what opening it does.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
 pub struct LinkSeen {
-    pub kind: LinkKind,
+    pub kind: KindHint,
     pub target: String,
     pub does: LinkDoes,
 }
@@ -101,7 +103,7 @@ pub struct LinkSeen {
 #[serde(tag = "answer", rename_all = "lowercase")]
 pub enum LinkOpened {
     /// Opened: `target` is what was opened.
-    Opened { kind: LinkKind, target: String },
+    Opened { kind: KindHint, target: String },
     /// Not opened yet: the person is asked, shown its text and where it goes. Accepted, the
     /// same candidate is sent again with `target` as what was confirmed.
     Ask {
@@ -113,20 +115,25 @@ pub enum LinkOpened {
     Refused { reason: String },
 }
 
-/// **What `candidate` is, for a hover**: a link and what opening it does, or none.
+/// **What `candidate` is, for a hover**, resolved once: a link and what opening it does, or
+/// text that is no link and why not (`ftp://…` says purlis opens only http and https). `None` is
+/// left for a later kind's text that says nothing on a hover.
 pub(crate) fn seen(resolver: &Resolver, pane: &Pane, candidate: &Candidate) -> Option<LinkSeen> {
-    let Resolved::Link(target) = resolver.resolve(candidate, pane) else {
-        return None;
-    };
-    let does = match resolver.open(candidate, pane, None) {
-        Opening::Open(_) => LinkDoes::Opens,
-        Opening::Ask { reason, .. } => LinkDoes::Asks { reason },
-        Opening::Refused(reason) => LinkDoes::Refused { reason },
-    };
-    Some(LinkSeen {
-        kind: target.kind().into(),
-        target: target.shown().to_owned(),
-        does,
+    Some(match resolver.hover(candidate, pane) {
+        Hover::Link { target, opening } => LinkSeen {
+            kind: target.kind().into(),
+            target: target.shown().to_owned(),
+            does: match opening {
+                Opening::Open(_) => LinkDoes::Opens,
+                Opening::Ask { reason, .. } => LinkDoes::Asks { reason },
+                Opening::Refused(reason) => LinkDoes::Refused { reason },
+            },
+        },
+        Hover::NotALink(reason) => LinkSeen {
+            kind: candidate.kind.into(),
+            target: candidate.text.clone(),
+            does: LinkDoes::Refused { reason },
+        },
     })
 }
 
@@ -143,7 +150,7 @@ pub(crate) fn answer(
         Opening::Open(target) => {
             let kind = target.kind().into();
             let opened = match &target {
-                Target::Url(url) => open_url(url),
+                Target::Url(url) => open_url(url.as_str()),
             };
             match opened {
                 Ok(()) => LinkOpened::Opened {
@@ -253,7 +260,7 @@ mod tests {
         assert_eq!(
             answered,
             LinkOpened::Opened {
-                kind: LinkKind::Url,
+                kind: KindHint::Url,
                 target: "https://github.com/purlis/purlis/pull/6148".into()
             }
         );
@@ -321,7 +328,7 @@ mod tests {
         assert_eq!(
             seen,
             Some(LinkSeen {
-                kind: LinkKind::Url,
+                kind: KindHint::Url,
                 target: "https://purlis.dev/".into(),
                 does: LinkDoes::Opens,
             })
@@ -329,14 +336,22 @@ mod tests {
     }
 
     #[test]
-    fn a_hover_over_another_scheme_is_no_link_and_one_carrying_a_password_says_it_won_t_open() {
+    fn a_hover_over_another_scheme_says_why_it_won_t_open_and_so_does_one_carrying_a_password() {
         assert_eq!(
             seen(
                 &Resolver::default(),
                 &Pane::default(),
                 &url("ftp://x.example/")
             ),
-            None
+            Some(LinkSeen {
+                kind: KindHint::Url,
+                target: "ftp://x.example/".into(),
+                does: LinkDoes::Refused {
+                    reason: "purlis opens only http and https addresses, so it will not open \
+                             this ftp: one"
+                        .into()
+                },
+            })
         );
         assert!(matches!(
             seen(
@@ -358,7 +373,7 @@ mod tests {
         let json = |answer: &LinkOpened| serde_json::to_value(answer).expect("serialises");
         assert_eq!(
             json(&LinkOpened::Opened {
-                kind: LinkKind::Url,
+                kind: KindHint::Url,
                 target: "https://a.example/".into()
             }),
             serde_json::json!({"answer": "opened", "kind": "url", "target": "https://a.example/"})

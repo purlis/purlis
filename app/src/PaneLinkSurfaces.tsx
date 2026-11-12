@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { LinkCandidate, LinkOpened, LinkSeen, PlaneId } from "./bindings";
-import { openLink, type HoveredLink, type LinkCore, type LinkHands } from "./paneLinks";
+import type { LinkCandidate, LinkFrom, LinkOpened, LinkSeen } from "./bindings";
+import { onAMac } from "./mac";
+import { UNASKED, openLink, type HoveredLink, type LinkCore, type LinkHands } from "./paneLinks";
 import { CodeBlock } from "./ui/code/CodeBlock";
 import { Dialog } from "./ui/dialog/Dialog";
 import {
@@ -57,20 +58,28 @@ export function LinkTip({ seen, mac }: { seen: LinkSeen; mac: boolean }) {
 type Answering = { answer: LinkOpened; candidate: LinkCandidate };
 
 /**
- * **A pane's link surfaces**, and the hands its link hook calls (`paneLinks.ts`): what the
- * pointer is on, and what the open command answered. An ask the person accepts is sent back
- *  from `plane`'s chat `session` (none for a read-only terminal) as a confirmed open, to
- *  `core`; with none, nothing is sent.
+ * **A pane's link surfaces, and the hands its link hook is handed** (`paneLinks.ts`): `core`
+ * decides its links, found `from` where it is, drawn in `colour`. With no core there are no
+ * hands, and so no links. The hands are made once per core: `from` and `colour` are read as
+ * they are when asked.
  */
-export function usePaneLinks(
-  mac: boolean,
-  plane: PlaneId | null,
-  session: number | null,
-  core: LinkCore | undefined,
-): {
-  hands: Pick<LinkHands, "hovered" | "answered">;
+export function usePaneLinks({
+  from,
+  core,
+  colour,
+}: {
+  from: LinkFrom;
+  core: LinkCore | undefined;
+  colour: () => string;
+}): {
+  hands: LinkHands | undefined;
   surfaces: ReactNode;
 } {
+  const mac = onAMac();
+  const now = useRef({ from, colour });
+  useEffect(() => {
+    now.current = { from, colour };
+  });
   const [shown, setShown] = useState<HoveredLink | null>(null);
   const [answering, setAnswering] = useState<Answering | null>(null);
   const pending = useRef<HoveredLink | null>(null);
@@ -92,7 +101,20 @@ export function usePaneLinks(
     if (answer.answer === "opened") return;
     setAnswering({ answer, candidate });
   }, []);
-  const hands = useMemo(() => ({ hovered, answered }), [hovered, answered]);
+  const hands = useMemo(
+    () =>
+      core === undefined
+        ? undefined
+        : {
+            core,
+            from: () => now.current.from,
+            hovered,
+            answered,
+            colour: () => now.current.colour(),
+            mac: onAMac,
+          },
+    [core, hovered, answered],
+  );
 
   const anchor = useRef<HTMLSpanElement>(null);
   const surfaces = (
@@ -131,12 +153,7 @@ export function usePaneLinks(
           onClose={() => setAnswering(null)}
           onConfirm={(target) => {
             setAnswering(null);
-            if (core !== undefined)
-              void openLink(
-                answering.candidate,
-                { core, from: () => ({ plane, session }), answered },
-                target,
-              );
+            if (hands !== undefined) void openLink(answering.candidate, hands, target);
           }}
         />
       )}
@@ -160,7 +177,7 @@ export function LinkAnswer({
       <Dialog
         title="Open this link?"
         description={`${sentence(answer.reason)}.`}
-        main={{ children: "Open", onPress: () => onConfirm(answer.target) }}
+        main={{ children: "Open link", onPress: () => onConfirm(answer.target) }}
         initialFocus="cancel"
         onClose={onClose}
         data-testid="pane-link-asks"
@@ -169,7 +186,7 @@ export function LinkAnswer({
         <CodeBlock label="Where it goes" text={answer.target} />
       </Dialog>
     );
-  const reason = answer.answer === "refused" ? answer.reason : "purlis did not open that link";
+  const reason = answer.answer === "refused" ? answer.reason : UNASKED;
   return (
     <Dialog
       title="Link not opened"
@@ -184,7 +201,11 @@ export function LinkAnswer({
   );
 }
 
-/** A sentence the core said, as the window starts one: its first letter capital. */
-function sentence(said: string): string {
+/**
+ * A sentence the core said, as the window starts one: its first letter capital, but purlis's
+ * name, which is lowercase wherever it stands (`docs/ui-copy.md`).
+ */
+export function sentence(said: string): string {
+  if (/^purlis\b/u.test(said)) return said;
   return said.charAt(0).toUpperCase() + said.slice(1);
 }

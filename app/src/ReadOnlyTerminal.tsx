@@ -47,7 +47,7 @@ import {
 } from "./theme/theme";
 
 /** Where a read-only screen's links were found: in no project's pane, so no chat's. */
-const NOWHERE = () => ({ plane: null, session: null });
+const NOWHERE = { plane: null, session: null };
 
 /** What a read-only screen says of itself when its owner says nothing more. */
 export const READ_ONLY_SAID = "Read-only: it takes no input.";
@@ -146,7 +146,11 @@ export function ReadOnlyTerminal({
   const [copy, setCopy] = useState<string>();
   const [finding, setFinding] = useState<{ search: SearchAddon; asked: number } | null>(null);
   /** Its links' surfaces: a hovered link's tooltip, and the answer to one that did not open. */
-  const { hands: linkHands, surfaces: linkSurfaces } = usePaneLinks(onAMac(), null, null, links);
+  const { hands: linkHands, surfaces: linkSurfaces } = usePaneLinks({
+    from: NOWHERE,
+    core: links,
+    colour: () => linkColour(theme ?? inForce()),
+  });
   // Read once, as it is drawn: a later write of the same screen is the same picture.
   const told = useRef(onWriting);
   useLayoutEffect(() => {
@@ -180,17 +184,7 @@ export function ReadOnlyTerminal({
     // xterm's own text box is never a Tab stop: the screen's region is.
     pane.textarea?.setAttribute("tabindex", "-1");
     drawn.current = { pane, search };
-    const linked =
-      still || links === undefined
-        ? undefined
-        : linkPane(pane, {
-            core: links,
-            from: NOWHERE,
-            hovered: linkHands.hovered,
-            answered: linkHands.answered,
-            colour: () => linkColour(look),
-            mac: onAMac,
-          });
+    const linked = still || linkHands === undefined ? undefined : linkPane(pane, linkHands);
     let live = true;
     // No cursor: what it showed is over.
     const written = new Promise<void>((done) =>
@@ -207,9 +201,7 @@ export function ReadOnlyTerminal({
       linked?.dispose();
       pane.dispose();
     };
-    // The link hands are made once for the screen's life (`usePaneLinks`).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [screen, cols, rows, theme, fontSize, still, links]);
+  }, [screen, cols, rows, theme, fontSize, still, linkHands]);
 
   const keys = (event: KeyboardEvent<HTMLElement>) => {
     const now = drawn.current;

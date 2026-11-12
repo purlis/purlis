@@ -15,20 +15,25 @@ import type { LinkCandidate, LinkFrom, LinkOpened, LinkSeen } from "./bindings";
  *   (`pane_link_resolve`), sending only the text, its kind hint and where it was found. The
  *   answers are cached per pane, so a line hovered again asks nothing.
  * - **Nothing marks a link at rest** (D1). Under the pointer it is underlined and drawn in the
- *   theme's link colour, and the pane shows its tooltip (`PaneLinkTip.tsx`).
+ *   theme's link colour, and the pane shows its tooltip (`PaneLinkSurfaces.tsx`).
  * - **⌘-click (Ctrl+click off a Mac) opens it**: the core's open command (`pane_link_open`) is
  *   handed the candidate's text again and answers. A plain click selects text, as in any
  *   terminal: xterm's selection is never stopped.
+ * - **An address purlis will not open says why on its hover** (`ftp://…`, one carrying a
+ *   password): it is not underlined, and ⌘-click does nothing.
  */
 
 /** A pattern's candidate on a line: its kind hint, its text and where in the line it sits. */
 export type Found = LinkCandidate & { start: number; end: number };
 
-/** An http(s) address as a pane prints it: up to the first space, quote or angle bracket. */
-const WEB = /\bhttps?:\/\/[^\s<>"'`\p{Cc}]+/giu;
+/**
+ * An address as a pane prints it, `scheme://` and up to the first space, quote or angle bracket:
+ * http(s), which opens, and any other scheme, which the core says it will not open.
+ */
+const WEB = /(?<![\p{L}\p{N}+.-])\p{L}[\p{L}\p{N}+.-]*:\/\/[^\s<>"'`\p{Cc}]+/giu;
 
-/** What a sentence puts after an address, which is not the address's. */
-const TRAILING = /[.,;:!?]+$/u;
+/** What a sentence, or Markdown's emphasis, puts after an address, which is not the address's. */
+const TRAILING = /[.,;:!?*_]+$/u;
 
 /** A closing bracket the address did not open, which the sentence around it did. */
 const CLOSES: Record<string, string> = { ")": "(", "]": "[", "}": "{" };
@@ -48,7 +53,7 @@ function balanced(text: string): string {
 }
 
 /**
- * **The candidates in `line`**, left to right: http(s) addresses, with the punctuation a
+ * **The candidates in `line`**, left to right: addresses (`scheme://…`), with the punctuation a
  * sentence puts after one left out. Later kinds (files, chats) add their patterns here.
  */
 export function candidatesIn(line: string): Found[] {
@@ -61,14 +66,25 @@ export function candidatesIn(line: string): Found[] {
   return found;
 }
 
-/** The most rows one wrapped line is read across: a line longer is read in part. */
+/**
+ * The most rows one wrapped line is read across. A line longer is read in part, and a candidate
+ * that runs off the part read is no link: it would open cut short.
+ */
 const MOST_ROWS = 24;
 
 /** The most answers a pane keeps: the oldest goes first. */
 const MOST_KEPT = 256;
 
-/** A line as xterm holds it across the rows it wraps over: its text, and each character's cell. */
-type Wrapped = { text: string; cells: { x: number; y: number }[] };
+/**
+ * A line as xterm holds it across the rows it wraps over: its text, each character's cell, and
+ * whether the line went on before or after the part read.
+ */
+type Wrapped = {
+  text: string;
+  cells: { x: number; y: number }[];
+  cutBefore: boolean;
+  cutAfter: boolean;
+};
 
 /** Buffer line `y` (zero-based) as one line with the rows it wraps over, and each character's cell. */
 function wrappedAt(pane: Terminal, y: number): Wrapped | undefined {
@@ -77,6 +93,8 @@ function wrappedAt(pane: Terminal, y: number): Wrapped | undefined {
   while (first > 0 && y - first < MOST_ROWS && buffer.getLine(first)?.isWrapped) first -= 1;
   let last = y;
   while (last - first < MOST_ROWS && buffer.getLine(last + 1)?.isWrapped) last += 1;
+  const cutBefore = buffer.getLine(first)?.isWrapped === true;
+  const cutAfter = buffer.getLine(last + 1)?.isWrapped === true;
   let text = "";
   const cells: { x: number; y: number }[] = [];
   for (let row = first; row <= last; row += 1) {
@@ -91,7 +109,15 @@ function wrappedAt(pane: Terminal, y: number): Wrapped | undefined {
       for (let unit = 0; unit < chars.length; unit += 1) cells.push({ x, y: row });
     }
   }
-  return { text, cells };
+  return { text, cells, cutBefore, cutAfter };
+}
+
+/** Whether `found` runs off the part of its line read: it would open cut short. */
+function cutShort(found: Found, wrapped: Wrapped): boolean {
+  return (
+    (wrapped.cutBefore && found.start === 0) ||
+    (wrapped.cutAfter && found.end === wrapped.text.length)
+  );
 }
 
 /** Where a hovered link is drawn, in the window's viewport: what its tooltip stands beside. */
@@ -132,6 +158,30 @@ export function opensALink(event: Pick<MouseEvent, "metaKey" | "ctrlKey">, mac: 
   return mac ? event.metaKey : event.ctrlKey;
 }
 
+/** What the window says when the core could not be asked to open a link. */
+export const UNASKED = "purlis could not open that link";
+
+/**
+ * **Hands that pass on to whichever pane shows the terminal now** (`to`), as a chat's terminal,
+ * kept while no pane shows it, needs: with none, nothing is asked and nothing is drawn.
+ */
+export function relayed(to: () => LinkHands | undefined): LinkHands {
+  return {
+    core: {
+      resolve: (from, candidates) =>
+        to()?.core.resolve(from, candidates) ?? Promise.resolve(candidates.map(() => null)),
+      open: (from, candidate, confirmed) =>
+        to()?.core.open(from, candidate, confirmed) ??
+        Promise.reject(new Error("no pane shows this terminal")),
+    },
+    from: () => to()?.from() ?? { plane: null, session: null },
+    hovered: (link) => to()?.hovered(link),
+    answered: (answer, candidate) => to()?.answered(answer, candidate),
+    colour: () => to()?.colour() ?? "#000000",
+    mac: () => to()?.mac() ?? false,
+  };
+}
+
 /** **Opens `candidate`**, resolved again by the core, and hands on its answer. */
 export function openLink(
   candidate: LinkCandidate,
@@ -142,7 +192,11 @@ export function openLink(
     .open(hands.from(), { kind: candidate.kind, text: candidate.text }, confirmed)
     .then(
       (answer) => hands.answered(answer, candidate),
-      (why: unknown) => hands.answered({ answer: "refused", reason: String(why) }, candidate),
+      (why: unknown) => {
+        // The detail is the log's: the window says it in a sentence.
+        console.warn("purlis could not ask the core to open a link", why);
+        hands.answered({ answer: "refused", reason: UNASKED }, candidate);
+      },
     );
 }
 
@@ -237,8 +291,10 @@ export function linkPane(pane: Terminal, hands: LinkHands): IDisposable {
       const y = line - 1;
       const wrapped = wrappedAt(pane, y);
       if (wrapped === undefined) return give(undefined);
-      const onRow = candidatesIn(wrapped.text).filter((found) =>
-        wrapped.cells.slice(found.start, found.end).some((cell) => cell.y === y),
+      const onRow = candidatesIn(wrapped.text).filter(
+        (found) =>
+          !cutShort(found, wrapped) &&
+          wrapped.cells.slice(found.start, found.end).some((cell) => cell.y === y),
       );
       if (onRow.length === 0) return give(undefined);
       void Promise.all(onRow.map(seenOf)).then((answers) => {
@@ -257,16 +313,18 @@ export function linkPane(pane: Terminal, hands: LinkHands): IDisposable {
             else row.width = cell.x - row.x + 1;
           }
           const candidate: LinkCandidate = { kind: found.kind, text: found.text };
+          // What purlis will not open says why on its hover, and is drawn as no link.
+          const opens = seen.does.does !== "refused";
           links.push({
             range: {
               start: { x: first.x + 1, y: first.y + 1 },
               end: { x: end.x + 1, y: end.y + 1 },
             },
             text: found.text,
-            decorations: { pointerCursor: true, underline: true },
+            decorations: { pointerCursor: opens, underline: opens },
             activate(event) {
               // A plain click is the selection's, as in any terminal.
-              if (!opensALink(event, hands.mac())) return;
+              if (!opens || !opensALink(event, hands.mac())) return;
               event.preventDefault();
               void openLink(candidate, hands);
             },
@@ -280,7 +338,7 @@ export function linkPane(pane: Terminal, hands: LinkHands): IDisposable {
               }
               on = here;
               const lines = [...rows.values()];
-              draw(lines);
+              if (opens) draw(lines);
               const top = lines[0];
               hands.hovered({
                 seen,

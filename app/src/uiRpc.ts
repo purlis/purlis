@@ -7811,6 +7811,12 @@ export type KeptMark =
 /**  What the person's key did (#2014). */
 export type KeyAct = "down" | "up";
 
+/**
+ *  **What the pane's pattern took a candidate for**: a hint, never trusted for more. The wire's
+ *  half of the core's [`Kind`]; a kind's resolver is the core's `LinkKind`.
+ */
+export type KindHint = "url";
+
 /**  One context of the person's kubeconfig, as Point kubectl at it lists it. */
 export type KubeContext = {
 	/**  Its name, as kubectl knows it. */
@@ -8041,7 +8047,7 @@ export type LinesShown = {
 
 /**  **Text a pane found that may be a link**: the words as printed, and the pattern's hint. */
 export type LinkCandidate = {
-	kind: LinkKind,
+	kind: KindHint,
 	text: string,
 };
 
@@ -8063,13 +8069,10 @@ export type LinkFrom = {
 	session: number | null,
 };
 
-/**  **What the pane's pattern took a candidate for**: a hint, never trusted for more. */
-export type LinkKind = "url";
-
 /**  **The open command's answer.** */
 export type LinkOpened = 
 /**  Opened: `target` is what was opened. */
-{ answer: "opened"; kind: LinkKind; target: string } | 
+{ answer: "opened"; kind: KindHint; target: string } | 
 /**
  *  Not opened yet: the person is asked, shown its text and where it goes. Accepted, the
  *  same candidate is sent again with `target` as what was confirmed.
@@ -8078,9 +8081,12 @@ export type LinkOpened =
 /**  Not opened, and the sentence the window shows. */
 { answer: "refused"; reason: string };
 
-/**  **A candidate that is a link**: its kind, its target in full and what opening it does. */
+/**
+ *  **What a hover over a candidate shows**: its kind, its target in full (its own text, where it
+ *  is no link) and what opening it does.
+ */
 export type LinkSeen = {
-	kind: LinkKind,
+	kind: KindHint,
 	target: string,
 	does: LinkDoes,
 };

@@ -44,8 +44,8 @@ pub struct Pane {
 /// **Where a link goes**, as the core resolved it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Target {
-    /// A web address, as the browser will be handed it.
-    Url(String),
+    /// A web address, as the browser will be handed it: read once, never parsed again.
+    Url(url::Url),
 }
 
 impl Target {
@@ -60,7 +60,7 @@ impl Target {
     /// the person accepted sends back.
     pub fn shown(&self) -> &str {
         match self {
-            Target::Url(url) => url,
+            Target::Url(url) => url.as_str(),
         }
     }
 }
@@ -69,6 +69,14 @@ impl Target {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Resolved {
     Link(Target),
+    NotALink(String),
+}
+
+/// **What a hover over a candidate shows**: a link, where it goes and what opening it does, read
+/// once; or not a link, and why not.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Hover {
+    Link { target: Target, opening: Opening },
     NotALink(String),
 }
 
@@ -123,23 +131,43 @@ impl Resolver {
             .map(|one| &**one)
     }
 
-    /// **What `candidate`, found in `pane`, is**: what a hover shows.
+    /// `candidate` read by the kind its hint picks, with that kind.
+    fn read(&self, candidate: &Candidate, pane: &Pane) -> Result<(&dyn LinkKind, Target), String> {
+        let Some(kind) = self.kind_of(candidate.kind) else {
+            return Err("purlis does not link that kind of text".into());
+        };
+        match kind.resolve(&candidate.text, pane) {
+            Resolved::Link(target) => Ok((kind, target)),
+            Resolved::NotALink(why) => Err(why),
+        }
+    }
+
+    /// **What `candidate`, found in `pane`, is.**
     pub fn resolve(&self, candidate: &Candidate, pane: &Pane) -> Resolved {
-        match self.kind_of(candidate.kind) {
-            Some(kind) => kind.resolve(&candidate.text, pane),
-            None => Resolved::NotALink("purlis does not link that kind of text".into()),
+        match self.read(candidate, pane) {
+            Ok((_, target)) => Resolved::Link(target),
+            Err(why) => Resolved::NotALink(why),
+        }
+    }
+
+    /// **What a hover over `candidate` shows**: what it is and what opening it does, resolved
+    /// once.
+    pub fn hover(&self, candidate: &Candidate, pane: &Pane) -> Hover {
+        match self.read(candidate, pane) {
+            Ok((kind, target)) => Hover::Link {
+                opening: kind.opening(target.clone(), &candidate.text, pane),
+                target,
+            },
+            Err(why) => Hover::NotALink(why),
         }
     }
 
     /// **What opening `candidate` does**, resolved again from its text. `confirmed` is the
     /// target an ask showed, which the person accepted: it opens that target and no other.
     pub fn open(&self, candidate: &Candidate, pane: &Pane, confirmed: Option<&str>) -> Opening {
-        let Some(kind) = self.kind_of(candidate.kind) else {
-            return Opening::Refused("purlis does not link that kind of text".into());
-        };
-        let target = match kind.resolve(&candidate.text, pane) {
-            Resolved::Link(target) => target,
-            Resolved::NotALink(why) => return Opening::Refused(why),
+        let (kind, target) = match self.read(candidate, pane) {
+            Ok(read) => read,
+            Err(why) => return Opening::Refused(why),
         };
         match kind.opening(target, &candidate.text, pane) {
             Opening::Ask { target, .. } if confirmed == Some(target.shown()) => {
@@ -179,15 +207,12 @@ impl LinkKind for WebAddress {
         if url.host_str().is_none_or(str::is_empty) {
             return Resolved::NotALink("that address names no host".into());
         }
-        Resolved::Link(Target::Url(url.to_string()))
+        Resolved::Link(Target::Url(url))
     }
 
     fn opening(&self, target: Target, _text: &str, _pane: &Pane) -> Opening {
         let Target::Url(url) = &target;
-        let carries = url::Url::parse(url)
-            .map(|url| !url.username().is_empty() || url.password().is_some())
-            .unwrap_or(true);
-        if carries {
+        if !url.username().is_empty() || url.password().is_some() {
             return Opening::Refused(
                 "purlis will not open an address that carries a name or a password".into(),
             );
@@ -205,6 +230,11 @@ mod tests {
             kind: Kind::Url,
             text: text.to_owned(),
         }
+    }
+
+    /// The target of a web address, as the core reads it.
+    fn web(text: &str) -> Target {
+        Target::Url(url::Url::parse(text).expect("a web address"))
     }
 
     fn here() -> Pane {
@@ -228,15 +258,11 @@ mod tests {
 
         assert_eq!(
             links.resolve(&pr, &here()),
-            Resolved::Link(Target::Url(
-                "https://github.com/purlis/purlis/pull/6148".into()
-            ))
+            Resolved::Link(web("https://github.com/purlis/purlis/pull/6148"))
         );
         assert_eq!(
             links.open(&pr, &here(), None),
-            Opening::Open(Target::Url(
-                "https://github.com/purlis/purlis/pull/6148".into()
-            ))
+            Opening::Open(web("https://github.com/purlis/purlis/pull/6148"))
         );
     }
 
@@ -245,20 +271,14 @@ mod tests {
         let opening =
             Resolver::default().open(&url("http://localhost:5173/a?b=c#d"), &here(), None);
 
-        assert_eq!(
-            opening,
-            Opening::Open(Target::Url("http://localhost:5173/a?b=c#d".into()))
-        );
+        assert_eq!(opening, Opening::Open(web("http://localhost:5173/a?b=c#d")));
     }
 
     #[test]
     fn a_bare_host_is_shown_as_the_browser_will_be_handed_it() {
         let resolved = Resolver::default().resolve(&url("https://purlis.dev"), &Pane::default());
 
-        assert_eq!(
-            resolved,
-            Resolved::Link(Target::Url("https://purlis.dev/".into()))
-        );
+        assert_eq!(resolved, Resolved::Link(web("https://purlis.dev/")));
     }
 
     #[test]
@@ -319,7 +339,7 @@ mod tests {
             Kind::Url
         }
         fn resolve(&self, text: &str, _pane: &Pane) -> Resolved {
-            Resolved::Link(Target::Url(format!("https://real.example/{text}")))
+            Resolved::Link(web(&format!("https://real.example/{text}")))
         }
         fn opening(&self, target: Target, text: &str, _pane: &Pane) -> Opening {
             Opening::Ask {
@@ -339,7 +359,7 @@ mod tests {
             Opening::Ask {
                 reason: "its text names another address".into(),
                 shown: "setup".into(),
-                target: Target::Url("https://real.example/setup".into()),
+                target: web("https://real.example/setup"),
             }
         );
     }
@@ -350,12 +370,29 @@ mod tests {
 
         assert_eq!(
             links.open(&url("setup"), &here(), Some("https://real.example/setup")),
-            Opening::Open(Target::Url("https://real.example/setup".into()))
+            Opening::Open(web("https://real.example/setup"))
         );
         // Accepted for another target than the one the text resolves to now: asked again.
         assert!(matches!(
             links.open(&url("setup"), &here(), Some("https://elsewhere.example/")),
             Opening::Ask { .. }
+        ));
+    }
+
+    #[test]
+    fn a_hover_reads_the_text_once_into_where_it_goes_and_what_opening_does() {
+        let links = Resolver::default();
+
+        assert_eq!(
+            links.hover(&url("https://purlis.dev"), &here()),
+            Hover::Link {
+                target: web("https://purlis.dev/"),
+                opening: Opening::Open(web("https://purlis.dev/")),
+            }
+        );
+        assert!(matches!(
+            links.hover(&url("ftp://mirror.example.org/pub"), &here()),
+            Hover::NotALink(why) if why.contains("ftp:")
         ));
     }
 
