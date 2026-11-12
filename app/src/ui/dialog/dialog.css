@@ -115,8 +115,6 @@
 
 [data-scope="dialog"][data-part="title"] {
   margin: 0;
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-strong);
   line-height: var(--line-height-tight);
   overflow-wrap: anywhere;
   text-wrap: balance;
@@ -124,8 +122,6 @@
 
 [data-scope="dialog"][data-part="subtitle"] {
   margin: var(--space-2) 0 0;
-  color: var(--text-muted);
-  font-size: var(--font-size-sm);
   overflow-wrap: anywhere;
 }
 
@@ -160,7 +156,6 @@
 
 [data-scope="dialog"][data-part="description"] {
   margin-block-end: var(--space-5);
-  color: var(--text-secondary);
 }
 
 [data-scope="dialog"][data-part="description"] > :first-child {
@@ -196,8 +191,6 @@
   flex: 1 1 auto;
   min-inline-size: 0;
   overflow: hidden;
-  color: var(--text-quiet);
-  font-size: var(--font-size-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

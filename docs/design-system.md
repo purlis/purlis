@@ -2067,13 +2067,42 @@ One change each, each checked against a screenshot (#1920):
    [below](#the-explorer-and-the-panels-halves-on-the-roles));
 4. the tab strips and the status bar (moved: [below](#the-tab-strips-and-the-status-bar-on-the-roles));
 5. Settings (moved: [below](#settings-on-the-roles));
-6. Notices and dialogs;
+6. Notices and dialogs (moved: [below](#notices-and-dialogs-on-the-roles));
 7. Welcome;
 8. the view tabs (Todos, Memory, a task's changes, the skills' pages): their `.none` and
    `.pending` sentences wear `ui-text-secondary`, and `.view-body`'s muted goes (#3938).
 
 Along the way the section label gets one spelling (`ui-text-label`, which is `.sidebar-title`'s
 type today), and the two largest size tokens are each read by a role or removed.
+
+### Notices and dialogs, on the roles
+
+Each family ranked its own words: a dialog's title at the title's size by a rule of its own,
+its subtitle muted, its description in the secondary grey at the dialog's 14px; a Notice's card
+title at the medium weight, and its sub-line muted at 12px under a `ui-text-meta` that the
+family's rule outranked. Now (#1920):
+
+| word                                       | role                              | before                 | after                 |
+| ------------------------------------------ | --------------------------------- | ---------------------- | --------------------- |
+| a dialog's title                           | `ui-text-title`                   | 16px, strong           | the same              |
+| a dialog's subtitle                        | `ui-text-secondary`               | 12px, muted            | 12px, secondary       |
+| a dialog's description                     | `ui-text-body`                    | 14px, secondary        | 13px, primary         |
+| a dialog's summary, before its answers     | `ui-text-secondary`               | 12px, quiet            | 12px, secondary       |
+| a Notice card's title                      | `ui-text-body ui-text-strong`     | 13px, medium           | 13px, strong          |
+| whose a Notice is                          | `ui-text-strong`                  | strong                 | the same              |
+| a Notice row's sub-line                    | `ui-text-meta`                    | 12px, muted            | 11px, quiet           |
+
+What it settled:
+
+- **A dialog's description is what it asks**, so it is the body, as an ask's words are, and not
+  a quieter line under the title: the subtitle is that.
+- **A role a family's rule outranked was no role.** The Notice's sub-line wore the meta and was
+  drawn by the family at 12px muted; the family's rule is gone.
+
+Not moved with it, and still on their own tokens: a dialog's own 14px root, which its body's
+other words inherit (the dialog's size in the parts manifest), the generic `h3`, `h4`, `.where`
+and `.value` inside a dialog in `App.css`, and a Notice's message, whose size is its placement's
+(a pane's row, the Inbox, a card).
 
 ### Settings, on the roles
 
