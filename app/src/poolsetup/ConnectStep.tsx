@@ -629,13 +629,14 @@ export function ConnectStep({
   const madePool = shown.pool !== null;
   const done = step.state === "done";
   const meeting = step.next?.id === "trust-machine";
-  // A tcp:// machine typed for TLS is plain TCP only until its files are named: the pick, with
-  // Options open, says how to name them (#6267).
-  const naming = chosenOver === "tls" && step.cause === "plain-tcp";
-  // Refused on its card until the person chooses a route; a choice of SSH made since reads again.
+  // A tcp:// machine is refused on its card until the person chooses a route (#6267): chosen
+  // TLS, the pick with Options open says how to name its files; chosen SSH, it is read again.
   const refused =
     (step.cause === "plain-tcp" && chosenOver === undefined) || step.cause === "not-a-route";
-  const finding = step.state === "attention" && !refused && !naming;
+  // Plain TCP and an address that isn't one are refusals of what was typed, never findings of
+  // the machine: once the person chose a route they are only stale until the next read.
+  const declined = step.cause === "plain-tcp" || step.cause === "not-a-route";
+  const finding = step.state === "attention" && !declined;
 
   return (
     <>

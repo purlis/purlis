@@ -357,4 +357,13 @@ describe("ConnectStep", () => {
     expect(overOf(tlsMachine({ route: "ssh://lab", tls: null }))).toBe("ssh");
     expect(overOf(null)).toBe("ssh");
   });
+
+  it("keeps the route choice when SSH is chosen back from TLS, before the core reads again", async () => {
+    core();
+    draw(step({ machine: tlsMachine(), cause: "plain-tcp", state: "attention" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Use TLS instead" }));
+    await userEvent.click(await screen.findByRole("radio", { name: /SSH/ }));
+    expect(screen.getByRole("radio", { name: /Docker's API over TLS/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Use SSH instead" })).toBeNull();
+  });
 });
