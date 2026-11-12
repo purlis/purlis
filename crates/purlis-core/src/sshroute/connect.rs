@@ -102,6 +102,13 @@ pub fn resolved_from(printed: &str) -> Option<Resolved> {
     })
 }
 
+/// **The `ssh-keygen` on `path`** (the person's `PATH`, where `None`).
+#[must_use]
+pub fn keygen_on(path: Option<&str>) -> Option<PathBuf> {
+    let from_env = std::env::var("PATH").ok();
+    crate::secrets::run::which("ssh-keygen", path.or(from_env.as_deref()))
+}
+
 /// The arguments of `ssh -G` for `route`.
 #[must_use]
 pub fn settings_args(route: &Route) -> Vec<String> {
@@ -183,7 +190,8 @@ pub fn meet(ssh: &Path, route: &Route, settings_in: &Path) -> Result<HostKey, Fi
 /// hashed names too.
 #[must_use]
 pub fn known_to_the_person(resolved: &Resolved, home: Option<&Path>) -> Option<HostKey> {
-    let keygen = Path::new("/usr/bin/ssh-keygen");
+    // Only read: the person's own known hosts, by their own ssh-keygen.
+    let keygen = keygen_on(None)?;
     let name = if resolved.port == 22 {
         resolved.hostname.clone()
     } else {
@@ -196,7 +204,7 @@ pub fn known_to_the_person(resolved: &Resolved, home: Option<&Path>) -> Option<H
             (None, _) => PathBuf::from(file),
         };
         let ran = super::run(
-            keygen,
+            &keygen,
             &[
                 "-F".to_owned(),
                 name.clone(),

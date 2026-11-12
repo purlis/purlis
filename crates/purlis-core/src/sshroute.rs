@@ -256,8 +256,8 @@ fn a_user(user: &str) -> bool {
 }
 
 /// A machine's name, an alias of the person's SSH settings, or an address: letters, digits,
-/// dots, dashes and underscores, or an IPv6 address's hex digits and colons; never one ssh could
-/// take for an option.
+/// dots, dashes and underscores, or an IPv6 address other than the unspecified `::`; never one
+/// ssh could take for an option.
 fn a_host(host: &str) -> bool {
     !host.is_empty()
         && host.len() <= 253
@@ -266,7 +266,9 @@ fn a_host(host: &str) -> bool {
         && (host
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-            || (host.contains(':') && host.chars().all(|c| c.is_ascii_hexdigit() || c == ':')))
+            || host
+                .parse::<std::net::Ipv6Addr>()
+                .is_ok_and(|address| !address.is_unspecified()))
 }
 
 /// An absolute path of the other machine's, with nothing a forward's `local:remote` spelling or
