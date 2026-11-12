@@ -253,3 +253,64 @@ fn the_recheck_marks_the_ask_ready_once_when_the_cluster_no_longer_stops_the_set
     );
     assert!(!recheck(config.path(), Err("no kubectl".into()), 40).unwrap());
 }
+
+/// **Every secret shape a cluster's words can carry is left out, as written or encoded**: what the
+/// person shares goes through the scanner a save's guard reads with, whole and a line at a time,
+/// and through every escaped and encoded reading of each line. Each value is put together here,
+/// so no file of purlis's holds one whole.
+#[test]
+fn a_secret_is_left_out_however_it_is_spelled_or_encoded() {
+    let planted = [
+        // A Google sign-in's access token, as a GKE API server's error could echo its header.
+        concat!(
+            "Authorization: Bearer ya",
+            "29.a0AfB_byC3dE5fG7hJ9kL1mN3pQ5rS7tV9xZ1bD3fH5jL7nP9"
+        ),
+        // An EKS token, as `aws eks get-token` hands kubectl one.
+        concat!(
+            "token: k8s-aws-v",
+            "1.aHR0cHM6Ly9zdHMudXMtZWFzdC0xLmFtYXpvbmF3cy5jb20vP0FjdGlvbj1HZXRDYWxsZXJJZGVudGl0eQ"
+        ),
+        // A kubeconfig's client key, a PEM private key in base64.
+        concat!(
+            "client-key-data: LS0tLS1CRUdJTiBFQyBQUklW",
+            "QVRFIEtFWS0tLS0tCk1IY0NBUUVFSUJhc2U2NGJhc2U2NGJhc2U2NGJhc2U2NGJhc2U2NAotLS0tLUVORCBFQyBQUklWQVRFIEtFWS0tLS0tCg=="
+        ),
+        // A registry's address with its password in it.
+        concat!(
+            "pulling from https://ada:",
+            "Hunter2-s3cret-Pw",
+            "@registry.example.com/v2/"
+        ),
+        // A JWT inside JSON, its dots escaped as JSON may spell them.
+        concat!(
+            "{\"id_token\":\"eyJhbGciOiJSUzI1NiIsImtpZCI6IkJ4In0",
+            "\\u002e",
+            "eyJzdWIiOiJ0ZWFtbWF0ZSJ9\\u002ec2lnbmF0dXJlc2lnbmF0dXJl\"}"
+        ),
+        // A GitHub token, percent-encoded as a URL's query carries it.
+        concat!(
+            "?access_token=%67%68%70%5F",
+            "R8fJ2kLmN4pQ6sT8vX0zB2dF4hJ6lN8pR0tV"
+        ),
+    ];
+    let kept: Vec<&str> = planted
+        .iter()
+        .copied()
+        .filter(|secret| !held_free_of_secrets(&format!("a\n{secret}\nb")).contains(LEFT_OUT))
+        .collect();
+    assert!(kept.is_empty(), "kept: {kept:#?}");
+    for secret in planted {
+        let text = format!("doctor said:\n{secret}\nthe rest stands");
+        let held = held_free_of_secrets(&text);
+        assert!(held.contains(LEFT_OUT), "{secret} was kept: {held}");
+        assert!(held.contains("the rest stands"), "{held}");
+        assert!(
+            crate::secretshape::leak_spans_whole_and_by_line(&held).is_empty(),
+            "{held}"
+        );
+        for line in held.lines() {
+            assert_eq!(crate::secretshape::token_kind_as_read(line), None, "{line}");
+        }
+    }
+}

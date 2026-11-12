@@ -39,20 +39,93 @@ pub struct Asked {
 
 /// **`text`, with every line that looks like a secret left out** (#4496, #4497): what a person
 /// shares with someone else, or a chat is started with, goes through this last.
+///
+/// Read with the scanner a save's guard reads with ([`crate::secretshape::leak_spans_whole_and_by_line`]),
+/// whole and a line at a time, so a secret that runs over several lines leaves out every line it
+/// touches; and each line also through every escaped and encoded reading of it
+/// ([`crate::secretshape::token_kind_as_read`]), so a token spelled in JSON's escapes or a URL's
+/// percent-encoding is left out as the token it is.
 #[must_use]
 pub fn held_free_of_secrets(text: &str) -> String {
-    text.lines()
-        .map(|line| {
-            if crate::secretshape::secret_kind(line).is_some()
-                || crate::secretshape::token_kind(line).is_some()
+    let spans = crate::secretshape::leak_spans_whole_and_by_line(text);
+    let mut at = 0;
+    let mut kept = Vec::new();
+    for line in text.split_inclusive('\n') {
+        let here = at..at + line.len();
+        at += line.len();
+        let bare = line.strip_suffix('\n').unwrap_or(line);
+        let bare = bare.strip_suffix('\r').unwrap_or(bare);
+        let touched = spans
+            .iter()
+            .any(|(span, _)| span.start < here.end && here.start < span.end);
+        kept.push(
+            if touched
+                || crate::secretshape::secret_kind(bare).is_some()
+                || crate::secretshape::token_kind_as_read(bare).is_some()
+                || a_cluster_credential(bare)
             {
                 LEFT_OUT
             } else {
-                line
+                bare
+            },
+        );
+    }
+    kept.join("\n")
+}
+
+/// **Whether `line` carries a credential a cluster's sign-in is made of**, in a shape the shared
+/// scanner doesn't read: a bearer header (a GKE `ya29.` token among them), a kubeconfig's
+/// key or token data, a URL with a password in it, a PEM spelled in base64, or a token behind
+/// JSON's `\u` escapes. kubectl and an API server echo these, and what Pool setup shares is made
+/// of what they said.
+fn a_cluster_credential(line: &str) -> bool {
+    static SHAPES: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let shapes = SHAPES.get_or_init(|| {
+        regex::Regex::new(concat!(
+            r"(?i)\bbearer\s+[^\s]{8,}",
+            r"|(?i)\b(?:client-key-data|client-certificate-data|token-data|id-token|refresh-token|access-token|id_token|refresh_token|access_token)\b",
+            r"|\bya29\.[A-Za-z0-9_-]{8,}",
+            r"|\bk8s-aws-v1\.[A-Za-z0-9_-]{8,}",
+            r"|[A-Za-z][A-Za-z0-9+.-]*://[^/\s:@]+:[^/\s@]+@",
+            r"|LS0tLS1CRUdJTi",
+        ))
+        .expect("a pattern this module wrote")
+    });
+    if shapes.is_match(line) {
+        return true;
+    }
+    // JSON's `\uXXXX` escapes, read as the characters they spell, then asked again.
+    let unescaped = json_unescaped(line);
+    unescaped != line
+        && (crate::secretshape::token_kind_as_read(&unescaped).is_some()
+            || !crate::secretshape::leak_spans(&unescaped).is_empty()
+            || shapes.is_match(&unescaped))
+}
+
+/// `line` with each JSON `\uXXXX` escape read as its character; an escape that spells none is kept.
+fn json_unescaped(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut rest = line;
+    while let Some(at) = rest.find("\\u") {
+        out.push_str(&rest[..at]);
+        let after = &rest[at + 2..];
+        match after
+            .get(..4)
+            .and_then(|hex| u32::from_str_radix(hex, 16).ok())
+            .and_then(char::from_u32)
+        {
+            Some(c) => {
+                out.push(c);
+                rest = &after[4..];
             }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+            None => {
+                out.push_str("\\u");
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// **Whether doctor shows the person can't install** (story 44): it ran, and the cluster lacks

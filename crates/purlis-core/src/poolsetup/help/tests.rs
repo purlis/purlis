@@ -164,3 +164,31 @@ fn a_chat_holds_none_of_the_pools_powers() {
         denied.paths
     );
 }
+
+/// **The opening leaves out a cluster's credential however it is spelled**: a GKE bearer header, a
+/// kubeconfig's base64 key and a URL with a password, in the error or in what the cluster said.
+#[test]
+fn the_opening_leaves_out_a_clusters_credential_however_it_is_spelled() {
+    let bearer = concat!(
+        "Authorization: Bearer ya",
+        "29.a0AfB_byC3dE5fG7hJ9kL1mN3pQ5rS7tV9xZ1bD3f"
+    );
+    let key = concat!(
+        "client-key-data: LS0tLS1CRUdJTiBFQyBQUklW",
+        "QVRFIEtFWS0tLS0tCg=="
+    );
+    let url = concat!(
+        "https://ada:",
+        "Hunter2-s3cret-Pw",
+        "@registry.example.com/v2/"
+    );
+    let setup = stuck_on_check(vec![key.to_owned(), format!("pulling from {url}")]);
+    let text = opening(&setup, StepId::Check, Some(bearer)).unwrap();
+    for planted in ["ya29.", "LS0tLS1CRUdJTi", "Hunter2-s3cret-Pw"] {
+        assert!(!text.contains(planted), "{planted} in {text}");
+    }
+    assert!(
+        crate::secretshape::leak_spans_whole_and_by_line(&text).is_empty(),
+        "{text}"
+    );
+}
