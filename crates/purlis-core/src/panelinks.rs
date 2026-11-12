@@ -19,11 +19,15 @@
 //!   the window was handed that ask, not that a person read it.
 //! - **A file path** ([`Kind::File`], [`LocalFile`]) links only once the core finds the file,
 //!   and opens in the light editor at its line; one outside the chat's workspace asks first.
+//! - **A link a program marked** ([`Kind::Osc8`], #6218): its target, as the pane was handed it,
+//!   is read again here by its scheme's kind, and words that read as another address or path ask
+//!   first, showing both ([`Asking::Misleading`]).
 
 use std::path::PathBuf;
 
 mod asks;
 mod file;
+mod osc8;
 pub use asks::{Asks, Identity};
 pub use file::{FileAt, Home, HomeIs, LocalFile, ReadFrom, home_of};
 mod chat;
@@ -39,14 +43,38 @@ pub enum Kind {
     File,
     /// `chat 641`: a chat's number in the pane's project.
     Chat,
+    /// A link a program marked itself (OSC 8): words, and the target it named for them, read by
+    /// that target's scheme.
+    Osc8,
 }
 
 /// **Text a pane found that may be a link**: the words as the program printed them, and the
-/// kind the pane's pattern took them for.
+/// kind the pane's pattern took them for. A link a program marked ([`Kind::Osc8`]) carries the
+/// target the program named, as the pane was handed it: never one the pane resolved.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Candidate {
     pub kind: Kind,
     pub text: String,
+    pub target: Option<String>,
+}
+
+impl Candidate {
+    /// **What the kind whose rules read it reads, and which kind that is**: its own text by its
+    /// hint's kind, or for a link a program marked, its target by that target's scheme's
+    /// kind; or why a marked link's target is not read.
+    fn reading(&self) -> Result<(Kind, &str), String> {
+        match self.kind {
+            Kind::Osc8 => osc8::kind_of(self.target.as_deref())
+                .map(|kind| (kind, self.target.as_deref().unwrap_or_default())),
+            kind => Ok((kind, self.text.as_str())),
+        }
+    }
+
+    /// **The kind whose rules read it**: its hint's, or for a link a program marked, its
+    /// target's scheme's; `None` for a marked link whose target purlis refuses.
+    pub fn read_by(&self) -> Option<Kind> {
+        self.reading().ok().map(|(kind, _)| kind)
+    }
 }
 
 /// **Where a candidate was found**: the project the pane is in, the chat it draws, where it
@@ -126,6 +154,17 @@ pub enum Hover {
     Quiet,
 }
 
+/// **What an ask is about**, which picks the question the window asks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Asking {
+    /// A link, in general words.
+    Link,
+    /// A file outside the chat's home (#6216).
+    FileOutside,
+    /// A link a program marked, whose words read as another address or path (#6218).
+    Misleading,
+}
+
 /// **What opening a link does**, the open command's answer.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Opening {
@@ -139,6 +178,7 @@ pub enum Opening {
         shown: String,
         target: Target,
         token: Option<String>,
+        about: Asking,
     },
     /// Not opened, and the sentence the window shows.
     Refused(String),
@@ -197,15 +237,26 @@ impl Resolver {
         candidate: &Candidate,
         pane: &Pane,
     ) -> Result<(&dyn LinkKind, Target), Resolved> {
-        let Some(kind) = self.kind_of(candidate.kind) else {
+        // A marked link is read from the target the program named, by its scheme's kind.
+        let (hint, text) = candidate.reading().map_err(Resolved::NotALink)?;
+        let Some(kind) = self.kind_of(hint) else {
             return Err(Resolved::NotALink(
                 "purlis does not link that kind of text".into(),
             ));
         };
-        match kind.resolve(&candidate.text, pane) {
+        match kind.resolve(text, pane) {
             Resolved::Link(target) => Ok((kind, target)),
+            // The program marked it as a link, and the pane draws it as one: say why it is none.
+            Resolved::Quiet if candidate.kind == Kind::Osc8 => Err(osc8::not_there()),
             other => Err(other),
         }
+    }
+
+    /// **What opening `target`, read from `candidate`, does**, by its kind; a marked link
+    /// whose words read as another target asks first ([`osc8::reconsidered`]).
+    fn opening(kind: &dyn LinkKind, target: Target, candidate: &Candidate, pane: &Pane) -> Opening {
+        let opening = kind.opening(target.clone(), &candidate.text, pane);
+        osc8::reconsidered(opening, candidate, target, pane)
     }
 
     /// **What `candidate`, found in `pane`, is.**
@@ -221,7 +272,7 @@ impl Resolver {
     pub fn hover(&self, candidate: &Candidate, pane: &Pane) -> Hover {
         match self.read(candidate, pane) {
             Ok((kind, target)) => Hover::Link {
-                opening: Box::new(kind.opening(target.clone(), &candidate.text, pane)),
+                opening: Box::new(Self::opening(kind, target.clone(), candidate, pane)),
                 target,
             },
             Err(Resolved::NotALink(why)) => Hover::NotALink(why),
@@ -244,7 +295,7 @@ impl Resolver {
             Err(Resolved::NotALink(why)) => return Opening::Refused(why),
             Err(_) => return Opening::Refused(NOT_A_LINK.into()),
         };
-        match kind.opening(target, &candidate.text, pane) {
+        match Self::opening(kind, target, candidate, pane) {
             Opening::Ask { target, .. }
                 if answer.is_some_and(|token| asks.accepted(token, pane, &target)) =>
             {
@@ -255,6 +306,7 @@ impl Resolver {
                 reason,
                 shown,
                 target,
+                about,
                 ..
             } => match asks.issue(pane, &target) {
                 Some(token) => Opening::Ask {
@@ -262,6 +314,7 @@ impl Resolver {
                     shown,
                     target,
                     token: Some(token),
+                    about,
                 },
                 None => Opening::Refused(UNASKABLE.into()),
             },
@@ -329,6 +382,7 @@ mod tests {
         Candidate {
             kind: Kind::Url,
             text: text.to_owned(),
+            target: None,
         }
     }
 
@@ -452,6 +506,7 @@ mod tests {
                 shown: text.to_owned(),
                 target,
                 token: None,
+                about: Asking::Link,
             }
         }
     }
@@ -465,6 +520,7 @@ mod tests {
             shown,
             target,
             token,
+            ..
         } = links.open(&url("setup"), &here(), &Asks::default(), None)
         else {
             panic!("expected an ask");

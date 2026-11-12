@@ -31,6 +31,7 @@ export const KIND_SAID: Record<KindHint, string> = {
   url: "Web address",
   file: "File",
   chat: "Chat",
+  osc8: "Link",
 };
 
 /** Each kind's icon, at the row's lead (the prototype's S5). Its word is the row's description,
@@ -39,6 +40,7 @@ const KIND_ICON: Record<KindHint, ReactNode> = {
   url: <ExternalLink aria-hidden="true" />,
   file: <FileText aria-hidden="true" />,
   chat: <MessageSquare aria-hidden="true" />,
+  osc8: <ExternalLink aria-hidden="true" />,
 };
 
 /** What the list's items are called. */
@@ -58,6 +60,20 @@ const nameOf = (link: ScreenLink) => `${link.candidate.text} ${link.seen.target}
 
 /** No links yet: the same empty list each time, so the filter keeps its answer. */
 const NONE: readonly ScreenLink[] = [];
+
+/** **What an entry says under its target**: its kind, whether it asks first or won't open, and
+ *  whether a program marked it itself (#6218). */
+export function kindSaid(link: ScreenLink): string {
+  const { candidate, seen } = link;
+  return [
+    KIND_SAID[seen.kind],
+    seen.does.does === "asks" ? "asks first" : undefined,
+    seen.does.does === "refused" ? "won't open" : undefined,
+    candidate.kind === "osc8" ? "marked by the program" : undefined,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
 
 /** An entry's line under its kind: why it asks first, or why it will not open. */
 function whySaid(link: ScreenLink): string | undefined {
@@ -148,6 +164,8 @@ export function PaneLinksList({
             <ListBox aria-label="Links on screen" size="lg" onAction={(key) => pick(byKey(key))}>
               {shown.map((link) => {
                 const why = whySaid(link);
+                // The words a program marked it with, only where they name another target.
+                const words = link.seen.its_text ?? undefined;
                 return (
                   <ListOption
                     key={keyOf(link)}
@@ -158,11 +176,8 @@ export function PaneLinksList({
                   >
                     <RowLead>{KIND_ICON[link.seen.kind]}</RowLead>
                     <RowLabel className="pane-link-target">{link.seen.target}</RowLabel>
-                    <RowDescription>
-                      {KIND_SAID[link.seen.kind]}
-                      {link.seen.does.does === "asks" ? " · asks first" : ""}
-                      {link.seen.does.does === "refused" ? " · won't open" : ""}
-                    </RowDescription>
+                    <RowDescription>{kindSaid(link)}</RowDescription>
+                    {words !== undefined && <RowBelow>Its text: {words}</RowBelow>}
                     {why !== undefined && <RowBelow>{why}</RowBelow>}
                   </ListOption>
                 );

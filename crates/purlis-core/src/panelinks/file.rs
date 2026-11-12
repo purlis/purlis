@@ -28,7 +28,7 @@ use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
-use super::{Asks, Kind, LinkKind, Opening, Pane, Resolved, Runs, Target};
+use super::{Asking, Asks, Kind, LinkKind, Opening, Pane, Resolved, Runs, Target};
 
 /// **A file a path names**, as the core resolved it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -348,6 +348,7 @@ impl LinkKind for LocalFile {
             shown: text.to_owned(),
             target,
             token: None,
+            about: Asking::FileOutside,
         }
     }
 

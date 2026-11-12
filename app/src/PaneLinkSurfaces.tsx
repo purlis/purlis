@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type {
   ChatGo,
   ChatSeen,
+  KindHint,
   LinkCandidate,
   LinkFrom,
   LinkHome,
@@ -51,6 +52,8 @@ import {
  * - **A chat link** (`chat 641`, #6217) says "#641 · <title>", then where the chat is and what
  *   ⌘-click does. What ⌘-click shows is the pane's to do (`PaneLinkChats.tsx`): this file draws
  *   on screens that reach no core, the theme specimen's, and imports nothing that does.
+ * - **A link a program marked (OSC 8) says where it goes first** (D2): "Goes to <target>".
+ *   One whose words read as another address asks first (the prototype's S8, D10).
  */
 
 /** The modifier word a link opens with, in the window's words (D12). */
@@ -99,11 +102,20 @@ export function chatSaid(chat: ChatSeen, click: string): string {
 }
 
 /** **A hovered link's tooltip**: where it goes (a file in the chat's workspace from the
- *  workspace, D2; everything else in full), then what ⌘-click does. */
-export function LinkTip({ seen, mac }: { seen: LinkSeen; mac: boolean }) {
+ *  workspace, D2; everything else in full; a link a program marked as "Goes to …"), then what
+ *  ⌘-click does. */
+export function LinkTip({
+  seen,
+  mac,
+  marked = false,
+}: {
+  seen: LinkSeen;
+  mac: boolean;
+  marked?: boolean;
+}) {
   return (
     <span className="pane-link-tip">
-      <code className="pane-link-target">{seen.shown}</code>
+      <code className="pane-link-target">{marked ? `Goes to ${seen.shown}` : seen.shown}</code>
       <TooltipDetail>{linkDoesSaid(seen, mac)}</TooltipDetail>
     </span>
   );
@@ -246,7 +258,7 @@ export function usePaneLinks({
               hovered(pending.current);
             }}
           >
-            <LinkTip seen={shown.seen} mac={mac} />
+            <LinkTip seen={shown.seen} mac={mac} marked={shown.marked} />
           </AnchoredTooltip>
         </>
       )}
@@ -307,6 +319,17 @@ export function LinkAnswer({
       <FileOutsideAsk
         target={answer.target}
         home={answer.about.home}
+        onClose={onClose}
+        onOpen={() => onConfirm(answer.token)}
+      />
+    );
+  if (answer.answer === "ask" && answer.about.about === "misleading")
+    return (
+      <MisleadingAsk
+        text={answer.shown}
+        target={answer.target}
+        kind={answer.about.kind}
+        host={answer.about.host}
         onClose={onClose}
         onOpen={() => onConfirm(answer.token)}
       />
@@ -389,6 +412,81 @@ export function FileOutsideAsk({
         )}
       </Facts>
       <p className="ui-text-secondary">It opens in an editor tab. Nothing is run.</p>
+    </Dialog>
+  );
+}
+
+/** `target` around its `host`, which {@link MisleadingAsk} draws apart: the first time it
+ *  appears, after the scheme. */
+function aroundHost(target: string, host: string | null): ReactNode {
+  const at = host === null || host === "" ? -1 : target.toLowerCase().indexOf(host.toLowerCase());
+  if (host === null || at < 0) return target;
+  return (
+    <>
+      {target.slice(0, at)}
+      <strong>{target.slice(at, at + host.length)}</strong>
+      {target.slice(at + host.length)}
+    </>
+  );
+}
+
+/**
+ * **The ask for a link a program marked whose words name another target** (#6218, the
+ * prototype's S8, D10): its words, and where it really goes, the real host drawn apart so a
+ * look-alike is seen. It starts on *Don't open*, and Return never opens it: *Open in browser*
+ * is plain, not primary. A file's target says *Copy path* and *Open file*. It is answered by
+ * the ask's one-use token, which proves only that this window was handed the ask.
+ */
+export function MisleadingAsk({
+  text,
+  target,
+  kind,
+  host,
+  onClose,
+  onOpen,
+}: {
+  text: string;
+  target: string;
+  kind: KindHint;
+  host: string | null;
+  onClose: () => void;
+  onOpen: () => void;
+}) {
+  const file = kind === "file";
+  const expected = file ? "this file" : (host ?? "this address");
+  return (
+    <Dialog
+      title="This link goes somewhere its text doesn't say"
+      description={`A program in this chat marked these words as a link to a different ${file ? "file" : "address"}.`}
+      cancel={{ children: "Don't open" }}
+      alternative={{
+        children: file ? "Copy path" : "Copy address",
+        onPress: () => {
+          void navigator.clipboard?.writeText(target).catch((why: unknown) => {
+            console.warn("purlis could not copy a link's address", why);
+          });
+          onClose();
+        },
+      }}
+      main={{
+        children: file ? "Open file" : "Open in browser",
+        onPress: onOpen,
+        variant: "secondary",
+        byReturn: false,
+      }}
+      initialFocus="cancel"
+      onClose={onClose}
+      data-testid="pane-link-misleading"
+    >
+      <Facts aria-label="The link">
+        <Fact label="Its text">
+          <span className="pane-link-path">{text}</span>
+        </Fact>
+        <Fact label="Goes to">
+          <span className="pane-link-path">{aroundHost(target, file ? null : host)}</span>
+        </Fact>
+      </Facts>
+      <p className="ui-text-secondary">Open it only if you expected {expected}.</p>
     </Dialog>
   );
 }
