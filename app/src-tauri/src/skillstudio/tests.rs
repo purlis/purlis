@@ -249,7 +249,7 @@ fn the_studio_carries_the_projects_personas_each_with_its_role_and_where_it_was_
     // A workspace the project no longer has is no place to look at a chat in.
     dispatch("gone");
 
-    let read = studio(&root, None, true, None, None, &no_harness());
+    let read = studio(&root, None, None, None, &no_harness());
 
     assert_eq!(
         read.personas,
@@ -274,12 +274,6 @@ fn the_studio_carries_the_projects_personas_each_with_its_role_and_where_it_was_
                 dispatched_into: Vec::new(),
             },
         ]
-    );
-    assert!(
-        studio(&root, None, false, None, None, &no_harness())
-            .personas
-            .is_empty(),
-        "off, nothing is read"
     );
 }
 
