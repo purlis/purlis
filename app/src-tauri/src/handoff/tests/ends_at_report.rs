@@ -944,11 +944,13 @@ fn a_quit_is_not_held_past_its_deadline_by_a_task_screen_that_will_not_come() {
     let began = std::time::Instant::now();
     bounded("the app quitting", move || quit.let_go_of_all());
 
+    let took = began.elapsed();
+    // The read left behind ends now, not 30 s on in a folder already deleted.
+    host.terminal_answers();
     let slack = std::time::Duration::from_millis(1500);
     assert!(
-        began.elapsed() < crate::chatcard::SCREENS_AT_QUIT_WITHIN + slack,
-        "the quit took {:?}",
-        began.elapsed()
+        took < crate::chatcard::SCREENS_AT_QUIT_WITHIN + slack,
+        "the quit took {took:?}"
     );
 }
 

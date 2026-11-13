@@ -552,16 +552,26 @@ mod tests {
         let host = Pretend::default();
         let (_dir, root) = a_task_on(&host);
         host.terminal_takes(Duration::from_secs(30));
-        let shared: Arc<dyn SessionHost> = Arc::new(host);
+        let shared: Arc<dyn SessionHost> = Arc::new(host.clone());
         let began = Instant::now();
 
         start_keeping_screens_at_quit(&root, &shared, &[(7, TASK.to_owned())])
             .wait_until(began + Duration::from_millis(300));
 
+        let waited = began.elapsed();
+        // The read left behind finishes now, into this test's folder while it is still there,
+        // and not 30 s on into one already deleted (#6508's review).
+        host.terminal_answers();
+        while purlis_core::chatscreens::kept(&root, TASK).is_none() {
+            assert!(
+                began.elapsed() < Duration::from_secs(10),
+                "the read never finished"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
         assert!(
-            began.elapsed() < Duration::from_secs(2),
-            "the quit waited {:?}",
-            began.elapsed()
+            waited < Duration::from_secs(2),
+            "the quit waited {waited:?}"
         );
     }
 }
