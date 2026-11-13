@@ -17,6 +17,7 @@ fn key(text: &str) -> HostKey {
 fn remote_facts(connect: Connecting) -> Facts {
     Facts {
         engine: Engine::Ready,
+        elsewhere: None,
         connect: Some(connect),
         pool: None,
         identity: Identity::None,
@@ -431,6 +432,7 @@ fn the_machine_connect_reads_is_kept_and_a_pin_only_once_trusted() {
             trusted: None,
             tls: None,
             trusted_tls: None,
+            docker_context: None,
         })
     );
     let remote = crate::runners::Remote {
@@ -811,4 +813,270 @@ fn connect_and_trust_over_tls_refuse_files_a_chat_could_reach_another_way() {
     let (met, trusted) = both(&[]);
     refused(met, "key.pem", "another name");
     refused(trusted, "key.pem", "another name");
+}
+
+// ---------------------------------------------------------------------------------------------
+// From a Docker context (#6268).
+
+fn context(
+    name: &str,
+    endpoint: crate::dockercontext::Endpoint,
+) -> crate::dockercontext::DockerContext {
+    crate::dockercontext::DockerContext {
+        name: name.to_owned(),
+        current: false,
+        endpoint,
+    }
+}
+
+fn ssh_context() -> crate::dockercontext::DockerContext {
+    context(
+        "build-box",
+        crate::dockercontext::Endpoint::Ssh(Route::parse("ssh://me@build-box").unwrap()),
+    )
+}
+
+fn tls_context() -> crate::dockercontext::DockerContext {
+    context(
+        "lab",
+        crate::dockercontext::Endpoint::Tls {
+            route: crate::tlsroute::Route::parse("tcp://lab.example:2376").unwrap(),
+            files: files(),
+        },
+    )
+}
+
+/// An ssh:// context picked is its route, read once, and its name is kept beside it through the
+/// trust, for doctor alone; a machine typed after forgets the name.
+#[test]
+fn an_ssh_context_picked_keeps_its_route_and_its_name_through_the_trust() {
+    let config = tempfile::tempdir().unwrap();
+    choose_docker_context(config.path(), &ssh_context()).unwrap();
+    let kept = read_choices(config.path()).unwrap();
+    assert_eq!(kept.kind, Some(Kind::RemoteDocker));
+    let chosen = kept.connect.unwrap();
+    assert_eq!(chosen.route, "ssh://me@build-box");
+    assert_eq!(chosen.docker_context.as_deref(), Some("build-box"));
+    let remote = crate::runners::Remote {
+        route: Route::parse("ssh://me@build-box/var/run/docker.sock").unwrap(),
+        pin: Pin {
+            host_key: key(KEY),
+            engine: crate::sshroute::EnginePin::Docker("ABCD".to_owned()),
+        },
+    };
+    trusted(config.path(), &remote).unwrap();
+    let file = std::fs::read_to_string(
+        crate::machine::dir(config.path()).join(super::super::CHOICES_FILE),
+    )
+    .unwrap();
+    let file: serde_json::Value = serde_json::from_str(&file).unwrap();
+    assert_eq!(file["connect"]["dockerContext"], "build-box");
+    assert_eq!(
+        read_choices(config.path())
+            .unwrap()
+            .connect
+            .unwrap()
+            .docker_context
+            .as_deref(),
+        Some("build-box")
+    );
+    // A machine typed is not the context's.
+    choose_machine(config.path(), Some("ssh://me@other-box"), None).unwrap();
+    assert_eq!(
+        read_choices(config.path())
+            .unwrap()
+            .connect
+            .unwrap()
+            .docker_context,
+        None
+    );
+}
+
+/// A TLS context picked is its tcp:// route with its own TLS material's paths, and the name
+/// stays through the trust of its CA.
+#[test]
+fn a_tls_context_picked_keeps_its_route_its_tls_files_and_its_name_through_the_trust() {
+    let config = tempfile::tempdir().unwrap();
+    choose_docker_context(config.path(), &tls_context()).unwrap();
+    let chosen = read_choices(config.path()).unwrap().connect.unwrap();
+    assert_eq!(chosen.route, "tcp://lab.example:2376");
+    assert_eq!(chosen.tls, Some(files()));
+    assert_eq!(chosen.docker_context.as_deref(), Some("lab"));
+    let remote = crate::tlsroute::Remote {
+        route: crate::tlsroute::Route::parse("tcp://lab.example:2376").unwrap(),
+        files: files(),
+        pin: crate::tlsroute::Pin {
+            ca: ca(),
+            engine: "ABCD".to_owned(),
+        },
+    };
+    trusted_tls(config.path(), &remote).unwrap();
+    let chosen = read_choices(config.path()).unwrap().connect.unwrap();
+    assert_eq!(chosen.trusted_tls, Some(remote.pin));
+    assert_eq!(chosen.docker_context.as_deref(), Some("lab"));
+    // The same files kept again are still the context's; others are the person's own.
+    choose_tls_files(config.path(), Some(files())).unwrap();
+    assert_eq!(
+        read_choices(config.path())
+            .unwrap()
+            .connect
+            .unwrap()
+            .docker_context
+            .as_deref(),
+        Some("lab")
+    );
+    let mine = crate::tlsroute::Files::new(
+        "/home/me/certs/ca.pem".into(),
+        "/home/me/certs/cert.pem".into(),
+        crate::tlsroute::KeyFrom::File("/home/me/certs/key.pem".into()),
+    )
+    .unwrap();
+    choose_tls_files(config.path(), Some(mine)).unwrap();
+    assert_eq!(
+        read_choices(config.path())
+            .unwrap()
+            .connect
+            .unwrap()
+            .docker_context,
+        None
+    );
+}
+
+/// A context on this machine's own socket is the local kind; one refused is refused in its own
+/// words, and keeps nothing.
+#[test]
+fn a_local_socket_context_is_the_local_kind_and_a_refused_one_keeps_nothing() {
+    let config = tempfile::tempdir().unwrap();
+    choose_docker_context(
+        config.path(),
+        &context("desktop-linux", crate::dockercontext::Endpoint::Here),
+    )
+    .unwrap();
+    let kept = read_choices(config.path()).unwrap();
+    assert_eq!(kept.kind, Some(Kind::Docker));
+    assert_eq!(kept.connect, None);
+    let refused = choose_docker_context(
+        config.path(),
+        &context(
+            "open",
+            crate::dockercontext::Endpoint::Refused(crate::sshroute::PLAIN_TCP.to_owned()),
+        ),
+    );
+    match refused {
+        Err(Refused::Other(why)) => assert_eq!(why, crate::sshroute::PLAIN_TCP),
+        other => panic!("taken: {other:?}"),
+    }
+    assert_eq!(
+        read_choices(config.path()).unwrap().kind,
+        Some(Kind::Docker)
+    );
+}
+
+/// Doctor's check of the context (ADR 0123 §7): a pool whose context now names another route
+/// says so in the ADR's words, offers Connect again and keeping the pool as it is, and changes
+/// nothing the pool runs on.
+#[test]
+fn a_context_that_now_names_another_route_is_said_in_adr_0123s_words_with_two_ways_on() {
+    let trusted_pin = Pin {
+        host_key: key(KEY),
+        engine: crate::sshroute::EnginePin::Docker("ABCD".to_owned()),
+    };
+    let connect = connect_of(&remote_facts(Connecting {
+        trusted: Some(trusted_pin.clone()),
+        docker_context: Some("build-box".to_owned()),
+        context_now: Some("ssh://me@new-box".to_owned()),
+        ..routed("ssh://me@build-box/var/run/docker.sock")
+    }));
+    assert_eq!(connect.state, StepState::Attention);
+    assert_eq!(connect.cause, Some("context-moved"));
+    assert_eq!(
+        connect.findings,
+        [
+            "Your context build-box now points somewhere else than this pool. Connect again to \
+          follow it, or keep the pool as it is."
+        ]
+    );
+    assert_eq!(connect.next.as_ref().unwrap().id, ActionId::ConnectAgain);
+    assert_eq!(connect.other.as_ref().unwrap().id, ActionId::KeepPoolAsItIs);
+    assert_eq!(
+        connect.prefill,
+        Some(Prefill {
+            route: "ssh://me@new-box".to_owned(),
+            context: Some("build-box".to_owned()),
+        })
+    );
+    // The pool's own machine is still the one shown.
+    let machine = connect.machine.unwrap();
+    assert_eq!(
+        machine.route.as_deref(),
+        Some("ssh://me@build-box/var/run/docker.sock")
+    );
+    assert_eq!(machine.context.as_deref(), Some("build-box"));
+    // A context that still names the route says nothing.
+    let still = connect_of(&remote_facts(Connecting {
+        trusted: Some(trusted_pin),
+        docker_context: Some("build-box".to_owned()),
+        ..routed("ssh://me@build-box/var/run/docker.sock")
+    }));
+    assert_eq!(still.state, StepState::Done);
+    assert_eq!(still.other, None);
+}
+
+/// The local kind's engine elsewhere offers Set up Docker on another machine beside its own
+/// words, prefilled from DOCKER_HOST or the current context where that is an SSH or TLS address.
+#[test]
+fn an_engine_elsewhere_offers_docker_on_another_machine_prefilled_with_its_address() {
+    let prefill = Prefill {
+        route: "ssh://me@build-box".to_owned(),
+        context: None,
+    };
+    let setup = of(
+        Kind::Docker,
+        &Facts {
+            engine: Engine::Elsewhere,
+            elsewhere: Some(prefill.clone()),
+            connect: None,
+            ..remote_facts(Connecting::default())
+        },
+        &Choices::default(),
+    );
+    let where_ = setup.step(StepId::Where).unwrap();
+    assert_eq!(where_.state, StepState::Attention);
+    assert_eq!(where_.next.as_ref().unwrap().id, ActionId::UseLocalDocker);
+    let other = where_.other.as_ref().unwrap();
+    assert_eq!(other.id, ActionId::UseRemoteDocker);
+    assert_eq!(other.label, "Set up Docker on another machine");
+    assert_eq!(where_.prefill, Some(prefill));
+}
+
+#[test]
+fn the_prefill_is_docker_host_where_it_is_remote_and_else_the_current_context() {
+    let mut current = ssh_context();
+    current.current = true;
+    let contexts = [tls_context(), current];
+    assert_eq!(
+        prefill_of(Some("ssh://me@host-box"), &contexts),
+        Some(Prefill {
+            route: "ssh://me@host-box".to_owned(),
+            context: None,
+        })
+    );
+    assert_eq!(
+        prefill_of(None, &contexts),
+        Some(Prefill {
+            route: "ssh://me@build-box".to_owned(),
+            context: Some("build-box".to_owned()),
+        })
+    );
+    assert_eq!(
+        prefill_of(Some("unix:///var/run/docker.sock"), &contexts[..1]),
+        None,
+        "a socket here, and no current context"
+    );
+    assert_eq!(
+        prefill_of(Some("tcp://lab.example:2376"), &[])
+            .unwrap()
+            .route,
+        "tcp://lab.example:2376"
+    );
 }

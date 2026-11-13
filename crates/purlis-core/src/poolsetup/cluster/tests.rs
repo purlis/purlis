@@ -9,6 +9,7 @@ use StepState::{Attention, Current, Done, Later};
 fn on_a_cluster(cluster: ClusterFacts) -> Facts {
     Facts {
         engine: Engine::Missing,
+        elsewhere: None,
         connect: None,
         pool: None,
         identity: Identity::None,

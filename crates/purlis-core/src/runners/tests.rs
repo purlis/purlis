@@ -2007,3 +2007,60 @@ fn a_tcp_row_without_its_files_its_ca_or_a_whole_pin_is_not_read() {
         assert!(pools(config.path()).is_err(), "{row} was read");
     }
 }
+
+/// A pool whose route was read from a Docker context keeps its name beside the route (#6268),
+/// over either route; a local pool or a bad name is no row purlis writes; and keeping the pool
+/// as it is forgets the name alone.
+#[test]
+fn a_pool_read_from_a_docker_context_keeps_its_name_and_forgets_only_it_when_kept_as_it_is() {
+    let config = tempfile::tempdir().unwrap();
+    let ssh = pool("build-box", Set::default())
+        .on(Some(remote()))
+        .from_docker_context(Some("build-box".to_owned()));
+    let tls = pool("lab", Set::default())
+        .on_engine(Some(
+            tls_remote(crate::tlsroute::KeyFrom::File(
+                "/home/me/.docker/key.pem".into(),
+            ))
+            .into(),
+        ))
+        .from_docker_context(Some("lab".to_owned()));
+    record_pool(config.path(), &ssh).unwrap();
+    record_pool(config.path(), &tls).unwrap();
+    let file = the_file(config.path());
+    assert_eq!(file["pools"][0]["dockerContext"], "build-box");
+    assert_eq!(file["pools"][1]["dockerContext"], "lab");
+    let read = pools(config.path()).unwrap();
+    assert_eq!(read, vec![ssh.clone(), tls]);
+    assert_eq!(read[0].docker_context(), Some("build-box"));
+    // A context's name is no part of what the pool runs on.
+    assert_eq!(
+        ssh.definition_digest(),
+        pool("build-box", Set::default())
+            .on(Some(remote()))
+            .definition_digest()
+    );
+
+    forget_docker_context(config.path(), "build-box").unwrap();
+    let read = pools(config.path()).unwrap();
+    assert_eq!(read[0].docker_context(), None);
+    assert_eq!(read[0].remote(), Some(&remote()));
+    assert_eq!(read[1].docker_context(), Some("lab"));
+    assert!(forget_docker_context(config.path(), "no-such-pool").is_err());
+
+    let file = crate::machine::dir(config.path()).join(crate::machine::RUNNERS_FILE);
+    for row in [
+        serde_json::json!({ "name": "b", "kind": "docker", "image": IMAGE,
+            "dockerContext": "box" }),
+        serde_json::json!({ "name": "b", "kind": "remote-docker", "image": IMAGE,
+            "route": "ssh://me@box/var/run/docker.sock",
+            "pin": { "hostKey": HOST_KEY, "engine": "X" }, "dockerContext": "-bad name" }),
+    ] {
+        std::fs::write(
+            &file,
+            serde_json::json!({ "version": 1, "pools": [row], "runners": [] }).to_string(),
+        )
+        .unwrap();
+        assert!(pools(config.path()).is_err(), "{row} was read");
+    }
+}

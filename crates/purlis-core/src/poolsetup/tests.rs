@@ -7,6 +7,7 @@ use crate::dockerpool::tests::{FakeDocker, inspected};
 fn facts(engine: Engine) -> Facts {
     Facts {
         engine,
+        elsewhere: None,
         connect: None,
         pool: None,
         identity: Identity::None,
