@@ -1,6 +1,6 @@
 ---
 name: purlis-safe-remove
-description: When the person wants a purlis workspace or persona gone, remove it without losing what it learned, then run the guarded remove. Use when asked to remove, delete, retire or archive one. Not for pruning memory (purlis-tidy-memory), a branch folder (purlis-repo-work) or a new persona (purlis-persona).
+description: When the person wants a purlis workspace or persona gone, keep what it learned, then run the guarded remove. Use when asked to remove, delete, retire or archive one. Not for pruning memory (purlis-tidy-memory), a branch folder (purlis-repo-work) or a new persona (purlis-persona).
 ---
 
 # Safe remove

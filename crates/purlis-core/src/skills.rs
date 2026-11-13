@@ -205,15 +205,14 @@ pub fn built_in_names(dir: Option<&Path>) -> Vec<String> {
 }
 
 /// **The most characters every built-in's description may come to together** (spec #5714's Q37;
-/// ADR 0102, amended 2026-11-12). 5,100 since `purlis-building-ui` was retired (#5725): the
-/// 5,000 of Q37 again once the built-ins' descriptions are trimmed to it, with
-/// [`CODEX_LEFT_FOR_THE_PLANE`] back at 2,800 in the same change.
-pub const BUILT_IN_DESCRIPTIONS_MOST: usize = 5_100;
+/// ADR 0102, amended 2026-11-13). Why, and how a description fits it: the house style in
+/// `docs/development.md`.
+pub const BUILT_IN_DESCRIPTIONS_MOST: usize = 5_000;
 
 /// **The least of Codex's listing the built-ins leave for the plane's own skills**, in
-/// characters (spec #5714's Q38; ADR 0102, amended 2026-11-12). 2,750 until the built-ins'
-/// descriptions fit [`BUILT_IN_DESCRIPTIONS_MOST`] at 5,000 again, then 2,800.
-pub const CODEX_LEFT_FOR_THE_PLANE: usize = 2_750;
+/// characters (spec #5714's Q38; ADR 0102, amended 2026-11-13): what Codex's 8,000 keep once
+/// the built-ins take their [`BUILT_IN_DESCRIPTIONS_MOST`] and their names and paths.
+pub const CODEX_LEFT_FOR_THE_PLANE: usize = 2_800;
 
 /// **The skills purlis ships**, by name: the bundle's `plugin/skills/<name>/SKILL.md`, each
 /// folder named as its skill (held to that folder by a test). Compiled in, for the doctor's check

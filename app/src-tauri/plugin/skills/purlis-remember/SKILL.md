@@ -1,6 +1,6 @@
 ---
 name: purlis-remember
-description: When something learned in a purlis chat should outlive it, record it, add a todo, or recall a decision. Use when asked to remember this, note that, add a todo, or what did we decide. Not for tidying memory (purlis-tidy-memory), a closing summary (purlis-smart-close) or a password (purlis-secrets).
+description: When something learned in a purlis chat should outlive it, record it or recall a decision. Use when asked to remember this, note that, add a todo, or what did we decide. Not for tidying memory (purlis-tidy-memory), a closing summary (purlis-smart-close) or a password (purlis-secrets).
 ---
 
 # Remember
