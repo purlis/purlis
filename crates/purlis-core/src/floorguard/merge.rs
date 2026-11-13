@@ -14,6 +14,10 @@
 //! * an **alias** is the command it stands for, and making one that stands for a held command,
 //!   or for the start of one, is refused.
 //!
+//! A **release or a tag made through the API** (`releases`, `repository/tags`, `git/tags`, a
+//! `refs/tags/` ref) is the act `glab release create` and `git tag` are, so a write to one is
+//! refused the same way (#6294).
+//!
 //! A read is never refused. An API call that is a `GET` cannot merge anything, whatever endpoint
 //! it names, so an unattended run can still read a request, its checks and whether it merged.
 //! Attended, nothing here runs at all: [`super::release_floor_reason`] returns first.
@@ -31,6 +35,14 @@ pub(super) const MERGES: &str =
 /// The sentence a refusal ends with when the call's effect on a merge cannot be read.
 pub(super) const UNREADABLE: &str =
     "purlis cannot read what this call would do to a merge, so it is treated as one.";
+
+/// The sentence a refusal of a release or a tag made through the API ends with.
+const PUBLISHES: &str =
+    "A release or a tag made through the API publishes, as `release create` does.";
+
+/// How a refused compound call is split into calls the floor can read (#6294).
+const SPLIT: &str = "Split the call: give each read its method (`-X GET`) or its endpoint written \
+     out, and run a write on its own, with its endpoint and method written out.";
 
 /// The sentence a refusal of an alias ends with.
 const ALIAS: &str = "An alias that would land code is the command it stands for.";
@@ -139,7 +151,7 @@ pub(super) fn forge_reason(
     let first = words.first().map(|w| w.1);
     let second = words.get(1).map(|w| w.1);
     match (first, second) {
-        (Some("api"), _) => api_reason(&args[words[0].0 + 1..], cmd).map(str::to_owned),
+        (Some("api"), _) => api_reason(&args[words[0].0 + 1..], cmd),
         (Some("alias"), Some("import")) => unreadable(),
         (Some("alias"), Some("set")) => {
             alias_reason(name, &args[words[1].0 + 1..], unattended, depth)
@@ -199,7 +211,10 @@ fn alias_reason(name: &str, args: &[String], unattended: bool, depth: usize) -> 
 }
 
 /// `gh api` / `glab api` value flags, short and long.
-const API_SHORT_VALUE: &[char] = &['X', 'H', 'f', 'F', 'q', 't', 'p'];
+///
+/// `-R`/`--repo` names a repository, as it does on every other command of either CLI, which
+/// [`forge_words`] already reads past; it sets neither a method nor a body.
+const API_SHORT_VALUE: &[char] = &['X', 'H', 'f', 'F', 'q', 't', 'p', 'R'];
 const API_SHORT_BOOL: &[char] = &['i', 'h'];
 const API_LONG_VALUE: &[&str] = &[
     "method",
@@ -214,6 +229,7 @@ const API_LONG_VALUE: &[&str] = &[
     "cache",
     "output",
     "form",
+    "repo",
 ];
 const API_LONG_BOOL: &[&str] = &["paginate", "slurp", "include", "silent", "verbose", "help"];
 
@@ -247,7 +263,8 @@ impl Field {
 #[derive(Default)]
 struct ApiCall {
     method: Option<String>,
-    unknown_flag: bool,
+    /// The first flag this reader does not know, as written.
+    unknown_flag: Option<String>,
     positionals: Vec<String>,
     fields: Vec<Field>,
     /// `--input` or `--form`: a body this reader does not see.
@@ -277,7 +294,7 @@ impl ApiCall {
                     });
                     call.take(name, value);
                 } else if !API_LONG_BOOL.contains(&name) {
-                    call.unknown_flag = true;
+                    call.unknown_flag.get_or_insert_with(|| a.to_owned());
                 }
                 continue;
             }
@@ -304,7 +321,7 @@ impl ApiCall {
                         };
                         call.take(name, value);
                     } else {
-                        call.unknown_flag = true;
+                        call.unknown_flag.get_or_insert_with(|| a.to_owned());
                     }
                     break;
                 }
@@ -327,15 +344,27 @@ impl ApiCall {
     }
 
     /// True when the call is a read: an explicit `GET`/`HEAD`, or no method and no body, which
-    /// both CLIs send as a `GET`. A flag this reader does not know could change either, so a call
-    /// carrying one is not a read.
+    /// both CLIs send as a `GET`. A flag this reader does not know could add a body, so a call
+    /// carrying one is a read only when its method is spelled out: in both CLIs the method flag
+    /// alone sets the method, and no other flag overrides it (#6294).
     fn is_read(&self) -> bool {
-        if self.unknown_flag {
-            return false;
-        }
         match &self.method {
             Some(m) => m.eq_ignore_ascii_case("GET") || m.eq_ignore_ascii_case("HEAD"),
-            None => self.fields.is_empty() && !self.opaque_body,
+            None => self.unknown_flag.is_none() && self.fields.is_empty() && !self.opaque_body,
+        }
+    }
+
+    /// Why a call that is not a read is not one, for a refusal that names it.
+    fn why_not_a_read(&self) -> String {
+        match (&self.method, &self.unknown_flag) {
+            (Some(m), _) => format!("it is a `{m}`"),
+            (None, Some(flag)) => {
+                format!("`{flag}` is a flag purlis does not read, so it may not be a `GET`")
+            }
+            (None, None) if self.opaque_body => {
+                "its body is read from a file purlis does not see".to_owned()
+            }
+            (None, None) => "its `-f`/`-F` fields make it a `POST`".to_owned(),
         }
     }
 }
@@ -413,48 +442,96 @@ fn is_repository(segs: &[String]) -> bool {
     under_repository(segs).is_some_and(|rest| rest.is_empty())
 }
 
-/// The refusal for one `gh api` / `glab api` call, or `None` when it cannot merge.
-fn api_reason(args: &[String], cmd: &str) -> Option<&'static str> {
+/// The refusal for one `gh api` / `glab api` call, or `None` when it can neither merge nor
+/// publish.
+fn api_reason(args: &[String], cmd: &str) -> Option<String> {
     let call = ApiCall::parse(args);
     let read = call.is_read();
     if !read && call.positionals.is_empty() {
-        return Some(UNREADABLE);
+        return unreadable();
+    }
+    if let Some(method) = call.method.as_deref().filter(|m| !read && opaque(m)) {
+        return Some(format!(
+            "{UNREADABLE} The method `{method}` is filled in by the shell. {SPLIT}"
+        ));
     }
     for endpoint in &call.positionals {
         let segs = segments(endpoint);
         if segs.iter().any(|s| s == "graphql") {
             if let Some(why) = graphql_reason(&call, cmd) {
-                return Some(why);
+                return Some(why.to_owned());
             }
             continue;
         }
         if read {
             continue;
         }
-        if opaque(endpoint) || segs.iter().any(|s| s == "." || s == "..") {
-            return Some(UNREADABLE);
+        if opaque(endpoint) {
+            return Some(format!(
+                "{UNREADABLE} The endpoint `{endpoint}` is filled in by the shell, and {}. {SPLIT}",
+                call.why_not_a_read()
+            ));
+        }
+        if segs.iter().any(|s| s == "." || s == "..") {
+            return Some(format!(
+                "{UNREADABLE} The endpoint `{endpoint}` climbs with `.` or `..`. {SPLIT}"
+            ));
         }
         if is_merge_path(&segs) {
-            return Some(MERGES);
+            return Some(MERGES.to_owned());
+        }
+        if let Some(why) = publish_reason(&segs, &call) {
+            return Some(why.to_owned());
         }
         let settable = is_request_path(&segs) || is_repository(&segs);
         for field in &call.fields {
             // A key the shell fills in could be an auto-merge setting where one can be set.
             if opaque(&field.key) && settable {
-                return Some(UNREADABLE);
+                return unreadable();
             }
             if speaks_of_merging(&field.key) {
-                return Some(MERGES);
+                return Some(MERGES.to_owned());
             }
         }
         if call.opaque_body && settable {
-            return Some(UNREADABLE);
+            return unreadable();
         }
     }
-    if !read && call.method.as_deref().is_some_and(opaque) {
-        return Some(UNREADABLE);
-    }
     None
+}
+
+/// The refusal for a write that would make a release or a tag, by the forges' own endpoint
+/// shapes: a release or its assets, a tag (`repository/tags`, `git/tags`), a `refs/tags/` ref,
+/// or a new ref whose name cannot be read. A path that names no repository is judged by any
+/// segment that names releases or tags.
+fn publish_reason(segs: &[String], call: &ApiCall) -> Option<&'static str> {
+    let Some(rest) = under_repository(segs) else {
+        return segs
+            .iter()
+            .any(|s| s == "releases" || s == "tags")
+            .then_some(PUBLISHES);
+    };
+    let rest: Vec<&str> = rest.iter().map(String::as_str).collect();
+    match rest[..] {
+        ["releases", ..] | ["repository", "tags", ..] | ["git", "tags", ..] => Some(PUBLISHES),
+        ["git", "refs", "tags", ..] => Some(PUBLISHES),
+        ["git", "refs"] => {
+            if call.opaque_body {
+                return Some(UNREADABLE);
+            }
+            let refs = call.fields.iter().filter(|f| f.key == "ref");
+            for field in refs {
+                if opaque(&field.value) {
+                    return Some(UNREADABLE);
+                }
+                if field.value.starts_with("refs/tags/") {
+                    return Some(PUBLISHES);
+                }
+            }
+            None
+        }
+        _ => None,
+    }
 }
 
 /// `$name` in a GraphQL document, with what stands before it and whether a `:` follows.
