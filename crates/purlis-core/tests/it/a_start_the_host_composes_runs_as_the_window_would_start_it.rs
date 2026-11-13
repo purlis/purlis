@@ -508,6 +508,16 @@ fn a_composed_starts_run_begins_under_its_ids_and_says_who_started_it() {
     assert_eq!(begun["attributes"]["started_by"], "terminal");
     assert_eq!(begun["attributes"]["persona"], "steward");
     assert_eq!(begun["attributes"]["profile"], "work");
+    // R-227: what the host resolved, the person's opt-out for this chat only, and the commit of a
+    // `charter.toml` no commit has.
+    assert_eq!(
+        begun["attributes"]["protection"],
+        serde_json::json!({
+            "layers": [{"layer": "sandbox", "level": "off", "tier": "chat"}],
+            "charter_commit": "none",
+            "answers_in_force": [],
+        })
+    );
 }
 
 /// An opencode chat's sandbox, compiled for a Mac whatever this machine is: what a composed start

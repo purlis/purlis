@@ -1296,6 +1296,11 @@ pub struct Attributes {
     /// came on (`local-ui` for the window, `terminal`, `remote-link`), where it is known
     /// (#2171).
     pub started_by: Option<String>,
+    /// **The protection the chat started under** (R-227): each layer's level and the tier that
+    /// set it, the `charter.toml` commit and the answers in force, as the start resolved them
+    /// ([`crate::sandbox::protection::at_start`]), never from the chat. [`UNKNOWN`] where the
+    /// start did not resolve it.
+    pub protection: Option<crate::sandbox::protection::InForce>,
 }
 
 impl Attributes {
@@ -1326,6 +1331,11 @@ impl Attributes {
             "sandbox": said(&self.sandbox),
             "conversation": said(&conversation),
             "started_by": said(&self.started_by),
+            "protection": self
+                .protection
+                .as_ref()
+                .and_then(|p| serde_json::to_value(p).ok())
+                .unwrap_or_else(|| UNKNOWN.into()),
         })
     }
 
@@ -2980,6 +2990,11 @@ impl Recorder {
         ended?;
         let body = who.attributes.body(cause, &self.log.device);
         let started = self.write(Some(&who.chat), Some(&who.run), None, "run.started", body)?;
+        // A start that records the protection it started under (R-227) is a start's act, made
+        // durable as an audited write is.
+        if who.attributes.protection.is_some() {
+            self.log.durable().through(started.seq)?;
+        }
         // Its start's routing record, held with it (SK-15b): one the log refuses costs the
         // record, never the run.
         if let Some(record) = routed

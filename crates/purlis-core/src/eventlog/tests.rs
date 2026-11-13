@@ -2513,6 +2513,7 @@ fn run_started_carries_every_attribute_adr_0066_names_for_the_run_read_back_from
         sandbox: Some("seatbelt".to_owned()),
         conversation: Some("0f6c2a1e-aaaa-4bbb-8ccc-123456789abc".to_owned()),
         started_by: Some("terminal".to_owned()),
+        protection: None,
     };
     host.begin(
         plane,
