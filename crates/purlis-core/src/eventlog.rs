@@ -194,6 +194,9 @@ pub struct Durable {
     appended: std::sync::atomic::AtomicU64,
     /// The last number known durable, and the segment being written.
     state: std::sync::Mutex<(u64, Option<File>)>,
+    /// How many of the next syncs fail, as a drive that refuses one would.
+    #[cfg(test)]
+    fail_syncs: std::sync::atomic::AtomicU32,
 }
 
 impl Durable {
@@ -212,6 +215,18 @@ impl Durable {
                 "the event log has no segment open to make durable",
             ));
         };
+        #[cfg(test)]
+        if self
+            .fail_syncs
+            .try_update(
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+                |left| left.checked_sub(1),
+            )
+            .is_ok()
+        {
+            return Err(io::Error::other("a sync the test made fail"));
+        }
         #[cfg(unix)]
         rustix::fs::fsync(file)?;
         #[cfg(not(unix))]
@@ -358,6 +373,8 @@ impl Log {
         let durable = std::sync::Arc::new(Durable {
             appended: std::sync::atomic::AtomicU64::new(next - 1),
             state: std::sync::Mutex::new((next - 1, Some(file.try_clone()?))),
+            #[cfg(test)]
+            fail_syncs: std::sync::atomic::AtomicU32::new(0),
         });
         let mut log = Log {
             dir: dir.to_owned(),
@@ -589,6 +606,13 @@ impl Log {
     /// Makes the next `times` opens of a new segment fail, as a full directory would.
     pub fn fail_the_next_opens(&mut self, times: u32) {
         self.fail_opens = times;
+    }
+
+    /// Makes the next `times` syncs fail, as a drive that refuses an `fsync` would.
+    pub fn fail_the_next_syncs(&self, times: u32) {
+        self.durable
+            .fail_syncs
+            .store(times, std::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -1296,6 +1320,13 @@ pub struct Attributes {
     /// came on (`local-ui` for the window, `terminal`, `remote-link`), where it is known
     /// (#2171).
     pub started_by: Option<String>,
+    /// **The protection the chat started under** (R-227): each layer's level and the tier that
+    /// set it, the `charter.toml` commit and the answers in force, as the start resolved them
+    /// ([`crate::sandbox::protection::at_start`]), never from the chat. [`UNKNOWN`] where the
+    /// start did not resolve it. Read leniently: one in a shape this version does not know is
+    /// not known, never a refusal of the run it begins.
+    #[serde(deserialize_with = "crate::sandbox::protection::lenient")]
+    pub protection: Option<crate::sandbox::protection::InForce>,
 }
 
 impl Attributes {
@@ -1326,6 +1357,11 @@ impl Attributes {
             "sandbox": said(&self.sandbox),
             "conversation": said(&conversation),
             "started_by": said(&self.started_by),
+            "protection": self
+                .protection
+                .as_ref()
+                .and_then(|p| serde_json::to_value(p).ok())
+                .unwrap_or_else(|| UNKNOWN.into()),
         })
     }
 
@@ -3035,6 +3071,14 @@ impl Recorder {
         ended?;
         let body = who.attributes.body(cause, &self.log.device);
         let started = self.write(Some(&who.chat), Some(&who.run), None, "run.started", body)?;
+        // A start that records the protection it started under (R-227) is a start's act, made
+        // durable as an audited write is. The line is written whatever the sync makes of it:
+        // one the drive refuses costs its durability, never the run.
+        if who.attributes.protection.is_some()
+            && let Err(why) = self.log.durable().through(started.seq)
+        {
+            tracing::warn!(error = %why, "the event log did not make a start's protection durable");
+        }
         // Its start's routing record, held with it (SK-15b): one the log refuses costs the
         // record, never the run.
         if let Some(record) = routed
