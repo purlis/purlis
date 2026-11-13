@@ -28,6 +28,9 @@ struct Fixture {
     program: PathBuf,
     docker: Docker,
     folders: tempfile::TempDir,
+    /// The person's own Docker settings: beside the fixture's TLS files, never under `/tmp`,
+    /// which chats write, so purlis refuses a CA kept there.
+    person: tempfile::TempDir,
 }
 
 fn fixture() -> Option<Fixture> {
@@ -41,7 +44,12 @@ fn fixture() -> Option<Fixture> {
         .prefix("rc")
         .tempdir_in("/tmp")
         .expect("a folder");
+    let person = tempfile::Builder::new()
+        .prefix("person")
+        .tempdir_in(tls_dir.parent().expect("the TLS files' folder"))
+        .expect("a folder");
     Some(Fixture {
+        person,
         ssh_route,
         tls_route,
         tls_dir,
@@ -54,7 +62,7 @@ fn fixture() -> Option<Fixture> {
 impl Fixture {
     /// The person's own Docker settings, where their contexts are kept: the test's own.
     fn person(&self) -> PathBuf {
-        self.folders.path().join("person")
+        self.person.path().to_path_buf()
     }
 
     /// `docker context <args>`, in the person's settings.
