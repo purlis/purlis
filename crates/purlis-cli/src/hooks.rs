@@ -157,6 +157,9 @@ pub fn handler(name: &str) -> Option<Handler> {
         // A purlis tool that failed (#5697): what failed inside purlis goes to the app as a
         // draft ([`tell_the_app_what_failed`]); the chat is told on its next turn, not here.
         purlis_core::caught::TOOL_WORD => says_nothing,
+        // The harness's own check refused the call (R-094): the host writes the block from the
+        // line every tool hook sends; the harness is told nothing, so its refusal stands.
+        purlis_core::hookreg::HARNESS_DENIED => says_nothing,
         _ => return None,
     })
 }
