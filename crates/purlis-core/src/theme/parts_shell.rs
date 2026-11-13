@@ -448,11 +448,12 @@ pub(super) const RAIL: Family = Family {
     // What its wrapper marks: under the pointer, the current project, the keyboard's focus.
     states: &[State::Hover, State::Selected, State::Focused],
     focused: "[data-focus-visible]",
-    words: &[("badge", "state.waiting")],
+    // The badge is the round count, in the hot count's role (`rail.css`, #6342).
+    words: &[("badge", "needs-you.count-text")],
     corner_most: None,
     around: &[],
-    // The badge's pill, the overlay's surface (`rail.css`): its digits are read on it (#3041).
-    fills: &[("badge", "surface.overlay")],
+    // Its circle, the hot count's own (`rail.css`): its character is read on it (#3041).
+    fills: &[("badge", "needs-you.count")],
     under: &[],
     later: &[],
 };
