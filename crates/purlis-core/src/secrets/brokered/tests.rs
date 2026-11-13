@@ -20,6 +20,7 @@ const KUBECONFIG: &str = "apiVersion: v1\nclusters: [k8s-s3cret]\n";
 mod links_read;
 mod one_notice;
 mod run_grants;
+mod waits;
 
 /// Policy says `said` for this test, and no longer once it ends.
 pub(super) struct PolicySays;
