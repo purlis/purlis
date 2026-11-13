@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import process from "node:process";
 import { config as base } from "./wdio.conf.js";
@@ -53,10 +53,17 @@ const environment = theRunsEnvironment(plane, {
   // The agent the job's ssh signs in to the other machine with (#6266, tests/remote-docker/up.sh),
   // as a person's window has their own.
   ...(process.env.SSH_AUTH_SOCK ? { SSH_AUTH_SOCK: process.env.SSH_AUTH_SOCK } : {}),
-  // The kubeconfig the job's kind cluster was made in (#4494), as a person's window has their
-  // own: the app's kubectl reads it on every call, and Pool setup keeps none of it.
-  ...(process.env.KUBECONFIG ? { KUBECONFIG: process.env.KUBECONFIG } : {}),
 });
+// The kubeconfig the job's kind cluster was made in (#4494), where a person's own is: kubectl's
+// default, in the home the app is given. The window's kubectl is never handed `KUBECONFIG`
+// (`purlis_core::clusterpool::CLEARED`), so it reads this one on every call, and Pool setup keeps
+// none of it.
+if (process.env.KUBECONFIG) {
+  const kube = join(environment.HOME, ".kube");
+  mkdirSync(kube, { recursive: true, mode: 0o700 });
+  copyFileSync(process.env.KUBECONFIG, join(kube, "config"));
+  chmodSync(join(kube, "config"), 0o600);
+}
 const programs = declarePoolsClaudeProfile(
   plane,
   environment.CHARTER_CONFIG_HOME,
