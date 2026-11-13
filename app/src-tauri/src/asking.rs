@@ -970,13 +970,15 @@ pub fn tell(plane: &PlaneId, hooks: &HookAsks, telling: &Telling) {
 }
 
 /// What hears a permission hook's ask on `plane`'s channel: held in `hooks` until it is
-/// answered, its hook goes away, or its deadline passes, and the window told each change.
+/// answered, its hook goes away, or its deadline passes, and the window told each change. The
+/// app hears give-ups too ([`permitting_or_given_up`]); this is the tests' way in.
+#[cfg(test)]
 pub fn permitting(plane: PlaneId, hooks: Arc<HookAsks>, telling: Telling) -> Permitting {
     permitting_or_given_up(plane, hooks, telling, Arc::new(|_| {}))
 }
 
-/// [`permitting`], with each ask `hooks` will not hold told to `gave_up` (R-204): its chat then
-/// waits in its terminal ([`Waiting::in_its_terminal`]).
+/// What hears a permission hook's ask, with each ask `hooks` will not hold told to `gave_up`
+/// (R-204): its chat then waits in its terminal ([`Waiting::in_its_terminal`]).
 pub fn permitting_or_given_up(
     plane: PlaneId,
     hooks: Arc<HookAsks>,
