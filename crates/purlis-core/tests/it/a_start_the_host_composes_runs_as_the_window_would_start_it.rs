@@ -515,6 +515,7 @@ fn a_composed_starts_run_begins_under_its_ids_and_says_who_started_it() {
         serde_json::json!({
             "layers": [{"layer": "sandbox", "level": "off", "tier": "chat"}],
             "charter_commit": "none",
+            "charter_dirty": false,
             "answers_in_force": [],
         })
     );
@@ -602,6 +603,41 @@ fn a_sandboxed_composed_start_runs_in_the_confinement_the_host_started_for_it() 
     assert_eq!(
         set(&launch, purlis_core::hookwire::SANDBOXED_ENV).as_deref(),
         Some("1")
+    );
+}
+
+/// R-227, Q238: a start the host composes reads no level of the person's, so its start event
+/// never says the person set it, even where their confirmed level is the one it runs at: the
+/// default floor is purlis's.
+#[test]
+fn a_composed_start_records_its_sandbox_as_purlis_s_floor_never_the_person_s() {
+    purlis_core::unsteered!();
+    let project = Project::on("codex");
+    // Your floor, as Settings writes it and confirms it.
+    let local = project.root().join(profiles::LOCAL_FILE);
+    let declared = fs::read_to_string(&local).unwrap();
+    fs::write(&local, format!("{declared}[sandbox]\nlevel = \"floor\"\n")).unwrap();
+    purlis_core::sandbox::personal::set_by_you(
+        project.root(),
+        None,
+        Some(purlis_core::sandbox::personal::Choice::Floor),
+    )
+    .expect("your floor, confirmed");
+    let host = Host {
+        tmp: Some(tempfile::tempdir().unwrap()),
+        ..Host::default()
+    };
+
+    composed_from(&project, a_sandboxed_opencode_start(&project), &host).expect("composed");
+
+    let recorded = host.recorded.borrow();
+    let begun = recorded
+        .iter()
+        .find(|entry| entry["entry"] == "begin")
+        .unwrap_or_else(|| panic!("no run began: {recorded:?}"));
+    assert_eq!(
+        begun["attributes"]["protection"]["layers"],
+        serde_json::json!([{"layer": "sandbox", "level": "floor", "tier": "purlis"}])
     );
 }
 

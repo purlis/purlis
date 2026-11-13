@@ -4508,3 +4508,55 @@ fn audits(dir: &Path) -> usize {
         .filter(|event| event.kind.starts_with("trust."))
         .count()
 }
+
+/// R-227: a start that records its protection is made durable, and a sync the drive refuses
+/// is warned of, never told as a run not written: the run goes on, and the routing record held
+/// with it is still written.
+#[test]
+fn a_start_whose_protection_sync_fails_is_still_begun_with_its_routing_record() {
+    let dir = tempfile::tempdir().unwrap();
+    let plane = a_plane();
+    let mut host = recorder(dir.path());
+    let attributes = Attributes {
+        protection: Some(crate::sandbox::protection::InForce {
+            layers: Vec::new(),
+            charter_commit: NONE.to_owned(),
+            charter_dirty: false,
+            answers_in_force: Vec::new(),
+        }),
+        ..Attributes::default()
+    };
+    host.begin_held(
+        plane.path(),
+        3,
+        RunOf {
+            chat: CHAT,
+            run: RUN,
+        },
+        Began::Start,
+        &attributes,
+        None,
+    );
+    let record = crate::skills::router::Record {
+        routing: "01K6E8ZK6V4Q9T0N3M2B1C5D7R".to_owned(),
+        router: "relevance".to_owned(),
+        ms: 12,
+        fell_back: None,
+        error: None,
+        hidden: Vec::new(),
+        prompt: false,
+        pointed: Vec::new(),
+    };
+    host.skill_routed(plane.path(), 3, &record).unwrap();
+    host.log.fail_the_next_syncs(1);
+
+    let begun = host.begun(plane.path(), 3);
+
+    assert!(matches!(begun, Ok(Some(_))), "{begun:?}");
+    let kinds: Vec<String> = read(dir.path())
+        .unwrap()
+        .into_iter()
+        .map(|event| event.kind)
+        .collect();
+    assert_eq!(kinds, ["run.started", "skill.routed"]);
+}
