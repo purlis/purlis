@@ -6,15 +6,15 @@
 //!
 //! [`clones_to_vouch`] lists every clone of the project's workspaces that purlis did not clone
 //! and the person has not trusted, with the address its remote names, which the project draws as
-//! one Notice per clone. [`vouch_clone`] is that Notice's fix: it records the clone at the address
-//! the Notice showed, while its remote still names exactly that one. It is also the Trust this
+//! one Notice per clone, and which the core keeps as the project's one ask, Trust these clones
+//! (R-336). [`vouch_clone`] is that Notice's fix: it records the clone at the address the
+//! Notice showed, while its remote still names exactly that one. It is also the Trust this
 //! clone of the ask a refused GitHub App token raises (R-330), and clears that ask.
 //!
 //! Both are the window's alone (`WINDOW_ONLY`): trusting a clone is what lets saves push it and
 //! chats in its workspace use the person's GitHub access with it, so no link and no chat may
 //! press it. A chat's refused mint raises the ask (Q181), and only the person presses it.
 
-use purlis_core::forge::gitcredential::vouch;
 use purlis_core::forge::route::HostScope;
 
 use crate::planes::{PlaneId, Planes};
@@ -49,7 +49,8 @@ pub async fn clones_to_vouch(
     let config_root = purlis_core::machine::config_root()
         .ok_or_else(|| "purlis found no home directory its record of clones is in".to_owned())?;
     tauri::async_runtime::spawn_blocking(move || {
-        vouch::unvouched_clones(&root, &config_root)
+        // The same read raises or settles the project's one Trust these clones (R-336).
+        purlis_core::windowonly::look_at_clones(&root, &config_root)
             .into_iter()
             .map(|clone| CloneToVouch {
                 workspace: clone.workspace,

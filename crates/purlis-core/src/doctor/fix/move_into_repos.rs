@@ -324,6 +324,20 @@ pub fn apply(
     open: &dyn Fn(&Path, &str) -> Vec<String>,
     shown: Option<&[Shown]>,
 ) -> Fixed {
+    apply_with(root, open, shown, None)
+}
+
+/// **[`apply`], keeping the record of clones and offering the trust in the same step** (R-339,
+/// Q184): with `records`, each clone purlis has a record of keeps it where it moved to (the
+/// record is kept by the clone's path), and each it has none of ([`offered`]) is trusted where
+/// it moved to on the person's yes ([`Records::trust`]), at the one address its remote named
+/// before the move and still names. Without the yes nothing is trusted, and the move says so.
+pub fn apply_with(
+    root: &Path,
+    open: &dyn Fn(&Path, &str) -> Vec<String>,
+    shown: Option<&[Shown]>,
+    records: Option<&Records<'_>>,
+) -> Fixed {
     let mut said = Vec::new();
     match finish(root) {
         Some(Ok(lines)) => said.extend(lines),
@@ -364,11 +378,16 @@ pub fn apply(
             },
         };
         let chats = || open(root, &one.workspace);
+        let before =
+            records.map(|records| before_the_move(root, &one.workspace, records.config_root));
         match move_workspace(root, &one.workspace, &chats, expected, &mut |from, to| {
             std::fs::rename(from, to)
         }) {
             Ok(lines) => {
                 said.extend(lines);
+                if let (Some(records), Some(before)) = (records, before) {
+                    said.extend(after_the_move(root, &one.workspace, before, records));
+                }
                 if let Some(line) = unresumable_said(&one.unresumable) {
                     said.push(line);
                 }
@@ -388,30 +407,130 @@ pub fn apply(
     }
 }
 
-/// The clone record a move keeps, and the trust it offers. Not yet written (T1-15, #6406).
+/// **The record of clones a move keeps, and the trust it offers in the same step** (R-339,
+/// Q184): [`apply_with`]'s.
 pub struct Records<'a> {
+    /// The config home the record of clones is kept in.
     pub config_root: &'a Path,
+    /// The person's yes to trusting the clones the move offers ([`offered`]), with the host's
+    /// scope, which only the person's own process holds. `None` trusts nothing.
     pub trust: Option<&'a crate::forge::route::HostScope>,
 }
 
-/// The clones the move offers to trust. Not yet written (T1-15, #6406).
+/// **The clones the move offers to trust** (R-339): those at a workspace's root it would move
+/// that purlis has no record of in the config home at `config_root`, each with the addresses its
+/// remote names ([`crate::forge::gitcredential::vouch::unvouched_clones`]). The confirmation
+/// shows them and asks. Nothing is trusted here.
 pub fn offered(
     root: &Path,
     config_root: &Path,
 ) -> Vec<crate::forge::gitcredential::vouch::Unvouched> {
-    let _ = (root, config_root);
-    Vec::new()
+    let Ok(workspaces) = crate::workspaces::Plane::open(root).workspaces() else {
+        return Vec::new();
+    };
+    let moving: Vec<String> = workspaces
+        .iter()
+        .filter_map(|ws| movable(root, ws).ok())
+        .flatten()
+        .map(|row| crate::sandbox::local::clone_key(&row.repo.path))
+        .collect();
+    crate::forge::gitcredential::vouch::unvouched_clones(root, config_root)
+        .into_iter()
+        .filter(|clone| moving.contains(&crate::sandbox::local::clone_key(&clone.path)))
+        .collect()
 }
 
-/// [`apply`], keeping records. Not yet written (T1-15, #6406).
-pub fn apply_with(
+/// What the record of clones says of one clone at a workspace's root, before it moves.
+struct Before {
+    name: String,
+    /// The address purlis has it recorded at, where it has a record of it.
+    recorded: Option<String>,
+    /// Where purlis has none: the one address its remote names, which the move offers to trust
+    /// at, or `None` where it names more than one.
+    offered: Option<Option<String>>,
+}
+
+/// [`Before`] for each clone at workspace `ws`'s root, as the record in `config_root` stands.
+fn before_the_move(root: &Path, ws: &str, config_root: &Path) -> Vec<Before> {
+    let recorded = crate::forge::gitcredential::read_push_remotes(config_root);
+    let unrecorded = offered(root, config_root);
+    let Ok(rows) = movable(root, ws) else {
+        return Vec::new();
+    };
+    rows.into_iter()
+        .map(|row| {
+            let key = crate::sandbox::local::clone_key(&row.repo.path);
+            Before {
+                recorded: recorded.get(&key).cloned(),
+                offered: unrecorded
+                    .iter()
+                    .find(|clone| crate::sandbox::local::clone_key(&clone.path) == key)
+                    .map(|clone| clone.place.clone()),
+                name: row.repo.name,
+            }
+        })
+        .collect()
+}
+
+/// After workspace `ws` moved: each clone purlis had a record of is recorded again where it now
+/// is, and each it had none of is trusted there on the person's yes. What it did, line by line.
+fn after_the_move(
     root: &Path,
-    open: &dyn Fn(&Path, &str) -> Vec<String>,
-    shown: Option<&[Shown]>,
-    records: Option<&Records<'_>>,
-) -> Fixed {
-    let _ = records;
-    apply(root, open, shown)
+    ws: &str,
+    before: Vec<Before>,
+    records: &Records<'_>,
+) -> Vec<String> {
+    let Ok(holdings) = repofolder::holdings(root, ws) else {
+        return Vec::new();
+    };
+    let mut said = Vec::new();
+    for one in before {
+        let Some(row) = holdings
+            .repos
+            .iter()
+            .find(|row| row.layout == Layout::Repos && row.repo.name == one.name)
+        else {
+            continue;
+        };
+        let folder = relative(root, &row.repo.path).unwrap_or_else(|| one.name.clone());
+        if let Some(recorded) = one.recorded {
+            // The record is kept by the clone's path, so the one it had stays behind unless it
+            // is written again: purlis cloned it, or the person trusted it, already.
+            if let Err(why) = crate::forge::gitcredential::remote::record(
+                records.config_root,
+                &row.repo.path,
+                recorded.clone(),
+            ) {
+                said.push(format!(
+                    "✗ {folder} was trusted at {recorded} before it moved, and {why}. Trust it \
+                     again with Trust these clones in the window's Asks"
+                ));
+            }
+            continue;
+        }
+        match (one.offered, records.trust) {
+            (None, _) => {}
+            (Some(None), _) => said.push(format!(
+                "• {folder} was not trusted: its remote names more than one address. Give origin \
+                 one address, then trust it with Trust these clones in the window's Asks"
+            )),
+            (Some(Some(place)), Some(host)) => match crate::windowonly::trust_this_clone(
+                host,
+                records.config_root,
+                root,
+                &folder,
+                &place,
+            ) {
+                Ok(trusted) => said.push(format!("✓ trusted {folder} at {trusted}")),
+                Err(why) => said.push(format!("✗ {folder} was not trusted: {why}")),
+            },
+            (Some(Some(place)), None) => said.push(format!(
+                "• {folder} ({place}) was not trusted: purlis did not clone it. Trust it with \
+                 Trust these clones in the window's Asks, only if you made it yourself"
+            )),
+        }
+    }
+    said
 }
 
 /// The line that names the chats a move leaves unresumable, or none when there are none.

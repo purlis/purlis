@@ -513,6 +513,7 @@ export const SOURCE_SAID: Record<Shown["source"], string> = {
   looping: "Paused, as it may be looping",
   "merge-hold": "Asks you to merge a request",
   "trust-clone": "Asks you to trust a clone",
+  "trust-clones": "Asks you to trust clones purlis did not clone",
 };
 
 /** Why a task's question reached the person, as its row says it. */

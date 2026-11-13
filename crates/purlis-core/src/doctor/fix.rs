@@ -521,10 +521,21 @@ pub fn apply_moving_into_repos(
     open: &dyn Fn(&Path, &str) -> Vec<String>,
     shown: Option<&[move_into_repos::Shown]>,
 ) -> Fixed {
+    apply_moving_into_repos_with(root, open, shown, None)
+}
+
+/// [`apply_moving_into_repos`], keeping the record of clones and trusting the clones it moves
+/// that purlis has no record of on the person's yes ([`move_into_repos::apply_with`], R-339).
+pub fn apply_moving_into_repos_with(
+    root: &Path,
+    open: &dyn Fn(&Path, &str) -> Vec<String>,
+    shown: Option<&[move_into_repos::Shown]>,
+    records: Option<&move_into_repos::Records<'_>>,
+) -> Fixed {
     if let Some(why) = refusal(root, FixId::MoveIntoRepos) {
         return Fixed::Refused(why);
     }
-    move_into_repos::apply(root, open, shown)
+    move_into_repos::apply_with(root, open, shown, records)
 }
 
 fn discover(root: &Path, caller: &crate::forge::Caller) -> Fixed {

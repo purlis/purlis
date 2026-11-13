@@ -233,6 +233,7 @@ impl World {
             removals: self.removals.clone(),
             merges: self.merges.clone(),
             window_only: Vec::new(),
+            unrecorded: None,
             locks: &self.locks,
             everyone: self.everyone,
             declared: &self.declared,
