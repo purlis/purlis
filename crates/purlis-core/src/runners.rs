@@ -746,6 +746,38 @@ pub fn record_pool_locked(
     write(config_root, &held)
 }
 
+/// **Keeps `remote`'s pin for pool `name`, on another machine** (#6270, ADR 0123 §3): what the
+/// person confirmed at Check and trust again, and only it. Refused, with nothing changed, where no
+/// such pool is kept, where it is on this machine, or where `remote` names another route or other
+/// files than the pool's: trusting again changes what the machine is trusted as, never which
+/// machine it is.
+///
+/// A login opt-in is bound to the pool's definition, its pin among it (`poollogins::Bound`), so
+/// each is asked again after this.
+pub fn pin_again(config_root: &Path, name: &str, remote: &RemoteEngine) -> Result<(), Refused> {
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    let Some(at) = held.pools.iter().position(|pool| pool.name() == name) else {
+        return Err(Refused::Other(format!(
+            "no pool named {name} is on this machine"
+        )));
+    };
+    let same = match (held.pools[at].remote_engine(), remote) {
+        (Some(RemoteEngine::Ssh(was)), RemoteEngine::Ssh(now)) => was.route == now.route,
+        (Some(RemoteEngine::Tls(was)), RemoteEngine::Tls(now)) => {
+            was.route == now.route && was.files == now.files
+        }
+        _ => false,
+    };
+    if !same {
+        return Err(Refused::Other(format!(
+            "pool {name} is not reached at that machine, so nothing of it was trusted again"
+        )));
+    }
+    held.pools[at] = held.pools[at].clone().on_engine(Some(remote.clone()));
+    write(config_root, &held)
+}
+
 /// **Has the pool `name` keep the profiles `profiles` on its runner** (#4047), a Docker pool or
 /// a cluster pool (#3819), or, `None`, the default: refused where no such pool is kept, and what
 /// is kept stays.

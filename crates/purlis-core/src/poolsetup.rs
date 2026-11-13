@@ -38,6 +38,7 @@ pub mod asked;
 pub mod cluster;
 pub mod connecting;
 pub mod install;
+pub mod pinchange;
 pub mod signins;
 pub mod trying;
 
