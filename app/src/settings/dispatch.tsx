@@ -29,6 +29,7 @@ import { DispatchGrantsList, useDispatchLocks } from "./DispatchGrants";
 import { showPersona } from "./links";
 import { OutLink } from "./OutLink";
 import type { LiveSetting, SettingsGroup } from "./groups";
+import { taskScreensSetting } from "./taskScreens";
 import type { Shown } from "./fileControls";
 import { Button } from "../ui/button/Button";
 
@@ -820,6 +821,9 @@ export function dispatchGroup(
           return { grouped: true, control: (ids) => <PolicyLocks plane={plane} ids={ids} /> };
         },
       },
+      // What a task's chat leaves to read once it closes (#6306): this machine's alone, in a
+      // section of its own, since the page's header says the team's file.
+      taskScreensSetting(plane),
     ],
   };
 }

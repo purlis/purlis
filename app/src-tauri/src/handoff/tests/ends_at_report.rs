@@ -845,6 +845,129 @@ fn a_task_that_had_reported_when_the_app_quit_is_a_finished_row_at_the_next_laun
     );
 }
 
+/// A steward chat, a task that reported and one still working, each showing a screen of its own:
+/// the task's id, and the one still working's.
+fn a_reported_task_and_one_working(
+    host: &Pretend,
+    held: &Held,
+    id: &PlaneId,
+    steward: u32,
+    task: u32,
+) -> (u32, String, String) {
+    let still_working = a_task_of(held, id, steward, "read the logs");
+    works(held, task);
+    reports(held, id, task);
+    its_turn_ends(held, task);
+    host.shows(steward, "the steward's own screen\r\n");
+    host.shows(task, "check prod: all green\r\n");
+    host.shows(still_working, "reading the logs\r\n");
+    let ulid = |chat: u32| {
+        held.chats()
+            .chat_at(chat)
+            .and_then(|at| at.id)
+            .expect("a chat's id")
+    };
+    (still_working, ulid(task), ulid(still_working))
+}
+
+#[test]
+fn a_task_that_had_reported_when_the_app_quit_has_its_screen_kept() {
+    // #6305. The next launch leaves it out of the put back (`put_back_without_the_finished`), so
+    // it never closes through `close_as`: its screen is kept as the app quits, while its session
+    // is still there to show it.
+    let (plane, host, quit, id, held, steward, task) = a_steward_and_its_task();
+    let (still_working, finished, working) =
+        a_reported_task_and_one_working(&host, &held, &id, steward, task);
+    let steward_id = held
+        .chats()
+        .chat_at(steward)
+        .and_then(|at| at.id)
+        .expect("id");
+    let at_quit = held.chats().record();
+    drop(held);
+
+    bounded("the app quitting", move || quit.let_go_of_all());
+
+    let root = plane.root.as_path();
+    assert_eq!(
+        purlis_core::chatscreens::kept(root, &finished).as_deref(),
+        Some("check prod: all green\r\n"),
+        "the reported task's screen is kept, so its card's *Read it* works after the launch"
+    );
+    // The chats the next launch puts back keep nothing: they go on.
+    assert_eq!(purlis_core::chatscreens::kept(root, &working), None);
+    assert_eq!(purlis_core::chatscreens::kept(root, &steward_id), None);
+    // And it is the very chat the put back leaves out.
+    let back = crate::finished::put_back_without_the_finished(root, &at_quit);
+    let numbers: Vec<u32> = back.chats.iter().filter_map(|chat| chat.number).collect();
+    assert_eq!(numbers, [steward, still_working]);
+}
+
+#[test]
+fn a_reported_task_keeps_no_screen_at_a_quit_where_this_machine_keeps_none() {
+    let (plane, host, quit, id, held, steward, task) = a_steward_and_its_task();
+    let (_, finished, _) = a_reported_task_and_one_working(&host, &held, &id, steward, task);
+    // Turned off by hand in this machine's own file.
+    std::fs::write(
+        plane
+            .root
+            .join(purlis_core::settings::Which::Local.file_at(&plane.root)),
+        "[task_screens]\nkeep = false\n",
+    )
+    .expect("written");
+    drop(held);
+
+    bounded("the app quitting", move || quit.let_go_of_all());
+
+    assert_eq!(purlis_core::chatscreens::kept(&plane.root, &finished), None);
+    assert!(
+        !purlis_core::chatscreens::dir(&plane.root)
+            .join(format!("{finished}.screen"))
+            .exists()
+    );
+}
+
+#[test]
+fn a_blocked_task_and_one_the_person_took_over_keep_no_screen_at_a_quit() {
+    // Both come back at the next launch, on the screen they had: nothing has ended.
+    let (plane, host, quit, id, held, steward, task) = a_steward_and_its_task();
+    let blocked = a_task_of(&held, &id, steward, "read the logs");
+    works(&held, task);
+    reports(&held, &id, task);
+    assert_eq!(held.operator_input(task, b"one more thing\r"), Ok(()));
+    works(&held, blocked);
+    tasks_report(
+        &held,
+        &id,
+        &Tickets::default(),
+        blocked,
+        Outcome::Blocked,
+        None,
+    );
+    host.shows(task, "taken over\r\n");
+    host.shows(blocked, "blocked\r\n");
+    let ids: Vec<String> = [task, blocked]
+        .iter()
+        .map(|chat| {
+            held.chats()
+                .chat_at(*chat)
+                .and_then(|at| at.id)
+                .expect("id")
+        })
+        .collect();
+    drop(held);
+
+    bounded("the app quitting", move || quit.let_go_of_all());
+
+    for one in &ids {
+        assert_eq!(
+            purlis_core::chatscreens::kept(&plane.root, one),
+            None,
+            "{one}"
+        );
+    }
+}
+
 #[test]
 fn a_task_the_person_took_over_and_a_blocked_one_come_back_at_the_next_launch() {
     let (_plane, _host, _planes, id, held, steward, task) = a_steward_and_its_task();

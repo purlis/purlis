@@ -1,13 +1,13 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { press, projectRoot, typeInto, untilSays } from "../acting.js";
 import { showView } from "../opening.js";
 import { closesTheTabsItOpens, tabNames } from "../reach.js";
-import { studioSkill } from "../studio.js";
+import { studioSkill, writeSkill } from "../studio.js";
 
 /**
  * **A persona's Skills section** (SK-5, #2768), in the built app against the real core, with the
@@ -27,16 +27,6 @@ const PANE = `[data-testid="view-pane-charter-persona-${PERSONA}"]`;
 const OWN = "e2e-steward-own-probe";
 const NAMED = "e2e-steward-named-probe";
 const ADDED = "e2e-steward-added-probe";
-
-function writeSkill(dir: string, name: string): string {
-  const folder = join(dir, name);
-  mkdirSync(folder, { recursive: true });
-  writeFileSync(
-    join(folder, "SKILL.md"),
-    `---\nname: ${name}\ndescription: Probes ${name}.\n---\n\nSay hello.\n`,
-  );
-  return folder;
-}
 
 describe("a persona's skills", function () {
   this.timeout(180_000);
