@@ -10,6 +10,7 @@
 //! 1. **the chat's repos** are the github.com remotes of the clones the chat's workspace had when
 //!    the chat started, read at that run from each clone's own config alone, and only of clones
 //!    whose git directory is in no folder a chat may be granted ([`remotes_of_workspace`], E3).
+//!    A chat at the plane's root, in no workspace, has every workspace's clones (#6494).
 //!    A GitHub Enterprise Server is not minted for yet: a run in a clone of one is refused,
 //!    naming it;
 //! 2. the App's key, read from its vault by the mint alone, signs a JWT of ten minutes at most
@@ -247,7 +248,9 @@ pub fn there_at_start(
 /// the window counts**, and only at the remote recorded for it then: `recorded` is that record
 /// ([`super::gitcredential::PUSH_REMOTES`], in the config home no chat writes), keyed by the
 /// clone's path and its `.git`'s identity, so a git folder put in place by anything else names
-/// no repo. Refused for a chat in no workspace.
+/// no repo. **A chat at the plane's root has every workspace's clones** (#6494, ADR 0077 as
+/// amended 2026-11-13), each held to the same checks. Refused for any other chat in no
+/// workspace.
 pub fn remotes_of_workspace(
     root: &Path,
     folder: Option<&Path>,
@@ -256,20 +259,35 @@ pub fn remotes_of_workspace(
     recorded: &std::collections::BTreeMap<String, String>,
 ) -> Result<Vec<Remote>, String> {
     let plane = crate::workspaces::Plane::open(root.to_path_buf());
-    let Some(workspace) = folder.and_then(|folder| plane.workspace_of(folder)) else {
-        return Err(
-            "this chat works in no workspace, so it has no repos a GitHub App's token could be \
-             minted for"
-                .to_owned(),
-        );
+    let clones = match folder.and_then(|folder| plane.workspace_of(folder)) {
+        Some(workspace) => {
+            crate::repos::clones(root, &workspace)
+                .map_err(|e| e.to_string())?
+                .repos
+        }
+        // As a chat's start records them ([`clones_now`]): a workspace whose clones cannot be
+        // read has none.
+        None if folder.is_some_and(|folder| at_plane_root(root, folder)) => plane
+            .workspaces()
+            .map_err(|e| e.to_string())?
+            .iter()
+            .filter_map(|workspace| crate::repos::clones(root, workspace).ok())
+            .flat_map(|clones| clones.repos)
+            .collect(),
+        None => {
+            return Err(
+                "this chat works in no workspace, so it has no repos a GitHub App's token could \
+                 be minted for"
+                    .to_owned(),
+            );
+        }
     };
-    let clones = crate::repos::clones(root, &workspace).map_err(|e| e.to_string())?;
     let known = super::known(root);
     let forge_of = |url: &str| super::resolve_in(url, &known);
     let mut out = Vec::new();
     let repos = match started {
-        Some(started) => there_at_start(clones.repos, started),
-        None => clones.repos,
+        Some(started) => there_at_start(clones, started),
+        None => clones,
     };
     for repo in held_from_chats(repos, &grantable_beside(root, writes)) {
         let Some(place) = recorded.get(&crate::sandbox::local::clone_key(&repo.path)) else {
@@ -297,6 +315,12 @@ pub fn remotes_of_workspace(
     out.sort();
     out.dedup();
     Ok(out)
+}
+
+/// **Whether `folder`, a chat's folder, is the root of the plane at `root`**: such a chat works in
+/// no workspace, and its repos are every workspace's (#6494).
+fn at_plane_root(root: &Path, folder: &Path) -> bool {
+    crate::sandbox::real(folder) == crate::sandbox::real(root)
 }
 
 /// **The clone of `remotes` the folder `here` is in**, canonical, where it is in one.
@@ -923,8 +947,12 @@ pub fn token_for(
     drop(key);
     let transport = jwt_transport::to_github_com(&jwt)?;
     drop(jwt);
-    let minted = mint_over(&transport, &forge, &remotes, clone.as_deref())
-        .map_err(|why| on_a_runner_said(why, chat.on_a_runner))?;
+    let minted = mint_over(&transport, &forge, &remotes, clone.as_deref()).map_err(|why| {
+        let at_root = chat
+            .folder
+            .is_some_and(|folder| at_plane_root(chat.root, folder));
+        refused_said(why, chat.on_a_runner, at_root)
+    })?;
     tracing::info!(
         "purlis: chat {} was handed a token of GitHub App {} for {} of installation {}",
         chat.chat,
@@ -1044,12 +1072,17 @@ fn not_minted_on(host: &str) -> String {
     )
 }
 
-/// `why` a mint was refused, said for a runner chat where it asks for a clone to run in: a
-/// runner's folder is not one of this machine's, so it is told what to change instead.
-fn on_a_runner_said(why: String, on_a_runner: bool) -> String {
+/// `why` a mint was refused, said for the chat it was refused to. Where it asks for a clone to run
+/// in, a runner chat is told what to change instead, since a runner's folder is not one of this
+/// machine's, and a chat at the plane root is told why its repos span installations (#6494).
+fn refused_said(why: String, on_a_runner: bool, at_plane_root: bool) -> String {
     if on_a_runner && why == SEVERAL_INSTALLATIONS {
         "this runner chat's repos are on several installations of the GitHub App, and on a \
          runner purlis mints for one alone: keep its workspace's clones on one installation"
+            .to_owned()
+    } else if at_plane_root && why == SEVERAL_INSTALLATIONS {
+        "this chat works at the plane root, so its repos are every workspace's, and they are on \
+         several installations of the GitHub App: run the command in a clone of one of them"
             .to_owned()
     } else {
         why

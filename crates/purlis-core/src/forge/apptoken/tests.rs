@@ -725,6 +725,86 @@ fn only_a_clone_purlis_cloned_or_the_window_saved_names_the_chat_s_repos() {
     );
 }
 
+/// Clone `name` of workspace `ws` under `root`, with `url` as its `origin`.
+fn a_clone_in(root: &Path, ws: &str, name: &str, url: &str) -> PathBuf {
+    let clone = root.join("workspaces").join(ws).join(name);
+    std::fs::create_dir_all(&clone).unwrap();
+    git(&clone, &["init", "-q"]);
+    git(&clone, &["remote", "add", "origin", url]);
+    clone
+}
+
+#[test]
+fn a_chat_at_the_plane_root_covers_every_workspace_s_recorded_clones_as_they_were_when_it_started()
+{
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    a_clone_in(root, "ws", "api", "https://github.com/acme/api.git");
+    a_clone_in(root, "other", "web", "https://github.com/acme/web.git");
+    // A clone the window never saved names no repo, at the plane root as anywhere.
+    let unrecorded = a_clone_in(root, "third", "put", "https://github.com/acme/put.git");
+    let started = clones_now(root);
+    let mut recorded = recorded_now(root);
+    let other = root.join("workspaces/other/web");
+    recorded.insert(
+        crate::sandbox::local::clone_key(&other),
+        "github.com/acme/web".to_owned(),
+    );
+    assert!(!recorded.contains_key(&crate::sandbox::local::clone_key(&unrecorded)));
+    let names = |folder: &Path,
+                 recorded: &std::collections::BTreeMap<String, String>|
+     -> Result<Vec<String>, String> {
+        remotes_of_workspace(root, Some(folder), &[], Some(&started), recorded).map(|remotes| {
+            remotes
+                .into_iter()
+                .map(|remote| format!("{}/{}", remote.owner, remote.name))
+                .collect()
+        })
+    };
+    assert_eq!(names(root, &recorded).unwrap(), ["acme/api", "acme/web"]);
+
+    // A clone that appears after the start is not one of them.
+    let late = a_clone_in(root, "other", "late", "https://github.com/acme/late.git");
+    recorded.insert(
+        crate::sandbox::local::clone_key(&late),
+        "github.com/acme/late".to_owned(),
+    );
+    assert_eq!(names(root, &recorded).unwrap(), ["acme/api", "acme/web"]);
+
+    // A workspace chat still covers its own workspace alone.
+    assert_eq!(
+        names(&root.join("workspaces/ws"), &recorded).unwrap(),
+        ["acme/api"]
+    );
+
+    // A folder of the plane that is neither its root nor in a workspace is still refused.
+    let personas = root.join("personas");
+    std::fs::create_dir_all(&personas).unwrap();
+    let said = names(&personas, &recorded).unwrap_err();
+    assert!(said.contains("works in no workspace"), "{said}");
+}
+
+#[test]
+fn a_chat_at_the_plane_root_whose_repos_span_installations_is_told_to_run_in_a_clone() {
+    let said = super::refused_said(super::SEVERAL_INSTALLATIONS.to_owned(), false, true);
+    assert!(said.contains("plane root"), "{said}");
+    assert!(said.contains("every workspace"), "{said}");
+    assert!(said.contains("in a clone of one of them"), "{said}");
+    // Any other refusal is said as it is, and a workspace chat is told what it always was.
+    assert_eq!(
+        super::refused_said("anything".to_owned(), false, true),
+        "anything"
+    );
+    assert_eq!(
+        super::refused_said(super::SEVERAL_INSTALLATIONS.to_owned(), false, false),
+        super::SEVERAL_INSTALLATIONS
+    );
+    assert!(
+        super::refused_said(super::SEVERAL_INSTALLATIONS.to_owned(), true, false)
+            .contains("runner chat")
+    );
+}
+
 /// A token the operator minted (#4207): kept for its chat's next runs, for no other chat, and gone
 /// as the chat ends.
 #[cfg(unix)]
