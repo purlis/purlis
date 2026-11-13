@@ -3892,6 +3892,8 @@ impl Planes {
                         .chat_at(block.line.chat)
                         .and_then(|chat| chat.cwd);
                     if hooks::its_own_to_retry(&block, chat_dir.as_deref()) {
+                        // Never an ask: one block at once (T1-10).
+                        blocked_at_once(&strong, &told);
                         record();
                         return;
                     }
@@ -3909,6 +3911,13 @@ impl Planes {
                     // never an ask beside its block, and never a second block (T1-10).
                     if !crate::taskblocks::heard(strong.chats(), &told) {
                         return;
+                    }
+                    // A refusal no answer names is never an ask (a denial class, a policy's no,
+                    // a grant purlis never makes, purlis's own operation): one block at once
+                    // (T1-10). One held as an ask is one once its ask leaves
+                    // (`Chats::write_stops_with`).
+                    if crate::taskblocks::held_of(&told).is_none() {
+                        blocked_at_once(&strong, &told);
                     }
                     // The chat now waits on the person for this Notice, until its turn moves
                     // on: what the chat that asked for it is told (#1663). purlis's own block
@@ -5699,6 +5708,35 @@ impl Planes {
 
     fn map(&self) -> MutexGuard<'_, HashMap<PlaneId, Arc<Held>>> {
         self.open.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// **Writes `told`, a sandbox refusal of chat `told.session` that is never an ask, as one Sandbox
+/// block now** (T1-10, Q154): aimed at what its line named, as the project names a folder
+/// (`sandboxblock::stop`), the tool of the chat's latest call by the harness's name, and
+/// `unverified` for the recorder to judge, since the chat's own hook line reported it (Q235). A
+/// quiet line read back is no refusal the chat met, and is none; nor is the echo of a held
+/// connection's block written already (Q240). A write that fails is said in the app's log.
+fn blocked_at_once(held: &Held, told: &hooks::ChatBlocked) {
+    if told.quiet.is_some()
+        || crate::taskblocks::held_of(told)
+            .is_some_and(|block| held.chats().blocks().echoes(told.session, &block))
+    {
+        return;
+    }
+    let tool = held.chats().blocks().latest_tool(told.session);
+    let stop = purlis_core::sandboxblock::stop::sandbox_block_of(
+        &told.kind,
+        told.target.as_deref(),
+        held.root(),
+        tool.as_deref(),
+        purlis_core::sandboxblock::stop::Reported::ByItsHook,
+    );
+    if let Err(why) = held.hooks.write_stop(told.session, stop) {
+        tracing::warn!(
+            "purlis: chat {}'s sandbox block was not written ({why})",
+            told.session
+        );
     }
 }
 

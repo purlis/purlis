@@ -3668,9 +3668,17 @@ impl Chats {
         &self.blocks
     }
 
-    /// Who writes a chat's stops into the event log from now on (R-290).
+    /// Who writes a chat's stops into the event log from now on (R-290): a held connection's
+    /// refusal the chat stopped waiting on, and every other refusal held as an ask once its ask
+    /// leaves by anything but an Allow (T1-10).
     pub fn write_stops_with(&self, write: StopWriter) {
         *lock(&self.stops) = Some(write);
+        let (stops, root) = (Arc::clone(&self.stops), self.project.clone());
+        self.blocks.when_left(Arc::new(
+            move |chat, block: &crate::taskblocks::HeldBlock, tool, reported| {
+                left_as_a_block(&stops, &root, chat, block, tool, reported);
+            },
+        ));
     }
 
     /// **Chat `call.chat`'s hook line said it made, or ended, a tool call** (R-290, Q154,
@@ -9219,6 +9227,34 @@ fn became_a_block(
         target,
         args: None,
     });
+    if let Err(why) = write(chat, stop) {
+        tracing::warn!("purlis: chat {chat}'s sandbox block was not written ({why})");
+    }
+}
+
+/// **Writes `block`, a refusal chat `chat` held as an ask until it left, as one Sandbox block**
+/// (T1-10, Q154): aimed at the host, folder or service its ask named, as the project at `root`
+/// names a folder (`sandboxblock::stop`), `tool` the chat's latest call by the harness's name,
+/// and `unverified` where the chat's own hook line `reported` it, for the recorder to judge
+/// (Q235). A write that fails is said in the app's log.
+fn left_as_a_block(
+    stops: &Mutex<Option<StopWriter>>,
+    root: &Path,
+    chat: u32,
+    block: &crate::taskblocks::HeldBlock,
+    tool: Option<String>,
+    reported: purlis_core::sandboxblock::stop::Reported,
+) {
+    let Some(write) = lock(stops).clone() else {
+        return;
+    };
+    let stop = purlis_core::sandboxblock::stop::sandbox_block_of(
+        &block.kind,
+        Some(block.target.as_str()),
+        root,
+        tool.as_deref(),
+        reported,
+    );
     if let Err(why) = write(chat, stop) {
         tracing::warn!("purlis: chat {chat}'s sandbox block was not written ({why})");
     }

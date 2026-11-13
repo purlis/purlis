@@ -44,14 +44,28 @@ pub fn sandbox_block(
     tool: Option<&str>,
     reported: Reported,
 ) -> Stop {
+    block(target_of(kind, named, root), tool, reported)
+}
+
+/// [`sandbox_block`], for a refusal whose kind is `kind`, by the word the app holds it under
+/// ([`Kind::word`]): one naming no target where the word names no kind this build knows.
+pub fn sandbox_block_of(
+    kind: &str,
+    named: Option<&str>,
+    root: &Path,
+    tool: Option<&str>,
+    reported: Reported,
+) -> Stop {
+    let target = Kind::of_word(kind).and_then(|kind| target_of(kind, named, root));
+    block(target, tool, reported)
+}
+
+fn block(target: Option<Target>, tool: Option<&str>, reported: Reported) -> Stop {
     Stop::Block(Block {
         tool: tool.unwrap_or_default().to_owned(),
         source: Source::Sandbox,
-        qualifier: {
-            let _ = reported;
-            None::<Qualifier>
-        },
-        target: target_of(kind, named, root),
+        qualifier: (reported == Reported::ByItsHook).then_some(Qualifier::Unverified),
+        target,
         args: None,
     })
 }
@@ -61,6 +75,45 @@ pub fn sandbox_block(
 /// socket's path or the service's name), for a chat of the project at `root`. None where it
 /// named nothing, or nothing a target admits.
 pub fn target_of(kind: Kind, named: Option<&str>, root: &Path) -> Option<Target> {
-    let _ = (kind, named, root);
-    None
+    let named = named.map(str::trim).filter(|named| !named.is_empty());
+    match kind {
+        Kind::Host | Kind::Address => {
+            let named = named?;
+            super::named_host(named)
+                .and_then(|host| Target::host(&host).ok())
+                .or_else(|| Target::host(named).ok())
+        }
+        Kind::LocalService | Kind::RunnerService => Target::service(named?).ok(),
+        // A socket by its file's name: a path is a folder's, and this is no folder.
+        Kind::LocalSocket => Target::service(Path::new(named?).file_name()?.to_str()?).ok(),
+        // The system service by its name, and where the refusal named none, the kind of service
+        // it is, which is purlis's own word.
+        Kind::CertificateCheck | Kind::SystemService => {
+            Target::service(named.unwrap_or_else(|| kind.word())).ok()
+        }
+        Kind::ProjectFiles
+        | Kind::ProjectState
+        | Kind::ProtectedFile
+        | Kind::ChatFolder
+        | Kind::ToolchainCache
+        | Kind::Home
+        | Kind::Temp
+        | Kind::SystemTemp
+        | Kind::SystemCache
+        | Kind::System => folder_in(Path::new(named?), root),
+    }
+}
+
+/// `folder` by its path inside the project at `root`, as written or as the kernel names the
+/// project (`/var` is `/private/var` on macOS); `.` for the project itself. None outside it.
+fn folder_in(folder: &Path, root: &Path) -> Option<Target> {
+    let real = root.canonicalize().ok();
+    let inside = std::iter::once(root)
+        .chain(real.as_deref())
+        .find_map(|root| folder.strip_prefix(root).ok())?;
+    let relative = match inside.to_str()? {
+        "" => ".",
+        relative => relative,
+    };
+    Target::folder(relative).ok()
 }

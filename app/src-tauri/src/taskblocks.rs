@@ -241,6 +241,10 @@ impl Blocks {
     /// [`Self::heard`], at `at`, in seconds since 1970: a block heard again while it is held
     /// keeps the time it was first heard.
     pub fn heard_at(&self, session: u32, block: HeldBlock, at: u64) {
+        // What was quiet before, which no ask listed, and what waits: what an ask that leaves
+        // is, as a block, decided by (T1-10).
+        let was_quiet = self.quiet().get(&session).cloned().unwrap_or_default();
+        let waited = self.waiting().get(&session).cloned().unwrap_or_default();
         // Heard of a command the chat ran: no longer the quiet line of a read (#1884).
         self.loud(session, |one| {
             if block.names_a_host() {
@@ -253,6 +257,7 @@ impl Blocks {
         let waits = |one: &HeldBlock| waits.contains(one);
         let mut held = self.held();
         let mine = held.entry(session).or_default();
+        let before = mine.clone();
         if block.names_a_host() {
             mine.retain(|one| *one != block);
         } else {
@@ -296,6 +301,15 @@ impl Blocks {
             };
             mine.retain(|one| !one.shares_a_notice(&oldest));
         }
+        // Each ask a newer one took the place of, or pushed out, left: a block now (T1-10).
+        let gone: Vec<(HeldBlock, Reported)> = before
+            .into_iter()
+            .filter(|one| !mine.contains(one) && !was_quiet.contains(one))
+            .map(|one| {
+                let reported = reported_of(&waited, &one);
+                (one, reported)
+            })
+            .collect();
         let mut since = self.since();
         let was = since.remove(&session).unwrap_or_default();
         let kept: Vec<(HeldBlock, u64)> = mine
@@ -309,6 +323,9 @@ impl Blocks {
             })
             .collect();
         since.insert(session, kept);
+        drop(since);
+        drop(held);
+        self.left_as_blocks(session, gone, self.latest_tool(session));
     }
 
     fn quiet(&self) -> std::sync::MutexGuard<'_, HashMap<u32, Vec<HeldBlock>>> {
@@ -553,6 +570,18 @@ impl Blocks {
     /// and kind, before the call it was held under is over. It is dropped, never held again as
     /// an ask beside its block.
     pub fn echoes(&self, session: u32, block: &HeldBlock) -> bool {
+        // #1903 in the other order (T1-10): a host unnamed, heard while the same refusal named
+        // waits on the person, is that ask's echo, never a second ask beside it.
+        let unnamed = block.what == GrantWhat::Host && block.target.is_empty();
+        if unnamed
+            && self.waiting().get(&session).is_some_and(|mine| {
+                mine.iter().any(|one| {
+                    one.names_a_host() && one.operation == block.operation && one.kind == block.kind
+                })
+            })
+        {
+            return true;
+        }
         self.calls().get(&session).is_some_and(|mine| {
             mine.written.iter().any(|one| {
                 one.block == *block
@@ -573,11 +602,74 @@ impl Blocks {
         *self.left.lock().unwrap_or_else(PoisonError::into_inner) = Some(left);
     }
 
-    /// **The person kept `block` of chat `session` blocked** (T1-10): whether it was held.
+    /// **The person kept `block` of chat `session` blocked** (T1-10, Q154): its ask leaves as
+    /// one block, unless it was a quiet line no ask listed. Whether it was held: once only,
+    /// whoever presses first.
     pub fn kept_blocked(&self, session: u32, block: &HeldBlock) -> bool {
-        let was = self.holds(session, block);
+        if !self.holds(session, block) {
+            return false;
+        }
+        let quiet = self.is_quiet(session, block);
+        let waited = self.waiting().get(&session).cloned().unwrap_or_default();
+        let mut tool = self.latest_tool(session);
+        // A held connection kept blocked: written as T1-09 writes one, so the post-tool line
+        // of the same refusal from the call it was held under is its echo, never a second ask
+        // and a second block (Q240). Taken before the answer forgets it.
+        if waited.contains(block) {
+            let mut calls = self.calls();
+            let mine = calls.entry(session).or_default();
+            let under = mine
+                .held
+                .iter()
+                .position(|one| one.block == *block)
+                .map(|at| mine.held.remove(at));
+            if let Some(held_under) = under.as_ref().and_then(Under::tool) {
+                tool = Some(held_under);
+            }
+            mine.written.retain(|one| one.block != *block);
+            mine.written.push(under.unwrap_or_else(|| Under {
+                block: block.clone(),
+                target: String::new(),
+                calls: Vec::new(),
+                ended: Vec::new(),
+                given_up: true,
+            }));
+            if mine.written.len() > MOST_WAITING_PER_CHAT {
+                mine.written.remove(0);
+            }
+        }
         self.answered(session, block);
-        was
+        if !quiet {
+            let reported = reported_of(&waited, block);
+            self.left_as_blocks(session, vec![(block.clone(), reported)], tool);
+        }
+        true
+    }
+
+    /// The tool of chat `session`'s latest call, by the harness's name, where one was heard.
+    pub fn latest_tool(&self, session: u32) -> Option<String> {
+        self.calls()
+            .get(&session)
+            .and_then(|mine| mine.latest.clone())
+    }
+
+    /// Tells who listens ([`Self::when_left`]) of each of chat `session`'s asks in `gone`, which
+    /// left as a block, `tool` the chat's latest call. Never under a lock of these.
+    fn left_as_blocks(&self, session: u32, gone: Vec<(HeldBlock, Reported)>, tool: Option<String>) {
+        if gone.is_empty() {
+            return;
+        }
+        let left = self
+            .left
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        let Some(left) = left else {
+            return;
+        };
+        for (block, reported) in gone {
+            left(session, &block, tool.clone(), reported);
+        }
     }
 
     /// Whether chat `session` is held on `block` now.
@@ -611,14 +703,25 @@ impl Blocks {
         }
     }
 
-    /// Chat `session` ended: nothing is held for it.
+    /// Chat `session` ended: nothing is held for it, and each ask it still had is a block now
+    /// (T1-10), but a quiet line no ask listed.
     pub fn ended(&self, session: u32) {
-        self.held().remove(&session);
+        let tool = self.latest_tool(session);
+        let held = self.held().remove(&session).unwrap_or_default();
+        let quiet = self.quiet().remove(&session).unwrap_or_default();
+        let waited = self.waiting().remove(&session).unwrap_or_default();
         self.noticed().remove(&session);
         self.since().remove(&session);
-        self.waiting().remove(&session);
-        self.quiet().remove(&session);
         self.calls().remove(&session);
+        let gone = held
+            .into_iter()
+            .filter(|one| !quiet.contains(one))
+            .map(|one| {
+                let reported = reported_of(&waited, &one);
+                (one, reported)
+            })
+            .collect();
+        self.left_as_blocks(session, gone, tool);
     }
 
     fn noticed(&self) -> std::sync::MutexGuard<'_, HashMap<u32, u32>> {
@@ -637,6 +740,16 @@ impl Blocks {
     /// each move it on.
     pub fn waits_on_a_notice(&self, session: u32, turn: u32, waiting: bool) -> bool {
         waiting && self.noticed().get(&session) == Some(&turn)
+    }
+}
+
+/// Who reported `block`, a refusal of a chat whose held connections are `waited` (Q235): purlis's
+/// proxy, for a connection it held, and otherwise the chat's own hook line.
+fn reported_of(waited: &[HeldBlock], block: &HeldBlock) -> Reported {
+    if waited.contains(block) {
+        Reported::ByTheProxy
+    } else {
+        Reported::ByItsHook
     }
 }
 
@@ -1090,19 +1203,35 @@ pub fn allow_for_tasks(
 
 /// The blocks of `answered` among `seen` are answered: the app holds them no longer.
 fn let_go(chats: &crate::chats::Chats, seen: &[SeenBlock], answered: &[u32]) {
-    for one in seen.iter().filter(|one| answered.contains(&one.task)) {
-        if let Some(target) = normalised(one.what, &one.target) {
-            chats.blocks().answered(
+    for (task, block) in held_by(seen, answered) {
+        chats.blocks().answered(task, &block);
+    }
+}
+
+/// [`let_go`], for a Keep blocked: each task's ask leaves as one block (T1-10).
+fn kept_blocked_each(chats: &crate::chats::Chats, seen: &[SeenBlock], kept: &[u32]) {
+    for (task, block) in held_by(seen, kept) {
+        chats.blocks().kept_blocked(task, &block);
+    }
+}
+
+/// The block each task of `tasks` was seen held on, as the app holds it.
+fn held_by(seen: &[SeenBlock], tasks: &[u32]) -> Vec<(u32, HeldBlock)> {
+    seen.iter()
+        .filter(|one| tasks.contains(&one.task))
+        .filter_map(|one| {
+            let target = normalised(one.what, &one.target)?;
+            Some((
                 one.task,
-                &HeldBlock {
+                HeldBlock {
                     operation: one.operation.clone(),
                     kind: one.kind.clone(),
                     what: one.what,
                     target,
                 },
-            );
-        }
-    }
+            ))
+        })
+        .collect()
 }
 
 /// **Allow on the one question for several tasks of chat `session`** (#1508, V100-57): `seen`
@@ -1163,7 +1292,7 @@ pub fn keep_blocked(
     audit: crate::sandboxing::Audit<'_>,
 ) -> Result<Vec<u32>, String> {
     let (tasks, block) = reading(chats, |reading| checked(session, seen, reading))?;
-    let_go(chats, seen, &tasks);
+    kept_blocked_each(chats, seen, &tasks);
     // What each task's proxy holds on the host is refused now (#1666, #1411), and each task is
     // told in one line, with the reason (#1987).
     if block.what == GrantWhat::Host
