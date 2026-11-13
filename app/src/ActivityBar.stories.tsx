@@ -12,6 +12,7 @@ import { expect, fn, waitFor, within } from "storybook/test";
 import { ActivityBar, ActivityCount, ActivityDot, VIEW_MARKS, type Tabbed } from "./ActivityBar";
 import type { ViewId } from "./regions";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
+import { drawPerson, personInForce } from "./theme/theme";
 
 const VIEWS: Tabbed[] = [
   { view: "asks", name: "Asks", mark: VIEW_MARKS.asks },
@@ -119,18 +120,18 @@ export const Bounce: Story = {
  * **Under reduced motion the ✋ does not move**: the number is all that changes. The window holds
  * the bounce itself (`handBounce.ts`), and should one be asked for, the theme's one switch ends
  * it before a frame is drawn, and the window still hears it end.
+ *
+ * Motion is turned off the way Settings turns it off, in the person's layer: the preview draws
+ * the theme again as the story renders, and that drawing writes the root's `data-motion` from
+ * the person's layer and the system, so an attribute set on the root by hand is gone by then.
  */
 export const BounceUnderReducedMotion: Story = {
   args: { bounce: "asks", onBounced: fn() },
   parameters: { screenshot: false },
   beforeEach: () => {
-    const root = document.documentElement;
-    const was = root.getAttribute("data-motion");
-    root.setAttribute("data-motion", "reduced");
-    return () => {
-      if (was === null) root.removeAttribute("data-motion");
-      else root.setAttribute("data-motion", was);
-    };
+    const was = personInForce();
+    drawPerson({ ...was, motion: "reduced" });
+    return () => drawPerson(was);
   },
   play: async ({ canvas, args }) => {
     const style = markStyle(canvas.getByRole("tab", { name: /^Asks/ }));
