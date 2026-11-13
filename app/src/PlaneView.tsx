@@ -241,6 +241,7 @@ import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
 import { elsewhereCount, handSaid, theirAsks, type Elsewhere } from "./InboxElsewhere";
 import type { AllChatsFilter } from "./InboxAsks";
 import { useAsksArrival } from "./asksArrival";
+import { useHandBounce } from "./useHandBounce";
 import { sayAboutThisMachine, useAboutThisMachine } from "./windowprefs";
 import { drawWhatIsInForce } from "./Extensions";
 import { useScreenReaderMode } from "./screenReader";
@@ -291,7 +292,7 @@ import {
 } from "./inboxUpdates";
 import { useInboxOpenTold } from "./askNotices";
 import { ReportDraftNotices, undoAlwaysSend, type SentDraft } from "./ReportDraftNotices";
-import { useAnsweredWhenGone } from "./inboxRules";
+import { useAnswered, useAnsweredWhenGone } from "./inboxRules";
 import { usePermissionAsks } from "./permissionAsks";
 import { useDismissals } from "./dismissals";
 import { dormantCause, dormantSays, type ChipNotices } from "./ChipNotices";
@@ -11587,10 +11588,19 @@ export const PlaneView = memo(function PlaneView({
   /** **The ✋'s count: this project's asks alone** (#6341, ADR 0121 amended 2026-11-12,
    *  decision 1). Another project's are on its own tab, and on the Dock badge's total. */
   const hand = waiting?.length ?? 0;
-  /** **A Blocking ask arriving** (ADR 0121 decisions 24 and 25, #6020): said once, politely,
-   *  and the first one on this machine that arrives while Asks is closed pulses the ✋. One in
+  /** **A Blocking ask arriving** (ADR 0121 decision 25, #6020): said once, politely. One in
    *  another project is still said, as its notification still comes. */
-  const arrival = useAsksArrival(waiting, elsewhereCount(plane, elsewhere), inFront && asksShown);
+  const arrival = useAsksArrival(waiting, elsewhereCount(plane, elsewhere));
+  /** **The ✋'s bounce** (#6343, ADR 0121 amended 2026-11-12): as an ask arrives here, and as a
+   *  reminder on its backoff while one waits; any answer and Asks opening restart it. */
+  const [lastAnswered] = useAnswered(plane);
+  const handBounce = useHandBounce({
+    waiting: hand > 0,
+    arrived: arrival.here,
+    answered: lastAnswered,
+    opened: inFront && asksShown,
+    inFront,
+  });
   /**
    * **Snooze all on Asks** (#5647): the core keeps what each chat held, and lists a snoozed
    * chat's asks apart until it asks something new, or until the time it was snoozed for runs out
@@ -12460,8 +12470,8 @@ export const PlaneView = memo(function PlaneView({
                 // The Lower icons' are drawn the same way, so they are there while their half of the
                 // Panel is away (P-9, #1739): Changes' count, and Repos' only once a clone is behind.
                 // **What is New in each view** (#6002): a pip beside its badge, until seen.
-                pulse={arrival.pulse ? "asks" : undefined}
-                onPulsed={arrival.pulsed}
+                bounce={handBounce.bouncing ? "asks" : undefined}
+                onBounced={handBounce.bounced}
                 fresh={{
                   asks: newAsks(waiting, seen),
                   updates: newUpdates(
