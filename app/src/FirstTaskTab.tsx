@@ -239,7 +239,7 @@ export function FirstTaskTab({
 
   return (
     <div className="first-task">
-      <p className="came-back">
+      <p className="came-back ui-text-secondary">
         Give one small, real task to two chats, each started with something different below, and
         compare what each did. Each chat works on a branch of its own in purlis&apos;s copy of your
         repo, and the task is typed in for you to read before you send it.
@@ -265,12 +265,12 @@ export function FirstTaskTab({
           the tab's own read refusal above, which is the Notice, said to a screen reader as they
           arrive (#1719). */}
       {unlooked !== undefined && (
-        <p className="came-back" role="status">
+        <p className="came-back ui-text-secondary" role="status">
           {`purlis could not look at which harnesses this machine has, so every profile is offered: ${unlooked}`}
         </p>
       )}
       {unlisted !== undefined && (
-        <p className="came-back" role="status">
+        <p className="came-back ui-text-secondary" role="status">
           {`purlis could not list the branches of this repo, so a chat started before this launch may show as not started: ${unlisted}`}
         </p>
       )}
@@ -286,19 +286,19 @@ export function FirstTaskTab({
           <section className="first-task-run" key={run} aria-labelledby={labelId}>
             <h2 id={labelId}>{ORDINAL[run]}</h2>
             {run === 2 && (
-              <p className="came-back">
+              <p className="came-back ui-text-secondary">
                 Start it once the first chat has finished. It starts knowing what the first one
                 learned: the lesson the first chat recorded is in its memory, whatever it is started
                 with.
               </p>
             )}
             {done ? (
-              <p className="came-back">
+              <p className="came-back ui-text-secondary">
                 {`Started on the branch ${done.branch}.`}{" "}
                 <Button onPress={() => does?.showDiff(done)}>Show its diff</Button>
               </p>
             ) : before ? (
-              <p className="came-back">
+              <p className="came-back ui-text-secondary">
                 {`Started on the branch ${before.branch}.`}{" "}
                 {beforeDiff ? (
                   <Button

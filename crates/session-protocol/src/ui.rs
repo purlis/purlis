@@ -990,6 +990,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_podman_connections",
     "pool_setup_connect",
     "pool_setup_trust",
+    // Naming a tcp:// machine's TLS files, a vault entry among them, is the person's too (#6267).
+    "pool_setup_tls_files",
     "pool_setup_name",
     "pool_setup_pool",
     "pool_setup_add",
@@ -1502,6 +1504,9 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "find_files",
     "find_files_end",
     "finished_tasks",
+    // Each chat's finishes and its turn's unresolved blocks, for its finish rows (R-178,
+    // T1-31): a read of the event log.
+    "finished_turns",
     "first_frame",
     "first_run_found",
     "forge_token_help",

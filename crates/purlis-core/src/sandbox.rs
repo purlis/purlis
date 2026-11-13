@@ -2547,6 +2547,17 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
                 Access::ReadWrite,
             );
         }
+        // The files each pool over Docker's TLS API names (#6267): its CA, which a chat could
+        // otherwise swap, and its client certificate and a key kept where it is, which would
+        // reach that engine as the person. Neither read nor written, as the cluster pools'
+        // kubeconfigs are not, each by its name and by its real path.
+        for file in crate::runners::tls_files(&config_root) {
+            let resolved = real(&file);
+            if resolved != file {
+                deny(Class::HumanPowers, resolved, Access::ReadWrite);
+            }
+            deny(Class::HumanPowers, file, Access::ReadWrite);
+        }
     }
     // This machine's profiles (ADR 0095, #2034): the folders purlis made, each holding a
     // profile's sign-in, settings and conversations. A chat neither reads nor writes them; their

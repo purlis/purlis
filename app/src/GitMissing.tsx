@@ -25,7 +25,7 @@ export function GitMissing({ gate }: { gate: GitGate }) {
   const { install } = gate;
   return (
     <section className="git-missing" aria-labelledby="git-missing-title" data-testid="git-missing">
-      <h3 id="git-missing-title">
+      <h3 id="git-missing-title" className="ui-text-heading">
         {install === null ? "purlis could not look for git" : "Git is not installed"}
       </h3>
       {install !== null && <Explained install={install} installing={gate.installing} />}
@@ -65,10 +65,10 @@ function Explained({ install, installing }: { install: GitInstall; installing: b
     case "developer-tools":
       return (
         <>
-          <p className="came-back">
+          <p className="came-back ui-text-secondary">
             purlis works with git, which comes with Apple&apos;s command line developer tools.
           </p>
-          <p className="came-back" role="status">
+          <p className="came-back ui-text-secondary" role="status">
             {installing
               ? "Apple's installer is open. Finish it there, and purlis carries on by itself."
               : "Install opens Apple's installer. When it has finished, purlis carries on where you were."}
@@ -78,18 +78,24 @@ function Explained({ install, installing }: { install: GitInstall; installing: b
     case "package":
       return (
         <>
-          <p className="came-back">purlis works with git. Install it with your package manager:</p>
+          <p className="came-back ui-text-secondary">
+            purlis works with git. Install it with your package manager:
+          </p>
           <code className="harness-installer">{install.command}</code>
-          <p className="came-back">Then press Check again, and purlis carries on where you were.</p>
+          <p className="came-back ui-text-secondary">
+            Then press Check again, and purlis carries on where you were.
+          </p>
         </>
       );
     case "download":
       return (
         <>
-          <p className="came-back">
+          <p className="came-back ui-text-secondary">
             purlis works with git. Get it from <code>{install.page}</code>.
           </p>
-          <p className="came-back">Then press Check again, and purlis carries on where you were.</p>
+          <p className="came-back ui-text-secondary">
+            Then press Check again, and purlis carries on where you were.
+          </p>
         </>
       );
   }

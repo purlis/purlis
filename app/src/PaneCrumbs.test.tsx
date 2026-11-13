@@ -147,7 +147,8 @@ describe("a pane's breadcrumb", () => {
   it("is drawn with the elements and classes its stylesheet and its geometry spec name", () => {
     render(<PaneCrumbs crumbs={{ path, elsewhere: "beta" }} onShow={() => undefined} />);
     const crumbs = screen.getByRole("navigation");
-    expect(crumbs.className).toBe("pane-crumbs");
+    // Its words wear the meta, on the root, and its names take it from there (#6389).
+    expect(crumbs.className).toBe("pane-crumbs ui-text-meta");
     const shape = (el: Element): string =>
       `${el.tagName.toLowerCase()}.${el.className.split(" ").join(".")}`;
     expect([...crumbs.children].map(shape)).toEqual([

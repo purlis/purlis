@@ -588,7 +588,7 @@ jobs:
           fi
           changed=$(git diff --name-only "$BASE" HEAD)
           echo "$changed"
-          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|pools|poolsetup|sshroute|codelink|session)[^/]*(\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_is_reached_over_ssh\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman)/|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
+          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|pools|poolsetup|sshroute|tlsroute|codelink|session)[^/]*(\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_is_reached_over_(ssh|tls)\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman)/|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::nothing of the host, the protocol, the sandbox or the browsers has changed; the parity suite is not run against Docker"
@@ -694,7 +694,7 @@ jobs:
   # pool target (`::in_a_remote_docker_pool`), its runner made there and linked through the pool's
   # own forward. Scoped by the same gate as `parity`.
   remote-parity:
-    name: parity against Docker on another machine, over SSH
+    name: parity against Docker on another machine, over SSH and TLS
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.parity != 'false') }}
     runs-on: ubuntu-24.04
@@ -721,7 +721,7 @@ jobs:
             exit 0
           fi
           changed=$(git diff --name-only "$BASE" HEAD)
-          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|pools|poolsetup|sshroute|codelink|session)[^/]*(\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_is_reached_over_ssh\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman)/|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
+          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|pools|poolsetup|sshroute|tlsroute|codelink|session)[^/]*(\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_is_reached_over_(ssh|tls)\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman)/|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::nothing of the pools or the SSH route has changed; the parity suite is not run against Docker on another machine"
@@ -764,6 +764,11 @@ jobs:
         run: >-
           cargo nextest run --locked -p purlis-core --profile ci --retries 0 --no-tests fail
           --test-threads 1 --test it -E 'test(/^a_remote_docker_pool_is_reached_over_ssh::/)'
+      - name: The TLS route against that machine, with dind's own CA and a second one
+        if: steps.scope.outputs.run == 'true'
+        run: >-
+          cargo nextest run --locked -p purlis-core --profile ci --retries 0 --no-tests fail
+          --test-threads 1 --test it -E 'test(/^a_remote_docker_pool_is_reached_over_tls::/)'
       # **Rootless Podman on another machine** (#6269): this runner's own rootless Podman API
       # service behind the same sshd image, sharing its socket and store at their own paths, with
       # latency and loss (`tests/remote-podman/up.sh`). Its route's tests: Docker's client finds a
@@ -794,6 +799,7 @@ jobs:
         run: |
           docker exec dind docker ps --all --no-trunc || true
           docker logs --tail 200 sshd || true
+          docker logs --tail 100 dind || true
           podman ps --all --no-trunc || true
           docker logs --tail 200 sshd-podman || true
           tail -n 200 "$RUNNER_TEMP/podman-service.log" || true
@@ -886,8 +892,8 @@ jobs:
         run: |
           npm test -- \
             e2e/dialogs.test.ts e2e/fakeGitLab.test.ts e2e/fence.test.ts e2e/gitAnswer.test.ts e2e/recordedForge.test.ts \
-            e2e/standInForge.test.ts e2e/upgrade.test.ts src/PersonaMark.test.tsx src/StripMarks.test.tsx \
-            src/allowLabels.test.ts src/artifactPage.test.ts src/copy.rust.test.ts src/layoutProjects.test.ts src/settings/linkedGroups.test.ts \
+            e2e/standInForge.test.ts e2e/upgrade.test.ts src/LoopPauseAsk.window.test.tsx src/PersonaMark.test.tsx src/StripMarks.test.tsx \
+            src/allowLabels.test.ts src/artifactPage.test.ts src/askLabels.guard.test.ts src/copy.rust.test.ts src/layoutProjects.test.ts src/settings/linkedGroups.test.ts \
             src/specimen/Specimen.test.tsx src/theme/consentToggles.test.ts src/theme/contrast.test.ts src/theme/core.test.ts \
             src/theme/forced-colors.test.ts src/theme/grounds.test.ts src/theme/railIcons.vendor.test.ts src/theme/registry.test.ts \
             src/theme/theme.test.ts src/theme/themeIds.test.ts src/theme/tint.test.ts src/ui/buildingDoc.test.ts src/ui/field/fieldHelp.guard.test.ts \

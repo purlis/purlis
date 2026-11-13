@@ -13,6 +13,8 @@ import { Notice, type NoticeAction } from "./Notice";
  * - **Budget reached**: Continue, Raise the budget (which opens Settings › Project › Dispatch at
  *   its limits; the chat goes on once it is within the new limit), or Stop.
  * - **Looping**: It's fine, continue, or Stop.
+ * - **Blocked on the same thing again and again** (T1-36): Tell it to stop trying, Let it keep
+ *   trying, or Stop chat.
  *
  * Drawn from the asks registry (`asks`), so an answer in Asks clears it here. Every word is
  * purlis's: what it was paused for is the core's sentence, and the answers are its labels.

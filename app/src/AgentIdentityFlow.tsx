@@ -531,7 +531,7 @@ export function StartOverAsk({
       onClose={onClose}
       title="Start over?"
       description={
-        <p className="came-back">
+        <p className="came-back ui-text-secondary">
           This App's key goes from your vault, and nothing used it yet. The App itself stays on
           GitHub until you delete it there.
         </p>
