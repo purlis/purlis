@@ -1,6 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { $, browser } from "@wdio/globals";
 import { pressMenuPath } from "./menus.js";
 
@@ -73,22 +75,7 @@ export async function studioSkill(name: string) {
 export async function studioMore(name: string, said: string) {
   const more = `button[aria-label="More for ${name}"]`;
   const menu = `[role="menu"][aria-label="More for ${name}"]`;
-  await $(more).waitForExist({ timeout: 20_000 });
-  // Pressed again until its menu is up: a press that lands while the page redraws opens none.
-  await browser.waitUntil(
-    async () =>
-      browser.execute(
-        (button: string, opened: string) => {
-          if (document.querySelector(opened) !== null) return true;
-          const one = document.querySelector<HTMLElement>(button);
-          if (one !== null && one.getAttribute("aria-disabled") !== "true") one.click();
-          return false;
-        },
-        more,
-        menu,
-      ),
-    { timeout: 20_000, interval: 500, timeoutMsg: `${name}'s menu never opened` },
-  );
+  await opened(more, menu, `${name}'s menu never opened`);
   await browser.waitUntil(
     async () =>
       browser.execute(
@@ -112,32 +99,49 @@ const WHOSE_MENU = '[role="menu"][aria-label="Whose chats and where they start"]
 /**
  * **Picks the row named `said` from the studio's Whose chats picker** (#2935): a chat in a
  * workspace, "A chat as steward", "Dispatched into alpha"… It opens the menu, presses the row by
- * its name, and waits until the picker's button reads `then`, which is the scope picked.
+ * its name, and waits until the picker's button `reads` the scope picked.
  */
-export async function studioWhose(said: string, then: string) {
-  await $(WHOSE).waitForExist({ timeout: 20_000 });
-  // Pressed again until its menu is up: a press that lands while the header redraws opens none.
-  await browser.waitUntil(
-    async () =>
-      browser.execute(
-        (button: string, opened: string) => {
-          if (document.querySelector(opened) !== null) return true;
-          document.querySelector<HTMLElement>(button)?.click();
-          return false;
-        },
-        WHOSE,
-        WHOSE_MENU,
-      ),
-    { timeout: 20_000, interval: 500, timeoutMsg: "the Whose chats menu never opened" },
-  );
+export async function studioWhose(said: string, reads: string) {
+  await opened(WHOSE, WHOSE_MENU, "the Whose chats menu never opened");
   await pressMenuPath(said);
-  await browser.waitUntil(async () => (await $(WHOSE).getText()).trim() === then, {
+  await browser.waitUntil(async () => (await $(WHOSE).getText()).trim() === reads, {
     timeout: 20_000,
     interval: 250,
-    timeoutMsg: `the Whose chats picker never read ${JSON.stringify(then)}`,
+    timeoutMsg: `the Whose chats picker never read ${JSON.stringify(reads)}`,
   });
 }
 
+/** **Presses `button` until `menu` is up**: a press that lands while the page redraws opens
+ *  none, and a button that is not usable yet is not pressed. */
+async function opened(button: string, menu: string, timeoutMsg: string) {
+  await $(button).waitForExist({ timeout: 20_000 });
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        (pressed: string, up: string) => {
+          if (document.querySelector(up) !== null) return true;
+          const one = document.querySelector<HTMLElement>(pressed);
+          if (one !== null && one.getAttribute("aria-disabled") !== "true") one.click();
+          return false;
+        },
+        button,
+        menu,
+      ),
+    { timeout: 20_000, interval: 500, timeoutMsg },
+  );
+}
+
+/** **Writes a skill folder `name` under `dir`**, as a person would: its `SKILL.md` alone, saying
+ *  it probes `name`. Answers the folder, for the spec to remove. */
+export function writeSkill(dir: string, name: string): string {
+  const folder = join(dir, name);
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(
+    join(folder, "SKILL.md"),
+    `---\nname: ${name}\ndescription: Probes ${name}.\n---\n\nSay hello.\n`,
+  );
+  return folder;
+}
 /** **Shows the tab `name` of the skill page beside the list** (#3682): Overview, Text, History,
  *  Grades or Runs, pressed again until it is the one shown. */
 export async function studioTab(name: string) {

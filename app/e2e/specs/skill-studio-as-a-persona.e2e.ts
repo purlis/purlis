@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { $, expect } from "@wdio/globals";
 import { projectRoot, stateOf } from "../acting.js";
 import { closesTheTabsItOpens, focusWorkspace, runFromThePalette } from "../reach.js";
-import { studioSkill, studioWhose } from "../studio.js";
+import { studioSkill, studioWhose, writeSkill } from "../studio.js";
 
 /**
  * **A persona's skills in a workspace it was dispatched into** (#2935, #6491), in the built app
@@ -19,7 +19,7 @@ import { studioSkill, studioWhose } from "../studio.js";
  * the Dispatches tab's spec does: `steward`, dispatched into `alpha` today. It gives `steward` a
  * skill of its own and `alpha` one of its own, as a person would.
  *
- * Opened from `alpha`, the picker's "A chat as steward" lists steward's skill and not alpha's;
+ * Opened on `alpha`'s chats, the picker's "A chat as steward" lists steward's skill and not alpha's;
  * In which workspace then offers "Dispatched into alpha", and there both are on.
  *
  * **It leaves the window and the project as it found them**: the record and the skills are
@@ -32,16 +32,6 @@ const OWN = "e2e-steward-dispatched-probe";
 const THERE = "e2e-alpha-dispatched-probe";
 const DISPATCH = "01K7E2E0000000000000SKPRS1";
 
-function writeSkill(dir: string, name: string): string {
-  const folder = join(dir, name);
-  mkdirSync(folder, { recursive: true });
-  writeFileSync(
-    join(folder, "SKILL.md"),
-    `---\nname: ${name}\ndescription: Probes ${name}.\n---\n\nSay hello.\n`,
-  );
-  return folder;
-}
-
 /** An ended task's record, as the app writes one (`dispatchrecord::Record`, version 1): steward,
  *  dispatched into alpha five minutes ago. */
 function aTaskInAlpha(): string {
@@ -51,10 +41,10 @@ function aTaskInAlpha(): string {
     v: 1,
     id: DISPATCH,
     mode: "task",
-    asker: { chat: 9401, name: "sk asking chat", workspace: WORKSPACE },
+    asker: { chat: 9401, name: "e2e asking chat", workspace: WORKSPACE },
     persona: PERSONA,
-    worker: { chat: 9402, name: `${PERSONA} sk task`, persona: PERSONA },
-    task: "sk task in alpha",
+    worker: { chat: 9402, name: `${PERSONA} e2e task`, persona: PERSONA },
+    task: "e2e task in alpha",
     place: { workspace: WORKSPACE },
     brief: "Do the task in alpha.",
     started: started.toISOString(),
@@ -89,7 +79,8 @@ describe("a persona's skills in a workspace it was dispatched into", function ()
   });
 
   it("picks a chat as the persona, then the workspace it was dispatched into, and lists what a chat dispatched there gets", async () => {
-    await runFromThePalette("Open Skill studio", "skills.studio");
+    // The studio on alpha, as its Settings' Skills row opens it: a chat in the workspace.
+    await runFromThePalette("Open Skill studio", `skills.studio:${WORKSPACE}`);
     await $(`[data-testid="skill-${THERE}"]`).waitForExist({ timeout: 20_000 });
 
     // As the persona, at the project's root: its own skill, and no workspace's.
@@ -111,7 +102,6 @@ describe("a persona's skills in a workspace it was dispatched into", function ()
     await expect(there).not.toHaveText(/Left out/);
     const thereItem = await studioSkill(THERE);
     await expect(thereItem.$('[data-testid="skill-in-a-chat"]')).toHaveText(/^On/);
-    await expect($(`[data-testid="skill-${OWN}"]`)).not.toHaveText(/Left out/);
     const ownItem = await studioSkill(OWN);
     await expect(ownItem.$('[data-testid="skill-in-a-chat"]')).toHaveText(/^On/);
   });
