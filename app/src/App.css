@@ -1118,11 +1118,6 @@ body {
 
 .start-chat-label {
   margin: 0;
-  color: var(--text-muted);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-strong);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 /* What stops a start, under the persona: drawn only when there is something to say. */
@@ -2566,7 +2561,6 @@ body {
   margin: 0 0 var(--space-3);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-strong);
-  letter-spacing: 0.05em;
   color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
@@ -5898,11 +5892,6 @@ nav.piece-files-head {
 
 .dispatch-read h2 {
   margin: 0 0 var(--space-2);
-  color: var(--text-muted);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-strong);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 
 .dispatch-read pre {
@@ -6104,11 +6093,6 @@ nav.piece-files-head {
 
 .session-dispatches h2 {
   margin: 0 0 var(--space-2);
-  color: var(--text-muted);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-strong);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 
 .session-dispatches ul {
@@ -8864,8 +8848,6 @@ nav.piece-files-head {
 }
 .pool-setup-title {
   margin: 0;
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-strong);
   line-height: var(--line-height-tight);
   outline: none;
 }
@@ -9039,8 +9021,6 @@ nav.piece-files-head {
 }
 .agent-identity-title {
   margin: 0;
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-strong);
   line-height: var(--line-height-tight);
   outline: none;
 }
