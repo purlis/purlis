@@ -67,6 +67,9 @@ beforeEach(() => {
     if (command === "plane_readiness") {
       return { state: "notChecked", why: "No forge in this test." };
     }
+    // The Skills groups are on every machine since the studio's flag went (#2786); their
+    // budget reads the studio, which this core has none of.
+    if (command === "skill_studio") throw "no studio in this test";
     return null;
   });
 });
