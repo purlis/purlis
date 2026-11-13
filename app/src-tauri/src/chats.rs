@@ -3135,6 +3135,11 @@ impl Chats {
             rows: 24,
         });
         lock(&self.replacing).insert(session);
+        // Said while its program still runs, so its end is written `superseded` (ADR 0076
+        // §2) wherever the event log is written, before its close is heard there.
+        if let Some(tell) = lock(&self.replaced_told).as_ref() {
+            tell(session);
+        }
         if let Err(why) = self.sessions.close(session) {
             tracing::warn!("purlis: chat {session}'s run did not end before its restart ({why})");
         }

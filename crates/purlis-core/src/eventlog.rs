@@ -1679,7 +1679,9 @@ pub struct Recorder {
     /// ([`Recorder::begin_held`], [`Recorder::knows`]) leaves it.
     taken_back: std::collections::HashSet<(PathBuf, u32)>,
     /// The chats' own runs whose `run.ended` is written ([`Recorder::end_run_with`]), by id: a
-    /// run ends once, however often its end is told.
+    /// run ends once, however often its end is told. Held to [`RUNS_HELD`], as [`Self::begun`]
+    /// is: when full, only the runs still some chat's own are kept, since only a chat's current
+    /// run is ever ended again.
     ended_runs: std::collections::HashSet<String>,
     /// Each live sub-agent's child run, by chat id and the harness's agent id.
     children: HashMap<(String, String), (String, String)>,
@@ -2393,6 +2395,11 @@ impl Recorder {
             return Ok(Vec::new());
         };
         let children = self.end_children(&who.chat, state, cause);
+        if self.ended_runs.len() >= RUNS_HELD {
+            let current: std::collections::HashSet<&str> =
+                self.chats.values().map(|who| who.run.as_str()).collect();
+            self.ended_runs.retain(|run| current.contains(run.as_str()));
+        }
         if who.held.is_some() || !self.ended_runs.insert(who.run.clone()) {
             return children;
         }

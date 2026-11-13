@@ -219,10 +219,12 @@ impl Recorder {
                 }
             }
             Entry::Begun { plane, number } => Ok(self.begun(&plane, number)?.into_iter().collect()),
-            Entry::Superseded { plane, number } => {
-                let _ = (plane, number);
-                Ok(Vec::new())
-            }
+            Entry::Superseded { plane, number } => self.end_run_with(
+                &plane,
+                number,
+                crate::state::run::RunState::Completed,
+                crate::state::run::Cause::Superseded,
+            ),
             Entry::TakenBack { plane, number } => {
                 self.taken_back(&plane, number);
                 Ok(Vec::new())

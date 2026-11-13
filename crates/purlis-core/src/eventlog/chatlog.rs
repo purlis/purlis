@@ -122,11 +122,6 @@ pub fn rows(events: &[Event], chat: &str) -> Vec<Row> {
         .collect()
 }
 
-/// [`rows`] of the log in `dir`, read through [`super::read`].
-pub fn rows_in(dir: &Path, chat: &str) -> io::Result<Vec<Row>> {
-    Ok(rows(&super::read(dir)?, chat))
-}
-
 /// **How many of each kind of stop.** A block whose report is qualified, `unverified` or
 /// `cant_tell` (Q165, Q235, Q237), is counted apart from a plain one, since such a report never
 /// counts on the sidebar, and each qualifier apart from the other. A `stop.block` whose body does
