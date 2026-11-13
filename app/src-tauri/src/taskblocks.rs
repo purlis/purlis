@@ -167,6 +167,8 @@ pub struct Blocks {
 struct Calls {
     /// The tool of its latest pre-tool call, by the harness's name for it.
     latest: Option<String>,
+    /// The hash of that call's arguments, as its hook sent it.
+    latest_args: Option<String>,
     /// Its calls open now, each heard by its pre-tool line with an id, and no post-tool line yet.
     open: Vec<Call>,
     /// Each connection its proxy holds now, with the calls open when it was asked about.
@@ -182,6 +184,8 @@ struct Call {
     id: String,
     agent: Option<String>,
     tool: Option<String>,
+    /// The hash of its arguments, as its hook sent it.
+    args: Option<String>,
 }
 
 /// A held connection, and the calls it may be held under.
@@ -211,6 +215,16 @@ impl Under {
     fn tool(&self) -> Option<String> {
         self.calls.last().and_then(|call| call.tool.clone())
     }
+
+    /// The hash of that call's arguments, where one was open.
+    fn args(&self) -> Option<String> {
+        self.calls.last().and_then(|call| call.args.clone())
+    }
+
+    /// The harness's id for that call, where one was open.
+    fn call(&self) -> Option<String> {
+        self.calls.last().map(|call| call.id.clone())
+    }
 }
 
 /// What a held connection's withdrawn ask leaves ([`Blocks::stopped_waiting`]).
@@ -218,6 +232,13 @@ impl Under {
 pub struct Withdrawn {
     /// The tool of the call it was held under, by the harness's name, where one was heard.
     pub tool: Option<String>,
+    /// The hash of that call's arguments, as its hook sent it: with the tool, the target the
+    /// block loop matches on (R-206).
+    pub args: Option<String>,
+    /// The harness's id for that call, where one was open as it was held: the block loop
+    /// counts a call once, however many connections it held (Q253). None where the tool is
+    /// only the chat's latest call's.
+    pub call: Option<String>,
 }
 
 impl Blocks {
@@ -427,10 +448,14 @@ impl Blocks {
         self.answered(session, block);
         let mut calls = self.calls();
         let mine = calls.entry(session).or_default();
-        let tool = under
-            .as_ref()
-            .and_then(Under::tool)
-            .or_else(|| mine.latest.clone());
+        let (tool, args, call) = match under.as_ref().and_then(Under::tool) {
+            Some(tool) => (
+                Some(tool),
+                under.as_ref().and_then(Under::args),
+                under.as_ref().and_then(Under::call),
+            ),
+            None => (mine.latest.clone(), mine.latest_args.clone(), None),
+        };
         // Its echo is dropped until the call it was held under is over (Q240).
         mine.written.retain(|one| one.block != *block);
         mine.written.push(under.unwrap_or_else(|| Under {
@@ -443,7 +468,7 @@ impl Blocks {
         if mine.written.len() > MOST_WAITING_PER_CHAT {
             mine.written.remove(0);
         }
-        Some(Withdrawn { tool })
+        Some(Withdrawn { tool, args, call })
     }
 
     /// **Chat `session`'s proxy holds a connection to `target`, a host and port, for `block`,
@@ -510,6 +535,7 @@ impl Blocks {
         }
         let agent = call.agent.as_deref();
         mine.latest.clone_from(&call.tool);
+        mine.latest_args.clone_from(&call.args);
         let mut moved_on = Vec::new();
         for under in &mut mine.held {
             if !under.given_up && under.moved_on_by(agent) {
@@ -533,6 +559,7 @@ impl Blocks {
                 id: id.clone(),
                 agent: call.agent.clone(),
                 tool: call.tool.clone(),
+                args: call.args.clone(),
             });
             if mine.open.len() > MOST_WAITING_PER_CHAT {
                 mine.open.remove(0);
@@ -1107,14 +1134,19 @@ pub async fn allow_sandbox_block_for_tasks(
     let tell = planes.block_teller();
     // Off the window's thread (#1949): each task's grant is judged, audited and kept on disk.
     crate::off_the_window("keeping your Allow", move || {
-        allow_for_tasks(
+        let done = allow_for_tasks(
             &plane,
             &purlis_core::sandbox::Machine::this(),
             held.chats(),
             (session, &seen, level),
             &held.audit_then_record(network.as_ref()),
             (crate::sandboxing::now_secs(), &|told| tell(told)),
-        )
+        )?;
+        // Each task allowed starts its block count again (R-211, Q253).
+        for task in &done.answered {
+            crate::pausing::allowed(&held, *task);
+        }
+        Ok(done)
     })
     .await
 }
