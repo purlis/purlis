@@ -2116,13 +2116,7 @@ pub fn trust_these_clones(ask: &purlis_core::windowonly::TrustTheseClones) -> Sh
     let named: Vec<String> = ask
         .clones
         .iter()
-        .map(|clone| {
-            let remote = clone
-                .place
-                .clone()
-                .unwrap_or_else(|| clone.places.join(" and "));
-            format!("{} ({remote})", clone.folder)
-        })
+        .map(|clone| format!("{} ({})", clone.folder, clone.remote_said()))
         .collect();
     let them = if ask.clones.len() == 1 { "it" } else { "them" };
     Shown {
@@ -2171,6 +2165,22 @@ pub fn trust_these_clones(ask: &purlis_core::windowonly::TrustTheseClones) -> Sh
         secret: None,
         run: None,
     }
+}
+
+/// **The project's Trust these clones, less every clone a chat's own Trust this clone asks for**
+/// (Q257): one ask per clone. `None` where no clone is left to ask for.
+fn not_asked_by_a_chat(
+    unrecorded: Option<&purlis_core::windowonly::TrustTheseClones>,
+    window_only: &[purlis_core::windowonly::Refusal],
+) -> Option<purlis_core::windowonly::TrustTheseClones> {
+    let mut ask = unrecorded?.clone();
+    ask.clones.retain(|clone| {
+        !window_only.iter().any(|one| {
+            let purlis_core::windowonly::Control::TrustClone { folder, .. } = &one.control;
+            *folder == clone.folder
+        })
+    });
+    (!ask.clones.is_empty()).then_some(ask)
 }
 
 /// The key of chat `session`'s browser Ask (#2013): one per chat.
@@ -4224,8 +4234,13 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     asks.extend(waiting.merges.iter().map(merge_hold));
     // A refusal whose only way out is the window's press is an ask with that control (R-328).
     asks.extend(waiting.window_only.iter().map(window_only));
-    // The clones purlis has no record of are one ask, no chat's (R-336).
-    asks.extend(waiting.unrecorded.iter().map(trust_these_clones));
+    // The clones purlis has no record of are one ask, no chat's (R-336), and a clone a chat's
+    // own Trust this clone asks for is not asked for twice (Q257).
+    asks.extend(
+        not_asked_by_a_chat(waiting.unrecorded.as_ref(), &waiting.window_only)
+            .iter()
+            .map(trust_these_clones),
+    );
     // A chat that proposed a change waits on the person's answer, as one that asked them to
     // remove a workspace does (#1975).
     asks.extend(
@@ -4541,7 +4556,11 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     for one in &window_only {
         since.insert(window_only_key(one.session, &one.control), one.since);
     }
-    let unrecorded = purlis_core::windowonly::clones_ask(root);
+    // A clone a chat's own Trust this clone asks for is not asked for again (Q257).
+    let unrecorded = not_asked_by_a_chat(
+        purlis_core::windowonly::clones_ask(root).as_ref(),
+        &window_only,
+    );
     if let Some(ask) = &unrecorded {
         since.insert(TRUST_CLONES_KEY.to_owned(), ask.since);
     }

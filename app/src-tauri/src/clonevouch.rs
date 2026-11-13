@@ -42,15 +42,18 @@ pub async fn clones_to_vouch(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
 ) -> Result<Vec<CloneToVouch>, String> {
-    let root = planes.held(&plane)?.root().to_path_buf();
+    let held = planes.held(&plane)?;
+    let root = held.root().to_path_buf();
     if purlis_core::fence::FENCED {
         return Ok(Vec::new());
     }
+    let writes = live_writes(&held);
     let config_root = purlis_core::machine::config_root()
         .ok_or_else(|| "purlis found no home directory its record of clones is in".to_owned())?;
     tauri::async_runtime::spawn_blocking(move || {
-        // The same read raises or settles the project's one Trust these clones (R-336).
-        purlis_core::windowonly::look_at_clones(&root, &config_root)
+        // The same read raises or settles the project's one Trust these clones (R-336), which
+        // leaves out what the live chats may write (Q257).
+        purlis_core::windowonly::look_at_clones(&root, &config_root, &writes)
             .into_iter()
             .map(|clone| CloneToVouch {
                 workspace: clone.workspace,
@@ -62,6 +65,24 @@ pub async fn clones_to_vouch(
     })
     .await
     .map_err(|err| format!("reading the workspaces' clones did not finish: {err}"))
+}
+
+/// **The folders the project's live chats may write** (Q257, Q249): each sandboxed chat's grants
+/// and cache grants as it started, as its GitHub App mint holds them. A clone inside one is never
+/// in Trust these clones.
+fn live_writes(held: &crate::planes::Held) -> Vec<std::path::PathBuf> {
+    held.chats()
+        .open_now()
+        .into_iter()
+        .filter_map(|open| held.chats().confines_of(open.session))
+        .flat_map(|confines| {
+            let mut writes = confines.writable;
+            if let Some(caches) = confines.widened.caches {
+                writes.extend(caches.trees.into_iter().chain(caches.bare));
+            }
+            writes
+        })
+        .collect()
 }
 
 /// The person's Trust this clone: records the clone at `folder` (relative to the project) at

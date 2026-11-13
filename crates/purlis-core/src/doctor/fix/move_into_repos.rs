@@ -495,7 +495,19 @@ fn after_the_move(
         let folder = relative(root, &row.repo.path).unwrap_or_else(|| one.name.clone());
         if let Some(recorded) = one.recorded {
             // The record is kept by the clone's path, so the one it had stays behind unless it
-            // is written again: purlis cloned it, or the person trusted it, already.
+            // is written again: purlis cloned it, or the person trusted it, already. Only while
+            // its remote is still the one it was recorded at (Q257): a remote changed since is
+            // not trusted again on the strength of the old record.
+            if crate::forge::gitcredential::remote::remote_now(&row.repo.path).as_deref()
+                != Some(recorded.as_str())
+            {
+                said.push(format!(
+                    "• {folder} was trusted at {recorded} before it moved, and its remote has \
+                     changed since, so purlis did not trust it again. Trust it with Trust these \
+                     clones in the window's Asks, only if you made it yourself"
+                ));
+                continue;
+            }
             if let Err(why) = crate::forge::gitcredential::remote::record(
                 records.config_root,
                 &row.repo.path,

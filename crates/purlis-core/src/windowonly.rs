@@ -261,15 +261,47 @@ static UNRECORDED: Mutex<Vec<TrustTheseClones>> = Mutex::new(Vec::new());
 /// there are and however often they are read, changed only where they changed, and gone once
 /// there is none. Nothing is recorded: a clone is trusted only on the person's answer
 /// ([`trust_this_clone`]). Answers the clones, for the Notice that lists each.
+///
+/// **The ask lists only the clones a press can trust and a mint would count** (Q257, Q249): not
+/// one whose git directory is inside `writes`, the folders the project's live chats may write,
+/// or a folder any chat may be granted (the clones
+/// [`crate::forge::apptoken::held_from_chats`] drops), so a clone a chat made or can write never
+/// asks the person; and not one whose origin names several addresses, which no press can trust
+/// (the doctor names it, with the fix).
 pub fn look_at_clones(
     root: &Path,
     config_root: &Path,
+    writes: &[PathBuf],
 ) -> Vec<crate::forge::gitcredential::vouch::Unvouched> {
     let clones = crate::forge::gitcredential::vouch::unvouched_clones(root, config_root);
-    if settle_clones(root, clones.clone()) {
+    if settle_clones(root, to_ask(root, &clones, writes)) {
         tell(root);
     }
     clones
+}
+
+/// The clones of `clones` that Trust these clones lists ([`look_at_clones`]).
+fn to_ask(
+    root: &Path,
+    clones: &[crate::forge::gitcredential::vouch::Unvouched],
+    writes: &[PathBuf],
+) -> Vec<crate::forge::gitcredential::vouch::Unvouched> {
+    let out_of_reach = crate::forge::apptoken::grantable_beside(root, writes);
+    let plane = crate::workspaces::Plane::open(root.to_path_buf());
+    let held: Vec<String> = plane
+        .workspaces()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|workspace| crate::repos::clones(root, workspace).ok())
+        .flat_map(|clones| crate::forge::apptoken::held_from_chats(clones.repos, &out_of_reach))
+        .map(|repo| crate::sandbox::local::clone_key(&repo.path))
+        .collect();
+    clones
+        .iter()
+        .filter(|clone| clone.place.is_some())
+        .filter(|clone| held.contains(&crate::sandbox::local::clone_key(&clone.path)))
+        .cloned()
+        .collect()
 }
 
 /// Sets the project's one ask to `clones`, none taking it away. Answers whether it moved.

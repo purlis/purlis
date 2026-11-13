@@ -261,13 +261,14 @@ pub(super) fn clone_git_config(d: &Doctor) -> Option<Row> {
     }
     Some(Row::warn(NAME, detail.join("; "), hint.join(" ")))
 }
-
 /// **`unrecorded clones`** (R-338, Q184): every clone of the project's workspaces that purlis did
-/// not clone and the person has not trusted, each with the address its remote names: the same
-/// clones the window's one Trust these clones lists
-/// ([`crate::forge::gitcredential::vouch::unvouched_clones`], [`crate::windowonly`]). It reads
-/// the record of clones and raises nothing: a clone is trusted only on the person's answer. No
-/// row at all where there is none, or no config home to read the record in.
+/// not clone and the person has not trusted, each with the address its remote names: the clones
+/// the window's one Trust these clones lists
+/// ([`crate::forge::gitcredential::vouch::unvouched_clones`], [`crate::windowonly`]). A clone
+/// whose origin names several addresses is not in that ask, since no press can trust it, so the
+/// row names it with the fix: give origin one address (Q257). It reads the record of clones and
+/// raises nothing: a clone is trusted only on the person's answer. No row at all where there is
+/// none, or no config home to read the record in.
 pub(super) fn unrecorded_clones(d: &Doctor) -> Option<Row> {
     const NAME: &str = "unrecorded clones";
     if !d.has_plane {
@@ -279,35 +280,40 @@ pub(super) fn unrecorded_clones(d: &Doctor) -> Option<Row> {
     if clones.is_empty() {
         return None;
     }
-    let named: Vec<String> = clones
-        .iter()
-        .map(|clone| {
-            let remote = clone
-                .place
-                .clone()
-                .unwrap_or_else(|| clone.places.join(" and "));
-            // A chat can name a folder anything, and a newline in it must not print a row of
-            // its own (#353).
-            super::one_line(
-                &format!("{} ({remote})", clone.folder),
-                super::DISPLAY_LIMIT,
-            )
-        })
-        .collect();
-    let them = if clones.len() == 1 { "it" } else { "them" };
-    Some(Row::warn(
-        NAME,
-        format!(
+    // A chat can name a folder anything, and a newline in it must not print a row of its own
+    // (#353).
+    let said = |text: String| super::one_line(&text, super::DISPLAY_LIMIT);
+    let (one, several): (Vec<_>, Vec<_>) = clones.iter().partition(|clone| clone.place.is_some());
+    let mut detail = Vec::new();
+    let mut hint = Vec::new();
+    if !one.is_empty() {
+        let named: Vec<String> = one
+            .iter()
+            .map(|clone| said(format!("{} ({})", clone.folder, clone.remote_said())))
+            .collect();
+        let them = if one.len() == 1 { "it" } else { "them" };
+        detail.push(format!(
             "purlis did not clone {} and you have not trusted {them}: {}",
-            if clones.len() == 1 { "this" } else { "these" },
+            if one.len() == 1 { "this" } else { "these" },
             named.join(", ")
-        ),
-        format!(
+        ));
+        hint.push(format!(
             "Trust {them} only if you made {them} yourself: with Trust these clones in the \
              window's Asks, or, for a clone at a workspace's root, with `purlis doctor --fix \
              move-into-repos` in your own terminal, which asks. Until then no chat gets a \
-             GitHub App token for {them}, and a save does not push {them} with your sign-in. A \
-             remote that names two addresses is trusted once origin has one."
-        ),
-    ))
+             GitHub App token for {them}, and a save does not push {them} with your sign-in."
+        ));
+    }
+    for clone in &several {
+        detail.push(said(format!(
+            "{} names more than one address ({}), so purlis cannot trust it",
+            clone.folder,
+            clone.remote_said()
+        )));
+        hint.push(said(format!(
+            "To trust it, give origin of {} one address, and it joins Trust these clones.",
+            clone.folder
+        )));
+    }
+    Some(Row::warn(NAME, detail.join("; "), hint.join(" ")))
 }

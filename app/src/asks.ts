@@ -837,7 +837,7 @@ export async function answerTaken(
         for (const clone of path.clones) {
           if (clone.place === null) {
             refused.push(
-              `'s remote names more than one address, so purlis didn't trust it. Give origin one address, then trust it.`,
+              `${clone.folder}'s remote names more than one address, so purlis didn't trust it. Give origin one address, then trust it.`,
             );
             continue;
           }

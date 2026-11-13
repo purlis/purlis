@@ -6078,15 +6078,19 @@ fn move_into_repos_asking(root: &std::path::Path) -> purlis_core::doctor::fix::F
     };
     let scope = purlis_core::forge::route::HostScope::claim();
     let offered = move_into_repos::offered(root, &config_root);
-    let asked = !offered.is_empty() && scope.is_some() && std::io::stdin().is_terminal();
+    // Asked only where both ends are the person's terminal: the question is read on stderr and
+    // answered on stdin, so a run whose stdin alone is a terminal (its stderr piped to a file or
+    // a program) is not asked. This is not the boundary: a chat could run the command in a
+    // pseudo-terminal of its own. The boundary is the sandbox, which denies chats the config
+    // home the record of clones is kept in, so no chat's yes records anything.
+    let asked = !offered.is_empty()
+        && scope.is_some()
+        && std::io::stdin().is_terminal()
+        && std::io::stderr().is_terminal();
     let yes = asked && {
         eprintln!("Move into repos/ moves clones purlis did not clone:");
         for clone in &offered {
-            let remote = clone
-                .place
-                .clone()
-                .unwrap_or_else(|| clone.places.join(" and "));
-            eprintln!("  {} ({remote})", clone.folder);
+            eprintln!("  {} ({})", clone.folder, clone.remote_said());
         }
         eprint!("Trust them too? Only if you made them yourself. [y/N] ");
         let _ = std::io::stderr().flush();
