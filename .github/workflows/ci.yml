@@ -2275,6 +2275,8 @@ jobs:
           # And what the kind cluster shows, where it was made (#4494).
           if [ -n "${KUBECONFIG:-}" ]; then
             kubectl get pools,claims,sandboxclaims,sandboxes,pods -A -o wide || true
+            kubectl get claims -A \
+              -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{range .status.conditions[*]}{"\n  "}{.type}={.status} {.reason}: {.message}{end}{"\n"}{end}' || true
             kubectl -n purlis-system logs deployment/purlis-cluster-operator --tail=100 || true
             kubectl -n agent-sandbox-system logs deployment/agent-sandbox-controller --tail=50 || true
             kubectl get events -A --sort-by=.lastTimestamp | tail -n 60 || true
