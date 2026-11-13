@@ -786,7 +786,7 @@ fn sent(
         // A grade's chat is drawn nowhere and never put back (SK-16).
         graded: why == SentFor::Grade,
         // Every later start of a help chat is held from clusters as its first was.
-        held_from_clusters: why == SentFor::PoolSetupHelp,
+        held_from_clusters: false,
         ..Default::default()
     };
     before(number);
