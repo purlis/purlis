@@ -35,7 +35,6 @@ import {
 } from "./bindings";
 import type { QuestionsHeld } from "./taskQuestions";
 import { listen } from "./here";
-import { concerns, SETTINGS } from "./planeChanged";
 import { ASKS_CHANGED, answerAsk } from "./permissionAsks";
 import { listenForChats } from "./chatEvents";
 import { askRemoveWorkspace } from "./removeWorkspaceAsk";
@@ -55,7 +54,7 @@ import {
 } from "./signingAsked";
 import { refusalsAnswered } from "./vaultRefusals";
 import { asDrawn, asNamed } from "./projectExpects";
-import { followPlaneChanged, SETTINGS } from "./planeChanged";
+import { concerns, followPlaneChanged, SETTINGS } from "./planeChanged";
 
 /** The event the core sends each time a command's confirmation comes or goes (`poolsignin_confirm`). */
 export const POOL_SIGN_IN_CONFIRM = "pool-sign-in-confirm";
