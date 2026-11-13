@@ -5071,3 +5071,52 @@ fn a_start_in_a_workspace_is_refused_while_the_machine_store_cannot_be_read() {
     assert!(chat_place(config.path(), plane, Some("app"), Some(&here)).is_ok());
     assert!(chat_place(config.path(), plane, None, None).is_ok());
 }
+
+/// Pool `first`, as `config` keeps it, made a pool on another machine (#6270): its row names a
+/// route and a pin, as Connect keeps them.
+fn on_another_machine(config: &Path) {
+    let file = crate::machine::dir(config).join(crate::machine::RUNNERS_FILE);
+    let mut held: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    let row = &mut held["pools"][0];
+    row["kind"] = "remote-docker".into();
+    row["route"] = "ssh://me@build-box/var/run/docker.sock".into();
+    row["pin"] = serde_json::json!({
+        "hostKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiGzfjDDJsgYLYCmdkf8Fel9sE6Ma14Y2+c33Y/qZ2n",
+        "engine": "engine-b",
+    });
+    std::fs::write(&file, held.to_string()).unwrap();
+    assert!(runners::pools(config).unwrap()[0].on_another_machine());
+}
+
+/// **On another machine, once its new engine is trusted, the runner is made again on it**
+/// (#6270, ADR 0123 §3): the person trusted the engine Docker now reaches there, so the runner
+/// made on the one trusted before is made again here, and the old one is left where it is,
+/// remembered as left behind. Nothing of it is read or removed on the new engine.
+#[test]
+fn a_pool_on_another_machine_makes_its_runner_again_on_the_engine_trusted_now() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let old = removed_with_its_making_kept(config.path(), &fake, &ours);
+    on_another_machine(config.path());
+    fake.set("engine", "engine-b\n");
+
+    let again = make_again_here(config.path(), &fake, &ours).unwrap();
+
+    assert_eq!(again.old_home, OldHome::Elsewhere);
+    assert!(!again.sign_ins_kept, "nothing is carried from another engine");
+    assert_eq!(again.kept.name(), AGAIN_NAMED);
+    assert_eq!(
+        runners::runner_for(config.path(), "first").unwrap().name(),
+        AGAIN_NAMED
+    );
+    let log = fake.file("log");
+    assert!(!log.contains("target=/to"), "nothing carried: {log}");
+    assert!(
+        !log.contains(&format!("rm --force {}", old.made.container.as_str())),
+        "nothing removed on the new engine: {log}"
+    );
+    let left = runners::left::read(config.path()).unwrap();
+    assert_eq!(left.len(), 1, "the old one is remembered as left behind");
+}
