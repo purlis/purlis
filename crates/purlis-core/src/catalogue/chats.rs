@@ -339,55 +339,39 @@ enum Side {
 }
 
 /// **The id each record names each of its chats by**: its own, or, for one given none, the
-/// id-less chat it is shown to be, or else its number on the board of the run the record was
-/// made in, after the record's id (a number alone may be another chat's in another run).
+/// open chat it is shown to be, or else its number on the board of the run the record was made
+/// in, after the record's id.
 ///
-/// A chat given no id is shown to be:
-/// - **the open chat with its number** whose run started no later than the record did, since
-///   the app opens a dispatch's record once its chat has started, and a number is one chat's
-///   at a time on a board;
-/// - else **the one an earlier record named** with the same number, name, persona and
-///   workspace, for the chat that asked: the chat that asked twice, or the task that went on to
-///   ask one of its own. A dispatch's worker is a new chat at its record's start, so it is never
-///   one an earlier record named, and the chats named after it by its number are it.
+/// A chat given no id is shown to be **the open chat with its number** whose run started no
+/// later than the record did, since the app opens a dispatch's record once its chat has
+/// started, and a number is one chat's at a time on a board. Otherwise it is **never taken to
+/// be a chat another record names**, however alike their numbers, names and personas: a
+/// board's numbers start again with each run of the app, and no record says which run it was
+/// made in, so a chat seen in two records is listed once for each.
 struct RecordedIds(std::collections::HashMap<(usize, Side), String>);
 
 impl RecordedIds {
     fn of(open: &[Chat], records: &[Record]) -> RecordedIds {
-        type Key<'a> = (Option<&'a str>, u32, &'a str, Option<&'a str>);
         let mut ids = std::collections::HashMap::new();
-        let mut named: std::collections::HashMap<Key, String> = std::collections::HashMap::new();
-        let mut by_start: Vec<(usize, &Record)> = records.iter().enumerate().collect();
-        by_start.sort_by_key(|(_, r)| stamped(&r.started));
-        for (at, record) in by_start {
+        for (at, record) in records.iter().enumerate() {
             let started = stamped(&record.started);
-            // The asker was there before the chat it started.
             for (side, chat, workspace) in [
                 (Side::Asker, &record.asker.chat, &record.asker.workspace),
                 (Side::Worker, &record.worker.chat, &record.place.workspace),
             ] {
                 let id = match chat.id.as_deref().filter(|id| !id.is_empty()) {
                     Some(id) => id.to_owned(),
-                    None => {
-                        let key = (
-                            workspace.as_deref(),
-                            chat.chat,
-                            chat.name.as_str(),
-                            chat.persona.as_deref(),
-                        );
-                        let open_one = open.iter().find(|c| {
+                    None => open
+                        .iter()
+                        .find(|c| {
                             c.id == number_id(chat.chat)
                                 && c.workspace == *workspace
                                 && c.started.zip(started).is_some_and(|(c, r)| c <= r)
-                        });
-                        let id = match (open_one, named.get(&key)) {
-                            (Some(open), _) => open.id.clone(),
-                            (None, Some(earlier)) if side == Side::Asker => earlier.clone(),
-                            _ => format!("{}.{}", record.id, number_id(chat.chat)),
-                        };
-                        named.insert(key, id.clone());
-                        id
-                    }
+                        })
+                        .map_or_else(
+                            || format!("{}.{}", record.id, number_id(chat.chat)),
+                            |open| open.id.clone(),
+                        ),
                 };
                 ids.insert((at, side), id);
             }

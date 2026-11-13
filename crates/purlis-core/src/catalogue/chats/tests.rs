@@ -535,8 +535,9 @@ fn numbered(number: u32, name: &str) -> Chat {
 }
 
 #[test]
-fn recorded_chats_with_no_id_from_two_runs_are_two_chats() {
-    // Two runs, each with its own chat 3 asking its own chat 7: the numbers say nothing.
+fn recorded_chats_with_no_id_from_two_runs_are_two_chats_even_by_the_same_name() {
+    // Two runs, each with its own chat 3 asking its own chat 7, named and personaed alike:
+    // a board's numbers restart with a run, so nothing says they are one chat.
     let records = [
         unnamed(
             "01KA0000000000000000000002",
@@ -545,7 +546,7 @@ fn recorded_chats_with_no_id_from_two_runs_are_two_chats() {
         ),
         unnamed(
             "01KA0000000000000000000001",
-            ((7, "a worker"), (3, "another asker")),
+            ((7, "a worker"), (3, "the asker")),
             (9, 10),
         ),
     ];
@@ -608,7 +609,8 @@ fn an_open_worker_with_no_id_is_listed_once_as_open() {
 }
 
 #[test]
-fn a_closed_chat_with_no_id_that_asked_twice_is_listed_once() {
+fn a_closed_chat_with_no_id_that_asked_twice_is_listed_once_per_record_since_nothing_proves_it_is_one_chat()
+ {
     let records = [
         unnamed(
             "01KA0000000000000000000002",
@@ -623,14 +625,24 @@ fn a_closed_chat_with_no_id_that_asked_twice_is_listed_once() {
     ];
     let data = answer(&[], &records, "alpha", with_history(HISTORY_DEFAULT));
     let rows = chats_of(&data);
-    assert_eq!(rows.len(), 3, "{:?}", ids(&data));
+    assert_eq!(
+        ids(&data),
+        [
+            "01KA0000000000000000000002.chat-8",
+            "01KA0000000000000000000002.chat-3",
+            "01KA0000000000000000000001.chat-7",
+            "01KA0000000000000000000001.chat-3",
+        ]
+    );
     assert_eq!(rows[1]["cause"], "closed");
+    assert_eq!(rows[3]["cause"], "closed");
     assert_eq!(rows[0]["parent"]["id"], rows[1]["id"]);
-    assert_eq!(rows[2]["parent"]["id"], rows[1]["id"]);
+    assert_eq!(rows[2]["parent"]["id"], rows[3]["id"]);
 }
 
 #[test]
-fn a_task_with_no_id_that_asked_a_task_of_its_own_is_listed_once_as_the_worker_it_was() {
+fn a_task_with_no_id_that_asked_a_task_of_its_own_is_listed_once_per_record_since_nothing_proves_it_is_one_chat()
+ {
     // G asked P, and P asked S, none of them given an id.
     let mut p_asks = unnamed("01KA0000000000000000000002", ((5, "s"), (4, "p")), (10, 12));
     p_asks.asker.chat.persona = Some("builder".into());
@@ -640,10 +652,19 @@ fn a_task_with_no_id_that_asked_a_task_of_its_own_is_listed_once_as_the_worker_i
     ];
     let data = answer(&[], &records, "alpha", with_history(HISTORY_DEFAULT));
     let rows = chats_of(&data);
-    assert_eq!(rows.len(), 3, "{:?}", ids(&data));
-    assert_eq!(rows[1]["cause"], "reported", "P is the worker it was");
+    assert_eq!(
+        ids(&data),
+        [
+            "01KA0000000000000000000002.chat-5",
+            "01KA0000000000000000000002.chat-4",
+            "01KA0000000000000000000001.chat-4",
+            "01KA0000000000000000000001.chat-1",
+        ]
+    );
+    assert_eq!(rows[1]["cause"], "closed", "P as the chat that asked S");
+    assert_eq!(rows[2]["cause"], "reported", "P as the worker it was");
     assert_eq!(rows[0]["parent"]["id"], rows[1]["id"]);
-    assert_eq!(rows[1]["parent"]["id"], rows[2]["id"]);
+    assert_eq!(rows[2]["parent"]["id"], rows[3]["id"]);
 }
 
 #[test]

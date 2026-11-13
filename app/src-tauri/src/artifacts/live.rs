@@ -75,7 +75,8 @@ impl Key {
 
     /// Whether it is a `purlis.chats` feed.
     fn of_chats(&self) -> bool {
-        self.catalogued().is_some_and(|query| query.name == "chats")
+        self.catalogued()
+            .is_some_and(|query| query.name == purlis_core::chattools::CHATS)
     }
 
     fn catalogued(&self) -> Option<&'static Query> {

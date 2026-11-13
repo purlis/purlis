@@ -16,15 +16,17 @@ three questions the work raised, the operator ruled 1a, 2a and 3a, recorded belo
   the page learns that its chat came from somewhere, and nothing of a chat outside its
   workspace. A chat given no id (ADR 0066) is named by its number on this run's board
   (`chat-4`). One a dispatch record names with no id is the open chat with that number whose
-  run started no later than the record; else, for the chat that asked, the chat an earlier
-  record named with the same number, name, persona and workspace; else it is named by that
-  record's id and the number it had in the run the record was made in (`<record id>.chat-4`),
-  since a number alone may be another chat's in another run.
+  run started no later than the record, in the record's workspace; else it is named by that
+  record's id and the number it had in the run the record was made in (`<record id>.chat-4`).
+  **One that is not open is never merged across records**, however alike their numbers,
+  names and personas: a board's numbers start again with each run of the app and no record
+  says which run it was made in, so a chat no record gives an id is listed once for each
+  record that names it.
 - **Live by default. `history` widens it**, and is declared under `widens`, so a page's
   approval names it as it names `todo_list`'s `done`. With `history: true`, the answer also
   holds the workspace's ended dispatches (tasks and handoffs), the one that ended last first:
   the last 50, or `limit`, at most 200, each followed by the chat that asked for it. Each chat
-  is listed once: a closed chat that asked for one dispatch and was itself the worker of
+  is listed once by its id: a closed chat that asked for one dispatch and was itself the worker of
   another is listed as that worker, with its harness, state and parent. **History is the dispatch
   records only** (ruling 2a), with no new store: a closed chat that dispatched nothing appears
   in no record and is not listed, and the parameter says so.
