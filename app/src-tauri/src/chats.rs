@@ -308,6 +308,9 @@ pub type Routed = Box<dyn Fn(u32, &purlis_core::skills::router::Record) + Send +
 /// Told a chat's number as its latest prompt changes whether it fell back (#4445).
 pub type PromptFallbackMoved = Box<dyn Fn(u32) + Send + Sync>;
 
+/// Told a chat's number as its run is replaced at once, before it is closed (ADR 0076 §2, Q247).
+pub type Replaced = Box<dyn Fn(u32) + Send + Sync>;
+
 /// When a run's `run.started` is written (#2250).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RunSaid {
@@ -847,7 +850,7 @@ pub struct Chats {
     /// Told of the run each start begins, before its program runs (ADR 0066).
     beginning: Mutex<Option<Beginning>>,
     /// Told the number of a run about to be replaced at once ([`Self::when_a_run_is_replaced`]).
-    replaced_told: Mutex<Option<Box<dyn Fn(u32) + Send + Sync>>>,
+    replaced_told: Mutex<Option<Replaced>>,
     /// What asks a chat's router extension at its start (SK-15b): none until the app hands one,
     /// so a chat whose workspace or persona chose one is routed by the built-in router.
     router: Mutex<Option<Arc<dyn purlis_core::skills::router::AskRouter>>>,
@@ -1778,7 +1781,7 @@ impl Chats {
     /// Calls `tell` with a run's number as it is about to be replaced at once (ADR 0076 §2, ADR
     /// 0067 as amended 2026-10-16, Q247): a restart for project settings, while its program
     /// still runs, so the event log ends it `superseded` before its close is heard.
-    pub fn when_a_run_is_replaced(&self, tell: Box<dyn Fn(u32) + Send + Sync>) {
+    pub fn when_a_run_is_replaced(&self, tell: Replaced) {
         *lock(&self.replaced_told) = Some(tell);
     }
 
