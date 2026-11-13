@@ -802,8 +802,13 @@ pub fn trust_chosen(
         let Some(files) = &chosen.tls else {
             return Ok(Err(Finding::Here(crate::sshroute::PLAIN_TCP.to_owned())));
         };
-        return match trust_tls(docker, &chosen.route, files, fingerprint, config) {
-            Ok(remote) => super::trusted_tls(config, &remote).map(Ok),
+        let trusted = if chosen.docker_context.is_some() {
+            trust_tls_read_once(docker, &chosen.route, files, fingerprint, config)
+        } else {
+            trust_tls(docker, &chosen.route, files, fingerprint, config)
+        };
+        return match trusted {
+            Ok(remote) => super::trusted_tls_read_from(config, &remote, files).map(Ok),
             Err(finding) => Ok(Err(finding)),
         };
     }
@@ -868,6 +873,23 @@ pub fn trust_tls(
         fingerprint,
         &crate::tlsroute::folders_chats_write(config),
     )
+}
+
+/// **[`trust_tls`] for the files a Docker context names** (#6268, the 2026-11-14 amendment of
+/// ADR 0123): they are Docker's, which `docker context update` rewrites and `docker context rm`
+/// deletes, so they are copied once into purlis's own store
+/// ([`crate::dockercontext::keep_tls`]) and the copies are what is checked and trusted. The
+/// remote names the copies.
+pub fn trust_tls_read_once(
+    docker: &crate::dockerpool::Docker,
+    route: &str,
+    files: &crate::tlsroute::Files,
+    fingerprint: &str,
+    config: &std::path::Path,
+) -> Result<crate::tlsroute::Remote, Finding> {
+    let host = crate::tlsroute::Route::parse(route).map_err(Finding::Here)?;
+    let copies = crate::dockercontext::keep_tls(config, files, host.host())?;
+    trust_tls(docker, route, &copies, fingerprint, config)
 }
 
 /// [`trust_tls`], with `chats_write` the folders chats write

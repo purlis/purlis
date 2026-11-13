@@ -361,17 +361,32 @@ fn tls_remote_of(
         return Err(Refused::Other(crate::sshroute::PLAIN_TCP.to_owned()));
     };
     let files = &files.clone();
+    // Files read from a Docker context are Docker's: the pool runs on purlis's own copies of them
+    // (#6268), and what Connect kept for this machine is those same copies where it trusted them.
+    let read_once = asked.docker_context.is_some()
+        || (asked.tls.is_none()
+            && chosen
+                .as_ref()
+                .is_some_and(|chosen| chosen.docker_context.is_some()));
+    let copies = if read_once {
+        Some(
+            crate::dockercontext::tls_copies_at(config, files, route.host())
+                .map_err(|finding| Refused::Other(super::connect_said(&finding)))?,
+        )
+    } else {
+        None
+    };
     let trust = asked.trust.as_deref().map(str::trim);
     let kept = chosen.and_then(|chosen| {
         let pin = chosen.trusted_tls?;
         let same = crate::tlsroute::Route::parse(&chosen.route).ok()? == route
-            && chosen.tls.as_ref() == Some(files);
+            && chosen.tls.as_ref() == Some(copies.as_ref().unwrap_or(files));
         let confirmed = trust.is_none_or(|trust| {
             crate::tlsroute::Fingerprint::parse(trust).is_ok_and(|trust| trust == pin.ca)
         });
         (same && confirmed).then(|| crate::tlsroute::Remote {
             route: route.clone(),
-            files: files.clone(),
+            files: copies.clone().unwrap_or_else(|| files.clone()),
             pin,
         })
     });
@@ -397,6 +412,10 @@ fn tls_remote_of(
             met.fingerprint.spelled()
         )));
     };
+    if read_once {
+        return super::connecting::trust_tls_read_once(docker, on, files, trust, config)
+            .map_err(said);
+    }
     super::connecting::trust_tls(docker, on, files, trust, config).map_err(said)
 }
 

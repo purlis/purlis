@@ -2136,6 +2136,16 @@ pub fn trusted(config: &Path, remote: &crate::runners::Remote) -> Result<(), Ref
 /// **Keeps what the person trusted on Connect over Docker's TLS API** (#6267): the route, its
 /// files and the CA pin the Pool step's pool is made with.
 pub fn trusted_tls(config: &Path, remote: &crate::tlsroute::Remote) -> Result<(), Refused> {
+    trusted_tls_read_from(config, remote, &remote.files)
+}
+
+/// [`trusted_tls`], for a remote whose files are purlis's own copies of `read_from`, the files
+/// Connect kept (#6268): the Docker context they were read from stays kept with them.
+pub fn trusted_tls_read_from(
+    config: &Path,
+    remote: &crate::tlsroute::Remote,
+    read_from: &crate::tlsroute::Files,
+) -> Result<(), Refused> {
     let _locked = runners::lock(config);
     let mut choices = read_choices(config)?;
     choices.kind = Some(Kind::RemoteDocker);
@@ -2145,7 +2155,7 @@ pub fn trusted_tls(config: &Path, remote: &crate::tlsroute::Remote) -> Result<()
             .connect
             .as_ref()
             .and_then(|chosen| chosen.tls.as_ref())
-            == Some(&remote.files)
+            == Some(read_from)
     });
     choices.connect = Some(Chosen {
         route,

@@ -13,14 +13,30 @@ plugin hooks off. Nothing reads Docker's context store on disk. An endpoint is r
 
 - `ssh://…`: the SSH route, as one typed is.
 - `tcp://…` with the context's own TLS material (`ca.pem`, `cert.pem`, `key.pem` in the folder
-  `inspect` names as `Storage.TLSPath`, under `docker/`): the TLS route with those paths. The
-  files stay where Docker keeps them (§4 stands).
+  `inspect` names as `Storage.TLSPath`, under `docker/`): the TLS route with those paths, until
+  Connect's trust step copies the files once (below).
 - `unix://…` or `npipe://…`: this machine. Picking it chooses the local kind.
 - Plain `tcp://`, a context with `SkipTLSVerify`, TLS material without a CA, and TLS without a
   client certificate are refused, the first three in §2's words.
 
 The window sends a context's name alone, and the core reads the contexts again before keeping
 one, so what is kept is what `docker` says now.
+
+## A context's TLS files are copied once, at the trust step
+
+The files in a context's `TLSPath` are Docker's, not the person's: `docker context update`
+rewrites them in place, and `docker context rm`, or an update to an `ssh://` endpoint, deletes
+them. A pool that named them would follow the context after all, changing engine or stopping
+with no word from the person, where §7 has nothing a pool runs on follow it. So when the person trusts a machine read from a
+context, on Connect or through `purlis pool add --context`, purlis first copies its `ca.pem`,
+`cert.pem` and `key.pem` into a store of its own, `docker-context-tls/` in its config home, and
+checks and trusts the copies. The pool names the copies. Each set is kept in a folder named by
+what it holds, so the same files are kept once and other files never over them: a pool's copies
+are never rewritten. The folder is this user's alone, the key `0600`; no chat reads or writes
+the folder; the key is never in the plane or a log.
+
+§4 still holds for TLS files the person names themselves (`--tls-ca`, `--tls-cert`,
+`--tls-key`): they are the person's, so purlis names them where they are and copies nothing.
 
 ## The pool keeps the context's name beside its route, for doctor alone
 
