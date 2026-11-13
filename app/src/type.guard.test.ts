@@ -309,11 +309,11 @@ export function complaints(found: ReadonlyMap<string, readonly string[]>): strin
  *  which only `primitives/text.css` may (#1920): a rule elsewhere may only take them off
  *  (`none`, `normal`, `0`, `inherit`), as a group named by data does. */
 export function labelSpellings(css: string): string[] {
-  const off = (name: string, value: string) =>
+  const spells = (name: string, value: string) =>
     (name === "text-transform" && !/^(?:none|inherit)$/.test(value)) ||
     (name === "letter-spacing" && !/^(?:normal|0|inherit)$/.test(value));
   return declarations(css)
-    .filter(({ property: name, value }) => off(unprefixed(name), value.trim()))
+    .filter(({ property: name, value }) => spells(unprefixed(name), value.trim()))
     .map(({ context, property: name, value }) => `${context.join(" › ")} | ${name}: ${value}`);
 }
 
