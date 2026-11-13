@@ -854,8 +854,7 @@ fn a_skills_entry_naming_the_retired_building_skill_says_it_was_removed_5725() {
         let p = naming(written);
         let l = Linter::new(p.root(), p.root())
             .with_home(Some(home.path().to_path_buf()))
-            .with_built_in(Some(bundle.path().join("skills")))
-            .with_studio(true);
+            .with_built_in(Some(bundle.path().join("skills")));
         let said = removed(written);
         assert_eq!(
             messages(&l.definition("s")),
