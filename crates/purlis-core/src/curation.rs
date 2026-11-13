@@ -648,15 +648,28 @@ pub fn lint(root: &Path, persona: &str) -> Vec<Issue> {
 /// **A warning for each built-in skill `action`'s prompt names by a name it had before a
 /// rename** (#5724): its chat would ask for a skill no harness knows by that name, as the old
 /// names have no stubs.
+/// One for each retired built-in skill it names, too (#5725), which no harness has at all.
 fn old_skill_names(action: &Declared) -> Vec<Issue> {
-    purlis_skills::old_names_in(&action.template)
+    let renamed = purlis_skills::old_names_in(&action.template)
         .into_iter()
-        .map(|(old, new)| Issue {
-            level: Level::Warn,
-            message: format!(
+        .map(|(old, new)| {
+            format!(
                 "the prompt names {old}, which is {new} now; no harness knows the old name, so \
                  write the new one"
-            ),
+            )
+        });
+    let retired = purlis_skills::retired_names_in(&action.template)
+        .into_iter()
+        .map(|(skill, now)| {
+            format!(
+                "the prompt names `{skill}`, which purlis removed: {now}. Take it out of the prompt"
+            )
+        });
+    renamed
+        .chain(retired)
+        .map(|message| Issue {
+            level: Level::Warn,
+            message,
         })
         .collect()
 }

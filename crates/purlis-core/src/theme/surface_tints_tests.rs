@@ -60,8 +60,19 @@ fn untinted(theme: &ResolvedTheme) -> ResolvedTheme {
     alone
 }
 
-/// A surface with no edge of its own to fall first, its own words and the switcher's count in
-/// the strongest colour, so what falls is what the buttons draw; with `tokens` and `more` keys.
+/// A badge's words in every variant in the strongest colour (#6214: a badge stands on a popover),
+/// so a test of another family's words on a surface is not read as the badge's.
+const BADGE_WORDS: [&str; 5] = [
+    "badge.root.text",
+    "badge.root.neutral.text",
+    "badge.root.accent.text",
+    "badge.root.ok.text",
+    "badge.root.waiting.text",
+];
+
+/// A surface with no edge of its own to fall first, its own words, a badge's and the switcher's
+/// count in the strongest colour, so what falls is what the buttons draw; with `tokens` and `more`
+/// keys.
 fn standing_on(surface: &str, tokens: Value, more: &Value) -> Option<ResolvedTheme> {
     let own: &[&str] = match surface {
         "popover" => &["root", "header", "footer", "key"],
@@ -75,6 +86,9 @@ fn standing_on(surface: &str, tokens: Value, more: &Value) -> Option<ResolvedThe
     });
     for part in own {
         parts[format!("{surface}.{part}.text")] = json!("text.primary");
+    }
+    for key in BADGE_WORDS {
+        parts[key] = json!("text.primary");
     }
     for (key, value) in more.as_object().expect("keys") {
         parts[key] = value.clone();
@@ -234,11 +248,13 @@ fn a_surface_whose_words_fall_as_written_is_still_caught_on_the_same_colour() {
 #[test]
 fn the_switcher_s_count_that_falls_only_in_a_tint_brings_the_popover_back() {
     // What stands apart from its root on the popover: the fill, as found by a search.
-    let theme = themed(
-        "light",
-        json!({ "chart.4": "#ff000014" }),
-        json!({ "popover.root.fill": "chart.4", "popover.root.border-width": 0 }),
-    )
+    let theme = themed("light", json!({ "chart.4": "#ff000014" }), {
+        let mut parts = json!({ "popover.root.fill": "chart.4", "popover.root.border-width": 0 });
+        for key in BADGE_WORDS {
+            parts[key] = json!("text.primary");
+        }
+        parts
+    })
     .expect("the theme loads");
     assert!(fallen(&untinted(&theme)).is_empty());
     let on_it = "what a titlebar draws on it";

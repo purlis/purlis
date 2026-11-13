@@ -6135,6 +6135,15 @@ impl Chats {
             *front = None;
         }
         drop(front);
+        // **A dispatched task's last screen is kept as its chat closes for good** (#6214): what
+        // *Read it* on its card shows. Not a restart's (the chat goes on), nor at a quit (the
+        // record brings the chat back), nor a held start's, which was never a chat.
+        if let Some(id) = last_of
+            .as_deref()
+            .filter(|_| a_chat && !self.ending.load(Ordering::SeqCst))
+        {
+            crate::chatcard::keep_screen_on_close(&self.project, self.sessions(), session, id);
+        }
         let closed = self.sessions.close(session);
         self.write_it_down();
         // Its own runner goes with it, what it holds back here first (#3818, #4569). Not as the

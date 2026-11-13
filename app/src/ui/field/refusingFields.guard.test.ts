@@ -37,6 +37,11 @@ const REFUSING: Record<string, { grounds: string[]; where: string }> = {
     grounds: ["surface.raised"],
     where: "HexColour: in a persona's card, a view tab's panel (Views.tsx)",
   },
+  "poolsetup/ClusterSteps.tsx": {
+    grounds: ["surface.base"],
+    where:
+      "InstallStep: the operator's image under Options, refused unless by its digest, on the Pool setup tab's page, the window's own ground",
+  },
   "poolsetup/PoolStep.tsx": {
     grounds: ["surface.base"],
     where:

@@ -1,0 +1,17 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "purlis-cluster-doctor"
+description = "What a cluster lacks for purlis's cluster operator, one line per finding, each with its next step: the checks and their words, shared by the operator's doctor and Pool setup"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+# No dependency: the cluster operator's own workspace links it, and links nothing else of purlis.
+
+[lints]
+workspace = true

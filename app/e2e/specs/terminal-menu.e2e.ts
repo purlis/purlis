@@ -101,14 +101,20 @@ describe("a terminal's menu", () => {
     const menu = await drawn();
     if (menu === null) throw new Error("no menu is open");
 
-    expect(menu.rows.slice(0, 3).map((row) => row.name)).toEqual(["Copy", "Paste", "Select all"]);
+    // Away from a link, *Links in this pane…* leads (#6219), then the terminal's own rows.
+    expect(menu.rows.slice(0, 4).map((row) => row.name)).toEqual([
+      "Links in this pane…",
+      "Copy",
+      "Paste",
+      "Select all",
+    ]);
     // The pane's own rows are still here: a right-click on a pane strands none of them.
-    expect(menu.rows.length).toBeGreaterThan(3);
-    expect(menu.lines).toBeGreaterThanOrEqual(1);
+    expect(menu.rows.length).toBeGreaterThan(4);
+    expect(menu.lines).toBeGreaterThanOrEqual(2);
 
     // Paste and Select all can always run.
-    expect(menu.rows[1].off).toBe(false);
     expect(menu.rows[2].off).toBe(false);
+    expect(menu.rows[3].off).toBe(false);
   });
 
   it("is drawn inside the window, with a key at a row's end and not over its words", async () => {
@@ -144,8 +150,8 @@ describe("a terminal's menu", () => {
     await openMenuOn(terminal());
     const menu = await drawn();
     if (menu === null) throw new Error("no menu is open");
-    expect(menu.rows[0].name).toBe("Copy");
-    expect(menu.rows[0].off).toBe(false);
+    const copy = menu.rows.find((row) => row.name === "Copy");
+    expect(copy?.off).toBe(false);
 
     await pressMenuRow("Copy");
     await browser.waitUntil(async () => (await drawn()) === null, {

@@ -18,6 +18,7 @@ import {
 } from "./GradeScorecard";
 import { studioOfSkillTab, skillGrading, AT_THE_ROOT } from "./skillStudio";
 import type { GradeScorecard } from "./bindings";
+import { findGrid } from "./ui/table/table.testkit";
 
 afterEach(() => {
   cleanup();
@@ -347,7 +348,7 @@ describe("A grade's scorecard page (SK-59, S6)", () => {
     };
     mockIPC((cmd) => (cmd === "skill_grade_scorecard" ? card : null));
     renderCard();
-    const table = await screen.findByRole("grid", { name: "Outcome evals of deploy" });
+    const table = await findGrid(screen, "Outcome evals of deploy");
     // React Aria draws the grid before its columns (#5007): the headers are waited for, not the
     // grid alone.
     const headers = (await within(table).findAllByRole("columnheader")).map(

@@ -6348,6 +6348,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "purlis-cluster-doctor"
+version = "0.5.2"
+
+[[package]]
 name = "purlis-core"
 version = "0.5.2"
 dependencies = [
@@ -6392,6 +6396,7 @@ dependencies = [
  "proptest",
  "psl",
  "purlis-browser-engine",
+ "purlis-cluster-doctor",
  "purlis-core",
  "purlis-host",
  "purlis-linux-sandbox",

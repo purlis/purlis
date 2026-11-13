@@ -75,9 +75,19 @@ beforeEach(() => {
       const { candidates } = args as { candidates: { kind: string; text: string }[] };
       return candidates.map((one) =>
         one.text.startsWith("https://")
-          ? { kind: "url", target: one.text, does: { does: "opens" } }
+          ? {
+              kind: "url",
+              target: one.text,
+              shown: one.text,
+              does: { does: "opens", into: "browser" },
+            }
           : one.text.startsWith("ftp://")
-            ? { kind: "url", target: one.text, does: { does: "refused", reason: FTP } }
+            ? {
+                kind: "url",
+                target: one.text,
+                shown: one.text,
+                does: { does: "refused", reason: FTP },
+              }
             : null,
       );
     }
@@ -155,7 +165,7 @@ describe("a pane's link candidates", () => {
     expect(candidatesIn("https://en.wikipedia.org/wiki/Foo_(bar)")[0].text).toBe(
       "https://en.wikipedia.org/wiki/Foo_(bar)",
     );
-    expect(candidatesIn("no links here, nor #5820 nor chat 641")).toEqual([]);
+    expect(candidatesIn("no links here, nor #5820")).toEqual([]);
   });
 });
 
@@ -206,7 +216,7 @@ describe("a link in a chat's pane", () => {
     expect(asked("pane_link_open")[0].args).toEqual({
       from: { plane: "/planes/one", session: 1 },
       candidate: { kind: "url", text: ADDRESS },
-      confirmed: null,
+      token: null,
     });
     // Opened, the window says nothing more.
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -253,12 +263,14 @@ describe("a link in a chat's pane", () => {
     );
   });
 
-  it("asks first when the core says so, and sends back the target it showed", async () => {
+  it("asks first when the core says so, and answers with the ask's token", async () => {
     opens = {
       answer: "ask",
       reason: "its text names another address",
       shown: "docs.purlis.dev/setup",
       target: "https://purlis-setup.example.net/s",
+      token: "a-one-use-token",
+      about: { about: "link" },
     };
     const { drawn } = await hovered();
 
@@ -272,7 +284,7 @@ describe("a link in a chat's pane", () => {
     expect(asked("pane_link_open")[1].args).toEqual({
       from: { plane: "/planes/one", session: 1 },
       candidate: { kind: "url", text: ADDRESS },
-      confirmed: "https://purlis-setup.example.net/s",
+      token: "a-one-use-token",
     });
   });
 

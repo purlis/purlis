@@ -862,7 +862,8 @@ describe("Settings › Project › Sandbox", () => {
     render(<SettingsTab plane={PLANE} level="project" />);
     await userEvent.type(await screen.findByRole("searchbox"), "Always protected");
 
-    const page = await screen.findByRole("region", { name: "Sandbox" });
+    // Among every match, under its level and page (#2920).
+    const page = await screen.findByRole("region", { name: "Project › Sandbox" });
     expect(within(page).getByRole("list", { name: "Always protected" })).toBeInTheDocument();
   });
 

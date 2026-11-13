@@ -39,6 +39,7 @@ import {
 import { forgetStudio, renderStudio } from "./SkillStudioTab.testkit";
 import { PLANE_ROOT, pieceFileView } from "./pieceViews";
 import { DEFAULT_SKILLS_VIEW, SKILLS_VIEW } from "./skillsViewPrefs";
+import { findGrid } from "./ui/table/table.testkit";
 
 /** How many times the view's list of cards has been drawn: the real list, counted (#4351). */
 const listDrawn = vi.hoisted(() => ({ times: 0 }));
@@ -177,7 +178,7 @@ function view(
   return hands;
 }
 
-const list = () => screen.findByRole("grid", { name: "Skills" });
+const list = () => findGrid(screen, "Skills");
 /** The card of skill `name`, by the words it is drawn with. */
 const rowOf = (name: string): HTMLElement => {
   const found = [...document.querySelectorAll<HTMLElement>('[data-testid^="skills-row-"]')].find(

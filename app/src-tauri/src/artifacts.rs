@@ -117,6 +117,7 @@ const PORT: &str = r#"(() => {
   const own = channel.port1;
   const send = (path) => { new Image().src = "/.purlis/port/" + load + "/" + path; };
   let open = false;
+  let offered = 0;
   const waiting = [];
   const opening = new Image();
   opening.onload = opening.onerror = () => { open = true; waiting.splice(0).forEach(send); };
@@ -133,7 +134,7 @@ const PORT: &str = r#"(() => {
     let path;
     try {
       path = Array.isArray(asked.offers)
-        ? "offers/" + id + "?" + encodeURIComponent(JSON.stringify({ offers: asked.offers }))
+        ? "offers/" + id + "/" + (offered += 1) + "?" + encodeURIComponent(JSON.stringify({ offers: asked.offers }))
         : typeof asked.query === "string" ? call("query", asked.query)
         : typeof asked.subscribe === "string" ? call("subscribe", asked.subscribe)
         : asked.unsubscribe === true ? "unsubscribe/" + id
@@ -198,6 +199,9 @@ struct Served {
     declared: Option<data::Declared>,
     /// The word of the load whose port is open, if one is.
     load: Option<String>,
+    /// The number of the newest set of offers taken from the open load (#6232): an older set,
+    /// gated after it, is not drawn over it.
+    offered: u64,
 }
 
 /// The artifact a webview shows, as it was read when it was opened, or last read again.
@@ -245,6 +249,7 @@ impl Served {
         }
         if said == "open" {
             self.load = Some(load.to_owned());
+            self.offered = 0;
             return None;
         }
         if self.load.as_deref() != Some(load) {
@@ -357,6 +362,7 @@ impl Artifacts {
     pub(crate) fn reloaded(&self, label: &str) {
         if let Some(one) = self.served().get_mut(label) {
             one.load = None;
+            one.offered = 0;
         }
         self.unsubscribe_label(label);
     }
@@ -1048,6 +1054,7 @@ pub async fn artifact_open(
         theme: sheet,
         declared,
         load: None,
+        offered: 0,
     };
     let label = lay(&window, &artifacts, served, place)?;
     Ok(ArtifactOpened {
@@ -1327,6 +1334,7 @@ pub async fn artifact_preview_open(
         theme: sheet,
         declared: None,
         load: None,
+        offered: 0,
     };
     Ok(ArtifactOpened {
         label: lay(&window, &artifacts, served, place)?,
@@ -1633,6 +1641,7 @@ mod tests {
                     theme: format!(":root {{ color-scheme: dark; }} /* {host} */"),
                     declared: None,
                     load: None,
+                    offered: 0,
                 },
             );
         }
@@ -2188,6 +2197,7 @@ mod tests {
                 theme: String::new(),
                 declared: None,
                 load: None,
+                offered: 0,
             },
         );
         artifacts

@@ -2107,6 +2107,8 @@ function App() {
       createWorkspace: () => undefined,
       removeWorkspace: () => undefined,
       showChat: () => undefined,
+      focusChat: () => undefined,
+      reopenTask: async () => nowhere(),
       paneBack: () => undefined,
       showChatTasks: () => undefined,
       ownTab: () => undefined,
@@ -2327,6 +2329,9 @@ function App() {
           },
     [branchInFront, inFront, planes.length],
   );
+
+  /** The chats the palette looks a number up in (#6214): the project in front's. */
+  const paletteChats = useMemo(() => ({ plane: inFront }), [inFront]);
 
   /** The pinned artifacts the palette finds (#5968): the project in front's. */
   const paletteArtifacts = useMemo(
@@ -2722,7 +2727,8 @@ function App() {
   }, [windowDoes]);
 
   const pressHere = useCallback((plane: string, offer: Offer) => {
-    if (offer.does.verb === "showChat") setShowing({ at: "plane", plane });
+    if (offer.does.verb === "showChat" || offer.does.verb === "focusChat")
+      setShowing({ at: "plane", plane });
     void reportsNow.current[plane]?.run(offer);
   }, []);
   /** A row for a chat in ANOTHER window is carried out there, and that window comes to the
@@ -3426,6 +3432,7 @@ function App() {
           projects={{ rows: switcherRows, asked: switcherAsk }}
           files={files}
           artifacts={paletteArtifacts}
+          chats={paletteChats}
           said={said}
           onSettings={followSaid}
           onRun={saying?.run ?? run}

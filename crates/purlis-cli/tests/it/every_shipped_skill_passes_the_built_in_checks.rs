@@ -29,7 +29,7 @@
 //! * **[`sandbox`]** (#5735): a sentence naming a way to lower the sandbox or edit a harness's
 //!   settings ([`NEVER_OFFERED`]) says never to.
 //! * **[`measured`]** (#5731): it carries trigger tests (`evals/triggers.json`) and an
-//!   `evals/sources.json` that reads, with its tier, unless it is [`LEAVING`] the bundle.
+//!   `evals/sources.json` that reads, with its tier.
 //!
 //! And the set is held to [`SET_RULES`]: **[`descriptions`]**, every description together at
 //! most [`MOST_DESCRIPTIONS`] characters (spec #5714's Q37). What a skill names on purpose
@@ -56,17 +56,8 @@ const DESCRIPTION_LIMIT: usize = 1024;
 
 /// **The built-ins' descriptions together** (spec #5714's Q37): at most this many characters,
 /// so Codex's 8,000-character listing keeps every built-in and room for the plane's own skills,
-/// and opencode's default budget (8,000) keeps them too. The number is purlis-core's, held while
-/// purlis-building-ui still ships (#5725).
+/// and opencode's default budget (8,000) keeps them too. The number is purlis-core's.
 const MOST_DESCRIPTIONS: usize = purlis_core::skills::BUILT_IN_DESCRIPTIONS_MOST;
-
-/// **Built-ins leaving the bundle**, each with where it goes: the one place a shipped skill is
-/// not held to carry trigger tests (#5731). An entry goes when its folder does, and the check
-/// fails until it has.
-const LEAVING: &[(&str, &str)] = &[(
-    "purlis-building-ui",
-    "leaves for the plane as its building-purlis-ui skill (#5725)",
-)];
 
 /// One skill as the checks read it.
 struct Skill {
@@ -819,9 +810,6 @@ fn save(skill: &Skill, _: &Build) -> Vec<Finding> {
 /// grader scores by, naming its tier, its neighbours and where each test came from. So no
 /// built-in ships without a trigger grade to hold it to its bar.
 fn measured(skill: &Skill, _: &Build) -> Vec<Finding> {
-    if LEAVING.iter().any(|(name, _)| *name == skill.name) {
-        return Vec::new();
-    }
     let mut out = Vec::new();
     if skill.triggers.is_empty() {
         out.push((
@@ -954,12 +942,6 @@ fn every_shipped_skill_passes_the_built_in_checks() {
         stale.is_empty(),
         "nothing matches these ON_PURPOSE entries any more — take them off: {stale:?}"
     );
-    for (name, goes) in LEAVING {
-        assert!(
-            build.skills.contains(*name),
-            "`{name}` ({goes}) is shipped no more — take it off LEAVING"
-        );
-    }
 }
 
 /// A skill made to fail every rule, so each is seen to find what it is for.
@@ -1393,15 +1375,6 @@ fn a_built_in_without_trigger_tests_sources_or_a_tier_is_named() {
     );
     assert_eq!(
         found(measured_skill("purlis-example", &page)),
-        Vec::<String>::new()
-    );
-}
-
-#[test]
-fn a_built_in_leaving_the_bundle_is_not_held_to_carry_trigger_tests() {
-    let page = format!("{GOOD}Do it.\n");
-    assert_eq!(
-        check(&[Skill::of("purlis-building-ui", &page)], &Build::new()).0,
         Vec::<String>::new()
     );
 }

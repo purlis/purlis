@@ -20,7 +20,9 @@ import {
   PS_COLUMNS,
   type ProcessRow,
   descendants,
+  footprintsOfTheLiving,
   harnessMemory,
+  type LivingFootprints,
   parseFootprints,
   parseProcesses,
   runs,
@@ -308,6 +310,9 @@ function descriptorsOnMacos(pid: number): number | null {
  *   release scale run (#814), which takes them the same way.
  *
  * Two `ps` calls and, on macOS, one `footprint` call for every web content process together.
+ * When footprint cannot find a pid, `ps` is asked again: a web content process that exited in
+ * between is dropped from the reading and from `webContentProcesses`, and footprint is asked
+ * once more for those still alive (`footprintsOfLiving`).
  */
 export interface WebAndHarnessMemory {
   webContentKb: number;
@@ -333,6 +338,21 @@ function footprint(pids: number[]): string {
   return `${answered.stderr ?? ""}\n${answered.stdout ?? ""}`;
 }
 
+/**
+ * Footprint's reading of the web content processes `pids`. A pid it could not read is checked
+ * against a fresh listing: one that has exited is dropped (`footprintsOfTheLiving`), and those
+ * still alive are asked once more. Footprint failing a live pid twice is the error.
+ */
+function footprintsOfLiving(pids: number[]): LivingFootprints {
+  let said = footprint(pids);
+  const first = parseFootprints(said, pids);
+  if (first.error === null) return { ...first, gone: [], unread: [] };
+  const alive = () => processes().map((row) => row.pid);
+  const unread = footprintsOfTheLiving(said, pids, alive()).unread;
+  if (unread.length > 0) said = `${said}\n${footprint(unread)}`;
+  return footprintsOfTheLiving(said, pids, alive());
+}
+
 /** The web content process's and the harnesses' memory, for the app at `pid`. */
 export function webAndHarnessMemory(pid: number): WebAndHarnessMemory {
   const rows = processes();
@@ -340,13 +360,15 @@ export function webAndHarnessMemory(pid: number): WebAndHarnessMemory {
   let webContentFootprintKb: number | null = null;
   let webContentFootprintPeakKb: number | null = null;
   let footprintError: string | null = null;
+  let webContentProcesses = web.pids.length;
   if (process.platform === "darwin") {
     if (web.pids.length === 0) {
       footprintError = "no web content process was found to ask footprint about";
     } else {
-      const read = parseFootprints(footprint(web.pids), web.pids);
+      const read = footprintsOfLiving(web.pids);
       const each = Object.values(read.byPid);
       footprintError = read.error;
+      webContentProcesses -= read.gone.length;
       if (each.length > 0) {
         webContentFootprintKb = each.reduce((sum, one) => sum + one.footprintKb, 0);
         webContentFootprintPeakKb = each.reduce((most, one) => Math.max(most, one.peakKb), 0);
@@ -356,7 +378,7 @@ export function webAndHarnessMemory(pid: number): WebAndHarnessMemory {
   const harness = harnessMemory(rows, pid);
   return {
     webContentKb: web.rssKb,
-    webContentProcesses: web.pids.length,
+    webContentProcesses,
     webContentFootprintKb,
     webContentFootprintPeakKb,
     footprintError,

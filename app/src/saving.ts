@@ -12,6 +12,7 @@ import {
   type RepoSaving,
   type SaveMerge,
 } from "./bindings";
+import { AFTER_GIT_MOVED_MS } from "./afterGitMoved";
 import { followPlaneChanged, GIT, usePlaneChanged } from "./planeChanged";
 import { aBeatSince, everyWhileShown } from "./whileShown";
 
@@ -165,6 +166,7 @@ export function usePlaneSaving(
       () => {
         if (shownNow.current) read();
       },
+      AFTER_GIT_MOVED_MS.planeSaving,
     );
     return () => {
       gone = true;
@@ -296,7 +298,12 @@ export function useRepoSaving(
    *  changes nothing still draws the hook's owner once before React lets it go. */
   const drawn = useRef(repos);
   const [asked, setAsked] = useState(0);
-  const changed = usePlaneChanged(plane === undefined ? [] : [plane], GIT);
+  // At its own turn after a move (`afterGitMoved.ts`, H8).
+  const changed = usePlaneChanged(
+    plane === undefined ? [] : [plane],
+    GIT,
+    AFTER_GIT_MOVED_MS.workspaceSaving,
+  );
   const key = keyOf(plane, workspace);
 
   useEffect(() => {

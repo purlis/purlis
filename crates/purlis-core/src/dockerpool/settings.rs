@@ -29,8 +29,10 @@ pub const DIR: &str = "docker-settings";
 /// The most of Docker's own `config.json` purlis reads: one larger is taken as holding nothing.
 const MOST_READ: u64 = 1024 * 1024;
 
-/// The variables a run is given, and those it is not handed from the window.
-pub const CLEARED: &[&str] = &["DOCKER_CONTEXT"];
+/// The variables a run is given, and those it is not handed from the window: Docker's context,
+/// and Podman's named connection, either of which would reach an engine other than the one a run
+/// is pointed at (#6269).
+pub const CLEARED: &[&str] = &["DOCKER_CONTEXT", "CONTAINER_CONNECTION"];
 
 /// **Docker's settings `read`, as purlis hands them on**: `auths` as it is, and `credsStore`
 /// and each of `credHelpers` where `held` says the helper of that name is in Docker's own
@@ -309,6 +311,83 @@ pub struct Source<'a> {
     pub runtime: Option<&'a Path>,
     /// The system's own socket: [`SYSTEM_SOCKET`].
     pub system: &'a Path,
+    /// **The socket of the forward of a pool on another machine** (#6266,
+    /// [`crate::sshroute`]), where the run is for one: it is the run's engine, and nothing of
+    /// the window's is.
+    pub forwarded: Option<&'a Path>,
+}
+
+/// **A run's own folder under `settings_in`** (#2752): made fresh, `0700`, in a `0700`
+/// `settings_in`, and held locked for as long as this is kept, so no sweep takes it (#2893).
+/// Removed once dropped. A run of `docker` keeps its copy of Docker's settings there, and a
+/// pool's SSH forward its pinned `known_hosts` (#6266).
+pub struct RunFolder {
+    folder: tempfile::TempDir,
+    lock: std::fs::File,
+}
+
+impl RunFolder {
+    /// Where it is.
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        self.folder.path()
+    }
+
+    /// **`contents` kept as `name` in it, `0600`**, made new.
+    pub fn keep(&self, name: &str, contents: &[u8]) -> std::io::Result<PathBuf> {
+        keep_in(self.folder.path(), name, contents)
+    }
+}
+
+fn keep_in(folder: &Path, name: &str, contents: &[u8]) -> std::io::Result<PathBuf> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let at = folder.join(name);
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&at)?;
+    std::io::Write::write_all(&mut file, contents)?;
+    Ok(at)
+}
+
+/// **Makes a run's folder in `settings_in`** ([`RunFolder`]), sweeping what runs left behind.
+pub fn run_folder(settings_in: &Path) -> Result<RunFolder, Refused> {
+    if let Some(why) = crate::datahome::refusal(settings_in) {
+        return Err(refused(why));
+    }
+    let private = |at: &Path| {
+        purlis_same_user::PrivateDirectory::open(at).map_err(|why| {
+            refused(format!(
+                "purlis could not make {} for docker's settings: {why}",
+                at.display()
+            ))
+        })
+    };
+    private(settings_in)?;
+    sweep(settings_in, std::time::SystemTime::now());
+    let folder = tempfile::Builder::new()
+        .prefix("run-")
+        .tempdir_in(settings_in)
+        .map_err(|why| {
+            refused(format!(
+                "purlis could not make a folder for docker's settings in {}: {why}",
+                settings_in.display()
+            ))
+        })?;
+    let held = private(folder.path())?;
+    // Held for as long as the run goes, so no sweep takes its copy (#2893).
+    let lock = held
+        .replace_file(HELD, b"")
+        .and_then(|()| std::fs::File::open(folder.path().join(HELD)))
+        .and_then(|file| file.lock().map(|()| file))
+        .map_err(|why| {
+            refused(format!(
+                "purlis could not hold the folder for docker's settings in {}: {why}",
+                folder.path().display()
+            ))
+        })?;
+    Ok(RunFolder { folder, lock })
 }
 
 /// **Prepares one run of `docker`**: Docker's settings read from where the window keeps them,
@@ -326,40 +405,13 @@ pub fn prepare(from: &Source<'_>) -> Result<Prepared, Refused> {
     let folders = docker_folders();
     let settings = checked(&read, &|name| held_in(&folders, name));
 
-    if let Some(why) = crate::datahome::refusal(from.settings_in) {
-        return Err(refused(why));
-    }
-    let private = |at: &Path| {
-        purlis_same_user::PrivateDirectory::open(at).map_err(|why| {
-            refused(format!(
-                "purlis could not make {} for docker's settings: {why}",
-                at.display()
-            ))
-        })
-    };
-    private(from.settings_in)?;
-    sweep(from.settings_in, std::time::SystemTime::now());
-    let folder = tempfile::Builder::new()
-        .prefix("run-")
-        .tempdir_in(from.settings_in)
-        .map_err(|why| {
-            refused(format!(
-                "purlis could not make a folder for docker's settings in {}: {why}",
-                from.settings_in.display()
-            ))
-        })?;
-    let held = private(folder.path())?;
-    // Held for as long as the run goes, so no sweep takes its copy (#2893).
-    let lock = held
-        .replace_file(HELD, b"")
-        .and_then(|()| std::fs::File::open(folder.path().join(HELD)))
-        .and_then(|file| file.lock().map(|()| file))
-        .map_err(|why| {
-            refused(format!(
-                "purlis could not hold the folder for docker's settings in {}: {why}",
-                folder.path().display()
-            ))
-        })?;
+    let RunFolder { folder, lock } = run_folder(from.settings_in)?;
+    let held = purlis_same_user::PrivateDirectory::open(folder.path()).map_err(|why| {
+        refused(format!(
+            "purlis could not make {} for docker's settings: {why}",
+            folder.path().display()
+        ))
+    })?;
     held.replace_file("config.json", settings.to_string().as_bytes())
         .map_err(|why| {
             refused(format!(
@@ -378,7 +430,19 @@ pub fn prepare(from: &Source<'_>) -> Result<Prepared, Refused> {
         runtime: from.runtime,
         system: from.system,
     };
-    if let Some(host) = engine(from.docker_host, &places)? {
+    // A pool on another machine is pointed at its own forward's socket alone (#6266): never the
+    // window's DOCKER_HOST, never a context.
+    let host = match from.forwarded {
+        Some(socket) => Some(format!("unix://{}", socket.display())),
+        None => engine(from.docker_host, &places)?,
+    };
+    if let Some(host) = host {
+        // Podman's own client takes its engine from `CONTAINER_HOST`, and Docker's from
+        // `DOCKER_HOST`: a pool's forward is named to both, so a Podman pool's runs reach it
+        // too (#6269).
+        if from.forwarded.is_some() {
+            env.push(("CONTAINER_HOST", host.clone().into()));
+        }
         env.push(("DOCKER_HOST", host.into()));
     }
     Ok(Prepared { folder, lock, env })
@@ -429,15 +493,7 @@ impl Prepared {
     /// **`contents` kept as `name` in the run's folder, `0600`**, for as long as the run goes:
     /// a file `docker` reads during the run (the runner's seccomp profile). Its path.
     pub fn keep(&self, name: &str, contents: &str) -> std::io::Result<PathBuf> {
-        use std::os::unix::fs::OpenOptionsExt;
-        let at = self.folder.path().join(name);
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&at)?;
-        std::io::Write::write_all(&mut file, contents.as_bytes())?;
-        Ok(at)
+        keep_in(self.folder.path(), name, contents.as_bytes())
     }
 
     /// Its variables, those not handed on, and what is held until the run ends, for a

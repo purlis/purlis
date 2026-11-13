@@ -22,6 +22,7 @@ import { stripNamed, showThePanel } from "./test-strips";
 import { findSelectNamed, pickIn } from "./ui/select/select.testkit";
 import { findResult } from "./actionResult.testkit";
 import { aTabForEachChat } from "./laidOut.testkit";
+import { findGrid } from "./ui/table/table.testkit";
 
 /**
  * **A memory's tab, against the whole window** (SI-9b, ADR 0065): a persona's memory rows open
@@ -264,7 +265,7 @@ const tabNames = () =>
 async function personaTab() {
   const panel = await showThePanel("Personas");
   await userEvent.click(within(panel).getByRole("row", { name: /steward/ }));
-  return screen.findByRole("grid", { name: "steward" });
+  return findGrid(screen, "steward");
 }
 
 async function memoryRowIn(slug: string) {

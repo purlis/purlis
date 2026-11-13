@@ -30,12 +30,26 @@ describe("Add a pool… (#4484)", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("keeps its dialog for a cluster pool", async () => {
-    core();
+  it("opens Pool setup on the cluster path for a cluster pool, keeping the kind first, and draws no form (#4492)", async () => {
+    const asked: { cmd: string; args: unknown }[] = [];
+    mockIPC((cmd, args) => {
+      asked.push({ cmd, args });
+      return cmd === "docker_pools"
+        ? { pools: [], clusters: [], defaults: null, suspend_after: null, yours: true }
+        : null;
+    });
     const onPoolSetup = vi.fn();
     render(<AddDockerPoolHost plane="/p" onPoolSetup={onPoolSetup} />);
     act(() => startAddingAPool("cluster"));
+    await waitFor(() => expect(onPoolSetup).toHaveBeenCalledWith("/p"));
+    expect(asked).toContainEqual({ cmd: "pool_setup_choose_cluster", args: { context: null } });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("keeps its dialog for a cluster pool only where no project can hold Pool setup", async () => {
+    core();
+    render(<AddDockerPoolHost />);
+    act(() => startAddingAPool("cluster"));
     expect(await screen.findByRole("dialog")).toBeTruthy();
-    expect(onPoolSetup).not.toHaveBeenCalled();
   });
 });
