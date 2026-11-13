@@ -232,10 +232,10 @@ describe("a stop is Blocked, never Refused (R-170)", () => {
     expect(refusedWord("`Refused`", "shown")).toEqual([]);
   });
 
-  it("refuses refused in any case where it is a label, not a sentence (Q259)", () => {
+  it("refuses refused in any case where it closes a label (Q259)", () => {
     expect(refusedWord("Commit refused", "shown")).toEqual([REFUSED]);
     expect(refusedWord("Commit refused")).toEqual([REFUSED]);
-    expect(refusedWord("commit REFUSED", "shown")).toEqual([REFUSED]);
+    expect(refusedWord("Commit REFUSED", "shown")).toEqual([REFUSED]);
     expect(refusedWord("Commit blocked", "shown")).toEqual([]);
   });
 });

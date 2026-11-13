@@ -83,7 +83,7 @@ export const KIND_SAID: Record<UpdateKind, string> = {
   "refused-away": "Blocked while you were away",
   "smart-close": "Smart close stopped",
   "report-undelivered": "Report not delivered",
-  "commit-refused": "Commit refused",
+  "commit-refused": "Commit blocked",
   "root-update-refused": "Asks you to update the project",
   "browser-ask-ended": "Browser ended",
   "question-closed": "Question closed",

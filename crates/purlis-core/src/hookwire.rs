@@ -3022,7 +3022,8 @@ pub type DoingHeard = Box<dyn Fn(Doing) + Send + Sync + 'static>;
 /// quote a command, so the log keeps only the block's source and its arguments' digest.
 ///
 /// It is the chat's side's word, so the window shows it as inert text, as written.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// A `Debug` print names the chat and the call alone, never the reason (Q259).
+#[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct HarnessReason {
     /// The app's number for the chat whose call was refused, from [`CHAT_ENV`].
     pub chat: u32,
@@ -3033,6 +3034,16 @@ pub struct HarnessReason {
     pub call: Option<String>,
     /// The reason, as the harness wrote it.
     pub harness_reason: String,
+}
+
+/// Keys only: the reason is the chat's side's words, and is never printed.
+impl std::fmt::Debug for HarnessReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HarnessReason")
+            .field("chat", &self.chat)
+            .field("call", &self.call)
+            .finish_non_exhaustive()
+    }
 }
 
 impl HarnessReason {

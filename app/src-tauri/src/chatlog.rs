@@ -11,14 +11,15 @@
 //!
 //! **A block's reason comes from memory, never the log** (R-340, Q185): what a harness's own
 //! check said as it refused a call is held by the app as the hook channel hears it
-//! ([`HARNESS_REASONS`]) and put on the block's row here, as written. A restarted app holds
-//! none, so the row then has none.
+//! ([`HARNESS_REASONS`]) and put on the block's row here, as written. Only a harness check's
+//! block carries one (Q259): the reason is the chat's or its harness's words, never a guard's.
+//! A restarted app holds none, so the row then has none.
 
 use std::sync::LazyLock;
 
 use purlis_core::eventlog::chatlog::{self, Row};
 use purlis_core::eventlog::reasons::Reasons;
-use purlis_core::eventlog::stops::{Block, Target};
+use purlis_core::eventlog::stops::{Block, Source, Target};
 use purlis_core::sandbox::protection::InForce;
 
 use crate::planes::PlaneId;
@@ -136,7 +137,7 @@ fn target_of(target: &Target) -> (String, String) {
 }
 
 /// The window's row for the core's `row`, a block's with the reason `reason` finds for its
-/// call.
+/// call where the block is a harness's own check's (Q259): a guard's or the sandbox's has none.
 fn row_of(row: Row, reason: &dyn Fn(&str) -> Option<String>) -> ChatLogRow {
     match row {
         Row::Started {
@@ -165,6 +166,13 @@ fn row_of(row: Row, reason: &dyn Fn(&str) -> Option<String>) -> ChatLogRow {
             call,
             harness,
         } => {
+            let harness_check = matches!(
+                &block,
+                Some(Block {
+                    source: Source::HarnessCheck,
+                    ..
+                })
+            );
             let (tool, source, qualifier, target) = match block {
                 Some(Block {
                     tool,
@@ -194,7 +202,9 @@ fn row_of(row: Row, reason: &dyn Fn(&str) -> Option<String>) -> ChatLogRow {
                 target_kind,
                 target,
                 harness,
-                reason: call.as_deref().and_then(reason),
+                // The reason is the chat's or its harness's words (Q259): only a harness's own
+                // check's block carries one, never a guard's or the sandbox's.
+                reason: call.as_deref().filter(|_| harness_check).and_then(reason),
             }
         }
     }

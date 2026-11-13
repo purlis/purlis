@@ -1161,7 +1161,7 @@ fn kind_said(ask: &Shown) -> &'static str {
         AskSource::Secret => "Asks you for a secret its vault doesn't hold",
         AskSource::RunGrant => "Asks you to allow a program to use a vault secret",
         AskSource::SecretFill => "Asks to put a vault secret into a field of its browser",
-        AskSource::Vault => "Refused a vault its persona isn't tagged for",
+        AskSource::Vault => "Blocked from a vault its persona isn't tagged for",
         AskSource::SandboxExpects => "Asks you to allow what this project expects",
         AskSource::Confirmation => "A command waits on your confirmation",
         AskSource::Budget => "Paused at its budget",

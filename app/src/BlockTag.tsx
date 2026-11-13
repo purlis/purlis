@@ -20,7 +20,7 @@ const ICON: Readonly<Record<BlockTagKind, LucideIcon>> = {
 export function BlockTag({ kind, word }: { kind: BlockTagKind; word: string }) {
   const Icon = ICON[kind];
   return (
-    <Badge variant="neutral" className="block-tag">
+    <Badge variant="neutral">
       <Icon aria-hidden="true" size={12} />
       {word}
     </Badge>
