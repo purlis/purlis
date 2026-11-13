@@ -317,6 +317,8 @@ function descriptorsOnMacos(pid: number): number | null {
 export interface WebAndHarnessMemory {
   webContentKb: number;
   webContentProcesses: number;
+  /** The web content processes counted, by pid: which ones, for a failure to name (#6589). */
+  webContentPids: number[];
   webContentFootprintKb: number | null;
   webContentFootprintPeakKb: number | null;
   footprintError: string | null;
@@ -360,7 +362,7 @@ export function webAndHarnessMemory(pid: number): WebAndHarnessMemory {
   let webContentFootprintKb: number | null = null;
   let webContentFootprintPeakKb: number | null = null;
   let footprintError: string | null = null;
-  let webContentProcesses = web.pids.length;
+  let webContentPids = web.pids;
   if (process.platform === "darwin") {
     if (web.pids.length === 0) {
       footprintError = "no web content process was found to ask footprint about";
@@ -368,7 +370,7 @@ export function webAndHarnessMemory(pid: number): WebAndHarnessMemory {
       const read = footprintsOfLiving(web.pids);
       const each = Object.values(read.byPid);
       footprintError = read.error;
-      webContentProcesses -= read.gone.length;
+      webContentPids = web.pids.filter((one) => !read.gone.includes(one));
       if (each.length > 0) {
         webContentFootprintKb = each.reduce((sum, one) => sum + one.footprintKb, 0);
         webContentFootprintPeakKb = each.reduce((most, one) => Math.max(most, one.peakKb), 0);
@@ -378,7 +380,8 @@ export function webAndHarnessMemory(pid: number): WebAndHarnessMemory {
   const harness = harnessMemory(rows, pid);
   return {
     webContentKb: web.rssKb,
-    webContentProcesses,
+    webContentProcesses: webContentPids.length,
+    webContentPids,
     webContentFootprintKb,
     webContentFootprintPeakKb,
     footprintError,
