@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794607789450,
+  "lastUpdate": 1794613639951,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -48762,6 +48762,48 @@ window.BENCHMARK_DATA = {
             "value": 102.40671900000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.893, 102.335, 102.407, 102.524, 103.259 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "39f768b4cb1295fe915ac4342b20a08b1d149527",
+          "message": "Run grant: the service managers, links through init.d, MySQL Cluster's reporters, brew and openssl's engines refused; RocksDB's ldb found harmless (#6320, #6321, #6322, #6324, #6325, #6329) (#6556)\n\n* Run grant: systemctl, start-stop-daemon and the service managers beside them refused (#6320)\n\nEach checked against its own source. systemctl link makes a unit of the file\nit is named, which start runs, and import-environment copies a value the run\nwas handed into the manager's environment (systemd v257); start-stop-daemon\nexecvs its --startas or --exec (dpkg 1.22.11). From the issue's comment: runit's\nsv runs a service folder's check script, which a path names, and runsv its\nrun; supervisorctl imports the ctl_factory its -c file names; openrc --service\nexecvs a path and openrc-run sources its script; chkconfig and\ndeb-systemd-helper hand systemctl the unit they are named. Refused on\nNOT_FOR_A_RUN_GRANT with run_grants tests seen red first. initctl's source was\nout of reach and is filed. ADR 0112 amendment and a Security fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B52ATNEXH8KCHG14VKRMRS\nPurlis-Persona: steward\n\n* Run grant: an init script reached through a link that points on out of init.d refused (#6321)\n\nheld_outside judged only the path its links resolve to, so a link landing in\ninit.d on a name that points on out of it (Upstart's\n/etc/init.d/<job> -> /lib/init/upstart-job) was offered under the last\nfile's name. Its walk now reports the folder of every link on the way, and a\nRun grant refuses a program where it was found, where it runs, or any link\non the way sits in init.d. It is judged as resolve_beside found it, with the\nfolders a chat may write left out (all_written, shared). run_grants test seen\nred first (it asked to allow upstart-job); a unit test pins a link chain\noutside init.d as no init script. ADR 0112 amendment extended.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B52ATNEXH8KCHG14VKRMRS\nPurlis-Persona: steward\n\n* Run grant: RocksDB's ldb and sst_dump checked and found harmless, pinned as offered (#6322)\n\nChecked at the RocksDB MariaDB 11.4 pins (79f08d7): --env_uri and --fs_uri go\nthrough Env::CreateFromUri and the object registry, which load no library;\nthe one dlopen, PosixEnv::LoadLibrary, is on none of the tools' paths, and\nneither tool runs a command. mariadb-ldb is LDBTool::Run with MyRocks's\ncomparator. Unit tests pin mariadb-ldb, mysql_ldb, ldb and sst_dump as not\nrefused by name and their usual commands as offered. ADR 0112 amendment\nextended; the Security fragment takes #6321's line, left out of its commit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B52ATNEXH8KCHG14VKRMRS\nPurlis-Persona: steward\n\n* Run grant: MySQL Cluster's ndb_error_reporter and ndb_size.pl refused (#6324)\n\nChecked again in mysql-server 8.0.40: ndb_error_reporter joins its config\nfile's name into ndb_config command lines system() and backticks hand a\nshell, and its scp user into the scp command system($cmd) runs; ndb_size.pl\njoins its --hostname and --socket into a DBI:mysql: address, as mytop does.\nBoth ship under %if cluster in the SLES spec (lines 1068, 1085). Refused on\nNOT_FOR_A_RUN_GRANT with run_grants tests seen red first. ADR 0112 amendment\nand Security fragment extended.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B52ATNEXH8KCHG14VKRMRS\nPurlis-Persona: steward\n\n* Run grant: Homebrew's brew refused (#6325)\n\nChecked in Homebrew/brew 4.4.0: brew ruby -e execs Ruby with the text it is\nhanded (dev-cmd/ruby.rb), brew sh --cmd has a shell run a command\n(dev-cmd/sh.rb), and brew <name> runs the brew-<name> the search path finds\n(commands.rb:84-88). Refused on NOT_FOR_A_RUN_GRANT with a run_grants test\nseen red first. ADR 0112 amendment and Security fragment extended.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B52ATNEXH8KCHG14VKRMRS\nPurlis-Persona: steward\n\n* Run grant: openssl's -engine, -provider, -provider-path and -config refused, and my_openssl read as openssl (#6329)\n\nChecked in openssl 3.0.15: -engine (and -keygen_engine, -ssl_client_engine)\nhands an unknown id to the dynamic engine's SO_PATH and LOADs it\n(apps/lib/engine.c); -provider and -provider-path load a provider module\n(apps/lib/app_provider.c); -config has ca, req, ts, srp, cms, smime, genpkey\nand pkeyutl load the modules the file names (app_load_modules); the engine\ncommand runs its -pre SO_PATH:, and fipsinstall loads the provider from its\n-module's folder. A command_flags row reads openssl's flags as opt_next does,\nwhole words after one dash or two, and refuses those and the two commands as\nthe first operand, so ordinary openssl stays offered (pinned). my_openssl,\nMySQL's bundled copy, takes the same row and the general-purpose caution.\nrun_grants tests seen red first. ADR 0112 amendment and fragment extended.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B52ATNEXH8KCHG14VKRMRS\nPurlis-Persona: steward\n\n* ADR 0112 amendment: rewrap my_openssl's paragraph (#6329)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B52ATNEXH8KCHG14VKRMRS\nPurlis-Persona: steward\n\n* Run grant: review round 1 of #6556: openssl's commands by their first eight characters, systemd's and s6's runners, apt and composer refused (#6320, #6325, #6329)\n\nFrom the adversarial review, each checked in source. openssl finds a command\nby strncmp(..., 8) and a hash (apps/openssl.c:439-447), so a word starting\nfipsinst with fipsinstall's hash runs it: a refused command of eight or more\ncharacters is refused by its first eight. systemd-cat, systemd-inhibit,\nsystemd-socket-activate, systemd-notify --exec and systemd-dissect --with run\nthe command after them, and busctl call reaches StartTransientUnit (#6320);\ns6-supervise, s6-svscan and runit's runsvdir run a folder's run as runsv does\n(#6320); apt-get and apt run the method program a -o setting names, and\ncomposer exec runs its command (#6325). run_grants and command_flags tests\nseen red first. The review's bare-openssl lead does not hold: a run under a\ngrant has no stdin (brokered.rs, under_a_grant). my_openssl moves to a const\nof its own so GENERAL_PURPOSE keeps its layout. daemontools filed as #6559.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B52ATNEXH8KCHG14VKRMRS\nPurlis-Persona: steward\n\n* Run grant: review round 2 of #6556: openssl's engine URI, the rpm tools, dpkg, setpriv, s6's chain loaders and coredumpctl refused (#6320, #6325, #6329)\n\nFrom the adversarial review's second round, each checked in source. A key or\nfile named org.openssl.engine:<id>:<key> loads the engine by its id, an\nunknown id through the dynamic engine, which takes a path\n(apps/lib/engine_loader.c, crypto/engine/eng_list.c:418-423): the openssl row\nrefuses that text anywhere in any word (a new anywhere field). rpm -E expands\na macro whose %(...) a shell runs, in every rpm tool sharing its options;\ndpkg --pre-invoke and dpkg-buildpackage --hook-init run their hooks; setpriv\nand s6-setuidgid, s6-softlimit and s6-applyuidgid run what follows them;\ncoredumpctl debug --debugger runs its program. run_grants and command_flags\ntests seen red first. The unchecked leads are filed as #6564.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B52ATNEXH8KCHG14VKRMRS\nPurlis-Persona: steward\n\n* Run grant: review round 3 of #6556: an engine URI after -- refused too (#6329)\n\nThe anywhere check sat inside refused_form's loop, whose -- branch takes the\nrest as operands and returns, so openssl storeutl -- org.openssl.engine:<path>\n(storeutl takes its URI there, apps/storeutl.c:258-263) was offered. It now\nreads every word before the loop. Tests seen red first. ADR amendment says so.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B52ATNEXH8KCHG14VKRMRS\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-13T22:06:38Z",
+          "tree_id": "6072cfe55beadc8346191402cb3ce0524376df34",
+          "url": "https://github.com/purlis/purlis/commit/39f768b4cb1295fe915ac4342b20a08b1d149527"
+        },
+        "date": 1794613632807,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.567393,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.558, 0.566, 0.567, 0.573, 0.581 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7113665,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.378, 16.593, 16.711, 16.716, 16.764 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.3597445,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.126, 102.328, 102.360, 102.858, 103.003 ms"
           }
         ]
       }
