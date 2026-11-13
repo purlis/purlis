@@ -15,7 +15,7 @@ import { tipOf } from "../ui/tooltip/tooltip.testkit";
 
 /**
  * **Settings › Sandbox › Network and a chat's Network view** (#1662, spec #1661): Open hosts host
- * by host, Allowed with Remove, Blocked lately with Allow, and what one chat reaches and was
+ * by host, Allowed with Remove, the Blocked log with Allow, and what one chat reaches and was
  * refused — all as the core says them, in the four words and none of the retired ones.
  */
 
@@ -127,7 +127,7 @@ describe("the Network page of a read-only project (#1759)", () => {
       </ReadOnlySaid.Provider>,
     );
 
-    const blocked = await screen.findByRole("list", { name: "Blocked lately" });
+    const blocked = await screen.findByRole("list", { name: "Blocked log" });
     expect(
       within(blocked).getByRole("button", {
         name: "Allow for me on this machine: db.example.com:5432",
@@ -169,13 +169,13 @@ describe("the Network page of a read-only project (#1759)", () => {
 });
 
 describe("the Network page", () => {
-  it("is Open hosts, Allowed and Blocked lately, in that order, then the folders and a port", () => {
+  it("is Open hosts, Allowed and the Blocked log, in that order, then the folders and a port", () => {
     const group = networkGroup(PLANE, "charter.toml");
     expect(group.label).toBe("Network");
     expect(group.settings.map((one) => one.label)).toEqual([
       "Open hosts",
       "Allowed",
-      "Blocked lately",
+      "Blocked log",
       "Folders a block's Allow may name",
       "A service on this Mac",
       "Who may dispatch to whom",
@@ -204,10 +204,10 @@ describe("the Network page", () => {
     ).toBeVisible();
   });
 
-  it("lists what was blocked lately with its host, chat and time, and Allow for a host", async () => {
+  it("lists the Blocked log with its host, chat and time, and Allow for a host", async () => {
     const asked = core();
     render(<Row id="blocked" />);
-    const list = await screen.findByRole("list", { name: "Blocked lately" });
+    const list = await screen.findByRole("list", { name: "Blocked log" });
     const [db, reached, lookup] = within(list).getAllByRole("listitem");
     expect(db).toHaveTextContent("db.example.com:5432");
     expect(db).toHaveTextContent(
@@ -252,12 +252,12 @@ describe("the Network page", () => {
       ],
     });
     render(<Row id="blocked" />);
-    const list = await screen.findByRole("list", { name: "Blocked lately" });
+    const list = await screen.findByRole("list", { name: "Blocked log" });
     expect(list).toHaveTextContent("Looked up by a program, not offered.");
     expect(within(list).queryByRole("button")).toBeNull();
   });
 
-  it("says when nothing was blocked lately", async () => {
+  it("says when the Blocked log is empty", async () => {
     core({ ...NETWORK, blocked: [] });
     render(<Row id="blocked" />);
     expect(await screen.findByText("Nothing was blocked here in the last 30 days.")).toBeVisible();
@@ -286,7 +286,7 @@ describe("the Network page", () => {
         ))}
       </>,
     );
-    await screen.findByRole("list", { name: "Blocked lately" });
+    await screen.findByRole("list", { name: "Blocked log" });
     await screen.findByRole("list", { name: "Allowed" });
     const said = [
       container.textContent ?? "",

@@ -42,6 +42,7 @@ use std::time::Instant;
 
 use crate::state::run::{Cause, RunState};
 
+pub mod blockedlog;
 pub mod browsing;
 pub mod chatlog;
 mod entry;

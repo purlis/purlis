@@ -16,6 +16,7 @@
 
 use std::path::Path;
 
+use purlis_core::eventlog::blockedlog::Listed;
 use purlis_core::sandbox::{self, browser_reach::Site, grant, hosts::Host};
 use purlis_core::sandboxblock::record::{self, Entry, Record};
 use purlis_core::sandboxblock::{Kind, Operation};
@@ -476,13 +477,23 @@ fn rows_of(
     rows
 }
 
-/// [`SandboxNetwork`] for the project at `root`, whose committed file reads as `plane`, from
-/// `record` at `now`.
+/// The Blocked log's rows of `listed`, as Settings draws them (stub: the tests come first, T1-32).
+fn blocked_log_rows(
+    _listed: &[Listed],
+    _name_of: &dyn Fn(&str) -> Option<String>,
+    _reached: &[String],
+    _locks: &sandbox::policy::Locks,
+) -> Vec<BlockedLately> {
+    Vec::new()
+}
+
+/// [`SandboxNetwork`] for the project at `root`, whose committed file reads as `plane`, with
+/// the Blocked log `listed`, each chat by the name `name_of` finds.
 fn network_of(
     root: &Path,
     plane: &sandbox::Plane,
-    record: Option<&Record>,
-    now: u64,
+    listed: &[Listed],
+    name_of: &dyn Fn(&str) -> Option<String>,
 ) -> SandboxNetwork {
     let locks = sandbox::policy::Locks::of(root);
     let Some(open) = open_of(plane, &locks) else {
@@ -492,8 +503,7 @@ fn network_of(
             blocked: Vec::new(),
         };
     };
-    let entries = record.map(|one| one.read(root, now)).unwrap_or_default();
-    let blocked = rows_of(&entries, &reached_here(root, &open), &locks);
+    let blocked = blocked_log_rows(listed, name_of, &reached_here(root, &open), &locks);
     SandboxNetwork {
         on: true,
         open,
@@ -501,10 +511,7 @@ fn network_of(
     }
 }
 
-/// **Open hosts and Blocked lately** for Settings' Network page (#1662).
-///
-/// Off the window's thread (#1949): it reads the project's manifest, the administrator's policy
-/// and this machine's network record.
+/// **Open hosts and the Blocked log** for Settings' Network page (#1662, T1-32).
 #[tauri::command]
 #[specta::specta]
 pub async fn sandbox_network(
@@ -512,13 +519,12 @@ pub async fn sandbox_network(
     plane: PlaneId,
 ) -> Result<SandboxNetwork, String> {
     let root = planes.held(&plane)?.root().to_path_buf();
-    let network = planes.network().cloned();
     crate::off_the_window(READING_NETWORK, move || {
         Ok(network_of(
             &root,
             &sandbox::Plane::read(&root),
-            network.as_ref(),
-            now_secs(),
+            &[],
+            &|_| None,
         ))
     })
     .await

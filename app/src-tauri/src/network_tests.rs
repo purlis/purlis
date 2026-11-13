@@ -1,11 +1,13 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! Settings' Network page and Blocked lately's Allow (#1662), from a plane's text and a network
-//! record under a temporary data home.
+//! Settings' Network page, its Blocked log (T1-32) and the Allow on its rows (#1662), from a
+//! plane's text, the Blocked log's blocks and a network record under a temporary data home.
 
 use super::*;
+use purlis_core::eventlog::stops::{Block as StopBlock, Qualifier, Source, Target};
 use purlis_core::sandboxblock::{Block, Kind, Operation};
+use std::path::Path;
 
 const HOST: Block = Block {
     operation: Operation::Connect,
@@ -51,7 +53,7 @@ fn open_hosts_name_every_host_of_each_preset_in_force_and_then_the_projects_own(
         "[sandbox]\nmode = \"on\"\negress = [\"model-providers\", \"forge\"]\n\
          hosts = [\"api.example.com\"]\n\n[[forge]]\nkind = \"gitlab\"\nhost = \"git.example.org\"\n",
     );
-    let shown = network_of(dir.path(), &plane, None, 100);
+    let shown = network_of(dir.path(), &plane, &[], &|_| None);
     assert!(shown.on);
     let none = sandbox::policy::Locks::none();
     assert_eq!(
@@ -78,7 +80,13 @@ fn open_hosts_name_every_host_of_each_preset_in_force_and_then_the_projects_own(
 #[test]
 fn a_project_whose_chats_are_not_sandboxed_lists_nothing() {
     let dir = tempfile::tempdir().expect("a project");
-    let shown = network_of(dir.path(), &plane("schema = 1\n"), None, 100);
+    let listed = [listed(
+        1,
+        10,
+        "id-first",
+        sandbox_host("a.example:443", None),
+    )];
+    let shown = network_of(dir.path(), &plane("schema = 1\n"), &listed, &|_| None);
     assert_eq!(
         shown,
         SandboxNetwork {
@@ -89,51 +97,61 @@ fn a_project_whose_chats_are_not_sandboxed_lists_nothing() {
     );
 }
 
+/// A block of the Blocked log, as [`blockedlog::listed`] gives it: event `seq` of chat `chat`,
+/// written at `at` seconds since 1970.
+fn listed(seq: u64, at: u64, chat: &str, block: StopBlock) -> Listed {
+    Listed {
+        at_ms: at * 1000,
+        seq,
+        chat: chat.to_owned(),
+        block,
+    }
+}
+
+/// A sandbox block of a connection to `host`, `qualifier` as its report is worth.
+fn sandbox_host(host: &str, qualifier: Option<Qualifier>) -> StopBlock {
+    StopBlock {
+        tool: "Bash".to_owned(),
+        source: Source::Sandbox,
+        qualifier,
+        target: Some(Target::host(host).expect("a host")),
+        args: None,
+    }
+}
+
+/// The name each fixture chat is shown under.
+fn named(chat: &str) -> Option<String> {
+    chat.strip_prefix("id-").map(str::to_owned)
+}
+
 #[test]
-fn blocked_lately_lists_each_host_once_newest_first_with_its_chat_and_allow() {
-    let dir = tempfile::tempdir().expect("a home");
-    let root = dir.path().join("project");
-    std::fs::create_dir_all(&root).expect("a project");
-    let record = Record::in_data(&dir.path().join("data"));
-    let write = |target: &str, name: &str, at: u64| {
-        record
-            .write(
-                &root,
-                &Entry::blocked(&HOST, Some(target), chat(name), None, at),
-            )
-            .expect("written");
-    };
-    write("a.example:443", "first", 10);
-    write("api.example.com:443", "first", 20);
-    write("a.example:443", "second", 30);
-    write("b.example:5432", "second", 40);
-    // A file block is no row: the page lists the network.
-    record
-        .write(
-            &root,
-            &Entry::blocked(
-                &Block {
-                    operation: Operation::Write,
-                    kind: Kind::Home,
-                    ours: false,
-                },
-                None,
-                chat("first"),
-                None,
-                50,
-            ),
-        )
-        .expect("written");
+fn the_blocked_log_lists_each_target_once_newest_first_with_its_chat_and_allow() {
+    let dir = tempfile::tempdir().expect("a project");
+    // Newest first, as the Blocked log gives them.
+    let listed = [
+        listed(6, 50, "id-first", {
+            let mut guard = sandbox_host("a.example:443", None);
+            guard.source = Source::Guard;
+            guard.target = Some(Target::guard_arm("A3c").expect("an arm"));
+            guard
+        }),
+        listed(5, 40, "id-second", sandbox_host("b.example:5432", None)),
+        listed(4, 30, "id-second", sandbox_host("a.example:443", None)),
+        listed(3, 20, "id-first", sandbox_host("api.example.com:443", None)),
+        listed(2, 10, "id-first", sandbox_host("a.example:443", None)),
+    ];
     let plane = plane("[sandbox]\nmode = \"on\"\negress = []\nhosts = [\"api.example.com\"]\n");
-    let shown = network_of(&root, &plane, Some(&record), 60);
-    /// A row as the test reads it: target, chat, when, how often, and whether it is reached.
-    type Read<'a> = (Option<&'a str>, Option<&'a str>, u32, u32, bool);
+    let shown = network_of(dir.path(), &plane, &listed, &named);
+    /// A row as the test reads it: target, what it says, chat, when, how often, and whether it
+    /// is reached.
+    type Read<'a> = (Option<&'a str>, &'a str, Option<&'a str>, u32, u32, bool);
     let rows: Vec<Read<'_>> = shown
         .blocked
         .iter()
         .map(|row| {
             (
                 row.target.as_deref(),
+                row.said.as_str(),
                 row.chat.as_deref(),
                 row.at,
                 row.times,
@@ -144,93 +162,252 @@ fn blocked_lately_lists_each_host_once_newest_first_with_its_chat_and_allow() {
     assert_eq!(
         rows,
         vec![
-            (Some("b.example:5432"), Some("second"), 40, 1, false),
-            (Some("a.example:443"), Some("second"), 30, 2, false),
-            (Some("api.example.com:443"), Some("first"), 20, 1, true),
+            (
+                Some("A3c"),
+                "blocked by purlis's guards",
+                Some("first"),
+                50,
+                1,
+                false
+            ),
+            (
+                Some("b.example:5432"),
+                "blocked by the sandbox",
+                Some("second"),
+                40,
+                1,
+                false
+            ),
+            (
+                Some("a.example:443"),
+                "blocked by the sandbox",
+                Some("second"),
+                30,
+                2,
+                false
+            ),
+            (
+                Some("api.example.com:443"),
+                "blocked by the sandbox",
+                Some("first"),
+                20,
+                1,
+                true
+            ),
         ]
     );
+    // A guard's arm is nothing a host's Allow mends.
+    assert_eq!(shown.blocked[0].levels, Vec::new());
     assert_eq!(
-        shown.blocked[0].levels,
+        shown.blocked[1].levels,
         vec![GrantLevel::You, GrantLevel::Project]
     );
     // Reached already: nothing to allow.
-    assert_eq!(shown.blocked[2].levels, Vec::new());
-    assert_eq!(
-        shown.blocked[0].said,
-        "a connection to an internet host this project does not allow"
-    );
+    assert_eq!(shown.blocked[3].levels, Vec::new());
+    assert!(shown.blocked.iter().all(|row| row.looked_up.is_none()));
 }
 
 #[test]
-fn blocked_lately_offers_no_allow_policy_forbids() {
-    let dir = tempfile::tempdir().expect("a home");
-    let root = dir.path().join("project");
-    std::fs::create_dir_all(&root).expect("a project");
-    let record = Record::in_data(&dir.path().join("data"));
-    record
-        .write(
-            &root,
-            &Entry::blocked(&HOST, Some("a.example:443"), chat("one"), None, 10),
-        )
-        .expect("written");
+fn the_blocked_log_offers_no_allow_policy_forbids() {
+    let dir = tempfile::tempdir().expect("a project");
+    let listed = [listed(1, 10, "id-one", sandbox_host("a.example:443", None))];
     let _under = Under::policy(r#"{"owner": "IT", "sandbox": {"hosts": ["*.corp.example"]}}"#);
     let shown = network_of(
-        &root,
+        dir.path(),
         &plane("[sandbox]\nmode = \"on\"\negress = []\n"),
-        Some(&record),
-        20,
+        &listed,
+        &named,
     );
     assert_eq!(shown.blocked.len(), 1);
     assert_eq!(shown.blocked[0].levels, Vec::new());
 }
 
-/// A refused lookup's host (#1663) is a program's own printed words: Blocked lately and a
-/// chat's Network view show it as text and offer no Allow on it, whatever it names.
+/// A host a chat's own hook reported (Q254: unverified) may be a program's own printed words, a
+/// refused lookup's among them (#1663): the Blocked log shows it as text and offers no Allow on
+/// it. Only a connection purlis's own proxy refused is offered.
 #[test]
-fn a_looked_up_host_is_shown_and_never_offered_to_allow() {
-    let dir = tempfile::tempdir().expect("a home");
-    let root = dir.path().join("project");
-    std::fs::create_dir_all(&root).expect("a project");
-    let record = Record::in_data(&dir.path().join("data"));
-    let lookup = Block {
-        operation: Operation::Lookup,
-        kind: Kind::Host,
-        ours: false,
-    };
-    for at in [10, 20] {
-        record
-            .write(
-                &root,
-                &Entry::blocked(&lookup, Some("db.example.com"), chat("one"), None, at),
-            )
-            .expect("written");
-    }
-    record
-        .write(
-            &root,
-            &Entry::blocked(&lookup, Some("other.example.com"), chat("one"), None, 30),
-        )
-        .expect("written");
+fn the_blocked_log_offers_allow_only_on_a_host_the_proxy_refused() {
+    let dir = tempfile::tempdir().expect("a project");
+    let listed = [
+        listed(
+            2,
+            20,
+            "id-one",
+            sandbox_host("db.example.com", Some(Qualifier::Unverified)),
+        ),
+        listed(1, 10, "id-one", sandbox_host("api.example.com:443", None)),
+    ];
     let shown = network_of(
-        &root,
+        dir.path(),
         &plane("[sandbox]\nmode = \"on\"\negress = []\n"),
-        Some(&record),
-        40,
+        &listed,
+        &named,
     );
-    let rows: Vec<(Option<&str>, Option<&str>, u32)> = shown
+    let rows: Vec<(Option<&str>, &[GrantLevel])> = shown
         .blocked
         .iter()
-        .map(|row| (row.target.as_deref(), row.looked_up.as_deref(), row.times))
+        .map(|row| (row.target.as_deref(), row.levels.as_slice()))
         .collect();
     assert_eq!(
         rows,
         vec![
-            (None, Some("other.example.com"), 1),
-            (None, Some("db.example.com"), 2),
+            (Some("db.example.com"), &[][..]),
+            (
+                Some("api.example.com:443"),
+                &[GrantLevel::You, GrantLevel::Project][..]
+            ),
         ]
     );
-    assert!(shown.blocked.iter().all(|row| row.levels.is_empty()));
-    assert!(shown.blocked.iter().all(|row| !row.reached));
+}
+
+/// **R-222: Blocked lately is folded into the Blocked log** (T1-32, Q264). A network-record
+/// fixture, each refusal also heard as T1-10 writes it: what ended as a block (kept blocked,
+/// withdrawn at the chat's end) is listed from its block event with the host its target summary
+/// names (R-220, Q206); an open ask has no block yet and stays in Asks, an allowed one never
+/// becomes a block, and another project's chat is not this one's. The record is written and
+/// never read: the rows are the log's.
+///
+/// Mutations it catches: the rows read from the record (the open and allowed asks listed), the
+/// project filter dropped (the other chat's host listed), the host read from anything but the
+/// target summary.
+#[test]
+fn blocked_lately_is_folded_into_the_blocked_log() {
+    use purlis_core::eventlog::stops::{Answer, AskAnswered, AskGroup, Stop};
+    use purlis_core::eventlog::{ArgsKey, Log, Recorder, RunOf};
+    use purlis_core::sandboxblock::stop::{Reported, sandbox_block};
+
+    const OURS: &str = "01K6CHAT000000000000000004";
+    const THEIRS: &str = "01K6CHAT000000000000000005";
+    let home = tempfile::tempdir().expect("a home");
+    let root = home.path().join("project");
+    let elsewhere = home.path().join("elsewhere");
+    std::fs::create_dir_all(&root).expect("a project");
+    std::fs::create_dir_all(&elsewhere).expect("another project");
+    let record = Record::in_data(&home.path().join("data"));
+    let log = home.path().join("events");
+    let mut recorder = Recorder::new(
+        Log::open(&log, "01J9ZZDEVICE0000000000000").expect("a log"),
+        ArgsKey::open(&log).expect("a key"),
+    );
+    recorder.knows(
+        &root,
+        2,
+        RunOf {
+            chat: OURS,
+            run: "01K6RUN0000000000000000004",
+        },
+    );
+    recorder.knows(
+        &elsewhere,
+        3,
+        RunOf {
+            chat: THEIRS,
+            run: "01K6RUN0000000000000000005",
+        },
+    );
+    let socket = Block {
+        operation: Operation::Connect,
+        kind: Kind::LocalSocket,
+        ours: false,
+    };
+    // What the record's Blocked lately listed, and whether each ended as a block.
+    let heard: [(&Path, u32, Block, &str, Option<Reported>); 6] = [
+        // Kept blocked: purlis's proxy held it, and the person said no.
+        (
+            &root,
+            2,
+            HOST,
+            "api.example.com:443",
+            Some(Reported::ByTheProxy),
+        ),
+        // The chat's own hook reported it, and the chat moved on.
+        (
+            &root,
+            2,
+            HOST,
+            "cdn.example.net:8443",
+            Some(Reported::ByItsHook),
+        ),
+        (
+            &root,
+            2,
+            socket,
+            "/var/run/docker.sock",
+            Some(Reported::ByItsHook),
+        ),
+        // Still an open ask: no block yet.
+        (&root, 2, HOST, "open.example:443", None),
+        // Allowed: an answer, never a block.
+        (&root, 2, HOST, "allowed.example:443", None),
+        // Another project's chat.
+        (
+            &elsewhere,
+            3,
+            HOST,
+            "theirs.example:443",
+            Some(Reported::ByTheProxy),
+        ),
+    ];
+    for (at, (project, number, block, named, ended)) in (10..).zip(heard) {
+        record
+            .write(
+                project,
+                &Entry::blocked(&block, Some(named), chat("fix the build"), None, at),
+            )
+            .expect("recorded");
+        if let Some(reported) = ended {
+            let stop = sandbox_block(block.kind, Some(named), project, Some("Bash"), reported);
+            recorder
+                .stop(project, Some(number), &stop)
+                .expect("a block");
+        }
+        if named == "allowed.example:443" {
+            let answered = Stop::AskAnswered(AskAnswered {
+                ask: AskGroup::Sandbox,
+                answer: Answer::Allowed,
+            });
+            recorder
+                .stop(project, Some(number), &answered)
+                .expect("an answer");
+        }
+    }
+    drop(recorder);
+
+    let now_ms = u64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("after 1970")
+            .as_millis(),
+    )
+    .expect("a time");
+    let listed = purlis_core::eventlog::blockedlog::listed_in(&log, now_ms, &|chat| chat == OURS)
+        .expect("the log");
+    let shown = network_of(
+        &root,
+        &plane("[sandbox]\nmode = \"on\"\negress = []\n"),
+        &listed,
+        &|chat| (chat == OURS).then(|| "fix the build".to_owned()),
+    );
+    let rows: Vec<(Option<&str>, Option<&str>, bool)> = shown
+        .blocked
+        .iter()
+        .map(|row| {
+            (
+                row.target.as_deref(),
+                row.chat.as_deref(),
+                row.levels.is_empty(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        vec![
+            (Some("docker.sock"), Some("fix the build"), true),
+            (Some("cdn.example.net:8443"), Some("fix the build"), true),
+            (Some("api.example.com:443"), Some("fix the build"), false),
+        ],
+        "the Blocked log lists what ended as a block, by its target summary"
+    );
 }
 
 /// The network record's lines of a connection refused to each of `targets`.
