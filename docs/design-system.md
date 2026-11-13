@@ -2091,12 +2091,16 @@ label; the panel section's title; the title bar switcher's header; Start a chat'
 session record's and a dispatch's section headings. `type.guard.test.ts` refuses capitals or a
 letter spacing anywhere else.
 
+- **The part carries the label, not the site** (#6482). A list's, a fold's and a tree's group
+  header is drawn from one `groupHeader` (`ui/list/List.tsx`), and a `Table`'s and a
+  `ControlTable`'s column name from one `headPart` (`ui/table/Table.tsx`), so a new one cannot
+  miss the role; `ui/groupAndHeadParts.test.tsx` holds each to one.
 - **A family keeps its tier.** The label's colour is `text.secondary`; a tree's, a list's and
   the title bar's group headers keep the quiet tier and a table's column names the muted, by the
   family's own rule, which outranks the role's colour.
 - **A group named by data is written as its name** (a project, a day): a menu's and a select's
   wears the secondary instead of the label; a tree's and a list's take the capitals off in the
-  family's `[data-named]` rule. A frame that labels its groups (the Chats list's
+  list family's one `[data-named]` rule (`list.css`), which a tree's header shares (#6482). A frame that labels its groups (the Chats list's
   workspaces, #3484) is the exception, and labels them as any group: the frame's group heads move
   from the medium weight spaced `0.06em` to the label's strong, spaced `0.05em`.
 

@@ -78,6 +78,20 @@ export type { ColumnChoices, ColumnLength, ColumnSize } from "./CellWords";
 const Drawn = createContext({ menus: false });
 
 /**
+ * **A column's name, as a part** (#6482): its scope and part and the section label it wears,
+ * with a site's own class beside it. Every column name of a `Table` and a `ControlTable` spreads
+ * it, so none is dressed by hand and a new one cannot miss the label (as a fold's group name
+ * did, #6473).
+ */
+export function headPart(className?: string) {
+  return {
+    className: className === undefined ? "ui-text-label" : `ui-text-label ${className}`,
+    "data-scope": "table",
+    "data-part": "head",
+  } as const;
+}
+
+/**
  * **The rule between rows** (`table.rule`, its own part, #2804): drawn at a cell's top edge, and
  * under a column's name. Purlis draws none (the rows' room, the pointer's ground and the chosen
  * wash carry the bands); Purlis Classic sets the hairline in its theme.
@@ -271,28 +285,14 @@ export function TableHeader({ children }: { children: ReactNode }) {
   return (
     <AriaTableHeader data-scope="table" data-part="header">
       {selectionBehavior === "toggle" && (
-        <AriaColumn
-          id="purlis:choose"
-          textValue="Choose"
-          className="ui-text-label"
-          data-scope="table"
-          data-part="head"
-          data-choose=""
-        >
+        <AriaColumn id="purlis:choose" textValue="Choose" {...headPart()} data-choose="">
           {selectionMode === "multiple" ? <Choose /> : <VisuallyHidden>Choose</VisuallyHidden>}
           <Rule />
         </AriaColumn>
       )}
       {children}
       {menus && (
-        <AriaColumn
-          id="purlis:menu"
-          textValue="Actions"
-          className="ui-text-label"
-          data-scope="table"
-          data-part="head"
-          data-actions=""
-        >
+        <AriaColumn id="purlis:menu" textValue="Actions" {...headPart()} data-actions="">
           <VisuallyHidden>Actions</VisuallyHidden>
           <Rule />
         </AriaColumn>
@@ -345,9 +345,7 @@ export function TableColumn({
       {...chosen.attributes}
       style={chosen.style}
       allowsSorting={allowsSorting}
-      className="ui-text-label"
-      data-scope="table"
-      data-part="head"
+      {...headPart()}
       data-align={align}
     >
       {({ sortDirection }) => (
