@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794571121026,
+  "lastUpdate": 1794573848462,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -48300,6 +48300,48 @@ window.BENCHMARK_DATA = {
             "value": 101.1963615,
             "unit": "ms",
             "extra": "median of 5 runs: 100.422, 100.726, 101.196, 101.374, 102.650 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "44a7e98bdce6adc1b1b31db2d8b33cba6e062550",
+          "message": "SK-5c: the Skill studio's Whose chats picker lists the project's personas (#2935) (#6469)\n\n* The Skill studio's Whose chats picker lists the project's personas, and a persona in a workspace it was dispatched into (#2935)\n\nStudio carries the project's personas, each with its role and the\nworkspaces it was dispatched into (dispatchrecord::dispatched_into). The\npicker gains As a persona and, with one picked, In which workspace\n(variant A of prototype/studio-whose-personas, ruled 2026-11-13). A\npersona in a workspace is read as in_the_studio(workspace, persona).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M79PF9XAY7QZ1T8FJGNM1XGP\nPurlis-Persona: steward\n\n* Its vitest and changelog fragment (#2935)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M79PF9XAY7QZ1T8FJGNM1XGP\nPurlis-Persona: steward\n\n* Review fixes (#2935): a persona in a workspace keeps that workspace's rows and its place\n\n- levelOf takes a workspace row's workspace from whoseChats, so the\n  rows of the workspace a persona was dispatched into can be changed.\n- scopeListing (moved from the tab into skillStudio.ts) keeps the\n  shown persona's workspace for its own skills: a scorecard, a copy or\n  a draft accepted no longer jumps to the persona at the root.\n- ManyPersonas pictures the menu before Escape closes it.\n- The picker's personas prop is required; its row ids and words are\n  computed once; the two keys get distinct names.\n- The changelog fragment names no <placeholder> and cites #2935.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M79PF9XAY7QZ1T8FJGNM1XGP\nPurlis-Persona: steward\n\n* Most chats first by sort_by_key (clippy::unnecessary_sort_by) (#2935)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M79PF9XAY7QZ1T8FJGNM1XGP\nPurlis-Persona: steward\n\n* Story baselines from PR #6469's stories run, and no heading over a section the filter empties (#2935)\n\nThe baselines of OpenInAClone (Whose chats no longer lists steward),\nAsAPersona and OpenAsAPersonaInAWorkspace come from run 43381680211.\nManyPersonas's picture showed Whose chats with no rows under it, so\nthe section is not drawn when the filter empties it, and its baselines\nare left for the next run.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M79PF9XAY7QZ1T8FJGNM1XGP\nPurlis-Persona: steward\n\n* Story baselines from PR #6469's stories run: many personas, and the light high-contrast pictures (#2935)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M79PF9XAY7QZ1T8FJGNM1XGP\nPurlis-Persona: steward\n\n* Story baseline from PR #6469's stories run: many personas, light compact Chromium (#2935)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M79PF9XAY7QZ1T8FJGNM1XGP\nPurlis-Persona: steward\n\n* Story baseline from PR #6469's stories run: many personas, classic dark WebKit (#2935)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M79PF9XAY7QZ1T8FJGNM1XGP\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-13T11:48:31Z",
+          "tree_id": "f79c5ed5dde69a3cef9c7bcece5a94217e0e39a0",
+          "url": "https://github.com/purlis/purlis/commit/44a7e98bdce6adc1b1b31db2d8b33cba6e062550"
+        },
+        "date": 1794573841379,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5570470000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.544, 0.553, 0.557, 0.576, 0.585 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2576535,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.170, 16.248, 16.258, 16.271, 16.412 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.504659,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.788, 101.232, 101.505, 101.902, 102.353 ms"
           }
         ]
       }
