@@ -282,6 +282,18 @@ describe("ConnectStep", () => {
     expect(verdictsOf("no-such-name", false)[0]).toBe("missing");
   });
 
+  it("fails Docker's line for an SSH server that refuses forwarding, after the sign-in passed", () => {
+    expect(verdictsOf("forwarding-refused", false)).toEqual([
+      "ok",
+      "ok",
+      "ok",
+      "ok",
+      "missing",
+      "todo",
+      "todo",
+    ]);
+  });
+
   it("spells a host as Docker's ssh:// route", () => {
     expect(routeOf(" sam@build-box ")).toBe("ssh://sam@build-box");
     expect(routeOf("ssh://build-box")).toBe("ssh://build-box");

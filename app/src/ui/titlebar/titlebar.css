@@ -362,10 +362,6 @@
 [data-part="header"][data-scope="titlebar"] {
   margin: var(--space-3) var(--space-4) var(--space-2);
   color: var(--text-quiet);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-strong);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 
 /* Two columns side by side, the line between them a part of its own. */

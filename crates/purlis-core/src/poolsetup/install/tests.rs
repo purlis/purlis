@@ -11,6 +11,7 @@ fn nothing() -> Installed {
         key: false,
         operator: Operator::Absent,
         claims: Some((0, 0)),
+        claims_in_force_in: None,
     }
 }
 
@@ -263,4 +264,14 @@ fn upstream_is_applied_from_the_release_this_build_carries_and_waited_on() {
     );
     // The kustomization names the controller by the digest doctor checks for.
     assert!(RELEASE_KUSTOMIZATION.contains(purlis_cluster_doctor::CONTROLLER_DIGEST));
+}
+
+#[test]
+fn the_policy_on_claims_pool_setup_waits_for_is_the_one_the_install_applies() {
+    let name = format!("  name: {}\n", super::super::cluster::CLAIMS_POLICY);
+    assert!(
+        POLICY.matches(&name).count() >= 2,
+        "operator/deploy/policy.yaml names no policy and binding {}",
+        super::super::cluster::CLAIMS_POLICY
+    );
 }

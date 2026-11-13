@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { projectRoot } from "../acting.js";
@@ -12,7 +12,7 @@ import {
   shownButton,
   tabNames,
 } from "../reach.js";
-import { studioSkill } from "../studio.js";
+import { studioSkill, writeSkill } from "../studio.js";
 
 /**
  * **A workspace's skills in the Skill studio** (SK-4, #2767), in the built app against the real
@@ -30,16 +30,6 @@ import { studioSkill } from "../studio.js";
 const GRANTED = "e2e-granted-probe";
 const KEPT = "e2e-root-only-probe";
 const OWN = "e2e-alpha-probe";
-
-function writeSkill(dir: string, name: string): string {
-  const folder = join(dir, name);
-  mkdirSync(folder, { recursive: true });
-  writeFileSync(
-    join(folder, "SKILL.md"),
-    `---\nname: ${name}\ndescription: Probes ${name}.\n---\n\nSay hello.\n`,
-  );
-  return folder;
-}
 
 describe("a workspace's skills in the Skill studio", function () {
   this.timeout(120_000);

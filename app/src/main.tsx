@@ -13,6 +13,7 @@ import { startTheSwitchClock } from "./switchClock";
 import { watchTheAnswers } from "./answerWatch";
 import { shareTheReads } from "./sharedReads";
 import { watchForStalls } from "./slowLog";
+import { watchTheFrames } from "./whenDrawing";
 import { drawWindowText, listenForSizeKeys, onTextSizes, textSizes } from "./textSize";
 import {
   DEFAULT_THEME,
@@ -98,6 +99,10 @@ if (frame !== undefined) void partsLand(frame);
 // written to a log in the app's log folder, so a slow moment can be read afterwards
 // (`slowLog.ts`).
 watchForStalls();
+
+// Whether the window is being drawn, so what the core tells a window hidden, or dark with the
+// display asleep or the screen locked, is caught up once it is drawn again (`whenDrawing.ts`).
+watchTheFrames();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

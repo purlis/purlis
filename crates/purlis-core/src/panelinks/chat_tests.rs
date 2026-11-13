@@ -30,8 +30,13 @@ const ELSEWHERE_ID: &str = "01K6E15EWHERE0000000000000";
 
 /// A task chat 641 worked, opened in `root`'s records.
 fn task_641(root: &Path) -> String {
+    opened_641(root, Mode::Task, true)
+}
+
+/// Chat 641's dispatch as `mode`, owing a report or not, opened in `root`'s records.
+fn opened_641(root: &Path, mode: Mode, report_owed: bool) -> String {
     let opening = Dispatch {
-        mode: Mode::Task,
+        mode,
         asker: Asker {
             chat: ChatRef {
                 chat: 652,
@@ -62,7 +67,7 @@ fn task_641(root: &Path) -> String {
             worktree: None,
         },
         brief: "Sign the commits.".to_owned(),
-        report_owed: true,
+        report_owed,
     };
     dispatchrecord::open(root, opening, at("2026-11-11T10:00:00Z"))
         .unwrap()
@@ -169,6 +174,63 @@ fn an_ended_chat_links_to_its_record_and_opening_it_shows_its_card() {
         links.open(&chat("chat 641"), &pane_of_652(&root), &Asks::default(), None),
         Opening::Open(Target::Chat(at)) if matches!(at.goes, Goes::Ended(_))
     ));
+}
+
+#[test]
+fn a_chat_no_dispatch_started_links_to_its_closed_record() {
+    // #6304: a chat the person started by hand and closed, kept by the app as it closed.
+    let (_dir, root) = project();
+    let closed = crate::chatrecords::ChatRecord {
+        number: 702,
+        id: "01K6CHATS0000000000000000C".to_owned(),
+        title: "Tidy the changelog".to_owned(),
+        started: "2026-11-12T09:00:00Z".to_owned(),
+        ended: "2026-11-12T09:40:00Z".to_owned(),
+        started_by: crate::chatrecords::StartedBy::Person,
+        place: "smart-ide".to_owned(),
+    };
+    crate::chatrecords::keep(&root, &closed).unwrap();
+    let links = links(vec![open(652, MINE_ID)]);
+
+    assert_eq!(
+        goes(links.resolve(&chat("chat 702"), &pane_of_652(&root))),
+        (702, Goes::Closed(Box::new(closed)))
+    );
+}
+
+#[test]
+fn a_closed_handoff_links_to_its_closed_record() {
+    // A handoff's ended record draws no card: the chat's own record, kept as it closed, does.
+    let (_dir, root) = project();
+    let id = opened_641(&root, Mode::Handoff, false);
+    dispatchrecord::close(
+        &root,
+        &id,
+        Ending {
+            report: None,
+            usage: None,
+        },
+        at("2026-11-11T11:08:00Z"),
+    )
+    .unwrap();
+    let closed = crate::chatrecords::ChatRecord {
+        number: 641,
+        id: WORKER_ID.to_owned(),
+        title: "Signed commits #5607".to_owned(),
+        started: "2026-11-11T10:00:00Z".to_owned(),
+        ended: "2026-11-11T11:08:00Z".to_owned(),
+        started_by: crate::chatrecords::StartedBy::Chat {
+            name: "Grill #5820: chat links".to_owned(),
+        },
+        place: "smart-ide".to_owned(),
+    };
+    crate::chatrecords::keep(&root, &closed).unwrap();
+    let links = links(vec![open(652, MINE_ID)]);
+
+    assert_eq!(
+        goes(links.resolve(&chat("chat 641"), &pane_of_652(&root))),
+        (641, Goes::Closed(Box::new(closed)))
+    );
 }
 
 #[test]

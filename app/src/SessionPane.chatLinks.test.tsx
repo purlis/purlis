@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { Terminal } from "@xterm/xterm";
@@ -49,8 +49,12 @@ const measuring = (el: HTMLElement) => el.classList.contains("xterm-char-measure
 const CARD: ChatCard = {
   number: 641,
   chat: "01K6W0RKER000000000000000B",
+  title: "Signed commits #5607",
+  ended: "2026-11-11T11:08:00",
+  place: "smart-ide",
   started_by: "steward 4",
   screen_kept: true,
+  dispatched: true,
   task: {
     id: "01K9DISPATCH0000000000000A",
     asker: 0,
@@ -286,5 +290,94 @@ describe("a chat link in a chat's pane", () => {
 
     expect(asked("pane_link_resolve")).toHaveLength(0);
     expect(asked("pane_link_open")).toHaveLength(0);
+  });
+});
+
+/**
+ * **The card from the Links list or the menu's Open link stands at the link** (#6442): both close
+ * on the press, so the row it came from is gone, and the card goes where a ⌘-click's does (the
+ * prototype's D7). The terminal's screen is given a box here, as jsdom lays nothing out.
+ */
+describe("an ended chat's card opened from the keyboard's ways", () => {
+  const SCREEN = { left: 100, top: 50, width: 80 * WIDTH, height: 24 * CELL };
+  // Row 2, column 2: 100 + 2 × 8 across, 50 + 2 × 17 down.
+  const AT_THE_LINK = { left: "116px", top: "84px" };
+
+  beforeEach(() => {
+    const real = Element.prototype.getBoundingClientRect;
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: Element,
+    ) {
+      if (!this.classList.contains("xterm-screen")) return real.call(this);
+      const { left, top, width, height } = SCREEN;
+      return {
+        left,
+        top,
+        width,
+        height,
+        x: left,
+        y: top,
+        right: left + width,
+        bottom: top + height,
+        toJSON: () => ({}),
+      } as DOMRect;
+    });
+  });
+
+  /** The pane written chat 641 on its third row. */
+  async function writtenLow() {
+    const pane = await opened();
+    await write(pane.term, "first\r\nsecond\r\n  chat 641 · finished");
+    return pane;
+  }
+
+  /** The card's anchor, once the card is up. */
+  async function cardAnchor() {
+    await screen.findByRole("dialog", { name: "#641 · Signed commits #5607" });
+    const anchor = document.querySelector<HTMLElement>(".pane-link-anchor");
+    if (!anchor) throw new Error("the card has no anchor");
+    return anchor.style;
+  }
+
+  it("from Links in this pane…", async () => {
+    await writtenLow();
+    const target = document.querySelector(".xterm-helper-textarea") as HTMLElement;
+    target.focus();
+    target.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "L",
+        code: "KeyL",
+        ctrlKey: true,
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    const list = await screen.findByRole("dialog", { name: "Links in this pane" });
+    fireEvent.click(await within(list).findByRole("option", { name: "chat 641" }));
+
+    expect(await cardAnchor()).toMatchObject(AT_THE_LINK);
+  });
+
+  it("from the terminal menu's Open link", async () => {
+    const { drawn } = await writtenLow();
+    // The pointer on the screen's box, which starts at its left and top.
+    const at = (init: MouseEventInit = {}) => {
+      const cell = over(4, 2, init);
+      return {
+        ...cell,
+        clientX: (cell.clientX ?? 0) + SCREEN.left,
+        clientY: (cell.clientY ?? 0) + SCREEN.top,
+      };
+    };
+    drawn.dispatchEvent(new MouseEvent("mousemove", at()));
+    await waitFor(() => expect(asked("pane_link_resolve")).toHaveLength(1));
+    await screen.findByRole("tooltip", {}, { timeout: 2000 });
+    for (const type of ["mousedown", "contextmenu", "mouseup"])
+      drawn.dispatchEvent(new MouseEvent(type, at({ button: 2 })));
+    const menu = await screen.findByRole("menu", { name: "Terminal" });
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Open link" }));
+
+    expect(await cardAnchor()).toMatchObject(AT_THE_LINK);
   });
 });

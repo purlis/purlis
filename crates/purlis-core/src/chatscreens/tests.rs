@@ -260,6 +260,23 @@ fn a_screen_not_written_for_its_record_s_age_goes_whatever_names_it() {
 }
 
 #[test]
+fn a_screen_last_written_exactly_thirty_days_ago_goes() {
+    // plane-format.md: "last written 30 days or more before", as a dispatch record is.
+    let (_dir, root) = project();
+    keep(&root, CHAT, "old").unwrap();
+    let written = SystemTime::now() - Duration::from_secs(3600);
+    std::fs::File::options()
+        .write(true)
+        .open(dir(&root).join(format!("{CHAT}.screen")))
+        .unwrap()
+        .set_modified(written)
+        .unwrap();
+    let now = written + crate::retention::KEEP_FOR;
+    assert_eq!(sweep(&root, |_| true, now), 1);
+    assert!(!is_kept(&root, CHAT));
+}
+
+#[test]
 fn a_screen_is_replaced_whole_and_leaves_no_temp_file() {
     let (_dir, root) = project();
     keep(&root, CHAT, "first").unwrap();
@@ -270,4 +287,21 @@ fn a_screen_is_replaced_whole_and_leaves_no_temp_file() {
         .map(|entry| entry.unwrap().file_name().into_string().unwrap())
         .collect();
     assert_eq!(names, vec![format!("{CHAT}.screen")]);
+}
+
+#[test]
+fn what_the_store_holds_is_counted_and_nothing_where_it_is_off() {
+    let (_dir, root) = settable();
+    assert_eq!(held(&root), (0, 0));
+    keep(&root, CHAT, "abc").unwrap();
+    keep(&root, OTHER, "de").unwrap();
+    assert_eq!(held(&root), (2, 5));
+    std::fs::write(
+        root.join(crate::settings::Which::Local.file_at(&root)),
+        "[task_screens]\nkeep = false\n",
+    )
+    .unwrap();
+    // Off by a hand edit: the count is read as nothing, and what was kept goes.
+    assert_eq!(held(&root), (0, 0));
+    assert!(every_kept(&root).is_empty());
 }

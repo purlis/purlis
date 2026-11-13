@@ -4,33 +4,47 @@
 import { describe, expect, it } from "vitest";
 import type { ChatCard } from "./bindings";
 import { narrow } from "./actions";
-import { cardRowId, cardWhen, numberRows, opensACard, outcomeOf } from "./closedChat";
+import {
+  ORDINARY_NO_REOPEN,
+  cardRowId,
+  cardWhen,
+  numberRows,
+  opensACard,
+  outcomeOf,
+  whyCardCannotReopen,
+} from "./closedChat";
+
+const TASK: NonNullable<ChatCard["task"]> = {
+  id: "01K9DISPATCH0000000000000A",
+  asker: 0,
+  name: "Signed commits #5607",
+  chat: null,
+  persona: null,
+  how: "done",
+  outcome: "done",
+  folds: true,
+  report: "Done.",
+  changed: null,
+  ended: "2026-11-11T11:08:00",
+  place: "smart-ide",
+  branch: null,
+  reopens: true,
+  not_reopened: null,
+  did_not_start: false,
+  attempts: 0,
+  waits: null,
+};
 
 const CARD: ChatCard = {
   number: 641,
   chat: "01K6W0RKER000000000000000B",
+  title: "Signed commits #5607",
+  ended: "2026-11-11T11:08:00",
+  place: "smart-ide",
   started_by: "steward 4",
   screen_kept: true,
-  task: {
-    id: "01K9DISPATCH0000000000000A",
-    asker: 0,
-    name: "Signed commits #5607",
-    chat: null,
-    persona: null,
-    how: "done",
-    outcome: "done",
-    folds: true,
-    report: "Done.",
-    changed: null,
-    ended: "2026-11-11T11:08:00",
-    place: "smart-ide",
-    branch: null,
-    reopens: true,
-    not_reopened: null,
-    did_not_start: false,
-    attempts: 0,
-    waits: null,
-  },
+  dispatched: true,
+  task: TASK,
 };
 
 describe("a chat found by its number in the palette (#6214)", () => {
@@ -63,12 +77,39 @@ describe("a chat found by its number in the palette (#6214)", () => {
     expect(numberRows(undefined)).toEqual([]);
   });
 
+  it("the row names only what its card can do", () => {
+    const note = (card: ChatCard) =>
+      numberRows({ number: 641, lookup: { is: "ended", card } })[0].note;
+    expect(note(CARD)).toBe(
+      "Done at 11:08 · its chat has closed. Shows its card, with Read it and Reopen.",
+    );
+    expect(note({ ...CARD, screen_kept: false })).toBe(
+      "Done at 11:08 · its chat has closed. Shows its card, with Reopen.",
+    );
+    expect(note({ ...CARD, task: { ...TASK, reopens: false } })).toBe(
+      "Done at 11:08 · its chat has closed. Shows its card, with Read it.",
+    );
+    // A chat no dispatch started: no screen and no task, so neither.
+    expect(note({ ...CARD, screen_kept: false, task: null })).toMatch(/\. Shows its card\.$/);
+  });
+
+  it("says why Reopen does nothing in words that fit how the chat was started", () => {
+    expect(whyCardCannotReopen(CARD)).toBeUndefined();
+    const ordinary = { ...CARD, task: null, dispatched: false };
+    expect(whyCardCannotReopen(ordinary)).toBe(ORDINARY_NO_REOPEN);
+    // A handoff, or a task that owed no report: a dispatch started it, so not the ordinary words.
+    const handedOff = whyCardCannotReopen({ ...ordinary, dispatched: true });
+    expect(handedOff).toMatch(/^It cannot be reopened/);
+    expect(handedOff).not.toBe(ORDINARY_NO_REOPEN);
+  });
+
   it("the card says how and when it ended, and that its chat has closed", () => {
     expect(cardWhen(CARD)).toBe("Done at 11:08 · its chat has closed");
   });
 
   it("says each end in the words a finished row says, coloured by how it went", () => {
-    const of = (how: ChatCard["task"]["how"], outcome: string) => outcomeOf({ how, outcome });
+    const of = (how: NonNullable<ChatCard["task"]>["how"], outcome: string) =>
+      outcomeOf({ how, outcome });
     expect(of("done", "done")).toMatchObject({ badge: "Done", variant: "ok" });
     expect(of("closed_by_person", "closed by you")).toMatchObject({
       badge: "Closed by you",

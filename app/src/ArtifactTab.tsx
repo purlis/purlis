@@ -609,6 +609,7 @@ export function ArtifactFrame({
       aria-describedby={hint}
       tabIndex={0}
       data-testid="artifact-frame"
+      data-native-page=""
       onKeyDown={(event) => {
         if (event.key !== "Enter" || label.current === null) return;
         event.preventDefault();

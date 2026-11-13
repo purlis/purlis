@@ -74,6 +74,7 @@ import { LetRunnerGo } from "../KeptRunnerNotice";
 import { StartOverAsk } from "../AgentIdentityFlow";
 import { RemoveIdentity } from "../AgentIdentityTab";
 import { RemoveProfile } from "../settings/profiles";
+import { StopKeepingTaskScreens } from "../settings/taskScreens";
 import { SpecimenDialog } from "../specimen/Specimen";
 import { LinkWorkItem } from "../LinkWorkItem";
 import { LiveDialog } from "../LiveDialog";
@@ -377,8 +378,12 @@ const nothing = () => {};
 const CLOSED_CHAT_CARD: ChatCard = {
   number: 641,
   chat: "01K6W0RKER000000000000000B",
+  title: "Signed commits 5607",
+  ended: "2026-11-11T11:08:00",
+  place: "smart-ide",
   started_by: "steward 4",
   screen_kept: true,
+  dispatched: true,
   task: {
     id: "01K9DISPATCH0000000000000A",
     asker: 0,
@@ -1178,6 +1183,12 @@ const DIALOGS: Opened[] = [
     file: "settings/PoolLimits.tsx",
     open: async () =>
       render(<ReplaceRunner pool="builds" onCancel={nothing} onReplace={nothing} />),
+  },
+  {
+    name: "turning keeping task screens off",
+    file: "settings/taskScreens.tsx",
+    open: async () =>
+      render(<StopKeepingTaskScreens kept={3} onDelete={nothing} onCancel={nothing} />),
   },
   {
     name: "removing a Docker pool",

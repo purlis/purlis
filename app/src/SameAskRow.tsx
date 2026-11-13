@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useId, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import type { Offered, PlaneId, Shown } from "./bindings";
 import { answerTaken, asksMoved } from "./asks";
 import { AskDecision } from "./AskDecision";
@@ -97,6 +97,8 @@ export function SameAsk({
   const who = asks.map((ask) => chainSaid(ask.chain)).join(", ");
   const line = capMarks(first.says).text;
   const key = sameRowKey(same);
+  /** Its watch to be seen, once its row is attached (`useSettledPlace`). */
+  const seenAttached = useRef<() => void>(undefined);
   const { drawn, drawnAt, tooSoon, readPlaces } = useSettledPlace<HTMLElement>(
     [
       above,
@@ -104,8 +106,12 @@ export function SameAsk({
       ...same.placed.map((one) => heldKey(one.ask, one.plane)),
       open ? "open" : "",
     ].join("\n"),
+    () => seenAttached.current?.(),
   );
   const [isNew, seenDrawnNow] = useSeenRow(askSeenKey(first), drawn, seen);
+  useLayoutEffect(() => {
+    seenAttached.current = seenDrawnNow;
+  });
   const mayAct = () => {
     if (!tooSoon()) return true;
     setSaid(MOVED_JUST_NOW);
@@ -140,6 +146,7 @@ export function SameAsk({
         allowed += 1;
         noteAnswered(where, {
           at: Date.now(),
+          session: ask.session,
           chain: ask.chain,
           says: ask.says,
           answer: option.label,

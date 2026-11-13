@@ -75,6 +75,10 @@ pub struct Query {
     pub widens: &'static [(&'static str, &'static str)],
     /// The JSON Schema of the answer's `data`.
     pub result: fn() -> Value,
+    /// How long an answer stays good, for a query that reads what no plane change moves: a
+    /// subscribed page is asked again after it (`purlis.forge_milestones`, #6233). `None` for
+    /// a query only a change of the plane moves.
+    pub fresh_seconds: Option<u64>,
 }
 
 impl Query {
@@ -122,6 +126,9 @@ impl Query {
             out.insert("widens".into(), Value::Object(widens));
         }
         out.insert("result".into(), (self.result)());
+        if let Some(fresh) = self.fresh_seconds {
+            out.insert("fresh_seconds".into(), json!(fresh));
+        }
         Value::Object(out)
     }
 }
@@ -129,8 +136,11 @@ impl Query {
 /// The release the first queries answer in.
 const FIRST: &str = "0.5.1";
 
+/// The release `purlis.forge_milestones` first answers in.
+const FORGE_MILESTONES_SINCE: &str = "0.5.2";
+
 /// A JSON Schema object whose every property is required and no other is allowed.
-fn object(properties: Value) -> Value {
+pub(crate) fn object(properties: Value) -> Value {
     let required: Vec<String> = properties
         .as_object()
         .map(|p| p.keys().cloned().collect())
@@ -143,7 +153,7 @@ fn object(properties: Value) -> Value {
     })
 }
 
-fn list_of(item: Value) -> Value {
+pub(crate) fn list_of(item: Value) -> Value {
     json!({ "type": "array", "items": item })
 }
 
@@ -223,9 +233,49 @@ fn changes() -> Value {
     }))
 }
 
+/// What `purlis.chats` answers: the workspace's chats, a tree by their parents (#6235).
+fn chats() -> Value {
+    let nullable =
+        |description: &str| json!({ "type": ["string", "null"], "description": description });
+    object(json!({
+        "history": { "type": "boolean", "description": "Whether ended dispatches are listed too." },
+        "chats": list_of(object(json!({
+            "id": string("Its id; chat-<n> for an open chat given none yet, <record id>.chat-<n> for an ended one: what a parent names it by."),
+            "name": string("Its name, as its tab shows it."),
+            "persona": nullable("The persona it runs as, or null."),
+            "harness": nullable("Its harness, by the project's word for it, or null for a shell."),
+            "state": json!({
+                "type": "string",
+                "enum": chats::Mark::ALL.iter().map(|m| m.key()).collect::<Vec<_>>(),
+                "description": "Its Chat state, as the window's mark keys it.",
+            }),
+            "state_said": string("Its Chat state, as the window names it: Waiting on you, Failed, …"),
+            "cause": string("The fact that decided its state, such as needs-you-queue or turn-ended."),
+            "started": nullable("When it started, RFC 3339, or null where it is not known."),
+            "last_activity": nullable("When it last moved, RFC 3339, or null where it is not known."),
+            "parent": json!({
+                "type": ["object", "null"],
+                "description": "The chat it came from, or null for one the person opened.",
+                "properties": {
+                    "id": nullable("That chat's id, or null where it works in another workspace or at the project's root."),
+                    "relation": json!({
+                        "type": "string",
+                        "enum": ["dispatched", "handed-off-from"],
+                        "description": "dispatched: a task that owes it a report; handed-off-from: the work moved here.",
+                    }),
+                },
+                "required": ["id", "relation"],
+                "additionalProperties": false,
+            }),
+            "session_record": nullable("Its newest session record, the file name session_record_read takes, or null."),
+            "open": { "type": "boolean", "description": "Whether it is open now; false only with history." },
+        }))),
+    }))
+}
+
 /// Every query, in the order the MCP server lists its tools. A new one is added at the end of
 /// its own line, and to the fixture.
-pub static CATALOGUE: [Query; 5] = [
+pub static CATALOGUE: [Query; 7] = [
     Query {
         name: "todo_list",
         since: FIRST,
@@ -234,6 +284,7 @@ pub static CATALOGUE: [Query; 5] = [
         scope: Scope::Workspace,
         widens: &[("done", "the done todos, not only the open ones")],
         result: todos,
+        fresh_seconds: None,
     },
     Query {
         name: "memory_search",
@@ -243,6 +294,7 @@ pub static CATALOGUE: [Query; 5] = [
         scope: Scope::Workspace,
         widens: &[],
         result: memories,
+        fresh_seconds: None,
     },
     Query {
         name: "session_record_list",
@@ -252,6 +304,7 @@ pub static CATALOGUE: [Query; 5] = [
         scope: Scope::Workspace,
         widens: &[],
         result: session_records,
+        fresh_seconds: None,
     },
     Query {
         name: "session_record_read",
@@ -261,6 +314,7 @@ pub static CATALOGUE: [Query; 5] = [
         scope: Scope::Workspace,
         widens: &[],
         result: session_record,
+        fresh_seconds: None,
     },
     Query {
         name: "change_status",
@@ -270,6 +324,32 @@ pub static CATALOGUE: [Query; 5] = [
         scope: Scope::Workspace,
         widens: &[],
         result: changes,
+        fresh_seconds: None,
+    },
+    Query {
+        name: milestones::NAME,
+        since: FORGE_MILESTONES_SINCE,
+        replaces: None,
+        deprecated: None,
+        scope: Scope::Workspace,
+        widens: &[("repo", "another repo of the workspace than its only one")],
+        result: milestones::result,
+        fresh_seconds: Some(milestones::FRESH_SECONDS),
+    },
+    // Answered by the app, which alone holds the live chats (#6235); `answer::ask` has none.
+    Query {
+        name: crate::chattools::CHATS,
+        since: "0.5.2",
+        replaces: None,
+        deprecated: None,
+        scope: Scope::Workspace,
+        widens: &[(
+            "history",
+            "the workspace's ended tasks and handoffs, not only its open chats",
+        )],
+        result: chats,
+        // The app pushes it as its chats move, so it is never asked again on a clock.
+        fresh_seconds: None,
     },
 ];
 
@@ -413,6 +493,9 @@ pub struct Answer {
     pub outcome: Result<Value, ErrorKind>,
     pub at: chrono::DateTime<chrono::Utc>,
     pub cursor: Option<String>,
+    /// With an error, a sentence for the reader saying what happened and what to do, where the
+    /// query has one (ADR 0122 as amended 2026-11-11): `error: { kind, message }`.
+    pub message: Option<String>,
 }
 
 impl Answer {
@@ -421,6 +504,7 @@ impl Answer {
             outcome: Ok(data),
             at,
             cursor: None,
+            message: None,
         }
     }
 
@@ -429,6 +513,19 @@ impl Answer {
             outcome: Err(kind),
             at,
             cursor: None,
+            message: None,
+        }
+    }
+
+    /// An error with a sentence for the reader.
+    pub fn error_saying(
+        kind: ErrorKind,
+        message: impl Into<String>,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> Self {
+        Answer {
+            message: Some(message.into()),
+            ..Answer::error(kind, at)
         }
     }
 
@@ -438,12 +535,19 @@ impl Answer {
         self
     }
 
-    /// `{ data | error: { kind }, at, cursor? }`.
+    /// `{ data | error: { kind, message? }, at, cursor? }`.
     pub fn to_json(&self) -> Value {
         let mut out = Map::new();
         match &self.outcome {
             Ok(data) => out.insert("data".into(), data.clone()),
-            Err(kind) => out.insert("error".into(), json!({ "kind": kind.as_str() })),
+            Err(kind) => {
+                let mut error = Map::new();
+                error.insert("kind".into(), json!(kind.as_str()));
+                if let Some(message) = &self.message {
+                    error.insert("message".into(), json!(message));
+                }
+                out.insert("error".into(), Value::Object(error))
+            }
         };
         out.insert(
             "at".into(),
@@ -466,6 +570,8 @@ pub fn listing() -> Value {
 }
 
 pub mod answer;
+pub mod chats;
+pub mod milestones;
 
 #[cfg(test)]
 mod tests;

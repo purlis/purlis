@@ -396,6 +396,7 @@ export const commands = {
 	allowPersonaHosts: __WINDOW_ONLY_RESULT,
 	allowProjectExpects: __WINDOW_ONLY_RESULT,
 	declineProjectExpects: __WINDOW_ONLY_RESULT,
+	personaAllowNotNow: __WINDOW_ONLY_RESULT,
 	answerTeamSandboxOff: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Whether chat `session` holds the asking chat's persona grants instead of its own, and whose
@@ -1563,6 +1564,8 @@ export const commands = {
 	taskFolderShared: (plane: PlaneId, session: number, place: string | null) => typedError<string | null, string>(__TAURI_INVOKE("task_folder_shared", { plane, session, place })),
 	chatByNumber: __WINDOW_ONLY_RESULT,
 	chatScreen: __WINDOW_ONLY_RESULT,
+	taskScreens: __WINDOW_ONLY_RESULT,
+	setTaskScreens: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The finished tasks of the project's open chats, oldest first, for the rows under each
 	 *  (#1485). On a blocking thread, as it reads every record.
@@ -3156,6 +3159,12 @@ export type AnswerPath =
  *  now, each sent `items` as its Notice sends them (#6000).
  */
 { via: "sandbox-expects"; items: ExpectedItem[] } | 
+/**
+ *  `allow_persona_hosts` for Allow, sent `digest`, the list the row showed, as its Notice
+ *  sends it; and `persona_allow_not_now` for Not now, which puts it away while the project
+ *  is open and the list stands (ADR 0121, amended 2026-11-12).
+ */
+{ via: "persona-allow"; persona: string; digest: string } | 
 /**  `answer_pool_sign_in` for confirmation `id`, yes or no, as its dialog answers (#6000). */
 { via: "confirmation"; id: number } | 
 /**
@@ -3632,6 +3641,12 @@ export type AskSource =
  *  sandboxed chats are refused it until the person allows it on this machine.
  */
 "sandbox-expects" | 
+/**
+ *  **A persona whose hosts or tools wait for an Allow on this machine** (ADR 0121, amended
+ *  2026-11-12): its chats reach none of its hosts and run none of its tools until the
+ *  person allows them as shown. One per persona.
+ */
+"persona-allow" | 
 /**
  *  **A `purlis` command's confirmation in the window** (#6000): a pool sign-in, a profile
  *  taken off a pool, a signing check, each waiting on the person's yes.
@@ -4529,19 +4544,31 @@ export type ChatCard = {
 	number: number,
 	/**  Its ULID: what *Read it* asks for its screen by. */
 	chat: string,
+	/**  What it is called: its task's name, or an ordinary chat's title as its tab said it. */
+	title: string,
+	/**  When it ended (UTC, RFC 3339), where its record keeps an end. */
+	ended: string | null,
+	/**  Where it ran: its workspace's name, or `project root`. */
+	place: string,
 	/**
-	 *  Its task as its finished row has it: its name, how it ended and when, its report
-	 *  (masked), where it ran, and whether it reopens. `id` is its dispatch record's, which
-	 *  *Reopen* names.
+	 *  Its task as its finished row has it: how it ended, its report (masked) and whether it
+	 *  reopens. `id` is its dispatch record's, which *Reopen* names. **None for a chat no
+	 *  dispatch started** (#6304): it has no report and no Reopen, and the card says Closed.
 	 */
-	task: FinishedTask,
+	task: FinishedTask | null,
 	/**
-	 *  Who started it: "you" where the person dispatched it, else the asking chat's name as
-	 *  the person saw it then.
+	 *  Who started it: "you" where the person started or dispatched it, else the chat that
+	 *  asked or handed off, by its name as the person saw it then.
 	 */
 	started_by: string,
 	/**  Whether its last screen was kept: *Read it* is disabled where it was not. */
 	screen_kept: boolean,
+	/**
+	 *  Whether a dispatch started it. True with no task for a handoff, or a task that ended
+	 *  owing no report: its card is drawn from its chat's record, and *Reopen* says why it does
+	 *  nothing in words of its own.
+	 */
+	dispatched: boolean,
 };
 
 /**
@@ -15694,6 +15721,11 @@ export type Studio = {
 	persona: string | null,
 	/**  Every workspace of the project, which it can be shown for. */
 	workspaces: string[],
+	/**
+	 *  **Every persona of the project** (#2935), which it can be shown as, each with the
+	 *  workspaces it was dispatched into. Empty while the studio is off.
+	 */
+	personas: StudioPersona[],
 	/**  Every level a skill can be made at or moved to, with its words (#2770). */
 	levels: StudioLevel[],
 	skills: StudioSkill[],
@@ -15792,6 +15824,15 @@ export type StudioClone = {
 	 *  Preview line ([`StudioRouter::preview`] at the root).
 	 */
 	preview: string,
+};
+
+/**
+ *  **A workspace a persona was dispatched into** (#2935), and how many of the dispatches this
+ *  machine keeps went there (`purlis_core::dispatchrecord::dispatched_into`).
+ */
+export type StudioDispatchedInto = {
+	workspace: string,
+	chats: number,
 };
 
 /**
@@ -15896,6 +15937,19 @@ export type StudioNotSupported = {
 	title: string,
 	/**  Why its chats get no skills, in one line. */
 	said: string,
+};
+
+/**
+ *  **A persona the studio can be shown as** (#2935): its name, its role, and each workspace of
+ *  the project it was dispatched into, where its chats can be looked at as a dispatched chat
+ *  sees them.
+ */
+export type StudioPersona = {
+	name: string,
+	/**  Its role, as its `persona.md` says it; `None` where it says none. */
+	role: string | null,
+	/**  Each workspace it was dispatched into, most chats first, then by name. */
+	dispatched_into: StudioDispatchedInto[],
 };
 
 /**  One chat a router extension was asked about at its start. */
@@ -16288,6 +16342,17 @@ export type TaskQuestion = {
 	number: number,
 	/**  What it asked, **as text**: a chat's own words, never drawn as markup. */
 	question: string,
+};
+
+/**
+ *  **Whether this machine keeps a task's last screen in a project, and how many it holds**
+ *  (#6306): what the row Settings › Project › Dispatch › Keep task screens draws.
+ */
+export type TaskScreens = {
+	/**  `[task_screens] keep` in the project's local file, `true` where it is not set. */
+	keep: boolean,
+	/**  How many screens are kept now: none where `keep` is off. */
+	kept: number,
 };
 
 /**  What one answer to several tasks did (#1508). */

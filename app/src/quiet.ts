@@ -63,8 +63,10 @@ function follow() {
   ]).catch(() => undefined);
 }
 
-/** Whether it is Quiet, and what the latest Quiet that ended held, as the core said last. */
+/** Whether it is Quiet, and what the latest Quiet that ended held, as the core said last. Asked
+ *  of the core the first time, so a reader that does not redraw with it still hears it. */
 export function quietNow(): QuietNow {
+  follow();
   return current;
 }
 

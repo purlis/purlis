@@ -2867,3 +2867,18 @@ describe("the picker's Secret ask's answer, as PlaneView sends it (#5902)", () =
     expect(refusedSaid(locked, true, { id: "keep", label: "Not now" })).toBe(locked);
   });
 });
+
+describe("Start a chat's section labels (#1920, #6443)", () => {
+  it("spells every one as the section label, the harness's, the name's and the sandbox's alike", () => {
+    const sandboxed = {
+      ...ONE.profiles[0],
+      sandbox: { state: "sandboxed", said: "", locked: null },
+    } as const;
+    show({ profiles: [sandboxed] });
+    const labels = [...document.querySelectorAll(".start-chat-label")];
+    expect(labels.map((label) => label.textContent?.trim())).toEqual(
+      expect.arrayContaining(["Harness", "Sandbox"]),
+    );
+    expect(labels.filter((label) => !label.classList.contains("ui-text-label"))).toEqual([]);
+  });
+});

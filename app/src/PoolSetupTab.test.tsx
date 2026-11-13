@@ -1,12 +1,15 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PoolSetupShown, PoolSetupStep } from "./bindings";
 import { PoolSetupTab } from "./PoolSetupTab";
+import { markPoolOwned } from "./pools";
+import { settingsPlace, useShownGroup } from "./settings/links";
+import { POOLS } from "./settings/pools";
 
 const step = (id: string, name: string, state: string, more: Partial<PoolSetupStep> = {}) =>
   ({
@@ -615,5 +618,70 @@ describe("Where, on a cluster (#4492)", () => {
       await screen.findByRole("button", { name: "Use Docker on this machine instead" }),
     );
     await waitFor(() => expect(sent.map((one) => one.cmd)).toContain("pool_setup_choose_docker"));
+  });
+});
+
+describe("Sign-ins on a cluster pool not marked as the person's own (#4071, #4494)", () => {
+  const signIns = (owned: boolean): PoolSetupShown => ({
+    ...setup(
+      "signins",
+      [
+        step("where", "Where chats run", "done", { line: "Your team's cluster" }),
+        step("pool", "Pool", "done", { line: "team" }),
+        step(
+          "signins",
+          "Sign-ins",
+          "current",
+          owned
+            ? { next: action("choose-profiles", "Choose profiles") }
+            : {
+                findings: ["Pool team isn't marked as your own."],
+                next: action("mark-as-own", "Open Settings › Pools"),
+              },
+        ),
+      ],
+      "team",
+    ),
+    kind: "cluster",
+  });
+
+  it("reads again once the pool is marked in Settings › Pools, in another tab of the window", async () => {
+    let owned = false;
+    const calls = core(() => signIns(owned), {
+      docker_pools: () => ({
+        pools: [],
+        clusters: [
+          {
+            name: "team",
+            context: "kind-team",
+            pool: "team",
+            namespace: "default",
+            operator_key: `ed25519:${"0".repeat(64)}`,
+            owned,
+          },
+        ],
+      }),
+      set_cluster_pool_owned: () => {
+        owned = true;
+        return null;
+      },
+    });
+    const onOpenPools = vi.fn();
+    render(<PoolSetupTab plane="p" onOpenPools={onOpenPools} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Open Settings › Pools" }));
+    expect(onOpenPools).toHaveBeenCalled();
+    // Your settings opens on Pools, where This is my own is, not on its first group.
+    expect(renderHook(() => useShownGroup(settingsPlace("you"))).result.current?.group).toBe(POOLS);
+    const before = calls.filter((call) => call.cmd === "pool_setup").length;
+
+    // Settings › Pools' switch, as its row sends it: no focus or visibility change of the window.
+    await markPoolOwned("team", true);
+
+    await waitFor(() =>
+      expect(calls.filter((call) => call.cmd === "pool_setup").length).toBeGreaterThan(before),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Open Settings › Pools" })).toBeNull(),
+    );
   });
 });

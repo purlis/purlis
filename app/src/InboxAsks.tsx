@@ -1,7 +1,15 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { Fragment, useCallback, useId, useRef, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useCallback,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Send, X } from "lucide-react";
 import { RestartEndsLine } from "./RestartEnds";
 import { commands, type Offered, type PlaneId, type ReachedWhy, type Shown } from "./bindings";
@@ -10,7 +18,7 @@ import { counted as countedSaid } from "./dispatches";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
 import { KindIcon, kindOfAsk, RowAge } from "./InboxRow";
 import { toneOfKind } from "./messageTone";
-import { keepInboxScope, keptInboxScope, scopeOf, type InboxScope } from "./inboxScope";
+import { asksScopeOf, keptAsksScope, pickAsksScope, type AsksScope } from "./asksScope";
 import { NoQuestion, ReadingTheQuestion, useAnswerQuestion } from "./AnswerQuestion";
 import { askKey, heldKey, noteAnswered, replyBytes, ageOf, type Answered } from "./inboxRules";
 import { type AllowedLately } from "./allowedLately";
@@ -134,6 +142,7 @@ export const ALLOW_OR_KEEP: ReadonlySet<Shown["source"]> = new Set<Shown["source
   "secret-fill",
   "vault",
   "sandbox-expects",
+  "persona-allow",
 ]);
 
 /** What one ask's row offers, decided once for its stops and its drawing. */
@@ -276,6 +285,8 @@ export const DECISIONS: ReadonlySet<Shown["source"]> = new Set<Shown["source"]>(
   // What the project expects of this machine, and a command's confirmation (#6000).
   "sandbox-expects",
   "confirmation",
+  // A persona's hosts and tools, waiting for an Allow here (ADR 0121, amended 2026-11-12).
+  "persona-allow",
   // A chat paused at its budget or as looping (#6015).
   "budget",
   "looping",
@@ -291,6 +302,7 @@ const QUESTION: Partial<Record<Shown["source"], string>> = {
   browser: "Let its browser reach this?",
   "browser-site": "Let its browser reach this site?",
   "sandbox-expects": "Allow what this project expects?",
+  "persona-allow": "Allow this persona's hosts and tools?",
   confirmation: "Confirm what this command asks?",
   budget: "Let it go on past its budget?",
   looping: "Let it go on?",
@@ -501,6 +513,7 @@ export const SOURCE_SAID: Record<Shown["source"], string> = {
   question: "Waiting on your reply",
   "task-question": "Asks you, through its asking chat",
   "sandbox-expects": "Asks you to allow what this project expects",
+  "persona-allow": "Its hosts or tools wait for your Allow",
   confirmation: "A command waits on your confirmation",
   budget: "Paused at its budget",
   looping: "Paused, as it may be looping",
@@ -618,9 +631,16 @@ export function Ask({
     // The question asked once more is drawn anew, and its Allow waits to settle (#6178).
     asking === undefined ? "" : `confirming ${asking.option.id}`,
   ].join("\n");
-  const { drawn, drawnAt, tooSoon, readPlaces } = useSettledPlace<HTMLElement>(here);
+  /** Its watch to be seen, once its row is attached (`useSettledPlace`). */
+  const seenAttached = useRef<() => void>(undefined);
+  const { drawn, drawnAt, tooSoon, readPlaces } = useSettledPlace<HTMLElement>(here, () =>
+    seenAttached.current?.(),
+  );
   // **New until seen** (#6002): its accent bar, until it has been in sight for about a second.
   const [isNew, seenDrawnNow] = useSeenRow(askSeenKey(ask), drawn, seen);
+  useLayoutEffect(() => {
+    seenAttached.current = seenDrawnNow;
+  });
   /** **The keyboard goes into the form its Answer opens** (#5651): onto its box, or its first
    *  answer. A task's box takes it itself once its question is read (`useAnswerQuestion`). */
   const focusForm = useRef(false);
@@ -708,6 +728,7 @@ export function Ask({
         if (opened === true) return;
         noteAnswered(plane, {
           at: Date.now(),
+          session: ask.session,
           chain: ask.chain,
           says: ask.says,
           answer: option.label,
@@ -1121,6 +1142,7 @@ function Reply({ plane, ask }: { plane: PlaneId; ask: Shown }) {
         }
         noteAnswered(plane, {
           at: Date.now(),
+          session: ask.session,
           chain: ask.chain,
           says: ask.says,
           answer: text.trim(),
@@ -1186,7 +1208,13 @@ function Reply({ plane, ask }: { plane: PlaneId; ask: Shown }) {
 
 /** Notes `answer` given to `ask` just now, for the list's recently answered. */
 function answeredNow(plane: PlaneId, ask: Shown, answer: string) {
-  noteAnswered(plane, { at: Date.now(), chain: ask.chain, says: ask.says, answer });
+  noteAnswered(plane, {
+    at: Date.now(),
+    session: ask.session,
+    chain: ask.chain,
+    says: ask.says,
+    answer,
+  });
 }
 
 /**
@@ -1362,13 +1390,23 @@ export function Empty({
   );
 }
 
-/** What the scope switch is called. */
+/** What the scope chips are called. */
 export const SCOPE_LABEL = "Show what needs you in";
 
+/** Why Chat is greyed (ADR 0121, amended 2026-11-12, decision 2). */
+export const NO_CHAT_FOCUSED = "No chat has focus. Pick one to list its asks here.";
+
+/** What Chat's tooltip says of the focused chat: "steward 8 and its 2 tasks". */
+export function tasksSaid(name: string, tasks: number): string {
+  if (tasks <= 0) return name;
+  return tasks === 1 ? `${name} and its task` : `${name} and its ${tasks} tasks`;
+}
+
 /**
- * **A scope with nothing in it, while a wider one has something** (qw359): it says so, says how
- * many wait in the nearest wider scope, and widens in one press, so a narrow pick never reads
- * as "nothing needs you".
+ * **A scope with nothing in it, while a wider one has something** (qw359; ADR 0121, amended
+ * 2026-11-12, decision 4): it says so, and its way out says how many wait in the nearest wider
+ * scope, one press to widen, so a narrow pick never reads as "nothing needs you". It never
+ * widens by itself.
  */
 export function EmptyScope({
   said,
@@ -1377,18 +1415,15 @@ export function EmptyScope({
 }: {
   /** What the scope says of itself: that nothing waits in it, or that it is not read yet. */
   said: string;
-  wider: { scope: InboxScope; count: number } | undefined;
+  wider: { scope: AsksScope; count: number } | undefined;
   onWiden: () => void;
 }) {
   if (wider === undefined) return <p className="inbox-none">{said}</p>;
   return (
     <div className="inbox-scope-empty">
       <p className="inbox-none">{said}</p>
-      <p className="inbox-none">
-        {`${wider.count} ${wider.count === 1 ? "waits" : "wait"} in ${scopeOf(wider.scope)}.`}
-      </p>
       <Button size="sm" onPress={onWiden}>
-        {`Show ${scopeOf(wider.scope)}`}
+        {`${wider.count} waiting in ${asksScopeOf(wider.scope)}`}
       </Button>
     </div>
   );
@@ -1423,12 +1458,13 @@ export function landOnGroup(session: number, source?: Shown["source"]): boolean 
 
 /**
  * **The same landing, through a scope that leaves the chat out** (qw359): a notification is
- * about one ask, and This workspace may not list its chat. So where the group is not drawn and
- * the scope is the workspace's, the scope widens to the project's, as revealing a row a filter
- * hides clears the filter, and the landing is tried again once that is drawn.
+ * about one ask, and Chat or Workspace may not list its chat. So where the group is not drawn and
+ * the scope is narrower than the project's, it widens to Project, as revealing a row a filter
+ * hides clears the filter, and the landing is tried again once that is drawn. The person's press
+ * on the notification is the widening; nothing widens by itself.
  */
 export function landOnGroupIn(plane: PlaneId, session: number, source?: Shown["source"]): void {
-  if (landOnGroup(session, source) || keptInboxScope(plane) !== "workspace") return;
-  keepInboxScope(plane, "project");
+  if (landOnGroup(session, source) || keptAsksScope(plane) === "project") return;
+  pickAsksScope(plane, "project");
   requestAnimationFrame(() => landOnGroup(session, source));
 }

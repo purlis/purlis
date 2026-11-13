@@ -20,6 +20,7 @@ import type { ChatCard, LinkCandidate, LinkOpened, LinkSeen } from "./bindings";
 import { LinkAnswer } from "./PaneLinkSurfaces";
 import { usePaneLinkChats } from "./PaneLinkChats";
 import { LINK_CORE } from "./paneLinkCore";
+import { onAMac } from "./mac";
 import { ReadOnlyTerminal } from "./ReadOnlyTerminal";
 import { expectFocusInSight, pictureNow, untilFocused } from "./stories.testkit";
 
@@ -50,8 +51,12 @@ const FILE_TURN = [
 const CARD: ChatCard = {
   number: 641,
   chat: "01K6W0RKER000000000000000B",
+  title: "Signed commits #5607",
+  ended: "2026-11-11T11:08:00",
+  place: "smart-ide",
   started_by: "steward 4",
   screen_kept: true,
+  dispatched: true,
   task: {
     id: "01K9DISPATCH0000000000000A",
     asker: 0,
@@ -283,6 +288,49 @@ export const ClosedChatCardFromALink: StoryObj<typeof meta> = {
     // Drawn once the popover has come in.
     await waitFor(() => expect(read).toBeVisible());
     await expect(within(card).getByRole("button", { name: "Reopen" })).toBeVisible();
+    await userEvent.tab();
+    await untilFocused(() => read, "Tab reaches Read it first");
+    expectFocusInSight();
+    await pictureNow();
+
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(page.queryByRole("dialog")).toBeNull());
+  },
+};
+
+/**
+ * **The card from Links in this pane…** (#6442): the keyboard's way to the same card. The list
+ * closes on Enter, so the row is gone, and the card stands at the link, as a ⌘-click's does (the
+ * prototype's D7), and not at the window's top left.
+ */
+export const ClosedChatCardFromTheList: StoryObj<typeof meta> = {
+  render: () => <Pane screen={CHAT_TURN} />,
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement.ownerDocument.body);
+    await drawn(canvasElement);
+    const region = await page.findByRole("region", { name: "A saved chat's last screen" });
+    region.focus();
+    await userEvent.keyboard(
+      onAMac() ? "{Meta>}{Shift>}L{/Shift}{/Meta}" : "{Control>}{Shift>}L{/Shift}{/Control}",
+    );
+    const list = await page.findByRole("dialog", { name: "Links in this pane" });
+    const row = await within(list).findByRole("option", { name: "chat 641" });
+    await userEvent.keyboard("{ArrowDown}");
+    // Newest first: chat 660 on the lower row, then chat 641.
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(() => row, "The down arrow reaches chat 641");
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+
+    const card = await page.findByRole("dialog", { name: "#641 · Signed commits #5607" });
+    const read = within(card).getByRole("button", { name: "Read it" });
+    await waitFor(() => expect(read).toBeVisible());
+    // Beside the link: below its row, within the screen, not at the window's corner.
+    const { screen } = cellOf(canvasElement, 4, 0);
+    const box = screen.getBoundingClientRect();
+    const at = card.getBoundingClientRect();
+    await expect(at.top).toBeGreaterThan(box.top);
+    await expect(at.left).toBeGreaterThanOrEqual(box.left - 1);
     await userEvent.tab();
     await untilFocused(() => read, "Tab reaches Read it first");
     expectFocusInSight();

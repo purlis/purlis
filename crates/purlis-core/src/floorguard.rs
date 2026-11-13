@@ -240,7 +240,9 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
         return Some(format!("{fix}{}", merge::UNREADABLE));
     }
     let inner_floor = |inner: &str| floor(inner, unattended, depth + 1);
-    let segments = shellseg::segment_argv(cmd);
+    // A heredoc body nothing runs is data, and only the substitutions of one the shell
+    // expands run (#6293).
+    let segments = shellseg::segment_argv(&crate::heredoc::commands_a_shell_runs(cmd));
     // A shell that reads its script from stdin is fed by the rest of the line (#866).
     let a_shell_reads_stdin = segments
         .iter()
@@ -475,6 +477,25 @@ mod tests {
             assert!(release_floor_reason(cmd, true).is_some(), "{cmd}");
         }
         assert_eq!(release_floor_reason("purlis skill list", true), None);
+    }
+
+    /// A heredoc body nothing runs is data (#6293), and what a shell does run is still read.
+    #[test]
+    fn an_unattended_run_may_write_a_heredoc_that_names_a_release() {
+        for cmd in [
+            "cat >> ledger.md <<'EOF'\n- released with `git push --tags`\nEOF",
+            "cat > p.sh <<-'EOF'\n\tgh release create v1\n\tEOF",
+            "cat > notes.md <<EOF\ngit tag v1.2.3 for $USER\nEOF",
+        ] {
+            assert_eq!(release_floor_reason(cmd, true), None, "{cmd}");
+        }
+        for cmd in [
+            "cat > f <<'EOF'\nnotes\nEOF\ngit push --tags",
+            "bash <<'EOF'\ngh release create v1\nEOF",
+            "cat > f <<EOF\n$(git tag v1.2.3)\nEOF",
+        ] {
+            assert!(release_floor_reason(cmd, true).is_some(), "{cmd}");
+        }
     }
 
     /// Attended is untouched, whatever the command is.

@@ -1,14 +1,14 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { act, renderHook } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import { renderHook } from "@testing-library/react";
 import type { Shown } from "./bindings";
-import { arrivedSaid, PULSED_KEY, useAsksArrival } from "./asksArrival";
+import { arrivedSaid, useAsksArrival } from "./asksArrival";
 
 /**
- * **A Blocking ask arriving** (ADR 0121 decisions 24 and 25, #6020): said once, politely, and
- * the first one on this machine that arrives while Asks is closed pulses the ✋, once.
+ * **A Blocking ask arriving** (ADR 0121 decision 25, #6020): said once, politely, and counted
+ * when it arrives in this project, for the ✋'s bounce (#6343).
  */
 
 const ask = (session: number, says = "Run cargo test"): Shown => ({
@@ -21,13 +21,10 @@ const ask = (session: number, says = "Run cargo test"): Shown => ({
   answer: { via: "hook" },
 });
 
-beforeEach(() => localStorage.clear());
-afterEach(() => localStorage.clear());
-
-type Props = { asks: readonly Shown[] | undefined; elsewhere: number; shown: boolean };
+type Props = { asks: readonly Shown[] | undefined; elsewhere: number };
 
 function arrival(first: Props) {
-  return renderHook((props: Props) => useAsksArrival(props.asks, props.elsewhere, props.shown), {
+  return renderHook((props: Props) => useAsksArrival(props.asks, props.elsewhere), {
     initialProps: first,
   });
 }
@@ -43,63 +40,42 @@ describe("what a new ask says (ADR 0121 decision 25)", () => {
 
 describe("useAsksArrival", () => {
   it("says nothing of what already waited when the asks were first read", () => {
-    const { result, rerender } = arrival({ asks: undefined, elsewhere: 0, shown: false });
-    rerender({ asks: [ask(1)], elsewhere: 0, shown: false });
+    const { result, rerender } = arrival({ asks: undefined, elsewhere: 0 });
+    rerender({ asks: [ask(1)], elsewhere: 0 });
     expect(result.current.said.said).toBe("");
-    expect(result.current.pulse).toBe(false);
+    expect(result.current.here).toBe(0);
   });
 
   it("says a new ask once, and nothing more when the same asks are drawn again", () => {
-    const { result, rerender } = arrival({ asks: [], elsewhere: 0, shown: true });
-    rerender({ asks: [ask(1)], elsewhere: 0, shown: true });
+    const { result, rerender } = arrival({ asks: [], elsewhere: 0 });
+    rerender({ asks: [ask(1)], elsewhere: 0 });
     const said = result.current.said;
     expect(said.said).toBe("New ask from steward 1: Run cargo test");
     // Drawn again with the same asks, in a fresh list: the same line, not said again.
-    rerender({ asks: [ask(1)], elsewhere: 0, shown: true });
-    rerender({ asks: [ask(1)], elsewhere: 0, shown: false });
+    rerender({ asks: [ask(1)], elsewhere: 0 });
+    rerender({ asks: [ask(1)], elsewhere: 0 });
     expect(result.current.said).toBe(said);
   });
 
   it("says an ask that rose elsewhere", () => {
-    const { result, rerender } = arrival({ asks: [], elsewhere: 0, shown: true });
-    rerender({ asks: [], elsewhere: 1, shown: true });
+    const { result, rerender } = arrival({ asks: [], elsewhere: 0 });
+    rerender({ asks: [], elsewhere: 1 });
     expect(result.current.said.said).toBe("New ask in another project");
-    rerender({ asks: [], elsewhere: 0, shown: true });
+    rerender({ asks: [], elsewhere: 0 });
     expect(result.current.said.said).toBe("New ask in another project");
   });
 
-  it("pulses the ✋ for the first ask that arrives while Asks is closed, and keeps that on this machine", () => {
-    const { result, rerender, unmount } = arrival({ asks: [], elsewhere: 0, shown: false });
-    rerender({ asks: [ask(1)], elsewhere: 0, shown: false });
-    expect(result.current.pulse).toBe(true);
-    expect(localStorage.getItem(PULSED_KEY)).not.toBeNull();
-    act(() => result.current.pulsed());
-    expect(result.current.pulse).toBe(false);
-    // Another ask, and another window: once per machine.
-    rerender({ asks: [ask(1), ask(2)], elsewhere: 0, shown: false });
-    expect(result.current.pulse).toBe(false);
-    unmount();
-    const again = arrival({ asks: [], elsewhere: 0, shown: false });
-    again.rerender({ asks: [ask(3)], elsewhere: 0, shown: false });
-    expect(again.result.current.pulse).toBe(false);
-  });
-
-  it("does not pulse for an ask that arrives while Asks is open, and pulses for the next one closed", () => {
-    const { result, rerender } = arrival({ asks: [], elsewhere: 0, shown: true });
-    rerender({ asks: [ask(1)], elsewhere: 0, shown: true });
-    expect(result.current.pulse).toBe(false);
-    expect(localStorage.getItem(PULSED_KEY)).toBeNull();
-    rerender({ asks: [ask(1)], elsewhere: 0, shown: false });
-    expect(result.current.pulse).toBe(false);
-    rerender({ asks: [ask(1), ask(2)], elsewhere: 0, shown: false });
-    expect(result.current.pulse).toBe(true);
-  });
-
-  it("stops the pulse once Asks is opened", () => {
-    const { result, rerender } = arrival({ asks: [], elsewhere: 0, shown: false });
-    rerender({ asks: [ask(1)], elsewhere: 0, shown: false });
-    expect(result.current.pulse).toBe(true);
-    rerender({ asks: [ask(1)], elsewhere: 0, shown: true });
-    expect(result.current.pulse).toBe(false);
+  it("counts each read that brought an ask to this project, and not one that rose elsewhere", () => {
+    const { result, rerender } = arrival({ asks: [], elsewhere: 0 });
+    expect(result.current.here).toBe(0);
+    rerender({ asks: [ask(1), ask(2)], elsewhere: 0 });
+    expect(result.current.here).toBe(1);
+    rerender({ asks: [ask(1), ask(2)], elsewhere: 0 });
+    rerender({ asks: [ask(2)], elsewhere: 0 });
+    expect(result.current.here).toBe(1);
+    rerender({ asks: [ask(2)], elsewhere: 3 });
+    expect(result.current.here).toBe(1);
+    rerender({ asks: [ask(2), ask(4)], elsewhere: 3 });
+    expect(result.current.here).toBe(2);
   });
 });

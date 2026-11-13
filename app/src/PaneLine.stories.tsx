@@ -62,8 +62,17 @@ const SPLITS: Offer[] = [
   },
 ];
 
+/** Its pane's links (#6332), under every drawn chat's and task's Open ▸, with ⇧⌘L at its end. */
+const LINKS: Offer = {
+  id: `chat.links:${SESSION}`,
+  title: "Links in fix-login…",
+  available: true,
+  reason: "",
+  does: { verb: "listLinks", session: SESSION },
+};
+
 /** The task's list, which its ⋯ opens. */
-const LIST = catalogued([STOP, CLOSE]);
+const LIST = catalogued([LINKS, STOP, CLOSE]);
 
 /** The head of a pane showing a task, with what was last pressed on it said under it. */
 function PaneLine() {
@@ -162,6 +171,15 @@ type Story = StoryObj<typeof meta>;
  */
 export const ATasksLine: Story = {
   play: async ({ canvas, canvasElement, userEvent }) => {
+    // **The number is drawn at the path's size** (#6297): "#7" beside the path is its small
+    // text, not a step larger.
+    const path = canvasElement.querySelector(".pane-crumbs");
+    const number = canvasElement.querySelector(".pane-number");
+    await expect(path).not.toBeNull();
+    await expect(number).not.toBeNull();
+    await expect(getComputedStyle(number as Element).fontSize).toBe(
+      getComputedStyle(path as Element).fontSize,
+    );
     const status = canvas.getByRole("status");
     const harness = canvas.getByRole("button", { name: "What Claude Code can do here" });
     const brief = canvas.getByRole("button", { name: "Brief of fix-login" });
@@ -186,6 +204,13 @@ export const ATasksLine: Story = {
     expectFocusInSight();
     await userEvent.keyboard("{Enter}");
     const menu = await within(document.body).findByRole("menu");
+    // Its pane's links (#6332), under Open ▸, with the registry's key drawn and said.
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "Open" }));
+    await waitFor(() => expect(within(document.body).getAllByRole("menu")).toHaveLength(2));
+    const opened = within(document.body).getAllByRole("menu")[1];
+    await expect(
+      within(opened).getByRole("menuitem", { name: "Links in this pane…" }),
+    ).toHaveAttribute("aria-keyshortcuts", expect.stringMatching(/Shift.*L$/));
     await expect(within(menu).getByRole("menuitem", { name: /^Close now/ })).toHaveAttribute(
       "aria-disabled",
       "true",

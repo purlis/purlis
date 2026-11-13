@@ -131,6 +131,15 @@ impl Scan {
     /// with its escaping backslashes taken off ([`Opened::Tick`]). One left open runs to the
     /// end of the text, which a shell refuses to run at all.
     pub(crate) fn substitutions(&self) -> Vec<String> {
+        self.substitutions_at()
+            .into_iter()
+            .map(|(_, text)| text)
+            .collect()
+    }
+
+    /// [`Scan::substitutions`], each with the character offset its body starts at: just past
+    /// its `$(` or its backtick.
+    pub(crate) fn substitutions_at(&self) -> Vec<(usize, String)> {
         let chars = &self.chars;
         let mut out = Vec::new();
         let mut taken_to = 0usize;
@@ -150,10 +159,13 @@ impl Scan {
                 .filter(|&j| !self.found.gone[j])
                 .map(|j| chars[j])
                 .collect();
-            out.push(match opened {
-                Opened::Dollar => body.iter().collect(),
-                Opened::Tick { quoted } => untick(&body, quoted),
-            });
+            out.push((
+                from,
+                match opened {
+                    Opened::Dollar => body.iter().collect(),
+                    Opened::Tick { quoted } => untick(&body, quoted),
+                },
+            ));
             taken_to = to + 1;
         }
         out

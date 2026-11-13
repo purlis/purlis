@@ -15,15 +15,22 @@
 //!   that chat, and the newest is what it did last. A task that never had a chat
 //!   ([`dispatchrecord::never_a_chat`]) names nobody, and a record that does not read as one the
 //!   app wrote ([`dispatchrecord::sound`]) is passed over.
-//! - **What it knows is what the records know.** A chat the person opened and closed with no
-//!   dispatch record leaves nothing here, and is "no chat".
+//! - **A chat no dispatch started has its own record** (#6304): the app keeps number → ULID →
+//!   title, times and who started it as any chat closes for good ([`crate::chatrecords`]).
+//!   A dispatch record is read first, as it is the fuller card; a chat record answers where no
+//!   dispatch record names the number, or where the one that does draws no card: a handoff's,
+//!   a task's that ended owing no report, or one still running. It is matched to the open
+//!   chats by ULID too.
+//! - **What it knows is what the records know.** A number neither names, or one swept after 30
+//!   days, is "no chat".
 //!
 //! **One entry point** ([`by_number_in`]), the app's window command (`chat_by_number`) and the
 //! pane's chat links (#6217) both call it. [`by_number`] is the same answer from records already
-//! read.
+//! read ([`Known`]).
 
 use std::path::Path;
 
+use crate::chatrecords::{self, ChatRecord};
 use crate::dispatchrecord::{self, ChatRef, Record};
 
 /// A chat the app has open now: the number it answers to, and its ULID where it has one.
@@ -42,40 +49,89 @@ pub enum Found {
     Restarted { now: u32 },
     /// The chat has ended: its newest dispatch record, which its card is drawn from.
     Ended(Box<Record>),
+    /// A chat no dispatch started has closed: the app's record of it, which its card is drawn
+    /// from. It kept no screen.
+    Closed(Box<ChatRecord>),
     /// No chat had it, or none that purlis kept a record of.
     NoChat,
 }
 
-/// **What `number` names in the project at `root`**, given the chats open now: one read of its
-/// dispatch records.
-pub fn by_number_in(root: &Path, number: u32, open: &[OpenChat]) -> Found {
-    // An open chat is answered without reading a record.
-    open_under(number, open).unwrap_or_else(|| not_open(number, open, &dispatchrecord::list(root)))
+/// **What a project's records say of its chats**, read once: its dispatch records, newest first
+/// as [`dispatchrecord::list`] lists them, and its closed chats ([`chatrecords::every`]).
+#[derive(Debug, Clone, Default)]
+pub struct Known {
+    pub dispatches: Vec<Record>,
+    pub chats: Vec<ChatRecord>,
 }
 
-/// [`by_number_in`], from `records` read already, newest first as [`dispatchrecord::list`] lists
-/// them.
-pub fn by_number(number: u32, open: &[OpenChat], records: &[Record]) -> Found {
-    open_under(number, open).unwrap_or_else(|| not_open(number, open, records))
+impl Known {
+    /// Both read from the project at `root`.
+    pub fn read(root: &Path) -> Self {
+        Self {
+            dispatches: dispatchrecord::list(root),
+            chats: chatrecords::every(root),
+        }
+    }
+}
+
+/// **What `number` names in the project at `root`**, given the chats open now: one read of its
+/// records.
+pub fn by_number_in(root: &Path, number: u32, open: &[OpenChat]) -> Found {
+    // An open chat is answered without reading a record.
+    open_under(number, open).unwrap_or_else(|| not_open(number, open, &Known::read(root)))
+}
+
+/// [`by_number_in`], from records read already.
+pub fn by_number(number: u32, open: &[OpenChat], known: &Known) -> Found {
+    open_under(number, open).unwrap_or_else(|| not_open(number, open, known))
 }
 
 /// What `number` names where no open chat answers to it.
-fn not_open(number: u32, open: &[OpenChat], records: &[Record]) -> Found {
-    let Some(record) = records.iter().find(|record| {
+fn not_open(number: u32, open: &[OpenChat], known: &Known) -> Found {
+    let Some(record) = known.dispatches.iter().find(|record| {
         record.worker.chat.chat == number
             && !dispatchrecord::never_a_chat(record)
             && dispatchrecord::sound(record)
     }) else {
-        return Found::NoChat;
+        return closed(chatrecords::of_number(&known.chats, number), open);
     };
     if let Some(now) = open.iter().find(|chat| is(&record.worker.chat, chat)) {
         return Found::Restarted { now: now.number };
     }
-    if record.running() {
-        // Its record is open and no chat has it: a start still waiting, nothing ended to show.
-        return Found::NoChat;
+    if !makes_a_card(record) {
+        // A handoff's record, a task's that ended owing no report, or one still running draws
+        // no card: the chat's own record, kept as it closed, is what answers for it. By the
+        // record's ULID where it names one, so a number dealt again never shows another chat.
+        let chat = match record.worker.chat.id.as_deref() {
+            Some(id) => known.chats.iter().find(|chat| chat.id == id),
+            None => chatrecords::of_number(&known.chats, number),
+        };
+        return closed(chat, open);
     }
     Found::Ended(Box::new(record.clone()))
+}
+
+/// **Whether a dispatch record makes a closed chat's card**: a finished task's
+/// ([`dispatchrecord::Finished::of`]) whose chat had a ULID. The window's card is drawn from
+/// such a record alone (`chatcard::card_of`).
+pub fn makes_a_card(record: &Record) -> bool {
+    record.worker.chat.id.is_some() && dispatchrecord::Finished::of(record).is_some()
+}
+
+/// What a closed chat's record `chat` answers where no dispatch record draws a card: its card,
+/// or the chat open again under another number, matched by its ULID. No chat where there is no
+/// record.
+fn closed(chat: Option<&ChatRecord>, open: &[OpenChat]) -> Found {
+    let Some(chat) = chat else {
+        return Found::NoChat;
+    };
+    match open
+        .iter()
+        .find(|one| one.id.as_deref() == Some(chat.id.as_str()))
+    {
+        Some(now) => Found::Restarted { now: now.number },
+        None => Found::Closed(Box::new(chat.clone())),
+    }
 }
 
 fn open_under(number: u32, open: &[OpenChat]) -> Option<Found> {

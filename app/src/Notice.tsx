@@ -1149,26 +1149,33 @@ export const countsInStatusBar = (cause: string): boolean =>
 
 /**
  * **The families whose arrival brings the Inbox on screen** (D-1695-3), where it is put away or
- * showing another view: each answers something the person just did. A refusal, an Undo of a few
- * seconds and a save's record answer a press; the summary of a time away answers their coming
- * back, and is the first thing they read then (#1514). A Notice that arrives on its own never
- * moves the window.
+ * showing another view: each answers the press the person just made, at once. A refusal and an
+ * Undo of a few seconds do. A Notice that arrives on its own never moves the window (ADR 0121:
+ * nothing but a Blocking ask interrupts), and neither does one that comes later than its press.
+ * A save's record lands when a chat has written it, minutes after Smart close or with no press
+ * at all, as a task closes with the chat that asked for it. The summary of a time away arrives
+ * on every return. Both opened Notices over whatever the person had open, so they are only
+ * listed.
  */
 export const ANSWERS: ReadonlySet<string> = new Set([
   "window-trouble",
   "memory-deleted",
   "memory-moved",
   "pin-forgotten",
-  "session-saved",
-  "away-summary",
 ]);
 
 /**
  * **The lines whose own Dismiss stands no Undo** (#5650): each answers something the person
- * just did ({@link ANSWERS}) or is an Undo itself (a layout change's), and goes by itself. Put
- * away, it is gone at once, as it was; Dismiss all still takes it with the rest, under one Undo.
+ * did ({@link ANSWERS}, a save's record, the summary of a time away) or is an Undo itself (a
+ * layout change's), and goes by itself. Put away, it is gone at once, as it was; Dismiss all
+ * still takes it with the rest, under one Undo.
  */
-const GOES_AT_ONCE: ReadonlySet<string> = new Set([...ANSWERS, "layout-changed"]);
+const GOES_AT_ONCE: ReadonlySet<string> = new Set([
+  ...ANSWERS,
+  "session-saved",
+  "away-summary",
+  "layout-changed",
+]);
 
 type Stacked = {
   cause: string;

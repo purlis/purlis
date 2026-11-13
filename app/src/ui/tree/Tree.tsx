@@ -874,7 +874,12 @@ export function TreeSection<T extends object>({
       data-part="section"
     >
       {title !== undefined && (
-        <AriaTreeHeader data-scope="tree" data-part="header" data-named={named || undefined}>
+        <AriaTreeHeader
+          className="ui-text-label"
+          data-scope="tree"
+          data-part="header"
+          data-named={named || undefined}
+        >
           {title}
         </AriaTreeHeader>
       )}

@@ -90,8 +90,9 @@ export function chatSaid(chat: ChatSeen, click: string): string {
         ? `Open · ${click} shows its tab`
         : `Open in ${chat.workspace} · ${click} shows it there`;
     case "ended": {
-      const at = endedAt(chat.card.task.ended);
-      const how = capitalised(chat.card.task.outcome);
+      const at = endedAt(chat.card.ended);
+      // A chat no dispatch started has no task: it closed (#6304).
+      const how = capitalised(chat.card.task?.outcome ?? "closed");
       return `${at === undefined ? how : `${how} ${at}`} · ${click} shows its card`;
     }
   }
@@ -255,7 +256,8 @@ export function usePaneLinks({
           onClose={closeLinksList}
           onPick={(link) => {
             closeLinksList();
-            if (hands !== undefined) void openLink(link.candidate, hands);
+            // A chat's card stands at the link: the list it was picked in has gone (#6442).
+            if (hands !== undefined) void openLink(link.candidate, hands, null, link.place);
           }}
           onCopy={(link) => {
             void navigator.clipboard?.writeText(link.seen.target).catch((why: unknown) => {

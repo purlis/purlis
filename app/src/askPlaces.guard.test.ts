@@ -60,6 +60,7 @@ const PLACES = {
   secret: { at: "pane" },
   "run-grant": { at: "pane" },
   "sandbox-expects": { at: "no-chat" },
+  "persona-allow": { at: "no-chat" },
   confirmation: { at: "no-chat" },
   budget: { at: "pane" },
   looping: { at: "pane" },
