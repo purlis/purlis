@@ -8,8 +8,12 @@ decisions Q154 and Q240 replace that row (T1-09, #6400).
 - **A held connection stops being an ask once the chat stops waiting on it.** That happens when
   its hold runs out (60 s, or up to `sandbox::asks::MOST_HELD_OPEN` while Quiet), or when the chat
   moves on. Its ask leaves the registry, and one `stop.block` with source `sandbox` is written to
-  the event log, naming the host (or the runner's service by its port) and the tool of the call
-  it was held under. It is never listed timed out, and it is never an ask and a block at once.
+  the event log, naming the host (or the runner's service by its port), the tool of the call it
+  was held under, and that call's arguments digest: its `args`, the HMAC of the arguments'
+  SHA-256 as its hook sent it, keyed as a tool event's is (`docs/plane-format.md`). The tool and
+  the digest are the target the block loop matches on (R-206, T1-12); a block written where no
+  call was heard has neither. It is never listed timed out, and it is never an ask and a block
+  at once.
   `taskblocks::Blocks::gave_up`, which that row named, no longer exists.
 - **"The chat moved on" is narrow** (Q240). It means the call that was open when the ask was
   raised has ended (its post-tool hook line, matched by call id), and then the same agent made

@@ -528,6 +528,10 @@ struct Running {
     runs_as: Option<String>,
     /// **What its runner said it armed it with** (SK-15h, #4218): `None` for a chat armed here.
     runners_word: Option<RunnersWord>,
+    /// **Whether its hooks report from outside its reach** (Q235, Q237), read from the
+    /// attributes its run began with: what a block its hook line reports is worth toward the
+    /// block loop (R-209).
+    reports_verified: bool,
 }
 
 /// **Whether the plane's skills reach a chat starting now** (#3445, #3466): a chat
@@ -6021,6 +6025,9 @@ impl Chats {
                 prompt_key,
                 runs_as: runs_as.clone(),
                 runners_word: armed_by_its_runner.then(|| RunnersWord::of(armed_skills)),
+                reports_verified: purlis_core::eventlog::stops::reported_from_outside_its_reach(
+                    &attributes,
+                ),
             },
         );
         drop(open);
@@ -7555,6 +7562,16 @@ impl Chats {
         }
     }
 
+    /// **Whether chat `session` is open and its hooks report from outside its reach** (Q235,
+    /// Q237): a Claude Code chat under a backend that leaves its hooks outside the sandbox, as
+    /// its run began. Any other chat's reports are unverified, and never count toward the block
+    /// loop (R-209).
+    pub fn reports_from_outside_its_reach(&self, session: u32) -> bool {
+        lock(&self.open)
+            .get(&session)
+            .is_some_and(|running| running.reports_verified)
+    }
+
     /// **Whether chat `session` is open and runs in a sandbox its host composed for it** (#2692):
     /// a runner's chat whose run the runner's record does not say is off. Its sandbox, and the
     /// tools it armed, are the runner's, so this window holds no record of them, and a restart
@@ -9087,8 +9104,13 @@ pub type AsksMoved = Arc<dyn Fn() + Send + Sync + 'static>;
 
 /// **What writes a stop of chat `number`'s into the event log** (R-290), made durable before
 /// it answers: told only as a held connection's ask is withdrawn, so what that ask set goes too.
+/// With it, the harness's id for the call the connection was held under, where one was heard:
+/// the block loop counts a call once (Q253).
 pub type StopWriter = Arc<
-    dyn Fn(u32, purlis_core::eventlog::stops::Stop) -> std::io::Result<()> + Send + Sync + 'static,
+    dyn Fn(u32, purlis_core::eventlog::stops::Stop, Option<String>) -> std::io::Result<()>
+        + Send
+        + Sync
+        + 'static,
 >;
 
 /// Who a chat's board of live asks tells (#1666), and as whom.
@@ -9204,7 +9226,7 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::pl
                 if let Some(block) = live_block(&target)
                     && let Some(withdrawn) = blocks.stopped_waiting(chat, &block)
                 {
-                    became_a_block(&stops, chat, withdrawn.tool, &block);
+                    became_a_block(&stops, chat, withdrawn, &block);
                     if let Some(moved) = lock(&moved).clone() {
                         told(Box::new(move || moved()));
                     }
@@ -9225,14 +9247,15 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::pl
 
 /// **Writes `block`, a held connection chat `chat` stopped waiting on, as one Sandbox block**
 /// (R-290, Q154), once its ask is withdrawn: the host, or the runner's service by its port, as
-/// a grant names it, and `tool`, the harness's name for the call it was held under (empty where
-/// no call was heard). The target is the proxy's own word; the tool comes from the chat's hook
-/// line, which a sandboxed chat holds the token to send (Q235's known limit). A write that fails
-/// is said in the app's log.
+/// a grant names it, and the call it was held under (`withdrawn`): the harness's name for its
+/// tool (empty where no call was heard) and its arguments' hash, the target the block loop
+/// matches on (R-206), and its id, so the loop counts that call once (Q253). The target is the
+/// proxy's own word; the tool comes from the chat's hook line, which a sandboxed chat holds the
+/// token to send (Q235's known limit). A write that fails is said in the app's log.
 fn became_a_block(
     stops: &Mutex<Option<StopWriter>>,
     chat: u32,
-    tool: Option<String>,
+    withdrawn: crate::taskblocks::Withdrawn,
     block: &crate::taskblocks::HeldBlock,
 ) {
     use purlis_core::eventlog::stops::{Block, Source, Stop, Target};
@@ -9245,13 +9268,13 @@ fn became_a_block(
     }
     .ok();
     let stop = Stop::Block(Block {
-        tool: tool.unwrap_or_default(),
+        tool: withdrawn.tool.unwrap_or_default(),
         source: Source::Sandbox,
         qualifier: None,
         target,
-        args: None,
+        args: withdrawn.args,
     });
-    if let Err(why) = write(chat, stop) {
+    if let Err(why) = write(chat, stop, withdrawn.call) {
         tracing::warn!("purlis: chat {chat}'s sandbox block was not written ({why})");
     }
 }
