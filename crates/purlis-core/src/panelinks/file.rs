@@ -145,9 +145,10 @@ const MOST_LINKS: usize = 40;
 /// not ignore, `Some(false)` for one it doesn't offer, and `None` where it could not say.
 pub type Offers = dyn Fn(&Path, Branch<'_>, &str) -> Option<bool> + Send + Sync;
 
-/// What the hover of a file its branch doesn't offer says (#6357).
+/// What the hover of a file its branch doesn't offer says (#6357). It names no cause: an ignored
+/// file and one in a submodule are both outside what the editor opens.
 pub const NOT_OFFERED: &str =
-    "git ignores this file, and the editor opens only a branch's own files";
+    "purlis will not open this file in its editor: it is not one of its branch's own files";
 
 /// **A file path** (#6216): opened in the light editor, at its line, never by the system.
 pub struct LocalFile {
