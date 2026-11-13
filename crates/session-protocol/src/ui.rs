@@ -1455,10 +1455,12 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "change_push_question",
     "charter_windows",
     "chat_attended",
+    // Each chat's blocks since the person last looked, for its marker (R-174, T1-30): a read.
+    "chat_blocks",
     "chat_doings",
-    // A chat whose program ended with its session host (#2007): what its pane says.
     // A chat's Chat log (T1-27, R-224): its start and end rows, a query of the event log, read only.
     "chat_log",
+    // A chat whose program ended with its session host (#2007): what its pane says.
     "chat_lost_with_the_host",
     "chat_moves",
     "chat_network",

@@ -423,5 +423,118 @@ pub(crate) fn in_the_window(ask: AskGroup, allowed: bool) -> AskAnswered {
     }
 }
 
+/// One chat the window asks the blocked marker of, and its last look: the `seq` of the latest
+/// block the person looked at, read from its key in the seen record (decimal, `None` for
+/// never).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, specta::Type)]
+pub struct BlocksAsked {
+    pub session: u32,
+    pub after: Option<String>,
+}
+
+/// **A chat's blocks since the person last looked** (R-172, R-174, R-299): what its marker
+/// shows.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct ChatBlocks {
+    pub session: u32,
+    /// The verified blocks after the look: the marker's count, "2 new blocked".
+    pub blocks: u32,
+    /// The unverified ones after it, which never count on the sidebar: a muted dot.
+    pub unverified: u32,
+    /// The seen record's key for a look at the chat's latest block, `blocks:<chat>:<seq>`, the
+    /// chat by its logged id, stable across restarts (Q258): what the window keeps once the chat
+    /// has been looked at. `None` for a chat with none, or one the log does not know.
+    pub key: Option<String>,
+}
+
+/// **The markers' running tally** (R-174): fed from the event log's subscription, so a refresh
+/// reads only what was written since the last one. One per log; a log opened elsewhere starts
+/// it again.
+static BLOCKS: std::sync::Mutex<Option<Feed>> = std::sync::Mutex::new(None);
+
+/// The log a tally reads, where it has read it to, and what it has counted.
+struct Feed {
+    dir: std::path::PathBuf,
+    read: purlis_core::eventlog::Subscription,
+    blocks: chatlog::Blocks,
+}
+
+/// One asked chat: its number, the id the event log knows it by, and its last look.
+struct Asked {
+    session: u32,
+    chat: Option<String>,
+    after: Option<u64>,
+}
+
+/// Each of `asked`'s markers, after reading on from the log in `dir`.
+fn blocks_of(dir: &std::path::Path, asked: &[Asked]) -> Result<Vec<ChatBlocks>, String> {
+    let mut held = BLOCKS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if held.as_ref().is_none_or(|feed| feed.dir != dir) {
+        *held = Some(Feed {
+            dir: dir.to_path_buf(),
+            read: purlis_core::eventlog::subscribe(dir, 0),
+            blocks: chatlog::Blocks::default(),
+        });
+    }
+    let Some(Feed { read, blocks, .. }) = held.as_mut() else {
+        return Ok(Vec::new());
+    };
+    for delivery in read.poll().map_err(|why| why.to_string())? {
+        blocks.take(delivery);
+    }
+    Ok(asked
+        .iter()
+        .map(|one| {
+            let Some(chat) = one.chat.as_deref() else {
+                return ChatBlocks {
+                    session: one.session,
+                    blocks: 0,
+                    unverified: 0,
+                    key: None,
+                };
+            };
+            let marker = blocks.since(chat, one.after);
+            ChatBlocks {
+                session: one.session,
+                blocks: marker.blocks,
+                unverified: marker.unverified,
+                key: marker
+                    .latest
+                    .map(|seq| format!("{}{chat}:{seq}", purlis_core::inboxupdates::BLOCKS)),
+            }
+        })
+        .collect())
+}
+
+/// **Each asked chat's blocked marker** (R-172, R-174, R-299; ADR 0124 decision 9.1): its
+/// verified and unverified blocks after the last look the window keeps for it, from this
+/// machine's event log. No notification and no announcement is made of them (R-176), and
+/// nothing of Quiet or snooze is touched (R-177): it only reads.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn chat_blocks(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: PlaneId,
+    asked: Vec<BlocksAsked>,
+) -> Result<Vec<ChatBlocks>, String> {
+    let held = planes.held(&plane)?;
+    let asked: Vec<Asked> = asked
+        .into_iter()
+        .map(|one| Asked {
+            session: one.session,
+            chat: held.chats().logged_id_of(one.session),
+            after: one.after.and_then(|after| after.parse().ok()),
+        })
+        .collect();
+    let dir = match crate::EVENT_LOG.get() {
+        Some(Ok(dir)) => dir.clone(),
+        // No log on this machine: no block is counted, and no marker is drawn.
+        _ => return Ok(Vec::new()),
+    };
+    crate::off_the_window("counting a chat's blocks", move || blocks_of(&dir, &asked)).await
+}
+
 #[cfg(test)]
 mod tests;

@@ -352,3 +352,51 @@ fn a_guard_block_whose_call_has_a_held_reason_shows_none() {
         [("guard".to_owned(), None), ("sandbox".to_owned(), None)]
     );
 }
+
+/// Q258: **a chat's look is keyed by its logged id**, stable across restarts, never by its
+/// session number: the marker hands the window the seen record's key for its latest block.
+#[test]
+fn the_marker_s_look_key_is_the_chat_s_logged_id_and_its_latest_block() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let mut log =
+        purlis_core::eventlog::Log::open(dir.path(), "01J9ZZDEVICE0000000000000").expect("a log");
+    for _ in 0..2 {
+        log.append(
+            Some(CHAT),
+            Some(RUN),
+            None,
+            purlis_core::eventlog::stops::BLOCK,
+            serde_json::json!({}),
+        )
+        .expect("written");
+    }
+    drop(log);
+    let events = purlis_core::eventlog::read(dir.path()).expect("the log reads");
+    let latest = events.last().expect("a block").seq;
+
+    let marked = blocks_of(
+        dir.path(),
+        &[
+            Asked {
+                session: 4,
+                chat: Some(CHAT.to_owned()),
+                after: None,
+            },
+            Asked {
+                session: 9,
+                chat: None,
+                after: None,
+            },
+        ],
+    )
+    .expect("counted");
+
+    assert_eq!(
+        marked[0].key.as_deref(),
+        Some(format!("blocks:{CHAT}:{latest}").as_str())
+    );
+    assert_eq!(
+        marked[1].key, None,
+        "a chat the log does not know has no look"
+    );
+}

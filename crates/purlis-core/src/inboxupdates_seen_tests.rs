@@ -157,3 +157,42 @@ fn forgetting_what_still_stands_writes_nothing() {
         .expect("its file");
     assert_eq!(written, after);
 }
+
+/// Q258: **a chat keeps one look**. A new look at a chat's blocks (`blocks:<chat>:<seq>`)
+/// replaces its earlier one in the same write, so however many looks are taken, the record
+/// never fills with them and evicts the other New markers.
+#[test]
+fn many_looks_at_a_chat_s_blocks_keep_one_key_and_leave_the_other_new_markers() {
+    let (_dir, root, store) = project();
+    let others: Vec<String> = (0..AT_MOST_SEEN - 2)
+        .map(|n| format!("update:u{n:04}"))
+        .collect();
+    store.see(&root, &others, 100).expect("seen");
+    store
+        .see(&root, &keys(&["blocks:01K6CHAT0000000000000000005:3"]), 101)
+        .expect("seen");
+
+    for seq in 0..(AT_MOST_SEEN as u64 * 2) {
+        let look = format!("{BLOCKS}01K6CHAT0000000000000000004:{seq}");
+        store.see(&root, &[look], 200 + seq).expect("seen");
+    }
+
+    let seen = store.seen(&root);
+    let looks: Vec<&str> = names(&seen)
+        .into_iter()
+        .filter(|key| key.starts_with("blocks:01K6CHAT0000000000000000004:"))
+        .collect();
+    let last = AT_MOST_SEEN * 2 - 1;
+    assert_eq!(
+        looks,
+        [format!("blocks:01K6CHAT0000000000000000004:{last}")]
+    );
+    assert!(
+        others.iter().all(|key| seen.contains_key(key)),
+        "every other New marker is still seen"
+    );
+    assert!(
+        seen.contains_key("blocks:01K6CHAT0000000000000000005:3"),
+        "another chat's look is its own"
+    );
+}

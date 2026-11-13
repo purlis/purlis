@@ -398,6 +398,94 @@ pub fn counts_in(dir: &Path) -> io::Result<Counts> {
     Ok(counts(&super::read(dir)?))
 }
 
+/// **What a chat's blocked marker shows** (R-172, R-174, R-299): its blocks after the person's
+/// last look, as the fleet counts tally them ([`Tally`]), and the latest block's `seq`, which is
+/// the look the window keeps once the chat has been looked at.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Marker {
+    /// The verified blocks after the look: `Tally.blocks` alone, the sidebar's count.
+    pub blocks: u32,
+    /// The unverified ones after it, which never count on the sidebar (R-299): a muted dot.
+    pub unverified: u32,
+    /// Every block after it, by its kind ([`Tally`]).
+    pub tally: Tally,
+    /// The `seq` of the chat's latest block, the look's point; `None` for a chat with none.
+    /// A `seq`, not its ULID: the log numbers its events in order, and two ULIDs minted in one
+    /// millisecond need not sort in the order they were written.
+    pub latest: Option<u64>,
+}
+
+/// The most blocks of one chat [`Blocks`] holds; the oldest go first. A look is always at the
+/// latest, so what goes is long looked at, or counted as "this many or more".
+pub const BLOCKS_HELD: usize = 1000;
+
+/// **The blocked markers' running tally** (R-174, T1-03's note): each chat's blocks, by their
+/// `seq`s, fed event by event from the log's subscription ([`super::subscribe`]), so a marker's
+/// refresh reads only what was written since, never the whole log. "After the last look" is
+/// the caller's filter ([`Blocks::since`]); the look itself is kept where the shipped New
+/// markers keep theirs (the Inbox's seen record, ADR 0124 decision 9.1), never here.
+#[derive(Debug, Default)]
+pub struct Blocks {
+    per_chat: BTreeMap<String, std::collections::VecDeque<(u64, Tally)>>,
+}
+
+impl Blocks {
+    /// Takes what the subscription delivered: a block is held under its chat. Lines the log
+    /// lost that this held (`Ahead`, after a power loss) let go of everything: the stream
+    /// carries on from where the log now ends, so the blocks still in the log before that are
+    /// not delivered again, and count only once the log is read whole, at the next start.
+    /// Events no longer kept (`Missed`) are only gone from the log.
+    pub fn take(&mut self, delivery: super::Delivery) {
+        match delivery {
+            super::Delivery::Event(event) => {
+                let Some(chat) = event.chat.clone() else {
+                    return;
+                };
+                if event.kind != stops::BLOCK {
+                    return;
+                }
+                let mut one = Tally::default();
+                one.add(&event);
+                let held = self.per_chat.entry(chat).or_default();
+                held.push_back((event.seq, one));
+                if held.len() > BLOCKS_HELD {
+                    held.pop_front();
+                }
+            }
+            super::Delivery::Ahead { .. } => self.per_chat.clear(),
+            super::Delivery::Missed { .. } => {}
+        }
+    }
+
+    /// **Chat `chat`'s marker**: its blocks after `after`, the `seq` of the last block looked at
+    /// (`None`: never looked at, so every block it has counts).
+    pub fn since(&self, chat: &str, after: Option<u64>) -> Marker {
+        let Some(held) = self.per_chat.get(chat) else {
+            return Marker::default();
+        };
+        let mut tally = Tally::default();
+        for (seq, one) in held {
+            if after.is_some_and(|looked| *seq <= looked) {
+                continue;
+            }
+            tally.blocks = tally.blocks.saturating_add(one.blocks);
+            tally.unverified_blocks = tally
+                .unverified_blocks
+                .saturating_add(one.unverified_blocks);
+            tally.cant_tell_blocks = tally.cant_tell_blocks.saturating_add(one.cant_tell_blocks);
+            tally.unreadable_blocks = tally
+                .unreadable_blocks
+                .saturating_add(one.unreadable_blocks);
+        }
+        Marker {
+            blocks: tally.blocks,
+            unverified: tally.unverified_blocks,
+            tally,
+            latest: held.back().map(|(seq, _)| *seq),
+        }
+    }
+}
+
 #[cfg(test)]
 #[path = "chatlog/tests.rs"]
 mod tests;

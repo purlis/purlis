@@ -152,6 +152,11 @@ fn the_reads(plane: &PlaneId) -> Vec<(&'static str, Value)> {
         ("all_tasks_ending", chat.clone()),
         ("vault_refusals", chat.clone()),
         ("activity_chat", json!({ "plane": plane, "key": "alpha" })),
+        // The blocked markers' counts (R-174, T1-30): read off the window's thread.
+        (
+            "chat_blocks",
+            json!({ "plane": plane, "asked": [{ "session": 1, "after": null }] }),
+        ),
         ("smart_closing", p.clone()),
         ("smart_close_offer", chat.clone()),
         ("stopping_chats", p.clone()),
