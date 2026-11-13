@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794576017922,
+  "lastUpdate": 1794580165242,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -48384,6 +48384,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9007545,
             "unit": "ms",
             "extra": "median of 5 runs: 100.586, 101.690, 101.901, 102.112, 102.268 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "7d11d7db60bfbacf30863a663963c13f92541e40",
+          "message": "The Skill studio's Library opens at a deep chosen row with a screen of rows and that row (#5276) (#6495)\n\n* The Skill studio's Library opens at a deep chosen row with a screen of rows and that row (#5276)\n\nOpening at row 199 of 200 drew every row before it on the first frame. Now\nthe chosen row past the rows drawn is drawn alone, in a keyed place of its own\namong the screens, and the rows before it come a screen a frame.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7AE0H9J5V4Q439TMFV6YSDB\nPurlis-Persona: steward\n\n* Review: draw the chosen row's own screen ahead, and keep every screen drawn (#5276)\n\nThe two-axis review found the row drawn alone had no neighbours (ArrowUp from\nrow 199 went to row 22) and was dropped when another deep row was chosen. Now\nthe chosen row's screen is drawn ahead, keyed as the screens reaching it key\nit, and screens drawn ahead are kept while the list stands.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7AE0H9J5V4Q439TMFV6YSDB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-13T13:46:40Z",
+          "tree_id": "33454c8df163e1eb4ad95231857cfd734e656e7f",
+          "url": "https://github.com/purlis/purlis/commit/7d11d7db60bfbacf30863a663963c13f92541e40"
+        },
+        "date": 1794580158050,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3640495,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.333, 0.356, 0.364, 0.365, 0.382 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.23925,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.220, 16.229, 16.239, 16.264, 16.687 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.650564,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.620, 101.061, 101.651, 101.971, 102.012 ms"
           }
         ]
       }
