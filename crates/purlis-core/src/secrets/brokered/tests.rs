@@ -1822,6 +1822,7 @@ fn an_app_answering(
         refused: Box::new(|_| Ok(())),
         tool: Box::new(|_| Ok(())),
         permission: Box::new(|_| None),
+        reason: Box::new(|_| {}),
     });
     let env = vec![
         ("PATH".to_owned(), "/usr/bin:/bin".to_owned()),
@@ -2267,6 +2268,7 @@ fn from_outside_the_chat_secret_exec_says_why_and_runs_nothing() {
         refused: Box::new(|_| Ok(())),
         tool: Box::new(|_| Ok(())),
         permission: Box::new(|_| None),
+        reason: Box::new(|_| {}),
     });
     let env = vec![
         ("PATH".to_owned(), "/usr/bin:/bin".to_owned()),

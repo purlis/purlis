@@ -4683,7 +4683,9 @@ export type ChatLogRow =
 /**  When (UTC, RFC 3339), where the event's id says. */
 at: string | null; cause: string; protection: StartProtection | null } | 
 /**  The chat's run ended: `completed`, `failed` or `stopped`, why, and its exit code. */
-{ kind: "ended"; at: string | null; state: string; cause: string; code: number | null };
+{ kind: "ended"; at: string | null; state: string; cause: string; code: number | null } | 
+/**  A call was blocked: by whom, how much its report is worth, at what, and why it said. */
+{ kind: "blocked"; at: string | null; tool: string; source: string; qualifier: string | null; target_kind: string | null; target: string | null; harness: string; reason: string | null };
 
 /**  What a number names, as the window is sent it. */
 export type ChatLookup = 

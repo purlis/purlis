@@ -1,0 +1,38 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest, repos/rules: Get rules for a branch (none), and branches: Get branch protection (404 Not Found, GitHub's answer to a login without admin access)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/acme/api/rules/branches/main"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "[]",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/acme/api/branches/main/protection"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 1,
+        "out": "{\"message\":\"Not Found\",\"documentation_url\":\"https://docs.github.com/rest/branches/branch-protection#get-branch-protection\",\"status\":\"404\"}",
+        "err": "gh: Not Found (HTTP 404)",
+        "status": 404
+      }
+    }
+  ]
+}

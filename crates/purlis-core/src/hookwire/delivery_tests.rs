@@ -41,6 +41,7 @@ fn hearing(tool: Tooled) -> Hearing {
         refused: Box::new(|_| Ok(())),
         tool,
         permission: Box::new(|_| None),
+        reason: Box::new(|_| {}),
     }
 }
 

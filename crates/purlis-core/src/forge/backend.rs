@@ -721,6 +721,17 @@ pub trait Requests {
     /// keyed on ([`crate::mergehold::MergeKey`]). Strict.
     fn head(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<HeadAt, ForgeError>;
 
+    /// **Whether a ruleset protects `branch`** of the repo at `path` (R-146, Q127): GitHub's
+    /// rules for the branch, which its rulesets give it, and GitLab's protected branch of that
+    /// name, its way of protecting one. A merge ask reads it as the window, with the app's own
+    /// login ([`crate::mergehold::read`]). Strict.
+    fn ruleset_protects(
+        &self,
+        caller: &Caller,
+        path: &str,
+        branch: &str,
+    ) -> Result<bool, ForgeError>;
+
     /// The description `pr` holds, whole: GitHub's `body`, GitLab's `description`. A request
     /// with none is the empty string (ADR 0060: `charter change push` splices its block in).
     fn body(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<String, ForgeError>;

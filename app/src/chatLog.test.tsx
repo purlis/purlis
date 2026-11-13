@@ -43,7 +43,7 @@ const ended = (over: Partial<Ended>): Ended => ({
 describe("the Chat log start row is one line built from the start event", () => {
   it("says each of the four fields as the event recorded them", () => {
     expect(startSaid(started())).toBe(
-      "Started · No sandbox, set by you for this chat only · charter.toml at 9b1d2e3, with changes not committed · 2 answers in force",
+      "Started · No sandbox, set by you for this chat only · purlis.toml at 9b1d2e3, with changes not committed · 2 answers in force",
     );
     expect(
       startSaid(
@@ -55,7 +55,7 @@ describe("the Chat log start row is one line built from the start event", () => 
         }),
       ),
     ).toBe(
-      "Started · Full sandbox, set by an administrator's policy · charter.toml's commit not known · no answers in force",
+      "Started · Full sandbox, set by an administrator's policy · purlis.toml's commit not known · no answers in force",
     );
   });
 
@@ -102,7 +102,7 @@ describe("the Chat log lists the chat end and its result", () => {
       "listitem",
     );
     expect(rows.map((row) => row.textContent)).toEqual([
-      "2026-11-13 09:00 UTCStarted · No sandbox, set by you for this chat only · charter.toml at 9b1d2e3, with changes not committed · 2 answers in force",
+      "2026-11-13 09:00 UTCStarted · No sandbox, set by you for this chat only · purlis.toml at 9b1d2e3, with changes not committed · 2 answers in force",
       "2026-11-13 10:00 UTCEnded · failed, exit code 3",
     ]);
     expect(screen.queryByRole("status")).toBeNull();

@@ -968,7 +968,7 @@ fn runs_blocks(runs: &[super::StudioRun], skill: &str) -> Vec<Block> {
             "Ended",
             "Tool calls",
             "Errors",
-            "Refused",
+            "Blocked",
             "Asks",
             "Tokens",
             "Time",
