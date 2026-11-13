@@ -1123,6 +1123,8 @@ pub(crate) mod pretend {
         terminal: Mutex<Vec<String>>,
         /// How long each input, resize and view takes ([`Pretend::terminal_takes`]).
         terminal_taking: Mutex<Duration>,
+        /// Wakes every input, resize and view still taking its time ([`Pretend::terminal_answers`]).
+        terminal_answered: std::sync::Condvar,
     }
 
     impl Pretend {
@@ -1453,11 +1455,27 @@ pub(crate) mod pretend {
             *lock(&self.seen.terminal_taking) = long;
         }
 
-        /// Takes as long as [`Self::terminal_takes`] says, then notes `what` reached it.
+        /// Every input, resize and view answers now, the ones still taking their time too, and
+        /// from now on at once: a test's last word to a host it made slow, so nothing it began
+        /// is still running once the test's folders are gone.
+        pub fn terminal_answers(&self) {
+            *lock(&self.seen.terminal_taking) = Duration::ZERO;
+            self.seen.terminal_answered.notify_all();
+        }
+
+        /// Takes as long as [`Self::terminal_takes`] says, or until
+        /// [`Self::terminal_answers`], then notes `what` reached it.
         fn reached(&self, what: String) {
-            let long = *lock(&self.seen.terminal_taking);
+            let taking = lock(&self.seen.terminal_taking);
+            let long = *taking;
             if !long.is_zero() {
-                std::thread::sleep(long);
+                let _ = self
+                    .seen
+                    .terminal_answered
+                    .wait_timeout_while(taking, long, |now| !now.is_zero())
+                    .unwrap_or_else(PoisonError::into_inner);
+            } else {
+                drop(taking);
             }
             lock(&self.seen.terminal).push(what);
         }
