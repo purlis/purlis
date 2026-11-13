@@ -774,6 +774,7 @@ const ORDINARY: Answers = {
       { said: "skills:gone", name: "gone", project: true, broken: true },
     ],
     used_by: ["release"],
+    hinted_by: [] as string[],
     uses_cut: false,
     pinned_by: [],
     pins_refused: [],

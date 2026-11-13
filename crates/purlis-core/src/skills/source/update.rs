@@ -24,7 +24,8 @@ use super::fetch::{SourceFile, fetch};
 use super::install::{Written, level_parts, paths_fit};
 use super::lock::{self, Kept, Locked};
 use super::review::{
-    Accepted, SkillReview, digest_of, met_at, review_of, reviews_of, sha256, summary_of, wrote,
+    Accepted, Hints, SkillReview, digest_of, met_at, review_of, reviews_of, sha256, summary_of,
+    wrote,
 };
 use super::widen::{self, Widening};
 use super::{Origin, Pin, Remote, SkillSource, Source, listed, write};
@@ -523,7 +524,12 @@ pub(super) fn reviewed_update(
     };
     let was = pinned.unwrap_or_else(|| here.clone());
     let met_here = met_at(plane, level);
-    let reviewed = reviews_of(source, std::slice::from_ref(&at_source), &met_here)?;
+    let reviewed = reviews_of(
+        source,
+        std::slice::from_ref(&at_source),
+        &met_here,
+        Hints::Every,
+    )?;
     let mut skills = reviewed.into_iter();
     let review = skills.next().unwrap_or_else(|| {
         let held_names: Vec<String> = found.iter().map(|f| f.name.clone()).collect();
@@ -751,6 +757,7 @@ pub(super) fn plan_from(
         source,
         std::slice::from_ref(&at_source),
         &met_at(plane, level),
+        Hints::Every,
     )?;
     if !accepted.is(&Accepted::of(&newer, &reviewed))
         || reviewed.first().is_none_or(|s| s.name != at_source)

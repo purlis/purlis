@@ -387,6 +387,19 @@ function core({
             ],
             accepted: { commit: "3".repeat(40), skills: [] },
           };
+        // It names test-driven-development bare, so a hint brings it along (#5874), unless the
+        // person unticked it.
+        if ((args as { names: string[] }).names[0] === "hints-at-tdd")
+          return {
+            commit: commit("3"),
+            skills: [
+              { ...DEBUGGING, hints: ["test-driven-development"] },
+              ...((args as { without: string[] }).without.includes("test-driven-development")
+                ? []
+                : [{ ...TDD, brought_by: DEBUGGING.name, brought_by_hint: true }]),
+            ],
+            accepted: { commit: "3".repeat(40), skills: [] },
+          };
         if ((args as { names: string[] }).names[0] in GRADES)
           return {
             commit: commit("3"),
@@ -614,6 +627,33 @@ export const InstallReview: Story = {
     await within(review).findByTestId("install-commit");
     await userEvent.click(within(review).getByRole("button", { name: "Show scripts/repro.sh" }));
     await expect(within(review).getByRole("button", { name: "Install" })).toBeVisible();
+  },
+};
+
+/** **A skill that comes along by a hint** (#5874, `prototype/skill-hints` A): ticked, with why it
+ *  may be left out under its box. Space unticks it, and it waits under Left out of this install
+ *  to be ticked back. */
+export const InstallReviewHint: Story = {
+  args: {
+    at: { at: "install", source: SOURCE, label: SUPERPOWERS.label, skill: "hints-at-tdd" },
+  },
+  play: async ({ canvas }) => {
+    const review = await canvas.findByTestId("install-review");
+    const box = await within(review).findByRole("checkbox", {
+      name: /^Install test-driven-development/,
+    });
+    await expect(within(review).getByTestId("reviewed-test-driven-development")).toHaveTextContent(
+      "Comes along by a hint: systematic-debugging names it bare.",
+    );
+    for (let step = 0; step < 40 && document.activeElement !== box; step++) await userEvent.tab();
+    await untilFocusWithin(() => box, "Tab reaches the hinted skill's box");
+    expectFocusInSight();
+    await userEvent.keyboard(" ");
+    const left = await within(review).findByRole("checkbox", {
+      name: "Install test-driven-development",
+    });
+    await waitFor(() => expect(left).not.toBeChecked());
+    await expect(within(review).queryByTestId("reviewed-test-driven-development")).toBeNull();
   },
 };
 

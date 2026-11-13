@@ -1509,7 +1509,11 @@ function SkillReviewed({
         <code>{skill.name}</code> {skill.description}
       </h3>
       {skill.brought_by !== null && (
-        <p className="honest">Comes along: {skill.brought_by} refers to it.</p>
+        <p className="honest">
+          {skill.brought_by_hint
+            ? `Comes along by a hint: ${skill.brought_by} names it bare.`
+            : `Comes along: ${skill.brought_by} refers to it.`}
+        </p>
       )}
       {clash}
       {skill.notes.map((line) => (
@@ -1556,6 +1560,102 @@ function SkillReviewed({
   );
 }
 
+/** What a skill that comes along only by a hint says under its box (#5874, `prototype/skill-hints`
+ *  A): the skill that names it runs without it. */
+export function hintKeptSaid(by: string): string {
+  return `${by} only names it bare, so it runs without it. Untick it to leave it out.`;
+}
+
+/**
+ * **The skills only a hint brings, left out of an install** (#5874): `without`, which the person
+ * unticked, as `by` says which skill named each. Ticking one puts it back, and the review is read
+ * again with it.
+ */
+export function useHintsLeftOut() {
+  const [without, setWithout] = useState<readonly { name: string; by: string }[]>([]);
+  return {
+    names: without.map((one) => one.name),
+    leftOut: without,
+    leave: (skill: ReviewSkill) => {
+      if (skill.brought_by === null || without.some((one) => one.name === skill.name)) return;
+      setWithout([...without, { name: skill.name, by: skill.brought_by }]);
+    },
+    keep: (name: string) => setWithout(without.filter((one) => one.name !== name)),
+  };
+}
+
+/** **A box for a skill that comes along** (#5874): ticked; one a reference brings is out of reach
+ *  while the skill that refers to it is installed, one only a hint brings may be unticked. */
+function ComesAlongPick({
+  skill,
+  busy,
+  onLeave,
+}: {
+  skill: ReviewSkill;
+  busy: boolean;
+  onLeave: () => void;
+}) {
+  if (skill.brought_by === null) return null;
+  return (
+    <Checkbox
+      isSelected
+      isDisabled={!skill.brought_by_hint || busy}
+      tooltip={
+        !skill.brought_by_hint
+          ? `It comes along while ${skill.brought_by} is installed.`
+          : busy
+            ? BUSY
+            : undefined
+      }
+      description={skill.brought_by_hint ? hintKeptSaid(skill.brought_by) : undefined}
+      onChange={onLeave}
+      data-testid={`keep-${skill.name}`}
+    >
+      Install {skill.name}
+      {skill.summary.marked > 0 &&
+        ` (${counted(skill.summary.marked, "risky item", "risky items")})`}
+    </Checkbox>
+  );
+}
+
+/** Of the skills only a hint brought that the person left out, those not in `review` after all:
+ *  one a reference brings is in it, and is not left out. */
+function hintsShown(
+  leftOut: readonly { name: string; by: string }[],
+  review: readonly ReviewSkill[] | undefined,
+) {
+  return leftOut.filter((one) => !review?.some((skill) => skill.name === one.name));
+}
+
+/** **The skills only a hint brought, left out by the person** (#5874), each to tick back in. */
+function HintsLeftOut({
+  shown,
+  busy,
+  onKeep,
+}: {
+  shown: readonly { name: string; by: string }[];
+  busy: boolean;
+  onKeep: (name: string) => void;
+}) {
+  return (
+    <>
+      {shown.map((one) => (
+        <Checkbox
+          key={one.name}
+          isSelected={false}
+          isDisabled={busy}
+          tooltip={busy ? BUSY : undefined}
+          description={`${one.by} only names it bare, so it runs without it.`}
+          onChange={() => onKeep(one.name)}
+          data-testid={`hint-left-out-${one.name}`}
+        >
+          Install {one.name}
+        </Checkbox>
+      ))}
+    </>
+  );
+}
+
 /** **The install review**: the pinned commit, each skill with its marks and its files, where it
  *  lands, and Install fixed at the foot. */
 function InstallReviewPage({
@@ -1585,10 +1685,13 @@ function InstallReviewPage({
   ) => void;
 }) {
   const [level, setLevel] = useState<SkillLevel>(start);
+  const hints = useHintsLeftOut();
   // Read again where it lands changes: a skill it refers to that the level holds already is
-  // left as it is, not brought along (#4032).
-  const { read, again } = useRead(`${source.key}\u0000${name}\u0000${JSON.stringify(level)}`, () =>
-    reviewInstall(plane, source, [name], level),
+  // left as it is, not brought along (#4032); and as a skill only a hint brings is unticked or
+  // ticked again (#5874).
+  const { read, again } = useRead(
+    `${source.key}\u0000${name}\u0000${JSON.stringify(level)}\u0000${hints.names.join("\u0000")}`,
+    () => reviewInstall(plane, source, [name], level, [...hints.names]),
   );
   const picker = picking(
     levels.map((one) => one.level),
@@ -1669,11 +1772,26 @@ function InstallReviewPage({
                 skill={skill}
                 widenings={reach.widenings}
                 clash={clashes.choice(skill, busy)}
+                pick={
+                  <ComesAlongPick skill={skill} busy={busy} onLeave={() => hints.leave(skill)} />
+                }
               />
             ))}
           </>
         )}
       </Held>
+      {hintsShown(hints.leftOut, review?.skills).length > 0 && (
+        <section aria-labelledby="install-left-out" className="skill-review">
+          <h3 id="install-left-out" className="ui-text-small ui-text-strong">
+            Left out of this install
+          </h3>
+          <HintsLeftOut
+            shown={hintsShown(hints.leftOut, review?.skills)}
+            busy={busy}
+            onKeep={hints.keep}
+          />
+        </section>
+      )}
     </ReviewPage>
   );
 }
@@ -1981,13 +2099,15 @@ function InstallSetReviewPage({
   // Those still in this install: unticking one here leaves it out and reads the review again.
   const [names, setNames] = useState<readonly string[]>(named);
   const [level, setLevel] = useState<SkillLevel>(start);
+  const hints = useHintsLeftOut();
   // Nothing is asked while nothing is ticked. Read again where they land changes: a skill one
-  // refers to that the level holds already is left as it is (#4032).
+  // refers to that the level holds already is left as it is (#4032); and as a skill only a hint
+  // brings is unticked or ticked again (#5874).
   const { read, again } = useRead(
     names.length === 0
       ? undefined
-      : `${source.key}\u0000${JSON.stringify(level)}\u0000${names.join("\u0000")}`,
-    () => reviewInstallSet(plane, source, [...names], level),
+      : `${source.key}\u0000${JSON.stringify(level)}\u0000${names.join("\u0000")}\u0001${hints.names.join("\u0000")}`,
+    () => reviewInstallSet(plane, source, [...names], level, [...hints.names]),
   );
   const picker = picking(
     levels.map((one) => one.level),
@@ -2006,6 +2126,7 @@ function InstallSetReviewPage({
     (name) => !names.includes(name) && !review?.skills.some((one) => one.name === name),
   );
   const narrow = (to: readonly string[]) => setNames(named.filter((name) => to.includes(name)));
+  const hintsLeft = hintsShown(hints.leftOut, review?.skills);
   const why =
     names.length === 0
       ? "Tick at least one skill."
@@ -2126,23 +2247,25 @@ function InstallSetReviewPage({
                     widenings={reach.widenings}
                     clash={clashes.choice(skill, busy)}
                     pick={
-                      <Checkbox
-                        isSelected
-                        isDisabled={skill.brought_by !== null || busy}
-                        tooltip={
-                          skill.brought_by !== null
-                            ? `It comes along while ${skill.brought_by} is installed.`
-                            : busy
-                              ? BUSY
-                              : undefined
-                        }
-                        onChange={() => narrow(names.filter((name) => name !== skill.name))}
-                        data-testid={`keep-${skill.name}`}
-                      >
-                        Install {skill.name}
-                        {skill.summary.marked > 0 &&
-                          ` (${counted(skill.summary.marked, "risky item", "risky items")})`}
-                      </Checkbox>
+                      skill.brought_by !== null ? (
+                        <ComesAlongPick
+                          skill={skill}
+                          busy={busy}
+                          onLeave={() => hints.leave(skill)}
+                        />
+                      ) : (
+                        <Checkbox
+                          isSelected
+                          isDisabled={busy}
+                          tooltip={busy ? BUSY : undefined}
+                          onChange={() => narrow(names.filter((name) => name !== skill.name))}
+                          data-testid={`keep-${skill.name}`}
+                        >
+                          Install {skill.name}
+                          {skill.summary.marked > 0 &&
+                            ` (${counted(skill.summary.marked, "risky item", "risky items")})`}
+                        </Checkbox>
+                      )
                     }
                   />
                 ))}
@@ -2174,11 +2297,12 @@ function InstallSetReviewPage({
           }
         </Held>
       )}
-      {leftOut.length > 0 && (
+      {(leftOut.length > 0 || hintsLeft.length > 0) && (
         <section aria-labelledby="install-all-left-out" className="skill-review">
           <h3 id="install-all-left-out" className="ui-text-small ui-text-strong">
             Left out of this install
           </h3>
+          <HintsLeftOut shown={hintsLeft} busy={busy} onKeep={hints.keep} />
           {leftOut.map((name) => (
             <Checkbox
               key={name}

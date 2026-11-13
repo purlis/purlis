@@ -806,6 +806,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     // project, the person's own press in their window. A chat's change is a draft (SK-9).
     "skill_new",
     "skill_save",
+    // Write skills:<name> on a hint's row of a skill's tab (#5874): one save of its SKILL.md.
+    "skill_hint_write",
     "skill_rename",
     "skill_copy",
     "skill_move",

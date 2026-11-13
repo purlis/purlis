@@ -2648,6 +2648,12 @@ export const commands = {
 	 */
 	skillSave: (plane: PlaneId, level: SkillLevel, name: string, was: string, now: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_save", { plane, level, name, was, now })),
 	/**
+	 *  **Write skills:<name>** (#5874), on a hint's row of a skill's tab: every quote of the
+	 *  skill's `SKILL.md` that names `hint` bare beside the word skill is written as a reference
+	 *  (`purlis_skills::uses::written_as_reference`), saved as one edit of the text it holds now.
+	 */
+	skillHintWrite: (plane: PlaneId, level: SkillLevel, name: string, hint: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_hint_write", { plane, level, name, hint })),
+	/**
 	 *  **Write trigger tests** (#3925): starts the skill's trigger tests file from a template where
 	 *  it has none, committed as one change ([`verbs::start_trigger_tests`]). The window then opens
 	 *  the file to write in.
@@ -3175,13 +3181,13 @@ export const commands = {
 	 *  **The install review** of `names` from a source into `level`, and the skills they refer to
 	 *  that `level` does not hold already.
 	 */
-	skillInstallReview: (plane: PlaneId, source: SkillSource, names: string[], level: SkillLevel) => typedError<InstallReview, string>(__TAURI_INVOKE("skill_install_review", { plane, source, names, level })),
+	skillInstallReview: (plane: PlaneId, source: SkillSource, names: string[], level: SkillLevel, without: string[]) => typedError<InstallReview, string>(__TAURI_INVOKE("skill_install_review", { plane, source, names, level, without })),
 	/**
 	 *  **The review of installing `names` from a source together** (#4024, Install all…): one review
 	 *  of the set into `level` and the skills they refer to that it does not hold already, those named
 	 *  that it holds already left out (#4153), or which of them fit one read.
 	 */
-	skillInstallSetReview: (plane: PlaneId, source: SkillSource, names: string[], level: SkillLevel) => typedError<InstallSetReview, string>(__TAURI_INVOKE("skill_install_set_review", { plane, source, names, level })),
+	skillInstallSetReview: (plane: PlaneId, source: SkillSource, names: string[], level: SkillLevel, without: string[]) => typedError<InstallSetReview, string>(__TAURI_INVOKE("skill_install_set_review", { plane, source, names, level, without })),
 	/**
 	 *  **What installing at `level` with `grant` asks of the project skills the reviewed skills
 	 *  refer to** (#4185, #4172): `already`, the references the review left as they are, each
@@ -3250,13 +3256,13 @@ export const commands = {
 	 *  **The install review** of `names` from an extension's source into `level`: the git source's
 	 *  review, and what it read held for the install.
 	 */
-	skillExtensionInstallReview: (plane: PlaneId, id: string, names: string[], level: SkillLevel) => typedError<InstallReview, string>(__TAURI_INVOKE("skill_extension_install_review", { plane, id, names, level })),
+	skillExtensionInstallReview: (plane: PlaneId, id: string, names: string[], level: SkillLevel, without: string[]) => typedError<InstallReview, string>(__TAURI_INVOKE("skill_extension_install_review", { plane, id, names, level, without })),
 	/**
 	 *  **The review of installing `names` from an extension's source together** (Install all…): one
 	 *  review, those named that the level holds already left out (#4153), what it read held for the
 	 *  install.
 	 */
-	skillExtensionInstallSetReview: (plane: PlaneId, id: string, names: string[], level: SkillLevel) => typedError<InstallSetReview, string>(__TAURI_INVOKE("skill_extension_install_set_review", { plane, id, names, level })),
+	skillExtensionInstallSetReview: (plane: PlaneId, id: string, names: string[], level: SkillLevel, without: string[]) => typedError<InstallSetReview, string>(__TAURI_INVOKE("skill_extension_install_set_review", { plane, id, names, level, without })),
 	/**
 	 *  **Installs what was reviewed** from an extension's source at `level`: the bytes its review
 	 *  read, never asked of the extension again.
@@ -15394,6 +15400,13 @@ export type ReviewSkill = {
 	folder: string,
 	brought_by: string | null,
 	/**
+	 *  Whether [`Self::brought_by`] only names it bare, as a hint (#4510): the review says it
+	 *  comes along by a hint, and the person may untick it (#5874).
+	 */
+	brought_by_hint: boolean,
+	/**  The skills it names only bare, as hints, each once. */
+	hints: string[],
+	/**
 	 *  The skills it refers to that the level it lands in holds already (#4032): left as they
 	 *  are, not brought along.
 	 */
@@ -17550,6 +17563,8 @@ export type SkillDetails = {
 	uses: SkillUse[],
 	/**  The project's skills that name it. */
 	used_by: string[],
+	/**  The project's skills that name it only bare, as a hint (#4510, #5874). */
+	hinted_by: string[],
 	/**  Whether the project holds more skills than the graph reads. */
 	uses_cut: boolean,
 	/**
@@ -18310,6 +18325,16 @@ export type SkillUse = {
 	project: boolean,
 	/**  Whether no skill has that name. */
 	broken: boolean,
+	/**
+	 *  Whether the text names it only bare, beside the word skill: a hint (#4510), which the tab
+	 *  marks and offers to write as `skills:<name>` (#5874).
+	 */
+	hint: boolean,
+	/**
+	 *  The first line of the copy the tab shows first that names it bare, from 1, where it is a
+	 *  hint there.
+	 */
+	line: number | null,
 };
 
 /**  Who uses a skill, as Delete shows before it deletes. */

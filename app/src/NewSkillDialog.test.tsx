@@ -76,7 +76,7 @@ function core(
       case "skill_stats":
         return { by_harness: [], by_persona: [], by_workspace: [] };
       case "skill_details":
-        return { copies: [], uses: [], used_by: [], uses_cut: false, pinned_by: [] };
+        return { copies: [], uses: [], used_by: [], hinted_by: [], uses_cut: false, pinned_by: [] };
       case "skill_updates":
         return { offers: [], unconfirmed: [], unasked: [] };
       default:

@@ -427,6 +427,7 @@ macro_rules! app_commands {
                 skillfiles::skill_file,
                 skillfiles::skill_folder_open,
                 skillchange::skill_save,
+                skillchange::skill_hint_write,
                 skillchange::skill_trigger_tests_start,
                 skillchange::skill_rename,
                 skillchange::skill_copy,

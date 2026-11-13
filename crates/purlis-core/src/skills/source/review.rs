@@ -522,8 +522,33 @@ pub(super) struct Reviewed {
     pub files: Vec<SourceFile>,
 }
 
+/// **Which skills a hint brings along** (#5874): a skill named only bare comes along as one it
+/// refers to does, unless the person left it out of the review, and an install brings along by a
+/// hint only what was accepted, so a hint left out of the review is left out of the install too.
+/// A skill it refers to always comes along.
+#[derive(Debug, Clone, Copy)]
+pub enum Hints<'a> {
+    /// Every skill a hint names comes along.
+    Every,
+    /// Every one but these, which the person left out.
+    Without(&'a [String]),
+    /// Only these, which were accepted.
+    Only(&'a [String]),
+}
+
+impl Hints<'_> {
+    /// Whether a hint at `name` brings it along.
+    fn bring(self, name: &str) -> bool {
+        match self {
+            Hints::Every => true,
+            Hints::Without(left) => !left.iter().any(|one| one == name),
+            Hints::Only(kept) => kept.iter().any(|one| one == name),
+        }
+    }
+}
+
 /// **The review of `names` from `source`**, and every skill they refer to that the source holds
-/// and `have` does not, each right after the one that brought it, so one that was also named is
+/// and `have` does not, and every one they hint at that `hints` brings, each right after the one that brought it, so one that was also named is
 /// still marked as brought along and an install's second review reads the same. One review for
 /// every source, the git one and each extension's (ADR 0101 §1): what is reviewed is what the
 /// source answered, and the review is purlis's.
@@ -535,9 +560,10 @@ pub(super) fn reviewed(
     source: &dyn super::SkillSource,
     names: &[String],
     have: &dyn Fn(&str) -> bool,
+    hints: Hints<'_>,
 ) -> Result<Vec<Reviewed>, Unread> {
     let (found, _) = source.skills()?;
-    reviewed_from(source, &found, names, have)
+    reviewed_from(source, &found, names, have, hints)
 }
 
 /// [`reviewed`], with what the source offers already listed as `found`: listing it again would
@@ -547,6 +573,7 @@ pub(super) fn reviewed_from(
     found: &[Found],
     names: &[String],
     have: &dyn Fn(&str) -> bool,
+    hints: Hints<'_>,
 ) -> Result<Vec<Reviewed>, Unread> {
     let held: Vec<String> = found.iter().map(|f| f.name.clone()).collect();
     // Each to review, the skill that brings it along, and whether only by a hint.
@@ -598,15 +625,17 @@ pub(super) fn reviewed_from(
         // One that is named is reviewed itself, so it is never said to be left as it is.
         let left_as_is = |other: &str| have(other) && !names.iter().any(|named| named == other);
         let mut review = review_of(one, &files, left, by, by_hint, &held, &left_as_is);
-        // What it refers to, then what it only hints at, each the source holds and the level
-        // does not have, comes along right after it.
-        let comes = |other: &&String| held.contains(*other) && !have(other);
+        // What it refers to, then what it only hints at and the person did not leave out, each
+        // the source holds and the level does not have, comes along right after it.
+        let comes = |other: &&String, hint: bool| {
+            held.contains(*other) && !have(other) && (!hint || hints.bring(other))
+        };
         let mut next: Vec<(String, Option<String>, bool)> = review
             .refers
             .iter()
             .map(|other| (other, false))
             .chain(review.hints.iter().map(|other| (other, true)))
-            .filter(|(other, _)| comes(other))
+            .filter(|(other, hint)| comes(other, *hint))
             .map(|(other, hint)| (other.clone(), Some(name.clone()), hint))
             .collect();
         next.append(&mut queue);
@@ -639,8 +668,9 @@ pub(super) fn reviews_of(
     source: &dyn super::SkillSource,
     names: &[String],
     have: &dyn Fn(&str) -> bool,
+    hints: Hints<'_>,
 ) -> Result<Vec<SkillReview>, String> {
-    reviewed(source, names, have)
+    reviewed(source, names, have, hints)
         .map(|skills| skills.into_iter().map(|one| one.review).collect())
         .map_err(Unread::said)
 }
@@ -651,11 +681,12 @@ impl Fetched {
         &self,
         names: &[String],
         have: &dyn Fn(&str) -> bool,
+        hints: Hints<'_>,
     ) -> Result<Review, String> {
         Ok(Review {
             source: self.source.clone(),
             commit: self.commit.clone(),
-            skills: reviews_of(self, names, have)?,
+            skills: reviews_of(self, names, have, hints)?,
         })
     }
 
@@ -669,18 +700,21 @@ impl Fetched {
         names: &[String],
         holds: &dyn Fn(&str) -> bool,
         have: &dyn Fn(&str) -> bool,
+        hints: Hints<'_>,
     ) -> Result<SetReview, String> {
-        Ok(match set_reviewed(self, found, names, holds, have)? {
-            Set::Reviewed { skills, there } => SetReview::Review {
-                review: Review {
-                    source: self.source.clone(),
-                    commit: self.commit.clone(),
-                    skills,
+        Ok(
+            match set_reviewed(self, found, names, holds, have, hints)? {
+                Set::Reviewed { skills, there } => SetReview::Review {
+                    review: Review {
+                        source: self.source.clone(),
+                        commit: self.commit.clone(),
+                        skills,
+                    },
+                    there,
                 },
-                there,
+                Set::TooMuch(too_much) => SetReview::TooMuch(too_much),
             },
-            Set::TooMuch(too_much) => SetReview::TooMuch(too_much),
-        })
+        )
     }
 }
 
@@ -703,10 +737,11 @@ pub(super) fn set_reviewed(
     names: &[String],
     holds: &dyn Fn(&str) -> bool,
     have: &dyn Fn(&str) -> bool,
+    hints: Hints<'_>,
 ) -> Result<Set, String> {
     let (there, names): (Vec<String>, Vec<String>) =
         names.iter().cloned().partition(|name| holds(name));
-    match reviewed_from(source, found, &names, have) {
+    match reviewed_from(source, found, &names, have, hints) {
         Ok(skills) => Ok(Set::Reviewed {
             skills: skills.into_iter().map(|one| one.review).collect(),
             there,
@@ -869,9 +904,21 @@ pub fn review(
     names: &[String],
     level: &Level,
 ) -> Result<Review, String> {
+    review_without(plane, source, names, level, &[])
+}
+
+/// [`review`], with each skill of `without` that only a hint would bring along left out
+/// (#5874): the person unticked it, and a skill one of them refers to still comes along.
+pub fn review_without(
+    plane: &Path,
+    source: &Source,
+    names: &[String],
+    level: &Level,
+    without: &[String],
+) -> Result<Review, String> {
     let fetched = fetch(plane, source, None)?;
     let review = fetched
-        .review_with(names, &met_at(plane, level))?
+        .review_with(names, &met_at(plane, level), Hints::Without(without))?
         .marked(plane, level);
     held_to_policy(plane, &fetched, &review)?;
     Ok(review)
@@ -907,6 +954,18 @@ pub fn review_set(
     names: &[String],
     level: &Level,
 ) -> Result<SetReview, String> {
+    review_set_without(plane, source, names, level, &[])
+}
+
+/// [`review_set`], with each skill of `without` that only a hint would bring along left out
+/// (#5874), as [`review_without`] leaves it.
+pub fn review_set_without(
+    plane: &Path,
+    source: &Source,
+    names: &[String],
+    level: &Level,
+    without: &[String],
+) -> Result<SetReview, String> {
     let fetched = fetch(plane, source, None)?;
     let (found, _) = fetched.skills()?;
     let installed = lock::every(plane).0;
@@ -920,6 +979,7 @@ pub fn review_set(
                     .any(|at| at == level)
             },
             &met_at(plane, level),
+            Hints::Without(without),
         )?
         .marked(plane, level);
     set_held_to_policy(plane, &fetched, &set)?;
@@ -941,7 +1001,13 @@ pub fn review_all(plane: &Path, source: &Source, level: &Level) -> Result<SetRev
         .collect();
     // Those it names are installed nowhere from this source, so none is there already.
     let set = fetched
-        .set_review(&found, &names, &|_| false, &met_at(plane, level))?
+        .set_review(
+            &found,
+            &names,
+            &|_| false,
+            &met_at(plane, level),
+            Hints::Every,
+        )?
         .marked(plane, level);
     set_held_to_policy(plane, &fetched, &set)?;
     Ok(set)

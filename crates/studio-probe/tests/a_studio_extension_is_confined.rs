@@ -343,6 +343,7 @@ fn it_adds_a_template_a_lint_a_panel_and_a_source() {
         ID,
         &[studio_probe::OFFERED.to_owned()],
         &purlis_core::skills::verbs::Level::project(),
+        &[],
     )
     .expect("purlis reviews what it answers");
     // What the review read is held for the install, which asks the extension nothing (#3089).

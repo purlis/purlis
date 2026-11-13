@@ -1846,3 +1846,81 @@ describe("an extension's skill source (#3092)", () => {
     expect(did(asked, "skill_update_review") || did(asked, "skill_update")).toBe(false);
   });
 });
+
+describe("a skill that comes along by a hint (#5874)", () => {
+  const GRILLING = {
+    ...NOTIFY,
+    name: "grilling",
+    description: "Asks hard questions.",
+    folder: "skills/grilling",
+    brought_by_hint: true,
+    hints: [],
+  };
+  const WITH_HINT = {
+    ...REVIEW,
+    skills: [{ ...REVIEW.skills[0], hints: ["grilling"] }, NOTIFY, GRILLING],
+    accepted: {
+      ...ACCEPTED,
+      skills: [...ACCEPTED.skills, { name: "grilling", digest: "sha256:g1" }],
+    },
+  };
+
+  it("says so, and is unticked out of the review and the install and ticked back in", async () => {
+    const asked = core({
+      answers: {
+        skill_install_review: (args) =>
+          (args.without as string[]).includes("grilling") ? REVIEW : WITH_HINT,
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const page = await openSource(user);
+    await user.click(await within(page).findByRole("button", { name: "Review install: deploy" }));
+    const review = await screen.findByTestId("install-review");
+    const grilling = await within(review).findByTestId("reviewed-grilling");
+    expect(grilling).toHaveTextContent("Comes along by a hint: deploy names it bare.");
+    expect(within(review).getByTestId("reviewed-notify")).toHaveTextContent(
+      "Comes along: deploy refers to it.",
+    );
+    // One a reference brings is out of reach; one a hint brings is not.
+    expect(within(review).getByRole("checkbox", { name: /^Install notify/ })).toBeDisabled();
+    const box = within(review).getByRole("checkbox", { name: /^Install grilling/ });
+    expect(box).toBeChecked();
+    expect(box).toHaveAccessibleDescription(
+      "deploy only names it bare, so it runs without it. Untick it to leave it out.",
+    );
+
+    await user.click(box);
+    await waitFor(() => expect(within(review).queryByTestId("reviewed-grilling")).toBeNull());
+    const reviews = () => asked.filter((one) => one.cmd === "skill_install_review");
+    expect(reviews().map((one) => one.args.without)).toEqual([[], ["grilling"]]);
+    const left = within(review).getByRole("checkbox", { name: "Install grilling" });
+    expect(left).not.toBeChecked();
+    expect(left).toHaveAccessibleDescription("deploy only names it bare, so it runs without it.");
+
+    await user.click(within(review).getByRole("button", { name: "Install" }));
+    await waitFor(() => expect(did(asked, "skill_install")).toBe(true));
+    expect(asked.find((one) => one.cmd === "skill_install")?.args.reviewed).toEqual(ACCEPTED);
+  });
+
+  it("is read again with it when its box is ticked back", async () => {
+    const asked = core({
+      answers: {
+        skill_install_review: (args) =>
+          (args.without as string[]).includes("grilling") ? REVIEW : WITH_HINT,
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const page = await openSource(user);
+    await user.click(await within(page).findByRole("button", { name: "Review install: deploy" }));
+    const review = await screen.findByTestId("install-review");
+    await user.click(await within(review).findByRole("checkbox", { name: /^Install grilling/ }));
+    const left = await within(review).findByRole("checkbox", { name: "Install grilling" });
+    await waitFor(() => expect(left).not.toBeChecked());
+    await user.click(left);
+    expect(await within(review).findByTestId("reviewed-grilling")).toBeInTheDocument();
+    const reviews = asked.filter((one) => one.cmd === "skill_install_review");
+    expect(reviews.map((one) => one.args.without)).toEqual([[], ["grilling"], []]);
+  });
+});

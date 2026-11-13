@@ -512,6 +512,11 @@ pub struct ReviewSkill {
     pub description: String,
     pub folder: String,
     pub brought_by: Option<String>,
+    /// Whether [`Self::brought_by`] only names it bare, as a hint (#4510): the review says it
+    /// comes along by a hint, and the person may untick it (#5874).
+    pub brought_by_hint: bool,
+    /// The skills it names only bare, as hints, each once.
+    pub hints: Vec<String>,
     /// The skills it refers to that the level it lands in holds already (#4032): left as they
     /// are, not brought along.
     pub already: Vec<String>,
@@ -534,6 +539,8 @@ impl From<&source::SkillReview> for ReviewSkill {
             description: esc(&skill.description),
             folder: esc(&skill.folder),
             brought_by: skill.brought_by.as_deref().map(esc),
+            brought_by_hint: skill.brought_by_hint,
+            hints: skill.hints.iter().map(|one| esc(one)).collect(),
             already: skill.already.iter().map(|one| esc(one)).collect(),
             clash: skill.clash.as_ref().map(ReviewClash::from),
             notes: skill.notes.iter().map(|one| esc(one)).collect(),
@@ -1096,7 +1103,8 @@ pub(crate) async fn skill_source_browse(
 }
 
 /// **The install review** of `names` from a source into `level`, and the skills they refer to
-/// that `level` does not hold already.
+/// that `level` does not hold already, and those they hint at but each of `without`, which the
+/// person unticked (#5874).
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_install_review(
@@ -1106,13 +1114,15 @@ pub(crate) async fn skill_install_review(
     source: SkillSource,
     names: Vec<String>,
     level: SkillLevel,
+    without: Vec<String>,
 ) -> Result<InstallReview, String> {
     let held = planes.held(&plane)?;
     let executor = views.executor();
     crate::off_the_window("reviewing the install", move || {
         flag_on()?;
         let at = (&level).into();
-        let mut review = source::review(held.root(), &source.core(), &names, &at)?;
+        let mut review =
+            source::review_without(held.root(), &source.core(), &names, &at, &without)?;
         lint_reviews(&executor, held.root(), &at, &mut review.skills);
         Ok(InstallReview::from(&review))
     })
@@ -1131,6 +1141,7 @@ pub(crate) async fn skill_install_set_review(
     source: SkillSource,
     names: Vec<String>,
     level: SkillLevel,
+    without: Vec<String>,
 ) -> Result<InstallSetReview, String> {
     let held = planes.held(&plane)?;
     let executor = views.executor();
@@ -1138,7 +1149,7 @@ pub(crate) async fn skill_install_set_review(
         flag_on()?;
         let at = (&level).into();
         Ok(
-            match source::review_set(held.root(), &source.core(), &names, &at)? {
+            match source::review_set_without(held.root(), &source.core(), &names, &at, &without)? {
                 source::SetReview::Review { mut review, there } => InstallSetReview::Review {
                     review: {
                         lint_reviews(&executor, held.root(), &at, &mut review.skills);
