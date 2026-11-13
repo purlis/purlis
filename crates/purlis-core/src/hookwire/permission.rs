@@ -44,6 +44,12 @@ pub struct PermissionAsked {
     /// from a hook older than the field, whose ask's deadline is counted from its raise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ran_for_ms: Option<u64>,
+    /// The harness run the hook ran under (Q266), judged against the run the chat adopted
+    /// before a give-up may say the chat waits in its terminal: a harness nested in the chat
+    /// holds its token, and its prompt is none of the chat's. A line without one is no one's,
+    /// and is written without it.
+    #[serde(default, skip_serializing_if = "super::Speaker::is_no_one")]
+    pub speaker: super::Speaker,
 }
 
 impl PermissionAsked {
@@ -115,12 +121,14 @@ pub struct Waiting {
 /// many, too big, a chat it does not know), and then the hook is told no option at once.
 pub type Permitting = Box<dyn Fn(PermissionAsked) -> Option<Waiting> + Send + Sync + 'static>;
 
-/// **A permission hook's ask the host would not hold** (R-204, #6426): the chat it ran in, who
-/// in it asked, and why ([`crate::harness::hooked::NotRaised`]). The hook is told no option at
-/// once, so its harness's own prompt asks in the pane, where the chat now waits.
+/// **A permission hook's ask the host would not hold** (R-204, #6426): the chat it ran in, the
+/// harness run that asked and who in it, and why ([`crate::harness::hooked::NotRaised`]). The
+/// hook is told no option at once, so its harness's own prompt asks in the pane, where the chat
+/// now waits if that run is the one it adopted (Q266).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GaveUp {
     pub chat: u32,
+    pub speaker: super::Speaker,
     pub asker: crate::harness::hooked::Asker,
     pub why: crate::harness::hooked::NotRaised,
 }
@@ -156,6 +164,7 @@ pub fn held_or_given_up(
             );
             gave_up(GaveUp {
                 chat: asked.chat,
+                speaker: asked.speaker.clone(),
                 asker: crate::harness::hooked::Asker::of(&asked.payload),
                 why,
             });
@@ -176,6 +185,9 @@ pub fn held_or_given_up(
         let id = held.raised.id.clone();
         // A hook's ask always has a deadline; one without would hold a hook past the harness's
         // patience, so it is let go at once, and its prompt asks in the pane as a late one's does.
+        // `raise_after` already refuses an ask with none (`NotRaised::TooLate`), so this does not
+        // run today. It stays, rather than an `expect`, so that a change there can never hold a
+        // hook with no deadline nor panic the hook channel's hearer.
         let Some(until) = held.raised.ask.deadline.duration() else {
             hooks.withdraw(&id);
             given_up(crate::harness::hooked::NotRaised::TooLate);
@@ -382,6 +394,7 @@ mod tests {
             payload: serde_json::json!({"tool_name": "Bash",
                 "tool_input": {"command": "npm test"}}),
             ran_for_ms: None,
+            speaker: Default::default(),
         }
     }
 

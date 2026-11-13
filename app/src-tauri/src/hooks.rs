@@ -3931,7 +3931,7 @@ fn told_it_gave_up(
 ) -> Option<Moved> {
     let mut board = held_board(board);
     moving(&mut board, plane, left.chat, |board| {
-        board.hook_gave_up(left.chat, &left.asker)
+        board.hook_gave_up(left.chat, &left.speaker, &left.asker)
     })
 }
 

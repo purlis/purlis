@@ -1,4 +1,4 @@
-### Fixed
+### Added
 
 - **A chat whose permission prompt purlis couldn't hold is listed in Asks.** When purlis can't
   hold a chat's permission ask (the ask is too big to show, its hook names another harness than

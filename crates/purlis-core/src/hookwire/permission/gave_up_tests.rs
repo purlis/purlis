@@ -367,7 +367,10 @@ fn at_the_32_open_cap_answering_another_ask_in_the_window_leaves_the_terminal_ro
                 .expect("the board")
                 .answered_by(CHAT, &answered);
             let why = format!("{:?}, answered as {answered:?}", on.source);
-            assert!(host.waits_in_its_terminal(), "{why}: the pane's prompt stands");
+            assert!(
+                host.waits_in_its_terminal(),
+                "{why}: the pane's prompt stands"
+            );
             assert_eq!(host.prompt(), Some(Prompt::Permission), "{why}");
 
             host.answered_in_the_pane(on);
@@ -377,8 +380,7 @@ fn at_the_32_open_cap_answering_another_ask_in_the_window_leaves_the_terminal_ro
 }
 
 #[test]
-fn the_chat_s_own_give_up_answered_in_its_pane_while_a_helper_still_asks_clears_the_chat_s_part()
-{
+fn the_chat_s_own_give_up_answered_in_its_pane_while_a_helper_still_asks_clears_the_chat_s_part() {
     // Q266: the chat's own prompt, answered in its pane, was the only one in the pane. Its helper
     // still asks, in the window, so the chat still waits, but no longer in its terminal.
     let on = HARNESSES[0];

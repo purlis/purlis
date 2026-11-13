@@ -696,6 +696,7 @@ fn an_edit_raised_on_the_hook_channel_is_drawn_in_its_row_and_its_allow_goes_bac
         permission_request: Source::ClaudeCode,
         payload: payload.clone(),
         ran_for_ms: None,
+        speaker: Default::default(),
     })
     .expect("the ask is held");
 
