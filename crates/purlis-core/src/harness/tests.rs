@@ -962,9 +962,11 @@ fn every_charter_tool_a_claude_code_chat_runs_without_asking_is_ruled_in_by_name
         // The catalogue's listing, the binary's own (ADR 0122 §7, #5969).
         "queries",
     ];
-    // Ruled on and left to ask: a repo's milestones (#6233) reach the forge as the chat, so
-    // nothing pre-allows it until someone rules it in.
-    let asked = [crate::chattools::FORGE_MILESTONES];
+    // Ruled on and left to ask: a repo's milestones (#6233) reach the forge as the chat, and
+    // the list of the workspace's other chats (#6235) is the harness's to ask the person about
+    // before a chat reads it (the operator's rulings of 2026-11-11). Nothing pre-allows either
+    // until someone rules it in.
+    let asked = [crate::chattools::FORGE_MILESTONES, crate::chattools::CHATS];
     let others: Vec<&str> = crate::chattools::TOOLS
         .iter()
         .map(|tool| tool.name)

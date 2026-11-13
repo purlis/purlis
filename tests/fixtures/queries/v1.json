@@ -38,7 +38,8 @@
     "purlis.session_record_list",
     "purlis.session_record_read",
     "purlis.change_status",
-    "purlis.forge_milestones"
+    "purlis.forge_milestones",
+    "purlis.chats"
   ],
   "results": {
     "purlis.todo_list": {
@@ -366,6 +367,141 @@
         "path",
         "state",
         "milestones"
+      ],
+      "additionalProperties": false
+    },
+    "purlis.chats": {
+      "type": "object",
+      "properties": {
+        "history": {
+          "type": "boolean",
+          "description": "Whether ended dispatches are listed too."
+        },
+        "chats": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Its id; chat-<n> for an open chat given none yet, <record id>.chat-<n> for an ended one: what a parent names it by."
+              },
+              "name": {
+                "type": "string",
+                "description": "Its name, as its tab shows it."
+              },
+              "persona": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The persona it runs as, or null."
+              },
+              "harness": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Its harness, by the project's word for it, or null for a shell."
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "needs",
+                  "stuck",
+                  "failed",
+                  "working",
+                  "waiting",
+                  "idle",
+                  "ended",
+                  "cant-tell"
+                ],
+                "description": "Its Chat state, as the window's mark keys it."
+              },
+              "state_said": {
+                "type": "string",
+                "description": "Its Chat state, as the window names it: Waiting on you, Failed, …"
+              },
+              "cause": {
+                "type": "string",
+                "description": "The fact that decided its state, such as needs-you-queue or turn-ended."
+              },
+              "started": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "When it started, RFC 3339, or null where it is not known."
+              },
+              "last_activity": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "When it last moved, RFC 3339, or null where it is not known."
+              },
+              "parent": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "The chat it came from, or null for one the person opened.",
+                "properties": {
+                  "id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "That chat's id, or null where it works in another workspace or at the project's root."
+                  },
+                  "relation": {
+                    "type": "string",
+                    "enum": [
+                      "dispatched",
+                      "handed-off-from"
+                    ],
+                    "description": "dispatched: a task that owes it a report; handed-off-from: the work moved here."
+                  }
+                },
+                "required": [
+                  "id",
+                  "relation"
+                ],
+                "additionalProperties": false
+              },
+              "session_record": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Its newest session record, the file name session_record_read takes, or null."
+              },
+              "open": {
+                "type": "boolean",
+                "description": "Whether it is open now; false only with history."
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "persona",
+              "harness",
+              "state",
+              "state_said",
+              "cause",
+              "started",
+              "last_activity",
+              "parent",
+              "session_record",
+              "open"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "history",
+        "chats"
       ],
       "additionalProperties": false
     }

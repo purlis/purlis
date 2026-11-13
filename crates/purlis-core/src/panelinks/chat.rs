@@ -16,8 +16,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use crate::chatlookup::{self, Found, OpenChat};
-use crate::dispatchrecord::{self, Record};
+use crate::chatlookup::{self, Found, Known, OpenChat};
+use crate::chatrecords::ChatRecord;
+use crate::dispatchrecord::Record;
 
 use super::{Kind, LinkKind, Opening, Pane, Resolved, Target};
 
@@ -56,14 +57,17 @@ pub enum Goes {
     Open,
     /// Ended: its newest dispatch record, which its card is drawn from.
     Ended(Box<Record>),
+    /// A chat no dispatch started has closed (#6304): the app's record of it, which its card is
+    /// drawn from.
+    Closed(Box<ChatRecord>),
 }
 
 /// **The chat kind**, given the chats of the pane's project open now. The project's dispatch
-/// records are read once, the first time a number no open chat answers to is looked up, and
+/// records and closed chats' records ([`Known`]) are read once, the first time a number no open chat answers to is looked up, and
 /// kept for the rest of the batch: one resolver is made for each line or open it answers.
 pub struct ChatNumber {
     open: Vec<OpenChat>,
-    records: OnceLock<(PathBuf, Vec<Record>)>,
+    records: OnceLock<(PathBuf, Known)>,
 }
 
 impl ChatNumber {
@@ -79,7 +83,7 @@ impl ChatNumber {
     fn lookup(&self, project: &Path, number: u32) -> Found {
         let (read_in, records) = self
             .records
-            .get_or_init(|| (project.to_owned(), dispatchrecord::list(project)));
+            .get_or_init(|| (project.to_owned(), Known::read(project)));
         if read_in == project {
             chatlookup::by_number(number, &self.open, records)
         } else {
@@ -152,6 +156,7 @@ impl ChatNumber {
             Found::Open { number } => Some(open_as(number)),
             Found::Restarted { now } => Some(open_as(now)),
             Found::Ended(record) => Some(ChatAt::new(number, Goes::Ended(record))),
+            Found::Closed(chat) => Some(ChatAt::new(number, Goes::Closed(chat))),
             Found::NoChat => None,
         }
     }

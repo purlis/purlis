@@ -3296,3 +3296,41 @@ fn a_question_with_no_answer_after_it_is_what_counts_as_asked_and_unanswered() {
         "question", "answer", "question"
     ])));
 }
+
+#[test]
+fn the_drawn_records_are_read_again_only_after_the_store_changed() {
+    // #6235: a page's chats feed is asked again at each move of a board, and reads the
+    // records only when they have changed.
+    let (_d, root) = project();
+    let mut drawing = Drawing::default();
+    let opened = open(&root, a_handoff(), at("2026-10-07T12:00:00Z")).unwrap();
+    let later = settled(&root);
+    let ids = |drawing: &mut Drawing, now| -> Vec<(String, bool)> {
+        drawing
+            .drawn_at(&root, now)
+            .records
+            .iter()
+            .map(|r| (r.id.clone(), r.running()))
+            .collect()
+    };
+    assert_eq!(ids(&mut drawing, later), [(opened.id.clone(), true)]);
+    assert!(
+        drawing.drawn_at(&root, later).records[0].brief.is_empty(),
+        "kept without its brief"
+    );
+
+    // A file changed behind the store's back, in place, is not read again.
+    let path = dir(&root).join(format!("{}.json", opened.id));
+    let kept = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(&path, "not a record").unwrap();
+    assert_eq!(ids(&mut drawing, later), [(opened.id.clone(), true)]);
+    std::fs::write(&path, kept).unwrap();
+
+    // Its end, written through the store, is read at once.
+    let ending = Ending {
+        report: Some(done("healthy")),
+        usage: None,
+    };
+    assert!(close(&root, &opened.id, ending, at("2026-10-07T12:01:00Z")).unwrap());
+    assert_eq!(ids(&mut drawing, settled(&root)), [(opened.id, false)]);
+}

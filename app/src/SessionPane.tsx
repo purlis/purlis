@@ -39,6 +39,7 @@ import {
 } from "./paneLinks";
 import { usePaneLinks } from "./PaneLinkSurfaces";
 import { usePaneLinkChats } from "./PaneLinkChats";
+import { listsLinks } from "./paneLinksOpen";
 import { isKey } from "./keys/registry";
 import { moveAlong } from "./tabSequence";
 import { TerminalMenu, type PaneMenu } from "./TerminalMenu";
@@ -241,7 +242,8 @@ export function SessionPane({
       const link = overLink.current;
       if (link === undefined) return;
       if (id === "terminal.openLink") {
-        if (linkHands !== undefined) void openLink(link.candidate, linkHands);
+        // A chat's card stands at the link: the menu has gone with its row (#6442).
+        if (linkHands !== undefined) void openLink(link.candidate, linkHands, null, link.place);
         return;
       }
       const out = navigator.clipboard as ClipboardOut | undefined;
@@ -265,6 +267,12 @@ export function SessionPane({
     },
     [runLinkRow],
   );
+
+  // **The window's rows open its list** (#6332): the palette's, its ⋯'s and its head's.
+  useEffect(() => {
+    if (openLinksList === undefined) return;
+    return listsLinks(plane, session, openLinksList);
+  }, [plane, session, openLinksList]);
 
   // **Its pane's head reaches it** (#4760): Copy and Paste on a right-click of the head run
   // here, as its own menu's do.

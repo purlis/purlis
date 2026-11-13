@@ -17,10 +17,20 @@ import { cardRowTitle } from "./closedChat";
 import { Button } from "./ui/button/Button";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
 
+/** The task of a card that has one, for a story's variations on it. */
+function taskOf(card: ChatCard): NonNullable<ChatCard["task"]> {
+  if (card.task === null) throw new Error("a task's card");
+  return card.task;
+}
+
 /** "#641 · Signed commits #5607", finished 11:08 (the prototype's `CLOSED_CHAT`). */
 const FINISHED: ChatCard = {
   number: 641,
   chat: "01K6W0RKER000000000000000B",
+  title: "Signed commits #5607",
+  // Local time, so every cell says 11:08 whatever its clock's zone.
+  ended: "2026-11-11T11:08:00",
+  place: "smart-ide",
   started_by: "steward 4",
   screen_kept: true,
   task: {
@@ -50,8 +60,10 @@ const FINISHED: ChatCard = {
 const BLOCKED: ChatCard = {
   ...FINISHED,
   number: 633,
+  title: "Docker pool on a full disk",
+  ended: "2026-11-11T09:41:00",
   task: {
-    ...FINISHED.task,
+    ...taskOf(FINISHED),
     name: "Docker pool on a full disk",
     how: "blocked",
     outcome: "blocked",
@@ -65,10 +77,12 @@ const BLOCKED: ChatCard = {
 const CLOSED: ChatCard = {
   ...FINISHED,
   number: 629,
+  title: "talk",
+  ended: "2026-11-11T08:15:00",
   started_by: "you",
   screen_kept: false,
   task: {
-    ...FINISHED.task,
+    ...taskOf(FINISHED),
     name: "talk",
     how: "closed_by_person",
     outcome: "closed by you",
@@ -77,6 +91,18 @@ const CLOSED: ChatCard = {
     report: "",
     reopens: false,
   },
+};
+
+/** "#702 · Tidy the changelog": a chat the person started by hand and closed (#6304). */
+const ORDINARY: ChatCard = {
+  number: 702,
+  chat: "01K6CHATS0000000000000000C",
+  title: "Tidy the changelog",
+  ended: "2026-11-12T09:40:00",
+  place: "smart-ide",
+  started_by: "you",
+  screen_kept: false,
+  task: null,
 };
 
 /** The palette's finished row, standing in: a press opens the card beside it. */
@@ -191,4 +217,30 @@ export const Outcomes: Story = {
       ))}
     </div>
   ),
+};
+
+/**
+ * **A chat no dispatch started** (#6304): the app kept its number, title and times as it
+ * closed, and no screen. Its badge says Closed, it has no report line, and both answers are off
+ * and say why.
+ */
+export const ChatNoDispatchStarted: Story = {
+  args: { card: ORDINARY },
+  play: async ({ canvasElement }) => {
+    await userEvent.click(
+      within(canvasElement).getByRole("button", { name: /Show closed chat #702/ }),
+    );
+    const card = await screen.findByRole("dialog", { name: "#702 · Tidy the changelog" });
+    await waitFor(() => expect(within(card).getByText("Closed")).toBeVisible());
+    await expect(within(card).getByText("you")).toBeVisible();
+    await expect(within(card).queryByText("Report")).toBeNull();
+    for (const name of ["Read it", "Reopen"])
+      await expect(within(card).getByRole("button", { name })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+    await expect(
+      within(card).getByText("Its screen was not kept.", { selector: "p" }),
+    ).toBeVisible();
+  },
 };

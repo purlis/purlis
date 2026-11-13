@@ -23,7 +23,7 @@ import { RowBelow, RowLabel, RowTrail } from "./ui/list/Row";
 import { ViewPageHeader } from "./ui/panel/ViewFrame";
 import { routedChatId } from "./skillStudio";
 import { SkillBudgetTable, type BudgetWrite, type BudgetWriteTold } from "./SkillBudget";
-import { capitalised } from "./saving";
+import { capitalised } from "./chatEnded";
 import { overSaid } from "./makeRoom";
 
 /** The word a choice of the built-in router is written as (`purlis_core::skills::router`). */

@@ -1347,7 +1347,24 @@ pub static TOOLS: [Tool; 32] = [
         schema: no_arguments,
         read_only: true,
     },
+    Tool {
+        name: CHATS,
+        description: "List the chats of the workspace this chat works in, as the window's Chats \
+                      tree has them: each with its id, name, persona, harness, its Chat state \
+                      and the fact that decided it, when it started and last moved, the chat \
+                      it came from and how (dispatched, or handed off from), and its session \
+                      record. With history, also the workspace's ended dispatches. Names, \
+                      states and times only: never what any chat wrote.",
+        schema: crate::catalogue::chats::parameters,
+        read_only: true,
+    },
 ];
+
+/// **The tool that lists the chats of the asking chat's workspace** (#6235). [`call`] does not
+/// answer it: only the app knows its open chats, so the server asks it over the chat's hook
+/// socket, as for [`PERSONA_WHERE`]. Not in [`PRE_ALLOWED`]: the harness asks the person
+/// before a chat lists the others (the operator's ruling of 2026-11-11).
+pub const CHATS: &str = "chats";
 
 /// The MCP twin of `purlis queries` (#5969).
 pub const QUERIES: &str = "queries";
@@ -1400,7 +1417,7 @@ pub fn call(
             "{tool} is handed to the app by purlis's MCP server, not written here"
         ));
     }
-    if tool == PERSONA_WHERE {
+    if tool == PERSONA_WHERE || tool == CHATS {
         return Err(format!(
             "{tool} is answered by the app through purlis's MCP server, not here"
         ));

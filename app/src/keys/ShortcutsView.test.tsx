@@ -36,7 +36,14 @@ describe("the cheat sheet (N25)", () => {
     render(<ShortcutsView mac />);
     expect(screen.queryByRole("heading")).toBeNull();
     const list = screen.getByRole("grid", { name: "Keyboard shortcuts" });
-    for (const group of ["Go to", "Window", "Tabs and chats", "Palette", "Dialogs and forms"])
+    for (const group of [
+      "Go to",
+      "Window",
+      "Tabs and chats",
+      "Panes",
+      "Palette",
+      "Dialogs and forms",
+    ])
       expect(within(list).getByText(group)).toBeInTheDocument();
     const focus = within(list).getByRole("row", { name: /Focus this pane/ });
     const cap = focus.querySelector('[data-part="shortcut"]');
@@ -63,5 +70,30 @@ describe("the cheat sheet (N25)", () => {
       .filter((one) => one.getAttribute("data-part") === "root");
     expect(acts).toHaveLength(1);
     expect(acts[0]).toHaveAccessibleName(/^Focus this pane/);
+  });
+
+  it("lists Links in this pane… with the pane's acts, in any pane, with its key on each keyboard (#6358)", () => {
+    for (const [mac, keys] of [
+      [true, "⇧⌘L"],
+      [false, "Ctrl+Shift+L"],
+    ] as const) {
+      const rows = sheetRows(mac);
+      // Not a chat's alone: a shell's pane and a one-job program's list their links too.
+      expect(rows.find((row) => row.id === "pane.links")).toMatchObject({
+        group: "Panes",
+        keys,
+        where: "In a pane",
+      });
+      expect(rows.filter((row) => row.group === "Panes").map((row) => row.id)).toEqual([
+        "pane.back",
+        "pane.focus",
+        "pane.move",
+        "pane.links",
+      ]);
+    }
+    render(<ShortcutsView mac />);
+    const list = screen.getByRole("grid", { name: "Keyboard shortcuts" });
+    const row = within(list).getByRole("row", { name: /^The links on the pane.s screen/ });
+    expect(row.querySelector('[data-part="shortcut"]')).toHaveTextContent("⇧⌘L");
   });
 });

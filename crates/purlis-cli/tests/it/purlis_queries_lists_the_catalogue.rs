@@ -47,6 +47,7 @@ fn the_json_listing_is_every_query_with_its_shape_scope_and_since() {
             "purlis.session_record_read",
             "purlis.change_status",
             "purlis.forge_milestones",
+            "purlis.chats",
         ]
     );
     for query in listing["queries"].as_array().expect("queries") {

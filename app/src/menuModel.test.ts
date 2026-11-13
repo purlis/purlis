@@ -474,7 +474,8 @@ describe("a chat's list (#4753)", () => {
       [
         "Go to qa 12",
         "Move…",
-        "Open ▸ [Focus workspace beta, Activity, Network]",
+        // Its pane's links (#6332), under Open ▸: the list stays ten rows at most.
+        "Open ▸ [Focus workspace beta, Links in this pane…, Activity, Network]",
         "Ignore until it asks again",
       ],
       ["Restart"],
@@ -517,7 +518,13 @@ describe("a chat's list (#4753)", () => {
       rowsOf(menuOf({ on: "chat", session }, offers)).map((row) => row.said);
 
     // Less what is chat 7's own now: its work link, and the Ignore of a chat that needs you.
-    const mine = new Set(["Unlink work item", "Go to qa 12", "Ignore until it asks again"]);
+    // And its pane's links (#6332): a chat no pane draws has no screen to list.
+    const mine = new Set([
+      "Unlink work item",
+      "Go to qa 12",
+      "Ignore until it asks again",
+      "Links in this pane…",
+    ]);
     // And what is the handoff's: the way back to the chat it came from (#5204).
     const itsOwn = "Go to console-developer 16";
     expect(rows(12).filter((one) => one !== itsOwn)).toEqual(
@@ -535,6 +542,8 @@ describe("a chat's list (#4753)", () => {
     expect(keys).toEqual({
       "Rename chat…": "F2",
       "Move…": expect.stringMatching(/^(⌘⇧M|Ctrl\+Shift\+M)$/),
+      // The list of its pane's links, the registry's `pane.links` (#6332).
+      "Links in this pane…": expect.stringMatching(/^(⇧⌘L|Ctrl\+Shift\+L)$/),
     });
   });
 

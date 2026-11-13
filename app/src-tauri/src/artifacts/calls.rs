@@ -110,6 +110,14 @@ pub(super) fn answer<R: tauri::Runtime>(
     if super::queried::is_extension(asked) {
         return super::queried::answer(app, config, of, snapshot, declared, asked, params);
     }
+    // The chats are the app's own record, not the plane's (#6235): admitted as any query is,
+    // and answered from the project as it is held.
+    if is_chats(asked) {
+        return match admitted(config, of, snapshot, declared, asked, params) {
+            Ok(_) => chats_answer(app, &of.plane, &of.workspace, params),
+            Err(kind) => Answer::error(kind, chrono::Utc::now()),
+        };
+    }
     let root = app
         .try_state::<Planes>()
         .and_then(|planes| planes.held(&of.plane).ok())
@@ -123,6 +131,51 @@ pub(super) fn answer<R: tauri::Runtime>(
         asked,
         params,
     )
+}
+
+/// Whether the query a page names, as declared (`<id>@<N>`) or bare, is `purlis.chats`.
+pub(super) fn is_chats(asked: &str) -> bool {
+    let id = asked.rsplit_once('@').map_or(asked, |(id, _)| id);
+    purlis_core::catalogue::find(id).is_some_and(|(q, _)| q.name == purlis_core::chattools::CHATS)
+}
+
+/// **`purlis.chats` asked with `params`** of workspace `workspace` of project `plane` (#6235):
+/// its parameters checked against its closed types, its data the app's own record, under the
+/// cap every answer is held to.
+pub(super) fn chats_answer<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    plane: &crate::planes::PlaneId,
+    workspace: &str,
+    params: &Value,
+) -> Answer {
+    use purlis_core::catalogue::{answer, chats};
+    let at = chrono::Utc::now();
+    let asked = answer::checked(&chats::parameters(), params)
+        .and_then(|args| chats::asked(&args).map_err(|_| ErrorKind::Refused));
+    let asked = match asked {
+        Ok(asked) => asked,
+        Err(kind) => return Answer::error(kind, at),
+    };
+    let Some(held) = app
+        .try_state::<Planes>()
+        .and_then(|planes| planes.held(plane).ok())
+    else {
+        return Answer::error(ErrorKind::Failed, at);
+    };
+    capped(
+        crate::chatlisting::answer(&held, plane, workspace, asked),
+        at,
+    )
+}
+
+/// `data` as an answer read `at`, or `too-large` where it is past the cap every answer is
+/// held to.
+fn capped(data: Value, at: chrono::DateTime<chrono::Utc>) -> Answer {
+    use purlis_core::catalogue::answer::MOST_BYTES;
+    if serde_json::to_vec(&data).map_or(usize::MAX, |b| b.len()) > MOST_BYTES {
+        return Answer::error(ErrorKind::TooLarge, at);
+    }
+    Answer::data(data, at)
 }
 
 /// [`answer`], of the plane at `root` (none: the plane is no longer open).
@@ -230,6 +283,19 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn a_chats_answer_past_the_cap_is_too_large_and_one_at_it_is_given() {
+        use purlis_core::catalogue::answer::MOST_BYTES;
+        let at = chrono::Utc::now();
+        // `{"chats":["…"]}` is 14 bytes around the text.
+        let of = |text: usize| json!({ "chats": ["x".repeat(text)] });
+        assert!(capped(of(MOST_BYTES - 14), at).outcome.is_ok());
+        assert_eq!(
+            capped(of(MOST_BYTES - 13), at).outcome,
+            Err(ErrorKind::TooLarge)
+        );
+    }
 
     #[test]
     fn a_query_ask_carries_the_declared_id_and_its_params_and_nothing_else() {

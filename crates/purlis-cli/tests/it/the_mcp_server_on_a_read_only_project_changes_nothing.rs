@@ -309,6 +309,8 @@ fn arguments(tool: &str, todo: &str) -> Value {
         "queries" => json!({}),
         // A repo's milestones (#6233): asked of the forge, never of the project's files.
         "forge_milestones" => json!({}),
+        // The workspace's chats (#6235): the app's to answer, read only.
+        "chats" => json!({}),
         other => panic!("no arguments for {other}: add it to this test"),
     }
 }

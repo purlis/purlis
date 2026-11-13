@@ -31,7 +31,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use purlis_core::dispatchrecord::Record;
 use purlis_core::panelinks::{
     Asks, Candidate, ChatAt, ChatNumber, FileAt, Goes, Home, HomeIs, Hover, Kind, NOT_A_LINK,
     Opening, Pane, ReadFrom, Resolver, Runs, Target, UNASKABLE,
@@ -226,8 +225,10 @@ pub(crate) struct ChatsHere<'a> {
     pub card: CardOf<'a>,
 }
 
-/// How an ended chat's card is drawn from its number and its record: none for one with no card.
-pub(crate) type CardOf<'a> = Box<dyn Fn(u32, &Record) -> Option<ChatCard> + 'a>;
+/// How an ended or closed chat's card is drawn from its number and where its link goes (its
+/// dispatch record, or the app's record of a chat no dispatch started, #6304): none for one with
+/// no card.
+pub(crate) type CardOf<'a> = Box<dyn Fn(u32, &Goes) -> Option<ChatCard> + 'a>;
 
 impl ChatsHere<'_> {
     /// A pane in no project: no chat links.
@@ -271,10 +272,10 @@ impl ChatsHere<'_> {
                     },
                 )
             }
-            Goes::Ended(record) => {
-                let card = (self.card)(at.number, record)?;
+            Goes::Ended(_) | Goes::Closed(_) => {
+                let card = (self.card)(at.number, &at.goes)?;
                 (
-                    format!("#{} · {}", at.number, card.task.name),
+                    format!("#{} · {}", at.number, card.title),
                     ChatSeen::Ended {
                         card: Box::new(card),
                     },
@@ -288,8 +289,8 @@ impl ChatsHere<'_> {
         Some(match &at.goes {
             Goes::ThisChat => ChatGo::ThisChat,
             Goes::Open => ChatGo::Chat { session: at.number },
-            Goes::Ended(record) => ChatGo::Card {
-                card: Box::new((self.card)(at.number, record)?),
+            Goes::Ended(_) | Goes::Closed(_) => ChatGo::Card {
+                card: Box::new((self.card)(at.number, &at.goes)?),
             },
         })
     }
@@ -605,7 +606,11 @@ fn for_project(held: Option<&Held>) -> (Resolver, ChatsHere<'_>) {
         .collect();
     let chats = ChatsHere {
         open: named,
-        card: Box::new(move |number, record| crate::chatcard::card_of(held, number, record, &open)),
+        card: Box::new(move |number, goes| match goes {
+            Goes::Ended(record) => crate::chatcard::card_of(held, number, record, &open),
+            Goes::Closed(chat) => Some(crate::chatcard::card_of_chat(held, chat)),
+            Goes::ThisChat | Goes::Open => None,
+        }),
     };
     (resolver, chats)
 }

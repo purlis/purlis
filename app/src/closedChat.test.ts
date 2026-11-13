@@ -9,6 +9,9 @@ import { cardRowId, cardWhen, numberRows, opensACard, outcomeOf } from "./closed
 const CARD: ChatCard = {
   number: 641,
   chat: "01K6W0RKER000000000000000B",
+  title: "Signed commits #5607",
+  ended: "2026-11-11T11:08:00",
+  place: "smart-ide",
   started_by: "steward 4",
   screen_kept: true,
   task: {
@@ -68,7 +71,8 @@ describe("a chat found by its number in the palette (#6214)", () => {
   });
 
   it("says each end in the words a finished row says, coloured by how it went", () => {
-    const of = (how: ChatCard["task"]["how"], outcome: string) => outcomeOf({ how, outcome });
+    const of = (how: NonNullable<ChatCard["task"]>["how"], outcome: string) =>
+      outcomeOf({ how, outcome });
     expect(of("done", "done")).toMatchObject({ badge: "Done", variant: "ok" });
     expect(of("closed_by_person", "closed by you")).toMatchObject({
       badge: "Closed by you",

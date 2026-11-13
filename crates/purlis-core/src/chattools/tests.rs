@@ -135,6 +135,7 @@ fn the_tools_are_the_ones_charter_names_and_each_says_what_it_does() {
             "dispatch_ask",
             "ask_operator",
             "queries",
+            "chats",
         ]
     );
     for tool in &TOOLS {

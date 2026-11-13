@@ -121,6 +121,8 @@ export const GROUPS = [
   "Go to",
   "Window",
   "Tabs and chats",
+  // A pane's own acts, whatever it shows: a chat, a shell or a one-job program (#6358).
+  "Panes",
   "Palette",
   "Dialogs and forms",
 ] as const;
@@ -145,6 +147,9 @@ export interface Shortcut {
   does: string;
   group: Group;
   where: Scope;
+  /** **Where the sheet says it applies**, for an act its scope's word is too narrow for: a key
+   *  the pane takes from a chat's, a shell's and a one-job program's terminal alike (#6358). */
+  place?: string;
   /** `key` is matched by its handler; a `path` is keys already declared, in turn; a `native`
    *  key is the system menu's or an editor's own. */
   kind: "key" | "path" | "native";
@@ -624,7 +629,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   {
     id: "pane.back",
     does: "Back to the chat this pane showed before",
-    group: "Tabs and chats",
+    group: "Panes",
     where: "window",
     kind: "key",
     chords: { mac: [cmd("H", { shift: true })], other: [ctl("H", { shift: true })] },
@@ -636,7 +641,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   {
     id: "pane.focus",
     does: "Move to the pane in that direction",
-    group: "Tabs and chats",
+    group: "Panes",
     where: "window",
     kind: "key",
     chords: {
@@ -701,7 +706,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   {
     id: "pane.move",
     does: "Pick up the focused pane, chat or tab to move it with the keys",
-    group: "Tabs and chats",
+    group: "Panes",
     where: "window",
     kind: "key",
     chords: { mac: [cmd("M", { shift: true })], other: [ctl("M", { shift: true })] },
@@ -761,15 +766,18 @@ export const SHORTCUTS: readonly Shortcut[] = [
   {
     id: "pane.links",
     does: "The links on the pane's screen: Links in this pane…",
-    group: "Tabs and chats",
+    group: "Panes",
     where: "terminal",
+    place: "In a pane",
     kind: "key",
     // `L` for links (#6220, D5). ⇧⌘L was no key of the window's; Ctrl with Shift and a letter is
     // no byte to a terminal's program, so it is the pane's off a Mac, as Ctrl+Shift+F is.
     chords: { mac: [PANE_LINKS.mac], other: [PANE_LINKS.other] },
     said: linksListKeySaid,
     // The terminal's menu row that opens the list (#6219) says this key, drawn and to a reader.
-    rows: ["terminal.links"],
+    // So does each pane's ⋯ and head row (#6332). The palette's draws no key: ⇧⌘L is the
+    // focused terminal's, not the window's, and the palette shows only the window's.
+    rows: ["terminal.links", "chat.links:"],
     yields: [],
     matches: opensTheLinksList,
   },

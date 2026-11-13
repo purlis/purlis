@@ -961,7 +961,31 @@ fn every_harness_denies_a_chat_the_record_of_what_was_refused_while_nobody_was_t
 /// read in the window, never a chat's.
 #[test]
 fn every_harness_denies_a_chat_the_kept_screens_of_tasks() {
-    const SCREEN: &str = "01K6W0RKER000000000000000B.screen";
+    every_harness_denies_a_chat_the_store(
+        crate::chatscreens::DIR_NAME,
+        "01K6W0RKER000000000000000B.screen",
+        crate::chatscreens::dir,
+    );
+}
+
+/// #6304: every closed chat's record (`chatrecords`) is denied the same way: its title and who
+/// started it are the person's, never a chat's to read or write.
+#[test]
+fn every_harness_denies_a_chat_the_records_of_closed_chats() {
+    every_harness_denies_a_chat_the_store(
+        crate::chatrecords::DIR_NAME,
+        crate::chatrecords::FILE_NAME,
+        crate::chatrecords::dir,
+    );
+}
+
+/// The store `dir_name` under the state folder's `app/`, holding `file_name`, which the app
+/// writes at `dir_of`, is denied for reading and writing in what each harness is compiled.
+fn every_harness_denies_a_chat_the_store(
+    dir_name: &str,
+    file_name: &str,
+    dir_of: fn(&std::path::Path) -> std::path::PathBuf,
+) {
     for os in [Os::MacOs, Os::Linux] {
         let (plane, denied) = denied_with(None, os);
         let files: Vec<std::path::PathBuf> = [".charter", ".purlis"]
@@ -971,8 +995,8 @@ fn every_harness_denies_a_chat_the_kept_screens_of_tasks() {
                     .path()
                     .join(state)
                     .join("app")
-                    .join(crate::chatscreens::DIR_NAME)
-                    .join(SCREEN)
+                    .join(dir_name)
+                    .join(file_name)
             })
             .collect();
         for file in &files {
@@ -982,7 +1006,7 @@ fn every_harness_denies_a_chat_the_kept_screens_of_tasks() {
         assert!(
             files
                 .iter()
-                .any(|file| file.parent() == Some(crate::chatscreens::dir(plane.path()).as_path()))
+                .any(|file| file.parent() == Some(dir_of(plane.path()).as_path()))
         );
         let under = |held: &[std::path::PathBuf], file: &std::path::Path| {
             held.iter().any(|folder| file.starts_with(folder))
@@ -1006,7 +1030,7 @@ fn every_harness_denies_a_chat_the_kept_screens_of_tasks() {
         };
         for file in &files {
             let folder = super::real(file.parent().expect("a folder"));
-            let named = folder.join(SCREEN);
+            let named = folder.join(file_name);
             assert!(under(&listed("denyRead"), &named), "{os:?}: {named:?}");
             assert!(under(&listed("denyWrite"), &named), "{os:?}: {named:?}");
             assert!(
