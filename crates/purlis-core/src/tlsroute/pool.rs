@@ -74,6 +74,14 @@ fn forget_checked(pool: &str) {
         .remove(pool);
 }
 
+/// **Pool `pool` is gone**: its engine's check and the vault key `remote` names, where this
+/// process holds them, are let go of. A run folder a run left behind is swept at the next start
+/// ([`crate::dockerpool::settings::sweep`]).
+pub fn forget_pool(pool: &str, remote: &Remote) {
+    forget_checked(pool);
+    super::forget_vault_key(&remote.files.key);
+}
+
 /// **Every engine is checked again at its next ask**, and every vault key read again: the person
 /// pressed Check again in Pool setup.
 pub fn look_again() {

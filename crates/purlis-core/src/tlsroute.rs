@@ -523,6 +523,26 @@ pub fn forget_vault_keys() {
         .clear();
 }
 
+/// **The vault key `from` names is let go of**, where this process holds it: its pool is gone.
+pub fn forget_vault_key(from: &KeyFrom) {
+    if let KeyFrom::Vault { plane, vault, key } = from {
+        KEPT.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&(plane.clone(), vault.clone(), key.clone()));
+    }
+}
+
+/// Whether this process holds the vault key `from` names.
+#[cfg(test)]
+pub(crate) fn kept_in_memory(from: &KeyFrom) -> bool {
+    let KeyFrom::Vault { plane, vault, key } = from else {
+        return false;
+    };
+    KEPT.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .contains_key(&(plane.clone(), vault.clone(), key.clone()))
+}
+
 /// **What the engine at `route` says to a TLS handshake of purlis's own** (ADR 0123 §7), with
 /// `material`'s CA as the only root and its client certificate, then Docker's `/_ping` asked
 /// over it: `Ok` where the server verifies and accepts the client, else the finding that names

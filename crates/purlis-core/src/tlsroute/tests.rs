@@ -725,3 +725,48 @@ fn a_bare_command_over_tls_is_refused_and_names_no_file() {
         "a docker on this machine has its bare command"
     );
 }
+
+/// **A pool removed lets go of what this process holds for it**: its vault key, read once for
+/// its runs, is not kept in memory after the pool is gone.
+#[test]
+fn a_pool_removed_lets_go_of_its_vault_key_held_in_memory() {
+    let pki = Pki::new();
+    let key = std::fs::read_to_string(pki.at("client-key.pem")).unwrap();
+    let plane = plane_with_the_key(&key);
+    let from = KeyFrom::Vault {
+        plane: plane.path().to_path_buf(),
+        vault: "docker-box".to_owned(),
+        key: "TLS_KEY".to_owned(),
+    };
+    let remote = Remote {
+        route: Route::parse("tcp://box").unwrap(),
+        files: Files::new(pki.at("ca.pem"), pki.at("client.pem"), from.clone()).unwrap(),
+        pin: Pin {
+            ca: pki.fingerprint("ca"),
+            engine: "ENGINE-A".to_owned(),
+        },
+    };
+    let config = tempfile::tempdir().unwrap();
+    let image = crate::dockerpool::Image::pinned(&format!(
+        "ghcr.io/purlis/purlis-runner@sha256:{}",
+        "0".repeat(64)
+    ))
+    .unwrap();
+    let pool = crate::runners::Pool::new("box", image, crate::runners::Set::default())
+        .unwrap()
+        .on_engine(Some(crate::runners::RemoteEngine::Tls(remote)));
+    crate::runners::record_pool(config.path(), &pool).unwrap();
+    vault_key_in(
+        plane.path(),
+        "docker-box",
+        "TLS_KEY",
+        crate::secrets::Env::of(&[]),
+    )
+    .unwrap();
+    assert!(kept_in_memory(&from), "the key was read and kept");
+    crate::runners::forget_pool(config.path(), "box").unwrap();
+    assert!(
+        !kept_in_memory(&from),
+        "the removed pool's key is let go of"
+    );
+}

@@ -1212,6 +1212,12 @@ pub fn forget_pool(config_root: &Path, name: &str) -> Result<(), Refused> {
 pub fn forget_pool_locked(config_root: &Path, name: &str, _locked: &Locked) -> Result<(), Refused> {
     let mut held = load(config_root)?;
     let before = held.pools.len() + held.clusters.len();
+    // What this process holds for a pool over Docker's TLS API goes with it (#6267).
+    for kept in held.pools.iter().filter(|kept| kept.name() == name) {
+        if let Some(RemoteEngine::Tls(remote)) = kept.remote_engine() {
+            crate::tlsroute::pool::forget_pool(name, remote);
+        }
+    }
     held.pools.retain(|kept| kept.name() != name);
     held.clusters.retain(|kept| kept.name() != name);
     if held.pools.len() + held.clusters.len() != before {
