@@ -158,3 +158,57 @@ fn a_blocks_row_hands_the_window_its_reason_from_memory_never_the_log() {
         ]
     );
 }
+
+/// **A held reason shows only under a harness's own check** (Q259, T1-29's security review):
+/// the reason is the chat's or its harness's words, so a block purlis's guard or the sandbox
+/// made never carries one, even where memory holds a reason for that call's id.
+#[test]
+fn a_guard_block_whose_call_has_a_held_reason_shows_none() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let mut log =
+        purlis_core::eventlog::Log::open(dir.path(), "01J9ZZDEVICE0000000000000").expect("a log");
+    log.append(
+        Some(CHAT),
+        Some(RUN),
+        None,
+        "run.started",
+        serde_json::json!({"cause": "start", "harness": "claude"}),
+    )
+    .expect("written");
+    for (call, source) in [("call_g", "guard"), ("call_s", "sandbox")] {
+        log.append(
+            Some(CHAT),
+            Some(RUN),
+            None,
+            "hook.pretooluse",
+            serde_json::json!({"decision": "deny", "hook_ms": 1, "tool": "Bash", "call": call}),
+        )
+        .expect("written");
+        log.append(
+            Some(CHAT),
+            Some(RUN),
+            None,
+            "stop.block",
+            serde_json::json!({"tool": "Bash", "source": source}),
+        )
+        .expect("written");
+    }
+    drop(log);
+    let events = purlis_core::eventlog::read(dir.path()).expect("the log reads");
+
+    let read = chat_log_with(&events, Some(CHAT), &|_| {
+        Some("the chat's own words".to_owned())
+    });
+    let reasons: Vec<_> = read
+        .rows
+        .iter()
+        .filter_map(|row| match row {
+            ChatLogRow::Blocked { source, reason, .. } => Some((source.clone(), reason.clone())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        reasons,
+        [("guard".to_owned(), None), ("sandbox".to_owned(), None)]
+    );
+}

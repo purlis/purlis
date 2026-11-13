@@ -104,20 +104,86 @@ mod tests {
     }
 
     #[test]
-    fn past_the_bound_the_oldest_reason_is_let_go() {
+    fn the_first_reason_held_for_a_call_wins() {
         let reasons = Reasons::default();
-        for n in 0..=MOST_HELD {
-            reasons.hold(Path::new("/one"), said(1, Some(&n.to_string()), "why"));
+        reasons.hold(Path::new("/one"), said(7, Some("c1"), "first"));
+        reasons.hold(Path::new("/one"), said(7, Some("c1"), "second"));
+        assert_eq!(
+            reasons.of(Path::new("/one"), 7, "c1").as_deref(),
+            Some("first")
+        );
+        assert_eq!(reasons.held.lock().unwrap().oldest_first.len(), 1);
+    }
+
+    #[test]
+    fn one_chat_flooding_leaves_another_chats_reason_held() {
+        let reasons = Reasons::default();
+        reasons.hold(Path::new("/one"), said(2, Some("kept"), "chat two's"));
+        for n in 0..=MOST_PER_CHAT * 4 {
+            reasons.hold(Path::new("/one"), said(1, Some(&n.to_string()), "flood"));
         }
         assert_eq!(
-            reasons.of(Path::new("/one"), 1, "0"),
+            reasons.of(Path::new("/one"), 2, "kept").as_deref(),
+            Some("chat two's"),
+            "chat 1's flood evicts only chat 1's own"
+        );
+        assert_eq!(reasons.of(Path::new("/one"), 1, "0"), None, "its oldest went");
+        let last = (MOST_PER_CHAT * 4).to_string();
+        assert!(reasons.of(Path::new("/one"), 1, &last).is_some());
+        let held = reasons.held.lock().unwrap();
+        assert_eq!(held.by_call.len(), MOST_PER_CHAT + 1);
+    }
+
+    #[test]
+    fn a_reason_past_its_length_is_cut_with_a_marker() {
+        let reasons = Reasons::default();
+        let long = "é".repeat(LONGEST);
+        reasons.hold(Path::new("/one"), said(1, Some("c1"), &long));
+        let kept = reasons.of(Path::new("/one"), 1, "c1").expect("held");
+        assert!(kept.len() <= LONGEST, "{} bytes", kept.len());
+        assert!(kept.ends_with(CUT), "it says it was cut");
+        assert!(kept.starts_with("éé"));
+        let short = "a".repeat(LONGEST);
+        reasons.hold(Path::new("/one"), said(1, Some("c2"), &short));
+        assert_eq!(
+            reasons.of(Path::new("/one"), 1, "c2"),
+            Some(short),
+            "one at the bound is whole"
+        );
+    }
+
+    #[test]
+    fn a_debug_print_names_keys_never_the_reason() {
+        let reasons = Reasons::default();
+        let secret = "the reason's own words";
+        let line = said(7, Some("c1"), secret);
+        assert!(!format!("{line:?}").contains(secret));
+        assert!(format!("{line:?}").contains("c1"));
+        reasons.hold(Path::new("/one"), line);
+        let printed = format!("{reasons:?}");
+        assert!(!printed.contains(secret), "{printed}");
+        assert!(printed.contains("c1"), "{printed}");
+    }
+
+    #[test]
+    fn past_the_bound_across_chats_the_oldest_reason_is_let_go() {
+        let reasons = Reasons::default();
+        let chat_of = |n: usize| u32::try_from(n / MOST_PER_CHAT).unwrap();
+        for n in 0..=MOST_HELD {
+            reasons.hold(
+                Path::new("/one"),
+                said(chat_of(n), Some(&n.to_string()), "why"),
+            );
+        }
+        assert_eq!(
+            reasons.of(Path::new("/one"), 0, "0"),
             None,
             "the oldest went"
         );
-        assert!(reasons.of(Path::new("/one"), 1, "1").is_some());
+        assert!(reasons.of(Path::new("/one"), 0, "1").is_some());
         assert!(
             reasons
-                .of(Path::new("/one"), 1, &MOST_HELD.to_string())
+                .of(Path::new("/one"), chat_of(MOST_HELD), &MOST_HELD.to_string())
                 .is_some()
         );
         let held = reasons.held.lock().unwrap();
