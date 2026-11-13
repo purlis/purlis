@@ -168,6 +168,7 @@ pub mod mdsection;
 pub mod memorypressure;
 pub mod memscope;
 pub mod memstore;
+pub mod mergehold;
 pub mod names;
 pub mod netlog;
 pub mod news;

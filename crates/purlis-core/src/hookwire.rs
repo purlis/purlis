@@ -1599,6 +1599,26 @@ pub enum Ask {
     /// [`Answer::Pointed`]. **The prompt goes no further than that router**: never written,
     /// never in a debug dump ([`PromptAsk`]). No ticket, for a record's reason.
     Prompt(Box<PromptAsk>),
+    /// **A merge the chat's hook held** (R-114, R-115, [`crate::mergehold`]): the chat is
+    /// refused it, and the app asks the person in Asks to merge the request, which only their
+    /// press merges, by the app's own forge call. **The app merges nothing for it.** It answers
+    /// [`Answer::No`] with the sentence the chat is told. No ticket, for [`Self::Removal`]'s
+    /// reason. **It carries no answer**: nothing a chat sends on this socket answers an ask
+    /// (V16a).
+    Merge(MergeAsk),
+}
+
+/// **A held merge, as the hook hands it to the app** ([`Ask::Merge`]): the request the command
+/// named, and the folder the command ran in, where the app finds the clone and the repo in the
+/// project. No title, no message, no head: what the person is shown is the app's and the forge's.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MergeAsk {
+    /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
+    pub chat: u32,
+    pub request: crate::mergehold::Request,
+    /// The hook's working folder, which the app checks is a clone of the project.
+    pub cwd: String,
 }
 
 /// **A chat's prompt, for its router** ([`Ask::Prompt`], SK-15c).
@@ -2687,6 +2707,7 @@ impl Ask {
             Self::ThemePreview(asks) => asks.chat,
             Self::ThemeDraft(draft) => draft.chat,
             Self::Prompt(asked) => asked.chat,
+            Self::Merge(asked) => asked.chat,
         }
     }
 }

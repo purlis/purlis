@@ -16,8 +16,9 @@ use super::backend::{
 use super::checks::{self, Annotation, Checks, FailedCheck};
 use super::pr::{
     AutoMerge, GITLAB_ACTIVE, GITLAB_NOT_MERGEABLE, Gate, Gated, Image, MergeAs, MergedAt, Opened,
-    Pinned, Pr, Ready, Request, State, check_gate, commit_named, held_to_the_forges_clock, is_ours,
-    is_proof_name, none_will_run, not_queued_when, not_this_saves, own_mr, pr_of, unknown_state,
+    Pinned, Pr, Ready, Request, State, check_gate, commit_named, held_to_the_forges_clock,
+    is_object_name, is_ours, is_proof_name, none_will_run, not_queued_when, not_this_saves, own_mr,
+    pr_of, unknown_state,
 };
 use super::transport::{Call, Field, Method, Reply};
 use super::{
@@ -663,6 +664,17 @@ impl Requests for GitLab {
             return Ok(None);
         };
         request_of(record, &doing).map(Some)
+    }
+
+    fn head(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<String, ForgeError> {
+        let api = format!("projects/{}/merge_requests/{}", quote(path), pr.number);
+        let doing = format!("reading merge request !{}'s head in {path}", pr.number);
+        let record = self.0.ask(caller, &Call::get(&api, LIST_TIMEOUT), &doing)?;
+        record["sha"]
+            .as_str()
+            .filter(|sha| is_object_name(sha))
+            .map(str::to_owned)
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitLab named no head commit")))
     }
 
     fn state(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<State, ForgeError> {

@@ -806,6 +806,20 @@ export async function answerTaken(
         if (option !== "yes" && option !== "no") break;
         await commands.answerPoolSignIn(path.id, option === "yes");
         return { status: "ok" };
+      case "merge-hold":
+        // A merge a chat's hook held (R-115): Merge is the app's own forge call, at the head the
+        // ask was raised at; Don't merge merges nothing. The chat never merges.
+        if (option === "merge")
+          return commands.mergeHeldRequest(plane, ask.session, path.repo, path.number, path.head);
+        if (option === "dont-merge")
+          return commands.dontMergeHeldRequest(
+            plane,
+            ask.session,
+            path.repo,
+            path.number,
+            path.head,
+          );
+        break;
       case "workspace-removal":
         // Keep puts the question away. Remove… removes nothing (qw356): it opens the window's
         // own Delete workspace, where what goes is read and the person's press there decides.

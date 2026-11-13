@@ -2986,6 +2986,24 @@ impl Hooks {
         answered.map_err(|refused| refused.to_string())
     }
 
+    /// **Writes one stop of chat `number`'s** into the event log, where this machine has one
+    /// open ([`purlis_core::eventlog::stops`]): a hold the app raised, say (R-114).
+    pub fn record_stop(
+        &self,
+        root: &Path,
+        number: u32,
+        stop: purlis_core::eventlog::stops::Stop,
+    ) -> std::io::Result<()> {
+        record(
+            &self.events,
+            Entry::Stop {
+                plane: root.to_path_buf(),
+                number: Some(number),
+                stop,
+            },
+        )
+    }
+
     /// Records every hook call this project's channel hears into `events` from now on (FD-9).
     pub fn record_into(&self, events: Events) {
         *self.events.lock().unwrap_or_else(PoisonError::into_inner) = Some(events);

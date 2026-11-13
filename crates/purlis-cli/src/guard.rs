@@ -136,6 +136,13 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
     if let Some(verdict) = toolgate::verdict(&call, plane.as_ref()) {
         return crate::hooks::Answered::of(Answer::Deny(verdict));
     }
+    // The merge hold (R-114, R-115): in a chat the app started, a merge is refused to the chat
+    // in any mode, and its request is handed to the app, which asks the person. After the
+    // refusals, so A4 still answers an unattended merge in its own words (its precedence is
+    // read with attendance, R-145).
+    if let Some(verdict) = held_merge(&command, &cwd) {
+        return crate::hooks::Answered::of(Answer::Deny(verdict));
+    }
     // A11: plain git that writes a branch folder another live chat holds, from a chat that runs
     // git itself (#3931). After every refusal, because it is the one that asks the app.
     if let Some(found) = &found
@@ -156,6 +163,47 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
         return crate::hooks::Answered::of(Answer::Deny(toolgate::too_deep()));
     }
     crate::hooks::Answered::of(allowed.map_or(Answer::Nothing, Answer::Say))
+}
+
+/// How long the guard waits for the app to take a held merge: the app answers before it reads
+/// the forge, so this is a socket's round trip, well inside the hook's [`BUDGET`].
+const A_MERGE_IS_TAKEN_WITHIN: Duration = Duration::from_millis(900);
+
+/// **The merge hold** (R-114, R-115, [`purlis_core::mergehold`]): the refusal of `command`,
+/// run in `cwd` by a chat the app started, where it merges a request; or `None`.
+///
+/// Asked only of a chat the app started (it has a chat number): the person's own terminal runs
+/// no hook, and a harness they start themselves is theirs. **No answer lets the merge through**:
+/// where no app takes the hand-over, the chat is refused all the same.
+fn held_merge(command: &str, cwd: &str) -> Option<toolgate::Verdict> {
+    use purlis_core::hookwire::{Answer, Ask, MergeAsk, NOTHING_ANSWERS};
+    use purlis_core::mergehold::{self, Held};
+    crate::session::chat_number()?;
+    let held = mergehold::held(command)?;
+    let app_said = match &held {
+        Held::Request(request) => crate::brokered::asked(
+            |chat| {
+                Ask::Merge(MergeAsk {
+                    chat,
+                    request: request.clone(),
+                    cwd: cwd.to_owned(),
+                })
+            },
+            A_MERGE_IS_TAKEN_WITHIN,
+        )
+        .ok()
+        .and_then(Result::ok)
+        .and_then(|answer| match answer {
+            Answer::No { why } if why != NOTHING_ANSWERS => Some(why),
+            _ => None,
+        }),
+        Held::Unreadable => None,
+    };
+    Some(toolgate::Verdict {
+        reason: mergehold::REASON.to_owned(),
+        shape: None,
+        denial: mergehold::refusal(&held, app_said.as_deref()),
+    })
 }
 
 /// How long the guard waits, in all, for the app to judge a line's branch folder claims

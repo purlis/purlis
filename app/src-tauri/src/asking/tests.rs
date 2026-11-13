@@ -91,6 +91,7 @@ struct World {
     blocks: Vec<(u32, HeldBlock)>,
     /// The workspaces a chat asked the person to remove, with what each holds (qw356).
     removals: Vec<(crate::removalasks::Waits, purlis_core::removalask::Holds)>,
+    merges: Vec<purlis_core::mergehold::Waits>,
     locks: Locks,
     /// Whether the project's sandbox is in force, so a browser site for everyone counts (#2443).
     everyone: bool,
@@ -149,6 +150,7 @@ impl World {
             dispatches: Vec::new(),
             blocks: Vec::new(),
             removals: Vec::new(),
+            merges: Vec::new(),
             locks: Locks::none(),
             everyone: true,
             names: Vec::new(),
@@ -229,6 +231,7 @@ impl World {
             dispatches: self.dispatches.clone(),
             blocks: self.blocks.clone(),
             removals: self.removals.clone(),
+            merges: self.merges.clone(),
             locks: &self.locks,
             everyone: self.everyone,
             declared: &self.declared,
@@ -1517,6 +1520,60 @@ fn a_chat_waiting_on_a_removal_s_answer_is_that_ask_and_no_question_beside_it() 
     assert_eq!(asks[0].since, Some(40));
 }
 
+/// A merge chat 3's hook held, for request 12 of `o/r` at a fixed head.
+fn a_held_merge(session: u32) -> purlis_core::mergehold::Waits {
+    purlis_core::mergehold::Waits {
+        session,
+        key: purlis_core::mergehold::MergeKey {
+            repo: "o/r".try_into().expect("a repo"),
+            number: 12,
+            head: "0123456789abcdef0123456789abcdef01234567"
+                .try_into()
+                .expect("a head"),
+        },
+        since: 40,
+    }
+}
+
+#[test]
+fn a_held_merge_is_one_ask_in_asks_offering_merge_and_dont_merge() {
+    // R-114: the merge a chat's hook held is listed once, as the person's to answer, keyed on
+    // the repo, the request and the head it was raised at; never offered a rule (R-117).
+    let mut world = World::new();
+    world.merges = vec![a_held_merge(3)];
+    world.since = vec![("merge:3:o/r#12", 40)];
+
+    let asks = world.asks();
+
+    let held: Vec<&Shown> = asks
+        .iter()
+        .filter(|ask| ask.source == AskSource::MergeHold)
+        .collect();
+    assert_eq!(held.len(), 1, "{asks:?}");
+    let ask = held[0];
+    assert_eq!(ask.session, 3);
+    assert_eq!(ids(ask), [MERGE, DONT_MERGE]);
+    assert_eq!(
+        ask.options
+            .iter()
+            .map(|one| one.label.as_str())
+            .collect::<Vec<_>>(),
+        ["Merge", "Don't merge"]
+    );
+    assert!(ask.options.iter().all(|one| one.scope.is_none()));
+    assert!(ask.rule.is_none());
+    assert_eq!(
+        ask.answer,
+        AnswerPath::MergeHold {
+            repo: "o/r".to_owned(),
+            number: 12,
+            head: "0123456789abcdef0123456789abcdef01234567".to_owned(),
+        }
+    );
+    assert!(ask.says.contains("There is no undo"), "{}", ask.says);
+    assert_eq!(ask.since, Some(40));
+}
+
 // Who may answer (V16).
 
 #[test]
@@ -1532,6 +1589,8 @@ fn every_command_an_ask_is_answered_by_is_the_window_s_alone() {
         "keep_sandbox_block",
         "forget_sandbox_block",
         "keep_asked_workspace",
+        "merge_held_request",
+        "dont_merge_held_request",
         "asks_waiting",
     ] {
         assert!(

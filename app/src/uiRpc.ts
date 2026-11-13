@@ -480,6 +480,8 @@ export const commands = {
 	keepVaultBlocked: __WINDOW_ONLY_RESULT,
 	putAwayRefusedVault: __WINDOW_ONLY_RESULT,
 	keepAskedWorkspace: __WINDOW_ONLY_RESULT,
+	mergeHeldRequest: __WINDOW_ONLY_RESULT,
+	dontMergeHeldRequest: __WINDOW_ONLY_RESULT,
 	allowChatBrowser: __WINDOW_ONLY_RESULT,
 	keepChatBrowserOff: __WINDOW_ONLY_RESULT,
 	answerPoolLogin: __WINDOW_ONLY_RESULT,
@@ -3153,6 +3155,11 @@ export type AnswerPath =
  *  the window's own, opening Settings where the limit is.
  */
 { via: "paused" } | 
+/**
+ *  `merge_held_request` for Merge and `dont_merge_held_request` for Don't merge, each for
+ *  request `number` of `repo` at `head`, the key the ask was raised at (R-115).
+ */
+{ via: "merge-hold"; repo: string; number: number; head: string } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -3636,7 +3643,12 @@ export type AskSource =
  *  **A chat paused as looping** (#6015, ADR 0121 decision 20): the same command failing
  *  again and again, or its asks refused again and again. It's fine, continue, or Stop.
  */
-"looping";
+"looping" | 
+/**
+ *  **A merge a chat's hook held** (R-114, R-115): the chat never merges. Merge is the
+ *  app's own forge call, on the person's press, and Don't merge merges nothing.
+ */
+"merge-hold";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the

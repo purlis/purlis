@@ -618,6 +618,9 @@ pub enum AskSource {
     /// **A chat paused as looping** (#6015, ADR 0121 decision 20): the same command failing
     /// again and again, or its asks refused again and again. It's fine, continue, or Stop.
     Looping,
+    /// **A merge a chat's hook held** (R-114, R-115): the chat never merges. Merge is the
+    /// app's own forge call, on the person's press, and Don't merge merges nothing.
+    MergeHold,
 }
 
 /// **The existing, checked path an ask is answered by** (#1690): the command the window
@@ -724,6 +727,13 @@ pub enum AnswerPath {
     /// `answer_pause` for the chat it names, with the option chosen (#6015); Raise the budget is
     /// the window's own, opening Settings where the limit is.
     Paused,
+    /// `merge_held_request` for Merge and `dont_merge_held_request` for Don't merge, each for
+    /// request `number` of `repo` at `head`, the key the ask was raised at (R-115).
+    MergeHold {
+        repo: String,
+        number: u32,
+        head: String,
+    },
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
 }
@@ -1922,6 +1932,67 @@ pub fn workspace_removal(
             memories: count(holds.memories),
             todos: count(holds.todos),
         },
+        since: None,
+        held_until: None,
+        expires: None,
+        blocks: None,
+        timed_out: None,
+        risk: None,
+        writes: None,
+        lines: None,
+        last_message: None,
+        login: None,
+        fill: None,
+        earlier_messages: None,
+        rule: None,
+        secret: None,
+        run: None,
+    }
+}
+
+/// The option id of a held merge's Merge.
+pub const MERGE: &str = "merge";
+/// The option id of a held merge's Don't merge.
+pub const DONT_MERGE: &str = "dont-merge";
+
+/// The key of chat `session`'s merge ask for `key`'s request.
+fn merge_key(session: u32, key: &purlis_core::mergehold::MergeKey) -> String {
+    format!("merge:{session}:{}#{}", key.repo.as_str(), key.number)
+}
+
+/// **The merge hold adapter** (R-114): a merge chat `waits.session`'s hook held, as one ask.
+/// It offers Merge, which the app performs itself, and Don't merge (R-303's word). Every word is
+/// purlis's; the repo, the number and the head are the key the app raised it at. Never offered
+/// a rule: a merge is never remembered (R-117).
+pub fn merge_hold(waits: &purlis_core::mergehold::Waits) -> Shown {
+    let key = &waits.key;
+    Shown {
+        session: waits.session,
+        ask: merge_key(waits.session, key),
+        says: said_inertly(&format!(
+            "Merge request {} of {} at {}? There is no undo.",
+            key.number,
+            key.repo.as_str(),
+            &key.head.as_str()[..12]
+        )),
+        options: vec![
+            Offered {
+                id: MERGE.to_owned(),
+                label: "Merge".to_owned(),
+                allows: true,
+                preselected: None,
+                scope: None,
+            },
+            refuses(DONT_MERGE, "Don't merge"),
+        ],
+        source: AskSource::MergeHold,
+        chain: Vec::new(),
+        answer: AnswerPath::MergeHold {
+            repo: key.repo.as_str().to_owned(),
+            number: u32::try_from(key.number).unwrap_or(u32::MAX),
+            head: key.head.as_str().to_owned(),
+        },
+        // Since when is the registry's to say, as for every ask (`Waiting::since`).
         since: None,
         held_until: None,
         expires: None,
@@ -3871,6 +3942,8 @@ pub struct Waiting<'a> {
     pub blocks: Vec<(u32, crate::taskblocks::HeldBlock)>,
     /// The workspaces a chat asked the person to remove, with what each holds (qw356).
     pub removals: Vec<(crate::removalasks::Waits, purlis_core::removalask::Holds)>,
+    /// The merges its chats' hooks held, each waiting on the person's press (R-114).
+    pub merges: Vec<purlis_core::mergehold::Waits>,
     /// The changes a chat proposed to purlis's own configuration, each as it is now (#1975).
     pub proposals: Vec<(crate::proposals::Proposal, crate::proposals::Now)>,
     /// The changes to the project chats on a pool's runner asked for (#2046).
@@ -3981,6 +4054,8 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             .iter()
             .map(|(waits, holds)| workspace_removal(waits, *holds)),
     );
+    // A chat whose merge was held waits on the person's press, never its own (R-114).
+    asks.extend(waiting.merges.iter().map(merge_hold));
     // A chat that proposed a change waits on the person's answer, as one that asked them to
     // remove a workspace does (#1975).
     asks.extend(
@@ -4290,6 +4365,10 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
             (waits, holds)
         })
         .collect();
+    let merges = held.merge_holds().every();
+    for one in &merges {
+        since.insert(merge_key(one.session, &one.key), one.since);
+    }
     let proposals: Vec<_> = crate::proposals::waiting(held)
         .into_iter()
         .inspect(|(one, _)| {
@@ -4423,6 +4502,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         sign_ins,
         pool_sign_ins,
         removals,
+        merges,
         proposals,
         runner_writes,
         runner_dispatches,

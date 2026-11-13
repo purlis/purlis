@@ -945,6 +945,17 @@ export const commands = {
 	 */
 	keepAskedWorkspace: (plane: PlaneId, session: number, workspace: string) => typedError<null, string>(__TAURI_INVOKE("keep_asked_workspace", { plane, session, workspace })),
 	/**
+	 *  **Merge**, pressed on chat `session`'s merge ask: the app asks the forge, with its own login,
+	 *  to merge request `number` of `repo` at exactly `head`. The ask is answered at the press, so a
+	 *  second press merges nothing; where the forge refuses, it waits again and the refusal is said.
+	 */
+	mergeHeldRequest: (plane: PlaneId, session: number, repo: string, number: number, head: string) => typedError<null, string>(__TAURI_INVOKE("merge_held_request", { plane, session, repo, number, head })),
+	/**
+	 *  **Don't merge**, pressed on chat `session`'s merge ask: it waits no more, and nothing is
+	 *  merged.
+	 */
+	dontMergeHeldRequest: (plane: PlaneId, session: number, repo: string, number: number, head: string) => typedError<null, string>(__TAURI_INVOKE("dont_merge_held_request", { plane, session, repo, number, head })),
+	/**
 	 *  **This project's sites, or also the open web**, on chat `session`'s browser Ask (#2013): its
 	 *  browser starts at its next browser call, reaching that; the chat is told on its next turn.
 	 *  With `always`, **Always for this persona** (#2241): kept for every chat as the chat's
@@ -6281,6 +6292,11 @@ export type AnswerPath =
  *  the window's own, opening Settings where the limit is.
  */
 { via: "paused" } | 
+/**
+ *  `merge_held_request` for Merge and `dont_merge_held_request` for Don't merge, each for
+ *  request `number` of `repo` at `head`, the key the ask was raised at (R-115).
+ */
+{ via: "merge-hold"; repo: string; number: number; head: string } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -6764,7 +6780,12 @@ export type AskSource =
  *  **A chat paused as looping** (#6015, ADR 0121 decision 20): the same command failing
  *  again and again, or its asks refused again and again. It's fine, continue, or Stop.
  */
-"looping";
+"looping" | 
+/**
+ *  **A merge a chat's hook held** (R-114, R-115): the chat never merges. Merge is the
+ *  app's own forge call, on the person's press, and Don't merge merges nothing.
+ */
+"merge-hold";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
