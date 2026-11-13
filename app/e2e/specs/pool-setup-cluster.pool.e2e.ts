@@ -16,6 +16,7 @@ import {
   watchTheTabs,
 } from "../poolsetup.js";
 import {
+  TABS,
   bringForward,
   closeTheViewTabsOpenedSince,
   runFromThePalette,
@@ -92,6 +93,11 @@ async function type(name: string, value: string): Promise<void> {
 
 /** Settings › Pools' switch of the one cluster pool kept here, by its role and its label. */
 const MY_OWN = '//*[@role="switch"][ancestor::label[normalize-space()="This is my own"]]';
+/**
+ * Its row, as a person presses it: React Aria draws the switch's input hidden, a pixel square
+ * that WebDriver can neither bring into view nor press where it is, so its label is pressed.
+ */
+const MY_OWN_ROW = '//label[normalize-space()="This is my own"][.//*[@role="switch"]]';
 
 /** Whether This is my own says on. */
 async function myOwnIsOn(): Promise<boolean> {
@@ -105,23 +111,23 @@ async function myOwnIsOn(): Promise<boolean> {
  * press, as a person's, then a wait for the mark to be kept and read back.
  */
 async function markAsMyOwn(): Promise<void> {
-  await $(MY_OWN)
-    .waitForExist({ timeout: 60_000 })
+  await $(MY_OWN_ROW)
+    .waitForDisplayed({ timeout: 60_000 })
     .catch(async () => {
       throw new Error(`no This is my own in Settings: ${await settingsSay()}`);
     });
   // Found afresh at each look: the row is drawn again as the pools are read again, and a press
-  // that found the switch of the row before is lost. Pressed until one press lands, never after.
+  // that found the row before is lost. Pressed until one press lands, never after.
   let pressed = false;
   await browser
     .waitUntil(
       async () => {
         if (await myOwnIsOn().catch(() => false)) return true;
         if (!pressed) {
-          const control = await $(MY_OWN);
-          pressed = await control
+          const row = await $(MY_OWN_ROW);
+          pressed = await row
             .scrollIntoView({ block: "center" })
-            .then(() => control.click())
+            .then(() => row.click())
             .then(
               () => true,
               () => false,
@@ -136,13 +142,14 @@ async function markAsMyOwn(): Promise<void> {
     });
 }
 
-/** What the cluster pool's row in Settings › Pools says, for a failure to name. */
+/** What the cluster pool's row in Settings › Pools says, or what is in front, for a failure. */
 async function settingsSay(): Promise<string> {
-  return browser.execute(
-    () =>
-      document.querySelector(".pools-about")?.textContent?.replace(/\s+/g, " ") ??
-      "no cluster pool's row on screen",
-  );
+  return browser.execute((strip: string) => {
+    const row = document.querySelector(".pools-about")?.textContent;
+    if (row) return row.replace(/\s+/g, " ");
+    const front = document.querySelector(`${strip} [role="tab"][aria-selected="true"] .tab-name`);
+    return `no cluster pool's row on screen; the tab in front is ${front?.textContent ?? "none"}`;
+  }, TABS);
 }
 
 describe("Pool setup on a kind cluster", () => {
