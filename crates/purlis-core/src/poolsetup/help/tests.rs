@@ -39,6 +39,7 @@ fn stuck_on_check(holds: Vec<String>) -> Setup {
                 key: false,
                 operator: cluster::Operator::Absent,
                 claims: Some((0, 0)),
+                claims_in_force_in: None,
             })),
             ..cluster::ClusterFacts::default()
         },
