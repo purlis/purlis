@@ -270,7 +270,7 @@ pub fn sweep(root: &Path, now: SystemTime) -> usize {
     let Ok(_held) = locked(root) else {
         return 0;
     };
-    // Under the lock no write is under way, so a temp file here is a killed write's.
+    // Under the lock no write is under way, so an old temp file here is a killed write's.
     remove_left_behind(root);
     let file = path(root);
     if !std::fs::symlink_metadata(&file).is_ok_and(|meta| meta.is_file()) {
@@ -298,13 +298,26 @@ pub fn sweep(root: &Path, now: SystemTime) -> usize {
 /// Removes what a write of [`FILE_NAME`] killed before its rename left in the folder: the temp
 /// file [`crate::rewrite::replace`] writes, `.purlis-generated.closed.json.<pid>.<tag>.tmp` (or
 /// an older build's prefix), which holds chats' titles and nothing else ever removes. Called
-/// under the folder's lock, which every write holds. Nothing else in the folder is touched.
+/// under the folder's lock, which every write holds; as that lock may not have been taken, only
+/// a temp file last written more than [`crate::rewrite::MOST_WAIT`] ago goes. Nothing else in
+/// the folder is touched.
 fn remove_left_behind(root: &Path) {
     let Ok(names) = std::fs::read_dir(dir(root)) else {
         return;
     };
+    let now = SystemTime::now();
     for one in names.flatten() {
-        if left_behind(&one.file_name().to_string_lossy())
+        // A lock that could not be taken (`Lock(None)`) lets a write run beside the sweep: a
+        // temp file written within the longest wait for the lock may still be one.
+        let stale = one
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .is_ok_and(|written| {
+                now.duration_since(written)
+                    .is_ok_and(|age| age > crate::rewrite::MOST_WAIT)
+            });
+        if stale
+            && left_behind(&one.file_name().to_string_lossy())
             && let Err(why) = std::fs::remove_file(one.path())
         {
             tracing::warn!(error = %why, "a closed chats' temp file was not removed");

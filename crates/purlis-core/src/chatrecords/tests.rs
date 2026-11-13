@@ -219,14 +219,33 @@ fn the_sweep_takes_what_a_killed_write_left_behind_and_nothing_else() {
     let left = dir(&root).join(".purlis-generated.closed.json.4242.k1.tmp");
     let older = dir(&root).join(".charter-generated.closed.json.4242.k2.tmp");
     let other = dir(&root).join("notes.txt");
+    let long_ago = SystemTime::now() - std::time::Duration::from_secs(3600);
     for file in [&left, &older, &other] {
         std::fs::write(file, "{}").unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(file)
+            .unwrap()
+            .set_modified(long_ago)
+            .unwrap();
     }
-    sweep(&root, at("2026-11-13T00:00:00Z"));
+    sweep(&root, SystemTime::now());
     assert!(!left.exists());
     assert!(!older.exists());
     assert!(
         other.exists(),
         "a file purlis never names is not its to take"
     );
+}
+
+#[test]
+fn the_sweep_leaves_a_write_still_under_way() {
+    // Where the folder cannot be locked, the sweep runs beside a write: a temp file written
+    // within the lock's longest wait may be one, and stays.
+    let (_dir, root) = project();
+    std::fs::create_dir_all(dir(&root)).unwrap();
+    let live = dir(&root).join(".purlis-generated.closed.json.4242.k1.tmp");
+    std::fs::write(&live, "{}").unwrap();
+    sweep(&root, SystemTime::now());
+    assert!(live.exists());
 }
