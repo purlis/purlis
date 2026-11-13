@@ -40,6 +40,12 @@ function chatsOf(first: ChatStates) {
   return { chats, move };
 }
 
+const running = (movedAt: number): ChatStates => ({
+  ...nothingKnown,
+  bySession: { 3: "running" },
+  movedAt: { 3: movedAt },
+});
+
 const ended = (movedAt: number): ChatStates => ({
   ...nothingKnown,
   bySession: { 3: "done" },
@@ -63,12 +69,15 @@ describe("the finish rows' reads (Q263)", () => {
   it("keeps the newest answer when an older read answers after it", async () => {
     const older = deferred();
     const newer = deferred();
-    vi.spyOn(commands, "finishedTurns")
+    const read = vi
+      .spyOn(commands, "finishedTurns")
       .mockReturnValueOnce(older.promise)
       .mockReturnValueOnce(newer.promise);
     const { chats, move } = chatsOf(ended(1));
     const { result } = renderHook(() => useFinishedTurns(PLANE, chats));
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
     move(ended(2));
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
     await act(async () => {
       newer.answer({ status: "ok", data: [turn(1)] });
       await newer.promise;
@@ -81,7 +90,7 @@ describe("the finish rows' reads (Q263)", () => {
     expect(result.current).toEqual([turn(1)]);
   });
 
-  it("asks again on the next move after a read failed", async () => {
+  it("asks again when a turn next ends after a read failed", async () => {
     const read = vi
       .spyOn(commands, "finishedTurns")
       .mockResolvedValueOnce({ status: "error", error: "the log is busy" })
@@ -92,12 +101,12 @@ describe("the finish rows' reads (Q263)", () => {
     await act(async () => {
       await Promise.resolve();
     });
-    move(ended(1));
+    move(ended(2));
     await waitFor(() => expect(result.current).toEqual([turn(1)]));
     expect(read).toHaveBeenCalledTimes(2);
   });
 
-  it("asks again on the next move after a read threw", async () => {
+  it("asks again when a turn next ends after a read threw", async () => {
     const read = vi
       .spyOn(commands, "finishedTurns")
       .mockRejectedValueOnce(new Error("gone"))
@@ -108,7 +117,23 @@ describe("the finish rows' reads (Q263)", () => {
     await act(async () => {
       await Promise.resolve();
     });
-    move(ended(1));
+    move(ended(2));
     await waitFor(() => expect(result.current).toEqual([turn(1)]));
+  });
+
+  it("asks nothing when a chat moves within its turn, nor again at the end it is already at", async () => {
+    const read = vi
+      .spyOn(commands, "finishedTurns")
+      .mockResolvedValue({ status: "error", error: "the log is busy" });
+    const { chats, move } = chatsOf(running(1));
+    renderHook(() => useFinishedTurns(PLANE, chats));
+    for (let at = 2; at < 10; at++) move(running(at));
+    move(ended(10));
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    move(ended(10));
+    await act(async () => {
+      await new Promise((done) => setTimeout(done, 20));
+    });
+    expect(read).toHaveBeenCalledTimes(1);
   });
 });

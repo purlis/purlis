@@ -103,69 +103,73 @@ export function groupedFinishes(updates: readonly InboxUpdate[]): Grouped[] {
 /** The states a chat's turn has ended in: `waiting` on the person, `done` and `failed`. */
 const ENDED = new Set(["waiting", "done", "failed"]);
 
-/** **What changes when a chat's turn ends**: each chat, and when it last moved where it moved to
- *  an end. One string, so a move within a turn asks nothing. */
-const endsOf = (states: ChatStates) =>
-  Object.entries(states.bySession)
-    .map(([session, state]) =>
-      ENDED.has(state) ? `${session}:${states.movedAt[Number(session)] ?? 0}` : session,
-    )
-    .join(",");
+/** **Each chat's last end**: when it last moved to an end, or `undefined` while its turn runs. */
+const endsOf = (states: ChatStates): Map<number, number | undefined> =>
+  new Map(
+    Object.entries(states.bySession).map(([session, state]) => [
+      Number(session),
+      ENDED.has(state) ? (states.movedAt[Number(session)] ?? 0) : undefined,
+    ]),
+  );
 
 const NONE: readonly FinishedTurn[] = [];
 
 /**
  * **The finishes of every chat of `plane` the window knows of** (R-178), as the core counts
- * them (`finished_turns`): asked again each time a chat's turn ends, never on a poll. **It
- * listens to the chats outside React**, so a move redraws nothing here (`MovedRenders`): only
- * an answer that differs from the last one does. An answer for another project, or one that is
- * no list (an older build), is none.
+ * them (`finished_turns`): asked again only when a chat's turn ends (it moves to an end it was
+ * not at), never on a poll and never on a move within a turn. **It listens to the chats outside
+ * React**, so a move redraws nothing here (`MovedRenders`): only an answer that differs from the
+ * last one does. **The read waits for the next task**, so a project that comes forward paints
+ * before it is asked, and the ends of one burst are one read. An answer for another project, or
+ * one that is no list (an older build), is none.
  *
  * **Only the newest answer is kept** (Q263): each read is numbered, and one that answers after
- * a later read has answered is dropped. **A read that failed is asked again on the next move**,
- * whatever moved.
+ * a later read has answered is dropped. **A read that failed is asked again when a turn next
+ * ends**, whichever chat's.
  */
 export function useFinishedTurns(plane: PlaneId, chats: Chats): readonly FinishedTurn[] {
   const { store } = chats;
   const [held, setHeld] = useState<{ plane: PlaneId; turns: readonly FinishedTurn[] }>();
   useEffect(() => {
     let live = true;
-    let asked: string | undefined;
+    /** Each chat's end as last seen; a chat first seen at an end is a turn that ended. */
+    let seen = new Map<number, number | undefined>();
     let said = "";
+    /** The read waiting for the next task, if one is. */
+    let pending: ReturnType<typeof setTimeout> | undefined;
     /** The number of the last read sent, and of the newest one that has answered. */
     let sent = 0;
     let answered = 0;
-    const ask = () => {
-      const ends = endsOf(store.statesFor(chats.plane));
-      if (ends === asked) return;
-      asked = ends;
-      const sessions = ends === "" ? [] : ends.split(",").map((one) => Number(one.split(":")[0]));
+    const read = () => {
+      pending = undefined;
+      if (!live) return;
+      const sessions = [...seen.keys()];
       if (sessions.length === 0) return;
-      const read = ++sent;
-      const failed = () => {
-        // Asked again on the next move, unless a later read has been sent since.
-        if (read === sent) asked = undefined;
-      };
+      const which = ++sent;
       void commands
         .finishedTurns(plane, sessions)
         .then((answer) => {
-          if (!live || read < answered) return;
-          if (answer.status !== "ok" || !Array.isArray(answer.data)) {
-            failed();
-            return;
-          }
-          answered = read;
+          if (!live || which < answered) return;
+          if (answer.status !== "ok" || !Array.isArray(answer.data)) return;
+          answered = which;
           const now = JSON.stringify(answer.data);
           if (now === said) return;
           said = now;
           setHeld({ plane, turns: answer.data });
         })
-        .catch(failed);
+        .catch(() => undefined);
     };
-    ask();
-    const stop = store.subscribe(ask);
+    const look = () => {
+      const now = endsOf(store.statesFor(chats.plane));
+      const ended = [...now].some(([session, at]) => at !== undefined && seen.get(session) !== at);
+      seen = now;
+      if (ended && pending === undefined) pending = setTimeout(read, 0);
+    };
+    look();
+    const stop = store.subscribe(look);
     return () => {
       live = false;
+      if (pending !== undefined) clearTimeout(pending);
       stop();
     };
   }, [plane, store, chats.plane]);
