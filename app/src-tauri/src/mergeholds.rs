@@ -39,7 +39,8 @@ use purlis_core::forge::pr::Repo as OnForge;
 use purlis_core::harness::asks::{Admitted, Answerer};
 use purlis_core::hookwire::{Answer, MergeAsk};
 use purlis_core::mergehold::{
-    self, Base, ByForge, HeadSha, Holds, Invalid, MergeKey, Raised, Refreshed, Repo, Request, Seen,
+    self, Base, ByForge, HeadSha, Holds, Invalid, MergeKey, Raised, Refreshed, Repo, Request,
+    Reread, Seen,
 };
 
 use crate::asking::{MergeShown, RulesetShown};
@@ -347,7 +348,7 @@ fn reread_shown(
     number: u32,
     head: &str,
 ) -> Result<MergeReread, String> {
-    let (now, facts, _) = reread(held, session, repo, number, head)?;
+    let (now, facts, _) = reread(held, session, repo, number, head, Reread::AsksOnceMore)?;
     Ok(MergeReread {
         head: now.head.as_str().to_owned(),
         facts: MergeShown::of(&facts, now.base.as_str()),
@@ -355,13 +356,15 @@ fn reread_shown(
 }
 
 /// The re-read of chat `session`'s ask for request `number` of `repo` at `head`, in `project`:
-/// the key the forge gives now, what it says of the request, and whether the ask moved.
+/// the key the forge gives now, what it says of the request, and whether the ask moved. `why`
+/// says whether the person is asked once more of it (Q269).
 pub(crate) fn reread(
     project: &dyn Project,
     session: u32,
     repo: &str,
     number: u32,
     head: &str,
+    why: Reread,
 ) -> Result<(MergeKey, mergehold::Facts, Refreshed), String> {
     let holds = project.holds();
     let (was, on) = waiting(holds, session, repo, number, head)?;
@@ -371,7 +374,7 @@ pub(crate) fn reread(
     let now = key_at(&was, &read.at).map_err(|why| why.to_string())?;
     let refreshed = holds
         .holds
-        .refresh(session, &was, now.clone(), read.facts.clone())
+        .refresh(session, &was, now.clone(), read.facts.clone(), why)
         .map_err(|why| why.to_string());
     // The ask at the new head is on the forge the old one was raised on.
     if refreshed == Ok(Refreshed::Moved) {
@@ -430,23 +433,40 @@ pub fn pressed(
     head: &str,
     seen: Seen,
 ) -> Result<(), String> {
-    // A moved head or base is another ask, which the person has not been shown (Q242).
-    let merged = reread(held, session, repo, number, head).and_then(|(_, _, refreshed)| {
-        if refreshed == Refreshed::Moved {
-            return Err(MOVED.to_owned());
-        }
-        press(
-            held.merge_holds(),
-            session,
-            repo,
-            number,
-            head,
-            seen,
-            &OnForge::backend,
-        )
-    });
+    let merged = pressed_in(held, session, repo, number, head, seen, &OnForge::backend);
     held.chats().asks_may_have_moved();
     merged
+}
+
+/// [`pressed`] in `project`, through the forge `backend_of` makes the client of.
+fn pressed_in(
+    project: &dyn Project,
+    session: u32,
+    repo: &str,
+    number: u32,
+    head: &str,
+    seen: Seen,
+    backend_of: &dyn Fn(&OnForge) -> Box<dyn ForgeBackend>,
+) -> Result<(), String> {
+    let (_, facts, refreshed) = reread(project, session, repo, number, head, Reread::Presses)?;
+    // A moved head or base is another ask, which the person has not been shown (Q242).
+    if refreshed == Refreshed::Moved {
+        return Err(MOVED.to_owned());
+    }
+    // The press is held to the ruleset state its own fresh read gives, whatever a raise did to
+    // the ask meanwhile (Q269, R-150).
+    if facts.ruleset.seen() != seen {
+        return Err(mergehold::NotMerged::RulesetChanged.to_string());
+    }
+    press(
+        project.holds(),
+        session,
+        repo,
+        number,
+        head,
+        seen,
+        backend_of,
+    )
 }
 
 /// What a press says where the re-read found the request at another head or base than its row's.

@@ -33,7 +33,7 @@ import { AskDecision, REASON_TYPED_MOST, waysOf } from "./AskDecision";
 import { RuleOffer, ruleMadeOf } from "./AskRules";
 import { SecretFillSite } from "./SecretFillNotice";
 import { MergeFacts } from "./MergeFacts";
-import { confirmationOf, rereadMerge } from "./mergeHold";
+import { confirmationOf, fallbackConfirm, rereadMerge } from "./mergeHold";
 import { Button, ButtonRow, IconButton } from "./ui/button/Button";
 import {
   MessageBody,
@@ -606,6 +606,10 @@ export function Ask({
   }>();
   const question = confirmationOf(ask);
   const asking = askedOf?.of === question ? askedOf : undefined;
+  /** **Asked once more before it acts** (ADR 0121 decision 8, Q268, Q269): a high-risk ask, and
+   *  a held merge whatever its risk, in its own sentence or purlis's. */
+  const twice = ask.risk != null || ask.answer.via === "merge-hold";
+  const confirmSaid = ask.risk?.confirm ?? fallbackConfirm(ask);
   const who = chainSaid(ask.chain);
   /** A secret's one notice draws its own answers (#5080). */
   const secretNotice = ask.secret != null || ask.run != null;
@@ -677,7 +681,7 @@ export function Ask({
    *  the form drew other words), a second press of it takes the question back, and every other
    *  answer acts. */
   const answerOrAsk = (option: Offered, given?: () => SecretAskGiven, said = option.label) => {
-    if (ask.risk != null && option.allows) {
+    if (twice && option.allows) {
       if (asking?.option.id === option.id || ask.answer.via !== "merge-hold") {
         setAsking(
           asking?.option.id === option.id ? undefined : { option, given, said, of: question },
@@ -846,9 +850,7 @@ export function Ask({
                 className={option.allows ? "inbox-answer allows" : "inbox-answer"}
                 aria-disabled={busy || undefined}
                 aria-busy={busy || undefined}
-                aria-expanded={
-                  ask.risk != null && option.allows ? asking?.option.id === option.id : undefined
-                }
+                aria-expanded={twice && option.allows ? asking?.option.id === option.id : undefined}
                 onPress={() => answerOrAsk(option)}
               >
                 {option.label}
@@ -858,9 +860,9 @@ export function Ask({
         )}
         {/* **Asked once more** (ADR 0121 decision 8, #6178): only the Allow here answers, held
               by the settle guard as every grant is; Cancel takes the question back. */}
-        {ask.risk != null && asking !== undefined && (
-          <ButtonRow className="inbox-answers" role="group" aria-label={ask.risk.confirm}>
-            <span className="ask-confirm ui-text-strong">{ask.risk.confirm}</span>
+        {twice && asking !== undefined && (
+          <ButtonRow className="inbox-answers" role="group" aria-label={confirmSaid}>
+            <span className="ask-confirm ui-text-strong">{confirmSaid}</span>
             <Button
               variant={grants(asking.option) ? "grants" : "primary"}
               className="inbox-answer allows"

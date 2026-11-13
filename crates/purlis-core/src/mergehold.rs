@@ -658,6 +658,45 @@ pub struct Waits {
     pub key: MergeKey,
     pub facts: Facts,
     pub since: u64,
+    /// **Asked once more** (Q269): the window read the request again and asked the person once
+    /// more, of these facts. Only [`Reread::AsksOnceMore`] sets it, a raise whose facts show
+    /// otherwise clears it, and [`Holds::press`] merges nothing without it.
+    pub asked: bool,
+}
+
+impl Facts {
+    /// Whether `self` and `other` show the person the same, whenever each was read.
+    fn shows_as(&self, other: &Facts) -> bool {
+        Facts {
+            read_at: other.read_at,
+            ..self.clone()
+        } == *other
+    }
+}
+
+/// **Why a waiting ask is read again** ([`Holds::refresh`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reread {
+    /// Merge was pressed once: the read is what the person is asked once more of (Q248), and the
+    /// ask is marked asked (Q269).
+    AsksOnceMore,
+    /// The once-more Merge was pressed: the read is checked before the merge, and leaves the
+    /// mark as it is (checks or a title that change after the question still merge, Q269).
+    Presses,
+}
+
+impl Waits {
+    /// The ask shows `facts`, unless they were read before what it shows (Q269); where they
+    /// show otherwise, the person was not asked of them.
+    fn replace(&mut self, facts: Facts) {
+        if facts.read_at < self.facts.read_at {
+            return;
+        }
+        if !self.facts.shows_as(&facts) {
+            self.asked = false;
+        }
+        self.facts = facts;
+    }
 }
 
 /// What a re-read did to a waiting ask ([`Holds::refresh`]).
@@ -705,6 +744,13 @@ pub enum NotMerged {
          merged. Read the request again, then merge"
     )]
     RulesetChanged,
+    /// The person was not asked once more of what the ask shows (Q269): Merge was not pressed
+    /// once first, or the request's facts changed since. The ask still waits.
+    #[error(
+        "you were not asked once more about this merge as it stands now, so nothing was merged. \
+         Press Merge, read what it asks, then merge"
+    )]
+    NotAsked,
 }
 
 /// **The merge asks the app holds**, until the person answers.
@@ -725,7 +771,9 @@ impl Holds {
     /// waiting ask's retires it and raises a new one in its place, waiting since `now`, so a key
     /// is never rewritten under an ask the person may be looking at.
     /// **A try again at the same head refreshes what the ask shows** (Q248): it is the one ask
-    /// still, waiting since it was first raised, and the newer read's `facts` replace the old.
+    /// still, waiting since it was first raised, and the newer read's `facts` replace the old;
+    /// **an older read never replaces a newer** (Q269). Facts that show otherwise take the
+    /// ask's asked mark away.
     pub fn raise(&self, session: u32, key: MergeKey, facts: Facts, now: u64) -> Raised {
         let mut held = self.lock();
         if let Some(at) = held
@@ -733,7 +781,7 @@ impl Holds {
             .position(|one| one.session == session && one.key.same_request(&key))
         {
             if held[at].key == key {
-                held[at].facts = facts;
+                held[at].replace(facts);
                 return Raised::Already;
             }
             held.remove(at);
@@ -746,6 +794,7 @@ impl Holds {
             key,
             facts,
             since: now,
+            asked: false,
         });
         Raised::New
     }
@@ -754,13 +803,16 @@ impl Holds {
     /// at `now` (the key the read gives) and showing `facts`, which keep the time they were
     /// read. At the same head and base it is the one ask still, waiting since it was raised; at
     /// another, the ask at `was` is retired and one at `now` waits from the read (Q242). An ask
-    /// that waits no more is never raised again by a re-read.
+    /// that waits no more is never raised again by a re-read. An older read never replaces a
+    /// newer (Q269). Read `why` [`Reread::AsksOnceMore`], the ask is marked asked where it shows
+    /// what this read gave.
     pub fn refresh(
         &self,
         session: u32,
         was: &MergeKey,
         now: MergeKey,
         facts: Facts,
+        why: Reread,
     ) -> Result<Refreshed, NotMerged> {
         let mut held = self.lock();
         let at = held
@@ -768,7 +820,13 @@ impl Holds {
             .position(|one| one.session == session && one.key == *was)
             .ok_or(NotMerged::NotHeld)?;
         if now == *was {
-            held[at].facts = facts;
+            let one = &mut held[at];
+            let asked = one.asked;
+            one.replace(facts.clone());
+            one.asked = match why {
+                Reread::AsksOnceMore => one.facts.shows_as(&facts),
+                Reread::Presses => asked,
+            };
             return Ok(Refreshed::Same);
         }
         if !was.same_request(&now) {
@@ -782,6 +840,7 @@ impl Holds {
             key: now,
             facts,
             since,
+            asked: false,
         });
         Ok(Refreshed::Moved)
     }
@@ -833,6 +892,9 @@ impl Holds {
                 .iter()
                 .position(|one| one.session == session && one.key == *key)
                 .ok_or(NotMerged::NotHeld)?;
+            if !held[at].asked {
+                return Err(NotMerged::NotAsked);
+            }
             if held[at].facts.ruleset.seen() != seen {
                 return Err(NotMerged::RulesetChanged);
             }

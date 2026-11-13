@@ -56,3 +56,12 @@ export async function rereadMerge(
   if (read.data.head !== path.head) return {};
   return { question: confirmationOf(ask, read.data.facts) };
 }
+
+/** **purlis's own question for a hold that arrived without its risk** (Q268, Q269): asked once
+ *  more on the pane and on the row alike, so a merge always takes two presses. */
+export function fallbackConfirm(hold: Shown): string {
+  const path = hold.answer;
+  return path.via === "merge-hold"
+    ? `Merge request ${path.number} of ${path.repo} at ${path.head.slice(0, 7)}? There is no undo.`
+    : "Merge this request? There is no undo.";
+}

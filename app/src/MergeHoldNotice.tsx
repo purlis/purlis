@@ -6,7 +6,7 @@ import type { PlaneId, Shown } from "./bindings";
 import { answerTaken, asksMoved } from "./asks";
 import { Notice, type NoticeAction } from "./Notice";
 import { MergeFacts } from "./MergeFacts";
-import { confirmationOf, rereadMerge } from "./mergeHold";
+import { confirmationOf, fallbackConfirm, rereadMerge } from "./mergeHold";
 import { NOTICE_MOVED_JUST_NOW, SETTLE_MS } from "./noticeSettle";
 
 /**
@@ -144,16 +144,8 @@ function OneHold({
       fixes={fixes}
     >
       {confirming ? confirm : hold.risk == null ? hold.says : `${hold.says} ${hold.risk.why}.`}
-      {refused !== undefined && ` ${refused}`}{" "}
+      {refused !== undefined && ` ${refused}`}
       {hold.answer.via === "merge-hold" && <MergeFacts facts={hold.answer.facts} />}
     </Notice>
   );
-}
-
-/** purlis's own question for a hold that arrived without its risk (Q268). */
-function fallbackConfirm(hold: Shown): string {
-  const path = hold.answer;
-  return path.via === "merge-hold"
-    ? `Merge request ${path.number} of ${path.repo} at ${path.head.slice(0, 7)}? There is no undo.`
-    : "Merge this request? There is no undo.";
 }
