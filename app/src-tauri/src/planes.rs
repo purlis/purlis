@@ -4835,7 +4835,10 @@ impl Planes {
             Box::new(move |record| records.write(record))
         };
         // The project every chat started here is of, sandbox and all (#1410).
-        let mut chats = Chats::on_host(recorder, (self.hosting)(reporting, &root), root.clone());
+        let mut host = (self.hosting)(reporting, &root);
+        // On the host itself, before the chats share it (#6508's review): every start reaches it.
+        host.stopped_by(Arc::clone(&self.kill_switch));
+        let mut chats = Chats::on_host(recorder, host, root.clone());
         // What the session host hands on from the hook channel it owns for this plane (#2000).
         if let Some(relayed) = hooks.relayed_from_the_host() {
             chats.sessions().hear_through(relayed);
@@ -4857,7 +4860,6 @@ impl Planes {
                 })
             }
         }));
-        chats.stopped_by(Arc::clone(&self.kill_switch));
         chats.on_device(device);
         chats.keeping_pools_in(self.pools_in.clone());
         // Each run a start begins goes into the host's event log, before the chat's program

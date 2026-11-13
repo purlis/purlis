@@ -2371,20 +2371,6 @@ impl Chats {
         *lock(&self.never_started) = Some(tell);
     }
 
-    /// Refuses every chat start while `switch` is thrown (OV-1), at the sessions every start
-    /// reaches.
-    ///
-    /// Set as the project opens, before anything shares the host: only a quit does, to read
-    /// task screens on threads of their own (#6305).
-    pub fn stopped_by(&mut self, switch: std::sync::Arc<crate::killswitch::KillSwitch>) {
-        if let Some(host) = Arc::get_mut(&mut self.sessions) {
-            host.stopped_by(switch);
-        } else {
-            debug_assert!(false, "the kill switch is set before the host is shared");
-            tracing::error!("purlis: the kill switch was set after the session host was shared");
-        }
-    }
-
     /// The sessions underneath, for everything that is about a terminal and not about a chat.
     pub fn sessions(&self) -> &dyn SessionHost {
         self.sessions.as_ref()
