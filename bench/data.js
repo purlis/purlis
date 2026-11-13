@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794529501201,
+  "lastUpdate": 1794547852038,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -47964,6 +47964,48 @@ window.BENCHMARK_DATA = {
             "value": 101.327301,
             "unit": "ms",
             "extra": "median of 5 runs: 100.540, 100.908, 101.327, 101.453, 101.688 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "31a77c21cce66ef518d7e94b6c1982a6b491660f",
+          "message": "fixes main: a web content process that exits mid-reading is dropped, not a failure (#6460)\n\nwebAndHarnessMemory listed web content pids with ps, then asked footprint for all of\nthem. WebKit can end a prewarmed or swapped web content process in between, and the gone\npid's 'Unable to find pid' failed artifact-memory.e2e.ts on macOS (main run 43334827097).\n\nWhen footprint cannot read a pid, ps is asked again: a pid no longer listed is dropped\n(from the reading and webContentProcesses), and footprint is asked once more for those\nstill alive. A live pid footprint cannot read, or no web content left, stays an error.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M79J48VAQ78RMMP2ND4W2HYY\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-13T04:53:09Z",
+          "tree_id": "f85ddb1b4f66f7e60844b9759d8feade16eda5d9",
+          "url": "https://github.com/purlis/purlis/commit/31a77c21cce66ef518d7e94b6c1982a6b491660f"
+        },
+        "date": 1794547846116,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6893175,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.674, 0.680, 0.689, 0.697, 0.705 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7387825,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.414, 16.618, 16.739, 16.756, 16.825 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.003498,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.097, 101.891, 102.003, 103.514, 103.546 ms"
           }
         ]
       }
