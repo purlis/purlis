@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794589270080,
+  "lastUpdate": 1794594727739,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -48552,6 +48552,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5831105,
             "unit": "ms",
             "extra": "median of 5 runs: 100.214, 100.938, 101.583, 101.691, 102.177 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f97ddfd7ba526812f0af076ee9369ff37f7155ec",
+          "message": "Older-sandbox and level asks read once per burst; one look walks the plane once; live_trees reads a repository's branch folders once per block (felt speed round 4, H10) (#6529)\n\nchatsOnOlderSandbox and chatsLevelWhy go through purlis_core::burst::Burst: an ask made\nwhile a read runs waits for the next read, shared by every ask that came meanwhile, so a\nburst costs at most two reads and no answer predates its ask. Inside one read,\nsandbox::planted::read_once walks the plane's folders and git folders once for every\nchat start it compiles. worktree::listing::live_trees looks up the block's verdict\nbefore reading any gitdir file, so the doctor's workspace layer row is O(N), not O(N^2).\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M7A63KPWPFFHDWX15PPNFQM0\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-13T17:59:37Z",
+          "tree_id": "f9e4df2312222c655df584d17e0946e829556cad",
+          "url": "https://github.com/purlis/purlis/commit/f97ddfd7ba526812f0af076ee9369ff37f7155ec"
+        },
+        "date": 1794594721943,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5672005,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.539, 0.557, 0.567, 0.579, 0.590 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.705264,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.655, 16.702, 16.705, 16.787, 17.005 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.75655850000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.970, 103.349, 103.757, 104.121, 104.894 ms"
           }
         ]
       }
