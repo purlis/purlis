@@ -627,6 +627,79 @@ describe("answering through the path an ask names", () => {
     expect((await answerTaken(PLANE, vault, "keep")).said).toBe(held);
   });
 
+  it("trusts every clone of Trust these clones with Trust all, each once at the address its remote names (R-336)", async () => {
+    const calls = sent({ vouch_clone: "github.com/acme/api" });
+    const clones: Shown = {
+      session: 0,
+      ask: "trust-clones",
+      says: "Trust these clones: purlis did not clone workspaces/alpha/repos/api (github.com/acme/api), workspaces/alpha/repos/web (github.com/acme/web). Trust them only if you made them yourself.",
+      options: [{ id: "trust-all", label: "Trust all", allows: true }],
+      source: "trust-clones",
+      chain: ["purlis"],
+      answer: {
+        via: "trust-clones",
+        clones: [
+          {
+            workspace: "alpha",
+            folder: "workspaces/alpha/repos/api",
+            place: "github.com/acme/api",
+            places: ["github.com/acme/api"],
+          },
+          {
+            workspace: "alpha",
+            folder: "workspaces/alpha/repos/web",
+            place: "github.com/acme/web",
+            places: ["github.com/acme/web"],
+          },
+        ],
+      },
+    };
+
+    expect(await answerTaken(PLANE, clones, "trust-all")).toEqual({
+      refused: undefined,
+      live: false,
+    });
+
+    expect(calls.map((one) => [one.cmd, one.args])).toEqual([
+      [
+        "vouch_clone",
+        { plane: PLANE, folder: "workspaces/alpha/repos/api", place: "github.com/acme/api" },
+      ],
+      [
+        "vouch_clone",
+        { plane: PLANE, folder: "workspaces/alpha/repos/web", place: "github.com/acme/web" },
+      ],
+    ]);
+  });
+
+  it("names the clone Trust all could not trust because its remote names several addresses (R-336)", async () => {
+    const calls = sent();
+    const clones: Shown = {
+      session: 0,
+      ask: "trust-clones",
+      says: "Trust these clones",
+      options: [{ id: "trust-all", label: "Trust all", allows: true }],
+      source: "trust-clones",
+      chain: ["purlis"],
+      answer: {
+        via: "trust-clones",
+        clones: [
+          {
+            workspace: "alpha",
+            folder: "workspaces/alpha/repos/api",
+            place: null,
+            places: ["github.com/acme/api", "github.com/acme/fork"],
+          },
+        ],
+      },
+    };
+
+    const taken = await answerTaken(PLANE, clones, "trust-all");
+
+    expect(taken.refused).toMatch(/^workspaces\/alpha\/repos\/api's remote names more than one/);
+    expect(calls.map((one) => one.cmd)).toEqual([]);
+  });
+
   it("hands on no sentence where Keep blocked on a run's notice holds", async () => {
     sent({ answer_run_grant: null });
     const taken = await answerTaken(PLANE, runAsk({ offer: "vault" }, VAULTS_OWN), "keep");

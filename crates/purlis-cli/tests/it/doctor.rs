@@ -1016,3 +1016,48 @@ fn purlis_doctor_lists_the_unrecorded_clones() {
         "the row names the clone and its remote: {unrecorded}"
     );
 }
+
+/// **`purlis doctor` names a clone whose origin names several addresses, with the fix** (Q257):
+/// such a clone is not in the window's Trust these clones, since no press can trust it.
+#[test]
+fn purlis_doctor_names_a_clone_whose_origin_names_several_addresses_with_the_fix() {
+    purlis_core::unsteered!();
+    let (_d, root) = plane();
+    let clone = root.join("workspaces/alpha/repos/api");
+    std::fs::create_dir_all(&clone).unwrap();
+    git(&clone, &["init", "-q", "."]);
+    git(
+        &clone,
+        &["remote", "add", "origin", "https://github.com/acme/api.git"],
+    );
+    git(
+        &clone,
+        &[
+            "remote",
+            "set-url",
+            "--add",
+            "--push",
+            "origin",
+            "https://github.com/acme/fork.git",
+        ],
+    );
+    let config = root.join("home/.config/purlis");
+    std::fs::create_dir_all(&config).unwrap();
+    let vars = [("PURLIS_CONFIG_HOME", config.to_str().unwrap())];
+
+    let out = doctor_with(&root, &root.join("home"), &["--json"], &vars);
+
+    let rows = rows(&out);
+    let unrecorded = row(&rows, "unrecorded clones");
+    assert_eq!(unrecorded["status"], "warn", "{unrecorded}");
+    let said = unrecorded.to_string();
+    assert!(
+        said.contains("workspaces/alpha/repos/api names more than one address")
+            && said.contains("github.com/acme/api and github.com/acme/fork"),
+        "the row names the clone and both addresses: {unrecorded}"
+    );
+    assert!(
+        said.contains("give origin of workspaces/alpha/repos/api one address"),
+        "the row says the fix: {unrecorded}"
+    );
+}

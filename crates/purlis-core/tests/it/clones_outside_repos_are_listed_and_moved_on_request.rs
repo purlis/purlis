@@ -1012,3 +1012,55 @@ fn answered_no_the_move_trusts_nothing_new_and_a_recorded_clone_keeps_its_record
         "web is not trusted without the person's yes: {said:?}"
     );
 }
+
+/// **The move re-records a trusted clone only while its remote is the one it was trusted at**
+/// (Q257): a clone whose origin changed after the person trusted it is not trusted again where
+/// it moved to, and the move says so.
+#[test]
+fn a_trusted_clone_whose_remote_changed_is_not_trusted_again_where_it_moved_to() {
+    purlis_core::unsteered!();
+    let (_d, root) = plane();
+    let home = tempfile::tempdir().unwrap();
+    let api = on_github_at(&root, "api");
+    vouch::vouch_clone(
+        &HostScope::for_a_test(),
+        home.path(),
+        &root,
+        &api,
+        "github.com/acme/api",
+    )
+    .expect("api is trusted before the move");
+    support::git(
+        &api,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "https://github.com/other/api.git",
+        ],
+    );
+
+    let applied = move_into_repos::apply_with(
+        &root,
+        &move_into_repos::open_in_record,
+        None,
+        Some(&move_into_repos::Records {
+            config_root: home.path(),
+            trust: None,
+        }),
+    );
+
+    let said = said(&applied);
+    let moved = ws(&root).join("repos/api");
+    assert!(moved.join(".git").is_dir(), "{said:?}");
+    assert!(
+        !vouch::trusted(home.path(), &moved),
+        "a remote changed since the trust is not trusted again: {said:?}"
+    );
+    assert!(
+        said.iter()
+            .any(|line| line.contains("workspaces/alpha/repos/api")
+                && line.contains("github.com/acme/api")),
+        "it says which clone it did not trust again, and at what: {said:?}"
+    );
+}

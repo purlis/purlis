@@ -87,8 +87,8 @@ fn unrecorded_clones_raise_one_ask_and_nothing_is_trusted_before_it() {
 
     // The window reads the project's clones as it opens, as it comes back into focus and as git
     // moves: each read is the same one ask, never a second.
-    let seen = windowonly::look_at_clones(&root, home.path());
-    windowonly::look_at_clones(&root, home.path());
+    let seen = windowonly::look_at_clones(&root, home.path(), &[]);
+    windowonly::look_at_clones(&root, home.path(), &[]);
 
     assert_eq!(seen.len(), 2, "{seen:?}");
     let ask = windowonly::clones_ask(&root).expect("unrecorded clones raise an ask");
@@ -148,9 +148,65 @@ fn a_workspace_with_a_recorded_clone_still_asks_for_its_unrecorded_one() {
     )
     .expect("api is trusted");
 
-    windowonly::look_at_clones(&root, home.path());
+    windowonly::look_at_clones(&root, home.path(), &[]);
 
     let ask = windowonly::clones_ask(&root).expect("web still raises the ask");
     assert_eq!(folders(&ask), ["workspaces/alpha/repos/web"]);
+    windowonly::project_ended(&root);
+}
+
+/// **A clone a live chat made or can write is never in Trust these clones** (Q257, Q249): its
+/// git directory is inside a chat's writes, so no mint would count it once trusted
+/// (`apptoken::held_from_chats`), and the person is not asked to trust what a chat put there.
+#[test]
+fn a_clone_a_live_chat_made_or_can_write_is_not_in_the_ask() {
+    purlis_core::unsteered!();
+    let (_d, root) = plane();
+    let home = tempfile::tempdir().unwrap();
+    // The chat was granted api's folder, and made the clone there mid-run.
+    let api = made_outside(&root, "api");
+    made_outside(&root, "web");
+
+    windowonly::look_at_clones(&root, home.path(), &[api]);
+
+    let ask = windowonly::clones_ask(&root).expect("web still raises the ask");
+    assert_eq!(
+        folders(&ask),
+        ["workspaces/alpha/repos/web"],
+        "the clone a chat can write is left out"
+    );
+    windowonly::project_ended(&root);
+}
+
+/// **A clone whose origin names several addresses is not in the ask** (Q257): no press can trust
+/// it, so the ask would never go. The doctor's row names it, with the fix.
+#[test]
+fn a_clone_whose_origin_names_several_addresses_is_not_in_the_ask() {
+    purlis_core::unsteered!();
+    let (_d, root) = plane();
+    let home = tempfile::tempdir().unwrap();
+    let api = made_outside(&root, "api");
+    support::git(
+        &api,
+        &[
+            "remote",
+            "set-url",
+            "--add",
+            "--push",
+            "origin",
+            "https://github.com/acme/fork.git",
+        ],
+    );
+    made_outside(&root, "web");
+
+    let seen = windowonly::look_at_clones(&root, home.path(), &[]);
+
+    assert_eq!(seen.len(), 2, "the Notices still list both: {seen:?}");
+    let ask = windowonly::clones_ask(&root).expect("web still raises the ask");
+    assert_eq!(
+        folders(&ask),
+        ["workspaces/alpha/repos/web"],
+        "a clone no press can trust is not in the ask"
+    );
     windowonly::project_ended(&root);
 }
