@@ -250,13 +250,16 @@ fn a_help_chat_is_not_started_again_without_the_sandbox() {
         ..project.start()
     };
 
-    // Not vacuous: an ordinary chat here starts again without the sandbox when asked to.
+    // Not vacuous: an ordinary chat here starts again without the sandbox when asked to, where
+    // the profile allows it at all (a sandbox-only profile, on Linux, refuses every chat that).
     let ordinary = purlis_core::reopen::Chat {
         held_from_clusters: false,
         ..help_chat(root)
     };
-    let ready = help::ready_again(&ordinary, &unsandboxed(), root).expect("it starts again");
-    assert!(ready.sandbox.is_none(), "an ordinary chat runs as asked");
+    if !project.sandbox_only {
+        let ready = help::ready_again(&ordinary, &unsandboxed(), root).expect("it starts again");
+        assert!(ready.sandbox.is_none(), "an ordinary chat runs as asked");
+    }
 
     let refused = help::ready_again(&help_chat(root), &unsandboxed(), root)
         .expect_err("a help chat is not started without the sandbox");
