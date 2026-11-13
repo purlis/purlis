@@ -56,18 +56,19 @@ describe("Settings › Skill sources", () => {
     );
     render(<Rows settings={group.settings as LiveSetting[]} />);
 
-    // Each row reads the controls as it is drawn: wait for what its control says.
-    await waitFor(() =>
+    // Each row reads the controls on its own as it is drawn, so one row can be drawn before the
+    // next: wait for what every row's control says, not only the first.
+    await waitFor(() => {
       expect(screen.getByTestId("skill-policy-allow")).toHaveTextContent(
         "https://github.com/acme/skills · pdf from https://github.com/anthropics/skills",
-      ),
-    );
-    expect(screen.getByTestId("skill-policy-block")).toHaveTextContent(
-      "yolo from https://github.com/acme/skills",
-    );
-    expect(screen.getByTestId("skill-policy-min-age")).toHaveTextContent("7 days");
-    expect(screen.getByTestId("skill-policy-exempt")).toHaveTextContent("9f3c1d27a0b4");
-    expect(screen.getAllByText("Team")).toHaveLength(4);
+      );
+      expect(screen.getByTestId("skill-policy-block")).toHaveTextContent(
+        "yolo from https://github.com/acme/skills",
+      );
+      expect(screen.getByTestId("skill-policy-min-age")).toHaveTextContent("7 days");
+      expect(screen.getByTestId("skill-policy-exempt")).toHaveTextContent("9f3c1d27a0b4");
+      expect(screen.getAllByText("Team")).toHaveLength(4);
+    });
     expect(screen.getByTestId("skill-policy-allow")).toHaveAccessibleDescription(
       expect.stringContaining("Set in purlis.toml, which your team sees.") as string,
     );
@@ -81,8 +82,11 @@ describe("Settings › Skill sources", () => {
     const { unmount } = render(
       <Rows settings={projectSkillSourcesGroup("p", "purlis.toml").settings as LiveSetting[]} />,
     );
-    expect(await screen.findByTestId("skill-policy-controls")).toHaveTextContent(
-      "None: purlis.toml holds no [skill_policy], so a skill installs from any source and no install, update or removal is audited.",
+    // The row is drawn saying "Reading…" before the answer: wait for what it says, not for it.
+    await waitFor(() =>
+      expect(screen.getByTestId("skill-policy-controls")).toHaveTextContent(
+        "None: purlis.toml holds no [skill_policy], so a skill installs from any source and no install, update or removal is audited.",
+      ),
     );
     expect(screen.queryByTestId("skill-policy-allow")).toBeNull();
     unmount();
@@ -100,8 +104,10 @@ describe("Settings › Skill sources", () => {
     render(
       <Rows settings={projectSkillSourcesGroup("p", "purlis.toml").settings as LiveSetting[]} />,
     );
-    expect(await screen.findByTestId("skill-policy-controls")).toHaveTextContent(
-      /^This project's \[skill_policy\] in purlis\.toml could not be read/,
+    await waitFor(() =>
+      expect(screen.getByTestId("skill-policy-controls")).toHaveTextContent(
+        /^This project's \[skill_policy\] in purlis\.toml could not be read/,
+      ),
     );
   });
 });
@@ -135,8 +141,9 @@ describe("Settings › Recorded skill acts", () => {
     });
     render(<Rows settings={projectSkillActsGroup("p").settings as LiveSetting[]} />);
     const table = await screen.findByRole("grid", { name: "Recorded skill acts" });
+    // The grid can be drawn before its rows: wait for the header row and both acts.
+    await waitFor(() => expect(within(table).getAllByRole("row")).toHaveLength(3));
     const rows = within(table).getAllByRole("row").slice(1);
-    expect(rows).toHaveLength(2);
     expect(rows[0]).toHaveTextContent("Install");
     expect(rows[0]).toHaveTextContent("release-train, notify");
     expect(rows[0]).toHaveTextContent("https://github.com/acme/skills @ 4be9c21");
