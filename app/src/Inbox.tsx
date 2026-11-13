@@ -758,6 +758,7 @@ export function Inbox({
             })}
             scope={scope}
             onPick={(to) => pickAsksScope(plane, to)}
+            countAs="round"
           />
         </div>
       )}

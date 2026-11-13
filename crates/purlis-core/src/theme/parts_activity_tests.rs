@@ -361,19 +361,31 @@ fn a_theme_of_activity_parts_alone_is_measured_once_as_written() {
 
 #[test]
 fn the_hot_count_draws_from_its_own_role_and_no_other() {
-    let css = include_str!("../../../../app/src/ui/activity/activity.css");
-    let rule = css
+    // The hot count is the badge family's round count (#6342): the round part paints it in the
+    // hot count's role, and the activity part that places it names no colour of its own.
+    let badge = include_str!("../../../../app/src/ui/badge/badge.css");
+    let round = badge
+        .split("[data-scope=\"count\"][data-part=\"round\"] {")
+        .nth(1)
+        .and_then(|rest| rest.split('}').next())
+        .expect("the round count's rule");
+    assert!(
+        round.contains("background-color: var(--needs-you-count);"),
+        "{round}"
+    );
+    assert!(
+        round.contains("color: var(--needs-you-count-text);"),
+        "{round}"
+    );
+    let activity = include_str!("../../../../app/src/ui/activity/activity.css");
+    let hot = activity
         .split("[data-tone=\"needs-you\"] {")
         .nth(1)
         .and_then(|rest| rest.split('}').next())
         .expect("the hot count's rule");
     assert!(
-        rule.contains("background-color: var(--needs-you-count);"),
-        "{rule}"
-    );
-    assert!(
-        rule.contains("color: var(--needs-you-count-text);"),
-        "{rule}"
+        hot.contains("background-color: transparent;") && !hot.contains("color: var("),
+        "{hot}"
     );
 }
 
