@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794583159341,
+  "lastUpdate": 1794586148171,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -48468,6 +48468,48 @@ window.BENCHMARK_DATA = {
             "value": 101.78953849999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.232, 100.456, 101.790, 102.438, 102.932 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c8337c8e6defca99df2d7f2d19725550a3d448ba",
+          "message": "Text roles: label spelling and xl titles (replaces #6473) (#6505)\n\n* feat(app): the section label has one spelling, and no word reads --font-size-xl\n\nReapplies what #6436 took back out in f5cfcf6d2a so its pictures fit one\ntake of the baselines (#6443): the section label's one spelling\n(f49ee1994b, its labelSpellings guard in type.guard.test.ts, and\nc2d9037640's fragment), a menu's and a select's group named by data on\nui-text-secondary (from 85bc912fbe), the last titles off --font-size-xl\n(95930058d1, fad36361ed), the panel section's title keeping\n--text-secondary in panel.css (from aab9a28912), and design-system.md's\n\"The section label, one spelling\" with the 0.05em it corrects.\n\nRefs #1920\nCloses #6443\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M78Y3RVW73BSX6FA2T16NPXC\nPurlis-Persona: steward\n\n* fix(app): every one of Start a chat's labels wears the section label\n\nReview of #6443: .start-chat-label lost its capitals, size and weight to\nui-text-label, but only the Harness heading wore the role, so the runs-on,\nname and sandbox labels drew as plain text. Each wears it now, and a test\nholds every .start-chat-label to the role. The one-section-label fragment\nsays three spacings, not five, and names the headings that move from the\nmuted tier to the secondary; labelSpellings' predicate is named for what\nit finds.\n\nRefs #1920\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M78Y3RVW73BSX6FA2T16NPXC\nPurlis-Persona: steward\n\n* fix(app): a fold's group name wears the section label\n\nReview of #6443's pictures: a fold's group name (Fold.tsx, #3670) is a row\nwith data-part=\"header\", not a ListSection header, so it never wore\nui-text-label; when list.css stopped spelling the label it lost its\ncapitals (\"In this chat\", \"Left out\" in the Skills view). It wears the\nrole now, a run's quiet line does not, and a test holds both.\n\nRefs #1920\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M78Y3RVW73BSX6FA2T16NPXC\nPurlis-Persona: steward\n\n* test(app): the story baselines of the section label's one spelling and the flows' titles, from the pull request's stories run\n\n4,886 pictures (about 239 MB, one take under the 256 MB cap), taken with\ntools/story-baselines-pull.mjs from run 43387670338 of 77aa8399d3 and\nreviewed by story group: table and control table column names, list,\ntree, fold and panel group names, card tiles, Start a chat's labels,\nsession record and dispatch headings in the label's one spelling, and a\npool's setup and the agent identity flow titled at the title's 16px.\n\nRefs #1920\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M78Y3RVW73BSX6FA2T16NPXC\nPurlis-Persona: steward\n\n* test(app): the story baselines the first take missed, from run 43395593502\n\n53 pictures the take from run 43387670338 left at main's: the agent\nidentity flow in the dark theme (Chromium) and dark compact (WebKit), and\nTable's stories in classic light (Chromium), classic light compact\n(WebKit) and light high contrast compact (Chromium). Each moves as its\nsiblings did: the title at 16px, the column names in the label's one\nspelling. Main has not touched Table or the roles since.\n\nRefs #1920\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M78Y3RVW73BSX6FA2T16NPXC\nPurlis-Persona: steward\n\n* fix(app): the grants table's column names stay whole in the label role (#6443)\n\nSettings › Project › Dispatch's grants table was a fixed ControlTable: each\ncolumn held at its share (22/32/23/23%) whatever its name said. With the label\nrole's 0.05em tracking, macOS's WebView drew \"Where it comes from\" wider than\nits 32%, and settings-tables.e2e.ts found it cut in the merge queue.\n\nThe table now lays itself out, as the limits table does, so a column's\none-line name is the least it is drawn at, in any font. The shares stay as\neach column's width, and a cell's words break anywhere, so no long name\nwidens its column. WebKit's fixed layout reads a max()/calc() width as auto,\nso a width that follows the role there would have needed another column\nleft to cut.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7AA2P5S84HVAMRDTG92WS5X\nPurlis-Persona: steward\n\n* test(app): the baselines of three stories main brought in, from run 43442867707\n\nAsksScopes (#6480), ConnectStep's Ssh Refuses Forwarding (#6463) and InboxDecision's A\nPersonas Allow On Its Row (#6457) came to main after #6473's pictures were drawn. Each move\nis #6443's: the list group headings in the label role's one spelling, and the pool setup's\ntitle at 16px. No story draws the grants table.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7AA2P5S84HVAMRDTG92WS5X\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-13T15:27:32Z",
+          "tree_id": "e903019754fc01f8032b4929d5786bf3855a6134",
+          "url": "https://github.com/purlis/purlis/commit/c8337c8e6defca99df2d7f2d19725550a3d448ba"
+        },
+        "date": 1794586142127,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7314944999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.685, 0.712, 0.731, 0.754, 0.769 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7286735,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.429, 16.660, 16.729, 16.768, 16.806 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.09079750000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.028, 101.259, 102.091, 103.073, 103.265 ms"
           }
         ]
       }
