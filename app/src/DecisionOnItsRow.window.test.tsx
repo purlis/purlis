@@ -702,6 +702,23 @@ describe("a held merge in Asks (R-115)", () => {
     expect(asked("merge_held_request")).toEqual([]);
   });
 
+  it("asks once more with purlis's own sentence when the hold arrived without its risk (Q268, Q269)", async () => {
+    // Q269: a merge hold with no risk class still takes two presses on its row: the first
+    // reads the request again and asks once more, and never merges.
+    const { view, asked } = await opened([{ ...MERGE, risk: null }]);
+    await answersOf(rowOf(view, "steward 3"));
+    const merge = await screen.findByRole("button", { name: "Merge" });
+    await read();
+
+    await press.click(merge);
+
+    await waitFor(() => expect(asked("reread_held_merge")).toHaveLength(1));
+    await screen.findByRole("group", {
+      name: "Merge request 12 of o/r at 0123456? There is no undo.",
+    });
+    expect(asked("merge_held_request")).toEqual([]);
+  });
+
   it("asks once more of a ruleset the re-read found, and sends the state it showed", async () => {
     // R-150: the re-read found a ruleset since the row was drawn: the question is asked of it,
     // and the press says it was shown one.

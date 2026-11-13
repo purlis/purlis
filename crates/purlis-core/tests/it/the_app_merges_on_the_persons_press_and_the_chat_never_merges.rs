@@ -12,7 +12,7 @@ use std::sync::Mutex;
 
 use purlis_core::harness::asks::{Admitted, Answerer};
 use purlis_core::mergehold::{
-    self, At, Held, Holds, MergeForge, MergeKey, Merged, NotMerged, Raised, Request, Seen,
+    self, At, Held, Holds, MergeForge, MergeKey, Merged, NotMerged, Raised, Request, Reread, Seen,
 };
 
 /// A forge that merges what it is asked to, counting each merge and the method, or refuses
@@ -107,6 +107,7 @@ fn the_app_merges_on_the_persons_press_and_the_chat_never_merges() {
     // Holding it merged nothing.
     assert!(forge.merged.lock().unwrap().is_empty());
 
+    asked_once_more(&holds, &asked);
     let pressed = holds.press(4, &asked, Seen::None, the_window(), &forge);
     assert!(pressed.is_ok(), "{pressed:?}");
     assert_eq!(*forge.merged.lock().unwrap(), [(key(12), false)]);
@@ -128,6 +129,7 @@ fn a_merge_the_forge_refuses_waits_again_and_dont_merge_merges_nothing() {
         refuses: Some("Head branch was modified"),
         ..Forge::default()
     };
+    asked_once_more(&holds, &key(12));
     assert_eq!(
         holds.press(4, &key(12), Seen::None, the_window(), &refusing),
         Err(NotMerged::Forge("Head branch was modified".to_owned()))
@@ -171,6 +173,7 @@ fn a_retried_merge_at_a_new_head_is_a_new_ask_and_the_old_one_is_gone() {
         Err(NotMerged::NotHeld)
     );
     assert!(forge.merged.lock().unwrap().is_empty());
+    asked_once_more(&holds, &moved);
     assert!(
         holds
             .press(4, &moved, Seen::None, the_window(), &forge)
@@ -220,6 +223,7 @@ fn a_press_on_a_request_whose_base_moved_merges_nothing() {
         base: Some("release"),
         ..Forge::default()
     };
+    asked_once_more(&holds, &key(12));
     assert_eq!(
         holds.press(4, &key(12), Seen::None, the_window(), &retargeted),
         Err(NotMerged::BaseMoved {
@@ -241,12 +245,21 @@ fn a_press_merges_by_the_repos_own_method() {
         squash: true,
         ..Forge::default()
     };
+    asked_once_more(&holds, &key(12));
     assert!(
         holds
             .press(4, &key(12), Seen::None, the_window(), &squashes)
             .is_ok()
     );
     assert_eq!(*squashes.merged.lock().unwrap(), [(key(12), true)]);
+}
+
+/// The person pressed Merge once on chat 4's ask for `key`: the window read it again and asked
+/// once more (Q269).
+fn asked_once_more(holds: &Holds, key: &MergeKey) {
+    holds
+        .refresh(4, key, key.clone(), facts(), Reread::AsksOnceMore)
+        .expect("asked once more");
 }
 
 /// What the forge said of the request, as a merge ask shows it.

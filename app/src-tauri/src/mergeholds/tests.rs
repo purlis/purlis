@@ -12,7 +12,7 @@ use purlis_core::eventlog::stops::Stop;
 use purlis_core::forge::checks::{Checks, Ci};
 use purlis_core::forge::pr::{HeadAt, Repo as OnForge};
 use purlis_core::hookwire::{Answer, MergeAsk};
-use purlis_core::mergehold::{self, Request, Seen};
+use purlis_core::mergehold::{self, Request, Reread, Seen};
 
 use super::{MergeHolds, Project, answer};
 
@@ -141,6 +141,12 @@ impl Project for Fake {
         self.recorded.lock().unwrap().push((chat, stop));
     }
     fn moved(&self) {}
+}
+
+/// The person pressed Merge once on chat 4's ask at [`HEAD`]: the window read it again and
+/// asked once more (Q269).
+fn asked_once_more(project: &Fake) {
+    super::reread(project, 4, "o/r", 12, HEAD, Reread::AsksOnceMore).expect("asked once more");
 }
 
 /// How a case sets its project up.
@@ -381,6 +387,7 @@ fn a_press_merges_through_the_forge_only_at_the_head_its_ask_is_at() {
         answer(&project, &project.ask(12)),
         Answer::MergeHeld { .. }
     ));
+    asked_once_more(&project);
     let transport = recorded(a_github_merge_at_head());
     let backend_of = |on: &OnForge| on.forge.backend_over(transport.clone());
     assert_eq!(
@@ -521,6 +528,7 @@ fn a_press_on_a_repo_with_a_merge_queue_queues_it_at_the_asks_head_through_the_f
     exchanges.extend(github_contract("lands_through_queue"));
     exchanges.extend(github_contract("enqueue_at"));
     let transport = recorded(exchanges);
+    asked_once_more(&project);
     let backend_of = |on: &OnForge| on.forge.backend_over(transport.clone());
 
     assert_eq!(
@@ -575,4 +583,38 @@ fn a_try_again_at_the_same_head_replaces_the_asks_facts_with_the_new_read() {
     assert_eq!(one.facts.read_at, 50, "when the new read was made");
     assert_eq!(one.since, since, "still the ask first raised");
     assert_eq!(project.holds_recorded(), 1, "no second hold");
+}
+
+/// Q269: a press is held to the ruleset state its own fresh read gives. Here that read finds no
+/// ruleset, though the ask still shows the one the person was asked of (the read is dated before
+/// it, so it never replaces it): the press merges nothing, and asks the forge for no merge.
+#[test]
+fn a_press_whose_fresh_read_disagrees_with_what_was_shown_is_refused() {
+    purlis_core::unsteered!();
+    let project = Fake::new();
+    assert!(matches!(
+        answer(&project, &project.ask(12)),
+        Answer::MergeHeld { .. }
+    ));
+    asked_once_more(&project);
+    let mut none = at(HEAD);
+    none.facts.ruleset = mergehold::Ruleset::None;
+    none.facts.read_at = 30;
+    *project.read.lock().unwrap() = Ok(none);
+    let reached = Mutex::new(0);
+    let backend_of = |on: &OnForge| {
+        *reached.lock().unwrap() += 1;
+        on.forge.backend_over(recorded(Vec::new()))
+    };
+
+    assert_eq!(
+        super::pressed_in(&project, 4, "o/r", 12, HEAD, Seen::Protects, &backend_of),
+        Err(mergehold::NotMerged::RulesetChanged.to_string())
+    );
+    assert_eq!(
+        *reached.lock().unwrap(),
+        0,
+        "the forge was asked for no merge"
+    );
+    assert_eq!(project.holds.every().len(), 1, "the ask still waits");
 }

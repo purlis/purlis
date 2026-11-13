@@ -1553,6 +1553,7 @@ fn a_held_merge(session: u32) -> purlis_core::mergehold::Waits {
             read_at: 40,
         },
         since: 40,
+        asked: false,
     }
 }
 

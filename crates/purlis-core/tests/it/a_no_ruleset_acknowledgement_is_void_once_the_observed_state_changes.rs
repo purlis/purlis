@@ -14,7 +14,7 @@ use std::sync::Mutex;
 use purlis_core::forge::checks::{Checks, Ci};
 use purlis_core::harness::asks::{Admitted, Answerer};
 use purlis_core::mergehold::{
-    At, Facts, Holds, MergeForge, MergeKey, Merged, NotMerged, Refreshed, Ruleset, Seen,
+    At, Facts, Holds, MergeForge, MergeKey, Merged, NotMerged, Refreshed, Reread, Ruleset, Seen,
 };
 
 const HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -87,7 +87,13 @@ fn a_no_ruleset_acknowledgement_is_void_once_the_observed_state_changes() {
     holds.raise(4, key(HEAD), facts(Ruleset::None, 1_000), 1_000);
     // The fresh read before the person's once-more press finds a ruleset on main now.
     assert_eq!(
-        holds.refresh(4, &key(HEAD), key(HEAD), facts(Ruleset::Protects, 1_060)),
+        holds.refresh(
+            4,
+            &key(HEAD),
+            key(HEAD),
+            facts(Ruleset::Protects, 1_060),
+            Reread::AsksOnceMore
+        ),
         Ok(Refreshed::Same)
     );
     let forge = Forge::default();
@@ -117,7 +123,13 @@ fn a_no_ruleset_acknowledgement_holds_while_the_fresh_read_gives_the_same_state(
     let holds = Holds::default();
     holds.raise(4, key(HEAD), facts(Ruleset::None, 1_000), 1_000);
     assert_eq!(
-        holds.refresh(4, &key(HEAD), key(HEAD), facts(Ruleset::None, 1_060)),
+        holds.refresh(
+            4,
+            &key(HEAD),
+            key(HEAD),
+            facts(Ruleset::None, 1_060),
+            Reread::AsksOnceMore
+        ),
         Ok(Refreshed::Same)
     );
     let forge = Forge::default();
@@ -140,7 +152,13 @@ fn a_reread_refreshes_a_waiting_ask_and_never_raises_one_that_is_gone() {
     holds.raise(4, key(HEAD), facts(Ruleset::None, 1_000), 1_000);
 
     assert_eq!(
-        holds.refresh(4, &key(HEAD), key(HEAD), facts(Ruleset::None, 1_060)),
+        holds.refresh(
+            4,
+            &key(HEAD),
+            key(HEAD),
+            facts(Ruleset::None, 1_060),
+            Reread::AsksOnceMore
+        ),
         Ok(Refreshed::Same)
     );
     let waiting = holds.every();
@@ -148,7 +166,13 @@ fn a_reread_refreshes_a_waiting_ask_and_never_raises_one_that_is_gone() {
     assert_eq!(waiting[0].since, 1_000);
 
     assert_eq!(
-        holds.refresh(4, &key(HEAD), key(MOVED), facts(Ruleset::None, 1_120)),
+        holds.refresh(
+            4,
+            &key(HEAD),
+            key(MOVED),
+            facts(Ruleset::None, 1_120),
+            Reread::AsksOnceMore
+        ),
         Ok(Refreshed::Moved)
     );
     let waiting = holds.every();
@@ -157,7 +181,13 @@ fn a_reread_refreshes_a_waiting_ask_and_never_raises_one_that_is_gone() {
 
     assert!(holds.dont_merge(4, &key(MOVED), the_window()));
     assert_eq!(
-        holds.refresh(4, &key(MOVED), key(MOVED), facts(Ruleset::None, 1_180)),
+        holds.refresh(
+            4,
+            &key(MOVED),
+            key(MOVED),
+            facts(Ruleset::None, 1_180),
+            Reread::AsksOnceMore
+        ),
         Err(NotMerged::NotHeld)
     );
     assert!(holds.every().is_empty(), "nothing is raised again");
@@ -179,6 +209,15 @@ fn a_press_at_an_old_head_racing_a_retry_leaves_only_the_new_ask() {
         ..Forge::default()
     };
 
+    holds
+        .refresh(
+            4,
+            &key(HEAD),
+            key(HEAD),
+            facts(Ruleset::None, 1_000),
+            Reread::AsksOnceMore,
+        )
+        .expect("asked once more");
     assert_eq!(
         holds.press(4, &key(HEAD), Seen::None, the_window(), &forge),
         Err(NotMerged::Forge("Head branch was modified".to_owned()))
