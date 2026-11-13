@@ -62,6 +62,7 @@ fn asked(chat: u32) -> PermissionAsked {
         permission_request: Source::ClaudeCode,
         payload: serde_json::json!({"tool_name": "Bash"}),
         ran_for_ms: None,
+        speaker: Default::default(),
     }
 }
 

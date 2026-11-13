@@ -208,6 +208,7 @@ export const RUST_READERS = [
   "src/ui/field/refusingFields.guard.test.ts",
   "src/ui/menu/submenuRows.guard.test.ts",
   "src/ui/notice/noticeCardFill.test.ts",
+  "src/waitingInItsTerminal.guard.test.ts",
   "src/windowControls.test.ts",
   "src/windowprefs.test.ts",
 ];

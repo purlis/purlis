@@ -5433,6 +5433,7 @@ fn an_ask_says_what_it_asks_to_use_in_plain_words() {
             permission_request: crate::harness::hooked::Source::ClaudeCode,
             payload,
             ran_for_ms: None,
+            speaker: Default::default(),
         }
         .asks_for()
     };
