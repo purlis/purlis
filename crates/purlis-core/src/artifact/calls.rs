@@ -429,6 +429,7 @@ mod tests {
             scope: Scope::Plane,
             widens: &[],
             result: todos,
+            fresh_seconds: None,
         };
         let call = Call {
             id: "purlis.todo_list".into(),

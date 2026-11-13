@@ -727,6 +727,7 @@ export function Ask({
         if (opened === true) return;
         noteAnswered(plane, {
           at: Date.now(),
+          session: ask.session,
           chain: ask.chain,
           says: ask.says,
           answer: option.label,
@@ -1140,6 +1141,7 @@ function Reply({ plane, ask }: { plane: PlaneId; ask: Shown }) {
         }
         noteAnswered(plane, {
           at: Date.now(),
+          session: ask.session,
           chain: ask.chain,
           says: ask.says,
           answer: text.trim(),
@@ -1205,7 +1207,13 @@ function Reply({ plane, ask }: { plane: PlaneId; ask: Shown }) {
 
 /** Notes `answer` given to `ask` just now, for the list's recently answered. */
 function answeredNow(plane: PlaneId, ask: Shown, answer: string) {
-  noteAnswered(plane, { at: Date.now(), chain: ask.chain, says: ask.says, answer });
+  noteAnswered(plane, {
+    at: Date.now(),
+    session: ask.session,
+    chain: ask.chain,
+    says: ask.says,
+    answer,
+  });
 }
 
 /**

@@ -104,6 +104,18 @@ pub fn is_kept(root: &Path, id: &str) -> bool {
             .is_some_and(|meta| meta.is_file())
 }
 
+/// **What the store holds now**, for the Settings row that turns keeping on and off (#6306): how
+/// many screens are kept and their bytes, none where this machine keeps none ([`keeps`]),
+/// which deletes every kept screen.
+pub fn held(root: &Path) -> (usize, u64) {
+    if !keeps(root) {
+        forget_all(root);
+        return (0, 0);
+    }
+    let kept = every_kept(root);
+    (kept.len(), kept.iter().map(|one| one.bytes).sum())
+}
+
 /// One kept screen: its chat's id, when it was last written, and its size.
 struct Kept {
     id: String,

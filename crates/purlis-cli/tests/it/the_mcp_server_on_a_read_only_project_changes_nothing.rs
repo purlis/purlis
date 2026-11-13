@@ -307,6 +307,8 @@ fn arguments(tool: &str, todo: &str) -> Value {
         "artifact_check" => json!({ "folder": "board" }),
         // The query catalogue (ADR 0122 §7): a listing, read only.
         "queries" => json!({}),
+        // A repo's milestones (#6233): asked of the forge, never of the project's files.
+        "forge_milestones" => json!({}),
         // The workspace's chats (#6235): the app's to answer, read only.
         "chats" => json!({}),
         other => panic!("no arguments for {other}: add it to this test"),

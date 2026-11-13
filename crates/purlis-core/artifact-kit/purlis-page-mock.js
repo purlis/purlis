@@ -13,7 +13,8 @@
 // - **A data file** is answered from `purlis-fixtures.json`'s `data`, else fetched from the
 //   page's folder, else `null`, as purlis answers a file not generated on this machine.
 // - **A query** is answered from `purlis-fixtures.json`'s `queries`, keyed `<id>@<N>`, each an
-//   envelope without `at`: `{ "data": …, "cursor": "…" }` or `{ "error": { "kind": "…" } }`.
+//   envelope without `at`: `{ "data": …, "cursor": "…" }` or
+//   `{ "error": { "kind": "…", "message": "…" } }`, the message optional.
 //   With no fixture it fails, and says so in the console.
 // - **Offers** are checked as purlis checks them and written to the console; nothing is done.
 //
@@ -131,7 +132,9 @@
     const fixture = from.queries[key];
     if (own(fixture, "error")) {
       const kind = fixture.error?.kind;
-      return { error: { kind: KINDS.includes(kind) ? kind : "failed" } };
+      const error = { kind: KINDS.includes(kind) ? kind : "failed" };
+      if (typeof fixture.error?.message === "string") error.message = fixture.error.message;
+      return { error };
     }
     const answer = { data: own(fixture, "data") ? fixture.data : null };
     if (typeof fixture?.cursor === "string") answer.cursor = fixture.cursor;

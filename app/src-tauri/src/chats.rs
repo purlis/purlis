@@ -8856,6 +8856,26 @@ impl Chats {
         lock(&self.open).len()
     }
 
+    /// **Keeps the screens of the task chats that had finished, as the app quits** (#6305): the
+    /// next launch leaves each out of its put back (`finished::left_out`), so none closes
+    /// through [`Self::close_as`], where a screen is kept. Before [`Self::end_all`], while their
+    /// sessions still show them.
+    pub fn keep_finished_screens(&self) {
+        let finished: Vec<(u32, String)> = self
+            .record()
+            .chats
+            .iter()
+            .filter(|chat| crate::finished::left_out(&self.project, chat))
+            .filter_map(|chat| {
+                let number = chat
+                    .number
+                    .filter(|number| lock(&self.open).contains_key(number))?;
+                Some((number, chat.identity.id.clone()?))
+            })
+            .collect();
+        crate::chatcard::keep_screens_at_quit(&self.project, self.sessions(), &finished);
+    }
+
     /// Ends every chat, and does not return until their programs are gone.
     pub fn end_all(&self) {
         self.ending.store(true, Ordering::SeqCst);
