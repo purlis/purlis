@@ -523,6 +523,82 @@ pub fn forget_vault_keys() {
         .clear();
 }
 
+/// **Whether purlis can hold `files` from every chat** (#6267), as Connect asks before it trusts
+/// them: each chat's sandbox denies the files a pool names, reading included, by their paths. A
+/// file with another name on disk (a hard link) is reached by that name, which no rule holds; a
+/// file in a folder chats write (`chats_write`, a temporary folder or a project) can be moved
+/// away with that folder and read from where it went. Either is refused, naming the file; a key
+/// is pointed to a vault.
+pub fn held_from_chats(files: &Files, chats_write: &[PathBuf], host: &str) -> Result<(), Finding> {
+    let written: Vec<PathBuf> = chats_write.iter().map(|folder| real_of(folder)).collect();
+    let named = [(files.ca.as_path(), false), (files.cert.as_path(), false)]
+        .into_iter()
+        .chain(files.key_file().map(|key| (key, true)));
+    for (file, is_key) in named {
+        let instead = if is_key {
+            "keep the key in a vault instead (--tls-key-in VAULT/KEY), which purlis hands each run \
+             alone"
+        } else {
+            "move it to a folder only you write, such as ~/.docker, and name it there"
+        };
+        let refused = |why: &str| {
+            Err(Finding::TlsFile {
+                host: host.to_owned(),
+                file: file.display().to_string(),
+                why: format!("{why}, so purlis can't keep chats from reading it: {instead}"),
+            })
+        };
+        if links_to(file) > 1 {
+            return refused("has another name on disk (a hard link)");
+        }
+        let real = real_of(file);
+        if written.iter().any(|folder| real.starts_with(folder)) {
+            return refused("is in a folder chats write");
+        }
+    }
+    Ok(())
+}
+
+/// **The folders chats write, for [`held_from_chats`]**: the temporary folders and every project
+/// this machine has opened.
+#[must_use]
+pub fn folders_chats_write() -> Vec<PathBuf> {
+    let mut folders = vec![
+        std::env::temp_dir(),
+        PathBuf::from("/tmp"),
+        PathBuf::from("/var/tmp"),
+    ];
+    if let Some(config_root) = crate::machine::config_root() {
+        folders.extend(
+            crate::machine::read(&config_root)
+                .store
+                .recents
+                .into_iter()
+                .map(|recent| recent.plane),
+        );
+    }
+    folders
+}
+
+/// How many names the file at `path` has on disk; 1 where it can't be read.
+fn links_to(path: &Path) -> u64 {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        std::fs::metadata(path).map_or(1, |meta| meta.nlink())
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        1
+    }
+}
+
+/// `path` with every link on the way resolved, where it is there.
+fn real_of(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
 /// **The vault key `from` names is let go of**, where this process holds it: its pool is gone.
 pub fn forget_vault_key(from: &KeyFrom) {
     if let KeyFrom::Vault { plane, vault, key } = from {

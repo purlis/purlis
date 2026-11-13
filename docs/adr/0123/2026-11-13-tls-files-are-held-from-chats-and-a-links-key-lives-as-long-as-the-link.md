@@ -3,6 +3,28 @@
 Records what the review of [#6267](https://github.com/purlis/purlis/issues/6267) changed or left
 as it is. It adds to §3 and §8. The rest of this record stands.
 
+## The files a pool names are held from every chat
+
+A pool over TLS names a CA, a client certificate and a client key. The key can be a file kept
+where it is, often in `~/.docker/`. Every chat's sandbox now denies each of those files, for
+reading and for writing, by its name and by its real path, as it denies the cluster pools'
+copies of their kubeconfigs (`runners::tls_files`). A chat that could read the certificate and
+key would reach that engine as the person. A chat that could write the CA would get every run
+refused, since the CA is held to its pin, but it could not swap in a CA of its own.
+
+A rule on a path holds the path, not the file. So Connect refuses a file that can be reached
+another way (`tlsroute::held_from_chats`), naming it:
+
+- a file with another name on disk, a hard link, which no rule on its path holds;
+- a file in a folder chats write, a temporary folder or a project this machine opened, since a
+  chat could move that folder away with the file in it and read it from where it went.
+
+A key refused this way is pointed to a vault (`--tls-key-in VAULT/KEY`), which purlis hands to
+each run on its own. A CA or certificate is pointed to a folder only the person writes.
+
+A chat that was already running when a TLS pool was added keeps the sandbox it started with, so
+the new denials reach it at its next start.
+
 ## What this process holds for a pool goes when the pool does
 
 A key read from a vault is held in memory for a while, so a link's several runs read the vault

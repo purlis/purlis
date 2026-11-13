@@ -2920,6 +2920,26 @@ pub fn cluster_holds(config_root: &Path) -> Vec<std::path::PathBuf> {
     held
 }
 
+/// **The files every pool over Docker's TLS API names** (#6267): its CA, its client certificate
+/// and a client key kept where it is, as each pool's row names them. What a chat's sandbox holds
+/// from every chat, reading included. Empty where none is, or where the pools aren't read.
+pub fn tls_files(config_root: &Path) -> Vec<std::path::PathBuf> {
+    let mut files: Vec<std::path::PathBuf> = Vec::new();
+    for pool in pools(config_root).unwrap_or_default() {
+        if let Some(RemoteEngine::Tls(remote)) = pool.remote_engine() {
+            let named = [remote.files.ca.as_path(), remote.files.cert.as_path()]
+                .into_iter()
+                .chain(remote.files.key_file());
+            for file in named {
+                if !files.iter().any(|kept| kept == file) {
+                    files.push(file.to_path_buf());
+                }
+            }
+        }
+    }
+    files
+}
+
 /// **Where every cluster pool's kubectl keeps its caches** (`--cache-dir`, #3292): a folder of
 /// this user's alone beside the pools' own copies of their contexts, made where it is not.
 pub fn kubectl_cache(config_root: &Path) -> Result<std::path::PathBuf, Refused> {

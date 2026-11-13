@@ -739,6 +739,7 @@ pub fn trust_chosen(
 /// `route` met by purlis's own handshake against it with the client certificate. Nothing is kept.
 pub fn meet_tls(route: &str, files: &crate::tlsroute::Files) -> Result<CaMet, Finding> {
     let route = crate::tlsroute::Route::parse(route).map_err(Finding::Here)?;
+    crate::tlsroute::held_from_chats(files, &crate::tlsroute::folders_chats_write(), route.host())?;
     let ca = crate::tlsroute::read_ca(&files.ca, route.host())?;
     let through = crate::tlsroute::Through {
         route: route.clone(),
@@ -766,6 +767,7 @@ pub fn trust_tls(
 ) -> Result<crate::tlsroute::Remote, Finding> {
     let route = crate::tlsroute::Route::parse(route).map_err(Finding::Here)?;
     let confirmed = crate::tlsroute::Fingerprint::parse(fingerprint).map_err(Finding::Here)?;
+    crate::tlsroute::held_from_chats(files, &crate::tlsroute::folders_chats_write(), route.host())?;
     let ca = crate::tlsroute::read_ca(&files.ca, route.host())?;
     if ca.fingerprint != confirmed {
         // What was confirmed isn't what the file holds now: confirmed again, never trusted unseen.

@@ -770,3 +770,37 @@ fn a_pool_removed_lets_go_of_its_vault_key_held_in_memory() {
         "the removed pool's key is let go of"
     );
 }
+
+/// **A file purlis can't hold from chats is refused at Connect** (#6267): one with another name
+/// on disk, which no rule on its path holds, and one in a folder chats write, which a chat could
+/// move away with the file inside. A key is pointed to a vault instead.
+#[cfg(unix)]
+#[test]
+fn a_tls_file_a_chat_could_reach_another_way_is_refused_at_connect() {
+    let pki = Pki::new();
+    let files = pki.files("client");
+    let host = "box";
+    assert_eq!(held_from_chats(&files, &[], host), Ok(()));
+
+    // Another name for the key, a hard link.
+    let elsewhere = tempfile::tempdir().unwrap();
+    std::fs::hard_link(pki.at("client-key.pem"), elsewhere.path().join("k.pem")).unwrap();
+    match held_from_chats(&files, &[], host) {
+        Err(Finding::TlsFile { file, why, .. }) => {
+            assert_eq!(file, pki.at("client-key.pem").display().to_string());
+            assert!(why.contains("another name"), "{why}");
+            assert!(why.contains("vault"), "a key is pointed to a vault: {why}");
+        }
+        other => panic!("a hard-linked key was taken: {other:?}"),
+    }
+    std::fs::remove_file(elsewhere.path().join("k.pem")).unwrap();
+
+    // The CA in a folder chats write.
+    match held_from_chats(&files, &[pki.at("")], host) {
+        Err(Finding::TlsFile { file, why, .. }) => {
+            assert_eq!(file, pki.at("ca.pem").display().to_string());
+            assert!(why.contains("chats write"), "{why}");
+        }
+        other => panic!("a CA in a folder chats write was taken: {other:?}"),
+    }
+}
