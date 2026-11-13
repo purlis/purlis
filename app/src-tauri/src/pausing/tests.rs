@@ -128,6 +128,24 @@ fn raise_the_budget_answers_its_ask_and_keeps_it_held_until_a_look_finds_it_with
     );
 }
 
+/// Q262: **an ask is answered once**. A budget pause's first Raise the budget is its answer;
+/// a later press, another Raise or Continue, writes none.
+#[test]
+fn raise_then_continue_writes_one_answer() {
+    let pauses = Pauses::default();
+    pauses.pause(TASK, at_time(30, 30), AT, vec![BELOW]);
+
+    let presses =
+        [RAISE, RAISE, CONTINUE].map(|option| pauses.answer(TASK, option).expect("answered"));
+    assert_eq!(
+        presses.iter().map(|one| one.answers).collect::<Vec<_>>(),
+        [true, false, false],
+        "one answer written, at the first press"
+    );
+    assert_eq!(presses[2].then, Then::GoOn, "Continue still lets it go on");
+    assert!(!pauses.holds(TASK));
+}
+
 #[test]
 fn stop_on_a_loop_is_the_windows_stop() {
     let pauses = Pauses::default();
