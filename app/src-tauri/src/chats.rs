@@ -2795,27 +2795,27 @@ impl Chats {
         // it lists any, and one whose command does not switch the harness's prompts off. Both
         // may have changed since it was dispatched, and nobody chose the change for this chat.
         purlis_core::dispatchprofiles::may_start_again(&self.project, chat)?;
-        let ready = purlis_core::start::ready(
-            &purlis_core::start::Start {
-                profile: Some(profile),
-                persona: chat.persona.clone(),
-                name: chat.name.clone(),
-                cwd: chat.cwd.clone(),
-                resume: chat.resume.clone(),
-                // The chat's own footer choice, brought back with it. It rides on the
-                // environment, which is rebuilt at every start, so a relaunch that did not
-                // carry it would silently blank a footer the operator had turned on.
-                show_footer: chat.show_footer,
-                resuming: None,
-                without_sandbox: opt_out,
-                // A handed-off chat keeps holding the asking chat's persona grants across a
-                // relaunch until the person allows its own (#1362, D-1362-5).
-                held: chat.held.clone(),
-                grants: self.grants_of(chat),
-                made: made_of(chat, why),
-            },
-            &self.project,
-        )?;
+        let start = purlis_core::start::Start {
+            profile: Some(profile),
+            persona: chat.persona.clone(),
+            name: chat.name.clone(),
+            cwd: chat.cwd.clone(),
+            resume: chat.resume.clone(),
+            // The chat's own footer choice, brought back with it. It rides on the
+            // environment, which is rebuilt at every start, so a relaunch that did not
+            // carry it would silently blank a footer the operator had turned on.
+            show_footer: chat.show_footer,
+            resuming: None,
+            without_sandbox: opt_out,
+            // A handed-off chat keeps holding the asking chat's persona grants across a
+            // relaunch until the person allows its own (#1362, D-1362-5).
+            held: chat.held.clone(),
+            grants: self.grants_of(chat),
+            made: made_of(chat, why),
+        };
+        // **Pool setup's Get help chat is held from every cluster at each start** (#4497,
+        // story 60), as at its first: a relaunch, a restart and a move all come through here.
+        let ready = purlis_core::poolsetup::help::ready_again(chat, &start, &self.project)?;
         // The core's start knows no chat, so it says "nothing recorded"; this chat may know
         // better — a workspace rename left it without its conversation (charter#367).
         let ready = purlis_core::start::Ready {

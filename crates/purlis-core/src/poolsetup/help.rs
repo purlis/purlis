@@ -36,6 +36,23 @@ pub fn ready_to_help(
     crate::sandbox::policy::holding_from_clusters(|| crate::start::ready(start, root))
 }
 
+/// **How a recorded chat starts again** (#4497, story 60): a relaunch, a restart, Again, a start
+/// on its exit and a move. A help chat's record says it is one
+/// ([`crate::reopen::Chat::held_from_clusters`]), and it is held from every cluster at each of
+/// those starts as at its first ([`ready_to_help`]). Every other chat starts as
+/// [`crate::start::ready`] starts it.
+pub fn ready_again(
+    chat: &crate::reopen::Chat,
+    start: &crate::start::Start,
+    root: &std::path::Path,
+) -> Result<crate::start::Ready, String> {
+    if chat.held_from_clusters {
+        ready_to_help(start, root)
+    } else {
+        crate::start::ready(start, root)
+    }
+}
+
 /// **The tab label of a help chat about `step`.**
 #[must_use]
 pub fn label(step: StepId) -> String {
