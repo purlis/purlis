@@ -311,6 +311,8 @@ fn what_the_store_holds_is_counted_and_nothing_where_it_is_off() {
 /// [`crate::rewrite::replace`] names it, last written `age` ago.
 fn a_killed_write_s_temp(root: &Path, id: &str, age: Duration) -> PathBuf {
     std::fs::create_dir_all(dir(root)).unwrap();
+    // A write takes the store's lock before it writes its temp, so the lock's file is there.
+    std::fs::write(dir(root).join(LOCK_NAME), "").unwrap();
     let temp = dir(root).join(format!(
         "{}{id}{SUFFIX}.4242.k1.tmp",
         crate::rewrite::TEMP_PREFIX
