@@ -304,7 +304,7 @@ impl Bound {
             .ok_or_else(|| NotSent::NotYours(format!("no pool named {pool} is on this machine")))?;
         // No vault value reaches a pool on another machine without the person's mark (#6266,
         // ADR 0123 §5; the mark is #6271): this machine's engine says nothing of that one.
-        if kept.remote().is_some() {
+        if kept.on_another_machine() {
             return Err(NotSent::NotYours(on_another_machine_said(pool)));
         }
         let runner = match reached {

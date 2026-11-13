@@ -89,7 +89,7 @@ function Outcome({ lines, refused }: { lines?: string[]; refused?: string }) {
         </p>
       )}
       {lines !== undefined && (
-        <ul className="came-back" aria-label="What happened">
+        <ul className="came-back ui-text-secondary" aria-label="What happened">
           {lines.map((line, at) => (
             <li key={at}>{line}</li>
           ))}
@@ -165,7 +165,7 @@ export function PushAsk({
             {question.refused}
           </p>
         ) : (
-          <p className="came-back">
+          <p className="came-back ui-text-secondary">
             {question.ok.destinations.length === 0
               ? "No member of this change can be pushed."
               : "Each branch is pushed to its own name, and only fast-forwarded: nothing is committed and nothing is forced. Then each request is opened or found, and its description gets the change's links."}
@@ -268,7 +268,7 @@ export function LandAsk({
           {q.number}?
         </>
       }
-      description={<p className="came-back">{q.how}</p>}
+      description={<p className="came-back ui-text-secondary">{q.how}</p>}
       {...doing({
         act: q.through === "record" ? "Record" : "Land",
         running,

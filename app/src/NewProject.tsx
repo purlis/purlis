@@ -201,7 +201,7 @@ export function NewProject({
             }
       }
     >
-      <p className="came-back">
+      <p className="came-back ui-text-secondary">
         Pick a repo. purlis opens it in a workspace of its own, in the project it keeps on this
         machine. Nothing is written into your repo.
       </p>
@@ -259,7 +259,7 @@ export function NewProject({
         onToggle={(event) => setAdvanced((event.currentTarget as HTMLDetailsElement).open)}
       >
         <summary tabIndex={0}>Advanced</summary>
-        <p className="came-back">
+        <p className="came-back ui-text-secondary">
           A project of its own, in a folder you choose, holding workspaces, personas and the repos
           work happens in.
         </p>

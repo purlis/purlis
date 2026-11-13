@@ -1,0 +1,3 @@
+### Added
+
+- **A pool on another machine can reach its Docker over Docker's API with TLS.** In Pool setup's Connect, choose Docker's API over TLS. Type the machine's address, then name its CA, your client certificate and your key under Options. The key can be a file or a vault entry. Check the CA's fingerprint, then trust it. purlis reads the files where they are and checks the CA before every run. If the CA ever changes, it runs nothing there. A key from a vault is written to disk for one run of `docker` only, and removed after. Plain `tcp://` without TLS is refused. From a terminal, `purlis pool add <name> --image … --on tcp://host:2376 --tls-ca … --tls-cert … --tls-key … --trust sha256:…` does the same (#6267).

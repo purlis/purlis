@@ -179,7 +179,7 @@ function DockedStrip({
           <div className="pane focused">
             {front?.variant === "file" ? (
               <div className="piece-file">
-                <header className="piece-files-head" {...editorToolbar}>
+                <header {...editorToolbar("piece-files-head")}>
                   <ToolbarFile path={`~/IdeaProjects/purlis/${front.name}`} />
                 </header>
               </div>

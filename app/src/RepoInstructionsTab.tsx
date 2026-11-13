@@ -129,7 +129,7 @@ export function RepoInstructionsTab({
 
   return (
     <div className="repo-instructions">
-      <p className="came-back">
+      <p className="came-back ui-text-secondary">
         This repo has instructions for AI agents. Add them to this workspace&apos;s memory and every
         chat here starts with them, whichever agent it runs. Nothing is written until you press Add
         to memory. Nothing is written into your repo.
@@ -142,7 +142,7 @@ export function RepoInstructionsTab({
         </p>
       )}
       {added !== undefined && (
-        <p className="came-back" role="status">
+        <p className="came-back ui-text-secondary" role="status">
           {added === 1 ? "Added 1 file to memory." : `Added ${added} files to memory.`}
         </p>
       )}
@@ -232,7 +232,7 @@ function FileRow({
           )}
         />
       ) : (
-        <p className="came-back">
+        <p className="came-back ui-text-secondary">
           {name}
           {": "}
           {standing.kind === "in-memory" ? "already in memory" : `left out; ${standing.why}`}

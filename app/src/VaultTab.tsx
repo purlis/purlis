@@ -1352,12 +1352,12 @@ function NoSeedDialog({
       title={`Mark ${secret} as no 2FA seed?`}
       description={
         <>
-          <p className="came-back">
+          <p className="came-back ui-text-secondary">
             A 2FA seed is the secret an authenticator app makes its codes from. Anyone who gets it
             can make those codes, so purlis won't put a value that looks like one into a page. Some
             other values look the same, such as a 16-letter app password.
           </p>
-          <p className="came-back">
+          <p className="came-back ui-text-secondary">
             Mark this key only if you know its value isn't a seed. A chat can then fill it as a
             plain value, still only on a site you allow. If the value changes, the mark goes.
           </p>
@@ -1416,7 +1416,7 @@ function DeleteDialog({
         if (!busy) onCancel();
       }}
       title={`Delete ${secret} from ${vault}?`}
-      description={<p className="came-back">{deleteSaid(held)}</p>}
+      description={<p className="came-back ui-text-secondary">{deleteSaid(held)}</p>}
       cancel={{ isDisabled: busy }}
       main={{
         children: deleting ? "Deleting…" : "Delete",
