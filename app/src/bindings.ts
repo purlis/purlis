@@ -3526,6 +3526,12 @@ export const commands = {
 	 */
 	activityChat: (plane: PlaneId, key: string) => typedError<number | null, string>(__TAURI_INVOKE("activity_chat", { plane, key })),
 	/**
+	 *  **Each asked chat's finishes in the last day** (R-241, R-178): its turns that ended and its
+	 *  own runs that ended failed, each with its turn's blocks still unresolved at its end, from
+	 *  this machine's event log. Read as a chat's turn ends, off the window's thread.
+	 */
+	finishedTurns: (plane: PlaneId, sessions: number[]) => typedError<FinishedTurn[], string>(__TAURI_INVOKE("finished_turns", { plane, sessions })),
+	/**
 	 *  **What happened to a task's question** (#4567): the steps of the question chat `key` (a
 	 *  line's `from_key`) asked at `at` (the line's time), from this machine's event log, oldest
 	 *  first. Empty where the log holds none of it. Read when the person opens it, off the window's
@@ -9869,6 +9875,19 @@ export type FinishedTask = {
 	 *  name it by; it has no Reopen and no Clear. Null for every ended task.
 	 */
 	waits: WaitsToStart | null,
+};
+
+/**  **One finish of a chat's** (R-241, R-178): a turn that ended, or its own run ended failed. */
+export type FinishedTurn = {
+	session: number,
+	/**  The id of the event that ended it: what its row is noted by. */
+	key: string,
+	/**  When, in seconds since 1970. */
+	at: number,
+	/**  Its own run ended failed, rather than its turn ending. */
+	failed: boolean,
+	/**  Its turn's blocks still unresolved at its end, one a target: none for a failed run. */
+	blocked: number,
 };
 
 /**  One ended task's tokens, by its dispatch record's id. */
@@ -20187,7 +20206,11 @@ export type UpdateKind =
 /**  The person filed a report a chat drafted (#5694). */
 "report-sent" | 
 /**  A working chat may not be getting anywhere (#6014). */
-"stuck";
+"stuck" | 
+/**  A chat's turn ended (T1-31): its finish row, with its blocks still unresolved. */
+"turn-finished" | 
+/**  A chat's own run ended failed (T1-31). */
+"chat-failed";
 
 /**  An update the window derived from its source, to be noted. */
 export type UpdateNoted = {
