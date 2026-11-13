@@ -412,5 +412,8 @@ fn a_closed_handoff_is_found_by_its_ulid_closed_again_under_a_later_number() {
         ..closed_641()
     };
     chatrecords::keep(&root, &later).unwrap();
-    assert_eq!(by_number_in(&root, 641, &[]), Found::Closed(Box::new(later)));
+    assert_eq!(
+        by_number_in(&root, 641, &[]),
+        Found::Closed(Box::new(later))
+    );
 }
