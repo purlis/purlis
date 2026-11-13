@@ -65,7 +65,9 @@ describe("the Keep task screens row", () => {
     expect(setting?.label).toBe("Keep task screens");
     expect(setting?.help).toMatch(/last screen/);
     expect(setting?.help).toMatch(/dispatched task/);
-    expect(setting?.help).toMatch(/purlis\.local\.toml/);
+    expect(setting?.help).toMatch(/the project's local settings file/);
+    // Which file that is, the core knows (`charter.local.toml` or `purlis.local.toml`).
+    expect(setting?.help).not.toMatch(/\.local\.toml/);
     expect(setting?.help).toMatch(/deletes every kept screen/);
     expect((setting as LiveSetting).writes).toBe("local");
   });

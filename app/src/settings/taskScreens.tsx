@@ -23,8 +23,10 @@ export const TASK_SCREENS = "project.dispatch.task-screens";
  * the person ruled on 2026-11-11 (#6214). A dispatched task's last screen is kept as its chat
  * closes, for *Read it* on its card. The row says what is kept, where, and for how long.
  *
- * - **This machine's alone**: the core writes `purlis.local.toml`, never the committed file
- *   (`purlis_core::chatscreens::set_keep`), as `[skill_grades]` is.
+ * - **This machine's alone**: the core writes the project's local settings file, never the
+ *   committed one (`purlis_core::chatscreens::set_keep`), as `[skill_grades]` is. The help never
+ *   names that file: a project's is `charter.local.toml` or `purlis.local.toml`, and only the core
+ *   knows which (#6508's review).
  * - **On writes at once; off asks first**, since it deletes every kept screen, and nothing puts
  *   them back. The ask says how many go.
  * - **What is drawn is what the core read** (`task_screens`), and a hand edit of the file is caught
@@ -36,9 +38,9 @@ export function taskScreensSetting(plane: PlaneId): LiveSetting {
     label: "Keep task screens",
     section: {
       label: "On this machine",
-      help: "Kept in purlis.local.toml, which only this machine reads.",
+      help: "Kept in this project's local settings file, which only this machine reads.",
     },
-    help: `When a dispatched task's chat closes, purlis keeps its last screen and scrollback, so Read it on the chat's card can show it. Never your own chats. Kept on this machine only: set in purlis.local.toml, kept in the project's state folder, out of every chat's reach. It keeps at most ${TASK_SCREENS_MOST_KEPT} screens and ${TASK_SCREENS_MOST_KEPT_MIB} MiB, deleting the oldest first. When the project opens, a screen is deleted ${TASK_SCREENS_KEPT_FOR_DAYS} days after it was kept, or once its task's record is gone. Turning it off deletes every kept screen.`,
+    help: `When a dispatched task's chat closes, purlis keeps its last screen and scrollback, so Read it on the chat's card can show it. Never your own chats. Kept on this machine only: set in the project's local settings file, kept in the project's state folder, out of every chat's reach. It keeps at most ${TASK_SCREENS_MOST_KEPT} screens and ${TASK_SCREENS_MOST_KEPT_MIB} MiB, deleting the oldest first. When the project opens, a screen is deleted ${TASK_SCREENS_KEPT_FOR_DAYS} days after it was kept, or once its task's record is gone. Turning it off deletes every kept screen.`,
     writes: "local",
     useControl: function useTaskScreens() {
       const [read, setRead] = useState<TaskScreens>();
