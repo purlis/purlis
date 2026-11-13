@@ -6,10 +6,11 @@
 //! the ✋ and notified, whatever drew it before.
 //!
 //! - **What a project expects and this machine has not allowed** ([`sandbox_expects`]): the
-//!   consent its Notice asks for ("Allow on this machine"), without which a sandboxed chat of the
-//!   project is refused what it expects. It stays a Notice too, and both are derived from the one
-//!   state (`sandbox::services::awaiting`), so one answer settles both. Where policy locks it, or
-//!   nothing listed can be allowed here, there is nothing to decide: its Notice alone says so.
+//!   sandbox consent ("Allow on this machine"), without which a sandboxed chat of the project is
+//!   refused what it expects. While it can be answered it is in Asks alone (R-205): its Notice
+//!   draws nothing beside it, and both read the one state (`sandbox::services::awaiting`), so
+//!   its answer settles it everywhere. Where policy locks it, or nothing listed can be allowed
+//!   here, there is nothing to decide: it is no ask, and its Notice alone says so.
 //! - **A `purlis` command's confirmation in the window** ([`confirmation`]): a pool sign-in, a
 //!   profile taken off a pool, a signing check. It is answered on its row alone, with the code
 //!   its command's terminal shows, and no dialog over the window (#6136); its two minutes still
@@ -20,7 +21,8 @@ use super::{AnswerPath, AskSource, Offered, Shown, said_inertly};
 use crate::poolsignin_confirm::{Asks, PoolSignInAsk};
 use crate::sandboxing::{ExpectedItem, GrantWhat, ProjectExpects};
 
-/// What the expects consent's Allow says, here and on its Notice (`ProjectExpectsNotice.tsx`).
+/// What the expects consent's Allow says, here and on Settings › Sandbox
+/// (`ProjectExpectsNotice.tsx`).
 pub const ALLOW_EXPECTS: &str = "Allow on this machine";
 /// The option id of the expects consent's Allow on this machine.
 pub const ALLOW: &str = "allow";
@@ -88,7 +90,7 @@ fn named(one: &ExpectedItem) -> String {
 
 /// **The expects consent, as a Blocking ask** (#6000): what the project at hand expects and this
 /// machine has not allowed, while the person is still to be asked and something listed can be
-/// allowed here. Its answers are its Notice's: Allow on this machine, Not now. None otherwise.
+/// allowed here: Allow on this machine, Not now, answered on its row alone (R-205). None otherwise.
 pub fn sandbox_expects(expects: Option<&ProjectExpects>) -> Option<Shown> {
     let expects = expects?;
     let allowable = expects.items.iter().any(|one| one.refused.is_none());
