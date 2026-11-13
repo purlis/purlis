@@ -271,3 +271,20 @@ fn a_screen_is_replaced_whole_and_leaves_no_temp_file() {
         .collect();
     assert_eq!(names, vec![format!("{CHAT}.screen")]);
 }
+
+#[test]
+fn what_the_store_holds_is_counted_and_nothing_where_it_is_off() {
+    let (_dir, root) = settable();
+    assert_eq!(held(&root), (0, 0));
+    keep(&root, CHAT, "abc").unwrap();
+    keep(&root, OTHER, "de").unwrap();
+    assert_eq!(held(&root), (2, 5));
+    std::fs::write(
+        root.join(crate::settings::Which::Local.file_at(&root)),
+        "[task_screens]\nkeep = false\n",
+    )
+    .unwrap();
+    // Off by a hand edit: the count is read as nothing, and what was kept goes.
+    assert_eq!(held(&root), (0, 0));
+    assert!(every_kept(&root).is_empty());
+}

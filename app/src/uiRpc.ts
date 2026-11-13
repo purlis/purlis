@@ -1564,6 +1564,8 @@ export const commands = {
 	taskFolderShared: (plane: PlaneId, session: number, place: string | null) => typedError<string | null, string>(__TAURI_INVOKE("task_folder_shared", { plane, session, place })),
 	chatByNumber: __WINDOW_ONLY_RESULT,
 	chatScreen: __WINDOW_ONLY_RESULT,
+	taskScreens: __WINDOW_ONLY_RESULT,
+	setTaskScreens: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The finished tasks of the project's open chats, oldest first, for the rows under each
 	 *  (#1485). On a blocking thread, as it reads every record.
@@ -16293,6 +16295,17 @@ export type TaskQuestion = {
 	number: number,
 	/**  What it asked, **as text**: a chat's own words, never drawn as markup. */
 	question: string,
+};
+
+/**
+ *  **Whether this machine keeps a task's last screen in a project, and how many it holds**
+ *  (#6306): what the row Settings › Project › Dispatch › Keep task screens draws.
+ */
+export type TaskScreens = {
+	/**  `[task_screens] keep` in the project's local file, `true` where it is not set. */
+	keep: boolean,
+	/**  How many screens are kept now: none where `keep` is off. */
+	kept: number,
 };
 
 /**  What one answer to several tasks did (#1508). */

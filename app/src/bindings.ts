@@ -3395,6 +3395,13 @@ export const commands = {
 	 *  draws read-only. Null where nothing was kept.
 	 */
 	chatScreen: (plane: PlaneId, chat: string) => typedError<string | null, string>(__TAURI_INVOKE("chat_screen", { plane, chat })),
+	/**  **Whether tasks' screens are kept in project `plane`, and how many are** (#6306). */
+	taskScreens: (plane: PlaneId) => typedError<TaskScreens, string>(__TAURI_INVOKE("task_screens", { plane })),
+	/**
+	 *  **Turns keeping tasks' screens on or off in project `plane`** (#6306), in its local file
+	 *  alone; off deletes every kept screen. The window asks the person before it turns it off.
+	 */
+	setTaskScreens: (plane: PlaneId, keep: boolean) => typedError<TaskScreens, string>(__TAURI_INVOKE("set_task_screens", { plane, keep })),
 	/**
 	 *  The finished tasks of the project's open chats, oldest first, for the rows under each
 	 *  (#1485). On a blocking thread, as it reads every record.
@@ -19438,6 +19445,17 @@ export type TaskQuestion = {
 	number: number,
 	/**  What it asked, **as text**: a chat's own words, never drawn as markup. */
 	question: string,
+};
+
+/**
+ *  **Whether this machine keeps a task's last screen in a project, and how many it holds**
+ *  (#6306): what the row Settings › Project › Dispatch › Keep task screens draws.
+ */
+export type TaskScreens = {
+	/**  `[task_screens] keep` in the project's local file, `true` where it is not set. */
+	keep: boolean,
+	/**  How many screens are kept now: none where `keep` is off. */
+	kept: number,
 };
 
 /**  What one answer to several tasks did (#1508). */
