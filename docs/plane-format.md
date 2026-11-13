@@ -127,6 +127,12 @@ its own plane:
   (#1457).
 - what appeared in a sandboxed chat's folders, `.charter/app/arrived/<chat>.json`, last written
   30 days or more before, unless the chat, by its id, is one the reopen record will bring back.
+- a closed chat's entry in `.charter/app/chat-records/closed.json` whose chat ended 30 days or
+  more before, as the entry says (`chatrecords::sweep`), and every entry that does not hold
+  together (#6304).
+- a dispatched task's kept screen, `.charter/app/chat-screens/<ULID>.screen`, whose chat no
+  dispatch record names, or last written 30 days or more before (`chatscreens::on_open`, #6214).
+  It runs whatever the reopen record says, so a screen never outlives its record.
 - a commit gate record, `.charter/commit-gate/<sid>`, and a first-edit nudge marker,
   `.charter/ws-edit-nudge/<sid>-<ws>`, last written 30 days or more before, unless its session
   is one the reopen record will bring back (for a nudge marker, any returning session its name
@@ -344,6 +350,8 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`app/spend/<chat>.json` — what a chat's harness says its session has cost](#appspendchatjson--what-a-chats-harness-says-its-session-has-cost)
   - [`app/spend/<chat>.limit.json` — when a chat's usage limit resets](#appspendchatlimitjson--when-a-chats-usage-limit-resets)
   - [`app/arrived/<chat>.json` — what can run later and has appeared in a chat's folders](#apparrivedchatjson--what-can-run-later-and-has-appeared-in-a-chats-folders)
+  - [`app/chat-records/closed.json` — every chat that closed, by its number](#appchat-recordsclosedjson--every-chat-that-closed-by-its-number)
+  - [`app/chat-screens/<ULID>.screen` — a dispatched task's last screen](#appchat-screensulidscreen--a-dispatched-tasks-last-screen)
   - [`app/hooks.sock`](#apphookssock)
   - [`app/slots.sock`](#appslotssock)
   - [Top-level markers, gates and ledgers](#top-level-markers-gates-and-ledgers)
@@ -7555,6 +7563,54 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
 - **Read by:** `purlis_core::usage::limit_reset`: by the app when a grade's chat stopped at its
   usage limit, for when Resume can run (#5718).
 - **Git:** gitignored. Collected with the spend files.
+
+### `app/chat-records/closed.json` — every chat that closed, by its number
+- **What:** number → ULID → what a closed chat's card shows (#6304, parent #5820), for a chat
+  the person started by hand or a handoff: a dispatched task's chat has its dispatch record,
+  which the lookup reads first (`chatlookup`). A dispatch record that draws no card (a
+  handoff's, a task's that ended owing no report, one still running) leaves the answer to this
+  file. **No screen**: a screen is kept for dispatched tasks only (`app/chat-screens/`, below).
+- **Format:** JSON on one line, mode 0600, replaced whole through a temp file under purlis's
+  lock on the folder (the folder 0700): `{"v": 1, "chats": [...]}`, newest close first, each
+  `{"number", "id", "title", "started", "ended", "started_by", "place"}`. `number` is what it
+  answered to as it closed; `id`, its ULID (ADR 0066); `title`, what its tab said, at most 200
+  characters; `started` and `ended`, UTC, RFC 3339; `started_by`, `{"by": "person"}` or
+  `{"by": "chat", "name": "<the chat that handed off, as the person saw it then>"}`; `place`,
+  its workspace's name or `project root`. A chat closed again replaces its entry, by its ULID
+  or its number. At most 2000 entries and 2 MiB read; an entry that does not hold together (an
+  id that is not a ULID, a time that is not one) is left out, and a file of another version,
+  too large, a link or not a file reads as empty.
+- **Status:** **internal** — **purlis only**. Written by the app as a chat closes for good:
+  not at a restart, not at a quit, never from anything a chat sent. Read by a closed chat's
+  card (`chat_by_number`, a pane's chat links). Denied a sandboxed chat's reading and writing
+  under every harness, as the dispatch records are. **Collected at the project's open**
+  (`chatrecords::sweep`, from `retention::on_open`): an entry whose chat ended 30 days or more
+  before goes.
+- **Tier:** Clone state — the card of a closed chat no dispatch started; lost, those chats
+  answer "no chat" when looked up, and nothing starts, ends or allows anything by it.
+- **Git:** gitignored (under `/.charter/`).
+- **Written by:** `crates/purlis-core/src/chatrecords.rs`.
+
+### `app/chat-screens/<ULID>.screen` — a dispatched task's last screen
+- **What:** what a dispatched task's chat showed as it closed (#6214, parent #5820; the
+  person's ruling of 2026-11-11), which *Read it* on its closed chat's card opens read-only.
+  Kept only for a chat a dispatch record names as its worker; nothing of an ordinary chat is
+  kept. `<ULID>` is the chat's own id.
+- **Format:** the screen's text, written whole through a temp file as a grade's kept chat is
+  (`keptscreen`), at most `keptscreen::MOST_SCREEN_BYTES`. Held to 200 screens and 256 MiB in
+  all, the oldest going first. A file not named by a ULID with `.screen`, a link, or one too
+  large is never shown.
+- **Status:** **internal** — **purlis only**. Written by the app as it closes a task's chat for
+  good, where this machine keeps task screens: `[task_screens] keep` in `charter.local.toml`,
+  on by default. Turned off, no screen is kept or shown and every kept one is deleted. Denied a
+  sandboxed chat's reading and writing under every harness. **Collected at the project's open**
+  (`chatscreens::on_open`, from `retention::on_open`): a screen whose chat no dispatch record
+  names goes, and so does one last written 30 days or more before, so a screen never outlives
+  its record.
+- **Tier:** Clone state — a task's last screen; lost, its card's *Read it* says the screen was
+  not kept, and nothing else is lost.
+- **Git:** gitignored (under `/.charter/`).
+- **Written by:** `crates/purlis-core/src/chatscreens.rs`.
 
 ### `app/hooks.sock`
 - **Format:** a unix socket, not a file. Each chat's hooks write one JSON line to it with the
