@@ -28,6 +28,8 @@ struct Project {
     /// prompts off.
     _settings: Option<tempfile::TempDir>,
     _outside: stand_in::NoChatWrites,
+    /// Whether `work` is this machine's sandbox-only profile, which starts no chat unsandboxed.
+    sandbox_only: bool,
 }
 
 impl Project {
@@ -74,6 +76,7 @@ impl Project {
             dir,
             _settings: settings,
             _outside: outside,
+            sandbox_only: !declared_here,
         })
     }
 
@@ -289,6 +292,15 @@ fn a_help_chat_is_not_started_again_in_a_project_without_the_sandbox() {
     sandbox::personal::set_by_you(root, None, Some(sandbox::personal::Choice::Off))
         .expect("your level");
 
+    let refused = help::ready_again(&help_chat(root), &project.start(), root)
+        .expect_err("a help chat is not started without the sandbox");
+    if project.sandbox_only {
+        // A sandbox-only profile (Linux) starts no chat unsandboxed, help chat or not: it
+        // refuses first, in its own words.
+        return;
+    }
+    assert_eq!(refused, help::PROJECT_UNSANDBOXED);
+
     // Not vacuous: an ordinary chat of this project starts again, and runs unsandboxed.
     let ordinary = purlis_core::reopen::Chat {
         held_from_clusters: false,
@@ -299,8 +311,4 @@ fn a_help_chat_is_not_started_again_in_a_project_without_the_sandbox() {
         ready.sandbox.is_none(),
         "the project runs its chats unsandboxed"
     );
-
-    let refused = help::ready_again(&help_chat(root), &project.start(), root)
-        .expect_err("a help chat is not started without the sandbox");
-    assert_eq!(refused, help::PROJECT_UNSANDBOXED);
 }

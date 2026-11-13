@@ -272,10 +272,12 @@ fn call_sites(sources: &[(String, String)], name: &str) -> Vec<String> {
 fn one_call_site_starts_a_chat_on_a_sent_message_for_one_reason_from_the_windows_press() {
     let sources = sources();
     let sent = concat!("start_", "sent");
-    // Fix, and Pool setup's Get help (ADR 0061, amended 2026-11-12).
+    // Fix, and Pool setup's Get help (ADR 0061, amended 2026-11-12). The handoff tests start
+    // a Get help chat as the window does, to restart it: a test, not a press.
     assert_eq!(
         call_sites(&sources, sent),
         [
+            "app/src-tauri/src/handoff/tests.rs",
             "app/src-tauri/src/poolsetuptab.rs",
             "app/src-tauri/src/savefix.rs"
         ],
