@@ -67,7 +67,7 @@ async function itsOwnTimeline(canvas: Canvas, end: RegExp) {
   await expect(rows).toHaveLength(2);
   const start = said(rows[0]);
   await expect(start?.textContent).toBe(
-    "Started · Basic sandbox, set by the project · charter.toml at 4f2a9c1 · no answers in force",
+    "Started · Basic sandbox, set by the project · purlis.toml at 4f2a9c1 · no answers in force",
   );
   // One line: its words are drawn on one line box, never wrapped.
   await expect(start?.getClientRects()).toHaveLength(1);
