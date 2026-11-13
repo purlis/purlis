@@ -3297,13 +3297,12 @@ export const commands = {
 	skillUpdates: (plane: PlaneId) => typedError<SkillUpdates, string>(__TAURI_INVOKE("skill_updates", { plane })),
 	/**
 	 *  **The project's skill controls, read only** (#6031): the `[skill_policy]` its shared settings
-	 *  hold, and what it does to each of `origins`, the sources the window lists. Nothing while the
-	 *  flag is off.
+	 *  hold, and what it does to each of `origins`, the sources the window lists.
 	 */
 	skillPolicy: (plane: PlaneId, origins: SourceOrigin[]) => typedError<SkillPolicy, string>(__TAURI_INVOKE("skill_policy", { plane, origins })),
 	/**
 	 *  **The skill acts this machine recorded** (#6031, SK-11): every install, update and removal of
-	 *  a skill from a source the audit wrote, newest first. Nothing while the flag is off.
+	 *  a skill from a source the audit wrote, newest first.
 	 */
 	skillActs: (plane: PlaneId) => typedError<SkillActs, string>(__TAURI_INVOKE("skill_acts", { plane })),
 	/**

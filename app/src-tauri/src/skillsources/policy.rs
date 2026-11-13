@@ -17,7 +17,6 @@ use purlis_core::settings::Which;
 use purlis_core::skills::source::policy;
 
 use super::{SourceOrigin, esc, seconds};
-use crate::skillchange::flag_on;
 
 /// **Which of the controls refuses**, what a row's mark says (#6031).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
@@ -156,8 +155,7 @@ pub(crate) fn policy_shown(root: &Path, origins: Vec<SourceOrigin>) -> SkillPoli
 }
 
 /// **The project's skill controls, read only** (#6031): the `[skill_policy]` its shared settings
-/// hold, and what it does to each of `origins`, the sources the window lists. Nothing while the
-/// flag is off.
+/// hold, and what it does to each of `origins`, the sources the window lists.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_policy(
@@ -167,7 +165,6 @@ pub(crate) async fn skill_policy(
 ) -> Result<SkillPolicy, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading the skill controls", move || {
-        flag_on()?;
         Ok(policy_shown(held.root(), origins))
     })
     .await
@@ -281,7 +278,7 @@ pub(crate) fn acts_in(dir: &Path) -> Result<SkillActs, String> {
 }
 
 /// **The skill acts this machine recorded** (#6031, SK-11): every install, update and removal of
-/// a skill from a source the audit wrote, newest first. Nothing while the flag is off.
+/// a skill from a source the audit wrote, newest first.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_acts(
@@ -299,11 +296,7 @@ pub(crate) async fn skill_acts(
         }
         None => return Err("purlis keeps no event log on this machine.".to_owned()),
     };
-    crate::off_the_window("reading the recorded skill acts", move || {
-        flag_on()?;
-        acts_in(&dir)
-    })
-    .await
+    crate::off_the_window("reading the recorded skill acts", move || acts_in(&dir)).await
 }
 
 #[cfg(test)]

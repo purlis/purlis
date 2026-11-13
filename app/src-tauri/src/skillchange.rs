@@ -530,7 +530,6 @@ pub(crate) async fn skill_hint_write(
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("writing the reference", move || {
-        flag_on()?;
         let level: Level = (&level).into();
         let (_, was) = verbs::text_of(held.root(), &level, &name)?;
         let now = purlis_core::skills::graph::written_as_reference(
