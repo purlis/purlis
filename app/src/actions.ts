@@ -29,7 +29,7 @@
  * gave travels to the operator as the core's own sentence rather than as whatever a `catch`
  * decided to say about it.
  */
-import { chatScreenTitle, chatScreenView } from "./closedChat";
+import { ORDINARY_NO_REOPEN, chatScreenTitle, chatScreenView } from "./closedChat";
 import { splitRefused } from "./paneFold";
 import type { Size } from "./paneDrop";
 import type {
@@ -6732,7 +6732,10 @@ export function showLinkedChatOffer(session: number): Offer {
 /** ***Reopen* on a closed chat's card** (#6214): its task's conversation started again as an
  *  ordinary chat, as Reopen on its finished row does. */
 export function reopenTaskOffer(card: ChatCard): Offer {
-  return can(`chat.reopen:${card.task.id}`, `Reopen ${card.task.name}`, {
+  // A chat no dispatch started has no task to reopen (#6304): its card's Reopen is disabled.
+  if (card.task === null)
+    return cannot(`chat.reopen:${card.chat}`, `Reopen ${card.title}`, ORDINARY_NO_REOPEN);
+  return can(`chat.reopen:${card.task.id}`, `Reopen ${card.title}`, {
     verb: "reopenTask",
     id: card.task.id,
   });

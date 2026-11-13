@@ -310,6 +310,14 @@ sentence goes back to the #3798 one: "then commit and push from it with `purlis 
 and `purlis worktree push`." No verdict moved, and only that sentence changed, replaced byte for
 byte in the same rows of the same three files.
 
+**And the floor's unreadable API call says what it could not read (#6294).** A `gh api` or
+`glab api` call the release floor refuses as unreadable now names the part: the endpoint the
+shell fills in and why the call is not a read (its method, a flag the floor does not know, or
+its `-f`/`-F` fields), or an endpoint that climbs with `.` or `..`. It then says how to split
+the call. The sentence the Python recorded still opens the answer, and the rest is appended to
+it. No verdict moved. `rfr` is the only key that changed, on generated rows 1061, 1451, 2119,
+2202 and 2389, each replaced with what the floor now says.
+
 ## The session recording
 
 Re-record with:

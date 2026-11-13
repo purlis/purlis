@@ -10,7 +10,8 @@
 //! (`reopen_finished_task`).
 //!
 //! Both commands are the window's alone (ADR 0052), and answer only what the app's own records
-//! say: the dispatch records and the screens the app kept. Nothing a chat says reaches either.
+//! say: the dispatch records, the closed chats' records (#6304, `purlis_core::chatrecords`) and
+//! the screens the app kept. Nothing a chat says reaches either.
 
 use purlis_core::chatlookup::{self, Found};
 use purlis_core::dispatchrecord;
@@ -41,12 +42,18 @@ pub(crate) struct ChatCard {
     pub number: u32,
     /// Its ULID: what *Read it* asks for its screen by.
     pub chat: String,
-    /// Its task as its finished row has it: its name, how it ended and when, its report
-    /// (masked), where it ran, and whether it reopens. `id` is its dispatch record's, which
-    /// *Reopen* names.
-    pub task: FinishedTask,
-    /// Who started it: "you" where the person dispatched it, else the asking chat's name as
-    /// the person saw it then.
+    /// What it is called: its task's name, or an ordinary chat's title as its tab said it.
+    pub title: String,
+    /// When it ended (UTC, RFC 3339), where its record keeps an end.
+    pub ended: Option<String>,
+    /// Where it ran: its workspace's name, or `project root`.
+    pub place: String,
+    /// Its task as its finished row has it: how it ended, its report (masked) and whether it
+    /// reopens. `id` is its dispatch record's, which *Reopen* names. **None for a chat no
+    /// dispatch started** (#6304): it has no report and no Reopen, and the card says Closed.
+    pub task: Option<FinishedTask>,
+    /// Who started it: "you" where the person started or dispatched it, else the chat that
+    /// asked or handed off, by its name as the person saw it then.
     pub started_by: String,
     /// Whether its last screen was kept: *Read it* is disabled where it was not.
     pub screen_kept: bool,
@@ -63,6 +70,9 @@ pub(crate) fn lookup(held: &Held, number: u32) -> ChatLookup {
         Found::Open { number } => ChatLookup::Open { number },
         Found::Restarted { now } => ChatLookup::Restarted { now },
         Found::NoChat => ChatLookup::NoChat,
+        Found::Closed(chat) => ChatLookup::Ended {
+            card: Box::new(card_of_chat(held, &chat)),
+        },
         Found::Ended(record) => match card_of(held, number, &record, &open) {
             Some(card) => ChatLookup::Ended {
                 card: Box::new(card),
@@ -102,13 +112,37 @@ pub(crate) fn card_of(
         number,
         screen_kept: purlis_core::chatscreens::is_kept(held.root(), &chat),
         chat,
-        task,
+        title: task.name.clone(),
+        ended: task.ended.clone(),
+        place: task.place.clone(),
+        task: Some(task),
         started_by: if record.asker.by_person {
             STARTED_BY_YOU.to_owned()
         } else {
             record.asker.chat.name.clone()
         },
     })
+}
+
+/// **The card of a chat no dispatch started** (#6304), from the record the app kept as it
+/// closed: its title, when it closed, who started it and where it ran. No task, so no report
+/// and no Reopen; and its screen was never kept (the person's ruling keeps a task's only), so
+/// *Read it* is disabled with "Its screen was not kept."
+pub(crate) fn card_of_chat(held: &Held, chat: &purlis_core::chatrecords::ChatRecord) -> ChatCard {
+    ChatCard {
+        number: chat.number,
+        // A task's screen is kept by its ULID; an ordinary chat's never is.
+        screen_kept: purlis_core::chatscreens::is_kept(held.root(), &chat.id),
+        chat: chat.id.clone(),
+        title: chat.title.clone(),
+        ended: Some(chat.ended.clone()),
+        place: chat.place.clone(),
+        task: None,
+        started_by: match &chat.started_by {
+            purlis_core::chatrecords::StartedBy::Person => STARTED_BY_YOU.to_owned(),
+            purlis_core::chatrecords::StartedBy::Chat { name } => name.clone(),
+        },
+    }
 }
 
 /// **Keeps chat `session`'s last screen as it closes for good**, where it is a dispatched task
@@ -253,4 +287,101 @@ pub(crate) async fn set_task_screens(
         set_task_screens_at(held.root(), keep)
     })
     .await
+}
+
+/// **The record chat `session` (ULID `id`) leaves as it closes for good** (#6304): what its card
+/// shows once its number is looked up, dispatched or not. Its title as its tab said it, when it
+/// started (its ULID's time: when it was first minted), `now` as its end, who started it (the
+/// person, or the chat that handed off to it) and the workspace it ran in. None for an id that
+/// is not a ULID.
+pub(crate) fn closed_record(
+    session: u32,
+    id: &str,
+    chat: &purlis_core::reopen::Chat,
+    harness: Option<purlis_core::harness::Harness>,
+    workspace: Option<&str>,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<purlis_core::chatrecords::ChatRecord> {
+    use purlis_core::chatrecords::{ChatRecord, StartedBy};
+    let minted = purlis_core::eventlog::written_at_ms(id)?;
+    let started =
+        chrono::DateTime::<chrono::Utc>::from_timestamp_millis(i64::try_from(minted).ok()?)?;
+    let stamp =
+        |at: chrono::DateTime<chrono::Utc>| at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    Some(ChatRecord {
+        number: session,
+        id: id.to_owned(),
+        title: purlis_core::reopen::shown_name(
+            chat,
+            harness.map(purlis_core::harness::Harness::name),
+        ),
+        started: stamp(started),
+        ended: stamp(now),
+        // A chat the person started from another chat's tab is theirs, as its report says.
+        started_by: match chat.from.as_ref() {
+            Some(from) if !from.by_person => StartedBy::Chat {
+                name: from.name.clone(),
+            },
+            _ => StartedBy::Person,
+        },
+        place: workspace.map_or_else(|| PROJECT_ROOT.to_owned(), str::to_owned),
+    })
+}
+
+/// Where a chat ran that ran in no workspace, as a finished task's row says it.
+const PROJECT_ROOT: &str = "project root";
+
+#[cfg(test)]
+mod closed_record_tests {
+    use super::*;
+
+    const ID: &str = "01K6CHATS0000000000000000C";
+
+    fn now() -> chrono::DateTime<chrono::Utc> {
+        chrono::DateTime::parse_from_rfc3339("2026-11-12T09:40:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc)
+    }
+
+    fn chat() -> purlis_core::reopen::Chat {
+        purlis_core::reopen::Chat {
+            program: "claude".to_owned(),
+            name: "steward 702".to_owned(),
+            label: Some("Tidy the changelog".to_owned()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_chat_the_person_started_is_recorded_with_its_title_times_and_place() {
+        let record = closed_record(702, ID, &chat(), None, Some("smart-ide"), now()).unwrap();
+        assert_eq!(record.number, 702);
+        assert_eq!(record.id, ID);
+        assert_eq!(record.title, "Tidy the changelog");
+        assert_eq!(record.ended, "2026-11-12T09:40:00Z");
+        assert_eq!(
+            record.started,
+            chrono::DateTime::<chrono::Utc>::from_timestamp_millis(
+                ulid::Ulid::from_string(ID).unwrap().timestamp_ms() as i64
+            )
+            .unwrap()
+            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+        );
+        assert_eq!(
+            record.started_by,
+            purlis_core::chatrecords::StartedBy::Person
+        );
+        assert_eq!(record.place, "smart-ide");
+    }
+
+    #[test]
+    fn a_chat_with_no_workspace_ran_in_the_project_root() {
+        let record = closed_record(702, ID, &chat(), None, None, now()).unwrap();
+        assert_eq!(record.place, "project root");
+    }
+
+    #[test]
+    fn an_id_that_is_no_ulid_leaves_no_record() {
+        assert!(closed_record(702, "702", &chat(), None, None, now()).is_none());
+    }
 }

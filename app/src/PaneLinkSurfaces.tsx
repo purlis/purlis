@@ -90,8 +90,9 @@ export function chatSaid(chat: ChatSeen, click: string): string {
         ? `Open · ${click} shows its tab`
         : `Open in ${chat.workspace} · ${click} shows it there`;
     case "ended": {
-      const at = endedAt(chat.card.task.ended);
-      const how = capitalised(chat.card.task.outcome);
+      const at = endedAt(chat.card.ended);
+      // A chat no dispatch started has no task: it closed (#6304).
+      const how = capitalised(chat.card.task?.outcome ?? "closed");
       return `${at === undefined ? how : `${how} ${at}`} · ${click} shows its card`;
     }
   }

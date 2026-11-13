@@ -212,6 +212,11 @@ impl ServerHandler for Server {
             let name = name.to_owned();
             return Ok(done(blocking(move || workspace_write(&name, &args)).await));
         }
+        if name == chattools::CHATS {
+            return Ok(done(
+                blocking(move || crate::whereworking::chats(&args)).await,
+            ));
+        }
         if name == chattools::PERSONA_WHERE {
             let (said, attached) = tokio::task::spawn_blocking(crate::whereworking::tool)
                 .await
