@@ -21,6 +21,7 @@ pub mod branchgit;
 pub mod briefing;
 pub mod brokered;
 pub mod browsertools;
+pub mod burst;
 pub mod casefold;
 pub mod catalogue;
 pub mod caught;
@@ -291,6 +292,7 @@ pub(crate) mod steer;
 pub mod stuck;
 pub mod taskchanges;
 pub mod template;
+pub mod tlsroute;
 // Public, and not `cfg(test)`: the integration tests of every crate copy the fixture planes
 // through it (#2089). Nothing in the product calls it.
 #[doc(hidden)]

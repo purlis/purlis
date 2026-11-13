@@ -86,7 +86,8 @@ async function draw(
         if (text !== undefined) made.textContent = text;
         return made;
       };
-      const crumbs = el("nav", "pane-crumbs");
+      // The meta is its words' size (`PaneCrumbs.tsx`, #6389), as the window draws it.
+      const crumbs = el("nav", "pane-crumbs ui-text-meta");
       crumbs.dataset.drawn = "pane-crumbs.e2e";
       const way = el("span", "crumb-path");
       path.forEach((name, index) => {

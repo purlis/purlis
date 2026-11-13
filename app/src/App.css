@@ -673,15 +673,16 @@ body {
 
 /* **Which of a split's panes has the keyboard** (#2914), where a theme draws no line around a
    pane (Purlis, the operator's ruling of 2026-10-22): the words in its header (where it came
-   from, its work item, its harness, its breadcrumb) are primary, and every other pane's keep
-   their muted tier. The harness is a button of the family (#3129), so its tier is drawn with the
-   family, in `paneFrame.css`. A split is the panes' own group inside the content panel; one pane
+   from, its work item, its harness, its breadcrumb's names) are primary, and every other
+   pane's keep their tier. The breadcrumb wears the meta (`PaneCrumbs.tsx`, #6389), which a rule
+   here cannot outrank, so the tint is on its names, which take the role from it. The harness
+   is a button of the family (#3129), so its tier is drawn with the family, in `paneFrame.css`. A split is the panes' own group inside the content panel; one pane
    is never marked, and a split's separator parts the panes. */
 [data-scope="panel"][data-variant="content"]
   [data-group]
   .pane-frame[data-focused]
   .pane-head
-  :is(.pane-from, .pane-work-item, .pane-crumbs) {
+  :is(.pane-from, .pane-work-item, .pane-crumbs .crumb) {
   color: var(--text-primary);
 }
 
@@ -1096,10 +1097,10 @@ body {
   font-size: var(--font-size-xl);
 }
 
+/* Who a chat starts as is the body's strong line (`ui-text-body ui-text-strong`, #6389), as the
+   dialog's own `h3` rule drew it: this rule's size never won. */
 .start-chat-who h3 {
   margin: 0;
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-strong);
   overflow-wrap: anywhere;
 }
 
@@ -1279,9 +1280,9 @@ body {
   min-width: 0;
   align-items: center;
   padding: 0 var(--space-2);
-  font-size: var(--font-size-xs);
+  /* Its words are the meta's (`ui-text-meta`, #6389), its names, where and who among them; the
+     chat on screen is primary, and a mark (a separator) faint. */
   white-space: nowrap;
-  color: var(--text-secondary);
   background: var(--surface-raised);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
@@ -1473,7 +1474,6 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: pre;
-  color: var(--text-muted);
 }
 
 /* `asked by you` (#1492): after the state, and it goes with `in <workspace>`, before any name
@@ -1484,7 +1484,6 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: pre;
-  color: var(--text-muted);
 }
 
 /* **Brief, on the breadcrumb line** (#1494, `Brief.tsx`): one small icon button after the
@@ -1552,14 +1551,14 @@ body {
 }
 
 /* **A tab that shows a task says so** (#1486, V100-35): `steward 4 › talk`, the task's name
-   dimmer than the session's, since the tab is the session's. Both names give way to an
+   read after the session's, since the tab is the session's: the meta (`ui-text-meta`, #6389),
+   which is never brighter than the tab's name in any of its states. Both names give way to an
    ellipsis as a tab's name always did; the task's goes first. */
 .tab-task {
   flex: 0 100 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--text-muted);
 }
 
 .tab-task-sep {
@@ -2555,13 +2554,12 @@ body {
   grid-column: 2;
   grid-row: 1 / span 2;
 }
-/* A group's heading. A chat's chain is data, so it is drawn as written; a section of the Inbox
-   itself (Notices, Updates) is a section title of the panel family's beside it. */
+/* A group's heading. A chat's chain is data, so it is drawn as written: a group named by data,
+   whose words are the secondary's at the strong weight (`ui-text-secondary ui-text-strong`,
+   #6389), as a menu's named group is the secondary; a section of the Inbox itself (Notices,
+   Updates, Other projects) is the section label, as the panel family's title beside it is. */
 .inbox-chain {
   margin: 0 0 var(--space-3);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-strong);
-  color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
 .inbox-chain[data-part="title"] {
@@ -3840,17 +3838,14 @@ body {
   margin-block-start: var(--space-1);
 }
 
-/* What a chat that was put back says about itself: resumed, or new and why. */
+/* What a chat that was put back says about itself: resumed, or new and why; and the line a
+   dialog, a tab or a door page says the same way. Its words are the secondary
+   (`ui-text-secondary`, every one of them, #6389). */
 .came-back {
   margin: 0;
   padding: var(--space-2) var(--space-5);
-  font-size: var(--font-size-sm);
   background: var(--border-subtle);
   border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
-}
-
-.came-back code {
-  color: var(--text-secondary);
 }
 
 /* What Remove pool's question names (`settings/pools.tsx`, #4678): the line that leads the list
@@ -4438,8 +4433,6 @@ body {
 
 .onboarding-steps {
   padding-inline: var(--space-4);
-  font-size: var(--font-size-sm);
-  color: var(--text-muted);
 }
 
 .onboarding-count {
@@ -4535,12 +4528,10 @@ body {
   min-inline-size: 0;
   margin: 0;
   overflow-wrap: anywhere;
-  color: var(--text-secondary);
 }
 
 .get-project-local {
   margin: var(--space-6) 0 0;
-  color: var(--text-secondary);
 }
 
 .get-project-progress {
@@ -4563,9 +4554,7 @@ body {
   margin: var(--space-4) 0 0;
   padding: 0;
   list-style: none;
-  font-size: var(--font-size-sm);
   line-height: var(--line-height-body);
-  color: var(--text-muted);
 }
 
 /* A row of acts on these pages, with room between them. */
@@ -4582,23 +4571,18 @@ body {
   margin-block-start: var(--space-8);
 }
 
-/* A sentence on these pages is the page's own words, not a strip across a pane. Not on a role
-   yet (#6389): every door page's lines share the window-wide `.came-back`, so it is moved with
-   that class, not page by page. */
+/* A sentence on these pages is the page's own words, not a strip across a pane: the secondary
+   all the same, as every `.came-back` is (#6389). */
 .welcome-pane .came-back {
   padding: 0;
   margin-block-end: var(--space-3);
   background: none;
   border: 0;
-  font-size: var(--font-size-base);
   line-height: var(--line-height-body);
-  color: var(--text-secondary);
 }
 
 .git-missing h3 {
   margin: 0 0 var(--space-3);
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-strong);
 }
 
 /* Where a project lives: the three answers side by side, as many as the pane holds. */
@@ -4652,8 +4636,6 @@ body {
 .your-repos .repo-picks [data-scope="card-button"][data-part="line"] {
   margin-inline-start: auto;
   white-space: nowrap;
-  font-size: var(--font-size-sm);
-  color: var(--text-muted);
 }
 
 /* In the launcher the harness rows sit in the page's own margins. */
@@ -4706,12 +4688,6 @@ body {
   min-inline-size: 0;
 }
 
-.harness-row-state,
-.harness-row-how {
-  font-size: var(--font-size-sm);
-  color: var(--text-muted);
-}
-
 .harness-row-how {
   grid-column: 1 / -1;
   overflow-wrap: anywhere;
@@ -4746,16 +4722,14 @@ body {
 
 /* What opening a project puts in force. Read before it is answered, so it is a list and not
    a paragraph — and every entry is `code`, because these are names and values and not prose. */
+/* A dialog's section heading is the heading (`ui-text-heading`) and a list's heading under it
+   the meta (`ui-text-meta`), each worn where it is written (#6389); here, only their room. */
 [data-scope="dialog"] h3 {
   margin: var(--space-5) 0 var(--space-2);
-  font-size: var(--font-size-md);
 }
 
 [data-scope="dialog"] h4 {
   margin: var(--space-5) 0 var(--space-2);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-regular);
-  color: var(--text-muted);
 }
 
 .changes,
@@ -4810,10 +4784,9 @@ body {
   border-radius: var(--radius-md);
 }
 
+/* A health group's heading is the secondary at the strong weight (#6389), as it was drawn. */
 .doctor h3 {
   margin: var(--space-5) 0 var(--space-2);
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
 }
 
 .doctor-rows {
@@ -4999,7 +4972,8 @@ body {
   padding: var(--space-4) var(--space-5);
   border-left: 2px solid var(--danger-base);
   background: var(--danger-wash);
-  color: var(--text-primary);
+  /* Its words are the body (`ui-text-body`, #6389): what the dialog warns of, primary on the
+     wash, where every other `.came-back` is the secondary. */
   opacity: 1;
 }
 
@@ -7496,20 +7470,6 @@ nav.piece-files-head {
   max-inline-size: 280px;
 }
 
-.ui-hosts-host {
-  font-size: var(--font-size-sm);
-}
-
-.ui-hosts-port {
-  color: var(--text-quiet);
-}
-
-/* When and by what each was added (#6172, R65): in the muted words, its column one line wide. */
-.ui-hosts-added {
-  color: var(--text-muted);
-  font-size: var(--font-size-sm);
-}
-
 /* **A record list, as the table family's** (#6301, after Your hosts): where a record is (a
    folder, a host) in the quiet words beside its name, broken anywhere so a long path never
    widens its column past the page. */
@@ -7829,10 +7789,9 @@ nav.piece-files-head {
 
 /* **The other devices' signing keys** (#5918, `settings/signing.tsx`): a heading and the line on
    what removing one does, above their table. */
+/* Its heading is the heading (`ui-text-heading`, #6389). */
 .signing-others h3 {
   margin: var(--space-3) 0 var(--space-1);
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-strong);
 }
 
 .signing-others .ui-setting-help {
@@ -7907,10 +7866,9 @@ nav.piece-files-head {
   border-block-end: 1px solid var(--border-strong);
 }
 
+/* A group's heading is the heading (`ui-text-heading`, #6389). */
 .pool-limits-head h4 {
   margin: 0;
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-strong);
 }
 
 .pool-limit {
@@ -8719,6 +8677,41 @@ nav.piece-files-head {
   flex: 1 1 0;
   min-block-size: 0;
   overflow: auto;
+}
+
+/* What an org's skill controls refuse of a row (#6031, `prototype/skill-policy` A): the core's
+   sentence on a line of its own under the row's name. */
+.skill-policy-why {
+  display: block;
+}
+
+/* A skill's Uses and used by (#5874, `prototype/skill-hints` A): one row each, a hint's mark
+   and its fix at the row's end, why on a line of its own under the name. */
+.skill-uses-rows {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.skill-uses-rows > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  border-block-end: 1px solid var(--border-subtle);
+}
+
+.skill-uses-row-said {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.skill-uses-row-why {
+  display: block;
+  font-size: var(--font-size-xs);
 }
 
 /* The Sources pages (#3687, `prototype/skill-sources` A): each part of a page a heading over

@@ -63,7 +63,7 @@ export function RemoveFromWorkspace({
       }}
       title={`Remove ${repo} from ${workspace}?`}
       description={
-        <p className="came-back">
+        <p className="came-back ui-text-secondary">
           {`${workspace} stops naming ${repo}. Nothing is deleted: it is not cloned on this machine.`}
         </p>
       }

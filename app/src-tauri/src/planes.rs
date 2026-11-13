@@ -5021,11 +5021,9 @@ impl Planes {
             let saves = Arc::clone(&self.saves);
             let plane = id.clone();
             let root = root.clone();
+            let tells = crate::autosave::Tells::of(&root);
             Arc::new(move |looked: crate::autosave::Looked| {
-                changes(
-                    plane.clone(),
-                    crate::autosave::what_it_did(looked.moved_tree),
-                );
+                changes(plane.clone(), tells.what_it_did(looked.moved_tree));
                 if looked.saved {
                     saves(plane.clone(), root.clone());
                 }

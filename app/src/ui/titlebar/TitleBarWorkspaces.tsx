@@ -201,6 +201,7 @@ export function WorkspaceChip({
       style={style}
       aria-current={current ? "true" : undefined}
       aria-describedby={describedBy}
+      className="ui-text-body"
       data-scope="titlebar"
       data-part="workspace"
       data-variant={variant}
@@ -217,7 +218,7 @@ export function WorkspaceChip({
         // The count's wash is laid on the bar's own ground, whatever the chip's fill
         // (D-3345-3): this holds that ground under it.
         <span data-scope="titlebar" data-ground="count" aria-hidden="true">
-          <span data-scope="titlebar" data-part="count">
+          <span className="ui-text-meta ui-text-strong" data-scope="titlebar" data-part="count">
             {counted}
           </span>
         </span>
@@ -511,10 +512,16 @@ export function TitleBarSlash() {
   );
 }
 
-/** **The project's name**, as the bar says it while the rail is shown (R92): quiet, 500. */
+/** **The project's name**, as the bar says it while the rail is shown (R92): the body's strong
+ *  line, in the quiet tier (#6389). */
 export function TitleBarProject({ name }: { name: string }) {
   return (
-    <span data-scope="titlebar" data-part="project" data-testid="title-project">
+    <span
+      className="ui-text-body ui-text-strong"
+      data-scope="titlebar"
+      data-part="project"
+      data-testid="title-project"
+    >
       {name}
     </span>
   );
@@ -559,6 +566,7 @@ export function ProjectCrumb({
       tabIndex={0}
       aria-haspopup="dialog"
       aria-expanded={open}
+      className="ui-text-body ui-text-strong"
       data-scope="titlebar"
       data-part="crumb"
       data-testid="title-project"

@@ -1917,3 +1917,110 @@ fn where_a_pools_engine_is_is_part_of_what_defines_it() {
     let there = pool("b", Set::default()).on(Some(remote()));
     assert_ne!(here.definition_digest(), there.definition_digest());
 }
+
+const CA: &str = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+fn tls_remote(key: crate::tlsroute::KeyFrom) -> crate::tlsroute::Remote {
+    crate::tlsroute::Remote {
+        route: crate::tlsroute::Route::parse("tcp://build-box").unwrap(),
+        files: crate::tlsroute::Files::new(
+            "/home/me/.docker/ca.pem".into(),
+            "/home/me/.docker/cert.pem".into(),
+            key,
+        )
+        .unwrap(),
+        pin: crate::tlsroute::Pin {
+            ca: crate::tlsroute::Fingerprint::parse(CA).unwrap(),
+            engine: "ABCD:EFGH:IJKL".to_owned(),
+        },
+    }
+}
+
+#[test]
+fn a_pool_over_dockers_tls_api_is_kept_with_its_files_and_ca_pin_in_the_ruled_keys() {
+    let config = tempfile::tempdir().unwrap();
+    for (key, tls) in [
+        (
+            crate::tlsroute::KeyFrom::File("/home/me/.docker/key.pem".into()),
+            serde_json::json!({
+                "ca": "/home/me/.docker/ca.pem",
+                "cert": "/home/me/.docker/cert.pem",
+                "key": "/home/me/.docker/key.pem",
+            }),
+        ),
+        (
+            crate::tlsroute::KeyFrom::Vault {
+                plane: "/home/me/plane".into(),
+                vault: "docker-box".to_owned(),
+                key: "TLS_KEY".to_owned(),
+            },
+            serde_json::json!({
+                "ca": "/home/me/.docker/ca.pem",
+                "cert": "/home/me/.docker/cert.pem",
+                "keyIn": { "plane": "/home/me/plane", "vault": "docker-box", "key": "TLS_KEY" },
+            }),
+        ),
+    ] {
+        let _ = std::fs::remove_dir_all(crate::machine::dir(config.path()));
+        let kept = pool("build-box", Set::default()).on_engine(Some(tls_remote(key).into()));
+        record_pool(config.path(), &kept).unwrap();
+        assert_eq!(
+            the_file(config.path())["pools"],
+            serde_json::json!([{
+                "name": "build-box",
+                "kind": "remote-docker",
+                "route": "tcp://build-box:2376",
+                "tls": tls,
+                "pin": { "ca": CA, "engine": "ABCD:EFGH:IJKL" },
+                "image": IMAGE,
+            }])
+        );
+        let read = pools(config.path()).unwrap();
+        assert_eq!(read, vec![kept]);
+        assert!(read[0].on_another_machine());
+        assert_eq!(read[0].remote(), None, "no SSH route is read into it");
+    }
+}
+
+#[test]
+fn a_tcp_row_without_its_files_its_ca_or_a_whole_pin_is_not_read() {
+    let config = tempfile::tempdir().unwrap();
+    let file = crate::machine::dir(config.path()).join(crate::machine::RUNNERS_FILE);
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    let tls = serde_json::json!({ "ca": "/ca.pem", "cert": "/cert.pem", "key": "/key.pem" });
+    for row in [
+        // Plain tcp://: no files at all.
+        serde_json::json!({ "name": "b", "kind": "remote-docker", "image": IMAGE,
+            "route": "tcp://box:2375", "pin": { "ca": CA, "engine": "X" } }),
+        // TLS that verifies no server.
+        serde_json::json!({ "name": "b", "kind": "remote-docker", "image": IMAGE,
+            "route": "tcp://box:2376", "tls": { "cert": "/cert.pem", "key": "/key.pem" },
+            "pin": { "ca": CA, "engine": "X" } }),
+        serde_json::json!({ "name": "b", "kind": "remote-docker", "image": IMAGE,
+            "route": "tcp://box:2376", "tls": tls, "pin": { "ca": CA } }),
+        serde_json::json!({ "name": "b", "kind": "remote-docker", "image": IMAGE,
+            "route": "tcp://box:2376", "tls": tls,
+            "pin": { "hostKey": HOST_KEY, "engine": "X" } }),
+        serde_json::json!({ "name": "b", "kind": "remote-docker", "image": IMAGE,
+            "route": "tcp://box:2376",
+            "tls": { "ca": "ca.pem", "cert": "/cert.pem", "key": "/key.pem" },
+            "pin": { "ca": CA, "engine": "X" } }),
+        serde_json::json!({ "name": "b", "kind": "remote-docker", "image": IMAGE,
+            "route": "tcp://box:2376",
+            "tls": { "ca": "/ca.pem", "cert": "/cert.pem", "key": "/key.pem",
+                     "keyIn": { "plane": "/p", "vault": "v", "key": "k" } },
+            "pin": { "ca": CA, "engine": "X" } }),
+        // An SSH route with TLS files is no row purlis writes.
+        serde_json::json!({ "name": "b", "kind": "remote-docker", "image": IMAGE,
+            "route": "ssh://me@box/var/run/docker.sock", "tls": tls,
+            "pin": { "hostKey": HOST_KEY, "engine": "X" } }),
+        serde_json::json!({ "name": "b", "kind": "docker", "image": IMAGE, "tls": tls }),
+    ] {
+        std::fs::write(
+            &file,
+            serde_json::json!({ "version": 1, "pools": [row], "runners": [] }).to_string(),
+        )
+        .unwrap();
+        assert!(pools(config.path()).is_err(), "{row} was read");
+    }
+}

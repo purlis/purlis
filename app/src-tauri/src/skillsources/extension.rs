@@ -227,6 +227,7 @@ pub(crate) async fn skill_extension_source_browse(
                     // purlis's own words, read to browse as a git source's are and let go of
                     // (#5760): the install copies what its own review reads.
                     marks: one.marks,
+                    refused: one.refused.as_ref().map(Into::into),
                 })
                 .collect(),
             not_skills: Vec::new(),
@@ -247,6 +248,7 @@ pub(crate) async fn skill_extension_install_review(
     id: String,
     names: Vec<String>,
     level: SkillLevel,
+    without: Vec<String>,
 ) -> Result<InstallReview, String> {
     let held = planes.held(&plane)?;
     let executor = views.executor();
@@ -255,7 +257,7 @@ pub(crate) async fn skill_extension_install_review(
         let root = held.root();
         let at = (&level).into();
         let (review, read) = studied(&executor, root, |studio| {
-            let (mut review, read) = ext::review(studio, root, &id, &names, &at)?;
+            let (mut review, read) = ext::review(studio, root, &id, &names, &at, &without)?;
             studio.lint_reviewed(&mut review.skills, &at);
             Ok((review, read))
         })?;
@@ -283,6 +285,7 @@ pub(crate) async fn skill_extension_install_set_review(
     id: String,
     names: Vec<String>,
     level: SkillLevel,
+    without: Vec<String>,
 ) -> Result<InstallSetReview, String> {
     let held = planes.held(&plane)?;
     let executor = views.executor();
@@ -291,7 +294,7 @@ pub(crate) async fn skill_extension_install_set_review(
         let root = held.root();
         let at = (&level).into();
         let (set, read) = studied(&executor, root, |studio| {
-            let (mut set, read) = ext::review_set(studio, root, &id, &names, &at)?;
+            let (mut set, read) = ext::review_set(studio, root, &id, &names, &at, &without)?;
             studio.lint_reviewed(&mut set.review.skills, &at);
             Ok((set, read))
         })?;

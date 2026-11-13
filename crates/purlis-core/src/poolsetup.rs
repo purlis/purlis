@@ -497,6 +497,10 @@ pub struct Chosen {
     /// (#6269).
     pub identity: Option<PathBuf>,
     pub trusted: Option<crate::sshroute::Pin>,
+    /// **For a machine reached over Docker's TLS API** (#6267): the files named under Options,
+    /// kept as soon as they are named, and the CA pin once the person trusted it.
+    pub tls: Option<crate::tlsroute::Files>,
+    pub trusted_tls: Option<crate::tlsroute::Pin>,
 }
 
 impl Chosen {
@@ -685,11 +689,13 @@ fn made_on(facts: &Facts) -> String {
         .connect
         .as_ref()
         .and_then(|connect| connect.route.as_deref())
-        .and_then(|route| crate::sshroute::Route::parse(route).ok())
-        .map_or_else(
-            || this_machine().to_owned(),
-            |route| route.host().to_owned(),
-        )
+        .and_then(|route| match crate::tlsroute::Route::parse(route) {
+            Ok(tcp) => Some(tcp.host().to_owned()),
+            Err(_) => crate::sshroute::Route::parse(route)
+                .ok()
+                .map(|route| route.host().to_owned()),
+        })
+        .unwrap_or_else(|| this_machine().to_owned())
 }
 
 fn pool_reading(facts: &Facts) -> Reading {
@@ -1288,12 +1294,16 @@ fn see_of(kind: Kind, id: StepId, facts: &Facts, choices: &Choices) -> Option<Se
         });
     }
     match (id, pool) {
-        (StepId::Connect, _) => Some(connecting::by_hand(
-            facts
-                .connect
-                .as_ref()
-                .and_then(|connect| connect.route.as_deref()),
-        )),
+        (StepId::Connect, _) => {
+            let connect = facts.connect.as_ref();
+            let route = connect.and_then(|connect| connect.route.as_deref());
+            Some(match route.filter(|route| crate::tlsroute::is_tcp(route)) {
+                Some(tcp) => {
+                    connecting::by_hand_tls(tcp, connect.and_then(|connect| connect.tls.as_ref()))
+                }
+                None => connecting::by_hand(route),
+            })
+        }
         (StepId::Where, _) if kind != Kind::Cluster => Some(See {
             note: "This is how purlis asks after Docker. It only reads.".to_owned(),
             text: "docker version".to_owned(),
@@ -1353,6 +1363,8 @@ pub fn read(here: &Here<'_>, pool: Option<&str>) -> Result<Setup, Refused> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Pressed {
     Met(connecting::Met),
+    /// The CA a machine over TLS was found to be signed by (#6267).
+    MetCa(connecting::CaMet),
     Found(crate::sshroute::connect::Finding),
 }
 
@@ -1372,7 +1384,7 @@ pub fn read_pressed(
     // On another machine where the pool is, or a new pool's choice on Where says so; the other
     // kinds are told apart below, once the pool and the contexts are read ([`kind_of`]).
     let remote = match (&kept, pool) {
-        (Some(kept), _) => kept.remote().is_some(),
+        (Some(kept), _) => kept.on_another_machine(),
         (None, None) => choices.kind == Some(Kind::RemoteDocker),
         (None, Some(_)) => false,
     };
@@ -1384,18 +1396,27 @@ pub fn read_pressed(
     let (engine, docker, mut connect) = match (
         kind,
         kept.as_ref()
-            .and_then(|kept| kept.remote().map(|remote| (kept, remote))),
+            .and_then(|kept| kept.remote_engine().map(|remote| (kept, remote))),
     ) {
-        // A pool on another machine: its own engine, through its forward, pin checked.
+        // A pool on another machine: its own engine, through its forward or over TLS, pin
+        // checked.
         (_, Some((kept, remote))) => {
-            let connect = connecting::Connecting {
-                route: Some(remote.route.spelled()),
-                identity: remote
-                    .route
-                    .identity()
-                    .map(|path| path.display().to_string()),
-                trusted: Some(remote.pin.clone()),
-                ..connecting::Connecting::default()
+            let connect = match remote {
+                runners::RemoteEngine::Ssh(remote) => connecting::Connecting {
+                    route: Some(remote.route.spelled()),
+                    identity: remote
+                        .route
+                        .identity()
+                        .map(|path| path.display().to_string()),
+                    trusted: Some(remote.pin.clone()),
+                    ..connecting::Connecting::default()
+                },
+                runners::RemoteEngine::Tls(remote) => connecting::Connecting {
+                    route: Some(remote.route.spelled()),
+                    tls: Some(remote.files.clone()),
+                    trusted_tls: Some(remote.pin.clone()),
+                    ..connecting::Connecting::default()
+                },
             };
             match here.docker {
                 None => (Engine::Missing, None, connect),
@@ -1424,6 +1445,14 @@ pub fn read_pressed(
                     .connect
                     .as_ref()
                     .and_then(|chosen| chosen.trusted.clone()),
+                tls: choices
+                    .connect
+                    .as_ref()
+                    .and_then(|chosen| chosen.tls.clone()),
+                trusted_tls: choices
+                    .connect
+                    .as_ref()
+                    .and_then(|chosen| chosen.trusted_tls.clone()),
                 ..connecting::Connecting::default()
             };
             let engine = if here.docker.is_some() {
@@ -1441,6 +1470,7 @@ pub fn read_pressed(
     };
     match pressed {
         Some(Pressed::Met(met)) => connect.met = Some(met),
+        Some(Pressed::MetCa(met)) => connect.met_ca = Some(met),
         Some(Pressed::Found(finding)) => connect.finding = Some(finding),
         None => {}
     }
@@ -1530,7 +1560,9 @@ pub fn read_pool(here: &Here<'_>, name: &str) -> Result<PoolFacts, Refused> {
     let kept = runners::pools(here.config)?
         .into_iter()
         .find(|one| one.name() == name);
-    if let (Some(kept), Some(docker)) = (kept.filter(|kept| kept.remote().is_some()), here.docker) {
+    if let (Some(kept), Some(docker)) =
+        (kept.filter(runners::Pool::on_another_machine), here.docker)
+    {
         return match crate::sshroute::pool::docker_of(docker, &kept) {
             Ok(through) => pool_facts(here, name, Engine::Ready, Some(&through)),
             Err(_) => pool_facts(here, name, Engine::NotAnswering, None),
@@ -1825,6 +1857,42 @@ pub fn read_choices(config: &Path) -> Result<Choices, Refused> {
 /// The `connect` kept, read: a route as it was given, its key file where one is, and a whole
 /// pin where there is one.
 fn chosen_from(held: HeldConnect) -> Option<Chosen> {
+    if crate::tlsroute::is_tcp(&held.route) {
+        // An SSH key file is no part of a route over TLS (#6267).
+        if held.identity.is_some() {
+            return None;
+        }
+        let tls = match &held.tls {
+            None => None,
+            Some(tls) => Some(runners::tls_from_row(tls)?),
+        };
+        let trusted_tls = match &held.trusted {
+            None => None,
+            Some(pin) => {
+                let pin = pin.as_object()?;
+                if pin.len() != 2 {
+                    return None;
+                }
+                crate::tlsroute::Route::parse(&held.route).ok()?;
+                tls.as_ref()?;
+                Some(crate::tlsroute::Pin {
+                    ca: crate::tlsroute::Fingerprint::parse(pin.get("ca")?.as_str()?).ok()?,
+                    engine: Some(pin.get("engine")?.as_str()?.to_owned())
+                        .filter(|id| runners::usable_noted(id))?,
+                })
+            }
+        };
+        return (held.route.len() <= 512).then_some(Chosen {
+            route: held.route,
+            identity: None,
+            trusted: None,
+            tls,
+            trusted_tls,
+        });
+    }
+    if held.tls.is_some() {
+        return None;
+    }
     let identity = match held.identity {
         None => None,
         Some(identity) => {
@@ -1849,6 +1917,8 @@ fn chosen_from(held: HeldConnect) -> Option<Chosen> {
         route: held.route,
         identity,
         trusted,
+        tls: None,
+        trusted_tls: None,
     })
 }
 
@@ -1857,6 +1927,9 @@ fn chosen_from(held: HeldConnect) -> Option<Chosen> {
 #[serde(deny_unknown_fields)]
 struct HeldConnect {
     route: String,
+    /// The TLS files, spelled as a pool's `tls` in `runners.json` (#6267).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tls: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     identity: Option<String>,
     /// A pin, as a pool's `pin` in `runners.json` ([`crate::sshroute::Pin::to_json`]).
@@ -1908,8 +1981,17 @@ fn write_choices(config: &Path, choices: Choices) -> Result<(), Refused> {
         made: choices.made,
         connect: choices.connect.map(|chosen| HeldConnect {
             route: chosen.route,
+            tls: chosen.tls.as_ref().map(runners::tls_to_row),
             identity: chosen.identity.map(|path| path.display().to_string()),
-            trusted: chosen.trusted.map(|pin| pin.to_json()),
+            // A host key's pin over SSH, as a pool's; a CA's over Docker's TLS API (#6267).
+            trusted: match (chosen.trusted, chosen.trusted_tls) {
+                (Some(pin), _) => Some(pin.to_json()),
+                (None, Some(pin)) => Some(serde_json::json!({
+                    "ca": pin.ca.spelled(),
+                    "engine": pin.engine,
+                })),
+                (None, None) => None,
+            },
         }),
     };
     let text = serde_json::to_string_pretty(&held)
@@ -1960,11 +2042,40 @@ pub fn choose_machine(
     let _locked = runners::lock(config);
     let mut choices = read_choices(config)?;
     choices.kind = Some(Kind::RemoteDocker);
+    // The TLS files named stay with another tcp:// machine typed (#6267): they are where the
+    // person keeps them, not the machine's.
+    let tls = choices.connect.take().and_then(|chosen| chosen.tls);
     choices.connect = route.map(|route| Chosen {
         route: route.to_owned(),
         identity,
         trusted: None,
+        tls: tls.filter(|_| crate::tlsroute::is_tcp(route)),
+        trusted_tls: None,
     });
+    write_choices(config, choices)
+}
+
+/// **Keeps the TLS files named under Connect's Options** (#6267), or forgets them (`None`), for
+/// the `tcp://` machine chosen: their paths and a vault entry's names, never what they hold. A
+/// trust kept before is forgotten with them, since it was of the files as they were.
+pub fn choose_tls_files(
+    config: &Path,
+    files: Option<crate::tlsroute::Files>,
+) -> Result<(), Refused> {
+    let _locked = runners::lock(config);
+    let mut choices = read_choices(config)?;
+    let Some(chosen) = choices.connect.as_mut() else {
+        return Err(Refused::Other(
+            "type the machine's tcp:// address before its TLS files".to_owned(),
+        ));
+    };
+    if !crate::tlsroute::is_tcp(&chosen.route) {
+        return Err(Refused::Other(
+            "TLS files are named only for a machine reached at a tcp:// address".to_owned(),
+        ));
+    }
+    chosen.tls = files;
+    chosen.trusted_tls = None;
     write_choices(config, choices)
 }
 
@@ -1988,6 +2099,24 @@ pub fn trusted(config: &Path, remote: &crate::runners::Remote) -> Result<(), Ref
         route: remote.route.spelled(),
         identity: remote.route.identity().map(Path::to_path_buf),
         trusted: Some(remote.pin.clone()),
+        tls: None,
+        trusted_tls: None,
+    });
+    write_choices(config, choices)
+}
+
+/// **Keeps what the person trusted on Connect over Docker's TLS API** (#6267): the route, its
+/// files and the CA pin the Pool step's pool is made with.
+pub fn trusted_tls(config: &Path, remote: &crate::tlsroute::Remote) -> Result<(), Refused> {
+    let _locked = runners::lock(config);
+    let mut choices = read_choices(config)?;
+    choices.kind = Some(Kind::RemoteDocker);
+    choices.connect = Some(Chosen {
+        route: remote.route.spelled(),
+        identity: None,
+        trusted: None,
+        tls: Some(remote.files.clone()),
+        trusted_tls: Some(remote.pin.clone()),
     });
     write_choices(config, choices)
 }

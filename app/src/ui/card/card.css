@@ -315,7 +315,6 @@
 
 /* Its line: what it does, in the secondary tier. */
 [data-scope="card-button"][data-part="line"] {
-  font-size: var(--font-size-sm);
   line-height: var(--line-height-body);
   color: var(--text-secondary);
 }

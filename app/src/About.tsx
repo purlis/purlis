@@ -240,7 +240,7 @@ function Said({ about }: { about: About }) {
         )
       ) : (
         <section aria-labelledby="about-brought">
-          <h3 id="about-brought">
+          <h3 className="ui-text-heading" id="about-brought">
             {build.kind === "release" ? `What ${notes.version} brought` : "Not released yet"}
           </h3>
           {notes.markdown === "" ? (

@@ -809,6 +809,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     // project, the person's own press in their window. A chat's change is a draft (SK-9).
     "skill_new",
     "skill_save",
+    // Write skills:<name> on a hint's row of a skill's tab (#5874): one save of its SKILL.md.
+    "skill_hint_write",
     "skill_rename",
     "skill_copy",
     "skill_move",
@@ -927,6 +929,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_install_widenings",
     "skill_install",
     "skill_updates",
+    // An org's skill controls and the skill acts this machine recorded (#6031): read only, the
+    // person's window alone, as the rest of the studio is.
+    "skill_policy",
+    "skill_acts",
     "skill_update_review",
     "skill_update",
     // Extension skill sources (#3092, #3089): each asks an extension the person approved, and an
@@ -977,6 +983,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_podman_connections",
     "pool_setup_connect",
     "pool_setup_trust",
+    // Naming a tcp:// machine's TLS files, a vault entry among them, is the person's too (#6267).
+    "pool_setup_tls_files",
     "pool_setup_name",
     "pool_setup_pool",
     "pool_setup_add",
