@@ -64,6 +64,8 @@ const GROUP_OF = {
   vault: "consent",
   // The sandbox consent (R-205): what the project expects and this machine has not allowed.
   "sandbox-expects": "consent",
+  // A persona's hosts or tools waiting for an Allow on this machine (ADR 0121, 2026-11-12).
+  "persona-allow": "consent",
   // Trust this clone (T1-14): what the clone may run and change, before it is trusted.
   "trust-clone": "consent",
   confirmation: "consent",
