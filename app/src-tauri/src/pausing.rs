@@ -139,7 +139,8 @@ impl Pauses {
 
     /// **Chat `chat` is paused for `why` at `now`**, with `below`, its tasks at work, held with
     /// it: answers the chats to hold still. Nothing where a pause holds it already, or at a
-    /// budget the person let it go on past.
+    /// budget the person let it go on past. A chat it holds is owed [`STOP_TRYING_LINE`] no
+    /// more: an old line never follows a later answer, nor reaches a program held still.
     pub fn pause(&self, chat: u32, why: Why, now: i64, below: Vec<u32>) -> Option<Vec<u32>> {
         let mut inner = self.inner();
         let already = inner
@@ -157,6 +158,9 @@ impl Pauses {
             return None;
         }
         let chats: Vec<u32> = std::iter::once(chat).chain(below).collect();
+        for one in &chats {
+            inner.owed.remove(one);
+        }
         inner.paused.insert(
             chat,
             Paused {
@@ -321,11 +325,11 @@ pub enum Telling {
 }
 
 /// **When a chat `seen` so is told to stop trying, as the person answers** (Q267 amended):
-/// only a chat that takes keys ([`Seen::takes_keys`]: a measured harness, heard from, not ended,
-/// showing no prompt), never in a stop's last turn; at once where it takes a line, and at its
-/// turn's end where it is mid-turn.
+/// only a measured harness, heard from and not ended, never in a stop's last turn; at once
+/// where it takes a line ([`Seen::takes_a_line`]), and at its turn's end where it is mid-turn
+/// or shows a prompt, [`at_turn_end`] typing it only once the prompt is gone.
 pub fn telling(seen: Seen, in_its_last_turn: bool) -> Telling {
-    if in_its_last_turn || !seen.takes_keys() {
+    if in_its_last_turn || !seen.measured || !seen.heard || seen.ended {
         Telling::Never
     } else if seen.takes_a_line() {
         Telling::Now
@@ -511,10 +515,10 @@ pub(crate) fn called(held: &Held, call: &purlis_core::hookwire::ToolCall) {
 
 /// **The person's answer to chat `chat`'s pause**, `option` one of its ask's: Continue or It's
 /// fine, continue and Let it keep trying let it go on; Tell it to stop trying lets it go on, and
-/// types [`STOP_TRYING_LINE`] at once where it waits, at its turn's end where it is mid-turn, and
-/// never where it takes no keys ([`telling`]); Stop and Stop chat let it go on only to stop it,
-/// as the budget's limit or the window's Stop stops it. Raise the budget is the window's own and
-/// never comes here.
+/// types [`STOP_TRYING_LINE`] at once where it waits, at its turn's end where it is mid-turn or
+/// shows a prompt, and never where it takes no keys ([`telling`]); Stop and Stop chat let it go
+/// on only to stop it, as the budget's limit or the window's Stop stops it. Raise the budget is
+/// the window's own and never comes here.
 pub(crate) fn answer(held: &Arc<Held>, chat: u32, option: &str) -> Result<(), String> {
     let answered = held.pauses().answer(chat, option)?;
     hold(held, &answered.held, false);
