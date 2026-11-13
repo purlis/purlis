@@ -480,7 +480,12 @@ mod cases {
         assert_eq!(
             over.backend
                 .head(&over.caller, &scene.path("api"), &open(scene)),
-            Ok("0123456789abcdef0123456789abcdef01234567".to_string())
+            Ok(purlis_core::forge::pr::HeadAt {
+                sha: "0123456789abcdef0123456789abcdef01234567".to_string(),
+                base: "main".to_string(),
+                // Both recordings are of a repo that merges only by squashing.
+                squash: true,
+            })
         );
         spent(&over);
     }
@@ -1301,7 +1306,7 @@ macro_rules! contract {
             }
             #[test]
             $(#[$attr])?
-            fn head_reads_the_commit_the_request_is_at() {
+            fn head_reads_the_commit_the_base_and_the_method_the_request_merges_by() {
                 purlis_core::unsteered!();
                 super::cases::head(stringify!($forge), super::How::$how);
             }

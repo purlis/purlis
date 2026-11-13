@@ -11,22 +11,34 @@
 use std::sync::Mutex;
 
 use purlis_core::harness::asks::{Admitted, Answerer};
-use purlis_core::mergehold::{self, Held, Holds, MergeForge, MergeKey, NotMerged, Request};
+use purlis_core::mergehold::{
+    self, At, Held, Holds, MergeForge, MergeKey, Merged, NotMerged, Raised, Request,
+};
 
-/// A forge that merges what it is asked to, counting each merge, or refuses every one.
+/// A forge that merges what it is asked to, counting each merge and the method, or refuses
+/// every one; its request merges into `base` (main where none is said).
 #[derive(Default)]
 struct Forge {
-    merged: Mutex<Vec<MergeKey>>,
+    merged: Mutex<Vec<(MergeKey, bool)>>,
     refuses: Option<&'static str>,
+    base: Option<&'static str>,
+    squash: bool,
 }
 
 impl MergeForge for Forge {
-    fn merge_at(&self, key: &MergeKey) -> Result<(), String> {
+    fn at(&self, _key: &MergeKey) -> Result<At, String> {
+        Ok(At {
+            base: self.base.unwrap_or("main").try_into().unwrap(),
+            squash: self.squash,
+        })
+    }
+
+    fn merge_at(&self, key: &MergeKey, squash: bool) -> Result<Merged, String> {
         if let Some(why) = self.refuses {
             return Err(why.to_owned());
         }
-        self.merged.lock().unwrap().push(key.clone());
-        Ok(())
+        self.merged.lock().unwrap().push((key.clone(), squash));
+        Ok(Merged::Now)
     }
 }
 
@@ -37,6 +49,7 @@ fn key(number: u64) -> MergeKey {
         repo: "o/r".try_into().unwrap(),
         number,
         head: HEAD.try_into().unwrap(),
+        base: "main".try_into().unwrap(),
     }
 }
 
@@ -96,7 +109,7 @@ fn the_app_merges_on_the_persons_press_and_the_chat_never_merges() {
 
     let pressed = holds.press(4, &asked, the_window(), &forge);
     assert!(pressed.is_ok(), "{pressed:?}");
-    assert_eq!(*forge.merged.lock().unwrap(), [key(12)]);
+    assert_eq!(*forge.merged.lock().unwrap(), [(key(12), false)]);
     assert!(holds.every().is_empty());
     // A second press, a double click say, merges nothing more.
     assert_eq!(
@@ -127,4 +140,63 @@ fn a_merge_the_forge_refuses_waits_again_and_dont_merge_merges_nothing() {
         Err(NotMerged::NotHeld)
     );
     assert!(forge.merged.lock().unwrap().is_empty());
+}
+
+/// Q239 (S6): a try again of a request whose branch moved keys its one ask on the head the
+/// forge says now, so the person's press is not one the forge must refuse.
+#[test]
+fn a_retried_merge_keys_its_one_ask_on_the_head_the_forge_says_now() {
+    let holds = Holds::default();
+    assert_eq!(holds.raise(4, key(12), 1_000), Raised::New);
+    let moved = MergeKey {
+        head: "89abcdef0123456789abcdef0123456789abcdef"
+            .try_into()
+            .unwrap(),
+        ..key(12)
+    };
+    assert_eq!(holds.raise(4, moved.clone(), 2_000), Raised::Already);
+    let waiting = holds.every();
+    assert_eq!(waiting.len(), 1);
+    assert_eq!(waiting[0].key, moved);
+    assert_eq!(waiting[0].since, 1_000, "it waits since the first try");
+    let forge = Forge::default();
+    assert_eq!(
+        holds.press(4, &key(12), the_window(), &forge),
+        Err(NotMerged::NotHeld)
+    );
+    assert!(holds.press(4, &moved, the_window(), &forge).is_ok());
+}
+
+/// Q239 (S7): the base is pinned in the key, and a press on a request retargeted since the ask
+/// merges nothing and says so; the ask waits again.
+#[test]
+fn a_press_on_a_request_whose_base_moved_merges_nothing() {
+    let holds = Holds::default();
+    holds.raise(4, key(12), 1_000);
+    let retargeted = Forge {
+        base: Some("release"),
+        ..Forge::default()
+    };
+    assert_eq!(
+        holds.press(4, &key(12), the_window(), &retargeted),
+        Err(NotMerged::BaseMoved {
+            was: "main".to_owned(),
+            now: "release".to_owned()
+        })
+    );
+    assert!(retargeted.merged.lock().unwrap().is_empty());
+    assert_eq!(holds.every().len(), 1);
+}
+
+/// Q239 (S5): the press merges by the repo's own method, as the forge says it at the press.
+#[test]
+fn a_press_merges_by_the_repos_own_method() {
+    let holds = Holds::default();
+    holds.raise(4, key(12), 1_000);
+    let squashes = Forge {
+        squash: true,
+        ..Forge::default()
+    };
+    assert!(holds.press(4, &key(12), the_window(), &squashes).is_ok());
+    assert_eq!(*squashes.merged.lock().unwrap(), [(key(12), true)]);
 }

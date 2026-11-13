@@ -15428,7 +15428,9 @@ export type RiskClass = "protected-push" | "production-host" | "outside-project"
 /**  A delete its command or tool plainly says (#6178). */
 "delete" | 
 /**  A credential handed from a purlis vault to a chat's program, a page or a runner (#6178). */
-"vault-use";
+"vault-use" | 
+/**  A merge a chat's hook held, which the app performs on the person's press (Q239). */
+"merge";
 
 /**  A risk, and the core's words for it. */
 export type RiskMark = {

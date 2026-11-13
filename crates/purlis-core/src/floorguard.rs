@@ -178,10 +178,28 @@ pub fn release_floor_reason(cmd: &str, unattended: bool) -> Option<String> {
 /// read of the forge token included. What the merge hold reads a line as a merge by
 /// ([`crate::mergehold`]), in any mode: every route the floor knows is the same act to it.
 pub fn merge_reason(cmd: &str) -> Option<String> {
-    let outer = ONLY_MERGES.replace(true);
-    let said = metered(cmd, true).0;
-    ONLY_MERGES.set(outer);
-    said
+    let _only = OnlyMerges::on();
+    metered(cmd, true).0
+}
+
+/// **The floor reads for merges alone while this lives** ([`merge_reason`]), and as it did before
+/// once it is dropped, a panic's unwinding included.
+struct OnlyMerges {
+    outer: bool,
+}
+
+impl OnlyMerges {
+    fn on() -> Self {
+        Self {
+            outer: ONLY_MERGES.replace(true),
+        }
+    }
+}
+
+impl Drop for OnlyMerges {
+    fn drop(&mut self) {
+        ONLY_MERGES.set(self.outer);
+    }
 }
 
 /// The rows of [`PUBLISH_FORGE`] that merge a request rather than cut a release.
@@ -481,6 +499,20 @@ fn substitution_bodies(line: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// T1-11's review: the floor reads for merges alone only while a merge read lasts, and a
+    /// panic inside one leaves the thread reading the whole floor again, tags and pushes too.
+    #[test]
+    fn a_panic_in_a_merge_read_leaves_the_floor_whole() {
+        let unwound = std::panic::catch_unwind(|| {
+            let _only = OnlyMerges::on();
+            assert!(only_merges());
+            panic!("a merge read that panics");
+        });
+        assert!(unwound.is_err());
+        assert!(!only_merges());
+        assert!(release_floor_reason("git tag v1", true).is_some());
+    }
 
     /// #1068: a publishing act floored through one forge CLI is floored through the other.
     #[test]

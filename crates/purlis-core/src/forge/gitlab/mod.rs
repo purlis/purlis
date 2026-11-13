@@ -15,8 +15,8 @@ use super::backend::{
 };
 use super::checks::{self, Annotation, Checks, FailedCheck};
 use super::pr::{
-    AutoMerge, GITLAB_ACTIVE, GITLAB_NOT_MERGEABLE, Gate, Gated, Image, MergeAs, MergedAt, Opened,
-    Pinned, Pr, Ready, Request, State, check_gate, commit_named, held_to_the_forges_clock,
+    AutoMerge, GITLAB_ACTIVE, GITLAB_NOT_MERGEABLE, Gate, Gated, HeadAt, Image, MergeAs, MergedAt,
+    Opened, Pinned, Pr, Ready, Request, State, check_gate, commit_named, held_to_the_forges_clock,
     is_object_name, is_ours, is_proof_name, none_will_run, not_queued_when, not_this_saves, own_mr,
     pr_of, unknown_state,
 };
@@ -666,15 +666,28 @@ impl Requests for GitLab {
         request_of(record, &doing).map(Some)
     }
 
-    fn head(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<String, ForgeError> {
+    /// The merge request's `sha` and `target_branch`; it squashes as its `squash_on_merge`
+    /// says, which the project's squash option sets, or its own `squash` where that is absent.
+    fn head(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<HeadAt, ForgeError> {
         let api = format!("projects/{}/merge_requests/{}", quote(path), pr.number);
         let doing = format!("reading merge request !{}'s head in {path}", pr.number);
         let record = self.0.ask(caller, &Call::get(&api, LIST_TIMEOUT), &doing)?;
-        record["sha"]
+        let sha = record["sha"]
             .as_str()
             .filter(|sha| is_object_name(sha))
-            .map(str::to_owned)
-            .ok_or_else(|| ForgeError::new(format!("{doing}: GitLab named no head commit")))
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitLab named no head commit")))?;
+        let base = record["target_branch"]
+            .as_str()
+            .filter(|base| !base.is_empty())
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitLab named no target branch")))?;
+        Ok(HeadAt {
+            sha: sha.to_owned(),
+            base: base.to_owned(),
+            squash: record["squash_on_merge"]
+                .as_bool()
+                .or_else(|| record["squash"].as_bool())
+                .unwrap_or(false),
+        })
     }
 
     fn state(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<State, ForgeError> {

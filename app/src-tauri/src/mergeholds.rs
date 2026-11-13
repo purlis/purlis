@@ -5,16 +5,19 @@
 //!
 //! A chat's hook refuses it a merge and hands the request over
 //! (`purlis_core::hookwire::Ask::Merge`). Here the request is found in the project: the folder
-//! the command ran in must be a clone in the plane, of a repo the project's inventory lists, and
-//! a repo the command named must be that one. The app answers the chat at once, then reads the
-//! request's head from the forge with its own login and holds one merge ask, keyed on the repo,
-//! the number and that head, which Asks lists ([`crate::asking`]) and the event log records as a
-//! hold.
+//! the command ran in must be a clone in the plane, of a repo the project's inventory lists on
+//! that forge and host, and a repo the command named must be that one. The app reads the
+//! request's head and base from the forge with its own login, holds one merge ask keyed on the
+//! repo, the number, that head and that base, which Asks lists ([`crate::asking`]) and the event
+//! log records as a hold, and only then answers the chat (Q239). Where it raises no ask, its
+//! answer says why, and the hook's refusal is a block.
 //!
 //! **Only the person's press merges** ([`merge_held_request`]), by the app's own forge call,
-//! only at the head the ask was raised at: a head that moved is the forge's refusal, and the ask
-//! waits again. **Don't merge** ([`dont_merge_held_request`]) merges nothing. Both are the
-//! window's alone (`purlis_session_protocol::ui::WINDOW_ONLY`), and each presses as the window,
+//! only at the head the ask was raised at, by the repo's own method, and through its merge queue
+//! or train where it lands through one (`purlis_core::mergehold::ByForge`): a head that moved is
+//! the forge's refusal, a base that moved is purlis's, and the ask waits again. A forge that sets
+//! the request to merge later instead is an error the person sees. **Don't merge**
+//! ([`dont_merge_held_request`]) merges nothing. Both are the window's alone (`purlis_session_protocol::ui::WINDOW_ONLY`), and each presses as the window,
 //! which is the only answerer a command here can be: nothing a chat sends answers (V16a).
 //!
 //! **Debt** (the merge row, R-120): no window draws the ask's row yet. Asks lists it, as
@@ -28,10 +31,12 @@ use std::sync::{Mutex, PoisonError, Weak};
 
 use purlis_core::eventlog::stops::{Hold, Stop, Target};
 use purlis_core::forge::backend::Caller;
-use purlis_core::forge::pr::{MergeAs, Pr, Repo as OnForge};
+use purlis_core::forge::pr::{HeadAt, Pr, Repo as OnForge};
 use purlis_core::harness::asks::{Admitted, Answerer};
 use purlis_core::hookwire::{Answer, MergeAsk};
-use purlis_core::mergehold::{self, HeadSha, Holds, MergeForge, MergeKey, Raised, Repo, Request};
+use purlis_core::mergehold::{
+    self, Base, ByForge, HeadSha, Holds, MergeKey, Raised, Repo, Request,
+};
 
 use crate::planes::{Held, PlaneId, Planes};
 
@@ -40,7 +45,7 @@ use crate::planes::{Held, PlaneId, Planes};
 #[derive(Debug, Default)]
 pub struct MergeHolds {
     holds: Holds,
-    on: Mutex<Vec<(MergeKey, OnForge)>>,
+    on: Mutex<Vec<(Repo, OnForge)>>,
 }
 
 impl MergeHolds {
@@ -56,53 +61,102 @@ impl MergeHolds {
         self.on
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .retain(|(key, _)| waiting.iter().any(|one| one.key == *key));
+            .retain(|(repo, _)| waiting.iter().any(|one| one.key.repo == *repo));
     }
 
-    fn forge_of(&self, key: &MergeKey) -> Option<OnForge> {
+    fn forge_of(&self, repo: &Repo) -> Option<OnForge> {
         self.on
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .iter()
-            .find(|(of, _)| of == key)
+            .find(|(of, _)| of == repo)
             .map(|(_, on)| on.clone())
     }
-}
 
-/// **The app's own forge call for a press**: `merge_at` with the window's login, never a chat's,
-/// only while the request's head is the key's.
-struct AppsLogin(OnForge);
-
-impl MergeForge for AppsLogin {
-    fn merge_at(&self, key: &MergeKey) -> Result<(), String> {
-        let pr = Pr {
-            number: key.number,
-            url: String::new(),
-        };
-        let how = MergeAs {
-            squash: false,
-            title: format!("Merge request {} of {}", key.number, key.repo.as_str()),
-            message: "Merged in purlis on the person's press.".to_owned(),
-        };
-        self.0
-            .backend()
-            .merge_at(
-                &Caller::window(),
-                &self.0.path,
-                &pr,
-                key.head.as_str(),
-                &how,
-            )
-            .map(|_| ())
-            .map_err(|why| why.to_string())
+    fn on_forge(&self, repo: Repo, on: OnForge) {
+        let mut every = self.on.lock().unwrap_or_else(PoisonError::into_inner);
+        every.retain(|(of, _)| *of != repo);
+        every.push((repo, on));
     }
 }
 
-/// The repo `ask` is of, found in the project at `root`, or why nobody is asked.
-fn found(root: &Path, ask: &MergeAsk) -> Result<(OnForge, Repo), String> {
+/// **What a held merge's answer needs of its project**: the seam it is tested at, where a test
+/// stands in for the app's project and the forge.
+pub(crate) trait Project {
+    /// The project's root.
+    fn root(&self) -> &Path;
+    /// Whether chat `chat` is one this app has open.
+    fn is_open(&self, chat: u32) -> bool;
+    /// Whether chat `chat` may ask now, at the rate its brokered writes are held to.
+    fn allow(&self, chat: u32) -> Result<(), String>;
+    /// The merge asks the project holds.
+    fn holds(&self) -> &MergeHolds;
+    /// Where request `number` of the repo `on` names stands, read with the app's own login
+    /// within [`mergehold::THE_FORGE_IS_READ_WITHIN`].
+    fn read(&self, on: &OnForge, number: u64) -> Result<HeadAt, String>;
+    /// Writes one stop of chat `chat` into the event log.
+    fn record(&self, chat: u32, stop: Stop);
+    /// The asks may have moved.
+    fn moved(&self);
+}
+
+impl Project for Held {
+    fn root(&self) -> &Path {
+        Held::root(self)
+    }
+
+    fn is_open(&self, chat: u32) -> bool {
+        self.chats()
+            .open_now()
+            .iter()
+            .any(|open| open.session == chat)
+    }
+
+    fn allow(&self, chat: u32) -> Result<(), String> {
+        self.brokered().allow(chat, std::time::Instant::now())
+    }
+
+    fn holds(&self) -> &MergeHolds {
+        self.merge_holds()
+    }
+
+    fn read(&self, on: &OnForge, number: u64) -> Result<HeadAt, String> {
+        let (tell, heard) = std::sync::mpsc::channel();
+        let on = on.clone();
+        std::thread::Builder::new()
+            .name("merge-hold".to_owned())
+            .spawn(move || {
+                let pr = Pr {
+                    number,
+                    url: String::new(),
+                };
+                let read = on.backend().head(&Caller::window(), &on.path, &pr);
+                let _ = tell.send(read.map_err(|why| why.to_string()));
+            })
+            .map_err(|why| why.to_string())?;
+        heard
+            .recv_timeout(mergehold::THE_FORGE_IS_READ_WITHIN)
+            .map_err(|_| "the forge did not answer in time".to_owned())?
+    }
+
+    fn record(&self, chat: u32, stop: Stop) {
+        if let Err(why) = self.hooks().record_stop(Held::root(self), chat, stop) {
+            tracing::warn!("purlis: chat {chat}'s held merge was not recorded: {why}");
+        }
+    }
+
+    fn moved(&self) {
+        self.chats().asks_may_have_moved();
+    }
+}
+
+/// The repo `ask` is of, found in the project at `root`, or why nobody is asked: the folder it
+/// ran in is a clone in the project, of a repo the project's inventory lists on the same forge,
+/// host and path ([`mergehold::listed_in`]), and a repo the command named is that one.
+pub(crate) fn found(root: &Path, ask: &MergeAsk) -> Result<(OnForge, Repo), String> {
     let cwd = Path::new(&ask.cwd);
     if !cwd.is_absolute() {
-        return Err("purlis could not tell which clone this ran in, so nobody was asked.".into());
+        return Err("purlis could not tell which clone this ran in.".into());
     }
     purlis_core::inventory::in_plane(root, cwd)?;
     let on = OnForge::of_clone(root, cwd)?;
@@ -111,134 +165,121 @@ fn found(root: &Path, ask: &MergeAsk) -> Result<(OnForge, Repo), String> {
         && *named != repo
     {
         return Err(format!(
-            "The command names {}, but it ran in a clone of {}, so nobody was asked.",
+            "the command names {}, but it ran in a clone of {}.",
             named.as_str(),
             repo.as_str()
         ));
     }
-    let listed = std::fs::read_to_string(purlis_core::inventory::path(root))
-        .ok()
-        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
-        .map(|doc| purlis_core::inventory::listed(&doc))
-        .unwrap_or_default();
-    if !listed.iter().any(|row| {
-        row.get("path_with_namespace")
-            .and_then(serde_json::Value::as_str)
-            == Some(&on.path)
-    }) {
+    if !mergehold::listed_in(root, &on.forge, &on.path) {
         return Err(format!(
-            "{} is not one of this project's repos, so purlis does not merge in it and nobody \
-             was asked.",
-            repo.as_str()
+            "{} on {} is not one of this project's repos, so purlis does not merge in it.",
+            repo.as_str(),
+            on.forge.host
         ));
     }
     Ok((on, repo))
 }
 
-/// **Chat `ask.chat`'s hook held a merge** and hands its request over. Answered at once with the
-/// sentence the chat is told; the forge is read beside it, and the ask raised once it has been.
+/// **Chat `ask.chat`'s hook held a merge** and hands its request over. The request is found in
+/// the project, read from the forge, and its ask raised **before** the hook is answered (Q239),
+/// so the chat is told the person is asked ([`Answer::MergeHeld`]) only where an ask waits; any
+/// other answer is a block the hook's deny line records.
 ///
 /// The chat the line names is the one whose token it carries, which the listener checks before
-/// this is asked. Each chat is held to the rate its brokered writes are, so a chat cannot fill
-/// the person's Asks by asking.
+/// this is asked. Each chat is held to the rate its brokered writes are, **shared with them**: a
+/// merge ask is one more thing a chat puts before the person, and a separate allowance would
+/// let a chat fill the person's Asks twice as fast. A refusal by the rate is said and recorded.
 pub fn asked(held: &Weak<Held>, ask: &MergeAsk) -> Answer {
-    let no = |why: String| Answer::No { why };
-    let Some(strong) = held.upgrade() else {
-        return no("this project has been closed".to_owned());
-    };
-    if !strong
-        .chats()
-        .open_now()
-        .iter()
-        .any(|open| open.session == ask.chat)
-    {
-        return no(format!("chat {} is not one this app has open", ask.chat));
+    match held.upgrade() {
+        Some(held) => answer(held.as_ref(), ask),
+        None => Answer::No {
+            why: "this project has been closed.".to_owned(),
+        },
     }
-    if let Err(why) = strong.brokered().allow(ask.chat, std::time::Instant::now()) {
-        return no(why);
-    }
-    let (on, repo) = match found(strong.root(), ask) {
-        Ok(found) => found,
-        Err(why) => return no(why),
-    };
-    let request = Request {
-        repo: Some(repo),
-        number: ask.request.number,
-    };
-    let said = mergehold::handed_said(&request);
-    let (held, chat) = (held.clone(), ask.chat);
-    let spawned = std::thread::Builder::new()
-        .name("merge-hold".to_owned())
-        .spawn(move || raise(&held, chat, &request, on));
-    if spawned.is_err() {
-        return no(
-            "purlis could not read this request from the forge, so nobody was asked.".into(),
-        );
-    }
-    no(said)
 }
 
-/// Reads `request`'s head from the forge and holds chat `chat`'s ask for it.
-fn raise(held: &Weak<Held>, chat: u32, request: &Request, on: OnForge) {
-    let pr = Pr {
-        number: request.number,
-        url: String::new(),
-    };
-    let head = on.backend().head(&Caller::window(), &on.path, &pr);
-    let Some(held) = held.upgrade() else {
-        return;
+/// [`asked`], of `project`.
+pub(crate) fn answer(project: &dyn Project, ask: &MergeAsk) -> Answer {
+    match raise(project, ask) {
+        Ok(said) => Answer::MergeHeld { said },
+        Err(why) => {
+            tracing::warn!(
+                "purlis: chat {}'s held merge raised no ask: {why}",
+                ask.chat
+            );
+            Answer::No { why }
+        }
+    }
+}
+
+/// Raises chat `ask.chat`'s merge ask, and answers what the chat is told; or why nobody was
+/// asked.
+fn raise(project: &dyn Project, ask: &MergeAsk) -> Result<String, String> {
+    let chat = ask.chat;
+    if !project.is_open(chat) {
+        return Err(format!("chat {chat} is not one this app has open."));
+    }
+    project.allow(chat)?;
+    let (on, repo) = found(project.root(), ask)?;
+    let request = Request {
+        repo: Some(repo.clone()),
+        number: ask.request.number,
     };
     let resolve = |request: &Request| -> Result<MergeKey, String> {
-        let head = head.as_ref().map_err(ToString::to_string)?;
+        let at = project
+            .read(&on, request.number)
+            .map_err(|why| format!("purlis could not read it from the forge ({why})."))?;
         Ok(MergeKey {
-            repo: request
-                .repo
-                .clone()
-                .ok_or_else(|| "no repo was found".to_owned())?,
+            repo: repo.clone(),
             number: request.number,
-            head: HeadSha::try_from(head.as_str()).map_err(|why| why.to_string())?,
+            head: HeadSha::try_from(at.sha.as_str()).map_err(|why| why.to_string())?,
+            base: Base::try_from(at.base.as_str()).map_err(|why| why.to_string())?,
         })
     };
-    let holds = held.merge_holds();
-    match mergehold::asked(
+    let holds = project.holds();
+    let (_, raised) = mergehold::asked(
         &holds.holds,
         chat,
-        request,
+        &request,
         &resolve,
         crate::sandboxing::now_secs(),
-    ) {
-        Ok((key, Raised::New)) => {
-            holds
-                .on
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push((key, on));
-            let hold = Stop::Hold(Hold {
-                tool: "Bash".to_owned(),
-                target: Target::guard_arm(mergehold::REASON).ok(),
-                args: None,
-            });
-            if let Err(why) = held.hooks().record_stop(held.root(), chat, hold) {
-                tracing::warn!("purlis: chat {chat}'s held merge was not recorded: {why}");
-            }
+    )?;
+    match raised {
+        Raised::New => {
+            holds.on_forge(repo, on);
+            project.record(
+                chat,
+                Stop::Hold(Hold {
+                    tool: "Bash".to_owned(),
+                    target: Target::guard_arm(mergehold::REASON).ok(),
+                    args: None,
+                }),
+            );
             tracing::info!(
                 "purlis: chat {chat}'s merge is held; nothing is merged until the person presses \
                  Merge"
             );
-            held.chats().asks_may_have_moved();
         }
-        Ok((_, Raised::Already | Raised::TooMany)) => {}
-        Err(why) => tracing::warn!("purlis: chat {chat}'s held merge raised no ask: {why}"),
+        // Still one ask, now keyed on the head and base the forge said this time.
+        Raised::Already => holds.on_forge(repo, on),
+        Raised::TooMany => {
+            return Err(format!(
+                "chat {chat} has {} merges waiting on the person already, which is as many as \
+                 one chat may.",
+                mergehold::AT_MOST_PER_CHAT
+            ));
+        }
     }
+    project.moved();
+    Ok(mergehold::handed_said(&request))
 }
 
-/// The key a press names, checked as it is made.
-fn key_of(repo: &str, number: u32, head: &str) -> Result<MergeKey, String> {
-    Ok(MergeKey {
-        repo: Repo::try_from(repo).map_err(|why| why.to_string())?,
-        number: u64::from(number),
-        head: HeadSha::try_from(head).map_err(|why| why.to_string())?,
-    })
+/// The repo and head a press names, checked as they are made.
+fn key_of(repo: &str, head: &str) -> Result<(Repo, HeadSha), String> {
+    Ok((
+        Repo::try_from(repo).map_err(|why| why.to_string())?,
+        HeadSha::try_from(head).map_err(|why| why.to_string())?,
+    ))
 }
 
 /// The window, as the answerer of every press here: the one client that sends these commands.
@@ -273,18 +314,50 @@ pub fn pressed(
     number: u32,
     head: &str,
 ) -> Result<(), String> {
-    let key = key_of(repo, number, head)?;
-    let holds = held.merge_holds();
-    let on = holds
-        .forge_of(&key)
-        .ok_or_else(|| mergehold::NotMerged::NotHeld.to_string())?;
-    let merged = holds
-        .holds
-        .press(session, &key, the_window()?, &AppsLogin(on))
-        .map(|_| ())
-        .map_err(|why| why.to_string());
+    let merged = press(held.merge_holds(), session, repo, number, head);
     held.chats().asks_may_have_moved();
     merged
+}
+
+/// The press of chat `session`'s ask in `holds`, through the forge its repo is on.
+fn press(
+    holds: &MergeHolds,
+    session: u32,
+    repo: &str,
+    number: u32,
+    head: &str,
+) -> Result<(), String> {
+    let (key, on) = waiting(holds, session, repo, number, head)?;
+    let backend = on.backend();
+    let forge = ByForge {
+        backend: backend.as_ref(),
+        caller: Caller::window(),
+        path: on.path.clone(),
+    };
+    let (_, merged) = holds
+        .holds
+        .press(session, &key, the_window()?, &forge)
+        .map_err(|why| why.to_string())?;
+    tracing::info!("purlis: chat {session}'s held merge was pressed: {merged:?}");
+    Ok(())
+}
+
+/// The waiting ask a press names, and the forge its repo is on.
+fn waiting(
+    holds: &MergeHolds,
+    session: u32,
+    repo: &str,
+    number: u32,
+    head: &str,
+) -> Result<(MergeKey, OnForge), String> {
+    let (repo, head) = key_of(repo, head)?;
+    let not_held = || mergehold::NotMerged::NotHeld.to_string();
+    let key = holds
+        .holds
+        .key_of(session, &repo, u64::from(number), &head)
+        .ok_or_else(not_held)?;
+    let on = holds.forge_of(&repo).ok_or_else(not_held)?;
+    Ok((key, on))
 }
 
 /// **Don't merge**, pressed on chat `session`'s merge ask: it waits no more, and nothing is
@@ -300,7 +373,7 @@ pub fn dont_merge_held_request(
     head: String,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
-    let key = key_of(&repo, number, &head)?;
+    let (key, _) = waiting(held.merge_holds(), session, &repo, number, &head)?;
     if !held
         .merge_holds()
         .holds
@@ -311,3 +384,7 @@ pub fn dont_merge_held_request(
     held.chats().asks_may_have_moved();
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "mergeholds/tests.rs"]
+mod tests;

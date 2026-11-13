@@ -505,6 +505,7 @@ pub fn send(
             | Answer::Finished { .. }
             | Answer::Browsed { .. }
             | Answer::Previewed { .. }
+            | Answer::MergeHeld { .. }
             | Answer::Recorded { .. }
             | Answer::Written { .. }
             | Answer::Said { .. }
@@ -791,7 +792,8 @@ pub fn report(outcome: &str, text: &str, changed: Option<&str>) -> Result<String
             | Answer::WaitingOnMemory { .. }
             | Answer::Task(_)
             | Answer::Browsed { .. }
-            | Answer::Previewed { .. },
+            | Answer::Previewed { .. }
+            | Answer::MergeHeld { .. },
         ) => Err(CliError::internal(format!(
             "{REPORT_SAYS} the purlis app answered the report with something purlis did not \
              ask for: this command and the app may be different versions (`purlis version`)."

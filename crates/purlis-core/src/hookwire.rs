@@ -2381,6 +2381,10 @@ pub enum Answer {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         kept_for: Option<String>,
     },
+    /// **A held merge's ask waits for the person** ([`Ask::Merge`], Q239): the app read the
+    /// request from the forge and holds one ask for it, and this is what the chat is told. The
+    /// only answer on which the hook records the merge as a hold; any other, or none, is a block.
+    MergeHeld { said: String },
     /// The app will not, and this is the sentence saying why. The asker prints the command
     /// to run in a terminal and says this underneath it: a refusal the operator cannot see
     /// is a handoff that vanished.

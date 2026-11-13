@@ -8,7 +8,10 @@
 //!
 //! The app here is a listener that answers the hand-over with the core's own
 //! `purlis_core::mergehold::asked`, its forge read standing in for a fixed head: what the real
-//! app does once it has found the repo and read its head. The person's press is at the core's
+//! app does once it has found the repo and read its head. It confirms an ask with
+//! `Answer::MergeHeld`, and refuses one more than a chat may have; the hook's deny line names a
+//! hold only for a confirmed ask, and a block's reason otherwise (Q239), which the event log
+//! writes as a block. The person's press is at the core's
 //! seam, in `crates/purlis-core/tests/it/the_app_merges_on_the_persons_press_and_the_chat_never_merges.rs`.
 #![cfg(unix)]
 
@@ -17,10 +20,13 @@ use crate::support;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
+use std::time::Duration;
 
-use purlis_core::hookwire::{self, Answer, Ask, CHAT_ENV, Listener, SOCKET_ENV, TOKEN_ENV};
-use purlis_core::mergehold::{self, Holds, MergeKey};
+use purlis_core::hookwire::{
+    self, Answer, Ask, CHAT_ENV, Hearing, Listener, SOCKET_ENV, TOKEN_ENV, ToolCall,
+};
+use purlis_core::mergehold::{self, Holds, MergeKey, Raised};
 
 const CHAT: u32 = 4;
 const HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -35,6 +41,7 @@ struct Chat {
     token: Option<hookwire::ChatToken>,
     holds: Arc<Holds>,
     asked: Arc<Mutex<Vec<Ask>>>,
+    tools: Option<Mutex<mpsc::Receiver<ToolCall>>>,
 }
 
 impl Chat {
@@ -55,9 +62,27 @@ impl Chat {
         let holds = Arc::new(Holds::default());
         let asked = Arc::new(Mutex::new(Vec::new()));
         let (held, was_asked) = (Arc::clone(&holds), Arc::clone(&asked));
-        let reading = listener.each_answering(
-            Box::new(|_| {}),
-            Box::new(move |_, ask| {
+        let (tool, tools) = mpsc::channel();
+        let tool = Mutex::new(tool);
+        let reading = listener.hear(Hearing {
+            serve: purlis_core::hookwire::serve::refusing(),
+            secret_exec: Box::new(|_, _, writer| {
+                purlis_core::secrets::brokered::not_answered(writer)
+            }),
+            each: Box::new(|_| Ok(())),
+            noticed: Box::new(|_| {}),
+            saved: Box::new(|_| {}),
+            refused: Box::new(|_| Ok(())),
+            tool: Box::new(move |call| {
+                let _ = tool.lock().unwrap().send(call);
+                Ok(())
+            }),
+            blocked: Box::new(|_| {}),
+            doing: Box::new(|_| {}),
+            output: Box::new(|_| {}),
+            touching: Box::new(|_| {}),
+            permission: Box::new(|_| None),
+            answer: Box::new(move |_, ask| {
                 was_asked.lock().unwrap().push(ask.clone());
                 let Ask::Merge(merge) = ask else {
                     return Answer::No {
@@ -72,15 +97,20 @@ impl Chat {
                             .unwrap_or_else(|| "o/r".try_into().unwrap()),
                         number: request.number,
                         head: HEAD.try_into().unwrap(),
+                        base: "main".try_into().unwrap(),
                     })
                 };
-                let why = match mergehold::asked(&held, merge.chat, &merge.request, &found, 1_000) {
-                    Ok(_) => mergehold::handed_said(&merge.request),
-                    Err(why) => why,
-                };
-                Answer::No { why }
+                match mergehold::asked(&held, merge.chat, &merge.request, &found, 1_000) {
+                    Ok((_, Raised::New | Raised::Already)) => Answer::MergeHeld {
+                        said: mergehold::handed_said(&merge.request),
+                    },
+                    Ok((_, Raised::TooMany)) => Answer::No {
+                        why: "this chat has as many merges waiting as it may.".to_owned(),
+                    },
+                    Err(why) => Answer::No { why },
+                }
             }),
-        );
+        });
         Self {
             _tmp: tmp,
             _reading: Some(reading),
@@ -90,6 +120,19 @@ impl Chat {
             token: Some(token),
             holds,
             asked,
+            tools: Some(Mutex::new(tools)),
+        }
+    }
+
+    /// The guard rule the hook's deny line of the last call named, as the app's event log
+    /// reads it.
+    fn rule(&self) -> Option<String> {
+        let tools = self.tools.as_ref()?.lock().unwrap();
+        loop {
+            let call = tools.recv_timeout(Duration::from_secs(5)).ok()?;
+            if call.tool_hook == "pretooluse" {
+                return call.rule;
+            }
         }
     }
 
@@ -111,6 +154,7 @@ impl Chat {
             token: None,
             holds: Arc::default(),
             asked: Arc::default(),
+            tools: None,
         }
     }
 
@@ -217,6 +261,8 @@ fn a_held_action_is_refused_to_the_chat_and_raises_one_ask() {
             reason.contains("asked in Asks to merge request 12"),
             "{reason}"
         );
+        // A confirmed ask is a hold, which the app records itself: no block.
+        assert_eq!(chat.rule().as_deref(), Some(mergehold::REASON));
     }
     // Tried twice, asked once: one merge ask waits, for request 12 at the forge's head.
     let waiting = chat.holds.every();
@@ -256,8 +302,27 @@ fn a_held_merge_is_refused_where_no_app_answers() {
         .expect("refused with no app");
     assert!(reason.contains("Nothing was merged"), "{reason}");
     assert!(reason.contains("The app was not heard from"), "{reason}");
+    assert!(reason.contains("nobody was asked"), "{reason}");
+    assert!(!reason.contains("the person is asked in Asks"), "{reason}");
     // Outside a chat the app started, an attended merge is the person's own: A4's ground.
     let mut outside = Chat::without_an_app();
     outside.socket = PathBuf::new();
     assert_eq!(outside.denial_outside_a_chat("gh pr merge 12"), None);
+}
+
+/// Q239 (S3): a merge the app raises no ask for, here one more than a chat may have waiting, is
+/// refused with a block's reason, and the chat is never told the person is asked.
+#[test]
+fn a_merge_the_app_raises_no_ask_for_is_a_block_and_says_nobody_was_asked() {
+    let chat = Chat::new();
+    for number in 1..=mergehold::AT_MOST_PER_CHAT {
+        chat.denial(&format!("gh pr merge {number}"), "default")
+            .expect("refused");
+        assert_eq!(chat.rule().as_deref(), Some(mergehold::REASON));
+    }
+    let reason = chat.denial("gh pr merge 99", "default").expect("refused");
+    assert!(reason.contains("Nobody was asked"), "{reason}");
+    assert!(!reason.contains("The person is asked"), "{reason}");
+    assert_eq!(chat.rule().as_deref(), Some(mergehold::REASON_NOT_ASKED));
+    assert_eq!(chat.holds.every().len(), mergehold::AT_MOST_PER_CHAT);
 }

@@ -1530,6 +1530,7 @@ fn a_held_merge(session: u32) -> purlis_core::mergehold::Waits {
             head: "0123456789abcdef0123456789abcdef01234567"
                 .try_into()
                 .expect("a head"),
+            base: "main".try_into().expect("a base"),
         },
         since: 40,
     }
@@ -1572,6 +1573,32 @@ fn a_held_merge_is_one_ask_in_asks_offering_merge_and_dont_merge() {
     );
     assert!(ask.says.contains("There is no undo"), "{}", ask.says);
     assert_eq!(ask.since, Some(40));
+}
+
+#[test]
+fn a_held_merge_is_a_high_risk_ask() {
+    // Q239 (S4): never grouped, passed by triage, and its Merge asks once more before it acts.
+    let mut world = World::new();
+    world.merges = vec![a_held_merge(3)];
+    let asks = world.asks();
+    let ask = asks
+        .iter()
+        .find(|ask| ask.source == AskSource::MergeHold)
+        .expect("the merge ask");
+    assert!(high_risk(ask));
+    let risk = ask.risk.as_ref().expect("its risk");
+    assert_eq!(risk.class, RiskClass::Merge);
+    assert_eq!(risk.why, "Merges request 12 of o/r into main, with no undo");
+    assert_eq!(risk.confirm, "Merge request 12 of o/r into main?");
+}
+
+#[test]
+fn a_merge_asks_source_is_the_one_a_rule_may_never_name() {
+    // R-117: the store of rules refuses `mergehold::SOURCE`; it is the merge ask's own source.
+    assert_eq!(
+        serde_json::to_value(AskSource::MergeHold).expect("a source"),
+        purlis_core::mergehold::SOURCE
+    );
 }
 
 // Who may answer (V16).

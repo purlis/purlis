@@ -1,5 +1,5 @@
 {
-  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest, pulls: Get a pull request (head.sha)",
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest, pulls: Get a pull request (head.sha, base.ref, base.repo.allow_merge_commit, base.repo.allow_squash_merge)",
   "exchanges": [
     {
       "call": {
@@ -13,7 +13,7 @@
       },
       "reply": {
         "code": 0,
-        "out": "{\"number\": 12, \"state\": \"open\", \"head\": {\"ref\": \"feature\", \"sha\": \"0123456789abcdef0123456789abcdef01234567\"}}",
+        "out": "{\"number\": 12, \"state\": \"open\", \"head\": {\"ref\": \"feature\", \"sha\": \"0123456789abcdef0123456789abcdef01234567\"}, \"base\": {\"ref\": \"main\", \"repo\": {\"full_name\": \"acme/api\", \"allow_merge_commit\": false, \"allow_squash_merge\": true, \"allow_rebase_merge\": false}}}",
         "err": ""
       }
     }

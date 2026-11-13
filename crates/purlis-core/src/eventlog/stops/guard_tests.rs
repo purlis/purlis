@@ -616,4 +616,16 @@ fn a_held_merge_is_no_block_and_a_merge_nobody_was_asked_about_is_one() {
     let blocks = blocks_since(dir.path(), 0);
     assert_eq!(blocks.len(), 1);
     assert_eq!(blocks[0].body["source"], "guard");
+
+    // Q239 (S3): a merge the app raised no ask for (it refused, the forge read failed, the chat
+    // has too many, or no app answered) is a block too: the stop is never silent.
+    let not_asked = ToolCall {
+        rule: Some(crate::mergehold::REASON_NOT_ASKED.to_owned()),
+        ..denied_by_no_arm(4)
+    };
+    host.tool(Path::new(PLANE), &not_asked, Instant::now())
+        .unwrap();
+    let blocks = blocks_since(dir.path(), 0);
+    assert_eq!(blocks.len(), 2);
+    assert_eq!(blocks[1].body["source"], "guard");
 }

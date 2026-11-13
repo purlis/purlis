@@ -165,22 +165,26 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
     crate::hooks::Answered::of(allowed.map_or(Answer::Nothing, Answer::Say))
 }
 
-/// How long the guard waits for the app to take a held merge: the app answers before it reads
-/// the forge, so this is a socket's round trip, well inside the hook's [`BUDGET`].
-const A_MERGE_IS_TAKEN_WITHIN: Duration = Duration::from_millis(900);
+/// How long the guard waits for the app to take a held merge: the app reads the request from
+/// the forge before it answers, within [`purlis_core::mergehold::THE_FORGE_IS_READ_WITHIN`], so
+/// the chat is told the person is asked only where an ask waits (Q239). Inside the hook's
+/// [`BUDGET`].
+const A_MERGE_IS_TAKEN_WITHIN: Duration = Duration::from_millis(1_500);
 
 /// **The merge hold** (R-114, R-115, [`purlis_core::mergehold`]): the refusal of `command`,
 /// run in `cwd` by a chat the app started, where it merges a request; or `None`.
 ///
 /// Asked only of a chat the app started (it has a chat number): the person's own terminal runs
 /// no hook, and a harness they start themselves is theirs. **No answer lets the merge through**:
-/// where no app takes the hand-over, the chat is refused all the same.
+/// where no app takes the hand-over, the chat is refused all the same. **It is a hold only where
+/// the app confirms it holds the ask** ([`Answer::MergeHeld`], Q239); any other answer, or none,
+/// is refused with a block's reason, which the event log records.
 fn held_merge(command: &str, cwd: &str) -> Option<toolgate::Verdict> {
     use purlis_core::hookwire::{Answer, Ask, MergeAsk, NOTHING_ANSWERS};
-    use purlis_core::mergehold::{self, Held};
+    use purlis_core::mergehold::{self, AppSaid, Held};
     crate::session::chat_number()?;
     let held = mergehold::held(command)?;
-    let app_said = match &held {
+    let answer = match &held {
         Held::Request(request) => crate::brokered::asked(
             |chat| {
                 Ask::Merge(MergeAsk {
@@ -192,23 +196,20 @@ fn held_merge(command: &str, cwd: &str) -> Option<toolgate::Verdict> {
             A_MERGE_IS_TAKEN_WITHIN,
         )
         .ok()
-        .and_then(Result::ok)
-        .and_then(|answer| match answer {
-            Answer::No { why } if why != NOTHING_ANSWERS => Some(why),
-            _ => None,
-        }),
-        Held::Unreadable => None,
+        .and_then(Result::ok),
+        Held::Unreadable | Held::Land => None,
     };
-    let reason = match held {
-        Held::Request(_) => mergehold::REASON,
-        Held::Unreadable => mergehold::REASON_UNREADABLE,
+    let app = match &answer {
+        Some(Answer::MergeHeld { said }) => AppSaid::Held(said),
+        Some(Answer::No { why }) if why != NOTHING_ANSWERS => AppSaid::Refused(why),
+        _ => AppSaid::Unheard,
     };
     Some(toolgate::Verdict {
         // No arm of the gate: the hold is its own rule, after the gate's.
         arm: None,
-        reason: reason.to_owned(),
+        reason: mergehold::reason(&held, &app).to_owned(),
         shape: None,
-        denial: mergehold::refusal(&held, app_said.as_deref()),
+        denial: mergehold::refusal(&held, &app),
     })
 }
 

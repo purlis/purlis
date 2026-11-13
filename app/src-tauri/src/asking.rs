@@ -252,6 +252,8 @@ pub enum RiskClass {
     Delete,
     /// A credential handed from a purlis vault to a chat's program, a page or a runner (#6178).
     VaultUse,
+    /// A merge a chat's hook held, which the app performs on the person's press (Q239).
+    Merge,
 }
 
 impl From<purlis_core::askrisk::Risk> for RiskShown {
@@ -264,6 +266,7 @@ impl From<purlis_core::askrisk::Risk> for RiskShown {
                 Class::OutsideProject => RiskClass::OutsideProject,
                 Class::Delete => RiskClass::Delete,
                 Class::VaultUse => RiskClass::VaultUse,
+                Class::Merge => RiskClass::Merge,
             },
             why: risk.why,
             confirm: risk.confirm,
@@ -1964,6 +1967,9 @@ fn merge_key(session: u32, key: &purlis_core::mergehold::MergeKey) -> String {
 /// It offers Merge, which the app performs itself, and Don't merge (R-303's word). Every word is
 /// purlis's; the repo, the number and the head are the key the app raised it at. Never offered
 /// a rule: a merge is never remembered (R-117).
+///
+/// **High-risk** (Q239): never grouped, passed by keyboard triage, and its Merge asks once more
+/// before it acts ([`purlis_core::askrisk::merge_of`]).
 pub fn merge_hold(waits: &purlis_core::mergehold::Waits) -> Shown {
     let key = &waits.key;
     Shown {
@@ -1998,7 +2004,9 @@ pub fn merge_hold(waits: &purlis_core::mergehold::Waits) -> Shown {
         expires: None,
         blocks: None,
         timed_out: None,
-        risk: None,
+        risk: Some(
+            purlis_core::askrisk::merge_of(key.repo.as_str(), key.number, key.base.as_str()).into(),
+        ),
         writes: None,
         lines: None,
         last_message: None,

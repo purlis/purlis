@@ -15,7 +15,7 @@ use super::backend::{
 use super::checks::{self, Annotation, Checks, FailedCheck};
 use super::pr::{
     AutoMerge, GITHUB_AUTO_MERGE_NOT_ALLOWED, GITHUB_METHODS, GITHUB_NOTHING_TO_WAIT_FOR, Gate,
-    Gated, Image, MergeAs, MergedAt, Opened, Pinned, Pr, Ready, Request, State, check_gate,
+    Gated, HeadAt, Image, MergeAs, MergedAt, Opened, Pinned, Pr, Ready, Request, State, check_gate,
     commit_named, first, held_to_the_forges_clock, is_object_name, is_ours, none_will_run,
     not_queued_when, not_this_saves, pr_of, unknown_state,
 };
@@ -651,16 +651,28 @@ impl Requests for GitHub {
         state_of(&record, &doing)
     }
 
-    fn head(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<String, ForgeError> {
+    /// The pull request's `head.sha` and `base.ref`; it squashes where its base repo allows
+    /// squash merges and no merge commits.
+    fn head(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<HeadAt, ForgeError> {
         let (owner, name) = owner_name(path);
         let api = format!("repos/{}/{}/pulls/{}", quote(owner), quote(name), pr.number);
         let doing = format!("reading pull request #{}'s head in {path}", pr.number);
         let record = self.0.ask(caller, &Call::get(&api, LIST_TIMEOUT), &doing)?;
-        record["head"]["sha"]
+        let sha = record["head"]["sha"]
             .as_str()
             .filter(|sha| is_object_name(sha))
-            .map(str::to_owned)
-            .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub named no head commit")))
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub named no head commit")))?;
+        let base = record["base"]["ref"]
+            .as_str()
+            .filter(|base| !base.is_empty())
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub named no base branch")))?;
+        let repo = &record["base"]["repo"];
+        Ok(HeadAt {
+            sha: sha.to_owned(),
+            base: base.to_owned(),
+            squash: repo["allow_merge_commit"] == Value::Bool(false)
+                && repo["allow_squash_merge"] == Value::Bool(true),
+        })
     }
 
     fn body(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<String, ForgeError> {

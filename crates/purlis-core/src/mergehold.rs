@@ -44,6 +44,15 @@ pub const REASON: &str = "merge-hold";
 /// and the event log records it as a block.
 pub const REASON_UNREADABLE: &str = "merge-unreadable";
 
+/// The trace reason a merge is refused with where its request was read but the app raised no
+/// ask for it (Q239): it refused, could not read the forge, the chat has as many merge asks as
+/// it may, or no app answered. The event log records it as a block.
+pub const REASON_NOT_ASKED: &str = "merge-not-asked";
+
+/// How long the app waits for the forge to say where a held request stands before it answers
+/// the hook: past it, nobody is asked, and the chat is told so. Inside the hook's own wait.
+pub const THE_FORGE_IS_READ_WITHIN: std::time::Duration = std::time::Duration::from_millis(1_200);
+
 /// The most merge asks one chat has waiting at once: one more is not asked.
 pub const AT_MOST_PER_CHAT: usize = 3;
 
@@ -57,6 +66,12 @@ pub struct Invalid(&'static str);
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct Repo(String);
+
+/// **A base branch**, the one a request merges into: 1 to 255 bytes, no space or control
+/// character, not starting with `-`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct Base(String);
 
 /// **A head commit**, as a forge names one: 40 or 64 lower-case hex digits.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -100,6 +115,13 @@ macro_rules! checked {
 
 checked!(Repo, "repo", is_repo);
 checked!(HeadSha, "head commit", is_head);
+checked!(Base, "base branch", is_base);
+
+fn is_base(value: &str) -> bool {
+    (1..=255).contains(&value.len())
+        && !value.starts_with('-')
+        && !value.chars().any(|c| c.is_whitespace() || c.is_control())
+}
 
 fn is_repo(value: &str) -> bool {
     let parts: Vec<&str> = value.split('/').collect();
@@ -122,13 +144,22 @@ fn is_head(value: &str) -> bool {
             .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
-/// **What a merge ask is keyed on**: the repo, the request's number, and the head commit the
-/// forge said the request was at when the ask was raised. Never a command line.
+/// **What a merge ask is keyed on**: the repo, the request's number, and the head commit and
+/// base branch the forge said the request was at when the ask was raised (Q239: the base is
+/// pinned, so a request retargeted after the ask is not merged by it). Never a command line.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct MergeKey {
     pub repo: Repo,
     pub number: u64,
     pub head: HeadSha,
+    pub base: Base,
+}
+
+impl MergeKey {
+    /// Whether `self` and `other` are the same request, whatever its head and base.
+    fn same_request(&self, other: &MergeKey) -> bool {
+        self.repo == other.repo && self.number == other.number
+    }
 }
 
 /// **The request a held command names**: its number, and its repo where the command names one
@@ -149,6 +180,9 @@ pub enum Held {
     /// A merge purlis cannot name the request of (a raw API call, a merge with no number, two
     /// merges on one line): refused, and nobody is asked.
     Unreadable,
+    /// `purlis change land`, which lands a change's requests: refused in a chat the app started,
+    /// as the person's to do now (Q9, Q93), and nobody is asked.
+    Land,
 }
 
 /// **Whether `cmd` is held**, and which request it merges where that can be read: `None` for a
@@ -156,11 +190,28 @@ pub enum Held {
 pub fn held(cmd: &str) -> Option<Held> {
     crate::floorguard::merge_reason(cmd)?;
     let segments = crate::shellseg::segment_argv(cmd);
+    if segments.iter().any(|toks| lands(toks)) {
+        return Some(Held::Land);
+    }
     let mut found = segments.iter().filter_map(|toks| merge_of(toks));
     Some(match (found.next(), found.next()) {
         (Some(Some(request)), None) => Held::Request(request),
         _ => Held::Unreadable,
     })
+}
+
+/// Whether one segment is `purlis change land` (or its older name, `charter change land`).
+fn lands(toks: &[String]) -> bool {
+    let (prog, _, argv) = crate::shellwrap::split_env(toks);
+    let base = crate::shellwrap::base_lower(&prog);
+    let mut words = argv
+        .get(1..)
+        .unwrap_or(&[])
+        .iter()
+        .filter(|arg| !arg.starts_with('-'));
+    matches!(base.as_str(), "purlis" | "charter")
+        && words.next().map(String::as_str) == Some("change")
+        && words.next().map(String::as_str) == Some("land")
 }
 
 /// The flags of `gh pr merge` and `glab mr merge` that take a value, which is never the
@@ -233,18 +284,53 @@ fn merge_of(toks: &[String]) -> Option<Option<Request>> {
     })
 }
 
-/// **What the chat is told when its merge is held**, with what the app said where it answered:
-/// that a chat never merges, that nothing was merged, and what happens next.
-pub fn refusal(held: &Held, app_said: Option<&str>) -> String {
+/// **What the app answered about a held merge** (Q239), as the hook heard it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AppSaid<'a> {
+    /// The app read the request from the forge and holds one ask for it: what the chat is told.
+    Held(&'a str),
+    /// The app raised no ask, in its words.
+    Refused(&'a str),
+    /// No app answered in time, or none was there.
+    Unheard,
+}
+
+/// **The trace reason the hook refuses `held` with**, by what the app said (Q239): a hold only
+/// where the app confirmed it holds an ask, which it records itself; otherwise a block, which
+/// the event log records from the refusal, so a stop is never silent.
+pub fn reason(held: &Held, app: &AppSaid<'_>) -> &'static str {
+    match (held, app) {
+        (Held::Request(_), AppSaid::Held(_)) => REASON,
+        (Held::Request(_), _) => REASON_NOT_ASKED,
+        (Held::Unreadable | Held::Land, _) => REASON_UNREADABLE,
+    }
+}
+
+/// **What the chat is told when its merge is held**, with what the app said: that a chat never
+/// merges, that nothing was merged, and what happens next. It says the person is asked only
+/// where the app confirmed it holds the ask.
+pub fn refusal(held: &Held, app: &AppSaid<'_>) -> String {
     const OPENS: &str = "purlis holds merges: a chat never merges, the app does, on the \
                          person's press. Nothing was merged.";
-    match (held, app_said) {
-        (Held::Request(_), Some(said)) => format!("{OPENS} {said}"),
-        (Held::Request(request), None) => format!(
-            "{OPENS} The app was not heard from about {}{}: where it took it, the person is asked \
-             in Asks; otherwise ask them to merge it in the window. Do not merge it another way.",
+    match (held, app) {
+        (Held::Request(_), AppSaid::Held(said)) => format!("{OPENS} {said}"),
+        (Held::Request(request), AppSaid::Refused(why)) => format!(
+            "{OPENS} Nobody was asked to merge {}{}: {why} Ask the person to merge it in the \
+             window. Do not merge it another way.",
             request.number_said(),
             request.repo_said()
+        ),
+        (Held::Request(request), AppSaid::Unheard) => format!(
+            "{OPENS} The app was not heard from about {}{}, so nobody was asked: ask the person \
+             to merge it in the window. Do not merge it another way.",
+            request.number_said(),
+            request.repo_said()
+        ),
+        (Held::Land, _) => format!(
+            "{OPENS} `purlis change land` lands a change's requests, which in a chat purlis \
+             started is the person's to do now, so nobody was asked. Ask them to land it from \
+             the window, or run `gh pr merge <number>` (or `glab mr merge <number>`) for one \
+             request, and the person is asked to merge it in Asks."
         ),
         (Held::Unreadable, _) => format!(
             "{OPENS} purlis cannot tell which request this merges, so nobody was asked. Run `gh \
@@ -267,13 +353,12 @@ impl Request {
     }
 }
 
-/// **What the app tells the chat it took the merge**: the person is asked in Asks once the app
-/// has read the request from the forge, which it does after it answers, so the hook never waits
-/// on a forge.
+/// **What the app tells the chat it holds the merge**, once it has read the request from the
+/// forge and an ask waits for it.
 pub fn handed_said(request: &Request) -> String {
     format!(
-        "The person is asked in Asks to merge {}{} once purlis has read it from the forge. Carry \
-         on with other work; do not merge it another way.",
+        "The person is asked in Asks to merge {}{}. Carry on with other work; do not merge it \
+         another way.",
         request.number_said(),
         request.repo_said()
     )
@@ -294,11 +379,120 @@ pub fn asked(
     Ok((key, raised))
 }
 
-/// **The forge, as a press needs it**: merge the request `key` names, only while its head is
-/// `key.head`. The app's adapter makes this call with its own forge login, never a chat's.
+/// **Where the request stands now**, as the forge says at a press.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct At {
+    pub base: Base,
+    /// Whether the repo's own method squashes it.
+    pub squash: bool,
+}
+
+/// What a press got the forge to do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Merged {
+    /// Merged now.
+    Now,
+    /// Put in its base branch's merge queue or train, which merges it in its turn.
+    Queued,
+}
+
+/// **Whether the project's inventory lists the repo at `path` on `forge`** (Q239): a row of the
+/// same forge kind and path whose web address is on the same host, read through
+/// [`crate::inventory::load`], which refuses an inventory a link takes out of the project. A row
+/// with no web address names no host, and is not this repo.
+pub fn listed_in(root: &std::path::Path, forge: &crate::forge::Forge, path: &str) -> bool {
+    let Ok(doc) = crate::inventory::load(root, "") else {
+        return false;
+    };
+    crate::inventory::listed(&doc).iter().any(|row| {
+        let text = |field: &str| row.get(field).and_then(serde_json::Value::as_str);
+        text("path_with_namespace") == Some(path)
+            && text("forge") == Some(forge.kind.word())
+            && text("web_url")
+                .and_then(|web| url::Url::parse(web).ok())
+                .and_then(|web| {
+                    web.host_str().map(|host| match web.port() {
+                        Some(port) => format!("{host}:{port}"),
+                        None => host.to_owned(),
+                    })
+                })
+                .is_some_and(|host| host.eq_ignore_ascii_case(&forge.host))
+    })
+}
+
+/// **The forge, as a press needs it**: where the request stands now, and its merge, only while
+/// its head is `key.head`. The app's adapter ([`ByForge`]) makes these calls with its own forge
+/// login, never a chat's.
 pub trait MergeForge {
-    /// Merges, or says why the forge refused, in its words.
-    fn merge_at(&self, key: &MergeKey) -> Result<(), String>;
+    /// Where the request `key` names stands now, or why the forge could not say.
+    fn at(&self, key: &MergeKey) -> Result<At, String>;
+    /// Merges, by the repo's method (`squash`), or says why the forge refused, in its words.
+    fn merge_at(&self, key: &MergeKey, squash: bool) -> Result<Merged, String>;
+}
+
+/// **A press, through a forge backend** (Q239): a repo that lands through a merge queue or
+/// train has the request put in it, as `purlis change land` does, and any other is merged at
+/// the key's head. A forge that sets it to merge later instead, which then merges whatever
+/// head the branch has, is an error the person sees, never a merge.
+pub struct ByForge<'a> {
+    pub backend: &'a dyn crate::forge::backend::ForgeBackend,
+    pub caller: crate::forge::backend::Caller,
+    /// The repo's path on its forge.
+    pub path: String,
+}
+
+impl ByForge<'_> {
+    fn pr(key: &MergeKey) -> crate::forge::pr::Pr {
+        crate::forge::pr::Pr {
+            number: key.number,
+            url: String::new(),
+        }
+    }
+}
+
+impl MergeForge for ByForge<'_> {
+    fn at(&self, key: &MergeKey) -> Result<At, String> {
+        let now = self
+            .backend
+            .head(&self.caller, &self.path, &Self::pr(key))
+            .map_err(|why| why.to_string())?;
+        Ok(At {
+            base: Base::try_from(now.base).map_err(|why| why.to_string())?,
+            squash: now.squash,
+        })
+    }
+
+    fn merge_at(&self, key: &MergeKey, squash: bool) -> Result<Merged, String> {
+        let pr = Self::pr(key);
+        let how = crate::forge::pr::MergeAs {
+            squash,
+            title: format!("Merge request {} of {}", key.number, key.repo.as_str()),
+            message: "Merged in purlis on the person's press.".to_owned(),
+        };
+        let head = key.head.as_str();
+        let queued = self
+            .backend
+            .lands_through_queue(&self.caller, &self.path, &pr)
+            .map_err(|why| format!("purlis could not tell how it lands: {why}"))?;
+        if queued {
+            return self
+                .backend
+                .enqueue_at(&self.caller, &self.path, &pr, head, &how)
+                .map(|()| Merged::Queued)
+                .map_err(|why| why.to_string());
+        }
+        match self
+            .backend
+            .merge_at(&self.caller, &self.path, &pr, head, &how)
+            .map_err(|why| why.to_string())?
+        {
+            crate::forge::pr::MergedAt::Now => Ok(Merged::Now),
+            crate::forge::pr::MergedAt::Later(why) => Err(format!(
+                "{why}. It will merge whatever head the branch has when a pipeline passes, not \
+                 the one you were asked about. Cancel its auto-merge on the forge."
+            )),
+        }
+    }
 }
 
 /// One merge ask that waits: the chat it holds, its key, and since when, in seconds since 1970.
@@ -314,7 +508,8 @@ pub struct Waits {
 pub enum Raised {
     /// One merge ask began to wait.
     New,
-    /// The chat's ask for that request waits already: still one.
+    /// The chat's ask for that request waits already: still one, now keyed on the head and
+    /// base the forge said this time.
     Already,
     /// The chat has as many merge asks waiting as one chat may: nothing was asked.
     TooMany,
@@ -329,6 +524,13 @@ pub enum NotMerged {
     /// The forge refused it, in its words. The ask still waits.
     #[error("the forge did not merge it: {0}")]
     Forge(String),
+    /// The request now merges into another branch than the one it was asked about. The ask
+    /// still waits; the chat's next try asks again at the new base.
+    #[error(
+        "the request now merges into {now}, not {was} as it did when you were asked, so nothing \
+         was merged"
+    )]
+    BaseMoved { was: String, now: String },
 }
 
 /// **The merge asks the app holds**, until the person answers.
@@ -344,11 +546,15 @@ impl Holds {
 
     /// Holds chat `session`'s merge of `key` at `now`: one ask per chat and request however
     /// often it tries, waiting since the first, and [`AT_MOST_PER_CHAT`] of one chat's at most.
+    /// A try again keys the ask on the head and base it found (Q239), so a branch pushed since
+    /// is not a press the forge must refuse.
     pub fn raise(&self, session: u32, key: MergeKey, now: u64) -> Raised {
         let mut held = self.lock();
-        if held.iter().any(|one| {
-            one.session == session && one.key.repo == key.repo && one.key.number == key.number
-        }) {
+        if let Some(one) = held
+            .iter_mut()
+            .find(|one| one.session == session && one.key.same_request(&key))
+        {
+            one.key = key;
             return Raised::Already;
         }
         if held.iter().filter(|one| one.session == session).count() >= AT_MOST_PER_CHAT {
@@ -367,16 +573,38 @@ impl Holds {
         self.lock().clone()
     }
 
+    /// The key of chat `session`'s waiting ask for request `number` of `repo` at `head`: what
+    /// a press names, with the base the ask was raised at.
+    pub fn key_of(
+        &self,
+        session: u32,
+        repo: &Repo,
+        number: u64,
+        head: &HeadSha,
+    ) -> Option<MergeKey> {
+        self.lock()
+            .iter()
+            .find(|one| {
+                one.session == session
+                    && one.key.repo == *repo
+                    && one.key.number == number
+                    && one.key.head == *head
+            })
+            .map(|one| one.key.clone())
+    }
+
     /// **The person's press**: chat `session`'s ask for `key` is taken out, so a second press
-    /// merges nothing, and `forge` is asked to merge exactly `key`. Where the forge refuses, the
-    /// ask waits again, as it was. `by` is the human who pressed, which no chat can be.
+    /// merges nothing, the forge is read again, and asked to merge exactly `key` by the repo's
+    /// own method, only while it still merges into `key.base` (Q239). Where the base moved or
+    /// the forge refuses, the ask waits again, as it was. `by` is the human who pressed, which
+    /// no chat can be.
     pub fn press(
         &self,
         session: u32,
         key: &MergeKey,
         by: Answerer,
         forge: &dyn MergeForge,
-    ) -> Result<HumanScope, NotMerged> {
+    ) -> Result<(HumanScope, Merged), NotMerged> {
         let taken = {
             let mut held = self.lock();
             let at = held
@@ -385,11 +613,25 @@ impl Holds {
                 .ok_or(NotMerged::NotHeld)?;
             held.remove(at)
         };
-        match forge.merge_at(key) {
-            Ok(()) => Ok(by.scope()),
+        let merged = forge
+            .at(key)
+            .map_err(NotMerged::Forge)
+            .and_then(|at| {
+                if at.base == key.base {
+                    Ok(at)
+                } else {
+                    Err(NotMerged::BaseMoved {
+                        was: key.base.as_str().to_owned(),
+                        now: at.base.as_str().to_owned(),
+                    })
+                }
+            })
+            .and_then(|at| forge.merge_at(key, at.squash).map_err(NotMerged::Forge));
+        match merged {
+            Ok(merged) => Ok((by.scope(), merged)),
             Err(why) => {
                 self.lock().push(taken);
-                Err(NotMerged::Forge(why))
+                Err(why)
             }
         }
     }

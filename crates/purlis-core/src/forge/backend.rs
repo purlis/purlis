@@ -31,7 +31,7 @@ use serde_json::Value;
 use super::checks::{Annotation, Checks, FailedCheck};
 use super::cli::Cli;
 use super::pr::{
-    AutoMerge, Gate, Image, MergeAs, MergedAt, Opened, Pinned, Pr, Ready, Request, State,
+    AutoMerge, Gate, HeadAt, Image, MergeAs, MergedAt, Opened, Pinned, Pr, Ready, Request, State,
 };
 use super::transport::{Call, NoAnswer, Reply, Transport};
 use super::{Forge, ForgeError, Kind, Raised};
@@ -680,9 +680,10 @@ pub trait Requests {
     /// Where `pr` stands: open, merged or closed.
     fn state(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<State, ForgeError>;
 
-    /// The commit request `pr` of the repo at `path` is at now, as the forge names it: what a
-    /// merge ask is keyed on ([`crate::mergehold::MergeKey`]). Strict.
-    fn head(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<String, ForgeError>;
+    /// Where request `pr` of the repo at `path` stands now: the commit it is at, the branch it
+    /// merges into, and the repo's own merge method for it ([`HeadAt`]). What a merge ask is
+    /// keyed on ([`crate::mergehold::MergeKey`]). Strict.
+    fn head(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<HeadAt, ForgeError>;
 
     /// The description `pr` holds, whole: GitHub's `body`, GitLab's `description`. A request
     /// with none is the empty string (ADR 0060: `charter change push` splices its block in).
