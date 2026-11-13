@@ -3142,6 +3142,25 @@ fn chkconfig_and_deb_systemd_helper_hand_systemctl_a_unit_so_they_are_offered_no
     }
 }
 
+/// MySQL Cluster's `ndb_error_reporter` (#6324) joins its first argument, the config file's
+/// name, into the `ndb_config` command lines `system()` and backticks run, and its second, the
+/// scp user, into the `scp` command `system($cmd)` runs
+/// (`storage/ndb/tools/ndb_error_reporter.pl`, mysql-server 8.0.40). Its name starts with
+/// neither `mysql` nor `mariadb`, so no row read it.
+#[test]
+fn ndb_error_reporter_hands_a_shell_its_arguments_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("ndb_error_reporter");
+}
+
+/// MySQL Cluster's `ndb_size.pl` (#6324) joins its `--hostname` (the part before a `:`) and its
+/// `--socket` into a `DBI:mysql:` address (`storage/ndb/tools/ndb_size.pl`, mysql-server 8.0.40),
+/// which DBD::mysql splits at each `:` or `;` into attributes, `mysql_read_default_file` among
+/// them, as `mytop`'s is.
+#[test]
+fn ndb_size_puts_its_host_in_a_dbi_address_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("ndb_size.pl");
+}
+
 /// The client built with the server inside it: what `--server-arg` hands the embedded server
 /// (`--plugin-load`, `--plugin-dir`) loads code from a file it names.
 #[test]

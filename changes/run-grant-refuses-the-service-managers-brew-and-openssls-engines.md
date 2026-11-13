@@ -9,3 +9,7 @@
 - **A run's notice offers no Allow for a program reached through a link in an `init.d` folder**,
   even where that link points on out of it, as Upstart's jobs were laid out
   (`/etc/init.d/<job>` to `/lib/init/upstart-job`) (#6321).
+- **A run's notice offers no Allow for MySQL Cluster's `ndb_error_reporter` or `ndb_size.pl`**.
+  The first hands a shell the file name and the user it is given, and the second puts its host
+  into a database address that can name a file of settings the client library reads. A persona
+  can still declare either as a tool (#6324).

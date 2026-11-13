@@ -87,3 +87,23 @@ What they do is read and write the RocksDB folder their `--db` names, as the arg
 person reads say. They keep no row of their own: `mariadb-ldb` and `mysql_ldb` reach the mysql
 tools' row by their prefix, which none of their usual commands trips, and tests pin all four
 names as offered.
+
+## MySQL Cluster's ndb_error_reporter and ndb_size.pl (#6324)
+
+Both ship in MySQL's packages built with the cluster (`%{_bindir}/ndb_error_reporter` and
+`%{_bindir}/ndb_size.pl`, `packaging/rpm-sles/mysql.spec.in:1068, 1085`, under `%if
+0%{?cluster}`; installed by `storage/ndb/tools/CMakeLists.txt`, github.com/mysql/mysql-server,
+8.0.40). Checked again in their source:
+
+- **`ndb_error_reporter`** takes the config file's name as its first argument and joins it
+  unquoted into `$ndb_config --config-file=$config_file …`, which `system()` and backticks hand
+  a shell (`storage/ndb/tools/ndb_error_reporter.pl:79-122`); a file the chat names `x;<cmd>`
+  passes its `stat`. Its second argument, the scp user, is joined into
+  `scp $scp_options $config_scp_user$host:…`, which `system($cmd)` runs (`:87-90, 156-163`).
+- **`ndb_size.pl`** splits its `--hostname` at `:` and joins the host and its `--socket` into
+  `DBI:mysql:host=$host;…;mysql_socket=$socket` (`storage/ndb/tools/ndb_size.pl:466-476`), which
+  DBD::mysql splits at each `:` or `;` into attributes, `mysql_read_default_file` among them:
+  the case `mytop` was refused for on 2026-11-12. Its `--loadqueries` file is opened with `<`
+  only.
+
+Neither name starts with `mysql` or `mariadb`, so no row read them. Both are refused whole.

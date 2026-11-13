@@ -2132,6 +2132,13 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "mariadb-embedded",
     "mysql_client_test_embedded",
     "mariadb-client-test-embedded",
+    // MySQL Cluster's reporters (#6324), which MySQL's packages ship built with the cluster:
+    // `ndb_error_reporter` joins its config file's name into the `ndb_config` commands a shell
+    // runs, and its scp user into the `scp` command one runs; `ndb_size.pl` joins its
+    // `--hostname` and `--socket` into a `DBI:mysql:` address, as `mytop` does. Neither name
+    // starts with `mysql` or `mariadb`, so no row read them.
+    "ndb_error_reporter",
+    "ndb_size.pl",
     // The service managers beside `service` (#6320): `systemctl link <path>` makes a unit of the
     // file it is named, which `start` runs, and `import-environment` copies a value the run was
     // handed into the manager's environment, for every unit after it (`launchctl` is refused
