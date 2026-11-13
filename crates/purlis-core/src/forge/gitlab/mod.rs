@@ -177,11 +177,11 @@ fn no_such_group(answer: &Reply) -> bool {
         || both.contains("404 Group Not Found")
 }
 
-/// Whether GitLab answered that no protected branch has the name asked: a `404`, by its status
-/// where the transport saw one, else by `glab`'s `(HTTP 404)` or GitLab's own `404 Not found`.
-/// Never any reply that only has `404` in it: a branch named `fix-404` whose read failed is a
-/// failure, not none.
-fn no_protected_branch(answer: &Reply) -> bool {
+/// Whether GitLab answered that no branch has the name asked: a `404`, by its status where the
+/// transport saw one, else by `glab`'s `(HTTP 404)` or GitLab's own `404 Not found`. Never any
+/// reply that only has `404` in it: a branch named `fix-404` whose read failed is a failure,
+/// not none.
+fn no_branch(answer: &Reply) -> bool {
     let both = answer.both();
     answer.status == Some(404)
         || both.contains("(HTTP 404)")
@@ -710,12 +710,13 @@ impl Requests for GitLab {
         })
     }
 
-    /// The project's protected branch of that name: GitLab answers 404 where there is none
-    /// ([`no_protected_branch`]).
+    /// GitLab's own judgement of the branch (Q252): `protected` on
+    /// `repository/branches/{branch}`, which GitLab computes from every protected branch rule,
+    /// wildcards (`release/*`) included. A 404 is no such branch, so none ([`no_branch`]); a
+    /// reply with no `protected` is an error, so unknown.
     ///
     /// What this cannot see: a protected branch that lets developers merge still reads as
-    /// protecting it, and a wildcard protection (`release/*`) is not found by this exact-name
-    /// lookup, so reads as none.
+    /// protecting it.
     fn ruleset_protects(
         &self,
         caller: &Caller,
@@ -723,15 +724,19 @@ impl Requests for GitLab {
         branch: &str,
     ) -> Result<bool, ForgeError> {
         let api = format!(
-            "projects/{}/protected_branches/{}",
+            "projects/{}/repository/branches/{}",
             quote(path),
             quote(branch)
         );
         let doing = format!("reading whether {branch} is protected in {path}");
-        Ok(self
-            .0
-            .found(caller, &api, &doing, no_protected_branch)?
-            .is_some())
+        let Some(record) = self.0.found(caller, &api, &doing, no_branch)? else {
+            return Ok(false);
+        };
+        record["protected"].as_bool().ok_or_else(|| {
+            ForgeError::new(format!(
+                "{doing}: GitLab did not say whether it is protected"
+            ))
+        })
     }
 
     fn state(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<State, ForgeError> {
