@@ -3710,6 +3710,24 @@ impl Docker {
         // line. A login holding one is pinned, so it is never typed into a shell, where the
         // folder, key and all, would outlive what purlis can see of it.
         if let Some(tls) = &self.tls {
+            // The engine is held to its pin before the login is made and once more each time
+            // it is heard, as a pool over SSH holds the host key: another engine behind the same
+            // CA signs nothing in.
+            let pin = crate::tlsroute::Pin {
+                ca: tls.ca,
+                engine: tls.engine.clone().ok_or_else(|| {
+                    "purlis signs in on no runner of a machine you haven't trusted yet".to_owned()
+                })?,
+            };
+            let holds = {
+                let docker = self.clone();
+                let route = tls.route.clone();
+                move || {
+                    crate::tlsroute::engine_holds(&docker, &route, &pin)
+                        .map_err(|finding| crate::poolsetup::connect_said(&finding))
+                }
+            };
+            holds()?;
             let prepared = self.prepared().map_err(|why| why.0)?;
             let folder = prepared
                 .env
@@ -3751,7 +3769,7 @@ impl Docker {
                 pin: Some(crate::profilestore::sign_in::Pin::new(move || {
                     // The folder is the login's: it goes with the last copy of the login.
                     let _held = &held;
-                    Ok(())
+                    holds()
                 })),
             });
         }

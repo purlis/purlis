@@ -296,6 +296,9 @@ pub struct Through {
     pub route: Route,
     pub files: Files,
     pub ca: Fingerprint,
+    /// The engine's id it is pinned to, once the person trusted it; `None` while Connect is
+    /// still meeting the machine, which signs nothing in.
+    pub engine: Option<String>,
 }
 
 impl Through {
@@ -306,6 +309,7 @@ impl Through {
             route: remote.route.clone(),
             files: remote.files.clone(),
             ca: remote.pin.ca,
+            engine: Some(remote.pin.engine.clone()),
         }
     }
 

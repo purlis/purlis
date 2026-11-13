@@ -744,6 +744,7 @@ pub fn meet_tls(route: &str, files: &crate::tlsroute::Files) -> Result<CaMet, Fi
         route: route.clone(),
         files: files.clone(),
         ca: ca.fingerprint,
+        engine: None,
     };
     let material = through.material()?;
     crate::tlsroute::handshake(&route, files, &material)?;
@@ -781,6 +782,7 @@ pub fn trust_tls(
         route: route.clone(),
         files: files.clone(),
         ca: ca.fingerprint,
+        engine: None,
     };
     let material = through.material()?;
     crate::tlsroute::handshake(&route, files, &material)?;

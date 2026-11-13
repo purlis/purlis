@@ -227,6 +227,7 @@ fn a_ca_file_that_holds_the_pinned_certificate_is_handed_to_the_run_as_it_was_re
         route: Route::parse("tcp://box").unwrap(),
         files: pki.files("client"),
         ca: pki.fingerprint("ca"),
+        engine: None,
     };
     let material = through.material().unwrap();
     assert_eq!(material.ca, std::fs::read(pki.at("ca.pem")).unwrap());
@@ -247,6 +248,7 @@ fn a_ca_file_that_no_longer_matches_the_pin_refuses_the_run_naming_the_file() {
         route: Route::parse("tcp://box").unwrap(),
         files: pki.files("client"),
         ca: pinned,
+        engine: None,
     };
     match through.material() {
         Err(Finding::CaChanged {
@@ -298,6 +300,7 @@ fn a_key_file_that_holds_no_private_key_is_refused_naming_it() {
         route: Route::parse("tcp://box").unwrap(),
         files,
         ca: pki.fingerprint("ca"),
+        engine: None,
     };
     match through.material() {
         Err(Finding::TlsFile { file, why, .. }) => {
@@ -401,6 +404,7 @@ fn shake(pki: &Pki, host: &str, server: &str, client: &str) -> Result<(), Findin
         route: route.clone(),
         files: files.clone(),
         ca: pki.fingerprint("ca"),
+        engine: None,
     };
     let material = through.material().unwrap();
     let (mut ours, theirs) = std::os::unix::net::UnixStream::pair().unwrap();
@@ -535,6 +539,7 @@ fn a_key_kept_in_a_vault_is_on_disk_for_its_run_alone_even_when_the_run_fails() 
         route: Route::parse("tcp://box").unwrap(),
         files,
         ca: pki.fingerprint("ca"),
+        engine: None,
     };
     // A docker that notes what it was handed, then fails.
     let bin = tempfile::tempdir().unwrap();
@@ -579,6 +584,7 @@ fn a_ca_that_isnt_the_pinned_one_makes_no_run_folder_and_runs_nothing() {
         route: Route::parse("tcp://box").unwrap(),
         files: pki.files("client"),
         ca: pinned,
+        engine: None,
     };
     let bin = tempfile::tempdir().unwrap();
     let ran = bin.path().join("ran");
@@ -646,4 +652,53 @@ fn walk(root: &std::path::Path) -> Vec<PathBuf> {
         }
     }
     out
+}
+
+/// **A TLS pool's sign-in holds the engine to its pin, as SSH's holds the host key**: another
+/// engine behind the same CA (a machine reinstalled, or another one given the CA's certificates)
+/// is refused before the login is made, and a login made is refused once the engine changes.
+#[test]
+fn a_sign_in_over_tls_refuses_another_engine_behind_the_same_ca() {
+    let pki = Pki::new();
+    let through = Through {
+        route: Route::parse("tcp://box").unwrap(),
+        files: pki.files("client"),
+        ca: pki.fingerprint("ca"),
+        engine: Some("ENGINE-A".to_owned()),
+    };
+    let bin = tempfile::tempdir().unwrap();
+    let id = bin.path().join("id");
+    let docker = stand_in::program(
+        bin.path(),
+        "docker",
+        &format!(
+            "#!/bin/sh\nprintf '{{\"ID\":\"%s\"}}' \"$(cat '{}')\"\n",
+            id.display()
+        ),
+    );
+    let settings = tempfile::tempdir().unwrap();
+    let docker = crate::dockerpool::Docker::at(docker)
+        .with_settings_in(settings.path().join("docker-settings"))
+        .over_tls(through);
+    let sign_in = || {
+        docker.sign_in_login(
+            &crate::dockerpool::tests::made(),
+            std::path::Path::new("/var/run/docker.sock"),
+            &settings.path().join("sign-in"),
+            "work",
+            None,
+        )
+    };
+
+    std::fs::write(&id, "ENGINE-B").unwrap();
+    let refused = sign_in().unwrap_err();
+    assert!(refused.contains("isn't the one you trusted"), "{refused}");
+
+    std::fs::write(&id, "ENGINE-A").unwrap();
+    let login = sign_in().unwrap();
+    let pin = login.pin.as_ref().expect("a TLS login is pinned");
+    assert_eq!(pin.holds(), Ok(()));
+    std::fs::write(&id, "ENGINE-B").unwrap();
+    let refused = pin.holds().unwrap_err();
+    assert!(refused.contains("isn't the one you trusted"), "{refused}");
 }
