@@ -3,10 +3,12 @@
 
 /// <reference types="node" />
 /**
- * **The purlis UI skill says what the repository has** (#2928, spec #2897 story 76).
+ * **The guide to building purlis's UI says what the repository has** (#2928, spec #2897 story
+ * 76; #5725).
  *
- * `purlis-building-ui` is the skill an agent loads to build the window, and it points into the
- * docs rather than restating them. A pointer that has gone stale sends the agent nowhere, so
+ * `docs/building-ui.md` is what a chat reads to build the window (it was the built-in skill
+ * `purlis-building-ui` until the person retired that skill on 2026-11-12), and it points into the
+ * docs rather than restating them. A pointer that has gone stale sends the chat nowhere, so
  * every one is held here, as the purlis-theme skill's commands are held by `purlis theme --help`:
  *
  * - each repository path it names in code exists, and each `#anchor` after a doc is a heading of
@@ -21,13 +23,10 @@ import { describe, expect, it } from "vitest";
 
 const APP = process.cwd();
 const REPO = join(APP, "..");
-const SKILL = readFileSync(
-  join(APP, "src-tauri", "plugin", "skills", "purlis-building-ui", "SKILL.md"),
-  "utf8",
-);
+const GUIDE = readFileSync(join(REPO, "docs", "building-ui.md"), "utf8");
 const PARTS = readFileSync(join(REPO, "crates", "purlis-core", "src", "theme", "parts.rs"), "utf8");
 
-/** Every piece of code in the skill: its code spans, and each line of a fenced block. */
+/** Every piece of code in the guide: its code spans, and each line of a fenced block. */
 function code(page: string): string[] {
   const out: string[] = [];
   let fenced = false;
@@ -69,9 +68,9 @@ function first(pattern: RegExp, text: string, what: string): string {
 /** A path from the repository's root, with no placeholder in it. */
 const ROOTS = /^(app|crates|docs|tools)\//;
 
-describe("the purlis UI skill", () => {
+describe("the guide to building purlis's UI", () => {
   it("names only paths the repository has, and headings its docs have", () => {
-    const paths = code(SKILL)
+    const paths = code(GUIDE)
       .flatMap((piece) => piece.split(/\s+/))
       .filter((word) => ROOTS.test(word) && !word.includes("<"));
     expect(paths.length).toBeGreaterThan(10);
@@ -87,7 +86,7 @@ describe("the purlis UI skill", () => {
     const scripts = Object.keys(
       (JSON.parse(readFileSync(join(APP, "package.json"), "utf8")) as { scripts: object }).scripts,
     );
-    const named = code(SKILL).flatMap((piece) =>
+    const named = code(GUIDE).flatMap((piece) =>
       [...piece.matchAll(/npm run ([\w:-]+)/g)].map((hit) => hit[1]),
     );
     expect(named.length).toBeGreaterThan(0);
@@ -99,14 +98,14 @@ describe("the purlis UI skill", () => {
     const names = [...block.matchAll(/State::(\w+)/g)].map((hit) =>
       first(new RegExp(`Self::${hit[1]} => "([a-z-]+)"`), PARTS, `name of State::${hit[1]}`),
     );
-    const listed = first(/\*\*The states are a closed list\*\*:([^.]*)\./s, SKILL, "state list");
+    const listed = first(/\*\*The states are a closed list\*\*:([^.]*)\./s, GUIDE, "state list");
     const said = [...listed.matchAll(/`([a-z-]+)`/g)].map((hit) => hit[1]);
     expect(said).toEqual(names);
   });
 
   it("tells a family to write the manifest's NEXT", () => {
     expect(PARTS).toMatch(/pub const NEXT: u32 = VERSION \+ 1;/);
-    expect(SKILL).toContain("`super::NEXT`");
-    expect(SKILL).toContain("`parts::NEXT`");
+    expect(GUIDE).toContain("`super::NEXT`");
+    expect(GUIDE).toContain("`parts::NEXT`");
   });
 });

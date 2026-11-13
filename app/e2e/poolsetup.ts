@@ -96,3 +96,37 @@ export async function watchTheTabs(): Promise<void> {
     }).observe(document.body, { subtree: true, childList: true });
   }, TABS);
 }
+
+/**
+ * **Picks the machine called `name` on Connect** (#6269), where Connect lists the machines the
+ * person's SSH settings and Podman connections name: the radio of that name in the group the words
+ * "Which machine?" name, chosen unless it is chosen already. A React Aria radio's input is drawn
+ * hidden, so its row is pressed. Where Connect lists no machine, there is nothing to pick.
+ */
+export async function pickTheMachine(name: string, timeout = 30_000): Promise<void> {
+  await browser
+    .waitUntil(
+      async () =>
+        browser.execute((wanted: string) => {
+          const group = Array.from(document.querySelectorAll('[role="radiogroup"]')).find(
+            (one) =>
+              (one.getAttribute("aria-labelledby") ?? "")
+                .split(" ")
+                .map((id) => document.getElementById(id)?.textContent?.trim() ?? "")
+                .join(" ") === "Which machine?",
+          );
+          if (!group) return true;
+          const row = Array.from(group.querySelectorAll("label")).find((one) =>
+            (one.textContent ?? "").startsWith(wanted),
+          );
+          const radio = row?.querySelector<HTMLInputElement>('input[type="radio"]');
+          if (!row || !radio) return false;
+          if (!radio.checked) row.click();
+          return radio.checked;
+        }, name),
+      { timeout, interval: 500 },
+    )
+    .catch(async () => {
+      throw new Error(`no machine ${name} to pick: ${await theStepSays()}`);
+    });
+}

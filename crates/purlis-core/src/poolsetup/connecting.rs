@@ -21,6 +21,8 @@ use crate::sshroute::{HostKey, Pin, Route};
 pub struct Connecting {
     /// The machine picked or typed: Docker's spelling, as the person gave it.
     pub route: Option<String>,
+    /// The key file it signs in with, where it was picked from a Podman connection (#6269).
+    pub identity: Option<String>,
     /// The key the machine showed at the last press of Connect to, in this read only.
     pub met: Option<Met>,
     /// The pin the person trusted, or the pool's.
@@ -57,6 +59,8 @@ impl From<&HostKey> for KeyShown {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct Machine {
     pub route: Option<String>,
+    /// The key file the route signs in with, where a Podman connection names one (#6269).
+    pub identity: Option<String>,
     pub host: Option<String>,
     /// The key it showed, to confirm before trusting it.
     pub key: Option<KeyShown>,
@@ -83,9 +87,10 @@ pub(super) fn reading(connect: &Connecting) -> (Reading, Machine, Option<&'stati
     let host = host_of(connect.route.as_deref());
     let mut machine = Machine {
         route: connect.route.clone(),
+        identity: connect.identity.clone(),
         host: connect.route.as_ref().map(|_| host.clone()),
         trusted: connect.trusted.as_ref().map(|pin| (&pin.host_key).into()),
-        engine: connect.trusted.as_ref().map(|pin| pin.engine.clone()),
+        engine: connect.trusted.as_ref().map(|pin| pin.engine.shown()),
         ..Machine::default()
     };
     if let Some(finding) = &connect.finding {
@@ -222,6 +227,7 @@ pub fn cause(finding: &Finding) -> &'static str {
         Finding::NotAllowed { .. } => "not-allowed",
         Finding::EngineSilent { .. } => "engine-silent",
         Finding::EngineChanged { .. } => "pool-engine-changed",
+        Finding::NeedsPodman { .. } => "needs-podman",
         Finding::Here(_) => "here",
     }
 }
@@ -331,12 +337,21 @@ fn said_with_next(finding: &Finding) -> (String, Option<Action>) {
             ),
             check_again(),
         ),
-        Finding::EngineChanged { host, .. } => (
-            format!(
-                "The Docker engine on {host} isn't the one you trusted: it was reset or \
-                 reinstalled. purlis makes and links no runner there until you check it and \
-                 trust it again. Runners made on the old engine aren't on this one."
-            ),
+        Finding::EngineChanged { host, podman, .. } => (
+            if *podman {
+                format!(
+                    "Podman on {host} isn't the one you trusted: its store is somewhere else now, \
+                     or it was reset or reinstalled. purlis makes and links no runner there until \
+                     you check it and trust it again. Runners made on the old store aren't on \
+                     this one."
+                )
+            } else {
+                format!(
+                    "The Docker engine on {host} isn't the one you trusted: it was reset or \
+                     reinstalled. purlis makes and links no runner there until you check it and \
+                     trust it again. Runners made on the old engine aren't on this one."
+                )
+            },
             Some(Action {
                 id: ActionId::CheckAndTrustAgain,
                 label: "Check and trust again".to_owned(),
@@ -344,6 +359,14 @@ fn said_with_next(finding: &Finding) -> (String, Option<Action>) {
                 command: None,
                 url: None,
             }),
+        ),
+        Finding::NeedsPodman { host } => (
+            format!(
+                "{host} runs Podman, and purlis reaches Podman with Podman's own client. Install \
+                 Podman on {}, then check again.",
+                super::this_machine()
+            ),
+            check_again(),
         ),
         Finding::Here(why) => (why.clone(), check_again()),
     }
@@ -388,15 +411,24 @@ pub fn by_hand(route: Option<&str>) -> super::See {
     }
 }
 
+/// **The route Connect keeps, read**: `route` as it was given, signing in with `identity` where
+/// a Podman connection names one (#6269).
+pub fn route_of(route: &str, identity: Option<&std::path::Path>) -> Result<Route, Finding> {
+    let route = Route::parse(route).map_err(Finding::Here)?;
+    match identity {
+        Some(identity) => route.with_identity(identity).map_err(Finding::Here),
+        None => Ok(route),
+    }
+}
+
 /// **What Connect to finds**: the key the machine at `route` shows, met with nothing signed in,
 /// and the one the person's own ssh knows for it. Nothing is kept.
-pub fn meet(docker: &crate::dockerpool::Docker, route: &str) -> Result<Met, Finding> {
-    let route = Route::parse(route).map_err(Finding::Here)?;
+pub fn meet(docker: &crate::dockerpool::Docker, route: &Route) -> Result<Met, Finding> {
     let ssh = crate::sshroute::ssh_here().map_err(Finding::Here)?;
     let (_, settings_in) = crate::sshroute::pool::folders_for(docker)?;
-    let resolved = crate::sshroute::connect::resolve(&ssh, &route)?;
-    crate::sshroute::connect::reachable(&route, &resolved)?;
-    let key = crate::sshroute::connect::meet(&ssh, &route, &settings_in)?;
+    let resolved = crate::sshroute::connect::resolve(&ssh, route)?;
+    crate::sshroute::connect::reachable(route, &resolved)?;
+    let key = crate::sshroute::connect::meet(&ssh, route, &settings_in)?;
     let home = crate::envvar::var_os("HOME").map(std::path::PathBuf::from);
     let known = crate::sshroute::connect::known_to_the_person(&resolved, home.as_deref());
     Ok(Met { key, known })
@@ -408,15 +440,14 @@ pub fn meet(docker: &crate::dockerpool::Docker, route: &str) -> Result<Met, Find
 /// socket, and the pin. Nothing is kept here: [`super::trusted`] keeps it.
 pub fn trust(
     docker: &crate::dockerpool::Docker,
-    route: &str,
+    route: &Route,
     fingerprint: &str,
 ) -> Result<Remote, Finding> {
-    let route = Route::parse(route).map_err(Finding::Here)?;
     let ssh = crate::sshroute::ssh_here().map_err(Finding::Here)?;
     let (engine_links, settings_in) = crate::sshroute::pool::folders_for(docker)?;
-    let resolved = crate::sshroute::connect::resolve(&ssh, &route)?;
-    crate::sshroute::connect::reachable(&route, &resolved)?;
-    let key = crate::sshroute::connect::meet(&ssh, &route, &settings_in)?;
+    let resolved = crate::sshroute::connect::resolve(&ssh, route)?;
+    crate::sshroute::connect::reachable(route, &resolved)?;
+    let key = crate::sshroute::connect::meet(&ssh, route, &settings_in)?;
     if key.fingerprint() != fingerprint.trim() {
         // What was confirmed isn't what shows now: confirmed again, never trusted unseen.
         return Err(Finding::Here(format!(
@@ -430,7 +461,7 @@ pub fn trust(
     let connecting = crate::sshroute::connecting_name();
     let found = crate::sshroute::connect::probe(
         &ssh,
-        &route,
+        route,
         &connecting,
         &key,
         &settings_in,
@@ -444,7 +475,7 @@ pub fn trust(
         engine_links: &engine_links,
         settings_in: &settings_in,
     };
-    let engine = crate::sshroute::connect::engine_id(docker, &opening)?;
+    let engine = crate::sshroute::connect::engine_pin(docker, &opening)?;
     Ok(Remote {
         route: found,
         pin: Pin {

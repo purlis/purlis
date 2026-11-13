@@ -6,6 +6,7 @@ import { dequal } from "dequal/lite";
 import { commands, type PlaneId, type StaleClone, type StaleFix } from "./bindings";
 import type { StandingNotice } from "./ChipNotices";
 import { Notice, type NoticeAction } from "./Notice";
+import { AFTER_GIT_MOVED_MS } from "./afterGitMoved";
 import { followPlaneChanged, GIT } from "./planeChanged";
 import { useOnWindowFocus } from "./windowFocused";
 
@@ -118,7 +119,8 @@ export function useStaleClones({
     };
     readAgain.current = read;
     read();
-    const stop = followPlaneChanged([plane], () => GIT, read);
+    // At its own turn after a move (`afterGitMoved.ts`, H8), not in the second the others start.
+    const stop = followPlaneChanged([plane], () => GIT, read, AFTER_GIT_MOVED_MS.staleClones);
     return () => {
       live = false;
       readAgain.current = () => {};

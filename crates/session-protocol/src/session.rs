@@ -55,6 +55,7 @@
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use futures::future::BoxFuture;
@@ -3498,6 +3499,13 @@ pub trait Host: Send + Sync + 'static {
         async {}
     }
 
+    /// A call `word` this host took up was answered: it `waited` behind the earlier calls of
+    /// its lane first, then took `ran` to carry out. What a host says in its log of an answer
+    /// that came late (#6437), so a slow one says which of the two held it.
+    fn answered(&self, word: &'static str, waited: Duration, ran: Duration) {
+        let _ = (word, waited, ran);
+    }
+
     /// Every event after `since`, then each as it is written, until the receiver is dropped.
     fn subscribe(
         &self,
@@ -3613,9 +3621,16 @@ async fn answer<H: Host>(
                 match serde_json::from_slice::<Frame>(&frame) {
                     Ok(Frame::Call(Call { id, command })) => {
                         let (host, peer) = (Arc::clone(host), Arc::clone(peer));
+                        let (word, came) = (command.word(), Instant::now());
                         calls.take(
                             Lane::of(&command),
-                            Box::pin(async move { carry_out(id, command, &*host, &peer).await }),
+                            // Begun only once its lane's earlier calls are done.
+                            Box::pin(async move {
+                                let began = Instant::now();
+                                let finished = carry_out(id, command, &*host, &peer).await;
+                                host.answered(word, began - came, began.elapsed());
+                                finished
+                            }),
                         );
                         None
                     }

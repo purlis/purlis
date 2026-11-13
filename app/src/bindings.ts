@@ -4180,12 +4180,17 @@ export const commands = {
 	 *  **Keeps the machine picked or typed on Connect**, or forgets it (#6266). It contacts
 	 *  nothing.
 	 */
-	poolSetupMachine: (route: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_machine", { route })),
+	poolSetupMachine: (route: string | null, identity: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_machine", { route, identity })),
 	/**
 	 *  **The machines the person's SSH settings name**, for Connect to offer (#6266). It contacts
 	 *  nothing.
 	 */
 	poolSetupSshHosts: () => typedError<string[], string>(__TAURI_INVOKE("pool_setup_ssh_hosts")),
+	/**
+	 *  **The person's Podman connections** (`podman system connection list`), for Connect to offer
+	 *  (#6269). It contacts no machine: this machine's `podman` lists what it keeps.
+	 */
+	poolSetupPodmanConnections: () => typedError<PoolSetupPodmanConnection[], string>(__TAURI_INVOKE("pool_setup_podman_connections")),
 	/**
 	 *  **Connect to <machine>** (#6266, ADR 0123 §3): the key the machine Connect keeps shows, met
 	 *  with nothing signed in, and what is read, with it laid over Connect. Nothing is kept.
@@ -13807,6 +13812,8 @@ export type PoolSetupKey = {
 /**  The machine of a pool on another machine, as Connect shows it (#6266). */
 export type PoolSetupMachine = {
 	route: string | null,
+	/**  The key file the route signs in with, where a Podman connection names one (#6269). */
+	identity: string | null,
 	host: string | null,
 	/**  The key it showed at Connect to, to confirm. */
 	key: PoolSetupKey | null,
@@ -13841,6 +13848,16 @@ export type PoolSetupPart = {
 	done: boolean,
 	line: string,
 	next: PoolSetupAction | null,
+};
+
+/**
+ *  A connection of Podman's own, as Connect offers it (#6269): its name, the route to that
+ *  machine's Podman socket, and the key file it signs in with, where it names one.
+ */
+export type PoolSetupPodmanConnection = {
+	name: string,
+	route: string,
+	identity: string | null,
 };
 
 /**  One of this machine's profiles against a pool's limit (#4482). */

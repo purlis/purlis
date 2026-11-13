@@ -135,15 +135,15 @@
     },
     {
       "query": "Add a new token to a component family in app/src/ui of the purlis repo.",
-      "source": "Boundary (the plane's building-purlis-ui skill, decisions.md of spec #5714 Q30): code in a purlis checkout; a plain negative."
+      "source": "Boundary (building purlis's own window, which docs/building-ui.md covers since purlis-building-ui was retired, #5725; decisions.md of spec #5714 Q30): code in a purlis checkout; a plain negative."
     },
     {
       "query": "Write a story and a screenshot baseline for the new Notice variant in purlis's app.",
-      "source": "Boundary (the plane's building-purlis-ui skill, decisions.md of spec #5714 Q30): code in a purlis checkout; a plain negative."
+      "source": "Boundary (building purlis's own window, which docs/building-ui.md covers since purlis-building-ui was retired, #5725; decisions.md of spec #5714 Q30): code in a purlis checkout; a plain negative."
     },
     {
       "query": "Change the theme generator code in the purlis repo so it emits a new CSS property.",
-      "source": "Boundary (the plane's building-purlis-ui skill, decisions.md of spec #5714 Q30): code in a purlis checkout; a plain negative; the theme code, not a theme."
+      "source": "Boundary (building purlis's own window, which docs/building-ui.md covers since purlis-building-ui was retired, #5725; decisions.md of spec #5714 Q30): code in a purlis checkout; a plain negative; the theme code, not a theme."
     },
     {
       "query": "Change my code editor's colour theme to something darker.",

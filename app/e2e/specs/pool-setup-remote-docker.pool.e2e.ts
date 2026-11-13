@@ -8,6 +8,7 @@ import {
   MAKING,
   TRYING,
   on,
+  pickTheMachine,
   press,
   pressTheOneOf,
   tabsAdded,
@@ -55,6 +56,9 @@ describe("Pool setup on Docker on another machine", () => {
 
     // Connect: the address typed, the key read, then trusted.
     await on("Connect");
+    // Another machine than those this one's SSH settings or Podman connections name, where it
+    // names any.
+    await pickTheMachine("Another machine");
     const address = await $("aria/Its address");
     await address.waitForDisplayed();
     await address.setValue(ADDRESS);
