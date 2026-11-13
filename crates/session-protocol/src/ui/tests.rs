@@ -222,3 +222,37 @@ fn a_workspaces_own_files_are_written_from_the_window_alone() {
         assert!(!served_on_a_link(command), "{command}");
     }
 }
+
+/// Q251: **No sandbox is chosen only in the window on this Mac**: `open_repo` and
+/// `create_project` asking for `protection: off` are not a link's to ask, whatever else they
+/// say; any other level, or none, is the command's to answer.
+#[test]
+fn choosing_no_sandbox_at_setup_is_not_a_links_to_ask() {
+    for method in ["open_repo", "create_project"] {
+        assert!(served_on_a_link(method), "{method}");
+        assert!(
+            chooses_no_sandbox(
+                method,
+                &serde_json::json!({"path": "/home/dev/widget", "protection": "off"})
+            ),
+            "{method}"
+        );
+        for args in [
+            serde_json::json!({"path": "/home/dev/widget", "protection": "floor"}),
+            serde_json::json!({"path": "/home/dev/widget", "protection": "on"}),
+            serde_json::json!({"path": "/home/dev/widget", "protection": null}),
+            serde_json::json!({"path": "/home/dev/widget"}),
+        ] {
+            assert!(!chooses_no_sandbox(method, &args), "{method} {args}");
+        }
+    }
+    assert!(!chooses_no_sandbox(
+        "rename_chat",
+        &serde_json::json!({"protection": "off"})
+    ));
+    // The sentence names no vault and no person: it is the same for every project.
+    assert_eq!(
+        NO_SANDBOX_IS_THE_WINDOWS,
+        "No sandbox is chosen in purlis's window on this Mac."
+    );
+}

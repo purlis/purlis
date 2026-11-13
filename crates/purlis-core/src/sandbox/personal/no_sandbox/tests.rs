@@ -222,6 +222,18 @@ fn a_team_vault_still_refuses_no_sandbox_when_git_fails() {
     use std::os::unix::fs::PermissionsExt;
     let plane = a_project();
     a_team_vault(&plane, "ci");
+    // Committed, so a git that worked would name Dana Okafor: only the stand-in says nothing.
+    assert!(crate::testgit::run_unconfigured(plane.root(), &["init", "-q"]).ok());
+    commit_as(
+        plane.root(),
+        "Dana Okafor",
+        &["vaults.json"],
+        "the ci vault",
+    );
+    assert_eq!(
+        report(&plane.ctx).unwrap().refused.unwrap().owner,
+        "Dana Okafor"
+    );
     let failing = plane.root().join("failing-git");
     std::fs::write(&failing, "#!/bin/sh\nexit 128\n").unwrap();
     std::fs::set_permissions(&failing, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -234,5 +246,156 @@ fn a_team_vault_still_refuses_no_sandbox_when_git_fails() {
         panic!("No sandbox was kept when git failed");
     };
     assert!(refusal.contains("your team"), "{refusal}");
+    assert!(!refusal.contains("Dana Okafor"), "{refusal}");
     assert_eq!(level_written(plane.root()), None);
+}
+
+/// Q251: **a move that leaves the plain file behind is a failed move**: the vault is in the
+/// keychain, but its file is still on disk for a chat with no sandbox to read, so the answer
+/// names the file and the level stays unwritten.
+#[cfg(unix)]
+#[test]
+fn a_move_that_leaves_the_plain_file_behind_leaves_the_level_unwritten() {
+    use std::os::unix::fs::PermissionsExt;
+    let plane = a_project();
+    let held = plane.ctx.vaults_dir().join("held");
+    std::fs::create_dir_all(&held).unwrap();
+    let file = held.join("kept-behind.json");
+    std::fs::write(&file, json!({"k": "kept-value-43"}).to_string()).unwrap();
+    plane.register(
+        "kept",
+        "plain-file",
+        json!({"file": file.to_string_lossy()}),
+        None,
+    );
+    // The file's folder lets it be read and not removed.
+    std::fs::set_permissions(&held, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let kept = chosen_at_setup_in(&plane.ctx, Choice::Off);
+
+    std::fs::set_permissions(&held, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let AtSetup::NotKept(said) = kept else {
+        panic!("No sandbox was kept with a vault's plain file left on disk");
+    };
+    assert!(said.contains("kept-behind.json"), "{said}");
+    assert_eq!(level_written(plane.root()), None);
+    assert!(file.exists());
+}
+
+/// Q251: **a move reads only files inside the vaults folder**: this machine's registration
+/// pointing a plain-file vault at a file elsewhere (the repo's own, where the plane is the
+/// repo, or one reached through `..`) is refused, not moved: the file stays, its registration
+/// stays a plain file, and no level is written.
+#[test]
+fn a_vault_file_outside_the_vaults_folder_is_refused_not_moved() {
+    let at: [fn(&Plane) -> std::path::PathBuf; 2] = [
+        |plane| plane.root().join("config").join("secrets.json"),
+        |plane| plane.ctx.vaults_dir().join("..").join("elsewhere.json"),
+    ];
+    for at in at {
+        let plane = a_project();
+        let file = at(&plane);
+        let outside = file.display().to_string();
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, json!({"k": "repo-value-53"}).to_string()).unwrap();
+        plane.register(
+            "elsewhere",
+            "plain-file",
+            json!({"file": file.to_string_lossy()}),
+            None,
+        );
+        plane.plain("personal", json!({"k": "personal-value-29"}));
+
+        let kept = chosen_at_setup_in(&plane.ctx, Choice::Off);
+
+        let AtSetup::NotKept(said) = kept else {
+            panic!("No sandbox moved {outside}, outside the vaults folder");
+        };
+        assert!(said.contains("elsewhere"), "{outside}: {said}");
+        assert_eq!(level_written(plane.root()), None, "{outside}");
+        assert!(file.exists(), "{outside} was removed");
+        for name in ["elsewhere", "personal"] {
+            assert_eq!(
+                registry::vault(&plane.ctx, name).unwrap().provider,
+                "plain-file",
+                "{outside}: {name} moved"
+            );
+        }
+    }
+}
+
+/// R-293, Q251: **the first vault moves and the second fails**: the first stays in the
+/// keychain, as a vault moves whole or not at all, and the level stays unwritten.
+#[test]
+fn a_second_vault_that_fails_to_move_leaves_the_level_unwritten() {
+    let plane = a_project();
+    plane.plain("aaa-moves", json!({"k": "moves-value-71"}));
+    let broken = plane.plain("zzz-broken", json!({}));
+    std::fs::write(&broken, "this is not a vault").unwrap();
+
+    let kept = chosen_at_setup_in(&plane.ctx, Choice::Off);
+
+    let AtSetup::NotKept(said) = kept else {
+        panic!("No sandbox was kept over a vault that did not move");
+    };
+    assert!(said.contains("zzz-broken"), "{said}");
+    assert_eq!(level_written(plane.root()), None);
+    let moved = registry::vault(&plane.ctx, "aaa-moves").unwrap();
+    assert_eq!(moved.provider, "keyring");
+    assert_eq!(
+        keyring::get(&plane.ctx, &moved, "k").unwrap(),
+        "moves-value-71"
+    );
+    assert_eq!(
+        registry::vault(&plane.ctx, "zzz-broken").unwrap().provider,
+        "plain-file"
+    );
+}
+
+/// Q251, Q250: **the owner's name is display only**: bidirectional and other format
+/// characters in the commit's author are not said.
+#[test]
+fn the_owner_s_name_is_said_without_format_characters() {
+    let plane = a_project();
+    a_team_vault(&plane, "ci");
+    assert!(crate::testgit::run_unconfigured(plane.root(), &["init", "-q"]).ok());
+    commit_as(
+        plane.root(),
+        "\u{202E}Dana\u{200B} Okafor\u{2066}",
+        &["vaults.json"],
+        "the ci vault",
+    );
+
+    let refused = report(&plane.ctx).unwrap().refused.unwrap();
+
+    assert_eq!(refused.owner, "Dana Okafor");
+}
+
+/// Q250: **a vault named as an entry's field is blamed on its own entry**: a vault called
+/// `provider` or `config` is found as a key of `vaults`, never as a field of another vault's
+/// entry that someone else committed.
+#[test]
+fn a_vault_named_as_an_entry_s_field_is_blamed_on_its_own_entry() {
+    for name in ["provider", "config"] {
+        let plane = a_project();
+        // Lee Park commits the file with another vault in it first.
+        let earlier = json!({"vaults": {"aaa-first": {"provider": "keyring", "config": {}}}});
+        let text = serde_json::to_string_pretty(&earlier).unwrap();
+        std::fs::write(plane.ctx.shared_registry(), format!("{text}\n")).unwrap();
+        assert!(crate::testgit::run_unconfigured(plane.root(), &["init", "-q"]).ok());
+        commit_as(
+            plane.root(),
+            "Lee Park",
+            &["vaults.json"],
+            "the first vault",
+        );
+        // Dana Okafor adds the team's plain-file vault after it.
+        a_team_vault(&plane, name);
+        commit_as(plane.root(), "Dana Okafor", &["vaults.json"], "the vault");
+
+        let refused = report(&plane.ctx).unwrap().refused.unwrap();
+
+        assert_eq!(refused.vault, name);
+        assert_eq!(refused.owner, "Dana Okafor", "{name}");
+    }
 }
