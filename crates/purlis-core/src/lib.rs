@@ -14,6 +14,7 @@ pub mod artifact;
 pub mod askoutcome;
 pub mod askrisk;
 pub mod askwait;
+pub mod attendance;
 pub mod autosave;
 pub mod awareness;
 pub mod boundedrun;
