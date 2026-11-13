@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794561472435,
+  "lastUpdate": 1794565464855,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -48174,6 +48174,48 @@ window.BENCHMARK_DATA = {
             "value": 102.375733,
             "unit": "ms",
             "extra": "median of 5 runs: 100.439, 101.735, 102.376, 102.490, 102.749 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "347406a94a333cc95e6529a071c153f699d2e0f5",
+          "message": "Regenerate accepts a code folder only below a workspace's root or as a skill's own folder (#6120) (#6255)\n\n* Regenerate accepts a code folder only below a workspace's root or as a skill's own folder (#6120)\n\nAn allowlist, by the operator's ruling of 2026-11-11 (decision A): the\nplane's workspaces/, personas/ and skills/, a workspace's root and every\nother plane folder are refused with one sentence. A test per refused and\naccepted shape, each seen red. ADR 0122 amended; Security fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M74PN5V1CTZB2A83XPAAF8BT\nPurlis-Persona: steward\n\n* fix(artifact): a code folder whose name is not UTF-8 is refused, never read as empty (#6120)\n\nRead as \"\", workspaces/<it>/... checked workspaces/ itself as the workspace,\nwhich passed, and skipped the dot-folder rule. The allowlist now refuses a\nshape it cannot read. Test seen red on the old mapping.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6ZPW5F9817YGADZBAKV8ZKA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-13T08:36:15Z",
+          "tree_id": "2522df0d64db36eb8b5a9b7d056135040c908e81",
+          "url": "https://github.com/purlis/purlis/commit/347406a94a333cc95e6529a071c153f699d2e0f5"
+        },
+        "date": 1794565458623,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7006509999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.687, 0.692, 0.701, 0.705, 0.709 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.651145999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.533, 16.599, 16.651, 16.812, 16.861 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9941885,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.890, 101.987, 101.994, 102.455, 102.709 ms"
           }
         ]
       }
