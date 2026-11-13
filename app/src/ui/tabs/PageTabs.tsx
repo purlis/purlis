@@ -60,6 +60,8 @@ function PageTabItem({ tab }: { tab: PageTab }) {
       id={tab.id}
       data-scope="page-tabs"
       data-part="tab"
+      // Its words are the body's (#1920), in the tier its state gives them (`tabs.css`).
+      className="ui-text-body"
       aria-describedby={counted ? said : undefined}
     >
       <span data-scope="page-tabs" data-part="label">
@@ -67,7 +69,12 @@ function PageTabItem({ tab }: { tab: PageTab }) {
       </span>
       {counted && (
         <>
-          <span data-scope="page-tabs" data-part="count" aria-hidden="true">
+          <span
+            data-scope="page-tabs"
+            data-part="count"
+            className="ui-text-meta"
+            aria-hidden="true"
+          >
             {countShown(tab.count ?? 0)}
           </span>
           <span id={said} hidden>

@@ -15,9 +15,11 @@ import { PROJECTS, ask, inFront, openFromTheStrip } from "../switching.js";
  * This is the run whose harness reports through `purlis hook` (`wdio.state.conf.ts`): a chat in
  * the launch's project asks a permission through the real hook (`ASKS_A_PERMISSION`) and waits.
  * A second project of the spec's own is then opened in the same window and brought to the front.
- * Its ✋ counts the launch's project's ask as "+1 elsewhere" (#5999), and its Asks, which opens
- * on All projects, lists that ask as a row of its own, with its options on the row and no line
- * for the project. Deny, pressed there, is answered in the launch's project: its hook is
+ * Its ✋ counts its own asks alone, so none (#6341, ADR 0121 amended 2026-11-12, decision 1), and
+ * the launch's project's tab on the rail carries the ask instead; pressed, that tab brings the
+ * launch's project forward, whose ✋ counts it. Back in the second project, its Asks, which opens on All
+ * projects, lists that ask as a row of its own, with its options on the row and no line for the
+ * project. Deny, pressed there, is answered in the launch's project: its hook is
  * answered, and the permission is listed and held nowhere after.
  *
  * `AsksInPlace.window.test.tsx` holds the rows against a mocked window; what only the built app
@@ -60,6 +62,24 @@ async function theirRows(plane: string): Promise<{ says: string; answers: string
           })),
       ),
     INBOX,
+    plane,
+  );
+}
+
+/** What `plane`'s tab on the rail says of itself beside its name: its description, where its
+ *  count is said ("1 waiting"). */
+async function tabSays(plane: string): Promise<string> {
+  return browser.execute(
+    (strip: string, path: string) => {
+      const tab = [...document.querySelectorAll<HTMLElement>(`${strip} [role="tab"]`)].find(
+        (one) => one.getAttribute("data-directory") === path,
+      );
+      return (tab?.getAttribute("aria-describedby") ?? "")
+        .split(/\s+/)
+        .map((id) => document.getElementById(id)?.textContent ?? "")
+        .join(" ");
+    },
+    PROJECTS,
     plane,
   );
 }
@@ -125,8 +145,7 @@ describe("another project's ask, answered in place from Asks", function () {
       { timeout: 30_000, interval: 250, timeoutMsg: "the hand never counted the ask" },
     );
 
-    // The second project, in front: its ✋ counts the launch's project's ask as elsewhere
-    // (#5999, ADR 0121 decision 4), with no view opened first.
+    // The second project, in front, with no view opened first.
     await toFront(second);
     // What the ✋'s badge says: its count is in the tab's name (ADR 0121 decision 25), named by
     // `aria-labelledby` as the tab itself and then its badge.
@@ -137,13 +156,23 @@ describe("another project's ask, answered in place from Asks", function () {
         ).split(/\s+/);
         return badge ? (document.getElementById(badge)?.textContent ?? "") : "";
       }, ASKS_TAB);
+    // The launch's project's tab says its ask; the ✋ in front, whose project asks nothing, has
+    // no count (#6341).
     await browser
-      .waitUntil(async () => /, \+1 elsewhere$/.test(await handSays()), { timeout: 30_000 })
+      .waitUntil(async () => /\b1 waiting\b/.test(await tabSays(first)), { timeout: 30_000 })
       .catch(async () => {
-        throw new Error(
-          `the ✋ of ${second} never counted the ask elsewhere; it says: ${await handSays()}`,
-        );
+        throw new Error(`${first}'s tab never counted its ask; it says: ${await tabSays(first)}`);
       });
+    expect(await handSays()).toBe("");
+    // **Reached from its tab** (#6341): pressed, the launch's project is in front, and its ✋
+    // counts the ask; then back to the second project, whose Asks answers it in place.
+    await toFront(first);
+    await browser
+      .waitUntil(async () => /^1 thing waits on you$/.test(await handSays()), { timeout: 30_000 })
+      .catch(async () => {
+        throw new Error(`${first}'s ✋ never counted its own ask; it says: ${await handSays()}`);
+      });
+    await toFront(second);
     // Its Asks opens on All projects, so the other project's ask is listed without a press.
     await showView("Asks");
     await browser

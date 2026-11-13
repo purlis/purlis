@@ -166,7 +166,19 @@ fn a_grade_s_chat_and_a_profile_s_own_mode_get_no_added_words() {
     use crate::harness::Harness;
     let words = |command: &[&str], graded: bool| {
         let command: Vec<String> = command.iter().map(|w| (*w).to_owned()).collect();
-        task_words(Harness::ClaudeCode, Level::Classifier, &command, graded)
+        let env = crate::harness_plugin::Env {
+            chat: &[],
+            home: None,
+            process: false,
+        };
+        task_start(
+            Harness::ClaudeCode,
+            Level::Classifier,
+            &command,
+            graded,
+            &env,
+        )
+        .words
     };
     assert_eq!(words(&["claude"], false), ["--permission-mode", "auto"]);
     // A grade's chat keeps the mode its grade pins, whatever level its record holds.
@@ -186,5 +198,55 @@ fn a_grade_s_chat_and_a_profile_s_own_mode_get_no_added_words() {
             }),
         )
         .is_ok()
+    );
+}
+
+#[test]
+fn a_task_starts_asking_when_your_settings_hold_auto_mode_deny_rules_and_its_pane_says_why() {
+    use crate::harness::Harness;
+    let config = tempfile::tempdir().unwrap();
+    let chat = [(
+        "CLAUDE_CONFIG_DIR".to_owned(),
+        config.path().display().to_string(),
+    )];
+    let env = crate::harness_plugin::Env {
+        chat: &chat,
+        home: None,
+        process: false,
+    };
+    let claude = vec!["claude".to_owned()];
+    let start = |level| task_start(Harness::ClaudeCode, level, &claude, false, &env);
+    assert_eq!(
+        start(Level::Classifier),
+        TaskStart {
+            words: vec!["--permission-mode".to_owned(), "auto".to_owned()],
+            said: None,
+        }
+    );
+    std::fs::write(
+        config.path().join("settings.json"),
+        r#"{"autoMode": {"soft_deny": ["Never push to main"]}}"#,
+    )
+    .unwrap();
+    let kept = start(Level::Classifier);
+    assert!(kept.words.is_empty(), "{kept:?}");
+    assert!(
+        kept.said
+            .as_deref()
+            .is_some_and(|said| said.contains("auto mode"))
+    );
+    // A task that asks anyway has nothing to say.
+    assert_eq!(start(Level::Asks), TaskStart::default());
+    // Nor does a grade's chat, or a profile that names its own mode.
+    assert_eq!(
+        task_start(Harness::ClaudeCode, Level::Classifier, &claude, true, &env),
+        TaskStart::default()
+    );
+    let own: Vec<String> = ["claude", "--permission-mode", "dontAsk"]
+        .map(str::to_owned)
+        .to_vec();
+    assert_eq!(
+        task_start(Harness::ClaudeCode, Level::Classifier, &own, false, &env),
+        TaskStart::default()
     );
 }

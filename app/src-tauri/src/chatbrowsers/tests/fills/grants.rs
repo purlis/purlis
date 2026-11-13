@@ -815,3 +815,92 @@ fn a_narrowed_chats_fill_notice_reads_as_the_persona_it_was_started_as() {
         ]
     );
 }
+
+/// #5242: the person allowed a fill once and its key was then asked for, but the call ended
+/// before they added it. Allow once was for that fill, which never went in: the chat's retry of
+/// exactly that fill asks only for the key, never for the Allow again.
+#[test]
+fn allow_once_for_a_fill_whose_call_ended_waiting_on_its_key_carries_its_retry() {
+    let project = Project::holding(&serde_json::json!({}));
+    let chat = project.a_chat();
+    let (browsers, hosted) = (ChatBrowsers::default(), Arc::new(Hosted::default()));
+    opens_a_browser(&browsers, &hosted, chat);
+    let held = Arc::clone(&project.held);
+    let done = Arc::new(AtomicBool::new(false));
+    let done_here = Arc::clone(&done);
+    // Allows each fill notice once, until the chat retries; then keeps any blocked, so a notice
+    // the retry raises ends its call, and adds the key on its Secret ask.
+    let retrying = Arc::new(AtomicBool::new(false));
+    let retrying_here = Arc::clone(&retrying);
+    let person = std::thread::spawn(move || {
+        let mut notices = Vec::new();
+        while !done_here.load(Ordering::SeqCst) {
+            let again = retrying_here.load(Ordering::SeqCst);
+            if let Some(wait) = held.secret_fills().waiting().into_iter().next() {
+                answer(
+                    held.root(),
+                    held.secret_fills(),
+                    &Asked {
+                        session: wait.session,
+                        id: wait.id,
+                        press: if again { Press::Keep } else { Press::Once },
+                        shown: &wait.digest(),
+                        reason: None,
+                    },
+                    &|_, _| Ok(()),
+                )
+                .expect("the press counts");
+                notices.push(wait);
+            } else if again && let Some(open) = held.secret_asks().open().into_iter().next() {
+                held.secret_asks()
+                    .answer(
+                        &Ctx::new(held.root(), Env::from_process()),
+                        open.id,
+                        SecretAnswer::Fill(VALUE.to_owned().into()),
+                        Answerer::admitted(Admitted::LocalUi).expect("the window"),
+                    )
+                    .expect("the answer counts");
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        notices
+    });
+    // The first call hangs up once the key is asked for, as a harness's call that timed out.
+    let asks = project.held.secret_asks();
+    let hung_up = || !asks.open().is_empty();
+    let first = refusal(fills_into_while(
+        &project,
+        &browsers,
+        &hosted,
+        chat,
+        field(FieldKind::OneLine),
+        &hung_up,
+    ));
+    assert!(first.contains("the call ended"), "{first}");
+
+    retrying.store(true, Ordering::SeqCst);
+    let retried = fills(&project, &browsers, &hosted, chat, FieldKind::OneLine);
+    // Used by the fill it was for: the next fill of that key asks, and is kept blocked.
+    let next = refusal(fills(
+        &project,
+        &browsers,
+        &hosted,
+        chat,
+        FieldKind::OneLine,
+    ));
+    done.store(true, Ordering::SeqCst);
+    let notices = person.join().expect("the person's thread");
+
+    assert_eq!(
+        notices.len(),
+        2,
+        "asked once for the retry, once after: {notices:?}"
+    );
+    assert!(next.contains("blocked"), "{next}");
+    told_it_filled(&retried);
+    assert_eq!(handed(&hosted), [(VALUE.to_owned(), false)]);
+    assert!(
+        handed_under_a_grant(&hosted).iter().all(|grant| !grant),
+        "it went in on the person's notice, under no standing grant"
+    );
+}

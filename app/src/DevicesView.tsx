@@ -249,7 +249,7 @@ function UnkeptSection({
 function DiskTrouble({ trouble }: { trouble: ReturnType<typeof diskTrouble> }) {
   if (trouble === undefined) return null;
   return (
-    <p className="ui-setting-help">
+    <p className="ui-setting-help ui-text-secondary">
       {trouble.line}
       {trouble.said !== undefined && (
         <Fragment>
@@ -282,7 +282,7 @@ export function DevicesView({ now = new Date() }: { now?: Date }) {
   if (read.state === "reading")
     return (
       <div className="devices-view" data-testid="devices-view">
-        <p className="ui-setting-help">Reading this machine&apos;s devices…</p>
+        <p className="ui-setting-help ui-text-secondary">Reading this machine&apos;s devices…</p>
       </div>
     );
   if (read.state === "trouble")

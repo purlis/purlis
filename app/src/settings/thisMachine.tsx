@@ -206,15 +206,16 @@ function useMachine(setting: string) {
 
 /** What stands in for a list until the store has been read, or why it could not be. */
 function waiting(read: Read) {
-  if (read.state === "reading") return <p className="ui-setting-help">Reading…</p>;
+  if (read.state === "reading")
+    return <p className="ui-setting-help ui-text-secondary">Reading…</p>;
   if (read.state === "trouble")
     return (
-      <p className="ui-setting-help" role="alert">
+      <p className="ui-setting-help ui-text-secondary" role="alert">
         {read.trouble}
       </p>
     );
   if (read.machine.forgetful !== null)
-    return <p className="ui-setting-help">{read.machine.forgetful}</p>;
+    return <p className="ui-setting-help ui-text-secondary">{read.machine.forgetful}</p>;
   return undefined;
 }
 
@@ -293,7 +294,9 @@ function EntryTable({
           <TableRow key={key} id={key} textValue={name}>
             <TableCell>{name}</TableCell>
             <TableCell heading="Where">
-              {path === undefined ? null : <span className="ui-record-where">{path}</span>}
+              {path === undefined ? null : (
+                <span className="ui-record-where ui-text-meta">{path}</span>
+              )}
             </TableCell>
             {columns.status === true ? (
               <TableCell heading="Status">
@@ -340,7 +343,7 @@ function list(
           return (
             <div role="group" aria-labelledby={ids.labelledBy} aria-describedby={ids.describedBy}>
               {entries.length === 0 ? (
-                <p className="ui-setting-help">{empty}</p>
+                <p className="ui-setting-help ui-text-secondary">{empty}</p>
               ) : (
                 <EntryTable ids={ids} label={label} columns={columns} entries={entries} />
               )}

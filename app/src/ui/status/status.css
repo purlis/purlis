@@ -25,7 +25,6 @@ footer[data-scope="status-bar"] {
   /* No room above or below for a ring: its items ring inside themselves (#1922), so the bar is
      the chrome's height alone. */
   padding: 0 var(--space-4);
-  font-size: var(--font-size-sm);
   white-space: nowrap;
   overflow: hidden;
   background-color: var(--surface-deep);
@@ -105,10 +104,9 @@ footer[data-scope="status-bar"] {
   padding-inline: var(--space-3);
   border: 0 solid transparent;
   border-radius: var(--radius-md);
+  /* Its words are the secondary's size (`ui-text-secondary`, #1920), in the item's tier. */
   color: var(--text-primary);
   background-color: transparent;
-  font: inherit;
-  font-size: var(--font-size-sm);
   line-height: 1;
   white-space: nowrap;
   cursor: default;
