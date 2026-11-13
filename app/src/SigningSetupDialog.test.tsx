@@ -606,7 +606,8 @@ describe("the Signed commits card", () => {
     };
     render(<Card />);
     expect(await screen.findByText("On")).toBeTruthy();
-    expect(screen.getByText("Verified on GitHub ✓")).toBeTruthy();
+    // The account's line is drawn once its row arrives, which can be after the state says On.
+    expect(await screen.findByText("Verified on GitHub ✓")).toBeTruthy();
     expect(screen.getByText("Commits as octocat@example.com")).toBeTruthy();
     const details = screen.getByRole("button", { name: "Details" });
     // Until Details is opened, nothing says SSH or Ed25519.
