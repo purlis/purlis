@@ -308,6 +308,9 @@ pub type Routed = Box<dyn Fn(u32, &purlis_core::skills::router::Record) + Send +
 /// Told a chat's number as its latest prompt changes whether it fell back (#4445).
 pub type PromptFallbackMoved = Box<dyn Fn(u32) + Send + Sync>;
 
+/// Told a chat's number as its run is replaced at once, before it is closed (ADR 0076 §2, Q247).
+pub type Replaced = Box<dyn Fn(u32) + Send + Sync>;
+
 /// When a run's `run.started` is written (#2250).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RunSaid {
@@ -525,6 +528,10 @@ struct Running {
     runs_as: Option<String>,
     /// **What its runner said it armed it with** (SK-15h, #4218): `None` for a chat armed here.
     runners_word: Option<RunnersWord>,
+    /// **Whether its hooks report from outside its reach** (Q235, Q237), read from the
+    /// attributes its run began with: what a block its hook line reports is worth toward the
+    /// block loop (R-209).
+    reports_verified: bool,
 }
 
 /// **Whether the plane's skills reach a chat starting now** (#3445, #3466): a chat
@@ -846,6 +853,8 @@ pub struct Chats {
     reattached: Mutex<Option<Starting>>,
     /// Told of the run each start begins, before its program runs (ADR 0066).
     beginning: Mutex<Option<Beginning>>,
+    /// Told the number of a run about to be replaced at once ([`Self::when_a_run_is_replaced`]).
+    replaced_told: Mutex<Option<Replaced>>,
     /// What asks a chat's router extension at its start (SK-15b): none until the app hands one,
     /// so a chat whose workspace or persona chose one is routed by the built-in router.
     router: Mutex<Option<Arc<dyn purlis_core::skills::router::AskRouter>>>,
@@ -1644,6 +1653,7 @@ impl Chats {
             starting: Mutex::new(None),
             reattached: Mutex::new(None),
             beginning: Mutex::new(None),
+            replaced_told: Mutex::new(None),
             router: Mutex::new(None),
             routed: Mutex::new(None),
             prompt_fallback_moved: Mutex::new(None),
@@ -1774,6 +1784,13 @@ impl Chats {
     /// begins: the chat's id, which a relaunch keeps, a new run's id, and why (ADR 0066).
     pub fn when_a_run_begins(&self, tell: Beginning) {
         *lock(&self.beginning) = Some(tell);
+    }
+
+    /// Calls `tell` with a run's number as it is about to be replaced at once (ADR 0076 §2, ADR
+    /// 0067 as amended 2026-10-16, Q247): a restart for project settings, while its program
+    /// still runs, so the event log ends it `superseded` before its close is heard.
+    pub fn when_a_run_is_replaced(&self, tell: Replaced) {
+        *lock(&self.replaced_told) = Some(tell);
     }
 
     /// Asks a chat's router extension at its start with `router` (SK-15b, ADR 0102 §5).
@@ -3129,6 +3146,11 @@ impl Chats {
             rows: 24,
         });
         lock(&self.replacing).insert(session);
+        // Said while its program still runs, so its end is written `superseded` (ADR 0076
+        // §2) wherever the event log is written, before its close is heard there.
+        if let Some(tell) = lock(&self.replaced_told).as_ref() {
+            tell(session);
+        }
         if let Err(why) = self.sessions.close(session) {
             tracing::warn!("purlis: chat {session}'s run did not end before its restart ({why})");
         }
@@ -6003,6 +6025,9 @@ impl Chats {
                 prompt_key,
                 runs_as: runs_as.clone(),
                 runners_word: armed_by_its_runner.then(|| RunnersWord::of(armed_skills)),
+                reports_verified: purlis_core::eventlog::stops::reported_from_outside_its_reach(
+                    &attributes,
+                ),
             },
         );
         drop(open);
@@ -6752,6 +6777,18 @@ impl Chats {
     /// reads its grants from (#1362), never the request.
     pub fn recorded_chat(&self, session: u32) -> Option<Chat> {
         lock(&self.open).get(&session).map(|one| one.chat.clone())
+    }
+
+    /// **The id of chat `session`** (ADR 0066), open here or ended here on purpose and still
+    /// kept ([`Self::close`]): what the event log knows it by. `None` for a number that is
+    /// neither, or a chat not given an id.
+    pub fn logged_id_of(&self, session: u32) -> Option<String> {
+        if let Some(one) = lock(&self.open).get(&session) {
+            return one.chat.identity.id.clone();
+        }
+        lock(&self.let_go)
+            .get(&session)
+            .and_then(|was| was.identity.id.clone())
     }
 
     /// **What a dispatch is decided over**: every chat this app has open and every one it is
@@ -7523,6 +7560,16 @@ impl Chats {
             running.confines = confines;
             running.ran = ran;
         }
+    }
+
+    /// **Whether chat `session` is open and its hooks report from outside its reach** (Q235,
+    /// Q237): a Claude Code chat under a backend that leaves its hooks outside the sandbox, as
+    /// its run began. Any other chat's reports are unverified, and never count toward the block
+    /// loop (R-209).
+    pub fn reports_from_outside_its_reach(&self, session: u32) -> bool {
+        lock(&self.open)
+            .get(&session)
+            .is_some_and(|running| running.reports_verified)
     }
 
     /// **Whether chat `session` is open and runs in a sandbox its host composed for it** (#2692):
@@ -8810,6 +8857,8 @@ impl Chats {
             &self.project,
             std::time::Duration::from_secs(2),
         );
+        // And the asks its chats' refusals raised go with them.
+        purlis_core::windowonly::project_ended(&self.project);
         lock(&self.open).clear();
         lock(&self.would_not_start).clear();
         lock(&self.coming).clear();
@@ -9055,8 +9104,13 @@ pub type AsksMoved = Arc<dyn Fn() + Send + Sync + 'static>;
 
 /// **What writes a stop of chat `number`'s into the event log** (R-290), made durable before
 /// it answers: told only as a held connection's ask is withdrawn, so what that ask set goes too.
+/// With it, the harness's id for the call the connection was held under, where one was heard:
+/// the block loop counts a call once (Q253).
 pub type StopWriter = Arc<
-    dyn Fn(u32, purlis_core::eventlog::stops::Stop) -> std::io::Result<()> + Send + Sync + 'static,
+    dyn Fn(u32, purlis_core::eventlog::stops::Stop, Option<String>) -> std::io::Result<()>
+        + Send
+        + Sync
+        + 'static,
 >;
 
 /// Who a chat's board of live asks tells (#1666), and as whom.
@@ -9172,7 +9226,7 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::pl
                 if let Some(block) = live_block(&target)
                     && let Some(withdrawn) = blocks.stopped_waiting(chat, &block)
                 {
-                    became_a_block(&stops, chat, withdrawn.tool, &block);
+                    became_a_block(&stops, chat, withdrawn, &block);
                     if let Some(moved) = lock(&moved).clone() {
                         told(Box::new(move || moved()));
                     }
@@ -9193,14 +9247,15 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::pl
 
 /// **Writes `block`, a held connection chat `chat` stopped waiting on, as one Sandbox block**
 /// (R-290, Q154), once its ask is withdrawn: the host, or the runner's service by its port, as
-/// a grant names it, and `tool`, the harness's name for the call it was held under (empty where
-/// no call was heard). The target is the proxy's own word; the tool comes from the chat's hook
-/// line, which a sandboxed chat holds the token to send (Q235's known limit). A write that fails
-/// is said in the app's log.
+/// a grant names it, and the call it was held under (`withdrawn`): the harness's name for its
+/// tool (empty where no call was heard) and its arguments' hash, the target the block loop
+/// matches on (R-206), and its id, so the loop counts that call once (Q253). The target is the
+/// proxy's own word; the tool comes from the chat's hook line, which a sandboxed chat holds the
+/// token to send (Q235's known limit). A write that fails is said in the app's log.
 fn became_a_block(
     stops: &Mutex<Option<StopWriter>>,
     chat: u32,
-    tool: Option<String>,
+    withdrawn: crate::taskblocks::Withdrawn,
     block: &crate::taskblocks::HeldBlock,
 ) {
     use purlis_core::eventlog::stops::{Block, Source, Stop, Target};
@@ -9213,13 +9268,13 @@ fn became_a_block(
     }
     .ok();
     let stop = Stop::Block(Block {
-        tool: tool.unwrap_or_default(),
+        tool: withdrawn.tool.unwrap_or_default(),
         source: Source::Sandbox,
         qualifier: None,
         target,
-        args: None,
+        args: withdrawn.args,
     });
-    if let Err(why) = write(chat, stop) {
+    if let Err(why) = write(chat, stop, withdrawn.call) {
         tracing::warn!("purlis: chat {chat}'s sandbox block was not written ({why})");
     }
 }

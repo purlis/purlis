@@ -17,6 +17,8 @@ import { forgetThisLaunch } from "./regions";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 import { runAsk } from "./secretAsk.testkit";
 import { MOVED_JUST_NOW } from "./InboxAsks";
+import { dismissNotice } from "./dismissals";
+import { cloneVouchCause } from "./CloneVouchNotice";
 
 /**
  * **A decision is answered on its row** (#5998, ADR 0121 amended 2026-11-09), on the real window
@@ -606,5 +608,66 @@ describe("a held merge in Asks (R-115)", () => {
       ]),
     );
     expect(asked("merge_held_request")).toEqual([]);
+  });
+});
+
+/** A GitHub App token chat 2 couldn't be minted for an unrecorded clone (R-330): Asks alone
+ *  draws it until the finish row and Blocking (T1-42). */
+const TRUST_CLONE: Shown = {
+  session: 2,
+  ask: "trust-clone:2:workspaces/alpha/api|github.com/acme/api",
+  says: "Trust this clone so chats can use GitHub: workspaces/alpha/api was not cloned by purlis, and its remote is github.com/acme/api. Trust it only if you made this clone yourself.",
+  options: [{ id: "press", label: "Trust this clone", allows: true }],
+  source: "trust-clone",
+  chain: ["steward 2"],
+  answer: { via: "trust-clone", folder: "workspaces/alpha/api", place: "github.com/acme/api" },
+};
+
+describe("a refusal whose only way out is the window's press (R-328, R-330, R-335)", () => {
+  /** Opens the ask's answers, behind its Answer where it has one, once its row has been read. */
+  const controlOf = async (row: HTMLElement) => {
+    await read();
+    const answer = within(row).queryByRole("button", { name: /^Answer/ });
+    if (answer !== null) await press.click(answer);
+    return screen.findByRole("button", { name: "Trust this clone" });
+  };
+
+  it("a_window_only_refusal_raises_one_ask_carrying_its_control: pressing it trusts the clone at the address it was raised at", async () => {
+    const { view, asked } = await opened([TRUST_CLONE]);
+    const rows = askRows().filter(
+      (one) => view.contains(one) && one.classList.contains("inbox-ask"),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent("Trust this clone so chats can use GitHub");
+    const trust = await controlOf(rowOf(view, "steward 2"));
+    await read();
+
+    await press.click(trust);
+
+    await waitFor(() =>
+      expect(asked("vouch_clone")).toEqual([
+        { plane: PLANE, folder: "workspaces/alpha/api", place: "github.com/acme/api" },
+      ]),
+    );
+  });
+
+  it("a_dismissed_notice_that_later_stops_a_chat_is_raised_again_as_an_ask", async () => {
+    // The person dismissed the clone's Notice; then the clone stopped a chat's mint.
+    dismissNotice(
+      PLANE,
+      cloneVouchCause({
+        workspace: "alpha",
+        folder: "workspaces/alpha/api",
+        place: "github.com/acme/api",
+        places: ["github.com/acme/api"],
+      }),
+    );
+    const { view } = await opened([TRUST_CLONE]);
+
+    const rows = askRows().filter(
+      (one) => view.contains(one) && one.classList.contains("inbox-ask"),
+    );
+    expect(rows).toHaveLength(1);
+    expect(await controlOf(rowOf(view, "steward 2"))).toBeInTheDocument();
   });
 });

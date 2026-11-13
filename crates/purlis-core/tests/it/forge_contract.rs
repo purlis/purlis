@@ -2545,16 +2545,17 @@ mod network_log {
             // and six on a first proof, and reads three or two of one it refuses, GitLab in two uploads, and a comment is one call on each.
             // A fork (#4342): who the account is, the source and the fork's place, the fork, the
             // draft and the request from it; GitLab reads the fork once more while it copies.
-            // Adding to an issue (#5694) opens one and comments on it: two calls on each. Where
-            // a merge ask's request stands is one call on each (R-115), and whether a ruleset
-            // protects its base one more (R-146). Whether a classic protection's read is
-            // none (Q252) is two scenes on GitHub of two calls each, the rules and
-            // `branches/{b}/protection` (a plain 404 Not Found and a 403), and GitLab's
-            // judgement of a branch two scenes of one `repository/branches/{b}` call each (a
-            // wildcard rule and no rule).
+            // Adding to an issue (#5694) opens one and comments on it: two calls on each.
+            // The merge hold reads a request's head, base and merge method (T1-11, R-115): one
+            // call each. Whether a ruleset protects a merge's base (R-146) is one more on each,
+            // and its scenes: on GitHub, the rules and `branches/{b}/protection` (two calls) for
+            // housekeeping-only rules, a classic protection, a plain 404 Not Found and a 403
+            // (Q252), and one rules call for a branch with a slash; on GitLab, one
+            // `repository/branches/{b}` call for each of no branch, a branch named fix-404, a
+            // wildcard rule and an unprotected branch (Q252).
             let expected = match kind {
-                "github" => 94,
-                _ => 109,
+                "github" => 99,
+                _ => 111,
             };
             assert_eq!(paths.len(), expected, "{kind}: the recorded REST calls");
             for path in paths {

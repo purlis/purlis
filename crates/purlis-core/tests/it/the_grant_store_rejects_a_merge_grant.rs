@@ -28,6 +28,7 @@ fn a_rule_for(source: &str) -> Rule {
 
 #[test]
 fn the_grant_store_rejects_a_merge_grant() {
+    purlis_core::unsteered!();
     let data = tempfile::tempdir().expect("a folder");
     let store = Store::in_data(data.path());
     for scope in [Scope::Chat, Scope::Project, Scope::Machine] {

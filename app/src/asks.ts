@@ -820,6 +820,14 @@ export async function answerTaken(
             path.head,
           );
         break;
+      case "trust-clone": {
+        // A refusal whose only way out is Trust this clone (R-328, R-330): the clone Notice's own
+        // press, at the address the refusal was raised at. It clears the ask, and the chat's next
+        // GitHub App token is minted.
+        if (option !== "press") break;
+        const trusted = await commands.vouchClone(plane, path.folder, path.place);
+        return trusted.status === "error" ? trusted : { status: "ok" };
+      }
       case "workspace-removal":
         // Keep puts the question away. Remove… removes nothing (qw356): it opens the window's
         // own Delete workspace, where what goes is read and the person's press there decides.

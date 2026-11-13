@@ -76,6 +76,7 @@ fn unbounded_spins(text: &str) -> Vec<usize> {
 
 #[test]
 fn the_named_spin_loops_and_fake_homes_never_hang_in_a_sandboxed_chat() {
+    purlis_core::unsteered!();
     let mut files = Vec::new();
     rust_files(&crate_root().join("src"), &mut files);
     rust_files(&crate_root().join("tests"), &mut files);
@@ -126,6 +127,7 @@ fn the_named_spin_loops_and_fake_homes_never_hang_in_a_sandboxed_chat() {
 
 #[test]
 fn a_spin_loop_with_no_way_out_is_found_and_one_with_its_threads_end_is_not() {
+    purlis_core::unsteered!();
     let spinning = "let id = loop {\n    if let Some(x) = look() { break x; }\n    std::thread::yield_now();\n};";
     assert_eq!(unbounded_spins(spinning), vec![1]);
     let bounded = "let id = loop {\n    if let Some(x) = look() { break x; }\n    if run.is_finished() { panic!() }\n    std::thread::yield_now();\n};";

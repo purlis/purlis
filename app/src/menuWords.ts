@@ -48,6 +48,7 @@ export const SAID = {
   openInStudio: "Open in the Skill studio",
   activity: "Activity",
   network: "Network",
+  chatLog: "Chat log",
   restart: "Restart",
   restartMidTurn: "Restart when this turn ends",
   startFresh: "Start fresh",

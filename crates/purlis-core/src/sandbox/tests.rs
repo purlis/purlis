@@ -8805,6 +8805,26 @@ fn a_chat_at_every_level_starts_with_its_harness_own_check() {
         runs_a_shell: false,
         own: &[],
     };
+    // A sandboxed Codex chat runs only on a profile for sandboxed chats only (D-88q, as amended
+    // 2026-10-15, #2037): its Codex cells run on such a profile, its folder made under a home
+    // that is there, as the profile store makes it.
+    let codex_home = tempfile::tempdir().expect("a home");
+    let codex_machine = Machine {
+        home: Some(codex_home.path().to_path_buf()),
+        ..machine(Os::MacOs)
+    };
+    let codex_profile = Homes::of(&codex_machine)
+        .profiles
+        .expect("a profiles folder")
+        .join("codex-sandbox/config");
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&codex_profile)
+            .expect("the profile's folder");
+    }
     let mut cells = Vec::new();
     for harness in [Harness::ClaudeCode, Harness::Codex, Harness::Opencode] {
         for level in ["on", "floor", "off"] {
@@ -8823,12 +8843,28 @@ fn a_chat_at_every_level_starts_with_its_harness_own_check() {
                     .expect("your off");
             }
             let root = plane.path().canonicalize().expect("a real folder");
-            let decided = decide(harness, &root, &machine(Os::MacOs), &|_| true, None, None);
-            let applied = match decided {
+            let on = if harness == Harness::Codex {
+                codex_machine.clone()
+            } else {
+                machine(Os::MacOs)
+            };
+            let decided = decide(harness, &root, &on, &|_| true, None, None);
+            let mut applied = match decided {
                 Ok(Some(Decided::Sandboxed(applied))) => Some(applied),
                 Ok(Some(Decided::Unsandboxed(_))) if level == "off" => None,
                 other => panic!("{harness:?} at {level}: {other:?}"),
             };
+            if harness == Harness::Codex
+                && let Some(applied) = &mut applied
+            {
+                applied.on_profile(&signin::ProfileFolders {
+                    config: Some(codex_profile.clone()),
+                    data: None,
+                    sandbox_only: Some("codex-sandbox".to_owned()),
+                    state: None,
+                    default_config: None,
+                });
+            }
             assert_eq!(
                 applied.as_ref().map(Applied::level),
                 match level {

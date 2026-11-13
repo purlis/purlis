@@ -342,7 +342,7 @@ fn a_sandbox_refusal_leaves_asks_and_becomes_one_block_when_the_chat_stops_waiti
     let written: Arc<Mutex<Vec<(u32, Stop)>>> = Arc::default();
     chats.write_stops_with({
         let written = Arc::clone(&written);
-        Arc::new(move |chat, stop| {
+        Arc::new(move |chat, stop, _| {
             lock(&written).push((chat, stop));
             Ok(())
         })
@@ -2687,6 +2687,35 @@ fn a_restart_for_project_settings_ends_the_old_run_before_the_new_one_starts() {
 }
 
 #[test]
+fn a_restart_for_project_settings_says_the_old_run_is_replaced_before_it_ends_it() {
+    // ADR 0076 §2, Q247: the event log is told the run is superseded while it still runs, so
+    // its end is written superseded wherever the log is written, the session host's included,
+    // and the close that follows ends nothing more.
+    let (plane, chats, host, _told) =
+        chats_on_kept_project_settings(crate::projectsettings::Watch::new());
+    let session = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    let replaced = Arc::new(Mutex::new(Vec::new()));
+    chats.when_a_run_is_replaced(Box::new({
+        let (replaced, host) = (Arc::clone(&replaced), host.clone());
+        move |number| lock(&replaced).push((number, host.openings().len()))
+    }));
+
+    let started = chats
+        .restart_for_project_settings(session)
+        .expect("started again");
+
+    assert_eq!(
+        *lock(&replaced),
+        [(session, 1)],
+        "once, before the new run started"
+    );
+    let _ = chats.close(session);
+    chats.close(started).expect("ends");
+}
+
+#[test]
 fn a_session_is_renamed_only_where_a_new_conversation_is_started() {
     let mut words: Vec<String> = ["--session-id", "a", "--name", "a"]
         .map(str::to_owned)
@@ -2950,6 +2979,7 @@ fn a_port_withdrawn_while_a_chat_runs_is_withdrawn_from_a_browser_it_opens_after
             last_prompt: None,
             runs_as: None,
             runners_word: None,
+            reports_verified: false,
             clones_at_start: None,
             prompt_key: None,
         },
@@ -3030,6 +3060,7 @@ fn chats_started_with_different_grants_are_compiled_apart_and_listed_apart() {
                 last_prompt: None,
                 runs_as: None,
                 runners_word: None,
+                reports_verified: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -3474,6 +3505,7 @@ fn a_chat_on_a_profile_is_compared_under_the_persona_grants_it_started_with() {
                 last_prompt: None,
                 runs_as: None,
                 runners_word: None,
+                reports_verified: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -8817,6 +8849,7 @@ fn each_path_reads_the_run_record_in_the_direction_that_fails_closed_for_it() {
                 last_prompt: None,
                 runs_as: None,
                 runners_word: None,
+                reports_verified: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -9310,6 +9343,7 @@ fn only_a_chat_with_no_sandbox_at_all_runs_unconfined() {
                 last_prompt: None,
                 runs_as: None,
                 runners_word: None,
+                reports_verified: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -9369,6 +9403,7 @@ fn a_login_is_asked_for_by_the_persona_its_chat_was_started_as() {
                 last_prompt: None,
                 runs_as: None,
                 runners_word: None,
+                reports_verified: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -9593,6 +9628,7 @@ fn two_chats_asking_live(plane: &std::path::Path) -> (Chats, [Arc<Told>; 2]) {
                 last_prompt: None,
                 runs_as: None,
                 runners_word: None,
+                reports_verified: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -9633,6 +9669,7 @@ fn open_a_harness_chat(
             last_prompt: None,
             runs_as: None,
             runners_word: None,
+            reports_verified: false,
             clones_at_start: None,
             prompt_key: None,
         },
@@ -9967,6 +10004,7 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
                 last_prompt: None,
                 runs_as: None,
                 runners_word: None,
+                reports_verified: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -10054,6 +10092,7 @@ fn a_chat_skill_stamp_is_read_again_only_once_the_instructions_change() {
                 last_prompt: None,
                 runs_as: None,
                 runners_word: None,
+                reports_verified: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -11709,7 +11748,7 @@ mod moved_on {
         let written: Arc<Mutex<Vec<(u32, Stop)>>> = Arc::default();
         chats.write_stops_with({
             let written = Arc::clone(&written);
-            Arc::new(move |chat, stop| {
+            Arc::new(move |chat, stop, _| {
                 lock(&written).push((chat, stop));
                 Ok(())
             })
@@ -11772,6 +11811,7 @@ mod moved_on {
                 last_prompt: None,
                 runs_as: None,
                 runners_word: None,
+                reports_verified: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -12156,9 +12196,9 @@ mod moved_on {
 }
 
 /// R-290 (review finding 5): a held connection's timeout reaches the event log itself, through
-/// [`crate::hooks::Hooks::record_stop`] and a real recorder, as one `stop.block` from the
-/// sandbox naming the host, the tool of the call it was held under, and no qualifier (Q235:
-/// purlis's own proxy observed it).
+/// [`crate::hooks::Hooks::write_stop`] and a real recorder, as one `stop.block` from the
+/// sandbox naming the host, the tool of the call it was held under and its arguments' digest
+/// (the block loop's target, R-206), and no qualifier (Q235: purlis's own proxy observed it).
 #[test]
 fn a_timed_out_hold_is_written_to_the_event_log_as_one_sandbox_block() {
     use purlis_core::eventlog::stops::{BLOCK, Block, Source, Target};
@@ -12174,7 +12214,7 @@ fn a_timed_out_hold_is_written_to_the_event_log_as_one_sandbox_block() {
     let chats = Chats::new();
     chats.write_stops_with({
         let hooks = Arc::clone(&hooks);
-        Arc::new(move |chat, stop| hooks.write_stop(chat, stop))
+        Arc::new(move |chat, stop, _| hooks.write_stop(chat, stop))
     });
     let tell = super::asked_by_the_proxy(
         super::Asking {
@@ -12195,7 +12235,7 @@ fn a_timed_out_hold_is_written_to_the_event_log_as_one_sandbox_block() {
         tool_hook: "pretooluse".to_owned(),
         tool: Some("Bash".to_owned()),
         call: Some("call-1".to_owned()),
-        args: None,
+        args: Some(HELD_CALLS_ARGS.to_owned()),
         decision: purlis_core::hookwire::Decision::default(),
         rule: None,
         arm: None,
@@ -12220,8 +12260,15 @@ fn a_timed_out_hold_is_written_to_the_event_log_as_one_sandbox_block() {
             source: Source::Sandbox,
             qualifier: None,
             target: Some(Target::host("slow.example.com").expect("a host")),
-            args: None,
+            args: Some(
+                ArgsKey::open(logs.path())
+                    .expect("the same key")
+                    .digest(HELD_CALLS_ARGS)
+            ),
         }],
         "one stop.block, from the sandbox"
     );
 }
+
+/// The hash of the arguments of the call a connection was held under, as its hook sent it.
+const HELD_CALLS_ARGS: &str = "5e1f0c0e8a7d6b4c3a2918f7e6d5c4b3a29180f7e6d5c4b3a2918f7e6d5c4b3a";

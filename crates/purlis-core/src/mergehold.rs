@@ -27,9 +27,9 @@
 //!   ruleset protects the base is read with the app's own forge login (R-146).
 //!
 //! **Not here yet** (each its ticket's): A4's refusal of an unattended merge still answers first
-//! (its precedence is read with attendance, R-145); the merge row in the window (R-120), and the
-//! ruleset state on it (R-147). A line whose request cannot be read (a raw API call, a merge
-//! with no number) is refused with no ask.
+//! (its precedence is read with attendance, R-145, #6409); the merge row in the window (R-120,
+//! #6431), and the ruleset state on it (R-147). A line whose request cannot be read (a raw API
+//! call, a merge with no number) is refused with no ask.
 //!
 //! In memory only, in the app: a relaunch holds none, and the chat's next try asks again.
 

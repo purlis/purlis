@@ -1539,6 +1539,8 @@ impl Held {
         self.secret_fills.forget(session);
         self.removal_asks.forget(session);
         self.merge_holds.forget(session);
+        // And its refusals whose only way out was a press in the window (R-328).
+        purlis_core::windowonly::forget(self.root(), session);
         // What its runner's commands wait on goes with it (#2047).
         self.pool_tools.forget(session);
         // And what it waits on or declined of a vault (#5068).
@@ -2035,13 +2037,16 @@ impl Held {
         // chat's same request, and the chat is told on its next turn to make it again. The
         // board is not moved: the chat still waits on its harness's own prompt, if it does.
         if let Some(late) = self.hooks.answer(session, ask, option)? {
+            let allowed = late.choice.kind == purlis_core::harness::model::ChoiceKind::Allow;
+            // An Allow answered late starts the block count again too (R-211, Q253).
+            if allowed {
+                crate::pausing::allowed(self, session);
+            }
             self.chats.tell_outcome(
                 session,
                 purlis_core::askoutcome::Outcome {
                     about: purlis_core::askoutcome::About::Permission { asked: late.said },
-                    answer: purlis_core::askoutcome::Answer::AnsweredLate {
-                        allowed: late.choice.kind == purlis_core::harness::model::ChoiceKind::Allow,
-                    },
+                    answer: purlis_core::askoutcome::Answer::AnsweredLate { allowed },
                 },
             );
             self.chats.asks_may_have_moved();
@@ -4013,6 +4018,16 @@ impl Planes {
                 }
             })
         });
+        // A refusal whose only way out is a press in the window is raised as an ask where it is
+        // refused (R-328): the window is told, as for a live ask. Weak for the handoff's reason.
+        purlis_core::windowonly::telling(held.root(), {
+            let weak = Arc::downgrade(&held);
+            Arc::new(move || {
+                if let Some(strong) = weak.upgrade() {
+                    strong.chats().asks_may_have_moved();
+                }
+            })
+        });
         // A held connection a chat stopped waiting on is one block in the event log (R-290,
         // Q154), and a chat's next tool call is when it stops waiting. Its ask is withdrawn as
         // it is written, so the needs-you mark that ask set goes with it (Q240); the pane's
@@ -4020,10 +4035,13 @@ impl Planes {
         // for the handoff's reason.
         held.chats().write_stops_with({
             let weak = Arc::downgrade(&held);
-            Arc::new(move |chat, stop| match weak.upgrade() {
+            Arc::new(move |chat, stop, call| match weak.upgrade() {
                 Some(strong) => {
-                    let written = strong.hooks.write_stop(chat, stop);
+                    let written = strong.hooks.write_stop(chat, stop.clone());
                     strong.block_withdrawn(chat);
+                    // And toward the block loop, which pauses it (R-206), the call it was held
+                    // under counted once (Q253).
+                    crate::pausing::stopped(&strong, chat, &stop, call.as_deref());
                     written
                 }
                 None => Ok(()),
@@ -4034,6 +4052,8 @@ impl Planes {
             Arc::new(move |call| {
                 if let Some(strong) = weak.upgrade() {
                     strong.chats().called(call);
+                    // And toward the block loop (R-206, R-210).
+                    crate::pausing::called(&strong, call);
                 }
             })
         });
@@ -4924,6 +4944,24 @@ impl Planes {
                     }
                 }
             }));
+            // A run replaced at once, a restart for project settings, has ended superseded
+            // (ADR 0076 §2, Q247): told before its close, so the host that writes the log ends
+            // it so, and its close then ends nothing more.
+            chats.when_a_run_is_replaced(Box::new({
+                let (events, root) = (events.clone(), root.clone());
+                move |session| {
+                    let superseded = events.record(purlis_core::eventlog::Entry::Superseded {
+                        plane: root.clone(),
+                        number: session,
+                    });
+                    if let Err(why) = superseded {
+                        tracing::warn!(
+                            "purlis: a replaced run's end was not written to the event log \
+                             ({why})"
+                        );
+                    }
+                }
+            }));
             // A start put aside is taken back: its program's later lines are of no run (#2252).
             chats.when_a_held_start_is_settled(Box::new(move |session, how| {
                 let plane = root.clone();
@@ -5177,21 +5215,24 @@ impl Planes {
                     }
                     // A run ended so that the same chat starts again at once (ADR 0067 as
                     // amended 2026-10-16) has not ended the chat: what follows its place says
-                    // so. Its sub-agents' runs still end with it, stopped as a close stops
-                    // them (ADR 0076 §6), and nothing else here is done for it. Where the
-                    // session host writes the event log, it ends them as the program ends
-                    // there (#2003).
+                    // so. It has ended superseded, its sub-agents' runs with it (ADR 0076 §2,
+                    // §6, Q247), and nothing else here is done for it. A restart said so before
+                    // it closed the run ([`crate::chats::Chats::when_a_run_is_replaced`]), so
+                    // this writes nothing more there; where the session host writes the event
+                    // log, it was told the same, and its end there writes nothing more (#2003).
                     if me
                         .get()
                         .and_then(std::sync::Weak::upgrade)
                         .is_some_and(|held| held.chats.replaced(session))
                     {
                         if let Some(events) = events.as_ref().and_then(hooks::Events::held) {
-                            let (state, cause) = how_its_run_ended(
-                                Some(purlis_core::state::run::StopBy::Closed),
-                                &exit,
+                            its_run_ends(
+                                events,
+                                &events_root,
+                                session,
+                                purlis_core::state::run::RunState::Completed,
+                                purlis_core::state::run::Cause::Superseded,
                             );
-                            its_children_end(events, &events_root, session, state, cause);
                         }
                         return;
                     }
@@ -5235,7 +5276,7 @@ impl Planes {
                                 .is_some_and(|held| held.chats.recorded_chat(session).is_none()),
                         );
                         let (state, cause) = how_its_run_ended(by, &exit);
-                        its_children_end(log, &events_root, session, state, cause);
+                        its_run_ends(log, &events_root, session, state, cause);
                     }
                     // A persona chat that still owed its asking chat a report has ended
                     // without one: that chat is told it failed, now (#1443). Before the
@@ -6427,7 +6468,7 @@ fn the_host_s_stop(
 
 /// What a chat's end leaves in the event log, read and written as both binaries' session hosts
 /// do (#2494).
-pub(crate) use purlis_core::hookchannel::{how_its_run_ended, its_children_end};
+pub(crate) use purlis_core::hookchannel::{how_its_run_ended, its_run_ends};
 
 #[path = "planes/tab_windows.rs"]
 mod tab_windows;

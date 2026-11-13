@@ -640,8 +640,12 @@ export const commands = {
 "floor" | 
 /**  No sandbox. */
 "off" | null) => typedError<RepoAnswer, string>(__TAURI_INVOKE("open_repo", { path, template, forge, protection })),
-	/**  What setup's Protection row shows, read from the core ([`SetupProtection`]). */
+	/**
+	 *  What setup's Protection row shows, read from the core ([`SetupProtection`]). It reads the
+	 *  local project's level from the disk, so off the window's thread (#1949).
+	 */
 	setupProtection: () => typedError<SetupProtection, string>(__TAURI_INVOKE("setup_protection")),
+	noSandboxAtSetup: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The project template that fits the repo at `path`, by id, or `null` when none does or `path`
 	 *  is not a full path to a directory: what the first run's "Fits the repo" says it will pick
@@ -1599,6 +1603,11 @@ export const commands = {
 	 */
 	activityChat: (plane: PlaneId, key: string) => typedError<number | null, string>(__TAURI_INVOKE("activity_chat", { plane, key })),
 	questionTrail: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **Chat `session`'s Chat log** (R-224): its rows, from this machine's event log, oldest
+	 *  first. Read when its tab opens, off the window's thread, as it reads the log.
+	 */
+	chatLog: (plane: PlaneId, session: number) => typedError<ChatLog, string>(__TAURI_INVOKE("chat_log", { plane, session })),
 	taskQuestion: __WINDOW_ONLY_RESULT,
 	taskQuestionAnswered: __WINDOW_ONLY_RESULT,
 	answerTaskQuestion: __WINDOW_ONLY_RESULT,
@@ -3174,6 +3183,12 @@ export type AnswerPath =
  *  request `number` of `repo` at `head`, the key the ask was raised at (R-115).
  */
 { via: "merge-hold"; repo: string; number: number; head: string } | 
+/**
+ *  `vouch_clone` for Trust this clone, on the clone at `folder` (relative to the project)
+ *  at `place`, the address its remote named when the refusal was raised (R-330): the clone
+ *  Notice's own command, which clears the ask.
+ */
+{ via: "trust-clone"; folder: string; place: string } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -3662,7 +3677,13 @@ export type AskSource =
  *  **A merge a chat's hook held** (R-114, R-115): the chat never merges. Merge is the
  *  app's own forge call, on the person's press, and Don't merge merges nothing.
  */
-"merge-hold";
+"merge-hold" | 
+/**
+ *  **A refusal whose only way out is Trust this clone** (R-328, R-330): a GitHub App token
+ *  that couldn't be minted for a clone purlis has no record of. Trust this clone records it,
+ *  as the clone's own Notice does, and the chat's next mint goes through.
+ */
+"trust-clone";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -4598,6 +4619,25 @@ export type ChatHeld = {
 	plane: PlaneId,
 	session: number,
 };
+
+/**  A chat's Chat log: whether purlis knows the chat, and its rows. */
+export type ChatLog = {
+	/**  purlis knows the chat by its number: open, or ended here and still kept. */
+	known: boolean,
+	rows: ChatLogRow[],
+};
+
+/**  One row of a chat's Chat log. */
+export type ChatLogRow = 
+/**
+ *  The chat's run started (`cause`: `start`, `reopen`, `fresh`, ...), with the protection
+ *  it recorded, or none where its event has none this version can read.
+ */
+{ kind: "started"; 
+/**  When (UTC, RFC 3339), where the event's id says. */
+at: string | null; cause: string; protection: StartProtection | null } | 
+/**  The chat's run ended: `completed`, `failed` or `stopped`, why, and its exit code. */
+{ kind: "ended"; at: string | null; state: string; cause: string; code: number | null };
 
 /**  What a number names, as the window is sent it. */
 export type ChatLookup = 
@@ -8898,6 +8938,21 @@ export type NewBranch = {
 	warnings: string[],
 };
 
+/**
+ *  **What choosing No sandbox at setup would do** (T1-25; R-066, R-293, R-298), read from the
+ *  core ([`purlis_core::sandbox::personal::no_sandbox::report`]) before the press: the vaults
+ *  that move into the system keychain in the press that writes the level, the warning's key,
+ *  and the team's vault that refuses No sandbox, where there is one. Nothing is written.
+ */
+export type NoSandboxAtSetup = {
+	/**  This machine's plain-file vaults that move, by name. */
+	moves: string[],
+	/**  The key of the warning the row shows beside them. */
+	warning: string,
+	/**  The team's vault that refuses No sandbox here, where there is one. */
+	refused: TeamVaultRefusal | null,
+};
+
 /**  A folder of a source that is not a skill purlis offers. */
 export type NotASkill = {
 	folder: string,
@@ -11397,6 +11452,19 @@ export type ProposedWhole = {
 	applies: boolean,
 	/**  Why it is not shown, or not applied, in a sentence. */
 	why: string | null,
+};
+
+/**  One layer's protection at a start, as the start row says it. */
+export type ProtectionLayer = {
+	/**  The layer: `sandbox`, the one a tier sets in phase 1. */
+	layer: string,
+	/**  Its level's word: `on`, `floor` or `off`. */
+	level: string,
+	/**
+	 *  Who set it: `policy`, `project`, `person`, `unconfirmed`, `chat`, `purlis` or
+	 *  `unknown`.
+	 */
+	tier: string,
 };
 
 /**
@@ -15549,6 +15617,17 @@ export type StartOptions = {
 	next_number?: number | null,
 };
 
+/**  The protection a start recorded (R-227): the four fields of its `run.started`. */
+export type StartProtection = {
+	layers: ProtectionLayer[],
+	/**  The last commit of `charter.toml`: a commit, `none` or `unknown`. */
+	charter_commit: string,
+	/**  The working `charter.toml` differed from that commit. */
+	charter_dirty: boolean,
+	/**  How many answers were in force: none until phase 2. */
+	answers_in_force: number,
+};
+
 /**
  *  **Why a start the window asked for did not start** (#3942, #3968): the core's sentence, and
  *  the approval the profile it started on needs, where its start was refused while that profile
@@ -16325,6 +16404,16 @@ export type TeamOffState = {
 	said: string,
 	/**  `null` until answered; `true` accepted (no sandbox by default), `false` kept on. */
 	answer: boolean | null,
+};
+
+/**  A plain-file vault the team's committed file registers, which refuses No sandbox (R-298). */
+export type TeamVaultRefusal = {
+	/**  The vault's name. */
+	vault: string,
+	/**  Who added it, as plain text: a name from git, or "your team". */
+	owner: string,
+	/**  The refusal, in the core's words. */
+	said: string,
 };
 
 /**

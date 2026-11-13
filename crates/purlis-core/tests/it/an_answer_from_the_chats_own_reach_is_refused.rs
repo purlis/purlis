@@ -14,6 +14,7 @@ use purlis_core::hookwire::Ask;
 
 #[test]
 fn an_answer_from_the_chats_own_reach_is_refused() {
+    purlis_core::unsteered!();
     // The chat's own reach: its hook socket and its token, and every client scope a process
     // of its may reach. None of them is an answerer, so none can press a merge.
     for reach in [
