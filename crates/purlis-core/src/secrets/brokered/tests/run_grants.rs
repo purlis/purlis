@@ -3161,6 +3161,14 @@ fn ndb_size_puts_its_host_in_a_dbi_address_so_it_is_offered_no_run_grant() {
     refused_as_running_others("ndb_size.pl");
 }
 
+/// Homebrew's `brew` (#6325): `brew ruby -e <text>` runs the Ruby it is handed, and
+/// `brew sh --cmd <command>` has a shell run the command (`Library/Homebrew/dev-cmd/ruby.rb`,
+/// `dev-cmd/sh.rb`, Homebrew/brew 4.4.0).
+#[test]
+fn brew_runs_the_ruby_and_the_commands_it_is_handed_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("brew");
+}
+
 /// The client built with the server inside it: what `--server-arg` hands the embedded server
 /// (`--plugin-load`, `--plugin-dir`) loads code from a file it names.
 #[test]

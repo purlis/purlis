@@ -107,3 +107,12 @@ Both ship in MySQL's packages built with the cluster (`%{_bindir}/ndb_error_repo
   only.
 
 Neither name starts with `mysql` or `mariadb`, so no row read them. Both are refused whole.
+
+## Homebrew's brew (#6325)
+
+`brew ruby -e <text>` `exec`s Homebrew's Ruby with the text as a script, and `brew ruby
+<file>` with the file (`Library/Homebrew/dev-cmd/ruby.rb`, github.com/Homebrew/brew, 4.4.0);
+`brew sh --cmd <command>` has the preferred shell run the command (`dev-cmd/sh.rb`); and
+`brew <name>` runs the `brew-<name>` or `brew-<name>.rb` the search path finds
+(`Commands.external_cmd_path`, `Library/Homebrew/commands.rb:84-88`). It is refused whole.
+`brew services start mysql`, the usual way to start the server on macOS, goes with it.

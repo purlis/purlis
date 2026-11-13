@@ -2156,6 +2156,9 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "openrc-run",
     "chkconfig",
     "deb-systemd-helper",
+    // Homebrew (#6325): `brew ruby -e` runs the Ruby it is handed, `brew sh --cmd` a shell
+    // command, and `brew <name>` the `brew-<name>` its search path finds.
+    "brew",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

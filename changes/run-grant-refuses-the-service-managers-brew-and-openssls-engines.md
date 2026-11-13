@@ -13,3 +13,6 @@
   The first hands a shell the file name and the user it is given, and the second puts its host
   into a database address that can name a file of settings the client library reads. A persona
   can still declare either as a tool (#6324).
+- **A run's notice offers no Allow for Homebrew's `brew`**, which runs the Ruby or the shell
+  command it is handed (`brew ruby -e`, `brew sh --cmd`). A persona can still declare it as a
+  tool (#6325).
