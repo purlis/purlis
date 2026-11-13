@@ -66,6 +66,10 @@ pub enum Move {
     AnsweredBy {
         asker: crate::harness::hooked::Asker,
     },
+    /// [`Board::hook_gave_up`] (R-204).
+    HookGaveUp {
+        asker: crate::harness::hooked::Asker,
+    },
     /// [`Board::tool_said_by`].
     ToolSaidBy {
         speaker: Speaker,
@@ -199,6 +203,7 @@ impl Board {
             Move::Replied => self.replied(number),
             Move::Answered => self.answered(number),
             Move::AnsweredBy { asker } => self.answered_by(number, &asker),
+            Move::HookGaveUp { asker } => self.hook_gave_up(number, &asker),
             Move::ToolSaidBy { speaker, said } => self.tool_said_by(number, &speaker, &said),
             Move::ChildToolSaidBy {
                 agent,

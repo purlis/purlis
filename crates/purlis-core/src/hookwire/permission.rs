@@ -115,6 +115,20 @@ pub struct Waiting {
 /// many, too big, a chat it does not know), and then the hook is told no option at once.
 pub type Permitting = Box<dyn Fn(PermissionAsked) -> Option<Waiting> + Send + Sync + 'static>;
 
+/// **A permission hook's ask the host would not hold** (R-204, #6426): the chat it ran in, who
+/// in it asked, and why ([`crate::harness::hooked::NotRaised`]). The hook is told no option at
+/// once, so its harness's own prompt asks in the pane, where the chat now waits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GaveUp {
+    pub chat: u32,
+    pub asker: crate::harness::hooked::Asker,
+    pub why: crate::harness::hooked::NotRaised,
+}
+
+/// What is told each [`GaveUp`]: the app tells the chat's board, which lists the chat as waiting
+/// in its terminal.
+pub type GivingUp = std::sync::Arc<dyn Fn(GaveUp) + Send + Sync + 'static>;
+
 /// The hearer that holds each [`PermissionAsked`] in `hooks`, under the chat's number, until it
 /// is answered there, its hook goes away, or its deadline passes. `changed` is told each time
 /// the asks held there change: raised, withdrawn or timed out. An ask `hooks` will not raise,
@@ -123,27 +137,48 @@ pub fn held_in(
     hooks: std::sync::Arc<crate::harness::hooked::HookAsks>,
     changed: std::sync::Arc<dyn Fn() + Send + Sync + 'static>,
 ) -> Permitting {
+    held_or_given_up(hooks, changed, std::sync::Arc::new(|_| {}))
+}
+
+/// [`held_in`], with each ask it will not hold told to `gave_up` (R-204): its harness's own
+/// prompt then waits in the pane, which is what the person is told. Only the hook's line says
+/// so, never what the terminal shows (ADR 0076).
+pub fn held_or_given_up(
+    hooks: std::sync::Arc<crate::harness::hooked::HookAsks>,
+    changed: std::sync::Arc<dyn Fn() + Send + Sync + 'static>,
+    gave_up: GivingUp,
+) -> Permitting {
     Box::new(move |asked: PermissionAsked| {
-        let held = hooks
-            .raise_after(
-                &asked.chat.to_string(),
-                asked.permission_request,
-                &asked.payload,
-                asked.ran_for(),
-                std::time::Instant::now(),
-            )
-            .map_err(|why| {
-                tracing::warn!(
-                    "purlis: chat {}'s permission ask was left to its pane: {why}",
-                    asked.chat
-                );
-            })
-            .ok()?;
+        let given_up = |why: crate::harness::hooked::NotRaised| {
+            tracing::warn!(
+                "purlis: chat {}'s permission ask was left to its pane: {why}",
+                asked.chat
+            );
+            gave_up(GaveUp {
+                chat: asked.chat,
+                asker: crate::harness::hooked::Asker::of(&asked.payload),
+                why,
+            });
+        };
+        let held = match hooks.raise_after(
+            &asked.chat.to_string(),
+            asked.permission_request,
+            &asked.payload,
+            asked.ran_for(),
+            std::time::Instant::now(),
+        ) {
+            Ok(held) => held,
+            Err(why) => {
+                given_up(why);
+                return None;
+            }
+        };
         let id = held.raised.id.clone();
         // A hook's ask always has a deadline; one without would hold a hook past the harness's
-        // patience, so it is let go at once.
+        // patience, so it is let go at once, and its prompt asks in the pane as a late one's does.
         let Some(until) = held.raised.ask.deadline.duration() else {
             hooks.withdraw(&id);
+            given_up(crate::harness::hooked::NotRaised::TooLate);
             return None;
         };
         changed();

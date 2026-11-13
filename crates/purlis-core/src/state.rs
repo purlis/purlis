@@ -649,6 +649,13 @@ pub struct Chat {
     /// Who asked the prompts it waits on (#1644): the chat itself, its helpers, or both.
     /// Meaningful only while [`Chat::waits_on_its_prompt`]; a fresh wait begins it anew.
     askers: Askers,
+    /// **Its permission hook gave up on the prompt it waits on** (R-204, #6426): the host would
+    /// not hold the ask (too big, not its harness's, too late, or the 32-open cap), so its
+    /// harness's own prompt asks in the pane and nothing held answers it
+    /// ([`Chat::hook_gave_up`]). Meaningful only while [`Chat::waits_on_its_prompt`]; a fresh
+    /// wait begins it anew.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    gave_up: bool,
     /// How many prompts have started a turn of this chat since the app started it.
     turns: u32,
     /// The child agents of its current run, shown under it (FD-18, W8).
@@ -771,6 +778,7 @@ impl Chat {
             prompt: crate::harness::model::Prompt::Unsaid,
             began_past_its_prompt: false,
             askers: Askers::default(),
+            gave_up: false,
             turns: 0,
             children: children::Children::default(),
             held: false,
@@ -839,6 +847,43 @@ impl Chat {
     /// holds it there ([`Chat::waits_on_its_prompt`]).
     pub fn its_prompt(&self) -> Option<crate::harness::model::Prompt> {
         self.waits_on_its_prompt().then_some(self.prompt)
+    }
+
+    /// **Its permission hook gave up** (R-204, #6426): the host would not hold the ask, so the
+    /// harness's own permission prompt asks in the pane. The chat waits on that prompt, asked by
+    /// `asker`, as a nudge that named it would say, whatever its harness nudges: a permission
+    /// hook runs only in the middle of a turn, so it is taken as one even where the board heard
+    /// no turn begin. What moves a chat past its prompt moves it past this one
+    /// ([`Chat::tool_said`], [`Chat::answered_by`]). The cause is the hook's line alone, never
+    /// what the terminal shows (ADR 0076). Answers whether anything a reader can see changed.
+    pub fn hook_gave_up(&mut self, asker: &crate::harness::hooked::Asker) -> bool {
+        if self.ended {
+            return false;
+        }
+        let was = (self.seen(), self.waits_in_its_terminal());
+        if !self.waits_on_its_prompt() {
+            self.state = State::Running;
+        }
+        let helper = match asker {
+            crate::harness::hooked::Asker::Helper(helper) => Some(helper.as_str()),
+            crate::harness::hooked::Asker::Chat | crate::harness::hooked::Asker::Unread => None,
+        };
+        let another = self.asked(
+            &Ask {
+                prompt: crate::harness::model::Prompt::Permission,
+                ..Ask::default()
+            },
+            Waits::default(),
+            helper,
+        );
+        self.gave_up = true;
+        another || was != (self.seen(), self.waits_in_its_terminal())
+    }
+
+    /// **Whether it waits in its terminal on a prompt its permission hook gave up on**, now
+    /// (R-204): [`Chat::hook_gave_up`], and nothing has moved it past that prompt since.
+    pub fn waits_in_its_terminal(&self) -> bool {
+        self.gave_up && self.waits_on_its_prompt()
     }
 
     /// How many prompts have started a turn of this chat, as the app has heard them.
@@ -1375,6 +1420,7 @@ impl Chat {
         self.began_past_its_prompt = false;
         if fresh {
             self.askers = Askers::default();
+            self.gave_up = false;
         }
         if self.waits_on_its_prompt() {
             self.askers.add(helper);
@@ -2335,6 +2381,28 @@ impl Board {
         self.chats
             .get(&number)
             .and_then(|tracked| tracked.chat.its_prompt())
+    }
+
+    /// Chat `number`'s permission hook gave up on an ask `asker` asked ([`Chat::hook_gave_up`],
+    /// R-204). Answers whether anything a reader can see changed: nothing does for a chat the
+    /// board does not have.
+    pub fn hook_gave_up(&mut self, number: u32, asker: &crate::harness::hooked::Asker) -> bool {
+        self.tell(number, || Move::HookGaveUp {
+            asker: asker.clone(),
+        });
+        let changed = self
+            .chats
+            .get_mut(&number)
+            .is_some_and(|tracked| tracked.chat.hook_gave_up(asker));
+        self.stamp(number, changed)
+    }
+
+    /// Whether chat `number` waits in its terminal on a prompt its permission hook gave up on
+    /// ([`Chat::waits_in_its_terminal`], R-204). A chat the board does not have waits on nothing.
+    pub fn waits_in_its_terminal(&self, number: u32) -> bool {
+        self.chats
+            .get(&number)
+            .is_some_and(|tracked| tracked.chat.waits_in_its_terminal())
     }
 
     /// How many prompts have started a turn of this chat ([`Chat::turns`]); none for a chat the

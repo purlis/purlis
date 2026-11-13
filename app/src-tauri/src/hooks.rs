@@ -2593,10 +2593,23 @@ impl Hooks {
                 Box::new(move |block| hear_block(block))
             },
             permission: {
-                let held = crate::asking::permitting(
+                // A hook that gives up leaves its harness's prompt in the pane: the board says
+                // the chat waits in its terminal, and the window is told (R-204).
+                let gave_up: purlis_core::hookwire::permission::GivingUp = {
+                    let board = Arc::clone(&board);
+                    let moved = Arc::clone(&moved);
+                    let plane = plane.clone();
+                    Arc::new(move |left| {
+                        if let Some(what) = told_it_gave_up(&board, &plane, &left) {
+                            moved(what);
+                        }
+                    })
+                };
+                let held = crate::asking::permitting_or_given_up(
                     plane.clone(),
                     Arc::clone(&asks),
                     Arc::clone(&asks_told),
+                    gave_up,
                 );
                 let skill_runs = Arc::clone(&skill_runs);
                 Box::new(move |asked| {
@@ -3904,6 +3917,21 @@ fn got_past_its_prompt(
     moving(&mut board, plane, chat, |board| match agent {
         Some(agent) => board.child_tool_said_by(chat, agent, speaker, said),
         None => board.tool_said_by(chat, speaker, said),
+    })
+}
+
+/// **Chat `left.chat`'s permission hook gave up** (R-204, #6426): the board says it waits in its
+/// terminal on its harness's prompt, and answers what the window must now be told. Its cause is
+/// the hook's line alone ([`purlis_core::hookwire::permission::GaveUp`]), never what the
+/// terminal shows (ADR 0076).
+fn told_it_gave_up(
+    board: &Mutex<Board>,
+    plane: &PlaneId,
+    left: &purlis_core::hookwire::permission::GaveUp,
+) -> Option<Moved> {
+    let mut board = held_board(board);
+    moving(&mut board, plane, left.chat, |board| {
+        board.hook_gave_up(left.chat, &left.asker)
     })
 }
 

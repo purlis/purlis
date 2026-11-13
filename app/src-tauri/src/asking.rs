@@ -972,10 +972,22 @@ pub fn tell(plane: &PlaneId, hooks: &HookAsks, telling: &Telling) {
 /// What hears a permission hook's ask on `plane`'s channel: held in `hooks` until it is
 /// answered, its hook goes away, or its deadline passes, and the window told each change.
 pub fn permitting(plane: PlaneId, hooks: Arc<HookAsks>, telling: Telling) -> Permitting {
+    permitting_or_given_up(plane, hooks, telling, Arc::new(|_| {}))
+}
+
+/// [`permitting`], with each ask `hooks` will not hold told to `gave_up` (R-204): its chat then
+/// waits in its terminal ([`Waiting::in_its_terminal`]).
+pub fn permitting_or_given_up(
+    plane: PlaneId,
+    hooks: Arc<HookAsks>,
+    telling: Telling,
+    gave_up: purlis_core::hookwire::permission::GivingUp,
+) -> Permitting {
     let told = Arc::clone(&hooks);
-    purlis_core::hookwire::permission::held_in(
+    purlis_core::hookwire::permission::held_or_given_up(
         hooks,
         Arc::new(move || tell(&plane, &told, &telling)),
+        gave_up,
     )
 }
 
@@ -4116,6 +4128,10 @@ pub struct Waiting<'a> {
     /// The prompt a chat is stopped on in its terminal, asked mid-turn, where it is
     /// (`Glance::prompt`, #1691).
     pub at_its_prompt: &'a dyn Fn(u32) -> Option<purlis_core::harness::model::Prompt>,
+    /// Whether a chat waits in its terminal on a prompt its permission hook gave up on (R-204,
+    /// `purlis_core::state::Board::waits_in_its_terminal`): listed as its own ask, even beside
+    /// the asks its hook still holds, since none of those answers that prompt.
+    pub in_its_terminal: &'a dyn Fn(u32) -> bool,
     /// The dispatches held for the person, as their Notices are told them.
     pub dispatches: Vec<crate::dispatchgrants::DispatchPending>,
     /// The blocks each chat is held on now.
@@ -4329,7 +4345,10 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
         waiting
             .queue
             .iter()
-            .filter(|session| !said.contains(session) && !(waiting.only_updates)(**session))
+            .filter(|session| {
+                (!said.contains(session) || (waiting.in_its_terminal)(**session))
+                    && !(waiting.only_updates)(**session)
+            })
             .map(|&session| match (waiting.at_its_prompt)(session) {
                 Some(prompt) => terminal(session, prompt, (waiting.asking)(session)),
                 None => question(
@@ -4714,6 +4733,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         permissions: permissions.into_iter().map(|(raised, _)| raised).collect(),
         queue,
         at_its_prompt: &|session| board.glance(session).prompt,
+        in_its_terminal: &|session| held.hooks().board().waits_in_its_terminal(session),
         dispatches: waiting_dispatches
             .iter()
             .map(|one| store.told(plane, root, &locks, one))
