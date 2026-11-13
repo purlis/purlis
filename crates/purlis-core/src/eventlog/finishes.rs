@@ -40,10 +40,15 @@ const TURN_ENDED: &str = "hook.stop";
 const FAILED: &str = "posttoolusefailure";
 
 /// **Whether an event of `kind` is a call that came back**: one of the recorder's post-tool
-/// kinds, `hook.` and a post-tool word it answers ([`super::phase`]), and not a failed call's.
+/// kinds, `hook.` and a post-tool word it answers ([`super::phase`]), and neither a failed
+/// call's nor one of the post-tool words that say nothing of a call
+/// ([`crate::hookreg::NO_OPS`]), so it reads a call coming back as the block loop does (Q263).
 fn came_back(kind: &str) -> bool {
-    kind.strip_prefix("hook.")
-        .is_some_and(|word| super::phase(word) == Some(Phase::Post) && !word.starts_with(FAILED))
+    kind.strip_prefix("hook.").is_some_and(|word| {
+        super::phase(word) == Some(Phase::Post)
+            && !word.starts_with(FAILED)
+            && !crate::hookreg::NO_OPS.contains(&word)
+    })
 }
 
 /// How a finish ended.

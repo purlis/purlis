@@ -231,7 +231,7 @@ fn a_call_comes_back_under_the_recorders_own_post_tool_words() {
     for (kind, left) in [
         ("hook.posttooluse", 0),
         ("hook.posttooluse-blocked", 0),
-        ("hook.posttooluse-bash", 0),
+        ("hook.posttooluse-bash", 1),
         ("hook.posttoolusefailure-blocked", 1),
         ("hook.posttoolusefailure-purlis", 1),
         ("hook.PostToolUse", 1),
