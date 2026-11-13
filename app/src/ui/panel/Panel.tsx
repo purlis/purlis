@@ -230,12 +230,12 @@ export function PanelSectionTitle({
   children,
   ...rest
 }: Omit<ComponentPropsWithRef<"h2">, "style"> & {
-  level?: 2 | 3;
+  level?: 2 | 3 | 4;
   /** The mark before the words, decoration beside them. */
   mark?: ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" }>;
   children?: ReactNode;
 }) {
-  const Heading = level === 3 ? "h3" : "h2";
+  const Heading = level === 4 ? "h4" : level === 3 ? "h3" : "h2";
   return (
     // The label's text role, the one a section label wears everywhere (#1920); a theme's parts
     // reach it over the role.

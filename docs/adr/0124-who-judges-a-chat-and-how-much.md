@@ -768,6 +768,6 @@ it.
 
 ## Amendments
 
-An amendment to this decision is a file of its own in `0124/`, named `<yyyy-mm-dd>-<slug>.md`,
+An amendment to this decision is a file of its own in [`0124/`](0124/), named `<yyyy-mm-dd>-<slug>.md`,
 never a section added to this record (#1982). The first expected is the person's review of the
 decisions the orchestrator made, the Journal's name among them (decision 11.3).

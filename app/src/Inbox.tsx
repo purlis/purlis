@@ -38,7 +38,13 @@ import {
 } from "./asksScope";
 import type { AskedBy } from "./tabs";
 import { quietSaid } from "./NeedsYou";
-import { Notice, NoticeList, type NoticesClear, type NoticesDot } from "./Notice";
+import {
+  Notice,
+  NoticeList,
+  type NoticesClear,
+  type NoticesDot,
+  type NoticesFindable,
+} from "./Notice";
 import {
   DISMISS_ALL,
   DISMISS_ALL_TIP,
@@ -253,6 +259,7 @@ export function Inbox({
   onNotices,
   onDot,
   onNoticeCauses,
+  findable,
   seen,
   onNoticeAnswer,
   elsewhere,
@@ -324,6 +331,9 @@ export function Inbox({
   onDot?: (dot: NoticesDot) => void;
   /** Hears the causes of the Notices it lists (#6002): what of them is New. */
   onNoticeCauses?: (causes: readonly string[]) => void;
+  /** **The Notices made findable** (Q182, Q183): a search box, filters by kind, groups with
+   *  counts and Dismissed (N), over the project's dismissals. In the Notices view alone. */
+  findable?: NoticesFindable;
   /** The project's seen record (`seen.ts`), which its rows read to draw what is New (#6002). */
   seen?: SeenRows;
   /** A Notice answering the person's own press arrived (`ANSWERS`, D-1695-3). */
@@ -994,6 +1004,7 @@ export function Inbox({
                 noticed === 0 &&
                 windowLinesCount === 0 &&
                 resultsCount === 0 &&
+                (findable === undefined || part !== "notices" || findable.dismissed.size === 0) &&
                 (reading === undefined || reading.length === 0)
               }
               ref={noticesAt}
@@ -1039,6 +1050,7 @@ export function Inbox({
                   onAnswer={onNoticeAnswer}
                   hold={part === "notices" ? hold : undefined}
                   onClear={setNoticesClear}
+                  findable={part === "notices" ? findable : undefined}
                 >
                   {aboutListed(undefined) ? notices : null}
                   {elsewhere !== undefined && part === undefined && (
