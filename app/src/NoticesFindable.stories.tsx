@@ -36,16 +36,21 @@ export const NOT_TRUSTED =
  *  dismissed by its cause as the window's dismissals keep them. */
 function TheNotices({
   result = false,
+  title = "repos/api was not saved",
   project = PROJECT,
   dismissedFirst = [],
   clones = CLONES,
 }: {
   result?: boolean;
+  /** The result's title, which names the clone it is about. */
+  title?: string;
   project?: string;
   dismissedFirst?: readonly string[];
   clones?: readonly CloneToVouch[];
 }) {
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set(dismissedFirst));
+  /** The clones trusted: each leaves the list, as a clone trusted in the window does. */
+  const [trusted, setTrusted] = useState<ReadonlySet<string>>(new Set());
   const [said, setSaid] = useState("Nothing pressed");
   const dismiss = (cause: string) => setDismissed((was) => new Set(was).add(cause));
   const showAgain = (cause: string) =>
@@ -55,7 +60,7 @@ function TheNotices({
       {result && (
         <ActionResultNotice
           cause="result:save"
-          said={{ from: "story", refused: true, title: "api was not saved", words: NOT_TRUSTED }}
+          said={{ from: "story", refused: true, title, words: NOT_TRUSTED }}
           onClose={() => undefined}
           onSettings={() => undefined}
           project={PROJECT}
@@ -63,13 +68,16 @@ function TheNotices({
       )}
       <NoticeList findable={{ project, dismissed, showAgain }}>
         {clones
-          .filter((one) => !dismissed.has(cloneVouchCause(one)))
+          .filter((one) => !dismissed.has(cloneVouchCause(one)) && !trusted.has(one.folder))
           .map((one) => (
             <CloneVouchNotice
               key={one.folder}
               clone={one}
               busy={false}
-              onTrust={() => setSaid(`Trusted ${one.folder}`)}
+              onTrust={() => {
+                setTrusted((was) => new Set(was).add(one.folder));
+                setSaid(`Trusted ${one.folder}`);
+              }}
               onDismiss={() => dismiss(cloneVouchCause(one))}
             />
           ))}
@@ -206,6 +214,62 @@ export const ToTheControl: Story = {
           .getAllByRole("button", { name: "Trust this clone" })
           .find((one) => one.closest('[data-cause*="repos/api"]') !== null) ?? null,
       "on api's Trust this clone",
+    );
+    expectFocusInSight();
+  },
+};
+
+/** **A kind that empties falls back to All** (R-332, R-333): after Go to, Trust this clone on
+ *  the last clone leaves no Notice of its kind, so every kind is shown, its filter pressed, and
+ *  what stands is listed; never a blank view. */
+export const ToTheControlThenTrusted: Story = {
+  args: { result: true, clones: [CLONES[1]] },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Go to Trust this clone" }));
+    const filters = within(canvas.getByRole("group", { name: "Show notices of a kind" }));
+    await waitFor(() =>
+      expect(
+        filters.getByRole("button", { name: "Clones made outside purlis · 1" }),
+      ).toHaveAttribute("aria-pressed", "true"),
+    );
+    await untilFocused(
+      () => canvas.queryByRole("button", { name: "Trust this clone" }),
+      "on api's Trust this clone",
+    );
+    // Pressed from the keyboard, where Go to left it.
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(filters.getByRole("button", { name: "All · 2" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      ),
+    );
+    await expect(canvas.getByText(/docs is on spike\/search/)).toBeVisible();
+    await expect(canvas.getByText(/hooks are not installed/)).toBeVisible();
+  },
+};
+
+/** **Go to the clone a result names** (R-333): by its folder's path, or its exact name in quotes
+ *  or code, never by a bare word, so folders named "clone" and "save", listed first, are not
+ *  taken for the “web” the result names (its words say "Trust this clone" and "save again"). */
+export const ToTheNamedFolder: Story = {
+  args: {
+    result: true,
+    title: "“web” was not saved",
+    clones: [
+      clone("repos/clone", "github.com/acme/clone"),
+      clone("repos/save", "github.com/acme/save"),
+      CLONES[0],
+    ],
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: "Go to Trust this clone" }));
+    await untilFocused(
+      () =>
+        canvas
+          .getAllByRole("button", { name: "Trust this clone" })
+          .find((one) => one.closest('[data-cause*="repos/web|"]') !== null) ?? null,
+      "on web's Trust this clone",
     );
     expectFocusInSight();
   },

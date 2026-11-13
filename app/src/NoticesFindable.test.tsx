@@ -6,7 +6,8 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import { userEvent } from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useDismissHold } from "./dismissHold";
+import { useDismissHold, type DismissHold } from "./dismissHold";
+import { UNDO_MS } from "./undo";
 import { Notice, NoticeList, type NoticesClear } from "./Notice";
 import * as stories from "./NoticesFindable.stories";
 import { ASK_WAITS_MS, WINDOW_CONTROLS, goToControl } from "./windowControls";
@@ -58,6 +59,14 @@ describe("the Notices view", () => {
 
   it("a message that names a window control links to the one it names, focused (R-333)", async () => {
     await walk(composed.ToTheControl);
+  });
+
+  it("a kind that empties after Go to falls back to All, its filter pressed (R-332, R-333)", async () => {
+    await walk(composed.ToTheControlThenTrusted);
+  });
+
+  it("Go to finds the clone by its path or quoted name, never a bare word (R-333)", async () => {
+    await walk(composed.ToTheNamedFolder);
   });
 
   it("Go to a dismissed control's Notice shows Dismissed, on its Show again (R-333)", async () => {
@@ -167,5 +176,78 @@ describe("Dismissed (N) while a Dismiss waits for its Undo", () => {
     await user.click(screen.getByRole("button", { name: "Show again" }));
     await user.click(filters.getByRole("button", { name: "All · 1" }));
     expect(await screen.findByText(/web is on spike/)).toBeVisible();
+  });
+});
+
+/** Two kept Notices, web's and api's, each dismissed in its own record, with a held Dismiss. */
+function HeldTwo({
+  onClear,
+}: {
+  onClear: (clear: NoticesClear | undefined, hold: DismissHold) => void;
+}) {
+  const hold = useDismissHold();
+  const [kept, setKept] = useState<ReadonlySet<string>>(new Set());
+  const keep = (cause: string) => setKept((was) => new Set(was).add(cause));
+  const notice = (cause: string, words: string) =>
+    !kept.has(cause) && (
+      <Notice key={cause} cause={cause} label={cause} onDismiss={() => keep(cause)}>
+        <p>{words}</p>
+      </Notice>
+    );
+  return (
+    <NoticeList
+      hold={hold}
+      onClear={(clear) => onClear(clear, hold)}
+      findable={{
+        project: PROJECT,
+        dismissed: kept,
+        showAgain: (cause) => setKept((was) => new Set([...was].filter((one) => one !== cause))),
+      }}
+    >
+      {notice("stale-clone:web", "web is on spike/search, not main.")}
+      {notice("stale-clone:api", "api is on spike/auth, not main.")}
+    </NoticeList>
+  );
+}
+
+describe("Show again on a row Dismiss all holds for its Undo", () => {
+  it("brings back only that Notice, and the rest are dismissed when the Undo goes (R-334)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    let clear: NoticesClear | undefined;
+    let holds: DismissHold | undefined;
+    render(
+      <HeldTwo
+        onClear={(now, hold) => {
+          clear = now;
+          holds = hold;
+        }}
+      />,
+    );
+    await waitFor(() => expect(clear?.count).toBe(2));
+    // Dismiss all, held for its Undo, as the Inbox's press holds it.
+    act(() => {
+      const { keys, out } = clear?.take() ?? { keys: [], out: () => undefined };
+      holds?.hold(keys, out);
+    });
+    const filters = within(screen.getByRole("group", { name: "Show notices of a kind" }));
+    await user.click(filters.getByRole("button", { name: "Dismissed (2)" }));
+    const rows = within(screen.getByRole("list", { name: "Dismissed notices" }));
+    const webs = rows.getAllByRole("listitem").find((row) => /web/.test(row.textContent ?? ""));
+    await user.click(within(webs as HTMLElement).getByRole("button", { name: "Show again" }));
+    // api's stays dismissed, waiting for its Undo; web's is back.
+    await waitFor(() =>
+      expect(filters.getByRole("button", { name: "Dismissed (1)" })).toBeInTheDocument(),
+    );
+    await user.click(filters.getByRole("button", { name: "All · 1" }));
+    expect(screen.getByText(/web is on spike/)).toBeVisible();
+    expect(screen.queryByText(/api is on spike/)).toBeNull();
+    // The Undo goes: api's own Dismiss is carried out, web's never.
+    act(() => {
+      vi.advanceTimersByTime(UNDO_MS + 1);
+    });
+    expect(screen.getByText(/web is on spike/)).toBeVisible();
+    expect(screen.queryByText(/api is on spike/)).toBeNull();
+    expect(filters.getByRole("button", { name: "Dismissed (1)" })).toBeInTheDocument();
   });
 });

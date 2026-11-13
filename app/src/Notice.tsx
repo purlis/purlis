@@ -1209,7 +1209,7 @@ export type NoticesClear = {
   count: number;
   /** Taken at the press: the keys the Notices are held by, where Dismiss all waits for its
    *  Undo, and each one's own Dismiss, done when `out` is called. */
-  take: () => { keys: readonly string[]; out: () => void };
+  take: () => { keys: readonly string[]; out: (still?: ReadonlySet<string>) => void };
 };
 
 /** The key a Notice is held by in a {@link DismissHold}: its place in the list and its cause,
@@ -1287,7 +1287,9 @@ export function NoticeList({
     });
     return {
       keys: now.map((one) => one.key),
-      out: () => now.forEach((one) => one.own?.()),
+      // Each one's own, unless it was brought back while its Undo stood (`still` holds it not).
+      out: (still?: ReadonlySet<string>) =>
+        now.forEach((one) => (still === undefined || still.has(one.key)) && one.own?.()),
     };
   }, []);
   /** Does the Dismiss of each Notice of `ids`: held for its Undo where the list has a hold. */
@@ -1350,7 +1352,17 @@ export function NoticeList({
         .map(([, one]) => one.cause),
     [entries, held],
   );
-  const found = useFinding(ordered, findable, listAt, heldKept, hold?.undo);
+  /** Show again on a Notice held for its Undo brings back that one alone (R-334). */
+  const release = hold?.release;
+  const showHeld = useCallback(
+    (cause: string) => {
+      for (const [id, one] of entries)
+        if (one.cause === cause && held?.has(heldKey(id, cause)) === true)
+          release?.(heldKey(id, cause));
+    },
+    [entries, held, release],
+  );
+  const found = useFinding(ordered, findable, listAt, heldKept, showHeld);
   const all = useMemo(() => ordered.map((one) => one.host), [ordered]);
   const hosts = found?.hosts ?? all;
 
@@ -1477,17 +1489,27 @@ function wordsOf(host: HTMLElement): string {
   return copy.textContent ?? "";
 }
 
-/** Whether `names`, a message's words, names what the Notice of `cause` is about: its whole
- *  `aboutOf`, or its last part as a word ("web" for `repos/web`). */
+/** `text`, as it reads inside a regular expression. */
+const literally = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * **Whether `names`, a message's words, names what the Notice of `cause` is about** (R-333): its
+ * folder by its path (`workspaces/smart-ide/repos/web`, or its last parts from a slash on,
+ * `repos/web`), not inside a longer one; or its exact name in quotes or code (“web”, `web`).
+ * Never by its bare name as a word: a folder named "clone" or "save" is in every message that
+ * says "Trust this clone" or "save again".
+ */
 function namesIt(names: string, cause: string): boolean {
-  const about = aboutOf(cause);
-  if (about === "") return false;
-  if (names.includes(about)) return true;
-  const last = about.split("/").pop() ?? "";
-  return (
-    last !== "" &&
-    new RegExp(`(^|\\W)${last.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\W|$)`).test(names)
-  );
+  const parts = aboutOf(cause)
+    .split("/")
+    .filter((part) => part !== "");
+  if (parts.length === 0) return false;
+  const byPath = parts
+    .slice(0, -1)
+    .map((_, at) => parts.slice(at).join("/"))
+    .some((path) => new RegExp(`(^|[^\\w./-])${literally(path)}(?![\\w/-])`).test(names));
+  const name = literally(parts[parts.length - 1]);
+  return byPath || new RegExp(`["'“‘\`]${name}["'”’\`]`).test(names);
 }
 
 /**
@@ -1502,14 +1524,15 @@ function namesIt(names: string, cause: string): boolean {
  * ({@link wordsOf}), and a dismissed one by its kind and what it was about.
  *
  * `heldKept` are the causes dismissed here and waiting for their Undo, listed under Dismissed
- * from the press; Show again on one is that Undo (`undo`).
+ * from the press; Show again on one brings back that one alone (`showHeld`), the rest still
+ * waiting for the same Undo.
  */
 function useFinding(
   ordered: readonly Entry[],
   findable: NoticesFindable | undefined,
   listAt: HTMLElement | null,
   heldKept: readonly string[],
-  undo: (() => void) | undefined,
+  showHeld: (cause: string) => void,
 ):
   | { hosts: readonly HTMLElement[]; bar: ReactNode; after: ReactNode; reach: () => void }
   | undefined {
@@ -1541,6 +1564,11 @@ function useFinding(
           : ALL;
   if (target !== undefined && !same(showing, target)) setShowing(target);
   if (target !== undefined && query !== "") setQuery("");
+  // **A kind picked that empties falls back to All** (R-332), always: its last Notice mended or
+  // dismissed leaves no filter of its kind, so the list shows every kind, never a blank view.
+  const picked = "kind" in showing ? showing.kind : undefined;
+  if (picked !== undefined && !ordered.some((one) => kindOf(one.cause).many === picked))
+    setShowing(ALL);
 
   const groups = useMemo(() => {
     const made: { many: string; members: Entry[] }[] = [];
@@ -1596,7 +1624,7 @@ function useFinding(
   const again = (cause: string, index: number) => {
     refocusAt.current = index;
     if (findable.dismissed.has(cause)) findable.showAgain(cause);
-    else undo?.();
+    else showHeld(cause);
   };
 
   const bar = (
