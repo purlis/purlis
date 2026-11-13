@@ -63,10 +63,7 @@ const PLACES = {
   confirmation: { at: "no-chat" },
   budget: { at: "pane" },
   looping: { at: "pane" },
-  "merge-hold": {
-    at: "asks-only",
-    debt: "a held merge is listed in Asks alone until its chat's pane draws the merge row (T1-40, R-120); its Merge and Don't merge are the window's, through the settle guard",
-  },
+  "merge-hold": { at: "pane" },
   "trust-clone": {
     at: "asks-only",
     debt: "a GitHub App token refused for a clone purlis has no record of is listed in Asks alone until it is drawn Blocking or on its chat's finish row (T1-42, R-329); its Trust this clone is the clone Notice's own vouch_clone, window-only",
@@ -141,6 +138,6 @@ describe("every kind of ask has a drawn place", () => {
       Object.entries(PLACE)
         .filter(([, place]) => place.at === "asks-only")
         .map(([source]) => source),
-    ).toEqual(["merge-hold", "trust-clone", "trust-clones"]);
+    ).toEqual(["trust-clone", "trust-clones"]);
   });
 });

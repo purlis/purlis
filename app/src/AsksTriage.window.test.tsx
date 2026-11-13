@@ -326,6 +326,64 @@ describe("triage's keys (#6016)", () => {
   });
 });
 
+/** A merge chat `session`'s hook held (R-114): a hold, high-risk, of the Merge class (Q239). */
+const hold = (session: number): Shown => ({
+  session,
+  ask: `merge:${session}:o/r#12@0123456789abcdef0123456789abcdef01234567`,
+  says: "Merge request 12 of o/r at 0123456789ab? There is no undo.",
+  options: [
+    { id: "merge", label: "Merge", allows: true },
+    { id: "dont-merge", label: "Don't merge", allows: false },
+  ],
+  source: "merge-hold",
+  chain: [`steward ${session}`],
+  answer: {
+    via: "merge-hold",
+    repo: "o/r",
+    number: 12,
+    head: "0123456789abcdef0123456789abcdef01234567",
+  },
+  risk: {
+    class: "merge",
+    why: "Merges request 12 of o/r at 0123456 into main, with no undo",
+    confirm: "Merge request 12 of o/r at 0123456 into main?",
+  },
+});
+
+describe("a hold in triage (T1-39, R-144)", () => {
+  const merged = (calls: { cmd: string }[]) =>
+    calls.filter(({ cmd }) => cmd === "merge_held_request" || cmd === "dont_merge_held_request");
+
+  it("keyboard triage skips holds", async () => {
+    // The hold stands first, yet ⌘⇧I lands past it, later never comes round to it, and Enter
+    // answers the ask the keyboard is on, never the hold.
+    const calls = core();
+    triage([hold(3), permission(4, "01J0B", "Run cargo build")]);
+    expect(chatGroup("steward 4").contains(focused())).toBe(true);
+    expect(focused()).toHaveAccessibleName("Deny");
+
+    await key("L");
+    expect(chatGroup("steward 4").contains(focused())).toBe(true);
+    expect(chatGroup("steward 3").contains(focused())).toBe(false);
+
+    await userEvent.keyboard("{Enter}");
+    expect(answered(calls)).toHaveLength(1);
+    expect(calls.find(({ cmd }) => cmd === "answer_ask")?.args).toMatchObject({ option: "deny" });
+    expect(merged(calls)).toEqual([]);
+  });
+
+  it("lands nowhere where Asks holds only holds, and its keys answer none", async () => {
+    const calls = core();
+    const { before } = triage([hold(3), hold(5)]);
+    expect(focused()).toBe(before);
+    for (const letter of ["L", "G", "S", "X"] as const) await key(letter);
+    await userEvent.keyboard("{Enter}");
+    expect(merged(calls)).toEqual([]);
+    expect(chatGroup("steward 3").contains(focused())).toBe(false);
+    expect(chatGroup("steward 5").contains(focused())).toBe(false);
+  });
+});
+
 /** A sandbox refusal of `target`: identical in several chats, it is one row of Asks (#6009). */
 const host = (session: number, target = "api.example.com"): Shown => ({
   session,
