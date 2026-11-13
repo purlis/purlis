@@ -3042,6 +3042,63 @@ fn a_link_to_an_init_script_is_offered_no_run_grant_whatever_its_name() {
     );
 }
 
+/// `systemctl` (#6320): `systemctl link <path>` makes a unit of the file it is named, which
+/// `start` then runs, and `import-environment <VAR>` copies a value the run was handed into the
+/// service manager's environment, where `show-environment` reads it back and every unit started
+/// after gets it (`src/systemctl/systemctl.c` and `systemctl-set-environment.c`, systemd v257).
+/// `launchctl` is refused for the same reason.
+#[test]
+fn systemctl_starts_a_unit_of_a_file_it_is_named_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("systemctl");
+}
+
+/// dpkg's `start-stop-daemon` (#6320) `execv`s the program its `--startas`, or else its `--exec`,
+/// names (`utils/start-stop-daemon.c`, dpkg 1.22.11).
+#[test]
+fn start_stop_daemon_runs_the_program_it_is_named_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("start-stop-daemon");
+}
+
+/// runit's `sv` runs the `check` script of the service folder it is named, which a path names as
+/// well as a service's name does, and `runsv` runs the `run` script of the folder it is named
+/// (`src/sv.c`, `src/runsv.c`, runit) (#6320, its second review).
+#[test]
+fn runits_sv_and_runsv_run_the_scripts_of_a_folder_they_are_named_so_they_are_offered_no_run_grant()
+{
+    for name in ["sv", "runsv"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// `supervisorctl`'s `-c` file names a `[ctlplugin:…]` whose `supervisor.ctl_factory` it imports and
+/// calls with the section's settings (`supervisor/options.py`, `supervisorctl.py`, supervisor
+/// 4.2.5) (#6320, its second review).
+#[test]
+fn supervisorctl_loads_the_plugin_its_settings_file_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("supervisorctl");
+}
+
+/// OpenRC (#6320, its second review): `openrc --service <path>` `execv`s the path it is given
+/// (`src/openrc/rc.c`, with `rc_service_resolve` in `src/librc/librc.c`, OpenRC 0.55), and
+/// `openrc-run <script>` has its shell helper source the script (`sh/openrc-run.sh.in`).
+#[test]
+fn openrc_and_openrc_run_run_the_script_they_are_named_so_they_are_offered_no_run_grant() {
+    for name in ["openrc", "openrc-run"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// `chkconfig` hands `systemctl` the unit it is named (`forwardSystemd`, `chkconfig.c`,
+/// chkconfig 1.30), and `deb-systemd-helper` has it preset the unit it is named
+/// (`script/deb-systemd-helper`, init-system-helpers): `systemctl` is refused (#6320, its second
+/// review).
+#[test]
+fn chkconfig_and_deb_systemd_helper_hand_systemctl_a_unit_so_they_are_offered_no_run_grant() {
+    for name in ["chkconfig", "deb-systemd-helper"] {
+        refused_as_running_others(name);
+    }
+}
+
 /// The client built with the server inside it: what `--server-arg` hands the embedded server
 /// (`--plugin-load`, `--plugin-dir`) loads code from a file it names.
 #[test]

@@ -2117,6 +2117,23 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "mariadb-embedded",
     "mysql_client_test_embedded",
     "mariadb-client-test-embedded",
+    // The service managers beside `service` (#6320): `systemctl link <path>` makes a unit of the
+    // file it is named, which `start` runs, and `import-environment` copies a value the run was
+    // handed into the manager's environment, for every unit after it (`launchctl` is refused
+    // for the same); dpkg's `start-stop-daemon` runs what its `--startas` or `--exec` names;
+    // runit's `sv` runs the `check` script of a folder it is named, and `runsv` its `run`;
+    // `supervisorctl`'s settings file names a plugin it imports; `openrc --service` runs the path
+    // it is given and `openrc-run` sources the script it is named; and `chkconfig` and
+    // `deb-systemd-helper` hand `systemctl` the unit they are named.
+    "systemctl",
+    "start-stop-daemon",
+    "sv",
+    "runsv",
+    "supervisorctl",
+    "openrc",
+    "openrc-run",
+    "chkconfig",
+    "deb-systemd-helper",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused
