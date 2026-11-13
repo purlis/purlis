@@ -45,6 +45,10 @@ pub enum Finding {
     },
     /// The engine at the socket didn't answer through the forward: what was said.
     EngineSilent { host: String, said: String },
+    /// The machine's SSH server signs the person in and refuses to forward the engine's socket
+    /// (#6349): `DisableForwarding`, `AllowStreamLocalForwarding no`, or a key's
+    /// `no-port-forwarding`. Found by [`forwarding_refused`], never from what ssh said.
+    ForwardingRefused { host: String },
     /// The engine answers with another id than the pinned one, or, for a Podman, another socket
     /// or graph root (#6269).
     EngineChanged {
@@ -351,11 +355,70 @@ pub fn engine_pin(
         Ok(crate::dockerpool::EngineSaid::PodmanOverDocker) => {
             Err(Finding::NeedsPodman { host: host() })
         }
-        Err(why) => Err(Finding::EngineSilent {
-            host: host(),
-            said: why.0,
-        }),
+        Err(why) => Err(silent_or_refused(
+            opening.ssh,
+            opening.route,
+            opening.pool,
+            opening.key,
+            opening.settings_in,
+            why.0,
+        )),
     }
+}
+
+/// **Why an engine didn't answer through a forward that opened** (#6349): the machine's SSH
+/// server refusing to forward its socket, where [`forwarding_refused`] finds it does, else the
+/// engine itself, with what was said.
+pub fn silent_or_refused(
+    ssh: &Path,
+    route: &Route,
+    pool: &str,
+    key: &HostKey,
+    settings_in: &Path,
+    said: String,
+) -> Finding {
+    if forwarding_refused(ssh, route, pool, key, settings_in) {
+        Finding::ForwardingRefused {
+            host: route.host().to_owned(),
+        }
+    } else {
+        Finding::EngineSilent {
+            host: route.host().to_owned(),
+            said,
+        }
+    }
+}
+
+/// **Whether the machine's SSH server refuses to forward the engine's socket** (#6349), by a check
+/// of its own: ssh asks it for one channel to the socket ([`super::forward_check_args`]) and ends
+/// with 255 where it is refused. ssh ends with 255 for a sign-in it was refused too, so a 255 is
+/// taken as a refused forward only where the sign-in, made again, is let in. A local forward opens
+/// on this machine alone, so a server that refuses it is found only by asking it for a channel.
+/// What ssh said is never read.
+#[must_use]
+pub fn forwarding_refused(
+    ssh: &Path,
+    route: &Route,
+    pool: &str,
+    key: &HostKey,
+    settings_in: &Path,
+) -> bool {
+    let Ok(folder) = crate::dockerpool::settings::run_folder(settings_in) else {
+        return false;
+    };
+    let Ok(known_hosts) = folder.keep("known_hosts", super::known_hosts(pool, key).as_bytes())
+    else {
+        return false;
+    };
+    let Ok(args) = super::forward_check_args(route, pool, &known_hosts) else {
+        return false;
+    };
+    let asked = super::run(ssh, &args);
+    if !matches!(asked, Ok(super::Ran { code: Some(255), .. })) {
+        return false;
+    }
+    super::run(ssh, &super::sign_in_args(route, pool, &known_hosts))
+        .is_ok_and(|signed_in| signed_in.code == Some(0))
 }
 
 /// **Whether `pin` still holds for the engine `docker` reaches through the pool's forward**: the

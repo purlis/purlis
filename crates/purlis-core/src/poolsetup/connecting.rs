@@ -226,6 +226,7 @@ pub fn cause(finding: &Finding) -> &'static str {
         Finding::NoEngine { .. } => "no-engine",
         Finding::NotAllowed { .. } => "not-allowed",
         Finding::EngineSilent { .. } => "engine-silent",
+        Finding::ForwardingRefused { .. } => "forwarding-refused",
         Finding::EngineChanged { .. } => "pool-engine-changed",
         Finding::NeedsPodman { .. } => "needs-podman",
         Finding::Here(_) => "here",
@@ -334,6 +335,14 @@ fn said_with_next(finding: &Finding) -> (String, Option<Action>) {
                 "Docker on {host} didn't answer through SSH{}. Check that Docker is running \
                  there, then check again.",
                 shown(said)
+            ),
+            check_again(),
+        ),
+        Finding::ForwardingRefused { host } => (
+            format!(
+                "The SSH server on {host} doesn't allow forwarding, and purlis reaches Docker \
+                 there by forwarding its socket. Ask its admin to allow forwarding for your \
+                 account (`AllowStreamLocalForwarding` in sshd_config), then check again."
             ),
             check_again(),
         ),

@@ -106,8 +106,32 @@ pub fn docker_through(
         if let Err(finding) = connect::engine_holds(&through, &remote.route, &remote.pin) {
             // Nothing more goes over a forward to an engine that isn't the pinned one.
             forget_checked(pool);
-            if matches!(finding, Finding::EngineChanged { .. }) {
+            let finding = match finding {
+                Finding::EngineSilent { said, .. } => connect::silent_or_refused(
+                    ssh,
+                    &remote.route,
+                    pool,
+                    &remote.pin.host_key,
+                    settings_in,
+                    said,
+                ),
+                finding => finding,
+            };
+            if matches!(
+                finding,
+                Finding::EngineChanged { .. } | Finding::ForwardingRefused { .. }
+            ) {
                 forward::let_go(pool);
+            }
+            if matches!(finding, Finding::ForwardingRefused { .. }) {
+                // A forward the server refuses opens here all the same and carries nothing: it
+                // waits, and is looked at again, as one that won't open does (#6349).
+                let now = Instant::now();
+                let failed = match kept {
+                    Some(kept) => kept.failed_again(now, Some(finding.clone())),
+                    None => Failing::first(finding.clone(), now),
+                };
+                note_failing(pool, &remote.pin, failed);
             }
             return Err(finding);
         }
@@ -285,7 +309,8 @@ pub fn docker_of_named(config: &Path, docker: &Docker, name: &str) -> Result<Doc
 
 /// **Why a forward did not open**, looked at again from the start (ADR 0123 §7): the name, the
 /// machine answering, the sign-in with the pinned key, and only where that fails the key it
-/// presents against the pin. Where all of those hold, what ssh said.
+/// presents against the pin. Where all of those hold, whether the server refuses to forward the
+/// engine's socket ([`connect::forwarding_refused`]), else what ssh said.
 fn diagnosed(ssh: &Path, remote: &Remote, pool: &str, settings_in: &Path, said: String) -> Finding {
     let route = &remote.route;
     let resolved = match connect::resolve(ssh, route) {
@@ -307,10 +332,15 @@ fn diagnosed(ssh: &Path, remote: &Remote, pool: &str, settings_in: &Path, said: 
         settings_in,
         &resolved.user,
     ) {
-        Ok(_) => Finding::EngineSilent {
-            host: route.host().to_owned(),
+        // Signed in, and the socket is there: the server's refusal to forward it, or the engine.
+        Ok(found) => connect::silent_or_refused(
+            ssh,
+            &found,
+            pool,
+            &remote.pin.host_key,
+            settings_in,
             said,
-        },
+        ),
         Err(finding) => finding,
     }
 }

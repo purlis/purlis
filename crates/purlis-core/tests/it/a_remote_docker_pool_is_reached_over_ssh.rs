@@ -459,3 +459,106 @@ fn nothing_of_the_persons_ssh_settings_rides_on_the_forward() {
         "the settings' RemoteForward listens there"
     );
 }
+
+/// Puts the sshd's own settings back, however the test ends.
+struct SshdSettingsBack<'a>(&'a Fixture);
+
+impl Drop for SshdSettingsBack<'_> {
+    fn drop(&mut self) {
+        let _ = purlis_core::forklock::output(std::process::Command::new("docker").args([
+            "exec",
+            &self.0.sshd,
+            "sh",
+            "-c",
+            "[ -f /root/kept/sshd_config ] && cp /root/kept/sshd_config /etc/ssh/sshd_config && \
+             kill -HUP 1",
+        ]));
+        std::thread::sleep(Duration::from_secs(1));
+        pool::look_again();
+    }
+}
+
+/// The sshd made to read `setting` first (its first value of a keyword is the one it takes),
+/// before the rest of its own settings.
+fn sshd_reads_first(fixture: &Fixture, setting: &str) {
+    exec_in(
+        &fixture.sshd,
+        &format!(
+            "mkdir -p /root/kept && cp -n /etc/ssh/sshd_config /root/kept/ && \
+             {{ echo '{setting}'; cat /root/kept/sshd_config; }} > /etc/ssh/sshd_config && \
+             sshd -t && kill -HUP 1"
+        ),
+    );
+    std::thread::sleep(Duration::from_secs(1));
+}
+
+/// Connect's Trust this machine against the fixture: met, signed in, its socket found, and its
+/// engine read through a forward, as [`trusted`] does, answering what that found.
+fn trust_found(fixture: &Fixture, pool: &str) -> Result<EnginePin, Finding> {
+    let key = connect::meet(&fixture.ssh, &fixture.route, &fixture.settings_in())?;
+    let found = connect::probe(
+        &fixture.ssh,
+        &fixture.route,
+        pool,
+        &key,
+        &fixture.settings_in(),
+        "pool",
+    )?;
+    connect::engine_pin(
+        &fixture.docker,
+        &forward::Opening {
+            ssh: &fixture.ssh,
+            route: &found,
+            pool,
+            key: &key,
+            engine_links: &fixture.engine_links(),
+            settings_in: &fixture.settings_in(),
+        },
+    )
+}
+
+#[test]
+fn an_sshd_that_refuses_forwarding_is_named_at_connect_and_for_a_pool_already_there() {
+    purlis_core::unsteered!();
+    let Some(fixture) = fixture() else { return };
+    let remote = trusted(&fixture, "unforwarded");
+    forward::let_go("unforwarded");
+    let _back = SshdSettingsBack(&fixture);
+    let refused = Finding::ForwardingRefused {
+        host: "127.0.0.1".to_owned(),
+    };
+    for setting in ["DisableForwarding yes", "AllowStreamLocalForwarding no"] {
+        sshd_reads_first(&fixture, setting);
+        // Connect: the sign-in and the socket hold, and the forward is named, not Docker.
+        assert_eq!(
+            trust_found(&fixture, "connecting"),
+            Err(refused.clone()),
+            "{setting}"
+        );
+        // The pool already there, as `purlis pool setup <pool>` and the window read it.
+        pool::look_again();
+        assert_eq!(
+            through(&fixture, "unforwarded", &remote).err(),
+            Some(refused.clone()),
+            "{setting}"
+        );
+        // Its next ask, within its wait, is answered with what was found, and opens nothing.
+        assert_eq!(
+            through(&fixture, "unforwarded", &remote).err(),
+            Some(refused.clone()),
+            "{setting}"
+        );
+        assert!(forward::ssh_of("unforwarded").is_none(), "{setting}");
+        assert!(
+            purlis_core::poolsetup::connect_said(&refused).contains("doesn't allow forwarding")
+        );
+        pool::look_again();
+    }
+    // TCP forwarding alone is not the socket's: `AllowTcpForwarding no` leaves it forwarded.
+    sshd_reads_first(&fixture, "AllowTcpForwarding no");
+    assert!(
+        trust_found(&fixture, "connecting").is_ok(),
+        "AllowTcpForwarding no"
+    );
+    forward::let_go("connecting");
+}
