@@ -15,6 +15,8 @@
  *   conversation started again as an ordinary chat. Where it cannot, it is disabled with why.
  * - **A chat no dispatch started** (#6304) has no task: its badge says Closed, it has no report
  *   line, *Reopen* is disabled with why, and *Read it* is disabled, as its screen is never kept.
+ *   A handoff, or a task that ended owing no report, is drawn the same way from its chat's
+ *   record, with *Reopen*'s own words, and *Read it* opens its screen where one was kept.
  * - Built from the families: `HeldPopover`, `Facts`, `Badge`, `ButtonRow` and `Button`.
  */
 import type { RefObject } from "react";
@@ -25,13 +27,12 @@ import { Fact, Facts } from "./ui/card/Facts";
 import { HeldPopover } from "./ui/popover/Popover";
 import {
   NO_REPORT,
-  ORDINARY_NO_REOPEN,
   SCREEN_NOT_KEPT,
   cardOutcome,
   cardTitle,
   cardWhen,
+  whyCardCannotReopen,
 } from "./closedChat";
-import { whyNoReopen } from "./finished";
 
 /** Why *Reopen* does nothing on a card whose task names no conversation. */
 export const NO_CONVERSATION =
@@ -53,7 +54,7 @@ export function ClosedChatCard({
   const outcome = cardOutcome(card);
   // A chat no dispatch started has no task: no report, and no Reopen (#6304).
   const task = card.task;
-  const cannotReopen = task === null ? ORDINARY_NO_REOPEN : whyNoReopen(task);
+  const cannotReopen = whyCardCannotReopen(card);
   return (
     <div className="closed-chat-card" data-testid="closed-chat-card">
       <div className="closed-chat-card-head">
