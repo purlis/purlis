@@ -269,6 +269,26 @@ fn each_finding_is_said_in_its_own_words_with_its_cause() {
 }
 
 #[test]
+fn an_ssh_server_that_refuses_forwarding_is_named_with_what_to_ask_its_admin() {
+    let step = found(Finding::ForwardingRefused {
+        host: "build-box".into(),
+    });
+    assert_eq!(step.state, StepState::Attention);
+    assert_eq!(step.cause, Some("forwarding-refused"));
+    assert_eq!(
+        step.findings,
+        [
+            "The SSH server on build-box doesn't allow forwarding, and purlis reaches Docker \
+             there by forwarding its socket. Ask its admin to allow it for your account \
+             (`AllowTcpForwarding`, `AllowStreamLocalForwarding` and `DisableForwarding` in \
+             sshd_config, or `restrict` and `no-port-forwarding` on your key), then check \
+             again."
+        ]
+    );
+    assert_eq!(step.next.unwrap().id, ActionId::CheckAgain);
+}
+
+#[test]
 fn a_changed_key_shows_both_fingerprints_and_offers_to_check_and_trust_again() {
     let step = found(Finding::KeyChanged {
         host: "build-box".into(),

@@ -425,6 +425,29 @@ fn a_podman_connection_is_read_into_the_ssh_route_to_its_socket_with_its_key_fil
 }
 
 #[test]
+fn the_forward_check_asks_sshd_for_one_channel_to_the_engines_socket_pinned_and_runs_nothing() {
+    let route = Route::parse("ssh://me@box/var/run/docker.sock").unwrap();
+    let args = forward_check_args(&route, "build", Path::new("/k")).unwrap();
+    assert_eq!(option(&args, "StrictHostKeyChecking"), Some("yes"));
+    assert_eq!(option(&args, "UserKnownHostsFile"), Some("/k"));
+    assert_eq!(option(&args, "ExitOnForwardFailure"), Some("yes"));
+    assert_eq!(option(&args, "ClearAllForwardings"), Some("yes"));
+    let w = args.iter().position(|arg| arg == "-W").unwrap();
+    assert_eq!(args[w + 1], "/var/run/docker.sock");
+    // The destination is the last word: `-W` runs no command there.
+    assert_eq!(&args[args.len() - 2..], ["--", "me@box"]);
+    assert!(
+        forward_check_args(
+            &Route::parse("ssh://me@box").unwrap(),
+            "build",
+            Path::new("/k")
+        )
+        .is_err(),
+        "no socket, nothing to ask for"
+    );
+}
+
+#[test]
 fn a_routes_key_file_is_handed_to_every_ssh_it_runs() {
     let route = Route::parse("ssh://me@build-box:2222/run/user/1000/podman/podman.sock")
         .unwrap()
@@ -440,6 +463,7 @@ fn a_routes_key_file_is_handed_to_every_ssh_it_runs() {
         forward_args(&route, "p", known, Path::new("/l/docker.sock")).unwrap(),
         sign_in_args(&route, "p", known),
         probe_args(&route, "p", known),
+        forward_check_args(&route, "p", known).unwrap(),
         contact_args(&route, Path::new("/k/scratch")),
         connect::settings_args(&route),
     ] {
@@ -670,6 +694,67 @@ fn a_file_is_read_there_only_where_it_is_a_plain_file_at_a_plain_path() {
         assert!(
             read_args(&route, "p", Path::new("/k"), bad).is_err(),
             "{bad:?}"
+        );
+    }
+}
+
+/// An `ssh` that ends with `w` when asked for a channel with `-W`, lets a sign-in (`true` there)
+/// in, and ends a probe with `probed`.
+#[cfg(unix)]
+fn an_ssh_ending(folder: &Path, w: i32, probed: i32) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt as _;
+    let ssh = folder.join("ssh");
+    std::fs::write(
+        &ssh,
+        format!(
+            "#!/bin/sh\nfor a in \"$@\"; do [ \"$a\" = -W ] && exit {w}; last=$a; done\n\
+             [ \"$last\" = true ] && exit 0\nexit {probed}\n"
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&ssh, std::fs::Permissions::from_mode(0o755)).unwrap();
+    ssh
+}
+
+#[cfg(unix)]
+#[test]
+fn a_forward_is_taken_as_refused_only_where_the_channel_fails_and_the_probe_holds() {
+    let route = Route::parse("ssh://me@box/var/run/docker.sock").unwrap();
+    for (w, probed, refused) in [
+        // The server signs the person in, the socket is there, and the channel isn't opened.
+        (255, 0, true),
+        // ssh's 255 for a sign-in refused or a connection lost: not a refusal to forward.
+        (255, 255, false),
+        // A channel opened to a socket that isn't there any more: the engine's.
+        (255, PROBE_NONE, false),
+        (255, PROBE_NOT_ALLOWED, false),
+        // The channel opened: whatever is wrong is the engine's.
+        (0, 0, false),
+        (1, 0, false),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let ssh = an_ssh_ending(dir.path(), w, probed);
+        let (links, settings) = (dir.path().join("l"), dir.path().join("s"));
+        let key = key();
+        let opening = forward::Opening {
+            ssh: &ssh,
+            route: &route,
+            pool: "build",
+            key: &key,
+            engine_links: &links,
+            settings_in: &settings,
+        };
+        assert_eq!(
+            connect::forwarding_refused(&opening),
+            refused,
+            "-W ended {w}, the probe {probed}"
+        );
+        assert_eq!(
+            matches!(
+                connect::silent_or_refused(&opening, "EOF".to_owned()),
+                connect::Finding::ForwardingRefused { .. }
+            ),
+            refused
         );
     }
 }
