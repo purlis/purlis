@@ -19,9 +19,12 @@
 - **A run's notice offers no Allow for Homebrew's `brew`, `apt-get`, `apt` or `composer`**.
   `brew` runs the Ruby or the shell command it is handed (`brew ruby -e`, `brew sh --cmd`),
   `composer exec` the command it is handed, and `apt-get` and `apt` the download program a
-  setting names. A persona can still declare it as a
+  setting names. The same goes for the rpm tools (`rpm -E` has a shell run a macro), `dpkg`,
+  `dpkg-buildpackage`, `setpriv`, s6's `s6-setuidgid`, `s6-softlimit` and `s6-applyuidgid`, and
+  `coredumpctl`, each of which runs a command it is handed. A persona can still declare it as a
   tool (#6325).
 - **A run's notice offers no Allow for `openssl` with `-engine`, `-provider`, `-provider-path` or
-  `-config`, or for its `engine` and `fipsinstall` commands, however they are spelled**, each of which loads a library or a
+  `-config`, or with an `org.openssl.engine:` key or file, or for its `engine` and
+  `fipsinstall` commands, however they are spelled**, each of which loads a library or a
   module it is named. `openssl` is still offered without them, and so is `my_openssl`, the copy
   MySQL's test package ships, with the same caution (#6329).

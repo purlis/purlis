@@ -3270,6 +3270,51 @@ fn apt_and_composer_run_a_program_they_are_handed_so_they_are_offered_no_run_gra
     }
 }
 
+/// The programs round 2 of #6556's review found that run the command they are handed:
+/// `rpm -E '%(cmd)'` expands a macro whose `%(…)` `popen`s a shell (`lib/poptALL.c:128-131`,
+/// `rpmio/macro.c`, rpm 4.20.0), in every rpm tool that shares its options; `dpkg
+/// --force-not-root --pre-invoke=<cmd>` has `system()` run it (`src/main/main.c:397`, dpkg
+/// 1.22.11), and `dpkg-buildpackage --hook-init=<cmd>` runs its hooks
+/// (`scripts/dpkg-buildpackage.pl`); `setpriv` `execvp`s what follows
+/// (`sys-utils/setpriv.c:1077`, util-linux 2.40.2); s6's chain loaders `s6-setuidgid`,
+/// `s6-softlimit` and `s6-applyuidgid` run the program after them; and `coredumpctl debug
+/// --debugger=` runs the debugger it is named (`src/coredump/coredumpctl.c`, systemd v257).
+#[test]
+fn rpm_dpkg_setpriv_s6s_chain_loaders_and_coredumpctl_are_offered_no_run_grant() {
+    for name in [
+        "rpm",
+        "rpmbuild",
+        "rpmspec",
+        "rpmquery",
+        "rpmverify",
+        "rpmkeys",
+        "rpmsign",
+        "rpmdb",
+        "dpkg",
+        "dpkg-buildpackage",
+        "setpriv",
+        "s6-setuidgid",
+        "s6-softlimit",
+        "s6-applyuidgid",
+        "coredumpctl",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// openssl loads an engine any key or file it is handed names as `org.openssl.engine:<id>:<key>`,
+/// an unknown id through the dynamic engine, which takes a path (`apps/lib/engine_loader.c`,
+/// `crypto/engine/eng_list.c`, openssl 3.0.15): refused wherever it is written (round 2 of the
+/// review of #6556).
+#[test]
+fn openssl_handed_an_engine_uri_is_offered_no_run_grant_and_the_chat_hears_to_leave_it_out() {
+    refused_for_its_flag(
+        "openssl",
+        &["pkey", "-in", "org.openssl.engine:/x/evil.so:k"],
+        "org.openssl.engine:",
+    );
+}
+
 /// The client built with the server inside it: what `--server-arg` hands the embedded server
 /// (`--plugin-load`, `--plugin-dir`) loads code from a file it names.
 #[test]

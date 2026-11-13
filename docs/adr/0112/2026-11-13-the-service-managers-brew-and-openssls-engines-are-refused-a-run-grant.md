@@ -185,3 +185,28 @@ The review also said a bare `openssl` 1.1.1 reads its commands from its input, w
 run is handed. It is not: a run under a grant has no stdin (`Stdio::null()` where
 `under_a_grant`, `crates/purlis-core/src/secrets/brokered.rs`), so nothing is read, and openssl
 alone stays offered.
+
+The review's second round found more, each checked in source:
+
+- **openssl's engine URI.** At start openssl registers a store loader for the
+  `org.openssl.engine:` scheme (`setup_engine_loader`, `apps/openssl.c`). A key or a file named
+  `org.openssl.engine:<id>:<key>`, wherever one is read (`-in`, `-key`, `storeutl`, `-CAstore`),
+  loads the engine by its id (`ENGINE_by_id`, `apps/lib/engine_loader.c`). An id no engine has
+  goes to the dynamic engine with `DIR_LOAD` (`crypto/engine/eng_list.c:418-423`), which takes
+  a path, so no refused flag is needed (openssl 3.0.15). The row refuses that text anywhere in any
+  word, whatever its case.
+- **rpm**: `-E <expr>` expands a macro (`lib/poptALL.c:128-131`,
+  github.com/rpm-software-management/rpm, 4.20.0), and `%(…)` has a shell run what it holds
+  (`rpmio/macro.c`). Every rpm tool that shares those options is refused: `rpm`, `rpmbuild`,
+  `rpmspec`, `rpmquery`, `rpmverify`, `rpmkeys`, `rpmsign` and `rpmdb`.
+- **dpkg**: `--force-not-root --pre-invoke=<cmd>` has `system()` run the command
+  (`src/main/main.c:397`, dpkg 1.22.11), and **`dpkg-buildpackage --hook-init=<cmd>`** runs its
+  hooks (`scripts/dpkg-buildpackage.pl`). Both refused.
+- **`setpriv`** `execvp`s what follows it, with no privilege needed (`sys-utils/setpriv.c:1077`,
+  util-linux 2.40.2), and so do **s6's chain loaders** `s6-setuidgid`, `s6-softlimit` and
+  `s6-applyuidgid`. All refused.
+- **`coredumpctl debug --debugger=<program>`** runs the program it is named
+  (`src/coredump/coredumpctl.c`, systemd v257). Refused.
+
+Its leads that were not checked (`aptitude`, `run-parts`, `capsh`, `cpanm`, `dnf`) are filed as
+#6564.

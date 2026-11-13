@@ -2186,6 +2186,25 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "apt-get",
     "apt",
     "composer",
+    // and the rest round 2 of that review found: `rpm -E '%(cmd)'` has a shell run `cmd`, in
+    // every rpm tool that shares its options; `dpkg --force-not-root --pre-invoke=` and
+    // `dpkg-buildpackage --hook-init=` run their hooks; `setpriv` runs what follows it, as s6's
+    // chain loaders do; and `coredumpctl debug --debugger=` runs the debugger it is named.
+    "rpm",
+    "rpmbuild",
+    "rpmspec",
+    "rpmquery",
+    "rpmverify",
+    "rpmkeys",
+    "rpmsign",
+    "rpmdb",
+    "dpkg",
+    "dpkg-buildpackage",
+    "setpriv",
+    "s6-setuidgid",
+    "s6-softlimit",
+    "s6-applyuidgid",
+    "coredumpctl",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

@@ -56,6 +56,9 @@ struct Flags {
     /// eight characters or more is refused by its first eight, as openssl finds its commands by
     /// those and a hash (`function_cmp`, `apps/openssl.c`).
     commands: &'static [&'static str],
+    /// Text refused anywhere in any word, whatever its case: openssl's engine URI, which loads
+    /// the engine it names wherever a key or a file is read (round 2 of the review of #6556).
+    anywhere: &'static [&'static str],
 }
 
 /// The hosts a jump pastes into the command ssh's shell runs.
@@ -288,6 +291,7 @@ const PROGRAMS: &[Flags] = &[
         jump_pastes: Jumped::Nothing,
         whole_words: false,
         commands: &[],
+        anywhere: &[],
     },
     Flags {
         attached: "",
@@ -305,6 +309,7 @@ const PROGRAMS: &[Flags] = &[
         jump_pastes: Jumped::Nothing,
         whole_words: false,
         commands: &[],
+        anywhere: &[],
     },
     Flags {
         attached: "",
@@ -322,6 +327,7 @@ const PROGRAMS: &[Flags] = &[
         jump_pastes: Jumped::Destination,
         whole_words: false,
         commands: &[],
+        anywhere: &[],
     },
     Flags {
         attached: "",
@@ -339,6 +345,7 @@ const PROGRAMS: &[Flags] = &[
         jump_pastes: Jumped::RemoteOperands,
         whole_words: false,
         commands: &[],
+        anywhere: &[],
     },
     Flags {
         attached: "",
@@ -356,6 +363,7 @@ const PROGRAMS: &[Flags] = &[
         jump_pastes: Jumped::FirstOperand,
         whole_words: false,
         commands: &[],
+        anywhere: &[],
     },
     Flags {
         attached: "",
@@ -372,6 +380,7 @@ const PROGRAMS: &[Flags] = &[
         jump_pastes: Jumped::Nothing,
         whole_words: false,
         commands: &[],
+        anywhere: &[],
     },
     Flags {
         attached: "",
@@ -387,6 +396,7 @@ const PROGRAMS: &[Flags] = &[
         jump_pastes: Jumped::Nothing,
         whole_words: false,
         commands: &[],
+        anywhere: &[],
     },
     Flags {
         attached: "",
@@ -411,6 +421,7 @@ const PROGRAMS: &[Flags] = &[
         jump_pastes: Jumped::Nothing,
         whole_words: false,
         commands: &[],
+        anywhere: &[],
     },
     Flags {
         attached: "",
@@ -433,6 +444,7 @@ const PROGRAMS: &[Flags] = &[
         jump_pastes: Jumped::Nothing,
         whole_words: false,
         commands: &[],
+        anywhere: &[],
     },
     Flags {
         attached: "",
@@ -449,6 +461,7 @@ const PROGRAMS: &[Flags] = &[
         jump_pastes: Jumped::Nothing,
         whole_words: false,
         commands: &[],
+        anywhere: &[],
     },
     // openssl (#6329): what loads a shared library or a provider module it is named. `-engine`
     // and its kin load one through the dynamic engine's `SO_PATH` (`apps/lib/engine.c`),
@@ -479,6 +492,10 @@ const PROGRAMS: &[Flags] = &[
         jump_pastes: Jumped::Nothing,
         whole_words: true,
         commands: &["engine", "fipsinstall"],
+        // `org.openssl.engine:<id>:<key>`, in a key's or a file's place, loads the engine by its
+        // id, and an id no engine has through the dynamic engine, which takes a path
+        // (`apps/lib/engine_loader.c`, `crypto/engine/eng_list.c`).
+        anywhere: &["org.openssl.engine:"],
     },
     // mysql's and mariadb's own tools, before the client's row, which their names' first part
     // would reach. No letter is taken to have a value: each word after one is read.
@@ -518,6 +535,7 @@ const PROGRAMS: &[Flags] = &[
         jump_pastes: Jumped::Nothing,
         whole_words: false,
         commands: &[],
+        anywhere: &[],
     },
     Flags {
         attached: "p",
@@ -539,6 +557,7 @@ const PROGRAMS: &[Flags] = &[
         jump_pastes: Jumped::Nothing,
         whole_words: false,
         commands: &[],
+        anywhere: &[],
     },
 ];
 
@@ -655,6 +674,10 @@ fn refused_form(program: &Flags, args: &[String]) -> Option<String> {
             .then(|| "a destination a shell would read".to_owned())
     };
     while let Some(word) = words.next() {
+        let lower = word.to_ascii_lowercase();
+        if let Some(one) = program.anywhere.iter().find(|one| lower.contains(**one)) {
+            return Some((*one).to_owned());
+        }
         if program.whole_words && word != "--" {
             if let Some(named) = word
                 .strip_prefix("--")

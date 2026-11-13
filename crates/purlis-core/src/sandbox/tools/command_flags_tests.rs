@@ -916,3 +916,21 @@ fn openssl_refuses_a_command_by_the_eight_characters_it_is_found_by() {
         offered(program, &["enginex", "fipsins -x"]);
     }
 }
+
+/// An engine URI loads the engine it names, by a path too (round 2 of the review of #6556), in a
+/// value of its own, after `=` or within a word, whatever its case.
+#[test]
+fn openssl_refuses_an_engine_uri_wherever_it_is_written() {
+    for program in ["openssl", "my_openssl"] {
+        refused(
+            program,
+            "org.openssl.engine:",
+            &[
+                &["pkey", "-in", "org.openssl.engine:/x/evil.so:k"],
+                &["x509", "-key=ORG.OPENSSL.ENGINE:/x/e.so:k"],
+                &["storeutl", "org.openssl.engine:pkcs11:k"],
+            ],
+        );
+        offered(program, &["pkey -in org.openssl.example.pem"]);
+    }
+}
