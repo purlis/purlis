@@ -6684,18 +6684,19 @@ nav.piece-files-head {
   animation: charter-knock var(--motion-duration-settle) var(--motion-easing-standard) 2;
 }
 
-/* **The ✋'s first pulse** (ADR 0121 decision 24): one breath of its mark, the first time on this
-   machine a Blocking ask arrives while Asks is closed (`asksArrival.ts`); the window takes the
-   mark off when it ends (`ActivityBar`'s `FIRST_PULSE`). In place of a tour; reduced motion
-   plays it at once, and the count beside it says the same thing still. */
-@keyframes purlis-first-pulse {
-  50% {
-    transform: scale(1.3);
+/* **The ✋'s bounce** (#6343, ADR 0121 amended 2026-11-12): the one movement in the window that
+   calls the person. Its mark hops 3 times as an ask arrives and as a reminder comes due
+   (`handBounce.ts`); the window takes the mark off when it ends (`ActivityBar`'s `HAND_BOUNCE`).
+   A transform, so nothing around it moves. Reduced motion plays none: the window holds it, and
+   the theme's one switch would end it at once. */
+@keyframes purlis-hand-bounce {
+  40% {
+    transform: translateY(calc(-1 * var(--space-1)));
   }
 }
 
-.activity-bar [data-scope="activity"][data-part="item"][data-pulse] > [data-part="icon"] {
-  animation: purlis-first-pulse var(--motion-duration-breathe) var(--motion-easing-breathe);
+.activity-bar [data-scope="activity"][data-part="item"][data-bounce] > [data-part="icon"] {
+  animation: purlis-hand-bounce var(--motion-duration-settle) var(--motion-easing-standard) 3;
 }
 
 /* The title bar's save indicator (charter-app#294): two small ghost buttons of the set
