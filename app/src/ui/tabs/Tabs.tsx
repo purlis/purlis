@@ -105,12 +105,20 @@ export function TabPicture({ picture }: { picture: Picture }) {
   );
 }
 
-/** The attributes of the bar over a file, which its file tab joins. */
-export const editorToolbar = {
-  "data-scope": "editor",
-  "data-part": "toolbar",
-  "data-variant": "default",
-} as const;
+/**
+ * The attributes of the bar over a file, which its file tab joins, with the caller's own class
+ * (`className`, which places it) beside the secondary role its words take (#6389). The role is on
+ * the toolbar itself, not on its words, so a theme's `editor.toolbar` size and colour, drawn on
+ * the part in the layer above the roles, still reach every word in it.
+ */
+export function editorToolbar(className: string) {
+  return {
+    className: `ui-text-secondary ${className}`,
+    "data-scope": "editor",
+    "data-part": "toolbar",
+    "data-variant": "default",
+  } as const;
+}
 
 /**
  * **What the editor's toolbar names**: the file's name, strong, then its path, as the switcher

@@ -615,7 +615,7 @@ function ConfirmSaveAll({
       onClose={onCancel}
       title={title}
       description={
-        <p className="came-back">
+        <p className="came-back ui-text-secondary">
           A repo&apos;s save commits every file changed in it on the branch it is on, then goes as
           far as its mode says.
         </p>

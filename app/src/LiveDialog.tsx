@@ -109,7 +109,7 @@ export function LiveDialog({
       onClose={() => (switched !== null ? onDone(switched.said) : onClose())}
       title={`Make ${workspace} ${word}?`}
       description={
-        <p className="came-back">
+        <p className="came-back ui-text-secondary">
           {going === false
             ? "Its charter, memory and todos stay on this machine and stop being committed."
             : "Its charter, memory and todos are committed with the project. Every save publishes them."}
@@ -155,12 +155,14 @@ export function LiveDialog({
               ))}
             </ul>
           )}
-          <p className="came-back">{whereText(read)}</p>
+          <p className="came-back ui-text-secondary">{whereText(read)}</p>
           {asksForge && <ReadersLine readers={readers === undefined ? "asking" : readers.said} />}
         </>
       )}
       {read !== null && read.mode !== null && read.mode !== "off" && (
-        <p className="came-back">The save also takes every other unsaved change in the project.</p>
+        <p className="came-back ui-text-secondary">
+          The save also takes every other unsaved change in the project.
+        </p>
       )}
       {trouble !== null && (
         <p className="trouble" role="alert">
@@ -208,23 +210,29 @@ function ReadersLine({ readers }: { readers: RemoteReaders | "asking" | null }) 
   switch (readers?.kind) {
     case "public":
       return (
-        <p className="came-back">
+        <p className="came-back ui-text-secondary">
           <strong>That repo is public: anyone can read what is pushed to it.</strong>
         </p>
       );
     case "internal":
       return (
-        <p className="came-back">{`That repo is internal: everyone signed in to ${readers.host} can read it.`}</p>
+        <p className="came-back ui-text-secondary">{`That repo is internal: everyone signed in to ${readers.host} can read it.`}</p>
       );
     case "private":
       return (
-        <p className="came-back">That repo is private: only those given access can read it.</p>
+        <p className="came-back ui-text-secondary">
+          That repo is private: only those given access can read it.
+        </p>
       );
     case "nobody":
-      return <p className="came-back">That remote is on this machine: a push publishes nothing.</p>;
+      return (
+        <p className="came-back ui-text-secondary">
+          That remote is on this machine: a push publishes nothing.
+        </p>
+      );
     case "unknown":
       return (
-        <p className="came-back">{`purlis could not tell whether that repo is public: ${readers.why}`}</p>
+        <p className="came-back ui-text-secondary">{`purlis could not tell whether that repo is public: ${readers.why}`}</p>
       );
     default:
       return null;

@@ -515,36 +515,29 @@
 }
 
 /* **The chat at a glance** (#4760, spec #4750 story 54): its name, its sandbox, its state, the
-   breathing mark while it wraps up, and "harness · workspace". The name is primary and cut to an
-   ellipsis before anything after it is; the rest is the line's muted tier, and a narrow pane
-   drops it part by part (`paneHead.ts`), so the name keeps its room. */
+   breathing mark while it wraps up, and "harness · workspace". The name is the heading
+   (`ui-text-heading`, #6389) and cut to an ellipsis before anything after it is; "harness ·
+   workspace" is the secondary, and a narrow pane drops the rest part by part (`paneHead.ts`), so
+   the name keeps its room. */
 .pane-chips > .pane-name {
   display: inline-flex;
   align-items: center;
   flex: 0 1 auto;
   min-inline-size: 3ch;
   overflow: hidden;
-  color: var(--text-primary);
-  font-weight: var(--font-weight-strong);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-/* **Its number beside its name** (#6212): `#641`, the chat's current number, in the line's muted
-   tier. Never cut: it is short, and it is how a chat is found again. A head under 500px drops
-   it before anything else (`HEAD_DROPS` in `paneHead.ts`); the tab's hover still says it. */
+/* **Its number beside its name** (#6212): `#641`, the chat's current number, the meta
+   (`ui-text-meta`, #6389), which is the size of a task's path beside it too (#6297). Never cut:
+   it is short, and it is how a chat is found again. A head under 500px drops it before anything
+   else (`HEAD_DROPS` in `paneHead.ts`); the tab's hover still says it. */
 .pane-chips > .pane-number {
   display: inline-flex;
   flex: none;
   align-items: center;
-  color: var(--text-muted);
   white-space: nowrap;
-}
-
-/* **Beside a task's path, at the path's size** (#6297): the path is the line's small text
-   (`.pane-crumbs`), and the number beside it is that text too, never a step larger. */
-.pane-chips:has(.pane-crumbs) > .pane-number {
-  font-size: var(--font-size-xs);
 }
 
 /* **A pane's grip** (#5290, `ui/grip`): the mark in its head, the tab's size, and a 24px target
@@ -619,9 +612,13 @@
   flex: 0 1 auto;
   min-inline-size: 0;
   overflow: hidden;
-  color: var(--text-muted);
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* The foot's in its tier, at the foot's meta; the head's is the secondary (#6389). */
+.pane-foot .pane-where {
+  color: var(--text-muted);
 }
 
 /* **The one state button** (`PaneStateButton`, #4760): the chat's part of the head, before
@@ -1060,9 +1057,7 @@
 }
 
 .pane-rail-count {
-  font-size: var(--font-size-sm);
   font-variant-numeric: tabular-nums;
-  color: var(--text-muted);
 }
 
 .pane-rail-count[data-trouble] {
@@ -1109,7 +1104,6 @@
 
 .task-quiz-title {
   overflow: hidden;
-  font-size: var(--font-size-md);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1124,7 +1118,6 @@
 
 .task-quiz-sub {
   overflow: hidden;
-  color: var(--text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1188,7 +1181,6 @@
 
 .task-quiz-why {
   margin: 0;
-  font-size: var(--font-size-sm);
 }
 
 /* The asking chat's note, marked as its own: never the task's words. */
@@ -1199,17 +1191,14 @@
   margin: 0;
   padding-inline-start: var(--space-3);
   border-inline-start: 2px solid var(--border-strong);
-  font-size: var(--font-size-sm);
 }
 
 .task-quiz-note-words {
   flex: 1;
-  color: var(--text-secondary);
 }
 
 .task-quiz-note-who {
   flex: none;
-  color: var(--text-muted);
 }
 
 .task-quiz-answer {
@@ -1228,7 +1217,6 @@
   gap: var(--space-3);
   align-items: center;
   justify-content: space-between;
-  color: var(--text-muted);
 }
 
 /* **Placement mode** (#4764): every other pane shows its five targets in a cross in its middle,

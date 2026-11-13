@@ -185,7 +185,7 @@ export function HostsTable({
             return (
               <TableRow key={written} id={written} textValue={written}>
                 <TableCell>
-                  <code className="ui-hosts-host ui-text-code">
+                  <code className="ui-hosts-host ui-text-body ui-text-code">
                     {host}
                     <span className="ui-hosts-port">{`:${port}`}</span>
                   </code>
@@ -194,7 +194,9 @@ export function HostsTable({
                   <HostStatus waiting={one.status === "waiting"} />
                 </TableCell>
                 <TableCell>
-                  <span className="ui-hosts-added">{addedSaid(one.added, now)}</span>
+                  <span className="ui-hosts-added ui-text-secondary">
+                    {addedSaid(one.added, now)}
+                  </span>
                 </TableCell>
                 <TableCell align="end">
                   {one.status === "waiting" && (

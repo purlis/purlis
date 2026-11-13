@@ -979,7 +979,9 @@ export function StartChat({
               <PersonaMark persona={persona} named />
             )}
             <div>
-              <h3 id={whoId}>{who}</h3>
+              <h3 className="ui-text-heading" id={whoId}>
+                {who}
+              </h3>
               <p>{personaLine}</p>
             </div>
           </div>

@@ -2104,6 +2104,74 @@ letter spacing anywhere else.
   workspaces, #3484) is the exception, and labels them as any group: the frame's group heads move
   from the medium weight spaced `0.06em` to the label's strong, spaced `0.05em`.
 
+### The words left over, on the roles
+
+The seven surfaces moved, and these words were found along the way, each drawn from tokens and
+ranked by its own rule (#6389). Each wears its role now; where a family gives it a tier (at rest,
+under the pointer, chosen, a tone), the family's rule still outranks the role's colour.
+
+| word | role | before | after |
+| --- | --- | --- | --- |
+| the title bar's project name, and its crumb while the rail is hidden | `ui-text-body ui-text-strong` | 13px, medium | 13px, strong |
+| a workspace chip; a switcher's row | `ui-text-body` | 13px, the chip's tiers | the same |
+| a chip's and a switcher row's count | `ui-text-meta ui-text-strong` | 11px, strong, waiting | the same |
+| the switcher filter's key | `ui-text-meta ui-text-code` | 11px mono, muted | 11px mono, quiet |
+| the switcher's empty line | `ui-text-secondary` | 12px, quiet | 12px, secondary |
+| the editor's toolbar over a file | `ui-text-secondary`, on the toolbar | 12px; name primary, path quiet | the same |
+| a pane's breadcrumb, its names, where and who | `ui-text-meta`, on the breadcrumb | 11px, secondary; where and who muted | 11px, quiet; the chat shown primary |
+| a pane's chat name | `ui-text-heading` | 14px, strong, primary | the same |
+| a pane's chat number | `ui-text-meta` | 14px muted (11px beside a path) | 11px, quiet |
+| a pane head's "harness · workspace" | `ui-text-secondary` | 14px, muted | 12px, secondary |
+| a pane's foot | `ui-text-meta`, on the foot | 11px, the foot's tiers | the same |
+| the rail's count of a pane's notes | `ui-text-meta ui-text-strong` | 12px, muted | 11px, strong, quiet |
+| a task's question: its first line, a note's words | `ui-text-body`; `ui-text-secondary` | 13px; 12px secondary | the same |
+| a task a chat's tab names after its own | `ui-text-meta` | 13px, muted | 11px, quiet |
+| a chat's chain over its group in the Inbox | `ui-text-secondary ui-text-strong` | 11px, strong, secondary | 12px, strong, secondary |
+| every `.came-back` line, a door page's sentences among them | `ui-text-secondary` | 12px (14px on a door page), the colour around it | 12px, secondary |
+| what an extension that runs as you warns, on the danger wash | `ui-text-body` | 12px, primary | 13px, primary |
+| a door page's other lines: the folder a project goes into, the steps, the forges, a harness row's state and how | `ui-text-secondary` | 12px or the page's, muted or secondary | 12px, secondary |
+| Git missing's heading; a dialog's `h3`; Settings' "Signing keys of your other devices" and a pool limit group's heading | `ui-text-heading` | 13px or 14px, strong | 14px, strong |
+| a dialog's `h4` over a list (what a project contributes) | `ui-text-meta` | 11px, muted | 11px, quiet |
+| Your hosts: a host, and when it was added | `ui-text-body ui-text-code`; `ui-text-secondary` | 12px mono, port quiet; 12px muted | 13px mono, one word; 12px secondary |
+| a card button's line | `ui-text-secondary`, on the part | 12px, secondary | the same |
+
+What it settled:
+
+- **A role goes on the part a theme reaches, not on the words inside it.** A theme's parts are
+  drawn in the layer above the roles, on the part's own element: the editor's toolbar
+  (`editor.toolbar` sets its text and size) and a pane's foot wear their role on that element,
+  so a theme still reaches every word in it. `editorToolbar(className)` merges the caller's class
+  with the role, where a spread of attributes would have replaced it.
+- **A tint a view rule gives goes on the words that take the role, not on the role.** The
+  focused pane's breadcrumb is primary by a rule in `App.css`, which the meta on the breadcrumb
+  would outrank; the tint is on its names, which take their role from it.
+- **A word read after a name is never brighter than the name.** The task on a chat's tab is the
+  meta, which is quiet as the tab is at rest; the secondary would have drawn it brighter than the
+  chat's own name.
+- **A group named by data in the Inbox is the secondary, strong.** Its chain is a chat's name, in a
+  `named` section, so it is no label: it was the label's size and weight without its capitals,
+  and is the secondary at the strong weight now, as a menu's named group is the secondary.
+
+**Words that wear no role, and why:**
+
+- **A Notice's message** takes its tone's colour (trouble's, attention's) and its placement's
+  size from the Notice's root, which a theme's `notice` parts reach. A role on the message would
+  draw it in the role's colour, not its tone's.
+- **The status pills' muted words and a page tab's muted rest** wear `ui-text-body`; their muted
+  colour is the family's tier and the parts manifest's (`status_look`), which a theme sets.
+  Moving it to the role's colour would change every theme's default look.
+- **A dialog's `.where`, `.value` and `.pending`** are classes shared with views outside
+  dialogs (a door page's folder, the view tabs' `.pending`, #3938); they move with the view
+  tabs' sentences, the last surface in [the order](#the-order-the-surfaces-move-in), so each
+  class moves once.
+- **Marks are not words**: the title bar's slash, a project's two-letter mark, a breadcrumb's
+  separator. Each keeps its own size and colour.
+
+Open for the operator: the label's colour still comes in three tiers (the role's secondary, the
+quiet of a tree's, a list's, the title bar's and a frame's group heads, and the muted of a
+table's column names; [above](#the-section-label-one-spelling)), and the weight of a group
+name's count (#6482).
+
 ### The Welcome, on the roles
 
 The Welcome drew its heading and the wordmark at `--font-size-xl` (20px), above the title, and
@@ -2125,8 +2193,8 @@ What it settled:
 - **A section of a door page is labelled as any group is**, with the section label, so its
   headings read as the Explorer's and the Panel's do.
 
-Not moved with it: a door page's sentences (`.welcome-pane .came-back`), which share the
-window-wide `.came-back` with lines in many dialogs and tabs, and move with that class (#6389).
+A door page's sentences (`.welcome-pane .came-back`) moved later, with the window-wide
+`.came-back` they share ([below](#the-words-left-over-on-the-roles), #6389).
 
 ### Notices and dialogs, on the roles
 
@@ -2156,9 +2224,9 @@ What it settled:
   drawn by the family at 12px muted; the family's rule is gone.
 
 Not moved with it, and still on their own tokens: a dialog's own 14px root, which its body's
-other words inherit (the dialog's size in the parts manifest), the generic `h3`, `h4`, `.where`
-and `.value` inside a dialog in `App.css`, and a Notice's message, whose size is its placement's
-(a pane's row, the Inbox, a card).
+other words inherit (the dialog's size in the parts manifest). A dialog's `h3` and `h4` moved
+later; its `.where`, `.value` and `.pending`, and a Notice's message, wear none
+([below](#the-words-left-over-on-the-roles), #6389).
 
 ### Settings, on the roles
 
@@ -2213,10 +2281,9 @@ What it settled:
 - **A count on a status item keeps its pill's colour**: the count pill's ground is the control's,
   and the meta's colour is measured on the window's.
 
-Not moved with it, and still on their own rules: a pane's breadcrumbs and its header's words
-(`.pane-crumbs`, `paneFrame.css`), the title bar's own words (`titlebar.css`), and the editor's
-toolbar over a file, which a chosen file tab joins, and the task a chat's tab names after its
-own (`.tab-task`), muted: a word read after the name with no role of its own (#6389).
+A pane's breadcrumbs and its header's words, the title bar's own words, the editor's toolbar
+and the task a chat's tab names after its own moved later
+([below](#the-words-left-over-on-the-roles), #6389).
 
 ### The Explorer and the Panel's halves, on the roles
 

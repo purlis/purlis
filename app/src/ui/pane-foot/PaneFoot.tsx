@@ -43,7 +43,7 @@ export function PaneFoot({
     <div
       data-scope="pane-foot"
       data-part="root"
-      className={className}
+      className={className === undefined ? "ui-text-meta" : `${className} ui-text-meta`}
       role="group"
       aria-label={label}
     >
