@@ -280,11 +280,17 @@ pub fn contexts_with(docker: &Path, settings: Option<&Path>) -> Vec<DockerContex
     run(&args).map_or_else(Vec::new, |inspected| contexts_in(&listed, &inspected))
 }
 
-/// The names `docker context ls` listed that a context can have.
+/// The names `docker context ls` listed that a context can have, but for one it lists with an
+/// error, which `docker context inspect` would refuse together with all the others.
 fn contexts_listed(listed: &str) -> Vec<String> {
     listed
         .lines()
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line.trim()).ok())
+        .filter(|one| {
+            one.get("Error")
+                .and_then(serde_json::Value::as_str)
+                .is_none_or(|error| error.trim().is_empty())
+        })
         .filter_map(|one| one.get("Name")?.as_str().map(str::to_owned))
         .filter(|name| a_name(name))
         .collect()

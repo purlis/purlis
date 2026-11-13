@@ -197,3 +197,16 @@ fn a_context_that_now_names_another_route_has_moved_and_one_that_still_names_it_
     assert_eq!(moved(&read, "desktop-linux", "ssh://me@build-box"), None);
     assert_eq!(moved(&read, "open", "ssh://me@build-box"), None);
 }
+
+/// A context `ls` lists with an error is not asked of `inspect`, so one broken context never
+/// hides the others.
+#[test]
+fn a_context_listed_with_an_error_is_not_inspected() {
+    let listed = format!(
+        "{LISTED}{}\n",
+        r#"{"Current":false,"DockerEndpoint":"","Error":"context \"broken\": meta.json is not valid","Name":"broken"}"#
+    );
+    let names = contexts_listed(&listed);
+    assert!(!names.iter().any(|name| name == "broken"), "{names:?}");
+    assert_eq!(names.len(), 6);
+}
