@@ -12,7 +12,8 @@ import { Notice, type NoticeAction } from "./Notice";
  * an answer in either place clears both.
  *
  * - **Merge** is the app's own forge call, at the head the ask was raised at, and asks once more
- *   first, in the risk's own sentence (`Shown.risk.confirm`): Merge again acts, Cancel takes the
+ *   first, in the risk's own sentence (`Shown.risk.confirm`), or purlis's own where the hold
+ *   arrived without its risk (Q268): Merge again acts, Cancel takes the
  *   question back. A confirmation holds only for the ask and the question it was asked of, so a
  *   hold raised again at a moved head (Q242) asks from the start.
  * - **Don't merge** merges nothing.
@@ -57,9 +58,13 @@ function OneHold({
   const [busy, setBusy] = useState(false);
   /** The question Merge asked once more, for the ask it was asked of. */
   const [asked, setAsked] = useState<string>();
-  const confirm = hold.risk?.confirm;
-  const question = `${hold.ask}\n${confirm ?? ""}`;
-  const confirming = confirm != null && asked === question;
+  // A merge always asks once more (Q268): in the risk's own sentence, or in purlis's own where
+  // the hold arrived without its risk, so it never merges on the first press.
+  const confirm = hold.risk?.confirm ?? fallbackConfirm(hold);
+  // As the row's (`InboxAsks`): the answer's facts are part of the question, so a refresh of
+  // them (Q248) takes an open confirmation back.
+  const question = [hold.ask, hold.risk?.confirm ?? "", JSON.stringify(hold.answer)].join("\n");
+  const confirming = asked === question;
 
   const send = (option: string, label: string) => {
     if (busy) return;
@@ -67,6 +72,7 @@ function OneHold({
     setRefused(undefined);
     onWay?.(label, hold);
     void answerTaken(plane, hold, option)
+      .catch((err: unknown) => ({ refused: `purlis could not send it: ${String(err)}` }))
       .then((answer) => setRefused(answer.refused))
       .finally(() => {
         setBusy(false);
@@ -83,9 +89,8 @@ function OneHold({
     label: merge.label,
     allows: true,
     busy,
-    // A high-risk Merge asks once more before it acts (Q239).
-    onPress: () =>
-      confirm != null && !confirming ? setAsked(question) : send(merge.id, merge.label),
+    // Merge asks once more before it acts (Q239, Q268).
+    onPress: () => (confirming ? send(merge.id, merge.label) : setAsked(question)),
   };
   const fixes: readonly [NoticeAction, ...NoticeAction[]] = confirming
     ? [mergeWay, { label: "Cancel", busy, onPress: () => setAsked(undefined) }]
@@ -104,4 +109,12 @@ function OneHold({
       {refused !== undefined && ` ${refused}`}
     </Notice>
   );
+}
+
+/** purlis's own question for a hold that arrived without its risk (Q268). */
+function fallbackConfirm(hold: Shown): string {
+  const path = hold.answer;
+  return path.via === "merge-hold"
+    ? `Merge request ${path.number} of ${path.repo} at ${path.head.slice(0, 7)}? There is no undo.`
+    : "Merge this request? There is no undo.";
 }

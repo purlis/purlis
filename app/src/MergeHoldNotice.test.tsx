@@ -2,11 +2,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { MergeHoldNotice } from "./MergeHoldNotice";
 import type { Shown } from "./bindings";
+
+/** An answer whose sending rejects outright, where a test says so; the real one otherwise. */
+const rejects = vi.hoisted(() => ({ with: undefined as Error | undefined }));
+vi.mock("./asks", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./asks")>();
+  return {
+    ...real,
+    answerTaken: (...args: Parameters<typeof real.answerTaken>) =>
+      rejects.with === undefined ? real.answerTaken(...args) : Promise.reject(rejects.with),
+  };
+});
 
 /**
  * **A held merge on its chat's pane** (T1-39; R-114, Q239): the hold its chat waits on is drawn
@@ -16,6 +27,7 @@ import type { Shown } from "./bindings";
  */
 
 afterEach(() => {
+  rejects.with = undefined;
   cleanup();
   clearMocks();
 });
@@ -132,6 +144,51 @@ describe("a held merge on its chat's pane", () => {
     rerender(<MergeHoldNotice plane={PLANE} session={SESSION} asks={[moved]} />);
 
     expect(buttons()).toEqual(["Merge", "Don't merge"]);
+    expect(sent("merge_held_request")).toEqual([]);
+  });
+
+  it("asks once more in purlis's own sentence when the hold arrives without its risk, and never merges on the first press (Q268)", async () => {
+    const sent = core();
+    const bare: Shown = { ...hold, risk: null };
+    render(<MergeHoldNotice plane={PLANE} session={SESSION} asks={[bare]} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Merge" }));
+    expect(sent("merge_held_request")).toEqual([]);
+    expect(notice().textContent).toContain("Merge request 12 of o/r at 0123456? There is no undo.");
+    expect(buttons()).toEqual(["Merge", "Cancel"]);
+
+    await userEvent.click(screen.getByRole("button", { name: "Merge" }));
+    await vi.waitFor(() =>
+      expect(sent("merge_held_request")).toEqual([
+        { plane: PLANE, session: SESSION, repo: "o/r", number: 12, head: HEAD },
+      ]),
+    );
+  });
+
+  it("takes an open confirmation back when the ask's facts refresh under it (Q268, Q248)", async () => {
+    const sent = core();
+    const refreshed: Shown = {
+      ...hold,
+      answer: { via: "merge-hold", repo: "o/r", number: 13, head: HEAD },
+    };
+    const { rerender } = render(<MergeHoldNotice plane={PLANE} session={SESSION} asks={[hold]} />);
+    await userEvent.click(screen.getByRole("button", { name: "Merge" }));
+    expect(buttons()).toEqual(["Merge", "Cancel"]);
+
+    rerender(<MergeHoldNotice plane={PLANE} session={SESSION} asks={[refreshed]} />);
+
+    expect(buttons()).toEqual(["Merge", "Don't merge"]);
+    expect(sent("merge_held_request")).toEqual([]);
+  });
+
+  it("says so when sending the answer rejects, and merges nothing (Q268)", async () => {
+    const sent = core();
+    rejects.with = new Error("the core went away");
+    render(<MergeHoldNotice plane={PLANE} session={SESSION} asks={[hold]} />);
+    await userEvent.click(screen.getByRole("button", { name: "Don't merge" }));
+    await waitFor(() =>
+      expect(notice().textContent).toContain("purlis could not send it: Error: the core went away"),
+    );
     expect(sent("merge_held_request")).toEqual([]);
   });
 
