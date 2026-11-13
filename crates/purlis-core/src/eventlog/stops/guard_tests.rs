@@ -591,3 +591,29 @@ fn a_drained_deny_answers_its_block_so_the_drain_makes_it_durable() {
         assert_eq!(answered.body["spooled"], 2, "chat {chat}");
     }
 }
+
+/// R-114: a merge the hook held is a hold, which the app writes once it has raised the ask, so
+/// its deny line writes no block; a merge whose request cannot be read raises no ask, and is a
+/// block with source guard as any refusal.
+#[test]
+fn a_held_merge_is_no_block_and_a_merge_nobody_was_asked_about_is_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut host = recorder(dir.path());
+    begun(&mut host, 4, Harness::ClaudeCode, true);
+    let held = ToolCall {
+        rule: Some(crate::mergehold::REASON.to_owned()),
+        ..denied_by_no_arm(4)
+    };
+    host.tool(Path::new(PLANE), &held, Instant::now()).unwrap();
+    assert_eq!(blocks_since(dir.path(), 0), Vec::new());
+
+    let unread = ToolCall {
+        rule: Some(crate::mergehold::REASON_UNREADABLE.to_owned()),
+        ..denied_by_no_arm(4)
+    };
+    host.tool(Path::new(PLANE), &unread, Instant::now())
+        .unwrap();
+    let blocks = blocks_since(dir.path(), 0);
+    assert_eq!(blocks.len(), 1);
+    assert_eq!(blocks[0].body["source"], "guard");
+}

@@ -372,7 +372,8 @@ impl Recorder {
     /// refused, its `stop.block` body, source guard, with the gate's arm as its target where the
     /// line names one the gate has, and the arguments' hash keyed as the tool event's is; none
     /// for a call that was not refused, and for one that handed its write to the person (a
-    /// proposed change or a draft skill, Q235: [`crate::toolhooks::hands_the_write_over`]).
+    /// proposed change or a draft skill, Q235: [`crate::toolhooks::hands_the_write_over`]), and
+    /// for a merge the hook held, which is a hold ([`crate::mergehold::REASON`]).
     /// `unverified` unless the chat ran on a harness whose hooks report from outside its reach,
     /// under a backend that leaves them there (`attributes`, none for a chat of no run;
     /// [`reported_from_outside_its_reach`]): at No sandbox the chat can reach whatever reports
@@ -391,6 +392,8 @@ impl Recorder {
                 .rule
                 .as_deref()
                 .is_some_and(crate::toolhooks::hands_the_write_over)
+            // A held merge is a hold, which the app writes once it raises the ask (R-114).
+            || call.rule.as_deref() == Some(crate::mergehold::REASON)
         {
             return None;
         }

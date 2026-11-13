@@ -36,8 +36,13 @@ use crate::harness::asks::{Answerer, HumanScope};
 /// name ([`crate::askrules::Store::make`]).
 pub const SOURCE: &str = "merge-hold";
 
-/// The trace reason a held merge is refused with.
+/// The trace reason a held merge is refused with: an ask is raised for it, and the event log
+/// records it as a hold, never as a block.
 pub const REASON: &str = "merge-hold";
+
+/// The trace reason a merge is refused with where its request cannot be read: nobody is asked,
+/// and the event log records it as a block.
+pub const REASON_UNREADABLE: &str = "merge-unreadable";
 
 /// The most merge asks one chat has waiting at once: one more is not asked.
 pub const AT_MOST_PER_CHAT: usize = 3;

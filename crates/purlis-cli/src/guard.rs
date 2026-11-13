@@ -199,8 +199,14 @@ fn held_merge(command: &str, cwd: &str) -> Option<toolgate::Verdict> {
         }),
         Held::Unreadable => None,
     };
+    let reason = match held {
+        Held::Request(_) => mergehold::REASON,
+        Held::Unreadable => mergehold::REASON_UNREADABLE,
+    };
     Some(toolgate::Verdict {
-        reason: mergehold::REASON.to_owned(),
+        // No arm of the gate: the hold is its own rule, after the gate's.
+        arm: None,
+        reason: reason.to_owned(),
         shape: None,
         denial: mergehold::refusal(&held, app_said.as_deref()),
     })
