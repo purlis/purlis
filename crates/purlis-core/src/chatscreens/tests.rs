@@ -93,7 +93,7 @@ fn forgetting_all_takes_every_screen() {
     let (_dir, root) = project();
     keep(&root, CHAT, "a").unwrap();
     keep(&root, OTHER, "b").unwrap();
-    assert_eq!(forget_all(&root), 2);
+    assert_eq!(forget_all(&root), Ok(2));
     assert!(!is_kept(&root, CHAT) && !is_kept(&root, OTHER));
 }
 
@@ -304,4 +304,94 @@ fn what_the_store_holds_is_counted_and_nothing_where_it_is_off() {
     // Off by a hand edit: the count is read as nothing, and what was kept goes.
     assert_eq!(held(&root), (0, 0));
     assert!(every_kept(&root).is_empty());
+}
+
+/// What a write of chat `id`'s screen that was killed before its rename leaves in the store, as
+/// [`crate::rewrite::replace`] names it, last written `age` ago.
+fn a_killed_write_s_temp(root: &Path, id: &str, age: Duration) -> PathBuf {
+    std::fs::create_dir_all(dir(root)).unwrap();
+    let temp = dir(root).join(format!(
+        "{}{id}{SUFFIX}.4242.k1.tmp",
+        crate::rewrite::TEMP_PREFIX
+    ));
+    std::fs::write(&temp, "a whole screen, never renamed").unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&temp)
+        .unwrap()
+        .set_modified(SystemTime::now() - age)
+        .unwrap();
+    temp
+}
+
+#[test]
+fn turning_keeping_off_takes_a_killed_write_s_temp_and_leaves_a_write_under_way() {
+    // #6451's review: a temp left by a write killed before its rename holds a whole screen, and
+    // nothing named `<ULID>.screen` points at it.
+    let (_dir, root) = settable();
+    let killed = a_killed_write_s_temp(&root, CHAT, LOCK_WAIT + Duration::from_secs(1));
+    let under_way = a_killed_write_s_temp(&root, OTHER, Duration::ZERO);
+
+    set_keep(&root, false).unwrap();
+
+    assert!(!killed.exists(), "the killed write's screen goes");
+    assert!(
+        under_way.exists(),
+        "a write younger than the lock wait may be live"
+    );
+}
+
+#[test]
+fn the_sweep_at_open_takes_a_killed_write_s_temp_and_leaves_a_write_under_way() {
+    let (_dir, root) = project();
+    let killed = a_killed_write_s_temp(&root, CHAT, LOCK_WAIT + Duration::from_secs(1));
+    let under_way = a_killed_write_s_temp(&root, OTHER, Duration::ZERO);
+
+    sweep(&root, |_| true, SystemTime::now());
+
+    assert!(!killed.exists());
+    assert!(under_way.exists());
+}
+
+#[test]
+fn a_temp_of_another_store_s_name_is_never_taken() {
+    let (_dir, root) = project();
+    std::fs::create_dir_all(dir(&root)).unwrap();
+    let not_ours = dir(&root).join(format!(
+        "{}notes.txt.4242.k1.tmp",
+        crate::rewrite::TEMP_PREFIX
+    ));
+    std::fs::write(&not_ours, "x").unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&not_ours)
+        .unwrap()
+        .set_modified(SystemTime::now() - LOCK_WAIT - Duration::from_secs(1))
+        .unwrap();
+
+    assert_eq!(forget_all(&root), Ok(0));
+
+    assert!(not_ours.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_screen_that_could_not_be_deleted_is_said_and_still_counted() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let (_dir, root) = settable();
+    keep(&root, CHAT, "abc").unwrap();
+    // The folder lets nothing in it be deleted.
+    std::fs::set_permissions(dir(&root), std::fs::Permissions::from_mode(0o500)).unwrap();
+
+    let turned_off = set_keep(&root, false);
+    let counted = held(&root);
+    std::fs::set_permissions(dir(&root), std::fs::Permissions::from_mode(0o700)).unwrap();
+
+    let said = turned_off.expect_err("a screen stayed");
+    assert!(
+        said.starts_with("1 kept screen could not be deleted"),
+        "{said}"
+    );
+    assert!(!keeps(&root), "the setting is off all the same");
+    assert_eq!(counted, (1, 3), "the row counts what is really there");
 }

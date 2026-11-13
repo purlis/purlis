@@ -138,4 +138,30 @@ describe("the Keep task screens row", () => {
     expect(await screen.findByText(/so nothing was changed/)).toBeInTheDocument();
     expect(toggle).not.toBeChecked();
   });
+
+  it("says which kept screens stayed when off could not delete them, and shows it is off", async () => {
+    // #6451's review: off is written, then the deletes fail; the row says so and counts them.
+    const stayed =
+      "1 kept screen could not be deleted (Permission denied). Check that purlis may change " +
+      "/home/dev/plane/.purlis/app/chat-screens, then turn it off again.";
+    const state = { keep: true, kept: 1 };
+    mockIPC((cmd) => {
+      if (cmd === "task_screens") return { ...state };
+      if (cmd === "set_task_screens") {
+        state.keep = false;
+        return Promise.reject(stayed);
+      }
+      throw new Error(`unexpected ${cmd}`);
+    });
+    render(<Row />);
+    const toggle = screen.getByRole("switch", { name: "Keep task screens" });
+    await waitFor(() => expect(toggle).toBeChecked());
+
+    await userEvent.click(toggle);
+    const ask = await screen.findByRole("alertdialog");
+    await userEvent.click(within(ask).getByRole("button", { name: "Delete kept screens" }));
+
+    expect(await screen.findByText(/1 kept screen could not be deleted/)).toBeInTheDocument();
+    await waitFor(() => expect(toggle).not.toBeChecked());
+  });
 });

@@ -180,7 +180,7 @@ pub(crate) fn keep_screen_on_close(
 ) {
     // Where this machine keeps none, nothing is kept, and what was kept goes now.
     if !purlis_core::chatscreens::keeps(root) {
-        purlis_core::chatscreens::forget_all(root);
+        let _ = purlis_core::chatscreens::forget_all(root);
         return;
     }
     let me = dispatchrecord::ChatRef {
@@ -304,11 +304,13 @@ pub(crate) async fn chat_screen(
 pub(crate) struct TaskScreens {
     /// `[task_screens] keep` in the project's local file, `true` where it is not set.
     pub keep: bool,
-    /// How many screens are kept now: none where `keep` is off.
+    /// How many screens are kept now. Where `keep` is off, the ones a delete left (#6451's
+    /// review): a screen that could not be deleted is still counted.
     pub kept: u32,
 }
 
-/// The project at `root`'s [`TaskScreens`], deleting every kept screen where keeping is off.
+/// The project at `root`'s [`TaskScreens`], deleting every kept screen where keeping is off and
+/// counting the ones that stayed.
 pub(crate) fn task_screens_at(root: &std::path::Path) -> TaskScreens {
     let (kept, _) = purlis_core::chatscreens::held(root);
     TaskScreens {

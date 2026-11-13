@@ -55,7 +55,14 @@ export function taskScreensSetting(plane: PlaneId): LiveSetting {
             if (said.status === "ok") {
               setRead(said.data);
               setRefused(undefined);
-            } else setRefused(said.error);
+              return;
+            }
+            setRefused(said.error);
+            // Off can be written and still leave screens it could not delete: the row then
+            // shows the setting and the count as they are, not as they were.
+            return commands.taskScreens(plane).then((now) => {
+              if (now.status === "ok") setRead(now.data);
+            });
           })
           .catch((err: unknown) => setRefused(String(err)));
       };

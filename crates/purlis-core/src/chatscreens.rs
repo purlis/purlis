@@ -54,6 +54,11 @@ pub const MOST_KEPT_BYTES: u64 = 256 * 1024 * 1024;
 
 const SUFFIX: &str = ".screen";
 
+/// How long a write of the store waits for another to let go of it, and so how young a write's
+/// temp file may be and still be one under way: an older one is a write that was killed before
+/// its rename, and is deleted ([`temps_left`]).
+pub const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// The store of the project at `root`.
 pub fn dir(root: &Path) -> PathBuf {
     crate::names::state(root).join("app").join(DIR_NAME)
@@ -75,7 +80,7 @@ fn path_of(root: &Path, id: &str) -> Option<PathBuf> {
 /// replaced whole.
 pub fn keep(root: &Path, id: &str, screen: &str) -> std::io::Result<()> {
     if !keeps(root) {
-        forget_all(root);
+        let _ = forget_all(root);
         return Err(std::io::Error::other("this machine keeps no task's screen"));
     }
     let path = path_of(root, id)
@@ -90,7 +95,7 @@ pub fn keep(root: &Path, id: &str, screen: &str) -> std::io::Result<()> {
 /// where this machine keeps none ([`keeps`]), which deletes every kept screen.
 pub fn kept(root: &Path, id: &str) -> Option<String> {
     if !keeps(root) {
-        forget_all(root);
+        let _ = forget_all(root);
         return None;
     }
     crate::keptscreen::read(&[dir(root)], &path_of(root, id)?)
@@ -105,12 +110,13 @@ pub fn is_kept(root: &Path, id: &str) -> bool {
 }
 
 /// **What the store holds now**, for the Settings row that turns keeping on and off (#6306): how
-/// many screens are kept and their bytes, none where this machine keeps none ([`keeps`]),
-/// which deletes every kept screen.
+/// many screens are kept and their bytes. Where this machine keeps none ([`keeps`]), every kept
+/// screen is deleted first.
+///
+/// What it counts is what is there: a screen that could not be deleted is still counted.
 pub fn held(root: &Path) -> (usize, u64) {
     if !keeps(root) {
-        forget_all(root);
-        return (0, 0);
+        let _ = forget_all(root);
     }
     let kept = every_kept(root);
     (kept.len(), kept.iter().map(|one| one.bytes).sum())
@@ -152,7 +158,60 @@ fn every_kept(root: &Path) -> Vec<Kept> {
 
 /// Deletes chat `id`'s kept screen; whether it went.
 fn forget(root: &Path, id: &str) -> bool {
-    path_of(root, id).is_some_and(|path| std::fs::remove_file(path).is_ok())
+    path_of(root, id).is_some_and(|path| gone(&path).is_ok())
+}
+
+/// Deletes `path`, a file already gone counting as deleted.
+fn gone(path: &Path) -> std::io::Result<()> {
+    match std::fs::remove_file(path) {
+        Err(why) if why.kind() != std::io::ErrorKind::NotFound => Err(why),
+        _ => Ok(()),
+    }
+}
+
+/// Whether `name` is what a write of a screen leaves when it is killed before its rename: the
+/// temp file [`crate::rewrite::replace`] writes beside `<ULID>.screen`,
+/// `.purlis-generated.<ULID>.screen.<pid>.<tag>.tmp` (or an older build's prefix). It holds a
+/// whole screen, and nothing reads it.
+fn a_screen_s_temp(name: &str) -> bool {
+    let prefix = crate::names::GENERATED_TEMP_PREFIX;
+    std::iter::once(prefix.write)
+        .chain(prefix.reads.iter().copied())
+        .chain(prefix.history.iter().copied())
+        .filter_map(|prefix| name.strip_prefix(prefix))
+        .filter_map(|rest| rest.strip_suffix(".tmp"))
+        .any(|rest| {
+            let mut parts = rest.rsplitn(3, '.');
+            let (tag, pid, screen) = (parts.next(), parts.next(), parts.next());
+            tag.is_some_and(|tag| !tag.is_empty())
+                && pid.is_some_and(|pid| !pid.is_empty())
+                && screen
+                    .and_then(|screen| screen.strip_suffix(SUFFIX))
+                    .is_some_and(an_id)
+        })
+}
+
+/// **The temp files of the writes that were killed before their rename**, last written longer
+/// ago than [`LOCK_WAIT`] before `now`: a younger one may be a write under way, which is never
+/// deleted.
+fn temps_left(root: &Path, now: SystemTime) -> Vec<PathBuf> {
+    let Ok(reader) = std::fs::read_dir(dir(root)) else {
+        return Vec::new();
+    };
+    reader
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_name().to_str().is_some_and(a_screen_s_temp))
+        .filter(|entry| {
+            entry
+                .metadata()
+                .ok()
+                .filter(std::fs::Metadata::is_file)
+                .and_then(|meta| meta.modified().ok())
+                .and_then(|written| now.duration_since(written).ok())
+                .is_some_and(|age| age > LOCK_WAIT)
+        })
+        .map(|entry| entry.path())
+        .collect()
 }
 
 /// The oldest screens deleted until the store is within [`MOST_KEPT`] and [`MOST_KEPT_BYTES`].
@@ -176,10 +235,11 @@ fn held_to_the_total(root: &Path) -> usize {
 
 /// **Takes away every kept screen whose chat `named` does not name, or not written since
 /// [`crate::retention::KEEP_FOR`] before `now`**, in the project at `root`, then holds it to its
-/// total. With the setting off ([`keeps`]), every kept screen goes. Answers how many went.
+/// total, and takes the temp files of the writes killed before their rename ([`temps_left`]).
+/// With the setting off ([`keeps`]), every kept screen goes. Answers how many went.
 pub fn sweep(root: &Path, named: impl Fn(&str) -> bool, now: SystemTime) -> usize {
     if !keeps(root) {
-        return forget_all(root);
+        return forget_all(root).unwrap_or(0);
     }
     let gone = every_kept(root)
         .into_iter()
@@ -191,7 +251,11 @@ pub fn sweep(root: &Path, named: impl Fn(&str) -> bool, now: SystemTime) -> usiz
         })
         .filter(|one| forget(root, &one.id))
         .count();
-    gone + held_to_the_total(root)
+    let temps = temps_left(root, now)
+        .into_iter()
+        .filter(|temp| self::gone(temp).is_ok())
+        .count();
+    gone + temps + held_to_the_total(root)
 }
 
 /// **The sweep at a project's open**: [`sweep`], with the chats the project's dispatch records
@@ -203,13 +267,33 @@ pub fn on_open(root: &Path, now: SystemTime) -> usize {
     sweep(root, |id| workers.contains(id), now)
 }
 
-/// **Takes away every kept screen** of the project at `root`: what turning the setting off does.
-/// Answers how many went.
-pub fn forget_all(root: &Path) -> usize {
-    every_kept(root)
-        .into_iter()
-        .filter(|one| forget(root, &one.id))
-        .count()
+/// **Takes away every kept screen** of the project at `root`, and every temp file a write killed
+/// before its rename left ([`temps_left`]): what turning the setting off does. Answers how many
+/// went, or, where any stayed, how many and why, in words for the window.
+pub fn forget_all(root: &Path) -> Result<usize, String> {
+    let mut paths: Vec<PathBuf> = every_kept(root)
+        .iter()
+        .filter_map(|one| path_of(root, &one.id))
+        .collect();
+    paths.extend(temps_left(root, SystemTime::now()));
+    let mut went = 0;
+    let mut stayed: Vec<std::io::Error> = Vec::new();
+    for path in &paths {
+        match gone(path) {
+            Ok(()) => went += 1,
+            Err(why) => stayed.push(why),
+        }
+    }
+    match stayed.first() {
+        None => Ok(went),
+        Some(why) => Err(format!(
+            "{} kept screen{} could not be deleted ({why}). Check that purlis may change {}, \
+             then turn it off again.",
+            stayed.len(),
+            if stayed.len() == 1 { "" } else { "s" },
+            dir(root).display()
+        )),
+    }
 }
 
 /// **Whether this machine keeps a dispatched task's last screen** in the project at `root`:
@@ -310,7 +394,7 @@ pub fn set_keep(root: &Path, keep: bool) -> Result<(), String> {
     crate::settings::save(root, Which::Local, base.as_deref(), &doc.to_string())
         .map_err(|why| why.join(" "))?;
     if !keep {
-        forget_all(root);
+        forget_all(root)?;
     }
     Ok(())
 }
