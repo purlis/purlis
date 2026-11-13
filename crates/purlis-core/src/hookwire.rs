@@ -3732,11 +3732,15 @@ impl Asking {
     ///
     /// `token` is the asking chat's own, carried on every line this writes.
     pub fn on(path: &std::path::Path, token: Option<ChatToken>) -> io::Result<Self> {
-        let stream = std::os::unix::net::UnixStream::connect(path)?;
-        Ok(Self {
+        std::os::unix::net::UnixStream::connect(path).map(|stream| Self::over(stream, token))
+    }
+
+    /// [`Asking::on`], over a connection to the app already made.
+    pub fn over(stream: std::os::unix::net::UnixStream, token: Option<ChatToken>) -> Self {
+        Self {
             stream: std::io::BufReader::new(stream),
             token,
-        })
+        }
     }
 
     /// Writes `ask` and reads the app's answer, waiting at most `within` for each half, and

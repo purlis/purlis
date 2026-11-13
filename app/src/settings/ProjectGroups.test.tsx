@@ -1308,7 +1308,7 @@ describe("the sandbox, in Sandbox (ADR 0067 §7, ruling V78 d)", () => {
 
     await waitFor(() =>
       expect(screen.getByRole("group", { name: "Sandbox" })).toHaveTextContent(
-        "Not turned on in this project, so chats here start at the floor.",
+        "Not turned on in this project, so chats here start in the basic sandbox.",
       ),
     );
     expect(screen.getByRole("button", { name: "Turn the sandbox on" })).toBeInTheDocument();
