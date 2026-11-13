@@ -927,57 +927,59 @@ fn on_github_at(root: &Path, name: &str) -> PathBuf {
     clone
 }
 
-/// **Move into repos/ offers the trust in the same step** (R-339, Q184): the clones it moves
-/// that purlis has no record of are offered before the move, and the person's yes records each
-/// as trusted where it now is.
+/// **Move into repos/ trusts no new clone, and names the window** (Q260): a clone it moves that
+/// purlis has no record of is moved and left untrusted, and one line tells the person to trust
+/// it in purlis's window, in Asks › Trust these clones. The purlis binary holds no host scope,
+/// so trust stays a press in the window (Q181, Q249).
 #[test]
-fn doctor_move_into_repos_offers_the_trust_in_the_same_step() {
+fn doctor_move_into_repos_trusts_no_new_clone_and_names_the_window() {
     purlis_core::unsteered!();
     let (_d, root) = plane();
     let home = tempfile::tempdir().unwrap();
     let api = on_github_at(&root, "api");
+    on_github_at(&root, "web");
 
-    let offered = move_into_repos::offered(&root, home.path());
-    assert_eq!(
-        offered
-            .iter()
-            .map(|clone| (clone.folder.as_str(), clone.place.as_deref()))
-            .collect::<Vec<_>>(),
-        [("workspaces/alpha/api", Some("github.com/acme/api"))],
-        "the move offers to trust the clone purlis has no record of"
-    );
-
-    let scope = HostScope::for_a_test();
     let applied = move_into_repos::apply_with(
         &root,
         &move_into_repos::open_in_record,
         None,
         Some(&move_into_repos::Records {
             config_root: home.path(),
-            trust: Some(&scope),
         }),
     );
 
-    let moved = ws(&root).join("repos/api");
     let said = said(&applied);
+    let moved = ws(&root).join("repos/api");
     assert!(!api.exists(), "api is still at the root: {said:?}");
     assert!(moved.join(".git").is_dir(), "{said:?}");
-    assert!(
-        vouch::trusted(home.path(), &moved),
-        "the yes records the moved clone as trusted: {said:?}"
+    for name in ["api", "web"] {
+        assert!(
+            !vouch::trusted(home.path(), &ws(&root).join("repos").join(name)),
+            "the move trusts no new clone, {name} included: {said:?}"
+        );
+    }
+    let naming: Vec<&String> = said
+        .iter()
+        .filter(|line| line.contains("Asks › Trust these clones"))
+        .collect();
+    assert_eq!(
+        naming.len(),
+        1,
+        "one line names the window's Asks › Trust these clones: {said:?}"
     );
     assert!(
-        said.iter()
-            .any(|line| line.contains("workspaces/alpha/repos/api")
-                && line.contains("github.com/acme/api")),
-        "it says what it trusted, where: {said:?}"
+        naming[0].contains("purlis's window")
+            && naming[0].contains("workspaces/alpha/repos/api")
+            && naming[0].contains("workspaces/alpha/repos/web"),
+        "the line names the window and each clone left untrusted: {said:?}"
     );
 }
 
-/// Without the person's yes the move trusts nothing, and a clone purlis has a record of keeps
-/// it where it moved to (R-336: nothing is adopted automatically, and nothing trusted is lost).
+/// The move trusts nothing new, and a clone purlis has a record of keeps it where it moved to,
+/// while its remote is unchanged (R-336, Q260: nothing is adopted automatically, and nothing
+/// trusted is lost).
 #[test]
-fn answered_no_the_move_trusts_nothing_new_and_a_recorded_clone_keeps_its_record() {
+fn the_move_trusts_nothing_new_and_a_recorded_clone_keeps_its_record() {
     purlis_core::unsteered!();
     let (_d, root) = plane();
     let home = tempfile::tempdir().unwrap();
@@ -998,7 +1000,6 @@ fn answered_no_the_move_trusts_nothing_new_and_a_recorded_clone_keeps_its_record
         None,
         Some(&move_into_repos::Records {
             config_root: home.path(),
-            trust: None,
         }),
     );
 
@@ -1009,7 +1010,7 @@ fn answered_no_the_move_trusts_nothing_new_and_a_recorded_clone_keeps_its_record
     );
     assert!(
         !vouch::trusted(home.path(), &ws(&root).join("repos/web")),
-        "web is not trusted without the person's yes: {said:?}"
+        "web, which purlis has no record of, is not trusted: {said:?}"
     );
 }
 
@@ -1046,7 +1047,6 @@ fn a_trusted_clone_whose_remote_changed_is_not_trusted_again_where_it_moved_to()
         None,
         Some(&move_into_repos::Records {
             config_root: home.path(),
-            trust: None,
         }),
     );
 

@@ -989,6 +989,52 @@ fn fix_move_into_repos_by_name_moves_the_root_clones_and_bare_fix_does_not() {
     );
 }
 
+/// **`doctor --fix move-into-repos` moves a clone purlis has no record of and trusts it not**
+/// (Q260): the purlis binary holds no host scope, so it asks no y/N, and one line tells the person
+/// to trust the moved clone in purlis's window, in Asks › Trust these clones.
+#[test]
+fn fix_move_into_repos_trusts_no_new_clone_and_names_the_window() {
+    let (_d, root) = plane();
+    let clone = root.join("workspaces/alpha/api");
+    std::fs::create_dir_all(&clone).unwrap();
+    git(&clone, &["init", "-q", "."]);
+    git(
+        &clone,
+        &["remote", "add", "origin", "https://github.com/acme/api.git"],
+    );
+    let config = root.join("home/.config/purlis");
+    std::fs::create_dir_all(&config).unwrap();
+    let vars = [("PURLIS_CONFIG_HOME", config.to_str().unwrap())];
+
+    let out = doctor_with(
+        &root,
+        &root.join("home"),
+        &["--fix", "move-into-repos"],
+        &vars,
+    );
+
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(said.contains("✓ alpha: moved api into repos/"), "{said}");
+    assert!(!said.contains("[y/N]"), "it asks no y/N: {said}");
+    let naming: Vec<&str> = said
+        .lines()
+        .filter(|line| line.contains("Asks › Trust these clones"))
+        .collect();
+    assert!(
+        naming.len() == 1
+            && naming[0].contains("purlis's window")
+            && naming[0].contains("workspaces/alpha/repos/api"),
+        "one line names the window and the moved clone: {said}"
+    );
+    let after = doctor_with(&root, &root.join("home"), &["--json"], &vars);
+    let rows = rows(&after);
+    let unrecorded = row(&rows, "unrecorded clones");
+    assert_eq!(
+        unrecorded["status"], "warn",
+        "the moved clone is still unrecorded: {unrecorded}"
+    );
+}
+
 /// **`purlis doctor` lists the clones purlis has no record of** (R-338, Q184): the same clones
 /// the window's Trust these clones lists, each by its folder and the address its remote names.
 #[test]
