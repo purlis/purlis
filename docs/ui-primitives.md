@@ -2740,9 +2740,12 @@ component library gets added on.
     open or not (ADR 0121 decisions 1 and 24, `VIEW_QUESTIONS`): Asks _"Do I need to answer
     something?"_, Updates _"Did my work finish?"_, Notices _"Is something about my setup wrong
     or worth knowing?"_. Its mark is what the view is, never which edge it is on.
-  - **The ✋ pulses once** (ADR 0121 decision 24): the first time on this machine a Blocking ask
-    arrives while Asks is closed, its item is marked `data-pulse` for one `breathe`
-    (`asksArrival.ts`, kept in web storage as `purlis.asks-pulsed`).
+  - **The ✋ bounces, and nothing else in the window does** (#6343, ADR 0121 amended
+    2026-11-12): its item is marked `data-bounce` and its mark hops 3 times, one `settle` each,
+    as an ask arrives in the project in front, and again on a backoff of 5, 10, 20, 40, then
+    every 60 minutes while one waits there. An answer, Asks opening or a new ask restarts it at
+    5. Quiet (its schedule, Quiet now, typing), reduced motion and the window behind hold it,
+    and a held one is not made up (`handBounce.ts`, fed by `useHandBounce.ts`).
   - **A press of the open view puts the side away**; any other opens. The bar is outside the
     resizable group, so a side put away keeps its bar and its badges, and nothing is added to
     or taken from the group (the throw above).
