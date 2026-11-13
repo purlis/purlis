@@ -169,6 +169,48 @@ async fn a_folder_watch_that_names_the_plane_root_is_refused_before_the_command_
     );
 }
 
+/// Q251: **No sandbox is chosen only in the window on this Mac**. A link's `open_repo` or
+/// `create_project` with `protection: off` is refused on the link itself, with a sentence that
+/// names no vault and no person, and the app's command is never asked: nothing is moved and no
+/// level is written. Another level is the command's to answer, as before.
+#[tokio::test]
+async fn choosing_no_sandbox_at_setup_on_a_link_is_refused_before_the_command_is_asked() {
+    let commands = Commands::default();
+    let (a, b) = duplex(64 * 1024);
+    let (client, served) = tokio::join!(
+        link::connect(
+            a,
+            session::speaks(),
+            Scope::LocalUi,
+            HELD.of(Scope::LocalUi)
+        ),
+        link::serve_any(b, session::speaks(), &HELD)
+    );
+    let ui = ui::Server::new(BUILD, ["open_repo", "create_project"], commands.clone());
+    tokio::spawn(session::serve(served.unwrap(), Sessions, Some(ui)));
+    let client = Client::new(client.unwrap()).0;
+    let ui = client.ui(BUILD).await.unwrap();
+
+    for method in ["open_repo", "create_project"] {
+        let off = json!({"path": "/home/dev/widget", "protection": "off"});
+        let refused = ui.call(method, off).await.unwrap();
+        assert_eq!(
+            refused,
+            Err(json!(ui::NO_SANDBOX_IS_THE_WINDOWS)),
+            "{method}"
+        );
+    }
+    assert!(commands.asked.lock().unwrap().is_empty());
+
+    let basic = json!({"path": "/home/dev/widget", "protection": "floor"});
+    let answered = ui.call("open_repo", basic.clone()).await.unwrap();
+    assert_eq!(answered, Err(json!("that plane is not open")));
+    assert_eq!(
+        commands.asked.lock().unwrap().clone(),
+        vec![("open_repo".to_owned(), basic)]
+    );
+}
+
 #[tokio::test]
 async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
     // HP-6: `answer_ask` is the window's over Tauri's IPC alone, even when a host is built with
