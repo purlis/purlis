@@ -904,6 +904,26 @@ fn a_task_that_had_reported_when_the_app_quit_has_its_screen_kept() {
 }
 
 #[test]
+fn a_quit_is_not_held_past_its_deadline_by_a_task_screen_that_will_not_come() {
+    // #6451's review: a host whose view of a finished task never answers (a pool's runner on a
+    // half-open link waits out its answer wait) holds the quit no longer than its deadline.
+    let (_plane, host, quit, id, held, steward, task) = a_steward_and_its_task();
+    a_reported_task_and_one_working(&host, &held, &id, steward, task);
+    drop(held);
+    host.terminal_takes(std::time::Duration::from_secs(30));
+
+    let began = std::time::Instant::now();
+    bounded("the app quitting", move || quit.let_go_of_all());
+
+    let slack = std::time::Duration::from_millis(1500);
+    assert!(
+        began.elapsed() < crate::chatcard::SCREENS_AT_QUIT_WITHIN + slack,
+        "the quit took {:?}",
+        began.elapsed()
+    );
+}
+
+#[test]
 fn a_reported_task_keeps_no_screen_at_a_quit_where_this_machine_keeps_none() {
     let (plane, host, quit, id, held, steward, task) = a_steward_and_its_task();
     let (_, finished, _) = a_reported_task_and_one_working(&host, &held, &id, steward, task);

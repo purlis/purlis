@@ -836,7 +836,7 @@ pub struct Chats {
     project: PathBuf,
     /// Whatever runs the sessions (FD-3). A trait object, so nothing here can reach past
     /// [`SessionHost`] to a pty: a chat layer that did would not compile against another host.
-    sessions: Box<dyn SessionHost>,
+    sessions: Arc<dyn SessionHost>,
     /// Told as each chat starts, before its program does.
     starting: Mutex<Option<Starting>>,
     /// Told as each chat put back is reattached in the session host, before anything else is
@@ -1635,7 +1635,7 @@ impl Chats {
     pub fn on_host(record_it: Recorder, host: Box<dyn SessionHost>, project: PathBuf) -> Self {
         Self {
             project,
-            sessions: host,
+            sessions: Arc::from(host),
             starting: Mutex::new(None),
             reattached: Mutex::new(None),
             beginning: Mutex::new(None),
@@ -8860,7 +8860,10 @@ impl Chats {
     /// next launch leaves each out of its put back (`finished::left_out`), so none closes
     /// through [`Self::close_as`], where a screen is kept. Before [`Self::end_all`], while their
     /// sessions still show them.
-    pub fn keep_finished_screens(&self) {
+    ///
+    /// **It waits no later than `by`**, the one deadline a quit gives every project together:
+    /// a view a host does not answer (a pool's runner on a half-open link) is left behind.
+    pub fn keep_finished_screens(&self, by: std::time::Instant) {
         let finished: Vec<(u32, String)> = self
             .record()
             .chats
@@ -8873,7 +8876,7 @@ impl Chats {
                 Some((number, chat.identity.id.clone()?))
             })
             .collect();
-        crate::chatcard::keep_screens_at_quit(&self.project, self.sessions(), &finished);
+        crate::chatcard::keep_screens_at_quit(&self.project, &self.sessions, &finished, by);
     }
 
     /// Ends every chat, and does not return until their programs are gone.

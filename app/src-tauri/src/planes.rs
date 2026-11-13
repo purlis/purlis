@@ -2072,7 +2072,11 @@ impl Held {
     /// and it is the one writer that sets [`reopen::Record::relaunch_after_update`]. It goes
     /// through the same gated [`Records::write`] as every other, so a plane whose record this
     /// launch never put back is left exactly as it was.
-    fn let_go(&self, to_update: bool) {
+    ///
+    /// `screens_by` is when a quit stops waiting for the screens of the tasks that had finished
+    /// (#6305): one deadline over every plane, so planes let go of one after another wait for
+    /// them no longer together than one does. A close of one plane gives its own.
+    fn let_go(&self, to_update: bool, screens_by: std::time::Instant) {
         // Nobody is told of its standing any more (H6c).
         purlis_core::planegit::tell_when_standing_moves(&self.root, None);
         // Auto-save first: ending the chats below tells the worker each one ended, and a plane
@@ -2092,7 +2096,7 @@ impl Held {
         });
         // A task that had finished is left out of the next launch's put back, so its screen is
         // kept now, while its session still shows it (#6305).
-        self.chats.keep_finished_screens();
+        self.chats.keep_finished_screens(screens_by);
         self.chats.end_all();
         self.hooks.stop();
         drop(
@@ -2471,7 +2475,8 @@ impl Closing {
     /// and every window drawing it told. Only then may it be opened again.
     pub(crate) fn finish(self) {
         let _one_at_a_time = self.one_at_a_time.enter(LETTING_GO_WAITS);
-        self.held.let_go(false);
+        self.held
+            .let_go(false, crate::chatcard::screens_by_from_now());
         (self.released)(&self.held.root);
         (self.closed)(&self.plane);
     }
@@ -4085,7 +4090,7 @@ impl Planes {
         let mut open = self.map();
         if self.letting_go.quitting() {
             drop(open);
-            held.let_go(false);
+            held.let_go(false, crate::chatcard::screens_by_from_now());
             (self.released)(&held.root);
             return id;
         }
@@ -5629,8 +5634,10 @@ impl Planes {
         for held in &all {
             crate::chatbrowsers::kept_at_quit(held);
         }
+        // One deadline for every plane's task screens, as for their saving above.
+        let screens_by = crate::chatcard::screens_by_from_now();
         for held in all {
-            held.let_go(to_update);
+            held.let_go(to_update, screens_by);
             (self.released)(&held.root);
         }
         // Every way out of the app lets go of every plane here — a quit, and a restart to
