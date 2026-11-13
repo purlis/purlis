@@ -758,7 +758,8 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
     // and it is also why this walk can tell them apart in its answer.
     //
     // FR-4 put the repository first and the two-directory form under Advanced, a `<details>`
-    // whose summary is in the walk; opened, its controls are too.
+    // whose summary is in the walk; opened, its controls are too. T1-24 put the Protection
+    // choice between the repo and Advanced.
     render(
       <NewProject
         making={false}
@@ -787,6 +788,9 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
       'button "Create project"',
       'input "Repo"',
       'button "Browse for the repo"',
+      // T1-24's Protection row: a radio group is one stop, its chosen radio, and arrows move
+      // within it.
+      'radio "Basic sandbox (recommended)"',
       'summary "Advanced"',
     ]);
     cleanup();
