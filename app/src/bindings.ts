@@ -3179,7 +3179,8 @@ export const commands = {
 	skillSourceBrowse: (plane: PlaneId, source: SkillSource) => typedError<SourceBrowse, string>(__TAURI_INVOKE("skill_source_browse", { plane, source })),
 	/**
 	 *  **The install review** of `names` from a source into `level`, and the skills they refer to
-	 *  that `level` does not hold already.
+	 *  that `level` does not hold already, and those they hint at but each of `without`, which the
+	 *  person unticked (#5874).
 	 */
 	skillInstallReview: (plane: PlaneId, source: SkillSource, names: string[], level: SkillLevel, without: string[]) => typedError<InstallReview, string>(__TAURI_INVOKE("skill_install_review", { plane, source, names, level, without })),
 	/**
@@ -3225,6 +3226,17 @@ export const commands = {
 	 *  nothing fetched.
 	 */
 	skillUpdates: (plane: PlaneId) => typedError<SkillUpdates, string>(__TAURI_INVOKE("skill_updates", { plane })),
+	/**
+	 *  **The project's skill controls, read only** (#6031): the `[skill_policy]` its shared settings
+	 *  hold, and what it does to each of `origins`, the sources the window lists. Nothing while the
+	 *  flag is off.
+	 */
+	skillPolicy: (plane: PlaneId, origins: SourceOrigin[]) => typedError<SkillPolicy, string>(__TAURI_INVOKE("skill_policy", { plane, origins })),
+	/**
+	 *  **The skill acts this machine recorded** (#6031, SK-11): every install, update and removal of
+	 *  a skill from a source the audit wrote, newest first. Nothing while the flag is off.
+	 */
+	skillActs: (plane: PlaneId) => typedError<SkillActs, string>(__TAURI_INVOKE("skill_acts", { plane })),
 	/**
 	 *  **An update's review**: the installed skill `name` at `level` against its source's newest
 	 *  commit.
@@ -12173,6 +12185,8 @@ export type OfferedSkill = {
 	 *  `None` where they were not read to browse, and its review reads them.
 	 */
 	marks: string[] | null,
+	/**  What the project's controls would refuse of installing it, before its review (#6031). */
+	refused: PolicyRefused | null,
 };
 
 /**
@@ -13478,6 +13492,23 @@ export type PluginOffShown = {
 	line: string,
 	/**  The command that puts it right, where one does. */
 	command: string | null,
+};
+
+/**  **Which of the controls refuses**, what a row's mark says (#6031). */
+export type PolicyKind = "blocked" | "not-allowed" | "too-young" | "unread";
+
+/**
+ *  **What the controls would refuse, said before a review** (#6031): the core's sentence, and
+ *  when it can be taken where it is refused for its age alone.
+ */
+export type PolicyRefused = {
+	kind: PolicyKind,
+	why: string,
+	/**
+	 *  When it is old enough to take, in seconds since the epoch, where its source says when it
+	 *  was made.
+	 */
+	until: number | null,
 };
 
 /**  A pool as the person typed it: each limit left empty takes the default. */
@@ -17427,6 +17458,38 @@ export type SigningWaiting = {
 	why?: string | null,
 };
 
+/**  **One skill act this machine recorded** (#6031), as the audit wrote it: metadata only. */
+export type SkillAct = {
+	/**  When it was written, in seconds since the epoch. */
+	at: number | null,
+	act: SkillActKind,
+	skills: string[],
+	/**  The source, as an audit names it. */
+	source: string,
+	/**  The commit or revision. */
+	pin: string,
+	/**  The level, as a sentence names it. */
+	level: string,
+	by: SkillActBy,
+};
+
+/**  Where a recorded act was made: the person's own scope either way. */
+export type SkillActBy = 
+/**  In the Skill studio, in the window. */
+"window" | 
+/**  With `purlis skill` at a terminal, written by the session host. */
+"terminal";
+
+/**  One of the three skill acts an org's project audits (SK-11). */
+export type SkillActKind = "install" | "update" | "remove";
+
+/**  **The skill acts this machine recorded**, newest first, at most [`MOST_ACTS`]. */
+export type SkillActs = {
+	acts: SkillAct[],
+	/**  Whether there are older ones than those listed. */
+	more: boolean,
+};
+
 /**
  *  A skill a chat would have loaded that could not be loaded (SK-8): the core's `Broken`, for
  *  the window. purlis-core keeps no UI typing crate, so its level is the studio's `Level`.
@@ -18073,6 +18136,33 @@ export type SkillPinsTogether = {
 };
 
 /**
+ *  **The project's skill controls** (#6031): where they are set, what they are, and what they do
+ *  to each source asked about.
+ */
+export type SkillPolicy = {
+	/**  The shared settings file, as the project spells it: `charter.toml` or `purlis.toml`. */
+	file: string,
+	state: SkillPolicyState,
+	sources: SourcePolicy[],
+};
+
+/**  **The project's controls, as its shared settings hold them.** */
+export type SkillPolicyState = 
+/**  The shared settings hold no `[skill_policy]`: no controls, and nothing audited. */
+{ kind: "none" } | 
+/**
+ *  The table cannot be read, or this machine's file holds one too: every install and update
+ *  is refused until it is fixed, and why.
+ */
+{ kind: "refused"; why: string } | 
+/**  The table, each entry as a sentence names it. */
+{ kind: "set"; 
+/**  `None` where it holds no allow list: every source not blocked is allowed. */
+allow: string[] | null; block: string[]; min_age_days: number; exempt: string[]; 
+/**  What it does, in one line: what Sources says above its list. */
+said: string };
+
+/**
  *  **How a chat's router did on its latest prompt** (#4297, ADR 0102 §6): the core's routing
  *  record of it, as the chat's tab and the studio say it. No word of the prompt.
  */
@@ -18300,6 +18390,11 @@ export type SkillUpdateOffer = {
 	pinned: SourceCommit,
 	newer: SourceCommit,
 	edited: boolean,
+	/**
+	 *  What the project's controls would refuse of taking it, before its review (#6031): with
+	 *  when it can be taken, where it is too young.
+	 */
+	refused: PolicyRefused | null,
 };
 
 /**  An installed skill whose source could not be asked. */
@@ -18550,6 +18645,17 @@ export type SourceOffering =
  *  or an extension's source, by the extension's id; `label` as a person reads it either way.
  */
 export type SourceOrigin = { kind: "git"; remote: SourceRemote; label: string } | { kind: "extension"; id: string; label: string };
+
+/**  **What the controls do to one source** the window lists (#6031). */
+export type SourcePolicy = {
+	origin: SourceOrigin,
+	/**  Which of them refuses it, where one does. */
+	kind: PolicyKind | null,
+	/**  Why they do not allow every skill of it, in the core's sentence; `None` where they do. */
+	refused: string | null,
+	/**  The skills of it they do allow, where they allow some alone. */
+	only: string[],
+};
 
 /**  A repository and the branch read from it. */
 export type SourceRemote = {

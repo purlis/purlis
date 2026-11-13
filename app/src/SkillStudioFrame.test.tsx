@@ -25,6 +25,7 @@ import { openViewAt } from "./ui/panel/viewHistory";
 import { pickIn } from "./ui/select/select.testkit";
 import type { Studio } from "./bindings";
 import { findGrid } from "./ui/table/table.testkit";
+import { NO_SKILL_POLICY } from "./skillPolicy.testkit";
 
 afterEach(() => {
   cleanup();
@@ -70,6 +71,7 @@ function core(
     }
     if (cmd in more) return more[cmd];
     if (cmd === "skill_updates") return { offers: [], unconfirmed: [], unasked: [] };
+    if (cmd === "skill_policy") return NO_SKILL_POLICY;
     return [];
   });
   return asked;

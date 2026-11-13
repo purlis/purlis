@@ -32,6 +32,7 @@ import { groupSaid } from "./SkillPanels";
 import { PLANE_ROOT } from "./pieceViews";
 import type { Offer } from "./actions";
 import type { SkillStats, StudioSkill } from "./bindings";
+import { NO_SKILL_POLICY } from "./skillPolicy.testkit";
 
 afterEach(() => {
   cleanup();
@@ -136,6 +137,8 @@ function core(
     asked.push({ cmd, args: given });
     if (cmd in more) return more[cmd](given);
     switch (cmd) {
+      case "skill_policy":
+        return NO_SKILL_POLICY;
       case "skill_studio":
         return studio(skills, {
           workspace: (given.workspace as string | null) ?? null,

@@ -227,6 +227,7 @@ pub(crate) async fn skill_extension_source_browse(
                     // purlis's own words, read to browse as a git source's are and let go of
                     // (#5760): the install copies what its own review reads.
                     marks: one.marks,
+                    refused: one.refused.as_ref().map(Into::into),
                 })
                 .collect(),
             not_skills: Vec::new(),

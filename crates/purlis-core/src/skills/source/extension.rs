@@ -47,6 +47,9 @@ pub struct Offered {
     /// marks them (#5760): `None` where they were not read to browse, past what one browse reads
     /// or where the extension's answer for it was refused; its review reads them.
     pub marks: Option<Vec<String>>,
+    /// What the project's controls would refuse of installing it, said before its review
+    /// (#6031): the extension or the skill not allowed, or its revision unable to say its age.
+    pub refused: Option<super::policy::Refused>,
 }
 
 /// **The most skills one browse of an extension's source reads the files of** for their marks
@@ -299,6 +302,15 @@ fn browse_of(
     let (found, _) = source.skills()?;
     let (locked, _) = lock::every(plane);
     let origin = Origin::Extension(id.to_owned());
+    // The org's controls (#6031): a revision cannot say when it was made, unless its source
+    // can.
+    let policy = super::policy::of(plane);
+    let pin = Pin::Revision(revision.clone());
+    let made = if super::policy::asks_age(&policy) {
+        source.made()
+    } else {
+        None
+    };
     let mut read: u64 = 0;
     let mut reading = true;
     let skills = found
@@ -321,6 +333,7 @@ fn browse_of(
             Offered {
                 installed: installed_at(&locked, &origin, &skill.name),
                 marks,
+                refused: super::policy::refused_before(&policy, &origin, &skill.name, &pin, made),
                 skill,
             }
         })

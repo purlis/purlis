@@ -1051,6 +1051,9 @@ pub struct Offered {
     /// `None` where its files were not read to browse, as the source holds more than one read
     /// may take: its review reads them.
     pub marks: Option<Vec<String>>,
+    /// What the project's controls would refuse of installing it, said before its review
+    /// (#6031): its source or itself not allowed, or the commit too young, with when.
+    pub refused: Option<super::policy::Refused>,
 }
 
 /// **What a source offers**: its newest commit, its skills, and each folder that is not a skill
@@ -1071,6 +1074,14 @@ pub fn browse(plane: &Path, source: &Source) -> Result<Browse, String> {
     let checked = super::checked::browsed(plane, &source.remote, found.len());
     let (locked, _) = lock::every(plane);
     let origin = Origin::Git(source.remote.clone());
+    // The org's controls, and when the commit was made where they hold a minimum age (#6031).
+    let policy = super::policy::of(plane);
+    let pin = Pin::Commit(fetched.commit.clone());
+    let made = if super::policy::asks_age(&policy) {
+        super::SkillSource::made(&fetched)
+    } else {
+        None
+    };
     // Each skill's files are read for its marks until one read would take the fetch past what it
     // may read: the rest are left for their reviews, and the browse is not refused for them.
     let mut reading = true;
@@ -1093,6 +1104,13 @@ pub fn browse(plane: &Path, source: &Source) -> Result<Browse, String> {
                 Offered {
                     installed: installed_at(&locked, &origin, &skill.name),
                     marks,
+                    refused: super::policy::refused_before(
+                        &policy,
+                        &origin,
+                        &skill.name,
+                        &pin,
+                        made,
+                    ),
                     skill,
                 }
             })

@@ -19,6 +19,7 @@ import { STUDIO_HISTORY, forgetStudio, renderStudio } from "./SkillStudioTab.tes
 import { SKILL_CHAT, type SkillChatAsk } from "./skillDraftAsks";
 import { AT_THE_ROOT, inWorkspace } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
+import { NO_SKILL_POLICY } from "./skillPolicy.testkit";
 
 afterEach(() => {
   cleanup();
@@ -50,6 +51,8 @@ function core(
     asked.push({ cmd, args: given });
     if (cmd in more) return more[cmd](given);
     switch (cmd) {
+      case "skill_policy":
+        return NO_SKILL_POLICY;
       case "skill_studio":
         return studio(made === undefined ? skills : [made, ...skills], {
           workspace: (given.workspace as string | null) ?? null,

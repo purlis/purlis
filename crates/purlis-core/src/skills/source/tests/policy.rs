@@ -524,3 +524,183 @@ fn a_deleted_installed_skill_comes_back_only_where_allowed_and_is_audited_as_an_
         .collect();
     assert_eq!(said, [("skill.install", commit)]);
 }
+
+/// #6031: the Updates list says, before a review, that a newer commit is too young, in the
+/// sentence the review refuses it with, and the moment it is old enough to take.
+#[test]
+fn updates_say_before_a_review_that_a_newer_commit_is_too_young_and_when_it_can_be_taken() {
+    let (remote, first) = remote_made_days_ago(20);
+    let tmp = org_plane(&allowing(&remote.url(), ""));
+    let root = tmp.path();
+    let source = remote.source();
+    let review = review(root, &source, &["notify".to_owned()], &Level::project()).unwrap();
+    on(root, |cx| {
+        cx_audited(cx, |cx| {
+            install(cx, &source, &Level::project(), &review.accepted(), None)
+        })
+    })
+    .0
+    .unwrap();
+    let newer: &[u8] = b"---\nname: notify\ndescription: Tells the team.\n---\n\nPost.\n";
+    let tree = remote.tree(&[("skills/notify/SKILL.md", "100644", newer)]);
+    commit_made(&remote, &tree, Some(&first), 1);
+
+    let found = updates(root, None);
+    let offer = found
+        .offers
+        .iter()
+        .find(|one| one.name == "notify")
+        .unwrap();
+    let refused = offer.refused.as_ref().expect("too young");
+    assert!(
+        refused.why.contains("was committed 1 day ago") && refused.why.contains("in 6 days"),
+        "{}",
+        refused.why
+    );
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let until = refused.until.expect("a commit says when it was made");
+    let six_days = 6 * 24 * 60 * 60;
+    assert!(
+        until > now + six_days - 120 && until <= now + six_days + 120,
+        "{until}"
+    );
+}
+
+/// #6031: a newer commit old enough, from a source the controls allow, is offered as ever.
+#[test]
+fn an_update_the_controls_allow_is_offered_unmarked() {
+    let (remote, first) = remote_made_days_ago(30);
+    let tmp = org_plane(&allowing(&remote.url(), ""));
+    let root = tmp.path();
+    let source = remote.source();
+    let review = review(root, &source, &["notify".to_owned()], &Level::project()).unwrap();
+    on(root, |cx| {
+        cx_audited(cx, |cx| {
+            install(cx, &source, &Level::project(), &review.accepted(), None)
+        })
+    })
+    .0
+    .unwrap();
+    let newer: &[u8] = b"---\nname: notify\ndescription: Tells the team.\n---\n\nPost.\n";
+    let tree = remote.tree(&[("skills/notify/SKILL.md", "100644", newer)]);
+    commit_made(&remote, &tree, Some(&first), 10);
+    let found = updates(root, None);
+    assert_eq!(found.offers.len(), 1);
+    assert_eq!(found.offers[0].refused, None);
+}
+
+/// #6031: Sources says, before a review, whether the controls allow every skill of a source,
+/// only some of them, or none, in the core's own sentence.
+#[test]
+fn a_source_says_whether_the_controls_allow_all_some_or_none_of_it() {
+    let (remote, _) = remote_made_days_ago(30);
+    let url = remote.url();
+    let origin = Origin::Git(remote.source().remote);
+    let of = |policy: &str| {
+        let tmp = org_plane(policy);
+        crate::skills::source::policy::of(tmp.path())
+            .unwrap()
+            .unwrap()
+    };
+    assert_eq!(of(&allowing(&url, "")).admits_source(&origin), Ok(()));
+    let some = of(&format!(
+        "[skill_policy]\nallow = [{{ source = \"{url}\", skill = \"notify\" }}]\n"
+    ))
+    .admits_source(&origin)
+    .unwrap_err();
+    assert!(
+        some.only == ["notify"]
+            && some.why.contains("has only notify on")
+            && some.why.contains("allow list"),
+        "{some:?}"
+    );
+    let none = of("[skill_policy]\nallow = [{ source = \"https://github.com/acme/skills\" }]\n")
+        .admits_source(&origin)
+        .unwrap_err();
+    assert!(none.only.is_empty(), "{none:?}");
+    assert!(
+        none.why
+            .contains("is not on this project's allow list of skill sources"),
+        "{none:?}"
+    );
+    let blocked = of(&format!(
+        "[skill_policy]\nblock = [{{ source = \"{url}\" }}]\n"
+    ))
+    .admits_source(&origin)
+    .unwrap_err();
+    assert!(
+        blocked
+            .why
+            .contains("is on this project's block list of skill sources"),
+        "{blocked:?}"
+    );
+}
+
+/// #6031: a source's page marks each skill the controls would refuse, before its review, in the
+/// sentence the review refuses it with.
+#[test]
+fn browsing_a_source_marks_each_skill_the_controls_refuse() {
+    let (remote, _) = remote_made_days_ago(30);
+    let url = remote.url();
+    let tmp = org_plane(&format!(
+        "[skill_policy]\nallow = [{{ source = \"{url}\" }}]\nblock = [{{ source = \"{url}\", skill = \"notify\" }}]\n"
+    ));
+    let browse = browse(tmp.path(), &remote.source()).unwrap();
+    let refused = |name: &str| {
+        browse
+            .skills
+            .iter()
+            .find(|one| one.skill.name == name)
+            .unwrap()
+            .refused
+            .clone()
+    };
+    assert_eq!(refused("deploy"), None);
+    let notify = refused("notify").expect("blocked");
+    assert!(
+        notify.why.contains("notify from") && notify.why.contains("block list"),
+        "{notify:?}"
+    );
+}
+
+/// #6031: Settings shows the table as the team set it, and Sources one line of what it does.
+#[test]
+fn the_controls_are_shown_as_set_and_said_in_one_line() {
+    let tmp = org_plane(
+        "[skill_policy]\nallow = [\n  { source = \"https://github.com/acme/skills\" },\n  \
+         { source = \"https://github.com/anthropics/skills\", skill = \"pdf\" },\n  \
+         { extension = \"acme.registry\" },\n]\nblock = [{ source = \"https://github.com/acme/skills\", skill = \"yolo\" }]\n\
+         min_age_exempt = [\"9f3c1d27a0b4e5f6a7b8c9d0e1f2a3b4c5d6e7f8\"]\n",
+    );
+    let policy = crate::skills::source::policy::of(tmp.path())
+        .unwrap()
+        .unwrap();
+    let shown = policy.shown();
+    assert_eq!(
+        shown.allow,
+        Some(vec![
+            "https://github.com/acme/skills".to_owned(),
+            "pdf from https://github.com/anthropics/skills".to_owned(),
+            "the extension acme.registry".to_owned(),
+        ])
+    );
+    assert_eq!(shown.block, ["yolo from https://github.com/acme/skills"]);
+    assert_eq!(shown.min_age_days, 7);
+    assert_eq!(shown.exempt, ["9f3c1d27a0b4e5f6a7b8c9d0e1f2a3b4c5d6e7f8"]);
+    assert_eq!(
+        policy.said(),
+        "This project's controls apply: 3 sources allowed, 1 skill blocked, commits at least 7 days old."
+    );
+    let open =
+        crate::skills::source::policy::of(org_plane("[skill_policy]\nmin_age_days = 0\n").path())
+            .unwrap()
+            .unwrap();
+    assert_eq!(open.shown().allow, None);
+    assert_eq!(
+        open.said(),
+        "This project's controls apply: every source not blocked is allowed, nothing blocked, no minimum age."
+    );
+}

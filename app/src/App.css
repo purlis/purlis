@@ -8734,6 +8734,12 @@ nav.piece-files-head {
   overflow: auto;
 }
 
+/* What an org's skill controls refuse of a row (#6031, `prototype/skill-policy` A): the core's
+   sentence on a line of its own under the row's name. */
+.skill-policy-why {
+  display: block;
+}
+
 /* A skill's Uses and used by (#5874, `prototype/skill-hints` A): one row each, a hint's mark
    and its fix at the row's end, why on a line of its own under the name. */
 .skill-uses-rows {

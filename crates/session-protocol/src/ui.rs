@@ -926,6 +926,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_install_widenings",
     "skill_install",
     "skill_updates",
+    // An org's skill controls and the skill acts this machine recorded (#6031): read only, the
+    // person's window alone, as the rest of the studio is.
+    "skill_policy",
+    "skill_acts",
     "skill_update_review",
     "skill_update",
     // Extension skill sources (#3092, #3089): each asks an extension the person approved, and an

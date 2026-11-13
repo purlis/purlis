@@ -32,7 +32,7 @@
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::{Origin, Pin};
 use crate::settings::{LayerText, Which};
@@ -109,6 +109,19 @@ impl Rule {
             (Named::Git(url), Origin::Git(remote)) => *url == same_url(&remote.url),
             (Named::Extension(id), Origin::Extension(of)) => id == of,
             _ => false,
+        }
+    }
+
+    /// The entry as a sentence names it (#6031): `<url>`, `<skill> from <url>`, `the extension
+    /// <id>`, `<skill> from the extension <id>`.
+    fn shown(&self) -> String {
+        let source = match &self.source {
+            Named::Git(url) => url.clone(),
+            Named::Extension(id) => format!("the extension {id}"),
+        };
+        match &self.skill {
+            Some(skill) => format!("{skill} from {source}"),
+            None => source,
         }
     }
 
@@ -209,6 +222,61 @@ pub fn of(plane: &Path) -> Result<Option<Policy>, String> {
     }))
 }
 
+/// **Which of the controls refuses** (#6031): what a row's mark says in a word or two, beside the
+/// sentence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Kind {
+    /// On the block list.
+    Blocked,
+    /// Not on the allow list, or only some of its source is.
+    NotAllowed,
+    /// Younger than the minimum age, or unable to say when it was made.
+    TooYoung,
+    /// The table cannot be read, so everything is refused until it is fixed.
+    Unread,
+}
+
+/// **What the controls would refuse before a review** (#6031): the sentence the review and the
+/// install refuse with, and, where it is refused for its age, when it is old enough.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Refused {
+    pub kind: Kind,
+    pub why: String,
+    /// When it is old enough to take, in seconds since 1970; `None` for any other refusal, or
+    /// where its source cannot say when it was made.
+    pub until: Option<u64>,
+}
+
+/// **Why the controls do not allow every skill of a source** (#6031): the sentence, and the
+/// skills of it they do allow, none where they allow none.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SourceRefused {
+    pub kind: Kind,
+    pub why: String,
+    pub only: Vec<String>,
+}
+
+/// **The controls as the team set them** (#6031), each entry as a sentence names it, for Settings
+/// to show read only.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Shown {
+    /// `None` where the table names no allow list, so every source not blocked is allowed.
+    pub allow: Option<Vec<String>>,
+    pub block: Vec<String>,
+    pub min_age_days: u64,
+    pub exempt: Vec<String>,
+}
+
+/// `names` as a sentence lists them: `a`, `a and b`, `a, b and c`.
+fn listed(names: &[String]) -> String {
+    match names {
+        [] => String::new(),
+        [one] => one.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
 /// `n` days, as a sentence says it.
 fn days_said(n: u64) -> String {
     crate::counts::counted(n, "day", "days")
@@ -217,23 +285,32 @@ fn days_said(n: u64) -> String {
 impl Policy {
     /// **Whether the skill `skill` of `origin` may be installed or updated**, or why not.
     pub fn admits(&self, origin: &Origin, skill: &str) -> Result<(), String> {
+        self.admitted(origin, skill).map_err(|(_, why)| why)
+    }
+
+    /// [`Self::admits`], with which list refuses it.
+    fn admitted(&self, origin: &Origin, skill: &str) -> Result<(), (Kind, String)> {
         if let Some(rule) = self.block.iter().find(|rule| rule.covers(origin, skill)) {
-            return Err(match rule.skill {
-                Some(_) => format!("{skill} from {origin} is on this project's block list"),
-                None => format!("{origin} is on this project's block list of skill sources"),
-            });
+            return Err((
+                Kind::Blocked,
+                match rule.skill {
+                    Some(_) => format!("{skill} from {origin} is on this project's block list"),
+                    None => format!("{origin} is on this project's block list of skill sources"),
+                },
+            ));
         }
         match &self.allow {
-            Some(allow) if !allow.iter().any(|rule| rule.covers(origin, skill)) => {
-                Err(if allow.iter().any(|rule| rule.names_source(origin)) {
+            Some(allow) if !allow.iter().any(|rule| rule.covers(origin, skill)) => Err((
+                Kind::NotAllowed,
+                if allow.iter().any(|rule| rule.names_source(origin)) {
                     format!(
                         "{skill} is not on this project's allow list: only some skills of \
                          {origin} are"
                     )
                 } else {
                     format!("{origin} is not on this project's allow list of skill sources")
-                })
-            }
+                },
+            )),
             _ => Ok(()),
         }
     }
@@ -272,6 +349,137 @@ impl Policy {
         ))
     }
 
+    /// **When what `pin` names, made at `made`, is old enough** (#6031), in seconds since 1970:
+    /// `None` where it is already, the age is off, `pin` is exempt, or `made` is not known.
+    pub fn old_enough_at(&self, pin: &Pin, made: Option<u64>, now: SystemTime) -> Option<u64> {
+        self.old_enough(pin, made, now).err()?;
+        made.map(|made| made + self.min_age.as_secs())
+    }
+
+    /// Whether the minimum age is in force: what is installed must say when it was made.
+    pub fn ages(&self) -> bool {
+        !self.min_age.is_zero()
+    }
+
+    /// **What the controls would refuse of the skill `skill` of `origin` at `pin`**, made at
+    /// `made`, as of `now` (#6031): [`Self::admits`], then [`Self::old_enough`], with when it is
+    /// old enough; `None` where they refuse nothing.
+    pub fn refuses(
+        &self,
+        origin: &Origin,
+        skill: &str,
+        pin: &Pin,
+        made: Option<u64>,
+        now: SystemTime,
+    ) -> Option<Refused> {
+        if let Err((kind, why)) = self.admitted(origin, skill) {
+            return Some(Refused {
+                kind,
+                why,
+                until: None,
+            });
+        }
+        let why = self.old_enough(pin, made, now).err()?;
+        Some(Refused {
+            kind: Kind::TooYoung,
+            why,
+            until: self.old_enough_at(pin, made, now),
+        })
+    }
+
+    /// **Whether the controls allow every skill of `origin`** (#6031), or why not and which of
+    /// them they do allow: a block of the whole source, or an allow list that does not name it,
+    /// allows none; one that names some of its skills alone allows those.
+    pub fn admits_source(&self, origin: &Origin) -> Result<(), SourceRefused> {
+        if self
+            .block
+            .iter()
+            .any(|rule| rule.skill.is_none() && rule.names_source(origin))
+        {
+            return Err(SourceRefused {
+                kind: Kind::Blocked,
+                why: format!("{origin} is on this project's block list of skill sources"),
+                only: Vec::new(),
+            });
+        }
+        let Some(allow) = &self.allow else {
+            return Ok(());
+        };
+        let of: Vec<&Rule> = allow
+            .iter()
+            .filter(|rule| rule.names_source(origin))
+            .collect();
+        if of.iter().any(|rule| rule.skill.is_none()) {
+            return Ok(());
+        }
+        let only: Vec<String> = of.iter().filter_map(|rule| rule.skill.clone()).collect();
+        Err(SourceRefused {
+            kind: Kind::NotAllowed,
+            why: if only.is_empty() {
+                format!("{origin} is not on this project's allow list of skill sources")
+            } else {
+                format!(
+                    "{origin} has only {} on this project's allow list",
+                    listed(&only)
+                )
+            },
+            only,
+        })
+    }
+
+    /// **The controls as the team set them** (#6031), for Settings to show read only.
+    pub fn shown(&self) -> Shown {
+        Shown {
+            allow: self
+                .allow
+                .as_ref()
+                .map(|allow| allow.iter().map(Rule::shown).collect()),
+            block: self.block.iter().map(Rule::shown).collect(),
+            min_age_days: self.min_age.as_secs() / DAY.as_secs(),
+            exempt: self.exempt.clone(),
+        }
+    }
+
+    /// **What the controls do, in one line** (#6031): what Sources says of them before anything
+    /// is reviewed.
+    pub fn said(&self) -> String {
+        let allowed = match &self.allow {
+            None => "every source not blocked is allowed".to_owned(),
+            Some(allow) => format!(
+                "{} allowed",
+                crate::counts::counted(allow.len(), "source", "sources")
+            ),
+        };
+        let blocked = match self.block.len() {
+            0 => "nothing blocked".to_owned(),
+            n => {
+                let skills = self
+                    .block
+                    .iter()
+                    .filter(|rule| rule.skill.is_some())
+                    .count();
+                let sources = n - skills;
+                let mut parts = Vec::new();
+                if sources > 0 {
+                    parts.push(crate::counts::counted(sources, "source", "sources"));
+                }
+                if skills > 0 {
+                    parts.push(crate::counts::counted(skills, "skill", "skills"));
+                }
+                format!("{} blocked", parts.join(" and "))
+            }
+        };
+        let age = if self.min_age.is_zero() {
+            "no minimum age".to_owned()
+        } else {
+            format!(
+                "commits at least {} old",
+                days_said(self.min_age.as_secs() / DAY.as_secs())
+            )
+        };
+        format!("This project's controls apply: {allowed}, {blocked}, {age}.")
+    }
+
     /// [`Self::admits`] for each of `skills`, then [`Self::old_enough`].
     pub fn check<'a>(
         &self,
@@ -285,6 +493,58 @@ impl Policy {
         }
         self.old_enough(pin, made, SystemTime::now())
     }
+}
+
+/// **What the controls `policy` (as [`of`] read them) would refuse of the skill `skill` of
+/// `origin` at `pin`, made at `made`**, before a review (#6031): every one where they cannot be
+/// read, as the review would refuse it; nothing where there are none.
+pub fn refused_before(
+    policy: &Result<Option<Policy>, String>,
+    origin: &Origin,
+    skill: &str,
+    pin: &Pin,
+    made: Option<u64>,
+) -> Option<Refused> {
+    match policy {
+        Err(why) => Some(Refused {
+            kind: Kind::Unread,
+            why: why.clone(),
+            until: None,
+        }),
+        Ok(None) => None,
+        Ok(Some(policy)) => policy.refuses(origin, skill, pin, made, SystemTime::now()),
+    }
+}
+
+/// [`refused_before`] of the lists alone, where when it was made could not be read here: the
+/// review reads it, and says.
+pub fn listed_before(
+    policy: &Result<Option<Policy>, String>,
+    origin: &Origin,
+    skill: &str,
+) -> Option<Refused> {
+    match policy {
+        Err(why) => Some(Refused {
+            kind: Kind::Unread,
+            why: why.clone(),
+            until: None,
+        }),
+        Ok(None) => None,
+        Ok(Some(policy)) => policy
+            .admitted(origin, skill)
+            .err()
+            .map(|(kind, why)| Refused {
+                kind,
+                why,
+                until: None,
+            }),
+    }
+}
+
+/// Whether the controls `policy` hold a minimum age, so what is installed must say when it was
+/// made.
+pub fn asks_age(policy: &Result<Option<Policy>, String>) -> bool {
+    matches!(policy, Ok(Some(policy)) if policy.ages())
 }
 
 /// **Holds what is about to be installed or updated at `plane` to its controls**, where it has

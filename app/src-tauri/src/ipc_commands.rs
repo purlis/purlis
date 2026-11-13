@@ -524,6 +524,8 @@ macro_rules! app_commands {
                 skillpublish::skill_export_review,
                 skillpublish::skill_export,
                 skillsources::skill_updates,
+                skillsources::policy::skill_policy,
+                skillsources::policy::skill_acts,
                 skillsources::skill_update_review,
                 skillsources::skill_update,
                 skillsources::extension::skill_extension_sources,

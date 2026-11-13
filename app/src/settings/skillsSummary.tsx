@@ -9,6 +9,7 @@ import { OPEN_SKILL_STUDIO, SKILL_NEEDS_IN, SKILL_STUDIO_IN } from "../skillStud
 import { SkillBudgetTable, writeBudgetTo } from "../SkillBudget";
 import { Button } from "../ui/button/Button";
 import { askSettingsAction } from "./links";
+import { skillActsRow, skillControlsRows } from "./skillControls";
 import type { LiveSetting, SettingsGroup } from "./groups";
 
 /**
@@ -44,6 +45,36 @@ export function projectSkillsGroup(plane: PlaneId): SettingsGroup {
     help: "How many skills a chat lists before the router moves the rest into an index skill. Pin a skill in the Skill studio to keep it listed.",
     // A row, not `after`: Settings offers no group without one.
     settings: [budgetInForce("project.skills.budget.in-force", plane, null)],
+  };
+}
+
+/**
+ * **Settings › Skill sources at the project** (#6031, `prototype/skill-policy` A): this project's
+ * `[skill_policy]` read only, each key saying it is set in `file`, the team's shared file, which
+ * only a reviewed change to it changes. Behind the studio's flag.
+ */
+export function projectSkillSourcesGroup(plane: PlaneId, file: string): SettingsGroup {
+  return {
+    id: "project.skill-sources",
+    label: "Skill sources",
+    help: "This project's controls over the sources its skills install from: which are allowed, which are blocked, and how old a commit must be.",
+    also: ["skill policy", "skill_policy", "allow list", "block list", "minimum age"],
+    kept: `Kept in ${file}, which your team sees. Read only here: change it by a reviewed change to that file.`,
+    settings: skillControlsRows(plane),
+  };
+}
+
+/**
+ * **Settings › Recorded skill acts** (#6031, SK-11): each install, update and removal of a skill
+ * from a source this machine's audit recorded, newest first. Behind the studio's flag.
+ */
+export function projectSkillActsGroup(plane: PlaneId): SettingsGroup {
+  return {
+    id: "project.skill-acts",
+    label: "Recorded skill acts",
+    help: "Every install, update and removal of a skill from a source is recorded where a project has skill controls.",
+    also: ["skill audit", "audit"],
+    settings: [skillActsRow(plane)],
   };
 }
 

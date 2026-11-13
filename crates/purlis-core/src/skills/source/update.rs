@@ -48,6 +48,9 @@ pub struct Offer {
     pub newer: Pin,
     /// Whether the copy was edited here since it was installed.
     pub edited: bool,
+    /// What the project's controls would refuse of it, said before its review (#6031): its
+    /// source or skill not allowed, or the newer commit too young, with when it can be taken.
+    pub refused: Option<super::policy::Refused>,
 }
 
 /// What an installed skill could not be asked about, and why.
@@ -178,6 +181,10 @@ pub fn updates(plane: &Path, studio: Option<Studio<'_>>) -> Updates {
         });
     }
     let mut asked: Vec<(Origin, Result<Pin, String>)> = Vec::new();
+    // The org's controls, read once, and when each newer commit was made, asked once per source
+    // and only while they hold a minimum age (#6031).
+    let policy = super::policy::of(plane);
+    let mut made: Vec<(Origin, Option<u64>)> = Vec::new();
     for (kept, one) in &locked {
         match may(plane, *kept, one) {
             May::Ask => {}
@@ -224,6 +231,7 @@ pub fn updates(plane: &Path, studio: Option<Studio<'_>>) -> Updates {
         };
         match newest {
             Ok(pin) if pin != one.pin => out.offers.push(Offer {
+                refused: refused_before(plane, &policy, &mut made, one, &pin),
                 name: one.name.clone(),
                 level: one.level.0.clone(),
                 source: one.source.clone(),
@@ -246,6 +254,40 @@ pub fn updates(plane: &Path, studio: Option<Studio<'_>>) -> Updates {
         .collect();
     super::checked::asked(plane, &answered);
     out
+}
+
+/// **What the controls `policy` would refuse of updating `one` to `pin`**, before its review
+/// (#6031). A git source's newer commit is asked when it was made, once per source in `made`,
+/// while the controls hold a minimum age; where that cannot be read, only the lists are held to,
+/// and the review says the rest. An extension's revision cannot say, so the controls say so.
+fn refused_before(
+    plane: &Path,
+    policy: &Result<Option<super::policy::Policy>, String>,
+    made: &mut Vec<(Origin, Option<u64>)>,
+    one: &Locked,
+    pin: &Pin,
+) -> Option<super::policy::Refused> {
+    let name = one.at_source();
+    let Pin::Commit(commit) = pin else {
+        return super::policy::refused_before(policy, &one.source, name, pin, None);
+    };
+    if !super::policy::asks_age(policy) {
+        return super::policy::listed_before(policy, &one.source, name);
+    }
+    let at = match made.iter().find(|(origin, _)| *origin == one.source) {
+        Some((_, at)) => *at,
+        None => {
+            let at = source_of(plane, one)
+                .ok()
+                .and_then(|source| super::fetch::newest_made(plane, &source, commit));
+            made.push((one.source.clone(), at));
+            at
+        }
+    };
+    match at {
+        Some(at) => super::policy::refused_before(policy, &one.source, name, pin, Some(at)),
+        None => super::policy::listed_before(policy, &one.source, name),
+    }
 }
 
 /// How a file changes in an update.

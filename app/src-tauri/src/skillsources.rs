@@ -154,7 +154,7 @@ impl From<&Pin> for SourceCommit {
 }
 
 /// One skill a source offers.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
 pub struct OfferedSkill {
     pub name: String,
     pub description: String,
@@ -164,6 +164,8 @@ pub struct OfferedSkill {
     /// What its files do beyond its instructions, a few words each, as the core marks them;
     /// `None` where they were not read to browse, and its review reads them.
     pub marks: Option<Vec<String>>,
+    /// What the project's controls would refuse of installing it, before its review (#6031).
+    pub refused: Option<policy::PolicyRefused>,
 }
 
 /// A folder of a source that is not a skill purlis offers.
@@ -696,7 +698,7 @@ impl SourceOrigin {
 }
 
 /// One newer commit, or an extension's newer revision, offered for an installed skill.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
 pub struct SkillUpdateOffer {
     pub name: String,
     pub level: SkillLevel,
@@ -705,6 +707,9 @@ pub struct SkillUpdateOffer {
     pub pinned: SourceCommit,
     pub newer: SourceCommit,
     pub edited: bool,
+    /// What the project's controls would refuse of taking it, before its review (#6031): with
+    /// when it can be taken, where it is too young.
+    pub refused: Option<policy::PolicyRefused>,
 }
 
 /// An installed skill whose source could not be asked.
@@ -723,7 +728,7 @@ pub struct SkillSourceUnconfirmed {
 }
 
 /// The updates there are.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
 pub struct SkillUpdates {
     pub offers: Vec<SkillUpdateOffer>,
     pub unasked: Vec<SkillUpdateUnasked>,
@@ -1086,6 +1091,7 @@ pub(crate) async fn skill_source_browse(
                     folder: esc(&one.skill.folder),
                     installed: one.installed.iter().map(ToString::to_string).collect(),
                     marks: one.marks,
+                    refused: one.refused.as_ref().map(Into::into),
                 })
                 .collect(),
             not_skills: browse
@@ -1273,6 +1279,7 @@ pub(crate) async fn skill_updates(
                     pinned: (&one.pinned).into(),
                     newer: (&one.newer).into(),
                     edited: one.edited,
+                    refused: one.refused.as_ref().map(Into::into),
                 })
                 .collect(),
             unasked: found
@@ -1366,6 +1373,7 @@ pub(crate) async fn skill_update(
 }
 
 pub(crate) mod extension;
+pub(crate) mod policy;
 
 #[cfg(test)]
 mod tests;

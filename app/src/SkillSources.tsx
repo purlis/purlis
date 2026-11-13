@@ -11,6 +11,7 @@ import {
   type InstallSetReview,
   type OfferedSkill,
   type OfferedSource,
+  type PolicyRefused,
   type ReviewSkill,
   type SkillChanged,
   type SkillGrant,
@@ -45,6 +46,7 @@ import {
   installFrom,
   installedFrom,
   originKey,
+  originOf,
   pinWord,
   reviewInstall,
   reviewInstallSet,
@@ -56,6 +58,14 @@ import { SetChoosePage, SetReviewPage, applySet, memberKey, setTitle } from "./S
 import { SetUpdateReviewPage, applySetUpdate } from "./SkillSetUpdateReview";
 import { installGoesOver } from "./makeRoom";
 import { Badge } from "./ui/badge/Badge";
+import {
+  PolicyNotice,
+  policyOf,
+  refusedMark,
+  refusedSaid,
+  sourceMark,
+  useSkillPolicy,
+} from "./skillPolicy";
 import { Changes, LOOK_CLOSELY, SourceGrade, Summary } from "./SkillChangesShown";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Card, CardTitle } from "./ui/card/Card";
@@ -360,6 +370,8 @@ export function SkillSourcesPage({
   if (at === undefined)
     page = (
       <SourcesList
+        plane={plane}
+        changed={changed}
         read={read}
         busy={busy}
         onGo={onGo}
@@ -585,15 +597,25 @@ export function SkillSourcesPage({
 
 // --- Sources -----------------------------------------------------------------------------------
 
+/** What the updates' line says after an update the project's controls refuse (#6031): its mark,
+ *  " (too young, 3 days to go)"; nothing where they refuse nothing. */
+function refusedNote(refused: PolicyRefused | null, now: Date): string {
+  return refused === null ? "" : ` (${refusedMark(refused, now.getTime() / 1000).toLowerCase()})`;
+}
+
 /** **The Sources page**: the updates and the unconfirmed sources, which need the person, then
  *  their sources, then the ones offered to start from. */
 function SourcesList({
+  plane,
+  changed,
   read,
   busy,
   onGo,
   onAdd,
   onConfirm,
 }: {
+  plane: string;
+  changed: number;
   read: ReturnType<typeof useSourcesRead>;
   busy: boolean;
   onGo: (to: SourcesAt) => void;
@@ -603,6 +625,9 @@ function SourcesList({
   const updates = read.updates?.data;
   const offers = updates?.offers ?? [];
   const now = useMinute();
+  // What the project's controls do to each source listed, said on its row (#6031).
+  const listed = allSources(read.sources?.data ?? [], read.extensions);
+  const policy = useSkillPolicy(plane, listed.map(originOf), changed);
   const review = (offer: SkillUpdateOffer) =>
     onGo({
       at: "update",
@@ -610,12 +635,20 @@ function SourcesList({
       label: offer.source.label,
       skill: offer.name,
     });
-  const fixes = offers.map((offer): NoticeAction => ({
-    label: offers.length === 1 ? "Review update" : `Review ${offer.name}`,
-    primary: true,
-    busy,
-    onPress: () => review(offer),
-  }));
+  // What the project's controls refuse of each update, before its review (#6031); `?? null`:
+  // an answer from before the controls were said has none.
+  const refusedOf = (offer: SkillUpdateOffer) => offer.refused ?? null;
+  const fixes = offers.map((offer): NoticeAction => {
+    const refused = refusedOf(offer);
+    return {
+      label: offers.length === 1 ? "Review update" : `Review ${offer.name}`,
+      primary: true,
+      busy,
+      // One the controls refuse is not reviewed until they allow it.
+      off: refused === null ? undefined : refusedSaid(refused),
+      onPress: () => review(offer),
+    };
+  });
   const [firstFix, ...otherFixes] = fixes;
   return (
     <div className="skill-sources" data-testid="skill-sources">
@@ -634,6 +667,7 @@ function SourcesList({
         </div>
       </ViewListHead>
       <div className="skill-studio-page">
+        <PolicyNotice plane={plane} policy={policy} />
         {firstFix !== undefined && (
           <Notice
             cause="skill-updates"
@@ -651,6 +685,7 @@ function SourcesList({
                   {at > 0 && ", "}
                   {offer.name} from {offer.source.label}
                   {offer.edited && " (edited here since it was installed)"}
+                  {refusedNote(refusedOf(offer), now)}
                 </span>
               ))}
               . Nothing changes until you accept it.
@@ -722,6 +757,9 @@ function SourcesList({
                     const unconfirmed = updates?.unconfirmed.some(
                       (one) => sourceKey(one.remote) === key,
                     );
+                    const controls = policyOf(policy, originOf(source));
+                    const mark = controls === undefined ? undefined : sourceMark(controls);
+                    const why = controls?.refused ?? null;
                     return (
                       <ListRow
                         key={key}
@@ -730,8 +768,9 @@ function SourcesList({
                         data-testid="skill-source"
                       >
                         <RowLabel>{source.label}</RowLabel>
-                        {(waiting > 0 || unconfirmed === true) && (
+                        {(waiting > 0 || unconfirmed === true || mark !== undefined) && (
                           <RowTrail>
+                            {mark !== undefined && <Badge variant="waiting">{mark}</Badge>}
                             {unconfirmed === true && (
                               <Badge variant="waiting">Not confirmed on this machine</Badge>
                             )}
@@ -742,8 +781,17 @@ function SourcesList({
                             )}
                           </RowTrail>
                         )}
-                        <RowBelow clamp={1}>
+                        <RowBelow clamp={why === null ? 1 : 2}>
                           {aboutSource(source, checkedSaid(checkedOf(read.checked, source), now))}
+                          {why !== null && (
+                            <span className="skill-policy-why" data-testid="skill-source-refused">
+                              {refusedSaid({
+                                kind: controls?.kind ?? "not-allowed",
+                                why,
+                                until: null,
+                              })}
+                            </span>
+                          )}
                         </RowBelow>
                       </ListRow>
                     );
@@ -988,8 +1036,18 @@ function SourcePage({
         : read.data.skills.every((skill) => skill.installed.length > 0)
           ? "Every skill here is installed."
           : undefined;
-  /** Where a skill's row goes: its update, its page in the Library, or its install. */
+  /** What the project's controls refuse of a skill's row, before its review (#6031): its update,
+   *  or its install; nothing of one installed with no update. */
+  const refusedOf = (skill: OfferedSkill) => {
+    const update = offered(skill);
+    // `?? null`: an answer from before the controls were said has neither.
+    if (update !== undefined) return update.refused ?? null;
+    return skill.installed.length > 0 ? null : (skill.refused ?? null);
+  };
+  /** Where a skill's row goes: its update, its page in the Library, or its install; nowhere
+   *  while the controls refuse it, as its button says. */
   const onward = (skill: OfferedSkill) => {
+    if (refusedOf(skill) !== null) return;
     if (offered(skill) !== undefined) onGo({ at: "update", ...at(skill.name) });
     else if (skill.installed.length > 0) onOpenSkill(skill.name);
     else onGo({ at: "install", ...at(skill.name) });
@@ -1121,6 +1179,7 @@ function SourcePage({
                 {data.skills.map((skill) => {
                   const update = offered(skill);
                   const installed = skill.installed.length > 0;
+                  const refused = refusedOf(skill);
                   return (
                     <ListRow
                       key={skill.folder}
@@ -1134,6 +1193,11 @@ function SourcePage({
                       <RowTrail>
                         {installed && <Badge variant="ok">Installed</Badge>}
                         {update !== undefined && <Badge variant="accent">Update available</Badge>}
+                        {refused !== null && (
+                          <Badge variant="waiting">
+                            {refusedMark(refused, now.getTime() / 1000)}
+                          </Badge>
+                        )}
                         {(skill.marks ?? []).map((mark) => (
                           <Badge key={mark} variant="waiting">
                             {mark}
@@ -1141,7 +1205,9 @@ function SourcePage({
                         ))}
                         <Button
                           size="sm"
-                          variant={update !== undefined ? "primary" : undefined}
+                          variant={update !== undefined && refused === null ? "primary" : undefined}
+                          isDisabled={refused !== null}
+                          tooltip={refused === null ? undefined : refusedSaid(refused)}
                           // Named for its row, its words first (WCAG 2.5.3, label in name).
                           aria-label={`${
                             update !== undefined
@@ -1163,6 +1229,11 @@ function SourcePage({
                         {skill.description}
                         {installed && ` · installed: ${skill.installed.join(", ")}`}
                         {skill.marks === null && " · its files are read when you review it"}
+                        {refused !== null && (
+                          <span className="skill-policy-why" data-testid={`refused-${skill.name}`}>
+                            {refusedSaid(refused)}
+                          </span>
+                        )}
                       </RowBelow>
                     </ListRow>
                   );
