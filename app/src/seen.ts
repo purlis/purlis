@@ -19,7 +19,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { commands, type InboxUpdate, type PlaneId, type Shown } from "./bindings";
 import { ASK, askSeenKey, isNewIn, SEEN_AFTER_MS, updateSeenKey, type SeenRows } from "./seenRows";
-import { blocksSeenKey } from "./blockedMarkers";
 
 export {
   askSeenKey,
@@ -274,8 +273,8 @@ function useWatch(see: (keys: readonly string[]) => void) {
  * update of chat `session` is seen as it comes, before it is painted, and again each time the
  * window comes back into focus.
  *
- * **And its blocks are looked at** (R-175, R-341; T1-30): `blocks` holds each chat's latest
- * block, and the one of the chat on screen is seen by this same rule, so its blocked marker
+ * **And its blocks are looked at** (R-175, R-341; T1-30): `blocks` holds each chat's look at its
+ * latest block, by its number, and the one of the chat on screen is seen by this same rule, so its blocked marker
  * clears and a block that comes while it is on screen never marks it.
  */
 export function useChatOnScreenSeen(
@@ -286,7 +285,7 @@ export function useChatOnScreenSeen(
   updates: readonly InboxUpdate[] | undefined,
   blocks?: ReadonlyMap<number, string>,
 ): void {
-  const latest = session === undefined ? undefined : blocks?.get(session);
+  const look = session === undefined ? undefined : blocks?.get(session);
   const keys = useMemo(
     () =>
       session === undefined
@@ -296,9 +295,9 @@ export function useChatOnScreenSeen(
             ...(updates ?? [])
               .filter((one) => one.session === session)
               .map((one) => updateSeenKey(one.key)),
-            ...(latest === undefined ? [] : [blocksSeenKey(session, latest)]),
+            ...(look === undefined ? [] : [look]),
           ],
-    [asks, updates, session, latest],
+    [asks, updates, session, look],
   );
   useLayoutEffect(() => {
     if (!shown || keys.length === 0) return undefined;

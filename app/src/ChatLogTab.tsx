@@ -56,7 +56,7 @@ export function ChatLogTab({
   const [log, setLog] = useState<ChatLog>();
   const [said, setSaid] = useState<string>();
   // **Filtered to blocks where its marker opened it** (R-301), and the count of its blocks.
-  const [filter, setFilter] = useChatLogFilter(session);
+  const [filter, setFilter] = useChatLogFilter(plane, session);
   const [counted, setCounted] = useState<ChatBlocks>();
   // **Opened, its blocks are looked at** (R-175): its marker clears.
   useBlocksLookedAt(session);

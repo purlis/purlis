@@ -232,8 +232,10 @@ pub struct Blocks {
 
 impl Blocks {
     /// Takes what the subscription delivered: a block is held under its chat. Lines the log
-    /// lost that this held (`Ahead`) let go of everything, which is read again from what
-    /// follows; events no longer kept (`Missed`) are only gone from the log.
+    /// lost that this held (`Ahead`, after a power loss) let go of everything: the stream
+    /// carries on from where the log now ends, so the blocks still in the log before that are
+    /// not delivered again, and count only once the log is read whole, at the next start.
+    /// Events no longer kept (`Missed`) are only gone from the log.
     pub fn take(&mut self, delivery: super::Delivery) {
         match delivery {
             super::Delivery::Event(event) => {

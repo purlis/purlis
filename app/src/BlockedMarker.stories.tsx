@@ -35,7 +35,7 @@ function Placed({ counted, open }: { counted: ChatBlocks; open: (session: number
 const meta = {
   component: Placed,
   args: {
-    counted: { session: 7, blocks: 2, unverified: 0, latest: "01B" },
+    counted: { session: 7, blocks: 2, unverified: 0, key: "blocks:01K6CHAT000000000000000007:01B" },
     open: fn(),
   },
 } satisfies Meta<typeof Placed>;
@@ -67,7 +67,9 @@ export const TwoNewBlocked: Story = {
  * the Chat log and the detail.
  */
 export const UnverifiedIsAMutedDot: Story = {
-  args: { counted: { session: 7, blocks: 0, unverified: 3, latest: "01C" } },
+  args: {
+    counted: { session: 7, blocks: 0, unverified: 3, key: "blocks:01K6CHAT000000000000000007:01C" },
+  },
   play: async ({ canvas }) => {
     await expect(
       canvas.getAllByRole("img", { name: "Unverified blocks, counted in its Chat log" }),

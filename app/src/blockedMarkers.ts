@@ -9,8 +9,9 @@
  * the Chat log.
  *
  * **The last look is kept where the shipped New markers keep theirs** (`seen.ts`: the Inbox's
- * seen record), as a key `blocks:<session>:<seq>`, the `seq` of the latest block the person
- * looked at; the latest such key of a chat is its look. No new store. A chat is looked at once
+ * seen record), as a key `blocks:<chat>:<seq>`, the chat by its logged id and the `seq` of the
+ * latest block the person looked at (Q258). The core hands the key over with the counts, and
+ * keeps one per chat: a new look replaces the earlier. No new store. A chat is looked at once
  * it has been on screen in the focused window, by the shipped rule (`useChatOnScreenSeen`), or
  * once its Chat log has been opened.
  *
@@ -27,14 +28,14 @@ export const BLOCKS = "blocks:";
 /** How often the counts are read again while the window is drawn. */
 export const BLOCKS_READ_EVERY_MS = 5000;
 
-/** The seen record's key for a look at chat `session`'s block `latest`. */
-export function blocksSeenKey(session: number, latest: string): string {
-  return `${BLOCKS}${session}:${latest}`;
-}
-
-/** **Chat `session`'s last look**: the latest block it was looked at, or `null` for none. */
-export function lastLook(seen: ReadonlySet<string>, session: number): string | null {
-  const prefix = `${BLOCKS}${session}:`;
+/**
+ * **The last look of the chat look `key` names** (`blocks:<chat>:<seq>`, as the core hands it):
+ * the latest of its blocks it was looked at, or `null` for none, or for a chat not counted yet.
+ */
+export function lastLook(seen: ReadonlySet<string>, key: string | null): string | null {
+  if (key === null || !key.startsWith(BLOCKS)) return null;
+  const prefix = key.slice(0, key.lastIndexOf(":") + 1);
+  if (prefix.length <= BLOCKS.length) return null;
   let latest: string | null = null;
   for (const key of seen) {
     if (!key.startsWith(prefix)) continue;
@@ -58,8 +59,7 @@ export function blockedSaid(count: number): string {
 export const UNVERIFIED_SAID = "Unverified blocks, counted in its Chat log";
 
 /** What a chat's marker shows: its count of verified blocks, or a muted dot. */
-export type Marker =
-  { kind: "count"; said: string; latest: string } | { kind: "dot"; latest: string };
+export type Marker = { kind: "count"; said: string; key: string } | { kind: "dot"; key: string };
 
 /**
  * **What chat's marker shows**, from the core's count and the seen record: nothing once its
@@ -70,18 +70,20 @@ export function markerOf(
   counted: ChatBlocks | undefined,
   seen: ReadonlySet<string>,
 ): Marker | undefined {
-  if (counted === undefined || counted.latest === null) return undefined;
-  if (seen.has(blocksSeenKey(counted.session, counted.latest))) return undefined;
+  if (counted === undefined || counted.key === null) return undefined;
+  if (seen.has(counted.key)) return undefined;
   if (counted.blocks > 0)
-    return { kind: "count", said: blockedSaid(counted.blocks), latest: counted.latest };
-  if (counted.unverified > 0) return { kind: "dot", latest: counted.latest };
+    return { kind: "count", said: blockedSaid(counted.blocks), key: counted.key };
+  if (counted.unverified > 0) return { kind: "dot", key: counted.key };
   return undefined;
 }
 
 /**
  * **Each listed chat's blocks since its last look**, as the core counts them: read as the list
  * or a look changes, as the window comes back into focus, and every few seconds while it is
- * drawn. A read that fails keeps what was last read.
+ * drawn. A read that fails keeps what was last read, and so does one that answers the same:
+ * the map stays the same object, so an unchanged poll redraws nothing. Each chat's look is
+ * found by the key its last count named, so a chat's first read asks from no look.
  */
 export function useBlockedMarkers(
   plane: PlaneId,
@@ -96,9 +98,9 @@ export function useBlockedMarkers(
         ? []
         : listed.split(",").map((one) => {
             const session = Number(one);
-            return { session, after: lastLook(seen, session) };
+            return { session, after: lastLook(seen, counted.get(session)?.key ?? null) };
           }),
-    [listed, seen],
+    [listed, seen, counted],
   );
   const asking = JSON.stringify(asked);
   useEffect(() => {
@@ -111,7 +113,8 @@ export function useBlockedMarkers(
         .chatBlocks(plane, these)
         .then((answer) => {
           if (!live || answer.status !== "ok" || !Array.isArray(answer.data)) return;
-          setCounted(new Map(answer.data.map((one) => [one.session, one])));
+          const next = new Map(answer.data.map((one) => [one.session, one]));
+          setCounted((was) => (sameCounts(was, next) ? was : next));
         })
         .catch(() => undefined);
     };
@@ -125,6 +128,25 @@ export function useBlockedMarkers(
     };
   }, [plane, asking]);
   return counted;
+}
+
+/** Whether two reads of the counts answer the same of every chat. */
+function sameCounts(
+  was: ReadonlyMap<number, ChatBlocks>,
+  now: ReadonlyMap<number, ChatBlocks>,
+): boolean {
+  if (was.size !== now.size) return false;
+  for (const [session, one] of now) {
+    const before = was.get(session);
+    if (
+      before === undefined ||
+      before.blocks !== one.blocks ||
+      before.unverified !== one.unverified ||
+      before.key !== one.key
+    )
+      return false;
+  }
+  return true;
 }
 
 /** What the window's markers are drawn from: each chat's, and the way to its Chat log. */
@@ -166,17 +188,23 @@ export function useBlocksLookedAt(session: number | undefined): void {
 /** The Chat log's filters: every row, or the blocks alone. */
 export type ChatLogFilter = "all" | "blocks";
 
-const filters = new Map<number, ChatLogFilter>();
+/** Each Chat log's filter, by its project and its chat's number: two projects' chat 7 are two. */
+const filters = new Map<string, ChatLogFilter>();
 const told = new Set<() => void>();
 
-/** **Chat `session`'s Chat log opens filtered to blocks** (R-301), from its marker. */
-export function filterChatLog(session: number, filter: ChatLogFilter): void {
-  filters.set(session, filter);
+/** The key of project `plane`'s chat `session` in {@link filters}. */
+const filterOf = (plane: PlaneId, session: number) => JSON.stringify([plane, session]);
+
+/** **Project `plane`'s chat `session`'s Chat log opens filtered to blocks** (R-301), from its
+ *  marker. */
+export function filterChatLog(plane: PlaneId, session: number, filter: ChatLogFilter): void {
+  filters.set(filterOf(plane, session), filter);
   for (const tell of told) tell();
 }
 
-/** The filter chat `session`'s Chat log shows, and the way to change it. */
+/** The filter project `plane`'s chat `session`'s Chat log shows, and the way to change it. */
 export function useChatLogFilter(
+  plane: PlaneId,
   session: number | undefined,
 ): [ChatLogFilter, (filter: ChatLogFilter) => void] {
   const [, redraw] = useState(0);
@@ -187,11 +215,11 @@ export function useChatLogFilter(
       told.delete(tell);
     };
   }, []);
-  const filter = session === undefined ? "all" : (filters.get(session) ?? "all");
+  const filter = session === undefined ? "all" : (filters.get(filterOf(plane, session)) ?? "all");
   return [
     filter,
     (to: ChatLogFilter) => {
-      if (session !== undefined) filterChatLog(session, to);
+      if (session !== undefined) filterChatLog(plane, session, to);
     },
   ];
 }

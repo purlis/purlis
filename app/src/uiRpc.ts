@@ -4016,7 +4016,7 @@ export type BlockedLately = {
 
 /**
  *  One chat the window asks the blocked marker of, and its last look: the `seq` of the latest
- *  block the person looked at, as the window keeps it in the seen record (decimal, `None` for
+ *  block the person looked at, read from its key in the seen record (decimal, `None` for
  *  never).
  */
 export type BlocksAsked = {
@@ -4537,10 +4537,11 @@ export type ChatBlocks = {
 	/**  The unverified ones after it, which never count on the sidebar: a muted dot. */
 	unverified: number,
 	/**
-	 *  The `seq` of the chat's latest block (decimal), which the window keeps as the look once
-	 *  the chat has been looked at; `None` for a chat with none.
+	 *  The seen record's key for a look at the chat's latest block, `blocks:<chat>:<seq>`, the
+	 *  chat by its logged id, stable across restarts (Q258): what the window keeps once the chat
+	 *  has been looked at. `None` for a chat with none, or one the log does not know.
 	 */
-	latest: string | null,
+	key: string | null,
 };
 
 /**

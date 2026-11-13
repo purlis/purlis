@@ -117,5 +117,8 @@ fn the_marker_s_look_key_is_the_chat_s_logged_id_and_its_latest_block() {
         marked[0].key.as_deref(),
         Some(format!("blocks:{CHAT}:{latest}").as_str())
     );
-    assert_eq!(marked[1].key, None, "a chat the log does not know has no look");
+    assert_eq!(
+        marked[1].key, None,
+        "a chat the log does not know has no look"
+    );
 }

@@ -5,9 +5,6 @@ import { Dot } from "lucide-react";
 import { Button } from "./ui/button/Button";
 import { UNVERIFIED_SAID, useBlockedMarker } from "./blockedMarkers";
 
-/** The dot's size: the line's, as the row's other quiet marks are. */
-const DOT = { width: "1em", height: "1em" };
-
 /**
  * **Chat `session`'s blocked marker** (R-172, R-299, R-301; T1-30), on its sidebar row's end and
  * its pane's band: "2 new blocked", a quiet button that opens its Chat log filtered to blocks;
@@ -28,7 +25,8 @@ export function BlockedMarker({ session }: { session: number }) {
         role="img"
         aria-label={UNVERIFIED_SAID}
       >
-        <Dot aria-hidden="true" style={DOT} />
+        {/* Sized by its `lucide` class, at the line's 1em, as every icon is (`App.css`). */}
+        <Dot aria-hidden="true" />
       </span>
     );
   return (

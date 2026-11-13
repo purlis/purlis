@@ -767,7 +767,6 @@ import {
 import {
   BlockedMarkers,
   filterChatLog,
-  blocksSeenKey,
   markerOf,
   useBlockedMarkers,
   type BlockedMarkersHeld,
@@ -11359,35 +11358,35 @@ export const PlaneView = memo(function PlaneView({
    *  kept in the same seen record. The chat on screen in a focused window is looked at by the
    *  same rule (R-341). */
   const blocksCounted = useBlockedMarkers(plane, [...chatNames.keys()], seen);
-  const blocksLatest = useMemo(
+  const blocksLooks = useMemo(
     () =>
       new Map(
         [...blocksCounted.values()].flatMap((one) =>
-          one.latest === null ? [] : [[one.session, one.latest] as const],
+          one.key === null ? [] : [[one.session, one.key] as const],
         ),
       ),
     [blocksCounted],
   );
-  useChatOnScreenSeen(see, chatOnScreen, inFront, waiting, keptUpdates, blocksLatest);
+  useChatOnScreenSeen(see, chatOnScreen, inFront, waiting, keptUpdates, blocksLooks);
   const blockedMarkers = useMemo<BlockedMarkersHeld>(
     () => ({
       of: (session) =>
         seen === undefined ? undefined : markerOf(blocksCounted.get(session), seen),
       // **It opens the Chat log, filtered to blocks** (R-301), as its row in the chat's list does.
       open: (session) => {
-        filterChatLog(session, "blocks");
+        filterChatLog(plane, session, "blocks");
         const offer = offers.find((one) => one.id === chatLogId(session));
         if (offer?.available === true) press(offer);
       },
       // **Its Chat log opened is a look** (R-175).
       look: (session) => {
         if (!blocksCounted.has(session)) return false;
-        const latest = blocksLatest.get(session);
-        if (latest !== undefined) see([blocksSeenKey(session, latest)]);
+        const key = blocksLooks.get(session);
+        if (key !== undefined) see([key]);
         return true;
       },
     }),
-    [blocksCounted, blocksLatest, offers, press, see, seen],
+    [blocksCounted, blocksLooks, offers, plane, press, see, seen],
   );
   const [noticeCauses, setNoticeCauses] = useState<readonly string[]>([]);
   useEffect(() => {

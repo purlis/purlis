@@ -165,7 +165,7 @@ pub(crate) async fn chat_log(
 }
 
 /// One chat the window asks the blocked marker of, and its last look: the `seq` of the latest
-/// block the person looked at, as the window keeps it in the seen record (decimal, `None` for
+/// block the person looked at, read from its key in the seen record (decimal, `None` for
 /// never).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, specta::Type)]
 pub struct BlocksAsked {
@@ -182,9 +182,10 @@ pub struct ChatBlocks {
     pub blocks: u32,
     /// The unverified ones after it, which never count on the sidebar: a muted dot.
     pub unverified: u32,
-    /// The `seq` of the chat's latest block (decimal), which the window keeps as the look once
-    /// the chat has been looked at; `None` for a chat with none.
-    pub latest: Option<String>,
+    /// The seen record's key for a look at the chat's latest block, `blocks:<chat>:<seq>`, the
+    /// chat by its logged id, stable across restarts (Q258): what the window keeps once the chat
+    /// has been looked at. `None` for a chat with none, or one the log does not know.
+    pub key: Option<String>,
 }
 
 /// **The markers' running tally** (R-174): fed from the event log's subscription, so a refresh
@@ -227,16 +228,22 @@ fn blocks_of(dir: &std::path::Path, asked: &[Asked]) -> Result<Vec<ChatBlocks>, 
     Ok(asked
         .iter()
         .map(|one| {
-            let marker = one
-                .chat
-                .as_deref()
-                .map(|chat| blocks.since(chat, one.after))
-                .unwrap_or_default();
+            let Some(chat) = one.chat.as_deref() else {
+                return ChatBlocks {
+                    session: one.session,
+                    blocks: 0,
+                    unverified: 0,
+                    key: None,
+                };
+            };
+            let marker = blocks.since(chat, one.after);
             ChatBlocks {
                 session: one.session,
                 blocks: marker.blocks,
                 unverified: marker.unverified,
-                latest: marker.latest.map(|seq| seq.to_string()),
+                key: marker
+                    .latest
+                    .map(|seq| format!("{}{chat}:{seq}", purlis_core::inboxupdates::BLOCKS)),
             }
         })
         .collect())
