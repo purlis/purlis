@@ -15,7 +15,7 @@
 set -euo pipefail
 operator_binary=${1:?the cluster operator binary of this build}
 registry=${2:?the registry container this job pushes to}
-port=${3:?the registry's port on this machine}
+port=${3:?the port of the registry on this machine}
 node=$(cat operator/e2e/kind-node.txt)
 cluster=pool-setup
 
