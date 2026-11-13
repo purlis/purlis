@@ -90,28 +90,39 @@ async function type(name: string, value: string): Promise<void> {
   await box.setValue(value);
 }
 
+/** Settings › Pools' switch of the one cluster pool kept here, by its role and its label. */
+const MY_OWN = '//*[@role="switch"][ancestor::label[normalize-space()="This is my own"]]';
+
+/** Whether This is my own says on. */
+async function myOwnIsOn(): Promise<boolean> {
+  const control = await $(MY_OWN);
+  if (!(await control.isExisting())) return false;
+  return (await control.getAttribute("aria-checked")) === "true" || (await control.isSelected());
+}
+
 /**
- * **Turns This is my own on**, in Settings › Pools, for the one cluster pool kept here. A React
- * Aria switch's input is drawn hidden, so its row is pressed, by its role.
+ * **Turns This is my own on**, in Settings › Pools, for the one cluster pool kept here: one
+ * press, as a person's, then a wait for the mark to be kept and read back.
  */
 async function markAsMyOwn(): Promise<void> {
-  const on = () =>
-    browser.execute(() => {
-      const control = Array.from(document.querySelectorAll('[role="switch"]')).find(
-        (one) => (one.closest("label")?.textContent ?? "").trim() === "This is my own",
-      );
-      if (!control) return "none";
-      const checked =
-        control.getAttribute("aria-checked") === "true" ||
-        (control instanceof HTMLInputElement && control.checked);
-      if (!checked) control.closest("label")?.click();
-      return checked ? "on" : "pressed";
-    });
-  await browser
-    .waitUntil(async () => (await on()) === "on", { timeout: 60_000, interval: 1_000 })
-    .catch(async () => {
-      throw new Error(`This is my own never turned on: ${await on()}`);
-    });
+  const control = await $(MY_OWN);
+  await control.waitForExist({ timeout: 60_000 }).catch(async () => {
+    throw new Error(`no This is my own in Settings: ${await settingsSay()}`);
+  });
+  await control.scrollIntoView({ block: "center" });
+  if (!(await myOwnIsOn())) await control.click();
+  await browser.waitUntil(myOwnIsOn, { timeout: 60_000, interval: 1_000 }).catch(async () => {
+    throw new Error(`This is my own never turned on: ${await settingsSay()}`);
+  });
+}
+
+/** What the cluster pool's row in Settings › Pools says, for a failure to name. */
+async function settingsSay(): Promise<string> {
+  return browser.execute(
+    () =>
+      document.querySelector(".pools-about")?.textContent?.replace(/\s+/g, " ") ??
+      "no cluster pool's row on screen",
+  );
 }
 
 describe("Pool setup on a kind cluster", () => {
