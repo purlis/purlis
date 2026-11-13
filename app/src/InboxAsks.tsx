@@ -512,6 +512,7 @@ export const SOURCE_SAID: Record<Shown["source"], string> = {
   budget: "Paused at its budget",
   looping: "Paused, as it may be looping",
   "merge-hold": "Asks you to merge a request",
+  "trust-clone": "Asks you to trust a clone",
 };
 
 /** Why a task's question reached the person, as its row says it. */

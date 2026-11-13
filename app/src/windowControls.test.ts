@@ -186,3 +186,85 @@ describe("the window controls the core's messages name", () => {
     expect(controlsNamedIn("Session saved")).toEqual([]);
   });
 });
+
+/** Names the control it needs in words the reader above does not take apart (a palette
+ *  command, a view's button): the control is attached (R-328). */
+const NAMED_IN_WORDS =
+  "names the window's control it needs, in words the reader above does not parse";
+/** Not a refusal: it says where an act is done, in a tool's description or a brief to a chat. */
+const NOT_A_REFUSAL = "not a refusal: it says where an act is done, and owes no way out";
+/** A refusal a chat reads whose way out is the window's, said with no control and no ask yet. */
+const NO_ASK_YET =
+  "a refusal whose way out is the window's, with no control and no ask yet: R-328 debt, its ask a ticket of its own";
+
+/**
+ * **The core messages that say "from the window" with no control the reader finds** (R-328),
+ * exactly: `<path>` and the words the message starts with, each with why. A refusal whose way
+ * out is a press in the window raises an ask carrying that control (`purlis_core::windowonly`),
+ * and its message names the control; one that names none is held here, so a new one fails.
+ */
+const FROM_THE_WINDOW: ReadonlyArray<readonly [path: string, starts: string, why: string]> = [
+  ["crates/purlis-cli/src/brokered.rs", "a chat does not force a branch folder's", NAMED_IN_WORDS],
+  [
+    "crates/purlis-cli/src/brokered.rs",
+    "a sandboxed chat does not remove a branch",
+    NAMED_IN_WORDS,
+  ],
+  ["crates/purlis-core/src/gitbroker.rs", "this chat stands in branch folder", NAMED_IN_WORDS],
+  ["crates/purlis-core/src/planegit/resolvefolder.rs", "Resolve moves the project", NAMED_IN_WORDS],
+  ["crates/purlis-core/src/chattools.rs", "Remove a finished branch folder", NOT_A_REFUSAL],
+  ["crates/purlis-core/src/planegit.rs", "This save is left unsigned", NOT_A_REFUSAL],
+  ["crates/purlis-core/src/renamelocal/keychain.rs", "it waits for you to finish", NOT_A_REFUSAL],
+  ["crates/purlis-core/src/savefix.rs", "find why these checks failed", NOT_A_REFUSAL],
+  ["crates/purlis-cli/src/brokered.rs", "a sandboxed chat changes only its own", NO_ASK_YET],
+  ["crates/purlis-cli/src/brokered.rs", "a sandboxed chat does not remove a persona", NO_ASK_YET],
+  ["crates/purlis-cli/src/brokered.rs", "a sandboxed chat does not remove a workspace", NO_ASK_YET],
+  ["crates/purlis-cli/src/brokered.rs", "this chat {runs_as}", NO_ASK_YET],
+  ["crates/purlis-cli/src/handoff.rs", "{HANDOFF_SAYS} no purlis app answered", NO_ASK_YET],
+  ["crates/purlis-core/src/dispatchguard.rs", "this call runs `purlis worktree", NO_ASK_YET],
+  ["crates/purlis-core/src/forge/gitcredential.rs", "this repository's remote pushes", NO_ASK_YET],
+  ["crates/purlis-core/src/hoststart.rs", "this chat's profile hands its program", NO_ASK_YET],
+  ["crates/purlis-core/src/hoststart.rs", "this session host composes", NO_ASK_YET],
+  ["crates/purlis-core/src/mergehold.rs", "{OPENS} `purlis change land`", NO_ASK_YET],
+  ["crates/purlis-core/src/piececmd.rs", "{repo} · {piece} holds files git ignores", NO_ASK_YET],
+  ["crates/purlis-core/src/piececmd.rs", "{why}. Nothing was removed", NO_ASK_YET],
+  ["crates/purlis-core/src/planegit/bringin.rs", "{target} comes in from the window", NO_ASK_YET],
+  ["crates/purlis-core/src/planegit/prsave.rs", "{request} merged, and {target} moves", NO_ASK_YET],
+  [
+    "crates/purlis-core/src/repocmd/clone/landing.rs",
+    "{name}: {host} refused this clone",
+    NO_ASK_YET,
+  ],
+];
+
+/** The entries of {@link FROM_THE_WINDOW} that hold `one`, a `<path>: <message>`. */
+const heldBy = (one: string) =>
+  FROM_THE_WINDOW.filter(([path, starts]) => one.startsWith(`${path}: ${starts}`));
+
+describe("no message says from the window without its control (R-328)", () => {
+  const bare = [
+    ...new Set(
+      sources(join(ROOT, "crates")).flatMap((path) =>
+        literalsOf(readFileSync(path, "utf8"))
+          .filter((literal) => /\bfrom the window\b/.test(literal))
+          .filter((literal) => controlsSaid(literal).length === 0)
+          .filter((literal) => !WINDOW_CONTROLS.some((one) => literal.includes(one.words)))
+          .map((literal) => `${relative(ROOT, path)}: ${literal}`),
+      ),
+    ),
+  ].sort();
+
+  it("finds the GitHub App token's refusal no longer among them, now that it raises Trust this clone", () => {
+    expect(
+      bare.filter((one) => one.startsWith("crates/purlis-core/src/forge/apptoken.rs")),
+    ).toEqual([]);
+  });
+
+  it("holds every message that says from the window with no control in the exact list, each once", () => {
+    expect(bare.filter((one) => heldBy(one).length !== 1)).toEqual([]);
+    const unused = FROM_THE_WINDOW.filter((entry) =>
+      bare.every((one) => !heldBy(one).includes(entry)),
+    );
+    expect(unused).toEqual([]);
+  });
+});
