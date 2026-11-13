@@ -3042,6 +3042,285 @@ fn a_link_to_an_init_script_is_offered_no_run_grant_whatever_its_name() {
     );
 }
 
+/// A link that reaches an init script's place and points on out of it (#6321), as Ubuntu's
+/// Upstart jobs were laid out (`/etc/init.d/<job> -> /lib/init/upstart-job`): what runs sits
+/// outside `init.d`, under a name no row reads, but the link in `init.d` is the service's script.
+#[cfg(unix)]
+#[test]
+fn a_link_through_an_init_script_that_points_on_out_of_init_d_is_offered_no_run_grant() {
+    use std::os::unix::fs::PermissionsExt;
+    let project = project();
+    let asks = Asks::new(project.path());
+    let system = tempfile::tempdir().unwrap();
+    let system = system.path().canonicalize().unwrap();
+    let (scripts, lib, sbin) = (
+        system.join("etc/init.d"),
+        system.join("lib/init"),
+        system.join("sbin"),
+    );
+    for folder in [&scripts, &lib, &sbin] {
+        std::fs::create_dir_all(folder).unwrap();
+    }
+    let job = lib.join("upstart-job");
+    std::fs::write(&job, "#!/bin/sh\nexit 0\n").unwrap();
+    std::fs::set_permissions(&job, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::os::unix::fs::symlink(&job, scripts.join("database")).unwrap();
+    std::os::unix::fs::symlink(scripts.join("database"), sbin.join("rcdatabase")).unwrap();
+    let mut want = printenv(project.path(), &["."]);
+    want.command = vec!["rcdatabase".to_owned(), "start".to_owned()];
+    // Judged as a system folder is, outside the temporary folders.
+    crate::sandbox::tools::TEMPS_HERE.with(|temps| *temps.borrow_mut() = Some(Vec::new()));
+    let frames = run_searching(
+        &the_chat(project.path()),
+        want,
+        &asks,
+        Duration::ZERO,
+        vec![sbin],
+    );
+    crate::sandbox::tools::TEMPS_HERE.with(|temps| *temps.borrow_mut() = None);
+    assert!(asks.open_runs().is_empty(), "{frames:?}");
+    assert!(
+        refusal(&frames).0.contains("runs other programs"),
+        "{frames:?}"
+    );
+}
+
+/// `systemctl` (#6320): `systemctl link <path>` makes a unit of the file it is named, which
+/// `start` then runs, and `import-environment <VAR>` copies a value the run was handed into the
+/// service manager's environment, where `show-environment` reads it back and every unit started
+/// after gets it (`src/systemctl/systemctl.c` and `systemctl-set-environment.c`, systemd v257).
+/// `launchctl` is refused for the same reason.
+#[test]
+fn systemctl_starts_a_unit_of_a_file_it_is_named_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("systemctl");
+}
+
+/// dpkg's `start-stop-daemon` (#6320) `execv`s the program its `--startas`, or else its `--exec`,
+/// names (`utils/start-stop-daemon.c`, dpkg 1.22.11).
+#[test]
+fn start_stop_daemon_runs_the_program_it_is_named_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("start-stop-daemon");
+}
+
+/// runit's `sv` runs the `check` script of the service folder it is named, which a path names as
+/// well as a service's name does, and `runsv` runs the `run` script of the folder it is named
+/// (`src/sv.c`, `src/runsv.c`, runit) (#6320, its second review).
+#[test]
+fn runits_sv_and_runsv_run_the_scripts_of_a_folder_they_are_named_so_they_are_offered_no_run_grant()
+{
+    for name in ["sv", "runsv"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// `supervisorctl`'s `-c` file names a `[ctlplugin:…]` whose `supervisor.ctl_factory` it imports and
+/// calls with the section's settings (`supervisor/options.py`, `supervisorctl.py`, supervisor
+/// 4.2.5) (#6320, its second review).
+#[test]
+fn supervisorctl_loads_the_plugin_its_settings_file_names_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("supervisorctl");
+}
+
+/// OpenRC (#6320, its second review): `openrc --service <path>` `execv`s the path it is given
+/// (`src/openrc/rc.c`, with `rc_service_resolve` in `src/librc/librc.c`, OpenRC 0.55), and
+/// `openrc-run <script>` has its shell helper source the script (`sh/openrc-run.sh.in`).
+#[test]
+fn openrc_and_openrc_run_run_the_script_they_are_named_so_they_are_offered_no_run_grant() {
+    for name in ["openrc", "openrc-run"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// `chkconfig` hands `systemctl` the unit it is named (`forwardSystemd`, `chkconfig.c`,
+/// chkconfig 1.30), and `deb-systemd-helper` has it preset the unit it is named
+/// (`script/deb-systemd-helper`, init-system-helpers): `systemctl` is refused (#6320, its second
+/// review).
+#[test]
+fn chkconfig_and_deb_systemd_helper_hand_systemctl_a_unit_so_they_are_offered_no_run_grant() {
+    for name in ["chkconfig", "deb-systemd-helper"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// MySQL Cluster's `ndb_error_reporter` (#6324) joins its first argument, the config file's
+/// name, into the `ndb_config` command lines `system()` and backticks run, and its second, the
+/// scp user, into the `scp` command `system($cmd)` runs
+/// (`storage/ndb/tools/ndb_error_reporter.pl`, mysql-server 8.0.40). Its name starts with
+/// neither `mysql` nor `mariadb`, so no row read it.
+#[test]
+fn ndb_error_reporter_hands_a_shell_its_arguments_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("ndb_error_reporter");
+}
+
+/// MySQL Cluster's `ndb_size.pl` (#6324) joins its `--hostname` (the part before a `:`) and its
+/// `--socket` into a `DBI:mysql:` address (`storage/ndb/tools/ndb_size.pl`, mysql-server 8.0.40),
+/// which DBD::mysql splits at each `:` or `;` into attributes, `mysql_read_default_file` among
+/// them, as `mytop`'s is.
+#[test]
+fn ndb_size_puts_its_host_in_a_dbi_address_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("ndb_size.pl");
+}
+
+/// Homebrew's `brew` (#6325): `brew ruby -e <text>` runs the Ruby it is handed, and
+/// `brew sh --cmd <command>` has a shell run the command (`Library/Homebrew/dev-cmd/ruby.rb`,
+/// `dev-cmd/sh.rb`, Homebrew/brew 4.4.0).
+#[test]
+fn brew_runs_the_ruby_and_the_commands_it_is_handed_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("brew");
+}
+
+/// openssl's `-engine` (#6329) loads the shared library it is named through the dynamic engine's
+/// `SO_PATH` (`apps/lib/engine.c`, openssl 3.0.15), so a run with it is offered no Allow, and the
+/// chat hears to leave it out. openssl without it stays offered, with its caution.
+#[test]
+fn openssl_with_an_engine_is_offered_no_run_grant_and_the_chat_hears_to_leave_it_out() {
+    refused_for_its_flag(
+        "openssl",
+        &["dgst", "-engine", "/x/evil.so", "f"],
+        "-engine",
+    );
+}
+
+/// openssl's `-provider` and `-provider-path` (#6329) load a provider module, by its path or
+/// from the folder named (`apps/lib/app_provider.c`, openssl 3.0.15).
+#[test]
+fn openssl_with_a_provider_is_offered_no_run_grant_and_the_chat_hears_to_leave_it_out() {
+    refused_for_its_flag("openssl", &["list", "-provider", "/x/evil.so"], "-provider");
+    refused_for_its_flag(
+        "openssl",
+        &["list", "-provider-path", "/x", "-providers"],
+        "-provider-path",
+    );
+}
+
+/// openssl's `-config` (#6329): `ca`, `req`, `ts`, `srp`, `cms`, `smime`, `genpkey` and
+/// `pkeyutl` load the modules a configuration file names, providers and engines among them
+/// (`app_load_modules`, `apps/lib/apps.c`, openssl 3.0.15).
+#[test]
+fn openssl_with_a_config_file_is_offered_no_run_grant_and_the_chat_hears_to_leave_it_out() {
+    refused_for_its_flag(
+        "openssl",
+        &["req", "-config", "/x/c.cnf", "-new"],
+        "-config",
+    );
+}
+
+/// openssl's `engine` command (#6329) loads the engines it is named and runs the control
+/// commands its `-pre` names, `SO_PATH:<library>` among them (`apps/engine.c`).
+#[test]
+fn openssl_engine_is_offered_no_run_grant_and_the_chat_hears_to_leave_it_out() {
+    refused_for_its_flag(
+        "openssl",
+        &["engine", "dynamic", "-pre", "SO_PATH:/x/evil.so"],
+        "engine",
+    );
+}
+
+/// `my_openssl`, the bundled openssl MySQL's test package ships under its own name (#6329,
+/// `cmake/ssl.cmake`, mysql-server 8.4), is read by openssl's row.
+#[test]
+fn my_openssl_with_an_engine_is_offered_no_run_grant_and_the_chat_hears_to_leave_it_out() {
+    refused_for_its_flag(
+        "my_openssl",
+        &["dgst", "-engine", "/x/evil.so", "f"],
+        "-engine",
+    );
+}
+
+/// systemd's programs that run the command after them (#6320, the review of #6556):
+/// `systemd-cat`, `systemd-inhibit` and `systemd-socket-activate` `execvp` it
+/// (`src/journal/cat.c:177`, `src/login/inhibit.c:318`, `src/socket-activate/socket-activate.c:211`),
+/// `systemd-notify --exec` runs what follows `;` (`src/notify/notify.c:476`), and
+/// `systemd-dissect --with` runs a command in the image it mounts (`src/dissect/dissect.c`),
+/// systemd v257. `busctl call` reaches any method, the manager's `StartTransientUnit` among them,
+/// which is how the refused `systemd-run` runs a command.
+#[test]
+fn systemds_programs_that_run_a_command_they_are_handed_are_offered_no_run_grant() {
+    for name in [
+        "systemd-cat",
+        "systemd-inhibit",
+        "systemd-socket-activate",
+        "systemd-notify",
+        "systemd-dissect",
+        "busctl",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// s6's `s6-supervise <folder>` runs the folder's `./run` (`src/supervision/s6-supervise.c`, s6),
+/// and `s6-svscan` and runit's `runsvdir` start a supervisor on each folder in the one they are
+/// named (`src/runsvdir.c`, runit), as the refused `runsv` is (#6320, the review of #6556).
+#[test]
+fn the_supervision_suites_scanners_and_supervisors_are_offered_no_run_grant() {
+    for name in ["s6-supervise", "s6-svscan", "runsvdir"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// `apt-get` and `apt` take any setting with `-o` or `-c` (`apt-private/private-cmndline.cc:418-419`),
+/// and `Dir::Bin::Methods::<scheme>` names the program a download runs as its method, which it
+/// `execv`s (`apt-pkg/acquire-worker.cc:96-155`, apt 2.9.8); Composer's `composer exec` runs the
+/// command it is handed (`src/Composer/Command/ExecCommand.php`), as `brew` does (#6325, the
+/// review of #6556).
+#[test]
+fn apt_and_composer_run_a_program_they_are_handed_so_they_are_offered_no_run_grant() {
+    for name in ["apt-get", "apt", "composer"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The programs round 2 of #6556's review found that run the command they are handed:
+/// `rpm -E '%(cmd)'` expands a macro whose `%(…)` `popen`s a shell (`lib/poptALL.c:128-131`,
+/// `rpmio/macro.c`, rpm 4.20.0), in every rpm tool that shares its options; `dpkg
+/// --force-not-root --pre-invoke=<cmd>` has `system()` run it (`src/main/main.c:397`, dpkg
+/// 1.22.11), and `dpkg-buildpackage --hook-init=<cmd>` runs its hooks
+/// (`scripts/dpkg-buildpackage.pl`); `setpriv` `execvp`s what follows
+/// (`sys-utils/setpriv.c:1077`, util-linux 2.40.2); s6's chain loaders `s6-setuidgid`,
+/// `s6-softlimit` and `s6-applyuidgid` run the program after them; and `coredumpctl debug
+/// --debugger=` runs the debugger it is named (`src/coredump/coredumpctl.c`, systemd v257).
+#[test]
+fn rpm_dpkg_setpriv_s6s_chain_loaders_and_coredumpctl_are_offered_no_run_grant() {
+    for name in [
+        "rpm",
+        "rpmbuild",
+        "rpmspec",
+        "rpmquery",
+        "rpmverify",
+        "rpmkeys",
+        "rpmsign",
+        "rpmdb",
+        "dpkg",
+        "dpkg-buildpackage",
+        "setpriv",
+        "s6-setuidgid",
+        "s6-softlimit",
+        "s6-applyuidgid",
+        "coredumpctl",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// openssl loads an engine any key or file it is handed names as `org.openssl.engine:<id>:<key>`,
+/// an unknown id through the dynamic engine, which takes a path (`apps/lib/engine_loader.c`,
+/// `crypto/engine/eng_list.c`, openssl 3.0.15): refused wherever it is written (round 2 of the
+/// review of #6556).
+#[test]
+fn openssl_handed_an_engine_uri_is_offered_no_run_grant_and_the_chat_hears_to_leave_it_out() {
+    refused_for_its_flag(
+        "openssl",
+        &["pkey", "-in", "org.openssl.engine:/x/evil.so:k"],
+        "org.openssl.engine:",
+    );
+    // after `--`, where `storeutl` takes its URI (round 3 of the review of #6556)
+    refused_for_its_flag(
+        "openssl",
+        &["storeutl", "--", "org.openssl.engine:/x/evil.so:k"],
+        "org.openssl.engine:",
+    );
+}
+
 /// The client built with the server inside it: what `--server-arg` hands the embedded server
 /// (`--plugin-load`, `--plugin-dir`) loads code from a file it names.
 #[test]

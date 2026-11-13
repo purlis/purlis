@@ -960,6 +960,8 @@ fn a_general_purpose_program_is_known_by_its_file_name_whatever_its_folder_or_ca
         "/usr/bin/xxd",
         "Tee",
         "/usr/bin/openssl",
+        // and the bundled openssl MySQL's test package ships under its own name (#6329)
+        "/usr/bin/my_openssl",
         // Forge command lines, which make whatever request their arguments name.
         "gh",
         "/opt/homebrew/bin/gh",
@@ -1667,7 +1669,43 @@ fn the_forms_a_run_grant_refuses_by_name_leave_curl_and_the_usual_tools_offered(
         "gptx",
         "ptar",
         "pt_online_schema_change",
+        // RocksDB's `ldb` and `sst_dump`, as MariaDB's RocksDB plugin and Percona's packages ship
+        // them (#6322): their `--env_uri` and `--fs_uri` go through RocksDB's object registry,
+        // which loads no library, and neither runs a command
+        "mariadb-ldb",
+        "mysql_ldb",
+        "ldb",
+        "sst_dump",
     ] {
         assert!(!super::not_for_a_run_grant(name), "{name}");
     }
+}
+
+/// A program reached through links that never sit in an `init.d` folder is no init script, and
+/// one reached through a link in `init.d` that points on out of it is, whatever the last file is
+/// called (#6321).
+#[cfg(unix)]
+#[test]
+fn a_program_is_an_init_script_only_where_it_or_a_link_on_the_way_sits_in_init_d() {
+    let system = tempfile::tempdir().unwrap();
+    let system = system.path().canonicalize().unwrap();
+    let (opt, init_d, lib, bin) = (
+        system.join("opt/tool/bin"),
+        system.join("etc/init.d"),
+        system.join("lib/init"),
+        system.join("bin"),
+    );
+    for folder in [&opt, &init_d, &lib, &bin] {
+        std::fs::create_dir_all(folder).unwrap();
+    }
+    std::fs::write(opt.join("tool"), "").unwrap();
+    std::os::unix::fs::symlink(opt.join("tool"), bin.join("tool")).unwrap();
+    assert!(!super::an_init_script(&bin.join("tool"), &opt.join("tool")));
+    std::fs::write(lib.join("upstart-job"), "").unwrap();
+    std::os::unix::fs::symlink(lib.join("upstart-job"), init_d.join("job")).unwrap();
+    std::os::unix::fs::symlink(init_d.join("job"), bin.join("rcjob")).unwrap();
+    assert!(super::an_init_script(
+        &bin.join("rcjob"),
+        &lib.join("upstart-job")
+    ));
 }
