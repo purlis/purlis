@@ -335,6 +335,9 @@ describe("the Project level", () => {
         "Harness & profiles",
         "work",
         "Skills",
+        // An org's skill controls and what was audited (#6031), always there since #2786.
+        "Skill sources",
+        "Recorded skill acts",
         "Sandbox",
         "Your hosts",
         "Your level",

@@ -476,7 +476,7 @@ describe("a chat's list (#4753)", () => {
         "Go to qa 12",
         "Move…",
         // Its pane's links (#6332), under Open ▸: the list stays ten rows at most.
-        "Open ▸ [Focus workspace beta, Links in this pane…, Skills, Activity, Network, Chat log]",
+        "Open ▸ [Focus workspace beta, Skills, Links in this pane…, Activity, Network, Chat log]",
         "Ignore until it asks again",
       ],
       ["Restart"],
