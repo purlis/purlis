@@ -47,8 +47,9 @@
 //    it run all the same (`RUST_READERS`), alone, and a story draws only the built-in themes
 //    (`READ_BY_WEB`, which runs everything). A Rust change that moves what the window calls
 //    changes `app/src/bindings.ts` too, which runs everything.
-// 6. `operator/`: the docs and tools alone. `ci` never builds it, a workspace of its own that
-//    `operator.yml` checks, but for `operator/Dockerfile`, which a Rust test reads.
+// 6. `operator/`: the docs and tools alone. A workspace of its own that `operator.yml` checks,
+//    but for `operator/Dockerfile`, which a Rust test reads. `ci` builds it only for Pool setup's
+//    walk on a kind cluster (#4494), which its gate (`GATES`) starts.
 // 7. Anything else: every scope. An unknown path runs everything, so a path this file has never
 //    heard of costs time, never a check.
 //
@@ -228,10 +229,11 @@ export const GATES = {
   // studio's outcome bars measure, and the suite and its stand-ins (#4343).
   "outcome-bars":
     "^(app/src/(Skill|UseSkill|skill|chatSkill|personaSkills)|app/src/ui/list/|app/src-tauri/src/(skill|useskill|personaskills)|crates/skills/|crates/purlis-core/src/(skills|skillspan|skilltools|skilluse)(\\.rs|/)|crates/fake-harness/|app/e2e/(outcomeBars|harness\\.ts|wdio\\.outcome\\.conf|specs/skill-outcome-bars)|Cargo\\.toml$|\\.github/workflows/ci\\.yml$)",
-  // No step of its own greps this one either: Pool setup's walk in the window on Docker (#4985),
-  // what it presses and the pools and runner image it makes.
+  // No step of its own greps this one either: Pool setup's walks in the window on Docker (#4985)
+  // and on a kind cluster (#4494), what they press and the pools and runner image they make, and,
+  // for the cluster, the operator this build makes, what Install applies and the cluster's make.
   "pool-setup":
-    "^(app/src/(poolsetup/|PoolSetup|AddDockerPool|pools\\.ts)|app/src-tauri/src/(poolsetuptab|dockerpools|runnerlinks|routedsessions)[^/]*(\\.rs$|/)|crates/purlis-core/src/(poolsetup|dockerpool|runners|pools|sshroute|tlsroute)[^/]*(\\.rs$|/)|runner-image/|tests/remote-(docker|podman)/|app/e2e/(pool-runner\\.Dockerfile$|wdio\\.pool\\.conf|poolsetup\\.ts$|specs/[^/]*\\.pool\\.e2e\\.ts$)|\\.github/workflows/ci\\.yml$)",
+    "^(app/src/(poolsetup/|PoolSetup|AddDockerPool|pools\\.ts|settings/pools\\.tsx$)|app/src-tauri/src/(poolsetuptab|dockerpools|clusterpools|runnerlinks|routedsessions)[^/]*(\\.rs$|/)|crates/purlis-core/src/(poolsetup|dockerpool|clusterpool|runners|pools|sshroute|tlsroute)[^/]*(\\.rs$|/)|crates/cluster-doctor/|operator/(src/|deploy/|vendor/|Dockerfile$|Cargo\\.(toml|lock)$|e2e/kind-node\\.txt$)|runner-image/|tests/(remote-docker|remote-podman|kind-cluster)/|app/e2e/(pool-runner\\.Dockerfile$|wdio\\.pool\\.conf|poolsetup\\.ts$|specs/[^/]*\\.pool\\.e2e\\.ts$)|\\.github/(workflows/ci\\.yml|actions/kind/))",
   "bench":
     "^(crates/session-protocol/|Cargo\\.toml$|Cargo\\.lock$|rust-toolchain\\.toml$|fixtures/corpora/|tools/bench\\.mjs$|tools/latency-gate\\.mjs$|\\.github/workflows/ci\\.yml$)",
 };

@@ -33,6 +33,8 @@ import { INSPECTOR_OPENS_AT, askToInspect } from "./inspector";
 import { useBrowserOrigin, useBrowserWatch, useWindowSeen } from "./browserWatch";
 import { poolOf, programsOf, secretsOf, useChatBrowsers } from "./chatBrowsers";
 import { EmptyState } from "./ui/empty-state/EmptyState";
+import { asksMoved, useAsks } from "./asks";
+import { OneAsk } from "./BrowserAskNotice";
 import { Notice, type NoticeAction, NoticePaneRow } from "./Notice";
 import { Select } from "./ui/select/Select";
 import { useProjectShown } from "./projectShown";
@@ -163,6 +165,12 @@ export function useSender(
  * would, so a site new to the project is held back and asked about here, once, under the
  * field; http and https only, any other scheme refused in words. A chat's browser has none: its
  * chat drives it.
+ *
+ * **Except one its chat handed the person** (#6290): while the chat's `ask_operator` Ask waits
+ * on it, its view has the address field too, so the person can open an address the chat gave
+ * them. The core judges it by the chat's own reach, as the chat's `browser_navigate` would be;
+ * Go never hands it back, since only Done ends the Ask; and a site new to the project waits as
+ * the chat's sites ask, drawn here under the field as on the chat's pane, an Allow sending it on.
  */
 export function BrowserView({ plane, program }: { plane: string; program: string }) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -185,6 +193,16 @@ export function BrowserView({ plane, program }: { plane: string; program: string
   /** Whether it is one the person opened: no chat of the project's uses it, and it is no chat's
    *  pinned past its chat (#2022), which only the window that opened it sends anywhere. */
   const theirs = chatBrowsersRead && !programsOf(chatBrowsers, kept).has(program);
+  /** The chat that handed it to the person through `ask_operator`, while that Ask waits
+   *  (#6290), and the sites ask of that chat's its view draws. */
+  const asks = useAsks([plane]).held[plane] ?? [];
+  const handedBy = theirs
+    ? undefined
+    : asks.find((ask) => ask.answer.via === "take-over" && ask.answer.program === program)?.session;
+  const handed = handedBy !== undefined;
+  const sitesAsked = asks.filter(
+    (ask) => handed && ask.session === handedBy && ask.answer.via === "browser-sites",
+  );
   /** The address the person typed, the origin it went to, and the sites it asks. */
   const [typed, setTyped] = useState("");
   const [wentTo, setWentTo] = useState<string | null>(null);
@@ -394,7 +412,8 @@ export function BrowserView({ plane, program }: { plane: string; program: string
       if (going) return;
       setGoing(true);
       after(async () => {
-        if (drives.current) {
+        // A browser its chat handed the person stays theirs: only Done ends the chat's Ask.
+        if (drives.current && !handed) {
           const back = await commands.handBackBrowser(program);
           if (back.status === "error") {
             setGoing(false);
@@ -411,7 +430,11 @@ export function BrowserView({ plane, program }: { plane: string; program: string
           return;
         }
         setSaid(undefined);
+        // The core gave it back to the person as soon as it went (#6290).
+        if (handed) drivingNow(true);
         if (went.data.outcome === "asks") {
+          // Its chat's sites ask is drawn here once the list is read again.
+          if (handed) asksMoved(plane);
           setAsking({ address: to, sites: went.data.sites, answers: went.data.answers });
           return;
         }
@@ -419,7 +442,7 @@ export function BrowserView({ plane, program }: { plane: string; program: string
         if (went.data.address !== null) setWentTo(originOfAddress(went.data.address));
       });
     },
-    [going, after, plane, program, drivingNow],
+    [going, after, plane, program, drivingNow, handed],
   );
 
   // An address the window was asked to open this browser at (the browsers open at the last
@@ -478,7 +501,7 @@ export function BrowserView({ plane, program }: { plane: string; program: string
   const keyboard = driving ? { [CHAT_KEYBOARD]: "" } : {};
   return (
     <div className="browser-view" data-testid="browser-view">
-      {theirs && (
+      {(theirs || handed) && (
         <Form className="browser-address" aria-label="Go to an address" onSubmit={onGo}>
           {/* One size for the row: the box is as small as Go beside it. */}
           <TextField
@@ -520,6 +543,27 @@ export function BrowserView({ plane, program }: { plane: string; program: string
             {asking.sites.join(", ")} {asking.sites.length === 1 ? "is a site" : "are sites"} new to
             this project, so this browser did not go there.
           </Notice>
+        </NoticePaneRow>
+      )}
+      {sitesAsked.length > 0 && (
+        <NoticePaneRow>
+          {sitesAsked.map((ask) => (
+            <OneAsk
+              key={ask.ask}
+              plane={plane}
+              ask={ask}
+              label="Browser site"
+              onWay={(answer, answered) => {
+                // An Allow sends it on to the address the person typed.
+                const allowed = answered.options.some((one) => one.label === answer && one.allows);
+                if (allowed && asking !== null) {
+                  const to = asking.address;
+                  setAsking(null);
+                  go(to);
+                } else setAsking(null);
+              }}
+            />
+          ))}
         </NoticePaneRow>
       )}
       <div className="browser-bar" data-driving={driving ? "person" : "agent"}>

@@ -1541,7 +1541,10 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && (github.event_name != 'pull_request' || needs.changes.outputs.confinement != 'false') && !github.event.pull_request.draft }}
     runs-on: macos-latest
-    timeout-minutes: 40
+    # A cold run builds four test targets (the probe, purlis-core's `it` and its lib tests,
+    # purlis-cli's `it`): on 2026-11-11 (#6202, job 130462236655) purlis-core's lib tests alone
+    # were still compiling 20 minutes in when 40 minutes ran out, with no test failed.
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1565,6 +1568,9 @@ jobs:
       - if: steps.scope.outputs.run == 'true'
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
+          # The macOS `app` job's cache, which `main` saves. With no shared key, this job's key
+          # is its own name, which nothing saves, so every run built every dependency cold.
+          shared-key: app
           save-if: false
       # The names the studio probe's network tests look up, from the hosts file, not outside DNS
       # (#3261): see the action for which names and why.
@@ -2067,6 +2073,20 @@ jobs:
           tests/remote-podman/up.sh
           "$(docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/purlis-runner-scenario:candidate)"
           PURLIS_E2E_REMOTE_PODMAN_IMAGE
+      # **A bare kind cluster, for Pool setup's walk on a cluster** (#4494): kind, as the operator's
+      # kind run pins it, a cluster of the oldest Kubernetes purlis supports whose nodes pull from
+      # this job's registry, and this build's cluster operator image pushed there
+      # (`tests/kind-cluster/up.sh`). The walk installs the rest from the window. The operator is
+      # its own workspace, built debug as operator.yml's kind job builds it: about 2 min cold.
+      - uses: ./.github/actions/kind
+        if: matrix.pool
+      - name: A bare kind cluster and the cluster operator of this build, for Pool setup's run
+        if: matrix.pool
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          cargo build --locked --manifest-path operator/Cargo.toml
+          tests/kind-cluster/up.sh operator/target/debug/purlis-cluster-operator registry 5000
       # What sccache found, as a notice: whether the experiment pays, without the log.
       - name: sccache's hits and misses
         if: runner.os == 'macOS' && !cancelled() && steps.sccache.outcome == 'success'
@@ -2249,9 +2269,10 @@ jobs:
         run: xvfb-run -a npm run e2e:browser
         if: runner.os == 'Linux' && matrix.extras
         working-directory: app
-      # Pool setup's Docker path, walked in the real window to Try it's last screen (#4985). Its
-      # own run, since it needs Docker and the image above; Linux's pool leg alone runs it. What
-      # the runners left is listed if it fails.
+      # Pool setup's Docker path, walked in the real window to Try it's last screen (#4985), with
+      # its paths to Docker and Podman on another machine and to the kind cluster above (#4494).
+      # Its own run, since it needs Docker and the images above; Linux's pool leg alone runs it.
+      # What the runners left is listed if it fails.
       - name: Pool setup's Docker path, in the window
         run: xvfb-run -a npm run e2e:pool
         if: runner.os == 'Linux' && matrix.pool
@@ -2263,6 +2284,15 @@ jobs:
           for container in $(docker ps --all --quiet --filter label=purlis.runner); do
             docker logs --tail 200 "$container" || true
           done
+          # And what the kind cluster shows, where it was made (#4494).
+          if [ -n "${KUBECONFIG:-}" ]; then
+            kubectl get pools,claims,sandboxclaims,sandboxes,pods -A -o wide || true
+            kubectl get claims -A \
+              -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{range .status.conditions[*]}{"\n  "}{.type}={.status} {.reason}: {.message}{end}{"\n"}{end}' || true
+            kubectl -n purlis-system logs deployment/purlis-cluster-operator --tail=100 || true
+            kubectl -n agent-sandbox-system logs deployment/agent-sandbox-controller --tail=50 || true
+            kubectl get events -A --sort-by=.lastTimestamp | tail -n 60 || true
+          fi
       # The app ended and started again, which no scenario spec can do: WebdriverIO's service
       # keeps one app process for a whole run, so a spec that quits takes the run with it.
       - name: Reopening what was open, across a real relaunch

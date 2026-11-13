@@ -13,6 +13,8 @@ import {
   type PoolSetupStep,
 } from "./bindings";
 import { Notice } from "./Notice";
+import { linkToGroup, settingsPlace } from "./settings/links";
+import { POOLS } from "./settings/pools";
 import { CheckStep, ClusterPoolStep, ContextOptions, InstallStep } from "./poolsetup/ClusterSteps";
 import { ConnectStep } from "./poolsetup/ConnectStep";
 import { Action, Recommended, Say, SeeWhat, StepHead } from "./poolsetup/parts";
@@ -24,6 +26,7 @@ import {
   readReleaseImage,
   startANewPoolSetup,
   startPoolSetupOver,
+  usePools,
   usePoolSetupStart,
 } from "./pools";
 import { Button } from "./ui/button/Button";
@@ -273,6 +276,49 @@ function Found({ step, onRecheck }: { step: PoolSetupStep; onRecheck: () => void
         step.next && <Action does={step.next.does} />
       )}
       {step.see && <SeeWhat text={step.see.text} note={step.see.note} />}
+    </>
+  );
+}
+
+/**
+ * **Sign-ins on a cluster pool not marked as the person's own** (#4071): its one button opens
+ * Settings › Pools, where This is my own is. That is another tab of this window, so coming back
+ * brings no focus or visibility change to read again on: the step reads again itself once the
+ * pools this machine keeps say the pool is marked (#4494).
+ */
+function MarkAsOwn({
+  step,
+  pool,
+  onOpenPools,
+  onMarked,
+}: {
+  step: PoolSetupStep;
+  pool: string | null;
+  onOpenPools?: () => void;
+  onMarked: () => void;
+}) {
+  const pools = usePools();
+  const owned =
+    pools.read.state === "read" &&
+    (pools.read.shown.clusters ?? []).some((one) => one.name === pool && one.owned);
+  useEffect(() => {
+    if (owned) onMarked();
+  }, [owned, onMarked]);
+  return (
+    <>
+      <StepHead title={step.name} />
+      <Findings step={step} />
+      {step.next && (
+        <Action
+          does={step.next.does}
+          main={step.next.label}
+          onMain={() => {
+            // Your settings on Pools, where This is my own is, not on the group it last showed.
+            linkToGroup(settingsPlace("you"), POOLS);
+            onOpenPools?.();
+          }}
+        />
+      )}
     </>
   );
 }
@@ -534,11 +580,7 @@ function PoolSetupGuide({
               onNext={() => after("connect")}
             />
           ) : step?.id === "signins" && step.next?.id === "mark-as-own" ? (
-            <>
-              <StepHead title={step.name} />
-              <Findings step={step} />
-              <Action does={step.next.does} main={step.next.label} onMain={onOpenPools} />
-            </>
+            <MarkAsOwn step={step} pool={setup.pool} onOpenPools={onOpenPools} onMarked={reread} />
           ) : step?.id === "pool" ? (
             <PoolStep
               step={step}

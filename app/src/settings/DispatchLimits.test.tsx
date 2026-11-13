@@ -143,7 +143,7 @@ const edit = (path: string[], value: unknown) => ({
 });
 
 describe("Settings › Project › Dispatch", () => {
-  it("is a page of the Project level, with the limits, the grants' slot and the locks", () => {
+  it("is a page of the Project level, with the limits, the grants' slot, the locks and kept task screens", () => {
     const group = dispatchGroup(PLANE);
     expect(group.id).toBe("project.dispatch");
     expect(group.label).toBe("Dispatch");
@@ -151,6 +151,7 @@ describe("Settings › Project › Dispatch", () => {
       "project.dispatch.limits",
       "project.dispatch.grants",
       "project.dispatch.locks",
+      "project.dispatch.task-screens",
     ]);
   });
 
@@ -918,6 +919,7 @@ describe("the profiles for dispatched chats", () => {
       "project.dispatch.grants",
       "project.dispatch.profiles",
       "project.dispatch.locks",
+      "project.dispatch.task-screens",
     ]);
     const row = group.settings[2];
     expect(row.label).toBe("Profiles for dispatched chats");

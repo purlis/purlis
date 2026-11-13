@@ -57,6 +57,10 @@ pub(crate) struct ChatCard {
     pub started_by: String,
     /// Whether its last screen was kept: *Read it* is disabled where it was not.
     pub screen_kept: bool,
+    /// Whether a dispatch started it. True with no task for a handoff, or a task that ended
+    /// owing no report: its card is drawn from its chat's record, and *Reopen* says why it does
+    /// nothing in words of its own.
+    pub dispatched: bool,
 }
 
 /// What a card says of a task the person dispatched themselves.
@@ -94,8 +98,8 @@ pub(crate) fn open_chats(held: &Held) -> Vec<chatlookup::OpenChat> {
 }
 
 /// **The card of chat `number`, ended with `record`**, given the chats open now: what the
-/// palette's finished row and a pane's `chat 641` link (#6217) show. None for a handoff, or a
-/// task's chat with no id: no card to draw.
+/// palette's finished row and a pane's `chat 641` link (#6217) show. None where the record
+/// makes no card (`chatlookup::makes_a_card`): a handoff's, or a task's chat with no id.
 pub(crate) fn card_of(
     held: &Held,
     number: u32,
@@ -106,6 +110,9 @@ pub(crate) fn card_of(
         .iter()
         .find(|one| chatlookup::is(&record.asker.chat, one))
         .map_or(0, |one| one.number);
+    if !chatlookup::makes_a_card(record) {
+        return None;
+    }
     let chat = record.worker.chat.id.clone()?;
     let task = crate::finished::card_row(held, record, asker)?;
     Some(ChatCard {
@@ -121,6 +128,7 @@ pub(crate) fn card_of(
         } else {
             record.asker.chat.name.clone()
         },
+        dispatched: true,
     })
 }
 
@@ -142,7 +150,21 @@ pub(crate) fn card_of_chat(held: &Held, chat: &purlis_core::chatrecords::ChatRec
             purlis_core::chatrecords::StartedBy::Person => STARTED_BY_YOU.to_owned(),
             purlis_core::chatrecords::StartedBy::Chat { name } => name.clone(),
         },
+        dispatched: dispatched(held.root(), chat),
     }
+}
+
+/// Whether a dispatch record names chat `chat` as its worker, by its ULID: a handoff, or a task
+/// that ended owing no report, whose card the lookup draws from its chat's record.
+fn dispatched(root: &std::path::Path, chat: &purlis_core::chatrecords::ChatRecord) -> bool {
+    let worker = dispatchrecord::ChatRef {
+        chat: chat.number,
+        id: Some(chat.id.clone()),
+        ..Default::default()
+    };
+    dispatchrecord::ledger(root)
+        .latest_for(root, &worker)
+        .is_some()
 }
 
 /// **Keeps chat `session`'s last screen as it closes for good**, where it is a dispatched task
@@ -178,6 +200,26 @@ pub(crate) fn keep_screen_on_close(
     }
 }
 
+/// **Keeps the last screens of the task chats `chats` as the app quits** (#6305), by number and
+/// id: the ones the next launch leaves out of its put back, having finished
+/// (`finished::left_out`), which never close through `Chats::close_as`. Read while their
+/// sessions are still there, before every program is ended, each on a thread of its own, so a
+/// quit waits for one screen's read at most rather than one after another.
+pub(crate) fn keep_screens_at_quit(
+    root: &std::path::Path,
+    host: &dyn crate::host::SessionHost,
+    chats: &[(u32, String)],
+) {
+    if chats.is_empty() {
+        return;
+    }
+    std::thread::scope(|scope| {
+        for (session, id) in chats {
+            scope.spawn(move || keep_screen_on_close(root, host, *session, id));
+        }
+    });
+}
+
 /// **What `number` names** (#6214): an open chat, one open again under another number, a
 /// closed one's card, or no chat. On a blocking thread, as it reads the dispatch records.
 #[tauri::command]
@@ -206,6 +248,65 @@ pub(crate) async fn chat_screen(
     let held = planes.held(&plane)?;
     crate::off_the_window("reading a chat's kept screen", move || {
         Ok(purlis_core::chatscreens::kept(held.root(), &chat))
+    })
+    .await
+}
+
+/// **Whether this machine keeps a task's last screen in a project, and how many it holds**
+/// (#6306): what the row Settings › Project › Dispatch › Keep task screens draws.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub(crate) struct TaskScreens {
+    /// `[task_screens] keep` in the project's local file, `true` where it is not set.
+    pub keep: bool,
+    /// How many screens are kept now: none where `keep` is off.
+    pub kept: u32,
+}
+
+/// The project at `root`'s [`TaskScreens`], deleting every kept screen where keeping is off.
+pub(crate) fn task_screens_at(root: &std::path::Path) -> TaskScreens {
+    let (kept, _) = purlis_core::chatscreens::held(root);
+    TaskScreens {
+        keep: purlis_core::chatscreens::keeps(root),
+        kept: u32::try_from(kept).unwrap_or(u32::MAX),
+    }
+}
+
+/// Sets keeping in the project at `root`, which off deletes every kept screen at once
+/// (`purlis_core::chatscreens::set_keep`), and answers what is in force then.
+pub(crate) fn set_task_screens_at(
+    root: &std::path::Path,
+    keep: bool,
+) -> Result<TaskScreens, String> {
+    purlis_core::chatscreens::set_keep(root, keep)?;
+    Ok(task_screens_at(root))
+}
+
+/// **Whether tasks' screens are kept in project `plane`, and how many are** (#6306).
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn task_screens(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<TaskScreens, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading whether task screens are kept", move || {
+        Ok(task_screens_at(held.root()))
+    })
+    .await
+}
+
+/// **Turns keeping tasks' screens on or off in project `plane`** (#6306), in its local file
+/// alone; off deletes every kept screen. The window asks the person before it turns it off.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn set_task_screens(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    keep: bool,
+) -> Result<TaskScreens, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("setting whether task screens are kept", move || {
+        set_task_screens_at(held.root(), keep)
     })
     .await
 }

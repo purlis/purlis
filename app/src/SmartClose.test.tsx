@@ -16,7 +16,8 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import App from "./App";
 import type { Phase, SavedRecord, SmartCloseOffer } from "./bindings";
-import { stripNamed } from "./test-strips";
+import { forgetThisLaunch } from "./regions";
+import { showNotices, stripNamed } from "./test-strips";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 import { findResult } from "./actionResult.testkit";
 import { askToEnd } from "./menus.testkit";
@@ -44,6 +45,8 @@ afterEach(() => {
   cleanup();
   clearMocks();
   vi.restoreAllMocks();
+  // A test that opened Notices leaves the next one on Memory, where a launch starts (P-14).
+  forgetThisLaunch();
 });
 
 const PLANE = "/home/dev/plane";
@@ -391,6 +394,8 @@ describe("a chat wrapping up", () => {
     await step(1, "kept_open", PLANE, { path: "sessions/a.md", title: "A" });
 
     await waitFor(() => expect(keptOpenNotice(1)).not.toBeNull());
+    // Listed in Notices, which the person opens: its arrival opens nothing (ADR 0121).
+    await showNotices();
     const notice = keptOpenNotice(1) as HTMLElement;
     expect(notice).toHaveTextContent(
       "steward 1 saved its session record. purlis did not see " +
@@ -413,6 +418,7 @@ describe("a chat wrapping up", () => {
     await openAChat();
     await step(1, "kept_open", PLANE, { path: "sessions/a.md", title: "A" });
     await waitFor(() => expect(keptOpenNotice(1)).not.toBeNull());
+    await showNotices();
 
     await userEvent.click(
       within(keptOpenNotice(1) as HTMLElement).getByRole("button", { name: /Dismiss/ }),
@@ -577,6 +583,8 @@ describe("a chat wrapping up among several (#4760: no tab goes into the backgrou
 
     // Its pane is left on the ended band (spec #4750 story 62), its tab where it was.
     expect(strip()).toEqual(["one", "two", "three"]);
+    // Listed in Notices, which the person opens: a record landing opens nothing (ADR 0121).
+    await showNotices();
     const notice = (await screen.findByText(/^Session saved — Ship it/)).closest<HTMLElement>(
       '[role="status"]',
     );
@@ -585,6 +593,31 @@ describe("a chat wrapping up among several (#4760: no tab goes into the backgrou
     await userEvent.click(within(notice).getByRole("button", { name: "Open record" }));
     await waitFor(() => expect(tabOf("Session · Ship it")).toBeDefined());
     expect(screen.queryByText(/^Session saved — Ship it/)).toBeNull();
+  });
+
+  it("brings Notices on screen for no record that lands, a task's closing with its asker included (ADR 0121)", async () => {
+    // A task closed with the chat that asked for it is smart-closed by the core, with no press
+    // of the person's (`handoff::close_reported`), and its record lands minutes later. Its
+    // "Session saved" opened Notices over Memory each time, which the person read as Notices
+    // opening on its own for every new one.
+    coreWith();
+    render(<App />);
+    await waitFor(() => expect(strip()).toEqual(["one", "two", "three"]));
+    // The Panel's right half opens on Memory (P-14): Notices is behind it (#5645).
+    await screen.findByRole("tabpanel", { name: "Memory" });
+
+    await step(3, "closed", PLANE, {
+      path: "workspaces/alpha/sessions/20261112-100000-reported.md",
+      title: "Reported",
+    });
+
+    await waitFor(() =>
+      expect(
+        document.querySelector('[data-scope=notice-list] [data-cause="session-saved"]'),
+      ).not.toBeNull(),
+    );
+    expect(screen.getByRole("tabpanel", { name: "Memory" })).toBeInTheDocument();
+    expect(screen.queryByRole("tabpanel", { name: "Notices" })).toBeNull();
   });
 
   it("goes back to normal in its place when no record arrives, and the Inbox says why", async () => {

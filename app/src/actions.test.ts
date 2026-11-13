@@ -2904,8 +2904,8 @@ describe("the palette at fifty chats", () => {
     // Show the Inbox view was. 1276 since #5645: Show the Notices view. 1277 since #5688: Your
     // settings: Reports. 1278 since #6017: Quiet now. 1382 since #2920: one row per setting of
     // You's and the project's (104), whatever the number of chats. 1432 since #6332: Links in
-    // this pane…, each of the fifty panes' own row.
-    expect(offers).toHaveLength(1432);
+    // this pane…, each of the fifty panes' own row. 1433 since #6306: Keep task screens.
+    expect(offers).toHaveLength(1433);
     // Fifty tabs of one chat each: the palette has their chats' Rename chat rows instead.
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.rename:"))).toHaveLength(0);
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.closeOthers:"))).toHaveLength(

@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { widenAsks } from "./test-inbox";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { StrictMode } from "react";
@@ -544,6 +545,11 @@ describe("a list is one Tab stop", () => {
     hand.focus();
     await userEvent.keyboard("{Enter}");
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
+    // Asks opens on Chat, which lists neither: the keyboard lands on its way out, and Enter
+    // widens to where they wait (ADR 0121, amended 2026-11-12).
+    const out = await within(inbox).findByRole("button", { name: / waiting in this / });
+    await waitFor(() => expect(out).toHaveFocus());
+    await userEvent.keyboard("{Enter}");
     // Each chat waiting is a group under its chain, in the order the registry first saw them.
     expect(
       within(inbox)
@@ -576,6 +582,7 @@ describe("a list is one Tab stop", () => {
     });
     await userEvent.click(hand);
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
+    await widenAsks(inbox);
 
     await userEvent.click(
       within(inbox).getByRole("button", { name: "Ignore steward three until it asks again" }),

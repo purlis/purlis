@@ -77,8 +77,8 @@ export function ActivityBar({
   current,
   keys,
   badges,
-  pulse,
-  onPulsed,
+  bounce,
+  onBounced,
   panelOf,
   tabOf,
   onPick,
@@ -109,12 +109,13 @@ export function ActivityBar({
   /** A count or a mark beside a view's icon, drawn whether or not the side is out. */
   badges?: Partial<Record<ViewId, ReactNode>>;
   /**
-   * **The view whose icon pulses, once** (ADR 0121 decision 24): its item is marked
-   * `data-pulse` and the stylesheet plays {@link FIRST_PULSE} on its mark, a duration token's
-   * length, so reduced motion plays it at once. `onPulsed` is told as it ends.
+   * **The view whose icon bounces** (#6343, ADR 0121 amended 2026-11-12): the ✋, the one
+   * movement in the window that calls the person. Its item is marked `data-bounce` and the
+   * stylesheet plays {@link HAND_BOUNCE} on its mark, 3 times a duration token's length, so
+   * reduced motion plays none. `onBounced` is told as it ends.
    */
-  pulse?: ViewId;
-  onPulsed?: () => void;
+  bounce?: ViewId;
+  onBounced?: () => void;
   /** The id of each view's tab panel, which its tab controls. */
   panelOf: (view: ViewId) => string;
   /** The id of each view's tab, which names its panel. */
@@ -164,11 +165,11 @@ export function ActivityBar({
                 id={tabOf(view)}
                 aria-expanded={view === current ? open !== undefined : undefined}
                 aria-controls={panelOf(view)}
-                data-pulse={view === pulse || undefined}
+                data-bounce={view === bounce || undefined}
                 onAnimationEnd={
-                  view === pulse
+                  view === bounce
                     ? (event) => {
-                        if (event.animationName === FIRST_PULSE) onPulsed?.();
+                        if (event.animationName === HAND_BOUNCE) onBounced?.();
                       }
                     : undefined
                 }
@@ -197,8 +198,8 @@ export function ActivityBar({
   );
 }
 
-/** The animation the first pulse plays (`App.css`), told apart from any other on the item. */
-export const FIRST_PULSE = "purlis-first-pulse";
+/** The animation the ✋'s bounce plays (`App.css`), told apart from any other on the item. */
+export const HAND_BOUNCE = "purlis-hand-bounce";
 
 /**
  * **The question each attention view answers** (ADR 0121 decision 1), its icon's tooltip in

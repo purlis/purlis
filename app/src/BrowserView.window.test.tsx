@@ -961,3 +961,109 @@ describe("a browser the person opened goes where they send it (#2176)", () => {
     expect(screen.queryByRole("textbox", { name: "Address" })).not.toBeInTheDocument();
   });
 });
+
+describe("a chat's browser handed to the person goes where they send it (#6290)", () => {
+  const CHATS_B1 = {
+    session: 3,
+    name: "b1",
+    program: "B1",
+    unended: false,
+    pinned: false,
+    was: null,
+    login: null,
+    driver: "person",
+    pool: null,
+    secrets: [],
+  };
+  /** Chat 3 asked the person, through ask_operator, to take browser B1 over. */
+  const HANDED = {
+    session: 3,
+    ask: "browser-needs-you:B1",
+    says: "Its browser waits for you on accounts.example.com",
+    options: [{ id: "open-view", label: "Open its view", allows: false }],
+    source: "browser-needs-you",
+    chain: ["claude 3"],
+    answer: { via: "take-over", program: "B1" },
+    since: 10,
+  };
+  const SITES_ASK = {
+    session: 3,
+    ask: "browser-site:3",
+    says: "Its browser wants to reach example.com:443.",
+    options: [
+      { id: "chat", label: "Allow for this chat", allows: true },
+      { id: "keep", label: "Keep blocked", allows: false },
+    ],
+    source: "browser-site",
+    chain: ["claude 3"],
+    answer: { via: "browser-sites", sites: ["example.com:443"] },
+    since: 11,
+  };
+
+  async function handedOver(asks: unknown[] = [HANDED]) {
+    besides.chat_browsers = () => [CHATS_B1];
+    besides.asks_waiting = () => ({ plane: PLANE, asks });
+    const host = core(undefined, true);
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+    await screen.findByTestId("title-about");
+    await fromThePalette("New browser");
+    await screen.findByRole("button", { name: "Done" });
+    return host;
+  }
+
+  async function typeAndGo(address: string) {
+    fireEvent.change(await screen.findByRole("textbox", { name: "Address" }), {
+      target: { value: address },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Go" }));
+  }
+
+  it("has an address field while the chat's ask waits, and Go keeps the browser theirs", async () => {
+    besides.go_browser = () => ({ outcome: "went", address: "https://example.com/" });
+    const host = await handedOver();
+
+    await typeAndGo("example.com");
+
+    await waitFor(() =>
+      expect(host.asked("go_browser")).toEqual([
+        { plane: PLANE, program: "B1", address: "example.com" },
+      ]),
+    );
+    // Done alone ends the chat's ask: Go never hands it back.
+    expect(host.asked("hand_back_browser")).toEqual([]);
+    expect(await screen.findByText(/^example\.com on this/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Done" })).toBeInTheDocument();
+  });
+
+  it("draws the chat's sites ask in its view, and an Allow there sends it on", async () => {
+    let goes = 0;
+    besides.go_browser = () => {
+      goes += 1;
+      return goes === 1
+        ? { outcome: "asks", sites: ["example.com:443"], answers: [] }
+        : { outcome: "went", address: "https://example.com/" };
+    };
+    besides.allow_browser_sites = () => null;
+    const host = await handedOver([HANDED, SITES_ASK]);
+
+    await typeAndGo("example.com");
+    const view = screen.getByTestId("browser-view");
+    await within(view).findByText("Its browser wants to reach example.com:443.");
+    await userEvent.click(within(view).getByRole("button", { name: "Allow for this chat" }));
+
+    await waitFor(() => expect(host.asked("allow_browser_sites")).toHaveLength(1));
+    await waitFor(() => expect(host.asked("go_browser")).toHaveLength(2));
+    expect(host.asked("hand_back_browser")).toEqual([]);
+  });
+
+  it("has no address field once no ask of its chat's waits on it", async () => {
+    const host = await handedOver([]);
+    await waitFor(() => expect(host.asked("asks_waiting").length).toBeGreaterThan(0));
+    await new Promise((settled) => setTimeout(settled, 50));
+    expect(screen.queryByRole("textbox", { name: "Address" })).not.toBeInTheDocument();
+  });
+});

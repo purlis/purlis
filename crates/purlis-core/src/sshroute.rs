@@ -715,6 +715,36 @@ pub fn probe_args(route: &Route, pool: &str, known_hosts: &Path) -> Vec<String> 
     args
 }
 
+/// **The forward check's arguments** (#6349): ssh, pinned, asks the machine's SSH server for one
+/// channel to the engine's socket with `-W`, which runs no command there and ends ssh with 255
+/// where the channel isn't opened. `-W` implies `ExitOnForwardFailure` and `ClearAllForwardings`,
+/// and the person's ssh_config could turn either off, so both are on the command line, where
+/// ssh takes the first value. Its standard input is empty, so a channel opened ends at once.
+/// Refused for a route whose socket isn't known yet.
+pub fn forward_check_args(
+    route: &Route,
+    pool: &str,
+    known_hosts: &Path,
+) -> Result<Vec<String>, String> {
+    let Some(socket) = route.socket() else {
+        return Err(
+            "the pool's route names no socket on the other machine: connect it again".to_owned(),
+        );
+    };
+    let mut args = pinned_options(known_hosts, &alias(pool));
+    for option in ["ExitOnForwardFailure=yes", "ClearAllForwardings=yes"] {
+        args.push("-o".to_owned());
+        args.push(option.to_owned());
+    }
+    args.extend(route.where_options());
+    // A plain path ([`a_socket_path`]), which `-W` reads as a socket's, not as `host:port`.
+    args.push("-W".to_owned());
+    args.push(socket.to_owned());
+    args.push("--".to_owned());
+    args.push(route.destination());
+    Ok(args)
+}
+
 /// **A file read on the other machine** (#6269): [`sign_in_args`]'s, printing `path` there where
 /// it is a plain file, and failing where it is not, so nothing waits on a FIFO in its place.
 /// Refused for a path that isn't plain, which no Podman's own file would be.

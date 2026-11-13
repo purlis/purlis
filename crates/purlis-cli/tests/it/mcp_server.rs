@@ -184,6 +184,7 @@ fn a_harness_lists_charter_s_tools() {
             "workspace_vision",
             "workspace_section",
             "change_status",
+            "forge_milestones",
             "dispatch",
             "dispatch_list",
             "dispatch_read",

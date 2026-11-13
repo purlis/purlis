@@ -33,6 +33,7 @@ const FINISHED: ChatCard = {
   place: "smart-ide",
   started_by: "steward 4",
   screen_kept: true,
+  dispatched: true,
   task: {
     id: "01K9DISPATCH0000000000000A",
     asker: 0,
@@ -102,6 +103,7 @@ const ORDINARY: ChatCard = {
   place: "smart-ide",
   started_by: "you",
   screen_kept: false,
+  dispatched: false,
   task: null,
 };
 
@@ -175,6 +177,9 @@ export const FromTheSwitchersRow: Story = {
     await untilFocused(() => within(again).getByRole("button", { name: "Read it" }), "Read it");
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(canvas.getByTestId("said")).toHaveTextContent(/Read it/));
+    // Pictured once the card has gone: a picture taken while it leaves raced its way out
+    // (2026-11-13, #6202's webkit 11/12 caught it gone where the baseline had it leaving).
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   },
 };
 

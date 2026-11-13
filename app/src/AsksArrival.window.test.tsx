@@ -5,22 +5,21 @@ import { StrictMode } from "react";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
-import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { OpenChat, Shown } from "./bindings";
 import { asksMoved } from "./asks";
-import { PULSED_KEY } from "./asksArrival";
 import { forgetInbox } from "./inboxRules";
 import { forgetProjectViews } from "./projectViews";
 
 /**
  * **A Blocking ask arriving, in the whole window** (ADR 0121 decisions 24 and 25, #6020): it is
- * said once in a polite live region, its count is in the ✋'s name, and the first one on this
- * machine to arrive while Asks is closed pulses the ✋ once.
+ * said once in a polite live region, its count is in the ✋'s name, and one in the project in
+ * front bounces the ✋ (#6343).
  */
 
-beforeEach(() => localStorage.removeItem(PULSED_KEY));
+// The purlis window in front, as the person using it has it.
+beforeEach(() => vi.spyOn(document, "hasFocus").mockReturnValue(true));
 
 vi.mock("./SessionPane", () => ({
   SessionPane: ({ session }: { session: number }) => (
@@ -147,10 +146,10 @@ function open(projects: Record<string, Project>) {
 const said = () => screen.getByTestId("ask-arrived");
 
 /** An ask arriving in ONE: the core's list grows, and the window is told its asks moved. */
-async function arrives(projects: Record<string, Project>, ask: Shown) {
-  projects[ONE].asks = [...projects[ONE].asks, ask];
+async function arrives(projects: Record<string, Project>, ask: Shown, plane = ONE) {
+  projects[plane].asks = [...projects[plane].asks, ask];
   await act(async () => {
-    asksMoved(ONE);
+    asksMoved(plane);
     await new Promise((resolve) => setTimeout(resolve, 100));
   });
 }
@@ -179,37 +178,50 @@ describe("a Blocking ask arriving (#6020)", () => {
     expect(said().firstElementChild).toBe(line);
   });
 
-  it("pulses the ✋ for the first ask that arrives while Asks is closed, once per machine", async () => {
+  it("bounces the ✋ for a new ask in the project in front, and stops it as the bounce ends", async () => {
     const projects: Record<string, Project> = {
       [ONE]: { chats: [chat(ONE, 1)], asks: [], snoozed: [] },
       [TWO]: { chats: [chat(TWO, 1)], asks: [], snoozed: [] },
     };
     open(projects);
     await screen.findByRole("tabpanel", { name: "Asks" });
-    await userEvent.click(within(bar()).getByRole("tab", { name: /^Updates/ }));
-    await screen.findByRole("tabpanel", { name: "Updates" });
+    expect(hand()).not.toHaveAttribute("data-bounce");
 
     await arrives(projects, permission(1, "a-1", "Run cargo test"));
 
-    await waitFor(() => expect(hand()).toHaveAttribute("data-pulse", "true"));
-    expect(localStorage.getItem(PULSED_KEY)).not.toBeNull();
-    await userEvent.click(hand());
-    await waitFor(() => expect(hand()).not.toHaveAttribute("data-pulse"));
+    await waitFor(() => expect(hand()).toHaveAttribute("data-bounce", "true"));
+    const event = new Event("webkitAnimationEnd", { bubbles: true });
+    Object.defineProperty(event, "animationName", { value: "purlis-hand-bounce" });
+    act(() => void hand().dispatchEvent(event));
+    await waitFor(() => expect(hand()).not.toHaveAttribute("data-bounce"));
   });
 
-  it("does not pulse where this machine's ✋ has pulsed before", async () => {
-    localStorage.setItem(PULSED_KEY, "2026-11-01T00:00:00Z");
+  it("does not bounce the ✋ for an ask in another project", async () => {
     const projects: Record<string, Project> = {
       [ONE]: { chats: [chat(ONE, 1)], asks: [], snoozed: [] },
       [TWO]: { chats: [chat(TWO, 1)], asks: [], snoozed: [] },
     };
     open(projects);
     await screen.findByRole("tabpanel", { name: "Asks" });
-    await userEvent.click(within(bar()).getByRole("tab", { name: /^Updates/ }));
+
+    await arrives(projects, permission(1, "b-1", "Run cargo build"), TWO);
+
+    await waitFor(() => expect(said()).toHaveTextContent("New ask in another project"));
+    expect(hand()).not.toHaveAttribute("data-bounce");
+  });
+
+  it("does not bounce the ✋ while the window is behind, and still says the ask", async () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    const projects: Record<string, Project> = {
+      [ONE]: { chats: [chat(ONE, 1)], asks: [], snoozed: [] },
+      [TWO]: { chats: [chat(TWO, 1)], asks: [], snoozed: [] },
+    };
+    open(projects);
+    await screen.findByRole("tabpanel", { name: "Asks" });
 
     await arrives(projects, permission(1, "a-1", "Run cargo test"));
 
     await waitFor(() => expect(said()).toHaveTextContent("New ask from steward 1"));
-    expect(hand()).not.toHaveAttribute("data-pulse");
+    expect(hand()).not.toHaveAttribute("data-bounce");
   });
 });

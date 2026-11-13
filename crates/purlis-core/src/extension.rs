@@ -2354,12 +2354,13 @@ pub fn file(config_root: &Path) -> PathBuf {
 /// **The record, opened in your editor** (#1296): the Extensions dialog's way to mend a record
 /// purlis could not read. Only this machine's own record, at its own path: the window names no
 /// file. Refused for a record that is not there, or that is not a plain file (a link is not
-/// followed to whatever it names).
+/// followed to whatever it names). Held as it was checked ([`crate::youreditor::Checked`],
+/// #3185): the app launches only through its `launch`.
 pub fn record_in_your_editor(
     config_root: &Path,
     editor: crate::youreditor::Editor,
     var: &dyn Fn(&str) -> Option<String>,
-) -> Result<crate::youreditor::Launch, String> {
+) -> Result<crate::youreditor::Checked, String> {
     let record = file(config_root);
     let shown = record.display();
     match std::fs::symlink_metadata(&record) {
@@ -2374,7 +2375,9 @@ pub fn record_in_your_editor(
         }
         Err(e) => return Err(format!("purlis cannot read {shown}: {e}")),
     }
-    crate::youreditor::launch(editor, &record, 1, var).map_err(|refused| refused.to_string())
+    // Held from the config home, so what is launched is still this record (#3185).
+    crate::youreditor::Checked::new(config_root, &record, editor, 1, var)
+        .map_err(|refused| refused.to_string())
 }
 
 /// Whether charter keeps an extension record on this platform at all. See the module
