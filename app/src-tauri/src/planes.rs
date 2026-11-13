@@ -2472,6 +2472,7 @@ impl Closing {
     pub(crate) fn finish(self) {
         let _one_at_a_time = self.one_at_a_time.enter(LETTING_GO_WAITS);
         self.held.let_go(false);
+        crate::chatlisting::project_closed(&self.plane);
         (self.released)(&self.held.root);
         (self.closed)(&self.plane);
     }

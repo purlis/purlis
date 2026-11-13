@@ -331,14 +331,74 @@ pub fn record_file(path: &str, workspace: &str) -> Option<String> {
     crate::sessionrecord::is_record_name(file).then(|| file.to_owned())
 }
 
-/// An id dispatch record `record` names a chat by: its own, or, for one given none, its number
-/// on the board of the run the record was made in, after the record's id. A number alone may
-/// be another chat's in another run.
-fn recorded_id(record: &Record, chat: &crate::dispatchrecord::ChatRef) -> String {
-    chat.id
-        .clone()
-        .filter(|id| !id.is_empty())
-        .unwrap_or_else(|| format!("{}.{}", record.id, number_id(chat.chat)))
+/// Which chat of a dispatch a record names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum Side {
+    Asker,
+    Worker,
+}
+
+/// **The id each record names each of its chats by**: its own, or, for one given none, the
+/// id-less chat it is shown to be, or else its number on the board of the run the record was
+/// made in, after the record's id (a number alone may be another chat's in another run).
+///
+/// A chat given no id is shown to be:
+/// - **the open chat with its number** whose run started no later than the record did, since
+///   the app opens a dispatch's record once its chat has started, and a number is one chat's
+///   at a time on a board;
+/// - else **the one an earlier record named** with the same number, name, persona and
+///   workspace, for the chat that asked: the chat that asked twice, or the task that went on to
+///   ask one of its own. A dispatch's worker is a new chat at its record's start, so it is never
+///   one an earlier record named, and the chats named after it by its number are it.
+struct RecordedIds(std::collections::HashMap<(usize, Side), String>);
+
+impl RecordedIds {
+    fn of(open: &[Chat], records: &[Record]) -> RecordedIds {
+        type Key<'a> = (Option<&'a str>, u32, &'a str, Option<&'a str>);
+        let mut ids = std::collections::HashMap::new();
+        let mut named: std::collections::HashMap<Key, String> = std::collections::HashMap::new();
+        let mut by_start: Vec<(usize, &Record)> = records.iter().enumerate().collect();
+        by_start.sort_by_key(|(_, r)| stamped(&r.started));
+        for (at, record) in by_start {
+            let started = stamped(&record.started);
+            // The asker was there before the chat it started.
+            for (side, chat, workspace) in [
+                (Side::Asker, &record.asker.chat, &record.asker.workspace),
+                (Side::Worker, &record.worker.chat, &record.place.workspace),
+            ] {
+                let id = match chat.id.as_deref().filter(|id| !id.is_empty()) {
+                    Some(id) => id.to_owned(),
+                    None => {
+                        let key = (
+                            workspace.as_deref(),
+                            chat.chat,
+                            chat.name.as_str(),
+                            chat.persona.as_deref(),
+                        );
+                        let open_one = open.iter().find(|c| {
+                            c.id == number_id(chat.chat)
+                                && c.workspace == *workspace
+                                && c.started.zip(started).is_some_and(|(c, r)| c <= r)
+                        });
+                        let id = match (open_one, named.get(&key)) {
+                            (Some(open), _) => open.id.clone(),
+                            (None, Some(earlier)) if side == Side::Asker => earlier.clone(),
+                            _ => format!("{}.{}", record.id, number_id(chat.chat)),
+                        };
+                        named.insert(key, id.clone());
+                        id
+                    }
+                };
+                ids.insert((at, side), id);
+            }
+        }
+        RecordedIds(ids)
+    }
+
+    /// The id the record at `at` names its chat on `side` by.
+    fn of_chat(&self, at: usize, side: Side) -> String {
+        self.0.get(&(at, side)).cloned().unwrap_or_default()
+    }
 }
 
 /// When an ended dispatch ended, or, where its record says not, when it started.
@@ -351,7 +411,11 @@ fn ended_at(record: &Record) -> Option<i64> {
 }
 
 /// An ended dispatch's chat, and the state its record says it ended in.
-fn ended_worker(record: &Record, workspace: &str) -> (Chat, (Mark, &'static str)) {
+fn ended_worker(
+    (at, record): (usize, &Record),
+    ids: &RecordedIds,
+    workspace: &str,
+) -> (Chat, (Mark, &'static str)) {
     let outcome = record.report.as_ref().map(|r| r.outcome.word());
     let said = if record.did_not_start || failed_outcome(outcome) {
         (Mark::Failed, "reported-failed")
@@ -364,7 +428,7 @@ fn ended_worker(record: &Record, workspace: &str) -> (Chat, (Mark, &'static str)
     };
     let worker = &record.worker;
     let chat = Chat {
-        id: recorded_id(record, &worker.chat),
+        id: ids.of_chat(at, Side::Worker),
         name: record
             .task
             .clone()
@@ -373,7 +437,7 @@ fn ended_worker(record: &Record, workspace: &str) -> (Chat, (Mark, &'static str)
         harness: worker.harness.clone(),
         workspace: record.place.workspace.clone(),
         parent: Some(Parent {
-            id: recorded_id(record, &record.asker.chat),
+            id: ids.of_chat(at, Side::Asker),
             relation: match record.mode {
                 crate::dispatchrecord::Mode::Task => Relation::Dispatched,
                 crate::dispatchrecord::Mode::Handoff => Relation::HandedOffFrom,
@@ -392,10 +456,10 @@ fn ended_worker(record: &Record, workspace: &str) -> (Chat, (Mark, &'static str)
 }
 
 /// The chat that asked for an ended dispatch, closed.
-fn closed_asker(record: &Record, workspace: &str) -> Chat {
+fn closed_asker((at, record): (usize, &Record), ids: &RecordedIds, workspace: &str) -> Chat {
     let asker = &record.asker;
     Chat {
-        id: recorded_id(record, &asker.chat),
+        id: ids.of_chat(at, Side::Asker),
         name: asker.chat.name.clone(),
         persona: asker.chat.persona.clone(),
         harness: None,
@@ -433,18 +497,20 @@ pub fn answer(open: &[Chat], records: &[Record], workspace: &str, asked: Asked) 
         chats.push(row(chat, mark(&chat.facts), true, workspace));
     }
     if asked.history {
-        let mut ended: Vec<&Record> = records
+        let mut ended: Vec<(usize, &Record)> = records
             .iter()
-            .filter(|r| !r.running() && here(&r.place.workspace))
+            .enumerate()
+            .filter(|(_, r)| !r.running() && here(&r.place.workspace))
             .collect();
         // Stable, so dispatches that ended in one second keep the store's order.
-        ended.sort_by_key(|r| std::cmp::Reverse(ended_at(r)));
+        ended.sort_by_key(|(_, r)| std::cmp::Reverse(ended_at(r)));
+        let ids = RecordedIds::of(open, records);
         let mut workers = 0;
-        for record in ended {
+        for dispatch in ended {
             if workers == asked.limit {
                 break;
             }
-            let (worker, said) = ended_worker(record, workspace);
+            let (worker, said) = ended_worker(dispatch, &ids, workspace);
             let shown = row(&worker, said, false, workspace);
             match listed.get(&worker.id).copied() {
                 Some(Listed::AsItself) => continue,
@@ -453,7 +519,7 @@ pub fn answer(open: &[Chat], records: &[Record], workspace: &str, asked: Asked) 
             }
             listed.insert(worker.id.clone(), Listed::AsItself);
             workers += 1;
-            let asker = closed_asker(record, workspace);
+            let asker = closed_asker(dispatch, &ids, workspace);
             if here(&asker.workspace) && !listed.contains_key(&asker.id) {
                 listed.insert(asker.id.clone(), Listed::AsAsker(chats.len()));
                 chats.push(row(&asker, (Mark::Ended, "closed"), false, workspace));

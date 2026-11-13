@@ -15,9 +15,11 @@ three questions the work raised, the operator ruled 1a, 2a and 3a, recorded belo
   root, keeps its relation and has a null id (`{ "id": null, "relation": "handed-off-from" }`):
   the page learns that its chat came from somewhere, and nothing of a chat outside its
   workspace. A chat given no id (ADR 0066) is named by its number on this run's board
-  (`chat-4`); one a dispatch record names with no id, by that record's id and the number it
-  had in the run the record was made in (`<record id>.chat-4`), since a number alone may be
-  another chat's in another run.
+  (`chat-4`). One a dispatch record names with no id is the open chat with that number whose
+  run started no later than the record; else, for the chat that asked, the chat an earlier
+  record named with the same number, name, persona and workspace; else it is named by that
+  record's id and the number it had in the run the record was made in (`<record id>.chat-4`),
+  since a number alone may be another chat's in another run.
 - **Live by default. `history` widens it**, and is declared under `widens`, so a page's
   approval names it as it names `todo_list`'s `done`. With `history: true`, the answer also
   holds the workspace's ended dispatches (tasks and handoffs), the one that ended last first:
@@ -35,7 +37,8 @@ three questions the work raised, the operator ruled 1a, 2a and 3a, recorded belo
 - **Why it is safe for a page.**
   - *Workspace-scoped*: a page reads its own workspace's chats only, and only as declared. The
     chat tool reads the asking chat's workspace from the app's record of that chat, never from
-    the call.
+    the call. A chat's `waiting` state with the cause `tasks-at-work` can show that it has a
+    task running in another workspace, though not which task or where.
   - *Metadata only*: names, personas, harnesses, states, causes, times and links. Never a
     transcript, a prompt, a brief, a report, a message between chats, or anything from a vault.
     History leaves out each record's brief and report too. A chat's name is what its tab
@@ -60,7 +63,9 @@ three questions the work raised, the operator ruled 1a, 2a and 3a, recorded belo
   may change are asked again: the moved chat's own and that of the chat it came from, whose
   tasks at work count it, or every chats feed of the project where the chat has closed. The
   dispatch records are read again only once their store has changed (`dispatchrecord::Drawing`),
-  and a run that answers what the feed last answered is handed to no page.
+  and what was read is let go of when the project closes. A chats feed's run that answers what
+  the feed last answered is handed to no page. Every other feed hands each answer on, since its
+  answer's time is the "as of" a page shows.
 - **Its MCP twin, `chats`, is not pre-allowed** (ruling 1a). The catalogue holds that every
   query is a read-only MCP tool, so any chat in a workspace can now list its workspace's
   chats, more than `persona_where`'s same-persona view. It is answered by the app over the hook

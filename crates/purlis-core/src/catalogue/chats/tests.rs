@@ -505,18 +505,49 @@ fn a_parent_in_another_workspace_or_at_the_root_is_named_by_its_relation_only() 
     assert!(!data.to_string().contains("01KA00000000000000000000E0"));
 }
 
+/// `ended_between`, with chats given no id: its worker and asker by number and name.
+fn unnamed(
+    id: &str,
+    (worker, asker): ((u32, &str), (u32, &str)),
+    (started, ended): (u32, u32),
+) -> Record {
+    let mut record = ended_between(id, ("", ""), (started, ended));
+    record.worker.chat = crate::dispatchrecord::ChatRef {
+        chat: worker.0,
+        id: None,
+        name: worker.1.to_owned(),
+        persona: Some("builder".into()),
+    };
+    record.asker.chat = crate::dispatchrecord::ChatRef {
+        chat: asker.0,
+        id: None,
+        name: asker.1.to_owned(),
+        persona: Some("steward".into()),
+    };
+    record
+}
+
+/// An open chat given no id, chat `number` of the board.
+fn numbered(number: u32, name: &str) -> Chat {
+    let mut chat = chat("", name);
+    chat.id = number_id(number);
+    chat
+}
+
 #[test]
 fn recorded_chats_with_no_id_from_two_runs_are_two_chats() {
-    let unnamed = |id: &str| {
-        let mut record = ended_record("", "", "alpha", "done");
-        record.id = id.to_owned();
-        record.worker.chat.id = None;
-        record.asker.chat.id = None;
-        record
-    };
+    // Two runs, each with its own chat 3 asking its own chat 7: the numbers say nothing.
     let records = [
-        unnamed("01KA0000000000000000000002"),
-        unnamed("01KA0000000000000000000001"),
+        unnamed(
+            "01KA0000000000000000000002",
+            ((7, "a worker"), (3, "the asker")),
+            (10, 11),
+        ),
+        unnamed(
+            "01KA0000000000000000000001",
+            ((7, "a worker"), (3, "another asker")),
+            (9, 10),
+        ),
     ];
     let data = answer(&[], &records, "alpha", with_history(HISTORY_DEFAULT));
     let listed = ids(&data);
@@ -529,6 +560,90 @@ fn recorded_chats_with_no_id_from_two_runs_are_two_chats() {
             .all(|id| id.starts_with("01KA00000000000000000000"))
     );
     assert_eq!(chats_of(&data)[0]["parent"]["id"], listed[1].as_str());
+}
+
+#[test]
+fn an_open_asker_with_no_id_is_listed_once_and_its_ended_task_points_at_it() {
+    let worker = "01KA00000000000000000000W1";
+    let mut record = unnamed(
+        "01KA0000000000000000000001",
+        ((7, "a worker"), (3, "the asker")),
+        (10, 11),
+    );
+    record.worker.chat.id = Some(worker.to_owned());
+    let data = answer(
+        &[numbered(3, "the asker")],
+        &[record],
+        "alpha",
+        with_history(HISTORY_DEFAULT),
+    );
+    assert_eq!(ids(&data), ["chat-3", worker]);
+    assert_eq!(chats_of(&data)[0]["open"], true);
+    assert_eq!(chats_of(&data)[1]["parent"]["id"], "chat-3");
+}
+
+#[test]
+fn an_open_worker_with_no_id_is_listed_once_as_open() {
+    let asker = "01KA00000000000000000000A1";
+    let mut record = unnamed(
+        "01KA0000000000000000000001",
+        ((7, "a worker"), (3, "the asker")),
+        (10, 11),
+    );
+    record.asker.chat.id = Some(asker.to_owned());
+    let data = answer(
+        &[numbered(7, "a worker")],
+        &[record.clone()],
+        "alpha",
+        with_history(HISTORY_DEFAULT),
+    );
+    // Its record is left out, as an open worker's with an id is.
+    assert_eq!(ids(&data), ["chat-7"]);
+    assert_eq!(chats_of(&data)[0]["open"], true);
+    // A chat 7 that started after the dispatch did is another chat with its number.
+    let mut later = numbered(7, "a later chat");
+    later.started = stamped("2026-11-11T10:30:00+00:00");
+    let data = answer(&[later], &[record], "alpha", with_history(HISTORY_DEFAULT));
+    assert_eq!(ids(&data).len(), 3, "{:?}", ids(&data));
+}
+
+#[test]
+fn a_closed_chat_with_no_id_that_asked_twice_is_listed_once() {
+    let records = [
+        unnamed(
+            "01KA0000000000000000000002",
+            ((8, "a second worker"), (3, "the asker")),
+            (10, 11),
+        ),
+        unnamed(
+            "01KA0000000000000000000001",
+            ((7, "a worker"), (3, "the asker")),
+            (9, 10),
+        ),
+    ];
+    let data = answer(&[], &records, "alpha", with_history(HISTORY_DEFAULT));
+    let rows = chats_of(&data);
+    assert_eq!(rows.len(), 3, "{:?}", ids(&data));
+    assert_eq!(rows[1]["cause"], "closed");
+    assert_eq!(rows[0]["parent"]["id"], rows[1]["id"]);
+    assert_eq!(rows[2]["parent"]["id"], rows[1]["id"]);
+}
+
+#[test]
+fn a_task_with_no_id_that_asked_a_task_of_its_own_is_listed_once_as_the_worker_it_was() {
+    // G asked P, and P asked S, none of them given an id.
+    let mut p_asks = unnamed("01KA0000000000000000000002", ((5, "s"), (4, "p")), (10, 12));
+    p_asks.asker.chat.persona = Some("builder".into());
+    let records = [
+        p_asks,
+        unnamed("01KA0000000000000000000001", ((4, "p"), (1, "g")), (9, 11)),
+    ];
+    let data = answer(&[], &records, "alpha", with_history(HISTORY_DEFAULT));
+    let rows = chats_of(&data);
+    assert_eq!(rows.len(), 3, "{:?}", ids(&data));
+    assert_eq!(rows[1]["cause"], "reported", "P is the worker it was");
+    assert_eq!(rows[0]["parent"]["id"], rows[1]["id"]);
+    assert_eq!(rows[1]["parent"]["id"], rows[2]["id"]);
 }
 
 #[test]

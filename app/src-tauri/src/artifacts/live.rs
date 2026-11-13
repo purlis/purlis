@@ -73,6 +73,11 @@ impl Key {
         super::queried::is_extension(&self.query)
     }
 
+    /// Whether it is a `purlis.chats` feed.
+    fn of_chats(&self) -> bool {
+        self.catalogued().is_some_and(|query| query.name == "chats")
+    }
+
     fn catalogued(&self) -> Option<&'static Query> {
         let (id, _) = self.query.rsplit_once('@')?;
         purlis_core::catalogue::find(id).map(|(query, _)| query)
@@ -88,10 +93,20 @@ pub(crate) struct Who {
 }
 
 /// Every subscription of this run, and the instant a wake is already set for.
-#[derive(Default)]
 pub(crate) struct Live {
     hub: live::Hub<Key, Who>,
     waking: Option<Instant>,
+}
+
+impl Default for Live {
+    /// Its `purlis.chats` feeds hand an answer on only when it changed
+    /// ([`live::Hub::handing_on_only_changes`]).
+    fn default() -> Self {
+        Self {
+            hub: live::Hub::handing_on_only_changes(Key::of_chats),
+            waking: None,
+        }
+    }
 }
 
 /// **What `said` after a load's word says about a subscription**, with the query string after
@@ -545,5 +560,34 @@ mod tests {
         every.sort_by(|a, b| a.workspace.cmp(&b.workspace));
         assert_eq!(every, [alpha, beta]);
         assert!(live.hub.any(|key| *key == todos));
+    }
+
+    #[test]
+    fn only_a_chats_feed_holds_back_an_answer_read_again_unchanged() {
+        // #6235's review: a page of any other feed shows its answer's time, which moves.
+        let mut live = Live::default();
+        let plane: PlaneId = serde_json::from_str("\"plane\"").unwrap();
+        let t = Instant::now();
+        for (query, handed_again) in [("purlis.chats@1", false), ("purlis.todo_list@1", true)] {
+            let key = Key::of(plane.clone(), "alpha".into(), query.into(), &json!({}));
+            let who = Who {
+                label: format!("artifact-{query}"),
+                load: LOAD.into(),
+                id: 1,
+            };
+            live.hub.subscribe(key.clone(), who, t);
+            live.hub
+                .finished(&key, Answer::data(json!({}), chrono::Utc::now()), t);
+            let later = t + live::MIN_INTERVAL;
+            live.hub.moved(later, |k| *k == key);
+            let again = live
+                .hub
+                .finished(&key, Answer::data(json!({}), chrono::Utc::now()), later);
+            assert_eq!(
+                again.iter().any(|d| matches!(d, Do::Hand(..))),
+                handed_again,
+                "{query}"
+            );
+        }
     }
 }
