@@ -741,7 +741,7 @@ pub enum NotMerged {
     /// still waits, showing what purlis read last.
     #[error(
         "whether a ruleset protects the base changed since you were shown it, so nothing was \
-         merged. Read the request again, then merge"
+         merged. Press Merge again"
     )]
     RulesetChanged,
     /// The person was not asked once more of what the ask shows (Q269): Merge was not pressed
@@ -822,10 +822,13 @@ impl Holds {
         if now == *was {
             let one = &mut held[at];
             let asked = one.asked;
+            let before = one.facts.ruleset.seen();
             one.replace(facts.clone());
             one.asked = match why {
                 Reread::AsksOnceMore => one.facts.shows_as(&facts),
-                Reread::Presses => asked,
+                // The press's own read keeps the mark only while the ruleset is what the person
+                // was asked of: a changed one is asked of again (Q269).
+                Reread::Presses => asked && one.facts.ruleset.seen() == before,
             };
             return Ok(Refreshed::Same);
         }

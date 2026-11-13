@@ -181,3 +181,41 @@ fn an_older_raise_never_overwrites_newer_facts() {
             .is_ok()
     );
 }
+
+/// Q269: the press's own read keeps the mark only while the ruleset is unchanged. Asked once
+/// more of no ruleset, a press whose read finds one leaves the ask unasked, so a press of the
+/// new state merges nothing until the person is asked of it.
+#[test]
+fn a_press_whose_read_finds_a_new_ruleset_leaves_the_ask_unasked() {
+    purlis_core::unsteered!();
+    let holds = Holds::default();
+    holds.raise(4, key(), facts(Ci::Passed, Ruleset::None, 1_000), 1_000);
+    holds
+        .refresh(
+            4,
+            &key(),
+            key(),
+            facts(Ci::Passed, Ruleset::None, 1_060),
+            Reread::AsksOnceMore,
+        )
+        .expect("asked once more");
+    assert!(holds.every()[0].asked);
+
+    holds
+        .refresh(
+            4,
+            &key(),
+            key(),
+            facts(Ci::Passed, Ruleset::Protects, 1_120),
+            Reread::Presses,
+        )
+        .expect("the press's own read");
+    assert!(!holds.every()[0].asked, "a new ruleset is asked of again");
+    let forge = Forge::default();
+
+    assert_eq!(
+        holds.press(4, &key(), Seen::Protects, the_window(), &forge),
+        Err(NotMerged::NotAsked)
+    );
+    assert!(forge.merged.lock().unwrap().is_empty());
+}
