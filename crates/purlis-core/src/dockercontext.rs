@@ -15,6 +15,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::sshroute::connect::Finding;
+
 /// **Where a context's endpoint is**, read once.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Endpoint {
@@ -294,6 +296,104 @@ fn contexts_listed(listed: &str) -> Vec<String> {
         .filter_map(|one| one.get("Name")?.as_str().map(str::to_owned))
         .filter(|name| a_name(name))
         .collect()
+}
+
+/// **Where purlis keeps its own copies of the TLS files read from Docker contexts** (#6268):
+/// [`crate::machine::DOCKER_CONTEXT_TLS_DIR`], a folder of this user's alone that no chat reads
+/// or writes, one folder in it for each set of files kept.
+#[must_use]
+pub fn kept_tls_dir(config_root: &Path) -> PathBuf {
+    crate::machine::dir(config_root).join(crate::machine::DOCKER_CONTEXT_TLS_DIR)
+}
+
+/// A context's TLS files, read, and the folder of [`kept_tls_dir`] they are kept in: named by
+/// what they hold, so the same files are kept once and others never over them.
+struct ToKeep {
+    ca: Vec<u8>,
+    cert: Vec<u8>,
+    key: zeroize::Zeroizing<Vec<u8>>,
+    folder: PathBuf,
+}
+
+fn to_keep(
+    config_root: &Path,
+    files: &crate::tlsroute::Files,
+    host: &str,
+) -> Result<ToKeep, Finding> {
+    use sha2::Digest;
+    let Some(key) = files.key_file() else {
+        return Err(Finding::Here(
+            "a Docker context keeps its client key in a file, and this one names none".to_owned(),
+        ));
+    };
+    let ca = crate::tlsroute::read_file(&files.ca, host)?;
+    let cert = crate::tlsroute::read_file(&files.cert, host)?;
+    let key = zeroize::Zeroizing::new(crate::tlsroute::read_file(key, host)?);
+    let mut digest = sha2::Sha256::new();
+    for part in [ca.as_slice(), cert.as_slice(), key.as_slice()] {
+        digest.update((part.len() as u64).to_be_bytes());
+        digest.update(part);
+    }
+    let name: String = digest
+        .finalize()
+        .iter()
+        .take(16)
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    Ok(ToKeep {
+        ca,
+        cert,
+        key,
+        folder: kept_tls_dir(config_root).join(name),
+    })
+}
+
+/// The files kept in `folder`, by the names Docker gives them.
+fn kept_in(folder: &Path) -> crate::tlsroute::Files {
+    crate::tlsroute::Files {
+        ca: folder.join(crate::tlsroute::CA_PEM),
+        cert: folder.join(crate::tlsroute::CERT_PEM),
+        key: crate::tlsroute::KeyFrom::File(folder.join(crate::tlsroute::KEY_PEM)),
+    }
+}
+
+/// **Where [`keep_tls`] would keep `files`**, read now, with nothing written: for Connect to see
+/// that what it trusted earlier is these same files.
+pub fn tls_copies_at(
+    config_root: &Path,
+    files: &crate::tlsroute::Files,
+    host: &str,
+) -> Result<crate::tlsroute::Files, Finding> {
+    Ok(kept_in(&to_keep(config_root, files, host)?.folder))
+}
+
+/// **Copies a context's TLS files into purlis's own store, once** (#6268, the 2026-11-14
+/// amendment of ADR 0123): the files at the paths `docker context inspect` named are Docker's,
+/// which `docker context update` rewrites in place and `docker context rm` deletes, so a pool
+/// runs on copies of its own instead. Read once, at Connect's trust step, and kept in a folder
+/// of [`kept_tls_dir`] named by what they hold, the key `0600`; the files kept, which the trust
+/// step then checks and the pool names. Nothing is kept where one can't be read.
+pub fn keep_tls(
+    config_root: &Path,
+    files: &crate::tlsroute::Files,
+    host: &str,
+) -> Result<crate::tlsroute::Files, Finding> {
+    let read = to_keep(config_root, files, host)?;
+    let could_not = |why: std::io::Error| {
+        Finding::Here(format!(
+            "purlis could not keep its own copy of the TLS files for {host}: {why}"
+        ))
+    };
+    purlis_same_user::PrivateDirectory::open(&kept_tls_dir(config_root)).map_err(could_not)?;
+    let folder = purlis_same_user::PrivateDirectory::open(&read.folder).map_err(could_not)?;
+    for (name, bytes) in [
+        (crate::tlsroute::CA_PEM, read.ca.as_slice()),
+        (crate::tlsroute::CERT_PEM, read.cert.as_slice()),
+        (crate::tlsroute::KEY_PEM, read.key.as_slice()),
+    ] {
+        folder.replace_file(name, bytes).map_err(could_not)?;
+    }
+    Ok(kept_in(&read.folder))
 }
 
 /// The file `name` in a context's TLS folder for Docker's endpoint.

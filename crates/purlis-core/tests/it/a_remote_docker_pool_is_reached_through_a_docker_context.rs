@@ -228,3 +228,117 @@ fn a_context_on_a_socket_here_is_this_machine_and_plain_tcp_is_refused() {
         Endpoint::Refused(sshroute::PLAIN_TCP.to_owned())
     );
 }
+/// What Docker does to a context's files after Connect trusted them (#6268): `docker context
+/// update` rewrites them in place; `docker context rm` deletes them.
+enum Afterwards {
+    Rewritten,
+    Removed,
+}
+
+/// **A TLS pool runs on purlis's own copies of the context's files** (#6268, the 2026-11-14
+/// amendment): picked on Connect and trusted there, and through `purlis pool add --context`,
+/// the route each makes reaches the engine after Docker rewrote or deleted the context's files.
+fn a_tls_pool_still_runs_where_it_did(afterwards: Afterwards) {
+    let Some(fixture) = fixture() else { return };
+    fixture.context(&[
+        "create",
+        "tls-box",
+        "--docker",
+        &fixture.tls_host(&fixture.tls_route),
+    ]);
+    let read = fixture.read();
+    let context = named(&read, "tls-box");
+    let Endpoint::Tls {
+        files: docker_s, ..
+    } = &context.endpoint
+    else {
+        panic!("not read as TLS: {context:?}");
+    };
+    // The machine store, never under /tmp, which chats write.
+    let config = tempfile::Builder::new()
+        .prefix("config")
+        .tempdir_in(fixture.tls_dir.parent().expect("the TLS files' folder"))
+        .expect("a folder");
+    let config = config.path();
+
+    // The window: the context picked on Connect, its CA met and trusted.
+    purlis_core::poolsetup::choose_docker_context(config, context).expect("picked");
+    let chosen = purlis_core::poolsetup::read_choices(config)
+        .unwrap()
+        .connect
+        .expect("chosen");
+    let purlis_core::poolsetup::Pressed::MetCa(met) =
+        connecting::meet_chosen(config, &fixture.docker, &chosen)
+    else {
+        panic!("not met");
+    };
+    connecting::trust_chosen(config, &fixture.docker, &chosen, &met.fingerprint.spelled())
+        .expect("read")
+        .expect("trusted");
+    let chosen = purlis_core::poolsetup::read_choices(config)
+        .unwrap()
+        .connect
+        .expect("chosen");
+    assert_eq!(chosen.docker_context.as_deref(), Some("tls-box"));
+    let window = purlis_core::tlsroute::Remote {
+        route: purlis_core::tlsroute::Route::parse(&chosen.route).unwrap(),
+        files: chosen.tls.clone().expect("its files"),
+        pin: chosen.trusted_tls.clone().expect("its pin"),
+    };
+
+    // The command line: `purlis pool add --context tls-box --trust <the CA>`.
+    let asked = purlis_core::poolsetup::asked::Asked {
+        trust: Some(met.fingerprint.spelled()),
+        ..Default::default()
+    }
+    .reading_docker_context(context)
+    .expect("read");
+    let Some(purlis_core::runners::RemoteEngine::Tls(command)) =
+        purlis_core::poolsetup::asked::remote_of(config, &fixture.docker, &asked).expect("trusted")
+    else {
+        panic!("not over TLS");
+    };
+
+    for remote in [&window, &command] {
+        let kept = dockercontext::kept_tls_dir(config);
+        assert!(remote.files.ca.starts_with(&kept), "{:?}", remote.files);
+        assert!(remote.files.cert.starts_with(&kept), "{:?}", remote.files);
+        assert!(
+            remote
+                .files
+                .key_file()
+                .is_some_and(|key| key.starts_with(&kept)),
+            "{:?}",
+            remote.files
+        );
+    }
+
+    match afterwards {
+        Afterwards::Rewritten => {
+            for file in [&docker_s.ca, &docker_s.cert, docker_s.key_file().unwrap()] {
+                std::fs::write(file, b"rewritten by docker context update").unwrap();
+            }
+        }
+        Afterwards::Removed => {
+            fixture.context(&["rm", "--force", "tls-box"]);
+            assert!(!docker_s.ca.exists(), "Docker kept {docker_s:?}");
+        }
+    }
+    for remote in [&window, &command] {
+        let still = purlis_core::tlsroute::pool::docker_over(&fixture.docker, "ctx-tls", remote)
+            .expect("the pool's docker, by its own files");
+        assert_eq!(still.engine_id_said().expect("its id"), remote.pin.engine);
+    }
+}
+
+#[test]
+fn a_tls_pool_still_runs_where_it_did_after_docker_rewrites_the_contexts_files() {
+    purlis_core::unsteered!();
+    a_tls_pool_still_runs_where_it_did(Afterwards::Rewritten);
+}
+
+#[test]
+fn a_tls_pool_still_runs_where_it_did_after_the_context_is_removed() {
+    purlis_core::unsteered!();
+    a_tls_pool_still_runs_where_it_did(Afterwards::Removed);
+}

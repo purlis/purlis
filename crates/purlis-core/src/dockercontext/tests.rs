@@ -210,3 +210,87 @@ fn a_context_listed_with_an_error_is_not_inspected() {
     assert!(!names.iter().any(|name| name == "broken"), "{names:?}");
     assert_eq!(names.len(), 6);
 }
+
+/// A context's TLS files, as Docker keeps them in its store, in a folder of the test's own.
+fn docker_store(at: &Path) -> crate::tlsroute::Files {
+    let folder = at.join("docker");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("ca.pem"), b"the CA").unwrap();
+    std::fs::write(folder.join("cert.pem"), b"the certificate").unwrap();
+    std::fs::write(folder.join("key.pem"), b"the key").unwrap();
+    crate::tlsroute::Files::new(
+        folder.join("ca.pem"),
+        folder.join("cert.pem"),
+        crate::tlsroute::KeyFrom::File(folder.join("key.pem")),
+    )
+    .unwrap()
+}
+
+/// **A context's TLS files are copied once into purlis's own store** (#6268): what Docker does
+/// to its store afterwards, `docker context update` rewriting them or `rm` deleting them, never
+/// reaches the copies a pool runs on.
+#[test]
+fn a_contexts_tls_files_are_copied_once_and_what_docker_does_later_does_not_reach_them() {
+    let config = tempfile::tempdir().unwrap();
+    let store = tempfile::tempdir().unwrap();
+    let files = docker_store(store.path());
+    let kept = keep_tls(config.path(), &files, "lab.example").unwrap();
+    assert!(kept.ca.starts_with(kept_tls_dir(config.path())), "{kept:?}");
+    assert_eq!(kept.ca.parent(), kept.cert.parent());
+    assert_eq!(
+        Some(kept.ca.parent().unwrap()),
+        kept.key_file().and_then(Path::parent)
+    );
+    // What was asked for where it would be kept is where it is kept.
+    assert_eq!(
+        tls_copies_at(config.path(), &files, "lab.example").unwrap(),
+        kept
+    );
+
+    // Docker rewrites its files, then deletes them: the copies are what they were.
+    std::fs::write(&files.cert, b"another certificate").unwrap();
+    std::fs::remove_dir_all(store.path().join("docker")).unwrap();
+    assert_eq!(std::fs::read(&kept.ca).unwrap(), b"the CA");
+    assert_eq!(std::fs::read(&kept.cert).unwrap(), b"the certificate");
+    assert_eq!(std::fs::read(kept.key_file().unwrap()).unwrap(), b"the key");
+}
+
+#[cfg(unix)]
+#[test]
+fn the_copied_key_is_the_users_alone() {
+    use std::os::unix::fs::PermissionsExt;
+    let config = tempfile::tempdir().unwrap();
+    let store = tempfile::tempdir().unwrap();
+    let kept = keep_tls(config.path(), &docker_store(store.path()), "lab.example").unwrap();
+    let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode(kept.key_file().unwrap()), 0o600);
+    assert_eq!(mode(kept.ca.parent().unwrap()), 0o700);
+}
+
+/// The same files are kept once, where they were; other files are kept beside them, never over
+/// them, so a pool's copies are never rewritten by another Connect.
+#[test]
+fn the_same_files_are_kept_once_and_other_files_beside_them() {
+    let config = tempfile::tempdir().unwrap();
+    let store = tempfile::tempdir().unwrap();
+    let files = docker_store(store.path());
+    let first = keep_tls(config.path(), &files, "lab.example").unwrap();
+    assert_eq!(
+        keep_tls(config.path(), &files, "lab.example").unwrap(),
+        first
+    );
+    std::fs::write(&files.ca, b"another CA").unwrap();
+    let second = keep_tls(config.path(), &files, "lab.example").unwrap();
+    assert_ne!(second.ca, first.ca);
+    assert_eq!(std::fs::read(&first.ca).unwrap(), b"the CA");
+}
+
+#[test]
+fn a_context_file_that_is_gone_keeps_nothing() {
+    let config = tempfile::tempdir().unwrap();
+    let store = tempfile::tempdir().unwrap();
+    let files = docker_store(store.path());
+    std::fs::remove_file(&files.cert).unwrap();
+    assert!(keep_tls(config.path(), &files, "lab.example").is_err());
+    assert!(!kept_tls_dir(config.path()).exists());
+}
