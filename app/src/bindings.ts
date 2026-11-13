@@ -1258,8 +1258,8 @@ export const commands = {
 	/**  **"It's fine"**: chat `session` is not stuck until it changes state. */
 	stuckFine: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("stuck_fine", { plane, session })),
 	/**
-	 *  **Answers chat `session`'s pause with `option`** (#6015): Continue, It's fine, continue, or
-	 *  Stop, as its ask in Asks offers them.
+	 *  **Answers chat `session`'s pause with `option`** (#6015): Continue, Raise the budget, It's
+	 *  fine, continue, or Stop, as its ask in Asks offers them.
 	 */
 	answerPause: (plane: PlaneId, session: number, option: string) => typedError<null, string>(__TAURI_INVOKE("answer_pause", { plane, session, option })),
 	/**
