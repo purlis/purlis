@@ -6,9 +6,7 @@
 
 use super::*;
 use crate::eventlog::Attributes;
-use crate::eventlog::stops::{
-    Block, Hold, Qualifier, Source, Stop, Target, reported_from_outside_its_reach,
-};
+use crate::eventlog::stops::{Hold, Qualifier, reported_from_outside_its_reach};
 use crate::harness::Harness;
 use crate::hookwire::{Decision, ToolCall};
 
@@ -72,7 +70,8 @@ fn succeeded(args: &str) -> ToolCall {
     }
 }
 
-/// R-206.
+/// R-206: pins shipped behaviour (Q208, Q253); mutation: `BLOCKED_TIMES = 4`, or
+/// `Loops::stopped` returning `None`.
 #[test]
 fn three_blocks_on_the_same_target_pause_the_chat() {
     let mut loops = Loops::default();
@@ -269,7 +268,8 @@ fn an_allow_resets_the_block_count() {
     );
 }
 
-/// R-212: the shipped rule, pinned (Q208).
+/// R-212: pins shipped behaviour (Q208, Q253); mutation: dropping the reset on an Allow in
+/// `Loops::answered`, or pausing at `refused_times + 1`.
 #[test]
 fn six_dont_allows_still_pause_and_an_allow_resets_them() {
     let mut loops = Loops::default();
@@ -290,7 +290,8 @@ fn six_dont_allows_still_pause_and_an_allow_resets_them() {
     );
 }
 
-/// R-213: the shipped rule, pinned (Q208).
+/// R-213: pins shipped behaviour (Q208, Q253); mutation: no reset on another command or on a
+/// success in `stuck::Failing::ran`, or the threshold off by one.
 #[test]
 fn six_identical_failures_still_pause_and_another_command_resets_them() {
     let mut loops = Loops::default();
@@ -332,7 +333,8 @@ fn held() -> Stop {
     })
 }
 
-/// R-215.
+/// R-215: pins shipped behaviour (Q208, Q253); mutation: `Loops::stopped` counting a
+/// `Stop::Hold`.
 #[test]
 fn a_block_with_an_open_ask_never_counts() {
     let mut loops = Loops::default();
@@ -364,7 +366,8 @@ fn a_block_with_an_open_ask_never_counts() {
 }
 
 /// R-218: Let it keep trying is the pause's answer that lets the chat go on (T1-36 words it;
-/// today's "It's fine, continue").
+/// today's "It's fine, continue"). Pins shipped behaviour (Q208, Q253); mutation: `Loops::fine`
+/// keeping the block count.
 #[test]
 fn let_it_keep_trying_resets_the_block_count() {
     let mut loops = Loops::default();
@@ -385,7 +388,9 @@ fn let_it_keep_trying_resets_the_block_count() {
 }
 
 /// R-350. The cool-off (`crate::askrules::cooling`) is read from the person's answers alone,
-/// which no block writes; the person's own refusals are this module's count of them.
+/// which no block writes; the person's own refusals are this module's count of them. Pins
+/// shipped behaviour (Q208, Q253); mutation: the refused branch of `Loops::answered` clearing
+/// the block count, or `Loops::stopped` bumping `refused`.
 #[test]
 fn the_block_loop_and_the_cool_off_are_counted_apart() {
     // Don't allows leave the block count unchanged.
@@ -409,5 +414,121 @@ fn the_block_loop_and_the_cool_off_are_counted_apart() {
     assert_eq!(
         loops.answered(CHAT, true, &limits()),
         Some(Why::Refused { times: 6 })
+    );
+}
+
+/// R-211 (Q253): the person's Allow on a sandbox ask, on any of its paths (a held connection,
+/// the chooser, a late answer), starts the block count again, as an Allow of a hook's ask does.
+#[test]
+fn an_allow_on_a_held_connection_resets_the_block_count() {
+    let mut loops = Loops::default();
+    loops.stopped(CHAT, &block(Source::Sandbox, "aa"));
+    loops.stopped(CHAT, &block(Source::Sandbox, "aa"));
+    loops.allowed(CHAT);
+    assert_eq!(loops.stopped(CHAT, &block(Source::Sandbox, "aa")), None);
+    assert_eq!(
+        loops.stopped(CHAT, &block(Source::Sandbox, "aa")),
+        None,
+        "2 blocks, an Allow on the held connection, 2 blocks: no pause"
+    );
+    assert_eq!(
+        loops.stopped(CHAT, &block(Source::Sandbox, "aa")),
+        Some(Why::Blocked { times: 3 })
+    );
+}
+
+/// The block one held connection of `call` makes: the same host every time, as a command that
+/// retries one host inside it does.
+fn held_under(loops: &mut Loops, call: &str) -> Option<Why> {
+    let stop = Stop::Block(Block {
+        tool: "Bash".to_owned(),
+        source: Source::Sandbox,
+        qualifier: None,
+        target: Target::host("api.example.com").ok(),
+        args: Some("aa".to_owned()),
+    });
+    loops.stopped_under(CHAT, &stop, Some(call))
+}
+
+/// R-206 (Q253): one call counts once, however many connections it held.
+#[test]
+fn one_call_holding_three_connections_does_not_pause() {
+    let mut loops = Loops::default();
+    for _ in 0..3 {
+        assert_eq!(held_under(&mut loops, "toolu_1"), None, "one call");
+    }
+    assert_eq!(held_under(&mut loops, "toolu_2"), None);
+    assert_eq!(
+        held_under(&mut loops, "toolu_3"),
+        Some(Why::Blocked { times: 3 }),
+        "the third call held on it pauses"
+    );
+}
+
+/// Q253: the count is kept per aim, so blocked calls that alternate still pause.
+#[test]
+fn alternating_blocked_calls_still_pause() {
+    let mut loops = Loops::default();
+    for args in ["aa", "bb", "aa", "bb"] {
+        assert_eq!(loops.stopped(CHAT, &block(Source::Guard, args)), None);
+    }
+    assert_eq!(
+        loops.stopped(CHAT, &block(Source::Guard, "aa")),
+        Some(Why::Blocked { times: 3 }),
+        "A, B, A, B, A pauses at A's third"
+    );
+
+    // The same resets clear every aim: a different success, an Allow, Let it keep trying.
+    let resets: [fn(&mut Loops); 4] = [
+        |loops| {
+            loops.called(CHAT, &succeeded("cc"), true);
+        },
+        |loops| loops.allowed(CHAT),
+        |loops| {
+            loops.answered(CHAT, false, &limits());
+        },
+        |loops| loops.fine(CHAT),
+    ];
+    for reset in resets {
+        let mut loops = Loops::default();
+        for args in ["aa", "bb", "aa", "bb"] {
+            loops.stopped(CHAT, &block(Source::Guard, args));
+        }
+        reset(&mut loops);
+        for args in ["aa", "bb", "aa", "bb"] {
+            assert_eq!(
+                loops.stopped(CHAT, &block(Source::Guard, args)),
+                None,
+                "counted again from nothing"
+            );
+        }
+    }
+}
+
+/// Q253: the per-aim count is bounded; past [`AIMS_KEPT`] aims, the oldest is dropped.
+#[test]
+fn the_block_count_keeps_a_bounded_number_of_aims() {
+    let mut loops = Loops::default();
+    loops.stopped(CHAT, &block(Source::Guard, "aa"));
+    loops.stopped(CHAT, &block(Source::Guard, "aa"));
+    for other in 0..AIMS_KEPT {
+        loops.stopped(CHAT, &block(Source::Guard, &format!("other-{other}")));
+    }
+    assert_eq!(
+        loops.stopped(CHAT, &block(Source::Guard, "aa")),
+        None,
+        "its count was dropped as the oldest"
+    );
+
+    // Within the bound, the oldest is kept.
+    let mut loops = Loops::default();
+    loops.stopped(CHAT, &block(Source::Guard, "aa"));
+    loops.stopped(CHAT, &block(Source::Guard, "aa"));
+    for other in 1..AIMS_KEPT {
+        loops.stopped(CHAT, &block(Source::Guard, &format!("other-{other}")));
+    }
+    assert_eq!(
+        loops.stopped(CHAT, &block(Source::Guard, "aa")),
+        Some(Why::Blocked { times: 3 })
     );
 }
