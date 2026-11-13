@@ -53,7 +53,7 @@ mod scene;
 use scene::{MERGE, SAVE, SHA, Scene};
 
 /// Every case, by the seam method it covers. The parity test compares this with the traits.
-const CASES: [&str; 33] = [
+const CASES: [&str; 34] = [
     "owned",
     "about",
     "reachable",
@@ -78,6 +78,7 @@ const CASES: [&str; 33] = [
     "read",
     "search",
     "add_comment",
+    "milestone_progress",
     "owners_to_create_under",
     "create_repo",
     "delete_created_repo",
@@ -1153,6 +1154,51 @@ mod cases {
         spent(&over);
     }
 
+    pub fn milestone_progress(kind: &str, how: How) {
+        let Some(over) = over(kind, "milestone_progress", how) else {
+            return;
+        };
+        let path = over.scene.path("api");
+        let read = over.backend.milestone_progress(&over.caller, &path, false);
+        if kind == "gitlab" {
+            // GitLab's milestones are not read yet (#6476): it says so and asks nothing.
+            let why = read.expect_err("GitLab answers that it cannot").to_string();
+            assert!(
+                why.contains("does not read the milestones") && why.contains(&path),
+                "{why}"
+            );
+            spent(&over);
+            return;
+        }
+        // The open milestones, each with its issue counts, in the forge's order.
+        let read = read.unwrap();
+        let shown: Vec<(u64, &str, &str, Option<&str>, u64, u64)> = read
+            .iter()
+            .map(|m| {
+                (
+                    m.number,
+                    m.title.as_str(),
+                    m.state.as_str(),
+                    m.due_on.as_deref(),
+                    m.open_issues,
+                    m.closed_issues,
+                )
+            })
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                (4, "M4", "open", Some("2026-12-01T08:00:00Z"), 3, 9),
+                (5, "M5", "open", None, 1, 0),
+            ]
+        );
+        assert_eq!(read[0].description, "");
+        assert_eq!(read[1].description, "The next one.");
+        assert_eq!(read[0].url, "https://github.com/acme/api/milestone/4");
+        assert_eq!(read[0].updated_at, "2026-11-10T09:00:00Z");
+        spent(&over);
+    }
+
     pub fn read(kind: &str, how: How) {
         let Some(over) = over(kind, "read", how) else {
             return;
@@ -1386,6 +1432,12 @@ macro_rules! contract {
             fn add_comment_posts_on_the_issue_and_answers_where_the_comment_is() {
                 purlis_core::unsteered!();
                 super::cases::add_comment(stringify!($forge), super::How::$how);
+            }
+            #[test]
+            $(#[$attr])?
+            fn milestone_progress_lists_the_open_milestones_with_their_issue_counts() {
+                purlis_core::unsteered!();
+                super::cases::milestone_progress(stringify!($forge), super::How::$how);
             }
             #[test]
             $(#[$attr])?

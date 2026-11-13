@@ -624,6 +624,7 @@ pub trait WorkItems {
         path: &str,
         _all: bool,
     ) -> Result<Vec<MilestoneProgress>, ForgeError> {
+        // GitLab's milestones are read by #6476; until then it answers this.
         Err(ForgeError::new(format!(
             "purlis does not read the milestones of {path} on this forge yet"
         )))
