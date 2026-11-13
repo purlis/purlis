@@ -1236,6 +1236,14 @@ fn begun(
         sandbox: sandbox.map_or_else(none, |applied| applied.backend_word().map(str::to_owned)),
         conversation: ready.session.as_ref().map(ToString::to_string),
         started_by: Some(starting.started_by.to_owned()),
+        // What the start resolved (R-227), as it was made here: by no grant of the window's.
+        protection: Some(crate::sandbox::protection::at_start(
+            starting.root,
+            persona,
+            &crate::sandbox::Made::Unnamed,
+            sandbox,
+            ready.unsandboxed.as_ref(),
+        )),
     };
     let cause = if start.resume.is_some() {
         Began::Reopen
