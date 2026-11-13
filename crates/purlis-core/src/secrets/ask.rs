@@ -2022,7 +2022,7 @@ pub fn ask_the_window(
     program: Option<&str>,
     waits: &mut dyn FnMut(&str),
 ) -> Result<Said, String> {
-    use crate::hookwire::{Answer, Ask, Asking, ChatToken, NOTHING_ANSWERS, UNKNOWN_LINE};
+    use crate::hookwire::{Ask, Asking, ChatToken};
     let env = |name: &str| ctx.env.get(name);
     let not_here = || {
         "a secret ask is answered in purlis's window, and this chat was not started by purlis: \
@@ -2047,9 +2047,23 @@ pub fn ask_the_window(
         replace: replace.map(str::to_owned),
         program: program.map(str::to_owned),
     }));
-    // Said once the ask is on its way, so nothing is said of a wait that never was (#6008).
+    ask_the_window_over(ctx, &mut asking, &line, waits)
+}
+
+/// [`ask_the_window`], sending `line` over a connection to the app already made. `waits` is told
+/// where the person answers it once the app is reached, before the wait for their answer.
+#[cfg(unix)]
+pub fn ask_the_window_over(
+    ctx: &Ctx,
+    asking: &mut crate::hookwire::Asking,
+    line: &crate::hookwire::Ask,
+    waits: &mut dyn FnMut(&str),
+) -> Result<Said, String> {
+    use crate::hookwire::{Answer, NOTHING_ANSWERS, UNKNOWN_LINE};
+    let env = |name: &str| ctx.env.get(name);
+    // Said once the app is reached, so nothing is said of a wait that never was (#6008).
     waits(&crate::askwait::waiting_said(&ctx.root, asker_holds(&env)));
-    match asking.ask(&line, asker_waits(&env)) {
+    match asking.ask(line, asker_waits(&env)) {
         Ok(Answer::Secret(said)) => Ok(said),
         Ok(Answer::No { why }) if why == NOTHING_ANSWERS || why == UNKNOWN_LINE => {
             Err(super::brokered::OLDER_APP.to_owned())

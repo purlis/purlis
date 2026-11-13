@@ -1001,6 +1001,9 @@ pub struct Chats {
     /// a live ask held for its chat whose Notice the throttle held back. Empty until the
     /// project's hooks listen.
     asks_moved: Arc<Mutex<Option<AsksMoved>>>,
+    /// Who writes a stop of a chat's into the event log (R-290): a held connection's refusal
+    /// once the chat has stopped waiting on it. Empty until the project's hooks record.
+    stops: Arc<Mutex<Option<StopWriter>>>,
     /// The project's Secret asks, which a start whose profile's credential its vault holds none
     /// of waits on (#5074, ADR 0109). Empty until the project is held.
     secret_asks: Mutex<Option<Arc<purlis_core::secrets::ask::Asks>>>,
@@ -1685,6 +1688,7 @@ impl Chats {
             kubeconfigs: Mutex::new(HashMap::new()),
             blocks: Arc::default(),
             asks_moved: Arc::new(Mutex::new(None)),
+            stops: Arc::new(Mutex::new(None)),
             secret_asks: Mutex::new(None),
             refused: Arc::new(Mutex::new(None)),
             refused_more: Arc::new(Mutex::new(None)),
@@ -3661,6 +3665,27 @@ impl Chats {
         &self.blocks
     }
 
+    /// Who writes a chat's stops into the event log from now on (R-290).
+    pub fn write_stops_with(&self, write: StopWriter) {
+        *lock(&self.stops) = Some(write);
+    }
+
+    /// **Chat `call.chat` made a tool call** (R-290, Q154), as its pre-tool hook line said: it
+    /// waits on its held connections no longer, so each one's ask is withdrawn and it is
+    /// written as one block, under the call it was held under.
+    pub fn called(&self, call: &purlis_core::hookwire::ToolCall) {
+        if !call.tool_hook.starts_with("pretooluse") {
+            return;
+        }
+        let (was, withdrawn) = self.blocks.called(call.chat, call.tool.as_deref());
+        for block in &withdrawn {
+            became_a_block(&self.stops, call.chat, was.clone(), block);
+        }
+        if !withdrawn.is_empty() {
+            self.asks_may_have_moved();
+        }
+    }
+
     /// Who hears, from now on, each host purlis's own proxy refuses a chat it wraps (#1663).
     pub fn tell_refusals_to(&self, hear: crate::hooks::Blocks) {
         *lock(&self.refused) = Some(hear);
@@ -5328,6 +5353,7 @@ impl Chats {
                     harness,
                     blocks: Arc::clone(&self.blocks),
                     moved: Arc::clone(&self.asks_moved),
+                    stops: Arc::clone(&self.stops),
                 },
                 self.project.clone(),
             )
@@ -9010,6 +9036,12 @@ pub type Narrowed = Arc<dyn Fn(u32) + Send + Sync + 'static>;
 /// What is told a project's asks may have moved (#1709).
 pub type AsksMoved = Arc<dyn Fn() + Send + Sync + 'static>;
 
+/// **What writes a stop of chat `number`'s into the event log** (R-290), made durable before
+/// it answers.
+pub type StopWriter = Arc<
+    dyn Fn(u32, purlis_core::eventlog::stops::Stop) -> std::io::Result<()> + Send + Sync + 'static,
+>;
+
 /// Who a chat's board of live asks tells (#1666), and as whom.
 struct Asking {
     hear: Arc<Mutex<Option<crate::hooks::Blocks>>>,
@@ -9020,6 +9052,8 @@ struct Asking {
     /// The blocks each chat of the project is held on: what the asks registry lists (#1709).
     blocks: Arc<crate::taskblocks::Blocks>,
     moved: Arc<Mutex<Option<AsksMoved>>>,
+    /// Who writes a refusal that became a block (R-290).
+    stops: Arc<Mutex<Option<StopWriter>>>,
 }
 
 /// **A chat's board of live asks** (#1666): what purlis's own proxy holds a connection on
@@ -9035,7 +9069,8 @@ struct Asking {
 ///   Notice, so the registry lists it and the window is told; it is answered there by
 ///   `allow_sandbox_block` and `keep_sandbox_block`, checked against what is held (#1538), one
 ///   ask at a time.
-/// - **A timeout** is kept in the network record. The Notice stays.
+/// - **A timeout** is kept in the network record, and the chat waits on it no longer: its ask
+///   is withdrawn and it is written as one block (R-290, Q154).
 /// - **Nobody to ask** (the project's hooks are not listening yet, or the chat has no number
 ///   yet, the first instant of its start): no Notice could be raised, so the connection is
 ///   refused at once, as before purlis asked live, never held its minute for an ask nobody sees.
@@ -9053,6 +9088,7 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::pl
         harness,
         blocks,
         moved,
+        stops,
     } = asking;
     let askable = {
         let (hear, whose) = (Arc::clone(&hear), Arc::clone(&whose));
@@ -9112,10 +9148,16 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::pl
                 }
             }
             Heard::TimedOut(target) => {
-                // It waits on the person no longer: it is held, timed out and answerable
-                // still, and goes as any block does (#6007).
-                if let Some(block) = live_block(&target) {
-                    blocks.gave_up(chat, &block, crate::sandboxing::now_secs());
+                // The chat waits on it no longer (R-290, Q154): its ask is withdrawn, then it
+                // is written as one block, never both at once. One the chat moved on from
+                // already is a block already.
+                if let Some(block) = live_block(&target)
+                    && blocks.stopped_waiting(chat, &block)
+                {
+                    became_a_block(&stops, chat, blocks.calling(chat), &block);
+                    if let Some(moved) = lock(&moved).clone() {
+                        told(Box::new(move || moved()));
+                    }
                 }
                 record(&target, purlis_core::sandboxblock::record::TIMED_OUT);
             }
@@ -9128,6 +9170,38 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::pl
             purlis_core::sandbox::grant::allowed_already(&root, host)
                 .map(purlis_core::sandbox::reach::By::from)
         }),
+    }
+}
+
+/// **Writes `block`, a held connection chat `chat` stopped waiting on, as one Sandbox block**
+/// (R-290, Q154), once its ask is withdrawn: the host, or the runner's service by its port, as
+/// a grant names it, and `tool`, the harness's name for the call it was held under (empty where
+/// no call was heard). Nothing a chat sent names either. A write that fails is said in the
+/// app's log.
+fn became_a_block(
+    stops: &Mutex<Option<StopWriter>>,
+    chat: u32,
+    tool: Option<String>,
+    block: &crate::taskblocks::HeldBlock,
+) {
+    use purlis_core::eventlog::stops::{Block, Source, Stop, Target};
+    let Some(write) = lock(stops).clone() else {
+        return;
+    };
+    let target = match block.what {
+        crate::sandboxing::GrantWhat::Port => Target::service(&block.target),
+        _ => Target::host(&block.target),
+    }
+    .ok();
+    let stop = Stop::Block(Block {
+        tool: tool.unwrap_or_default(),
+        source: Source::Sandbox,
+        qualifier: None,
+        target,
+        args: None,
+    });
+    if let Err(why) = write(chat, stop) {
+        tracing::warn!("purlis: chat {chat}'s sandbox block was not written ({why})");
     }
 }
 

@@ -313,30 +313,46 @@ fn a_held_ask_is_not_dropped_while_its_connection_waits() {
     );
 }
 
-/// #6007: a held connection that gave up with nobody's answer stays held, timed out and
-/// answerable, saying when, until it is answered, held again, or its chat ends.
+/// R-290 (Q154, which retires #6007's timed-out ask): a held connection the chat stopped
+/// waiting on is withdrawn from the registry, once: the first to say so is told it was an ask,
+/// and anyone after it, or for another chat, is told it was not.
 #[test]
-fn a_held_connection_that_gave_up_stays_timed_out_until_answered_held_again_or_ended() {
+fn a_held_connection_the_chat_stopped_waiting_on_is_withdrawn_once() {
     let blocks = Blocks::default();
-    let gave_up = held(&seen(4, "waits.example.com"));
-    blocks.heard_waiting(4, gave_up.clone());
+    let waits = held(&seen(4, "waits.example.com"));
+    let still = held(&seen(4, "still.example.com"));
+    blocks.heard_waiting(4, waits.clone());
+    blocks.heard_waiting(4, still.clone());
 
-    blocks.gave_up(4, &gave_up, 1_700_000_060);
-    assert!(blocks.holds(4, &gave_up));
-    assert_eq!(blocks.gave_up_at(4, &gave_up), Some(1_700_000_060));
-    assert_eq!(blocks.gave_up_at(5, &gave_up), None, "another chat's");
+    assert!(!blocks.stopped_waiting(5, &waits), "another chat's");
+    assert!(blocks.holds(4, &waits));
+    assert!(blocks.stopped_waiting(4, &waits), "an ask until now");
+    assert!(!blocks.holds(4, &waits), "withdrawn");
+    assert!(blocks.holds(4, &still), "the other still waits");
+    assert!(!blocks.stopped_waiting(4, &waits), "once");
 
-    blocks.heard_waiting(4, gave_up.clone());
-    assert_eq!(blocks.gave_up_at(4, &gave_up), None, "held again: Expiring");
+    blocks.heard_waiting(4, waits.clone());
+    let (_, withdrawn) = blocks.called(4, Some("Bash"));
+    assert_eq!(
+        withdrawn,
+        [still, waits.clone()],
+        "its next call withdraws each"
+    );
+    assert!(!blocks.stopped_waiting(4, &waits), "a block already");
+}
 
-    blocks.gave_up(4, &gave_up, 1_700_000_200);
-    blocks.answered(4, &gave_up);
-    assert_eq!(blocks.gave_up_at(4, &gave_up), None, "answered");
+/// #1903's rule on the registry (T1-09): a named refusal that follows the same refusal
+/// unnamed replaces it, so the chat has one ask for it, never a second.
+#[test]
+fn a_named_held_refusal_replaces_the_same_refusal_unnamed() {
+    let blocks = Blocks::default();
+    let named = held(&seen(4, "api.example.com"));
+    let unnamed = HeldBlock::unnamed_host(&named.operation, &named.kind);
+    blocks.heard(4, unnamed.clone());
+    blocks.heard(5, unnamed.clone());
 
-    blocks.heard_waiting(4, gave_up.clone());
-    blocks.gave_up(4, &gave_up, 1_700_000_300);
-    blocks.ended(4);
-    assert_eq!(blocks.gave_up_at(4, &gave_up), None, "its chat ended");
+    blocks.heard_waiting(4, named.clone());
+    assert_eq!(blocks.every(), [(4, named), (5, unnamed)]);
 }
 
 /// #1709: a burst of held asks keeps each of them, past the hosts one Notice lists, up to as

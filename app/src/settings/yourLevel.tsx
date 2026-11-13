@@ -29,13 +29,13 @@ export const LEVELS = ["on", "floor", "off"] as const;
 /** What each level is called here, as on a chat's tab. */
 export const LEVEL_SAID: Readonly<Record<(typeof LEVELS)[number], string>> = {
   on: "Full sandbox",
-  floor: "Floor",
+  floor: "Basic sandbox",
   off: "No sandbox",
 };
 
 /** What the group says above its rows. */
 export function yourLevelHelp(file: string): string {
-  return `How much the sandbox holds for your chats in this project, on this machine only. Kept in ${file}, never in a committed file. A chat takes it at its next start; a chat already running keeps the level it started with. A level set here counts as yours; a lower one written into the file any other way waits for your Confirm below, and a chat starts at what you confirmed, or the project's own level, until then. Full sandbox is the project's hosts, folders and Allow asks. Floor reaches every host and folder, but never a vault's files or a file a program runs later: it is where a chat starts when the project has not turned the full sandbox on. Floor starts the floor even where the project has turned the full sandbox on, and Full sandbox starts it even where the project has not. A level lower than the project's own, written into the file any other way, waits for your Confirm. No sandbox holds nothing: a chat can read any file on disk, a plain-file vault's included, and its tab says no sandbox — your setting.`;
+  return `How much the sandbox holds for your chats in this project, on this machine only. Kept in ${file}, never in a committed file. A chat takes it at its next start; a chat already running keeps the level it started with. A level set here counts as yours; a lower one written into the file any other way waits for your Confirm below, and a chat starts at what you confirmed, or the project's own level, until then. Full sandbox is the project's hosts, folders and Allow asks. Basic sandbox reaches every host and folder, but never a vault's files or a file a program runs later: it is where a chat starts when the project has not turned the full sandbox on. Basic sandbox starts a chat in the basic sandbox even where the project has turned the full sandbox on, and Full sandbox starts it in the full sandbox even where the project has not. A level lower than the project's own, written into the file any other way, waits for your Confirm. No sandbox holds nothing: a chat can read any file on disk, a plain-file vault's included, and its tab says no sandbox — your setting.`;
 }
 
 /**
@@ -252,12 +252,13 @@ export function levelsWaitingRow(plane: PlaneId, text: string): LiveSetting[] {
 /**
  * **The level a chat here starts at where you chose none** (#2071), as the core said it: the full
  * sandbox where the project turned it on or its `policy = "never"` (or a policy on this machine)
- * holds it, no sandbox where you accepted the team's off, and the floor otherwise. `undefined`
+ * holds it, no sandbox where you accepted the team's off, and the basic sandbox otherwise. `undefined`
  * until the core has said.
  */
 export function projectLevelSaid(sandbox: SandboxState | undefined): string | undefined {
   if (sandbox === undefined) return undefined;
   if (sandbox.level_held != null) return "full sandbox";
-  if (sandbox.team_off != null) return sandbox.team_off.answer === true ? "no sandbox" : "floor";
-  return sandbox.on ? "full sandbox" : "floor";
+  if (sandbox.team_off != null)
+    return sandbox.team_off.answer === true ? "no sandbox" : "basic sandbox";
+  return sandbox.on ? "full sandbox" : "basic sandbox";
 }

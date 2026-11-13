@@ -3992,6 +3992,24 @@ impl Planes {
                 }
             })
         });
+        // A held connection a chat stopped waiting on is one block in the event log (R-290,
+        // Q154), and a chat's next tool call is when it stops waiting. Weak for the handoff's
+        // reason.
+        held.chats().write_stops_with({
+            let weak = Arc::downgrade(&held);
+            Arc::new(move |chat, stop| match weak.upgrade() {
+                Some(strong) => strong.hooks.record_stop(chat, stop),
+                None => Ok(()),
+            })
+        });
+        held.hooks.tell_calls_to({
+            let weak = Arc::downgrade(&held);
+            Arc::new(move |call| {
+                if let Some(strong) = weak.upgrade() {
+                    strong.chats().called(call);
+                }
+            })
+        });
         // purlis's word on a chat's held connections (#1666) is handed to its next turn on
         // the road the person's words take: the app's memory, never a file. Weak for the
         // handoff's reason.

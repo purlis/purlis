@@ -22,8 +22,9 @@
  * Expiring ask, or the one that blocks most, or the longest wait), and each chat's other asks
  * keep their own row after it.
  *
- * **In any project** (decision 6, #1921): Asks lists every open project's asks, so one row may
- * hold chats of several projects, each ask answered in its own (`Placed.plane`).
+ * **Within the scope in view** (ADR 0121, amended 2026-11-12, decision 8, #6346): only the asks
+ * the scope picked lists are grouped, so Allow for all never answers an ask the person cannot
+ * see. `Inbox.tsx` hands it the listed asks alone.
  *
  * Pure: no commands and no markup. `Inbox.tsx` draws a group with `AskDecision`.
  */

@@ -185,6 +185,7 @@ mod every_shipped_skill_names_only_purlis;
 mod every_store_the_plane_format_names_has_a_tier;
 mod every_test_here_runs_without_the_shells_steering;
 mod every_third_party_call_is_listed_in_the_network_log;
+mod every_waiting_purlis_command_says_where_it_waits;
 mod five_unsafe_blocks;
 mod fixture_planes;
 mod forge_accounts;
