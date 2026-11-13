@@ -117,6 +117,8 @@ function Tab({
   narrow?: boolean;
   chosen: StudioSkill;
   tab: SkillPageTab;
+  /** Whether its text names skills bare, as hints (#5874). */
+  hints?: boolean;
 }) {
   return <StudioInPanel width={width} height={height} narrow={narrow} />;
 }
@@ -159,8 +161,28 @@ const meta = {
                 uncommitted: RUNS,
               },
             ],
-            uses: [],
-            used_by: [],
+            uses: args_.hints
+              ? [
+                  {
+                    said: "skills:notify",
+                    name: "notify",
+                    project: true,
+                    broken: false,
+                    hint: false,
+                    line: null,
+                  },
+                  {
+                    said: '"grilling"',
+                    name: "grilling",
+                    project: true,
+                    broken: false,
+                    hint: true,
+                    line: 14,
+                  },
+                ]
+              : [],
+            used_by: args_.hints ? ["landing-a-pr"] : [],
+            hinted_by: args_.hints ? ["report-intake"] : [],
             uses_cut: false,
             pinned_by: [],
             pins_refused: [],
@@ -250,6 +272,24 @@ export const Overview: Story = {
         "true",
       ),
     );
+  },
+};
+
+/**
+ * **A skill that names another bare** (#5874, `prototype/skill-hints` A): the hint's row carries
+ * the Hint mark, why on its own line and Write skills:grilling, which Tab reaches; a skill that
+ * names this one bare is marked too.
+ */
+export const OverviewHints: Story = {
+  args: { hints: true },
+  play: async ({ canvas }) => {
+    const write = await canvas.findByRole("button", { name: "Write skills:grilling" });
+    await expect(canvas.getByRole("list", { name: "Skills that name deploy" })).toHaveTextContent(
+      "It names deploy bare. Its own tab offers the fix.",
+    );
+    for (let step = 0; step < 60 && document.activeElement !== write; step++) await userEvent.tab();
+    await untilFocused(() => write, "Tab reaches Write skills:grilling");
+    expectFocusInSight();
   },
 };
 

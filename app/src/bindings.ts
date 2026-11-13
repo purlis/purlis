@@ -2662,6 +2662,12 @@ export const commands = {
 	 */
 	skillSave: (plane: PlaneId, level: SkillLevel, name: string, was: string, now: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_save", { plane, level, name, was, now })),
 	/**
+	 *  **Write skills:<name>** (#5874), on a hint's row of a skill's tab: every quote of the
+	 *  skill's `SKILL.md` that names `hint` bare beside the word skill is written as a reference
+	 *  (`purlis_skills::uses::written_as_reference`), saved as one edit of the text it holds now.
+	 */
+	skillHintWrite: (plane: PlaneId, level: SkillLevel, name: string, hint: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_hint_write", { plane, level, name, hint })),
+	/**
 	 *  **Write trigger tests** (#3925): starts the skill's trigger tests file from a template where
 	 *  it has none, committed as one change ([`verbs::start_trigger_tests`]). The window then opens
 	 *  the file to write in.
@@ -3187,15 +3193,16 @@ export const commands = {
 	skillSourceBrowse: (plane: PlaneId, source: SkillSource) => typedError<SourceBrowse, string>(__TAURI_INVOKE("skill_source_browse", { plane, source })),
 	/**
 	 *  **The install review** of `names` from a source into `level`, and the skills they refer to
-	 *  that `level` does not hold already.
+	 *  that `level` does not hold already, and those they hint at but each of `without`, which the
+	 *  person unticked (#5874).
 	 */
-	skillInstallReview: (plane: PlaneId, source: SkillSource, names: string[], level: SkillLevel) => typedError<InstallReview, string>(__TAURI_INVOKE("skill_install_review", { plane, source, names, level })),
+	skillInstallReview: (plane: PlaneId, source: SkillSource, names: string[], level: SkillLevel, without: string[]) => typedError<InstallReview, string>(__TAURI_INVOKE("skill_install_review", { plane, source, names, level, without })),
 	/**
 	 *  **The review of installing `names` from a source together** (#4024, Install all…): one review
 	 *  of the set into `level` and the skills they refer to that it does not hold already, those named
 	 *  that it holds already left out (#4153), or which of them fit one read.
 	 */
-	skillInstallSetReview: (plane: PlaneId, source: SkillSource, names: string[], level: SkillLevel) => typedError<InstallSetReview, string>(__TAURI_INVOKE("skill_install_set_review", { plane, source, names, level })),
+	skillInstallSetReview: (plane: PlaneId, source: SkillSource, names: string[], level: SkillLevel, without: string[]) => typedError<InstallSetReview, string>(__TAURI_INVOKE("skill_install_set_review", { plane, source, names, level, without })),
 	/**
 	 *  **What installing at `level` with `grant` asks of the project skills the reviewed skills
 	 *  refer to** (#4185, #4172): `already`, the references the review left as they are, each
@@ -3234,6 +3241,17 @@ export const commands = {
 	 */
 	skillUpdates: (plane: PlaneId) => typedError<SkillUpdates, string>(__TAURI_INVOKE("skill_updates", { plane })),
 	/**
+	 *  **The project's skill controls, read only** (#6031): the `[skill_policy]` its shared settings
+	 *  hold, and what it does to each of `origins`, the sources the window lists. Nothing while the
+	 *  flag is off.
+	 */
+	skillPolicy: (plane: PlaneId, origins: SourceOrigin[]) => typedError<SkillPolicy, string>(__TAURI_INVOKE("skill_policy", { plane, origins })),
+	/**
+	 *  **The skill acts this machine recorded** (#6031, SK-11): every install, update and removal of
+	 *  a skill from a source the audit wrote, newest first. Nothing while the flag is off.
+	 */
+	skillActs: (plane: PlaneId) => typedError<SkillActs, string>(__TAURI_INVOKE("skill_acts", { plane })),
+	/**
 	 *  **An update's review**: the installed skill `name` at `level` against its source's newest
 	 *  commit.
 	 */
@@ -3264,13 +3282,13 @@ export const commands = {
 	 *  **The install review** of `names` from an extension's source into `level`: the git source's
 	 *  review, and what it read held for the install.
 	 */
-	skillExtensionInstallReview: (plane: PlaneId, id: string, names: string[], level: SkillLevel) => typedError<InstallReview, string>(__TAURI_INVOKE("skill_extension_install_review", { plane, id, names, level })),
+	skillExtensionInstallReview: (plane: PlaneId, id: string, names: string[], level: SkillLevel, without: string[]) => typedError<InstallReview, string>(__TAURI_INVOKE("skill_extension_install_review", { plane, id, names, level, without })),
 	/**
 	 *  **The review of installing `names` from an extension's source together** (Install all…): one
 	 *  review, those named that the level holds already left out (#4153), what it read held for the
 	 *  install.
 	 */
-	skillExtensionInstallSetReview: (plane: PlaneId, id: string, names: string[], level: SkillLevel) => typedError<InstallSetReview, string>(__TAURI_INVOKE("skill_extension_install_set_review", { plane, id, names, level })),
+	skillExtensionInstallSetReview: (plane: PlaneId, id: string, names: string[], level: SkillLevel, without: string[]) => typedError<InstallSetReview, string>(__TAURI_INVOKE("skill_extension_install_set_review", { plane, id, names, level, without })),
 	/**
 	 *  **Installs what was reviewed** from an extension's source at `level`: the bytes its review
 	 *  read, never asked of the extension again.
@@ -12212,6 +12230,8 @@ export type OfferedSkill = {
 	 *  `None` where they were not read to browse, and its review reads them.
 	 */
 	marks: string[] | null,
+	/**  What the project's controls would refuse of installing it, before its review (#6031). */
+	refused: PolicyRefused | null,
 };
 
 /**
@@ -13517,6 +13537,23 @@ export type PluginOffShown = {
 	line: string,
 	/**  The command that puts it right, where one does. */
 	command: string | null,
+};
+
+/**  **Which of the controls refuses**, what a row's mark says (#6031). */
+export type PolicyKind = "blocked" | "not-allowed" | "too-young" | "undated" | "unread";
+
+/**
+ *  **What the controls would refuse, said before a review** (#6031): the core's sentence, and
+ *  when it can be taken where it is refused for its age alone.
+ */
+export type PolicyRefused = {
+	kind: PolicyKind,
+	why: string,
+	/**
+	 *  When it is old enough to take, in seconds since the epoch, where its source says when it
+	 *  was made.
+	 */
+	until: number | null,
 };
 
 /**  A pool as the person typed it: each limit left empty takes the default. */
@@ -15438,6 +15475,13 @@ export type ReviewSkill = {
 	description: string,
 	folder: string,
 	brought_by: string | null,
+	/**
+	 *  Whether [`Self::brought_by`] only names it bare, as a hint (#4510): the review says it
+	 *  comes along by a hint, and the person may untick it (#5874).
+	 */
+	brought_by_hint: boolean,
+	/**  The skills it names only bare, as hints, each once. */
+	hints: string[],
 	/**
 	 *  The skills it refers to that the level it lands in holds already (#4032): left as they
 	 *  are, not brought along.
@@ -17459,6 +17503,38 @@ export type SigningWaiting = {
 	why?: string | null,
 };
 
+/**  **One skill act this machine recorded** (#6031), as the audit wrote it: metadata only. */
+export type SkillAct = {
+	/**  When it was written, in seconds since the epoch. */
+	at: number | null,
+	act: SkillActKind,
+	skills: string[],
+	/**  The source, as an audit names it. */
+	source: string,
+	/**  The commit or revision. */
+	pin: string,
+	/**  The level, as a sentence names it. */
+	level: string,
+	by: SkillActBy,
+};
+
+/**  Where a recorded act was made: the person's own scope either way. */
+export type SkillActBy = 
+/**  In the Skill studio, in the window. */
+"window" | 
+/**  With `purlis skill` at a terminal, written by the session host. */
+"terminal";
+
+/**  One of the three skill acts an org's project audits (SK-11). */
+export type SkillActKind = "install" | "update" | "remove";
+
+/**  **The skill acts this machine recorded**, newest first, at most [`MOST_ACTS`]. */
+export type SkillActs = {
+	acts: SkillAct[],
+	/**  Whether there are older ones than those listed. */
+	more: boolean,
+};
+
 /**
  *  A skill a chat would have loaded that could not be loaded (SK-8): the core's `Broken`, for
  *  the window. purlis-core keeps no UI typing crate, so its level is the studio's `Level`.
@@ -17595,6 +17671,8 @@ export type SkillDetails = {
 	uses: SkillUse[],
 	/**  The project's skills that name it. */
 	used_by: string[],
+	/**  The project's skills that name it only bare, as a hint (#4510, #5874). */
+	hinted_by: string[],
 	/**  Whether the project holds more skills than the graph reads. */
 	uses_cut: boolean,
 	/**
@@ -18103,6 +18181,33 @@ export type SkillPinsTogether = {
 };
 
 /**
+ *  **The project's skill controls** (#6031): where they are set, what they are, and what they do
+ *  to each source asked about.
+ */
+export type SkillPolicy = {
+	/**  The shared settings file, as the project spells it: `charter.toml` or `purlis.toml`. */
+	file: string,
+	state: SkillPolicyState,
+	sources: SourcePolicy[],
+};
+
+/**  **The project's controls, as its shared settings hold them.** */
+export type SkillPolicyState = 
+/**  The shared settings hold no `[skill_policy]`: no controls, and nothing audited. */
+{ kind: "none" } | 
+/**
+ *  The table cannot be read, or this machine's file holds one too: every install and update
+ *  is refused until it is fixed, and why.
+ */
+{ kind: "refused"; why: string } | 
+/**  The table, each entry as a sentence names it. */
+{ kind: "set"; 
+/**  `None` where it holds no allow list: every source not blocked is allowed. */
+allow: string[] | null; block: string[]; min_age_days: number; exempt: string[]; 
+/**  What it does, in one line: what Sources says above its list. */
+said: string };
+
+/**
  *  **How a chat's router did on its latest prompt** (#4297, ADR 0102 §6): the core's routing
  *  record of it, as the chat's tab and the studio say it. No word of the prompt.
  */
@@ -18330,6 +18435,11 @@ export type SkillUpdateOffer = {
 	pinned: SourceCommit,
 	newer: SourceCommit,
 	edited: boolean,
+	/**
+	 *  What the project's controls would refuse of taking it, before its review (#6031): with
+	 *  when it can be taken, where it is too young.
+	 */
+	refused: PolicyRefused | null,
 };
 
 /**  An installed skill whose source could not be asked. */
@@ -18355,6 +18465,16 @@ export type SkillUse = {
 	project: boolean,
 	/**  Whether no skill has that name. */
 	broken: boolean,
+	/**
+	 *  Whether the text names it only bare, beside the word skill: a hint (#4510), which the tab
+	 *  marks and offers to write as `skills:<name>` (#5874).
+	 */
+	hint: boolean,
+	/**
+	 *  The first line of the copy the tab shows first that names it bare, from 1, where it is a
+	 *  hint there.
+	 */
+	line: number | null,
 };
 
 /**  Who uses a skill, as Delete shows before it deletes. */
@@ -18570,6 +18690,17 @@ export type SourceOffering =
  *  or an extension's source, by the extension's id; `label` as a person reads it either way.
  */
 export type SourceOrigin = { kind: "git"; remote: SourceRemote; label: string } | { kind: "extension"; id: string; label: string };
+
+/**  **What the controls do to one source** the window lists (#6031). */
+export type SourcePolicy = {
+	origin: SourceOrigin,
+	/**  Which of them refuses it, where one does. */
+	kind: PolicyKind | null,
+	/**  Why they do not allow every skill of it, in the core's sentence; `None` where they do. */
+	refused: string | null,
+	/**  The skills of it they do allow, where they allow some alone. */
+	only: string[],
+};
 
 /**  A repository and the branch read from it. */
 export type SourceRemote = {
