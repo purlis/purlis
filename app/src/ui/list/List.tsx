@@ -435,7 +435,6 @@ export function ListOption<T extends object>({
   );
 }
 
-/** **A group of options under its name**: the name is the section's `header` part. */
 /**
  * **A group's header, as a part** (#6482): its scope and part, the section label it wears, and
  * whether it is named by data (a file's, a day's), which `list.css` writes as the name is. A
@@ -451,6 +450,7 @@ export function groupHeader(scope: "list" | "tree", named: boolean) {
   } as const;
 }
 
+/** **A group of options under its name**: the name is the section's `header` part. */
 export function ListSection<T extends object>({
   title,
   named = false,

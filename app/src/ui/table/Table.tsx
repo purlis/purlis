@@ -33,6 +33,7 @@
  * the pointer's ground, a chosen row's wash and the keyboard's ring, drawn inside the row or the
  * cell, change a colour, never a size.
  */
+import clsx from "clsx";
 import {
   createContext,
   useCallback,
@@ -85,7 +86,7 @@ const Drawn = createContext({ menus: false });
  */
 export function headPart(className?: string) {
   return {
-    className: className === undefined ? "ui-text-label" : `ui-text-label ${className}`,
+    className: clsx("ui-text-label", className),
     "data-scope": "table",
     "data-part": "head",
   } as const;
