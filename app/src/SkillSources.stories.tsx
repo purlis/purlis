@@ -19,7 +19,12 @@ import { studio } from "./skillsListing.testkit";
 import { updateOffer, updateReview } from "./skillUpdates.testkit";
 import { extensionKey } from "./studioSources";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
-import { expectFocusInSight, tabInto, untilFocusWithin } from "./stories.testkit";
+import {
+  expectFocusInSight,
+  scrollIntoItsPane,
+  tabInto,
+  untilFocusWithin,
+} from "./stories.testkit";
 
 const commit = (c: string) => ({ id: c.repeat(40), short: c.repeat(7) });
 
@@ -757,8 +762,12 @@ export const InstallReviewHint: Story = {
     });
     await waitFor(() => expect(left).not.toBeChecked());
     await expect(within(review).queryByTestId("reviewed-test-driven-development")).toBeNull();
-    // The picture shows where the hinted skill waits to be ticked back.
-    left.scrollIntoView({ block: "center" });
+    // The review is read again without it: once it says so, the picture shows where the hinted
+    // skill waits to be ticked back.
+    await waitFor(() =>
+      expect(within(review).getByTestId("install-commit")).toHaveTextContent("1 skill"),
+    );
+    scrollIntoItsPane(left);
   },
 };
 
