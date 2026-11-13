@@ -30,6 +30,8 @@ const COUNTED: FinishedTurn[] = [
 ];
 
 const WAITING: ChatStates = { ...nothingKnown, bySession: { 3: "waiting" }, movedAt: { 3: 7 } };
+/** Chat 3, its turn ended: one store, as a project holds one. */
+const CHATS = fixedChats(WAITING);
 
 let asked: unknown[] = [];
 
@@ -53,7 +55,7 @@ afterEach(() => {
 });
 
 function Mine() {
-  const turns = useFinishedTurns(PLANE, fixedChats(WAITING));
+  const turns = useFinishedTurns(PLANE, CHATS);
   const rows = finishUpdates(turns, () => "steward 3").map((one) => ({
     update: { ...one, read: false },
     dismiss: () => undefined,

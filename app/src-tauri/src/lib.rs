@@ -56,6 +56,8 @@ mod clipath;
 mod clonevouch;
 mod createproject;
 mod curation;
+// Each chat's finishes, for its finish rows (R-241, R-178, T1-31).
+mod finishedturns;
 mod layout;
 mod mergeholds;
 mod pane_links;

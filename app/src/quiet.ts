@@ -10,7 +10,7 @@
  * schedule. While Quiet the ✋ still counts and nothing else in the window changes.
  *
  * **When Quiet ends, one summary heads Asks** ({@link QuietSummaryOf}): "While you were quiet:
- * 3 asks, 2 finished, 1 failed", each part a link, until all of it has been seen (#6002). The
+ * 3 asks, 2 finished, 1 failed, 1 stopped after a block" (R-182), each part a link, until all of it has been seen (#6002). The
  * core says what came in while it held (`Ended`); the updates of the same span are counted here.
  *
  * Not a "focus mode": that name is #2921's, the window with its rail and bars put away.
@@ -25,6 +25,7 @@ import {
   type Shown,
 } from "./bindings";
 import { listen } from "./here";
+import { stoppedAfterBlock } from "./finishRows";
 import { askSeenKey, updateSeenKey } from "./seenRows";
 
 /** The event the core sends every window when Quiet starts or ends (`QUIET_CHANGED`). */
@@ -122,6 +123,8 @@ export type QuietSummaryOf = {
   finished: readonly InboxUpdate[];
   /** The tasks that failed while it held, not seen. */
   failed: readonly InboxUpdate[];
+  /** The turns that ended after a block still unresolved while it held, not seen (R-182). */
+  blocked: readonly InboxUpdate[];
 };
 
 /**
@@ -136,7 +139,8 @@ export function quietSummaryOf(
   updates: readonly InboxUpdate[] | undefined,
   isNew: (key: string) => boolean,
 ): QuietSummaryOf {
-  if (ended === null || ended === undefined) return { asks: [], finished: [], failed: [] };
+  if (ended === null || ended === undefined)
+    return { asks: [], finished: [], failed: [], blocked: [] };
   const came = new Set(ended.asks.filter((one) => one.plane === plane).map((one) => one.key));
   const inIt = (one: InboxUpdate) =>
     one.at >= ended.from && one.at <= ended.to && !one.read && isNew(updateSeenKey(one.key));
@@ -144,6 +148,7 @@ export function quietSummaryOf(
     asks: (asks ?? []).filter((ask) => came.has(ask.ask) && isNew(askSeenKey(ask))),
     finished: (updates ?? []).filter((one) => one.kind === "task-done" && inIt(one)),
     failed: (updates ?? []).filter((one) => one.kind === "task-failed" && inIt(one)),
+    blocked: (updates ?? []).filter((one) => stoppedAfterBlock(one) && inIt(one)),
   };
 }
 
@@ -153,11 +158,13 @@ export type QuietPart = { part: keyof QuietSummaryOf; says: string };
 /** **A summary's parts, in words**, those with nothing left out: "3 asks", "2 finished". */
 export function quietPartsSaid(summary: QuietSummaryOf): QuietPart[] {
   const parts: QuietPart[] = [];
-  const { asks, finished, failed } = summary;
+  const { asks, finished, failed, blocked } = summary;
   if (asks.length > 0)
     parts.push({ part: "asks", says: `${asks.length} ${asks.length === 1 ? "ask" : "asks"}` });
   if (finished.length > 0) parts.push({ part: "finished", says: `${finished.length} finished` });
   if (failed.length > 0) parts.push({ part: "failed", says: `${failed.length} failed` });
+  if (blocked.length > 0)
+    parts.push({ part: "blocked", says: `${blocked.length} stopped after a block` });
   return parts;
 }
 

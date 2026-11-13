@@ -94,6 +94,11 @@ pub enum Kind {
     /// A working chat may not be getting anywhere (#6014, ADR 0121 decision 19): drawn while it
     /// reads Stuck?, a Should-know item.
     Stuck,
+    /// A chat's turn ended (T1-31, R-241): its finish row, which says the blocks still
+    /// unresolved at its end (R-178), and is never a failure (R-180).
+    TurnFinished,
+    /// A chat's own run ended failed (T1-31, R-241).
+    ChatFailed,
 }
 
 /// One update, as it is kept.

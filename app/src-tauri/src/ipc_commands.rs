@@ -562,6 +562,7 @@ macro_rules! app_commands {
                 taskbrief::task_brief,
                 activity::activity,
                 activity::activity_chat,
+                finishedturns::finished_turns,
                 questiontrail::question_trail,
                 chatlog::chat_log,
                 dispatched::task_question,
