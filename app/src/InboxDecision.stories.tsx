@@ -157,6 +157,21 @@ const LOOPING: Shown = {
   chain: ["steward 8"],
 };
 
+/** A chat paused at 3 blocks on the same target (T1-36, R-216): Tell it to stop trying, the lead,
+ *  then Let it keep trying and Stop chat. */
+const BLOCK_LOOP: Shown = {
+  ...LOOPING,
+  session: 9,
+  ask: "paused:9",
+  says: "steward 9 was blocked 3 times on the same thing. Let it keep trying?",
+  options: [
+    { id: "stop-trying", label: "Tell it to stop trying", allows: false, preselected: true },
+    { id: "keep-trying", label: "Let it keep trying", allows: true },
+    { id: "stop", label: "Stop chat", allows: false },
+  ],
+  chain: ["steward 9"],
+};
+
 /** A permission that deletes a folder (#6178): high risk, asked once more. */
 const DELETE: Shown = {
   ...PUSH,
@@ -207,6 +222,7 @@ const ASKS = {
   PUSH,
   BUDGET,
   LOOPING,
+  BLOCK_LOOP,
   DELETE,
   VAULT_FILL,
 } as const;
@@ -443,6 +459,28 @@ export const ALoopOnItsRow: Story = {
     await userEvent.tab();
     await untilFocused(rowIn(canvasElement), "Tab lands on the row");
     for (const name of ["It's fine, continue", "Stop"]) {
+      await userEvent.keyboard("{ArrowRight}");
+      await untilFocused(() => canvas.getByRole("button", { name }), `→ reaches ${name}`);
+      expectFocusInSight();
+    }
+  },
+};
+
+/** **A block loop's pause, on its row** (T1-36, R-216, R-217): the chat and the count, then Tell it
+ *  to stop trying, Let it keep trying and Stop chat. The lead is the primary answer, where ⌘⇧I
+ *  lands; → walks the three in that order. */
+export const ABlockLoopOnItsRow: Story = {
+  args: { ask: "BLOCK_LOOP" },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      canvas.getByText("steward 9 was blocked 3 times on the same thing. Let it keep trying?"),
+    ).toBeVisible();
+    const lead = canvas.getByRole("button", { name: "Tell it to stop trying" });
+    await expect(lead).toHaveAttribute("data-variant", "primary");
+    await userEvent.tab();
+    await untilFocused(rowIn(canvasElement), "Tab lands on the row");
+    for (const name of ["Tell it to stop trying", "Let it keep trying", "Stop chat"]) {
       await userEvent.keyboard("{ArrowRight}");
       await untilFocused(() => canvas.getByRole("button", { name }), `→ reaches ${name}`);
       expectFocusInSight();
