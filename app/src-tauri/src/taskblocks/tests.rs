@@ -591,7 +591,11 @@ fn a_post_tool_ask_is_withdrawn_as_a_block_at_the_chats_next_turn() {
     blocks.heard(4, service.clone());
     let live = held(&seen(4, "api.example.com"));
     blocks.heard_waiting(4, live.clone());
-    let read_back = write_to("/p/read-back");
+    // Of a kind of its own, so it takes no other's Notice.
+    let read_back = HeldBlock {
+        kind: "toolchain-cache".to_owned(),
+        ..write_to("/p/cache")
+    };
     blocks.heard_quietly(4, read_back.clone());
     let elsewhere = write_to("/p/elsewhere");
     blocks.heard(5, elsewhere.clone());

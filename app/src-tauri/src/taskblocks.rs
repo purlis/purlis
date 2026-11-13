@@ -149,8 +149,10 @@ pub struct Blocks {
     /// board had then (#1663): what the chat that asked for it is told it waits on.
     noticed: Mutex<HashMap<u32, u32>>,
     /// When each block held was first heard, in seconds since 1970 (#1700): what the asks
-    /// registry orders the longest waiting first by. Kept beside `held`, only for what it holds.
-    since: Mutex<HashMap<u32, Vec<(HeldBlock, u64)>>>,
+    /// registry orders the longest waiting first by. Kept beside `held`, only for what it holds,
+    /// with the call it refused as it was heard, which its block names once its ask leaves
+    /// (Q254).
+    since: Mutex<HashMap<u32, Vec<(HeldBlock, u64, Refused)>>>,
     /// The blocks of each open chat whose connection is held now, waiting on the person
     /// (#1709): never pushed out by what is heard after them, until they no longer wait.
     waiting: Mutex<HashMap<u32, Vec<HeldBlock>>>,
@@ -165,15 +167,62 @@ pub struct Blocks {
     left: Mutex<Option<Left>>,
 }
 
-/// **Who is told a held refusal left its ask as a block** (T1-10, Q154): its chat, the block,
-/// the tool of the chat's latest call by the harness's name, and who reported it.
-pub type Left = std::sync::Arc<dyn Fn(u32, &HeldBlock, Option<String>, Reported) + Send + Sync>;
+/// **Who is told a held refusal left its ask as a block** (T1-10, Q154): its chat, and the block
+/// it left as.
+pub type Left = std::sync::Arc<dyn Fn(u32, &LeftBlock) + Send + Sync>;
+
+/// **A held refusal whose ask left as a block** (T1-10, Q154, Q254).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LeftBlock {
+    pub block: HeldBlock,
+    /// The call it refused, as it was when the refusal was heard (Q254): never the chat's latest
+    /// call as the ask left.
+    pub refused: Refused,
+    /// Who reported it (Q235).
+    pub reported: Reported,
+    /// How its ask left, which says whether its block counts toward the block loop.
+    pub how: Leaving,
+}
+
+/// **The call a refusal was of** (Q254), kept as the refusal is heard.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Refused {
+    /// Its tool, by the harness's name, where a call was heard.
+    pub tool: Option<String>,
+    /// The harness's id for it, where its hook line named one: the block loop counts a call
+    /// once (Q253).
+    pub call: Option<String>,
+}
+
+/// **How a held refusal's ask left as a block** (T1-10, Q254).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Leaving {
+    /// A newer ask of its kind took its place, or pushed it out.
+    Replaced,
+    /// The chat began its next turn after the one that raised it (Q254).
+    NextTurn,
+    /// The person kept it blocked.
+    KeptBlocked,
+    /// Its chat ended.
+    ChatEnded,
+}
+
+impl Leaving {
+    /// **Whether its block counts toward the block loop** (Q254): never one the person's Keep
+    /// blocked or the chat's end wrote, which is the person's answer or the chat's close, not a
+    /// chat looping.
+    pub fn counts(self) -> bool {
+        matches!(self, Self::Replaced | Self::NextTurn)
+    }
+}
 
 /// **What a chat's hook lines said of its calls** (R-290, Q240), for the connections it holds.
 #[derive(Default)]
 struct Calls {
     /// The tool of its latest pre-tool call, by the harness's name for it.
     latest: Option<String>,
+    /// The harness's id for that call, where its line named one.
+    latest_call: Option<String>,
     /// The hash of that call's arguments, as its hook sent it.
     latest_args: Option<String>,
     /// Its calls open now, each heard by its pre-tool line with an id, and no post-tool line yet.
@@ -266,6 +315,8 @@ impl Blocks {
         // is, as a block, decided by (T1-10).
         let was_quiet = self.quiet().get(&session).cloned().unwrap_or_default();
         let waited = self.waiting().get(&session).cloned().unwrap_or_default();
+        // The call it refused, as it is heard: what its block names once its ask leaves (Q254).
+        let refused = self.latest(session);
         // Heard of a command the chat ran: no longer the quiet line of a read (#1884).
         self.loud(session, |one| {
             if block.names_a_host() {
@@ -323,30 +374,33 @@ impl Blocks {
             mine.retain(|one| !one.shares_a_notice(&oldest));
         }
         // Each ask a newer one took the place of, or pushed out, left: a block now (T1-10).
-        let gone: Vec<(HeldBlock, Reported)> = before
+        let gone: Vec<HeldBlock> = before
             .into_iter()
             .filter(|one| !mine.contains(one) && !was_quiet.contains(one))
-            .map(|one| {
-                let reported = reported_of(&waited, &one);
-                (one, reported)
-            })
             .collect();
         let mut since = self.since();
         let was = since.remove(&session).unwrap_or_default();
-        let kept: Vec<(HeldBlock, u64)> = mine
+        // A block heard again keeps when it was first heard, and the call it was first heard of.
+        let kept: Vec<(HeldBlock, u64, Refused)> = mine
             .iter()
-            .map(|one| {
-                let first = was
-                    .iter()
-                    .find(|(seen, _)| seen == one)
-                    .map_or(at, |(_, first)| *first);
-                (one.clone(), first)
+            .map(|one| match was.iter().find(|(seen, ..)| seen == one) {
+                Some((_, first, first_refused)) => (one.clone(), *first, first_refused.clone()),
+                None => (one.clone(), at, refused.clone()),
             })
             .collect();
         since.insert(session, kept);
         drop(since);
         drop(held);
-        self.left_as_blocks(session, gone, self.latest_tool(session));
+        let gone = gone
+            .into_iter()
+            .map(|one| LeftBlock {
+                refused: refused_in(&was, &one),
+                reported: reported_of(&waited, &one),
+                block: one,
+                how: Leaving::Replaced,
+            })
+            .collect();
+        self.left_as_blocks(session, gone);
     }
 
     fn quiet(&self) -> std::sync::MutexGuard<'_, HashMap<u32, Vec<HeldBlock>>> {
@@ -560,6 +614,7 @@ impl Blocks {
         let agent = call.agent.as_deref();
         mine.latest.clone_from(&call.tool);
         mine.latest_args.clone_from(&call.args);
+        mine.latest_call.clone_from(&call.call);
         let mut moved_on = Vec::new();
         for under in &mut mine.held {
             if !under.given_up && under.moved_on_by(agent) {
@@ -598,7 +653,11 @@ impl Blocks {
     /// an ask beside its block.
     pub fn echoes(&self, session: u32, block: &HeldBlock) -> bool {
         // #1903 in the other order (T1-10): a host unnamed, heard while the same refusal named
-        // waits on the person, is that ask's echo, never a second ask beside it.
+        // waits on the person, is that ask's echo, never a second ask beside it. A known limit
+        // (T1-10's review): an unnamed line names no host to tell two refusals apart, so one of
+        // a different host, heard while a named host of the same operation and kind waits, is
+        // taken for that ask's echo and dropped, with no ask and no block of its own. The named
+        // ask it was taken for stays, and leaves as one block.
         let unnamed = block.what == GrantWhat::Host && block.target.is_empty();
         if unnamed
             && self.waiting().get(&session).is_some_and(|mine| {
@@ -638,7 +697,8 @@ impl Blocks {
         }
         let quiet = self.is_quiet(session, block);
         let waited = self.waiting().get(&session).cloned().unwrap_or_default();
-        let mut tool = self.latest_tool(session);
+        // The call it refused, as it was heard (Q254), never the chat's latest call now.
+        let mut refused = self.refused_of(session, block);
         // A held connection kept blocked: written as T1-09 writes one, so the post-tool line
         // of the same refusal from the call it was held under is its echo, never a second ask
         // and a second block (Q240). Taken before the answer forgets it.
@@ -651,7 +711,10 @@ impl Blocks {
                 .position(|one| one.block == *block)
                 .map(|at| mine.held.remove(at));
             if let Some(held_under) = under.as_ref().and_then(Under::tool) {
-                tool = Some(held_under);
+                refused = Refused {
+                    tool: Some(held_under),
+                    call: under.as_ref().and_then(Under::call),
+                };
             }
             mine.written.retain(|one| one.block != *block);
             mine.written.push(under.unwrap_or_else(|| Under {
@@ -667,22 +730,78 @@ impl Blocks {
         }
         self.answered(session, block);
         if !quiet {
-            let reported = reported_of(&waited, block);
-            self.left_as_blocks(session, vec![(block.clone(), reported)], tool);
+            self.left_as_blocks(
+                session,
+                vec![LeftBlock {
+                    block: block.clone(),
+                    refused,
+                    reported: reported_of(&waited, block),
+                    how: Leaving::KeptBlocked,
+                }],
+            );
         }
         true
     }
 
-    /// The tool of chat `session`'s latest call, by the harness's name, where one was heard.
-    pub fn latest_tool(&self, session: u32) -> Option<String> {
+    /// **Chat `session` began a new turn** (Q254): each ask its hook line raised in a turn before
+    /// this one, once the refused call came back (a write, a service or socket on this machine,
+    /// a host), that nobody answered, is withdrawn as one block, as a held connection's ask is
+    /// once its chat moves on (Q240). Not a connection held now, which its own timeout or the
+    /// chat's next call ends, nor a quiet line no ask lists. Whether any was withdrawn.
+    pub fn turn_began(&self, session: u32) -> bool {
+        let waiting = self.waiting().get(&session).cloned().unwrap_or_default();
+        let quiet = self.quiet().get(&session).cloned().unwrap_or_default();
+        let asked: Vec<HeldBlock> = self
+            .held()
+            .get(&session)
+            .map(|mine| {
+                mine.iter()
+                    .filter(|one| !waiting.contains(one) && !quiet.contains(one))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+        let gone: Vec<LeftBlock> = asked
+            .into_iter()
+            .map(|block| {
+                let refused = self.refused_of(session, &block);
+                self.answered(session, &block);
+                LeftBlock {
+                    block,
+                    refused,
+                    reported: Reported::ByItsHook,
+                    how: Leaving::NextTurn,
+                }
+            })
+            .collect();
+        let any = !gone.is_empty();
+        self.left_as_blocks(session, gone);
+        any
+    }
+
+    /// **The call chat `session`'s latest pre-tool line named**: its tool, by the harness's
+    /// name, and its id, where one was heard.
+    pub fn latest(&self, session: u32) -> Refused {
         self.calls()
             .get(&session)
-            .and_then(|mine| mine.latest.clone())
+            .map(|mine| Refused {
+                tool: mine.latest.clone(),
+                call: mine.latest_call.clone(),
+            })
+            .unwrap_or_default()
+    }
+
+    /// The call `block` of chat `session` refused, as it was heard (Q254).
+    fn refused_of(&self, session: u32, block: &HeldBlock) -> Refused {
+        self.since()
+            .get(&session)
+            .map(|mine| refused_in(mine, block))
+            .unwrap_or_default()
     }
 
     /// Tells who listens ([`Self::when_left`]) of each of chat `session`'s asks in `gone`, which
-    /// left as a block, `tool` the chat's latest call. Never under a lock of these.
-    fn left_as_blocks(&self, session: u32, gone: Vec<(HeldBlock, Reported)>, tool: Option<String>) {
+    /// left as a block. Never under a lock of these.
+    fn left_as_blocks(&self, session: u32, gone: Vec<LeftBlock>) {
         if gone.is_empty() {
             return;
         }
@@ -694,8 +813,8 @@ impl Blocks {
         let Some(left) = left else {
             return;
         };
-        for (block, reported) in gone {
-            left(session, &block, tool.clone(), reported);
+        for one in &gone {
+            left(session, one);
         }
     }
 
@@ -723,7 +842,7 @@ impl Blocks {
         }
         let mut since = self.since();
         if let Some(mine) = since.get_mut(&session) {
-            mine.retain(|(one, _)| one != block);
+            mine.retain(|(one, ..)| one != block);
             if mine.is_empty() {
                 since.remove(&session);
             }
@@ -733,22 +852,23 @@ impl Blocks {
     /// Chat `session` ended: nothing is held for it, and each ask it still had is a block now
     /// (T1-10), but a quiet line no ask listed.
     pub fn ended(&self, session: u32) {
-        let tool = self.latest_tool(session);
         let held = self.held().remove(&session).unwrap_or_default();
         let quiet = self.quiet().remove(&session).unwrap_or_default();
         let waited = self.waiting().remove(&session).unwrap_or_default();
         self.noticed().remove(&session);
-        self.since().remove(&session);
+        let since = self.since().remove(&session).unwrap_or_default();
         self.calls().remove(&session);
         let gone = held
             .into_iter()
             .filter(|one| !quiet.contains(one))
-            .map(|one| {
-                let reported = reported_of(&waited, &one);
-                (one, reported)
+            .map(|one| LeftBlock {
+                refused: refused_in(&since, &one),
+                reported: reported_of(&waited, &one),
+                block: one,
+                how: Leaving::ChatEnded,
             })
             .collect();
-        self.left_as_blocks(session, gone, tool);
+        self.left_as_blocks(session, gone);
     }
 
     fn noticed(&self) -> std::sync::MutexGuard<'_, HashMap<u32, u32>> {
@@ -768,6 +888,16 @@ impl Blocks {
     pub fn waits_on_a_notice(&self, session: u32, turn: u32, waiting: bool) -> bool {
         waiting && self.noticed().get(&session) == Some(&turn)
     }
+}
+
+/// The call `block` refused, as `since` kept it when the refusal was heard (Q254); none kept,
+/// none heard.
+fn refused_in(since: &[(HeldBlock, u64, Refused)], block: &HeldBlock) -> Refused {
+    since
+        .iter()
+        .find(|(one, ..)| one == block)
+        .map(|(_, _, refused)| refused.clone())
+        .unwrap_or_default()
 }
 
 /// Who reported `block`, a refusal of a chat whose held connections are `waited` (Q235): purlis's
@@ -802,6 +932,15 @@ pub fn heard(chats: &crate::chats::Chats, told: &crate::hooks::ChatBlocked) -> b
         chats.blocks().heard(told.session, block);
     }
     true
+}
+
+/// **Chat `chat` of the project `held` holds began a new turn of its own** (Q254): each ask its
+/// hook line raised in a turn before is withdrawn as one block ([`Blocks::turn_began`]), and the
+/// window is told its asks moved, so the pane's Notice goes too.
+pub(crate) fn turn_began(held: &crate::planes::Held, chat: u32) {
+    if held.chats().blocks().turn_began(chat) {
+        held.chats().asks_may_have_moved();
+    }
 }
 
 /// The block a chat is held on for what the window is `told`, or none where no answer names it.
@@ -1372,8 +1511,8 @@ impl Blocks {
             .map(|(session, block)| {
                 let first = since
                     .get(&session)
-                    .and_then(|mine| mine.iter().find(|(one, _)| *one == block))
-                    .map(|(_, first)| *first);
+                    .and_then(|mine| mine.iter().find(|(one, ..)| *one == block))
+                    .map(|(_, first, _)| *first);
                 (session, block, first)
             })
             .collect()

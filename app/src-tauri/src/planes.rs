@@ -3665,6 +3665,13 @@ impl Planes {
                     // record each time it changes (#5747): a restart that ends the chat tells
                     // it, brought back, what ended. Judged against the same conversation.
                     held.chats().heard_own_work(report, now.as_deref());
+                    // A new turn of its own: each ask its hook raised in a turn before is
+                    // withdrawn as a block (Q254). A helper's prompt is no turn of it.
+                    if report.event == purlis_core::state::Event::UserPromptSubmit
+                        && report.agent.is_none()
+                    {
+                        crate::taskblocks::turn_began(&held, report.chat);
+                    }
                     // And whatever waited for this chat to move: the line that says its tasks
                     // reported (#1441).
                     crate::dispatched::heard(&held, report);
@@ -4025,20 +4032,25 @@ impl Planes {
                 }
             })
         });
-        // A held connection a chat stopped waiting on is one block in the event log (R-290,
-        // Q154), and a chat's next tool call is when it stops waiting. Its ask is withdrawn as
-        // it is written, so the needs-you mark that ask set goes with it (Q240); the pane's
-        // Notice, drawn from the asks registry, goes as the registry is told it moved. Weak
-        // for the handoff's reason.
+        // Every sandbox block is written here, one road (Q254): a held connection a chat
+        // stopped waiting on (R-290, Q154; a chat's next tool call is when it stops waiting),
+        // every other refusal once its ask leaves, and one never asked. Where an ask left, the
+        // needs-you mark it set goes with it (Q240); the pane's Notice, drawn from the asks
+        // registry, goes as the registry is told it moved. Weak for the handoff's reason.
         held.chats().write_stops_with({
             let weak = Arc::downgrade(&held);
-            Arc::new(move |chat, stop, call| match weak.upgrade() {
+            Arc::new(move |chat, stop, why| match weak.upgrade() {
                 Some(strong) => {
                     let written = strong.hooks.write_stop(chat, stop.clone());
-                    strong.block_withdrawn(chat);
-                    // And toward the block loop, which pauses it (R-206), the call it was held
-                    // under counted once (Q253).
-                    crate::pausing::stopped(&strong, chat, &stop, call.as_deref());
+                    if why.leaves_an_ask() {
+                        strong.block_withdrawn(chat);
+                    }
+                    // And toward the block loop, which pauses it (R-206), each call counted
+                    // once (Q253); never a block the person's Keep blocked or the chat's end
+                    // wrote (Q254).
+                    if let Some(call) = why.counted_under() {
+                        crate::pausing::stopped(&strong, chat, &stop, call);
+                    }
                     written
                 }
                 None => Ok(()),
@@ -5720,11 +5732,12 @@ impl Planes {
 }
 
 /// **Writes `told`, a sandbox refusal of chat `told.session` that is never an ask, as one Sandbox
-/// block now** (T1-10, Q154): aimed at what its line named, as the project names a folder
-/// (`sandboxblock::stop`), the tool of the chat's latest call by the harness's name, and
-/// `unverified` for the recorder to judge, since the chat's own hook line reported it (Q235). A
-/// quiet line read back is no refusal the chat met, and is none; nor is the echo of a held
-/// connection's block written already (Q240). A write that fails is said in the app's log.
+/// block now** (T1-10, Q154), by the one road every sandbox block takes (Q254,
+/// [`crate::chats::Chats::write_block`]): aimed at what its line named, as the project names a
+/// folder (`sandboxblock::stop`), the tool of the call it refused, the chat's latest, by the
+/// harness's name, and `unverified`, since the chat's own hook line reported it (Q254); toward
+/// the block loop under that call's id. A quiet line read back is no refusal the chat met, and
+/// is none; nor is the echo of a held connection's block written already (Q240).
 fn blocked_at_once(held: &Held, told: &hooks::ChatBlocked) {
     if told.quiet.is_some()
         || crate::taskblocks::held_of(told)
@@ -5732,20 +5745,19 @@ fn blocked_at_once(held: &Held, told: &hooks::ChatBlocked) {
     {
         return;
     }
-    let tool = held.chats().blocks().latest_tool(told.session);
+    let refused = held.chats().blocks().latest(told.session);
     let stop = purlis_core::sandboxblock::stop::sandbox_block_of(
         &told.kind,
         told.target.as_deref(),
         held.root(),
-        tool.as_deref(),
+        refused.tool.as_deref(),
         purlis_core::sandboxblock::stop::Reported::ByItsHook,
     );
-    if let Err(why) = held.hooks.write_stop(told.session, stop) {
-        tracing::warn!(
-            "purlis: chat {}'s sandbox block was not written ({why})",
-            told.session
-        );
-    }
+    held.chats().write_block(
+        told.session,
+        stop,
+        crate::chats::BlockWritten::AtOnce(refused.call),
+    );
 }
 
 /// The one sentence for a plane the process is not holding.

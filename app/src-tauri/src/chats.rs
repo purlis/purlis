@@ -3673,16 +3673,33 @@ impl Chats {
     }
 
     /// Who writes a chat's stops into the event log from now on (R-290): a held connection's
-    /// refusal the chat stopped waiting on, and every other refusal held as an ask once its ask
-    /// leaves by anything but an Allow (T1-10).
+    /// refusal the chat stopped waiting on, every other refusal held as an ask once its ask
+    /// leaves by anything but an Allow (T1-10), and one never asked ([`Self::write_block`]).
     pub fn write_stops_with(&self, write: StopWriter) {
         *lock(&self.stops) = Some(write);
         let (stops, root) = (Arc::clone(&self.stops), self.project.clone());
         self.blocks.when_left(Arc::new(
-            move |chat, block: &crate::taskblocks::HeldBlock, tool, reported| {
-                left_as_a_block(&stops, &root, chat, block, tool, reported);
+            move |chat, left: &crate::taskblocks::LeftBlock| {
+                left_as_a_block(&stops, &root, chat, left);
             },
         ));
+    }
+
+    /// **Writes `stop`, a sandbox block of chat `chat`'s, by the one road every sandbox block
+    /// takes** (Q254): the stop writer, which feeds the block loop as `written` says. A write
+    /// that fails is said in the app's log; nothing is written before the writer is set.
+    pub fn write_block(
+        &self,
+        chat: u32,
+        stop: purlis_core::eventlog::stops::Stop,
+        written: BlockWritten,
+    ) {
+        let Some(write) = lock(&self.stops).clone() else {
+            return;
+        };
+        if let Err(why) = write(chat, stop, written) {
+            tracing::warn!("purlis: chat {chat}'s sandbox block was not written ({why})");
+        }
     }
 
     /// **Chat `call.chat`'s hook line said it made, or ended, a tool call** (R-290, Q154,
@@ -9078,16 +9095,47 @@ pub type Narrowed = Arc<dyn Fn(u32) + Send + Sync + 'static>;
 /// What is told a project's asks may have moved (#1709).
 pub type AsksMoved = Arc<dyn Fn() + Send + Sync + 'static>;
 
-/// **What writes a stop of chat `number`'s into the event log** (R-290), made durable before
-/// it answers: told only as a held connection's ask is withdrawn, so what that ask set goes too.
-/// With it, the harness's id for the call the connection was held under, where one was heard:
-/// the block loop counts a call once (Q253).
+/// **What writes a sandbox block of chat `number`'s into the event log** (R-290), made durable
+/// before it answers: the one road every sandbox block takes (Q254), and why it is written
+/// ([`BlockWritten`]), which says whether an ask was withdrawn and whether the block loop counts
+/// it.
 pub type StopWriter = Arc<
-    dyn Fn(u32, purlis_core::eventlog::stops::Stop, Option<String>) -> std::io::Result<()>
+    dyn Fn(u32, purlis_core::eventlog::stops::Stop, BlockWritten) -> std::io::Result<()>
         + Send
         + Sync
         + 'static,
 >;
+
+/// **Why a sandbox block is written** (Q254): what its writing does beside.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BlockWritten {
+    /// Its ask was withdrawn as the chat went on without it: a held connection timed out or
+    /// its chat moved on (Q240), a newer ask took its place, or the chat began its next turn.
+    /// What that ask set is taken back, and the block counts toward the block loop under the
+    /// harness's id for the call it refused, where one was heard, a call counted once (Q253).
+    Withdrawn(Option<String>),
+    /// It was never an ask (a denial class, a policy's no, a grant purlis never makes, purlis's
+    /// own operation, its chat's own to retry): it counts, under the chat's latest call.
+    AtOnce(Option<String>),
+    /// The person's Keep blocked, or its chat's end: its ask is gone, and it is written and
+    /// never counted, since it is the person's answer or the chat's close, not a chat looping.
+    Answered,
+}
+
+impl BlockWritten {
+    /// The call it counts under toward the block loop, where it counts at all.
+    pub fn counted_under(&self) -> Option<Option<&str>> {
+        match self {
+            Self::Withdrawn(call) | Self::AtOnce(call) => Some(call.as_deref()),
+            Self::Answered => None,
+        }
+    }
+
+    /// Whether an ask left as it was written, so what that ask set goes too.
+    pub fn leaves_an_ask(&self) -> bool {
+        !matches!(self, Self::AtOnce(_))
+    }
+}
 
 /// Who a chat's board of live asks tells (#1666), and as whom.
 struct Asking {
@@ -9250,35 +9298,40 @@ fn became_a_block(
         target,
         args: withdrawn.args,
     });
-    if let Err(why) = write(chat, stop, withdrawn.call) {
+    if let Err(why) = write(chat, stop, BlockWritten::Withdrawn(withdrawn.call)) {
         tracing::warn!("purlis: chat {chat}'s sandbox block was not written ({why})");
     }
 }
 
-/// **Writes `block`, a refusal chat `chat` held as an ask until it left, as one Sandbox block**
+/// **Writes `left`, a refusal chat `chat` held as an ask until it left, as one Sandbox block**
 /// (T1-10, Q154): aimed at the host, folder or service its ask named, as the project at `root`
-/// names a folder (`sandboxblock::stop`), `tool` the chat's latest call by the harness's name,
-/// and `unverified` where the chat's own hook line `reported` it, for the recorder to judge
-/// (Q235). A write that fails is said in the app's log.
+/// names a folder (`sandboxblock::stop`), `tool` the call it refused by the harness's name, as
+/// the refusal was heard (Q254), and `unverified` where the chat's own hook line reported it
+/// (Q254). Counted toward the block loop only where its ask left as the chat went on without it,
+/// never by the person's Keep blocked or the chat's end (Q254). A write that fails is said in
+/// the app's log.
 fn left_as_a_block(
     stops: &Mutex<Option<StopWriter>>,
     root: &Path,
     chat: u32,
-    block: &crate::taskblocks::HeldBlock,
-    tool: Option<String>,
-    reported: purlis_core::sandboxblock::stop::Reported,
+    left: &crate::taskblocks::LeftBlock,
 ) {
     let Some(write) = lock(stops).clone() else {
         return;
     };
     let stop = purlis_core::sandboxblock::stop::sandbox_block_of(
-        &block.kind,
-        Some(block.target.as_str()),
+        &left.block.kind,
+        Some(left.block.target.as_str()),
         root,
-        tool.as_deref(),
-        reported,
+        left.refused.tool.as_deref(),
+        left.reported,
     );
-    if let Err(why) = write(chat, stop, None) {
+    let written = if left.how.counts() {
+        BlockWritten::Withdrawn(left.refused.call.clone())
+    } else {
+        BlockWritten::Answered
+    };
+    if let Err(why) = write(chat, stop, written) {
         tracing::warn!("purlis: chat {chat}'s sandbox block was not written ({why})");
     }
 }

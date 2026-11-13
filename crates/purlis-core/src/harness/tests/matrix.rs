@@ -85,8 +85,12 @@ const MATRIX: [Row; 10] = [
     Row {
         layer: "Sandbox: files and egress",
         cells: [
+            // The Full sandbox's half; the floor's (web tools allowed, Q254) is pinned beside it
+            // by `at_basic_sandbox_claude_codes_denial_classes_are_held_and_its_web_tools_allowed`.
             cell(
-                "enforced (Bash in the sandbox; file tools by deny rules; web tools denied)",
+                "enforced (Bash in the sandbox; file tools by deny rules where a denial class \
+                 holds the path; web tools denied at Full sandbox and allowed at Basic sandbox, \
+                 whose proxy carries every host)",
                 enforced("files_and_egress_are_enforced_on_claude_code"),
             ),
             cell(

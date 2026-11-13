@@ -28,9 +28,9 @@ use crate::eventlog::stops::{Block, Qualifier, Source, Stop, Target};
 pub enum Reported {
     /// purlis's own proxy, by its own word: plain.
     ByTheProxy,
-    /// The chat's own hook line, which a chat that can reach its hooks can send itself: written
-    /// `unverified`, which the recorder clears for a run whose hooks run outside the chat's
-    /// reach (`Recorder::stop`).
+    /// The chat's own hook line: written `unverified` on every harness (Q254). Where the hook
+    /// runs outside the sandbox it still reads the command's own output, which the chat can
+    /// write.
     ByItsHook,
 }
 

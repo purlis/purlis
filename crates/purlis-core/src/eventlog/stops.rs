@@ -351,27 +351,16 @@ impl Recorder {
     /// keyed by this device, never as the hook sent it.
     ///
     /// **A sandbox block its chat's own hook reported** comes `unverified` from the app
-    /// (`sandboxblock::stop::Reported::ByItsHook`, T1-10), and is kept so on the rule a guard's
-    /// report takes (Q235): plain only where the chat's run reports from outside its reach
-    /// ([`reported_from_outside_its_reach`]), which the app does not know and the run here says.
+    /// (`sandboxblock::stop::Reported::ByItsHook`, T1-10) and is written so on every harness
+    /// (Q254): even where the hook runs outside the sandbox, it reads the command's own output,
+    /// which the chat can write. It is never cleared as a guard's deny is.
     pub fn stop(&mut self, plane: &Path, number: Option<u32>, stop: &Stop) -> io::Result<Event> {
         let tool = |tool: &str| crate::shown::readable(tool, TARGET_CHARS);
-        let outside = match (stop, number) {
-            (Stop::Block(block), Some(number))
-                if block.source == Source::Sandbox
-                    && block.qualifier == Some(Qualifier::Unverified) =>
-            {
-                self.identity(plane, number)?
-                    .is_some_and(|who| reported_from_outside_its_reach(&who.attributes))
-            }
-            _ => false,
-        };
         let body = match stop {
             Stop::Block(block) => serde_json::to_value(Block {
                 tool: tool(&block.tool),
                 target: block.target.as_ref().map(Target::shortened),
                 args: block.args.as_deref().map(|hash| self.key.digest(hash)),
-                qualifier: if outside { None } else { block.qualifier },
                 ..block.clone()
             }),
             Stop::Hold(hold) => serde_json::to_value(Hold {
