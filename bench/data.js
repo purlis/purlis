@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794567981740,
+  "lastUpdate": 1794571121026,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -48258,6 +48258,48 @@ window.BENCHMARK_DATA = {
             "value": 102.2752615,
             "unit": "ms",
             "extra": "median of 5 runs: 102.011, 102.079, 102.275, 102.570, 102.917 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "d9c5d8109f04a1af6e9a3997eef62c4ed2b25be0",
+          "message": "Asks opens on Chat: the Chat, Workspace and Project chips (#6340) (#6480)\n\n* Asks opens on Chat, with Workspace and Project; All projects gone (#6340), rebuilt on main after #6456\n\nThe tree of 6340-chips-rebuilt-on-main-after-6456-0q8sba59 (b2f45f2f3, PR #6478's head),\nits diff from 73e24d122 applied onto main at ac27b89f6. Applied, not reset: the sandbox\ncannot write this worktree's git index. b2f45f2f3's own message says how its conflicts with\n#6456 were settled.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7A4GWBDAZED69GTCN5JTC0P\nPurlis-Persona: steward\n\n* e2e: the Asks specs read Chat, Workspace and Project, and each project answers its own asks (#6340)\n\nADR 0121 as amended 2026-11-12 (decisions 1 to 4) moved three specs' contracts; each failed in\nrun 43388658890 (ubuntu, scenario part 3 of 3) on the old design:\n\n- inbox.state: the chips opened on All projects; Asks now opens on Chat, the chat that asked\n  (\"Chat, 1 waiting on you\"). The chips are read by role as well as by input.\n- inbox-elsewhere.state: another project's Asks listed the launch's ask as a row to answer in\n  place. Decision 3 drops that: the second project's Asks lists none of it and offers no All\n  projects; the launch's tab counts it, and pressed, its own ✋ and Asks list it, and Deny there\n  answers the hook.\n- every-ask-from-the-hand.state: every kind was found and answered from the launch's Asks under\n  its project's [data-elsewhere] group. Now each is counted on its own project's tab, reached by\n  pressing it, and listed by that project's Asks in the scope it opens on or one press wider (the\n  empty scope's way out, else the Project chip): a chat's ask is under Chat; the sandbox consent\n  and the command confirmation, which no chat holds, under Project alone.\n\nNo app code changed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7A4GWBDAZED69GTCN5JTC0P\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-13T11:04:40Z",
+          "tree_id": "87a2321d629dffc311efa57aa5d90bd5d7583742",
+          "url": "https://github.com/purlis/purlis/commit/d9c5d8109f04a1af6e9a3997eef62c4ed2b25be0"
+        },
+        "date": 1794571113999,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5554815,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.549, 0.555, 0.555, 0.559, 0.566 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.129061999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.095, 16.113, 16.129, 16.196, 17.037 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.1963615,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.422, 100.726, 101.196, 101.374, 102.650 ms"
           }
         ]
       }
