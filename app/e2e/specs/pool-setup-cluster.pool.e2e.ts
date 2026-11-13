@@ -47,6 +47,20 @@ const OPERATOR = process.env.PURLIS_E2E_CLUSTER_OPERATOR_IMAGE ?? "";
 /** agent-sandbox's controller and the operator are pulled and started: a minute or two each. */
 const INSTALLING = 360_000;
 
+/**
+ * Goes on from step `done` to step `next`: the guide moves on by itself from a step that is done,
+ * and where it waits on `done` instead, its Continue is pressed.
+ */
+async function goOnFrom(done: string, next: string, timeout = MAKING): Promise<void> {
+  await browser
+    .waitUntil(async () => [done, next].includes(await showing()), { timeout, interval: 500 })
+    .catch(async () => {
+      throw new Error(`Pool setup never got past ${done}; it shows ${await showing()}`);
+    });
+  if ((await showing()) === done) await press("Continue", timeout);
+  await on(next, timeout);
+}
+
 /** Opens the Options under the step on show, unless they are open already. */
 async function openTheOptions(): Promise<void> {
   const options = await $("aria/Options");
@@ -110,16 +124,8 @@ describe("Pool setup on a kind cluster", () => {
     await press("Continue with this cluster");
 
     // Check the cluster: doctor finds only agent-sandbox missing, which Install adds, so Check is
-    // done and the guide goes on to Install by itself; its Continue is pressed only where it waits.
-    await browser
-      .waitUntil(async () => ["Check the cluster", "Install"].includes(await showing()), {
-        timeout: MAKING,
-        interval: 500,
-      })
-      .catch(async () => {
-        throw new Error(`Pool setup never checked the cluster; it shows ${await showing()}`);
-      });
-    if ((await showing()) === "Check the cluster") await press("Continue");
+    // done and the guide goes on to Install by itself.
+    await goOnFrom("Check the cluster", "Install");
 
     // Install, a part at a time, each offered once the one before it is there.
     await on("Install");
@@ -130,11 +136,10 @@ describe("Pool setup on a kind cluster", () => {
     await press("Apply the definitions", INSTALLING);
     await press("Make the signing key", INSTALLING);
     await press("Install the operator", INSTALLING);
-    await press("Continue", INSTALLING);
+    await goOnFrom("Install", "Pool", INSTALLING);
 
     // Pool: one made in the cluster, of this build's runner image, then this person's runner of
     // it claimed and paired here, once its cluster operator key is shown.
-    await on("Pool", MAKING);
     await openTheOptions();
     await type("Name", POOL);
     await type("Runner image", IMAGE);
