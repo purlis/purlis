@@ -210,26 +210,23 @@ pub(crate) fn screens_by_from_now() -> std::time::Instant {
     std::time::Instant::now() + SCREENS_AT_QUIT_WITHIN
 }
 
-/// **Keeps the last screens of the task chats `chats` as the app quits** (#6305), by number and
-/// id: the ones the next launch leaves out of its put back, having finished
+/// **Starts keeping the last screens of the task chats `chats` as the app quits** (#6305), by
+/// number and id: the ones the next launch leaves out of its put back, having finished
 /// (`finished::left_out`), which never close through `Chats::close_as`. Read while their
 /// sessions are still there, before every program is ended, each on a thread of its own.
 ///
-/// **It returns by `by` whatever the host does** (#6451's review): a view can wait out a link's
-/// and an answer's wait, or a pool's answer wait of minutes, and a quit is not held for one.
-/// Each read runs on a thread of its own that nothing joins: one still waiting at `by` is left
+/// **It returns at once**, and [`ScreensComing::wait_until`] waits for them: a quit starts every
+/// project's reads before it waits for any (#6508's review), so one project's ending never eats
+/// another's time. Nothing joins the threads: one still reading when the wait gives up is left
 /// to finish or to end with the app, and the screen it would have kept is not kept (a write cut
 /// off leaves only a temporary file, which the store sweeps).
-pub(crate) fn keep_screens_at_quit(
+pub(crate) fn start_keeping_screens_at_quit(
     root: &std::path::Path,
     host: &std::sync::Arc<dyn crate::host::SessionHost>,
     chats: &[(u32, String)],
-    by: std::time::Instant,
-) {
-    if chats.is_empty() {
-        return;
-    }
+) -> ScreensComing {
     let (done, finished) = std::sync::mpsc::channel();
+    let mut left = 0;
     for (session, id) in chats {
         let (root, host, session, id, done) = (
             root.to_path_buf(),
@@ -244,24 +241,39 @@ pub(crate) fn keep_screens_at_quit(
                 keep_screen_on_close(&root, &*host, session, &id);
                 let _ = done.send(());
             });
-        if let Err(why) = spawned {
-            tracing::info!("purlis: task chat {session}'s screen was not kept ({why})");
+        match spawned {
+            Ok(_) => left += 1,
+            Err(why) => tracing::info!("purlis: task chat {session}'s screen was not kept ({why})"),
         }
     }
-    drop(done);
-    let mut left = chats.len();
-    while left > 0 {
-        let wait = by.saturating_duration_since(std::time::Instant::now());
-        match finished.recv_timeout(wait) {
-            Ok(()) => left -= 1,
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                tracing::info!(
-                    "purlis: {} did not come in time as purlis quit, and {} not kept",
-                    purlis_core::counts::counted(left, "task screen", "task screens"),
-                    purlis_core::counts::plural(left, "was", "were")
-                );
-                break;
+    ScreensComing { finished, left }
+}
+
+/// The task screens a quit is keeping, until [`Self::wait_until`] has waited for them.
+#[must_use = "a quit waits for the screens it started keeping before it ends their sessions"]
+pub(crate) struct ScreensComing {
+    finished: std::sync::mpsc::Receiver<()>,
+    left: usize,
+}
+
+impl ScreensComing {
+    /// **Waits for every screen to be kept, and no later than `by`** (#6451's review): a view
+    /// can wait out a link's and an answer's wait, or a pool's answer wait of minutes, and a
+    /// quit is not held for one.
+    pub(crate) fn wait_until(mut self, by: std::time::Instant) {
+        while self.left > 0 {
+            let wait = by.saturating_duration_since(std::time::Instant::now());
+            match self.finished.recv_timeout(wait) {
+                Ok(()) => self.left -= 1,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    tracing::info!(
+                        "purlis: {} did not come in time as purlis quit, and {} not kept",
+                        purlis_core::counts::counted(self.left, "task screen", "task screens"),
+                        purlis_core::counts::plural(self.left, "was", "were")
+                    );
+                    break;
+                }
             }
         }
     }
@@ -523,12 +535,8 @@ mod tests {
         let (_dir, root) = a_task_on(&host);
         let shared: Arc<dyn SessionHost> = Arc::new(host);
 
-        keep_screens_at_quit(
-            &root,
-            &shared,
-            &[(7, TASK.to_owned())],
-            Instant::now() + SCREENS_AT_QUIT_WITHIN,
-        );
+        start_keeping_screens_at_quit(&root, &shared, &[(7, TASK.to_owned())])
+            .wait_until(Instant::now() + SCREENS_AT_QUIT_WITHIN);
 
         assert_eq!(
             purlis_core::chatscreens::kept(&root, TASK).as_deref(),
@@ -546,12 +554,8 @@ mod tests {
         let shared: Arc<dyn SessionHost> = Arc::new(host);
         let began = Instant::now();
 
-        keep_screens_at_quit(
-            &root,
-            &shared,
-            &[(7, TASK.to_owned())],
-            began + Duration::from_millis(300),
-        );
+        start_keeping_screens_at_quit(&root, &shared, &[(7, TASK.to_owned())])
+            .wait_until(began + Duration::from_millis(300));
 
         assert!(
             began.elapsed() < Duration::from_secs(2),

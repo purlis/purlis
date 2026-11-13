@@ -8864,14 +8864,15 @@ impl Chats {
         lock(&self.open).len()
     }
 
-    /// **Keeps the screens of the task chats that had finished, as the app quits** (#6305): the
-    /// next launch leaves each out of its put back (`finished::left_out`), so none closes
-    /// through [`Self::close_as`], where a screen is kept. Before [`Self::end_all`], while their
-    /// sessions still show them.
+    /// **Starts keeping the screens of the task chats that had finished, as the app quits**
+    /// (#6305): the next launch leaves each out of its put back (`finished::left_out`), so none
+    /// closes through [`Self::close_as`], where a screen is kept. Before [`Self::end_all`], while
+    /// their sessions still show them.
     ///
-    /// **It waits no later than `by`**, the one deadline a quit gives every project together:
-    /// a view a host does not answer (a pool's runner on a half-open link) is left behind.
-    pub fn keep_finished_screens(&self, by: std::time::Instant) {
+    /// **It returns at once**: the quit starts every project's before it waits for any, and
+    /// then waits once, until the one deadline it gives them all
+    /// ([`crate::chatcard::ScreensComing::wait_until`]).
+    pub fn start_keeping_finished_screens(&self) -> crate::chatcard::ScreensComing {
         let finished: Vec<(u32, String)> = self
             .record()
             .chats
@@ -8884,7 +8885,7 @@ impl Chats {
                 Some((number, chat.identity.id.clone()?))
             })
             .collect();
-        crate::chatcard::keep_screens_at_quit(&self.project, &self.sessions, &finished, by);
+        crate::chatcard::start_keeping_screens_at_quit(&self.project, &self.sessions, &finished)
     }
 
     /// Ends every chat, and does not return until their programs are gone.

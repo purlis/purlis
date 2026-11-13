@@ -953,6 +953,45 @@ fn a_quit_is_not_held_past_its_deadline_by_a_task_screen_that_will_not_come() {
 }
 
 #[test]
+fn a_quit_keeps_every_project_s_task_screen_within_its_one_deadline() {
+    // #6508's review: the deadline was used up one project at a time, so a second project's
+    // healthy host had only what the first one's ending left, and its screen was not kept. Each
+    // host here takes most of the deadline to show a screen, so both fit only if read together.
+    let (first, second) = (a_plane_with_personas(), a_plane_with_personas());
+    let (one, two) = (Pretend::default(), Pretend::default());
+    let hosts = [one.clone(), two.clone()];
+    let opened = std::sync::atomic::AtomicUsize::new(0);
+    let quit = planes().running_sessions_on(Arc::new(move |_, _: &std::path::Path| {
+        let which = opened.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Box::new(hosts[which.min(1)].clone())
+    }));
+    let mut finished = Vec::new();
+    for (plane, host) in [(&first, &one), (&second, &two)] {
+        let id = quit.open(&plane.root);
+        let held = quit.held(&id).expect("held");
+        let alpha = held.root().join("workspaces").join("alpha");
+        let steward = a_chat_as(&held, &plane.root, Some("steward"), &alpha);
+        let task = a_task_of(&held, &id, steward, "check prod");
+        let (_, task_id, _) = a_reported_task_and_one_working(host, &held, &id, steward, task);
+        finished.push((plane.root.clone(), task_id));
+    }
+    let most = crate::chatcard::SCREENS_AT_QUIT_WITHIN * 2 / 3;
+    one.terminal_takes(most);
+    two.terminal_takes(most);
+
+    bounded("the app quitting", move || quit.let_go_of_all());
+
+    for (root, task) in &finished {
+        assert_eq!(
+            purlis_core::chatscreens::kept(root, task).as_deref(),
+            Some("check prod: all green\r\n"),
+            "{} kept its task's screen",
+            root.display()
+        );
+    }
+}
+
+#[test]
 fn a_reported_task_keeps_no_screen_at_a_quit_where_this_machine_keeps_none() {
     let (plane, host, quit, id, held, steward, task) = a_steward_and_its_task();
     let (_, finished, _) = a_reported_task_and_one_working(&host, &held, &id, steward, task);
