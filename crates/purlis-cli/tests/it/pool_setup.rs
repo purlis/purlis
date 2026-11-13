@@ -134,3 +134,104 @@ fn no_fetch_belongs_to_a_check() {
         "{out:?}"
     );
 }
+
+fn doctor(config: &Path, args: &[&str]) -> std::process::Output {
+    support::purlis()
+        .args(["pool", "doctor"])
+        .args(args)
+        .current_dir(config)
+        .env("PURLIS_CONFIG_HOME", config.join("config"))
+        .env("HOME", config)
+        .output()
+        .expect("the binary runs")
+}
+
+/// A CA of its own in `dir`, as `<name>.pem`, made by the system's openssl.
+fn a_ca(dir: &Path, name: &str) -> std::path::PathBuf {
+    let run = |args: &[&str]| {
+        let ran = std::process::Command::new("openssl")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .expect("the system's openssl");
+        assert!(ran.status.success(), "openssl {args:?}: {ran:?}");
+    };
+    run(&[
+        "req",
+        "-x509",
+        "-newkey",
+        "ec",
+        "-pkeyopt",
+        "ec_paramgen_curve:prime256v1",
+        "-nodes",
+        "-keyout",
+        &format!("{name}-key.pem"),
+        "-subj",
+        &format!("/CN={name}"),
+        "-days",
+        "1",
+        "-out",
+        &format!("{name}.pem"),
+    ]);
+    dir.join(format!("{name}.pem"))
+}
+
+/// **`purlis pool doctor` says a changed pin in the Notice's words and exits 1** (#6270, ADR 0123
+/// §3): a pool over Docker's TLS API whose CA file now holds another CA than the one pinned. The
+/// file is checked before anything runs, so no machine is contacted.
+#[test]
+fn doctor_says_a_pool_whose_ca_changed_and_exits_1() {
+    let config = tempfile::tempdir().unwrap();
+    let tls = config.path().join("tls");
+    std::fs::create_dir_all(&tls).unwrap();
+    let pinned = a_ca(&tls, "pinned");
+    let ca = a_ca(&tls, "ca");
+    let fingerprint = |path: &Path| {
+        purlis_core::tlsroute::read_ca(path, "build-box")
+            .unwrap()
+            .fingerprint
+    };
+    let image = purlis_core::dockerpool::Image::pinned(&format!(
+        "ghcr.io/purlis/purlis-runner@sha256:{}",
+        "0".repeat(64)
+    ))
+    .unwrap();
+    let remote = purlis_core::tlsroute::Remote {
+        route: purlis_core::tlsroute::Route::parse("tcp://build-box:2376").unwrap(),
+        files: purlis_core::tlsroute::Files::new(
+            ca.clone(),
+            tls.join("ca.pem"),
+            purlis_core::tlsroute::KeyFrom::File(tls.join("ca-key.pem")),
+        )
+        .unwrap(),
+        pin: purlis_core::tlsroute::Pin {
+            ca: fingerprint(&pinned),
+            engine: "ABCD:EFGH:IJKL".to_owned(),
+        },
+    };
+    let pool = purlis_core::runners::Pool::new(
+        "builds",
+        image,
+        purlis_core::runners::Set::default(),
+    )
+    .unwrap()
+    .on_engine(Some(remote.into()));
+    purlis_core::runners::record_pool(&config.path().join("config"), &pool).unwrap();
+
+    let out = doctor(config.path(), &["builds"]);
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(said.contains("Pool builds: build-box's CA changed"), "{said}");
+    assert!(said.contains(&fingerprint(&pinned).shown()), "{said}");
+    assert!(said.contains(&fingerprint(&ca).shown()), "{said}");
+    assert!(said.contains("Check and trust again"), "{said}");
+}
+
+#[test]
+fn doctor_of_a_pool_this_machine_has_not_is_refused_in_words() {
+    let config = tempfile::tempdir().unwrap();
+    let out = doctor(config.path(), &["nowhere"]);
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(said.contains("no pool named nowhere"), "{said}");
+}

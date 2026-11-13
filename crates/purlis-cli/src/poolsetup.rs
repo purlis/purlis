@@ -46,6 +46,37 @@ pub fn answered(name: Option<&str>, json: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// **`purlis pool doctor <name>`** (#6270, ADR 0123 §3): whether pool `name`'s machine and engine
+/// are the ones the person trusted, in the window's words, on stdout. Exits 1 where they aren't or
+/// the machine can't be reached. It reaches the machine as a run for the pool does, and changes
+/// nothing.
+pub fn doctor(name: &str) -> Result<u8, String> {
+    let config = purlis_core::machine::config_root()
+        .ok_or_else(|| "this machine has no home folder to read pools from".to_owned())?;
+    let pools = purlis_core::runners::pools(&config).map_err(|why| why.to_string())?;
+    let pool = pools
+        .iter()
+        .find(|pool| pool.name() == name)
+        .ok_or_else(|| format!("there is no pool named {name} on this machine"))?;
+    let host = match pool.remote_engine() {
+        None => {
+            println!(
+                "Pool {name} runs on this machine's Docker, so it has no other machine to check."
+            );
+            return Ok(0);
+        }
+        Some(purlis_core::runners::RemoteEngine::Ssh(remote)) => remote.route.host().to_owned(),
+        Some(purlis_core::runners::RemoteEngine::Tls(remote)) => remote.route.host().to_owned(),
+    };
+    let docker = poolsetup::docker_here()
+        .ok_or_else(|| "purlis found no docker command on this machine.".to_owned())?;
+    let reached = purlis_core::sshroute::pool::docker_of(&docker, pool);
+    let (said, code) =
+        poolsetup::pinchange::doctor_said(name, reached.as_ref().map(|_| host.as_str()));
+    print!("{said}");
+    Ok(code)
+}
+
 /// The lines of a setup.
 fn said(setup: &Setup) -> String {
     use std::fmt::Write as _;
