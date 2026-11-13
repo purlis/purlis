@@ -179,10 +179,10 @@ fn the_measured_permission_mode_strings_are_the_fixture_the_mode_tests_read() {
 fn claude_code_mode_is_read_only_from_the_armed_hook() {
     purlis_core::unsteered!();
     for set in measured_modes() {
-        let started = claude_code_chat(Some(&set));
+        let started = claude_code_chat(Some(set.as_str()));
         assert_eq!(started.reported(), None, "the start's {set} is no report");
         for (event, said) in measured_reports() {
-            let report = line("claude-code", event, Some(&said));
+            let report = line("claude-code", event, Some(said.as_str()));
             assert_eq!(
                 report.detail.claude_code_mode,
                 Some(ClaudeCodeMode::of(&said)),
@@ -257,8 +257,8 @@ fn a_mode_purlis_did_not_set_makes_a_claude_code_chat_unattended_and_codex_bypas
             continue;
         }
         for (event, said) in measured_reports() {
-            let mut fact = claude_code_chat(Some(&set));
-            fact.heard(&line("claude-code", event, Some(&said)));
+            let mut fact = claude_code_chat(Some(set.as_str()));
+            fact.heard(&line("claude-code", event, Some(said.as_str())));
             let wanted = if said == set {
                 Attendance::Attended
             } else {
