@@ -8,17 +8,19 @@
 //!   address's rules, `file:` by a file's (one on another host is refused, ruling Q2), and
 //!   every other scheme is refused with a sentence that names it. A target longer than
 //!   [`MOST_TARGET`] is refused unread.
-//! - **Words that may name another address or path ask first** ([`reconsidered`], ruling Q1):
-//!   it is an allowlist ([`misleading`]). Text such as "Click here", whose every word is plain
-//!   ASCII that builds no host or path, opens its target the way a found link does, and so do
-//!   words a browser reads as the target itself (`github.com/purlis` over
-//!   `https://github.com/purlis`). Every other word asks, showing both: another host, port,
-//!   scheme or path (`github.com/someone-else` under the text `github.com/purlis`), another
-//!   file, and words the check cannot read.
+//! - **Words that name another target ask first** ([`reconsidered`], ruling Q1): a word asks
+//!   only if it names a target ([`misleading`]: a scheme, an IP address, `localhost`, a host and
+//!   port, a domain under a public suffix, a path) that is not the link's own, or if its letters
+//!   may not be what they look like (mixed scripts, a whole-script look-alike, a restricted
+//!   letter; UTS #39). Every other word is plain, in any script: "Click here", "v1.2.3",
+//!   "#6384", "café", an emoji. `github.com/purlis` over `https://github.com/purlis/purlis`
+//!   opens; `github.com/someone-else` over it asks, showing both.
 
 use std::path::{Component, Path, PathBuf};
 
 use unicode_normalization::UnicodeNormalization as _;
+use unicode_properties::{GeneralCategory, GeneralCategoryGroup, UnicodeGeneralCategory as _};
+use unicode_security::{RestrictionLevel, RestrictionLevelDetection as _};
 
 use super::file::at_line;
 use super::{Asking, Candidate, Kind, Opening, Pane, Resolved, Target};
@@ -95,66 +97,64 @@ fn ask_first(text: &str, target: Target, said: &str) -> Opening {
 }
 
 /// **What a marked link's `text` says that its `target` is not**, in the words the ask shows
-/// ("docs.purlis.dev", "src/lib.rs"), or `None` when the text is shown to name nothing else.
+/// ("docs.purlis.dev", "src/lib.rs"), or `None` when no word of it names another target.
 ///
-/// It is an allowlist: every word of the text, as a reader sees it ([`seen`]), must be
-/// [`plain`] (it can build no host or path) or name the target itself ([`names_web`],
-/// [`names_file`]). Anything else asks: a false ask costs one click, and a missed one opens the
-/// wrong place. Reads no file's contents: a path is compared by its name, resolved through its
-/// links where it is absolute.
+/// A word asks only if it **names a target** ([`names_a_target`]: a scheme, an IP address,
+/// `localhost`, a host with a port, a domain under a public suffix, a path) and that target is not
+/// `target` ([`names_web`], [`names_file`]), or its letters may not be what they look like
+/// ([`reads_as_written`]). Any other word is plain, in any script: "Click here", "v1.2.3",
+/// "#6384", "café", an emoji. Each word is read as a reader sees it ([`drawn`], NFKC), and the
+/// shape that decides whether it names a target is its UTS #39 skeleton ([`shape`]), so a
+/// look-alike of `.`, `:` or `/` counts as the character. Reads no file's contents.
 pub fn misleading(text: &str, target: &Target, pane: &Pane) -> Option<String> {
     if text.chars().count() > MOST_TEXT {
         let start: String = text.chars().take(64).collect();
         return Some(format!("{start}…"));
     }
-    let seen = seen(text);
-    seen.split(char::is_whitespace).find_map(|word| {
-        let word = trimmed(word);
-        if word.is_empty() || plain(word) {
-            return None;
-        }
-        match target {
-            Target::Url(url) => names_web(word, url),
-            Target::File(file) => names_file(word, &file.path, pane),
-            // A marked link's target is read only as a web address or a file, never as a chat.
-            Target::Chat(_) => Some(word.to_owned()),
-        }
-    })
+    drawn(text)
+        .split(char::is_whitespace)
+        .find_map(|original| said_by(original, target, pane))
 }
 
-/// **`text` as a reader sees it**: characters that draw nothing dropped (those that are space
-/// read as one), then wide letters and look-alike forms folded (NFKC).
-fn seen(text: &str) -> String {
-    let drawn: String = text
-        .chars()
+/// What the word `original` says that `target` is not: read with the sentence's punctuation
+/// around it taken off, and where that leaves it naming no target, as written (`::1`).
+fn said_by(original: &str, target: &Target, pane: &Pane) -> Option<String> {
+    let word: String = original.nfkc().collect();
+    let file = matches!(target, Target::File(_));
+    let trimmed = trimmed(&word);
+    let read = [trimmed, word.as_str()]
+        .into_iter()
+        .find(|read| !read.is_empty() && names_a_target(&shape(read), file))?;
+    let differs = match target {
+        Target::Url(url) => names_web(read, url),
+        Target::File(file) => names_file(read, &file.path, pane),
+        // A marked link's target is read only as a web address or a file, never as a chat.
+        Target::Chat(_) => Some(read.to_owned()),
+    };
+    differs.or_else(|| (!reads_as_written(original)).then(|| read.to_owned()))
+}
+
+/// **`text` as it is drawn**: characters that draw nothing dropped, those that draw a blank read
+/// as a space. A control or a line or paragraph separator draws nothing, so it joins the words
+/// around it, as the reader sees them.
+fn drawn(text: &str) -> String {
+    text.chars()
         .filter_map(|c| {
-            if purlis_unicode::invisible(c) {
+            if c.is_control() || matches!(c, '\u{2028}' | '\u{2029}') {
+                None
+            } else if purlis_unicode::invisible(c) {
                 c.is_whitespace().then_some(' ')
             } else {
                 Some(c)
             }
         })
-        .collect();
-    drawn.nfkc().collect()
+        .collect()
 }
 
-/// The punctuation a plain word may hold: none of it builds a host, a port or a path.
-const PLAIN_PUNCTUATION: &str = "!\"$&'()*+,-<=>^_`{|}~";
+/// The punctuation a sentence puts around a word, which [`trimmed`] takes off.
+const WRAPPERS: &str = "()[]{}<>\"'`*_,;:!?.«»“”‘’「」";
 
-/// **Whether `word` is plain**: ASCII letters, digits and [`PLAIN_PUNCTUATION`] only, so no
-/// `.`, `:`, `/`, `\`, `%`, `@`, `#`, `?`, `;`, `[` or `]`, and no character outside ASCII. A
-/// word that is `localhost` is no plain word.
-fn plain(word: &str) -> bool {
-    !word.eq_ignore_ascii_case("localhost")
-        && word
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || PLAIN_PUNCTUATION.contains(c))
-}
-
-/// The ASCII punctuation a sentence puts around a word, which [`trimmed`] takes off.
-const WRAPPERS: &str = "()[]{}<>\"'`*_,;:!?.";
-
-/// `word` without the ASCII punctuation a sentence puts around it ([`WRAPPERS`]): never a path's
+/// `word` without the punctuation a sentence puts around it ([`WRAPPERS`]): never a path's
 /// leading `./` or `../`, nor the brackets of an IPv6 address (`[::1]:8080`).
 fn trimmed(word: &str) -> &str {
     let start = if word.starts_with("./") || word.starts_with("../") || bracketed_ip(word) {
@@ -173,31 +173,286 @@ fn bracketed_ip(text: &str) -> bool {
         .is_some_and(|(inner, _)| inner.parse::<std::net::Ipv6Addr>().is_ok())
 }
 
+/// Characters a reader may take for a dot that UTS #39's skeleton maps to something else.
+const DOTS: &str =
+    "\u{0589}\u{3002}\u{FF61}\u{06D4}\u{00B7}\u{2027}\u{02F3}\u{0387}\u{30FB}\u{FF65}";
+
+/// **The shape of `word`, which decides whether it names a target**: ASCII as written, in lower
+/// case; a character whose UTS #39 skeleton is ASCII punctuation as that punctuation (a
+/// look-alike of `.`, `:` or `/`), and one more look-alike of a dot ([`DOTS`]) as `.`; a dash as
+/// the end of a name; any other letter or digit as written without its marks, so a host in
+/// another script keeps its suffix (`.рф`); any other punctuation as `.`; and marks, symbols,
+/// emoji and private-use characters, which build no address, dropped.
+fn shape(word: &str) -> String {
+    let mut shape = String::with_capacity(word.len());
+    for c in word.chars() {
+        let skeleton: String = unicode_security::skeleton(c.encode_utf8(&mut [0; 4])).collect();
+        if c.is_ascii() {
+            shape.push(c.to_ascii_lowercase());
+        } else if DOTS.contains(c) {
+            shape.push('.');
+        } else if !skeleton.is_empty() && skeleton.chars().all(|c| c.is_ascii_punctuation()) {
+            shape.push_str(&skeleton);
+        } else if c.general_category() == GeneralCategory::DashPunctuation {
+            // A dash looks like no part of an address: it ends a name, as a space does.
+            shape.push(',');
+        } else if c.is_alphanumeric() {
+            // Without its marks: `ó` is an `o` with an accent drawn over it.
+            shape.extend(
+                c.nfd()
+                    .filter(|c| c.general_category_group() != GeneralCategoryGroup::Mark)
+                    .flat_map(char::to_lowercase),
+            );
+        } else if c.general_category_group() == GeneralCategoryGroup::Punctuation
+            || skeleton.chars().any(|c| DOTS.contains(c) || c == '.')
+        {
+            shape.push('.');
+        }
+    }
+    shape
+}
+
+/// **Whether the [`shape`] of a word names a target**: a scheme (`https:`, `x://`), an IP
+/// address (four numbers, a `0x` number, IPv6 in brackets or not), `localhost`, a name with a
+/// port (`intranet:8080`), or a domain whose last label is a public suffix (ICANN); and a path
+/// (`./x`, `~/x`, `a/b.rs`, `/a/b`), or over a file any file's name (`main.rs`). "1.2.3",
+/// "12:30", "e.g", "self.x" and "foo::bar" name none.
+fn names_a_target(shape: &str, file: bool) -> bool {
+    names_a_place(shape) || names_a_path(shape, file)
+}
+
+/// The schemes a word names by its first colon alone, as `https:good.com` does.
+const SCHEMES: [&str; 14] = [
+    "http",
+    "https",
+    "file",
+    "ftp",
+    "ws",
+    "wss",
+    "javascript",
+    "data",
+    "vbscript",
+    "mailto",
+    "blob",
+    "about",
+    "view-source",
+    "ssh",
+];
+
+/// Whether `word` starts with a scheme: one of [`SCHEMES`] and a colon, or any scheme and `://`.
+fn has_scheme(word: &str) -> bool {
+    let Some((scheme, rest)) = word.split_once(':') else {
+        return false;
+    };
+    scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+        && scheme
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+        && (SCHEMES.contains(&scheme.to_ascii_lowercase().as_str()) || rest.starts_with("//"))
+}
+
+/// Whether `shape` names a host a browser would go to: see [`names_a_target`].
+fn names_a_place(shape: &str) -> bool {
+    if has_scheme(shape) {
+        return true;
+    }
+    // Every name in it counts, before an `@` as after it: a reader takes either for the host.
+    let authority = shape
+        .split(['/', '\\', '?', '#'])
+        .next()
+        .unwrap_or_default();
+    let host = decoded(authority.rsplit('@').next().unwrap_or_default());
+    let authority = decoded(authority);
+    bracketed_ip(&host)
+        || host.parse::<std::net::Ipv6Addr>().is_ok()
+        || authority
+            .split(|c: char| !(c.is_alphanumeric() || matches!(c, '-' | '.' | ':')))
+            .any(names_a_host)
+}
+
+/// Whether `piece`, with no characters a host cannot hold, is a host and maybe a port: any
+/// name with a port counts (`intranet:8080`, `localhost.test:5173`), a time (`12:30`) does not.
+fn names_a_host(piece: &str) -> bool {
+    let (name, port) = match piece.rsplit_once(':') {
+        Some((name, port)) if port.chars().all(|c| c.is_ascii_digit()) => (name, Some(port)),
+        _ => (piece, None),
+    };
+    if name.contains(':') {
+        return false;
+    }
+    let name = name.trim_matches('.');
+    name == "localhost"
+        || port.is_some_and(|port| !port.is_empty())
+            && name.starts_with(|c: char| c.is_ascii_alphabetic())
+            && name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.'))
+        || numbers_a_host(name)
+        || public_domain(name)
+}
+
+/// Whether `name` is an IPv4 address as a browser reads one and a reader may: four numbers, or
+/// up to four where one is written in hex (`0x7f.1`, `0x7f000001`).
+fn numbers_a_host(name: &str) -> bool {
+    let parts: Vec<&str> = name.split('.').collect();
+    let hex = |part: &str| {
+        part.get(..2).is_some_and(|x| x.eq_ignore_ascii_case("0x"))
+            && part[2..].chars().all(|c| c.is_ascii_hexdigit())
+    };
+    let number =
+        |part: &str| !part.is_empty() && (part.chars().all(|c| c.is_ascii_digit()) || hex(part));
+    parts.len() <= 4
+        && parts.iter().all(|part| number(part))
+        && (parts.len() == 4 || parts.iter().any(|part| hex(part)))
+}
+
+/// Whether `name` is a domain of two labels or more whose last label is a public suffix in the
+/// list's ICANN section (`good.com`, `README.md`, `good.xn--p1ai`).
+fn public_domain(name: &str) -> bool {
+    let Ok(ascii) = idna::domain_to_ascii(name) else {
+        return false;
+    };
+    let labels: Vec<&str> = ascii.split('.').collect();
+    labels.len() >= 2
+        && labels.iter().all(|label| {
+            !label.is_empty() && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+        })
+        && labels.last().is_some_and(|last| {
+            psl::suffix(last.as_bytes()).is_some_and(|suffix| {
+                suffix.typ() == Some(psl::Type::Icann) && suffix.as_bytes() == last.as_bytes()
+            })
+        })
+}
+
+/// Whether `shape` names a path: from `/` with a folder in it, from `.`, `..` or `~`, or
+/// through a folder to a file's name; and over a file, a file's name alone.
+fn names_a_path(shape: &str, file: bool) -> bool {
+    let (path, _, _) = at_line(shape);
+    let name = path.rsplit(['/', '\\']).next().unwrap_or_default();
+    let file_name = name.rsplit_once('.').is_some_and(|(stem, extension)| {
+        !stem.is_empty()
+            && extension.len() <= 10
+            && extension.starts_with(|c: char| c.is_ascii_alphabetic())
+            && extension.chars().all(|c| c.is_ascii_alphanumeric())
+    });
+    let folders = path.contains(['/', '\\']);
+    path.starts_with("./")
+        || path.starts_with("../")
+        || path.starts_with('~')
+        || path.starts_with('/') && (path[1..].contains('/') || file_name || file)
+        || folders && (file_name || file)
+        || file && file_name
+}
+
+/// `text` with its percent-encoded bytes decoded, as a browser decodes a host.
+fn decoded(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let hex = bytes
+            .get(i + 1..i + 3)
+            .and_then(|hex| std::str::from_utf8(hex).ok())
+            .and_then(|hex| u8::from_str_radix(hex, 16).ok());
+        match (bytes[i], hex) {
+            (b'%', Some(byte)) => {
+                out.push(byte);
+                i += 3;
+            }
+            (byte, _) => {
+                out.push(byte);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// **Whether the letters of `original` are what they look like**: each run of letters outside
+/// ASCII looks the same once folded (NFKC: `ſ` reads as `f` and folds to `s`), is in one script
+/// or a highly restrictive mix (UTS #39) with no restricted character, and is no whole-script
+/// look-alike of ASCII (Cyrillic `аррӏе`). München passes. A word in ASCII always does.
+fn reads_as_written(original: &str) -> bool {
+    let skeleton = |text: &str| unicode_security::skeleton(text).collect::<String>();
+    original
+        .split(|c: char| {
+            !(c.is_alphanumeric() || c.general_category_group() == GeneralCategoryGroup::Mark)
+        })
+        .filter(|run| !run.is_ascii())
+        .all(|run| {
+            let folded: String = run.nfkc().collect();
+            skeleton(run) == skeleton(&folded)
+                && (folded.is_ascii()
+                    || folded
+                        .as_str()
+                        .check_restriction_level(RestrictionLevel::HighlyRestrictive)
+                        && !skeleton(&folded).is_ascii())
+        })
+}
+
 /// **What `word` says that the web address `url` is not**, or `None` when it names `url`
-/// itself. It is read as a browser reads an address (WHATWG): as written where it names an
-/// `http`, `https` or `file` scheme, and otherwise with `url`'s scheme before it. Then its
-/// scheme, host (IDNA applied, a `www.` before it and a dot after it no difference) and port
-/// must be `url`'s, and where it shows them, its name and password, path, query and fragment.
+/// itself. It is read as a browser reads an address (WHATWG): as written where it names a
+/// scheme, and otherwise with `url`'s scheme before it. Then its scheme, host (IDNA applied, a
+/// `www.` before it and a dot after it no difference) and port must be `url`'s, and where it
+/// shows them, its name and password, query and fragment; and the path it shows must be
+/// `url`'s or lead to it, compared with no encoding of a letter, digit or `-._~` (RFC 3986).
 fn names_web(word: &str, url: &url::Url) -> Option<String> {
-    let said = url::Url::parse(word)
-        .ok()
-        .filter(|said| matches!(said.scheme(), "http" | "https" | "file"))
-        .or_else(|| url::Url::parse(&format!("{}://{word}", url.scheme())).ok());
+    let said = if has_scheme(word) {
+        url::Url::parse(word).ok()
+    } else {
+        url::Url::parse(&format!("{}://{word}", url.scheme())).ok()
+    };
     let Some(said) = said else {
         return Some(word.to_owned());
     };
     if host_key(&said) != host_key(url) {
         return Some(said.host_str().unwrap_or(word).to_owned());
     }
+    fn shown(part: Option<&str>) -> Option<&str> {
+        part.filter(|part| !part.is_empty())
+    }
+    let said_path = unreserved(said.path());
+    let path = unreserved(url.path());
+    let (said_path, path) = (said_path.trim_end_matches('/'), path.trim_end_matches('/'));
     let same = said.scheme() == url.scheme()
         && said.port_or_known_default() == url.port_or_known_default()
         && ((said.username(), said.password()) == ("", None)
             || (said.username(), said.password()) == (url.username(), url.password()))
-        && (said.path() == "/"
-            || said.path().trim_end_matches('/') == url.path().trim_end_matches('/'))
-        && (said.query().is_none() || said.query() == url.query())
-        && (said.fragment().is_none() || said.fragment() == url.fragment());
+        && (said_path.is_empty()
+            || said_path == path
+            || path
+                .strip_prefix(said_path)
+                .is_some_and(|rest| rest.starts_with('/')))
+        && (shown(said.query()).is_none() || shown(said.query()) == shown(url.query()))
+        && (shown(said.fragment()).is_none() || shown(said.fragment()) == shown(url.fragment()));
     (!same).then(|| word.to_owned())
+}
+
+/// `path` with every percent-encoded letter, digit, `-`, `.`, `_` and `~` decoded, and the
+/// hex of every other encoding in capitals (RFC 3986 6.2.2): two spellings of one path agree.
+fn unreserved(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    let mut rest = path;
+    while let Some(at) = rest.find('%') {
+        out.push_str(&rest[..at]);
+        let byte = rest
+            .get(at + 1..at + 3)
+            .and_then(|hex| u8::from_str_radix(hex, 16).ok());
+        match byte {
+            Some(byte) if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) => {
+                out.push(char::from(byte));
+            }
+            Some(_) => out.push_str(&rest[at..at + 3].to_ascii_uppercase()),
+            None => {
+                out.push('%');
+                rest = &rest[at + 1..];
+                continue;
+            }
+        }
+        rest = &rest[at + 3..];
+    }
+    out.push_str(rest);
+    out
 }
 
 /// `url`'s host as two addresses of the same place share it: no `www.` before it, no dot after.
@@ -233,7 +488,18 @@ fn names_file(word: &str, file: &Path, pane: &Pane) -> Option<String> {
 /// same path from `/` (resolved through its links), the same from the chat's folder where it
 /// climbs out with `..`, and otherwise the end of `file`'s path.
 fn same_file(words: &str, file: &Path, pane: &Pane) -> bool {
-    let path = Path::new(words.strip_prefix("~/").unwrap_or(words));
+    let home;
+    let path = if words == "~" || words.starts_with("~/") {
+        let Some(dir) = std::env::var_os("HOME") else {
+            return false;
+        };
+        home = PathBuf::from(dir).join(words.trim_start_matches('~').trim_start_matches('/'));
+        home.as_path()
+    } else if words.starts_with('~') {
+        return false;
+    } else {
+        Path::new(words)
+    };
     if path.is_absolute() {
         return path == file || std::fs::canonicalize(path).is_ok_and(|real| real == file);
     }

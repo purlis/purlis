@@ -506,11 +506,22 @@ function wordsOf(pane: Terminal, marked: Marked): string {
     if (line === undefined) break;
     const from = !marked.moved && y === marked.start.line ? marked.startX : 0;
     const to = !marked.moved && y === marked.end.line ? marked.endX : line.length;
+    let row = "";
+    let blank = "";
     for (let x = from; x < to; x += 1) {
       const cell = line.getCell(x);
       if (cell === undefined || cell.getWidth() === 0) continue;
-      text += cell.getChars() || " ";
+      const chars = cell.getChars();
+      if (chars === "") {
+        blank += " ";
+        continue;
+      }
+      row += blank + chars;
+      blank = "";
     }
+    // A row's cells no program wrote, to its end, are no space inside one link: its words go on
+    // on the next row, where a hard line break put them.
+    text += marked.moved || y === last ? row + blank : row;
   }
   if (marked.moved) return text.trim();
   const { before, after } = besideOf(
@@ -702,10 +713,13 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
    */
   const markedCandidate = (target: string, range: IBufferRange): LinkCandidate => {
     const cut = target.slice(0, MOST_TARGET + 1);
-    const cells = rowsOf(range, pane.cols)
+    const runs = rowsOf(range, pane.cols);
+    // As in wordsOf, a row's blank tail inside the link is no space.
+    const cells = runs
       .map(
-        ({ x, y, width }) =>
-          pane.buffer.active.getLine(y)?.translateToString(false, x, x + width) ?? "",
+        ({ x, y, width }, at) =>
+          pane.buffer.active.getLine(y)?.translateToString(at < runs.length - 1, x, x + width) ??
+          "",
       )
       .join("");
     const { before, after } = besideOf(

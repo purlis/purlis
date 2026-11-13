@@ -187,6 +187,11 @@ toml = { version = "1.1", features = ["preserve_order"] }
 # version already in this workspace's lockfile, so it adds no crate to the tree.
 toml_edit = "0.25"
 unicode-normalization = "0.1.25"
+# **A marked link's words, as a reader sees them** (#6218): UTS #39's skeleton, so a look-alike of
+# `.`, `:` or `/` reads as the character it looks like, and its restriction levels, so a host
+# written in mixed scripts or with a restricted letter asks. From unicode-rs, the authors of the
+# unicode-* crates the tree already has; its own dependencies are already in the tree.
+unicode-security = "0.1"
 # The diagnostic log (`applog`, #647): what the app notices and nobody asked to see goes to
 # `tracing`, and from there to a file that rotates daily and to standard error. `tracing` is
 # already in this workspace's lockfile through Tauri; the subscriber and the rolling appender

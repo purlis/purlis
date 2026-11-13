@@ -265,6 +265,19 @@ describe("a link a program marked (OSC 8)", () => {
     );
   });
 
+  it("is read as one word where a line break inside it goes on to the next row", async () => {
+    const { term, drawn } = await opened();
+    await write(term, `see ${osc8(TARGET, "evil.\r\ncom")} y`);
+
+    hover(drawn, 5, 0);
+
+    await waitFor(() =>
+      expect(asked("pane_link_resolve").map((one) => one.args.candidates)).toContainEqual([
+        { kind: "osc8", text: "evil.com", target: TARGET },
+      ]),
+    );
+  });
+
   it("is read with the text the program printed against it, as one word", async () => {
     const { term, drawn } = await opened();
     // Only "hub.com/login" is marked; "git" before it and "!x" after it touch its cells.
