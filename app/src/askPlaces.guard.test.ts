@@ -66,6 +66,10 @@ const PLACES = {
     at: "asks-only",
     debt: "a held merge is listed in Asks alone until its chat's pane draws the merge row (T1-40, R-120); its Merge and Don't merge are the window's, through the settle guard",
   },
+  "trust-clone": {
+    at: "asks-only",
+    debt: "a GitHub App token refused for a clone purlis has no record of is listed in Asks alone until it is drawn Blocking or on its chat's finish row (T1-42, R-329); its Trust this clone is the clone Notice's own vouch_clone, window-only",
+  },
 } as const satisfies Record<AskSource, Place>;
 
 /** Each kind's place, as any place: a kind may move to or from Asks alone. */
@@ -132,6 +136,6 @@ describe("every kind of ask has a drawn place", () => {
       Object.entries(PLACE)
         .filter(([, place]) => place.at === "asks-only")
         .map(([source]) => source),
-    ).toEqual(["merge-hold"]);
+    ).toEqual(["merge-hold", "trust-clone"]);
   });
 });

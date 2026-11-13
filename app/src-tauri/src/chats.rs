@@ -308,6 +308,9 @@ pub type Routed = Box<dyn Fn(u32, &purlis_core::skills::router::Record) + Send +
 /// Told a chat's number as its latest prompt changes whether it fell back (#4445).
 pub type PromptFallbackMoved = Box<dyn Fn(u32) + Send + Sync>;
 
+/// Told a chat's number as its run is replaced at once, before it is closed (ADR 0076 §2, Q247).
+pub type Replaced = Box<dyn Fn(u32) + Send + Sync>;
+
 /// When a run's `run.started` is written (#2250).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RunSaid {
@@ -850,6 +853,8 @@ pub struct Chats {
     reattached: Mutex<Option<Starting>>,
     /// Told of the run each start begins, before its program runs (ADR 0066).
     beginning: Mutex<Option<Beginning>>,
+    /// Told the number of a run about to be replaced at once ([`Self::when_a_run_is_replaced`]).
+    replaced_told: Mutex<Option<Replaced>>,
     /// What asks a chat's router extension at its start (SK-15b): none until the app hands one,
     /// so a chat whose workspace or persona chose one is routed by the built-in router.
     router: Mutex<Option<Arc<dyn purlis_core::skills::router::AskRouter>>>,
@@ -1648,6 +1653,7 @@ impl Chats {
             starting: Mutex::new(None),
             reattached: Mutex::new(None),
             beginning: Mutex::new(None),
+            replaced_told: Mutex::new(None),
             router: Mutex::new(None),
             routed: Mutex::new(None),
             prompt_fallback_moved: Mutex::new(None),
@@ -1778,6 +1784,13 @@ impl Chats {
     /// begins: the chat's id, which a relaunch keeps, a new run's id, and why (ADR 0066).
     pub fn when_a_run_begins(&self, tell: Beginning) {
         *lock(&self.beginning) = Some(tell);
+    }
+
+    /// Calls `tell` with a run's number as it is about to be replaced at once (ADR 0076 §2, ADR
+    /// 0067 as amended 2026-10-16, Q247): a restart for project settings, while its program
+    /// still runs, so the event log ends it `superseded` before its close is heard.
+    pub fn when_a_run_is_replaced(&self, tell: Replaced) {
+        *lock(&self.replaced_told) = Some(tell);
     }
 
     /// Asks a chat's router extension at its start with `router` (SK-15b, ADR 0102 §5).
@@ -3133,6 +3146,11 @@ impl Chats {
             rows: 24,
         });
         lock(&self.replacing).insert(session);
+        // Said while its program still runs, so its end is written `superseded` (ADR 0076
+        // §2) wherever the event log is written, before its close is heard there.
+        if let Some(tell) = lock(&self.replaced_told).as_ref() {
+            tell(session);
+        }
         if let Err(why) = self.sessions.close(session) {
             tracing::warn!("purlis: chat {session}'s run did not end before its restart ({why})");
         }
@@ -6786,6 +6804,18 @@ impl Chats {
         lock(&self.open).get(&session).map(|one| one.chat.clone())
     }
 
+    /// **The id of chat `session`** (ADR 0066), open here or ended here on purpose and still
+    /// kept ([`Self::close`]): what the event log knows it by. `None` for a number that is
+    /// neither, or a chat not given an id.
+    pub fn logged_id_of(&self, session: u32) -> Option<String> {
+        if let Some(one) = lock(&self.open).get(&session) {
+            return one.chat.identity.id.clone();
+        }
+        lock(&self.let_go)
+            .get(&session)
+            .and_then(|was| was.identity.id.clone())
+    }
+
     /// **What a dispatch is decided over**: every chat this app has open and every one it is
     /// about to start, by its number for each, handed to `decide` with whether a number is a
     /// chat still starting (which counts as working: it is about to be).
@@ -8852,6 +8882,8 @@ impl Chats {
             &self.project,
             std::time::Duration::from_secs(2),
         );
+        // And the asks its chats' refusals raised go with them.
+        purlis_core::windowonly::project_ended(&self.project);
         lock(&self.open).clear();
         lock(&self.would_not_start).clear();
         lock(&self.coming).clear();

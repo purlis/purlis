@@ -1990,14 +1990,17 @@ fn a_parents_end_ends_each_live_child_in_the_parents_end_state_and_cause() {
         .unwrap();
 
     let ended = host
-        .end_children_with(plane, 5, RunState::Stopped, Cause::Stop(StopBy::Killed))
+        .end_run_with(plane, 5, RunState::Stopped, Cause::Stop(StopBy::Killed))
         .unwrap();
     // Told again, there is nothing left to end.
     let again = host
-        .end_children_with(plane, 5, RunState::Stopped, Cause::Stop(StopBy::Killed))
+        .end_run_with(plane, 5, RunState::Stopped, Cause::Stop(StopBy::Killed))
         .unwrap();
 
-    assert_eq!(ended.len(), 2);
+    // Its two live children, then its own run (R-233).
+    assert_eq!(ended.len(), 3);
+    assert_eq!(ended[2].run.as_deref(), Some(parent.as_str()));
+    assert_eq!(ended[2].parent_run, None);
     assert!(again.is_empty());
     let mut ends = run_ends(dir.path());
     ends.sort();
@@ -2014,7 +2017,13 @@ fn a_parents_end_ends_each_live_child_in_the_parents_end_state_and_cause() {
             "stopped".to_owned(),
             "killed".to_owned(),
         ),
-        (two, Some(parent), "stopped".to_owned(), "killed".to_owned()),
+        (
+            two,
+            Some(parent.clone()),
+            "stopped".to_owned(),
+            "killed".to_owned(),
+        ),
+        (parent, None, "stopped".to_owned(), "killed".to_owned()),
     ];
     want.sort();
     assert_eq!(ends, want);
@@ -2034,7 +2043,7 @@ fn a_parents_end_that_is_no_end_state_is_refused_and_ends_nothing() {
     host.tool(plane, &by_agent(5, "agent-1"), Instant::now())
         .unwrap();
 
-    let refused = host.end_children_with(plane, 5, RunState::Working, Cause::Prompted);
+    let refused = host.end_run_with(plane, 5, RunState::Working, Cause::Prompted);
 
     assert_eq!(
         refused.unwrap_err().kind(),
@@ -4559,4 +4568,51 @@ fn a_start_whose_protection_sync_fails_is_still_begun_with_its_routing_record() 
         .map(|event| event.kind)
         .collect();
     assert_eq!(kinds, ["run.started", "skill.routed"]);
+}
+
+#[test]
+fn the_runs_a_writer_ended_are_held_no_more_than_the_runs_it_began_and_each_still_ends_once() {
+    // T1-27's review: a chat's own run ends once (`ended_runs`), and what remembers it is held
+    // as `begun` is, to [`RUNS_HELD`]. One chat run again and again leaves its old runs behind.
+    let dir = tempfile::tempdir().unwrap();
+    let mut host = recorder(dir.path());
+    let (plane, chat) = (Path::new("/p"), crate::reopen::mint());
+    let attributes = Attributes::default();
+    for _ in 0..=RUNS_HELD {
+        let run = crate::reopen::mint();
+        host.begin(
+            plane,
+            1,
+            RunOf {
+                chat: &chat,
+                run: &run,
+            },
+            Began::Reopen,
+            &attributes,
+        )
+        .unwrap();
+        host.end_run_with(
+            plane,
+            1,
+            RunState::Completed,
+            Cause::Exited(crate::state::run::Exit::Code(0)),
+        )
+        .unwrap();
+    }
+
+    assert!(
+        host.ended_runs.len() < RUNS_HELD,
+        "held {} runs' ends",
+        host.ended_runs.len()
+    );
+    // The run in force is still known to have ended: told again, it writes nothing.
+    let again = host
+        .end_run_with(
+            plane,
+            1,
+            RunState::Completed,
+            Cause::Exited(crate::state::run::Exit::Code(0)),
+        )
+        .unwrap();
+    assert!(again.is_empty(), "{again:?}");
 }

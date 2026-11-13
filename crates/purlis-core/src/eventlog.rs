@@ -1678,6 +1678,11 @@ pub struct Recorder {
     /// stays small: only a start put aside adds a number, one each, and a number told again
     /// ([`Recorder::begin_held`], [`Recorder::knows`]) leaves it.
     taken_back: std::collections::HashSet<(PathBuf, u32)>,
+    /// The chats' own runs whose `run.ended` is written ([`Recorder::end_run_with`]), by id: a
+    /// run ends once, however often its end is told. Held to [`RUNS_HELD`], as [`Self::begun`]
+    /// is: when full, only the runs still some chat's own are kept, since only a chat's current
+    /// run is ever ended again.
+    ended_runs: std::collections::HashSet<String>,
     /// Each live sub-agent's child run, by chat id and the harness's agent id.
     children: HashMap<(String, String), (String, String)>,
     /// The sub-agents whose `SubagentStop` was heard, by chat id and agent id: a later line
@@ -1816,6 +1821,7 @@ impl Recorder {
             children: HashMap::new(),
             stopped: std::collections::HashSet::new(),
             taken_back: std::collections::HashSet::new(),
+            ended_runs: std::collections::HashSet::new(),
             calls: HashMap::new(),
             kill_switch: None,
             kill_switch_skipped: None,
@@ -2364,12 +2370,15 @@ impl Recorder {
 
     /// Chat `number`'s current run has ended, in `state` for `cause`: each of its sub-agents
     /// still live ends with it, in the same state and for the same cause (ADR 0076 §6), with a
-    /// `run.ended` under its child run. What the host calls at the run's exit or its own stop;
-    /// a `/clear`, a `SessionEnd` and a new run begun for the chat end them here already. The
-    /// events written, none when no child was live.
+    /// `run.ended` under its child run, and then **the chat's own run ends** with a `run.ended`
+    /// under it (R-233): its result, and the exit code where the program left one. What the
+    /// host calls at the run's program's exit or its own stop; a `/clear`, a `SessionEnd` and
+    /// a new run begun for the chat end its sub-agents there already. The events written, none
+    /// for a chat the host was never told of, or one whose start is still held.
     ///
-    /// Refused, with nothing ended, for a `state` that is not an end state.
-    pub fn end_children_with(
+    /// Every line is tried: the first refusal is the answer. Refused, with nothing ended, for
+    /// a `state` that is not an end state.
+    pub fn end_run_with(
         &mut self,
         plane: &Path,
         number: u32,
@@ -2382,14 +2391,35 @@ impl Recorder {
                 format!("a run does not end {state:?}"),
             ));
         }
-        let Some(chat) = self
-            .chats
-            .get(&(plane.to_path_buf(), number))
-            .map(|who| who.chat.clone())
-        else {
+        let Some(who) = self.chats.get(&(plane.to_path_buf(), number)).cloned() else {
             return Ok(Vec::new());
         };
-        self.end_children(&chat, state, cause)
+        let children = self.end_children(&who.chat, state, cause);
+        if self.ended_runs.len() >= RUNS_HELD {
+            let current: std::collections::HashSet<&str> =
+                self.chats.values().map(|who| who.run.as_str()).collect();
+            self.ended_runs.retain(|run| current.contains(run.as_str()));
+        }
+        if who.held.is_some() || !self.ended_runs.insert(who.run.clone()) {
+            return children;
+        }
+        let mut body = serde_json::json!({ "state": end_word(state), "cause": cause.word() });
+        if let Cause::Exited(crate::state::run::Exit::Code(code)) = cause {
+            body["code"] = code.into();
+        }
+        let under = Under {
+            chat: who.chat,
+            run: who.run,
+            parent: None,
+        };
+        let own = self.append(&under, "run.ended", body);
+        match (children, own) {
+            (Ok(mut ended), Ok(event)) => {
+                ended.push(event);
+                Ok(ended)
+            }
+            (Err(why), _) | (Ok(_), Err(why)) => Err(why),
+        }
     }
 
     /// Records each line of the kill switch's journal under `config` that the log does not

@@ -2687,6 +2687,35 @@ fn a_restart_for_project_settings_ends_the_old_run_before_the_new_one_starts() {
 }
 
 #[test]
+fn a_restart_for_project_settings_says_the_old_run_is_replaced_before_it_ends_it() {
+    // ADR 0076 §2, Q247: the event log is told the run is superseded while it still runs, so
+    // its end is written superseded wherever the log is written, the session host's included,
+    // and the close that follows ends nothing more.
+    let (plane, chats, host, _told) =
+        chats_on_kept_project_settings(crate::projectsettings::Watch::new());
+    let session = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    let replaced = Arc::new(Mutex::new(Vec::new()));
+    chats.when_a_run_is_replaced(Box::new({
+        let (replaced, host) = (Arc::clone(&replaced), host.clone());
+        move |number| lock(&replaced).push((number, host.openings().len()))
+    }));
+
+    let started = chats
+        .restart_for_project_settings(session)
+        .expect("started again");
+
+    assert_eq!(
+        *lock(&replaced),
+        [(session, 1)],
+        "once, before the new run started"
+    );
+    let _ = chats.close(session);
+    chats.close(started).expect("ends");
+}
+
+#[test]
 fn a_session_is_renamed_only_where_a_new_conversation_is_started() {
     let mut words: Vec<String> = ["--session-id", "a", "--name", "a"]
         .map(str::to_owned)

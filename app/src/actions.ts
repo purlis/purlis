@@ -49,6 +49,7 @@ import type {
 import type { Failed } from "./repoClones";
 import { activityTitle, activityView } from "./activity";
 import { chatNetworkTitle, chatNetworkView } from "./chatNetwork";
+import { chatLogTitle, chatLogView } from "./chatLog";
 import { DISPATCHES_TITLE, DISPATCHES_VIEW } from "./dispatches";
 import { BROWSERS_GRID_TITLE, BROWSERS_GRID_VIEW } from "./browsersGrid";
 import {
@@ -1725,6 +1726,8 @@ function isPinned<T>(held: readonly T[], one: T): boolean {
 export const activityId = (session: number) => `chat.activity:${session}`;
 /** The catalogue's id for the row that opens chat `session`'s Network view (#1662). */
 export const networkId = (session: number) => `chat.network:${session}`;
+/** The catalogue's id for the row that opens chat `session`'s Chat log (R-224, T1-27). */
+export const chatLogId = (session: number) => `chat.log:${session}`;
 /** The id of the row that opens the card of the harness chat `session` runs on (#5204). */
 export const chatHarnessId = (session: number) => `chat.harness:${session}`;
 /** The id of the row that focuses the workspace chat `session` works in (#5204). */
@@ -5010,8 +5013,8 @@ function askerRow(
       );
 }
 
-/** **A chat's Activity (#1495) and Network (#1662) rows**: each opens a view in a tab of its
- *  own, and only reads. */
+/** **A chat's Activity (#1495), Network (#1662) and Chat log (R-224) rows**: each opens a view in
+ *  a tab of its own, and only reads. */
 function readingRows(session: number, name: string): Offer[] {
   return [
     {
@@ -5031,6 +5034,15 @@ function readingRows(session: number, name: string): Offer[] {
         name,
       ),
       note: `What ${name} can reach now and what it was refused, in a tab of its own.`,
+    },
+    {
+      ...can(
+        chatLogId(session),
+        `Chat log of ${name}`,
+        { verb: "openView", view: chatLogView(session), title: chatLogTitle(name) },
+        name,
+      ),
+      note: `${name}'s story: its start and its end, in a tab of its own.`,
     },
   ];
 }
@@ -5995,6 +6007,7 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
           chatStudioId(at),
           activityId(at),
           networkId(at),
+          chatLogId(at),
           ignoreId(at),
         ],
         below: [

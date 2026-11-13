@@ -7,11 +7,12 @@
 //! [`clones_to_vouch`] lists every clone of the project's workspaces that purlis did not clone
 //! and the person has not trusted, with the address its remote names, which the project draws as
 //! one Notice per clone. [`vouch_clone`] is that Notice's fix: it records the clone at the address
-//! the Notice showed, while its remote still names exactly that one.
+//! the Notice showed, while its remote still names exactly that one. It is also the Trust this
+//! clone of the ask a refused GitHub App token raises (R-330), and clears that ask.
 //!
 //! Both are the window's alone (`WINDOW_ONLY`): trusting a clone is what lets saves push it and
-//! chats in its workspace use the person's GitHub access with it, so no link and no chat may ask
-//! or press it.
+//! chats in its workspace use the person's GitHub access with it, so no link and no chat may
+//! press it. A chat's refused mint raises the ask (Q181), and only the person presses it.
 
 use purlis_core::forge::gitcredential::vouch;
 use purlis_core::forge::route::HostScope;
@@ -79,8 +80,9 @@ pub async fn vouch_clone(
         let config_root = purlis_core::machine::config_root()
             .ok_or_else(|| "purlis found no home directory to record the clone in".to_owned())?;
         // Any folder that is not one of the project's workspace clones is refused by the core.
-        let clone = root.join(&folder);
-        vouch::vouch_clone(&scope, &config_root, &root, &clone, &place)
+        // The same press clears every chat's refusal that waited on it, from its ask or its
+        // Notice (R-328).
+        purlis_core::windowonly::trust_this_clone(&scope, &config_root, &root, &folder, &place)
     })
     .await
     .map_err(|err| format!("trusting the clone did not finish: {err}"))?

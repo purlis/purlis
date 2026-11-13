@@ -624,6 +624,10 @@ pub enum AskSource {
     /// **A merge a chat's hook held** (R-114, R-115): the chat never merges. Merge is the
     /// app's own forge call, on the person's press, and Don't merge merges nothing.
     MergeHold,
+    /// **A refusal whose only way out is Trust this clone** (R-328, R-330): a GitHub App token
+    /// that couldn't be minted for a clone purlis has no record of. Trust this clone records it,
+    /// as the clone's own Notice does, and the chat's next mint goes through.
+    TrustClone,
 }
 
 /// **The existing, checked path an ask is answered by** (#1690): the command the window
@@ -737,6 +741,10 @@ pub enum AnswerPath {
         number: u32,
         head: String,
     },
+    /// `vouch_clone` for Trust this clone, on the clone at `folder` (relative to the project)
+    /// at `place`, the address its remote named when the refusal was raised (R-330): the clone
+    /// Notice's own command, which clears the ask.
+    TrustClone { folder: String, place: String },
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
 }
@@ -2019,6 +2027,62 @@ pub fn merge_hold(waits: &purlis_core::mergehold::Waits) -> Shown {
             )
             .into(),
         ),
+        writes: None,
+        lines: None,
+        last_message: None,
+        login: None,
+        fill: None,
+        earlier_messages: None,
+        rule: None,
+        secret: None,
+        run: None,
+    }
+}
+
+/// The option id of a window-only refusal's one control: the press that clears it.
+pub const PRESS: &str = "press";
+
+/// The key of chat `session`'s ask for a window-only refusal whose way out is `control`.
+fn window_only_key(session: u32, control: &purlis_core::windowonly::Control) -> String {
+    match control {
+        purlis_core::windowonly::Control::TrustClone { folder, place } => {
+            format!("trust-clone:{session}:{folder}|{place}")
+        }
+    }
+}
+
+/// **The window-only refusal adapter** (R-328): a refusal whose only way out is a press in the
+/// window, as one ask with that control on its row. Every word is purlis's; the folder and the
+/// address are the ones the refusal was raised at (R-330).
+pub fn window_only(refused: &purlis_core::windowonly::Refusal) -> Shown {
+    let control = &refused.control;
+    let answer = match control {
+        purlis_core::windowonly::Control::TrustClone { folder, place } => AnswerPath::TrustClone {
+            folder: folder.clone(),
+            place: place.clone(),
+        },
+    };
+    Shown {
+        session: refused.session,
+        ask: window_only_key(refused.session, control),
+        says: said_inertly(&control.says()),
+        options: vec![Offered {
+            id: PRESS.to_owned(),
+            label: control.label().to_owned(),
+            allows: true,
+            preselected: None,
+            scope: None,
+        }],
+        source: AskSource::TrustClone,
+        chain: Vec::new(),
+        answer,
+        // Since when is the registry's to say, as for every ask (`Waiting::since`).
+        since: None,
+        held_until: None,
+        expires: None,
+        blocks: None,
+        timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -3964,6 +4028,8 @@ pub struct Waiting<'a> {
     pub removals: Vec<(crate::removalasks::Waits, purlis_core::removalask::Holds)>,
     /// The merges its chats' hooks held, each waiting on the person's press (R-114).
     pub merges: Vec<purlis_core::mergehold::Waits>,
+    /// The refusals whose only way out is a press in the window, each an ask (R-328).
+    pub window_only: Vec<purlis_core::windowonly::Refusal>,
     /// The changes a chat proposed to purlis's own configuration, each as it is now (#1975).
     pub proposals: Vec<(crate::proposals::Proposal, crate::proposals::Now)>,
     /// The changes to the project chats on a pool's runner asked for (#2046).
@@ -4076,6 +4142,8 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     );
     // A chat whose merge was held waits on the person's press, never its own (R-114).
     asks.extend(waiting.merges.iter().map(merge_hold));
+    // A refusal whose only way out is the window's press is an ask with that control (R-328).
+    asks.extend(waiting.window_only.iter().map(window_only));
     // A chat that proposed a change waits on the person's answer, as one that asked them to
     // remove a workspace does (#1975).
     asks.extend(
@@ -4387,6 +4455,10 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     for one in &merges {
         since.insert(merge_key(one.session, &one.key), one.since);
     }
+    let window_only = purlis_core::windowonly::every(root);
+    for one in &window_only {
+        since.insert(window_only_key(one.session, &one.control), one.since);
+    }
     let proposals: Vec<_> = crate::proposals::waiting(held)
         .into_iter()
         .inspect(|(one, _)| {
@@ -4521,6 +4593,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         pool_sign_ins,
         removals,
         merges,
+        window_only,
         proposals,
         runner_writes,
         runner_dispatches,

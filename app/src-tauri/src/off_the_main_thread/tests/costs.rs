@@ -425,6 +425,8 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "keep_dispatch_blocked",
             "put_away_refused_vault",
             "keep_asked_workspace",
+            // Don't merge on a held merge (R-115): the ask taken from the holds, in memory.
+            "dont_merge_held_request",
             "dismiss_sign_in",
             "dismiss_sandbox_only",
             "keep_sandbox_block_for_tasks",

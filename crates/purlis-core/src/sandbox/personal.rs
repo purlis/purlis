@@ -396,12 +396,35 @@ pub fn set_by_you(
 /// ([`super::team::allowed_levels`]) is never written, and nothing else is either. It is never an
 /// error: setup has made the project by now and finishes in one press (R-064), so what was not
 /// kept comes back as the window's sentence.
+///
+/// **No sandbox moves the vaults first, in this same step** (T1-25, R-293, R-298): a project
+/// whose committed `vaults.json` registers a plain-file vault refuses it, naming who added that
+/// vault, and every plain-file vault this machine registers moves into the system keychain
+/// before the level is written ([`no_sandbox`]). A refusal, or a move that stops, writes no
+/// level.
 pub fn chosen_at_setup(root: &Path, choice: Choice) -> AtSetup {
+    let ctx = crate::secrets::Ctx::new(root, crate::secrets::Env::from_process());
+    chosen_at_setup_in(&ctx, choice)
+}
+
+/// [`chosen_at_setup`] for the project of `ctx`, whose vaults it reads and moves.
+pub fn chosen_at_setup_in(ctx: &crate::secrets::Ctx, choice: Choice) -> AtSetup {
+    let root = ctx.root.as_path();
     let bound = super::team::allowed_levels(root);
     if !bound.allows(choice) {
         let why = bound
             .why
             .unwrap_or_else(|| format!("{} is not a level you may choose here.", choice.said()));
+        return AtSetup::NotKept(format!(
+            "{why} Your choice, {}, was not kept: chats here start at {}. Change it in \
+             Settings › Project › Sandbox.",
+            choice.said(),
+            bound.default.said()
+        ));
+    }
+    if choice == Choice::Off
+        && let Err(why) = no_sandbox::moved_before_the_level(ctx)
+    {
         return AtSetup::NotKept(format!(
             "{why} Your choice, {}, was not kept: chats here start at {}. Change it in \
              Settings › Project › Sandbox.",
@@ -475,6 +498,8 @@ pub fn forget_not_in(root: &Path, local: Option<&str>) {
         let _ = super::local::change_levels(root, |held| *held = kept);
     }
 }
+
+pub mod no_sandbox;
 
 #[cfg(test)]
 mod tests;

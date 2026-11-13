@@ -3,6 +3,7 @@
 
 import { activityView, isActivity } from "./activity";
 import { chatNetworkView, isChatNetwork } from "./chatNetwork";
+import { chatLogView, isChatLog } from "./chatLog";
 import { archiveTitle } from "./memories";
 
 /**
@@ -2010,8 +2011,8 @@ export function replaceSession(tabs: Tabs, from: number, to: number): Tabs {
   return moved;
 }
 
-/** `tabs` with every Activity and Network view of chat `from` about chat `to`; `tabs` itself
- *  where none is. */
+/** `tabs` with every Activity, Network and Chat log view of chat `from` about chat `to`; `tabs`
+ *  itself where none is. */
 function viewsFollow(tabs: Tabs, from: number, to: number): Tabs {
   const was = String(from);
   let byId = tabs.byId;
@@ -2023,7 +2024,9 @@ function viewsFollow(tabs: Tabs, from: number, to: number): Tabs {
         ? activityView(to)
         : isChatNetwork(content.view)
           ? chatNetworkView(to)
-          : undefined;
+          : isChatLog(content.view)
+            ? chatLogView(to)
+            : undefined;
       if (view === undefined) continue;
       const now: Content = { ...content, view };
       layout = replace(layout, pane, (found) => ({ ...found, content: now }));
