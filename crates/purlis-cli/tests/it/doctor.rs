@@ -1021,7 +1021,6 @@ fn purlis_doctor_lists_the_unrecorded_clones() {
 /// such a clone is not in the window's Trust these clones, since no press can trust it.
 #[test]
 fn purlis_doctor_names_a_clone_whose_origin_names_several_addresses_with_the_fix() {
-    purlis_core::unsteered!();
     let (_d, root) = plane();
     let clone = root.join("workspaces/alpha/repos/api");
     std::fs::create_dir_all(&clone).unwrap();
