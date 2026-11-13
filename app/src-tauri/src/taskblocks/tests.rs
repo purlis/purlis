@@ -352,6 +352,140 @@ fn a_named_held_refusal_replaces_the_same_refusal_unnamed() {
     assert_eq!(blocks.every(), [(4, named), (5, unnamed)]);
 }
 
+/// What a [`Blocks`] said left its asks as blocks ([`Blocks::when_left`]): each chat, block,
+/// tool and who reported it.
+type LeftAsBlocks =
+    std::sync::Arc<std::sync::Mutex<Vec<(u32, HeldBlock, Option<String>, Reported)>>>;
+
+fn telling_left(blocks: &Blocks) -> LeftAsBlocks {
+    let left: LeftAsBlocks = std::sync::Arc::default();
+    blocks.when_left({
+        let left = std::sync::Arc::clone(&left);
+        std::sync::Arc::new(move |chat, block: &HeldBlock, tool, reported| {
+            left.lock()
+                .unwrap()
+                .push((chat, block.clone(), tool, reported));
+        })
+    });
+    left
+}
+
+fn write_to(folder: &str) -> HeldBlock {
+    HeldBlock {
+        operation: "write".to_owned(),
+        kind: "project-files".to_owned(),
+        what: GrantWhat::Write,
+        target: folder.to_owned(),
+    }
+}
+
+/// T1-10, by T1-09's rule (Q154): a sandbox refusal held as an ask is a block once its ask
+/// leaves by anything but an Allow (Keep blocked, a newer ask in its place, its chat's end),
+/// once, and never while it is still an ask. An Allow writes none, and a quiet line read back,
+/// which no ask lists, none either.
+#[test]
+fn a_held_refusal_is_one_block_once_its_ask_leaves_by_anything_but_an_allow() {
+    let blocks = Blocks::default();
+    let left = telling_left(&blocks);
+    let taken = || std::mem::take(&mut *left.lock().unwrap());
+    // The chat's latest call, by the harness's name: the tool its blocks name.
+    blocks.called(&purlis_core::hookwire::ToolCall {
+        chat: 4,
+        tool_hook: "pretooluse".to_owned(),
+        tool: Some("Bash".to_owned()),
+        call: Some("c1".to_owned()),
+        args: None,
+        decision: purlis_core::hookwire::Decision::Allow,
+        rule: None,
+        arm: None,
+        hook_ms: 0,
+        agent: None,
+        at_ms: 0,
+        skill: None,
+    });
+
+    // A write held as an ask is no block yet.
+    let first = write_to("/p/records");
+    blocks.heard(4, first.clone());
+    assert!(taken().is_empty(), "an ask, and no block beside it");
+
+    // A newer write of the same kind takes its Notice's place: the first left, one block.
+    let second = write_to("/p/notes");
+    blocks.heard(4, second.clone());
+    assert_eq!(
+        taken(),
+        [(
+            4,
+            first.clone(),
+            Some("Bash".to_owned()),
+            Reported::ByItsHook
+        )]
+    );
+    // Heard again, the same ask stays, and is no block.
+    blocks.heard(4, second.clone());
+    assert!(taken().is_empty());
+
+    // Keep blocked: the ask leaves as one block, once.
+    assert!(blocks.kept_blocked(4, &second));
+    assert!(!blocks.holds(4, &second));
+    assert!(!blocks.kept_blocked(4, &second), "answered already");
+    assert_eq!(
+        taken(),
+        [(4, second, Some("Bash".to_owned()), Reported::ByItsHook)]
+    );
+
+    // An Allow: the ask leaves as no block.
+    let allowed = write_to("/p/allowed");
+    blocks.heard(4, allowed.clone());
+    blocks.answered(4, &allowed);
+    assert!(taken().is_empty(), "allowed, so no block");
+
+    // A quiet line read back is no ask, and its going is no block.
+    let read_back = write_to("/p/read-back");
+    blocks.heard_quietly(4, read_back.clone());
+    blocks.heard(4, write_to("/p/after"));
+    assert!(
+        !taken().iter().any(|(_, block, ..)| *block == read_back),
+        "a quiet line is never a block"
+    );
+
+    // A live held connection kept blocked is purlis's proxy's own word.
+    let live = held(&seen(4, "api.example.com"));
+    blocks.heard_waiting(4, live.clone());
+    assert!(blocks.kept_blocked(4, &live));
+    assert_eq!(
+        taken(),
+        [(4, live, Some("Bash".to_owned()), Reported::ByTheProxy)]
+    );
+
+    // The chat ends: what it was still asked about is a block each.
+    let last = write_to("/p/last");
+    blocks.heard(4, last.clone());
+    taken();
+    blocks.ended(4);
+    assert_eq!(
+        taken(),
+        [(4, last, Some("Bash".to_owned()), Reported::ByItsHook)]
+    );
+    blocks.ended(4);
+    assert!(taken().is_empty(), "once");
+}
+
+/// #1903 in the other order (T1-10): an unnamed line of a refusal heard while the same refusal,
+/// named, is an ask is that ask's echo, so it is dropped, never a second ask beside it, and
+/// never a second block once the named one is one.
+#[test]
+fn an_unnamed_refusal_heard_while_the_named_one_is_asked_is_its_echo() {
+    let blocks = Blocks::default();
+    let named = held(&seen(4, "api.example.com"));
+    let unnamed = HeldBlock::unnamed_host(&named.operation, &named.kind);
+    blocks.heard_waiting(4, named.clone());
+    assert!(blocks.echoes(4, &unnamed), "the named one is asked");
+    assert!(!blocks.echoes(5, &unnamed), "another chat's");
+    let other = HeldBlock::unnamed_host("lookup", &named.kind);
+    assert!(!blocks.echoes(4, &other), "another refusal");
+}
+
 /// #1709: a burst of held asks keeps each of them, past the hosts one Notice lists, up to as
 /// many connections as one chat's proxy holds at once; past that the oldest goes first, so what
 /// is held for one chat stays bounded.

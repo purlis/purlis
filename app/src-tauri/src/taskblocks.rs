@@ -30,6 +30,7 @@ use std::collections::HashMap;
 use std::sync::{Mutex, PoisonError};
 
 use purlis_core::sandbox::grant::{self, Level, What};
+pub use purlis_core::sandboxblock::stop::Reported;
 
 use crate::planes::{PlaneId, Planes};
 use crate::sandboxing::{GrantLevel, GrantWhat};
@@ -160,7 +161,13 @@ pub struct Blocks {
     /// What each open chat's hook lines said of its calls (R-290, Q240): what tells when it
     /// has moved on from a connection held now.
     calls: Mutex<HashMap<u32, Calls>>,
+    /// Who is told each block an ask left as (T1-10): set once the project's hooks record.
+    left: Mutex<Option<Left>>,
 }
+
+/// **Who is told a held refusal left its ask as a block** (T1-10, Q154): its chat, the block,
+/// the tool of the chat's latest call by the harness's name, and who reported it.
+pub type Left = std::sync::Arc<dyn Fn(u32, &HeldBlock, Option<String>, Reported) + Send + Sync>;
 
 /// **What a chat's hook lines said of its calls** (R-290, Q240), for the connections it holds.
 #[derive(Default)]
@@ -559,6 +566,18 @@ impl Blocks {
 
     fn calls(&self) -> std::sync::MutexGuard<'_, HashMap<u32, Calls>> {
         self.calls.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Who is told, from now on, each held refusal whose ask left as a block (T1-10).
+    pub fn when_left(&self, left: Left) {
+        *self.left.lock().unwrap_or_else(PoisonError::into_inner) = Some(left);
+    }
+
+    /// **The person kept `block` of chat `session` blocked** (T1-10): whether it was held.
+    pub fn kept_blocked(&self, session: u32, block: &HeldBlock) -> bool {
+        let was = self.holds(session, block);
+        self.answered(session, block);
+        was
     }
 
     /// Whether chat `session` is held on `block` now.
