@@ -1227,6 +1227,9 @@ struct StartKey {
     level_as: Option<String>,
     made: purlis_core::sandbox::Made,
     grants: purlis_core::sandbox::grant::Grants,
+    /// Whether it is held from every cluster at each start, as Pool setup's Get help chat is
+    /// ([`purlis_core::reopen::Chat::held_from_clusters`]).
+    held_from_clusters: bool,
 }
 
 /// What a start would compile now, for [`StartKey`]: the sandbox it settles to, none at all,
@@ -4188,13 +4191,15 @@ impl Chats {
                 // What the chat's next start would be made as.
                 made: made_of(&chat, Why::Relaunch),
                 grants: with.grants.clone(),
+                // Compiled as its next start compiles it (`start_recorded_checked`).
+                held_from_clusters: chat.held_from_clusters,
             };
             let known = compiled
                 .iter()
                 .find(|(one, _)| *one == key)
                 .map(|(_, now)| now.clone());
             let now = known.unwrap_or_else(|| {
-                let now = match purlis_core::sandbox::decide_granted(
+                let decide = || match purlis_core::sandbox::decide_granted(
                     key.harness,
                     &self.project,
                     machine,
@@ -4214,6 +4219,11 @@ impl Chats {
                         CompiledNow::Unconfined
                     }
                     Err(_) => CompiledNow::Refused,
+                };
+                let now = if key.held_from_clusters {
+                    purlis_core::sandbox::policy::holding_from_clusters(decide)
+                } else {
+                    decide()
                 };
                 compiled.push((key, now.clone()));
                 now

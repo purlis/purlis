@@ -39,19 +39,37 @@ pub fn ready_to_help(
 /// **How a recorded chat starts again** (#4497, story 60): a relaunch, a restart, Again, a start
 /// on its exit and a move. A help chat's record says it is one
 /// ([`crate::reopen::Chat::held_from_clusters`]), and it is held from every cluster at each of
-/// those starts as at its first ([`ready_to_help`]). Every other chat starts as
-/// [`crate::start::ready`] starts it.
+/// those starts as at its first ([`ready_to_help`]), and it never starts without the sandbox:
+/// not on the person's Start without the sandbox ([`ONLY_SANDBOXED`]), and not where the
+/// project now runs its chats without one ([`PROJECT_UNSANDBOXED`]), as its first start is
+/// refused there. Every other chat starts as [`crate::start::ready`] starts it.
 pub fn ready_again(
     chat: &crate::reopen::Chat,
     start: &crate::start::Start,
     root: &std::path::Path,
 ) -> Result<crate::start::Ready, String> {
-    if chat.held_from_clusters {
-        ready_to_help(start, root)
-    } else {
-        crate::start::ready(start, root)
+    if !chat.held_from_clusters {
+        return crate::start::ready(start, root);
     }
+    if start.without_sandbox.is_some() {
+        return Err(ONLY_SANDBOXED.to_owned());
+    }
+    let ready = ready_to_help(start, root)?;
+    if ready.sandbox.is_none() {
+        return Err(PROJECT_UNSANDBOXED.to_owned());
+    }
+    Ok(ready)
 }
+
+/// **Why a help chat isn't started again without the sandbox** ([`ready_again`]).
+pub const ONLY_SANDBOXED: &str = "Get help runs only in the sandbox, so this chat isn't started \
+     without it. Restart it with the sandbox, or read the step's findings in Pool setup.";
+
+/// **Why a help chat isn't started again in a project that runs chats without the sandbox**
+/// ([`ready_again`]), as its first start is refused there.
+pub const PROJECT_UNSANDBOXED: &str = "This project runs chats without the sandbox, and Get help \
+     runs only in it, so this chat isn't started. Turn the sandbox on for this project, or read \
+     the step's findings in Pool setup.";
 
 /// **The tab label of a help chat about `step`.**
 #[must_use]

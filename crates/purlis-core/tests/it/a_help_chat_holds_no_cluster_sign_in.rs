@@ -215,3 +215,92 @@ fn a_help_chat_started_again_from_its_record_is_held_as_at_its_first_start() {
         "an ordinary chat started again"
     );
 }
+
+/// The help chat's record, as the app writes it: what [`help::ready_again`] starts again.
+fn help_chat(root: &Path) -> purlis_core::reopen::Chat {
+    purlis_core::reopen::Chat {
+        program: "claude".to_owned(),
+        name: "help.1".to_owned(),
+        cwd: Some(root.to_path_buf()),
+        profile: Some("work".to_owned()),
+        number: Some(1),
+        held_from_clusters: true,
+        ..Default::default()
+    }
+}
+
+/// **A help chat is never started again without the sandbox** (#4497, story 60): the person's
+/// Start without the sandbox, which any other chat may take, is refused for it, and says why.
+#[test]
+fn a_help_chat_is_not_started_again_without_the_sandbox() {
+    purlis_core::unsteered!();
+    let Some(project) = Project::new(
+        "a_help_chat_holds_no_cluster_sign_in::a_help_chat_is_not_started_again_without_the_sandbox",
+    ) else {
+        return;
+    };
+    let root = project.root();
+    let unsandboxed = || Start {
+        without_sandbox: Some(sandbox::OptOut {
+            reason: Some("started again without the sandbox".to_owned()),
+        }),
+        ..project.start()
+    };
+
+    // Not vacuous: an ordinary chat here starts again without the sandbox when asked to.
+    let ordinary = purlis_core::reopen::Chat {
+        held_from_clusters: false,
+        ..help_chat(root)
+    };
+    let ready = help::ready_again(&ordinary, &unsandboxed(), root).expect("it starts again");
+    assert!(ready.sandbox.is_none(), "an ordinary chat runs as asked");
+
+    let refused = help::ready_again(&help_chat(root), &unsandboxed(), root)
+        .expect_err("a help chat is not started without the sandbox");
+    assert_eq!(refused, help::ONLY_SANDBOXED);
+    assert!(
+        refused.contains("Get help runs only in the sandbox"),
+        "{refused}"
+    );
+
+    // With the sandbox it starts again, held.
+    let again = help::ready_again(&help_chat(root), &project.start(), root).expect("it starts");
+    assert_eq!(
+        held(again.sandbox.as_ref().expect("sandboxed")),
+        (false, true)
+    );
+}
+
+/// **A help chat is not started again where the project now runs chats without the sandbox**
+/// (#4497, story 60), as its first start is refused there: here, the person's own level is off.
+#[test]
+fn a_help_chat_is_not_started_again_in_a_project_without_the_sandbox() {
+    purlis_core::unsteered!();
+    let Some(project) = Project::new(
+        "a_help_chat_holds_no_cluster_sign_in::a_help_chat_is_not_started_again_in_a_project_without_the_sandbox",
+    ) else {
+        return;
+    };
+    let root = project.root();
+    // The person's own level for this project, set in Settings on this machine: off.
+    let local = root.join(profiles::LOCAL_FILE);
+    let text = fs::read_to_string(&local).unwrap_or_default();
+    fs::write(&local, format!("[sandbox]\nlevel = \"off\"\n\n{text}")).unwrap();
+    sandbox::personal::set_by_you(root, None, Some(sandbox::personal::Choice::Off))
+        .expect("your level");
+
+    // Not vacuous: an ordinary chat of this project starts again, and runs unsandboxed.
+    let ordinary = purlis_core::reopen::Chat {
+        held_from_clusters: false,
+        ..help_chat(root)
+    };
+    let ready = help::ready_again(&ordinary, &project.start(), root).expect("it starts again");
+    assert!(
+        ready.sandbox.is_none(),
+        "the project runs its chats unsandboxed"
+    );
+
+    let refused = help::ready_again(&help_chat(root), &project.start(), root)
+        .expect_err("a help chat is not started without the sandbox");
+    assert_eq!(refused, help::PROJECT_UNSANDBOXED);
+}
