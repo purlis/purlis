@@ -182,7 +182,7 @@ impl Recorder {
                 followed,
                 begun,
             } => one(self.report_with(&plane, &report, followed, begun.as_deref())),
-            Entry::Tool { plane, call } => one(self.tool(&plane, &call, Instant::now())),
+            Entry::Tool { plane, call } => self.tool_spooled(&plane, &call, Instant::now(), None),
             Entry::Refused { plane, chat } => one(self.refused(&plane, chat)),
             Entry::Begin {
                 plane,
