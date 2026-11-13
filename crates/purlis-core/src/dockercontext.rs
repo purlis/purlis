@@ -240,8 +240,18 @@ const RUN_WITHIN: std::time::Duration = std::time::Duration::from_secs(10);
 /// the context their settings choose) and Docker's plugin hooks off. It only reads.
 #[must_use]
 pub fn contexts_here(docker: &Path) -> Vec<DockerContext> {
+    contexts_with(docker, None)
+}
+
+/// [`contexts_here`], with Docker's settings the folder `settings` (`--config`) where one is
+/// named, as a test makes its own contexts in.
+#[must_use]
+pub fn contexts_with(docker: &Path, settings: Option<&Path>) -> Vec<DockerContext> {
     let run = |args: &[&str]| {
         let mut command = std::process::Command::new(docker);
+        if let Some(settings) = settings {
+            command.arg("--config").arg(settings);
+        }
         command
             .args(args)
             .env_remove("DOCKER_CONTEXT")

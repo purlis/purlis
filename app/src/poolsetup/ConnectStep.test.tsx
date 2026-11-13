@@ -27,6 +27,7 @@ const tlsMachine = (more: Partial<NonNullable<PoolSetupStep["machine"]>> = {}) =
   ca: null,
   trusted_ca: null,
   ca_now: null,
+  context: null,
   ...more,
 });
 
@@ -61,11 +62,13 @@ const step = (more: Partial<PoolSetupStep>): PoolSetupStep => ({
     ca: null,
     trusted_ca: null,
     ca_now: null,
+    context: null,
   },
   cause: null,
   also: null,
   parts: [],
   undo: null,
+  prefill: null,
   ...more,
 });
 
@@ -88,6 +91,7 @@ function core(more: Record<string, (args: unknown) => unknown> = {}) {
     if (cmd in more) return more[cmd]?.(args);
     if (cmd === "pool_setup_ssh_hosts") return [];
     if (cmd === "pool_setup_podman_connections") return [];
+    if (cmd === "pool_setup_docker_contexts") return [];
     return null;
   });
   return calls;
@@ -133,6 +137,7 @@ describe("ConnectStep", () => {
           ca: null,
           trusted_ca: null,
           ca_now: null,
+          context: null,
         },
       }),
     );
@@ -202,6 +207,7 @@ describe("ConnectStep", () => {
           ca: null,
           trusted_ca: null,
           ca_now: null,
+          context: null,
         },
       }),
     );
@@ -237,6 +243,7 @@ describe("ConnectStep", () => {
           ca: null,
           trusted_ca: null,
           ca_now: null,
+          context: null,
         },
       }),
     );
@@ -268,6 +275,7 @@ describe("ConnectStep", () => {
           ca: null,
           trusted_ca: null,
           ca_now: null,
+          context: null,
         },
       }),
     );
@@ -511,5 +519,139 @@ describe("ConnectStep", () => {
       ),
     );
     expect(screen.getByRole("button", { name: "Connect to lab" })).toBeEnabled();
+  });
+
+  // From a Docker context (#6268).
+
+  const sshContext = {
+    name: "build-box",
+    current: true,
+    over: "ssh",
+    route: "ssh://me@build-box",
+    refused: null,
+  };
+
+  it("keeps a Docker context picked by its name, for the core to read again, and contacts nothing", async () => {
+    const calls = core({
+      pool_setup_ssh_hosts: () => ["gpu"],
+      pool_setup_docker_contexts: () => [sshContext],
+    });
+    const props = draw(step({ machine: null }));
+    await userEvent.click(await screen.findByRole("radio", { name: /build-box/ }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "pool_setup_docker_context",
+        args: { name: "build-box" },
+      }),
+    );
+    expect(props.changed).toHaveBeenCalled();
+    expect(screen.getByText("From your Docker contexts")).toBeVisible();
+    expect(calls.some((call) => call.cmd === "pool_setup_machine")).toBe(false);
+    expect(calls.some((call) => call.cmd === "pool_setup_connect")).toBe(false);
+  });
+
+  it("picks the Docker context kept, and never takes its route for a machine typed", async () => {
+    const calls = core({ pool_setup_docker_contexts: () => [sshContext] });
+    draw(
+      step({
+        machine: {
+          ...tlsMachine(),
+          route: "ssh://me@build-box",
+          host: "build-box",
+          over: "ssh",
+          context: "build-box",
+        },
+      }),
+    );
+    await waitFor(() => expect(screen.getByRole("radio", { name: /build-box/ })).toBeChecked());
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(calls.some((call) => call.cmd === "pool_setup_machine")).toBe(false);
+    expect(calls.some((call) => call.cmd === "pool_setup_docker_context")).toBe(false);
+  });
+
+  it("offers a context on this machine's own socket as this machine's Docker", async () => {
+    const calls = core({
+      pool_setup_ssh_hosts: () => ["gpu"],
+      pool_setup_docker_contexts: () => [
+        { name: "desktop-linux", current: false, over: "here", route: null, refused: null },
+      ],
+    });
+    draw(step({ machine: null }));
+    const here = await screen.findByRole("radio", { name: /desktop-linux/ });
+    expect(screen.getByText(/This machine's own Docker/)).toBeVisible();
+    await userEvent.click(here);
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "pool_setup_docker_context",
+        args: { name: "desktop-linux" },
+      }),
+    );
+  });
+
+  it("offers a TLS context on Docker's API over TLS, its files the context's own", async () => {
+    const calls = core({
+      pool_setup_docker_contexts: () => [
+        sshContext,
+        { name: "lab", current: false, over: "tls", route: "tcp://lab:2376", refused: null },
+      ],
+    });
+    draw(step({ machine: null }));
+    await userEvent.click(await screen.findByRole("radio", { name: /Docker's API over TLS/ }));
+    await userEvent.click(await screen.findByRole("radio", { name: /^lab/ }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({ cmd: "pool_setup_docker_context", args: { name: "lab" } }),
+    );
+    expect(calls.some((call) => call.cmd === "pool_setup_tls_files")).toBe(false);
+  });
+
+  it("says a pool's context moved, and keeps the pool as it is or connects again", async () => {
+    const calls = core();
+    const moved = step({
+      state: "attention",
+      cause: "context-moved",
+      findings: [
+        "Your context build-box now points somewhere else than this pool. Connect again to follow it, or keep the pool as it is.",
+      ],
+      next: {
+        id: "connect-again",
+        label: "Connect again",
+        does: "Starts setting up a pool on the machine build-box names now.",
+        command: null,
+        url: null,
+      },
+      other: {
+        id: "keep-pool-as-it-is",
+        label: "Keep the pool as it is",
+        does: "The pool stays on the machine it runs on now.",
+        command: null,
+        url: null,
+      },
+      prefill: { route: "ssh://me@new-box", context: "build-box" },
+      machine: {
+        ...tlsMachine(),
+        route: "ssh://me@build-box/var/run/docker.sock",
+        host: "build-box",
+        over: "ssh",
+        context: "build-box",
+      },
+    });
+    const props = { onShown: vi.fn(), changed: vi.fn(), onNext: vi.fn(), onConnectAgain: vi.fn() };
+    render(
+      <ConnectStep step={moved} shown={{ ...shown(moved), pool: "build" }} plane="p" {...props} />,
+    );
+    expect(await screen.findByText("Your context points somewhere else")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Connect again" }));
+    expect(props.onConnectAgain).toHaveBeenCalledWith({
+      route: "ssh://me@new-box",
+      context: "build-box",
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Keep the pool as it is" }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "pool_setup_keep_pool_as_it_is",
+        args: { pool: "build" },
+      }),
+    );
+    expect(props.changed).toHaveBeenCalled();
   });
 });

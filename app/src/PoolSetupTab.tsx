@@ -9,6 +9,7 @@ import {
   type PlaneId,
   type PoolSetupAction,
   type PoolSetupContexts,
+  type PoolSetupPrefill,
   type PoolSetupShown,
   type PoolSetupStep,
 } from "./bindings";
@@ -24,7 +25,9 @@ import { SignInsStep } from "./poolsetup/SignInsStep";
 import { TryStep } from "./poolsetup/TryStep";
 import {
   readReleaseImage,
+  pickPoolSetupMachine,
   startANewPoolSetup,
+  startPoolSetupOn,
   startPoolSetupOver,
   usePools,
   usePoolSetupStart,
@@ -124,7 +127,8 @@ function Where({
   contexts: PoolSetupContexts;
   onNext: () => void;
   onChose: () => void;
-  onChoseRemote: () => void;
+  /** Docker on another machine, with the machine to open Connect with where there is one. */
+  onChoseRemote: (prefill?: PoolSetupPrefill | null) => void;
   onChoseCluster: (context: string) => void;
   onRecheck: () => void;
   said: (trouble: string) => void;
@@ -247,7 +251,15 @@ function Where({
       )}
       {step.see && <SeeWhat text={step.see.text} note={step.see.note} />}
       {next && onlySaid ? (
-        <Action does={next.does}>{other}</Action>
+        <Action does={next.does}>
+          {/* Docker here points at another machine: set up a pool there (#6268). */}
+          {step.other?.id === "use-remote-docker" && (
+            <Button variant="secondary" onPress={() => onChoseRemote(step.prefill)}>
+              {step.other.label}
+            </Button>
+          )}
+          {other}
+        </Action>
       ) : next ? (
         <Action
           does={next.does}
@@ -523,9 +535,16 @@ function PoolSetupGuide({
               key={setup.kind}
               step={step}
               kind={setup.kind}
-              onChoseRemote={() => {
+              onChoseRemote={(prefill) => {
                 setTrouble(undefined);
                 setShowing(undefined);
+                if (prefill) {
+                  void pickPoolSetupMachine(prefill).then((why) => {
+                    if (why) setTrouble(why);
+                    else reread();
+                  });
+                  return;
+                }
                 void commands.poolSetupChooseRemoteDocker().then((answer) => {
                   if (answer.status === "error") setTrouble(answer.error);
                   else reread();
@@ -578,6 +597,11 @@ function PoolSetupGuide({
                 reread();
               }}
               onNext={() => after("connect")}
+              onConnectAgain={(prefill) => {
+                setTrouble(undefined);
+                setShowing(undefined);
+                void startPoolSetupOn(prefill).then((why) => why && setTrouble(why));
+              }}
             />
           ) : step?.id === "signins" && step.next?.id === "mark-as-own" ? (
             <MarkAsOwn step={step} pool={setup.pool} onOpenPools={onOpenPools} onMarked={reread} />

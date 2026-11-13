@@ -43,6 +43,7 @@ const install = (parts: PoolSetupPart[], undo = true): PoolSetupStep => ({
   machine: null,
   cause: null,
   also: null,
+  prefill: null,
   parts,
   undo: undo
     ? {
@@ -132,6 +133,7 @@ const poolStep = (next: string): PoolSetupStep => ({
   id: "pool",
   name: "Pool",
   undo: null,
+  prefill: null,
   see: null,
   next: {
     id: next,

@@ -19,6 +19,7 @@ const STEP: PoolSetupStep = {
   also: null,
   parts: [],
   undo: null,
+  prefill: null,
   see: null,
   other: null,
   machine: null,

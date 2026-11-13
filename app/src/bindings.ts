@@ -4231,6 +4231,22 @@ export const commands = {
 	 */
 	poolSetupPodmanConnections: () => typedError<PoolSetupPodmanConnection[], string>(__TAURI_INVOKE("pool_setup_podman_connections")),
 	/**
+	 *  **The person's Docker contexts** (`docker context ls`, then `docker context inspect`), for
+	 *  Connect to offer (#6268). It contacts no machine: this machine's `docker` lists what it keeps.
+	 */
+	poolSetupDockerContexts: () => typedError<PoolSetupDockerContext[], string>(__TAURI_INVOKE("pool_setup_docker_contexts")),
+	/**
+	 *  **Keeps the Docker context `name` picked on Connect** (#6268, ADR 0123 §2): read again now,
+	 *  once, into the route its endpoint names, its TLS files and its name; a context on this
+	 *  machine's own socket chooses the local kind. It contacts nothing.
+	 */
+	poolSetupDockerContext: (name: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_docker_context", { name })),
+	/**
+	 *  **Keep the pool as it is** (#6268, ADR 0123 §7): pool `pool` stays on its route, and forgets
+	 *  the Docker context it was read from, so doctor stops comparing them.
+	 */
+	poolSetupKeepPoolAsItIs: (pool: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_keep_pool_as_it_is", { pool })),
+	/**
 	 *  **Connect to <machine>** (#6266, ADR 0123 §3): the key the machine Connect keeps shows, met
 	 *  with nothing signed in, and what is read, with it laid over Connect. Nothing is kept.
 	 */
@@ -13897,6 +13913,20 @@ export type PoolSetupCreated = {
 	breaks: string[],
 };
 
+/**
+ *  **A context of the person's Docker, as Connect offers it** (#6268): its name, whether it is
+ *  the one their `docker` uses now, and what its endpoint was read into: `over` `ssh` or `tls`
+ *  with its `route`, `here` for a socket on this machine (the local kind), or `refused` with
+ *  why purlis doesn't use it.
+ */
+export type PoolSetupDockerContext = {
+	name: string,
+	current: boolean,
+	over: string,
+	route: string | null,
+	refused: string | null,
+};
+
 /**  Why Try it didn't pass, and the step that mends it, where one does (#4483). */
 export type PoolSetupFailed = {
 	/**  What happened and what to do, in a sentence or two. */
@@ -13937,6 +13967,8 @@ export type PoolSetupMachine = {
 	trusted_ca: string | null,
 	/**  The fingerprint the CA file holds now, where that isn't the one trusted. */
 	ca_now: string | null,
+	/**  The Docker context the route was read from (#6268). */
+	context: string | null,
 };
 
 /**  A limit a profile is over. */
@@ -13970,6 +14002,15 @@ export type PoolSetupPodmanConnection = {
 	name: string,
 	route: string,
 	identity: string | null,
+};
+
+/**
+ *  **A machine to open Connect with** (#6268): its route, and the Docker context it was read
+ *  from, where it was read from one.
+ */
+export type PoolSetupPrefill = {
+	route: string,
+	context: string | null,
 };
 
 /**  One of this machine's profiles against a pool's limit (#4482). */
@@ -14042,6 +14083,8 @@ export type PoolSetupStep = {
 	parts: PoolSetupPart[],
 	/**  How the step is undone by hand, never by a button: uninstalling from a cluster. */
 	undo: PoolSetupSee | null,
+	/**  What Set up Docker on another machine, or Connect again, opens Connect with (#6268). */
+	prefill: PoolSetupPrefill | null,
 };
 
 /**  The TLS files named for a `tcp://` machine, as Connect's Options show them (#6267). */

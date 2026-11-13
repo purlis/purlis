@@ -115,6 +115,8 @@ impl PoolAdding {
             identity: None,
             // A tcp:// machine's files are the ones Connect kept for it (#6267).
             tls: None,
+            // The Docker context Connect read the machine from is the one it kept (#6268).
+            docker_context: None,
         }
     }
 }
