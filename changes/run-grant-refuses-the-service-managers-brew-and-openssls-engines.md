@@ -16,3 +16,7 @@
 - **A run's notice offers no Allow for Homebrew's `brew`**, which runs the Ruby or the shell
   command it is handed (`brew ruby -e`, `brew sh --cmd`). A persona can still declare it as a
   tool (#6325).
+- **A run's notice offers no Allow for `openssl` with `-engine`, `-provider`, `-provider-path` or
+  `-config`, or for its `engine` and `fipsinstall` commands**, each of which loads a library or a
+  module it is named. `openssl` is still offered without them, and so is `my_openssl`, the copy
+  MySQL's test package ships, with the same caution (#6329).

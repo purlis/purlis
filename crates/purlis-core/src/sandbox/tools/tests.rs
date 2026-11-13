@@ -960,6 +960,8 @@ fn a_general_purpose_program_is_known_by_its_file_name_whatever_its_folder_or_ca
         "/usr/bin/xxd",
         "Tee",
         "/usr/bin/openssl",
+        // and the bundled openssl MySQL's test package ships under its own name (#6329)
+        "/usr/bin/my_openssl",
         // Forge command lines, which make whatever request their arguments name.
         "gh",
         "/opt/homebrew/bin/gh",

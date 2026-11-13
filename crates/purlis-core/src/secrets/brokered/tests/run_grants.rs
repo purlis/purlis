@@ -3169,6 +3169,64 @@ fn brew_runs_the_ruby_and_the_commands_it_is_handed_so_it_is_offered_no_run_gran
     refused_as_running_others("brew");
 }
 
+/// openssl's `-engine` (#6329) loads the shared library it is named through the dynamic engine's
+/// `SO_PATH` (`apps/lib/engine.c`, openssl 3.0.15), so a run with it is offered no Allow, and the
+/// chat hears to leave it out. openssl without it stays offered, with its caution.
+#[test]
+fn openssl_with_an_engine_is_offered_no_run_grant_and_the_chat_hears_to_leave_it_out() {
+    refused_for_its_flag(
+        "openssl",
+        &["dgst", "-engine", "/x/evil.so", "f"],
+        "-engine",
+    );
+}
+
+/// openssl's `-provider` and `-provider-path` (#6329) load a provider module, by its path or
+/// from the folder named (`apps/lib/app_provider.c`, openssl 3.0.15).
+#[test]
+fn openssl_with_a_provider_is_offered_no_run_grant_and_the_chat_hears_to_leave_it_out() {
+    refused_for_its_flag("openssl", &["list", "-provider", "/x/evil.so"], "-provider");
+    refused_for_its_flag(
+        "openssl",
+        &["list", "-provider-path", "/x", "-providers"],
+        "-provider-path",
+    );
+}
+
+/// openssl's `-config` (#6329): `ca`, `req`, `ts`, `srp`, `cms`, `smime`, `genpkey` and
+/// `pkeyutl` load the modules a configuration file names, providers and engines among them
+/// (`app_load_modules`, `apps/lib/apps.c`, openssl 3.0.15).
+#[test]
+fn openssl_with_a_config_file_is_offered_no_run_grant_and_the_chat_hears_to_leave_it_out() {
+    refused_for_its_flag(
+        "openssl",
+        &["req", "-config", "/x/c.cnf", "-new"],
+        "-config",
+    );
+}
+
+/// openssl's `engine` command (#6329) loads the engines it is named and runs the control
+/// commands its `-pre` names, `SO_PATH:<library>` among them (`apps/engine.c`).
+#[test]
+fn openssl_engine_is_offered_no_run_grant_and_the_chat_hears_to_leave_it_out() {
+    refused_for_its_flag(
+        "openssl",
+        &["engine", "dynamic", "-pre", "SO_PATH:/x/evil.so"],
+        "engine",
+    );
+}
+
+/// `my_openssl`, the bundled openssl MySQL's test package ships under its own name (#6329,
+/// `cmake/ssl.cmake`, mysql-server 8.4), is read by openssl's row.
+#[test]
+fn my_openssl_with_an_engine_is_offered_no_run_grant_and_the_chat_hears_to_leave_it_out() {
+    refused_for_its_flag(
+        "my_openssl",
+        &["dgst", "-engine", "/x/evil.so", "f"],
+        "-engine",
+    );
+}
+
 /// The client built with the server inside it: what `--server-arg` hands the embedded server
 /// (`--plugin-load`, `--plugin-dir`) loads code from a file it names.
 #[test]

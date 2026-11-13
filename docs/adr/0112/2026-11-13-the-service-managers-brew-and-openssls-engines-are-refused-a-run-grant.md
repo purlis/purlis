@@ -116,3 +116,36 @@ Neither name starts with `mysql` or `mariadb`, so no row read them. Both are ref
 `brew <name>` runs the `brew-<name>` or `brew-<name>.rb` the search path finds
 (`Commands.external_cmd_path`, `Library/Homebrew/commands.rb:84-88`). It is refused whole.
 `brew services start mysql`, the usual way to start the server on macOS, goes with it.
+
+## openssl's engines, providers and configuration modules, and my_openssl (#6329)
+
+`openssl` stays offered, with the general-purpose caution, as it is a usual reason to hand a
+chat a key; only its forms that load a library are refused, by a row in `command_flags`.
+Checked in github.com/openssl/openssl at `openssl-3.0.15`:
+
+- **The parser.** `opt_next` (`apps/lib/opt.c:848-885`) takes a flag as `-name` or `--name`,
+  matched to its whole name with `strcmp`, its value after `=` or in the next word, and stops
+  at `--` or the first word without a dash. The row reads each flag the same way, as a whole word
+  whatever its case, so a short option (`enc -e`) is never taken for the start of a long one, and
+  it reads on past the first operand, which is wider than openssl and only takes away an Allow.
+- **`-engine <id>`**, in nearly every command, and `req -keygen_engine` and
+  `s_client -ssl_client_engine`: an id no engine has is handed to the dynamic engine as
+  `SO_PATH` and `LOAD`ed, a shared library by its path (`try_load_engine`,
+  `apps/lib/engine.c:28-38`).
+- **`-provider <name>`** loads a provider module, which a path names as well as a name does,
+  and **`-provider-path <folder>`** sets the folder it is loaded from (`apps/include/opt.h:290-291`,
+  `app_provider_load` and `opt_provider_path`, `apps/lib/app_provider.c:33-37, 61-65`).
+- **`-config <file>`**: `ca`, `req`, `ts` and `srp` (`app_load_modules`, `apps/lib/apps.c:400-417`)
+  and `cms`, `smime`, `genpkey` and `pkeyutl` (`app_load_config_modules`) load the modules the
+  file names, its `providers` and `engines` sections among them, so a file the chat wrote names
+  the library. `fipsinstall -config` does the same (`apps/fipsinstall.c:206`). `-config` is
+  refused in every command, the ones that only read it too.
+- **The `engine` command** loads the engines it is named and runs the control commands its
+  `-pre` and `-post` name, `SO_PATH:<library>` and `LOAD` among them (`apps/engine.c`), and
+  **`fipsinstall`** sets the provider search path to its `-module`'s folder and loads the FIPS
+  provider from it (`apps/fipsinstall.c:400-410, 500`). Both are refused as the first operand.
+
+**`my_openssl`**, the bundled openssl MySQL's test RPM ships under its own name
+(`%{_bindir}/my_openssl`, `packaging/rpm-oel/mysql.spec.in:1611`; the bundled build's `openssl`
+copied, as `cmake/ssl.cmake:185-186` says, mysql-server 8.4.3), is read by the same row, and is on the general-purpose list, which matches a program's exact
+name only, so its notice carries openssl's caution too.

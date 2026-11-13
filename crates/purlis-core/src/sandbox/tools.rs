@@ -663,11 +663,41 @@ fn runs_what_it_is_told(name: &str) -> bool {
 const GENERAL_PURPOSE: &[&str] = &[
     // fetch and send over the network, the forge command lines (gh, glab) among them, which
     // make whatever request their arguments name
-    "curl", "wget", "wget2", "http", "https", "httpie", "xh", "xhs", "aria2c", "nc", "ncat",
-    "netcat", "socat", "ssh", "scp", "sftp", "rsync", "gh", "glab",
+    "curl",
+    "wget",
+    "wget2",
+    "http",
+    "https",
+    "httpie",
+    "xh",
+    "xhs",
+    "aria2c",
+    "nc",
+    "ncat",
+    "netcat",
+    "socat",
+    "ssh",
+    "scp",
+    "sftp",
+    "rsync",
+    "gh",
+    "glab",
     // copy, encode or rewrite what they are given
-    "cat", "cp", "tee", "dd", "sed", "base64", "xxd", "od", "hexdump", "openssl", "gzip", "tar",
+    "cat",
+    "cp",
+    "tee",
+    "dd",
+    "sed",
+    "base64",
+    "xxd",
+    "od",
+    "hexdump",
+    "openssl",
+    "gzip",
+    "tar",
     "zip",
+    // the bundled openssl MySQL's test package ships under its own name (#6329)
+    "my_openssl",
 ];
 
 /// **Whether the program at `program` is a general-purpose one**, by its file name, whatever
