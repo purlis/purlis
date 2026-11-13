@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { OPEN_POOL_SETUP_ASK } from "./poolSetupAsked";
 import { saidOfLate, useLateAnswers } from "./answerWatch";
 import {
   useCallback,
@@ -1619,6 +1620,15 @@ function App() {
    *  launch or another window hands this one takes it back, so only the person's own open from
    *  the welcome opens Pool setup. */
   const [runElsewhereNext, setRunElsewhereNext] = useState(false);
+  // Needs you's Open Pool setup, on the entry that a cluster is ready (#4496).
+  useEffect(() => {
+    const heard = (event: Event) => {
+      const plane = (event as CustomEvent<{ plane?: unknown }>).detail?.plane;
+      if (typeof plane === "string") windowDoes.openPoolSetup(plane);
+    };
+    window.addEventListener(OPEN_POOL_SETUP_ASK, heard);
+    return () => window.removeEventListener(OPEN_POOL_SETUP_ASK, heard);
+  }, [windowDoes]);
   useEffect(() => {
     if (!runElsewhereNext || inFront === undefined) return;
     setRunElsewhereNext(false);

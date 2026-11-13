@@ -16,6 +16,7 @@ import { Notice } from "./Notice";
 import { CheckStep, ClusterPoolStep, ContextOptions, InstallStep } from "./poolsetup/ClusterSteps";
 import { ConnectStep } from "./poolsetup/ConnectStep";
 import { Action, Recommended, Say, SeeWhat, StepHead } from "./poolsetup/parts";
+import { GET_HELP_SAYS, GetHelp, PoolSetupPlane } from "./poolsetup/GetHelp";
 import { IdentityStep } from "./poolsetup/IdentityStep";
 import { NOTHING_CHOSEN, PoolStep, type Chosen } from "./poolsetup/PoolStep";
 import { SignInsStep } from "./poolsetup/SignInsStep";
@@ -62,6 +63,8 @@ import { STEP_STATES, StepList, type StepState } from "./ui/steps/Steps";
 
 /** How often the tab asks again while it waits on Docker. */
 const RECHECK_MS = 5000;
+/** How often a step waiting for an admin is checked again while the tab is open (#4496). */
+const ADMIN_RECHECK_MS = 30_000;
 
 const STATES: readonly string[] = STEP_STATES;
 
@@ -293,7 +296,11 @@ type TabProps = {
 
 export function PoolSetupTab(props: TabProps) {
   const start = usePoolSetupStart();
-  return <PoolSetupGuide key={start.count} {...props} continuing={start.continuing} />;
+  return (
+    <PoolSetupPlane.Provider value={props.plane}>
+      <PoolSetupGuide key={start.count} {...props} continuing={start.continuing} />
+    </PoolSetupPlane.Provider>
+  );
 }
 
 function PoolSetupGuide({
@@ -389,6 +396,15 @@ function PoolSetupGuide({
     }, RECHECK_MS);
     return () => clearInterval(every);
   }, [waiting, reread]);
+  // Waiting for an admin (#4496): doctor asks the cluster, so slower than a Docker that starts.
+  const onTheAdmin = shown?.steps.some((step) => step.state === "waiting") ?? false;
+  useEffect(() => {
+    if (!onTheAdmin) return;
+    const every = setInterval(() => {
+      if (reading.current === 0) reread();
+    }, ADMIN_RECHECK_MS);
+    return () => clearInterval(every);
+  }, [onTheAdmin, reread]);
 
   if (read.state === "reading")
     return (
@@ -507,7 +523,7 @@ function PoolSetupGuide({
               }}
             />
           ) : step?.id === "check" ? (
-            <CheckStep step={step} onNext={() => after("check")} onRecheck={reread} />
+            <CheckStep step={step} plane={plane} onNext={() => after("check")} onRecheck={reread} />
           ) : step?.id === "install" ? (
             <InstallStep step={step} onNext={() => after("install")} changed={reread} />
           ) : step?.id === "pool" && setup.kind === "cluster" ? (
@@ -515,6 +531,8 @@ function PoolSetupGuide({
               step={step}
               contexts={setup.contexts}
               image={releaseImage}
+              pool={setup.pool}
+              onOpenPools={onOpenPools}
               onNext={() => after("pool")}
               changed={() => {
                 setShowing(undefined);
@@ -593,6 +611,12 @@ function PoolSetupGuide({
             />
           ) : (
             step && <Found step={step} onRecheck={reread} />
+          )}
+          {step && (step.state === "attention" || step.state === "waiting") && (
+            <div className="pool-setup-help">
+              <p className="pool-setup-p">{GET_HELP_SAYS}</p>
+              <GetHelp step={step.id} />
+            </div>
           )}
         </div>
       </div>

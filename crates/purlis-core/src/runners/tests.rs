@@ -1232,7 +1232,24 @@ fn a_cluster_pools_row_of_another_shape_refuses_the_file_whole_and_never_replace
         change(&mut row);
         file(&pool_row, &row)
     };
+    // How its key was confirmed (#4495) is read with it, as either word, and absent is none.
+    for (word, confirmed) in [
+        ("pasted", clusterpool::Confirmed::Pasted),
+        ("made-here", clusterpool::Confirmed::MadeHere),
+    ] {
+        folder
+            .replace_file(
+                crate::machine::RUNNERS_FILE,
+                pool_with(&|row| row["keyConfirmed"] = word.into()).as_bytes(),
+            )
+            .unwrap();
+        let pool = cluster_pools(config.path()).unwrap().remove(0);
+        assert_eq!(pool.confirmed(), Some(confirmed));
+        assert_eq!(cluster_pool_to_row(&pool)["keyConfirmed"], word);
+    }
     for text in [
+        pool_with(&|row| row["keyConfirmed"] = "shown".into()),
+        pool_with(&|row| row["keyConfirmed"] = true.into()),
         pool_with(&|row| row["kubeconfig"] = "kube/config".into()),
         pool_with(&|row| row["context"] = "--server=evil".into()),
         pool_with(&|row| row["pool"] = "Default".into()),

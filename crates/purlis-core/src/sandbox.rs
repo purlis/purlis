@@ -2654,6 +2654,29 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
     }
     paths.extend(held_whole);
     paths.extend(studio_held);
+    // Pool setup's Get help chat holds no sign-in to a cluster (#4497,
+    // [`policy::holding_from_clusters`]): the person's kubeconfigs, `~/.kube` and every file
+    // `KUBECONFIG` names, as kubectl reads them.
+    if policy::held_from_clusters() {
+        let named = machine.env.get(kubeconfig::ENV).unwrap_or_default();
+        let kubeconfigs = machine
+            .home
+            .iter()
+            .map(|home| home.join(".kube"))
+            .chain(std::env::split_paths(&named).filter(|path| path.is_absolute()));
+        for path in kubeconfigs {
+            if !paths.iter().any(|kept| kept.path == path) {
+                paths.push(Denial {
+                    class: Class::HumanPowers,
+                    path,
+                    access: Access::ReadWrite,
+                    named: None,
+                    reach: Reach::AndBelow,
+                    any_case: false,
+                });
+            }
+        }
+    }
     // Everything held in the state folder, under each of its spellings and where `$PURLIS_HOME`
     // puts it, is held under every spelling of its name on macOS's case-folding disk: a store not
     // there yet is made under the name as typed, and purlis reads it under its own. One pass

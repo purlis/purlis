@@ -1002,6 +1002,13 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_install",
     "pool_setup_operator_image",
     "pool_setup_cluster_pool",
+    // Pinning a cluster pool's changed key again (#4495), only as the person confirmed it.
+    "pool_setup_pin_again",
+    // Send to your admin's wait (#4496): kept, and forgotten, only on the person's press.
+    "pool_setup_ask_admin",
+    "pool_setup_stop_waiting",
+    // Get help (#4497): it starts a chat as the person.
+    "pool_setup_get_help",
     "add_docker_pool",
     "remove_docker_pool",
     "docker_pool_link",

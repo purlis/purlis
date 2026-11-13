@@ -343,11 +343,22 @@ fi
 
 step "the guide's pool, its key and a teammate's rights"
 guide_run pool --value "ghcr.io/purlis/purlis-runner@<runner digest>=$runner"
+# The key the guide has the admin give their teammates is read from the signing key's Secret, not
+# from the Pool's status (#4495): it is a key of the form a desktop pins, and the key an honest
+# operator's Pool names.
+admins_key=$(guide_run pool-key)
+case $admins_key in
+  ed25519:????????????????????????????????????????????????????????????????) ;;
+  *)
+    echo "the guide's key is not ed25519: and 64 hex digits: $admins_key" >&2
+    exit 1
+    ;;
+esac
 tries=0
-until [ -n "$(guide_run pool-key)" ]; do
+until [ "$(kubectl --context "$context" get pools.runners.purlis.dev team --output jsonpath='{.status.signingKey}')" = "$admins_key" ]; do
   tries=$((tries + 1))
   if [ "$tries" -ge 60 ]; then
-    echo "the guide's pool named no key within a minute" >&2
+    echo "the guide's pool named no key, or another than the Secret's, within a minute" >&2
     exit 1
   fi
   sleep 1

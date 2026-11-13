@@ -1142,6 +1142,8 @@ fn the_command_signs_in_on_a_cluster_pool_only_marked_and_vouched_and_a_runner_f
         &config,
         &purlis_core::pools::kubectl_here(&config).expect("kubectl on this machine"),
         &team,
+        // The operator's key, as the cluster's admin would give it to the person.
+        Some(&team.pin().expect("its pin").key.spelled()),
         &desktop,
         PATIENCE * 2,
     )
