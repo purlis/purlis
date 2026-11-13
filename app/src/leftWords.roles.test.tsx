@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /// <reference types="node" />
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
@@ -118,6 +118,33 @@ describe("a pane's header and foot", () => {
     tieredAs(crumbs.querySelector(".crumb.shown"), "meta", "--text-primary", "the chat shown");
   });
 
+  it("tints the breadcrumb's names primary on the pane that has the keyboard, and keeps where it is quiet", () => {
+    render(
+      <div data-scope="panel" data-variant="content">
+        <div data-group="">
+          <div className="pane-frame" data-focused="">
+            <div className="pane-head">
+              <PaneCrumbs
+                crumbs={{
+                  path: [
+                    listed(4, "steward 4", { mode: null, report: null, outcome: null, tab: true }),
+                    listed(9, "talk", { parent: 4 }),
+                  ],
+                  elsewhere: "beta",
+                }}
+                onShow={() => undefined}
+                gone={() => true}
+              />
+            </div>
+          </div>
+        </div>
+      </div>,
+    );
+    const crumbs = screen.getByRole("navigation", { name: "Chat path" });
+    tieredAs(crumbs.querySelector(".crumb.own"), "meta", "--text-primary", "a name, focused");
+    tieredAs(crumbs.querySelector(".crumb-where"), "meta", "--text-quiet", "where, focused");
+  });
+
   it("wears the meta on the foot itself, in the foot's own tier", () => {
     render(
       <PaneFoot className="pane-foot" label="deep: where it runs and its context">
@@ -127,6 +154,101 @@ describe("a pane's header and foot", () => {
     const foot = screen.getByRole("group");
     expect(foot).toHaveClass("ui-text-meta", "pane-foot");
     tieredAs(foot, "meta", "--text-muted", "the foot");
+  });
+});
+
+/**
+ * The words whose components are too wide to draw here, by the class that places them and the
+ * role every element written with that class wears beside it.
+ */
+const WORN: [file: string, placed: string, roles: string[]][] = [
+  ["LayoutPanes.tsx", "pane-name", ["ui-text-heading"]],
+  ["LayoutPanes.tsx", "pane-number", ["ui-text-meta"]],
+  ["LayoutPanes.tsx", "pane-head-where", ["ui-text-secondary"]],
+  ["PaneRail.tsx", "pane-rail-count", ["ui-text-meta", "ui-text-strong"]],
+  ["TaskQuiz.tsx", "task-quiz-title", ["ui-text-body"]],
+  ["TaskQuiz.tsx", "task-quiz-note-words", ["ui-text-secondary"]],
+  ["ChatRows.tsx", "tab-task", ["ui-text-meta"]],
+  ["Inbox.tsx", "inbox-chain", ["ui-text-secondary", "ui-text-strong"]],
+  ["InboxElsewhere.tsx", "inbox-chain", ["ui-text-secondary", "ui-text-strong"]],
+  ["Onboarding.tsx", "onboarding-steps", ["ui-text-secondary"]],
+  ["GetProject.tsx", "get-project-folder", ["ui-text-secondary"]],
+  ["GetProject.tsx", "get-project-local", ["ui-text-secondary"]],
+  ["YourRepos.tsx", "your-repos-hosts", ["ui-text-secondary"]],
+  ["HarnessSetupTab.tsx", "harness-row-state", ["ui-text-secondary"]],
+  ["HarnessSetupTab.tsx", "harness-row-how", ["ui-text-secondary"]],
+  ["settings/HostsTable.tsx", "ui-hosts-host", ["ui-text-body", "ui-text-code"]],
+  ["settings/HostsTable.tsx", "ui-hosts-added", ["ui-text-secondary"]],
+];
+
+/** Every `className="…"` written in `file` that holds `placed`, as its classes. */
+function classesWith(file: string, placed: string): string[][] {
+  const text = readFileSync(join(process.cwd(), "src", file), "utf8");
+  return [...text.matchAll(/className="([^"]*)"/g)]
+    .map((found) => found[1].split(/\s+/))
+    .filter((classes) => classes.includes(placed));
+}
+
+describe("the words placed by a view's class", () => {
+  it("wear their role wherever the class is written", () => {
+    const bare = WORN.flatMap(([file, placed, roles]) => {
+      const sites = classesWith(file, placed);
+      // A section of the Inbox's own (Notices, Updates) is the panel family's title, which
+      // wears the label itself; only a chain in purlis's words has no role of its own.
+      const counted = sites.filter((classes) => classes.length > 1 || placed !== "inbox-chain");
+      if (counted.length === 0) return [`${file}: no .${placed} is written`];
+      return counted
+        .filter((classes) => !roles.every((role) => classes.includes(role)))
+        .map((classes) => `${file}: .${placed} wears "${classes.join(" ")}"`);
+    });
+    expect(bare).toEqual([]);
+  });
+
+  it("draw every .came-back line as the secondary, but the warning on the danger wash", () => {
+    const src = join(process.cwd(), "src");
+    const lines = readdirSync(src, { recursive: true })
+      .map(String)
+      .filter((file) => file.endsWith(".tsx") && !/\.(test|stories)\.tsx$/.test(file))
+      .flatMap((file) =>
+        [...readFileSync(join(src, file), "utf8").matchAll(/className="([^"]*)"/g)]
+          .map((found) => found[1].split(/\s+/))
+          .filter((classes) => classes.includes("came-back"))
+          .map((classes) => ({ file, classes })),
+      );
+    // There are about ninety; a scan that finds none has lost them, not passed.
+    expect(lines.length).toBeGreaterThan(80);
+    const off = lines
+      .filter(({ classes }) =>
+        classes.includes("runs-as-you")
+          ? !classes.includes("ui-text-body")
+          : !classes.includes("ui-text-secondary"),
+      )
+      .map(({ file, classes }) => `${file}: ${classes.join(" ")}`);
+    expect(off).toEqual([]);
+  });
+
+  it("head a dialog's sections with the heading and its lists with the meta", () => {
+    const dialogs = [
+      "About.tsx",
+      "ApproveExtension.tsx",
+      "ApprovePlane.tsx",
+      "DeleteVault.tsx",
+      "DeleteWorkspace.tsx",
+      "Doctor.tsx",
+      "Extensions.tsx",
+      "SkillChangeDialogs.tsx",
+      "StartChat.tsx",
+      "GitMissing.tsx",
+      "settings/profiles.tsx",
+      "settings/signing.tsx",
+      "settings/PoolLimits.tsx",
+    ];
+    const bare = dialogs.flatMap((file) =>
+      [...readFileSync(join(process.cwd(), "src", file), "utf8").matchAll(/<h([34])\b[^>]*>/g)]
+        .filter(([tag]) => !/className="[^"]*ui-text-/.test(tag))
+        .map(([tag]) => `${file}: ${tag}`),
+    );
+    expect(bare).toEqual([]);
   });
 });
 

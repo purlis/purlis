@@ -113,7 +113,7 @@ export function TabPicture({ picture }: { picture: Picture }) {
  */
 export function editorToolbar(className: string) {
   return {
-    className: `ui-text-secondary ${className}`,
+    className: clsx("ui-text-secondary", className),
     "data-scope": "editor",
     "data-part": "toolbar",
     "data-variant": "default",

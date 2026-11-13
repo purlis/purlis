@@ -675,8 +675,8 @@ body {
    pane (Purlis, the operator's ruling of 2026-10-22): the words in its header (where it came
    from, its work item, its harness, its breadcrumb's names) are primary, and every other
    pane's keep their tier. The breadcrumb wears the meta (`PaneCrumbs.tsx`, #6389), which a rule
-   here cannot outrank, so the tint is on its names, which take the role from it. The harness is a button of the family (#3129), so its tier is drawn with the
-   family, in `paneFrame.css`. A split is the panes' own group inside the content panel; one pane
+   here cannot outrank, so the tint is on its names, which take the role from it. The harness
+   is a button of the family (#3129), so its tier is drawn with the family, in `paneFrame.css`. A split is the panes' own group inside the content panel; one pane
    is never marked, and a split's separator parts the panes. */
 [data-scope="panel"][data-variant="content"]
   [data-group]
@@ -1097,10 +1097,9 @@ body {
   font-size: var(--font-size-xl);
 }
 
+/* Who a chat starts as is the title (`ui-text-title`, #6389). */
 .start-chat-who h3 {
   margin: 0;
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-strong);
   overflow-wrap: anywhere;
 }
 
@@ -4784,10 +4783,9 @@ body {
   border-radius: var(--radius-md);
 }
 
+/* A health group's heading is the secondary at the strong weight (#6389), as it was drawn. */
 .doctor h3 {
   margin: var(--space-5) 0 var(--space-2);
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
 }
 
 .doctor-rows {
@@ -7470,9 +7468,6 @@ nav.piece-files-head {
 .ui-hosts .list-filter {
   max-inline-size: 280px;
 }
-
-/* A host is its row's name, the body in code (`ui-text-body ui-text-code`), its port one word
-   with it; when and by what it was added is the secondary (#6172, R65, #6389). */
 
 /* **A record list, as the table family's** (#6301, after Your hosts): where a record is (a
    folder, a host) in the quiet words beside its name, broken anywhere so a long path never

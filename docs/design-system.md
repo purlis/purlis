@@ -2100,7 +2100,8 @@ letter spacing anywhere else.
   family's own rule, which outranks the role's colour.
 - **A group named by data is written as its name** (a project, a day): a menu's and a select's
   wears the secondary instead of the label; a tree's and a list's take the capitals off in the
-  list family's one `[data-named]` rule (`list.css`), which a tree's header shares (#6482). A frame that labels its groups (the Chats list's
+  list family's one `[data-named]` rule (`list.css`), which a tree's header shares (#6482). A
+  frame that labels its groups (the Chats list's
   workspaces, #3484) is the exception, and labels them as any group: the frame's group heads move
   from the medium weight spaced `0.06em` to the label's strong, spaced `0.05em`.
 
@@ -2130,6 +2131,8 @@ under the pointer, chosen, a tone), the family's rule still outranks the role's 
 | every `.came-back` line, a door page's sentences among them | `ui-text-secondary` | 12px (14px on a door page), the colour around it | 12px, secondary |
 | what an extension that runs as you warns, on the danger wash | `ui-text-body` | 12px, primary | 13px, primary |
 | a door page's other lines: the folder a project goes into, the steps, the forges, a harness row's state and how | `ui-text-secondary` | 12px or the page's, muted or secondary | 12px, secondary |
+| who Start a chat starts as | `ui-text-title` | 16px, strong | the same |
+| Health's group headings (Blockers, Warnings, Passed) | `ui-text-secondary ui-text-strong` | 12px, bold, secondary | 12px, strong, secondary |
 | Git missing's heading; a dialog's `h3`; Settings' "Signing keys of your other devices" and a pool limit group's heading | `ui-text-heading` | 13px or 14px, strong | 14px, strong |
 | a dialog's `h4` over a list (what a project contributes) | `ui-text-meta` | 11px, muted | 11px, quiet |
 | Your hosts: a host, and when it was added | `ui-text-body ui-text-code`; `ui-text-secondary` | 12px mono, port quiet; 12px muted | 13px mono, one word; 12px secondary |
@@ -2152,23 +2155,28 @@ What it settled:
   `named` section, so it is no label: it was the label's size and weight without its capitals,
   and is the secondary at the strong weight now, as a menu's named group is the secondary.
 
-**Words that wear no role, and why:**
+**Words that wear no role, or keep their family's colour, and why:**
 
 - **A Notice's message** takes its tone's colour (trouble's, attention's) and its placement's
   size from the Notice's root, which a theme's `notice` parts reach. A role on the message would
   draw it in the role's colour, not its tone's.
-- **The status pills' muted words and a page tab's muted rest** wear `ui-text-body`; their muted
-  colour is the family's tier and the parts manifest's (`status_look`), which a theme sets.
-  Moving it to the role's colour would change every theme's default look.
-- **A dialog's `.where`, `.value` and `.pending`** are classes shared with views outside
-  dialogs (a door page's folder, the view tabs' `.pending`, #3938); they move with the view
-  tabs' sentences, the last surface in [the order](#the-order-the-surfaces-move-in), so each
-  class moves once.
+- **The status pills' muted words and a page tab's muted rest** wear a role (`ui-text-body`,
+  since #1920) and keep their family's muted colour, which the parts manifest names
+  (`status_look`) and a theme sets: the role's colour would change every theme's default look.
+  That is the one place muted is not the meta's, and it is the operator's to rule on.
+- **A dialog's `.where`, `.value` and `.pending`** wear none because each is one class drawn
+  two ways: `[data-scope="dialog"] .where` is 11px muted, while the same `.where` on a door page
+  (the folder a project goes into) and in a tab is drawn by other rules, and `.pending` is the
+  view tabs' muted sentence (#3938). A role on each site would give one class two ranks; each
+  is ranked once, when the view tabs' sentences move (#3938), the last surface in
+  [the order](#the-order-the-surfaces-move-in).
 - **Marks are not words**: the title bar's slash, a project's two-letter mark, a breadcrumb's
   separator. Each keeps its own size and colour.
 
-Open for the operator: the label's colour still comes in three tiers (the role's secondary, the
-quiet of a tree's, a list's, the title bar's and a frame's group heads, and the muted of a
+Open for the operator: the Inbox's chain, which #6389 asked be ruled a label or a strong meta,
+is neither here: it is a group named by data, and a menu's named group is the secondary, so it
+is the secondary at the strong weight; the label's colour still comes in three tiers (the role's
+secondary, the quiet of a tree's, a list's, the title bar's and a frame's group heads, and the muted of a
 table's column names; [above](#the-section-label-one-spelling)), and the weight of a group
 name's count (#6482).
 

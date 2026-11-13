@@ -571,10 +571,13 @@
 }
 
 /* **Harness · workspace, on the pane foot** (#5202): cut short at its end before the gauge
-   gives way, in the foot's muted tier. */
+   gives way, in the foot's muted tier. It takes the meta's size from the foot (#6389), and the
+   foot's colour, not the meta's quiet: the foot's tier is the parts manifest's, which a theme
+   sets on the foot. */
 .pane-foot .pane-where {
   /* The foot's start's, which a theme's `pane-foot.start.gap` sets. */
   gap: inherit;
+  color: var(--text-muted);
 }
 
 /* **Each part of the foot's start gives way before the gauge does** (#5204): a name is as long as
@@ -614,11 +617,6 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-}
-
-/* The foot's in its tier, at the foot's meta; the head's is the secondary (#6389). */
-.pane-foot .pane-where {
-  color: var(--text-muted);
 }
 
 /* **The one state button** (`PaneStateButton`, #4760): the chat's part of the head, before

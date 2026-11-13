@@ -20,6 +20,7 @@
  * with its `label`, `value`, `track` and the `fill` on it. `pane-foot.css` draws the family
  * default and a theme's `pane-foot` parts reach the same attributes.
  */
+import clsx from "clsx";
 import type { ReactNode } from "react";
 
 /** The core's tone for a gauge's value (`purlis_core::usage::gauge`), or `ended`, a chat's last
@@ -43,7 +44,7 @@ export function PaneFoot({
     <div
       data-scope="pane-foot"
       data-part="root"
-      className={className === undefined ? "ui-text-meta" : `${className} ui-text-meta`}
+      className={clsx(className, "ui-text-meta")}
       role="group"
       aria-label={label}
     >

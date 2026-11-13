@@ -105,7 +105,7 @@ function PaneLine() {
                 }
               >
                 <div className="pane-chips">
-                  <span className="pane-crumbs">steward 2 › fix-login</span>
+                  <span className="pane-crumbs ui-text-meta">steward 2 › fix-login</span>
                   <PaneNumber session={SESSION} />
                 </div>
               </PaneHead>
