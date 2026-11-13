@@ -10,6 +10,7 @@ import {
   type PlaneId,
   type TaskScreens,
 } from "../bindings";
+import { counted } from "../dispatches";
 import { AlertDialog } from "../ui/dialog/Dialog";
 import { Choice } from "./components";
 import type { LiveSetting } from "./groups";
@@ -45,11 +46,16 @@ export function taskScreensSetting(plane: PlaneId): LiveSetting {
       const [asking, setAsking] = useState(false);
       useEffect(() => {
         let live = true;
-        void commands.taskScreens(plane).then((said) => {
-          if (!live) return;
-          if (said.status === "ok") setRead(said.data);
-          else setRefused(said.error);
-        });
+        void commands
+          .taskScreens(plane)
+          .then((said) => {
+            if (!live) return;
+            if (said.status === "ok") setRead(said.data);
+            else setRefused(said.error);
+          })
+          .catch((err: unknown) => {
+            if (live) setRefused(String(err));
+          });
         return () => {
           live = false;
         };
@@ -73,6 +79,18 @@ export function taskScreensSetting(plane: PlaneId): LiveSetting {
           })
           .catch((err: unknown) => setRefused(String(err)));
       };
+      // The count the ask says is read as it opens: screens are kept while the page is open.
+      const ask = () => {
+        void commands
+          .taskScreens(plane)
+          .then((said) => {
+            if (said.status === "ok") {
+              setRead(said.data);
+              setAsking(true);
+            } else setRefused(said.error);
+          })
+          .catch((err: unknown) => setRefused(String(err)));
+      };
       const kept = read?.kept ?? 0;
       return {
         error: refused === undefined ? undefined : [refused],
@@ -83,7 +101,7 @@ export function taskScreensSetting(plane: PlaneId): LiveSetting {
               ids={ids}
               checked={read?.keep ?? true}
               disabled={read === undefined}
-              onCheckedChange={(to) => (to ? set(true) : setAsking(true))}
+              onCheckedChange={(to) => (to ? set(true) : ask())}
             />
             {asking && (
               <StopKeepingTaskScreens
@@ -102,7 +120,8 @@ export function taskScreensSetting(plane: PlaneId): LiveSetting {
 /**
  * **The ask before keeping is turned off** (#6306): how many kept screens go, that nothing is
  * kept from then on, and that each task's report stays. *Delete kept screens* is the danger
- * answer, since nothing puts them back.
+ * answer, since nothing puts them back. With none kept it deletes nothing, so its answer is
+ * *Turn off* and it is not drawn as a danger.
  */
 export function StopKeepingTaskScreens({
   kept,
@@ -121,12 +140,16 @@ export function StopKeepingTaskScreens({
         <p>
           {kept === 0
             ? "No screen is kept now. "
-            : `purlis deletes the ${kept} kept ${kept === 1 ? "screen" : "screens"} now. `}
+            : `purlis deletes the ${counted(kept, "kept screen", "kept screens")} now. `}
           From then on no task's screen is kept, so Read it on a closed task's card has nothing to
           show. Its report stays.
         </p>
       }
-      main={{ children: "Delete kept screens", variant: "danger", onPress: onDelete }}
+      main={
+        kept === 0
+          ? { children: "Turn off", onPress: onDelete }
+          : { children: "Delete kept screens", variant: "danger", onPress: onDelete }
+      }
     />
   );
 }

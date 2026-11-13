@@ -184,4 +184,43 @@ describe("the Keep task screens row", () => {
     expect(await screen.findByText(/1 kept screen could not be deleted/)).toBeInTheDocument();
     await waitFor(() => expect(toggle).not.toBeChecked());
   });
+
+  it("reads the count again as it asks, not as the row was drawn", async () => {
+    // #6451's review: screens kept while the page was open are counted in the ask.
+    const { state } = aCore(true, 1);
+    render(<Row />);
+    const toggle = screen.getByRole("switch", { name: "Keep task screens" });
+    await waitFor(() => expect(toggle).toBeChecked());
+    state.kept = 4;
+
+    await userEvent.click(toggle);
+
+    expect(await screen.findByRole("alertdialog")).toHaveTextContent("4 kept screens");
+  });
+
+  it("with nothing kept, asks to turn it off and names no delete", async () => {
+    const { set } = aCore(true, 0);
+    render(<Row />);
+    const toggle = screen.getByRole("switch", { name: "Keep task screens" });
+    await waitFor(() => expect(toggle).toBeChecked());
+
+    await userEvent.click(toggle);
+
+    const ask = await screen.findByRole("alertdialog");
+    expect(ask).toHaveTextContent("No screen is kept now.");
+    expect(within(ask).queryByRole("button", { name: "Delete kept screens" })).toBeNull();
+    await userEvent.click(within(ask).getByRole("button", { name: "Turn off" }));
+    await waitFor(() => expect(toggle).not.toBeChecked());
+    expect(set).toEqual([{ plane: PLANE, keep: false }]);
+  });
+
+  it("says why when the setting could not be read at all", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "task_screens") throw new Error("the window lost its project");
+      throw new Error(`unexpected ${cmd}`);
+    });
+    render(<Row />);
+
+    expect(await screen.findByText(/the window lost its project/)).toBeInTheDocument();
+  });
 });
