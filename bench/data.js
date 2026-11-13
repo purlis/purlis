@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794547852038,
+  "lastUpdate": 1794550917426,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -48006,6 +48006,48 @@ window.BENCHMARK_DATA = {
             "value": 102.003498,
             "unit": "ms",
             "extra": "median of 5 runs: 101.097, 101.891, 102.003, 103.514, 103.546 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "173f3a76aaf0ec86f5a8296070ecc79da89035e0",
+          "message": "ADR 0121 amended: Asks scoped to Chat, Workspace, Project; the ✋ counts the project in front, with its reminder bounce (#6337)\n\nRecords the design agreed with the person on 2026-11-12 and settled by the\nprototype on draft #6330: the ✋ counts the project in front (reversing\ndecision 4's every-project count; the Dock badge stays the total), the\nChat, Workspace and Project chips with All projects dropped from Asks,\nanswer-once and triage narrowed to the scope in view, Notices under the\nchips, small round counts, and the ✋'s reminder bounce on a 5, 10, 20,\n40, then 60 minute backoff with its resets, holds and Remind me setting.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77NWCEGXDH1ZSZTBTYQ8C6E\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-13T04:20:14Z",
+          "tree_id": "84a059406521d5d8be99a33ec2fa4f8f1fff5529",
+          "url": "https://github.com/purlis/purlis/commit/173f3a76aaf0ec86f5a8296070ecc79da89035e0"
+        },
+        "date": 1794550911107,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.558327,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.545, 0.552, 0.558, 0.559, 0.561 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.178086,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.030, 16.169, 16.178, 16.235, 16.278 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.48224300000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.315, 100.703, 101.482, 101.742, 103.384 ms"
           }
         ]
       }
