@@ -664,10 +664,27 @@ export function ConnectStep({
       else onShown(answer.data);
     });
   };
+  /** **Check and trust again** (#6270): a made pool's machine met again, without its pin, for the
+   *  person to check what it shows now. */
+  const checkAndTrustAgain = (pool: string) => {
+    setPressing("connecting");
+    setTrouble(undefined);
+    void commands.poolSetupCheckAndTrustAgain(plane, pool).then((answer) => {
+      setPressing(undefined);
+      if (answer.status === "error") setTrouble(answer.error);
+      else onShown(answer.data);
+    });
+  };
   const trust = (fingerprint: string) => {
     setPressing("trusting");
     setTrouble(undefined);
-    void commands.poolSetupTrust(plane, fingerprint).then((answer) => {
+    // A made pool met again keeps the pin confirmed in place of its own (#6270).
+    const made = shown.pool;
+    void (
+      made === null
+        ? commands.poolSetupTrust(plane, fingerprint)
+        : commands.poolSetupTrustAgain(plane, made, fingerprint)
+    ).then((answer) => {
       setPressing(undefined);
       if (answer.status === "error") setTrouble(answer.error);
       else onShown(answer.data);
@@ -688,8 +705,9 @@ export function ConnectStep({
         else onShown(answer.data);
       });
   };
-  const notIt = () => pick(null);
   const madePool = shown.pool !== null;
+  // A made pool's machine is never forgotten: This isn't it reads it again as it stands.
+  const notIt = () => (madePool ? checkAgain() : pick(null));
   const done = step.state === "done";
   const meeting = step.next?.id === "trust-machine";
   // A tcp:// machine is refused on its card until the person chooses a route (#6267): chosen
@@ -700,11 +718,15 @@ export function ConnectStep({
   // the machine: once the person chose a route they are only stale until the next read.
   const declined = step.cause === "plain-tcp" || step.cause === "not-a-route";
   const finding = step.state === "attention" && !declined;
+  // A made pool whose pin no longer holds is checked and trusted again (#6270).
+  const againPool = madePool && step.next?.id === "check-and-trust-again" ? shown.pool : null;
 
   return (
     <>
       <StepHead
-        title={finding && madePool ? `Check ${host} again` : "Connect to the other machine"}
+        title={
+          (finding || meeting) && madePool ? `Check ${host} again` : "Connect to the other machine"
+        }
         tag={done ? <Badge variant="ok">Every check passed</Badge> : undefined}
         lead={
           done
@@ -807,14 +829,25 @@ export function ConnectStep({
           }
           actions={
             <>
-              <Button
-                variant="primary"
-                onPress={
-                  step.next?.id === "change-machine" ? notIt : madePool ? checkAgain : connect
-                }
-              >
-                {step.next?.id === "change-machine" ? "Change the machine" : "Check again"}
-              </Button>
+              {againPool !== null ? (
+                <>
+                  <Button variant="primary" onPress={() => checkAndTrustAgain(againPool)}>
+                    {step.next?.label ?? "Check and trust again"}
+                  </Button>
+                  <Button variant="secondary" onPress={checkAgain}>
+                    Check again
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  variant="primary"
+                  onPress={
+                    step.next?.id === "change-machine" ? notIt : madePool ? checkAgain : connect
+                  }
+                >
+                  {step.next?.id === "change-machine" ? "Change the machine" : "Check again"}
+                </Button>
+              )}
               {!madePool && step.next?.id !== "change-machine" && (
                 <Button variant="secondary" onPress={notIt}>
                   Change the machine
