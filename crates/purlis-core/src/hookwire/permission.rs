@@ -546,3 +546,6 @@ mod tests {
         assert_eq!(chosen.expect("a reply"), None);
     }
 }
+
+#[cfg(test)]
+mod gave_up_tests;
