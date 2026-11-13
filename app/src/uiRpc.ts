@@ -640,7 +640,10 @@ export const commands = {
 "floor" | 
 /**  No sandbox. */
 "off" | null) => typedError<RepoAnswer, string>(__TAURI_INVOKE("open_repo", { path, template, forge, protection })),
-	/**  What setup's Protection row shows, read from the core ([`SetupProtection`]). */
+	/**
+	 *  What setup's Protection row shows, read from the core ([`SetupProtection`]). It reads the
+	 *  local project's level from the disk, so off the window's thread (#1949).
+	 */
 	setupProtection: () => typedError<SetupProtection, string>(__TAURI_INVOKE("setup_protection")),
 	/**
 	 *  The project template that fits the repo at `path`, by id, or `null` when none does or `path`
