@@ -260,6 +260,38 @@ fn the_blocked_log_offers_allow_only_on_a_host_the_proxy_refused() {
     );
 }
 
+/// Q265: in a group, the newest *verified* block decides the Allow. A later line a chat's own
+/// hook reported (unverified, Q254) joins the row's count and names its newest chat, and never
+/// hides the Allow an older block purlis's own proxy saw offers.
+///
+/// Mutations it catches: the row's Allow taken from its newest block alone (none offered), the
+/// count or the newest chat taken from the verified block.
+#[test]
+fn in_a_group_the_newest_verified_block_decides_the_allow() {
+    let dir = tempfile::tempdir().expect("a project");
+    let listed = [
+        listed(
+            2,
+            20,
+            "id-second",
+            sandbox_host("a.example:443", Some(Qualifier::Unverified)),
+        ),
+        listed(1, 10, "id-first", sandbox_host("a.example:443", None)),
+    ];
+    let shown = network_of(
+        dir.path(),
+        &plane("[sandbox]\nmode = \"on\"\negress = []\n"),
+        &listed,
+        &named,
+    );
+    assert_eq!(shown.blocked.len(), 1, "{:?}", shown.blocked);
+    let row = &shown.blocked[0];
+    assert_eq!(row.target.as_deref(), Some("a.example:443"));
+    assert_eq!((row.times, row.at), (2, 20));
+    assert_eq!(row.chat.as_deref(), Some("second"));
+    assert_eq!(row.levels, vec![GrantLevel::You, GrantLevel::Project]);
+}
+
 /// **R-222: Blocked lately is folded into the Blocked log** (T1-32, Q264). A network-record
 /// fixture, each refusal also heard as T1-10 writes it: what ended as a block (kept blocked,
 /// withdrawn at the chat's end) is listed from its block event with the host its target summary
@@ -418,11 +450,73 @@ fn refused_lately(targets: &[&str]) -> Vec<Entry> {
         .collect()
 }
 
-/// #1681: Allow on Blocked lately allows only a host the record has a refused connection to:
-/// a host the record never refused, one only looked up, or one on another port is not allowed
-/// from there, and nothing is audited.
+/// The Blocked log's blocks of a connection to each of `targets` purlis's own proxy refused.
+fn verified(targets: &[&str]) -> Vec<Listed> {
+    (1..)
+        .zip(targets)
+        .map(|(seq, target)| listed(seq, seq, "id-first", sandbox_host(target, None)))
+        .collect()
+}
+
+/// Q265: Allow on the Blocked log needs a verified sandbox block of that host in the Blocked
+/// log as well as the network record's refused connection (#1681), so the gate matches what the
+/// row offers. A host only a chat's own hook reported (Q254), one only a guard blocked, and one
+/// whose verified block is of another host are refused, and nothing is audited.
+///
+/// Mutations it catches: the Blocked log's check dropped (the record alone lets each through),
+/// the qualifier or the source left out of it.
 #[test]
-fn allow_on_blocked_lately_refuses_a_host_that_is_not_a_refused_connection_here() {
+fn allow_on_the_blocked_log_refuses_a_host_only_a_hook_reported() {
+    let dir = tempfile::tempdir().expect("a project");
+    let chats = crate::chats::Chats::new();
+    let seen = std::sync::Mutex::new(Vec::new());
+    let audit = audited_into(&seen);
+    let hosts = ["hook.example:443", "guard.example:443", "other.example:443"];
+    let lately = refused_lately(&hosts);
+    let mut guarded = sandbox_host("guard.example:443", None);
+    guarded.source = Source::Guard;
+    let blocked_log = [
+        listed(
+            3,
+            30,
+            "id-first",
+            sandbox_host("hook.example:443", Some(Qualifier::Unverified)),
+        ),
+        listed(2, 20, "id-first", guarded),
+        listed(
+            1,
+            10,
+            "id-first",
+            sandbox_host("elsewhere.example:443", None),
+        ),
+    ];
+    for host in hosts {
+        let refused = allow_blocked(
+            dir.path(),
+            &chats,
+            &lately,
+            &blocked_log,
+            host,
+            GrantLevel::You,
+            &audit,
+            3,
+        )
+        .expect_err(host);
+        assert!(
+            refused.contains("not a connection the sandbox refused here"),
+            "{refused}"
+        );
+    }
+    assert!(seen.lock().expect("the audit").is_empty());
+    assert!(sandbox::hosts::personal(dir.path()).is_empty());
+}
+
+/// #1681: Allow on the Blocked log allows only a host the network record has a refused
+/// connection to: a host the record never refused, one only looked up, or one on another port is
+/// not allowed from there, even with a verified block of it in the Blocked log, and nothing is
+/// audited.
+#[test]
+fn allow_on_the_blocked_log_refuses_a_host_that_is_not_a_refused_connection_here() {
     let dir = tempfile::tempdir().expect("a project");
     let chats = crate::chats::Chats::new();
     let seen = std::sync::Mutex::new(Vec::new());
@@ -439,11 +533,19 @@ fn allow_on_blocked_lately_refuses_a_host_that_is_not_a_refused_connection_here(
         None,
         2,
     ));
+    // Each is verified in the Blocked log: the record alone still refuses it.
+    let blocked_log = verified(&[
+        "never.example:443",
+        "looked.example",
+        "a.example:8443",
+        "a.example:443",
+    ]);
     for host in ["never.example:443", "looked.example", "a.example:8443"] {
         let refused = allow_blocked(
             dir.path(),
             &chats,
             &lately,
+            &blocked_log,
             host,
             GrantLevel::You,
             &audit,
@@ -461,6 +563,7 @@ fn allow_on_blocked_lately_refuses_a_host_that_is_not_a_refused_connection_here(
             dir.path(),
             &chats,
             &nothing,
+            &blocked_log,
             "a.example:443",
             GrantLevel::You,
             &audit,
@@ -487,16 +590,18 @@ fn audited_into(
 }
 
 #[test]
-fn allow_on_blocked_lately_is_judged_audited_and_never_for_one_chat() {
+fn allow_on_the_blocked_log_is_judged_audited_and_never_for_one_chat() {
     let dir = tempfile::tempdir().expect("a project");
     let chats = crate::chats::Chats::new();
     let seen = std::sync::Mutex::new(Vec::new());
     let audit = audited_into(&seen);
     let lately = refused_lately(&["a.example:443"]);
+    let blocked_log = verified(&["a.example:443"]);
     let refused = allow_blocked(
         dir.path(),
         &chats,
         &lately,
+        &blocked_log,
         "a.example:443",
         GrantLevel::Chat,
         &audit,
@@ -508,6 +613,7 @@ fn allow_on_blocked_lately_is_judged_audited_and_never_for_one_chat() {
         dir.path(),
         &chats,
         &lately,
+        &blocked_log,
         "169.254.169.254",
         GrantLevel::You,
         &audit,
@@ -521,6 +627,7 @@ fn allow_on_blocked_lately_is_judged_audited_and_never_for_one_chat() {
             dir.path(),
             &chats,
             &lately,
+            &blocked_log,
             "a.example:443",
             GrantLevel::You,
             &unaudited,
@@ -535,7 +642,7 @@ fn allow_on_blocked_lately_is_judged_audited_and_never_for_one_chat() {
 /// Writes the project's local settings file, which a sandboxed run of this suite cannot: it
 /// first runs on CI.
 #[test]
-fn allow_on_blocked_lately_keeps_the_host_for_this_project_on_this_machine_and_records_it() {
+fn allow_on_the_blocked_log_keeps_the_host_for_this_project_on_this_machine_and_records_it() {
     let dir = tempfile::tempdir().expect("a home");
     let root = dir.path().join("project");
     std::fs::create_dir_all(&root).expect("a project");
@@ -545,10 +652,12 @@ fn allow_on_blocked_lately_keeps_the_host_for_this_project_on_this_machine_and_r
     let audit = audited_into(&seen);
     let audit = recorded(&audit, Some(&record), &root, &chats);
     let lately = refused_lately(&["a.example:443"]);
+    let blocked_log = verified(&["a.example:443"]);
     let said = allow_blocked(
         &root,
         &chats,
         &lately,
+        &blocked_log,
         "A.Example:443",
         GrantLevel::You,
         &audit,
