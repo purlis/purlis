@@ -79,9 +79,11 @@ export const signedCommits: LiveSetting = {
       grouped: true,
       control: (ids) => (
         <div role="group" aria-labelledby={ids.labelledBy} aria-describedby={ids.describedBy}>
-          {read.state === "reading" && <p className="ui-setting-help">Reading…</p>}
+          {read.state === "reading" && (
+            <p className="ui-setting-help ui-text-secondary">Reading…</p>
+          )}
           {read.state === "trouble" && (
-            <p className="ui-setting-help" role="alert">
+            <p className="ui-setting-help ui-text-secondary" role="alert">
               {read.why}
             </p>
           )}
@@ -118,21 +120,21 @@ function Signing({
   const accounts = signing.accounts;
   const cannot = accounts.filter((account) => !account.verifies);
   const cannotSay = cannot.map((account) => (
-    <p className="ui-setting-help" key={`${account.kind}:${account.host}`}>
+    <p className="ui-setting-help ui-text-secondary" key={`${account.kind}:${account.host}`}>
       {cantVerify(account)}
     </p>
   ));
   if (!signing.on) {
     return (
       <>
-        <p className="ui-setting-help">
+        <p className="ui-setting-help ui-text-secondary">
           <Badge variant="neutral">Not set up</Badge>
         </p>
-        <p className="ui-setting-help">
+        <p className="ui-setting-help ui-text-secondary">
           Your signing key is made on this Mac and stays in its Keychain. No chat can reach it.
         </p>
         {accounts.length === 0 ? (
-          <p className="ui-setting-help">
+          <p className="ui-setting-help ui-text-secondary">
             Sign in to GitHub or GitLab above first, then set up signing.
           </p>
         ) : (
@@ -216,7 +218,7 @@ function On({
   };
   return (
     <>
-      <p className="ui-setting-help">
+      <p className="ui-setting-help ui-text-secondary">
         <Badge variant="ok">On</Badge> Chat commits on this Mac are signed with its signing key.
       </p>
       {accounts.length > 0 ? (
@@ -238,11 +240,13 @@ function On({
                 <TableRow key={keyOf(account)} id={keyOf(account)} textValue={account.login}>
                   <TableCell>{account.login}</TableCell>
                   <TableCell heading="Host">
-                    <span className="ui-record-where">{account.host}</span>
+                    <span className="ui-record-where ui-text-meta">{account.host}</span>
                   </TableCell>
                   <TableCell heading="Signing">
                     {!account.verifies ? (
-                      <span className="ui-setting-help">{cantVerify(account)}</span>
+                      <span className="ui-setting-help ui-text-secondary">
+                        {cantVerify(account)}
+                      </span>
                     ) : held?.has_key === false ? (
                       <Button
                         size="sm"
@@ -254,7 +258,9 @@ function On({
                     ) : account.verified_as ? (
                       <span className="signing-verified">
                         <Badge variant="ok">Verified on {account.forge} ✓</Badge>
-                        <span className="ui-setting-help">Commits as {account.verified_as}</span>
+                        <span className="ui-setting-help ui-text-secondary">
+                          Commits as {account.verified_as}
+                        </span>
                       </span>
                     ) : (
                       <Button
@@ -272,7 +278,7 @@ function On({
           </TableBody>
         </Table>
       ) : (
-        <p className="ui-setting-help">
+        <p className="ui-setting-help ui-text-secondary">
           Sign in to GitHub or GitLab above to add the key to your account.
         </p>
       )}
@@ -362,7 +368,7 @@ function OtherKeys({ children }: { children: ReactNode }) {
   return (
     <section className="signing-others" aria-labelledby={heading}>
       <h3 id={heading}>Signing keys of your other devices</h3>
-      <p className="ui-setting-help">
+      <p className="ui-setting-help ui-text-secondary">
         Each signs that device&apos;s chat commits. Removing one here stops that device&apos;s
         commits showing as Verified until it sets up signing again.
       </p>
@@ -425,7 +431,7 @@ function OtherKey({
         </span>
       </TableCell>
       <TableCell heading="Account">
-        <span className="ui-record-where">{where}</span>
+        <span className="ui-record-where ui-text-meta">{where}</span>
       </TableCell>
       <TableCell heading="Added">{other.added ? addedOn(other.added) : ""}</TableCell>
       <TableCell align="end">
@@ -443,7 +449,7 @@ function OtherKey({
           </Button>
         )}
         {why !== undefined && (
-          <span className="ui-setting-help" role="alert">
+          <span className="ui-setting-help ui-text-secondary" role="alert">
             {why}
           </span>
         )}
@@ -500,13 +506,13 @@ export function RemoveOtherKeyConfirm({
 function DidSaid({ did }: { did: Did }) {
   if ("why" in did)
     return (
-      <p className="ui-setting-help" role="alert">
+      <p className="ui-setting-help ui-text-secondary" role="alert">
         {did.why}
       </p>
     );
   const refused = did.done.filter((one) => one.outcome === "refused");
   return (
-    <div className="ui-setting-help" role="status">
+    <div className="ui-setting-help ui-text-secondary" role="status">
       <p>
         {did.what === "replaced"
           ? "A new key is in place of the old one, on every account that had it. Check each account again to see it Verified."

@@ -621,7 +621,11 @@ function AddClusterPool({ kinds }: { kinds: boolean }) {
           label="Cluster operator key"
           help={`${checked.made_here ? "The key this machine made in Pool setup." : "The same as the key your admin gave you."} Its runner is claimed in namespace ${checked.namespace}.`}
           control={(ids) => (
-            <output id={ids.id} aria-describedby={ids.describedBy} className="ui-machine-path">
+            <output
+              id={ids.id}
+              aria-describedby={ids.describedBy}
+              className="ui-machine-path ui-text-meta"
+            >
               <code>{checked.key}</code>
             </output>
           )}

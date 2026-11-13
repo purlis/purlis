@@ -203,7 +203,7 @@ export function MemoryTab({
           control={() => (
             <Suspense
               fallback={
-                <p className="ui-setting-help" aria-busy="true">
+                <p className="ui-setting-help ui-text-secondary" aria-busy="true">
                   Opening the editor…
                 </p>
               }

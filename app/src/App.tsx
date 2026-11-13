@@ -149,6 +149,7 @@ import { slideTowards } from "./workspaceSlide";
 import { pinsChanged } from "./workspacePins";
 import type { Needing, Quiet } from "./NeedsYou";
 import { asksMoved, notSnoozed, useAsks } from "./asks";
+import { askedIn, handOf } from "./askedIn";
 import { useDockBadge } from "./dockBadge";
 import { giveKeyboardTo } from "./paneKeyboard";
 import { landsOn, useNotificationLanding, type Landing } from "./askNotices";
@@ -2666,28 +2667,28 @@ function App() {
   );
   const everyQuiet = useMemo(() => [...quiet, ...others.quiet], [quiet, others.quiet]);
   /**
-   * **The hand's number: the asks, one per thing that waits** (#1690). A project the core has
-   * not said its asks for yet counts its rows, as the hand always did, and so does a project in
-   * another window, whose asks that window reads.
+   * **How many asks wait in each open project of every window** (#1690, #6341): one per thing
+   * that waits, as its registry or its window says them (`askedIn`). Undefined until this
+   * window's registry has said any project's asks.
    */
-  const askedCount = useMemo(() => {
-    if (!planes.some((plane) => plane in registry.held)) return undefined;
-    const here = planes.reduce(
-      (sum, plane) =>
-        sum + (registry.held[plane]?.length ?? needing.filter((one) => one.plane === plane).length),
-      0,
-    );
-    // Another window's project counts its asks where that window told them (#1921), and its
-    // chats where it did not.
-    const told = new Set(askedThere.map((one) => one.plane));
-    return (
-      here +
-      askedThere.reduce((sum, one) => sum + one.count, 0) +
-      others.needing.filter((one) => !planes.includes(one.plane) && !told.has(one.plane)).length
-    );
-  }, [planes, registry.held, needing, others.needing, askedThere]);
-  // The Dock badge is the same total (#5999). A tab window says nothing of its own (#4768).
-  useDockBadge(tabWindow === null ? askedCount : undefined);
+  const asked = useMemo(
+    () =>
+      planes.some((plane) => plane in registry.held)
+        ? askedIn({
+            planes,
+            held: registry.held,
+            needing,
+            there: askedThere,
+            asking: others.needing.filter((one) => !planes.includes(one.plane)),
+          })
+        : undefined,
+    [planes, registry.held, needing, others.needing, askedThere],
+  );
+  /** **The hand's number: the project in front's asks alone** (ADR 0121 amended 2026-11-12,
+   *  decision 1). Each project tab counts its own, and the Dock badge every one. */
+  const askedCount = asked === undefined ? undefined : handOf(asked, inFront);
+  // The Dock badge is the total (#5999). A tab window says nothing of its own (#4768).
+  useDockBadge(tabWindow === null ? asked : undefined);
   /** What a quit would end in every window: the main window is the one asked (`lifecycle.rs`),
    *  and a warning that left out a split window's chats would end them unannounced. */
   const everyEnding = useMemo(() => [...ending, ...others.ending], [ending, others.ending]);
@@ -2752,24 +2753,11 @@ function App() {
   );
   useRunHere(pressHere);
   /**
-   * **A press of the hand** (#1692, #1695): the Inbox of a project this window holds where
-   * something waits there. Where what waits is only in another window's projects, the first of
-   * those chats is brought to the front in its own window, where its Inbox lists it.
+   * **A press of the hand** (#1692, #6341): the Asks of the project in front, and nothing more.
+   * It counts that project alone, so it brings no other project forward: another project's asks
+   * are reached from its own tab, or its notification.
    */
-  const pressHand = useCallback(() => {
-    const waitsHere = planesNow.current.some(
-      (plane) =>
-        (registry.held[plane]?.length ?? 0) > 0 || needing.some((one) => one.plane === plane),
-    );
-    const elsewhere = everyNeeding.find(
-      (one) => !planesNow.current.includes(one.plane) && one.go?.available,
-    );
-    // The Inbox in front lists a chat in another window too (`InboxElsewhere`), so the press
-    // goes there unless this window has no project to open one in.
-    if (!waitsHere && inFrontNow.current === undefined && elsewhere?.go)
-      pressNeeding(elsewhere.plane, elsewhere.go);
-    else openInbox();
-  }, [everyNeeding, needing, openInbox, pressNeeding, registry.held]);
+  const pressHand = openInbox;
   /**
    * **What each Inbox lists that its registry cannot see** (#1695): the chats waiting in other
    * windows' projects and every chat that cannot say it waits, as the ✋'s list named them.
@@ -3052,7 +3040,7 @@ function App() {
           sandbox={inFront !== undefined ? reports[inFront]?.sandbox : undefined}
           chats={ending}
           needing={{
-            count: askedCount ?? everyNeeding.length,
+            count: askedCount ?? needing.filter((one) => one.plane === inFront).length,
             chats: askedCount === undefined,
             quiet: everyQuiet,
             onInbox: pressHand,
@@ -3098,7 +3086,11 @@ function App() {
               rows={strip}
               offers={stripFound}
               onPress={press}
-              waitingIn={(project) => registry.held[project.plane]?.length ?? askingIn(project)}
+              waitingIn={(project) =>
+                asked?.get(project.plane) ??
+                registry.held[project.plane]?.length ??
+                askingIn(project)
+              }
               unsavedIn={(project) => unsavedOf(reports[project.plane]?.saving)}
               onDrop={dragProject}
               lettingGo={lettingGo}

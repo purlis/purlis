@@ -14,7 +14,7 @@ export const CLUSTER_SETUP_GUIDE =
  */
 export function ClusterSetupGuide() {
   return (
-    <p className="ui-setting-help">
+    <p className="ui-setting-help ui-text-secondary">
       Nothing's set up on this cluster yet?{" "}
       <Button
         variant="link"

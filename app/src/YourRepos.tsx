@@ -82,7 +82,9 @@ export function YourRepos({
 
   return (
     <section className="your-repos" aria-labelledby={listLabel}>
-      <h2 id={listLabel}>Or pick one of your repos</h2>
+      <h2 id={listLabel} className="ui-text-label">
+        Or pick one of your repos
+      </h2>
 
       {signingIn !== undefined && (
         <ForgeTokenSignIn
