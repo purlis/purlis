@@ -241,14 +241,14 @@ function rowsThatFit(): number {
  * React Aria builds a collection's rows without yielding. Mounted with the
  * list and keyed by scope, so each list it draws starts from the top.
  *
- * **A chosen row past the rows drawn is drawn alone** (#5276): on the first frame, with the first
- * screen and none of the rows between them, so an opening at row 200 of 200 builds a screen and
- * one row, not all two hundred. It keeps a place of its own among the screens, keyed by itself,
- * so as the rows before it come it moves into its place in the list without being drawn afresh,
- * and the keyboard on it stays on it. What is drawn never shrinks while the list stands, so a row
- * drawn stays drawn, and a press, the keyboard and the search box work on the rows there while
- * the rest come. A screen's size is read once, as the list is mounted: a window taller than it
- * has the rest a frame on.
+ * **A row chosen past the screens drawn has its own screen drawn ahead** (#5276): on its frame,
+ * with the screens drawn and none of those between, so an opening at row 200 of 200 builds two
+ * screens, not all two hundred, and the chosen row has the rows either side of it at once. A
+ * screen drawn ahead is keyed as the screens reaching it key it, so it is never drawn afresh and
+ * the keyboard on its rows stays there. What is drawn never shrinks while the list stands, so a
+ * row drawn stays drawn, and a press, the keyboard and the search box work on the rows there
+ * while the rest come. A screen's size is read once, as the list is mounted: a window taller than
+ * it has the rest a frame on.
  */
 function LibraryRows({
   rows,
@@ -257,39 +257,36 @@ function LibraryRows({
 }: {
   rows: readonly StudioSkill[];
   row: (skill: StudioSkill) => ReactNode;
-  /** The chosen row's id, drawn at once wherever it is. */
+  /** The chosen row's id, drawn at once wherever it is, with its screen. */
   chosen: string | undefined;
 }) {
   const [rowsPerScreen] = useState(rowsThatFit);
   const [screens, setScreens] = useState(1);
-  const [alone, setAlone] = useState<string | undefined>(undefined);
-  const drawn = Math.min(rows.length, screens * rowsPerScreen);
+  /** The screens drawn ahead of the rest, each for a row chosen in it before they reached it. */
+  const [ahead, setAhead] = useState<readonly number[]>([]);
   const at = chosen === undefined ? -1 : rows.findIndex((one) => skillRowId(one) === chosen);
+  const its = Math.floor(at / rowsPerScreen);
   // Adjusted as it is drawn (React's state set while rendering), so the chosen row's frame has it.
-  if (at >= drawn && alone !== chosen) setAlone(chosen);
-  const more = drawn < rows.length;
+  if (its >= screens && !ahead.includes(its)) setAhead([...ahead, its]);
+  const more = screens * rowsPerScreen < rows.length;
   useEffect(() => {
     if (!more) return;
     return afterPaint(() => startTransition(() => setScreens((was) => was + 1)));
   }, [more, screens]);
-  const aloneAt = alone === undefined ? -1 : rows.findIndex((one) => skillRowId(one) === alone);
-  const screen = (key: string, from: number, to: number) =>
-    from < to && <LibraryScreen key={key} rows={rows} from={from} to={to} row={row} />;
-  // A screen at a time, each kept as it was drawn, so a screen added draws its own rows alone;
-  // the screen the row drawn alone falls in is drawn either side of it.
-  return [
-    ...Array.from({ length: Math.ceil(drawn / rowsPerScreen) }, (_, n) => {
-      const from = n * rowsPerScreen;
-      const to = Math.min(drawn, from + rowsPerScreen);
-      if (aloneAt < from || aloneAt >= to) return screen(`screen ${n}`, from, to);
-      return [
-        screen(`screen ${n}`, from, aloneAt),
-        row(rows[aloneAt]),
-        screen(`screen ${n} after`, aloneAt + 1, to),
-      ];
-    }).flat(),
-    aloneAt >= drawn && row(rows[aloneAt]),
-  ];
+  // A screen at a time, each kept as it was drawn, so a screen added draws its own rows alone.
+  const drawn = [
+    ...Array.from({ length: screens }, (_, n) => n),
+    ...ahead.filter((n) => n >= screens).sort((a, b) => a - b),
+  ].filter((n) => n * rowsPerScreen < rows.length);
+  return drawn.map((n) => (
+    <LibraryScreen
+      key={n}
+      rows={rows}
+      from={n * rowsPerScreen}
+      to={Math.min(rows.length, (n + 1) * rowsPerScreen)}
+      row={row}
+    />
+  ));
 }
 
 /** One screen of the Library's rows, `from` up to `to`: drawn again only when they change. */
