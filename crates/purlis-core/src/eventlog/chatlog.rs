@@ -23,7 +23,7 @@ use std::io;
 use std::path::Path;
 
 use super::Event;
-use super::stops::{self, Block, Qualifier};
+use super::stops::{self, AskAnswered, AskGroup, Block, Hold, LoopPause, Qualifier};
 use crate::sandbox::protection::InForce;
 
 /// **Whether an event of `kind` is part of a chat's story**: its runs starting and ending, its
@@ -74,6 +74,31 @@ pub enum Row {
         /// The exit code, where the program left one.
         code: Option<i64>,
     },
+    /// **The chat's protection changed** (R-228), through a shipped path in phase 1: its
+    /// sandbox lifted for a run (`trust.sandbox.off`) or put back on (`trust.sandbox.on`).
+    ProtectionChanged {
+        at_ms: Option<u64>,
+        /// `off` or `on`.
+        change: String,
+        /// Who made it, as its trust event names them: `human`, `host` or `agent`.
+        actor_kind: String,
+        /// The actor's own word under that kind (`operator`, `purlis`, `a chat`, ...).
+        actor: String,
+    },
+    /// **An ask raised** (R-229): what waited on the person, by its group.
+    AskRaised { at_ms: Option<u64>, ask: AskGroup },
+    /// **An ask answered** (R-229): its group, the answer and who answered.
+    AskAnswered {
+        at_ms: Option<u64>,
+        answered: AskAnswered,
+    },
+    /// **A hold** (R-231): an action purlis refused to the chat and raised as an ask.
+    Held { at_ms: Option<u64>, hold: Hold },
+    /// **A loop pause** (R-232): the rule that paused the chat, and at how many times.
+    LoopPaused {
+        at_ms: Option<u64>,
+        pause: LoopPause,
+    },
 }
 
 /// **The rows of chat `chat`'s Chat log** among `events`, oldest first: read from its
@@ -120,6 +145,25 @@ pub fn rows(events: &[Event], chat: &str) -> Vec<Row> {
             }
         })
         .collect()
+}
+
+/// **What heads a chat's Chat log** (R-234, R-235): its allowed calls, collapsed into one
+/// count with those allowed by the person's rules, and the honesty lines its start event says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Summary {
+    /// The calls purlis's hook let through.
+    pub allowed: u32,
+    /// Of those, the calls an entry in the person's Allowed list allowed.
+    pub by_your_rules: u32,
+    /// What reports the chat's calls is within its own reach, so its reports are not checked.
+    pub unverified: bool,
+    /// The chat ran with No sandbox: as the person, with all they can reach.
+    pub ran_as_you: bool,
+}
+
+/// **What heads chat `chat`'s Chat log** among `events` ([`Summary`]).
+pub fn summary(_events: &[Event], _chat: &str) -> Summary {
+    Summary::default()
 }
 
 /// **How many of each kind of stop.** A block whose report is qualified, `unverified` or

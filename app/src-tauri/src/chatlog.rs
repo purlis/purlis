@@ -57,6 +57,48 @@ pub enum ChatLogRow {
         cause: String,
         code: Option<i32>,
     },
+    /// The chat's sandbox was lifted for a run (`off`) or put back on (`on`), and who did it:
+    /// `actor_kind` `human`, `host` or `agent`, and the actor's word.
+    ProtectionChanged {
+        at: Option<String>,
+        change: String,
+        actor_kind: String,
+        actor: String,
+    },
+    /// The chat raised an ask, by its group's word.
+    AskRaised { at: Option<String>, ask: String },
+    /// The chat's ask was answered: `allowed` or `refused`, and by whom: `window` or `inbox`.
+    AskAnswered {
+        at: Option<String>,
+        ask: String,
+        answer: String,
+        by: String,
+    },
+    /// purlis held an action and asked the person: the tool, and the guard's arm it was held
+    /// at, where it names one (`merge-hold`).
+    Held {
+        at: Option<String>,
+        tool: String,
+        arm: Option<String>,
+    },
+    /// The chat was paused as looping: the rule's word and how many times.
+    LoopPaused {
+        at: Option<String>,
+        rule: String,
+        times: u32,
+    },
+}
+
+/// What heads a chat's Chat log: its allowed calls in one count, with those its person's rules
+/// allowed, and its honesty lines.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, specta::Type)]
+pub struct ChatLogSummary {
+    pub allowed: u32,
+    pub by_your_rules: u32,
+    /// What reports its calls is within its own reach.
+    pub unverified: bool,
+    /// It ran with No sandbox.
+    pub ran_as_you: bool,
 }
 
 /// A chat's Chat log: whether purlis knows the chat, and its rows.
@@ -65,6 +107,7 @@ pub struct ChatLog {
     /// purlis knows the chat by its number: open, or ended here and still kept.
     pub known: bool,
     pub rows: Vec<ChatLogRow>,
+    pub summary: ChatLogSummary,
 }
 
 fn at(ms: Option<u64>) -> Option<String> {
@@ -94,8 +137,8 @@ fn protection_of(in_force: InForce) -> StartProtection {
 }
 
 /// The window's row for the core's `row`.
-fn row_of(row: Row) -> ChatLogRow {
-    match row {
+fn row_of(row: Row) -> Option<ChatLogRow> {
+    Some(match row {
         Row::Started {
             at_ms,
             cause,
@@ -116,7 +159,8 @@ fn row_of(row: Row) -> ChatLogRow {
             cause,
             code: code.and_then(|code| i32::try_from(code).ok()),
         },
-    }
+        _ => return None,
+    })
 }
 
 /// The Chat log of the chat with id `chat` (`None`: purlis does not know it) in `events`.
@@ -125,13 +169,15 @@ fn chat_log_of(events: &[purlis_core::eventlog::Event], chat: Option<&str>) -> C
         None => ChatLog {
             known: false,
             rows: Vec::new(),
+            summary: ChatLogSummary::default(),
         },
         Some(chat) => ChatLog {
             known: true,
             rows: chatlog::rows(events, chat)
                 .into_iter()
-                .map(row_of)
+                .filter_map(row_of)
                 .collect(),
+            summary: ChatLogSummary::default(),
         },
     }
 }

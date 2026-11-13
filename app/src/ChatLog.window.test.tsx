@@ -8,7 +8,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import App from "./App";
-import type { ChatLog, ChatLogRow, OpenChat } from "./bindings";
+import type { ChatLog, ChatLogRow, ChatLogSummary, OpenChat } from "./bindings";
 import { aTabForEachChat } from "./laidOut.testkit";
 import { chatList, pressMenuPath } from "./menus.testkit";
 import { stripNamed } from "./test-strips";
@@ -101,7 +101,15 @@ const ENDED: ChatLogRow = {
  *  so this machine's log holds none of it (Q247). */
 const here = (session: number): ChatLogRow[] => (session === 9 ? [] : [started(session)]);
 
-function core(rows: (session: number) => ChatLogRow[] = here) {
+/** What heads a log with nothing to say above its rows. */
+const QUIET: ChatLogSummary = {
+  allowed: 0,
+  by_your_rules: 0,
+  unverified: false,
+  ran_as_you: false,
+};
+
+function core(rows: (session: number) => ChatLogRow[] = here, summary: ChatLogSummary = QUIET) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   mockIPC(
     (cmd, args) => {
@@ -133,7 +141,7 @@ function core(rows: (session: number) => ChatLogRow[] = here) {
       )
         return [];
       if (cmd === "chat_log") {
-        const read: ChatLog = { known: true, rows: rows(Number(given.session)) };
+        const read: ChatLog = { known: true, rows: rows(Number(given.session)), summary };
         return read;
       }
       return null;
@@ -245,5 +253,111 @@ describe("a chat's Chat log tab", () => {
     await userEvent.click(offered[0]);
 
     expect(await screen.findByRole("list", { name: "Chat log of steward 3" })).toBeInTheDocument();
+  });
+});
+
+const at = (minute: number) => `2026-11-13T09:${String(minute).padStart(2, "0")}:00Z`;
+const raised = (ask: string, minute: number): ChatLogRow => ({
+  kind: "ask_raised",
+  at: at(minute),
+  ask,
+});
+const answered = (ask: string, answer: string, by: string, minute: number): ChatLogRow => ({
+  kind: "ask_answered",
+  at: at(minute),
+  ask,
+  answer,
+  by,
+});
+
+/** The words of each row of `log` of kind `kind`, top to bottom. */
+const linesOf = (log: HTMLElement, kind: string) =>
+  within(log)
+    .getAllByRole("listitem")
+    .filter((row) => row.dataset.kind === kind)
+    .map((row) => row.querySelector(".chat-log-said")?.textContent);
+
+describe("the rows of a chat's Chat log (T1-28)", () => {
+  it("the Chat log lists asks with their answers and who answered", async () => {
+    // R-229: what the core read of the chat's asks, each raise and its answer events of its own.
+    core(() => [
+      started(3),
+      raised("harness_prompt", 1),
+      raised("sandbox", 2),
+      answered("harness_prompt", "refused", "window", 3),
+      answered("sandbox", "allowed", "inbox", 4),
+      raised("loop_pause", 5),
+      answered("loop_pause", "allowed", "window", 6),
+      raised("consent", 7),
+    ]);
+    render(<App />);
+    const log = await opened("steward 3");
+
+    // One row per ask, at the time it was raised, with its answer and who answered.
+    expect(linesOf(log, "ask")).toEqual([
+      "Asked you about its harness's permission prompt · Kept blocked, by you in the window",
+      "Asked you about something the sandbox blocked · Allowed, by you from purlis inbox",
+      "Asked you whether to keep going after a loop · Let it go on, by you in the window",
+      "Asked you about a step that needs your consent · Not answered",
+    ]);
+    expect(linesOf(log, "ask_raised")).toEqual([]);
+    expect(linesOf(log, "ask_answered")).toEqual([]);
+  });
+
+  it("allowed calls collapse into one line with the by-your-rules count", async () => {
+    // R-234: the core's counts, said once above the rows; no row per call.
+    core(() => [started(3), ENDED], { ...QUIET, allowed: 212, by_your_rules: 9 });
+    render(<App />);
+    const log = await opened("steward 3");
+
+    const line = screen.getByText("212 allowed · 9 by your rules");
+    expect(within(log).getAllByRole("listitem")).toHaveLength(2);
+    expect(line.compareDocumentPosition(log) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it.each([
+    [
+      "an unverified chat",
+      { ...QUIET, unverified: true },
+      [
+        "Unverified: this chat could reach what reports its calls to purlis, so purlis cannot check this log.",
+      ],
+    ],
+    [
+      "a No sandbox chat",
+      { ...QUIET, ran_as_you: true, unverified: true },
+      [
+        "Unverified: this chat could reach what reports its calls to purlis, so purlis cannot check this log.",
+        "Ran as you: this chat had No sandbox, so it could reach everything you can on this machine.",
+      ],
+    ],
+  ])(
+    "the honesty lines head the Chat log for an unverified or No sandbox chat: %s",
+    async (_, summary, lines) => {
+      // R-235: from the core's flags, first in the tab, above the allowed line and the rows.
+      core(() => [started(3)], { ...summary, allowed: 4 });
+      render(<App />);
+      const log = await opened("steward 3");
+
+      const said = lines.map((line) => screen.getByText(line));
+      const allowed = screen.getByText("4 allowed");
+      for (const line of said) {
+        expect(
+          line.compareDocumentPosition(allowed) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBeTruthy();
+        expect(line.compareDocumentPosition(log) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      }
+      if (!summary.ran_as_you) expect(screen.queryByText(/^Ran as you/)).toBeNull();
+    },
+  );
+
+  it("a chat that reads neither has no honesty line", async () => {
+    core(() => [started(3)]);
+    render(<App />);
+    await opened("steward 3");
+
+    expect(screen.queryByText(/^Unverified:/)).toBeNull();
+    expect(screen.queryByText(/^Ran as you:/)).toBeNull();
+    expect(screen.queryByText(/allowed/)).toBeNull();
   });
 });

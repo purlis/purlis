@@ -306,6 +306,7 @@ fn a_chats_timeline_and_the_fleet_counts_are_queries_of_the_event_log() {
         &Stop::AskAnswered(AskAnswered {
             ask: AskGroup::LoopPause,
             answer: Answer::Allowed,
+            by: crate::eventlog::stops::AnsweredBy::Window,
         }),
     )
     .unwrap();
@@ -525,4 +526,376 @@ fn the_start_and_end_rows_are_built_from_the_start_and_end_events() {
             ..
         }]
     ));
+}
+
+/// Every group of ask (R-229), in the order the log names them.
+const GROUPS: [AskGroup; 7] = [
+    AskGroup::Sandbox,
+    AskGroup::HarnessPrompt,
+    AskGroup::Consent,
+    AskGroup::Hold,
+    AskGroup::LoopPause,
+    AskGroup::Budget,
+    AskGroup::HookGiveUp,
+];
+
+/// R-229 (core): **raising an ask and answering it each write an event under the chat, and the
+/// Chat log's rows have both, with the answer and who answered**. One ask of each group is
+/// raised and answered, sent as the window sends a stop; the harness's permission prompt is
+/// raised in and answered through the asks registry itself, so its answer is the one the
+/// registry applied, from the human scope it came through. Allowed and refused, from the window
+/// and from a shell, each read back as written; nothing of what an ask said is in the log.
+#[test]
+fn raising_and_answering_an_ask_writes_its_event_with_the_answer_and_who() {
+    use crate::eventlog::Entry;
+    use crate::eventlog::stops::{AnsweredBy, AskRaised};
+    use crate::harness::asks::{Admitted, Answerer, Asks};
+    use crate::harness::model::{Ask, Channel, Choice, ChoiceKind, ChoiceScope};
+
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path();
+    let plane = Path::new(PLANE);
+    let mut written = Log::open(log, DEVICE).unwrap();
+    run_started(&mut written, ONE, RUN_ONE, None);
+    drop(written);
+    let mut host = recorder(log);
+    let send = |host: &mut Recorder, stop: Stop| {
+        // As the window sends it, over the wire.
+        let entry = serde_json::to_value(Entry::Stop {
+            plane: plane.to_path_buf(),
+            number: Some(4),
+            stop,
+        })
+        .unwrap();
+        host.apply(serde_json::from_value(entry).unwrap()).unwrap();
+    };
+
+    // The registry's own ask: a permission prompt, answered Deny from the window.
+    let asks = Asks::new();
+    let now = std::time::Instant::now();
+    let prompt = "Allow `rm -rf build` in the project?";
+    let raised = asks
+        .raise(
+            "4",
+            Ask {
+                summary: crate::harness::model::Summary::of(prompt),
+                options: vec![
+                    Choice {
+                        id: "allow".into(),
+                        label: "Allow".into(),
+                        kind: ChoiceKind::Allow,
+                        scope: ChoiceScope::Once,
+                    },
+                    Choice {
+                        id: "deny".into(),
+                        label: "Deny".into(),
+                        kind: ChoiceKind::Reject,
+                        scope: ChoiceScope::Once,
+                    },
+                ],
+                channel: Channel::Hook,
+                ..Ask::default()
+            },
+            now,
+        )
+        .raised;
+    let window = Answerer::admitted(Admitted::LocalUi).unwrap();
+    let applied = asks.answer("4", &raised.id, "deny", window, now).unwrap();
+
+    let mut expected = Vec::new();
+    for (at, group) in GROUPS.into_iter().enumerate() {
+        send(&mut host, Stop::AskRaised(AskRaised { ask: group }));
+        let answered = match group {
+            AskGroup::HarnessPrompt => AskAnswered::applied(group, &applied),
+            _ => AskAnswered {
+                ask: group,
+                answer: if at % 2 == 0 {
+                    Answer::Allowed
+                } else {
+                    Answer::Refused
+                },
+                by: if at % 3 == 0 {
+                    AnsweredBy::Inbox
+                } else {
+                    AnsweredBy::Window
+                },
+            },
+        };
+        send(&mut host, Stop::AskAnswered(answered));
+        expected.push((group, answered));
+    }
+    drop(host);
+    assert_eq!(
+        expected[1].1,
+        AskAnswered {
+            ask: AskGroup::HarnessPrompt,
+            answer: Answer::Refused,
+            by: AnsweredBy::Window,
+        },
+        "the registry's applied answer: Deny, from the window"
+    );
+
+    let events = crate::eventlog::read(log).unwrap();
+    let asked: Vec<(AskGroup, AskAnswered)> = rows(&events, ONE)
+        .into_iter()
+        .filter(|row| !matches!(row, Row::Started { .. }))
+        .collect::<Vec<_>>()
+        .chunks(2)
+        .map(|pair| match pair {
+            [
+                Row::AskRaised { ask, .. },
+                Row::AskAnswered { answered, .. },
+            ] => (*ask, *answered),
+            other => panic!("each ask raised, then its answer: {other:?}"),
+        })
+        .collect();
+    assert_eq!(asked, expected);
+    let kinds: Vec<&str> = timeline(&events, ONE)
+        .iter()
+        .map(|event| event.kind.as_str())
+        .filter(|kind| kind.starts_with("ask."))
+        .collect::<Vec<_>>();
+    assert_eq!(kinds.len(), 2 * GROUPS.len(), "{kinds:?}");
+    let answered = timeline(&events, ONE)
+        .into_iter()
+        .find(|event| event.kind == stops::ASK_ANSWERED)
+        .unwrap();
+    assert_eq!(
+        answered.body,
+        serde_json::json!({"ask": "sandbox", "answer": "allowed", "by": "inbox"}),
+        "closed words alone"
+    );
+    let everything = std::fs::read_to_string(log.join(FILE)).unwrap();
+    assert!(
+        !everything.contains("rm -rf"),
+        "an ask's words are never written"
+    );
+}
+
+/// A tool event of chat `chat`, as the recorder writes one: `hook.<word>` with its decision,
+/// the call's id and, where given, its rule.
+fn tool_event(
+    log: &mut Log,
+    chat: &str,
+    word: &str,
+    decision: &str,
+    call: &str,
+    rule: Option<&str>,
+) {
+    let mut body =
+        serde_json::json!({"decision": decision, "hook_ms": 1, "tool": "Bash", "call": call});
+    if let Some(rule) = rule {
+        body["rule"] = rule.into();
+    }
+    log.append(
+        Some(chat),
+        Some(RUN_ONE),
+        None,
+        &format!("hook.{word}"),
+        body,
+    )
+    .unwrap();
+}
+
+/// R-234 (core): **the Chat log's summary counts the chat's allowed calls, and of them those
+/// allowed by the person's rules**, from its tool events' decision and rule: 212 calls purlis's
+/// hook let through, 9 of them allowed by an entry of the Allowed list, give 212 and 9. A call
+/// refused or asked about is not allowed; a call's post hook is the same call, never a second;
+/// another chat's calls are its own.
+#[test]
+fn the_timeline_query_counts_allowed_calls_and_those_by_your_rules() {
+    assert_eq!(
+        super::super::phase("pretooluse"),
+        Some(super::super::Phase::Pre)
+    );
+    assert_eq!(
+        super::super::phase("posttooluse"),
+        Some(super::super::Phase::Post)
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let mut log = Log::open(dir.path(), DEVICE).unwrap();
+    run_started(&mut log, ONE, RUN_ONE, None);
+    for at in 0..212 {
+        let call = format!("toolu_{at:04}");
+        // 9 allowed by a rule of the person's; the rest let through with nothing said, or
+        // allowed by the hook.
+        let (decision, rule) = match at {
+            0..9 => ("allow", Some("allowed-list")),
+            9..100 => ("allow", None),
+            _ => ("none", None),
+        };
+        tool_event(&mut log, ONE, "pretooluse", decision, &call, rule);
+        tool_event(&mut log, ONE, "posttooluse", "none", &call, None);
+    }
+    tool_event(
+        &mut log,
+        ONE,
+        "pretooluse",
+        "deny",
+        "toolu_deny",
+        Some("A4"),
+    );
+    tool_event(&mut log, ONE, "pretooluse", "ask", "toolu_ask", None);
+    tool_event(
+        &mut log,
+        TWO,
+        "pretooluse",
+        "allow",
+        "toolu_two",
+        Some("allowed-list"),
+    );
+    drop(log);
+    let events = crate::eventlog::read(dir.path()).unwrap();
+
+    let read = summary(&events, ONE);
+    assert_eq!((read.allowed, read.by_your_rules), (212, 9));
+    let two = summary(&events, TWO);
+    assert_eq!((two.allowed, two.by_your_rules), (1, 1));
+}
+
+/// A chat's own `run.started`, by `harness` with the sandbox backend `sandbox`, at sandbox
+/// level `level`.
+fn started_as(log: &mut Log, chat: &str, harness: &str, sandbox: &str, level: &str) {
+    let body = serde_json::json!({
+        "cause": "start",
+        "device": DEVICE,
+        "persona": "steward",
+        "harness": harness,
+        "sandbox": sandbox,
+        "protection": {
+            "layers": [{"layer": "sandbox", "level": level, "tier": "person"}],
+            "charter_commit": "none",
+            "answers_in_force": [],
+        },
+    });
+    log.append(Some(chat), Some(RUN_ONE), None, "run.started", body)
+        .unwrap();
+}
+
+/// R-235 (core): **the Chat log's summary says whether the chat is unverified and whether it
+/// ran as the person**, from its start event's harness and level: a Codex chat, whose hooks run
+/// inside what its sandbox holds, reads unverified; a chat started at No sandbox (`off`) reads
+/// ran as you; a Claude Code chat at the floor, its hooks outside its Seatbelt, reads neither.
+#[test]
+fn the_timeline_query_says_unverified_and_ran_as_you() {
+    const THREE: &str = "01K6CHAT000000000000000006";
+    let dir = tempfile::tempdir().unwrap();
+    let mut log = Log::open(dir.path(), DEVICE).unwrap();
+    started_as(&mut log, ONE, "codex", "seatbelt", "floor");
+    started_as(&mut log, TWO, "claude", "none", "off");
+    started_as(&mut log, THREE, "claude", "seatbelt", "floor");
+    drop(log);
+    let events = crate::eventlog::read(dir.path()).unwrap();
+
+    let flags = |chat| {
+        let read = summary(&events, chat);
+        (read.unverified, read.ran_as_you)
+    };
+    assert_eq!(flags(ONE), (true, false), "a Codex chat is unverified");
+    assert!(flags(TWO).1, "a chat started at off ran as you");
+    assert_eq!(
+        flags(THREE),
+        (false, false),
+        "Claude Code at the floor: neither"
+    );
+}
+
+/// R-228, R-231, R-232 (core): **a protection change and who made it, a hold and a loop pause
+/// are each a row of the Chat log**, read from their events: the sandbox lifted by the person
+/// and put back on by purlis, a held merge, and a pause for blocks on the same target. A grant
+/// (`trust.sandbox.grant`) is no protection change: grants are phase 3's rows (R-133).
+#[test]
+fn a_protection_change_a_hold_and_a_loop_pause_are_rows() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path();
+    let plane = Path::new(PLANE);
+    let mut written = Log::open(log, DEVICE).unwrap();
+    run_started(&mut written, ONE, RUN_ONE, None);
+    written
+        .append(
+            Some(ONE),
+            Some(RUN_ONE),
+            None,
+            "trust.sandbox.off",
+            serde_json::json!({"actor_kind": "human", "actor": "operator", "scope": "local-ui"}),
+        )
+        .unwrap();
+    written
+        .append(
+            Some(ONE),
+            Some(RUN_ONE),
+            None,
+            "trust.sandbox.grant",
+            serde_json::json!({"actor_kind": "human", "actor": "operator"}),
+        )
+        .unwrap();
+    drop(written);
+    let mut host = recorder(log);
+    host.trust(
+        RunOf {
+            chat: ONE,
+            run: RUN_ONE,
+        },
+        &crate::sandbox::Change::On,
+        None,
+        Some("steward"),
+    )
+    .unwrap();
+    let hold = Hold {
+        tool: "Bash".to_owned(),
+        target: Some(Target::guard_arm(crate::mergehold::REASON).unwrap()),
+        args: None,
+    };
+    host.stop(plane, Some(4), &Stop::Hold(hold.clone()))
+        .unwrap();
+    let pause = LoopPause {
+        rule: LoopRule::Blocked,
+        times: 3,
+    };
+    host.stop(plane, Some(4), &Stop::LoopPause(pause)).unwrap();
+    drop(host);
+    let events = crate::eventlog::read(log).unwrap();
+
+    let drawn: Vec<Row> = rows(&events, ONE)
+        .into_iter()
+        .map(|row| match row {
+            Row::ProtectionChanged {
+                change,
+                actor_kind,
+                actor,
+                ..
+            } => Row::ProtectionChanged {
+                at_ms: None,
+                change,
+                actor_kind,
+                actor,
+            },
+            Row::Held { hold, .. } => Row::Held { at_ms: None, hold },
+            Row::LoopPaused { pause, .. } => Row::LoopPaused { at_ms: None, pause },
+            other => other,
+        })
+        .filter(|row| !matches!(row, Row::Started { .. }))
+        .collect();
+    assert_eq!(
+        drawn,
+        [
+            Row::ProtectionChanged {
+                at_ms: None,
+                change: "off".to_owned(),
+                actor_kind: "human".to_owned(),
+                actor: "operator".to_owned(),
+            },
+            Row::ProtectionChanged {
+                at_ms: None,
+                change: "on".to_owned(),
+                actor_kind: "host".to_owned(),
+                actor: "charter".to_owned(),
+            },
+            Row::Held {
+                at_ms: None,
+                hold: Hold { args: None, ..hold },
+            },
+            Row::LoopPaused { at_ms: None, pause },
+        ]
+    );
 }

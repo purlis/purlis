@@ -33,6 +33,9 @@ pub const HOLD: &str = "stop.hold";
 pub const LOOP_PAUSE: &str = "stop.loop_pause";
 /// The person's answer to an ask.
 pub const ASK_ANSWERED: &str = "ask.answered";
+/// An ask raised: what waits on the person (R-229). No stop of its own, so never counted: the
+/// Chat log's row of it, beside its answer.
+pub const ASK_RAISED: &str = "ask.raised";
 
 /// **Who refused a block**: one of five (R-169). The policy and project values exist as values
 /// only until the slice that writes them ships.
@@ -316,11 +319,58 @@ pub enum Answer {
     Refused,
 }
 
-/// **The person's answer to an ask**: its group and the answer, closed words alone.
+/// **Who answered an ask** (R-229): the person, named by the human scope the answer came
+/// through (ADR 0080 §5.3), never by a login, and never a chat, which no answerer is
+/// ([`crate::harness::asks::Answerer`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AnsweredBy {
+    /// The person, in purlis's window.
+    Window,
+    /// The person, from a shell (`purlis inbox`).
+    Inbox,
+}
+
+impl From<crate::harness::asks::Answerer> for AnsweredBy {
+    fn from(by: crate::harness::asks::Answerer) -> Self {
+        match by.scope() {
+            crate::harness::asks::HumanScope::LocalUi => Self::Window,
+            crate::harness::asks::HumanScope::Approval => Self::Inbox,
+        }
+    }
+}
+
+/// **The person's answer to an ask**: its group, the answer and who answered, closed words
+/// alone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AskAnswered {
     pub ask: AskGroup,
     pub answer: Answer,
+    pub by: AnsweredBy,
+}
+
+impl AskAnswered {
+    /// **The answer the asks registry applied** (HP-5), to an ask of group `ask`: allowed where
+    /// the option chosen allows, refused for a reject or a cancel, and by the human scope it came
+    /// through.
+    pub fn applied(ask: AskGroup, applied: &crate::harness::asks::Applied) -> Self {
+        Self {
+            ask,
+            answer: match applied.choice.kind {
+                crate::harness::model::ChoiceKind::Allow => Answer::Allowed,
+                crate::harness::model::ChoiceKind::Reject
+                | crate::harness::model::ChoiceKind::Cancel => Answer::Refused,
+            },
+            by: applied.by.into(),
+        }
+    }
+}
+
+/// **An ask raised** (R-229): its group, a closed word alone. What it asks is the chat's and
+/// the window's words, and is never written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct AskRaised {
+    pub ask: AskGroup,
 }
 
 /// **One stop, as the log writes it.**
@@ -331,6 +381,7 @@ pub enum Stop {
     Hold(Hold),
     LoopPause(LoopPause),
     AskAnswered(AskAnswered),
+    AskRaised(AskRaised),
 }
 
 impl Stop {
@@ -341,6 +392,7 @@ impl Stop {
             Self::Hold(_) => HOLD,
             Self::LoopPause(_) => LOOP_PAUSE,
             Self::AskAnswered(_) => ASK_ANSWERED,
+            Self::AskRaised(_) => ASK_RAISED,
         }
     }
 }
@@ -365,6 +417,7 @@ impl Recorder {
             }),
             Stop::LoopPause(pause) => serde_json::to_value(pause),
             Stop::AskAnswered(answered) => serde_json::to_value(answered),
+            Stop::AskRaised(raised) => serde_json::to_value(raised),
         }
         .map_err(io::Error::other)?;
         self.audited(plane, number, stop.kind(), body)
