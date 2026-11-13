@@ -339,6 +339,8 @@ export const ManyPersonas: Story = {
     await waitFor(() =>
       expect(within(menu).queryByRole("menuitemradio", { name: "A chat as qa" })).toBeNull(),
     );
+    // No workspace matches: Whose chats has no heading left standing over nothing.
+    await expect(within(menu).queryByRole("group", { name: "Whose chats" })).toBeNull();
     await expect(
       within(menu).getByRole("menuitemradio", { name: "A chat as reviewer" }),
     ).toBeVisible();

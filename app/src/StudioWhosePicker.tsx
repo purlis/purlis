@@ -125,24 +125,27 @@ export function StudioWhosePicker({
             }
           : {})}
       >
-        <MenuSection
-          title="Whose chats"
-          selectionMode="single"
-          selectedKeys={[scopeKey(scope)]}
-          shouldCloseOnSelect
-        >
-          {shown.map((one) => (
-            <MenuItem
-              key={scopeKey(one)}
-              id={scopeKey(one)}
-              textValue={scopeChat(one)}
-              // The workspace shown, picked again, keeps where its chat starts.
-              onAction={() => scopeKey(one) !== scopeKey(scope) && pick(one)}
-            >
-              <MenuWords said={scopeChat(one)} />
-            </MenuItem>
-          ))}
-        </MenuSection>
+        {/* A section the filter leaves empty is not drawn: no heading stands over nothing. */}
+        {shown.length > 0 ? (
+          <MenuSection
+            title="Whose chats"
+            selectionMode="single"
+            selectedKeys={[scopeKey(scope)]}
+            shouldCloseOnSelect
+          >
+            {shown.map((one) => (
+              <MenuItem
+                key={scopeKey(one)}
+                id={scopeKey(one)}
+                textValue={scopeChat(one)}
+                // The workspace shown, picked again, keeps where its chat starts.
+                onAction={() => scopeKey(one) !== scopeKey(scope) && pick(one)}
+              >
+                <MenuWords said={scopeChat(one)} />
+              </MenuItem>
+            ))}
+          </MenuSection>
+        ) : null}
         {shownPersonas.length > 0 ? (
           <MenuSection
             title="As a persona"
