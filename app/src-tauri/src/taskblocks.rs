@@ -152,7 +152,7 @@ pub struct Blocks {
     /// registry orders the longest waiting first by. Kept beside `held`, only for what it holds,
     /// with the call it refused as it was heard, which its block names once its ask leaves
     /// (Q254).
-    since: Mutex<HashMap<u32, Vec<(HeldBlock, u64, Refused)>>>,
+    since: Mutex<HashMap<u32, Vec<HeldSince>>>,
     /// The blocks of each open chat whose connection is held now, waiting on the person
     /// (#1709): never pushed out by what is heard after them, until they no longer wait.
     waiting: Mutex<HashMap<u32, Vec<HeldBlock>>>,
@@ -183,6 +183,9 @@ pub struct LeftBlock {
     /// How its ask left, which says whether its block counts toward the block loop.
     pub how: Leaving,
 }
+
+/// A held block, when it was first heard (seconds since 1970), and the call it refused (Q254).
+type HeldSince = (HeldBlock, u64, Refused);
 
 /// **The call a refusal was of** (Q254), kept as the refusal is heard.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -381,7 +384,7 @@ impl Blocks {
         let mut since = self.since();
         let was = since.remove(&session).unwrap_or_default();
         // A block heard again keeps when it was first heard, and the call it was first heard of.
-        let kept: Vec<(HeldBlock, u64, Refused)> = mine
+        let kept: Vec<HeldSince> = mine
             .iter()
             .map(|one| match was.iter().find(|(seen, ..)| seen == one) {
                 Some((_, first, first_refused)) => (one.clone(), *first, first_refused.clone()),
@@ -453,7 +456,7 @@ impl Blocks {
         true
     }
 
-    fn since(&self) -> std::sync::MutexGuard<'_, HashMap<u32, Vec<(HeldBlock, u64, Refused)>>> {
+    fn since(&self) -> std::sync::MutexGuard<'_, HashMap<u32, Vec<HeldSince>>> {
         self.since.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
