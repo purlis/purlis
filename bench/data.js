@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794550917426,
+  "lastUpdate": 1794554865132,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -48048,6 +48048,48 @@ window.BENCHMARK_DATA = {
             "value": 101.48224300000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.315, 100.703, 101.482, 101.742, 103.384 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "73e24d1225c624bdab836dba2004f6ccda42dbb3",
+          "message": "A task starts asking when your Claude Code settings hold auto mode deny rules (#6315) (#6364)\n\nWith autoMode.soft_deny or hard_deny rules (other than $defaults) in the\nperson's, remote-managed or managed Claude Code settings, Claude Code\nrefuses every call auto mode's check cannot judge, without asking. A task\npurlis would start in auto now starts in the default mode and its pane says\nwhy. ADR 0090 amended 2026-11-12 by the operator's ruling.\n\nCause: when auto mode's classifier gives no answer and settings hold deny\nrules, Claude Code 2.1.322 refuses instead of falling back to asking, so an\nunwatched task in auto loses Bash for the session. Brought onto current\nmain from 6cf2ae36c (branch 6315-auto-mode-chat-with-every-bash-refu-eysgssd0),\nwith the module doc's stale link to task_words now pointing at task_start.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77XFN0D0MPN39W3GKRVTQNN\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-13T05:49:33Z",
+          "tree_id": "a6748ccba2a211a708cce6f78b3aab5587a3448e",
+          "url": "https://github.com/purlis/purlis/commit/73e24d1225c624bdab836dba2004f6ccda42dbb3"
+        },
+        "date": 1794554858191,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7135015,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.649, 0.676, 0.714, 0.724, 0.728 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.631699500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.497, 16.506, 16.632, 16.736, 16.924 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.523032,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.069, 102.231, 102.523, 102.639, 103.044 ms"
           }
         ]
       }
