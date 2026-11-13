@@ -278,6 +278,30 @@ export const PodmanThereNeedsPodmanHere: Story = {
   },
 };
 
+const FORWARDING_REFUSED = connect({
+  state: "attention",
+  cause: "forwarding-refused",
+  findings: [
+    "The SSH server on build-box doesn't allow forwarding, and purlis reaches Docker there by forwarding its socket. Ask its admin to allow forwarding for your account (`AllowStreamLocalForwarding` in sshd_config), then check again.",
+  ],
+  next: action("check-again", "Check again", "Contacts the machine again. It changes nothing."),
+});
+
+/** An SSH server that signs you in and refuses forwarding (#6349): Docker's line fails, named. */
+export const SshRefusesForwarding: Story = {
+  beforeEach: faked([]),
+  args: { step: FORWARDING_REFUSED, shown: shown(FORWARDING_REFUSED) },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText("SSH there doesn't allow forwarding")).toBeVisible();
+    const again = canvas.getByRole("button", { name: "Check again" });
+    again.focus();
+    await userEvent.tab();
+    await expect(canvas.getByRole("button", { name: "Change the machine" })).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
 const REFUSED = connect({
   state: "attention",
   cause: "plain-tcp",
