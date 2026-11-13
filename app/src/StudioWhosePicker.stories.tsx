@@ -13,9 +13,9 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, screen, waitFor, within } from "storybook/test";
 import type { StudioClone, StudioPersona } from "./bindings";
-import { AT_THE_ROOT, asPersonaIn, inWorkspace, type StudioScope } from "./skillStudio";
+import { AT_THE_ROOT, asPersona, asPersonaIn, inWorkspace, type StudioScope } from "./skillStudio";
 import { StudioWhosePicker } from "./StudioWhosePicker";
-import { expectFocusInSight, untilFocusWithin, untilFocused } from "./stories.testkit";
+import { expectFocusInSight, pictureNow, untilFocusWithin, untilFocused } from "./stories.testkit";
 
 const PLACES: StudioClone[] = [
   { clone: "purlis", repo_skills: 12, preview: "" },
@@ -324,7 +324,7 @@ export const OpenAsAPersonaInAWorkspace: Story = {
  *  and As a persona while In which workspace stays; Escape closes it. The picture is the menu
  *  narrowed. */
 export const ManyPersonas: Story = {
-  args: { places: [], personas: MANY_PERSONAS, start: asPersonaIn("steward", undefined) },
+  args: { places: [], personas: MANY_PERSONAS, start: asPersona("steward") },
   parameters: { screenshot: "page" },
   play: async ({ canvas, userEvent }) => {
     const picker = canvas.getByRole("button", { name: "A chat as steward" });
@@ -348,6 +348,8 @@ export const ManyPersonas: Story = {
     await expect(
       within(menu).getByRole("menuitemradio", { name: "Dispatched into smart-ide" }),
     ).toBeVisible();
+    // The picture is the menu narrowed, taken before Escape closes it.
+    await pictureNow();
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull(), CLOSES);
     await untilFocused(() => picker, "the picker, after Escape");

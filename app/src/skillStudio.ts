@@ -67,7 +67,7 @@ const SCOPES: Record<
 
 /** What comes between a persona's name and the workspace it was dispatched into, in a scope's
  *  key and in its words: no plain name holds it. */
-const INTO_KEY = "/";
+const INTO_SEPARATOR = "/";
 
 /** A chat at the project's root. */
 export const AT_THE_ROOT: StudioScope = { at: "root", name: "" };
@@ -88,6 +88,16 @@ export function asPersonaIn(persona: string, workspace: string | undefined): Stu
   return workspace === undefined ? asPersona(persona) : { ...asPersona(persona), into: workspace };
 }
 
+/** **The scope whose Library lists a skill at `level`**: a workspace's or a persona's own, else
+ *  the scope shown. The persona shown keeps the workspace it was dispatched into (#2935), so a
+ *  skill of its own opens where the person was. */
+export function scopeListing(level: SkillLevel, shown: StudioScope): StudioScope {
+  if (level.at === "workspace") return inWorkspace(level.name);
+  if (level.at === "persona")
+    return shown.at === "persona" && shown.name === level.name ? shown : asPersona(level.name);
+  return shown;
+}
+
 /** The workspace and the persona a scope names, as the core takes them: `null` for none. */
 export function whoseChats(scope: StudioScope): {
   workspace: string | null;
@@ -101,7 +111,7 @@ export function whoseChats(scope: StudioScope): {
 
 /** The persona's name, then the workspace it was dispatched into where it names one. */
 function namedInto(scope: StudioScope): string {
-  return scope.into === undefined ? scope.name : `${scope.name}${INTO_KEY}${scope.into}`;
+  return scope.into === undefined ? scope.name : `${scope.name}${INTO_SEPARATOR}${scope.into}`;
 }
 
 /** What the studio's view is keyed by for `scope`: the one encoding of a scope. */
@@ -114,7 +124,7 @@ export function scopeOfKey(key: string): StudioScope {
   if (key === "") return AT_THE_ROOT;
   const persona = SCOPES.persona.prefix;
   if (!key.startsWith(persona)) return inWorkspace(key);
-  const [name = "", into] = key.slice(persona.length).split(INTO_KEY);
+  const [name = "", into] = key.slice(persona.length).split(INTO_SEPARATOR);
   return asPersonaIn(name, into || undefined);
 }
 

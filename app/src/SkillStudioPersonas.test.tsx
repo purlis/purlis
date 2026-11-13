@@ -12,6 +12,7 @@ import {
   sameScope,
   scopeChat,
   scopeKey,
+  scopeListing,
   scopeOfKey,
   skillStudioTitle,
   startedIn,
@@ -161,5 +162,23 @@ describe("a persona in a workspace is a scope of its own (#2935)", () => {
     expect(scopeChat(there)).toBe("A chat as steward in smart-ide");
     expect(skillStudioTitle(there)).toBe("Skill studio · steward in smart-ide");
     expect(sameScope(startedIn(there, "purlis"), there)).toBe(true);
+  });
+});
+
+describe("a skill's own scope keeps the workspace the persona shown was dispatched into (#2935)", () => {
+  const there = asPersonaIn("steward", "smart-ide");
+
+  it("opens a skill of the persona shown where the person was", () => {
+    expect(scopeListing({ at: "persona", name: "steward", local: false }, there)).toEqual(there);
+  });
+
+  it("opens another persona's skill at that persona's root, and a workspace's in the workspace", () => {
+    expect(scopeListing({ at: "persona", name: "qa", local: false }, there)).toEqual(
+      asPersona("qa"),
+    );
+    expect(scopeListing({ at: "workspace", name: "ops", local: false }, there)).toEqual(
+      inWorkspace("ops"),
+    );
+    expect(scopeListing({ at: "project", local: false }, there)).toEqual(there);
   });
 });

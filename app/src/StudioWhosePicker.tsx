@@ -27,7 +27,7 @@ export const ROOT_NOTE =
 const WHERE_ROOT_KEY = "\u0000root";
 
 /** The key of an In which workspace row: no scope's key or clone's name starts with it. */
-const INTO_KEY = "\u0000into:";
+const INTO_ROW = "\u0000into:";
 
 /** The In which workspace row of the project's root. */
 const AT_THE_PROJECTS_ROOT = "At the project's root";
@@ -52,7 +52,7 @@ export function whoseAndWhere(scope: StudioScope): string {
 export function StudioWhosePicker({
   scope,
   whose,
-  personas = [],
+  personas,
   places,
   onScope,
 }: {
@@ -60,7 +60,7 @@ export function StudioWhosePicker({
   /** Every scope on no persona it offers: the project's root and its workspaces. */
   whose: readonly StudioScope[];
   /** The project's personas, each with where it was dispatched (#2935). */
-  personas?: readonly StudioPersona[];
+  personas: readonly StudioPersona[];
   /** The clones of the shown workspace a chat can be previewed in. */
   places: readonly StudioClone[];
   onScope: (next: StudioScope) => void;
@@ -78,10 +78,11 @@ export function StudioWhosePicker({
           dispatched_into: [],
         })
       : undefined;
-  const asOne = shownPersona === undefined || personas.includes(shownPersona) ? [] : [shownPersona];
-  const everyPersona = [...personas, ...asOne];
-  const placed = scope.at === "workspace" && places.length > 0;
-  if (!placed && everyPersona.length === 0)
+  const notListed =
+    shownPersona === undefined || personas.includes(shownPersona) ? [] : [shownPersona];
+  const everyPersona = [...personas, ...notListed];
+  const inAClone = scope.at === "workspace" && places.length > 0;
+  if (!inAClone && everyPersona.length === 0)
     return (
       <Select
         size="sm"
@@ -108,7 +109,7 @@ export function StudioWhosePicker({
   return (
     <MenuTrigger onOpenChange={(open) => open || setTyped("")}>
       <Button size="sm" data-testid="studio-whose">
-        {placed ? whoseAndWhere(scope) : scopeChat(scope)}
+        {inAClone ? whoseAndWhere(scope) : scopeChat(scope)}
       </Button>
       <Menu
         align="end"
@@ -170,34 +171,35 @@ export function StudioWhosePicker({
           <MenuSection
             title="In which workspace"
             selectionMode="single"
-            selectedKeys={[`${INTO_KEY}${scope.into ?? ""}`]}
+            selectedKeys={[`${INTO_ROW}${scope.into ?? ""}`]}
             shouldCloseOnSelect
           >
-            {[undefined, ...intoShown].map((one) => (
-              <MenuItem
-                key={`${INTO_KEY}${one?.workspace ?? ""}`}
-                id={`${INTO_KEY}${one?.workspace ?? ""}`}
-                textValue={
-                  one === undefined ? AT_THE_PROJECTS_ROOT : `Dispatched into ${one.workspace}`
-                }
-                onAction={() => pick(asPersonaIn(scope.name, one?.workspace))}
-                data-testid={`studio-into-${one?.workspace ?? "root"}`}
-              >
-                <MenuWords
-                  said={
-                    one === undefined ? AT_THE_PROJECTS_ROOT : `Dispatched into ${one.workspace}`
-                  }
-                  under={
-                    one === undefined || one.chats === 0
-                      ? undefined
-                      : counted(one.chats, "chat ran there", "chats ran there")
-                  }
-                />
-              </MenuItem>
-            ))}
+            {[undefined, ...intoShown].map((one) => {
+              const id = `${INTO_ROW}${one?.workspace ?? ""}`;
+              const said =
+                one === undefined ? AT_THE_PROJECTS_ROOT : `Dispatched into ${one.workspace}`;
+              return (
+                <MenuItem
+                  key={id}
+                  id={id}
+                  textValue={said}
+                  onAction={() => pick(asPersonaIn(scope.name, one?.workspace))}
+                  data-testid={`studio-into-${one?.workspace ?? "root"}`}
+                >
+                  <MenuWords
+                    said={said}
+                    under={
+                      one === undefined || one.chats === 0
+                        ? undefined
+                        : counted(one.chats, "chat ran there", "chats ran there")
+                    }
+                  />
+                </MenuItem>
+              );
+            })}
           </MenuSection>
         ) : null}
-        {placed ? (
+        {inAClone ? (
           <MenuSection
             title="Where it starts"
             selectionMode="single"
