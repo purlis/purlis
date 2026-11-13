@@ -167,10 +167,10 @@ export function PoolLimits({ pool, plane }: { pool: string; plane?: string }) {
         if (open) void askLimits(pool);
       }}
     >
-      {read === undefined && <p className="ui-setting-help">Reading…</p>}
+      {read === undefined && <p className="ui-setting-help ui-text-secondary">Reading…</p>}
       {read !== undefined && "trouble" in read && (
         <>
-          <p className="ui-setting-help" role="alert">
+          <p className="ui-setting-help ui-text-secondary" role="alert">
             {read.trouble}
           </p>
           <Button size="sm" onPress={() => void askLimits(pool)}>
@@ -180,7 +180,7 @@ export function PoolLimits({ pool, plane }: { pool: string; plane?: string }) {
       )}
       {shown && (
         <div className="pool-limits-body">
-          <p className="ui-setting-help">{ABOUT}</p>
+          <p className="ui-setting-help ui-text-secondary">{ABOUT}</p>
           {shown.waiting.length > 0 && (
             <ChangeWaits pool={pool} plane={plane} waiting={shown.waiting} />
           )}
@@ -207,7 +207,7 @@ function Group({ pool, group }: { pool: string; group: PoolLimitGroup }) {
     <section className="pool-limits-group" aria-labelledby={heading}>
       <header className="pool-limits-head">
         <h4 id={heading}>{group.label}</h4>
-        <p className="ui-setting-help">
+        <p className="ui-setting-help ui-text-secondary">
           {group.help}
           {group.applies !== null && ` ${group.applies}`}
         </p>
@@ -315,7 +315,7 @@ function LimitRow({ pool, row }: { pool: string; row: PoolLimitRow }) {
                 }
               }}
             />
-            <span className="ui-setting-help" id={unit}>
+            <span className="ui-setting-help ui-text-secondary" id={unit}>
               {row.unit}
             </span>
           </span>
@@ -326,7 +326,7 @@ function LimitRow({ pool, row }: { pool: string; row: PoolLimitRow }) {
       <div className="ui-setting-error" id={refusal} aria-live="polite" aria-atomic="true">
         {why !== undefined ? <p>{why}</p> : row.refused !== null && <p>{row.refused}</p>}
       </div>
-      <p className="ui-setting-help pool-limit-says" id={says}>
+      <p className="ui-setting-help ui-text-secondary pool-limit-says" id={says}>
         {isSet && <Badge variant="accent">You set this</Badge>}
         <span>
           Default {row.default_said}
@@ -336,7 +336,7 @@ function LimitRow({ pool, row }: { pool: string; row: PoolLimitRow }) {
         {row.applies !== null && <span>{row.applies}</span>}
       </p>
       {row.suggested !== null && row.suggested_said !== null && (
-        <p className="ui-setting-help pool-limit-says">
+        <p className="ui-setting-help ui-text-secondary pool-limit-says">
           <span>The team suggests {row.suggested_said}.</span>
           <Button
             size="sm"

@@ -423,7 +423,7 @@ export function SignInStrip(props: SignInStripProps) {
           Signing {profile} in on {pool}
         </strong>
         {/* Each step change, said once to a screen reader. */}
-        <span className="ui-setting-help" role="status" aria-live="polite">
+        <span className="ui-setting-help ui-text-secondary" role="status" aria-live="polite">
           {now ?? (step.at === "signed-in" ? `${profile} is signed in on ${pool}` : "")}
         </span>
       </div>
@@ -470,7 +470,7 @@ export function SignInStrip(props: SignInStripProps) {
       </div>
       {/* A login approved in the browser has no way back from a terminal here (#4044). */}
       {!props.approves && (
-        <p className="ui-setting-help">
+        <p className="ui-setting-help ui-text-secondary">
           From a terminal:{" "}
           <code>
             purlis profile sign-in {profile} --pool {pool}
@@ -582,7 +582,7 @@ function StepBody({
             Approve the sign-in on the page that opened in your browser. There is nothing to paste:
             purlis carries your browser&apos;s answer to {pool}&apos;s runner.
           </p>
-          <p className="ui-setting-help">
+          <p className="ui-setting-help ui-text-secondary">
             This signs in {who} on {pool}&apos;s runner only. Nothing of this Mac&apos;s sign-in
             goes there.
           </p>
@@ -595,7 +595,7 @@ function StepBody({
           <Button size="sm" onPress={onDeviceCode}>
             Use a device code
           </Button>
-          <p className="ui-setting-help">
+          <p className="ui-setting-help ui-text-secondary">
             {kind === "codex" ? (
               <>
                 Runs <code>codex login --device-auth</code> on the runner, here in this strip.
@@ -613,7 +613,7 @@ function StepBody({
             The runner&apos;s terminal below runs the device-code sign-in. Copy the page it prints
             to your browser and enter its code there; purlis checks when it ends.
           </p>
-          <p className="ui-setting-help">{CHECK_THE_PAGE}</p>
+          <p className="ui-setting-help ui-text-secondary">{CHECK_THE_PAGE}</p>
         </>
       );
     case "code":
@@ -637,7 +637,7 @@ function StepBody({
               Sign in
             </Button>
           </form>
-          <p className="ui-setting-help">
+          <p className="ui-setting-help ui-text-secondary">
             The code signs in {who} on {pool}&apos;s runner only. Nothing of this Mac&apos;s sign-in
             goes there.
           </p>
@@ -664,11 +664,15 @@ function StepBody({
             terminal below, and a page it opened before is over. Finish it there; purlis checks when
             it ends.
           </p>
-          {approves && <p className="ui-setting-help">{CHECK_THE_PAGE}</p>}
+          {approves && <p className="ui-setting-help ui-text-secondary">{CHECK_THE_PAGE}</p>}
         </>
       );
     case "cancelled":
-      return <p className="ui-setting-help">The sign-in was cancelled; nothing changed there.</p>;
+      return (
+        <p className="ui-setting-help ui-text-secondary">
+          The sign-in was cancelled; nothing changed there.
+        </p>
+      );
     default:
       return null;
   }
@@ -723,11 +727,11 @@ function DeviceCode({
         <Button onPress={copy}>Copy code</Button>
       </SettingActions>
       {copied !== undefined && (
-        <p className="ui-setting-help" role="status">
+        <p className="ui-setting-help ui-text-secondary" role="status">
           {copied ? "The code is on the clipboard." : "purlis could not copy the code."}
         </p>
       )}
-      <p className="ui-setting-help">
+      <p className="ui-setting-help ui-text-secondary">
         Or go to <code>{url}</code> on any device. This signs in {who} on {pool}&apos;s runner only,
         on GitHub.com{terminal ? ": for GitHub Enterprise, use Open in terminal." : "."}
       </p>

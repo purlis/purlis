@@ -870,12 +870,12 @@ function ShownGroup({
       editAs={homeFile?.as}
     >
       {group.notes?.map((why, at) => (
-        <p key={at} className="ui-setting-help">
+        <p key={at} className="ui-setting-help ui-text-secondary">
           {why}
         </p>
       ))}
       {group.settings.length === 0 && group.collection === undefined && group.empty && (
-        <p className="ui-setting-help">{group.empty}</p>
+        <p className="ui-setting-help ui-text-secondary">{group.empty}</p>
       )}
       {onAction && (group.links?.length ?? 0) > 0 && (
         <p className="ui-setting-links">
@@ -1399,7 +1399,11 @@ function FileRow({
         ) : setting.reading && value === "" ? (
           // What is in force is still being read (#1875): a placeholder, so the row does not
           // draw a select that turns into a switch once the core answers. Nothing to pick yet.
-          <span className="ui-setting-help" aria-labelledby={ids.labelledBy} aria-busy="true">
+          <span
+            className="ui-setting-help ui-text-secondary"
+            aria-labelledby={ids.labelledBy}
+            aria-busy="true"
+          >
             Reading…
           </span>
         ) : (setting.inForce !== undefined || setting.reading) && ON_OFF.has(value) ? (
