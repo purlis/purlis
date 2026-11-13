@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::chatrecords::StartedBy;
 use crate::dispatchrecord::{
     self, Asker, Changed, ChatRef, EndedBy, EndedWay, Ending, Mode, Opening, Outcome, Place,
     Report, Worker,
@@ -218,14 +219,14 @@ fn a_task_that_never_started_is_no_chat() {
 const ORDINARY_ID: &str = "01K6CHATS0000000000000000C";
 
 /// Chat 702, started by the person in the window and closed by them.
-fn closed_702() -> crate::chatrecords::ChatRecord {
-    crate::chatrecords::ChatRecord {
+fn closed_702() -> ChatRecord {
+    ChatRecord {
         number: 702,
         id: ORDINARY_ID.to_owned(),
         title: "Tidy the changelog".to_owned(),
         started: "2026-11-12T09:00:00Z".to_owned(),
         ended: "2026-11-12T09:40:00Z".to_owned(),
-        started_by: crate::chatrecords::StartedBy::Person,
+        started_by: StartedBy::Person,
         place: "smart-ide".to_owned(),
     }
 }
@@ -233,7 +234,7 @@ fn closed_702() -> crate::chatrecords::ChatRecord {
 #[test]
 fn an_ordinary_chat_that_closed_is_found_closed_with_its_record() {
     let (_dir, root) = project();
-    crate::chatrecords::keep(&root, &closed_702()).unwrap();
+    chatrecords::keep(&root, &closed_702()).unwrap();
     assert_eq!(
         by_number_in(&root, 702, &[open_chat(3, ASKER_ID)]),
         Found::Closed(Box::new(closed_702()))
@@ -243,7 +244,7 @@ fn an_ordinary_chat_that_closed_is_found_closed_with_its_record() {
 #[test]
 fn an_ordinary_chat_open_again_is_found_under_its_new_number() {
     let (_dir, root) = project();
-    crate::chatrecords::keep(&root, &closed_702()).unwrap();
+    chatrecords::keep(&root, &closed_702()).unwrap();
     assert_eq!(
         by_number_in(&root, 702, &[open_chat(731, ORDINARY_ID)]),
         Found::Restarted { now: 731 }
@@ -262,9 +263,9 @@ fn a_dispatch_record_answers_before_the_chat_record_of_its_number() {
         at("2026-11-11T11:08:00Z"),
     )
     .unwrap();
-    crate::chatrecords::keep(
+    chatrecords::keep(
         &root,
-        &crate::chatrecords::ChatRecord {
+        &ChatRecord {
             number: 641,
             id: WORKER_ID.to_owned(),
             ..closed_702()
@@ -277,7 +278,7 @@ fn a_dispatch_record_answers_before_the_chat_record_of_its_number() {
 #[test]
 fn the_records_read_once_answer_as_one_read_does() {
     let (_dir, root) = project();
-    crate::chatrecords::keep(&root, &closed_702()).unwrap();
+    chatrecords::keep(&root, &closed_702()).unwrap();
     let known = Known::read(&root);
     assert_eq!(by_number(702, &[], &known), by_number_in(&root, 702, &[]));
     assert_eq!(by_number(9999, &[], &known), Found::NoChat);
@@ -338,14 +339,14 @@ fn ended_unreported(root: &std::path::Path, mode: Mode, report_owed: bool) {
 }
 
 /// Chat 641's own record, as the app kept it as it closed: handed off to by `steward 3`.
-fn closed_641() -> crate::chatrecords::ChatRecord {
-    crate::chatrecords::ChatRecord {
+fn closed_641() -> ChatRecord {
+    ChatRecord {
         number: 641,
         id: WORKER_ID.to_owned(),
         title: "Signed commits #5607".to_owned(),
         started: "2026-11-11T10:00:00Z".to_owned(),
         ended: "2026-11-11T11:08:00Z".to_owned(),
-        started_by: crate::chatrecords::StartedBy::Chat {
+        started_by: StartedBy::Chat {
             name: "steward 3".to_owned(),
         },
         place: "smart-ide".to_owned(),
@@ -356,7 +357,7 @@ fn closed_641() -> crate::chatrecords::ChatRecord {
 fn a_closed_handoff_is_found_closed_with_its_chat_record() {
     let (_dir, root) = project();
     ended_unreported(&root, Mode::Handoff, false);
-    crate::chatrecords::keep(&root, &closed_641()).unwrap();
+    chatrecords::keep(&root, &closed_641()).unwrap();
     assert_eq!(
         by_number_in(&root, 641, &[open_chat(3, ASKER_ID)]),
         Found::Closed(Box::new(closed_641()))
@@ -367,7 +368,7 @@ fn a_closed_handoff_is_found_closed_with_its_chat_record() {
 fn a_task_that_ended_owing_no_report_is_found_closed_with_its_chat_record() {
     let (_dir, root) = project();
     ended_unreported(&root, Mode::Task, false);
-    crate::chatrecords::keep(&root, &closed_641()).unwrap();
+    chatrecords::keep(&root, &closed_641()).unwrap();
     assert_eq!(
         by_number_in(&root, 641, &[]),
         Found::Closed(Box::new(closed_641()))
@@ -378,7 +379,7 @@ fn a_task_that_ended_owing_no_report_is_found_closed_with_its_chat_record() {
 fn a_running_task_whose_chat_closed_is_found_closed_with_its_chat_record() {
     let (_dir, root) = project();
     task_641(&root);
-    crate::chatrecords::keep(&root, &closed_641()).unwrap();
+    chatrecords::keep(&root, &closed_641()).unwrap();
     assert_eq!(
         by_number_in(&root, 641, &[]),
         Found::Closed(Box::new(closed_641()))
