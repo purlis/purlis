@@ -5,7 +5,15 @@ import { useCallback, useState } from "react";
 import { commands, type ProtectionWord } from "./bindings";
 import { type ForgeAsk, ForgeQuestion } from "./ForgeQuestion";
 import { useNewerTrouble } from "./pickTrouble";
-import { ProtectionRow, useProtection, useSetupProtection, YourLevel } from "./ProtectionRow";
+import {
+  ProtectionRow,
+  refusedHere,
+  useNoSandbox,
+  withTheMove,
+  useProtection,
+  useSetupProtection,
+  YourLevel,
+} from "./ProtectionRow";
 import { Choice, Field, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
 import { Dialog } from "./ui/dialog/Dialog";
@@ -142,16 +150,27 @@ export function NewProject({
   // open, Create project. It stays in its place and keeps the room of the longer, so opening
   // Advanced moves nothing.
   const [advanced, setAdvanced] = useState(false);
+  // What No sandbox would do for the project the main act makes (T1-25): the folder Create
+  // makes it in, or this machine's local project Open repo goes into.
+  const shown = advanced || making;
+  const noSandbox = useNoSandbox(shown ? (path.trim() === "" ? undefined : path.trim()) : null);
+  const refused = refusedHere(protection, noSandbox);
+  // Both acts' words, and each with the move named, so choosing No sandbox moves nothing.
+  const reserved = ["Open repo", "Create project"].flatMap((label) => [
+    label,
+    withTheMove(label, "off", noSandbox),
+  ]);
   const openRepo = () => {
     started();
-    if (repo.trim() !== "" && !opening) onOpenRepo(repo.trim(), setup?.yours ? null : protection);
+    if (repo.trim() !== "" && !opening && !refused)
+      onOpenRepo(repo.trim(), setup?.yours ? null : protection);
   };
   const create = () => {
     started();
     // The box and the adopt field are two answers to one question — which repository this plane
     // starts from — so a ticked box sends no repo, rather than sending both and letting the core
     // rank them.
-    if (ready)
+    if (ready && !refused)
       onCreate(path.trim(), planeIsThisRepo, planeIsThisRepo ? "" : adopt.trim(), protection);
   };
   return (
@@ -163,15 +182,15 @@ export function NewProject({
         // While a project of its own is made, its act says so, whatever is open.
         advanced || making
           ? {
-              children: making ? "Creating…" : "Create project",
-              reserve: ["Open repo", "Create project", "Creating…"],
-              isDisabled: !ready,
+              children: making ? "Creating…" : withTheMove("Create project", protection, noSandbox),
+              reserve: [...reserved, "Creating…"],
+              isDisabled: !ready || refused,
               onPress: create,
             }
           : {
-              children: "Open repo",
-              reserve: ["Open repo", "Create project", "Creating…"],
-              isDisabled: repo.trim() === "" || opening,
+              children: withTheMove("Open repo", protection, noSandbox),
+              reserve: [...reserved, "Creating…"],
+              isDisabled: repo.trim() === "" || opening || refused,
               onPress: openRepo,
             }
       }
@@ -207,6 +226,7 @@ export function NewProject({
           value={protection}
           onChange={setProtection}
           setup={setup}
+          noSandbox={noSandbox}
           disabled={making || opening}
         />
       )}

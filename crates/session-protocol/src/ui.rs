@@ -776,6 +776,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The plain-file vaults offered to move into the keychain before a person turns their
     // sandbox down (#2071): read in their window alone.
     "plain_file_vaults",
+    // What No sandbox at setup would move into the keychain, and the team's vault that refuses
+    // it (T1-25): it names the project's vaults, as the list above does.
+    "no_sandbox_at_setup",
     // Your levels waiting for Confirm, and the Confirm that makes one count at a start
     // (#2071, ADR 0096 §7): the window's alone, as the record they read and write is.
     "sandbox_levels_waiting",
@@ -1583,6 +1586,9 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "session_host_failing",
     "session_record",
     "set_dismissed",
+    // What setup's Protection row offers (T1-24): this machine's bound, and the local
+    // project's level. A read.
+    "setup_protection",
     "show_window_holding",
     // A deleted skill's last text, for its page on Deleted (S9, #3691): read only.
     "skill_deleted_text",

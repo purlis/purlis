@@ -10,7 +10,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import type { SetupProtection } from "./bindings";
+import type { NoSandboxAtSetup, SetupProtection } from "./bindings";
 import { FirstRun } from "./FirstRun";
 import { NewProject } from "./NewProject";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
@@ -23,7 +23,7 @@ type Acts = {
 };
 
 /** The core faked at its command boundary, `setup` being what it says of this machine's bound. */
-function machine(setup: SetupProtection | null) {
+function machine(setup: SetupProtection | null, noSandbox: NoSandboxAtSetup | null = null) {
   return () => {
     mockIPC((cmd) => {
       if (cmd === "first_run_found")
@@ -34,6 +34,7 @@ function machine(setup: SetupProtection | null) {
         };
       if (cmd === "new_project_folder") return "/home/dev/Projects/billing-api";
       if (cmd === "setup_protection") return setup;
+      if (cmd === "no_sandbox_at_setup") return noSandbox;
       return null;
     });
     return () => clearMocks();
@@ -194,5 +195,116 @@ export const YourLevelReadOnly: Story = {
       await canvas.findByText("Your level: Full sandbox · change it in Settings"),
     ).toBeVisible();
     await expectHeldAtFull(await waitFor(() => rowIn(canvasElement)));
+  },
+};
+
+/** What the core says No sandbox would move: this machine's two plain-file vaults (T1-25). */
+const TWO_VAULTS: NoSandboxAtSetup = {
+  moves: ["personal", "stripe-test"],
+  warning: "setup.no-sandbox.runs-as-you",
+  refused: null,
+};
+
+/** The core's refusal where the team's committed file registers a plain-file vault (R-298). */
+export const TEAM_REFUSAL =
+  "No sandbox is refused here: the vault ci, which Dana Okafor registered in the project's " +
+  "committed vaults.json, is a plain file a chat with no sandbox could read. Choose Basic " +
+  "sandbox, or ask Dana Okafor to move it into the keychain.";
+
+/** A project whose team registers the plain-file vault `ci`, which Dana Okafor added. */
+const TEAM_VAULT: NoSandboxAtSetup = {
+  moves: ["personal"],
+  warning: "setup.no-sandbox.runs-as-you",
+  refused: { vault: "ci", owner: "Dana Okafor", said: TEAM_REFUSAL },
+};
+
+/** From Basic sandbox, two arrows down reach No sandbox, the focus with them. */
+async function arrowToNone(row: HTMLElement) {
+  const basic = within(row).getByRole("radio", { name: /^Basic sandbox \(recommended\)/ });
+  basic.focus();
+  await untilFocused(() => basic, "the row starts on Basic sandbox");
+  await userEvent.keyboard("{ArrowDown}{ArrowDown}");
+  const none = within(row).getByRole("radio", { name: /^No sandbox/ });
+  await untilFocused(() => none, "two arrows reach No sandbox");
+  await waitFor(() => expect(none).toBeChecked());
+  expectFocusInSight();
+}
+
+/** The New project dialog drawn for a story of No sandbox. */
+const newProject = (args: Acts) => (
+  <NewProject
+    making={false}
+    opening={false}
+    onCreate={args.onCreate as never}
+    onOpenRepo={args.onOpenRepo as never}
+    onCancel={() => undefined}
+  />
+);
+
+/** The dialog, once drawn. */
+const dialogIn = (canvasElement: HTMLElement) =>
+  waitFor(() =>
+    within(canvasElement.ownerDocument.body).getByRole("dialog", { name: "New project" }),
+  );
+
+/**
+ * **No sandbox at setup** (T1-25; R-066, R-293): choosing it shows the warning and the vault
+ * move in the row, in no second dialog, and the main button says what its one press does.
+ */
+export const NoSandboxMovesTwoVaults: Story = {
+  args: { onOpenRepo: fn(), onCreate: fn() },
+  beforeEach: machine(null, TWO_VAULTS),
+  parameters: { screenshot: "page" },
+  render: newProject,
+  play: async ({ canvasElement, args }) => {
+    const dialog = await dialogIn(canvasElement);
+    await arrowToNone(rowIn(dialog));
+    const body = within(canvasElement.ownerDocument.body);
+    await expect(await body.findByText(/A chat runs as you/)).toBeVisible();
+    await expect(
+      body.getByText(
+        /moves 2 plain-file vaults, personal and stripe-test, into the system keychain/,
+      ),
+    ).toBeVisible();
+    await expect(body.getAllByRole("dialog")).toHaveLength(1);
+    await userEvent.type(within(dialog).getByLabelText("Repo"), "/home/dev/widget");
+    const main = within(dialog).getByRole("button", {
+      name: "Open repo, and move 2 vaults to the keychain",
+    });
+    await userEvent.click(main);
+    await expect(args.onOpenRepo).toHaveBeenCalledTimes(1);
+    await expect(args.onOpenRepo).toHaveBeenCalledWith("/home/dev/widget", "off");
+  },
+};
+
+/**
+ * **No sandbox refused over a team's vault** (T1-25, R-298): the row says the core's refusal,
+ * naming the vault's owner, the main act waits, and Use Basic sandbox puts the choice back.
+ */
+export const NoSandboxRefusedByATeamVault: Story = {
+  args: { onOpenRepo: fn(), onCreate: fn() },
+  beforeEach: machine(null, TEAM_VAULT),
+  parameters: { screenshot: "page" },
+  render: newProject,
+  play: async ({ canvasElement, args }) => {
+    const dialog = await dialogIn(canvasElement);
+    const row = rowIn(dialog);
+    await arrowToNone(row);
+    const body = within(canvasElement.ownerDocument.body);
+    await expect(await body.findByText(TEAM_REFUSAL)).toBeVisible();
+    await expect(body.queryByText(/into the system keychain/)).toBeNull();
+    await userEvent.type(within(dialog).getByLabelText("Repo"), "/home/dev/widget");
+    await expect(within(dialog).getByRole("button", { name: "Open repo" })).toBeDisabled();
+    const basic = within(dialog).getByRole("button", { name: "Use Basic sandbox" });
+    basic.focus();
+    await untilFocused(() => basic, "Use Basic sandbox takes the focus");
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(within(row).getByRole("radio", { name: /^Basic sandbox/ })).toBeChecked(),
+    );
+    await expect(body.queryByText(TEAM_REFUSAL)).toBeNull();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Open repo" }));
+    await expect(args.onOpenRepo).toHaveBeenCalledWith("/home/dev/widget", "floor");
   },
 };

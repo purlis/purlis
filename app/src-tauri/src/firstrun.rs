@@ -625,6 +625,60 @@ fn setup_protection_in(data: &Path) -> SetupProtection {
     }
 }
 
+/// **What choosing No sandbox at setup would do** (T1-25; R-066, R-293, R-298), read from the
+/// core ([`purlis_core::sandbox::personal::no_sandbox::report`]) before the press: the vaults
+/// that move into the system keychain in the press that writes the level, the warning's key,
+/// and the team's vault that refuses No sandbox, where there is one. Nothing is written.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct NoSandboxAtSetup {
+    /// This machine's plain-file vaults that move, by name.
+    pub moves: Vec<String>,
+    /// The key of the warning the row shows beside them.
+    pub warning: String,
+    /// The team's vault that refuses No sandbox here, where there is one.
+    pub refused: Option<TeamVaultRefusal>,
+}
+
+/// A plain-file vault the team's committed file registers, which refuses No sandbox (R-298).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct TeamVaultRefusal {
+    /// The vault's name.
+    pub vault: String,
+    /// Who added it, as plain text: a name from git, or "your team".
+    pub owner: String,
+    /// The refusal, in the core's words.
+    pub said: String,
+}
+
+/// What choosing No sandbox at setup would do for the project made at `folder`, or, for none,
+/// for this machine's local project ([`NoSandboxAtSetup`]). The window's alone: it names vaults.
+#[tauri::command]
+#[specta::specta]
+pub async fn no_sandbox_at_setup(folder: Option<String>) -> Result<NoSandboxAtSetup, String> {
+    let root = match folder {
+        Some(folder) => PathBuf::from(folder),
+        None => firstrun::local_plane(&data_home()?),
+    };
+    tauri::async_runtime::spawn_blocking(move || no_sandbox_at(&root))
+        .await
+        .map_err(|err| format!("reading the vaults did not finish: {err}"))?
+}
+
+fn no_sandbox_at(root: &Path) -> Result<NoSandboxAtSetup, String> {
+    use purlis_core::sandbox::personal::no_sandbox;
+    use purlis_core::secrets::{Ctx, Env};
+    let said = no_sandbox::report(&Ctx::new(root, Env::from_process()))?;
+    Ok(NoSandboxAtSetup {
+        moves: said.moves,
+        warning: said.warning.to_owned(),
+        refused: said.refused.map(|team| TeamVaultRefusal {
+            said: team.said(),
+            vault: team.vault,
+            owner: team.owner,
+        }),
+    })
+}
+
 impl From<purlis_core::sandbox::personal::Choice> for ProtectionWord {
     fn from(choice: purlis_core::sandbox::personal::Choice) -> Self {
         use purlis_core::sandbox::personal::Choice;

@@ -23,7 +23,15 @@ import { type ForgeAsk, ForgeQuestion } from "./ForgeQuestion";
 import { rememberedParent, rememberParent } from "./CreateOnForge";
 import { DoorPage } from "./DoorPage";
 import { useNewerTrouble } from "./pickTrouble";
-import { ProtectionRow, useProtection, useSetupProtection, YourLevel } from "./ProtectionRow";
+import {
+  ProtectionRow,
+  refusedHere,
+  useNoSandbox,
+  useProtection,
+  useSetupProtection,
+  withTheMove,
+  YourLevel,
+} from "./ProtectionRow";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
 import { Form } from "./ui/field/Field";
@@ -97,6 +105,11 @@ export function FirstRun({
   const setup = useSetupProtection();
   const [protection, setProtection] = useProtection(setup);
   const forTheRepo = setup?.yours ? undefined : protection;
+  // What No sandbox would do for the local project a repo opens into (T1-25): its vaults move in
+  // the same press, or a team's vault refuses it. A project made elsewhere is the core's to
+  // judge when it is made, where it is refused or moved the same way.
+  const noSandbox = useNoSandbox(null);
+  const repoRefused = forTheRepo !== undefined && refusedHere(forTheRepo, noSandbox);
   // The template that fits a typed path, by id, with the path it was asked about: `null` when
   // none fits. A folder picked in the dialog opens at once, so this is the typed path's alone,
   // and an answer about a path no longer typed is not shown.
@@ -150,12 +163,20 @@ export function FirstRun({
         else if (answer.data) onOpenRepo(answer.data, choiceOf(template), forTheRepo);
       });
   }, [onOpenRepo, template, forTheRepo, pickFailed, started]);
+  const openRepoSaid =
+    forTheRepo === undefined ? "Open repo" : withTheMove("Open repo", forTheRepo, noSandbox);
 
   return (
     <DoorPage title="Create a project" className="first-run" onBack={onBack}>
       {/* **One Protection row** for every act below, wherever the project lives (T1-24; Q115,
           Q241). */}
-      <ProtectionRow value={protection} onChange={setProtection} setup={setup} disabled={opening} />
+      <ProtectionRow
+        value={protection}
+        onChange={setProtection}
+        setup={setup}
+        noSandbox={noSandbox}
+        disabled={opening}
+      />
       {where}
       {elsewhere ? (
         elsewhere(found?.templates, protection)
@@ -217,7 +238,7 @@ export function FirstRun({
           {/* One leading row of the two ways in (#1719), and the path form's own below it.
           `tabIndex={0}` on every button, per `docs/ui-primitives.md` (charter-app#189). */}
           <SettingActions>
-            <Button isDisabled={opening} onPress={pick}>
+            <Button isDisabled={opening || repoRefused} onPress={pick}>
               Open a repo…
             </Button>
           </SettingActions>
@@ -227,7 +248,7 @@ export function FirstRun({
             onSubmit={(event) => {
               event.preventDefault();
               started();
-              if (typed.trim() && !opening)
+              if (typed.trim() && !opening && !repoRefused)
                 onOpenRepo(typed.trim(), choiceOf(template), forTheRepo);
             }}
           >
@@ -246,8 +267,8 @@ export function FirstRun({
             />
             <SettingActions>
               {/* The same act as New project's, in the same words (`docs/ui-copy.md`, #630). */}
-              <Button type="submit" isDisabled={!typed.trim() || opening}>
-                Open repo
+              <Button type="submit" isDisabled={!typed.trim() || opening || repoRefused}>
+                {openRepoSaid}
               </Button>
             </SettingActions>
           </Form>
