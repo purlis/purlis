@@ -18,7 +18,10 @@
 //!   asks refused again and again, or blocks on the same target (R-206), heard from its hook
 //!   lines ([`called`]) and from the stops the app writes ([`stopped`]), the person's Allow
 //!   starting the block count again ([`allowed`]). Asked: It's fine, continue, which starts its
-//!   counts again; or Stop, the window's Stop.
+//!   counts again; or Stop, the window's Stop. A block loop is asked in its own words (R-216,
+//!   R-217): Tell it to stop trying, the lead, which lets it go on told so in one line of
+//!   purlis's ([`STOP_TRYING_LINE`]); Let it keep trying (R-218); or Stop chat, the window's Stop.
+//!   Each starts its counts again.
 //!
 //! **What moves a pause is a named cause** (ADR 0076): the app's own clock and counts, from the
 //! chat's hooks and the person's answers, and the person's answer to the ask. Nothing a chat
@@ -32,7 +35,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use purlis_core::dispatchlimits::Reached;
 use purlis_core::looping::{self, Loops};
 
-use crate::asking::pauses::{CONTINUE, FINE, STOP};
+use crate::asking::pauses::{CONTINUE, FINE, KEEP_TRYING, STOP, STOP_TRYING};
 use crate::planes::{Held, PlaneId, Planes};
 
 /// Why a chat is paused.
@@ -212,8 +215,9 @@ impl Pauses {
     }
 
     /// **The person's answer `option` to chat `chat`'s pause**: its pause ends, and what is
-    /// left to do is answered. Continue keeps that budget from pausing it again; It's fine and
-    /// Stop on a loop start its counts again.
+    /// left to do is answered. Continue keeps that budget from pausing it again; every answer to
+    /// a loop starts its counts again. A block loop takes only its own three answers (R-217),
+    /// and another loop only It's fine and Stop.
     pub fn answer(&self, chat: u32, option: &str) -> Result<Answered, String> {
         let mut inner = self.inner();
         let Some(paused) = inner.paused.get(&chat).cloned() else {
@@ -225,7 +229,15 @@ impl Pauses {
                 Then::GoOn
             }
             (Why::Budget(reached), STOP) => Then::StopAt(reached),
-            (Why::Looping(_), FINE) => {
+            (Why::Looping(looping::Why::Blocked { .. }), STOP_TRYING) => {
+                inner.loops.fine(chat);
+                Then::TellToStopTrying
+            }
+            (Why::Looping(looping::Why::Blocked { .. }), KEEP_TRYING) => {
+                inner.loops.fine(chat);
+                Then::GoOn
+            }
+            (Why::Looping(why), FINE) if !matches!(why, looping::Why::Blocked { .. }) => {
                 inner.loops.fine(chat);
                 Then::GoOn
             }
@@ -256,10 +268,34 @@ pub struct Answered {
 pub enum Then {
     /// Nothing: it goes on.
     GoOn,
+    /// It goes on, told in one line to stop trying what it was blocked on (R-217).
+    TellToStopTrying,
     /// It is stopped as the budget's limit stops it: asked for its report, then ended.
     StopAt(Reached),
     /// It is stopped as the window's Stop stops it.
     Stop,
+}
+
+/// **What Tell it to stop trying types into its chat** (R-217): purlis's own line, which names
+/// nothing it tried, as the event log keeps no command (R-220).
+pub const STOP_TRYING_LINE: &str = "purlis: the person asks you to stop trying what was blocked \
+    again and again. It stays blocked. Don't try it again, in these words or others: go on \
+    without it, or say what you needed it for and stop.";
+
+/// **Tells chat `chat` to stop trying** (R-217), in [`STOP_TRYING_LINE`], as a line is typed into
+/// a chat when nothing else holds its turn: never while it shows a prompt, nor in a stop's last
+/// turn. Where it can't be told, it goes on all the same, its count started again.
+fn tell_to_stop_trying(held: &Held, chat: u32) {
+    if held.stopping().in_its_last_turn(chat)
+        || crate::dispatched::seen_now(held, chat).prompt_showing()
+    {
+        tracing::warn!("purlis: chat {chat} was not told to stop trying: it can't be typed in now");
+        return;
+    }
+    let line = format!("{}\r", crate::curation::bracketed(STOP_TRYING_LINE));
+    if let Err(why) = held.type_in_turn(chat, line.as_bytes()) {
+        tracing::warn!("purlis: chat {chat} was not told to stop trying ({why})");
+    }
 }
 
 fn now() -> i64 {
@@ -351,13 +387,18 @@ pub(crate) fn called(held: &Held, call: &purlis_core::hookwire::ToolCall) {
 }
 
 /// **The person's answer to chat `chat`'s pause**, `option` one of its ask's: Continue or It's
-/// fine, continue let it go on; Stop lets it go on only to stop it, as the budget's limit or
-/// the window's Stop stops it. Raise the budget is the window's own and never comes here.
+/// fine, continue and Let it keep trying let it go on; Tell it to stop trying lets it go on, told
+/// so; Stop and Stop chat let it go on only to stop it, as the budget's limit or the window's Stop
+/// stops it. Raise the budget is the window's own and never comes here.
 pub(crate) fn answer(held: &Arc<Held>, chat: u32, option: &str) -> Result<(), String> {
     let answered = held.pauses().answer(chat, option)?;
     hold(held, &answered.held, false);
     match answered.then {
         Then::GoOn => Ok(()),
+        Then::TellToStopTrying => {
+            tell_to_stop_trying(held, chat);
+            Ok(())
+        }
         // A task is asked for its report, then ended, as the limit stopped it before.
         Then::StopAt(reached) if crate::stopping::stop_at_a_limit(held, chat, reached) > 0 => {
             Ok(())

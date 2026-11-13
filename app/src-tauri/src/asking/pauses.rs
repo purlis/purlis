@@ -8,6 +8,9 @@
 //! - **Budget reached**: Continue, Raise the budget, Stop. Raise the budget opens the window's
 //!   Settings where the limit is, and the chat goes on once a look finds it within the limit.
 //! - **Looping**: It's fine, continue, or Stop.
+//! - **Blocked on the same thing again and again** (R-216, R-217, T1-12's block loop): "steward 3
+//!   was blocked 3 times on the same thing. Let it keep trying?" Tell it to stop trying, the
+//!   lead; Let it keep trying; or Stop chat.
 
 use super::{AnswerPath, AskSource, Offered, Shown, said_inertly};
 use crate::pausing::{Paused, Why};
@@ -18,8 +21,17 @@ pub const CONTINUE: &str = "continue";
 pub const RAISE: &str = "raise";
 /// The option id of a loop's It's fine, continue.
 pub const FINE: &str = "fine";
-/// The option id of Stop, for either.
+/// The option id of a block loop's Tell it to stop trying, its lead (R-217).
+pub const STOP_TRYING: &str = "stop-trying";
+/// The option id of a block loop's Let it keep trying, which starts its count again (R-218).
+pub const KEEP_TRYING: &str = "keep-trying";
+/// The option id of Stop, for every pause: a block loop's Stop chat too.
 pub const STOP: &str = "stop";
+
+/// What a block loop's answers say (R-217), read by the window's tests as the registry's.
+const STOP_TRYING_SAID: &str = "Tell it to stop trying";
+const KEEP_TRYING_SAID: &str = "Let it keep trying";
+const STOP_CHAT_SAID: &str = "Stop chat";
 
 fn offered(id: &str, label: &str, allows: bool) -> Offered {
     Offered {
@@ -30,6 +42,11 @@ fn offered(id: &str, label: &str, allows: bool) -> Offered {
         // No answer to a pause is a grant (ADR 0121 decision 7): nothing for a rule to be for.
         scope: None,
     }
+}
+
+/// **What a block loop's pause says** (R-216): the chat, as its chain names it, and the count.
+fn blocked_says(chat: &str, times: u32) -> String {
+    format!("{chat} was blocked {times} times on the same thing. Let it keep trying?")
 }
 
 /// The ask's key: one per paused chat.
@@ -51,6 +68,19 @@ pub fn paused(session: u32, paused: &Paused, chain: Vec<String>, blocks: Option<
                 offered(STOP, "Stop", false),
             ],
             AskSource::Budget,
+        ),
+        Why::Looping(purlis_core::looping::Why::Blocked { times }) => (
+            // The chat paused is the last of its chain, the one the chain is of.
+            blocked_says(chain.last().map_or("This chat", String::as_str), times),
+            vec![
+                Offered {
+                    preselected: Some(true),
+                    ..offered(STOP_TRYING, STOP_TRYING_SAID, false)
+                },
+                offered(KEEP_TRYING, KEEP_TRYING_SAID, true),
+                offered(STOP, STOP_CHAT_SAID, false),
+            ],
+            AskSource::Looping,
         ),
         Why::Looping(why) => (
             format!("It may be looping: {}.", why.said()),
