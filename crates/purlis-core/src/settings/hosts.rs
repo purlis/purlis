@@ -26,6 +26,7 @@ use super::Which;
 use super::collection::{FieldRefusal, Listed, Refusal};
 use crate::sandbox::TABLE;
 use crate::sandbox::hosts::{Host, KEY};
+use crate::sandbox::local::AddedBy;
 
 /// The collection's name in each file, as the window sends it back.
 pub fn collection(which: Which) -> &'static str {
@@ -158,10 +159,16 @@ fn without(which: Which, text: &str, at: usize) -> Result<String, Refusal> {
 /// ([`crate::sandbox::policy::Locks::refuses`], #1423), one already listed here, or (for yours)
 /// one the project already lets every chat reach.
 pub fn add(root: &Path, which: Which, base: Option<&str>, typed: &str) -> Result<String, Refusal> {
-    added(root, which, base, typed).map_err(|refusal| refusal.named_at(root))
+    added(root, which, base, typed, AddedBy::You).map_err(|refusal| refusal.named_at(root))
 }
 
-fn added(root: &Path, which: Which, base: Option<&str>, typed: &str) -> Result<String, Refusal> {
+fn added(
+    root: &Path,
+    which: Which,
+    base: Option<&str>,
+    typed: &str,
+    by: AddedBy,
+) -> Result<String, Refusal> {
     super::unchanged(root, which, base).map_err(Refusal::file)?;
     let text = base.unwrap_or_default();
     let field = |why: String| Refusal {
@@ -206,9 +213,9 @@ fn added(root: &Path, which: Which, base: Option<&str>, typed: &str) -> Result<S
     let after = with(which, text, &host)?;
     super::save(root, which, base, &after).map_err(Refusal::file)?;
     seen_by_you(root, which, pending, &after);
-    // Added here, by you: confirmed on this machine.
+    // Added here, by you or a block's Allow: confirmed on this machine, with when and by what.
     if which == Which::Local {
-        crate::sandbox::local::confirm_host(root, &host.to_string()).map_err(|e| {
+        crate::sandbox::local::add_host(root, &host.to_string(), by).map_err(|e| {
             Refusal::file(vec![format!(
                 "{host} was written, and could not be recorded as yours ({}), so it reaches \
                  nothing yet. Press Confirm beside it.",
@@ -379,6 +386,7 @@ pub fn listed_at(root: &Path, which: Which, text: &str) -> Vec<Listed> {
         return entries;
     }
     let confirmed = crate::sandbox::local::confirmed_hosts(root);
+    let records = crate::sandbox::local::hosts_added(root);
     for one in &mut entries {
         let written = one
             .values
@@ -392,6 +400,13 @@ pub fn listed_at(root: &Path, which: Which, text: &str) -> Vec<Listed> {
         }
         one.values
             .push(("confirmed", if mine { "yes" } else { "no" }.to_owned()));
+        let spelled = Host::parse(&written).map(|host| host.to_string());
+        if let Ok(spelled) = spelled
+            && let Some(added) = records.iter().find(|it| it.host == spelled)
+        {
+            one.values.push(("added_at", added.at.to_string()));
+            one.values.push(("added_by", added.by.word().to_owned()));
+        }
     }
     entries
 }
@@ -428,9 +443,15 @@ fn now(root: &Path, which: Which) -> Result<Option<String>, String> {
 /// confirmed on this machine as it is added). Answers why not, in a sentence.
 pub fn grant(root: &Path, which: Which, host: &Host) -> Result<(), String> {
     let base = now(root, which)?;
-    add(root, which, base.as_deref(), &host.to_string())
-        .map(|_| ())
-        .map_err(said)
+    added(
+        root,
+        which,
+        base.as_deref(),
+        &host.to_string(),
+        AddedBy::Block,
+    )
+    .map(|_| ())
+    .map_err(|refusal| said(refusal.named_at(root)))
 }
 
 /// **Revokes `host`** at `which`'s level (#1348): [`remove`] of every entry naming it, against

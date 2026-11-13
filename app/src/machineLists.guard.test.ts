@@ -7,44 +7,28 @@ import { describe, expect, it } from "vitest";
 import { isScript, ratchet, sourceFiles, SRC, withoutComments } from "./guards.testkit";
 
 /**
- * **Settings' hand-drawn record lists only get fewer** (#2911, #2919). A record list is a list
- * of things a store holds, each row ending in its actions, and it is the list or table family's
+ * **No record list is drawn by hand** (#2911, #2919, #6301). A record list is a list of things a
+ * store holds, each row ending in its actions, and it is the list or table family's
  * (`ui/list/List`, `ui/table/Table`, `ui/table/ControlTable`). You › This machine drew its own
  * before the families did: a `<ul className="ui-machine-list">` of `ui-machine-entry` rows. A
  * plain `<ul>` with a class of its own breaks no family's lint (`purlis/list-family` keeps a
  * `<ul>` of words), so this guard holds them instead.
  *
- * `LEFT` names every list still drawn that way, by exact count per file. A new one fails. One
- * moved onto a family fails until its line is crossed off, so the list only gets shorter. When
- * it is empty, delete this file and the `.ui-machine-*` rules in `App.css`.
+ * The last seven moved onto the families in #6301, so `LEFT` is empty and stays so: a list
+ * drawn that way anywhere fails, and its class's rules are gone from `App.css`.
  *
  * Read as text, as `Notice.guard.test.ts` reads its live regions: a rendered window shows only
  * the lists its test set up.
  */
 
-/** The class every hand-drawn record list wears. */
+/** The class every hand-drawn record list wore. */
 const HAND_DRAWN = "ui-machine-list";
 
-/** Every hand-drawn record list left, one entry per list, by its file under `src`. */
-const LEFT: Record<string, readonly string[]> = {
-  "settings/accounts.tsx": ["the forge accounts signed in"],
-  "settings/PoolProfiles.tsx": ["the profiles on one pool"],
-  "settings/pools.tsx": ["the pools"],
-  "settings/profiles.tsx": ["this machine's profiles"],
-  "settings/signing.tsx": ["the forge accounts' signing keys", "the other devices' signing keys"],
-  "settings/thisMachine.tsx": ["This machine's stores"],
-};
+/** Every hand-drawn record list left, one entry per list, by its file under `src`: none. */
+const LEFT: Record<string, readonly string[]> = {};
 
-/** How many each file may have: frozen at the lists as they were on 2026-11-12, never raised.
- *  Lower one as its file's lists move; a file that reaches 0 leaves both tables. */
-const CEILING: Record<string, number> = {
-  "settings/accounts.tsx": 1,
-  "settings/PoolProfiles.tsx": 1,
-  "settings/pools.tsx": 1,
-  "settings/profiles.tsx": 1,
-  "settings/signing.tsx": 2,
-  "settings/thisMachine.tsx": 1,
-};
+/** How many each file may have: none, never raised. */
+const CEILING: Record<string, number> = {};
 
 /** The class as a whole word: `ui-machine-list`, not `ui-machine-listing`. */
 const HAND_DRAWN_WORD = new RegExp(String.raw`(?<![\w-])${HAND_DRAWN}(?![\w-])`, "g");
@@ -90,13 +74,13 @@ describe("Settings' hand-drawn record lists (#2911, #2919)", () => {
     ]);
   });
 
-  it("asks for a moved one's line to be crossed off", () => {
+  it("refuses one put back where the lists moved from", () => {
     const planted = (file: string) =>
       file === "settings/accounts.tsx"
-        ? fromDisk(file).split(HAND_DRAWN).join("moved")
+        ? `${fromDisk(file)}\nexport const X = () => <ul className="${HAND_DRAWN}" />;`
         : fromDisk(file);
     expect(ratchet(found(planted), LEFT, CEILING, WORDS)).toEqual([
-      "settings/accounts.tsx: stale entry, delete it from the allowance: the forge accounts signed in",
+      `settings/accounts.tsx: ${WORDS.added}: a hand-drawn list (1)`,
     ]);
   });
 });

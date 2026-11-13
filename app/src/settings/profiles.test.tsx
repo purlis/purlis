@@ -129,6 +129,30 @@ function Row({ at, plane = "/p" }: { at: number; plane?: string | null }) {
 }
 
 describe("Settings › You › Profiles", () => {
+  it("draws the profiles as a table of controls: a row a profile, its actions at its end (#6301)", async () => {
+    profiles = [row("work"), row("mine", { origin: "adopted", imported_at: null })];
+    render(<Row at={0} />);
+    const table = await screen.findByRole("table", { name: "This machine's profiles" });
+    expect(
+      within(table)
+        .getAllByRole("columnheader")
+        .map((one) => one.getAttribute("aria-label") ?? one.textContent),
+    ).toEqual(["Profile", "Sign-in", "Pin", "Actions"]);
+    // The icon's monogram first, kept from a reader; then the name, its harness and its folder.
+    const [work, mine] = within(table)
+      .getAllByRole("rowheader")
+      .map((one) => one.textContent ?? "");
+    expect(work).toMatch(/^CworkClaude Code, settings imported .+\/data\/profiles\/work\/config$/);
+    expect(mine).toBe("CmineClaude Code, the harness's own folder/data/profiles/mine/config");
+    const workRow = within(table).getAllByRole("row")[1] as HTMLElement;
+    const actions = workRow.querySelector("[data-actions]") as HTMLElement;
+    expect(
+      within(actions)
+        .getAllByRole("button")
+        .map((one) => one.textContent),
+    ).toEqual(["Import again", "Remove…"]);
+  });
+
   it("says each profile's pinned version and offers another major version installed", async () => {
     profiles = [
       row("work", { pinned: "2.1.283", installed: "3.0.0", offered: "3.0.0" }),
@@ -165,18 +189,40 @@ describe("Settings › You › Profiles", () => {
     expect(screen.queryByRole("button", { name: /^Update the pin of / })).toBeNull();
   });
 
+  it("names each of a profile's buttons with the words it shows (WCAG 2.5.3, #6301)", async () => {
+    profiles = [
+      row("work", { pinned: "2.1.283", installed: "3.0.0", offered: "3.0.0", standing: "none" }),
+      row("oc", {
+        kind: "opencode",
+        harness: "opencode",
+        plans: [{ id: "copilot", title: "GitHub Copilot" }],
+      }),
+    ];
+    render(<Row at={0} />);
+    const table = await screen.findByRole("table", { name: "This machine's profiles" });
+    const buttons = within(table).getAllByRole("button");
+    expect(buttons.length).toBeGreaterThan(4);
+    // Its words, without the ellipsis a reader is not read, are in its name.
+    for (const button of buttons)
+      expect(button.getAttribute("aria-label")).toContain(
+        (button.textContent ?? "").replace("…", ""),
+      );
+  });
+
   it("lists each profile with when its settings were imported", async () => {
     profiles = [row("work"), row("mine", { origin: "adopted", imported_at: null })];
     render(<Row at={0} />);
     expect(await screen.findByText("work")).toBeTruthy();
     expect(screen.getByText(/^Claude Code, settings imported /)).toBeTruthy();
     expect(screen.getByText("Claude Code, the harness's own folder")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Import the settings of work again" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Import the settings of mine again" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Import again: work" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Import again: mine" })).toBeNull();
     // Each profile's icon is drawn beside its name (#2922), hidden from assistive technology.
-    const icons = document.querySelectorAll(".ui-machine-entry .harness-icon");
+    const icons = within(screen.getByRole("table", { name: "This machine's profiles" }))
+      .getAllByRole("rowheader")
+      .map((heading) => heading.querySelector(".harness-icon"));
     expect(icons).toHaveLength(2);
-    for (const icon of icons) expect(icon.getAttribute("aria-hidden")).toBe("true");
+    for (const icon of icons) expect(icon?.getAttribute("aria-hidden")).toBe("true");
   });
 
   it("warns plainly on a profile whose sign-in the commands its chats run can read (#2037)", async () => {
@@ -232,18 +278,14 @@ describe("Settings › You › Profiles", () => {
     );
     expect(await screen.findByText("Claude Code, for sandboxed chats only")).toBeTruthy();
     // Its settings are purlis's: nothing to import again.
-    expect(
-      screen.queryByRole("button", { name: "Import the settings of codex-sandbox again" }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Import again: codex-sandbox" })).toBeNull();
     expect(screen.getByRole("status").textContent).toContain("made for sandboxed chats only");
   });
 
   it("imports a profile's settings again", async () => {
     profiles = [row("work")];
     render(<Row at={0} />);
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Import the settings of work again" }),
-    );
+    await userEvent.click(await screen.findByRole("button", { name: "Import again: work" }));
     await waitFor(() =>
       expect(sent.find((one) => one.cmd === "machine_profile_import")?.args).toEqual({
         name: "work",
@@ -328,7 +370,7 @@ describe("Settings › You › Profiles", () => {
         "Signs in with Claude Code's own sign-in on this Mac, as it was before purlis.",
       ),
     ).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Sign mine in" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Sign in: mine" })).toBeNull();
   });
 
   it("asks the project's window to sign a made profile in", async () => {
@@ -338,7 +380,7 @@ describe("Settings › You › Profiles", () => {
     window.addEventListener(PROFILE_SIGN_IN, hear);
     try {
       render(<Row at={0} plane="/projects/p" />);
-      await userEvent.click(await screen.findByRole("button", { name: "Sign work in" }));
+      await userEvent.click(await screen.findByRole("button", { name: "Sign in: work" }));
       expect(asked).toEqual([{ plane: "/projects/p", profile: "work" }]);
       expect(sent.some((one) => one.cmd === "type_profile_sign_in")).toBe(false);
     } finally {
@@ -350,7 +392,7 @@ describe("Settings › You › Profiles", () => {
     profiles = [row("work", { standing: "signed-out" })];
     render(<Row at={0} plane={null} />);
     expect(await screen.findByText("purlis profile sign-in work")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Sign work in" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Sign in: work" })).toBeNull();
   });
 
   it("signs an opencode profile in to the plan picked, and offers no Claude plan", async () => {
@@ -371,10 +413,10 @@ describe("Settings › You › Profiles", () => {
     try {
       render(<Row at={0} plane="/projects/p" />);
       await userEvent.click(
-        await screen.findByRole("button", { name: "Sign oc in to GitHub Copilot" }),
+        await screen.findByRole("button", { name: "Sign in to GitHub Copilot: oc" }),
       );
       expect(asked).toEqual([{ plane: "/projects/p", profile: "oc", provider: "github-copilot" }]);
-      expect(screen.queryByRole("button", { name: "Sign oc in" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Sign in: oc" })).toBeNull();
       expect(screen.queryByRole("button", { name: /Claude/ })).toBeNull();
     } finally {
       window.removeEventListener(PROFILE_SIGN_IN, hear);

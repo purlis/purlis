@@ -180,6 +180,16 @@ fn row(record: &Record, asker: u32, how: Finished) -> FinishedTask {
     }
 }
 
+/// **`record`'s task as a closed chat's card draws it** (#6214): its row, with why its last
+/// Reopen did not hold. `asker` is the asking chat's number now, 0 where it is not open. None
+/// for a dispatch that is not a finished task.
+pub(crate) fn card_row(held: &Held, record: &Record, asker: u32) -> Option<FinishedTask> {
+    Some(with_why_not_reopened(
+        held,
+        row(record, asker, Finished::of(record)?),
+    ))
+}
+
 /// Why a task that ended with a gone runner has no Reopen (#4420).
 const WENT_WITH_ITS_RUNNER: &str = "It cannot be reopened: its conversation went with its pool's \
                                     runner, which is gone. Dispatch a new task to go on.";

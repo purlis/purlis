@@ -7,11 +7,11 @@
  * version. The core is faked at its command boundary.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, userEvent, waitFor, within } from "storybook/test";
+import { expect, userEvent, within } from "storybook/test";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { ArtifactCompared, ArtifactHistory as History } from "./bindings";
 import { ArtifactHistory, AsOfStanding } from "./ArtifactHistory";
-import { expectFocusInSight, untilSettled } from "./stories.testkit";
+import { expectFocusInSight, untilSeenInDialog } from "./stories.testkit";
 
 const HISTORY: History = {
   kept_most: 20,
@@ -105,7 +105,9 @@ export const Compared: Story = {
     const page = within(canvasElement.ownerDocument.body);
     const compare = await page.findByRole("button", { name: "Compare" });
     await userEvent.click(compare);
-    await expect(await page.findByText(/data\.json › open/)).toBeVisible();
+    // Compare is pressed while the dialog may still be fading in, so its answer can arrive
+    // unseen (#6360).
+    await untilSeenInDialog(await page.findByText(/data\.json › open/));
   },
 };
 
@@ -117,10 +119,7 @@ export const NoneYet: Story = {
     await userEvent.click(await bar.findByRole("button", { name: "History…" }));
     const page = within(canvasElement.ownerDocument.body);
     const said = await page.findByText(/No versions yet/);
-    // The dialog fades in as it opens: whether it is seen is read once it has arrived.
-    await untilSettled(said.closest('[data-scope="dialog"][data-part="scrim"]') ?? said);
-    // And read again until it is, as the fade's end is the engine's (stories run 42857403995).
-    await waitFor(() => expect(said).toBeVisible());
+    await untilSeenInDialog(said);
     await expect(page.queryByRole("button", { name: "Show this version" })).toBeNull();
     await expect(page.queryByRole("button", { name: "Compare" })).toBeNull();
   },

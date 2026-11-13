@@ -3,10 +3,10 @@
 
 [workspace]
 resolver = "3"
-members = ["crates/purlis-core", "crates/purlis-cli", "crates/fake-harness", "crates/persona-statistics", "crates/extension-probe", "crates/studio-probe", "crates/check-probe", "crates/release-manifest", "crates/changelog", "crates/stand-in", "crates/session-protocol", "crates/same-user", "crates/terminal", "crates/browser-engine", "crates/host", "crates/linux-sandbox", "crates/skills", "crates/skill-grader", "crates/unicode", "crates/scale-project", "crates/crash-handler", "app/src-tauri"]
+members = ["crates/purlis-core", "crates/purlis-cli", "crates/fake-harness", "crates/persona-statistics", "crates/extension-probe", "crates/studio-probe", "crates/check-probe", "crates/release-manifest", "crates/changelog", "crates/stand-in", "crates/session-protocol", "crates/same-user", "crates/terminal", "crates/browser-engine", "crates/host", "crates/linux-sandbox", "crates/skills", "crates/skill-grader", "crates/unicode", "crates/scale-project", "crates/crash-handler", "crates/cluster-doctor", "app/src-tauri"]
 # Plain `cargo test` and `cargo clippy` cover the crates that need no built frontend.
 # The app crate compiles `app/dist` into itself, so it is checked through `npm run tauri`.
-default-members = ["crates/purlis-core", "crates/purlis-cli", "crates/fake-harness", "crates/persona-statistics", "crates/extension-probe", "crates/studio-probe", "crates/check-probe", "crates/release-manifest", "crates/changelog", "crates/stand-in", "crates/session-protocol", "crates/same-user", "crates/terminal", "crates/browser-engine", "crates/host", "crates/linux-sandbox", "crates/skills", "crates/skill-grader", "crates/unicode", "crates/scale-project", "crates/crash-handler"]
+default-members = ["crates/purlis-core", "crates/purlis-cli", "crates/fake-harness", "crates/persona-statistics", "crates/extension-probe", "crates/studio-probe", "crates/check-probe", "crates/release-manifest", "crates/changelog", "crates/stand-in", "crates/session-protocol", "crates/same-user", "crates/terminal", "crates/browser-engine", "crates/host", "crates/linux-sandbox", "crates/skills", "crates/skill-grader", "crates/unicode", "crates/scale-project", "crates/crash-handler", "crates/cluster-doctor"]
 # Third-party crates patched in below, under their own licences: built as dependencies, never
 # linted or tested as the workspace's own (vendor/tauri-plugin-wdio-webdriver/PURLIS.md).
 exclude = ["vendor"]
@@ -38,6 +38,8 @@ purlis-linux-sandbox = { path = "crates/linux-sandbox" }
 # The app's out-of-process crash handler (#5691, ruling O9): a companion process that writes a
 # minidump of a native crash for Reports to send on the next launch.
 purlis-crash-handler = { path = "crates/crash-handler" }
+# What a cluster lacks for the cluster operator, shared with the operator's own doctor (#4492).
+purlis-cluster-doctor = { path = "crates/cluster-doctor" }
 # What a chat's skill set is, and why: the one crate that works skills out (SK-1, #2764).
 purlis-skills = { path = "crates/skills" }
 # purlis's one rule for a character a reader does not see, and its one mark, generated (SK-49).

@@ -71,7 +71,7 @@ const SKILLS: ChatSkills = {
     warns: "both",
   },
   repos: [],
-  not_supported: null,
+  none_because: null,
   routing: { router: "acme", ms: 3000, fell_back: true, said: "acme did not answer." },
   missing: null,
 };

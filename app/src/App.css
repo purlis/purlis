@@ -873,6 +873,13 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* The ask for a file outside the workspace (#6216, the prototype's S7): the paths in the code
+   face, broken anywhere so a long one stays in the dialog. */
+.pane-link-path {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
 /* **A read-only terminal** (#3676, `ReadOnlyTerminal.tsx`): the words that say it is read-only,
    then the screen, one Tab stop with the ring on its edge, and the find bar over its corner. The
    grid's ground is the terminal's own, so the screen reads as a terminal that is over. */
@@ -7171,9 +7178,19 @@ nav.piece-files-head {
   color: var(--text-secondary);
 }
 
-.ui-settings-none {
-  margin: 0;
-  color: var(--text-muted);
+/* The search (#2920, N27): its box across the column, so its words are whole, and the "Set
+   here" toggle under it, at the column's start. */
+.ui-settings-search {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: flex-start;
+  min-inline-size: 0;
+}
+
+.ui-settings-search > .ui-settings-filter {
+  align-self: stretch;
+  min-inline-size: 0;
 }
 
 /* The left nav: the panel family's page navigation (`ViewNav`, #2930), which draws its
@@ -7538,6 +7555,26 @@ nav.piece-files-head {
   color: var(--text-quiet);
 }
 
+/* When and by what each was added (#6172, R65): in the muted words, its column one line wide. */
+.ui-hosts-added {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* **A record list, as the table family's** (#6301, after Your hosts): where a record is (a
+   folder, a host) in the quiet words beside its name, broken anywhere so a long path never
+   widens its column past the page. */
+/* A record table keeps room under it, before what its row offers next (Sign in, Add a pool). */
+.ui-record-table {
+  margin-block-end: var(--space-4);
+}
+
+.ui-record-where {
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-xs);
+  color: var(--text-quiet);
+}
+
 /* **Where Settings is narrow** (R75): under 728 px of its pane (the prototype's 760 px window
    less its 16 px gutters, the width its tab had) the side column is a band over
    the page, its pages one sideways-scrolling row, and each row's label goes over its control,
@@ -7847,22 +7884,7 @@ nav.piece-files-head {
   grid-column: 2 / -1;
 }
 
-/* You › This machine (ST-2): one line per thing the machine store holds, with its action at
-   the end of the line. */
-.ui-machine-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.ui-machine-entry {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) 0;
-}
-
+/* Where a record is, in the quiet words (Add a pool's image). */
 .ui-machine-path {
   flex: 1 1 auto;
   min-width: 0;
@@ -7871,12 +7893,8 @@ nav.piece-files-head {
   color: var(--text-quiet);
 }
 
-.ui-machine-entry .ui-setting-reset {
-  margin-inline-start: auto;
-}
-
 /* **The other devices' signing keys** (#5918, `settings/signing.tsx`): a heading and the line on
-   what removing one does, above their list. */
+   what removing one does, above their table. */
 .signing-others h3 {
   margin: var(--space-3) 0 var(--space-1);
   font-size: var(--font-size-base);
@@ -7885,6 +7903,51 @@ nav.piece-files-head {
 
 .signing-others .ui-setting-help {
   margin: 0;
+}
+
+/* **The pools, a table of controls** (#6301): under each pool's heading row, what is said and
+   set about it, one thing under another across the table. */
+.pools-about {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+}
+
+/* A pool's profiles, rows of the list family inside it, along the cell's width. */
+.pools-about .pool-profiles {
+  inline-size: 100%;
+}
+
+/* **A record's lines in a table's cell** (#6301): one under another (a name and where it is,
+   how a profile signs in, its buttons), each as wide as its words. A profile's icon stands
+   beside its name. */
+.ui-record-lines {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+}
+
+/* A profile's actions one under another, so its four columns fit the page. */
+.profiles-actions {
+  display: inline-grid;
+  justify-items: end;
+  gap: var(--space-2);
+}
+
+.profiles-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* A signing table's cell of words and a mark side by side (#6301): a device and its Older
+   setup, a Verified badge and who it commits as. */
+.signing-device,
+.signing-verified {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
 }
 
 /* **A pool's limits, folded under its row** (#4285, `PoolLimits.tsx`): the groups of what they
@@ -9351,4 +9414,37 @@ nav.piece-files-head {
   display: flex;
   gap: var(--space-2);
   align-items: center;
+}
+/* A closed chat's card (#6214): where its parts stand. Its look is its families'. */
+.closed-chat-card-popover {
+  inline-size: 26rem;
+  max-inline-size: calc(100vw - 32px);
+}
+.closed-chat-card {
+  display: grid;
+  gap: var(--space-2);
+}
+.closed-chat-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.closed-chat-card-title {
+  margin: 0;
+  font-size: var(--font-size-md);
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+}
+.closed-chat-card-when,
+.closed-chat-card-note {
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+/* Its report cut at four lines (D8): the whole of it is under Read it. */
+.closed-chat-card-report {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
 }

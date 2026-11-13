@@ -13,7 +13,7 @@ import { useMemo, useState } from "react";
 import { expect, screen, waitFor, within } from "storybook/test";
 import { OUTSIDE } from "../../actions";
 import { Button } from "../button/Button";
-import { expectFocusInSight, untilFocused } from "../../stories.testkit";
+import { expectFocusInSight, penFor, untilFocused } from "../../stories.testkit";
 import { TitleBarSwitch, type SwitchProject } from "../../TitleBarSwitch";
 
 /** The prototype's projects and workspaces, with what waits in each. */
@@ -586,11 +586,7 @@ export const Descenders: Story = {
     const cut = chips.flatMap((chip) => {
       const name = chip.querySelector<HTMLElement>('[data-part="name"]');
       if (name === null) return [`${chip.textContent ?? ""}: no name part`];
-      const style = getComputedStyle(name);
-      const pen = document.createElement("canvas").getContext("2d");
-      if (pen === null) return ["no canvas"];
-      pen.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-      const ink = pen.measureText(name.textContent ?? "");
+      const ink = penFor(name).measureText(name.textContent ?? "");
       const tall = ink.fontBoundingBoxAscent + ink.fontBoundingBoxDescent;
       const box = name.getBoundingClientRect().height;
       return box + 0.5 >= tall ? [] : [`${name.textContent ?? ""}: ${box}px of ${tall}px`];
