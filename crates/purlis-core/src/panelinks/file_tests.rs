@@ -569,7 +569,7 @@ fn a_file_its_branch_does_not_offer_is_no_link_and_says_why() {
         match links.resolve(&file(&ignored), &pane) {
             Resolved::NotALink(why) => assert_eq!(
                 why,
-                "git ignores this file, and the editor opens only a branch's own files"
+                "purlis will not open this file in its editor: it is not one of its branch's own files"
             ),
             other => panic!("{ignored}: expected no link with a reason, got {other:?}"),
         }
