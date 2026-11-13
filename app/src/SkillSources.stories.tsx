@@ -19,7 +19,12 @@ import { studio } from "./skillsListing.testkit";
 import { updateOffer, updateReview } from "./skillUpdates.testkit";
 import { extensionKey } from "./studioSources";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
-import { expectFocusInSight, tabInto, untilFocusWithin } from "./stories.testkit";
+import {
+  expectFocusInSight,
+  scrollIntoItsPane,
+  tabInto,
+  untilFocusWithin,
+} from "./stories.testkit";
 
 const commit = (c: string) => ({ id: c.repeat(40), short: c.repeat(7) });
 
@@ -198,6 +203,41 @@ const OFFER = {
   edited: true,
 };
 
+/** brainstorming's newer commit, too young to take for three days and a few hours (#6031). */
+const YOUNG = {
+  kind: "too-young",
+  why: "8888888 was committed 4 days ago, and this project installs only commits at least 7 days old: it can be installed in 3 days",
+  until: Math.floor(Date.now() / 1000) + 3 * 24 * 60 * 60 - 3600,
+};
+
+/** An org's controls (#6031): Superpowers allowed, platform-skills not, one skill blocked. */
+const POLICY = {
+  file: "purlis.toml",
+  state: {
+    kind: "set",
+    allow: ["https://github.com/obra/superpowers", "the extension acme-registry"],
+    block: ["systematic-debugging from https://github.com/obra/superpowers"],
+    min_age_days: 7,
+    exempt: [],
+    said: "This project's controls apply: 2 sources allowed, 1 skill blocked, commits at least 7 days old.",
+  },
+  sources: [
+    {
+      origin: { kind: "git", remote: SUPERPOWERS.remote, label: SUPERPOWERS.remote.label },
+      kind: null,
+      refused: null,
+      only: [],
+    },
+    {
+      origin: { kind: "git", remote: PLATFORM.remote, label: PLATFORM.remote.label },
+      kind: "not-allowed",
+      refused:
+        "https://git.example.com/platform/skills (main) is not on this project's allow list of skill sources",
+      only: [],
+    },
+  ],
+};
+
 /** test-driven-development as its review shows it: instructions only. */
 const TDD = {
   ...DEBUGGING,
@@ -226,8 +266,12 @@ function core({
   twoUpdates = false,
   overBudget = false,
   extension = false,
+  controls = false,
 }: {
   tooMuch?: boolean;
+  /** An org's `[skill_policy]` (#6031): platform-skills not on its allow list, systematic-debugging
+   *  blocked, and the update of brainstorming too young. */
+  controls?: boolean;
   /** An extension that declares `skill-source` too, listed beside the git sources (#3092). */
   extension?: boolean;
   /** A second update waiting from Superpowers, for Review updates… (#5354). */
@@ -305,9 +349,15 @@ function core({
             },
           },
         ];
+      case "skill_policy":
+        return controls ? POLICY : { file: "purlis.toml", state: { kind: "none" }, sources: [] };
       case "skill_updates":
         return {
-          offers: twoUpdates ? [OFFER, updateOffer("writing-plans", SUPERPOWERS.remote)] : [OFFER],
+          offers: controls
+            ? [{ ...OFFER, refused: YOUNG }]
+            : twoUpdates
+              ? [OFFER, updateOffer("writing-plans", SUPERPOWERS.remote)]
+              : [OFFER],
           unasked: [],
           unconfirmed: [{ remote: PLATFORM.remote, skills: ["deploy-checks"] }],
         };
@@ -361,6 +411,13 @@ function core({
               folder: DEBUGGING.folder,
               installed: [],
               marks: ["runs a script", "reaches 1 host"],
+              refused: controls
+                ? {
+                    kind: "blocked",
+                    why: "systematic-debugging from https://github.com/obra/superpowers is on this project's block list",
+                    until: null,
+                  }
+                : null,
             },
           ],
           not_skills: [
@@ -384,6 +441,19 @@ function core({
                   "The ops skills have a systematic-debugging too: where a chat gets both, the narrowest copy wins.",
                 ],
               },
+            ],
+            accepted: { commit: "3".repeat(40), skills: [] },
+          };
+        // It names test-driven-development bare, so a hint brings it along (#5874), unless the
+        // person unticked it.
+        if ((args as { names: string[] }).names[0] === "hints-at-tdd")
+          return {
+            commit: commit("3"),
+            skills: [
+              { ...DEBUGGING, hints: ["test-driven-development"] },
+              ...((args as { without: string[] }).without.includes("test-driven-development")
+                ? []
+                : [{ ...TDD, brought_by: DEBUGGING.name, brought_by_hint: true }]),
             ],
             accepted: { commit: "3".repeat(40), skills: [] },
           };
@@ -484,6 +554,8 @@ function Tab({
   at?: SourcesAt;
   /** Whether an extension's source is listed too. */
   extension?: boolean;
+  /** Whether the project holds an org's `[skill_policy]` (#6031). */
+  controls?: boolean;
 }) {
   return <StudioInPanel width={width} height={560} narrow={narrow} />;
 }
@@ -497,7 +569,11 @@ const meta = {
   component: Tab,
   args: { width: 1000 },
   beforeEach: ({ args }) => {
-    core({ twoUpdates: args.at?.at === "set-update", extension: args.extension === true });
+    core({
+      twoUpdates: args.at?.at === "set-update",
+      extension: args.extension === true,
+      controls: args.controls === true,
+    });
     openViewAt(HISTORY, {
       page: "sources",
       scope: AT_THE_ROOT,
@@ -533,6 +609,51 @@ export const Sources: Story = {
       await userEvent.tab();
     await untilFocusWithin(() => review, "Tab reaches Review update");
     expectFocusInSight();
+  },
+};
+
+/** **Sources on an org's project** (#6031, `prototype/skill-policy` A): one Notice says the
+ *  controls apply, with See the controls; platform-skills is marked Not on the allow list with
+ *  the core's sentence; the update waiting is too young, its Review out of reach. Tab reaches See
+ *  the controls. */
+export const SourcesWithControls: Story = {
+  args: { controls: true },
+  play: async ({ canvas }) => {
+    const notice = await canvas.findByTestId("skill-policy");
+    await expect(notice).toHaveTextContent("This project's controls apply");
+    await waitFor(() =>
+      expect(canvas.getAllByTestId("skill-source")[1]).toHaveTextContent("Not on the allow list"),
+    );
+    await expect(canvas.getByTestId("skill-updates")).toHaveTextContent(
+      "(too young, 3 days to go)",
+    );
+    const see = canvas.getByRole("button", { name: "See the controls" });
+    for (let step = 0; step < 30 && document.activeElement !== see; step++) await userEvent.tab();
+    await untilFocusWithin(() => see, "Tab reaches See the controls");
+    expectFocusInSight();
+  },
+};
+
+/** **A source's page on an org's project** (#6031): systematic-debugging marked Blocked and its
+ *  Review install out of reach, its reason on the row; the update of brainstorming too young,
+ *  with the day it can be taken. Not pictured: that day moves with the day the run is on. */
+export const SourcePageWithControls: Story = {
+  args: { controls: true, at: { at: "source", source: SOURCE, label: SUPERPOWERS.label } },
+  parameters: { screenshot: false },
+  play: async ({ canvas }) => {
+    const debugging = await canvas.findByTestId("offered-systematic-debugging");
+    await expect(debugging).toHaveTextContent("Blocked");
+    await expect(
+      canvas.getByRole("button", { name: "Review install: systematic-debugging" }),
+    ).toHaveAttribute("aria-disabled", "true");
+    await waitFor(() =>
+      expect(canvas.getByTestId("offered-brainstorming")).toHaveTextContent(
+        "Too young, 3 days to go",
+      ),
+    );
+    await expect(canvas.getByTestId("refused-brainstorming")).toHaveTextContent(
+      /it can be installed in 3 days, on \w+day \d+ \w+\./,
+    );
   },
 };
 
@@ -614,6 +735,39 @@ export const InstallReview: Story = {
     await within(review).findByTestId("install-commit");
     await userEvent.click(within(review).getByRole("button", { name: "Show scripts/repro.sh" }));
     await expect(within(review).getByRole("button", { name: "Install" })).toBeVisible();
+  },
+};
+
+/** **A skill that comes along by a hint** (#5874, `prototype/skill-hints` A): ticked, with why it
+ *  may be left out under its box. Space unticks it, and it waits under Left out of this install
+ *  to be ticked back, which the picture shows. */
+export const InstallReviewHint: Story = {
+  args: {
+    at: { at: "install", source: SOURCE, label: SUPERPOWERS.label, skill: "hints-at-tdd" },
+  },
+  play: async ({ canvas }) => {
+    const review = await canvas.findByTestId("install-review");
+    const box = await within(review).findByRole("checkbox", {
+      name: /^Install test-driven-development/,
+    });
+    await expect(within(review).getByTestId("reviewed-test-driven-development")).toHaveTextContent(
+      "Comes along by a hint: systematic-debugging names it bare.",
+    );
+    for (let step = 0; step < 40 && document.activeElement !== box; step++) await userEvent.tab();
+    await untilFocusWithin(() => box, "Tab reaches the hinted skill's box");
+    expectFocusInSight();
+    await userEvent.keyboard(" ");
+    const left = await within(review).findByRole("checkbox", {
+      name: "Install test-driven-development",
+    });
+    await waitFor(() => expect(left).not.toBeChecked());
+    await expect(within(review).queryByTestId("reviewed-test-driven-development")).toBeNull();
+    // The review is read again without it: once it says so, the picture shows where the hinted
+    // skill waits to be ticked back.
+    await waitFor(() =>
+      expect(within(review).getByTestId("install-commit")).toHaveTextContent("1 skill"),
+    );
+    scrollIntoItsPane(left);
   },
 };
 

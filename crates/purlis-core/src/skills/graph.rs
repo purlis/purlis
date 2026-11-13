@@ -10,7 +10,7 @@
 use std::path::Path;
 
 use purlis_skills::uses;
-pub use purlis_skills::uses::{MOST_SKILLS, Use};
+pub use purlis_skills::uses::{MOST_SKILLS, Use, hint_line, written_as_reference};
 
 use super::verbs::Level;
 use super::{LINKED_PLUGIN, built_in_names};
