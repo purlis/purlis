@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794580165242,
+  "lastUpdate": 1794583159341,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -48426,6 +48426,48 @@ window.BENCHMARK_DATA = {
             "value": 101.650564,
             "unit": "ms",
             "extra": "median of 5 runs: 100.620, 101.061, 101.651, 101.971, 102.012 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "6aadc3680643ade8d91b30edc7f957d1c65acf19",
+          "message": "#6452 review fixes: closed handoffs and chat-records docs (#6490)\n\n* A closed handoff opens its card, not \"no chat\"\n\nThe lookup let any dispatch record of a number answer. A handoff's ended\nrecord, a task's that ended owing no report, and one still running draw no\ncard (Finished::of is None), so the window said \"no chat\" for a chat whose\nown record (chat-records/closed.json) would have drawn one. Such a record now\nfalls through to the closed chat's record.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7AB6JJ9DRDFQ5RK4E0SGMA9\nPurlis-Persona: steward\n\n* plane-format: chat-records/closed.json and chat-screens/, with their 30-day sweeps\n\n#6452 added app/chat-records/closed.json and #6214 app/chat-screens/, and\nneither landed in plane-format.md with its tier, nor in the list of what\nretention collects at a project's open. Both are Clone state, swept at the\nopen (chatrecords::sweep, chatscreens::on_open).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7AB6JJ9DRDFQ5RK4E0SGMA9\nPurlis-Persona: steward\n\n* chatrecords, chatscreens: their tier is Clone state, as ADR 0069 names it\n\nBoth module docs said \"Clone state, device-bound, transient\". ADR 0069 gives\ndevice-bound only to a Machine store and transient only to a store that lives\none session; these live in the clone and are swept at 30 days.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7AB6JJ9DRDFQ5RK4E0SGMA9\nPurlis-Persona: steward\n\n* changes: the fragment #6452 left out\n\nA chat the person started, or a handoff, opens its closed-chat card when its\nnumber is looked up (#6304). #6452 shipped it with no changelog fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7AB6JJ9DRDFQ5RK4E0SGMA9\nPurlis-Persona: steward\n\n* chatrecords: swept at the dispatch records' boundary and clock skew\n\nA dispatch record goes 30 days or more after its end, and an end standing more\nthan END_SKEW in the future is aged from the file's last write. The closed\nchats' sweep kept an entry at exactly 30 days, and kept one whose end a clock\nfar ahead wrote for ever. Both now age as a dispatch record does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7AB6JJ9DRDFQ5RK4E0SGMA9\nPurlis-Persona: steward\n\n* chatrecords: the sweep removes a killed write's temp file\n\nA write of closed.json killed between its temp file and the rename left\n.purlis-generated.closed.json.<pid>.<tag>.tmp, holding chats' titles, which\nnothing removed. The sweep removes it under the folder's lock, which every\nwrite holds, and touches nothing else there.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7AB6JJ9DRDFQ5RK4E0SGMA9\nPurlis-Persona: steward\n\n* A closed chat's palette row names only what its card can do\n\nThe row said \"Shows its card, with Read it and Reopen.\" whatever the card\nhad: a chat no dispatch started, whose card draws both disabled, was offered\nboth. It now names Read it where the screen was kept and Reopen where the task\nreopens, and neither where the card has neither.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7AB6JJ9DRDFQ5RK4E0SGMA9\nPurlis-Persona: steward\n\n* chatrecords: an end in the future is swept, and never kept\n\nThe sweep aged a future end from closed.json's last write, but every keep\nrewrites that file, so such an entry never aged and the newest-first cap\nnever evicted it. keep() now writes an end no later than now, and the sweep\ntakes an end that stands in the future at once. The copied aged_from clamp\ngoes, and END_SKEW is private to dispatchrecord again.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7AB6JJ9DRDFQ5RK4E0SGMA9\nPurlis-Persona: steward\n\n* chatscreens: a screen goes at 30 days or more, as plane-format says\n\nThe sweep took a screen only past 30 days (age > KEEP_FOR), where\nplane-format.md and the dispatch records go at 30 days or more.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7AB6JJ9DRDFQ5RK4E0SGMA9\nPurlis-Persona: steward\n\n* changes: a handoff's card can Read its kept screen\n\nThe fragment said Read it is disabled on a chat no dispatch started. A handoff\nhas a dispatch record, so keep_screen_on_close keeps its screen, and Read it\nopens it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7AB6JJ9DRDFQ5RK4E0SGMA9\nPurlis-Persona: steward\n\n* chatrecords, chatscreens: the tier line in its sibling form\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7AB6JJ9DRDFQ5RK4E0SGMA9\nPurlis-Persona: steward\n\n* chatrecords: the temp sweep leaves a write that may be under way\n\nLock::bounded answers an unheld lock where the folder cannot be locked, so\nthe sweep could run beside a write and remove its temp file before the rename.\nIt now removes only a temp file last written more than MOST_WAIT ago.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7AB6JJ9DRDFQ5RK4E0SGMA9\nPurlis-Persona: steward\n\n* chatlookup tests: use the chat records' names, not full paths\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7AB6JJ9DRDFQ5RK4E0SGMA9\nPurlis-Persona: steward\n\n* chatlookup: a record that draws no card finds its chat by its ULID\n\nThe fall-through to a closed chat's record matched by number. The count of\nnumbers starts over where the record of open chats could not be read, so a\nnumber dealt again could show an older chat's card for a handoff. Where the\ndispatch record names its chat's ULID, the chat record is found by it.\nmakes_a_card is public, for the window's card to use.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7AB6JJ9DRDFQ5RK4E0SGMA9\nPurlis-Persona: steward\n\n* chatcard: card_of asks the core whether a record makes a card\n\ncard_of repeated chatlookup's rule for which dispatch records draw a card. It\nnow calls chatlookup::makes_a_card. A pane's chat link to a closed handoff\nresolves to its chat's record (panelinks test).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7AB6JJ9DRDFQ5RK4E0SGMA9\nPurlis-Persona: steward\n\n* A handoff's card says why Reopen does nothing in its own words\n\nA handoff, or a task that ended owing no report, is drawn from its chat's\nrecord with no task, and its Reopen gave the ordinary chat's reason, \"purlis\nkeeps the conversation of a dispatched task only\", which is wrong for a chat\na dispatch started. ChatCard says whether a dispatch started it, and such a\ncard says it was handed off or owed no report. Bindings carry the new field.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7AB6JJ9DRDFQ5RK4E0SGMA9\nPurlis-Persona: steward\n\n* chatlookup tests: rustfmt\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7AB6JJ9DRDFQ5RK4E0SGMA9\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-13T14:39:59Z",
+          "tree_id": "5b873a2770b1e905f37abe48fbd11db95ec8dde1",
+          "url": "https://github.com/purlis/purlis/commit/6aadc3680643ade8d91b30edc7f957d1c65acf19"
+        },
+        "date": 1794583152578,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5521834999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.539, 0.546, 0.552, 0.559, 0.568 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.242955,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.067, 16.155, 16.243, 16.285, 16.326 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.78953849999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.232, 100.456, 101.790, 102.438, 102.932 ms"
           }
         ]
       }
