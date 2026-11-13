@@ -177,7 +177,7 @@ pub fn sweep(root: &Path, named: impl Fn(&str) -> bool, now: SystemTime) -> usiz
             !named(&one.id)
                 || now
                     .duration_since(one.written)
-                    .is_ok_and(|age| age > crate::retention::KEEP_FOR)
+                    .is_ok_and(|age| age >= crate::retention::KEEP_FOR)
         })
         .filter(|one| forget(root, &one.id))
         .count();
