@@ -53,6 +53,9 @@ pub struct Paused {
     pub since: u32,
     /// The chats held still for it: itself, and its tasks at work below it then.
     pub held: Vec<u32>,
+    /// Whether the person has answered it already, with Raise the budget, while it still holds
+    /// them (Q262): an ask is answered once, so a later press writes no answer.
+    pub raised: bool,
 }
 
 /// What one project holds.
@@ -155,6 +158,7 @@ impl Pauses {
                 why,
                 since: u32::try_from(now).unwrap_or(0),
                 held: chats.clone(),
+                raised: false,
             },
         );
         Some(chats)
@@ -220,6 +224,7 @@ impl Pauses {
         let Some(paused) = inner.paused.get(&chat).cloned() else {
             return Err("This chat is no longer paused.".to_owned());
         };
+        let answers = !paused.raised;
         let then = match (paused.why, option) {
             (Why::Budget(reached), CONTINUE) => {
                 inner.continued.insert(chat, reached);
@@ -229,9 +234,13 @@ impl Pauses {
             // Answered, and still held: it goes on once a look finds it within the limit the
             // person raises ([`let_go_of_budgets`]).
             (Why::Budget(_), RAISE) => {
+                if let Some(paused) = inner.paused.get_mut(&chat) {
+                    paused.raised = true;
+                }
                 return Ok(Answered {
                     held: Vec::new(),
                     then: Then::Raise,
+                    answers,
                 });
             }
             (Why::Looping(_), FINE) => {
@@ -248,6 +257,7 @@ impl Pauses {
         Ok(Answered {
             held: paused.held,
             then,
+            answers,
         })
     }
 }
@@ -258,6 +268,9 @@ pub struct Answered {
     /// The chats it held still, which go on.
     pub held: Vec<u32>,
     pub then: Then,
+    /// Whether this press is the ask's answer, its first (Q262): a Raise the budget answered
+    /// it already, and a later press writes none.
+    pub answers: bool,
 }
 
 /// What follows a pause's end.
@@ -397,7 +410,9 @@ pub(crate) fn answer(held: &Arc<Held>, chat: u32, option: &str) -> Result<(), St
         .map(|(_, paused)| group_of(paused.why));
     let answered = held.pauses().answer(chat, option)?;
     // R-229: the person's answer, from the window (`answer_pause` is the window's alone).
-    if let Some(ask) = group {
+    if let Some(ask) = group
+        && answered.answers
+    {
         let allowed = matches!(answered.then, Then::GoOn | Then::Raise);
         crate::chatlog::answered_in_the_window(held.hooks(), chat, ask, allowed);
     }

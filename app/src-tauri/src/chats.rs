@@ -9309,7 +9309,7 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::pl
                 // every block held is (`taskblocks::Blocks`), in memory only.
                 let registered = targets
                     .iter()
-                    .filter(|target| register_live(&blocks, chat, target))
+                    .filter(|target| register_live(&blocks, &stops, chat, target))
                     .count();
                 if registered > 0
                     && let Some(moved) = lock(&moved).clone()
@@ -9400,13 +9400,29 @@ fn became_a_block(
 /// Holds `target`, a host and port chat `chat`'s proxy asks about, as the block it is for the
 /// chat (#1709), as a grant names it: what the asks registry lists. Held as waiting on the
 /// person, so a burst of later asks does not push it out while its connection waits. Whether it
-/// is one a grant can name.
-fn register_live(blocks: &crate::taskblocks::Blocks, chat: u32, target: &str) -> bool {
+/// is one a grant can name. An ask it raises, one not held already, is written raised through
+/// `stops` (R-229, Q262), as every sandbox ask is.
+fn register_live(
+    blocks: &crate::taskblocks::Blocks,
+    stops: &Mutex<Option<StopWriter>>,
+    chat: u32,
+    target: &str,
+) -> bool {
+    use purlis_core::eventlog::stops::{AskGroup, AskRaised, Stop};
     let Some(block) = live_block(target) else {
         return false;
     };
+    let raised = !blocks.holds(chat, &block);
     blocks.heard_waiting(chat, block.clone());
     blocks.held_live(chat, &block, target);
+    if raised && let Some(write) = lock(stops).clone() {
+        let ask = Stop::AskRaised(AskRaised {
+            ask: AskGroup::Sandbox,
+        });
+        if let Err(why) = write(chat, ask, None) {
+            tracing::warn!("purlis: chat {chat}'s sandbox ask was not written ({why})");
+        }
+    }
     true
 }
 

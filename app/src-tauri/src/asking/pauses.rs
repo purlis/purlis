@@ -119,6 +119,7 @@ mod tests {
             }),
             since: 1_000,
             held: vec![7],
+            raised: false,
         };
         let shown = paused(7, &at, vec!["steward 2".into(), "#7 drill".into()], None);
         assert_eq!(shown.session, 7);
@@ -141,6 +142,7 @@ mod tests {
             why: Why::Looping(purlis_core::looping::Why::Failing { times: 6 }),
             since: 1_000,
             held: vec![3],
+            raised: false,
         };
         let shown = paused(3, &at, vec!["steward 3".into()], None);
         assert_eq!(shown.source, AskSource::Looping);
@@ -163,6 +165,7 @@ mod tests {
             }),
             since: 1_000,
             held: vec![7],
+            raised: false,
         };
         let waited_on = paused(7, &at, vec!["#7 drill".into()], Some(2));
         assert_eq!(waited_on.expires, None);
@@ -182,6 +185,7 @@ mod tests {
             }),
             since: 1_000,
             held: vec![7],
+            raised: false,
         };
         let shown = paused(7, &at, vec!["#7 drill".into()], None);
         assert!(shown.risk.is_none());

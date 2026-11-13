@@ -161,6 +161,11 @@ const ASK_SAID: Readonly<Record<string, string>> = {
 /** The groups whose Allow lets the chat go on, and whose refusal stops it. */
 const GOES_ON = new Set(["loop_pause", "budget"]);
 
+/** What an Allow of a group says where it is not the group's usual words (Q262). */
+const ALLOWED_SAID: Readonly<Record<string, string>> = {
+  budget: "Raised its budget",
+};
+
 /** Who answered, as an ask's row says it. */
 const BY_SAID: Readonly<Record<string, string>> = {
   window: "by you in the window",
@@ -209,9 +214,7 @@ export function askSaid(row: AskRow): string {
   const goesOn = GOES_ON.has(row.ask);
   const said =
     answer.answer === "allowed"
-      ? goesOn
-        ? "Let it go on"
-        : "Allowed"
+      ? (ALLOWED_SAID[row.ask] ?? (goesOn ? "Let it go on" : "Allowed"))
       : goesOn
         ? "Stopped"
         : "Kept blocked";

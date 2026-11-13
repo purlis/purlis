@@ -2213,15 +2213,16 @@ pub async fn allow_sandbox_block(
         // The person's Allow on the held connection, now it has succeeded, starts its block
         // count again (R-211, Q253).
         crate::pausing::allowed(&held, session);
-        // R-229: the person's Allow, in the chat's Chat log.
+        // Answered: neither this Notice nor a question for several tasks answers it again.
+        held.chats().blocks().answered(session, &block);
+        // R-229: the person's Allow, in the chat's Chat log, once the block is answered, so a
+        // dismissal racing it finds nothing left to answer and writes nothing (Q262).
         crate::chatlog::answered_in_the_window(
             held.hooks(),
             session,
             purlis_core::eventlog::stops::AskGroup::Sandbox,
             true,
         );
-        // Answered: neither this Notice nor a question for several tasks answers it again.
-        held.chats().blocks().answered(session, &block);
         Ok(allowed)
     })
     .await
