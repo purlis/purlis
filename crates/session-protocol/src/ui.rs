@@ -776,6 +776,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The plain-file vaults offered to move into the keychain before a person turns their
     // sandbox down (#2071): read in their window alone.
     "plain_file_vaults",
+    // What No sandbox at setup would move into the keychain, and the team's vault that refuses
+    // it (T1-25): it names the project's vaults, as the list above does.
+    "no_sandbox_at_setup",
     // Your levels waiting for Confirm, and the Confirm that makes one count at a start
     // (#2071, ADR 0096 §7): the window's alone, as the record they read and write is.
     "sandbox_levels_waiting",
@@ -1334,6 +1337,19 @@ pub fn names_the_plane_root(method: &str, args: &Value) -> bool {
 pub const THE_PLANE_ROOT_IS_THE_WINDOWS: &str =
     "The project's own files are listed and watched in purlis's window only.";
 
+/// **Whether a call chooses No sandbox at setup** (T1-25, Q251): `open_repo` or
+/// `create_project` with `protection: off`. No sandbox is chosen only in the window on this
+/// Mac, as `no_sandbox_at_setup`, which says what it would move and who refuses it, is the
+/// window's alone ([`WINDOW_ONLY`]). So such a call is refused to a link before its handler is
+/// asked ([`NO_SANDBOX_IS_THE_WINDOWS`]): no vault is moved, no level is written, and no vault
+/// or person is named. Any other level, or none, is the command's to answer.
+pub fn chooses_no_sandbox(method: &str, args: &Value) -> bool {
+    matches!(method, "open_repo" | "create_project") && args["protection"] == "off"
+}
+
+/// What a link is told when its call chooses No sandbox at setup: the same for every project.
+pub const NO_SANDBOX_IS_THE_WINDOWS: &str = "No sandbox is chosen in purlis's window on this Mac.";
+
 /// **Whether a call names a workspace's own files** (#5375): a branch's path, find or watch
 /// with a workspace and no repo, which is how the window names the files in the workspace's
 /// folder that are no repo's. They are the person's window's alone, as `workspace_tree` and
@@ -1431,6 +1447,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     // A chat's Chat log (R-224, T1-27): a read of the event log.
     "chat_log",
     // A chat whose program ended with its session host (#2007): what its pane says.
+    // A chat's Chat log (T1-27, R-224): its start and end rows, a query of the event log, read only.
+    "chat_log",
     "chat_lost_with_the_host",
     "chat_moves",
     "chat_network",
@@ -1827,6 +1845,14 @@ impl Serving {
                     {
                         Answered::Now(Some(reply(Outcome::Err(Value::String(
                             A_WORKSPACES_OWN_FILES_ARE_THE_WINDOWS.into(),
+                        )))))
+                    }
+                    (Some(server), true)
+                        if server.methods.contains(&method)
+                            && chooses_no_sandbox(&method, &args) =>
+                    {
+                        Answered::Now(Some(reply(Outcome::Err(Value::String(
+                            NO_SANDBOX_IS_THE_WINDOWS.into(),
                         )))))
                     }
                     (Some(server), true) if server.methods.contains(&method) => {

@@ -645,6 +645,7 @@ export const commands = {
 	 *  local project's level from the disk, so off the window's thread (#1949).
 	 */
 	setupProtection: () => typedError<SetupProtection, string>(__TAURI_INVOKE("setup_protection")),
+	noSandboxAtSetup: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The project template that fits the repo at `path`, by id, or `null` when none does or `path`
 	 *  is not a full path to a directory: what the first run's "Fits the repo" says it will pick
@@ -8971,6 +8972,21 @@ export type NewBranch = {
 	warnings: string[],
 };
 
+/**
+ *  **What choosing No sandbox at setup would do** (T1-25; R-066, R-293, R-298), read from the
+ *  core ([`purlis_core::sandbox::personal::no_sandbox::report`]) before the press: the vaults
+ *  that move into the system keychain in the press that writes the level, the warning's key,
+ *  and the team's vault that refuses No sandbox, where there is one. Nothing is written.
+ */
+export type NoSandboxAtSetup = {
+	/**  This machine's plain-file vaults that move, by name. */
+	moves: string[],
+	/**  The key of the warning the row shows beside them. */
+	warning: string,
+	/**  The team's vault that refuses No sandbox here, where there is one. */
+	refused: TeamVaultRefusal | null,
+};
+
 /**  A folder of a source that is not a skill purlis offers. */
 export type NotASkill = {
 	folder: string,
@@ -16422,6 +16438,16 @@ export type TeamOffState = {
 	said: string,
 	/**  `null` until answered; `true` accepted (no sandbox by default), `false` kept on. */
 	answer: boolean | null,
+};
+
+/**  A plain-file vault the team's committed file registers, which refuses No sandbox (R-298). */
+export type TeamVaultRefusal = {
+	/**  The vault's name. */
+	vault: string,
+	/**  Who added it, as plain text: a name from git, or "your team". */
+	owner: string,
+	/**  The refusal, in the core's words. */
+	said: string,
 };
 
 /**

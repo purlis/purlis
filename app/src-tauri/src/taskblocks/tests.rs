@@ -338,6 +338,35 @@ fn a_held_connection_the_chat_stopped_waiting_on_is_withdrawn_once() {
     assert!(blocks.stopped_waiting(4, &waits).is_none(), "once");
 }
 
+/// R-206 (Q253): a held connection's withdrawn ask names the call it was held under, so the
+/// block loop counts the connections one call held once.
+#[test]
+fn a_withdrawn_held_connection_names_the_call_it_was_held_under() {
+    let blocks = Blocks::default();
+    blocks.called(&purlis_core::hookwire::ToolCall {
+        chat: 4,
+        tool_hook: "pretooluse".to_owned(),
+        tool: Some("Bash".to_owned()),
+        call: Some("toolu_1".to_owned()),
+        args: Some("aa".to_owned()),
+        decision: purlis_core::hookwire::Decision::Allow,
+        rule: None,
+        arm: None,
+        hook_ms: 1,
+        agent: None,
+        at_ms: 0,
+        skill: None,
+    });
+    for host in ["one.example.com", "two.example.com", "three.example.com"] {
+        let block = held(&seen(4, host));
+        blocks.heard_waiting(4, block.clone());
+        blocks.held_live(4, &block, &format!("{host}:443"));
+        let withdrawn = blocks.stopped_waiting(4, &block).expect("an ask until now");
+        assert_eq!(withdrawn.call.as_deref(), Some("toolu_1"), "{host}");
+        assert_eq!(withdrawn.args.as_deref(), Some("aa"), "{host}");
+    }
+}
+
 /// #1903's rule on the registry (T1-09): a named refusal that follows the same refusal
 /// unnamed replaces it, so the chat has one ask for it, never a second.
 #[test]

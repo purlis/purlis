@@ -2200,6 +2200,9 @@ pub async fn allow_sandbox_block(
             }
             answered => answered?,
         };
+        // The person's Allow on the held connection, now it has succeeded, starts its block
+        // count again (R-211, Q253).
+        crate::pausing::allowed(&held, session);
         // Answered: neither this Notice nor a question for several tasks answers it again.
         held.chats().blocks().answered(session, &block);
         Ok(allowed)
