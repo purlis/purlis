@@ -115,7 +115,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 /** **An org's controls**: each key read only, set in purlis.toml, and the acts recorded. Tab
- *  reaches the table of acts. */
+ *  reaches the table of acts. Its column names wear the section label's one spelling (#6505). */
 export const Set: Story = {
   play: async ({ canvas }) => {
     await expect(await canvas.findByTestId("skill-policy-allow")).toHaveTextContent(
