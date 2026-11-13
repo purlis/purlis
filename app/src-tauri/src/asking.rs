@@ -4242,8 +4242,9 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     let now_secs = crate::sandboxing::now_secs();
     let mut permissions = held.hooks().asks().pending_since(now);
     // **When each ask's wait ended unanswered, by its key** (ADR 0121 decision 15, #6007),
-    // where an answer still reaches the chat: a hook ask that lapsed, a held connection that
-    // gave up, a run grant and a Secret ask past their command's hold.
+    // where an answer still reaches the chat: a hook ask that lapsed, a run grant and a Secret
+    // ask past their command's hold. A held connection that timed out is a block, not an ask
+    // (R-290, Q154).
     let mut timed_out: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
     let ago = |at: Instant| now_secs.saturating_sub(now.saturating_duration_since(at).as_secs());
     for lapsed in held.hooks().asks().lapsed(now) {
@@ -4277,9 +4278,6 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     for (session, block, first) in &held_blocks {
         if let Some(first) = first {
             since.insert(block_key(*session, block), *first);
-        }
-        if let Some(gave_up) = chats.blocks().gave_up_at(*session, block) {
-            timed_out.insert(block_key(*session, block), gave_up);
         }
     }
     let removals: Vec<_> = crate::removalasks::waiting(held)

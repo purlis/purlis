@@ -157,10 +157,9 @@ pub struct Blocks {
     /// held, so the person may still answer one, and listed by no ask until they take it up
     /// ([`Self::taken_up`]) or a command of the chat is refused the same.
     quiet: Mutex<HashMap<u32, Vec<HeldBlock>>>,
-    /// The blocks of each open chat whose held connection gave up with nobody's answer, and
-    /// when, in seconds since 1970 (#6007): still answerable, and an Allow tells the chat to
-    /// retry. Until it is answered, held again, or the chat ends.
-    gave_up: Mutex<HashMap<u32, Vec<(HeldBlock, u64)>>>,
+    /// The tool of each open chat's latest call, by the harness's name for it, as its hook
+    /// line said (R-290): the call a connection held now is held under.
+    calls: Mutex<HashMap<u32, String>>,
 }
 
 impl Blocks {
@@ -310,7 +309,13 @@ impl Blocks {
     /// it, until it is answered, it no longer waits ([`Self::no_longer_waits`]), or the chat
     /// ends. At most [`MOST_WAITING_PER_CHAT`] wait at once, the oldest going first.
     pub fn heard_waiting(&self, session: u32, block: HeldBlock) {
-        self.forget_gave_up(session, &block);
+        // The same refusal, heard unnamed before, is this one now (#1903): one ask, never two.
+        if block.names_a_host() {
+            let unnamed = HeldBlock::unnamed_host(&block.operation, &block.kind);
+            if self.holds(session, &unnamed) {
+                self.answered(session, &unnamed);
+            }
+        }
         {
             let mut waiting = self.waiting();
             let mine = waiting.entry(session).or_default();
@@ -335,41 +340,54 @@ impl Blocks {
         }
     }
 
-    /// `block` of chat `session` waits on the person no longer because its held connection
-    /// gave up with nobody's answer, at `at` (#6007): it stays, timed out and answerable.
-    pub fn gave_up(&self, session: u32, block: &HeldBlock, at: u64) {
-        self.no_longer_waits(session, block);
-        let mut gave_up = self.gave_ups();
-        let mine = gave_up.entry(session).or_default();
-        mine.retain(|(one, _)| one != block);
-        mine.push((block.clone(), at));
-        if mine.len() > MOST_WAITING_PER_CHAT {
-            mine.remove(0);
-        }
-    }
-
-    /// When `block` of chat `session` gave up with nobody's answer, where it did and is still
-    /// held (#6007).
-    pub fn gave_up_at(&self, session: u32, block: &HeldBlock) -> Option<u64> {
-        self.gave_ups()
-            .get(&session)?
-            .iter()
-            .find(|(one, _)| one == block)
-            .map(|(_, at)| *at)
-    }
-
-    fn gave_ups(&self) -> std::sync::MutexGuard<'_, HashMap<u32, Vec<(HeldBlock, u64)>>> {
-        self.gave_up.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    fn forget_gave_up(&self, session: u32, block: &HeldBlock) {
-        let mut gave_up = self.gave_ups();
-        if let Some(mine) = gave_up.get_mut(&session) {
-            mine.retain(|(one, _)| one != block);
+    /// **Chat `session` stopped waiting on `block`, its held connection** (R-290, Q154): the
+    /// connection timed out, so the ask is withdrawn. Whether it was an ask until now: true
+    /// once only, whoever asks first, so the refusal becomes one block, never two.
+    pub fn stopped_waiting(&self, session: u32, block: &HeldBlock) -> bool {
+        let was = {
+            let mut waiting = self.waiting();
+            let Some(mine) = waiting.get_mut(&session) else {
+                return false;
+            };
+            let before = mine.len();
+            mine.retain(|one| one != block);
+            let was = mine.len() != before;
             if mine.is_empty() {
-                gave_up.remove(&session);
+                waiting.remove(&session);
             }
+            was
+        };
+        if was {
+            self.answered(session, block);
         }
+        was
+    }
+
+    /// **Chat `session` made a call of `tool`** (R-290, Q154): it waits on its held
+    /// connections no longer, so each one's ask is withdrawn. Answers the tool of the call they
+    /// were held under, where one was heard, and the blocks withdrawn, each once.
+    pub fn called(&self, session: u32, tool: Option<&str>) -> (Option<String>, Vec<HeldBlock>) {
+        let was = {
+            let mut calls = self.calls();
+            match tool {
+                Some(tool) => calls.insert(session, tool.to_owned()),
+                None => calls.remove(&session),
+            }
+        };
+        let withdrawn = self.waiting().remove(&session).unwrap_or_default();
+        for block in &withdrawn {
+            self.answered(session, block);
+        }
+        (was, withdrawn)
+    }
+
+    /// The tool of chat `session`'s latest call, where one was heard (R-290).
+    pub fn calling(&self, session: u32) -> Option<String> {
+        self.calls().get(&session).cloned()
+    }
+
+    fn calls(&self) -> std::sync::MutexGuard<'_, HashMap<u32, String>> {
+        self.calls.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Whether chat `session` is held on `block` now.
@@ -382,7 +400,6 @@ impl Blocks {
     /// `block` of chat `session` was answered: it is held no longer.
     pub fn answered(&self, session: u32, block: &HeldBlock) {
         self.no_longer_waits(session, block);
-        self.forget_gave_up(session, block);
         self.loud(session, |one| one == block);
         self.noticed().remove(&session);
         let mut held = self.held();
@@ -408,7 +425,7 @@ impl Blocks {
         self.since().remove(&session);
         self.waiting().remove(&session);
         self.quiet().remove(&session);
-        self.gave_ups().remove(&session);
+        self.calls().remove(&session);
     }
 
     fn noticed(&self) -> std::sync::MutexGuard<'_, HashMap<u32, u32>> {
