@@ -180,7 +180,9 @@ pub(crate) fn keep_screen_on_close(
 ) {
     // Where this machine keeps none, nothing is kept, and what was kept goes now.
     if !purlis_core::chatscreens::keeps(root) {
-        let _ = purlis_core::chatscreens::forget_all(root);
+        if let Err(why) = purlis_core::chatscreens::forget_all(root) {
+            tracing::info!("purlis: keeping task screens is off, and {why}");
+        }
         return;
     }
     let me = dispatchrecord::ChatRef {

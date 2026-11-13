@@ -352,7 +352,10 @@ fn turning_keeping_off_unlocked_leaves_a_write_that_may_be_under_way() {
     no_flock::here(|| set_keep(&root, false)).unwrap();
 
     assert!(!killed.exists());
-    assert!(under_way.exists(), "a write younger than the lock wait may be live");
+    assert!(
+        under_way.exists(),
+        "a write younger than the lock wait may be live"
+    );
 }
 
 #[test]
@@ -478,4 +481,21 @@ fn a_filesystem_that_cannot_flock_still_keeps_deletes_and_sweeps() {
         assert_eq!(set_keep(&root, false), Ok(()), "off still deletes");
         assert!(!is_kept(&root, OTHER));
     });
+}
+
+#[test]
+fn turning_it_off_while_another_purlis_writes_says_to_wait_and_try_again() {
+    // #6508's review: the window said purlis "could not take their lock", an internal.
+    let (_dir, root) = settable();
+    keep(&root, CHAT, "abc").unwrap();
+    let _writing = locked(&root).unwrap().expect("this filesystem locks");
+
+    let said = set_keep(&root, false).expect_err("not deleted");
+
+    assert!(
+        said.contains("another purlis was still writing one"),
+        "{said}"
+    );
+    assert!(said.contains("then turn it off again"), "{said}");
+    assert!(!said.contains("lock"), "{said}");
 }

@@ -94,7 +94,7 @@ fn path_of(root: &Path, id: &str) -> Option<PathBuf> {
 pub fn keep(root: &Path, id: &str, screen: &str) -> std::io::Result<()> {
     let off = || std::io::Error::other("this machine keeps no task's screen");
     if !keeps(root) {
-        let _ = forget_all(root);
+        forget_all_logged(root);
         return Err(off());
     }
     let path = path_of(root, id)
@@ -102,7 +102,9 @@ pub fn keep(root: &Path, id: &str, screen: &str) -> std::io::Result<()> {
     crate::keptscreen::made_private(&dir(root))?;
     let held = locked(root)?;
     if !keeps(root) {
-        let _ = forget_all_held(root, held.is_some());
+        if let Err(why) = forget_all_held(root, held.is_some()) {
+            tracing::info!("purlis: keeping task screens is off, and {why}");
+        }
         return Err(off());
     }
     crate::keptscreen::write(&[dir(root)], &path, screen)?;
@@ -195,7 +197,7 @@ fn there(root: &Path) -> bool {
 /// where this machine keeps none ([`keeps`]), which deletes every kept screen.
 pub fn kept(root: &Path, id: &str) -> Option<String> {
     if !keeps(root) {
-        let _ = forget_all(root);
+        forget_all_logged(root);
         return None;
     }
     crate::keptscreen::read(&[dir(root)], &path_of(root, id)?)
@@ -219,7 +221,7 @@ pub fn is_kept(root: &Path, id: &str) -> bool {
 pub fn held(root: &Path) -> (usize, u64) {
     let on = keeps(root);
     if !on {
-        let _ = forget_all(root);
+        forget_all_logged(root);
     }
     let kept = every_kept(root);
     let temps: Vec<u64> = temps_left(root, SystemTime::now(), !on)
@@ -351,7 +353,7 @@ fn held_to_the_total(root: &Path) -> usize {
 /// With the setting off ([`keeps`]), every kept screen goes. Answers how many went.
 pub fn sweep(root: &Path, named: impl Fn(&str) -> bool, now: SystemTime) -> usize {
     if !keeps(root) {
-        return forget_all(root).unwrap_or(0);
+        return forget_all_logged(root);
     }
     if !there(root) {
         return 0;
@@ -397,12 +399,28 @@ pub fn forget_all(root: &Path) -> Result<usize, String> {
         return Ok(0);
     }
     let held = locked(root).map_err(|why| {
-        format!(
-            "The kept screens were not deleted: purlis could not take their lock ({why}). Turn \
-             it off again."
-        )
+        if why.kind() == std::io::ErrorKind::TimedOut {
+            "The kept screens were not deleted: another purlis was still writing one. Wait a \
+             moment, then turn it off again."
+                .to_owned()
+        } else {
+            format!(
+                "The kept screens were not deleted: purlis could not open {} ({why}). Check \
+                 that purlis may change that folder, then turn it off again.",
+                dir(root).display()
+            )
+        }
     })?;
     forget_all_held(root, held.is_some())
+}
+
+/// [`forget_all`] where nobody waits on its answer (a keep, a read, the sweep): what stayed is
+/// said in the log, not dropped (#6508's review). Answers how many went.
+fn forget_all_logged(root: &Path) -> usize {
+    forget_all(root).unwrap_or_else(|why| {
+        tracing::info!("purlis: keeping task screens is off, and {why}");
+        0
+    })
 }
 
 /// [`forget_all`], with the store's lock held where `locked`, which takes every temp file a write
