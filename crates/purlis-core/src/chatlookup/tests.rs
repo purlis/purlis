@@ -282,3 +282,105 @@ fn the_records_read_once_answer_as_one_read_does() {
     assert_eq!(by_number(702, &[], &known), by_number_in(&root, 702, &[]));
     assert_eq!(by_number(9999, &[], &known), Found::NoChat);
 }
+
+// A dispatch record answers only where it makes a card: a handoff's, or a task's that owed no
+// report, has none (`Finished::of` is None), so the chat's own record answers for it.
+
+/// [`task_641`] as `mode`, owing a report or not, ended with no report.
+fn ended_unreported(root: &std::path::Path, mode: Mode, report_owed: bool) {
+    let opening = Opening {
+        mode,
+        asker: Asker {
+            chat: ChatRef {
+                chat: 3,
+                id: Some(ASKER_ID.to_owned()),
+                name: "steward 3".to_owned(),
+                persona: Some("steward".to_owned()),
+            },
+            workspace: Some("smart-ide".to_owned()),
+            by_person: false,
+            session_record: None,
+        },
+        persona: Some("steward".to_owned()),
+        worker: Worker {
+            chat: ChatRef {
+                chat: 641,
+                id: Some(WORKER_ID.to_owned()),
+                name: "Signed commits #5607".to_owned(),
+                persona: Some("steward".to_owned()),
+            },
+            harness: Some("claude".to_owned()),
+            profile: None,
+            session_record: None,
+        },
+        task: Some("Signed commits #5607".to_owned()),
+        place: Place {
+            workspace: Some("smart-ide".to_owned()),
+            folder: Some("workspaces/smart-ide".to_owned()),
+            worktree: None,
+        },
+        brief: "Sign the commits.".to_owned(),
+        report_owed,
+    };
+    let id = dispatchrecord::open(root, opening, at("2026-11-11T10:00:00Z"))
+        .unwrap()
+        .id;
+    dispatchrecord::close(
+        root,
+        &id,
+        Ending {
+            report: None,
+            usage: None,
+        },
+        at("2026-11-11T11:08:00Z"),
+    )
+    .unwrap();
+}
+
+/// Chat 641's own record, as the app kept it as it closed: handed off to by `steward 3`.
+fn closed_641() -> crate::chatrecords::ChatRecord {
+    crate::chatrecords::ChatRecord {
+        number: 641,
+        id: WORKER_ID.to_owned(),
+        title: "Signed commits #5607".to_owned(),
+        started: "2026-11-11T10:00:00Z".to_owned(),
+        ended: "2026-11-11T11:08:00Z".to_owned(),
+        started_by: crate::chatrecords::StartedBy::Chat {
+            name: "steward 3".to_owned(),
+        },
+        place: "smart-ide".to_owned(),
+    }
+}
+
+#[test]
+fn a_closed_handoff_is_found_closed_with_its_chat_record() {
+    let (_dir, root) = project();
+    ended_unreported(&root, Mode::Handoff, false);
+    crate::chatrecords::keep(&root, &closed_641()).unwrap();
+    assert_eq!(
+        by_number_in(&root, 641, &[open_chat(3, ASKER_ID)]),
+        Found::Closed(Box::new(closed_641()))
+    );
+}
+
+#[test]
+fn a_task_that_ended_owing_no_report_is_found_closed_with_its_chat_record() {
+    let (_dir, root) = project();
+    ended_unreported(&root, Mode::Task, false);
+    crate::chatrecords::keep(&root, &closed_641()).unwrap();
+    assert_eq!(
+        by_number_in(&root, 641, &[]),
+        Found::Closed(Box::new(closed_641()))
+    );
+}
+
+#[test]
+fn a_running_task_whose_chat_closed_is_found_closed_with_its_chat_record() {
+    let (_dir, root) = project();
+    task_641(&root);
+    crate::chatrecords::keep(&root, &closed_641()).unwrap();
+    assert_eq!(
+        by_number_in(&root, 641, &[]),
+        Found::Closed(Box::new(closed_641()))
+    );
+}

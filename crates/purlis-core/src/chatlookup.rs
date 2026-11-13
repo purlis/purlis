@@ -18,7 +18,9 @@
 //! - **A chat no dispatch started has its own record** (#6304): the app keeps number → ULID →
 //!   title, times and who started it as any chat closes for good ([`crate::chatrecords`]).
 //!   A dispatch record is read first, as it is the fuller card; a chat record answers where no
-//!   dispatch record names the number. It is matched to the open chats by ULID too.
+//!   dispatch record names the number, or where the one that does draws no card: a handoff's,
+//!   a task's that ended owing no report, or one still running. It is matched to the open
+//!   chats by ULID too.
 //! - **What it knows is what the records know.** A number neither names, or one swept after 30
 //!   days, is "no chat".
 //!
@@ -96,11 +98,18 @@ fn not_open(number: u32, open: &[OpenChat], known: &Known) -> Found {
     if let Some(now) = open.iter().find(|chat| is(&record.worker.chat, chat)) {
         return Found::Restarted { now: now.number };
     }
-    if record.running() {
-        // Its record is open and no chat has it: a start still waiting, nothing ended to show.
-        return Found::NoChat;
+    if !makes_a_card(record) {
+        // A handoff's record, a task's that ended owing no report, or one still running draws
+        // no card: the chat's own record, kept as it closed, is what answers for it.
+        return closed(number, open, &known.chats);
     }
     Found::Ended(Box::new(record.clone()))
+}
+
+/// **Whether a dispatch record makes a closed chat's card**: a finished task's
+/// ([`dispatchrecord::Finished::of`]) whose chat had a ULID, as the window's card is drawn.
+fn makes_a_card(record: &Record) -> bool {
+    record.worker.chat.id.is_some() && dispatchrecord::Finished::of(record).is_some()
 }
 
 /// What `number` names where no dispatch record does: a closed chat's record, or the chat open
