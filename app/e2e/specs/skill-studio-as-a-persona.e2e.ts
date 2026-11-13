@@ -10,7 +10,7 @@ import { studioSkill, studioWhose, writeSkill } from "../studio.js";
 
 /**
  * **A persona's skills in a workspace it was dispatched into** (#2935, #6491), in the built app
- * against the real core, with the `skill-studio` flag on for the run (`wdio.conf.ts`).
+ * against the real core.
  *
  * The Skill studio's Whose chats picker lists the project's personas, and for one picked, the
  * workspaces it was dispatched into: what a chat dispatched there gets. A dispatch is recorded by
