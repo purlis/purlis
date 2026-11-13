@@ -748,13 +748,14 @@ fn environment_in(
     container: &str,
 ) -> Vec<(OsString, OsString)> {
     use std::os::unix::ffi::OsStringExt;
-    let out = purlis_core::forklock::output(docker.command().args([
-        "exec",
-        container,
-        "cat",
-        "/proc/1/environ",
-    ]))
-    .expect("docker runs");
+    let out =
+        purlis_core::forklock::output(docker.command().expect("a bare docker command").args([
+            "exec",
+            container,
+            "cat",
+            "/proc/1/environ",
+        ]))
+        .expect("docker runs");
     assert!(out.status.success(), "the runner's environment: {out:?}");
     out.stdout
         .split(|byte| *byte == 0)
@@ -782,12 +783,14 @@ impl Drop for RemovesThePool {
         if std::thread::panicking()
             && let Ok(kept) = purlis_core::runners::runner_for(&self.config, &self.name)
         {
-            let said = purlis_core::forklock::output(self.docker.command().args([
-                "logs",
-                "--tail",
-                "200",
-                kept.made.container.as_str(),
-            ]));
+            let said = purlis_core::forklock::output(
+                self.docker.command().expect("a bare docker command").args([
+                    "logs",
+                    "--tail",
+                    "200",
+                    kept.made.container.as_str(),
+                ]),
+            );
             if let Ok(said) = said {
                 use std::io::Write as _;
                 let _ = writeln!(
@@ -927,7 +930,7 @@ impl OnTheRunner {
         };
         match &self.reach {
             ReachedBy::Container { docker, container } => {
-                let mut command = docker.command();
+                let mut command = docker.command().expect("a bare docker command");
                 command.arg("exec");
                 if interactive {
                     command.arg("--interactive");
@@ -1033,7 +1036,7 @@ impl OnTheRunner {
     fn said(&self) -> String {
         let mut command = match &self.reach {
             ReachedBy::Container { docker, container } => {
-                let mut command = docker.command();
+                let mut command = docker.command().expect("a bare docker command");
                 command.args(["logs", container.as_str()]);
                 command
             }
@@ -1073,6 +1076,7 @@ impl OnTheRunner {
                 let out = purlis_core::forklock::output(
                     docker
                         .command()
+                        .expect("a bare docker command")
                         .arg("cp")
                         .arg(format!("{container}:{path}"))
                         .arg(&at),

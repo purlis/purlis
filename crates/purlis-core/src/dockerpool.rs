@@ -2875,7 +2875,17 @@ impl Docker {
     /// program, pointed at the forward's socket where this is a pool's on another machine, and
     /// otherwise inheriting what its caller has. Never what a pool's own runs are given, which is
     /// [`Docker::prepared`].
-    pub fn command(&self) -> std::process::Command {
+    ///
+    /// **Refused over Docker's TLS API** (#6267): a bare command holds no run's folder, so it
+    /// could only name the pool's files where they are, a CA never checked against the pin and a
+    /// key outside its vault. Such a pool's runs are prepared, each with its own checked copy.
+    pub fn command(&self) -> Result<std::process::Command, Refused> {
+        if self.tls.is_some() {
+            return Err(refused(
+                "purlis makes no bare docker command for a pool reached over TLS: each of its \
+                 runs is prepared with the pool's files checked against its pinned CA",
+            ));
+        }
         let mut command = std::process::Command::new(&self.program);
         if let Some(socket) = &self.forwarded {
             command.env("DOCKER_HOST", format!("unix://{}", socket.display()));
@@ -2883,21 +2893,7 @@ impl Docker {
             command.env_remove("DOCKER_CONTEXT");
             command.env_remove("CONTAINER_CONNECTION");
         }
-        // Over TLS, the files where they are, named on the line: a bare command holds no run's
-        // folder to copy them into, so a key kept in a vault is not reached by one.
-        if let Some(tls) = &self.tls {
-            command.env("DOCKER_HOST", tls.route.spelled());
-            command.env_remove("DOCKER_CONTEXT");
-            command.env_remove("DOCKER_CERT_PATH");
-            command.env_remove("DOCKER_TLS_VERIFY");
-            command.arg("--tlsverify");
-            command.arg("--tlscacert").arg(&tls.files.ca);
-            command.arg("--tlscert").arg(&tls.files.cert);
-            if let Some(key) = tls.files.key_file() {
-                command.arg("--tlskey").arg(key);
-            }
-        }
-        command
+        Ok(command)
     }
 
     /// **The socket of the Docker engine this machine's pools run on, where it is on this

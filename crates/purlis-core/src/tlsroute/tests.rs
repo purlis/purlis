@@ -702,3 +702,26 @@ fn a_sign_in_over_tls_refuses_another_engine_behind_the_same_ca() {
     let refused = pin.holds().unwrap_err();
     assert!(refused.contains("isn't the one you trusted"), "{refused}");
 }
+
+/// **A bare command of a pool reached over TLS is refused**: it has no run folder to copy the
+/// checked files into, so naming the files where they are would hand docker a CA never checked
+/// against the pin and a key outside the vault. Its runs are prepared ([`Docker::prepared`]).
+#[test]
+fn a_bare_command_over_tls_is_refused_and_names_no_file() {
+    let pki = Pki::new();
+    let through = Through {
+        route: Route::parse("tcp://box").unwrap(),
+        files: pki.files("client"),
+        ca: pki.fingerprint("ca"),
+        engine: Some("ENGINE-A".to_owned()),
+    };
+    let docker = crate::dockerpool::Docker::at("/usr/local/bin/docker").over_tls(through);
+    let refused = docker.command().unwrap_err();
+    assert!(refused.0.contains("over TLS"), "{}", refused.0);
+    assert!(
+        crate::dockerpool::Docker::at("/usr/local/bin/docker")
+            .command()
+            .is_ok(),
+        "a docker on this machine has its bare command"
+    );
+}
