@@ -21,7 +21,7 @@ const MOCK = readFileSync(
 type Answer = {
   id: number | null;
   data?: unknown;
-  error?: { kind: string };
+  error?: { kind: string; message?: string };
   at: string;
   cursor?: string;
 };
@@ -144,6 +144,18 @@ describe("the mock of purlis.port", () => {
       id: 5,
       error: { kind: "needs-extension" },
     });
+  });
+
+  it("hands on the sentence a fixture's error carries, as purlis does", async () => {
+    const said = "purlis could not reach GitHub for the milestones of acme/api.";
+    const { ask } = page(DECLARED, {
+      "purlis-fixtures.json": {
+        queries: { "purlis.change_status@1": { error: { kind: "failed", message: said } } },
+      },
+    });
+    expect(await ask({ id: 6, query: "purlis.change_status@1", params: null })).toEqual(
+      expect.objectContaining({ id: 6, error: { kind: "failed", message: said } }),
+    );
   });
 
   it("refuses a parameter the page did not declare, and a query with no fixture fails with a warning", async () => {

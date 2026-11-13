@@ -167,6 +167,7 @@ fn checked_whole(
             Path::new(config),
             &dockerpool::podman_store(&store)?,
             seccomp,
+            &dockerpool::is_file_here,
         )?;
     }
     Ok(())

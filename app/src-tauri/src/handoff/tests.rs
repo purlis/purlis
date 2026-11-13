@@ -3240,6 +3240,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::ReportDraft(_) => 21,
             Ask::ProposePin(_) => 22,
             Ask::Merge(_) => 23,
+            Ask::Chats(_) => 24,
         }
     }
     let asks = vec![
@@ -3399,10 +3400,16 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             },
             cwd: "/nowhere".to_owned(),
         }),
+        // The chats of the asking chat's workspace (#6235): names and states, never a write.
+        Ask::Chats(purlis_core::hookwire::ChatsAsk {
+            chat,
+            history: true,
+            limit: None,
+        }),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=23).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=24).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 

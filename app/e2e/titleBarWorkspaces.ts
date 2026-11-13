@@ -140,13 +140,19 @@ function whyNotOpened(last: Chevron, presses: number, trouble: unknown): string 
   return trouble === undefined ? said : `${said}; a step failed with: ${String(trouble)}`;
 }
 
+/** How often {@link opened} presses the ⌄ before it says why no list came: a popover lost to the
+ *  title bar drawing again at launch came back on the next press (main run 43423866685). */
+const PRESSES = 3;
+
 /**
  * Opens the workspace popover, if it is not open, and waits for its rows (#5035): once the ⌄ is
- * ready for a press, a press, and one more only if no popover came of it, for a press the page
- * did not take (a ⌄ drawn again as it was pressed). A popover that came and went is not pressed
- * for again: something took the keyboard from it, and the failure says so. Never more: each
- * press toggles, and the old step, which pressed whenever it saw no list, opened and lost the
- * popover under a dialog left up, over and over, for the whole wait.
+ * ready for a press, a press, and at most {@link PRESSES} in all, each only once the ⌄ is ready
+ * again with nothing over it: a press the page did not take (a ⌄ drawn again as it was pressed),
+ * or a popover that came and went with no overlay up, as when the title bar draws again just
+ * after launch (a window just resized, the project's first read). A dialog or menu over the ⌄ is
+ * never pressed through: {@link pressedWhenReady} reports it as `behind`, and the failure names
+ * it. Each press toggles, and the old step, which pressed whenever it saw no list, opened and lost
+ * the popover under a dialog left up, over and over, for the whole wait.
  */
 async function opened(): Promise<void> {
   let last = { at: "undrawn" } as Chevron;
@@ -162,12 +168,12 @@ async function opened(): Promise<void> {
           return false;
         }
         if (last.at === "pressed") presses += 1;
-        if (last.at === "ready" && presses === 1 && !last.cameAndWent) {
+        if (last.at === "ready" && presses > 0 && presses < PRESSES) {
           last = await browser.execute(pressedWhenReady, LISTED, ALL_WORKSPACES, true);
           if (last.at === "pressed") presses += 1;
         }
-        // Listed; or pressed for, and nothing more a press would do.
-        return last.at === "listed" || (last.at === "ready" && presses > 0);
+        // Listed; or pressed for as often as it may be, and nothing came of it.
+        return last.at === "listed" || (last.at === "ready" && presses >= PRESSES);
       },
       { timeout: 20_000, interval: 200 },
     )

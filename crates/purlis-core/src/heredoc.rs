@@ -2143,6 +2143,47 @@ pub fn strip_reader_heredocs(cmd: &str) -> String {
         .join("\n")
 }
 
+/// `cmd` as the commands a shell runs (#6293): every line but a heredoc body's, and a body's
+/// only where a program that runs text takes it ([`LayoutLine::executed`]: `bash <<'EOF'`, or a
+/// body the shells read differently). A body nothing runs is data, whoever reads it. Where its
+/// delimiter is unquoted the shell that opens it expands it first, so each command
+/// substitution in it stands in its place, as `$( … )` on a line of its own: what the shell
+/// runs there, and nothing more.
+///
+/// For a guard that reads a line by its segments ([`shellseg::joined_argv`]), whose lexer knows
+/// no heredoc and would read every line of a body as a command.
+pub fn commands_a_shell_runs(cmd: &str) -> String {
+    if !cmd.contains("<<") {
+        return cmd.to_owned();
+    }
+    let substitutions = OnceCell::new();
+    let substitutions = || {
+        substitutions.get_or_init(|| {
+            crate::shellsubst::scan(cmd, true)
+                .map(|scan| scan.substitutions_at())
+                .unwrap_or_default()
+        })
+    };
+    let mut out: Vec<String> = Vec::new();
+    // The character offset the line starts at: the layout keeps every line, in order.
+    let mut at = 0usize;
+    for line in heredoc_layout(cmd) {
+        let len = line.text.chars().count();
+        if !line.body || line.executed {
+            out.push(line.text);
+        } else if line.expands {
+            out.extend(
+                substitutions()
+                    .iter()
+                    .filter(|(from, _)| (at..=at + len).contains(from))
+                    .map(|(_, text)| format!("$({text})")),
+            );
+        }
+        at += len + 1;
+    }
+    out.join("\n")
+}
+
 /// A text a shell runs, read once for every reading a backstop takes of it, and shared by the
 /// three backstops that read the same command (#1426): its heredocs ([`heredoc_layout`]) as the
 /// text itself, the text with every body a reader takes as data left out

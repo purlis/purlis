@@ -17,7 +17,6 @@ import { StatusItem } from "./ui/status/StatusItem";
 import {
   askWayOut,
   behindness,
-  capitalised,
   repoSavable,
   repoSaveGoesTo,
   repoStageText,
@@ -33,6 +32,7 @@ import {
 } from "./saving";
 import { Choice, Field, SettingActions, SettingRow, type Option } from "./settings/components";
 import { useReadOnlySaid } from "./ReadOnlyLine";
+import { capitalised } from "./chatEnded";
 import { askSettingsLink, type SettingsLink } from "./settings/links";
 import { Notice } from "./Notice";
 import { RemoteQuestionNotice } from "./RemoteQuestion";

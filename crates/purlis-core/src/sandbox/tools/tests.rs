@@ -531,6 +531,12 @@ fn a_tool_declared_and_not_armed_here_says_what_arms_it() {
         "{why}"
     );
     assert!(why.contains("allowed on this machine"), "{why}");
+    // Where that Allow waits: its row in Asks, which the ✋ counts (ADR 0121, amended
+    // 2026-11-12), so the person finds it from the ✋ alone, not a Notice among many.
+    assert!(
+        why.contains("the persona's row in Asks, under the ✋ in the purlis window"),
+        "{why}"
+    );
     assert!(why.contains("Start the chat again"), "{why}");
 }
 

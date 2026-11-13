@@ -23,6 +23,13 @@
         "kind": "refused"
       },
       "at": "2026-11-09T13:32:00Z"
+    },
+    "error_with_message": {
+      "error": {
+        "kind": "failed",
+        "message": "It says why."
+      },
+      "at": "2026-11-09T13:32:00Z"
     }
   },
   "queries": [
@@ -30,7 +37,9 @@
     "purlis.memory_search",
     "purlis.session_record_list",
     "purlis.session_record_read",
-    "purlis.change_status"
+    "purlis.change_status",
+    "purlis.forge_milestones",
+    "purlis.chats"
   ],
   "results": {
     "purlis.todo_list": {
@@ -275,6 +284,224 @@
       "required": [
         "changes",
         "unreadable"
+      ],
+      "additionalProperties": false
+    },
+    "purlis.forge_milestones": {
+      "type": "object",
+      "properties": {
+        "repo": {
+          "type": "string",
+          "description": "The repo of this workspace, by its folder's name."
+        },
+        "path": {
+          "type": "string",
+          "description": "Its owner/name on GitHub."
+        },
+        "state": {
+          "type": "string",
+          "description": "open or all, as asked."
+        },
+        "milestones": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "number": {
+                "type": "integer",
+                "description": "Its number on GitHub."
+              },
+              "title": {
+                "type": "string",
+                "description": "Its title."
+              },
+              "description": {
+                "type": "string",
+                "description": "Its description, or empty."
+              },
+              "due_on": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "When it is due (RFC 3339), or null."
+              },
+              "state": {
+                "type": "string",
+                "description": "open or closed."
+              },
+              "open_issues": {
+                "type": "integer",
+                "description": "How many of its issues are open."
+              },
+              "closed_issues": {
+                "type": "integer",
+                "description": "How many of its issues are closed."
+              },
+              "url": {
+                "type": "string",
+                "description": "Its page on GitHub."
+              },
+              "updated_at": {
+                "type": "string",
+                "description": "When it last changed (RFC 3339)."
+              }
+            },
+            "required": [
+              "number",
+              "title",
+              "description",
+              "due_on",
+              "state",
+              "open_issues",
+              "closed_issues",
+              "url",
+              "updated_at"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "repo",
+        "path",
+        "state",
+        "milestones"
+      ],
+      "additionalProperties": false
+    },
+    "purlis.chats": {
+      "type": "object",
+      "properties": {
+        "history": {
+          "type": "boolean",
+          "description": "Whether ended dispatches are listed too."
+        },
+        "chats": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Its id; chat-<n> for an open chat given none yet, <record id>.chat-<n> for an ended one: what a parent names it by."
+              },
+              "name": {
+                "type": "string",
+                "description": "Its name, as its tab shows it."
+              },
+              "persona": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The persona it runs as, or null."
+              },
+              "harness": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Its harness, by the project's word for it, or null for a shell."
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "needs",
+                  "stuck",
+                  "failed",
+                  "working",
+                  "waiting",
+                  "idle",
+                  "ended",
+                  "cant-tell"
+                ],
+                "description": "Its Chat state, as the window's mark keys it."
+              },
+              "state_said": {
+                "type": "string",
+                "description": "Its Chat state, as the window names it: Waiting on you, Failed, …"
+              },
+              "cause": {
+                "type": "string",
+                "description": "The fact that decided its state, such as needs-you-queue or turn-ended."
+              },
+              "started": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "When it started, RFC 3339, or null where it is not known."
+              },
+              "last_activity": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "When it last moved, RFC 3339, or null where it is not known."
+              },
+              "parent": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "The chat it came from, or null for one the person opened.",
+                "properties": {
+                  "id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "That chat's id, or null where it works in another workspace or at the project's root."
+                  },
+                  "relation": {
+                    "type": "string",
+                    "enum": [
+                      "dispatched",
+                      "handed-off-from"
+                    ],
+                    "description": "dispatched: a task that owes it a report; handed-off-from: the work moved here."
+                  }
+                },
+                "required": [
+                  "id",
+                  "relation"
+                ],
+                "additionalProperties": false
+              },
+              "session_record": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Its newest session record, the file name session_record_read takes, or null."
+              },
+              "open": {
+                "type": "boolean",
+                "description": "Whether it is open now; false only with history."
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "persona",
+              "harness",
+              "state",
+              "state_said",
+              "cause",
+              "started",
+              "last_activity",
+              "parent",
+              "session_record",
+              "open"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "history",
+        "chats"
       ],
       "additionalProperties": false
     }

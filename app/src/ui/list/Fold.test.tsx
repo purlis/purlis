@@ -141,6 +141,13 @@ describe("a section that folds", () => {
     expect(cellOf(row("In this chat, 4"))).toHaveAttribute("aria-expanded", "true");
   });
 
+  it("spells purlis's own group names as the section label, and a run's quiet line not (#6443)", () => {
+    render(<Groups />);
+    expect(row("Needs you, 1")).toHaveClass("ui-text-label");
+    expect(row("Left out, 1")).toHaveClass("ui-text-label");
+    expect(row("3 built-in skills")).not.toHaveClass("ui-text-label");
+  });
+
   it("draws a name that is data as it is written", () => {
     render(
       <List aria-label="Files">

@@ -67,9 +67,9 @@ describe("the Inbox", () => {
     await expect(await ask.$("button=Go to chat")).toBeDisplayed();
 
     // **Its scope and its ranks, as drawn** (qw359), in ranges and never exact pixels: the
-    // switch opens on Chat, the chat in front that asked (#6340, ADR 0121 amended 2026-11-12),
-    // offers no All projects, and fits the view; what needs you is the largest and heaviest text
-    // of the row, and its kind the smallest; its kind's mark is drawn.
+    // chips open on Chat, the chat in front that asked (#6340, ADR 0121, amended 2026-11-12,
+    // decisions 2 and 4), offer no All projects, and fit the view; what needs you is the largest
+    // and heaviest text of the row, and its kind the smallest; its kind's mark is drawn.
     const seen = await browser.execute(
       (inbox: string, row: string) => {
         const view = document.querySelector<HTMLElement>(inbox);
@@ -84,10 +84,13 @@ describe("the Inbox", () => {
           return part ? Number.parseInt(getComputedStyle(part).fontWeight, 10) : 0;
         };
         return {
+          // A radio by its role: React Aria's segment is a native radio input.
           picked:
-            group?.querySelector('input[type="radio"]:checked')?.getAttribute("aria-label") ?? "",
-          scopes: group?.querySelectorAll('input[type="radio"]').length ?? 0,
-          labels: [...(group?.querySelectorAll('input[type="radio"]') ?? [])].map(
+            group
+              ?.querySelector('[role="radio"][aria-checked="true"], input[type="radio"]:checked')
+              ?.getAttribute("aria-label") ?? "",
+          scopes: group?.querySelectorAll('[role="radio"], input[type="radio"]').length ?? 0,
+          labels: [...(group?.querySelectorAll('[role="radio"], input[type="radio"]') ?? [])].map(
             (one) => one.getAttribute("aria-label") ?? "",
           ),
           // How far the switch runs past the view's right edge (≤ 0 when inside).

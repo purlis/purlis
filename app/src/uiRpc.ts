@@ -402,6 +402,7 @@ export const commands = {
 	allowPersonaHosts: __WINDOW_ONLY_RESULT,
 	allowProjectExpects: __WINDOW_ONLY_RESULT,
 	declineProjectExpects: __WINDOW_ONLY_RESULT,
+	personaAllowNotNow: __WINDOW_ONLY_RESULT,
 	answerTeamSandboxOff: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Whether chat `session` holds the asking chat's persona grants instead of its own, and whose
@@ -1233,6 +1234,7 @@ export const commands = {
 	skillFile: __WINDOW_ONLY_RESULT,
 	skillFolderOpen: __WINDOW_ONLY_RESULT,
 	skillSave: __WINDOW_ONLY_RESULT,
+	skillHintWrite: __WINDOW_ONLY_RESULT,
 	skillTriggerTestsStart: __WINDOW_ONLY_RESULT,
 	skillRename: __WINDOW_ONLY_RESULT,
 	skillCopy: __WINDOW_ONLY_RESULT,
@@ -1518,6 +1520,8 @@ export const commands = {
 	skillExportReview: __WINDOW_ONLY_RESULT,
 	skillExport: __WINDOW_ONLY_RESULT,
 	skillUpdates: __WINDOW_ONLY_RESULT,
+	skillPolicy: __WINDOW_ONLY_RESULT,
+	skillActs: __WINDOW_ONLY_RESULT,
 	skillUpdateReview: __WINDOW_ONLY_RESULT,
 	skillUpdate: __WINDOW_ONLY_RESULT,
 	skillExtensionSources: __WINDOW_ONLY_RESULT,
@@ -1583,6 +1587,8 @@ export const commands = {
 	taskFolderShared: (plane: PlaneId, session: number, place: string | null) => typedError<string | null, string>(__TAURI_INVOKE("task_folder_shared", { plane, session, place })),
 	chatByNumber: __WINDOW_ONLY_RESULT,
 	chatScreen: __WINDOW_ONLY_RESULT,
+	taskScreens: __WINDOW_ONLY_RESULT,
+	setTaskScreens: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The finished tasks of the project's open chats, oldest first, for the rows under each
 	 *  (#1485). On a blocking thread, as it reads every record.
@@ -1971,6 +1977,7 @@ export const commands = {
 	poolSetupChooseRemoteDocker: __WINDOW_ONLY_RESULT,
 	poolSetupMachine: __WINDOW_ONLY_RESULT,
 	poolSetupSshHosts: __WINDOW_ONLY_RESULT,
+	poolSetupPodmanConnections: __WINDOW_ONLY_RESULT,
 	poolSetupConnect: __WINDOW_ONLY_RESULT,
 	poolSetupTrust: __WINDOW_ONLY_RESULT,
 	poolSetupChooseCluster: __WINDOW_ONLY_RESULT,
@@ -3171,6 +3178,12 @@ export type AnswerPath =
  *  now, each sent `items` as its Notice sends them (#6000).
  */
 { via: "sandbox-expects"; items: ExpectedItem[] } | 
+/**
+ *  `allow_persona_hosts` for Allow, sent `digest`, the list the row showed, as its Notice
+ *  sends it; and `persona_allow_not_now` for Not now, which puts it away while the project
+ *  is open and the list stands (ADR 0121, amended 2026-11-12).
+ */
+{ via: "persona-allow"; persona: string; digest: string } | 
 /**  `answer_pool_sign_in` for confirmation `id`, yes or no, as its dialog answers (#6000). */
 { via: "confirmation"; id: number } | 
 /**
@@ -3658,6 +3671,12 @@ export type AskSource =
  *  sandboxed chats are refused it until the person allows it on this machine.
  */
 "sandbox-expects" | 
+/**
+ *  **A persona whose hosts or tools wait for an Allow on this machine** (ADR 0121, amended
+ *  2026-11-12): its chats reach none of its hosts and run none of its tools until the
+ *  person allows them as shown. One per persona.
+ */
+"persona-allow" | 
 /**
  *  **A `purlis` command's confirmation in the window** (#6000): a pool sign-in, a profile
  *  taken off a pool, a signing check, each waiting on the person's yes.
@@ -4561,19 +4580,31 @@ export type ChatCard = {
 	number: number,
 	/**  Its ULID: what *Read it* asks for its screen by. */
 	chat: string,
+	/**  What it is called: its task's name, or an ordinary chat's title as its tab said it. */
+	title: string,
+	/**  When it ended (UTC, RFC 3339), where its record keeps an end. */
+	ended: string | null,
+	/**  Where it ran: its workspace's name, or `project root`. */
+	place: string,
 	/**
-	 *  Its task as its finished row has it: its name, how it ended and when, its report
-	 *  (masked), where it ran, and whether it reopens. `id` is its dispatch record's, which
-	 *  *Reopen* names.
+	 *  Its task as its finished row has it: how it ended, its report (masked) and whether it
+	 *  reopens. `id` is its dispatch record's, which *Reopen* names. **None for a chat no
+	 *  dispatch started** (#6304): it has no report and no Reopen, and the card says Closed.
 	 */
-	task: FinishedTask,
+	task: FinishedTask | null,
 	/**
-	 *  Who started it: "you" where the person dispatched it, else the asking chat's name as
-	 *  the person saw it then.
+	 *  Who started it: "you" where the person started or dispatched it, else the chat that
+	 *  asked or handed off, by its name as the person saw it then.
 	 */
 	started_by: string,
 	/**  Whether its last screen was kept: *Read it* is disabled where it was not. */
 	screen_kept: boolean,
+	/**
+	 *  Whether a dispatch started it. True with no task for a handoff, or a task that ended
+	 *  owing no report: its card is drawn from its chat's record, and *Reopen* says why it does
+	 *  nothing in words of its own.
+	 */
+	dispatched: boolean,
 };
 
 /**
@@ -4613,6 +4644,15 @@ export type ChatEvents = {
 	plane: PlaneId,
 	events: ChatEvent[],
 };
+
+/**  **What the window shows for a chat link opened.** */
+export type ChatGo = 
+/**  The pane's own chat: nothing more. */
+{ to: "this_chat" } | 
+/**  Chat `session`, in its tab or its workspace. */
+{ to: "chat"; session: number } | 
+/**  An ended chat's card, beside the link. */
+{ to: "card"; card: ChatCard };
 
 /**  A chat the window has open, by its plane and its session. */
 export type ChatHeld = {
@@ -4789,6 +4829,15 @@ export type ChatRestart = {
 	notices: string[],
 	not_yet: string | null,
 };
+
+/**  **What the chat a `chat 641` link names is**, for its hover's second line. */
+export type ChatSeen = 
+/**  The pane's own chat: ⌘-click does nothing more. */
+{ is: "this_chat"; number: number } | 
+/**  Open under `number`; `workspace` where that is another workspace than the pane's chat's. */
+{ is: "open"; number: number; workspace: string | null } | 
+/**  Ended: its card, which ⌘-click shows. */
+{ is: "ended"; card: ChatCard };
 
 /**  One skill Use skill… offers a chat. */
 export type ChatSkill = {
@@ -7976,7 +8025,7 @@ export type KeyAct = "down" | "up";
  *  **What the pane's pattern took a candidate for**: a hint, never trusted for more. The wire's
  *  half of the core's [`Kind`]; a kind's resolver is the core's `LinkKind`.
  */
-export type KindHint = "url" | "file";
+export type KindHint = "url" | "file" | "chat";
 
 /**  One context of the person's kubeconfig, as Point kubectl at it lists it. */
 export type KubeContext = {
@@ -8264,6 +8313,8 @@ export type LinkHome = { is: "workspace"; name: string; folder: string } | { is:
 export type LinkOpened = 
 /**  Opened: `target` is what was opened. */
 { answer: "opened"; kind: KindHint; target: string } | 
+/**  A chat link: what the window shows for it. */
+{ answer: "chat"; go: ChatGo } | 
 /**
  *  A file, for the window to show in an editor tab at its line and column: never handed to
  *  the system, so nothing runs.
@@ -8280,13 +8331,16 @@ export type LinkOpened =
 /**
  *  **What a hover over a candidate shows**: its kind, its target in full (its own text, where it
  *  is no link), what the hover's first line says (`shown`: a file in the chat's workspace from
- *  the workspace, D2) and what opening it does.
+ *  the workspace, D2; a chat as "#641 · <title>") and what opening it does. A chat link says
+ *  what the chat is too.
  */
 export type LinkSeen = {
 	kind: KindHint,
 	target: string,
 	shown: string,
 	does: LinkDoes,
+	/**  What the chat a chat link names is: none for every other kind. */
+	chat: ChatSeen | null,
 };
 
 /**  One repo the person can get. */
@@ -9127,6 +9181,8 @@ export type OfferedSkill = {
 	 *  `None` where they were not read to browse, and its review reads them.
 	 */
 	marks: string[] | null,
+	/**  What the project's controls would refuse of installing it, before its review (#6031). */
+	refused: PolicyRefused | null,
 };
 
 /**
@@ -9497,7 +9553,9 @@ export type OpensIn =
 /**  The person's browser. */
 "browser" | 
 /**  One of purlis's editor tabs. */
-"editor-tab";
+"editor-tab" | 
+/**  purlis's window itself: a chat shown in its tab, or a closed chat's card. */
+"window";
 
 /**  One file that goes. */
 export type OutgoingFile = {
@@ -10437,6 +10495,23 @@ export type PluginOffShown = {
 	command: string | null,
 };
 
+/**  **Which of the controls refuses**, what a row's mark says (#6031). */
+export type PolicyKind = "blocked" | "not-allowed" | "too-young" | "undated" | "unread";
+
+/**
+ *  **What the controls would refuse, said before a review** (#6031): the core's sentence, and
+ *  when it can be taken where it is refused for its age alone.
+ */
+export type PolicyRefused = {
+	kind: PolicyKind,
+	why: string,
+	/**
+	 *  When it is old enough to take, in seconds since the epoch, where its source says when it
+	 *  was made.
+	 */
+	until: number | null,
+};
+
 /**  A pool as the person typed it: each limit left empty takes the default. */
 export type PoolAdding = {
 	name: string,
@@ -10775,6 +10850,8 @@ export type PoolSetupKey = {
 /**  The machine of a pool on another machine, as Connect shows it (#6266). */
 export type PoolSetupMachine = {
 	route: string | null,
+	/**  The key file the route signs in with, where a Podman connection names one (#6269). */
+	identity: string | null,
 	host: string | null,
 	/**  The key it showed at Connect to, to confirm. */
 	key: PoolSetupKey | null,
@@ -10809,6 +10886,16 @@ export type PoolSetupPart = {
 	done: boolean,
 	line: string,
 	next: PoolSetupAction | null,
+};
+
+/**
+ *  A connection of Podman's own, as Connect offers it (#6269): its name, the route to that
+ *  machine's Podman socket, and the key file it signs in with, where it names one.
+ */
+export type PoolSetupPodmanConnection = {
+	name: string,
+	route: string,
+	identity: string | null,
 };
 
 /**  One of this machine's profiles against a pool's limit (#4482). */
@@ -12375,6 +12462,13 @@ export type ReviewSkill = {
 	description: string,
 	folder: string,
 	brought_by: string | null,
+	/**
+	 *  Whether [`Self::brought_by`] only names it bare, as a hint (#4510): the review says it
+	 *  comes along by a hint, and the person may untick it (#5874).
+	 */
+	brought_by_hint: boolean,
+	/**  The skills it names only bare, as hints, each once. */
+	hints: string[],
 	/**
 	 *  The skills it refers to that the level it lands in holds already (#4032): left as they
 	 *  are, not brought along.
@@ -14416,6 +14510,38 @@ export type SigningWaiting = {
 	why?: string | null,
 };
 
+/**  **One skill act this machine recorded** (#6031), as the audit wrote it: metadata only. */
+export type SkillAct = {
+	/**  When it was written, in seconds since the epoch. */
+	at: number | null,
+	act: SkillActKind,
+	skills: string[],
+	/**  The source, as an audit names it. */
+	source: string,
+	/**  The commit or revision. */
+	pin: string,
+	/**  The level, as a sentence names it. */
+	level: string,
+	by: SkillActBy,
+};
+
+/**  Where a recorded act was made: the person's own scope either way. */
+export type SkillActBy = 
+/**  In the Skill studio, in the window. */
+"window" | 
+/**  With `purlis skill` at a terminal, written by the session host. */
+"terminal";
+
+/**  One of the three skill acts an org's project audits (SK-11). */
+export type SkillActKind = "install" | "update" | "remove";
+
+/**  **The skill acts this machine recorded**, newest first, at most [`MOST_ACTS`]. */
+export type SkillActs = {
+	acts: SkillAct[],
+	/**  Whether there are older ones than those listed. */
+	more: boolean,
+};
+
 /**
  *  A skill a chat would have loaded that could not be loaded (SK-8): the core's `Broken`, for
  *  the window. purlis-core keeps no UI typing crate, so its level is the studio's `Level`.
@@ -14552,6 +14678,8 @@ export type SkillDetails = {
 	uses: SkillUse[],
 	/**  The project's skills that name it. */
 	used_by: string[],
+	/**  The project's skills that name it only bare, as a hint (#4510, #5874). */
+	hinted_by: string[],
 	/**  Whether the project holds more skills than the graph reads. */
 	uses_cut: boolean,
 	/**
@@ -15060,6 +15188,33 @@ export type SkillPinsTogether = {
 };
 
 /**
+ *  **The project's skill controls** (#6031): where they are set, what they are, and what they do
+ *  to each source asked about.
+ */
+export type SkillPolicy = {
+	/**  The shared settings file, as the project spells it: `charter.toml` or `purlis.toml`. */
+	file: string,
+	state: SkillPolicyState,
+	sources: SourcePolicy[],
+};
+
+/**  **The project's controls, as its shared settings hold them.** */
+export type SkillPolicyState = 
+/**  The shared settings hold no `[skill_policy]`: no controls, and nothing audited. */
+{ kind: "none" } | 
+/**
+ *  The table cannot be read, or this machine's file holds one too: every install and update
+ *  is refused until it is fixed, and why.
+ */
+{ kind: "refused"; why: string } | 
+/**  The table, each entry as a sentence names it. */
+{ kind: "set"; 
+/**  `None` where it holds no allow list: every source not blocked is allowed. */
+allow: string[] | null; block: string[]; min_age_days: number; exempt: string[]; 
+/**  What it does, in one line: what Sources says above its list. */
+said: string };
+
+/**
  *  **How a chat's router did on its latest prompt** (#4297, ADR 0102 §6): the core's routing
  *  record of it, as the chat's tab and the studio say it. No word of the prompt.
  */
@@ -15287,6 +15442,11 @@ export type SkillUpdateOffer = {
 	pinned: SourceCommit,
 	newer: SourceCommit,
 	edited: boolean,
+	/**
+	 *  What the project's controls would refuse of taking it, before its review (#6031): with
+	 *  when it can be taken, where it is too young.
+	 */
+	refused: PolicyRefused | null,
 };
 
 /**  An installed skill whose source could not be asked. */
@@ -15312,6 +15472,16 @@ export type SkillUse = {
 	project: boolean,
 	/**  Whether no skill has that name. */
 	broken: boolean,
+	/**
+	 *  Whether the text names it only bare, beside the word skill: a hint (#4510), which the tab
+	 *  marks and offers to write as `skills:<name>` (#5874).
+	 */
+	hint: boolean,
+	/**
+	 *  The first line of the copy the tab shows first that names it bare, from 1, where it is a
+	 *  hint there.
+	 */
+	line: number | null,
 };
 
 /**  Who uses a skill, as Delete shows before it deletes. */
@@ -15527,6 +15697,17 @@ export type SourceOffering =
  *  or an extension's source, by the extension's id; `label` as a person reads it either way.
  */
 export type SourceOrigin = { kind: "git"; remote: SourceRemote; label: string } | { kind: "extension"; id: string; label: string };
+
+/**  **What the controls do to one source** the window lists (#6031). */
+export type SourcePolicy = {
+	origin: SourceOrigin,
+	/**  Which of them refuses it, where one does. */
+	kind: PolicyKind | null,
+	/**  Why they do not allow every skill of it, in the core's sentence; `None` where they do. */
+	refused: string | null,
+	/**  The skills of it they do allow, where they allow some alone. */
+	only: string[],
+};
 
 /**  A repository and the branch read from it. */
 export type SourceRemote = {
@@ -15798,6 +15979,11 @@ export type Studio = {
 	persona: string | null,
 	/**  Every workspace of the project, which it can be shown for. */
 	workspaces: string[],
+	/**
+	 *  **Every persona of the project** (#2935), which it can be shown as, each with the
+	 *  workspaces it was dispatched into. Empty while the studio is off.
+	 */
+	personas: StudioPersona[],
 	/**  Every level a skill can be made at or moved to, with its words (#2770). */
 	levels: StudioLevel[],
 	skills: StudioSkill[],
@@ -15896,6 +16082,15 @@ export type StudioClone = {
 	 *  Preview line ([`StudioRouter::preview`] at the root).
 	 */
 	preview: string,
+};
+
+/**
+ *  **A workspace a persona was dispatched into** (#2935), and how many of the dispatches this
+ *  machine keeps went there (`purlis_core::dispatchrecord::dispatched_into`).
+ */
+export type StudioDispatchedInto = {
+	workspace: string,
+	chats: number,
 };
 
 /**
@@ -16000,6 +16195,19 @@ export type StudioNotSupported = {
 	title: string,
 	/**  Why its chats get no skills, in one line. */
 	said: string,
+};
+
+/**
+ *  **A persona the studio can be shown as** (#2935): its name, its role, and each workspace of
+ *  the project it was dispatched into, where its chats can be looked at as a dispatched chat
+ *  sees them.
+ */
+export type StudioPersona = {
+	name: string,
+	/**  Its role, as its `persona.md` says it; `None` where it says none. */
+	role: string | null,
+	/**  Each workspace it was dispatched into, most chats first, then by name. */
+	dispatched_into: StudioDispatchedInto[],
 };
 
 /**  One chat a router extension was asked about at its start. */
@@ -16392,6 +16600,17 @@ export type TaskQuestion = {
 	number: number,
 	/**  What it asked, **as text**: a chat's own words, never drawn as markup. */
 	question: string,
+};
+
+/**
+ *  **Whether this machine keeps a task's last screen in a project, and how many it holds**
+ *  (#6306): what the row Settings › Project › Dispatch › Keep task screens draws.
+ */
+export type TaskScreens = {
+	/**  `[task_screens] keep` in the project's local file, `true` where it is not set. */
+	keep: boolean,
+	/**  How many screens are kept now: none where `keep` is off. */
+	kept: number,
 };
 
 /**  What one answer to several tasks did (#1508). */

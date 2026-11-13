@@ -456,6 +456,15 @@ impl Repos for GitHub {
 }
 
 impl WorkItems for GitHub {
+    fn milestone_progress(
+        &self,
+        caller: &Caller,
+        path: &str,
+        all: bool,
+    ) -> Result<Vec<super::backend::MilestoneProgress>, ForgeError> {
+        GitHub::milestone_progress(self, caller, path, all)
+    }
+
     fn create(
         &self,
         caller: &Caller,

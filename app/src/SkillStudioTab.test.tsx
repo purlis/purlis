@@ -5,7 +5,14 @@ import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { forgetStudio, openSkill, renderStudio, renderStudioAt } from "./SkillStudioTab.testkit";
+import {
+  forgetStudio,
+  openSkill,
+  renderStudio,
+  renderStudioAt,
+  STUDIO_HISTORY,
+} from "./SkillStudioTab.testkit";
+import { openViewAt } from "./ui/panel/viewHistory";
 import {
   AT_THE_ROOT,
   skillRowNamed,
@@ -290,20 +297,87 @@ describe("the Skill studio", () => {
     expect(screen.getByTestId("skill-crowd-199")).toBeTruthy();
   });
 
-  it("keeps every row drawn for a chosen row past the first screen once an early row is pressed (#4351)", async () => {
+  it("keeps a chosen row past the first screen drawn once an early row is pressed (#4351, #5276)", async () => {
     const skills = crowd(200).map((name) => skill(name));
     answering(studio(skills));
+    const frames = stepTheFrames();
     renderStudioAt({ page: "library", scope: AT_THE_ROOT, skill: skillRowId(skills[150]) });
     await screen.findByTestId("skill-crowd-150");
     const drawnForIt = skillRows();
-    expect(drawnForIt).toBeGreaterThanOrEqual(151);
 
-    const frames = stepTheFrames();
     await userEvent.setup().click(screen.getByTestId("skill-crowd-005"));
 
     expect(skillRows()).toBeGreaterThanOrEqual(drawnForIt);
+    expect(screen.getByTestId("skill-crowd-150")).toBeTruthy();
     await frames.all();
     expect(skillRows()).toBe(200);
+  });
+
+  // The first frame's budget at a deep chosen row is two screens: the first, which is what an
+  // opening with nothing chosen builds and L10 judges, and the chosen row's own, so the rows
+  // either side of it are there for the keyboard and a reader. Opening at row 199 of 200 with
+  // every row before it took 140 ms to the row in jsdom, against 28 ms for a screen (#5276).
+  it("opens at a chosen row deep in the Library with the first screen and the chosen row's own on its first frame (#5276)", async () => {
+    windowOfHeight(900); // 23 rows a screen
+    const skills = crowd(200).map((name) => skill(name));
+    answering(studio(skills));
+    const frames = stepTheFrames();
+    renderStudioAt({ page: "library", scope: AT_THE_ROOT, skill: skillRowId(skills[100]) });
+
+    const chosen = await screen.findByTestId("skill-crowd-100");
+    expect(chosen.getAttribute("aria-selected")).toBe("true");
+    // The first screen, rows 0 to 22, and the chosen row's, 92 to 114.
+    const drawnFirst = within(screen.getByRole("grid", { name: "Skills" }))
+      .getAllByRole("row")
+      .map((one) => one.getAttribute("data-testid"));
+    expect(drawnFirst).toEqual(
+      [...crowd(200).slice(0, 23), ...crowd(200).slice(92, 115)].map((name) => `skill-${name}`),
+    );
+
+    await frames.all();
+    const drawn = within(screen.getByRole("grid", { name: "Skills" }))
+      .getAllByRole("row")
+      .map((one) => one.getAttribute("data-testid"));
+    expect(drawn).toEqual(crowd(200).map((name) => `skill-${name}`));
+  });
+
+  it("keeps the rows drawn for a deep chosen row when another deep row is chosen (#5276)", async () => {
+    windowOfHeight(900);
+    const skills = crowd(200).map((name) => skill(name));
+    answering(studio(skills));
+    const frames = stepTheFrames();
+    renderStudioAt({ page: "library", scope: AT_THE_ROOT, skill: skillRowId(skills[100]) });
+    await screen.findByTestId("skill-crowd-100");
+
+    await act(async () =>
+      openViewAt(STUDIO_HISTORY, {
+        page: "library",
+        scope: AT_THE_ROOT,
+        skill: skillRowId(skills[199]),
+      }),
+    );
+
+    await waitFor(() => expect(screen.getByTestId("skill-crowd-199")).toBeTruthy());
+    expect(screen.getByTestId("skill-crowd-100")).toBeTruthy();
+    expect(skillRows()).toBe(23 * 2 + 16);
+    await frames.all();
+    expect(skillRows()).toBe(200);
+  });
+
+  it("keeps the keyboard on a deep chosen row while the rows before it come (#5276)", async () => {
+    windowOfHeight(900);
+    const skills = crowd(200).map((name) => skill(name));
+    answering(studio(skills));
+    const frames = stepTheFrames();
+    renderStudioAt({ page: "library", scope: AT_THE_ROOT, skill: skillRowId(skills[150]) });
+    const chosen = await screen.findByTestId("skill-crowd-150");
+    await act(async () => chosen.focus());
+
+    await frames.all();
+
+    expect(skillRows()).toBe(200);
+    expect(screen.getByTestId("skill-crowd-150")).toBe(chosen);
+    expect(document.activeElement).toBe(chosen);
   });
 
   it("draws a chosen row past the Library's first screen on the tab's first frame (#4351)", async () => {

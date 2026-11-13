@@ -39,10 +39,11 @@ import { endEveryChat, pressAndStart, showView } from "../opening.js";
 import { PROJECTS, ask, inFront, keepTheNotices, openFromTheStrip } from "../switching.js";
 
 /**
- * **Every kind of Blocking ask is found from its project's tab** (#6001, spec #5997, ADR 0121
- * decisions 2 and 4, Consequences, amended 2026-11-12). The specs that shipped ADR 0119 opened
- * their views directly, so none of them checked that a request can be seen from where it is
- * counted, and asks went unseen. (The file keeps its name from when the ✋ counted every project.)
+ * **Every kind of Blocking ask is found from its project's tab and that project's ✋** (#6001,
+ * spec #5997, ADR 0121 decisions 2 and 4, Consequences, as amended 2026-11-12). The specs that
+ * shipped ADR 0119 opened their views directly, so none of them checked that a request can be
+ * seen from where it is counted, and asks went unseen. (The file keeps its name from when the ✋
+ * counted every project.)
  *
  * Here each kind is raised **in another project and another workspace** than the one in front:
  * projects of the spec's own, opened beside the launch's, their chats started in their `beta`
@@ -53,10 +54,12 @@ import { PROJECTS, ask, inFront, keepTheNotices, openFromTheStrip } from "../swi
  *
  * - **counted** on its own project's tab on the rail; the ✋ counts the project in front alone
  *   (#6341, ADR 0121 amended 2026-11-12, decision 1), so it never counts it, and the Asks in
- *   front lists no other project's ask (#6340, decision 4);
- * - **reached from that tab**: pressed, its project is in front, and its own Asks, on Project,
- *   lists it as a row of its own, saying what it asks;
- * - **answerable on its row**: its row is titled as its kind is, and a decision's options stand on
+ *   front lists no other project's ask, as a row or a line (#6340, decision 3);
+ * - **reached from its tab**: pressed, its project is in front, and that project's ✋ counts it;
+ * - **listed** by that project's Asks, which opens on Chat: in the scope drawn, or one press
+ *   wider, on the way out an empty scope offers or on the Project chip (decision 4), as a row of
+ *   its own saying what it asks;
+ * - **answerable in place**: its row is titled as its kind is, and a decision's options stand on
  *   it (ADR 0121 amended 2026-11-09), or a typed ask keeps its Answer.
  *
  * Each is then answered there, in its own project, with its refusal or the cheapest safe answer,
@@ -86,10 +89,14 @@ import { PROJECTS, ask, inFront, keepTheNotices, openFromTheStrip } from "../swi
 
 /** The Asks view, wherever the right side's bar draws it. */
 const INBOX = '[role="tabpanel"][data-view="asks"]';
+/** The right bar's ✋: its count is in its name, after "Asks". */
+const ASKS_TAB = '[role="tablist"][aria-label="Attention"] [role="tab"][aria-label="Asks"]';
 /** The rows of the asks in an Asks view. */
 const ROWS = `${INBOX} .inbox-ask[role="row"]`;
 /** Any row or line of another project's asks, which no Asks draws since #6340. */
 const ELSEWHERE = `${INBOX} [data-elsewhere], ${INBOX} [role="rowgroup"][data-others]`;
+/** Asks's scope chips (ADR 0121, amended 2026-11-12, decision 2). */
+const CHIPS = `${INBOX} [role="radiogroup"][aria-label="Show what needs you in"]`;
 
 /** One of the spec's own projects: its folder, which is the name Asks gives it. */
 type Project = { root: string; name: string };
@@ -184,33 +191,78 @@ async function counted(roots: readonly string[]): Promise<{
   );
 }
 
-/** **Puts the Asks in sight on Project**, the whole project's asks: Asks opens on Chat (#6340),
- *  and a sandbox consent or a command confirmation is no chat's. */
-async function onProject(): Promise<void> {
-  await showView("Asks");
-  await browser
-    .waitUntil(
-      () =>
-        browser.execute((inbox: string) => {
-          const view = [...document.querySelectorAll<HTMLElement>(inbox)].find(
-            (one) => one.getClientRects().length > 0,
-          );
-          const group = view?.querySelector('[role="radiogroup"]');
-          const project = [
-            ...(group?.querySelectorAll<HTMLInputElement>('input[type="radio"]') ?? []),
-          ].find((one) => (one.getAttribute("aria-label") ?? "").startsWith("Project"));
-          if (project === undefined) return false;
-          if (!project.checked) project.click();
-          return project.checked;
-        }, INBOX),
-      { timeout: 20_000, interval: 250 },
-    )
-    .catch(async () => {
-      throw new Error(`Asks never listed Project; it says: ${await asksSaid()}`);
-    });
+/** How many asks `root`'s tab on the rail counts (#6341), from its description ("1 waiting");
+ *  `null` where the rail has no tab for it. */
+async function tabCounts(root: string): Promise<number | null> {
+  return browser.execute(
+    (strip: string, path: string) => {
+      const tab = [...document.querySelectorAll<HTMLElement>(`${strip} [role="tab"]`)].find(
+        (one) => one.getAttribute("data-directory") === path,
+      );
+      if (tab === undefined) return null;
+      const said = (tab.getAttribute("aria-describedby") ?? "")
+        .split(/\s+/)
+        .map((id) => document.getElementById(id)?.textContent ?? "")
+        .join(" ");
+      return Number(/\b(\d+) waiting\b/.exec(said)?.[1] ?? 0);
+    },
+    PROJECTS,
+    root,
+  );
 }
 
-/** Asks's own words, for a failure to say what it showed. */ /** Asks's own words, for a failure to say what it showed. */
+/** What the rows of the Asks in sight say, and whether one of them is a `source`; one pass. */
+async function rowsSay(source: string): Promise<{ says: string[]; texts: string[] }> {
+  return browser.execute(
+    (inbox: string, rows: string, of: string) => {
+      const inSight = [...document.querySelectorAll<HTMLElement>(inbox)].find(
+        (one) => one.offsetParent !== null,
+      );
+      const listed = [
+        ...(inSight?.querySelectorAll<HTMLElement>(`${rows}[data-source="${of}"]`) ?? []),
+      ];
+      return {
+        says: listed.map((row) => row.querySelector(".ask-says")?.textContent?.trim() ?? ""),
+        texts: listed.map((row) => row.innerText.replace(/\s+/g, " ").trim()),
+      };
+    },
+    INBOX,
+    ROWS,
+    source,
+  );
+}
+
+/**
+ * **One press wider** (decision 4): the way out an empty scope offers ("1 waiting in this
+ * project"), else the Project chip. Pressed from the page; nothing where neither is drawn.
+ */
+async function widen(): Promise<void> {
+  await browser.execute(
+    (inbox: string, chips: string) => {
+      const inSight = [...document.querySelectorAll<HTMLElement>(inbox)].find(
+        (one) => one.offsetParent !== null,
+      );
+      const wayOut = [
+        ...(inSight?.querySelectorAll<HTMLElement>(".inbox-scope-empty button") ?? []),
+      ].find((one) => /waiting in this project$/.test(one.textContent?.trim() ?? ""));
+      if (wayOut !== undefined) {
+        wayOut.click();
+        return;
+      }
+      [
+        ...(inSight?.querySelectorAll<HTMLElement>(
+          `${chips} [role="radio"], ${chips} input[type="radio"]`,
+        ) ?? []),
+      ]
+        .find((one) => (one.getAttribute("aria-label") ?? "").startsWith("Project"))
+        ?.click();
+    },
+    INBOX,
+    CHIPS,
+  );
+}
+
+/** Asks's own words, for a failure to say what it showed. */
 async function asksSaid(): Promise<string> {
   return browser.execute((inbox: string) => {
     // Every project's view keeps its Asks drawn behind the one in front: each is said, and
@@ -571,7 +623,7 @@ describe("every Blocking ask, found from its project's tab (#6001, #6341)", func
       expect(await inFront()).toBe(front);
 
       // **Counted on its own project's tab** (#6341), and listed in no Asks of the project in
-      // front (#6340), with Asks open there.
+      // front (#6340, decision 3), with Asks open there.
       await showView("Asks");
       const roots = [mine.root, walled.root];
       let seen = await counted(roots);
@@ -591,10 +643,56 @@ describe("every Blocking ask, found from its project's tab (#6001, #6341)", func
           );
         });
       expect(seen.elsewhere).toBe(0);
+      if (await $(INBOX).isDisplayed()) expect((await rowsSay(kind.source)).says).toEqual([]);
 
-      // **Reached from its tab**: pressed, its project is in front, and its own Asks lists it.
+      // **Reached from its tab**: pressed, its project is in front; then its ✋ is the one thing
+      // pressed, and only if Asks is not open. The right bar's ✋: the title bar's is drawn only
+      // where the project in front has asks, and it may not be drawn yet.
       await toFront(kind.from.root);
-      await onProject();
+      if (!(await $(INBOX).isDisplayed())) await $(ASKS_TAB).click();
+      await $(INBOX)
+        .waitForDisplayed({ timeout: 20_000 })
+        .catch(() => {
+          throw new Error(`${kind.name}: the ✋ did not open Asks`);
+        });
+
+      // **Listed** in the scope Asks opens on, or one press wider (decision 4): a chat's ask is
+      // under Chat where its chat has focus; one no chat holds, under Project alone.
+      const listed = async () => {
+        const { says, texts } = await rowsSay(kind.source);
+        const { waits } = kind;
+        return (
+          says.some((said) => kind.says.test(said)) ||
+          (waits !== undefined && texts.some((text) => text.includes(waits)))
+        );
+      };
+      let widened = false;
+      await browser
+        .waitUntil(
+          async () => {
+            if (await listed()) return true;
+            if (!widened && ((await tabCounts(kind.from.root)) ?? 0) > 0) {
+              await widen();
+              widened =
+                (await $(`${CHIPS} [aria-label^="Project"]:checked`).isExisting()) ||
+                (await $(
+                  `${CHIPS} [role="radio"][aria-label^="Project"][aria-checked="true"]`,
+                ).isExisting());
+            }
+            return false;
+          },
+          { timeout: 90_000, interval: 500 },
+        )
+        .catch(async () => {
+          const kept = await keepTheNotices(`every-ask-${kind.source}`);
+          throw new Error(
+            `${kind.name}: not listed from the ✋ of ${kind.from.name}; ` +
+              `Asks says: ${await asksSaid()} (kept: ${kept})`,
+          );
+        });
+
+      expect(await inFront()).toBe(kind.from.root);
+      // **Answerable in place**: its row, in its own project's Asks.
       const row = `${ROWS}[data-source="${kind.source}"]`;
       await $(row)
         .waitForDisplayed({ timeout: 20_000 })

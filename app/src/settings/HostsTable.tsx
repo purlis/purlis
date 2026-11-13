@@ -185,7 +185,7 @@ export function HostsTable({
             return (
               <TableRow key={written} id={written} textValue={written}>
                 <TableCell>
-                  <code className="ui-hosts-host">
+                  <code className="ui-hosts-host ui-text-code">
                     {host}
                     <span className="ui-hosts-port">{`:${port}`}</span>
                   </code>

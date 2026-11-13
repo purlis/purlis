@@ -80,8 +80,8 @@ pub use read::{
 };
 use reference::Seen;
 pub use reference::{
-    BUILT_IN_PREFIXES, OLD_BUILT_IN_PREFIX, OnMachine, RENAMED, Reference, WORKSPACE_PREFIX,
-    name_now, old_names_in,
+    BUILT_IN_PREFIXES, OLD_BUILT_IN_PREFIX, OnMachine, RENAMED, RETIRED, Reference,
+    WORKSPACE_PREFIX, name_now, old_names_in, retired_names_in,
 };
 pub use router::{
     Candidate, Candidates, Hidden, HiddenWhy, INDEX, Index, Line, Router, Routing, StillOver,

@@ -40,8 +40,7 @@ const QUIET: readonly string[] = [
   ".search-file-rest",
   ".search-line-number",
   ".search-summary",
-  ".ui-machine-path",
-  ".ui-record-where",
+  // `.ui-machine-path` and `.ui-record-where` wear the meta (#1920), whose colour is quiet.
   ".activity-at",
   ".memory-meta",
   ...FAMILY_THEMES.flatMap((family) => family.quiet ?? []),

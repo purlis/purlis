@@ -18,6 +18,7 @@ import {
   whoReaches,
 } from "./personaHostsAllow";
 import { useWindowFocused } from "./windowFocused";
+import { asksMoved } from "./asks";
 
 /** The personas whose hosts or tools this machine has not allowed as they stand: hosts a chat
  *  would reach (none under a policy that forbids them), or tools (D-PE-ruling-1). */
@@ -49,14 +50,24 @@ export function waitingPersonas(state: SandboxState | null | undefined): Persona
  * change on disk (a pull, a branch switched, a hand's edit) and each time the window comes back
  * into focus, so a list a teammate changed is asked about while the project is open; and when a
  * chat starts, so a list allowed in another window is not still asked about here.
+ *
+ * **It is a Blocking ask too** (ADR 0121, amended 2026-11-12): the core lists each such persona
+ * among the project's asks, so the ✋ counts it and its row in Asks answers it. In the window
+ * the Notice is drawn from that same ask (`asked`): a persona whose ask is gone, allowed or put
+ * away in either place, has no Notice either. Not now here says so to the core, which puts the
+ * ask away while the project is open and the list stands.
  */
 export function PersonaHostsNotice({
   plane,
   canAllow = mayAllowPersonaHosts(),
+  asked,
 }: {
   plane: PlaneId;
   /** Whether this page may press Allow: the window may, a link may not. */
   canAllow?: boolean;
+  /** The personas whose Allow the project's asks list now, where they have been read: in the
+   *  window, only those have a Notice. A link reads no asks, and draws each that waits. */
+  asked?: readonly string[];
 }) {
   const [state, setState] = useState<SandboxState>();
   const [later, setLater] = useState<readonly string[]>([]);
@@ -102,10 +113,19 @@ export function PersonaHostsNotice({
     <>
       {waitingPersonas(state)
         .filter((one) => !later.includes(one.persona))
+        .filter((one) => !canAllow || asked === undefined || asked.includes(one.persona))
         .map((one) => {
           const notNow = {
             label: "Not now",
-            onPress: () => setLater((now) => [...now, one.persona]),
+            onPress: () => {
+              setLater((now) => [...now, one.persona]);
+              // And its ask in Asks, put away with it (ADR 0121, amended 2026-11-12).
+              if (canAllow)
+                void commands
+                  .personaAllowNotNow(plane, one.persona, one.digest)
+                  .then(() => asksMoved(plane))
+                  .catch(() => {});
+            },
           };
           const what = whatWaits(one, hostsLocked);
           const tools = one.tools.length > 0;

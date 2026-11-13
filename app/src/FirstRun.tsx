@@ -189,7 +189,7 @@ export function FirstRun({
             templates={found?.templates}
           />
 
-          <h2>Or start from a repo you already have</h2>
+          <h2 className="ui-text-label">Or start from a repo you already have</h2>
           {setup?.yours && <YourLevel level={setup.yours} />}
 
           {/* **The template first** (#1719): both acts below open the repo with it, so it is seen

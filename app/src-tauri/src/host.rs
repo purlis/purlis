@@ -1065,6 +1065,9 @@ pub(crate) mod pretend {
         confined: Mutex<Vec<purlis_core::sandbox::plan::Plan>>,
         /// How each chat left running is sandboxed, as its host recorded it (#2636).
         ran_in: Mutex<Vec<(u32, Option<purlis_session_protocol::session::RunSandbox>)>>,
+        /// What each session shows, where a test said ([`Pretend::shows`]): what a view of it
+        /// is sent first.
+        screens: Mutex<Vec<(u32, String)>>,
         /// The chats reattached, in order.
         reattached: Mutex<Vec<u32>>,
         /// The chats left running that nothing reattached, closed.
@@ -1292,6 +1295,14 @@ pub(crate) mod pretend {
         /// back with its chat, or ends it (#2025).
         pub fn leaves_a_browser(&self, browser: purlis_session_protocol::session::HeldProgram) {
             lock(&self.seen.browsers_left).push(browser);
+        }
+
+        /// Session `number` shows `screen`: what a view of it is sent first, its scrollback
+        /// with it, as a real host sends a view's snapshot.
+        pub fn shows(&self, number: u32, screen: &str) {
+            let mut screens = lock(&self.seen.screens);
+            screens.retain(|(one, _)| *one != number);
+            screens.push((number, screen.to_owned()));
         }
 
         /// The chats reattached, in order.
@@ -1645,9 +1656,16 @@ pub(crate) mod pretend {
             self.reached(format!("resized {id} {}x{}", size.columns, size.rows));
             Ok(())
         }
-        fn watch(&self, id: u32, _sink: Sink) -> Result<Watching, String> {
+        fn watch(&self, id: u32, mut sink: Sink) -> Result<Watching, String> {
             self.here(id)?;
             self.reached(format!("watched {id}"));
+            let shown = lock(&self.seen.screens)
+                .iter()
+                .find(|(one, _)| *one == id)
+                .map(|(_, screen)| screen.clone());
+            if let Some(screen) = shown {
+                sink(screen.into_bytes());
+            }
             Ok(Watching {
                 view: 1,
                 size: Size {

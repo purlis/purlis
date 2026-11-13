@@ -14,7 +14,7 @@ use std::net::ToSocketAddrs as _;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use super::{HostKey, Pin, Route};
+use super::{EnginePin, HostKey, Pin, Route};
 
 /// **What a check of the route found wrong** (ADR 0123 §7, its SSH rows), each with what the
 /// sentence names.
@@ -45,12 +45,20 @@ pub enum Finding {
     },
     /// The engine at the socket didn't answer through the forward: what was said.
     EngineSilent { host: String, said: String },
-    /// The engine answers with another id than the pinned one.
+    /// The machine's SSH server signs the person in and refuses to forward the engine's socket
+    /// (#6349): `AllowTcpForwarding no`, `AllowStreamLocalForwarding no`, `DisableForwarding`,
+    /// or a key's `no-port-forwarding`. Found by [`forwarding_refused`], never from what ssh said.
+    ForwardingRefused { host: String },
+    /// The engine answers with another id than the pinned one, or, for a Podman, another socket
+    /// or graph root (#6269).
     EngineChanged {
         host: String,
         pinned: String,
         now: String,
+        podman: bool,
     },
+    /// The engine there is a Podman, and this machine has no `podman` to reach it with (#6269).
+    NeedsPodman { host: String },
     /// Something else went wrong on this machine (no ssh, a folder that couldn't be made).
     Here(String),
 }
@@ -136,7 +144,8 @@ pub fn not_carried(printed: &str) -> Vec<&'static str> {
 #[must_use]
 pub fn carried_refused(host: &str, settings: &[&str]) -> String {
     format!(
-        "Your SSH settings for {host} add {}, which purlis won't carry on its connection to          Docker there. Give the machine a Host entry without {}.",
+        "Your SSH settings for {host} add {}, which purlis won't carry on its connection to \
+         Docker there. Give the machine a Host entry without {}.",
         settings.join(", "),
         if settings.len() == 1 { "it" } else { "them" },
     )
@@ -320,43 +329,117 @@ pub fn probe(
     }
 }
 
-/// **The engine's id, read through a forward opened against `key`** (`docker info`'s `.ID`): what
-/// the pin keeps. The forward is ended once read; the pool holds its own once it is added.
-pub fn engine_id(
+/// **The engine's pin, read through a forward opened against `key`** (ADR 0123 §3): Docker's id,
+/// or a Podman's socket and graph root, read with this machine's `podman` where Docker's client
+/// finds a Podman there (#6269). The forward is ended once read; the pool holds its own once it
+/// is added.
+pub fn engine_pin(
     docker: &crate::dockerpool::Docker,
     opening: &super::forward::Opening<'_>,
-) -> Result<String, Finding> {
+) -> Result<EnginePin, Finding> {
     let host = || opening.route.host().to_owned();
     let held = super::forward::open(opening)
         .map_err(|said| Finding::EngineSilent { host: host(), said })?;
-    let read = docker.clone().through(held.socket()).engine_id_said();
+    let through = docker.clone().through(held.socket());
+    let read = match through.engine_pin_said() {
+        Ok(crate::dockerpool::EngineSaid::PodmanOverDocker) => match super::podman_here() {
+            Some(podman) => through.as_program(podman).engine_pin_said(),
+            None => return Err(Finding::NeedsPodman { host: host() }),
+        },
+        read => read,
+    };
     drop(held);
-    read.map_err(|why| Finding::EngineSilent {
-        host: host(),
-        said: why.0,
-    })
+    match read {
+        Ok(crate::dockerpool::EngineSaid::Pin(pin)) => Ok(pin),
+        // Podman's own client answers as a Podman, never as Docker's over it.
+        Ok(crate::dockerpool::EngineSaid::PodmanOverDocker) => {
+            Err(Finding::NeedsPodman { host: host() })
+        }
+        Err(why) => Err(silent_or_refused(opening, why.0)),
+    }
+}
+
+/// **Why an engine didn't answer through a forward that opened** (#6349): the machine's SSH
+/// server refusing to forward its socket, where [`forwarding_refused`] finds it does, else the
+/// engine itself, with what was said.
+pub fn silent_or_refused(opening: &super::forward::Opening<'_>, said: String) -> Finding {
+    let host = opening.route.host().to_owned();
+    if forwarding_refused(opening) {
+        Finding::ForwardingRefused { host }
+    } else {
+        Finding::EngineSilent { host, said }
+    }
+}
+
+/// **Whether the machine's SSH server refuses to forward the engine's socket** (#6349), by a check
+/// of its own. A local forward opens on this machine alone, so a server that refuses it is found
+/// only by asking it for a channel: ssh asks for one to the socket ([`super::forward_check_args`])
+/// and ends with 255 where it isn't opened. ssh ends with 255 too for a sign-in refused, a lost
+/// connection, and a channel the server opened to a socket that took no connection, so a 255 is
+/// taken as a refused forward only where the probe, run right after, signs in and finds the
+/// socket there and usable ([`super::probe_args`]). What ssh said is never read.
+///
+/// What it can't tell apart: a socket left behind by an engine that ended without removing it,
+/// on a machine that forwards. That is said as a refused forward, and Check again asks again.
+#[must_use]
+pub fn forwarding_refused(opening: &super::forward::Opening<'_>) -> bool {
+    let (route, pool) = (opening.route, opening.pool);
+    let Ok(folder) = crate::dockerpool::settings::run_folder(opening.settings_in) else {
+        return false;
+    };
+    let Ok(known_hosts) = folder.keep(
+        "known_hosts",
+        super::known_hosts(pool, opening.key).as_bytes(),
+    ) else {
+        return false;
+    };
+    let Ok(args) = super::forward_check_args(route, pool, &known_hosts) else {
+        return false;
+    };
+    if !matches!(
+        super::run(opening.ssh, &args),
+        Ok(super::Ran {
+            code: Some(255),
+            ..
+        })
+    ) {
+        return false;
+    }
+    super::run(opening.ssh, &super::probe_args(route, pool, &known_hosts))
+        .is_ok_and(|probed| probed.code == Some(0))
 }
 
 /// **Whether `pin` still holds for the engine `docker` reaches through the pool's forward**: the
 /// check made before every runner is made, checked or linked (ADR 0123 §3). The host key is
-/// ssh's to refuse as the forward opens.
+/// ssh's to refuse as the forward opens. A Podman's is its socket and graph root: another graph
+/// root under the same key is another engine (#6269).
 pub fn engine_holds(
     docker: &crate::dockerpool::Docker,
     route: &Route,
     pin: &Pin,
 ) -> Result<(), Finding> {
-    let now = docker
-        .engine_id_said()
-        .map_err(|why| Finding::EngineSilent {
-            host: route.host().to_owned(),
-            said: why.0,
-        })?;
+    let silent = |why: crate::dockerpool::Refused| Finding::EngineSilent {
+        host: route.host().to_owned(),
+        said: why.0,
+    };
+    let now = match &pin.engine {
+        EnginePin::Docker(_) => EnginePin::Docker(docker.engine_id_said().map_err(silent)?),
+        EnginePin::Podman { .. } => match docker.engine_pin_said().map_err(silent)? {
+            crate::dockerpool::EngineSaid::Pin(now) => now,
+            crate::dockerpool::EngineSaid::PodmanOverDocker => {
+                return Err(Finding::NeedsPodman {
+                    host: route.host().to_owned(),
+                });
+            }
+        },
+    };
     if now == pin.engine {
         return Ok(());
     }
     Err(Finding::EngineChanged {
         host: route.host().to_owned(),
-        pinned: pin.engine.clone(),
-        now,
+        pinned: pin.engine.shown(),
+        now: now.shown(),
+        podman: pin.engine.is_podman(),
     })
 }

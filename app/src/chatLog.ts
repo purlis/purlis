@@ -80,9 +80,9 @@ function layerSaid(layer: StartProtection["layers"][number]): string {
 }
 
 function commitSaid(protection: StartProtection): string {
-  if (protection.charter_commit === "none") return "charter.toml in no commit";
-  if (protection.charter_commit === "unknown") return "charter.toml's commit not known";
-  const at = `charter.toml at ${protection.charter_commit.slice(0, 7)}`;
+  if (protection.charter_commit === "none") return "purlis.toml in no commit";
+  if (protection.charter_commit === "unknown") return "purlis.toml's commit not known";
+  const at = `purlis.toml at ${protection.charter_commit.slice(0, 7)}`;
   return protection.charter_dirty ? `${at}, with changes not committed` : at;
 }
 
@@ -93,7 +93,7 @@ function answersSaid(count: number): string {
 
 /**
  * **The start row's one line** (R-227): the four fields of the start event, each from the
- * event and none from the chat: each layer's level and who set it, the `charter.toml` commit,
+ * event and none from the chat: each layer's level and who set it, the `purlis.toml` commit,
  * and the answers in force.
  */
 export function startSaid(row: Extract<ChatLogRow, { kind: "started" }>): string {

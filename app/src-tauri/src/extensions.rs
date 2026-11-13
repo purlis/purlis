@@ -1575,25 +1575,91 @@ pub async fn set_extension_on(id: String, on: bool) -> Result<(), String> {
 // record purlis could not read. The window names the editor and nothing else: the file is this
 // machine's own record, placed by the core, never a path the window sent. Window-only
 // (`WINDOW_ONLY`): it starts a program of the person's on a machine file, which no link may.
+// A terminal editor opens in a shell tab of the project in front, on its root's strip, standing
+// in the record's folder (#1894), as a harness declaration's does; `front` is that project, and
+// none when the dialog was opened over no project.
 // Not a doc comment, because the generated bindings carry those.
 #[tauri::command]
 #[specta::specta]
 pub async fn open_extension_record(
     app: tauri::AppHandle,
+    planes: tauri::State<'_, crate::planes::Planes>,
+    front: Option<crate::planes::PlaneId>,
     editor: crate::piecefiles::YourEditor,
 ) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt as _;
     let root = config_root()?;
     let var = |name: &str| std::env::var(name).ok();
-    match extension::record_in_your_editor(&root, editor.into(), &var)? {
-        purlis_core::youreditor::Launch::Url(url) => app
+    match record_opens(&root, editor, &var, front.is_some())? {
+        RecordOpens::Url(url) => app
             .opener()
             .open_url(&url, None::<&str>)
             .map_err(|e| format!("the system did not open {url}: {e}")),
-        purlis_core::youreditor::Launch::Program { program, args } => {
-            crate::piecefiles::started(program, args).await
+        RecordOpens::Detached { program, args } => crate::piecefiles::started(program, args).await,
+        RecordOpens::InATab(chat) => {
+            let plane = front.ok_or_else(no_project_for_a_terminal_editor)?;
+            let held = planes.held(&plane)?;
+            crate::editortab::shown(&app, &held, &plane, crate::editortab::PROJECT_ROOT, *chat)
         }
     }
+}
+
+/// How the extension record opens in the editor the window named.
+#[derive(Debug, PartialEq, Eq)]
+enum RecordOpens {
+    /// An editor the system opens a link for.
+    Url(String),
+    /// An editor that opens its own window, started as it always was.
+    Detached {
+        program: String,
+        args: Vec<std::ffi::OsString>,
+    },
+    /// A terminal editor, as the program of a tab of its own.
+    InATab(Box<purlis_core::reopen::Chat>),
+}
+
+/// Where the record at `root` opens in `editor`, with `var` as the environment: a terminal
+/// editor needs a project `in_front` to hold its tab, and is refused with why without one.
+fn record_opens(
+    root: &std::path::Path,
+    editor: crate::piecefiles::YourEditor,
+    var: &dyn Fn(&str) -> Option<String>,
+    in_front: bool,
+) -> Result<RecordOpens, String> {
+    use purlis_core::youreditor::{self, Launch};
+    let checked = extension::record_in_your_editor(root, editor.into(), var)?;
+    // Asked again right before the launch: still the record checked (#3185).
+    let launch = checked.launch().map_err(|refused| refused.to_string())?;
+    let (program, args) = match launch {
+        Launch::Url(url) => return Ok(RecordOpens::Url(url)),
+        Launch::Program { program, args } => (program, args),
+    };
+    if !youreditor::in_a_terminal(&program, &args) {
+        return Ok(RecordOpens::Detached { program, args });
+    }
+    if !in_front {
+        return Err(no_project_for_a_terminal_editor());
+    }
+    let record = extension::file(root);
+    let folder = record
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .ok_or_else(|| {
+            format!(
+                "{} is in no folder, so nothing was opened.",
+                record.display()
+            )
+        })?;
+    crate::editortab::tab_chat(program, args, folder)
+        .map(|chat| RecordOpens::InATab(Box::new(chat)))
+}
+
+/// Why a terminal editor did not open the record from a dialog over no project.
+fn no_project_for_a_terminal_editor() -> String {
+    "Your editor runs in a terminal, which opens in a shell tab of a project, and no project is \
+     open, so the record was not opened. Open a project first, or choose VS Code, Zed or a \
+     JetBrains IDE in Settings › You › Editor."
+        .to_owned()
 }
 
 // ---------------------------------------------------------------------------------------
@@ -3415,8 +3481,8 @@ mod tests {
         }
     }
 
-    /// #1296: opening the extension record is the window's alone, and the window names only the
-    /// editor: the generated client carries no path for it.
+    /// #1296, #1894: opening the extension record is the window's alone, and the window names
+    /// only the project in front and the editor: the generated client carries no path for it.
     #[test]
     fn the_record_is_opened_from_the_window_alone_and_names_no_file() {
         assert!(purlis_session_protocol::ui::window_only(
@@ -3427,7 +3493,163 @@ mod tests {
             .find("openExtensionRecord: (")
             .expect("the window's client has the command");
         let signature = &bound[at..at + bound[at..].find(')').expect("its parameters end")];
-        assert_eq!(signature, "openExtensionRecord: (editor: YourEditor");
+        assert_eq!(
+            signature,
+            "openExtensionRecord: (front: string | null, editor: YourEditor"
+        );
+    }
+
+    /// A config home under `parent` holding an extension record, and the record's path.
+    fn a_record(parent: &std::path::Path) -> (std::path::PathBuf, std::path::PathBuf) {
+        let config = parent.join("config");
+        let record = extension::file(&config);
+        std::fs::create_dir_all(record.parent().expect("a folder")).expect("its folder");
+        std::fs::write(&record, "not a record purlis can read").expect("the record");
+        (config, record)
+    }
+
+    /// An environment where `$VISUAL` says `visual`.
+    fn visual(visual: &str) -> impl Fn(&str) -> Option<String> + '_ {
+        move |name| (name == "VISUAL").then(|| visual.to_owned())
+    }
+
+    /// #1894: a terminal editor opens the record in a tab of its own, standing in the record's
+    /// folder, with its words, the line and the record as its arguments.
+    #[test]
+    fn a_terminal_editor_opens_the_record_in_a_tab_as_an_argument_vector() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let (config, record) = a_record(dir.path());
+
+        let opens = record_opens(
+            &config,
+            crate::piecefiles::YourEditor::Variable,
+            &visual("nvim -u NONE"),
+            true,
+        )
+        .expect("it opens");
+
+        let RecordOpens::InATab(chat) = opens else {
+            panic!("a terminal editor opens in a tab, not {opens:?}");
+        };
+        assert_eq!(chat.program, "nvim");
+        assert_eq!(
+            chat.args,
+            ["-u", "NONE", "+1", record.to_str().expect("UTF-8")]
+        );
+        assert_eq!(chat.cwd.as_deref(), record.parent());
+        let named = record.file_name().expect("a name").to_string_lossy();
+        assert_eq!(chat.name, format!("nvim {named}"));
+    }
+
+    /// #1894: an editor that opens its own window is started as it always was, whether or not a
+    /// project is in front, and a linked editor is still a link.
+    #[test]
+    fn a_windowed_editor_opens_the_record_as_it_always_did() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let (config, record) = a_record(dir.path());
+        for in_front in [true, false] {
+            let opens = record_opens(
+                &config,
+                crate::piecefiles::YourEditor::Variable,
+                &visual("gvim -f"),
+                in_front,
+            )
+            .expect("it opens");
+            assert_eq!(
+                opens,
+                RecordOpens::Detached {
+                    program: "gvim".to_owned(),
+                    args: vec!["-f".into(), "+1".into(), record.clone().into_os_string()],
+                },
+                "{in_front}"
+            );
+            let linked = record_opens(
+                &config,
+                crate::piecefiles::YourEditor::Zed,
+                &visual("nvim"),
+                in_front,
+            )
+            .expect("it opens");
+            assert!(matches!(linked, RecordOpens::Url(_)), "{linked:?}");
+        }
+    }
+
+    /// #1894: with no project in front there is nowhere to hold a terminal editor's tab, so
+    /// the window is told why rather than the editor starting with no terminal.
+    #[test]
+    fn a_terminal_editor_with_no_project_in_front_is_refused_with_why() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let (config, _) = a_record(dir.path());
+
+        let refused = record_opens(
+            &config,
+            crate::piecefiles::YourEditor::Variable,
+            &visual("vim"),
+            false,
+        )
+        .expect_err("refused");
+
+        assert_eq!(refused, no_project_for_a_terminal_editor());
+        assert!(refused.contains("no project is open"), "{refused}");
+        assert!(refused.contains("Open a project first"), "{refused}");
+    }
+
+    /// #1894: the record's tab hands the editor the record's path as one word, which no shell
+    /// reads, however the folder it is in is named. It needs a pseudo-terminal, so it first
+    /// runs on CI.
+    #[cfg(unix)]
+    #[test]
+    fn the_record_s_tab_gets_the_record_as_one_word_no_shell_reads() {
+        use std::os::unix::fs::PermissionsExt as _;
+        use std::sync::Arc;
+        use std::time::{Duration, Instant};
+
+        let dir = tempfile::tempdir().expect("a directory");
+        let odd = dir.path().join("a b;$(touch pwned)");
+        let (config, record) = a_record(&odd);
+        // A stand-in terminal editor, by its name: a fixed script writing the words it was
+        // handed, one per line, into the folder it stands in.
+        let bin = dir.path().join("bin");
+        std::fs::create_dir_all(&bin).expect("a bin folder");
+        let nvim = bin.join("nvim");
+        std::fs::write(&nvim, "#!/bin/sh\nprintf '%s\\n' \"$@\" > heard\n").expect("a script");
+        std::fs::set_permissions(&nvim, std::fs::Permissions::from_mode(0o755)).expect("runnable");
+        let project = dir.path().join("one");
+        std::fs::create_dir_all(&project).expect("the project");
+        std::fs::write(project.join(purlis_core::plane::MANIFEST), "").expect("its manifest");
+        let planes = crate::planes::Planes::telling(
+            Arc::new(|_: crate::hooks::Moved| {}),
+            crate::Shipped::default(),
+            Some(config.clone()),
+        );
+        let held = planes.held(&planes.open(&project)).expect("held");
+        let said = nvim.display().to_string();
+        let RecordOpens::InATab(chat) = record_opens(
+            &config,
+            crate::piecefiles::YourEditor::Variable,
+            &visual(&said),
+            true,
+        )
+        .expect("it opens") else {
+            panic!("a terminal editor opens in a tab");
+        };
+
+        crate::editortab::in_a_tab(&held, &chat).expect("the tab starts");
+
+        let heard = record.parent().expect("a folder").join("heard");
+        let deadline = Instant::now() + Duration::from_secs(15);
+        let mut words = String::new();
+        while Instant::now() < deadline {
+            words = std::fs::read_to_string(&heard).unwrap_or_default();
+            if words.lines().count() == 2 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        planes.let_go_of_all();
+        assert_eq!(words, format!("+1\n{}\n", record.display()));
+        assert!(!dir.path().join("pwned").exists(), "no shell read the path");
+        assert!(!odd.join("pwned").exists(), "no shell read the path");
     }
 
     /// A config home, and two projects whose committed default is a theme folder of their own.

@@ -1889,10 +1889,10 @@ fn pool_to_row(pool: &Pool) -> serde_json::Value {
     if let Some(remote) = pool.remote() {
         row["kind"] = REMOTE_DOCKER.into();
         row["route"] = remote.route.spelled().into();
-        row["pin"] = serde_json::json!({
-            "hostKey": remote.pin.host_key.spelled(),
-            "engine": remote.pin.engine,
-        });
+        if let Some(identity) = remote.route.identity() {
+            row["identity"] = identity.display().to_string().into();
+        }
+        row["pin"] = remote.pin.to_json();
     }
     row["image"] = pool.image().as_str().into();
     let set = pool.set();
@@ -2016,6 +2016,7 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         "width",
         "profiles",
         "route",
+        "identity",
         "pin",
     ];
     if fields
@@ -2026,7 +2027,13 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
     }
     let text = |key: &str| fields.get(key).and_then(serde_json::Value::as_str);
     let remote = match text("kind")? {
-        "docker" if !fields.contains_key("route") && !fields.contains_key("pin") => None,
+        "docker"
+            if !fields.contains_key("route")
+                && !fields.contains_key("pin")
+                && !fields.contains_key("identity") =>
+        {
+            None
+        }
         REMOTE_DOCKER => Some(remote_from_row(fields)?),
         _ => return None,
     };
@@ -2081,27 +2088,20 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         })
 }
 
-/// A `remote-docker` row's `route` and `pin` (#6266): a route that names its socket, and both
-/// halves of the pin. Anything else is not as purlis writes it.
+/// A `remote-docker` row's `route`, `identity` and `pin` (#6266, #6269): a route that names its
+/// socket, the key file a Podman connection named where there is one, and both halves of the
+/// pin. Anything else is not as purlis writes it.
 fn remote_from_row(fields: &serde_json::Map<String, serde_json::Value>) -> Option<Remote> {
     let route = crate::sshroute::Route::parse(fields.get("route")?.as_str()?).ok()?;
     route.socket()?;
-    let pin = fields.get("pin")?.as_object()?;
-    if pin.len() != 2 {
-        return None;
-    }
-    let host_key = crate::sshroute::HostKey::parse(pin.get("hostKey")?.as_str()?).ok()?;
-    let engine = pin.get("engine")?.as_str()?;
-    if !usable_noted(engine) {
-        return None;
-    }
-    Some(Remote {
-        route,
-        pin: crate::sshroute::Pin {
-            host_key,
-            engine: engine.to_owned(),
-        },
-    })
+    let route = match fields.get("identity") {
+        None => route,
+        Some(identity) => route
+            .with_identity(std::path::Path::new(identity.as_str()?))
+            .ok()?,
+    };
+    let pin = crate::sshroute::Pin::from_json(fields.get("pin")?.as_object()?)?;
+    Some(Remote { route, pin })
 }
 
 /// The kind a cluster pool's row, and its runner's, are of (#3292).

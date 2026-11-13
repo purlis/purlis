@@ -74,9 +74,8 @@ amending the same record do not conflict (`tools/adr-amendments.mjs` holds it).
   allow of the lint appears anywhere else. A sixth block is a new ruling, not an edit.
 - **UI is built from the component families in `app/src/ui`, never hand-rolled markup** (ADR
   0104): each wraps its React Aria primitive once, and lint refuses a control drawn by hand. Before
-  any UI work, follow the `purlis-building-ui` skill
-  (`app/src-tauri/plugin/skills/purlis-building-ui/SKILL.md`): the families, parts, stories and
-  checks that make it done. Every family has moved and Radix is gone (#2930):
+  any UI work, follow [`docs/building-ui.md`](docs/building-ui.md): the families, parts, stories
+  and checks that make it done. Every family has moved and Radix is gone (#2930):
   `app/src/radixGone.guard.test.ts` fails on a `@radix-ui` import or dependency. A shadcn/ui
   component's source **copied into the repo is allowed** (ADR 0037, amended 2026-09-22).
   **Beyond the families there is one house set:** the six settings pieces in

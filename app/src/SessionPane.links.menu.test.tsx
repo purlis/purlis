@@ -342,6 +342,7 @@ describe("Links in this pane… on the terminal's menu", () => {
         target: TARGET,
         shown: TARGET,
         does: { does: "opens", into: "browser" },
+        chat: null,
       },
     });
 

@@ -427,6 +427,11 @@ pub fn answer(
                     Answer::Working(Box::new(working))
                 },
             ),
+        // The chats of the asking chat's workspace (#6235): no ticket, for the record's reason.
+        // The workspace is this app's record of the chat whose token the line carries, and the
+        // answer is names, states and times, never what a chat wrote.
+        Ask::Chats(asks) => crate::chatlisting::for_chat(held, plane, &asks)
+            .map_or_else(no, |data| Answer::Chats { data }),
         // An ask after a task this chat dispatched (#1441): no ticket, for the record's reason,
         // and whose task it names is the app's record of that chat.
         Ask::Task(asked) => crate::dispatched::answer(held, &asked, connection),

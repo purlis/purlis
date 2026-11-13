@@ -1395,3 +1395,61 @@ fn a_git_of_very_many_words_is_judged_in_a_moment() {
         );
     }
 }
+
+/// A heredoc body no shell runs is data (#6293): a ledger entry or a script written to a file
+/// that names git is not a git the line runs, whether its delimiter is quoted or not, indented
+/// (`<<-`) or one of several.
+#[test]
+fn a_heredoc_body_no_shell_runs_is_never_read_as_git() {
+    let l = Layout::new();
+    for cmd in [
+        // An append to a ledger whose text names `git push`.
+        "cat >> ledger.md <<'EOF'\n- pushed with `cd \"$WT\" && git push`\n$GIT push origin main\nEOF",
+        // A patch script written to a scratch file.
+        "cat > \"$TMPDIR/p.sh\" <<\"EOF\"\n#!/bin/sh\ncd \"$1\" && git commit -am x\n$GIT push\nEOF\nchmod +x \"$TMPDIR/p.sh\"",
+        // Indented, its tab-led terminator ends it.
+        "cat > p.sh <<-'EOF'\n\tcd \"$1\" && git push\n\tEOF",
+        // Two on one line, and a body that spells a heredoc of its own.
+        "cat <<'A' > a.sh; cat <<'B' > b.sh\n$GIT push\nA\ncd \"$1\" && git rebase main\nB",
+        "cat > outer.sh <<'OUT'\ncat > inner.sh <<'IN'\n$GIT push\nIN\ncd \"$1\" && git push\nOUT",
+        // Unquoted: expanded, but the text around a substitution is data still.
+        "cat > notes.md <<EOF\nrun cd \"$WT\" && git push when $USER is back\nEOF",
+    ] {
+        assert_eq!(l.unplaced(cmd, &l.root), None, "{cmd}");
+        assert_eq!(l.writes(cmd, &l.root), [], "{cmd}");
+    }
+    // In a branch folder, a sandboxed chat's guard reads the same.
+    let cmd = "cat > p.sh <<'EOF'\ngit add -A\ngit commit -m x\nEOF";
+    assert_eq!(l.ask(cmd, &l.folder), None);
+    assert_eq!(l.writes(cmd, &l.folder), []);
+}
+
+/// What a shell does run is still read (#6293): the command after a body, a body fed to a
+/// shell, and a substitution in a body whose delimiter is unquoted.
+#[test]
+fn git_after_a_heredoc_or_run_from_one_is_still_read() {
+    let l = Layout::new();
+    for (cmd, sub) in [
+        (
+            "cat > f <<'EOF'\ngit push\nEOF\ncd \"$DIR\" && git push",
+            "push",
+        ),
+        (
+            "cat > f <<-'EOF'\n\tgit push\n\tEOF\ncd \"$DIR\" && git commit -m x",
+            "commit",
+        ),
+        ("bash <<'EOF'\ncd \"$DIR\" && git push\nEOF", "push"),
+        (
+            "cat > f <<EOF\nsha: $(cd \"$DIR\" && git commit -m x)\nEOF",
+            "commit",
+        ),
+        ("cat > f <<EOF\n'`cd \"$DIR\" && git push`'\nEOF", "push"),
+    ] {
+        assert_eq!(l.unplaced(cmd, &l.root).as_deref(), Some(sub), "{cmd}");
+    }
+    let cmd = "cat > f <<'EOF'\nnotes\nEOF\ngit add -A";
+    assert_eq!(
+        l.ask(cmd, &l.folder).map(|(sub, _)| sub).as_deref(),
+        Some("add")
+    );
+}

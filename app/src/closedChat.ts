@@ -21,7 +21,8 @@ import {
   type FinishedTask,
   type PlaneId,
 } from "./bindings";
-import { qualifierOf, shownOf } from "./finished";
+import { qualifierOf, shownOf, whyNoReopen } from "./finished";
+import { capitalised, endedAt } from "./chatEnded";
 import { chatNumberIn, chatNumberSaid, numberedName } from "./chatNumber";
 import type { ViewRef } from "./tabs";
 import type { Offer } from "./actions";
@@ -52,28 +53,44 @@ export function outcomeOf(task: Pick<FinishedTask, "how" | "outcome">): CardOutc
   };
 }
 
-function capitalised(words: string): string {
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
-
-/** When it ended, as a clock says it: `11:08`. Nothing where the record keeps no end. */
-export function endedAt(ended: string | null): string | undefined {
-  if (ended === null) return undefined;
-  const at = new Date(ended);
-  if (Number.isNaN(at.getTime())) return undefined;
-  return at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
-}
-
 /** The card's title: `#641 · Signed commits #5607`. */
 export function cardTitle(card: ChatCard): string {
-  return numberedName(card.number, card.task.name);
+  return numberedName(card.number, card.title);
+}
+
+/**
+ * The badge of a chat no dispatch started (#6304): it closed, and nothing more is known of how.
+ * Plain, as a task the person closed is.
+ */
+export const CHAT_CLOSED: CardOutcome = { badge: "Closed", variant: "neutral", said: "Closed" };
+
+/** **How a card says its chat ended**: its task's end, or Closed for a chat no dispatch started. */
+export function cardOutcome(card: ChatCard): CardOutcome {
+  return card.task === null ? CHAT_CLOSED : outcomeOf(card.task);
 }
 
 /** The card's line under its title: "Done at 11:08 · its chat has closed". */
 export function cardWhen(card: ChatCard): string {
-  const at = endedAt(card.task.ended);
-  const how = outcomeOf(card.task).said;
+  const at = endedAt(card.ended);
+  const how = cardOutcome(card).said;
   return `${at === undefined ? how : `${how} at ${at}`} · its chat has closed`;
+}
+
+/** Why *Reopen* does nothing on the card of a chat no dispatch started (#6304). */
+export const ORDINARY_NO_REOPEN =
+  "It cannot be reopened from here: purlis keeps the conversation of a dispatched task only.";
+
+/**
+ * Why *Reopen* does nothing on the card of a handoff, or of a task that ended owing no report: a
+ * dispatch started it, but only a task that owed a report has a finished row to reopen.
+ */
+export const DISPATCHED_NO_REOPEN =
+  "It cannot be reopened: purlis reopens a task that owed a report, and this chat was handed off or owed none. Start a new chat to go on.";
+
+/** Why *Reopen* on `card` does nothing, or nothing where it reopens. */
+export function whyCardCannotReopen(card: ChatCard): string | undefined {
+  if (card.task !== null) return whyNoReopen(card.task);
+  return card.dispatched ? DISPATCHED_NO_REOPEN : ORDINARY_NO_REOPEN;
 }
 
 /** What *Read it* says where nothing was kept: the person's ruling of 2026-11-11. */
@@ -148,6 +165,18 @@ const NO_CHAT: ChatLookup = { is: "no_chat" };
 /** What a number the palette was asked for names: the number, and the core's lookup of it. */
 export type ByNumber = { number: number; lookup: ChatLookup };
 
+/**
+ * What a card's palette row says it shows: its card, with *Read it* and *Reopen* named only where
+ * the card has them enabled, so the row never offers a button the card draws disabled.
+ */
+function showsItsCard(card: ChatCard): string {
+  const can = [
+    card.screen_kept ? "Read it" : undefined,
+    whyCardCannotReopen(card) === undefined ? "Reopen" : undefined,
+  ].filter((one) => one !== undefined);
+  return can.length === 0 ? "Shows its card." : `Shows its card, with ${can.join(" and ")}.`;
+}
+
 /** Whether palette row `offer` is a finished chat's, which opens its card in place. */
 export function opensACard(offer: Offer): boolean {
   return offer.id.startsWith("chat.card:");
@@ -170,8 +199,8 @@ export function numberRows(byNumber: ByNumber | undefined): Offer[] {
         available: true,
         reason: "",
         does: { verb: "nothing" },
-        name: lookup.card.task.name,
-        note: `${cardWhen(lookup.card)}. Shows its card, with Read it and Reopen.`,
+        name: lookup.card.title,
+        note: `${cardWhen(lookup.card)}. ${showsItsCard(lookup.card)}`,
         chat: number,
       },
     ];
@@ -182,7 +211,8 @@ export function numberRows(byNumber: ByNumber | undefined): Offer[] {
         title: restartedRowTitle(number, lookup.now),
         available: true,
         reason: "",
-        does: { verb: "showChat", session: lookup.now },
+        // That chat, and nothing a needs-you item's Go does (#6217).
+        does: { verb: "focusChat", session: lookup.now },
         chat: number,
       },
     ];

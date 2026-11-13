@@ -48,6 +48,7 @@ fn launch(
         editor,
         var,
     )
+    .and_then(|checked| Ok(checked.launch()?))
 }
 
 #[test]
@@ -275,6 +276,125 @@ fn the_editor_program_is_started_with_each_argument_as_it_was_given() {
             "--wait\n+9\n{}\n",
             piece.join("a dir/it's $HOME.md").display()
         )
+    );
+}
+
+/// #3185: what the app does with a checked file, at the moment it launches: asks again, then
+/// starts the program. What the stand-in editor heard, if it ran at all.
+#[cfg(unix)]
+fn launched_as_the_app_does(
+    checked: youreditor::Checked,
+    heard: &std::path::Path,
+) -> (Result<(), String>, Option<String>) {
+    let answered = checked
+        .launch()
+        .map_err(|refused| refused.to_string())
+        .and_then(|launch| match launch {
+            Launch::Program { program, args } => youreditor::start(&program, &args),
+            Launch::Url(url) => panic!("$EDITOR is a program: {url}"),
+        });
+    // Past the moment `start` waits, and more: a stand-in that ran has written by then.
+    let deadline = std::time::Instant::now() + 2 * youreditor::AT_ONCE;
+    while !heard.exists() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    (answered, std::fs::read_to_string(heard).ok())
+}
+
+/// A stand-in `$EDITOR` that writes each argument it was handed, a line each, to `heard`.
+#[cfg(unix)]
+fn recording_editor(
+    f: &support::Fixture,
+    heard: &std::path::Path,
+) -> impl Fn(&str) -> Option<String> {
+    let editor = stand_in::program(
+        &f.plane,
+        "a-recording-editor",
+        &format!(
+            "#!/bin/sh\nfor one in \"$@\"; do printf '%s\\n' \"$one\"; done > '{}.part'\nmv '{0}.part' '{0}'\n",
+            heard.display()
+        ),
+    );
+    move |name: &str| (name == "EDITOR").then(|| format!("'{}'", editor.display()))
+}
+
+/// #3185, #1044 line 1: a chat that can write in the branch swaps a folder on the file's way for
+/// a link out of it between the check and the launch. The editor is never started, so it is
+/// never handed the file outside.
+#[cfg(unix)]
+#[test]
+fn a_folder_swapped_for_a_link_between_the_check_and_the_launch_starts_no_editor() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let piece = cut(&f, "piece");
+    std::fs::create_dir_all(piece.join("notes")).unwrap();
+    std::fs::write(piece.join("notes/plan.md"), "the plan\n").unwrap();
+    let outside = f.plane.join("outside");
+    std::fs::create_dir_all(outside.join("notes")).unwrap();
+    std::fs::write(outside.join("notes/plan.md"), "not the branch's\n").unwrap();
+    let heard = f.plane.join("heard");
+    let var = recording_editor(&f, &heard);
+
+    let checked = files::in_your_editor(
+        &f.plane,
+        Branch::piece(&f.ws, &f.repo, "piece"),
+        "notes/plan.md",
+        4,
+        Editor::Variable,
+        &var,
+    )
+    .expect("the file is checked");
+    std::fs::rename(piece.join("notes"), piece.join("notes-moved")).unwrap();
+    std::os::unix::fs::symlink(outside.join("notes"), piece.join("notes")).unwrap();
+    let (answered, said) = launched_as_the_app_does(checked, &heard);
+
+    let refused = answered.expect_err("the swapped path is not launched");
+    assert!(
+        refused.contains("did not hand it to your editor"),
+        "{refused}"
+    );
+    assert_eq!(said, None, "the editor was started");
+}
+
+/// #3185: the file itself swapped for a link out of the branch after the check starts no
+/// editor either, and one left alone is handed on as it was checked.
+#[cfg(unix)]
+#[test]
+fn a_file_swapped_for_a_link_between_the_check_and_the_launch_starts_no_editor() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let piece = cut(&f, "piece");
+    std::fs::write(piece.join("plan.md"), "the plan\n").unwrap();
+    let outside = f.plane.join("outside.md");
+    std::fs::write(&outside, "not the branch's\n").unwrap();
+    let heard = f.plane.join("heard");
+    let var = recording_editor(&f, &heard);
+    let check = || {
+        files::in_your_editor(
+            &f.plane,
+            Branch::piece(&f.ws, &f.repo, "piece"),
+            "plan.md",
+            1,
+            Editor::Variable,
+            &var,
+        )
+        .expect("the file is checked")
+    };
+
+    let swapped = check();
+    std::fs::rename(piece.join("plan.md"), piece.join("plan-moved.md")).unwrap();
+    std::os::unix::fs::symlink(&outside, piece.join("plan.md")).unwrap();
+    let (answered, said) = launched_as_the_app_does(swapped, &heard);
+    assert!(answered.is_err(), "the swapped file was launched");
+    assert_eq!(said, None, "the editor was started");
+
+    std::fs::remove_file(piece.join("plan.md")).unwrap();
+    std::fs::rename(piece.join("plan-moved.md"), piece.join("plan.md")).unwrap();
+    let (answered, said) = launched_as_the_app_does(check(), &heard);
+    assert_eq!(answered, Ok(()));
+    assert_eq!(
+        said,
+        Some(format!("+1\n{}\n", piece.join("plan.md").display()))
     );
 }
 

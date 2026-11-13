@@ -706,6 +706,7 @@ fn in_the_app(
             | Answer::Keys { .. }
             | Answer::Secret(_)
             | Answer::Working(_)
+            | Answer::Chats { .. }
             | Answer::Pointed { .. }
             | Answer::Dispatched { .. }
             | Answer::HeldToMove { .. }
@@ -772,6 +773,7 @@ pub(crate) fn ticketed_within(within: std::time::Duration) -> Ticketed {
             | Answer::Keys { .. }
             | Answer::Secret(_)
             | Answer::Working(_)
+            | Answer::Chats { .. }
             | Answer::Pointed { .. }
             | Answer::Dispatched { .. }
             | Answer::NeedsGrant { .. }

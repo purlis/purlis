@@ -541,6 +541,12 @@
   white-space: nowrap;
 }
 
+/* **Beside a task's path, at the path's size** (#6297): the path is the line's small text
+   (`.pane-crumbs`), and the number beside it is that text too, never a step larger. */
+.pane-chips:has(.pane-crumbs) > .pane-number {
+  font-size: var(--font-size-xs);
+}
+
 /* **A pane's grip** (#5290, `ui/grip`): the mark in its head, the tab's size, and a 24px target
    (WCAG 2.5.8) that reaches past the mark and moves nothing around it. */
 .pane-chips > .pane-persona,

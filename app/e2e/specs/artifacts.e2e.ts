@@ -419,6 +419,17 @@ describe("a pinned artifact with script", function () {
   const bar = async () => $('[data-testid="artifact-bar"]').getText();
   /** What the frame's edge says of the page's script. */
   const edge = async () => $('[data-testid="artifact-edge"]').getAttribute("data-standing");
+  /**
+   * Waits for the edge to say `want`. The edge and the bar are drawn from one reading, but the
+   * frame is remounted when the watcher sees the template change, and for that moment the edge
+   * has no reading (`plain`) though the bar's words were already there (#6232).
+   */
+  const edgeSays = async (want: "plain" | "asks" | "runs") => {
+    await browser.waitUntil(async () => (await edge()) === want, {
+      timeout: 20_000,
+      timeoutMsg: `the frame's edge never said ${want}`,
+    });
+  };
 
   /** Closes the tab, if it is open, and opens it again from its icon: a fresh read. */
   async function openAgain() {
@@ -468,7 +479,7 @@ pin = [
       timeout: 20_000,
       timeoutMsg: "the bar did not ask about the page's script",
     });
-    expect(await edge()).toBe("asks");
+    await edgeSays("asks");
     expect(await $("aria/Approve script").isExisting()).toBe(true);
   });
 
@@ -478,7 +489,7 @@ pin = [
       timeout: 20_000,
       timeoutMsg: "the approval did not reach the tab",
     });
-    expect(await edge()).toBe("runs");
+    await edgeSays("runs");
     expect(await artifactWebviews()).toHaveLength(1);
   });
 
@@ -498,7 +509,7 @@ pin = [
       async () => (await bar()).includes("Its template changed since you approved it"),
       { timeout: 20_000, timeoutMsg: "a changed template ran under the old approval" },
     );
-    expect(await edge()).toBe("asks");
+    await edgeSays("asks");
     await $('[data-testid="artifact-bar"]').$("aria/Approve script").click();
     await browser.waitUntil(async () => (await bar()).includes("Script approved on this machine"), {
       timeout: 20_000,

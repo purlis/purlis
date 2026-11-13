@@ -75,7 +75,6 @@ import {
   SKILL_PAGE_TAB_NAMES,
   SKILL_STUDIO_ASKED,
   SKILL_STUDIO_VIEW,
-  asPersona,
   backIsTo,
   STUDIO_PAGE_NAMES,
   STUDIO_START,
@@ -91,6 +90,7 @@ import {
   sameScope,
   scopeChat,
   scopeKey,
+  scopeListing,
   samePlace,
   skillOfRowId,
   skillRowId,
@@ -229,8 +229,9 @@ const LEAST_ROWS = 20;
 const MOST_ROWS = 40;
 
 /** **How many of the Library's rows make a screen, and so its first frame** (#4351): what the
- *  window's height can show. Two hundred rows took a third of a second to lay out, in which the
- *  tab showed none of them, and each row past what shows still delays the first frame. */
+ *  window's height can show. Each row past what shows delays the first frame: in jsdom, an
+ *  opening that drew all two hundred rows took 140 ms to the row, against 28 ms for a screen of
+ *  them (#5276). */
 function rowsThatFit(): number {
   return Math.min(MOST_ROWS, Math.max(LEAST_ROWS, Math.ceil(window.innerHeight / ROW_PX)));
 }
@@ -242,10 +243,14 @@ function rowsThatFit(): number {
  * React Aria builds a collection's rows without yielding. Mounted with the
  * list and keyed by scope, so each list it draws starts from the top.
  *
- * The chosen row is drawn on the first frame, with every row before it, wherever the list has
- * it. What is drawn never shrinks while the list stands, so a row drawn stays drawn, and a press,
- * the keyboard and the search box work on the rows there while the rest come. A screen's size is
- * read once, as the list is mounted: a window taller than it has the rest a frame on.
+ * **A row chosen past the screens drawn has its own screen drawn ahead** (#5276): on its frame,
+ * with the screens drawn and none of those between, so an opening at row 200 of 200 builds two
+ * screens, not all two hundred, and the chosen row has the rows either side of it at once. A
+ * screen drawn ahead is keyed as the screens reaching it key it, so it is never drawn afresh and
+ * the keyboard on its rows stays there. What is drawn never shrinks while the list stands, so a
+ * row drawn stays drawn, and a press, the keyboard and the search box work on the rows there
+ * while the rest come. A screen's size is read once, as the list is mounted: a window taller than
+ * it has the rest a frame on.
  */
 function LibraryRows({
   rows,
@@ -254,28 +259,33 @@ function LibraryRows({
 }: {
   rows: readonly StudioSkill[];
   row: (skill: StudioSkill) => ReactNode;
-  /** The chosen row's id, drawn at once wherever it is. */
+  /** The chosen row's id, drawn at once wherever it is, with its screen. */
   chosen: string | undefined;
 }) {
   const [rowsPerScreen] = useState(rowsThatFit);
   const [screens, setScreens] = useState(1);
+  /** The screens drawn ahead of the rest, each for a row chosen in it before they reached it. */
+  const [ahead, setAhead] = useState<readonly number[]>([]);
   const at = chosen === undefined ? -1 : rows.findIndex((one) => skillRowId(one) === chosen);
-  const needed = Math.max(screens, Math.ceil((at + 1) / rowsPerScreen));
+  const its = Math.floor(at / rowsPerScreen);
   // Adjusted as it is drawn (React's state set while rendering), so the chosen row's frame has it.
-  if (needed !== screens) setScreens(needed);
-  const drawn = Math.min(rows.length, needed * rowsPerScreen);
-  const more = drawn < rows.length;
+  if (its >= screens && !ahead.includes(its)) setAhead([...ahead, its]);
+  const more = screens * rowsPerScreen < rows.length;
   useEffect(() => {
     if (!more) return;
     return afterPaint(() => startTransition(() => setScreens((was) => was + 1)));
   }, [more, screens]);
   // A screen at a time, each kept as it was drawn, so a screen added draws its own rows alone.
-  return Array.from({ length: Math.ceil(drawn / rowsPerScreen) }, (_, n) => (
+  const drawn = [
+    ...Array.from({ length: screens }, (_, n) => n),
+    ...ahead.filter((n) => n >= screens).sort((a, b) => a - b),
+  ].filter((n) => n * rowsPerScreen < rows.length);
+  return drawn.map((n) => (
     <LibraryScreen
       key={n}
       rows={rows}
       from={n * rowsPerScreen}
-      to={Math.min(drawn, (n + 1) * rowsPerScreen)}
+      to={Math.min(rows.length, (n + 1) * rowsPerScreen)}
       row={row}
     />
   ));
@@ -325,19 +335,11 @@ function builtInStandsOut(
   );
 }
 
-/** The scope whose Library lists a skill at `level`: a workspace's or a persona's own, else the
- *  scope shown. */
-function scopeOfLevel(level: SkillLevel, shown: StudioScope): StudioScope {
-  if (level.at === "workspace") return { at: "workspace", name: level.name };
-  if (level.at === "persona") return asPersona(level.name);
-  return shown;
-}
-
 /** **The scope whose Library lists a new skill made at `level`** (#3684): a workspace's or a
  *  persona's own; a project skill starts granted to the project's root alone, so the root's
  *  Library is the one sure to list it. */
 function scopeOfNew(level: SkillLevel, shown: StudioScope): StudioScope {
-  return level.at === "project" ? AT_THE_ROOT : scopeOfLevel(level, shown);
+  return level.at === "project" ? AT_THE_ROOT : scopeListing(level, shown);
 }
 
 /** Whether `skill`, a row of the studio showing `scope`, is at `level`. */
@@ -600,7 +602,7 @@ export function SkillStudioTab({
     if (graded === undefined || open === undefined || studio === undefined) return;
     if (open.at !== "scorecard" && open.at !== "chat") return;
     if (open.grade !== graded.grade || at.skill === undefined) return;
-    const there = scopeOfLevel(graded.level, at.scope);
+    const there = scopeListing(graded.level, at.scope);
     if (!sameScope(there, at.scope)) {
       if (there.at === "workspace" && !studio.workspaces.includes(there.name)) return;
       history.replace({ ...at, scope: there });
@@ -959,7 +961,7 @@ export function SkillStudioTab({
           return;
         }
         setCopying(undefined);
-        go({ page: "library", scope: scopeOfLevel(level, scope), skill: skillRowNamed(to) });
+        go({ page: "library", scope: scopeListing(level, scope), skill: skillRowNamed(to) });
         setSaid({
           tone: "news",
           label: "Copy made",
@@ -1251,12 +1253,12 @@ export function SkillStudioTab({
       whose={[
         AT_THE_ROOT,
         ...(studio?.workspaces ?? []).map(inWorkspace),
-        // The scope shown is always among them, while its skills are still being read too.
-        ...(scope.at === "persona" ||
-        (scope.at === "workspace" && !(studio?.workspaces ?? []).includes(scope.name))
+        // The workspace shown is always among them, while its skills are still being read too.
+        ...(scope.at === "workspace" && !(studio?.workspaces ?? []).includes(scope.name)
           ? [startedIn(scope, undefined)]
           : []),
       ]}
+      personas={studio?.personas ?? []}
       places={studio?.places ?? []}
       onScope={(next) => go({ page, scope: next })}
     />
@@ -2031,7 +2033,7 @@ export function SkillStudioTab({
               async () => {
                 go({
                   page: "library",
-                  scope: scopeOfLevel(one.level, scope),
+                  scope: scopeListing(one.level, scope),
                   skill: skillRowNamed(one.name),
                 });
                 return undefined;
@@ -2201,7 +2203,6 @@ export function SkillStudioTab({
     const chats = router?.chats ?? [];
     const chat = routedChat;
     const by: SkillPinner | null = pinnerOf(scope);
-    const budgetWorkspace = scope.at === "workspace" ? scope.name : null;
     list = pageList(
       "When a chat's list of skills is over its budget, a router decides which it sees. The router is asked at a chat's start.",
       held(() =>
@@ -2227,7 +2228,7 @@ export function SkillStudioTab({
                   () => Promise.resolve({ tone: "news", label: "Router changed", text }),
                 )
               }
-              budgetWorkspace={budgetWorkspace}
+              budgetWorkspace={workspace}
               onBudget={(write, told) =>
                 change(
                   "The skill budget was not changed",
@@ -2235,7 +2236,7 @@ export function SkillStudioTab({
                     commands
                       .skillBudgetSet(
                         plane,
-                        budgetWorkspace,
+                        workspace,
                         write.program.key,
                         write.skills,
                         write.chars,
