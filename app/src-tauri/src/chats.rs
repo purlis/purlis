@@ -9278,7 +9278,7 @@ fn left_as_a_block(
         tool.as_deref(),
         reported,
     );
-    if let Err(why) = write(chat, stop) {
+    if let Err(why) = write(chat, stop, None) {
         tracing::warn!("purlis: chat {chat}'s sandbox block was not written ({why})");
     }
 }
