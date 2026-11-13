@@ -118,6 +118,8 @@ const ON_A_PANE: ReadonlySet<Shown["source"]> = new Set([
   // A chat paused at its budget or as looping (#6015).
   "budget",
   "looping",
+  // A merge its chat's hook held (T1-39, R-114): Merge and Don't merge, on its pane too.
+  "merge-hold",
 ]);
 
 /**

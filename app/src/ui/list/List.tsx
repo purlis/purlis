@@ -763,11 +763,14 @@ function rowElement({
         const manager = state.selectionManager;
         // A move a key makes is React Aria's own, already placed: its arrows and its Tab out of
         // the list (which passes the keyboard through the list's last control). Coming in from
-        // outside is React Aria's too, but for a Tab whose control is in its own row (#6033).
+        // outside by Tab is React Aria's too, but for a Tab whose control is in its own row
+        // (#6033). Coming in from outside any other way is a script's (⌘⇧I's landing past a
+        // high-risk first row, T1-39), even while the key that ran it is still heard.
         const from = event.relatedTarget;
         const list = event.currentTarget.closest('[role="grid"]');
         const fromWithin = from === null || (from instanceof Node && list?.contains(from) === true);
-        if (!keyHeardNow && fromWithin && event.target !== event.currentTarget)
+        const scripted = fromWithin ? !keyHeardNow : !tabHeardNow;
+        if (scripted && event.target !== event.currentTarget)
           if (id !== undefined && manager.focusedKey !== id) manager.setFocusedKey(id);
         if (tabHeardNow && !fromWithin && event.target !== event.currentTarget)
           backToTheRow(event.target, event.currentTarget, id, manager);
