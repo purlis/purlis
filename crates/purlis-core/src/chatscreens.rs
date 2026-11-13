@@ -213,13 +213,24 @@ pub fn is_kept(root: &Path, id: &str) -> bool {
 /// many screens are kept and their bytes. Where this machine keeps none ([`keeps`]), every kept
 /// screen is deleted first.
 ///
-/// What it counts is what is there: a screen that could not be deleted is still counted.
+/// What it counts is what is there: a screen that could not be deleted is still counted, and so
+/// is a temp file a killed write left (#6508's review), as turning it off counts one that stays.
+/// With keeping on, a temp younger than [`LOCK_WAIT`] may be a write under way, and is not.
 pub fn held(root: &Path) -> (usize, u64) {
-    if !keeps(root) {
+    let on = keeps(root);
+    if !on {
         let _ = forget_all(root);
     }
     let kept = every_kept(root);
-    (kept.len(), kept.iter().map(|one| one.bytes).sum())
+    let temps: Vec<u64> = temps_left(root, SystemTime::now(), !on)
+        .iter()
+        .filter_map(|temp| std::fs::symlink_metadata(temp).ok())
+        .map(|meta| meta.len())
+        .collect();
+    (
+        kept.len() + temps.len(),
+        kept.iter().map(|one| one.bytes).sum::<u64>() + temps.iter().sum::<u64>(),
+    )
 }
 
 /// One kept screen: its chat's id, when it was last written, and its size.

@@ -409,6 +409,28 @@ fn a_screen_that_could_not_be_deleted_is_said_and_still_counted() {
 }
 
 #[test]
+fn a_killed_write_s_temp_that_could_not_be_deleted_is_counted_as_it_is_said() {
+    // #6508's review: off counted an undeletable temp as "1 kept screen", and the row then
+    // counted 0 kept.
+    use std::os::unix::fs::PermissionsExt as _;
+    let (_dir, root) = settable();
+    let temp = a_killed_write_s_temp(&root, CHAT, Duration::ZERO);
+    let bytes = std::fs::metadata(&temp).unwrap().len();
+    std::fs::set_permissions(dir(&root), std::fs::Permissions::from_mode(0o500)).unwrap();
+
+    let turned_off = set_keep(&root, false);
+    let counted = held(&root);
+    std::fs::set_permissions(dir(&root), std::fs::Permissions::from_mode(0o700)).unwrap();
+
+    let said = turned_off.expect_err("the temp stayed");
+    assert!(
+        said.starts_with("1 kept screen could not be deleted"),
+        "{said}"
+    );
+    assert_eq!(counted, (1, bytes), "the row counts it too");
+}
+
+#[test]
 fn a_screen_written_as_keeping_is_turned_off_does_not_stay() {
     // #6451's review: keep checks the setting, then writes. Turned off between the two, the
     // screen landed after every screen was deleted, and stayed.
