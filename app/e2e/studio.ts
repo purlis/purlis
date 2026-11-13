@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { $, browser } from "@wdio/globals";
+import { pressMenuPath } from "./menus.js";
 
 /**
  * **Getting about the Skill studio's tab** (#3681): its pages in the left navigation, and a skill
@@ -103,6 +104,38 @@ export async function studioMore(name: string, said: string) {
       ),
     { timeout: 20_000, interval: 250, timeoutMsg: `${name}'s menu has no ${said}` },
   );
+}
+
+const WHOSE = '[data-testid="studio-whose"]';
+const WHOSE_MENU = '[role="menu"][aria-label="Whose chats and where they start"]';
+
+/**
+ * **Picks the row named `said` from the studio's Whose chats picker** (#2935): a chat in a
+ * workspace, "A chat as steward", "Dispatched into alpha"… It opens the menu, presses the row by
+ * its name, and waits until the picker's button reads `then`, which is the scope picked.
+ */
+export async function studioWhose(said: string, then: string) {
+  await $(WHOSE).waitForExist({ timeout: 20_000 });
+  // Pressed again until its menu is up: a press that lands while the header redraws opens none.
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        (button: string, opened: string) => {
+          if (document.querySelector(opened) !== null) return true;
+          document.querySelector<HTMLElement>(button)?.click();
+          return false;
+        },
+        WHOSE,
+        WHOSE_MENU,
+      ),
+    { timeout: 20_000, interval: 500, timeoutMsg: "the Whose chats menu never opened" },
+  );
+  await pressMenuPath(said);
+  await browser.waitUntil(async () => (await $(WHOSE).getText()).trim() === then, {
+    timeout: 20_000,
+    interval: 250,
+    timeoutMsg: `the Whose chats picker never read ${JSON.stringify(then)}`,
+  });
 }
 
 /** **Shows the tab `name` of the skill page beside the list** (#3682): Overview, Text, History,
