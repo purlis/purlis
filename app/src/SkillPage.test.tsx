@@ -32,6 +32,7 @@ import { groupSaid } from "./SkillPanels";
 import { PLANE_ROOT } from "./pieceViews";
 import type { Offer } from "./actions";
 import type { SkillStats, StudioSkill } from "./bindings";
+import { NO_SKILL_POLICY } from "./skillPolicy.testkit";
 
 afterEach(() => {
   cleanup();
@@ -92,6 +93,7 @@ function details(lifecycle: unknown = { state: "active" }, unused: number | null
       { said: "skills:gone", name: "gone", project: true, broken: true },
     ],
     used_by: ["release"],
+    hinted_by: [] as string[],
     uses_cut: false,
     pinned_by: [] as unknown[],
     pins_refused: [] as unknown[],
@@ -135,6 +137,8 @@ function core(
     asked.push({ cmd, args: given });
     if (cmd in more) return more[cmd](given);
     switch (cmd) {
+      case "skill_policy":
+        return NO_SKILL_POLICY;
       case "skill_studio":
         return studio(skills, {
           workspace: (given.workspace as string | null) ?? null,
@@ -161,6 +165,7 @@ function core(
       case "skill_revert":
       case "skill_level_accept":
       case "skill_owners":
+      case "skill_hint_write":
         return { notes: [] };
       default:
         return [];
@@ -527,6 +532,52 @@ describe("a skill's Overview", () => {
     expect(uses).toHaveTextContent("Uses ship");
     expect(uses.querySelector("[data-broken]")).toHaveTextContent("gone");
     expect(uses).toHaveTextContent("Used by release");
+  });
+
+  it("marks a skill named bare as a hint, says why, and writes it as a reference (#5874)", async () => {
+    const hinted = {
+      ...details(),
+      uses: [
+        ...details().uses,
+        {
+          said: '"grilling"',
+          name: "grilling",
+          project: true,
+          broken: false,
+          hint: true,
+          line: 14,
+        },
+      ],
+      hinted_by: ["report-intake"],
+    };
+    const asked = core([DEPLOY], { skill_details: () => hinted });
+    const user = userEvent.setup();
+    renderStudioAt(at(DEPLOY));
+
+    await page();
+    const uses = await screen.findByRole("list", { name: "Skills deploy names" });
+    const row = within(uses).getByText("grilling").closest("li");
+    expect(row).not.toBeNull();
+    const hint = within(row as HTMLElement);
+    expect(hint.getByText("Hint")).toBeInTheDocument();
+    expect(row).toHaveTextContent(
+      "Named bare on line 14, so a chat may or may not load it. Write skills:grilling to make it a reference.",
+    );
+    // A reference carries no mark.
+    const ship = within(uses).getByText("ship").closest("li");
+    expect(within(ship as HTMLElement).queryByText("Hint")).toBeNull();
+    const by = screen.getByRole("list", { name: "Skills that name deploy" });
+    expect(by).toHaveTextContent("Used by report-intake");
+    expect(by).toHaveTextContent("It names deploy bare. Its own tab offers the fix.");
+
+    await user.click(hint.getByRole("button", { name: "Write skills:grilling" }));
+    await waitFor(() =>
+      expect(asked.find((one) => one.cmd === "skill_hint_write")?.args).toMatchObject({
+        level: { at: "project", local: false },
+        name: "deploy",
+        hint: "grilling",
+      }),
+    );
   });
 
   it("changes who looks after it in a dialog", async () => {

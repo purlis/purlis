@@ -47,6 +47,9 @@ pub struct Offered {
     /// marks them (#5760): `None` where they were not read to browse, past what one browse reads
     /// or where the extension's answer for it was refused; its review reads them.
     pub marks: Option<Vec<String>>,
+    /// What the project's controls would refuse of installing it, said before its review
+    /// (#6031): the extension or the skill not allowed, or its revision unable to say its age.
+    pub refused: Option<super::policy::Refused>,
 }
 
 /// **The most skills one browse of an extension's source reads the files of** for their marks
@@ -299,6 +302,15 @@ fn browse_of(
     let (found, _) = source.skills()?;
     let (locked, _) = lock::every(plane);
     let origin = Origin::Extension(id.to_owned());
+    // The org's controls (#6031): a revision cannot say when it was made, unless its source
+    // can.
+    let policy = super::policy::of(plane);
+    let pin = Pin::Revision(revision.clone());
+    let made = if super::policy::asks_age(&policy) {
+        source.made()
+    } else {
+        None
+    };
     let mut read: u64 = 0;
     let mut reading = true;
     let skills = found
@@ -321,6 +333,7 @@ fn browse_of(
             Offered {
                 installed: installed_at(&locked, &origin, &skill.name),
                 marks,
+                refused: super::policy::refused_before(&policy, &origin, &skill.name, &pin, made),
                 skill,
             }
         })
@@ -335,16 +348,17 @@ fn browse_of(
 /// **The review of installing `names` from the extension `id`'s source at `level`**, and every
 /// skill they refer to that it holds and that is not met at `level` already: the same review the
 /// git source's install shows, marked the same way. Answered with what it read, [`Held`] for the
-/// install.
+/// install. Each skill of `without` that only a hint would bring along is left out (#5874).
 pub fn review(
     studio: Studio<'_>,
     plane: &Path,
     id: &str,
     names: &[String],
     level: &Level,
+    without: &[String],
 ) -> Result<(Review, Held), String> {
     let asked = Asked::of(studio, id)?;
-    let review = review_in(&asked, id, &asked.revision, plane, names, level)?;
+    let review = review_in(&asked, id, &asked.revision, plane, names, level, without)?;
     Ok((review, asked.held()))
 }
 
@@ -356,8 +370,14 @@ fn review_in(
     plane: &Path,
     names: &[String],
     level: &Level,
+    without: &[String],
 ) -> Result<Review, String> {
-    let mut skills = review::reviews_of(source, names, &met_at(plane, level))?;
+    let mut skills = review::reviews_of(
+        source,
+        names,
+        &met_at(plane, level),
+        review::Hints::Without(without),
+    )?;
     let origin = Origin::Extension(id.to_owned());
     held_to_policy(plane, &origin, &skills, revision)?;
     review::mark(&mut skills, plane, level, &origin);
@@ -370,15 +390,17 @@ fn review_in(
 
 /// **The review of installing `names` from the extension `id`'s source together at `level`**
 /// (#4024): one review and one install for the set, those named that are installed from it at
-/// `level` already left out and said to be there (#4153).
+/// `level` already left out and said to be there (#4153), and each of `without` that only a hint
+/// would bring along (#5874).
 pub fn review_set(
     studio: Studio<'_>,
     plane: &Path,
     id: &str,
     names: &[String],
     level: &Level,
+    without: &[String],
 ) -> Result<(SetReview, Held), String> {
-    set_review_of(Asked::of(studio, id)?, id, plane, names, level)
+    set_review_of(Asked::of(studio, id)?, id, plane, names, level, without)
 }
 
 /// **The review of installing every skill the extension `id`'s source offers but `skipping`**
@@ -399,7 +421,7 @@ pub fn review_every(
         .map(|one| one.name.clone())
         .filter(|name| !skipping.contains(name))
         .collect();
-    set_review_of(asked, id, plane, &names, level)
+    set_review_of(asked, id, plane, &names, level, &[])
 }
 
 /// [`review_set`], of `asked`.
@@ -409,6 +431,7 @@ fn set_review_of(
     plane: &Path,
     names: &[String],
     level: &Level,
+    without: &[String],
 ) -> Result<(SetReview, Held), String> {
     let origin = Origin::Extension(id.to_owned());
     let (locked, _) = lock::every(plane);
@@ -422,6 +445,7 @@ fn set_review_of(
                 .any(|at| at == level)
         },
         &met_at(plane, level),
+        review::Hints::Without(without),
     )?;
     let (mut skills, there) = match set {
         Set::Reviewed { skills, there } => (skills, there),
@@ -588,7 +612,16 @@ pub type HeldSkill<'a> = (&'a str, &'a str, &'a [(&'a str, &'a str)]);
 impl Held {
     /// The review a review of the extension would answer, read from what it holds.
     pub fn review(&self, plane: &Path, names: &[String], level: &Level) -> Review {
-        review_in(self, &self.extension, &self.revision, plane, names, level).expect("reviewed")
+        review_in(
+            self,
+            &self.extension,
+            &self.revision,
+            plane,
+            names,
+            level,
+            &[],
+        )
+        .expect("reviewed")
     }
 
     /// What browsing the extension would answer, read from what it holds.

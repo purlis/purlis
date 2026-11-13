@@ -125,6 +125,7 @@ function core(root: StudioSkill[], ops: StudioSkill[], level: SkillLevel) {
             copies: [],
             uses: [],
             used_by: [],
+            hinted_by: [],
             uses_cut: false,
             pinned_by: [],
             pins_refused: [],
