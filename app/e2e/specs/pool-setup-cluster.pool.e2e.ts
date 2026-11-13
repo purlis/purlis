@@ -11,7 +11,6 @@ import {
   TRYING,
   on,
   press,
-  pressTheOneOf,
   showing,
   tabsAdded,
   theStepSays,
@@ -54,17 +53,27 @@ const INSTALLING = 360_000;
 
 /**
  * Goes on from step `done` to step `next`: the guide moves on by itself from a step that is done,
- * and where it waits on `done` instead, its Continue is pressed.
+ * and where it waits on `done` instead, the first of `presses` that can be pressed is.
  */
-async function goOnFrom(done: string, next: string, timeout = MAKING): Promise<void> {
+async function goOnFrom(
+  done: string,
+  next: string,
+  timeout = MAKING,
+  presses: readonly string[] = ["Continue"],
+): Promise<void> {
   await browser
     .waitUntil(
       async () => {
         const at = await showing();
         if (at === next) return true;
         if (at === done) {
-          const go = await $("aria/Continue");
-          if (await go.isClickable().catch(() => false)) await go.click();
+          for (const name of presses) {
+            const go = await $(`aria/${name}`);
+            if (await go.isClickable().catch(() => false)) {
+              await go.click();
+              break;
+            }
+          }
         }
         return false;
       },
@@ -253,7 +262,12 @@ describe("Pool setup on a kind cluster", () => {
     await markAsMyOwn();
     await bringForward("Pool setup");
     // Then the project's profile, kept on the runner, which says it is signed in.
-    await pressTheOneOf(["Sign in 1 profile", "Save and continue", "Continue"], MAKING);
+    // The guide goes on from Sign-ins by itself once the profile is kept there and signed in.
+    await goOnFrom("Sign-ins", "Agent identity", MAKING, [
+      "Sign in 1 profile",
+      "Save and continue",
+      "Continue",
+    ]);
 
     // Agent identity: skipped (above).
     await on("Agent identity", MAKING);
