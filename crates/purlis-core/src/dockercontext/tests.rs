@@ -294,3 +294,17 @@ fn a_context_file_that_is_gone_keeps_nothing() {
     assert!(keep_tls(config.path(), &files, "lab.example").is_err());
     assert!(!kept_tls_dir(config.path()).exists());
 }
+
+/// **A name a context can have is Docker's own rule** (#6268): `^[a-zA-Z0-9][a-zA-Z0-9_.+-]+$`,
+/// so `+` is one, and a name of one character is not.
+#[test]
+fn a_context_name_is_held_to_dockers_own_rule() {
+    for name in ["lab", "lab+tls", "a.b_c-d+e", "0x", "box2"] {
+        assert!(a_name(name), "{name}");
+    }
+    for name in [
+        "", "a", "-lab", "+lab", ".lab", "_lab", "lab box", "lab/tls", "lab=x",
+    ] {
+        assert!(!a_name(name), "{name}");
+    }
+}

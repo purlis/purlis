@@ -106,17 +106,18 @@ pub fn contexts_in(listed: &str, inspected: &str) -> Vec<DockerContext> {
     out
 }
 
-/// **A name a context can have**: Docker's own rule is letters, digits, `.`, `_` and `-`, starting
-/// with a letter or digit, and purlis holds it to that.
+/// **A name a context can have**: Docker's own rule, `^[a-zA-Z0-9][a-zA-Z0-9_.+-]+$`, two
+/// characters or more of letters, digits, `_`, `.`, `+` and `-`, starting with a letter or digit.
+/// purlis holds it to that, and to 128 bytes at most.
 pub fn a_name(name: &str) -> bool {
-    name.len() <= 128
+    (2..=128).contains(&name.len())
         && name
             .chars()
             .next()
             .is_some_and(|first| first.is_ascii_alphanumeric())
         && name
             .chars()
-            .all(|one| one.is_ascii_alphanumeric() || matches!(one, '.' | '_' | '-'))
+            .all(|one| one.is_ascii_alphanumeric() || matches!(one, '.' | '_' | '+' | '-'))
 }
 
 /// **The endpoint one context `inspect` described names**, or `None` where it describes no
