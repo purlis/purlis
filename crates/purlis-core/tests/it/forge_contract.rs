@@ -1830,12 +1830,16 @@ fn every_method_of_the_seam_has_a_case_on_both_forges() {
 
 /// The recordings of one forge's own scene beside a case's, each read by a test of its own:
 /// `<case>.<scene>.json`.
-const SCENES: [(&str, &str, &str); 29] = [
+const SCENES: [(&str, &str, &str); 33] = [
     ("github", "ruleset_protects", "housekeeping"),
     ("github", "ruleset_protects", "classic"),
     ("github", "ruleset_protects", "slash"),
+    ("github", "ruleset_protects", "not_found"),
+    ("github", "ruleset_protects", "forbidden"),
     ("gitlab", "ruleset_protects", "none"),
     ("gitlab", "ruleset_protects", "fix_404"),
+    ("gitlab", "ruleset_protects", "wildcard"),
+    ("gitlab", "ruleset_protects", "unprotected"),
     ("github", "keep_images", "first"),
     ("github", "keep_images", "planted"),
     ("github", "keep_images", "merge"),
@@ -2543,10 +2547,14 @@ mod network_log {
             // draft and the request from it; GitLab reads the fork once more while it copies.
             // Adding to an issue (#5694) opens one and comments on it: two calls on each. Where
             // a merge ask's request stands is one call on each (R-115), and whether a ruleset
-            // protects its base one more (R-146).
+            // protects its base one more (R-146). Whether a classic protection's read is
+            // none (Q252) is two scenes on GitHub of two calls each, the rules and
+            // `branches/{b}/protection` (a plain 404 Not Found and a 403), and GitLab's
+            // judgement of a branch two scenes of one `repository/branches/{b}` call each (a
+            // wildcard rule and no rule).
             let expected = match kind {
-                "github" => 90,
-                _ => 107,
+                "github" => 94,
+                _ => 109,
             };
             assert_eq!(paths.len(), expected, "{kind}: the recorded REST calls");
             for path in paths {
@@ -3770,6 +3778,61 @@ mod ruleset_protects_scenes {
                 backend.ruleset_protects(&me, "acme/api", "release/2.0"),
                 Ok(true)
             );
+            check();
+        }
+    }
+
+    /// Q252: GitHub answers a login without admin access `404 Not Found` for a protected
+    /// branch's protection too, so only its `Branch not protected` is none.
+    #[test]
+    fn githubs_plain_404_not_found_for_classic_protection_is_unknown_not_none() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("github", "not_found", how);
+            let got = backend.ruleset_protects(&me, "acme/api", "main");
+            assert!(got.is_err(), "{got:?}");
+            check();
+        }
+    }
+
+    /// Q252: no rules and a refused classic protection read is unknown, never none. A pin
+    /// (Q208): it was never seen red, as a 403 was already an error. The mutation it catches
+    /// is reading any refusal of `branches/{b}/protection` as none, such as a `not_protected`
+    /// that matches every 4xx status.
+    #[test]
+    fn no_rules_and_a_refused_classic_protection_read_is_unknown_not_none() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("github", "forbidden", how);
+            let got = backend.ruleset_protects(&me, "acme/api", "main");
+            assert!(got.is_err(), "{got:?}");
+            check();
+        }
+    }
+
+    /// Q252: GitLab's own `protected` on the branch counts its wildcard rules, so `release/2.0`
+    /// under a `release/*` rule is protected, which an exact-name lookup of
+    /// `protected_branches` missed.
+    #[test]
+    fn a_gitlab_branch_a_wildcard_rule_protects_protects_a_merge() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("gitlab", "wildcard", how);
+            assert_eq!(
+                backend.ruleset_protects(&me, "acme/api", "release/2.0"),
+                Ok(true)
+            );
+            check();
+        }
+    }
+
+    /// Q252: a branch GitLab answers with `protected: false` is protected by no rule.
+    #[test]
+    fn a_gitlab_branch_gitlab_calls_unprotected_does_not_protect_a_merge() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("gitlab", "unprotected", how);
+            assert_eq!(backend.ruleset_protects(&me, "acme/api", "main"), Ok(false));
             check();
         }
     }

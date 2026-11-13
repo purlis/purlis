@@ -362,6 +362,11 @@ fn a_slow_checks_read_is_unknown_and_the_ask_is_still_raised() {
 }
 
 /// A ruleset read the forge fails is unknown, in its words, never none.
+///
+/// A pin (Q208, Q252): it was never seen red, since the read already kept the forge's error.
+/// The mutation it catches is mapping the rules call's `Err` to none, `Ok(Err(_)) =>
+/// Ruleset::None` in `read`, or a `ruleset_protects` that reads a failed rules call as
+/// `Ok(false)`.
 #[test]
 fn a_failed_ruleset_read_is_unknown_never_none() {
     let refused = serde_json::json!({"code": 1, "status": 500,
