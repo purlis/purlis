@@ -44,8 +44,11 @@ fn event_named(name: &str) -> Option<Event> {
     }
 }
 
+/// A measured mode and, for each event that reported it, the strings it said.
+type Measured = Vec<(String, Vec<(String, Vec<String>)>)>;
+
 /// Each measured mode and the strings its reporting events said, from the fixture.
-fn measured() -> Vec<(String, Vec<(String, Vec<String>)>)> {
+fn measured() -> Measured {
     let read: Value = serde_json::from_str(MEASURED).expect("the fixture is JSON");
     let modes = read["modes"]
         .as_object()
