@@ -290,20 +290,59 @@ describe("the Skill studio", () => {
     expect(screen.getByTestId("skill-crowd-199")).toBeTruthy();
   });
 
-  it("keeps every row drawn for a chosen row past the first screen once an early row is pressed (#4351)", async () => {
+  it("keeps a chosen row past the first screen drawn once an early row is pressed (#4351, #5276)", async () => {
     const skills = crowd(200).map((name) => skill(name));
     answering(studio(skills));
+    const frames = stepTheFrames();
     renderStudioAt({ page: "library", scope: AT_THE_ROOT, skill: skillRowId(skills[150]) });
     await screen.findByTestId("skill-crowd-150");
     const drawnForIt = skillRows();
-    expect(drawnForIt).toBeGreaterThanOrEqual(151);
 
-    const frames = stepTheFrames();
     await userEvent.setup().click(screen.getByTestId("skill-crowd-005"));
 
     expect(skillRows()).toBeGreaterThanOrEqual(drawnForIt);
+    expect(screen.getByTestId("skill-crowd-150")).toBeTruthy();
     await frames.all();
     expect(skillRows()).toBe(200);
+  });
+
+  // The first frame's budget is what an opening with nothing chosen builds, a screen of rows, and
+  // the chosen row: opening at row 199 of 200 with every row before it took 140 ms to the row in
+  // jsdom, against 28 ms for a screen (#5276), and L10 is judged on the screen's opening.
+  it("opens at a chosen row deep in the Library with one screen of rows and that row on its first frame (#5276)", async () => {
+    windowOfHeight(900);
+    const skills = crowd(200).map((name) => skill(name));
+    answering(studio(skills));
+    const frames = stepTheFrames();
+    renderStudioAt({ page: "library", scope: AT_THE_ROOT, skill: skillRowId(skills[199]) });
+
+    const chosen = await screen.findByTestId("skill-crowd-199");
+    expect(chosen.getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByTestId("skill-crowd-022")).toBeTruthy();
+    expect(screen.queryByTestId("skill-crowd-100")).toBeNull();
+    expect(skillRows()).toBe(24);
+
+    await frames.all();
+    const drawn = within(screen.getByRole("grid", { name: "Skills" }))
+      .getAllByRole("row")
+      .map((one) => one.getAttribute("data-testid"));
+    expect(drawn).toEqual(crowd(200).map((name) => `skill-${name}`));
+  });
+
+  it("keeps the keyboard on a deep chosen row while the rows before it come (#5276)", async () => {
+    windowOfHeight(900);
+    const skills = crowd(200).map((name) => skill(name));
+    answering(studio(skills));
+    const frames = stepTheFrames();
+    renderStudioAt({ page: "library", scope: AT_THE_ROOT, skill: skillRowId(skills[150]) });
+    const chosen = await screen.findByTestId("skill-crowd-150");
+    await act(async () => chosen.focus());
+
+    await frames.all();
+
+    expect(skillRows()).toBe(200);
+    expect(screen.getByTestId("skill-crowd-150")).toBe(chosen);
+    expect(document.activeElement).toBe(chosen);
   });
 
   it("draws a chosen row past the Library's first screen on the tab's first frame (#4351)", async () => {
