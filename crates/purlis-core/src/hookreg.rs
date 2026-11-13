@@ -60,8 +60,12 @@ impl Handler {
     }
 }
 
+/// **The word of the harness's own check's refusal** (R-094): Claude Code's `PermissionDenied`,
+/// which it fires when its own check refuses a call (its auto-mode classifier among them).
+pub const HARNESS_DENIED: &str = "permissiondenied";
+
 /// Every hook the Rust `charter` answers, in the order a session meets them.
-pub const HANDLERS: [Handler; 19] = [
+pub const HANDLERS: [Handler; 20] = [
     Handler {
         name: "sessionstart",
         event: "SessionStart",
@@ -165,6 +169,19 @@ pub const HANDLERS: [Handler; 19] = [
         name: crate::caught::TOOL_WORD,
         event: "PostToolUseFailure",
         matcher: Some("mcp__purlis__.*"),
+        timeout: 5,
+    },
+    // The harness's own check refused a call (R-094): Claude Code's `PermissionDenied`, whose
+    // line the host writes as a block by that check ([`HARNESS_DENIED`]). Its own event, never
+    // a tool event's group, so a version that does not know the event loses this hook alone:
+    // Claude Code 2.1.323's `claude plugin validate` says of an event it does not know "entry
+    // ignored at runtime". Measured on claude 2.1.323 only: no version from before the event
+    // has been run with this file (an open measurement). It answers nothing, so the check's
+    // refusal stands.
+    Handler {
+        name: HARNESS_DENIED,
+        event: "PermissionDenied",
+        matcher: None,
         timeout: 5,
     },
     Handler {
