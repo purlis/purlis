@@ -6,11 +6,9 @@ import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { Inbox, MOVED_JUST_NOW } from "./Inbox";
-import type { Needing } from "./NeedsYou";
 import type { Elsewhere } from "./InboxElsewhere";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 import { forgetInbox } from "./inboxRules";
-import { keepInboxScope } from "./inboxScope";
 import { forgetProjectViews } from "./projectViews";
 import { chatGroup, openEveryAnswer } from "./test-inbox";
 import type { Shown } from "./bindings";
@@ -62,31 +60,6 @@ const permission = (
     chain,
     answer: { via: "hook" },
   }) satisfies Shown;
-
-/** A chat waiting in another window, listed in the Inbox under All projects (#1695). */
-const away = (session: number): Needing => ({
-  plane: "/home/dev/ops",
-  project: "ops",
-  session,
-  name: `steward ${session}`,
-  workspace: "infra",
-  go: {
-    id: `needs.show:${session}`,
-    title: `Show steward ${session}`,
-    available: true,
-    reason: "",
-    does: { verb: "showChat", session },
-    name: `steward ${session}`,
-  },
-  ignore: {
-    id: `needs.ignore:${session}`,
-    title: `Ignore steward ${session} until it asks again`,
-    available: true,
-    reason: "",
-    does: { verb: "ignoreNeedsYou", session },
-    name: `steward ${session}`,
-  },
-});
 
 /** A core that records what the window sends. */
 function core() {
@@ -142,23 +115,6 @@ describe.each(BOTH)("the press-settle guard, pressed by the %s (#3123)", (by) =>
 
     read();
     await press(allowOf("steward 4"), by);
-    expect(answered(calls)).toBe(true);
-  });
-
-  it("lets an Allow through when a chat elsewhere joins, which is listed below every ask", async () => {
-    keepInboxScope(PLANE, "all");
-    const calls = core();
-    const ask = permission(3, "01J0A", ["steward 3"]);
-    const there = (asking: Needing[]): Elsewhere => ({ asking, quiet: [], onPress: vi.fn() });
-    const { again } = draw([ask], there([away(7)]));
-    again([ask], there([away(8), away(7)]));
-    // Below the ask, so no stop above it changed: the case "an elsewhere row joining above" has
-    // no instance on today's Inbox, and this pins why.
-    const joined = chatGroup("steward 8");
-    expect(
-      chatGroup("steward 3").compareDocumentPosition(joined) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    await press(allowOf("steward 3"), by);
     expect(answered(calls)).toBe(true);
   });
 

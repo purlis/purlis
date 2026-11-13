@@ -675,6 +675,112 @@ fn the_bash_guard_refuses_by_printing_and_exits_cleanly() {
     );
 }
 
+/// R-021: **guard A, the leak guard, is never switchable.** What this proves: with the project's
+/// files at their loosest (the manifest's and the machine file's sandbox keys, the harness's own
+/// settings allowing every Bash and Read call in bypass mode), on each harness, sandboxed or not,
+/// from the chat or a sub-agent, in bypass permissions, with the state folder or the plane root
+/// moved by `$PURLIS_HOME`/`$CHARTER_HOME` or `$PURLIS_ROOT`/`$CHARTER_ROOT`, A still denies the
+/// read of a vault, by Bash and by the Read and Grep tools, in a plane and outside one.
+#[test]
+fn the_leak_guard_denies_whatever_any_setting_says() {
+    const LOOSEST: &str = "schema = 1\n\
+        [sandbox]\nlevel = \"off\"\nproposed-changes = \"off\"\nrun-grants = true\n\
+        undeclared-secret-asks = true\npersona-tools = true\n";
+    let plane = tempfile::tempdir().expect("a directory");
+    let bare = tempfile::tempdir().expect("a directory");
+    let elsewhere = tempfile::tempdir().expect("a directory");
+    for dir in [plane.path(), bare.path()] {
+        // The vault itself is not made: a chat's sandbox refuses a folder of that name, and
+        // the leak guard refuses the read by its path.
+        std::fs::create_dir_all(dir.join(".charter")).expect("the state directory");
+        std::fs::create_dir_all(dir.join(".claude")).expect(".claude");
+        std::fs::write(
+            dir.join(".claude/settings.json"),
+            r#"{"permissions": {"allow": ["Bash(*)", "Read(*)", "Grep(*)"], "defaultMode": "bypassPermissions"}}"#,
+        )
+        .expect("the harness's settings");
+    }
+    for name in ["charter.toml", "purlis.toml", "purlis.local.toml"] {
+        std::fs::write(plane.path().join(name), LOOSEST).expect("a manifest at its loosest");
+    }
+    const VAULT: &str = ".charter/vaults/db.json";
+    let reads = [
+        ("pretooluse", bash(&format!("cat {VAULT}"))),
+        (
+            "pretooluse-read",
+            tool_call("Read", serde_json::json!({ "file_path": VAULT })),
+        ),
+        (
+            "pretooluse-read",
+            tool_call(
+                "Grep",
+                serde_json::json!({ "pattern": "token", "path": VAULT }),
+            ),
+        ),
+    ];
+    let payload = |read: &str, agent: Option<&str>| {
+        let mut call: serde_json::Value = serde_json::from_str(read).unwrap();
+        call["permission_mode"] = "bypassPermissions".into();
+        if let Some(agent) = agent {
+            call["agent_id"] = agent.into();
+        }
+        call.to_string()
+    };
+    // The fence the hook holds a plane to is the temporary folder the fixture is in.
+    let tmp = std::env::temp_dir().display().to_string();
+    let moved = elsewhere.path().display().to_string();
+    // A root under the new name is given under the old one too: the two disagreeing is refused
+    // on its own, before any guard is asked.
+    let homes_and_roots: [&[(&str, &str)]; 5] = [
+        &[],
+        &[("PURLIS_HOME", &moved)],
+        &[("CHARTER_HOME", &moved)],
+        &[("PURLIS_ROOT", &moved), ("CHARTER_ROOT", &moved)],
+        &[("CHARTER_ROOT", &moved)],
+    ];
+    for dir in [plane.path(), bare.path()] {
+        for (word, read) in &reads {
+            for harness in ["claude-code", "codex", "opencode"] {
+                for sandboxed in ["0", "1"] {
+                    for agent in [None, Some("sub-1")] {
+                        for moved in homes_and_roots {
+                            let mut env = vec![
+                                ("CHARTER_HARNESS", harness),
+                                (purlis_core::hookwire::SANDBOXED_ENV, sandboxed),
+                                ("TMPDIR", &tmp),
+                            ];
+                            env.extend(moved.iter().copied());
+                            let at = format!(
+                                "{word} {harness}, sandboxed {sandboxed}, {agent:?}, {moved:?}"
+                            );
+                            let (code, out, err) =
+                                charter_in(dir, &["hook", word], &payload(read, agent), &env);
+                            let said = decision(&out)
+                                .unwrap_or_else(|| panic!("{at}: {code} {out:?} {err}"));
+                            assert!(
+                                said.contains("reads a vault/secret file directly"),
+                                "{at}: {said}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// A PreToolUse payload for the harness's `tool` with `input`.
+fn tool_call(tool: &str, input: serde_json::Value) -> String {
+    serde_json::json!({
+        "session_id": "11111111-2222-4333-8444-555555555555",
+        "cwd": ".",
+        "hook_event_name": "PreToolUse",
+        "tool_name": tool,
+        "tool_input": input,
+    })
+    .to_string()
+}
+
 /// What makes a debug build's `charter hook <word>` panic before it answers (#349).
 const PANICS: (&str, &str) = ("CHARTER_TEST_HOOK_PANICS", "1");
 
@@ -1499,4 +1605,89 @@ fn every_hook_the_bundled_plugin_wires_answers_an_ordinary_call_with_exit_zero()
         }
     }
     assert_eq!(ran, purlis_core::hookreg::HANDLERS.len());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_harness_version_that_does_not_know_permission_denied_still_starts_and_its_other_hooks_answer()
+{
+    // R-094's hook-contract guard: Claude Code drops a hooks.json entry of an event it does not
+    // know, and keeps the rest (2.1.323's `claude plugin validate`: "unknown hook event; entry
+    // ignored at runtime"). Measured on claude 2.1.323 only: this test assumes that behaviour,
+    // and no version from before the event has been run with the generated file (an open
+    // measurement). So the `PermissionDenied` hook is an event of its own, holding that
+    // word alone, and an older version that drops it keeps every other hook, the Bash guard
+    // first among them, which still answers.
+    let mut doc: serde_json::Value =
+        serde_json::from_str(&purlis_core::plugin::hooks_json()).expect("the hooks file");
+    let words = |hooks: &serde_json::Value| -> Vec<String> {
+        hooks
+            .as_object()
+            .expect("events")
+            .values()
+            .flat_map(|groups| groups.as_array().expect("groups").iter())
+            .flat_map(|group| group["hooks"].as_array().expect("hooks").iter())
+            .map(|hook| {
+                let command = hook["command"].as_str().expect("a command");
+                command.rsplit(' ').next().unwrap_or_default().to_owned()
+            })
+            .collect()
+    };
+    let denied = purlis_core::hookreg::HARNESS_DENIED;
+    assert_eq!(
+        words(&serde_json::json!({ "PermissionDenied": doc["hooks"]["PermissionDenied"] })),
+        [denied],
+        "the event holds its word alone"
+    );
+
+    // What a version that does not know the event runs.
+    doc["hooks"]
+        .as_object_mut()
+        .expect("events")
+        .remove("PermissionDenied");
+    let mut kept = words(&doc["hooks"]);
+    kept.sort_unstable();
+    let mut every_other: Vec<String> = purlis_core::hookreg::HANDLERS
+        .iter()
+        .map(|handler| handler.name.to_owned())
+        .filter(|name| name != denied)
+        .collect();
+    every_other.sort_unstable();
+    assert_eq!(kept, every_other, "every other hook is still wired");
+
+    // And its Bash guard, as that file spells it, answers an ordinary call.
+    let group = doc["hooks"]["PreToolUse"]
+        .as_array()
+        .expect("PreToolUse")
+        .iter()
+        .find(|group| group["matcher"] == "Bash")
+        .expect("the Bash guard");
+    let command = group["hooks"][0]["command"].as_str().expect("a command");
+    let plane = tempfile::tempdir().expect("a directory");
+    std::fs::write(plane.path().join("charter.toml"), "schema = 1\n").expect("the marker");
+    let mut child = support::command("/bin/sh")
+        .args(["-c", command])
+        .current_dir(plane.path())
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        // The fence is the temporary folder the plane was made in, wherever that is.
+        .env("TMPDIR", std::env::temp_dir())
+        .env("CHARTER_ROOT", plane.path())
+        .env("CHARTER_HARNESS", "claude-code")
+        .env("PURLIS_TEST_GUARD_DEADLINE_MS", VERDICT_BUDGET_MS)
+        .env(purlis_core::plugin::BINARY_ENV, CHARTER)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("sh runs");
+    stand_in::feed(&mut child, bash("ls").as_bytes());
+    let out = child.wait_with_output().expect("it finishes");
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "the guard did not answer: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(decision(&String::from_utf8_lossy(&out.stdout)), None);
 }

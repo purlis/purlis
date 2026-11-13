@@ -231,13 +231,13 @@ mod on_a_socket {
         let within = Duration::from_secs(5);
 
         assert_eq!(
-            ask_on(&socket, &forget("work"), within),
+            ask_on(&socket, &forget("work"), within, &mut |_| {}),
             Answered::Said(Said::Asked {
                 note: Some("Pool builds keeps it".to_owned())
             })
         );
         assert_eq!(
-            ask_on(&socket, &forget("other"), within),
+            ask_on(&socket, &forget("other"), within, &mut |_| {}),
             Answered::Said(Said::Refused {
                 why: "no".to_owned()
             })
@@ -251,11 +251,17 @@ mod on_a_socket {
         let dir = tempfile::tempdir().unwrap();
         let socket = dir.path().join("purlis").join("window.sock");
         let within = Duration::from_millis(200);
-        assert_eq!(ask_on(&socket, &forget("work"), within), Answered::NoWindow);
+        assert_eq!(
+            ask_on(&socket, &forget("work"), within, &mut |_| {}),
+            Answered::NoWindow
+        );
 
         crate::hostsocket::make_the_folder(&socket).unwrap();
         drop(std::os::unix::net::UnixListener::bind(&socket).unwrap());
-        assert_eq!(ask_on(&socket, &forget("work"), within), Answered::NoWindow);
+        assert_eq!(
+            ask_on(&socket, &forget("work"), within, &mut |_| {}),
+            Answered::NoWindow
+        );
 
         let refused = |_: Asked| Said::Refused {
             why: "the first".to_owned(),
@@ -274,7 +280,12 @@ mod on_a_socket {
         let socket = dir.path().join("silent.sock");
         let _listening = std::os::unix::net::UnixListener::bind(&socket).unwrap();
         assert_eq!(
-            ask_on(&socket, &forget("work"), Duration::from_millis(100)),
+            ask_on(
+                &socket,
+                &forget("work"),
+                Duration::from_millis(100),
+                &mut |_| {}
+            ),
             Answered::NoAnswer
         );
     }

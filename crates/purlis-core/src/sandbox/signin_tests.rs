@@ -108,7 +108,7 @@ fn a_claude_code_chat_on_its_harnesss_own_folder_is_denied_the_sign_in_file_ther
 
 #[test]
 fn the_profiles_folders_are_the_ones_its_folder_variables_name_in_the_chats_environment() {
-    let home = PathBuf::from("/home/op");
+    let home = PathBuf::from("/nonexistent-home/op");
     let machine = machine(&home);
     let env = |pairs: &[(&str, &str)]| -> Vec<(String, String)> {
         pairs

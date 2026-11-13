@@ -6,15 +6,15 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cascadeOf, drawnWith } from "./cascade.testkit";
-import { Inbox, NOT_READ_YET, NOTHING_WAITS, landOnGroupIn } from "./Inbox";
+import { Inbox, NO_CHAT_FOCUSED, NOTHING_WAITS, landOnGroupIn } from "./Inbox";
 import { OTHER_PROJECTS, type Elsewhere } from "./InboxElsewhere";
 import type { Needing } from "./NeedsYou";
 import { forgetInbox } from "./inboxRules";
-import { keepInboxScope, keptInboxScope } from "./inboxScope";
-import { forgetProjectViews } from "./projectViews";
+import { forgetAsksScope, keptAsksScope, pickAsksScope } from "./asksScope";
+import { forgetProjectViews, keptFacet } from "./projectViews";
 import type { Shown } from "./bindings";
 import { hoverTipOf, tipOf } from "./ui/tooltip/tooltip.testkit";
-import { chatGroup } from "./test-inbox";
+import { chatGroupOrNone } from "./test-inbox";
 
 /**
  * **The Inbox's scope, and what one of its rows is made of** (qw359): every project's, this
@@ -33,6 +33,7 @@ afterEach(() => {
   clearMocks();
   forgetInbox();
   forgetProjectViews();
+  forgetAsksScope(PLANE);
   vi.useRealTimers();
 });
 
@@ -63,8 +64,15 @@ const question = (session: number, says = "Waiting on your reply"): Shown => ({
   answer: { via: "in-its-pane" },
 });
 
-/** Chat 3 works in alpha, chat 5 in beta, and chat 9 at the plane root. */
-const FILED: Record<number, string> = { 3: "alpha", 5: "beta", 9: ROOT };
+/** Chats 3, 4, 6 and 8 work in alpha, chat 5 in beta, and chat 9 at the plane root. */
+const FILED: Record<number, string> = {
+  3: "alpha",
+  4: "alpha",
+  6: "alpha",
+  8: "alpha",
+  5: "beta",
+  9: ROOT,
+};
 const strip = (here: string) => ({
   here,
   workspaceOf: (session: number) => FILED[session],
@@ -106,176 +114,197 @@ const picked = () => scopes().getByRole("radio", { checked: true }).getAttribute
 const chats = () =>
   [...document.querySelectorAll('.inbox-chat [role="rowheader"]')].map((h) => h.textContent);
 
-describe("the scope switch", () => {
-  it("offers this workspace, this project and all projects, narrowest first, each with its count, on all projects", async () => {
-    draw(ASKS, { ...strip("alpha"), elsewhere: elsewhere({ asking: [away] }) });
+/** Chat 3 dispatched 4, which dispatched 8; chat 6 is 3's sibling, a task of 1. */
+const PARENT: Record<number, number> = { 4: 3, 8: 4, 6: 1, 3: 1 };
+const askedBy = (session: number) => PARENT[session];
+/** Chat 3 has focus, and holds two tasks. */
+const focus = (session = 3, tasks = 2) => ({
+  chat: { session, name: `steward ${session}`, tasks },
+  askedBy,
+});
+
+describe("the scope chips (ADR 0121, amended 2026-11-12)", () => {
+  const FAMILY = [
+    permission(3, "a"),
+    permission(4, "c", "Run npm ci"),
+    permission(8, "d", "Run git push"),
+    permission(6, "e", "Run gh pr view"),
+  ];
+  const ALL = [...FAMILY, ...ASKS.slice(1)];
+
+  it("offers Chat, Workspace and Project, narrowest first, each with its count, on Chat", () => {
+    draw(ALL, { ...strip("alpha"), ...focus() });
     expect(
       scopes()
         .getAllByRole("radio")
         .map((one) => one.getAttribute("aria-label")),
     ).toEqual([
-      "This workspace, 1 waiting on you",
-      "This project, 3 waiting on you",
-      "All projects, 4 waiting on you",
+      "Chat, 3 waiting on you",
+      "Workspace, 4 waiting on you",
+      "Project, 6 waiting on you",
     ]);
-    // Asks opens on every project's (#5999, ADR 0121 decision 4): the chat that waits in another
-    // window's project is listed beside the project's own.
-    expect(picked()).toBe("All projects, 4 waiting on you");
-    expect(chatGroup("steward 7")).toBeTruthy();
-    // This project narrows the list to the project's asks.
-    await userEvent.click(scopes().getByRole("radio", { name: /^This project/ }));
-    expect(chats()).toEqual(["steward 3", "steward 5", "steward 9"]);
+    expect(picked()).toBe("Chat, 3 waiting on you");
   });
 
-  it("is the one segmented switch the Chats view draws", () => {
-    draw(ASKS, strip("alpha"));
-    const group = screen.getByRole("radiogroup", { name: "Show what needs you in" });
-    expect(group).toHaveAttribute("data-scope", "segmented-control");
-    expect(group).toHaveAttribute("data-size", "sm");
-    expect(scopes().getAllByRole("radio")[0].closest("label")).toHaveAttribute(
-      "data-scope",
-      "segment",
+  it("lists under Chat the focused chat's asks and every chat it dispatched, never a sibling's", () => {
+    draw(ALL, { ...strip("alpha"), ...focus() });
+    expect(chats()).toEqual(["steward 3", "steward 4", "steward 8"]);
+  });
+
+  it("draws no Workspace where the project has one workspace", () => {
+    draw(ALL, { ...strip("alpha"), ...focus(), oneWorkspace: true });
+    expect(
+      scopes()
+        .getAllByRole("radio")
+        .map((one) => one.getAttribute("aria-label")),
+    ).toEqual(["Chat, 3 waiting on you", "Project, 6 waiting on you"]);
+  });
+
+  it("names the chat and its tasks in Chat's tooltip", async () => {
+    draw(ALL, { ...strip("alpha"), ...focus() });
+    const chat = scopes().getByRole("radio", { name: /^Chat/ });
+    expect(await hoverTipOf(chat.closest("label"))).toBe("steward 3 and its 2 tasks");
+  });
+
+  it("greys Chat with no chat focused, says why, and lists Workspace", async () => {
+    draw(ALL, { ...strip("alpha"), askedBy });
+    const chat = scopes().getByRole("radio", { name: "Chat" });
+    expect(chat).toBeDisabled();
+    expect(await hoverTipOf(chat.closest("label"))).toBe(NO_CHAT_FOCUSED);
+    expect(picked()).toBe("Workspace, 4 waiting on you");
+    expect(chats()).toEqual(["steward 3", "steward 4", "steward 8", "steward 6"]);
+  });
+
+  it("says why Chat is greyed to the keyboard and a screen reader, with no pointer over it", () => {
+    draw(ALL, { ...strip("alpha"), askedBy });
+    const chat = scopes().getByRole("radio", { name: "Chat" });
+    expect(chat).toBeDisabled();
+    // Its description, read where the radio is (ADR 0104, `ui/unavailable.ts`): no hover needed.
+    expect(chat).toHaveAccessibleDescription(NO_CHAT_FOCUSED);
+  });
+
+  it("lists Project for Chat with no chat focused and one workspace", () => {
+    draw(ALL, { ...strip("alpha"), askedBy, oneWorkspace: true });
+    expect(picked()).toBe("Project, 6 waiting on you");
+  });
+
+  it("shows a chip's count only above 0", () => {
+    draw(ASKS, { ...strip("beta"), ...focus(6, 0) });
+    const counts = [...document.querySelectorAll('.inbox-scope [data-part="count"]')].map(
+      (one) => one.textContent,
     );
+    expect(counts).toEqual(["1", "3"]);
+    expect(scopes().getByRole("radio", { name: "Chat" })).toBeTruthy();
   });
 
-  it("offers only the scopes the window can list, and no switch for one", () => {
-    const { unmount } = draw(ASKS);
-    expect(screen.queryByRole("radiogroup")).toBeNull();
-    expect(chats()).toEqual(["steward 3", "steward 5", "steward 9"]);
-    unmount();
-    draw(ASKS, strip("alpha"));
-    expect(scopes().getAllByRole("radio")).toHaveLength(2);
-  });
-
-  it("lists this workspace's asks alone, and follows the strip", async () => {
-    const { again } = draw(ASKS, strip("alpha"));
-    await userEvent.click(scopes().getByRole("radio", { name: /^This workspace/ }));
+  it("lists Workspace's and Project's asks, and follows the strip", async () => {
+    const { again } = draw(ASKS, { ...strip("alpha"), ...focus() });
+    await userEvent.click(scopes().getByRole("radio", { name: /^Workspace/ }));
     expect(chats()).toEqual(["steward 3"]);
     again(strip("beta"));
-    expect(chats()).toEqual(["steward 5"]);
-    expect(picked()).toBe("This workspace, 1 waiting on you");
+    expect(chats()).toEqual(["steward 3", "steward 5"]);
+    await userEvent.click(scopes().getByRole("radio", { name: /^Project/ }));
+    expect(chats()).toEqual(["steward 3", "steward 5", "steward 9"]);
   });
 
-  it("lists the asks of no workspace at the plane root", async () => {
+  it("lists the asks of no workspace under Workspace at the plane root", async () => {
     draw(ASKS, strip(ROOT));
-    await userEvent.click(scopes().getByRole("radio", { name: /^This workspace/ }));
+    expect(picked()).toBe("Workspace, 1 waiting on you");
     expect(chats()).toEqual(["steward 9"]);
   });
 
-  it("remembers the pick for the project", async () => {
-    const { unmount } = draw(ASKS, strip("alpha"));
-    await userEvent.click(scopes().getByRole("radio", { name: /^This workspace/ }));
-    expect(keptInboxScope(PLANE)).toBe("workspace");
-    unmount();
-    draw(ASKS, strip("alpha"));
-    expect(picked()).toBe("This workspace, 1 waiting on you");
-    expect(chats()).toEqual(["steward 3"]);
+  it("holds a pick until Asks closes, opens on Chat again, and keeps nothing for the project", async () => {
+    const { again } = draw(ALL, { ...strip("alpha"), ...focus(), shown: true });
+    await userEvent.click(scopes().getByRole("radio", { name: /^Project/ }));
+    expect(picked()).toBe("Project, 6 waiting on you");
+    again({ ...focus(6) });
+    expect(picked()).toBe("Project, 6 waiting on you");
+    again({ ...focus(6), shown: false });
+    again({ ...focus(6), shown: true });
+    expect(picked()).toBe("Chat, 1 waiting on you");
+    expect(keptFacet(PLANE, "inbox")).toBeUndefined();
   });
 
-  it("lists another project's asks under All projects as rows of its own, each in its project (#1921)", async () => {
+  it("lists no other project's asks, though the window knows what waits there", () => {
     const npm = { ...permission(2, "x", "Run npm test"), chain: ["dev 2"] };
-    const port = { ...question(4, "Which port?"), chain: ["dev 4"] };
     const there = elsewhere({
       asking: [away],
       waitingHere: [
         { plane: PLANE, project: "plane", count: 3 },
-        {
-          plane: "/home/dev/web",
-          project: "web",
-          count: 2,
-          asks: [npm, port],
-          where: { "2": "site · steward" },
-        },
+        { plane: "/home/dev/web", project: "web", count: 1, asks: [npm] },
+        { plane: "/home/dev/api", project: "api", count: 2 },
       ],
     });
-    draw(ASKS, { ...strip("alpha"), elsewhere: there });
-    // Listed at once: Asks opens on All projects (#5999).
-    expect(picked()).toBe("All projects, 6 waiting on you");
-    expect(chatGroup("steward 7")).toBeTruthy();
-    // Each ask of the other project is a group of its own, named by its chat, with no line for
-    // the project: its asks are drawn whole.
-    expect(chats()).toEqual(expect.arrayContaining(["dev 2", "dev 4"]));
-    expect(document.querySelector(".inbox-chat[data-others]")).toBeNull();
-    const npmGroup = chatGroup("dev 2");
-    expect(npmGroup).toHaveAttribute("data-elsewhere", "/home/dev/web#2");
-    // Its options stand on its row, as this project's decisions' do (#5998).
+    draw(ASKS, { ...strip("alpha"), ...focus(), elsewhere: there });
     expect(
-      within(npmGroup)
-        .getAllByRole("button")
-        .map((one) => one.textContent),
-    ).toEqual(expect.arrayContaining(["Allow", "Deny", "Go to chat"]));
-    // It says its project, and where its chat is filed there.
-    expect(npmGroup.querySelector(".inbox-where")?.textContent).toBe("web · site · steward");
-    await userEvent.click(within(npmGroup).getByRole("button", { name: /^Go to chat/ }));
-    expect(there.onPress).toHaveBeenLastCalledWith(
-      "/home/dev/web",
-      expect.objectContaining({ does: { verb: "showChat", session: 2 } }),
-    );
-    // This project's own asks say which project they are in, beside the others'.
-    expect(document.querySelector('.inbox-chat[data-session="3"] .inbox-where')?.textContent).toBe(
-      "plane · alpha",
-    );
-    // This project narrows them away.
-    await userEvent.click(scopes().getByRole("radio", { name: /^This project/ }));
-    expect(chats()).toEqual(["steward 3", "steward 5", "steward 9"]);
+      scopes()
+        .getAllByRole("radio")
+        .map((one) => one.getAttribute("aria-label")),
+    ).toEqual([
+      "Chat, 1 waiting on you",
+      "Workspace, 1 waiting on you",
+      "Project, 3 waiting on you",
+    ]);
+    expect(screen.queryByRole("radio", { name: /All projects/ })).toBeNull();
+    for (const scope of [/^Chat/, /^Workspace/, /^Project/]) {
+      act(() => scopes().getByRole("radio", { name: scope }).click());
+      expect(chatGroupOrNone("dev 2")).toBeNull();
+      expect(chatGroupOrNone("steward 7")).toBeNull();
+      expect(chatGroupOrNone(OTHER_PROJECTS)).toBeNull();
+    }
   });
+});
 
-  it("draws a line with Go to project for another project whose asks are not read yet", async () => {
-    const there = elsewhere({
-      waitingHere: [
-        { plane: PLANE, project: "plane", count: 3 },
-        { plane: "/home/dev/web", project: "web", count: 2 },
-      ],
-    });
-    draw(ASKS, { ...strip("alpha"), elsewhere: there });
-    const others = chatGroup(OTHER_PROJECTS);
-    expect(
-      within(others)
-        .getAllByRole("button")
-        .map((one) => one.textContent),
-    ).toEqual(["Go to project"]);
-    await userEvent.click(within(others).getByRole("button", { name: "Go to project web" }));
-    expect(there.onOpen).toHaveBeenLastCalledWith("/home/dev/web");
+describe("a New ask a chip shows (#6002)", () => {
+  it("is watched to be seen once its row is drawn, though nothing else draws Asks again", async () => {
+    const watch = vi.fn<(element: Element, key: string) => () => void>(() => () => undefined);
+    draw(ASKS, { ...strip("beta"), ...focus(6, 0), seen: { isNew: () => true, watch } });
+    expect(watch).not.toHaveBeenCalled();
+    await userEvent.click(scopes().getByRole("radio", { name: /^Workspace/ }));
+    await waitFor(() =>
+      expect(watch.mock.calls.map(([element, key]) => [element.isConnected, key])).toContainEqual([
+        true,
+        "ask:5:b",
+      ]),
+    );
   });
 });
 
 describe("an empty scope", () => {
-  it("says how many wait in the wider scope, and widens in one press", async () => {
-    keepInboxScope(PLANE, "workspace");
-    draw([permission(5, "b"), question(9)], strip("alpha"));
+  it("offers the nearest wider scope with something waiting, one press to widen, and never widens itself", async () => {
+    draw([permission(5, "b"), question(9)], { ...strip("beta"), ...focus() });
+    expect(picked()).toBe("Chat");
     expect(chats()).toEqual([]);
-    expect(screen.getByText("Nothing is waiting on you in this workspace.")).toBeTruthy();
-    expect(screen.getByText("2 wait in this project.")).toBeTruthy();
+    expect(screen.getByText("Nothing is waiting on you in this chat.")).toBeTruthy();
     expect(screen.queryByText(NOTHING_WAITS)).toBeNull();
-
-    await userEvent.click(screen.getByRole("button", { name: "Show this project" }));
-    expect(chats()).toEqual(["steward 5", "steward 9"]);
-    expect(keptInboxScope(PLANE)).toBe("project");
+    await userEvent.click(screen.getByRole("button", { name: "1 waiting in this workspace" }));
+    expect(chats()).toEqual(["steward 5"]);
+    expect(picked()).toBe("Workspace, 1 waiting on you");
   });
 
-  it("goes past an empty project to all projects", async () => {
-    keepInboxScope(PLANE, "workspace");
-    draw([], { ...strip("alpha"), elsewhere: elsewhere({ asking: [away] }) });
-    expect(screen.getByText("1 waits in all projects.")).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "Show all projects" }));
-    expect(chatGroup("steward 7")).toBeTruthy();
+  it("takes the keyboard from its way out to the first ask it lists", async () => {
+    draw([permission(5, "b"), question(9)], { ...strip("beta"), ...focus() });
+    const out = screen.getByRole("button", { name: "1 waiting in this workspace" });
+    act(() => out.focus());
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(document.activeElement?.closest(".inbox-chat")?.getAttribute("data-session")).toBe(
+        "5",
+      ),
+    );
   });
 
-  it("offers what the window knows waits wider while its own asks are not read yet", async () => {
-    keepInboxScope(PLANE, "project");
-    draw(undefined, { ...strip("alpha"), elsewhere: elsewhere({ asking: [away] }) });
-    expect(screen.getByText(NOT_READ_YET)).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "Show all projects" }));
-    expect(chatGroup("steward 7")).toBeTruthy();
-    expect(screen.getByText(NOT_READ_YET)).toBeTruthy();
+  it("goes past an empty workspace to the project", async () => {
+    draw([question(9)], { ...strip("alpha"), ...focus() });
+    await userEvent.click(screen.getByRole("button", { name: "1 waiting in this project" }));
+    expect(chats()).toEqual(["steward 9"]);
   });
 
   it("is the Inbox's own empty sentence where no scope lists anything", () => {
-    keepInboxScope(PLANE, "workspace");
-    draw([], { ...strip("alpha"), elsewhere: elsewhere() });
+    draw([], { ...strip("alpha"), ...focus(), elsewhere: elsewhere({ asking: [away] }) });
     expect(screen.getByText(NOTHING_WAITS)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /^Show / })).toBeNull();
-    // Nothing to narrow, so no switch: as the Chats view draws none over an empty list.
+    expect(screen.queryByRole("button", { name: /waiting in/ })).toBeNull();
+    // Nothing to narrow, so no chips: as the Chats view draws none over an empty list.
     expect(screen.queryByRole("radiogroup")).toBeNull();
   });
 });
@@ -307,6 +336,7 @@ describe("what a row is made of", () => {
   });
 
   it("has its question for its title, its age at the right, then its chat, kind and where, then its words (#5649, #5998)", () => {
+    pickAsksScope(PLANE, "project");
     draw([{ ...permission(3, "a"), since: Date.now() / 1000 - 5 * 60 }, question(9)], {
       ...strip("alpha"),
       personaOf: (session) => (session === 3 ? "steward" : null),
@@ -331,6 +361,7 @@ describe("what a row is made of", () => {
   });
 
   it("marks its state with a tinted glyph beside its words, never by colour alone (#5649)", () => {
+    pickAsksScope(PLANE, "project");
     draw([permission(3, "a"), question(9)], strip("alpha"));
     const ask = row(3);
     expect(ask).toHaveAttribute("data-variant", "waiting");
@@ -487,11 +518,10 @@ describe("a row's ranks are the text roles (#1920)", () => {
 
 describe("a notification's landing", () => {
   it("widens a scope that leaves its chat out, and lands on it", async () => {
-    keepInboxScope(PLANE, "workspace");
-    draw(ASKS, strip("alpha"));
+    draw(ASKS, { ...strip("alpha"), ...focus() });
     expect(chats()).toEqual(["steward 3"]);
     act(() => landOnGroupIn(PLANE, 5));
-    expect(chats()).toEqual(["steward 3", "steward 5", "steward 9"]);
+    await waitFor(() => expect(chats()).toEqual(["steward 3", "steward 5", "steward 9"]));
     await waitFor(() =>
       expect(document.activeElement?.closest(".inbox-chat")?.getAttribute("data-session")).toBe(
         "5",
@@ -500,10 +530,9 @@ describe("a notification's landing", () => {
   });
 
   it("leaves the scope alone where it lists the chat", () => {
-    keepInboxScope(PLANE, "workspace");
-    draw(ASKS, strip("alpha"));
+    draw(ASKS, { ...strip("alpha"), ...focus() });
     act(() => landOnGroupIn(PLANE, 3));
-    expect(keptInboxScope(PLANE)).toBe("workspace");
+    expect(keptAsksScope(PLANE)).toBe("chat");
     expect(document.activeElement?.closest(".inbox-chat")?.getAttribute("data-session")).toBe("3");
   });
 });

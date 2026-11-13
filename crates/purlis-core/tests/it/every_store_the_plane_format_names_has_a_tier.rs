@@ -614,6 +614,7 @@ fn a_chat_touches_a_file(run: &Path) {
         args: Some(args_hash(&input)),
         decision: Decision::None,
         rule: None,
+        arm: None,
         hook_ms: 1,
         agent: None,
         at_ms: 0,

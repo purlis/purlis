@@ -388,6 +388,8 @@ pub(crate) fn run_attributes(
                 .word()
                 .to_owned(),
         ),
+        // Set by the start that resolves it ([`purlis_core::sandbox::protection::at_start`]).
+        protection: None,
     }
 }
 
@@ -5294,6 +5296,18 @@ impl Chats {
             conversation.as_deref(),
         );
         attributes.model_source = sign_in.map(|s| s.kind.word().to_owned());
+        // The protection it starts under (R-227), read from what this start resolved, through
+        // the persona and the way of starting its decide read; a chat reattached or started on
+        // its runner is not started here, so this window resolved nothing for it.
+        if !reattaching && !on_the_runner {
+            attributes.protection = Some(purlis_core::sandbox::protection::at_start(
+                &self.project,
+                level_as_of(chat),
+                &made_of(chat, why),
+                sandbox,
+                unsandboxed,
+            ));
+        }
         // What a wrapped chat needs running beside it, started before it and kept for as long
         // as it is open: charter's egress proxy and its own temp directory (ADR 0067 §2).
         // Its proxy tells the app each host it refuses, by the proxy's word (#1663): the

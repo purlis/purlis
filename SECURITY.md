@@ -102,10 +102,11 @@ scanning, where maintainers read them. They are not yet published to the public 
 
 A plane can put every chat purlis starts in a sandbox ([ADR 0067](docs/adr/0067-a-chat-runs-in-a-sandbox-charter-compiles-for-its-harness.md)):
 `[sandbox]` with `mode = "on"` in its `charter.toml` ([the plane format](docs/plane-format.md)).
-A project purlis makes has it on. A project that has not turned it on runs its chats at **the
-floor** (#2071): each reaches every host through its own proxy and writes every folder but what
-the floor holds. The floor holds the same five classes below; the names a later program runs at
-every depth and in either case, the person's own among them (git's and ssh's config, launch
+A project that has not turned it on runs its chats at **the floor** (#2071): each reaches every
+host through its own proxy and writes every folder but what the floor holds. A new project purlis
+makes starts at the floor too; the full sandbox is chosen at setup or in Settings. The floor
+holds the same five classes below; the names a later program runs at every depth and in either
+case, the person's own among them (git's and ssh's config, launch
 agents, shell startup files, each harness's and editor's user settings); the folders a person
 runs programs from (the `PATH`, the packages its links lead to, Homebrew's prefix, npm's global
 packages, the person's Python site folders), which a block's Allow can lift for that chat; every

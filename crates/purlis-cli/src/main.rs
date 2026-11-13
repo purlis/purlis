@@ -2282,6 +2282,7 @@ fn tell_the_host_about_the_tool_call(
         args: data.get("tool_input").map(purlis_core::eventlog::args_hash),
         decision: answered.decision,
         rule: answered.rule.clone(),
+        arm: answered.arm.map(|arm| arm.id().to_owned()),
         hook_ms: u64::try_from(took.as_millis()).unwrap_or(u64::MAX),
         agent: hookwire::sub_agent(data["agent_id"].as_str(), &purlis_core::envvar::var),
         at_ms: std::time::SystemTime::now()
@@ -2295,9 +2296,11 @@ fn tell_the_host_about_the_tool_call(
         let _ = writeln!(std::io::stderr(), "{} {word} ({why})", hookwire::NOT_TAKEN);
     }
     // The file a file tool touched, for the tree's live marker (FM-6): on a line of its own,
-    // sent once and never spooled, so no record holds it (D-86a). Not for a call the guard
-    // refused, which touched nothing. A marker the app missed is not worth a word on stderr.
+    // sent once and never spooled, so no record holds it (D-86a). Not for a call the guard or
+    // the harness's own check refused, which touched nothing. A marker the app missed is not
+    // worth a word on stderr.
     if call.decision != hookwire::Decision::Deny
+        && word != purlis_core::hookreg::HARNESS_DENIED
         && let Some(touching) = purlis_core::touching::of_tool(&data)
     {
         let _ = hookwire::touch(
@@ -4428,7 +4431,7 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
                 let reached = purlis_core::windowline::reach_the_pools(
                     store.config_root(),
                     &gone.name,
-                    purlis_core::windowline::ask,
+                    |asked| purlis_core::windowline::ask(asked, &mut |line| eprintln!("{line}")),
                 );
                 #[cfg(not(unix))]
                 let reached = "";
@@ -4893,8 +4896,7 @@ fn confirmed_in_the_window(config: &std::path::Path, pool: &str, name: &str) -> 
             "confirm signing '{name}' in on pool {pool} in the purlis window, if it shows the \
              code {code}…"
         );
-        eprintln!("{}", pool::waiting_on_the_window(project.as_deref()));
-        purlis_core::windowline::ask(asked)
+        purlis_core::windowline::ask(asked, &mut |line| eprintln!("{line}"))
     })
 }
 
@@ -4956,7 +4958,7 @@ fn kept_first(
 ) -> Result<purlis_core::profilestore::sign_in::Standing, String> {
     purlis_core::windowline::kept_first(pool, name, standing, |asked| {
         eprintln!("it does not keep '{name}': asking the purlis window to keep it there…");
-        purlis_core::windowline::ask(asked)
+        purlis_core::windowline::ask(asked, &mut |line| eprintln!("{line}"))
     })
 }
 
