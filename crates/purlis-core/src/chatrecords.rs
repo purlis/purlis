@@ -26,7 +26,8 @@
 //! - **Swept like a dispatch record** ([`sweep`], run at the project's open from
 //!   [`crate::retention::on_open`]): a chat that ended
 //!   [`crate::retention::KEEP_FOR`] (30 days) or more ago goes. Held to [`MOST_KEPT`] besides, the
-//!   oldest close going first.
+//!   oldest close going first. A write killed before its rename leaves a temp file holding
+//!   titles, and the sweep removes it.
 //! - **Read as the app wrote it**: one file of at most [`MOST_FILE_BYTES`], opened following no
 //!   link, written whole through a temp file at 0600 under the folder's lock. An entry that does
 //!   not hold together (an id that is not a ULID, a time that is not one) is left out, and a
@@ -254,6 +255,14 @@ pub fn keep(root: &Path, chat: &ChatRecord) -> std::io::Result<()> {
 /// `dispatchrecord::END_SKEW` past `now` was written by a clock far ahead, and is aged
 /// from the file's last write instead, so it is not kept on for ever. Answers how many went.
 pub fn sweep(root: &Path, now: SystemTime) -> usize {
+    if !std::fs::symlink_metadata(dir(root)).is_ok_and(|meta| meta.is_dir()) {
+        return 0;
+    }
+    let Ok(_held) = locked(root) else {
+        return 0;
+    };
+    // Under the lock no write is under way, so a temp file here is a killed write's.
+    remove_left_behind(root);
     let file = path(root);
     let Ok(meta) = std::fs::symlink_metadata(&file) else {
         return 0;
@@ -261,9 +270,6 @@ pub fn sweep(root: &Path, now: SystemTime) -> usize {
     if !meta.is_file() {
         return 0;
     }
-    let Ok(_held) = locked(root) else {
-        return 0;
-    };
     let written = meta.modified().unwrap_or(now);
     let values = read_values(&file);
     let before = values.len();
@@ -282,6 +288,39 @@ pub fn sweep(root: &Path, now: SystemTime) -> usize {
             0
         }
     }
+}
+
+/// Removes what a write of [`FILE_NAME`] killed before its rename left in the folder: the temp
+/// file [`crate::rewrite::replace`] writes, `.purlis-generated.closed.json.<pid>.<tag>.tmp` (or
+/// an older build's prefix), which holds chats' titles and nothing else ever removes. Called
+/// under the folder's lock, which every write holds. Nothing else in the folder is touched.
+fn remove_left_behind(root: &Path) {
+    let Ok(names) = std::fs::read_dir(dir(root)) else {
+        return;
+    };
+    for one in names.flatten() {
+        if left_behind(&one.file_name().to_string_lossy())
+            && let Err(why) = std::fs::remove_file(one.path())
+        {
+            tracing::warn!(error = %why, "a closed chats' temp file was not removed");
+        }
+    }
+}
+
+/// Whether `name` is a temp file a write of [`FILE_NAME`] leaves when it is cut short.
+fn left_behind(name: &str) -> bool {
+    let prefix = crate::names::GENERATED_TEMP_PREFIX;
+    std::iter::once(prefix.write)
+        .chain(prefix.reads.iter().copied())
+        .filter_map(|prefix| name.strip_prefix(prefix))
+        .filter_map(|rest| rest.strip_prefix(FILE_NAME))
+        .filter_map(|rest| rest.strip_prefix('.'))
+        .filter_map(|rest| rest.strip_suffix(".tmp"))
+        // `<pid>.<tag>`: the two parts a write adds.
+        .any(|rest| {
+            rest.split_once('.')
+                .is_some_and(|(pid, tag)| !pid.is_empty() && !tag.is_empty() && !tag.contains('.'))
+        })
 }
 
 /// Whether `chat`, in a file last written at `written`, is [`crate::retention::KEEP_FOR`] or

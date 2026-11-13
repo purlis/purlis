@@ -184,3 +184,23 @@ fn a_chat_that_ended_in_the_future_is_aged_from_the_files_last_write() {
     assert_eq!(sweep(&root, now + a_month), 1);
     assert!(every(&root).is_empty());
 }
+
+#[test]
+fn the_sweep_takes_what_a_killed_write_left_behind_and_nothing_else() {
+    // A write killed between its temp file and the rename leaves the temp file, holding titles.
+    let (_dir, root) = project();
+    std::fs::create_dir_all(dir(&root)).unwrap();
+    let left = dir(&root).join(".purlis-generated.closed.json.4242.k1.tmp");
+    let older = dir(&root).join(".charter-generated.closed.json.4242.k2.tmp");
+    let other = dir(&root).join("notes.txt");
+    for file in [&left, &older, &other] {
+        std::fs::write(file, "{}").unwrap();
+    }
+    sweep(&root, at("2026-11-13T00:00:00Z"));
+    assert!(!left.exists());
+    assert!(!older.exists());
+    assert!(
+        other.exists(),
+        "a file purlis never names is not its to take"
+    );
+}
