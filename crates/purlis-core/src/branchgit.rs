@@ -543,6 +543,9 @@ fn found<T: Clone>(
     if !shellwrap::prefilter_text(cmd).contains("git") {
         return (seen, lost);
     }
+    // A heredoc body no program that runs text is handed is data, and only the substitutions
+    // of one the shell expands run (#6293).
+    let cmd = &crate::heredoc::commands_a_shell_runs(cmd);
     let Some(segments) = shellseg::joined_argv(cmd) else {
         // A line that does not tokenize cannot be followed, and a git in it may write.
         if unplaced == Unplaced::Name {
