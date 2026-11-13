@@ -201,9 +201,8 @@ pub(crate) fn keep_screen_on_close(
 }
 
 /// How long a quit waits, over every project together, for the screens of the tasks that had
-/// finished (#6305): as long as it gives every plane's saving to stop
-/// (`crate::autosave::QUIT_STOPS_WITHIN`).
-pub(crate) const SCREENS_AT_QUIT_WITHIN: std::time::Duration = std::time::Duration::from_secs(3);
+/// finished (#6305): as long as it gives every plane's saving to stop.
+pub(crate) const SCREENS_AT_QUIT_WITHIN: std::time::Duration = crate::autosave::QUIT_STOPS_WITHIN;
 
 /// [`SCREENS_AT_QUIT_WITHIN`] from now: the deadline a quit's task screens are given.
 pub(crate) fn screens_by_from_now() -> std::time::Instant {
