@@ -147,5 +147,6 @@ Checked in github.com/openssl/openssl at `openssl-3.0.15`:
 
 **`my_openssl`**, the bundled openssl MySQL's test RPM ships under its own name
 (`%{_bindir}/my_openssl`, `packaging/rpm-oel/mysql.spec.in:1611`; the bundled build's `openssl`
-copied, as `cmake/ssl.cmake:185-186` says, mysql-server 8.4.3), is read by the same row, and is on the general-purpose list, which matches a program's exact
-name only, so its notice carries openssl's caution too.
+copied, as `cmake/ssl.cmake:185-186` says, mysql-server 8.4.3), is read by the same row, and is
+on the general-purpose list, which matches a program's exact name only, so its notice carries
+openssl's caution too.
