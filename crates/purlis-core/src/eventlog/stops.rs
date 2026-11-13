@@ -428,6 +428,11 @@ impl Recorder {
     /// **Writes one stop** under chat `number`'s current run, where it is of one, made durable
     /// before it answers: a block or a hold with its target shortened and its arguments' hash
     /// keyed by this device, never as the hook sent it.
+    ///
+    /// **A sandbox block its chat's own hook reported** comes `unverified` from the app
+    /// (`sandboxblock::stop::Reported::ByItsHook`, T1-10) and is written so on every harness
+    /// (Q254): even where the hook runs outside the sandbox, it reads the command's own output,
+    /// which the chat can write. It is never cleared as a guard's deny is.
     pub fn stop(&mut self, plane: &Path, number: Option<u32>, stop: &Stop) -> io::Result<Event> {
         let tool = |tool: &str| crate::shown::readable(tool, TARGET_CHARS);
         let body = match stop {

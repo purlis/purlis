@@ -6,11 +6,12 @@
 //! A chat's hook refuses it a merge and hands the request over
 //! (`purlis_core::hookwire::Ask::Merge`). Here the request is found in the project: the folder
 //! the command ran in must be a clone in the plane, of a repo the project's inventory lists on
-//! that forge and host, and a repo the command named must be that one. The app reads the
-//! request's head and base from the forge with its own login, holds one merge ask keyed on the
-//! repo, the number, that head and that base, which Asks lists ([`crate::asking`]) and the event
-//! log records as a hold, and only then answers the chat (Q239). Where it raises no ask, its
-//! answer says why, and the hook's refusal is a block.
+//! that forge and host (R-118), and a repo the command named must be that one. The app reads the
+//! request from the forge with its own login ([`mergehold::read`]): its head and base, which
+//! the one merge ask it holds is keyed on with the repo and the number, and the title, author,
+//! checks and ruleset the ask shows, none of them the chat's (R-119, R-146). Asks lists the ask
+//! ([`crate::asking`]), the event log records it as a hold, and only then is the chat answered
+//! (Q239). Where it raises no ask, its answer says why, and the hook's refusal is a block.
 //!
 //! **Only the person's press merges** ([`merge_held_request`]), by the app's own forge call,
 //! only at the head the ask was raised at, by the repo's own method, and through its merge queue
@@ -31,11 +32,11 @@ use std::sync::{Mutex, PoisonError, Weak};
 
 use purlis_core::eventlog::stops::{AskGroup, AskRaised, Hold, Stop, Target};
 use purlis_core::forge::backend::{Caller, ForgeBackend};
-use purlis_core::forge::pr::{HeadAt, Pr, Repo as OnForge};
+use purlis_core::forge::pr::Repo as OnForge;
 use purlis_core::harness::asks::{Admitted, Answerer};
 use purlis_core::hookwire::{Answer, MergeAsk};
 use purlis_core::mergehold::{
-    self, Base, ByForge, HeadSha, Holds, MergeKey, Raised, Repo, Request,
+    self, Base, ByForge, HeadSha, Holds, Invalid, MergeKey, Raised, Repo, Request,
 };
 
 use crate::planes::{Held, PlaneId, Planes};
@@ -103,9 +104,9 @@ pub(crate) trait Project {
     fn allow(&self, chat: u32) -> Result<(), String>;
     /// The merge asks the project holds.
     fn holds(&self) -> &MergeHolds;
-    /// Where request `number` of the repo `on` names stands, read with the app's own login
-    /// within [`mergehold::THE_FORGE_IS_READ_WITHIN`].
-    fn read(&self, on: &OnForge, number: u64) -> Result<HeadAt, String>;
+    /// Request `number` of the repo `on` names, as the forge says it stands, read with the
+    /// app's own login ([`mergehold::read`]) within [`mergehold::THE_FORGE_IS_READ_WITHIN`].
+    fn read(&self, on: &OnForge, number: u64) -> Result<mergehold::Read, String>;
     /// Writes one stop of chat `chat` into the event log.
     fn record(&self, chat: u32, stop: Stop);
     /// The asks may have moved.
@@ -132,23 +133,14 @@ impl Project for Held {
         self.merge_holds()
     }
 
-    fn read(&self, on: &OnForge, number: u64) -> Result<HeadAt, String> {
-        let (tell, heard) = std::sync::mpsc::channel();
-        let on = on.clone();
-        std::thread::Builder::new()
-            .name("merge-hold".to_owned())
-            .spawn(move || {
-                let pr = Pr {
-                    number,
-                    url: String::new(),
-                };
-                let read = on.backend().head(&Caller::window(), &on.path, &pr);
-                let _ = tell.send(read.map_err(|why| why.to_string()));
-            })
-            .map_err(|why| why.to_string())?;
-        heard
-            .recv_timeout(mergehold::THE_FORGE_IS_READ_WITHIN)
-            .map_err(|_| "the forge did not answer in time".to_owned())?
+    fn read(&self, on: &OnForge, number: u64) -> Result<mergehold::Read, String> {
+        mergehold::read(
+            on.backend().into(),
+            &on.path,
+            number,
+            mergehold::THE_FORGE_IS_READ_WITHIN,
+            crate::sandboxing::now_secs(),
+        )
     }
 
     fn record(&self, chat: u32, stop: Stop) {
@@ -241,18 +233,27 @@ fn raise(project: &dyn Project, ask: &MergeAsk) -> Result<String, String> {
         repo: Some(repo.clone()),
         number: ask.request.number,
     };
-    let resolve = |request: &Request| -> Result<MergeKey, String> {
-        let at = project
+    let holds = project.holds();
+    let resolve = |request: &Request| -> Result<(MergeKey, mergehold::Facts), String> {
+        let read = project
             .read(&on, request.number)
             .map_err(|why| format!("purlis could not read it from the forge ({why})."))?;
-        Ok(MergeKey {
+        let key = MergeKey {
             repo: repo.clone(),
             number: request.number,
-            head: HeadSha::try_from(at.sha.as_str()).map_err(|why| why.to_string())?,
-            base: Base::try_from(at.base.as_str()).map_err(|why| why.to_string())?,
-        })
+            head: HeadSha::try_from(read.at.sha.as_str()).map_err(|why| why.to_string())?,
+            base: Base::try_from(read.at.base.as_str()).map_err(|why| why.to_string())?,
+        };
+        // Refused before it is raised, so a read on another forge never refreshes the ask.
+        if holds.forge_of(chat, &key).is_some_and(|was| was != on) {
+            return Err(format!(
+                "chat {chat} has this merge waiting on the person already, on another forge \
+                 than {}, so purlis does not ask it again here.",
+                on.forge.host
+            ));
+        }
+        Ok((key, read.facts))
     };
-    let holds = project.holds();
     let (key, raised) = mergehold::asked(
         &holds.holds,
         chat,
@@ -284,17 +285,9 @@ fn raise(project: &dyn Project, ask: &MergeAsk) -> Result<String, String> {
                  Merge"
             );
         }
-        // Still the one ask, at the head and base it was raised at. A moved head is `New`: the
-        // ask at the old head is gone (Q242).
-        Raised::Already => {
-            if holds.forge_of(chat, &key).as_ref() != Some(&on) {
-                return Err(format!(
-                    "chat {chat} has this merge waiting on the person already, on another forge \
-                     than {}, so purlis does not ask it again here.",
-                    on.forge.host
-                ));
-            }
-        }
+        // Still the one ask, at the head and base it was raised at, showing the new read's facts
+        // (Q248). A moved head is `New`: the ask at the old head is gone (Q242).
+        Raised::Already => {}
         Raised::TooMany => {
             return Err(format!(
                 "chat {chat} has {} merges waiting on the person already, which is as many as \
@@ -307,12 +300,10 @@ fn raise(project: &dyn Project, ask: &MergeAsk) -> Result<String, String> {
     Ok(mergehold::handed_said(&request))
 }
 
-/// The repo and head a press names, checked as they are made.
-fn key_of(repo: &str, head: &str) -> Result<(Repo, HeadSha), String> {
-    Ok((
-        Repo::try_from(repo).map_err(|why| why.to_string())?,
-        HeadSha::try_from(head).map_err(|why| why.to_string())?,
-    ))
+/// The repo and head a press names, checked as they are made: a refusal is the core's
+/// [`Invalid`], which names the part and never the value.
+fn key_of(repo: &str, head: &str) -> Result<(Repo, HeadSha), Invalid> {
+    Ok((Repo::try_from(repo)?, HeadSha::try_from(head)?))
 }
 
 /// The window, as the answerer of every press here: the one client that sends these commands.
@@ -407,7 +398,7 @@ fn waiting(
     number: u32,
     head: &str,
 ) -> Result<(MergeKey, OnForge), String> {
-    let (repo, head) = key_of(repo, head)?;
+    let (repo, head) = key_of(repo, head).map_err(|why| why.to_string())?;
     let not_held = || mergehold::NotMerged::NotHeld.to_string();
     let key = holds
         .holds

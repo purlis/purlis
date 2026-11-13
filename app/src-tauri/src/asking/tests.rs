@@ -92,6 +92,10 @@ struct World {
     /// The workspaces a chat asked the person to remove, with what each holds (qw356).
     removals: Vec<(crate::removalasks::Waits, purlis_core::removalask::Holds)>,
     merges: Vec<purlis_core::mergehold::Waits>,
+    /// The refusals whose only way out is a press in the window (R-328).
+    window_only: Vec<purlis_core::windowonly::Refusal>,
+    /// The project's one ask for its clones purlis has no record of (R-336).
+    unrecorded: Option<purlis_core::windowonly::TrustTheseClones>,
     locks: Locks,
     /// Whether the project's sandbox is in force, so a browser site for everyone counts (#2443).
     everyone: bool,
@@ -151,6 +155,8 @@ impl World {
             blocks: Vec::new(),
             removals: Vec::new(),
             merges: Vec::new(),
+            window_only: Vec::new(),
+            unrecorded: None,
             locks: Locks::none(),
             everyone: true,
             names: Vec::new(),
@@ -232,7 +238,8 @@ impl World {
             blocks: self.blocks.clone(),
             removals: self.removals.clone(),
             merges: self.merges.clone(),
-            window_only: Vec::new(),
+            window_only: self.window_only.clone(),
+            unrecorded: self.unrecorded.clone(),
             locks: &self.locks,
             everyone: self.everyone,
             declared: &self.declared,
@@ -1537,6 +1544,18 @@ fn a_held_merge(session: u32) -> purlis_core::mergehold::Waits {
                 .try_into()
                 .expect("a head"),
             base: "main".try_into().expect("a base"),
+        },
+        facts: purlis_core::mergehold::Facts {
+            title: "Add the parser".to_owned(),
+            author: "octo".to_owned(),
+            checks: purlis_core::forge::checks::Checks {
+                total: Some(1),
+                ci: purlis_core::forge::checks::Ci::Passed,
+                why: None,
+                failed: Vec::new(),
+            },
+            ruleset: purlis_core::mergehold::Ruleset::Protects,
+            read_at: 40,
         },
         since: 40,
     }
@@ -3672,5 +3691,120 @@ fn a_runner_chats_login_and_tool_are_vault_uses_naming_the_pool() {
                 "Hands devops's values from vault team to kubectl on pool builds".to_owned()
             ),
         ]
+    );
+}
+
+/// A clone of workspace `alpha` purlis has no record of, at the one address its remote names.
+fn unvouched(name: &str) -> purlis_core::forge::gitcredential::vouch::Unvouched {
+    let folder = format!("workspaces/alpha/repos/{name}");
+    purlis_core::forge::gitcredential::vouch::Unvouched {
+        workspace: "alpha".into(),
+        path: Path::new("/work/plane").join(&folder),
+        folder,
+        place: Some(format!("github.com/acme/{name}")),
+        places: vec![format!("github.com/acme/{name}")],
+    }
+}
+
+/// The project's Trust these clones, for `clones`.
+fn trust_these(
+    clones: Vec<purlis_core::forge::gitcredential::vouch::Unvouched>,
+) -> purlis_core::windowonly::TrustTheseClones {
+    purlis_core::windowonly::TrustTheseClones {
+        root: "/work/plane".into(),
+        clones,
+        since: 1_700_000_000,
+    }
+}
+
+/// Chat `session`'s refused mint, whose way out is Trust this clone on `name`.
+fn trust_this(session: u32, name: &str) -> purlis_core::windowonly::Refusal {
+    purlis_core::windowonly::Refusal {
+        root: "/work/plane".into(),
+        session,
+        control: purlis_core::windowonly::Control::TrustClone {
+            folder: format!("workspaces/alpha/repos/{name}"),
+            place: format!("github.com/acme/{name}"),
+        },
+        since: 1_700_000_000,
+    }
+}
+
+/// The folders each Trust these clones lists, ask by ask.
+fn trust_clones_folders(asks: &[Shown]) -> Vec<Vec<String>> {
+    asks.iter()
+        .filter_map(|ask| match &ask.answer {
+            AnswerPath::TrustClones { clones } => {
+                Some(clones.iter().map(|clone| clone.folder.clone()).collect())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// **The clones purlis has no record of are exactly one ask** (R-336), with Trust all, whatever
+/// their number.
+#[test]
+fn unrecorded_clones_are_exactly_one_trust_these_clones_ask() {
+    let mut world = World::new();
+    world.unrecorded = Some(trust_these(vec![unvouched("api"), unvouched("web")]));
+
+    let asks = world.asks();
+
+    let clones: Vec<&Shown> = asks
+        .iter()
+        .filter(|ask| ask.source == AskSource::TrustClones)
+        .collect();
+    assert_eq!(clones.len(), 1, "{asks:?}");
+    assert_eq!(
+        clones[0]
+            .options
+            .iter()
+            .map(|one| one.id.as_str())
+            .collect::<Vec<_>>(),
+        [TRUST_ALL]
+    );
+    assert_eq!(
+        trust_clones_folders(&asks),
+        [["workspaces/alpha/repos/api", "workspaces/alpha/repos/web"]]
+    );
+}
+
+/// **One ask per clone** (Q257): a clone with a chat's own Trust this clone is left out of the
+/// project's Trust these clones, which lists the rest.
+#[test]
+fn a_clone_with_a_chats_trust_this_clone_is_left_out_of_trust_these_clones() {
+    let mut world = World::new();
+    world.window_only = vec![trust_this(2, "api")];
+    world.unrecorded = Some(trust_these(vec![unvouched("api"), unvouched("web")]));
+
+    let asks = world.asks();
+
+    assert_eq!(
+        asks.iter()
+            .filter(|ask| ask.source == AskSource::TrustClone)
+            .count(),
+        1,
+        "{asks:?}"
+    );
+    assert_eq!(
+        trust_clones_folders(&asks),
+        [["workspaces/alpha/repos/web"]],
+        "api is asked for once, by the chat's ask"
+    );
+}
+
+/// Where every clone has a chat's own ask, there is no Trust these clones at all (Q257).
+#[test]
+fn trust_these_clones_is_not_raised_when_each_of_its_clones_has_a_chats_ask() {
+    let mut world = World::new();
+    world.window_only = vec![trust_this(2, "api"), trust_this(3, "api")];
+    world.unrecorded = Some(trust_these(vec![unvouched("api")]));
+
+    let asks = world.asks();
+
+    assert!(
+        !asks.iter().any(|ask| ask.source == AskSource::TrustClones),
+        "{asks:?}"
     );
 }

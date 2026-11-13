@@ -364,10 +364,11 @@ pub(crate) fn answered(held: &Held, chat: u32, refused: bool) {
     }
 }
 
-/// **Chat `chat` had `stop` written** by the app (a held connection's block, a merge's hold),
-/// under `call`, the harness's id for the call it was held under, where one was heard: three
-/// blocks on the same target pause it (R-206), each call counted once (Q253); a hold never
-/// counts (R-215).
+/// **Chat `chat` had `stop` written** by the app (a sandbox block, by the one road every one
+/// takes, Q254; a merge's hold), under `call`, the harness's id for the call it refused or was
+/// held under, where one was heard: three blocks on the same target pause it (R-206), each call
+/// counted once (Q253); a hold never counts (R-215), nor does a block the person's Keep blocked
+/// or its chat's end wrote, which never comes here (Q254).
 pub(crate) fn stopped(
     held: &Held,
     chat: u32,

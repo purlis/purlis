@@ -3202,6 +3202,11 @@ export type AnswerPath =
  *  Notice's own command, which clears the ask.
  */
 { via: "trust-clone"; folder: string; place: string } | 
+/**
+ *  `vouch_clone` for Trust all, on each of `clones` at the one address its remote names: the
+ *  clone Notice's own command, and each clone it trusts leaves the ask (R-336).
+ */
+{ via: "trust-clones"; clones: CloneToVouch[] } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -3702,7 +3707,12 @@ export type AskSource =
  *  that couldn't be minted for a clone purlis has no record of. Trust this clone records it,
  *  as the clone's own Notice does, and the chat's next mint goes through.
  */
-"trust-clone";
+"trust-clone" | 
+/**
+ *  **The clones purlis has no record of** (R-336, Q184): one ask for all of them, no chat's,
+ *  never one per clone. Trust all records each, as its Notice's Trust this clone does.
+ */
+"trust-clones";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -4696,7 +4706,9 @@ at: string | null; cause: string; protection: StartProtection | null } |
 /**  It was held under one of the chat's sub-agents. */
 sub_agent: boolean } | 
 /**  The chat was paused as looping: the rule's word and how many times. */
-{ kind: "loop_paused"; at: string | null; rule: string; times: number };
+{ kind: "loop_paused"; at: string | null; rule: string; times: number } | 
+/**  A call was blocked: by whom, how much its report is worth, at what, and why it said. */
+{ kind: "blocked"; at: string | null; tool: string; source: string; qualifier: string | null; target_kind: string | null; target: string | null; harness: string; reason: string | null };
 
 /**
  *  What heads a chat's Chat log: its allowed calls in one count, with those its person's rules

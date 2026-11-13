@@ -1,0 +1,22 @@
+{
+  "source": "GitLab 19.4 REST API docs (gitlab-org/gitlab 19-4-stable-ee, doc/api), branches.md: Get a single repository branch (404 where there is no such branch)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "projects/acme%2Fapi/repository/branches/main"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 1,
+        "out": "{\"message\": \"404 Branch Not Found\"}",
+        "err": "glab: 404 Branch Not Found (HTTP 404)",
+        "status": 404
+      }
+    }
+  ]
+}

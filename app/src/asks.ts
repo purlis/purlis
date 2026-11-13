@@ -806,9 +806,9 @@ export async function answerTaken(
           );
         break;
       case "sandbox-expects": {
-        // What the project expects of this machine (#6000): its Notice's own two commands, sent
-        // the items as the row drew them. Either way its Notice reads again: one answer settles
-        // both.
+        // What the project expects of this machine (#6000), answered here alone while it can be
+        // (R-205): the window's two commands, sent the items as the row drew them. Either way
+        // Settings › Sandbox reads again.
         const answered =
           option === "allow"
             ? commands.allowProjectExpects(plane, asDrawn(path.items))
@@ -872,6 +872,26 @@ export async function answerTaken(
         if (option !== "press") break;
         const trusted = await commands.vouchClone(plane, path.folder, path.place);
         return trusted.status === "error" ? trusted : { status: "ok" };
+      }
+      case "trust-clones": {
+        // The clones purlis has no record of, one ask for all of them (R-336): Trust all is the
+        // clone Notice's own press on each, at the one address its remote names. Each clone it
+        // trusts leaves the ask; one it can't is said, and the rest are still trusted.
+        if (option !== "trust-all") break;
+        const refused: string[] = [];
+        for (const clone of path.clones) {
+          if (clone.place === null) {
+            refused.push(
+              `${clone.folder}'s remote names more than one address, so purlis didn't trust it. Give origin one address, then trust it.`,
+            );
+            continue;
+          }
+          const trusted = await commands.vouchClone(plane, clone.folder, clone.place);
+          if (trusted.status === "error") refused.push(trusted.error);
+        }
+        return refused.length === 0
+          ? { status: "ok" }
+          : { status: "error", error: refused.join(" ") };
       }
       case "workspace-removal":
         // Keep puts the question away. Remove… removes nothing (qw356): it opens the window's

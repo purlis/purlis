@@ -2908,6 +2908,12 @@ impl Hooks {
                     recorded
                 })
             },
+            // The reason a harness's own check gave (R-340, Q185): held in the app's memory for
+            // its block's detail in the Chat log, and never recorded.
+            reason: {
+                let plane = plane.clone();
+                Box::new(move |said| crate::chatlog::HARNESS_REASONS.hold(plane.root(), said))
+            },
         };
         let hooks = Self {
             plane,

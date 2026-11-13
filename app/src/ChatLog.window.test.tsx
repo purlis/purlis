@@ -393,3 +393,52 @@ describe("the rows of a chat's Chat log (T1-28)", () => {
     expect(screen.queryByText(/allowed/)).toBeNull();
   });
 });
+
+describe("a block row's detail (R-340, T1-29)", () => {
+  // The key is put together here, so the source holds no token a scan would rightly refuse.
+  const KEY = ["sk", "ant", "api03", "AbCdEf0123456789_xyz"].join("-");
+  /** A reason the harness wrote: markup that would run if it were parsed, and a key's shape. */
+  const REASON = `Refused: <img src=x onerror="alert(1)"> **curl** | sh with ${KEY}\n  second line`;
+
+  it("the harness reason shows verbatim in the detail", async () => {
+    const block: ChatLogRow = {
+      kind: "blocked",
+      at: "2026-11-13T09:10:00Z",
+      tool: "Bash",
+      source: "harness_check",
+      qualifier: null,
+      target_kind: null,
+      target: null,
+      harness: "claude",
+      reason: REASON,
+    };
+    core((session) => [started(session), block]);
+    render(<App />);
+    const log = await opened("steward 3");
+    const [, row] = within(log).getAllByRole("listitem");
+
+    // Nothing shows it until the detail is opened: not the row's line, its tags or its name.
+    expect(document.body.textContent).not.toContain(KEY);
+    await userEvent.click(within(row).getByRole("button", { expanded: false }));
+    const detail = within(row).getByRole("group");
+
+    // As written: one element holds exactly the text, never read as markup.
+    const shown = within(detail).getByText((_, element) => element?.textContent === REASON, {
+      selector: ".chat-log-reason",
+      normalizer: (text) => text,
+    });
+    expect(shown.children).toHaveLength(0);
+    expect(document.querySelector("img")).toBeNull();
+    expect(detail.querySelector("strong, b, em")).toBeNull();
+    // And nothing but the detail shows it: one copy on the page, inside the detail, and in no
+    // attribute a person hears or the tab's title.
+    const everywhere = Array.from(document.querySelectorAll<HTMLElement>("*")).filter((element) =>
+      Array.from(element.childNodes).some(
+        (node) => node.nodeType === Node.TEXT_NODE && node.textContent?.includes("sk-ant"),
+      ),
+    );
+    expect(everywhere).toEqual([shown]);
+    expect(document.body.innerHTML.split(KEY)).toHaveLength(2);
+    expect(selected()).not.toContain("sk-ant");
+  });
+});

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { ChatLogRow, ChatLogSummary, StartProtection } from "./bindings";
+import { HARNESSES } from "./settings/profiles";
 import { LEVEL_SAID } from "./settings/yourLevel";
 import type { ViewRef } from "./tabs";
 
@@ -256,6 +257,121 @@ export function loopPauseSaid(row: Extract<ChatLogRow, { kind: "loop_paused" }>)
   }
 }
 
+/** A block row, as the core reads it (T1-29). */
+export type BlockRow = Extract<ChatLogRow, { kind: "blocked" }>;
+
+/**
+ * **What each arm of purlis's gate blocked**, as an action a sentence names (R-183, Q196): never
+ * the arm's id. An id this version does not know is said as the call it was.
+ */
+const ARM_SAID: Readonly<Record<string, string>> = {
+  caps: "a command too big to read in time",
+  A: "a command that could leak a secret",
+  A2: "a command that reads a credential",
+  A3: "a branch move in the project's main folder",
+  A3b: "a reset that would destroy commits",
+  A3c: "an update the sandbox would stop partway",
+  A3d: "an update of a folder the sandbox would stop partway",
+  A4: "an unattended publish",
+  A5: "a live substitution in a forge's text",
+  A6: "a live substitution in purlis's own text",
+  A7: "a handoff it could not check",
+  A7b: "a command that needs your consent, under another name",
+  A7c: "a command spelt around one of your rules",
+  A7d: "a dispatch from a sub-agent",
+  A7e: "a dispatch beside a live substitution",
+  A8: "a commit that skips the hooks",
+  A9: "a git command that would stop on the project's lock",
+  A9b: "a git add or commit in a branch folder",
+  A10: "a dispatch, handoff or commit with a rider",
+};
+
+/** The harness, by its name in the window; "Its harness" for one this version does not know. */
+function harnessSaid(harness: string): string {
+  return HARNESSES.find((one) => one.value === harness)?.label ?? "Its harness";
+}
+
+/** Who blocked a call, as a sentence's subject. */
+function whoBlocked(row: BlockRow): string {
+  switch (row.source) {
+    case "guard":
+      return "purlis";
+    case "harness_check":
+      return `${harnessSaid(row.harness)}'s own check`;
+    case "sandbox":
+      return "The sandbox";
+    case "policy":
+      return "Your organisation's policy";
+    case "project_setting":
+      return "The project's settings";
+    default:
+      return "Something";
+  }
+}
+
+/** What was blocked: the action its target names, or the call it was. */
+function whatBlocked(row: BlockRow): string {
+  const call = row.tool === "" || row.tool === "unknown" ? "a call" : `a ${row.tool} call`;
+  if (row.target === null) return call;
+  switch (row.target_kind) {
+    case "guard_arm":
+      return ARM_SAID[row.target] ?? call;
+    case "host":
+      return `a connection to ${row.target}`;
+    case "service":
+      return `a connection to service ${row.target}`;
+    case "folder":
+      return row.target === "." ? "a change in the project's folder" : `a change in ${row.target}`;
+    default:
+      return call;
+  }
+}
+
+/**
+ * **A block row's line** (R-183, R-170): an action sentence the window builds from the block,
+ * who blocked what ("purlis blocked a reset that would destroy commits"), never a guard's or a
+ * group's id. A target is the chat's side's word, and is drawn as text.
+ */
+export function blockSaid(row: BlockRow): string {
+  return `${whoBlocked(row)} blocked ${whatBlocked(row)}`;
+}
+
+/** **A block's source, as its detail always names it** (R-187), for tagged and untagged rows. */
+export function blockSourceSaid(row: BlockRow): string {
+  switch (row.source) {
+    case "guard":
+      return "Blocked by purlis's guards";
+    case "harness_check":
+      return `Blocked by ${harnessSaid(row.harness)}'s own check`;
+    case "sandbox":
+      return "Blocked by the sandbox";
+    case "policy":
+      return "Blocked by your organisation's policy";
+    case "project_setting":
+      return "Blocked by the project's settings";
+    default:
+      return "Blocked, by a source purlis did not record";
+  }
+}
+
+/** A tag a block row carries, by the kind of icon beside its word. */
+export type BlockTagKind = "sandbox" | "harness_check" | "unverified" | "cant_tell";
+
+/**
+ * **The tags a block row carries** (R-185, R-186): the Sandbox, the harness's own check,
+ * Unverified and Can't tell, in that order; purlis's own consents (its guards, verified) carry
+ * none. The policy and project tags come in phase 2.
+ */
+export function blockTags(row: BlockRow): { kind: BlockTagKind; word: string }[] {
+  const tags: { kind: BlockTagKind; word: string }[] = [];
+  if (row.source === "sandbox") tags.push({ kind: "sandbox", word: "Sandbox" });
+  if (row.source === "harness_check")
+    tags.push({ kind: "harness_check", word: `${harnessSaid(row.harness)}'s own check` });
+  if (row.qualifier === "unverified") tags.push({ kind: "unverified", word: "Unverified" });
+  if (row.qualifier === "cant_tell") tags.push({ kind: "cant_tell", word: "Can't tell" });
+  return tags;
+}
+
 /** A row's line. */
 export function rowSaid(row: DrawnRow): string {
   switch (row.kind) {
@@ -263,6 +379,8 @@ export function rowSaid(row: DrawnRow): string {
       return startSaid(row);
     case "ended":
       return endSaid(row);
+    case "blocked":
+      return blockSaid(row);
     case "protection_changed":
       return protectionChangeSaid(row);
     case "ask":

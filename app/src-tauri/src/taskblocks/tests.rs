@@ -399,6 +399,280 @@ fn a_named_held_refusal_replaces_the_same_refusal_unnamed() {
     assert_eq!(blocks.every(), [(4, named), (5, unnamed)]);
 }
 
+/// What a [`Blocks`] said left its asks as blocks ([`Blocks::when_left`]): each chat, and the
+/// block its ask left as.
+type LeftAsBlocks = std::sync::Arc<std::sync::Mutex<Vec<(u32, LeftBlock)>>>;
+
+fn telling_left(blocks: &Blocks) -> LeftAsBlocks {
+    let left: LeftAsBlocks = std::sync::Arc::default();
+    blocks.when_left({
+        let left = std::sync::Arc::clone(&left);
+        std::sync::Arc::new(move |chat, one: &LeftBlock| {
+            left.lock().unwrap().push((chat, one.clone()));
+        })
+    });
+    left
+}
+
+/// What left since this was last asked: each chat, block, the tool of the call it refused, who
+/// reported it, and how its ask left.
+fn taken_from(left: &LeftAsBlocks) -> Vec<(u32, HeldBlock, Option<String>, Reported, Leaving)> {
+    std::mem::take(&mut *left.lock().unwrap())
+        .into_iter()
+        .map(|(chat, one)| (chat, one.block, one.refused.tool, one.reported, one.how))
+        .collect()
+}
+
+/// Chat `chat`'s pre-tool line for a call of `tool`, by the harness's id `id`.
+fn a_call(chat: u32, tool: &str, id: &str) -> purlis_core::hookwire::ToolCall {
+    purlis_core::hookwire::ToolCall {
+        chat,
+        tool_hook: "pretooluse".to_owned(),
+        tool: Some(tool.to_owned()),
+        call: Some(id.to_owned()),
+        args: None,
+        decision: purlis_core::hookwire::Decision::Allow,
+        rule: None,
+        arm: None,
+        hook_ms: 0,
+        agent: None,
+        at_ms: 0,
+        skill: None,
+    }
+}
+
+fn write_to(folder: &str) -> HeldBlock {
+    HeldBlock {
+        operation: "write".to_owned(),
+        kind: "project-files".to_owned(),
+        what: GrantWhat::Write,
+        target: folder.to_owned(),
+    }
+}
+
+/// T1-10, by T1-09's rule (Q154): a sandbox refusal held as an ask is a block once its ask
+/// leaves by anything but an Allow (Keep blocked, a newer ask in its place, its chat's end),
+/// once, and never while it is still an ask. An Allow writes none, and a quiet line read back,
+/// which no ask lists, none either. Q254: only a block the chat's own looping made counts
+/// toward the block loop, never one the person's Keep blocked or the chat's end wrote.
+#[test]
+fn a_held_refusal_is_one_block_once_its_ask_leaves_by_anything_but_an_allow() {
+    let blocks = Blocks::default();
+    let left = telling_left(&blocks);
+    let taken = || taken_from(&left);
+    let bash = || Some("Bash".to_owned());
+    // The chat's call that each refusal below is of, by the harness's name.
+    blocks.called(&a_call(4, "Bash", "c1"));
+
+    // A write held as an ask is no block yet.
+    let first = write_to("/p/records");
+    blocks.heard(4, first.clone());
+    assert!(taken().is_empty(), "an ask, and no block beside it");
+
+    // A newer write of the same kind takes its Notice's place: the first left, one block.
+    let second = write_to("/p/notes");
+    blocks.heard(4, second.clone());
+    assert_eq!(
+        taken(),
+        [(4, first, bash(), Reported::ByItsHook, Leaving::Replaced)]
+    );
+    // Heard again, the same ask stays, and is no block.
+    blocks.heard(4, second.clone());
+    assert!(taken().is_empty());
+
+    // Keep blocked: the ask leaves as one block, once.
+    assert!(blocks.kept_blocked(4, &second));
+    assert!(!blocks.holds(4, &second));
+    assert!(!blocks.kept_blocked(4, &second), "answered already");
+    assert_eq!(
+        taken(),
+        [(4, second, bash(), Reported::ByItsHook, Leaving::KeptBlocked)]
+    );
+
+    // An Allow: the ask leaves as no block.
+    let allowed = write_to("/p/allowed");
+    blocks.heard(4, allowed.clone());
+    blocks.answered(4, &allowed);
+    assert!(taken().is_empty(), "allowed, so no block");
+
+    // A quiet line read back is no ask, and its going is no block.
+    let read_back = write_to("/p/read-back");
+    blocks.heard_quietly(4, read_back.clone());
+    blocks.heard(4, write_to("/p/after"));
+    assert!(
+        !taken().iter().any(|(_, block, ..)| *block == read_back),
+        "a quiet line is never a block"
+    );
+
+    // A live held connection kept blocked is purlis's proxy's own word.
+    let live = held(&seen(4, "api.example.com"));
+    blocks.heard_waiting(4, live.clone());
+    assert!(blocks.kept_blocked(4, &live));
+    assert_eq!(
+        taken(),
+        [(4, live, bash(), Reported::ByTheProxy, Leaving::KeptBlocked)]
+    );
+
+    // The chat ends: what it was still asked about is a block each.
+    let last = write_to("/p/last");
+    blocks.heard(4, last.clone());
+    taken();
+    blocks.ended(4);
+    assert_eq!(
+        taken(),
+        [(4, last, bash(), Reported::ByItsHook, Leaving::ChatEnded)]
+    );
+    blocks.ended(4);
+    assert!(taken().is_empty(), "once");
+
+    // Whether each counts toward the block loop (Q254).
+    assert!(Leaving::Replaced.counts());
+    assert!(Leaving::NextTurn.counts());
+    assert!(!Leaving::KeptBlocked.counts(), "the person's answer");
+    assert!(!Leaving::ChatEnded.counts(), "the chat's close");
+}
+
+/// Q254 (review finding 4): a block names the tool of the call it refused, kept as the refusal
+/// is heard, never the tool of the chat's latest call as its ask leaves, whichever way it
+/// leaves; and the harness's id for that call, which the block loop counts once (Q253).
+#[test]
+fn a_block_names_the_call_it_refused_not_the_chats_latest_call_as_its_ask_leaves() {
+    let blocks = Blocks::default();
+    let left = telling_left(&blocks);
+    let refused_of = |block: &HeldBlock| {
+        std::mem::take(&mut *left.lock().unwrap())
+            .into_iter()
+            .find(|(_, one)| one.block == *block)
+            .map(|(_, one)| one.refused)
+            .expect("it left as a block")
+    };
+    let of_bash = Refused {
+        tool: Some("Bash".to_owned()),
+        call: Some("c1".to_owned()),
+    };
+
+    // A newer ask in its place.
+    blocks.called(&a_call(4, "Bash", "c1"));
+    let first = write_to("/p/records");
+    blocks.heard(4, first.clone());
+    blocks.called(&a_call(4, "Read", "c2"));
+    // Heard again under a later call, it keeps the call it was first heard of.
+    blocks.heard(4, first.clone());
+    blocks.called(&a_call(4, "Grep", "c3"));
+    blocks.heard(4, write_to("/p/notes"));
+    assert_eq!(refused_of(&first), of_bash);
+
+    // Keep blocked.
+    blocks.called(&a_call(5, "Bash", "c1"));
+    let kept = write_to("/p/kept");
+    blocks.heard(5, kept.clone());
+    blocks.called(&a_call(5, "Read", "c2"));
+    assert!(blocks.kept_blocked(5, &kept));
+    assert_eq!(refused_of(&kept), of_bash);
+
+    // Its chat's end.
+    blocks.called(&a_call(6, "Bash", "c1"));
+    let last = write_to("/p/last");
+    blocks.heard(6, last.clone());
+    blocks.called(&a_call(6, "Read", "c2"));
+    blocks.ended(6);
+    assert_eq!(refused_of(&last), of_bash);
+
+    // The chat's next turn.
+    blocks.called(&a_call(7, "Bash", "c1"));
+    let late = write_to("/p/late");
+    blocks.heard(7, late.clone());
+    blocks.called(&a_call(7, "Read", "c2"));
+    assert!(blocks.turn_began(7));
+    assert_eq!(refused_of(&late), of_bash);
+}
+
+/// Q254 (review, the four items): an ask a chat's hook line raised after its call came back (a
+/// write, a service or socket on this machine) is withdrawn as one block at the chat's next
+/// turn after the one that raised it, on every harness: the chat has moved on without it, as a
+/// held connection's chat does (Q240). Not a connection held now, which its own timeout or the
+/// chat's next call ends, nor a quiet line no ask lists, nor another chat's ask.
+#[test]
+fn a_post_tool_ask_is_withdrawn_as_a_block_at_the_chats_next_turn() {
+    let blocks = Blocks::default();
+    let left = telling_left(&blocks);
+    let taken = || taken_from(&left);
+    blocks.called(&a_call(4, "Bash", "c1"));
+    let write = write_to("/p/records");
+    blocks.heard(4, write.clone());
+    let service = HeldBlock {
+        operation: "connect".to_owned(),
+        kind: "local-service".to_owned(),
+        what: GrantWhat::Port,
+        target: "5432".to_owned(),
+    };
+    blocks.heard(4, service.clone());
+    let live = held(&seen(4, "api.example.com"));
+    blocks.heard_waiting(4, live.clone());
+    // Of a kind of its own, so it takes no other's Notice.
+    let read_back = HeldBlock {
+        kind: "toolchain-cache".to_owned(),
+        ..write_to("/p/cache")
+    };
+    blocks.heard_quietly(4, read_back.clone());
+    let elsewhere = write_to("/p/elsewhere");
+    blocks.heard(5, elsewhere.clone());
+    assert!(taken().is_empty(), "asks, and no block beside them");
+
+    assert!(blocks.turn_began(4));
+
+    // By target: the folder's path sorts before the port.
+    let mut withdrawn = taken();
+    withdrawn.sort_by(|a, b| a.1.target.cmp(&b.1.target));
+    let bash = || Some("Bash".to_owned());
+    assert_eq!(
+        withdrawn,
+        [
+            (
+                4,
+                write.clone(),
+                bash(),
+                Reported::ByItsHook,
+                Leaving::NextTurn
+            ),
+            (
+                4,
+                service.clone(),
+                bash(),
+                Reported::ByItsHook,
+                Leaving::NextTurn
+            ),
+        ]
+    );
+    assert!(!blocks.holds(4, &write), "withdrawn, so no ask is left");
+    assert!(!blocks.holds(4, &service));
+    assert!(blocks.holds(4, &live), "a held connection waits on its own");
+    assert!(blocks.holds(4, &read_back), "a quiet line is no ask");
+    assert!(
+        blocks.holds(5, &elsewhere),
+        "another chat's turn did not move"
+    );
+
+    // Once: the next turn has nothing of them left.
+    assert!(!blocks.turn_began(4));
+    assert!(taken().is_empty());
+}
+
+/// #1903 in the other order (T1-10): an unnamed line of a refusal heard while the same refusal,
+/// named, is an ask is that ask's echo, so it is dropped, never a second ask beside it, and
+/// never a second block once the named one is one.
+#[test]
+fn an_unnamed_refusal_heard_while_the_named_one_is_asked_is_its_echo() {
+    let blocks = Blocks::default();
+    let named = held(&seen(4, "api.example.com"));
+    let unnamed = HeldBlock::unnamed_host(&named.operation, &named.kind);
+    blocks.heard_waiting(4, named.clone());
+    assert!(blocks.echoes(4, &unnamed), "the named one is asked");
+    assert!(!blocks.echoes(5, &unnamed), "another chat's");
+    let other = HeldBlock::unnamed_host("lookup", &named.kind);
+    assert!(!blocks.echoes(4, &other), "another refusal");
+}
+
 /// #1709: a burst of held asks keeps each of them, past the hosts one Notice lists, up to as
 /// many connections as one chat's proxy holds at once; past that the oldest goes first, so what
 /// is held for one chat stays bounded.
@@ -1016,12 +1290,15 @@ fn a_write_for_this_chat_is_judged_against_each_tasks_own_folder() {
     }
 }
 
-/// Needs a terminal. Keep blocked is checked as an Allow is, and lets the blocks go.
+/// Needs a terminal. Keep blocked is checked as an Allow is, and lets the blocks go: each task's
+/// ask leaves as one block of its own, which the person's answer wrote and the block loop does
+/// not count (T1-10, Q254).
 #[test]
 fn keep_blocked_is_checked_against_the_held_blocks_and_lets_them_go() {
     let dir = tempfile::tempdir().expect("a project");
     let chats = crate::chats::Chats::new();
     let (session, tasks) = started(&chats, dir.path(), &["talk", "sweep"]);
+    let left = telling_left(chats.blocks());
     let seen = on_npm(&tasks);
     assert!(
         keep_blocked(&chats, session, &seen, None, &|_, _| Ok(())).is_err(),
@@ -1033,6 +1310,18 @@ fn keep_blocked_is_checked_against_the_held_blocks_and_lets_them_go() {
     assert_eq!(
         keep_blocked(&chats, session, &seen, None, &|_, _| Ok(())).expect("kept"),
         tasks
+    );
+    let mut kept: Vec<(u32, HeldBlock, Leaving)> = taken_from(&left)
+        .into_iter()
+        .map(|(task, block, _, _, how)| (task, block, how))
+        .collect();
+    kept.sort_by_key(|(task, ..)| *task);
+    assert_eq!(
+        kept,
+        seen.iter()
+            .map(|one| (one.task, held(one), Leaving::KeptBlocked))
+            .collect::<Vec<_>>(),
+        "one block for each task kept blocked"
     );
     assert!(
         keep_blocked(&chats, session, &seen, None, &|_, _| Ok(())).is_err(),

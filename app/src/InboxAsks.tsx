@@ -504,7 +504,7 @@ export const SOURCE_SAID: Record<Shown["source"], string> = {
   "pool-login": "Asks to log its browser in on a pool's runner",
   "pool-tool": "Asks to send a tool its vault values for a run on a pool's runner",
   secret: "Asks you for a secret its vault doesn't hold",
-  vault: "Refused a vault its persona isn't tagged for",
+  vault: "Blocked from a vault its persona isn't tagged for",
   "browser-login": "Asks to log its browser in to a site with vault credentials",
   "secret-fill": "Asks to put a vault secret into a field of its browser",
   "run-grant": "Asks you to allow a program to use a vault secret",
@@ -518,6 +518,7 @@ export const SOURCE_SAID: Record<Shown["source"], string> = {
   looping: "Paused, as it may be looping",
   "merge-hold": "Asks you to merge a request",
   "trust-clone": "Asks you to trust a clone",
+  "trust-clones": "Asks you to trust clones purlis did not clone",
 };
 
 /** Why a task's question reached the person, as its row says it. */
