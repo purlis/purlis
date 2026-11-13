@@ -127,7 +127,15 @@ fn text_that_is_its_own_address_opens_by_the_web_address_rule() {
 #[test]
 fn plain_words_open_their_target_as_a_found_link_does() {
     let links = links();
-    for text in ["Click here", "the docs", "PR 12", "here", "v1.2", "e.g."] {
+    for text in [
+        "Click here",
+        "the docs",
+        "PR 12",
+        "here.",
+        "(see this!)",
+        "Go -> docs",
+        "Ｃｌｉｃｋ",
+    ] {
         assert_eq!(
             links.open(
                 &marked(text, "https://purlis.dev/docs"),
@@ -145,10 +153,12 @@ fn plain_words_open_their_target_as_a_found_link_does() {
 fn an_address_of_the_same_host_is_no_mismatch() {
     let links = links();
     for text in [
-        "github.com/purlis",
-        "https://github.com/purlis",
-        "GitHub.com/purlis/purlis",
+        "github.com/purlis/purlis/pull/1",
+        "https://github.com/purlis/purlis/pull/1",
+        "GitHub.com/purlis/purlis/pull/1/",
         "github.com",
+        "github.com.",
+        "See github.com/purlis/purlis/pull/1 now",
     ] {
         assert_eq!(
             links.open(
@@ -232,6 +242,7 @@ fn an_address_anywhere_in_the_text_naming_another_host_asks() {
         ("see https://github.com/login now", "github.com"),
         ("(github.com/login)", "github.com"),
         ("Open www.purlis.dev.", "www.purlis.dev"),
+        ("Open https:purlis.dev", "purlis.dev"),
         ("http://localhost:5173", "localhost"),
     ] {
         let Opening::Ask { reason, about, .. } = ask(
@@ -403,12 +414,13 @@ fn a_name_names_a_web_address_by_its_host_alone_never_its_path() {
         asks_saying("paypal.com", "https://evil.example/paypal.com"),
         "its text says paypal.com"
     );
+    // A file's name a browser reads as a host asks: one click.
     assert_eq!(
         asks_saying(
             "README.md",
             "https://github.com/purlis/purlis/blob/main/README.md"
         ),
-        "its text says README.md"
+        "its text says readme.md"
     );
     assert!(opens("purlis.dev", "https://purlis.dev/docs/setup"));
 }
@@ -482,59 +494,67 @@ fn every_wrapper_a_sentence_puts_around_a_word_is_taken_off() {
         "paypal.com?",
         "paypal.com—log in",
     ] {
-        assert_eq!(
-            asks_saying(text, "https://evil.example/"),
-            "its text says paypal.com",
+        assert!(
+            asks_about_its_words(text, "https://evil.example/"),
             "{text}"
         );
+    }
+    // ASCII wrappers come off, so the host itself is no mismatch.
+    for text in [
+        "(paypal.com)",
+        "*paypal.com*",
+        "\"paypal.com\"",
+        "paypal.com.",
+        "<paypal.com>",
+    ] {
+        assert!(opens(text, "https://paypal.com/"), "{text}");
     }
 }
 
 #[test]
-fn an_https_address_marked_as_a_link_to_http_asks() {
+fn another_scheme_asks_and_none_shown_is_the_targets() {
     assert_eq!(
         asks_saying("https://purlis.dev/login", "http://purlis.dev/login"),
-        "its text says https://purlis.dev"
+        "its text says https://purlis.dev/login"
     );
-    // The other way round is no weaker.
-    assert!(opens("http://purlis.dev/", "https://purlis.dev/"));
+    assert_eq!(
+        asks_saying("http://purlis.dev/", "https://purlis.dev/"),
+        "its text says http://purlis.dev/"
+    );
+    assert!(opens("purlis.dev/login", "http://purlis.dev/login"));
+    assert!(opens("localhost:3000", "http://localhost:3000/"));
 }
 
 #[test]
 fn another_port_asks() {
     assert_eq!(
         asks_saying("localhost.test:5173/x", "http://localhost.test:3000/x"),
-        "its text says localhost.test:5173"
+        "its text says localhost.test:5173/x"
     );
     assert_eq!(
         asks_saying("https://purlis.dev/", "https://purlis.dev:8443/"),
-        "its text says purlis.dev"
+        "its text says https://purlis.dev/"
     );
     assert_eq!(
         asks_saying("purlis.dev", "https://purlis.dev:8443/"),
         "its text says purlis.dev"
     );
     assert!(opens("https://purlis.dev:443/", "https://purlis.dev/"));
-    assert!(opens("purlis.dev:8443/a", "https://purlis.dev:8443/b"));
+    assert!(opens("purlis.dev:8443/a", "https://purlis.dev:8443/a"));
 }
 
 #[test]
 fn a_name_before_an_at_asks_for_the_reader_takes_it_for_the_host() {
-    assert_eq!(
-        asks_saying("https://paypal.com@evil.example/", "https://evil.example/"),
-        "its text says paypal.com"
-    );
-    assert_eq!(
-        asks_saying("paypal.com@evil.example", "https://evil.example/"),
-        "its text says paypal.com"
-    );
-    assert_eq!(
-        asks_saying(
-            "paypal.com@evil.example/login",
-            "https://evil.example/login"
-        ),
-        "its text says paypal.com"
-    );
+    for text in [
+        "https://paypal.com@evil.example/",
+        "paypal.com@evil.example",
+        "paypal.com@evil.example/login",
+    ] {
+        assert_eq!(
+            asks_saying(text, "https://evil.example/login"),
+            format!("its text says {text}")
+        );
+    }
 }
 
 #[test]
@@ -547,7 +567,8 @@ fn an_email_address_names_its_domain() {
         ),
         "its text says paypal.com"
     );
-    assert!(opens(
+    // A name before the host is shown, so it must be the target's too.
+    assert!(asks_about_its_words(
         &["help", "@purlis.dev"].concat(),
         "https://purlis.dev/contact"
     ));
@@ -693,12 +714,14 @@ fn a_single_name_with_a_port_and_localhost_are_hosts() {
     );
     assert_eq!(
         asks_saying("dev:3000", "http://evil.example:3000/"),
-        "its text says dev:3000"
+        "its text says dev"
     );
-    assert!(opens("localhost:3000", "http://localhost:3000/x"));
+    assert!(opens("localhost:3000", "http://localhost:3000/"));
     assert!(opens("localhost", "http://localhost/"));
-    // A time is no host.
-    assert!(opens("12:30", "https://purlis.dev/"));
+    assert!(opens("(localhost)", "http://localhost/"));
+    assert!(asks_about_its_words("*localhost*", "https://evil.example/"));
+    // A time reads as a host and port to a browser, so it asks: one click.
+    assert!(asks_about_its_words("12:30", "https://purlis.dev/"));
 }
 
 #[test]
@@ -727,14 +750,78 @@ fn an_international_last_label_is_a_host() {
 }
 
 #[test]
-fn plain_words_of_any_script_still_open() {
-    for text in [
-        "Нажмите здесь",
-        "Cliquez ici",
-        "naïve café",
-        "日本語のドキュメント",
-        "the docs",
-    ] {
-        assert!(opens(text, "https://purlis.dev/docs"), "{text}");
+fn a_word_outside_ascii_asks_unless_it_names_the_target() {
+    // Plain means ASCII: any other letter may be one a browser reads as a host's.
+    for text in ["Нажмите здесь", "naïve café", "日本語のドキュメント"] {
+        assert!(
+            asks_about_its_words(text, "https://purlis.dev/docs"),
+            "{text}"
+        );
     }
+    assert!(opens("Cliquez ici", "https://purlis.dev/docs"));
+}
+
+#[test]
+fn a_word_is_read_as_a_browser_reads_an_address() {
+    // Every one of these is the loopback address, or no address purlis.dev is.
+    for text in [
+        "127.1",
+        "0x7f.1",
+        "0177.0.0.1",
+        "%70aypal.com",
+        "paypal%2ecom",
+        "paypal.com\\@purlis.dev",
+        "https:paypal.com",
+        "https:/paypal.com",
+        "https:\\\\paypal.com",
+        "HTTPS://PAYPAL.COM",
+        "paypal.com#purlis.dev",
+        "paypal.com?purlis.dev",
+        "paypal.com;purlis.dev",
+        "paypal.com\\purlis.dev",
+    ] {
+        assert!(asks_about_its_words(text, "https://purlis.dev/"), "{text}");
+    }
+    assert!(opens("127.1", "http://127.0.0.1/"));
+    assert!(opens("0x7f.1:8080", "http://127.0.0.1:8080/"));
+    assert!(opens("https:purlis.dev", "https://purlis.dev/"));
+}
+
+#[test]
+fn another_path_on_the_same_host_asks() {
+    assert_eq!(
+        asks_saying("github.com/purlis", "https://github.com/attacker"),
+        "its text says github.com/purlis"
+    );
+    for (text, target) in [
+        ("github.com/purlis", "https://github.com/purlis/purlis"),
+        ("github.com/purlis?tab=repos", "https://github.com/purlis"),
+        ("github.com/purlis#top", "https://github.com/purlis#bottom"),
+        ("github.com/%70urlis", "https://github.com/purlis"),
+    ] {
+        assert!(asks_about_its_words(text, target), "{text} → {target}");
+    }
+    assert!(opens("github.com/purlis/", "https://github.com/purlis"));
+    assert!(opens(
+        "github.com/purlis?tab=repos",
+        "https://github.com/purlis?tab=repos"
+    ));
+    // A host alone names no path, so any path on it opens.
+    assert!(opens("github.com", "https://github.com/purlis/purlis"));
+}
+
+#[test]
+fn an_international_name_and_www_are_the_host_they_name() {
+    assert!(opens("bücher.example", "https://xn--bcher-kva.example/"));
+    assert!(opens("xn--bcher-kva.example", "https://bücher.example/"));
+    assert!(opens("www.purlis.dev", "https://purlis.dev/"));
+    assert!(opens("purlis.dev", "https://www.purlis.dev/"));
+    assert!(asks_about_its_words(
+        "bucher.example",
+        "https://bücher.example/"
+    ));
+    assert!(asks_about_its_words(
+        "www2.purlis.dev",
+        "https://purlis.dev/"
+    ));
 }

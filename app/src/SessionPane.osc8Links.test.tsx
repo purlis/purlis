@@ -265,6 +265,27 @@ describe("a link a program marked (OSC 8)", () => {
     );
   });
 
+  it("is read with the text the program printed against it, as one word", async () => {
+    const { term, drawn } = await opened();
+    // Only "hub.com/login" is marked; "git" before it and "!x" after it touch its cells.
+    await write(term, `see git${osc8(TARGET, "hub.com/login")}!x and ${osc8(TARGET, "here")} y`);
+
+    hover(drawn, 9, 0);
+    await waitFor(() =>
+      expect(asked("pane_link_resolve").map((one) => one.args.candidates)).toContainEqual([
+        { kind: "osc8", text: "github.com/login!x", target: TARGET },
+      ]),
+    );
+
+    // Across a blank, the text beside a link is no part of it.
+    hover(drawn, 30, 0);
+    await waitFor(() =>
+      expect(asked("pane_link_resolve").map((one) => one.args.candidates)).toContainEqual([
+        { kind: "osc8", text: "here", target: TARGET },
+      ]),
+    );
+  });
+
   it("is listed in Links in this pane, with its text under its target", async () => {
     Object.defineProperty(navigator, "platform", { configurable: true, get: () => "MacIntel" });
     const { term } = await opened();
