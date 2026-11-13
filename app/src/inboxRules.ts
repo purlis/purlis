@@ -142,7 +142,8 @@ export type Answered = {
   /** When, in ms since the epoch. */
   at: number;
   /** The chat that asked: what the chips list its Notice under (ADR 0121, amended 2026-11-12,
-   *  decision 9). Left out, it is listed only under Project. */
+   *  decision 9); 0 or left out where no chat asked (a change purlis holds, a sign-in), and then
+   *  it is listed only under Project. */
   session?: number;
   chain: readonly string[];
   says: string;
@@ -230,7 +231,13 @@ export function useAnsweredWhenGone(
     for (const [key, { ask, answer }] of touched.current) {
       if (listed.has(key)) continue;
       touched.current.delete(key);
-      noteAnswered(plane, { at: Date.now(), chain: ask.chain, says: ask.says, answer });
+      noteAnswered(plane, {
+        at: Date.now(),
+        session: ask.session,
+        chain: ask.chain,
+        says: ask.says,
+        answer,
+      });
     }
   });
   return useCallback((ask: Shown, answer: string) => {

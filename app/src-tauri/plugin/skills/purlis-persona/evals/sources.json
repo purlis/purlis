@@ -135,7 +135,7 @@
     },
     {
       "query": "Remove the old qa-legacy persona, but keep what it learned.",
-      "source": "Near miss (purlis-safe-remove): its description, \"Remove ... a persona without losing what it learned\".",
+      "source": "Near miss (purlis-safe-remove): its description, \"persona gone, keep what it learned\".",
       "belongs_to": "purlis-safe-remove"
     },
     {

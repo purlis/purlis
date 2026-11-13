@@ -515,6 +515,7 @@ pub fn send(
             | Answer::Keys { .. }
             | Answer::Secret(_)
             | Answer::Working(_)
+            | Answer::Chats { .. }
             | Answer::Pointed { .. }
             | Answer::Task(_),
         )
@@ -785,6 +786,7 @@ pub fn report(outcome: &str, text: &str, changed: Option<&str>) -> Result<String
             | Answer::Keys { .. }
             | Answer::Secret(_)
             | Answer::Working(_)
+            | Answer::Chats { .. }
             | Answer::Pointed { .. }
             | Answer::Dispatched { .. }
             | Answer::NeedsGrant { .. }

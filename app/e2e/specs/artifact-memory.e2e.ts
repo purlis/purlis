@@ -86,25 +86,57 @@ function look(pid: number): TabMemoryLook {
 
 const total = (seen: TabMemoryLook) => seen.appKb + seen.webContentKb;
 
-/** A look once two in a row, a second apart, agree within `SETTLED_KB` and `ready` holds. */
+/** Where `settledLook` has got to, kept in one place its wait can write. */
+interface Looking {
+  last: TabMemoryLook | null;
+  settled: TabMemoryLook | null;
+  missed: unknown;
+  gone: boolean;
+}
+
+/**
+ * A look once two in a row, a second apart, agree within `SETTLED_KB` and `ready` holds.
+ *
+ * A look that fails is one more second to wait, not the verdict: `footprint` can miss a web
+ * content process that `ps` still lists, one starting or exiting (#6232). Two good looks in a
+ * row are still needed, and a look failing until the timeout fails the test with its own words.
+ * The app itself gone fails it at once.
+ */
 async function settledLook(
   pid: number,
   ready: (seen: TabMemoryLook) => boolean,
   what: string,
 ): Promise<TabMemoryLook> {
-  let last = look(pid);
-  let settled: TabMemoryLook | null = null;
-  await browser.waitUntil(
-    () => {
-      const now = look(pid);
-      const steady = Math.abs(total(now) - total(last)) <= SETTLED_KB;
-      last = now;
-      if (steady && ready(now)) settled = now;
-      return settled !== null;
-    },
-    { timeout: 60_000, interval: 1_000, timeoutMsg: `the app's memory never settled ${what}` },
-  );
-  return settled ?? last;
+  const looking: Looking = { last: null, settled: null, missed: null, gone: false };
+  try {
+    await browser.waitUntil(
+      () => {
+        if (sample(pid) === null) {
+          looking.gone = true;
+          return true;
+        }
+        let now: TabMemoryLook;
+        try {
+          now = look(pid);
+        } catch (error) {
+          looking.missed = error;
+          looking.last = null;
+          return false;
+        }
+        const before = looking.last;
+        const steady = before !== null && Math.abs(total(now) - total(before)) <= SETTLED_KB;
+        looking.last = now;
+        if (steady && ready(now)) looking.settled = now;
+        return looking.settled !== null;
+      },
+      { timeout: 60_000, interval: 1_000 },
+    );
+  } catch {
+    const why = looking.missed === null ? "" : `; the last look failed: ${String(looking.missed)}`;
+    throw new Error(`the app's memory never settled ${what}${why}`);
+  }
+  if (looking.gone || looking.settled === null) throw new Error(`the app (pid ${pid}) is gone`);
+  return looking.settled;
 }
 
 describe("an open artifact tab's memory (ADR 0086 M8)", function () {

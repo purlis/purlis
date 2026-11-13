@@ -16,7 +16,9 @@
 //!   run, and the page is never left on an answer older than the last change.
 //! - **An extension's query is asked again once its `fresh_seconds` has passed**, while someone
 //!   subscribes ([`Hub::subscribe_every`], #5971): extensions are never long-running and push
-//!   nothing (ADR 0053), so its freshness is what keeps a page on it live.
+//!   nothing (ADR 0053), so its freshness is what keeps a page on it live. **So is a core
+//!   query with a `fresh_seconds`** (`purlis.forge_milestones`, #6233), which reads what no
+//!   change of the plane moves.
 //!
 //! The hub holds no clock and starts nothing itself: it says what to do ([`Do`]), and its
 //! caller runs the query, hands the answers and wakes it, so it is tested with the instants it
@@ -43,6 +45,11 @@ fn read_from(name: &str) -> Option<&'static [Kind]> {
         "session_record_list" | "session_record_read" => Some(&[Kind::Sessions]),
         // `workspaces/<ws>/changes/` is a plain folder of the workspace to the watch.
         "change_status" => Some(&[Kind::Workspace]),
+        // Read from the forge, which no change of the plane moves: it is asked again on its
+        // `fresh_seconds` instead (#6233).
+        crate::catalogue::milestones::NAME => Some(&[]),
+        // The app's own record, not the plane: the app moves it as its chats move (#6235).
+        "chats" => Some(&[]),
         _ => None,
     }
 }
@@ -162,18 +169,29 @@ impl<K: Clone + Eq + Hash, W: Clone + PartialEq> Hub<K, W> {
     }
 
     /// **Feed `key`'s run answered `answer`**: handed to every subscriber it has now, and run
-    /// again when it is due if something moved it meanwhile.
+    /// again when it is due if something moved it meanwhile. An answer that says what the
+    /// feed's last one said, whenever it was read, is handed to no one (#6235): every page of
+    /// the feed already holds it. A feed with a freshness hands each one on, since its time is
+    /// what is fresh.
     pub fn finished(&mut self, key: &K, answer: Answer, now: Instant) -> Vec<Do<K, W>> {
         let Some(feed) = self.feeds.get_mut(key) else {
             return Vec::new();
         };
         feed.running = false;
-        feed.last = Some(answer.clone());
-        let mut out: Vec<Do<K, W>> = feed
-            .who
-            .iter()
-            .map(|w| Do::Hand(w.clone(), answer.clone()))
-            .collect();
+        let unchanged = feed.every.is_none()
+            && feed
+                .last
+                .as_ref()
+                .is_some_and(|last| last.outcome == answer.outcome && last.cursor == answer.cursor);
+        let mut out: Vec<Do<K, W>> = if unchanged {
+            Vec::new()
+        } else {
+            feed.who
+                .iter()
+                .map(|w| Do::Hand(w.clone(), answer.clone()))
+                .collect()
+        };
+        feed.last = Some(answer);
         out.extend(self.due(key, now));
         out
     }
@@ -182,6 +200,11 @@ impl<K: Clone + Eq + Hash, W: Clone + PartialEq> Hub<K, W> {
     pub fn tick(&mut self, now: Instant) -> Vec<Do<K, W>> {
         let keys: Vec<K> = self.feeds.keys().cloned().collect();
         keys.iter().flat_map(|key| self.due(key, now)).collect()
+    }
+
+    /// Whether any feed is one `which` names: a look that runs nothing.
+    pub fn any(&self, which: impl Fn(&K) -> bool) -> bool {
+        self.feeds.keys().any(which)
     }
 
     /// How many feeds there are: one per query, parameters and place subscribed to.
@@ -427,6 +450,22 @@ mod tests {
     }
 
     #[test]
+    fn the_chats_are_moved_by_the_app_s_chats_and_by_no_change_of_the_plane() {
+        let chats = query("chats");
+        for kind in [
+            Kind::Todos,
+            Kind::Memory,
+            Kind::Sessions,
+            Kind::Workspace,
+            Kind::Git,
+        ] {
+            assert!(!moves(chats, "alpha", Some(&[change(kind, Some("alpha"))])));
+        }
+        // A change the watch could not place still moves it, as it moves everything.
+        assert!(moves(chats, "alpha", None));
+    }
+
+    #[test]
     fn every_catalogue_query_names_the_change_kinds_its_answer_is_read_from() {
         for query in &CATALOGUE {
             assert!(
@@ -473,6 +512,47 @@ mod tests {
         let done = hub.finished(&"todos", answer(1), t);
         assert!(!done.iter().any(|d| matches!(d, Do::WakeAt(_))), "{done:?}");
         assert!(hub.tick(t + Duration::from_secs(3600)).is_empty());
+    }
+
+    #[test]
+    fn a_run_that_answers_what_the_feed_last_answered_hands_nothing_on() {
+        // #6235: a board's move asks every chats feed again; most answer as they did.
+        let t = Instant::now();
+        let mut hub = Hub::default();
+        hub.subscribe("chats", ("page-a", 1), t);
+        assert_eq!(
+            handed(&hub.finished(&"chats", answer(1), t)),
+            [("page-a", 1)]
+        );
+        let later = t + MIN_INTERVAL;
+        assert_eq!(runs(&hub.moved(later, |_| true)), ["chats"]);
+        let same = Answer::data(json!({ "n": 1 }), chrono::Utc::now());
+        assert!(handed(&hub.finished(&"chats", same, later)).is_empty());
+        // A page that subscribes now is handed it, and a new answer goes to every page.
+        let late = hub.subscribe("chats", ("page-b", 1), later);
+        assert_eq!(handed(&late), [("page-b", 1)]);
+        let again = later + MIN_INTERVAL;
+        assert_eq!(runs(&hub.moved(again, |_| true)), ["chats"]);
+        assert_eq!(
+            handed(&hub.finished(&"chats", answer(2), again)),
+            [("page-a", 1), ("page-b", 1)]
+        );
+    }
+
+    #[test]
+    fn a_feed_with_a_freshness_hands_on_each_answer_it_is_asked_again_for() {
+        let t = Instant::now();
+        let every = Duration::from_secs(60);
+        let mut hub = Hub::default();
+        hub.subscribe_every("slack", ("page-a", 1), t, Some(every));
+        hub.finished(&"slack", answer(1), t);
+        assert_eq!(runs(&hub.tick(t + every)), ["slack"]);
+        let fresh = Answer::data(json!({ "n": 1 }), chrono::Utc::now());
+        assert_eq!(
+            handed(&hub.finished(&"slack", fresh, t + every)),
+            [("page-a", 1)],
+            "its answer's time is what is fresh"
+        );
     }
 
     #[test]

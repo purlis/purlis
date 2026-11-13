@@ -27,6 +27,7 @@ on:
       - rust-toolchain.toml
       - .github/actions/rust-toolchain/**
       - .github/actions/helm/**
+      - .github/actions/kind/**
       - .github/actions/cargo-deny/**
       - tools/operator-install*
       - tools/guide-commands*
@@ -75,6 +76,7 @@ on:
       - rust-toolchain.toml
       - .github/actions/rust-toolchain/**
       - .github/actions/helm/**
+      - .github/actions/kind/**
       - .github/actions/cargo-deny/**
       - tools/operator-install*
       - .github/workflows/operator.yml
@@ -185,16 +187,9 @@ jobs:
             . -> target
             operator
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      # kind, one exact release, checked against the SHA-256 it publishes.
-      - name: Install kind
-        env:
-          KIND_VERSION: v0.33.0
-          KIND_SHA256: aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
-        run: |
-          curl --fail --silent --show-error --location -o "$RUNNER_TEMP/kind" \
-            "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
-          echo "$KIND_SHA256  $RUNNER_TEMP/kind" | sha256sum --check --strict
-          sudo install -m 0755 "$RUNNER_TEMP/kind" /usr/local/bin/kind
+      # kind, one exact release, checked against the SHA-256 it publishes (.github/actions/kind
+      # pins it).
+      - uses: ./.github/actions/kind
       # Helm, which installs the operator's chart on the kind cluster.
       - uses: ./.github/actions/helm
       # Node, for `tools/operator-install.mjs`, which pins the install kind.sh installs (#2281).

@@ -122,8 +122,10 @@ fn a_bare_cluster_passes_the_check_then_is_installed_a_part_at_a_time() {
         poolsetup::install_part(config.path(), &kubectl, id)
             .unwrap_or_else(|why| panic!("{id:?}: {why}"));
         if id == PartId::Definitions {
-            // The operator acts on no Claim made within 30 seconds of its policy's binding.
-            settles_at = Some(Instant::now() + Duration::from_secs(35));
+            // The operator acts on no Claim made within 30 seconds of its policy's binding, and
+            // Pool setup offers no Add the pool here until then (`CLAIMS_SETTLE`).
+            settles_at =
+                Some(Instant::now() + Duration::from_secs(poolsetup::cluster::CLAIMS_SETTLE + 1));
         }
         let after = poolsetup::read(&here, None).unwrap();
         assert!(
@@ -166,6 +168,11 @@ fn a_bare_cluster_passes_the_check_then_is_installed_a_part_at_a_time() {
         &needed("POOL_SETUP_TEST_RUNNER_IMAGE"),
     )
     .unwrap();
+    // A pool is added only once the policy on Claims is in force: the operator refuses for good a
+    // Claim made within its settle time of it.
+    if let Some(at) = settles_at {
+        std::thread::sleep(at.saturating_duration_since(Instant::now()));
+    }
     let with_a_pool = poolsetup::read(&here, None).unwrap();
     assert_eq!(
         with_a_pool.contexts.pools,
@@ -184,9 +191,6 @@ fn a_bare_cluster_passes_the_check_then_is_installed_a_part_at_a_time() {
     );
 
     // A Claim on it, as this kubeconfig's user, becomes ready.
-    if let Some(at) = settles_at {
-        std::thread::sleep(at.saturating_duration_since(Instant::now()));
-    }
     let on = kubectl.clone().with_context(&context);
     let requester = on.whoami().unwrap();
     on.claim(

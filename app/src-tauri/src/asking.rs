@@ -612,6 +612,10 @@ pub enum AskSource {
     /// **What the project expects and this machine has not allowed** (#6000, qw354): its
     /// sandboxed chats are refused it until the person allows it on this machine.
     SandboxExpects,
+    /// **A persona whose hosts or tools wait for an Allow on this machine** (ADR 0121, amended
+    /// 2026-11-12): its chats reach none of its hosts and run none of its tools until the
+    /// person allows them as shown. One per persona.
+    PersonaAllow,
     /// **A `purlis` command's confirmation in the window** (#6000): a pool sign-in, a profile
     /// taken off a pool, a signing check, each waiting on the person's yes.
     Confirmation,
@@ -729,6 +733,10 @@ pub enum AnswerPath {
     SandboxExpects {
         items: Vec<crate::sandboxing::ExpectedItem>,
     },
+    /// `allow_persona_hosts` for Allow, sent `digest`, the list the row showed, as its Notice
+    /// sends it; and `persona_allow_not_now` for Not now, which puts it away while the project
+    /// is open and the list stands (ADR 0121, amended 2026-11-12).
+    PersonaAllow { persona: String, digest: String },
     /// `answer_pool_sign_in` for confirmation `id`, yes or no, as its dialog answers (#6000).
     Confirmation { id: u32 },
     /// `answer_pause` for the chat it names, with the option chosen (#6015); Raise the budget is
@@ -4718,6 +4726,12 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
                 .map(Into::into)
                 .as_ref(),
             ))
+            // A persona whose hosts or tools wait for an Allow here: one ask each (ADR 0121,
+            // amended 2026-11-12), read as Settings and its Notice read them.
+            .chain({
+                let (personas, hosts_locked) = crate::sandboxing::persona_hosts_here(root);
+                consents::persona_allows(&personas, hosts_locked, held.persona_later(), &risk)
+            })
             // A command's confirmation in the window, filed under this project (#6000).
             .chain(
                 crate::poolsignin_confirm::waiting_in(plane)
@@ -4775,6 +4789,24 @@ pub fn forget_sandbox_block(
 }
 
 mod consents;
+pub use consents::Later as PersonaLater;
+
+/// **Not now on a persona's Allow** (ADR 0121, amended 2026-11-12), on its row in Asks or on its
+/// Notice: put away while project `plane` is open and `persona`'s list is the one shown,
+/// `digest`. Nothing is kept, and nothing is granted; a changed list asks again. The window's
+/// alone, as the Allow is.
+#[tauri::command]
+#[specta::specta]
+pub async fn persona_allow_not_now(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    persona: String,
+    digest: String,
+) -> Result<(), String> {
+    let held = planes.held(&plane)?;
+    held.persona_later().say(&persona, &digest);
+    Ok(())
+}
 pub mod pauses;
 
 #[cfg(test)]

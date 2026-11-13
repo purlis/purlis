@@ -426,15 +426,29 @@ fn what_is_found_never_prints_an_address_whole() {
 /// remote's default is `main`: stale for its branch.
 fn plane_with_a_clone_off_its_default()
 -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
+    let (dir, plane) = a_plane();
+    let clone = a_clone(&plane, "alpha", "widget");
+    git_in(&clone, &["checkout", "-q", "-b", "topic"]);
+    (dir, plane, clone)
+}
+
+fn a_plane() -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let plane = dir.path().canonicalize().unwrap();
     std::fs::write(plane.join("charter.toml"), "schema = 1\n").unwrap();
-    let clone = plane.join("workspaces/alpha/widget");
+    (dir, plane)
+}
+
+fn git_in(clone: &std::path::Path, args: &[&str]) {
+    let done = crate::testgit::run(clone, args);
+    assert!(done.ok(), "git {args:?} failed: {done:?}");
+}
+
+/// Clone `name` of workspace `ws`, on `main`, the remote's default.
+fn a_clone(plane: &std::path::Path, ws: &str, name: &str) -> std::path::PathBuf {
+    let clone = plane.join("workspaces").join(ws).join(name);
     std::fs::create_dir_all(&clone).unwrap();
-    let git = |args: &[&str]| {
-        let done = crate::testgit::run(&clone, args);
-        assert!(done.ok(), "git {args:?} failed: {done:?}");
-    };
+    let git = |args: &[&str]| git_in(&clone, args);
     git(&["init", "-q", "-b", "main", "."]);
     // Its own identity: a CI runner has none of its own to commit with.
     git(&["config", "user.email", "t@e.invalid"]);
@@ -454,8 +468,7 @@ fn plane_with_a_clone_off_its_default()
         "refs/remotes/origin/HEAD",
         "refs/remotes/origin/main",
     ]);
-    git(&["checkout", "-q", "-b", "topic"]);
-    (dir, plane, clone)
+    clone
 }
 
 fn statuses_in(clone: &std::path::Path) -> usize {
@@ -508,4 +521,172 @@ fn a_clone_with_changes_is_still_read_as_changed_from_the_shared_standing() {
     assert_eq!(seen.branch.as_deref(), Some("topic"));
     assert_eq!(seen.clean, Some(false));
     assert_eq!(seen, read("alpha", &repo));
+}
+
+// A look at a clone that cannot have changed runs no git (felt speed round 3, H8).
+
+fn gits_in(clone: &std::path::Path) -> usize {
+    crate::worktree::git::tally::asked(clone).len()
+}
+
+fn stale_of(plane: &std::path::Path) -> Vec<Vec<Stale>> {
+    found(plane)
+        .found
+        .into_iter()
+        .map(|one| one.stale)
+        .collect()
+}
+
+#[test]
+fn a_second_look_at_an_unchanged_clone_runs_no_git() {
+    let (_dir, plane) = a_plane();
+    let clone = a_clone(&plane, "alpha", "widget");
+    assert_eq!(stale_of(&plane), Vec::<Vec<Stale>>::new());
+    let before = gits_in(&clone);
+
+    assert_eq!(stale_of(&plane), Vec::<Vec<Stale>>::new());
+
+    assert_eq!(
+        gits_in(&clone),
+        before,
+        "{:?}",
+        crate::worktree::git::tally::asked(&clone)
+    );
+}
+
+#[test]
+fn a_second_look_at_an_unchanged_stale_clone_runs_no_git_and_still_finds_it() {
+    let (_dir, plane, clone) = plane_with_a_clone_off_its_default();
+    assert_eq!(found(&plane).found.len(), 1);
+    let before = gits_in(&clone);
+
+    assert_eq!(found(&plane).found.len(), 1);
+
+    assert_eq!(gits_in(&clone), before);
+}
+
+#[test]
+fn a_switch_of_branch_is_seen_on_the_next_look() {
+    let (_dir, plane) = a_plane();
+    let clone = a_clone(&plane, "alpha", "widget");
+    assert_eq!(stale_of(&plane), Vec::<Vec<Stale>>::new());
+
+    git_in(&clone, &["checkout", "-q", "-b", "topic"]);
+
+    assert_eq!(
+        stale_of(&plane),
+        [vec![Stale::OffDefault {
+            branch: "topic".into(),
+            default: "main".into(),
+        }]]
+    );
+}
+
+#[test]
+fn a_branch_born_under_an_unchanged_head_is_seen_on_the_next_look() {
+    // HEAD names `topic` before it has a commit: no branch to judge. The commit that makes it
+    // writes the branch's ref and leaves HEAD as it was.
+    let (_dir, plane) = a_plane();
+    let clone = a_clone(&plane, "alpha", "widget");
+    git_in(&clone, &["symbolic-ref", "HEAD", "refs/heads/topic"]);
+    assert_eq!(stale_of(&plane), Vec::<Vec<Stale>>::new());
+
+    git_in(
+        &clone,
+        &["update-ref", "refs/heads/topic", "refs/heads/main"],
+    );
+
+    assert_eq!(stale_of(&plane).len(), 1);
+}
+
+#[test]
+fn a_new_default_branch_is_seen_on_the_next_look() {
+    let (_dir, plane) = a_plane();
+    let clone = a_clone(&plane, "alpha", "widget");
+    git_in(&clone, &["update-ref", "refs/remotes/origin/trunk", "HEAD"]);
+    assert_eq!(stale_of(&plane), Vec::<Vec<Stale>>::new());
+
+    git_in(
+        &clone,
+        &[
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/trunk",
+        ],
+    );
+
+    assert_eq!(
+        stale_of(&plane),
+        [vec![Stale::OffDefault {
+            branch: "main".into(),
+            default: "trunk".into(),
+        }]]
+    );
+}
+
+#[test]
+fn a_change_to_the_clones_config_is_seen_on_the_next_look() {
+    let (_dir, plane) = a_plane();
+    let clone = a_clone(&plane, "alpha", "widget");
+    assert_eq!(stale_of(&plane), Vec::<Vec<Stale>>::new());
+
+    git_in(
+        &clone,
+        &["config", MOVED_KEY, "https://github.com/purlis/widget.git"],
+    );
+
+    assert!(
+        matches!(&stale_of(&plane)[..], [one] if matches!(one[..], [Stale::RemoteMoved { .. }])),
+        "{:?}",
+        stale_of(&plane)
+    );
+}
+
+#[test]
+fn a_config_edited_in_place_to_the_same_size_and_time_is_seen_on_the_next_look() {
+    // No stamp of time or size: what the file says is what is compared.
+    let (_dir, plane) = a_plane();
+    let clone = a_clone(&plane, "alpha", "widget");
+    git_in(
+        &clone,
+        &["config", MOVED_KEY, "https://github.com/purlis/widget.git"],
+    );
+    let moved_to = |stale: Vec<Vec<Stale>>| match &stale[..] {
+        [one] => match &one[..] {
+            [Stale::RemoteMoved { now, .. }] => now.clone(),
+            other => panic!("{other:?}"),
+        },
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(
+        moved_to(stale_of(&plane)),
+        "https://github.com/purlis/widget.git"
+    );
+    let config = clone.join(".git/config");
+    let was = std::fs::metadata(&config).unwrap();
+
+    let text = std::fs::read_to_string(&config).unwrap();
+    std::fs::write(&config, text.replace("purlis/widget", "purlis/gadget")).unwrap();
+    let file = std::fs::File::options().write(true).open(&config).unwrap();
+    file.set_modified(was.modified().unwrap()).unwrap();
+    drop(file);
+    assert_eq!(std::fs::metadata(&config).unwrap().len(), was.len());
+
+    assert_eq!(
+        moved_to(stale_of(&plane)),
+        "https://github.com/purlis/gadget.git"
+    );
+}
+
+#[test]
+fn a_clone_whose_config_includes_another_file_is_read_in_full_each_time() {
+    let (_dir, plane) = a_plane();
+    let clone = a_clone(&plane, "alpha", "widget");
+    git_in(&clone, &["config", "include.path", "elsewhere.conf"]);
+    assert_eq!(stale_of(&plane), Vec::<Vec<Stale>>::new());
+    let before = gits_in(&clone);
+
+    assert_eq!(stale_of(&plane), Vec::<Vec<Stale>>::new());
+
+    assert!(gits_in(&clone) > before, "an included file is not stamped");
 }

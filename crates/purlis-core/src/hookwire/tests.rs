@@ -2870,6 +2870,7 @@ fn an_app_at(path: &std::path::Path, within: &std::path::Path) -> (Reading, Chat
                 | Ask::Keys { .. }
                 | Ask::Secret(_)
                 | Ask::WhereWorking(_)
+                | Ask::Chats(_)
                 | Ask::Dispatch(_)
                 | Ask::Task(_)
                 | Ask::Removal(_)

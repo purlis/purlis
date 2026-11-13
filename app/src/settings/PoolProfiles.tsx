@@ -108,7 +108,11 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
   }, [pool, plane, asked, fetching]);
   const rows = signing !== undefined && heldRows !== undefined ? heldRows : asked;
   if (rows === undefined || rows === "asking") {
-    return <p className="ui-setting-help">Asking the runner about this machine&apos;s profiles…</p>;
+    return (
+      <p className="ui-setting-help ui-text-secondary">
+        Asking the runner about this machine&apos;s profiles…
+      </p>
+    );
   }
   const again = (
     <Button size="sm" onPress={() => void askProfiles(pool, plane)}>
@@ -118,7 +122,7 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
   if (!("kept" in rows)) {
     return (
       <>
-        <p className="ui-setting-help" role="alert">
+        <p className="ui-setting-help ui-text-secondary" role="alert">
           {rows.trouble}
         </p>
         {again}
@@ -194,11 +198,11 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
     );
   // Said above its profiles, so it stays in sight while a sign-in's strip is open.
   const lasts = rows.fresh_claim ? (
-    <p className="ui-setting-help">{lastsOnlyForThisClaim(pool)}</p>
+    <p className="ui-setting-help ui-text-secondary">{lastsOnlyForThisClaim(pool)}</p>
   ) : null;
   const told =
     said === undefined ? null : (
-      <p className="ui-setting-help" role="status">
+      <p className="ui-setting-help ui-text-secondary" role="status">
         {said}
       </p>
     );
@@ -206,7 +210,7 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
     return (
       <>
         {lasts}
-        <p className="ui-setting-help">
+        <p className="ui-setting-help ui-text-secondary">
           {rows.addable.length === 0
             ? "This machine keeps no profile of its own yet."
             : `No profile is on pool ${pool}: its chats start on the profiles its runner has of its own.`}
@@ -410,7 +414,7 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
               className="pool-profile-raise"
               aria-label={`${row.name}'s limit on pool ${pool}`}
             >
-              <p className="ui-setting-help">{`${row.name}: ${row.not_kept}.`}</p>
+              <p className="ui-setting-help ui-text-secondary">{`${row.name}: ${row.not_kept}.`}</p>
               <OfferToRaise
                 offer={row.limit}
                 action="Save to the pool and ask again"
@@ -442,7 +446,10 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
       )}
       {told}
       {outSaid !== undefined && (
-        <p className="ui-setting-help" role={outSaid.trouble ? "alert" : "status"}>
+        <p
+          className="ui-setting-help ui-text-secondary"
+          role={outSaid.trouble ? "alert" : "status"}
+        >
           {outSaid.text}
         </p>
       )}

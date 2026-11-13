@@ -521,7 +521,7 @@ function PoolEntry({
           <span className="ui-record-lines">
             {pool.name}
             <Tooltip tip={pool.image}>
-              <span className="ui-record-where">{limitsSaid(pool)}</span>
+              <span className="ui-record-where ui-text-meta">{limitsSaid(pool)}</span>
             </Tooltip>
           </span>
         </ControlRowHeading>
@@ -552,7 +552,7 @@ function PoolEntry({
       <ControlRow>
         <ControlCell colSpan={3}>
           <div className="pools-about">
-            <p className="ui-setting-help">{suspendSaid(pool, version)}</p>
+            <p className="ui-setting-help ui-text-secondary">{suspendSaid(pool, version)}</p>
             <KeyChangedNotice name={pool.name} link={link} removing={removing} onRemove={remove} />
             {typeof link === "object" && link.state === "removed" && (
               <RemovedNotice
@@ -563,19 +563,19 @@ function PoolEntry({
               />
             )}
             {typeof link === "object" && link.state === "on_another_engine" && (
-              <p className="ui-setting-help">{anotherEngineSaid(pool.name)}</p>
+              <p className="ui-setting-help ui-text-secondary">{anotherEngineSaid(pool.name)}</p>
             )}
-            {remade !== undefined && <p className="ui-setting-help">{remade}</p>}
+            {remade !== undefined && <p className="ui-setting-help ui-text-secondary">{remade}</p>}
             {typeof link === "object" && link.state === "down" && (
-              <p className="ui-setting-help">{link.why}</p>
+              <p className="ui-setting-help ui-text-secondary">{link.why}</p>
             )}
             {versionSaid(version) !== undefined && (
-              <p className="ui-setting-help">{versionSaid(version)}</p>
+              <p className="ui-setting-help ui-text-secondary">{versionSaid(version)}</p>
             )}
-            {owed !== undefined && <p className="ui-setting-help">{owed}</p>}
-            {left !== undefined && <p className="ui-setting-help">{left}</p>}
+            {owed !== undefined && <p className="ui-setting-help ui-text-secondary">{owed}</p>}
+            {left !== undefined && <p className="ui-setting-help ui-text-secondary">{left}</p>}
             {version?.not_checked.map((one) => (
-              <p key={`not-checked:${one.runner}`} className="ui-setting-help">
+              <p key={`not-checked:${one.runner}`} className="ui-setting-help ui-text-secondary">
                 {notCheckedPoolSaid(one.runner, one.left)}
               </p>
             ))}
@@ -681,7 +681,7 @@ function ClusterPoolEntry({
         <ControlRowHeading>
           <span className="ui-record-lines">
             {pool.name}
-            <span className="ui-record-where">
+            <span className="ui-record-where ui-text-meta">
               Pool {pool.pool} in {pool.context}, namespace {pool.namespace}
             </span>
           </span>
@@ -703,7 +703,7 @@ function ClusterPoolEntry({
       <ControlRow>
         <ControlCell colSpan={3}>
           <div className="pools-about">
-            <p className="ui-setting-help">
+            <p className="ui-setting-help ui-text-secondary">
               Cluster operator key <code>{pool.operator_key}</code>
             </p>
             <Switch
@@ -715,19 +715,23 @@ function ClusterPoolEntry({
             >
               This is my own
             </Switch>
-            <p className="ui-setting-help" id={said}>
+            <p className="ui-setting-help ui-text-secondary" id={said}>
               {MY_OWN_SAID}
             </p>
             {refused !== undefined && (
-              <p className="ui-setting-help" role="alert">
+              <p className="ui-setting-help ui-text-secondary" role="alert">
                 {refused}
               </p>
             )}
             <KeyChangedNotice name={pool.name} link={link} removing={removing} onRemove={onAsk} />
             {typeof link === "object" && link.state === "down" && (
-              <p className="ui-setting-help">{link.why}</p>
+              <p className="ui-setting-help ui-text-secondary">{link.why}</p>
             )}
-            {pool.owned ? profiles : <p className="ui-setting-help">{notMarkedSaid(pool.name)}</p>}
+            {pool.owned ? (
+              profiles
+            ) : (
+              <p className="ui-setting-help ui-text-secondary">{notMarkedSaid(pool.name)}</p>
+            )}
             {notHeld}
             <PoolLimits pool={pool.name} />
           </div>
@@ -819,15 +823,17 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
           aria-labelledby={ids.labelledBy}
           aria-describedby={pools.length === 0 ? undefined : removeSaid}
         >
-          {now.read.state === "reading" && <p className="ui-setting-help">Reading…</p>}
+          {now.read.state === "reading" && (
+            <p className="ui-setting-help ui-text-secondary">Reading…</p>
+          )}
           {now.read.state === "trouble" && (
-            <p className="ui-setting-help" role="alert">
+            <p className="ui-setting-help ui-text-secondary" role="alert">
               {now.read.trouble}
             </p>
           )}
           {now.read.state === "read" &&
             (pools.length === 0 ? (
-              <p className="ui-setting-help">{NO_POOL_YET}</p>
+              <p className="ui-setting-help ui-text-secondary">{NO_POOL_YET}</p>
             ) : (
               // **A table of the pools** (#6301, as Your hosts is, #2919 R65, R67): a table of
               // controls, since what is said and set about a pool (its notices, its limits, its
@@ -875,7 +881,7 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
               </ControlTable>
             ))}
           {pools.length > 0 && (
-            <p className="ui-setting-help" id={removeSaid}>
+            <p className="ui-setting-help ui-text-secondary" id={removeSaid}>
               {REMOVE_SAID}
             </p>
           )}

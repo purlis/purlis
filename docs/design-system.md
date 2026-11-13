@@ -1964,7 +1964,7 @@ fixed size, weight and colour from the tokens, and a surface wears it instead.
 | body      | `ui-text-body`      | what the surface is about: a row's name, an ask's words   | `--font-size-md`, 13px   | regular | `text.primary`   |
 | secondary | `ui-text-secondary` | where, who, a help line under a field                     | `--font-size-sm`, 12px   | regular | `text.secondary` |
 | meta      | `ui-text-meta`      | age, kind, counts, shortcuts: read last                   | `--font-size-xs`, 11px   | regular | `text.quiet`     |
-| label     | `ui-text-label`     | a section label over a group, in capitals spaced `0.06em` | `--font-size-xs`, 11px   | strong  | `text.secondary` |
+| label     | `ui-text-label`     | a section label over a group, in capitals spaced `0.05em` | `--font-size-xs`, 11px   | strong  | `text.secondary` |
 | code      | `ui-text-code`      | a command, a path, a host: `--font-mono`                  | the role it sits in      | regular | inherited        |
 
 `ui-text-strong` is a modifier and not a role: the one strong line of a row is a body at the
@@ -2012,7 +2012,12 @@ window differ, the window was kept and the difference is recorded here for the m
   title and drawn by nothing.** The table puts the title on `lg` and the heading on `base`.
   Today's titles are `1rem` (14px) and its section headings `0.85rem` to `0.95rem`, so each
   steps up when its surface moves, which is a change to see in a screenshot first. `xl` has no
-  role.
+  role, and since the migrations no word reads it (#1920): the Welcome's heading, a settings
+  page's, a pool's setup and the agent identity flow's wear the title. What still reads it is
+  two marks, icons sized by the text around them (a persona's mark in Start a chat, a door
+  card's mark), and Tailwind's `text-xl`, pointed at it so it has no value of its own.
+  `primitives/text.test.ts` holds that list. Taking `font-size.xl` out of the theme format is
+  the operator's call, since a theme may set it.
 - **The Welcome page's `h1` is `1.5rem` (21px)**, above the scale's top step.
 - **Counts and matches were weight 700** (five rules), which no token names. The geometry snap
   rule (#2313, 2026-10-17) takes a weight with no token to the nearest one, so the counts on the
@@ -2027,7 +2032,7 @@ window differ, the window was kept and the difference is recorded here for the m
   because nothing else should name it, is given once with the 14px root size in
   `theme/geometry.css`, the core. The terminal and the editor take their type from their own
   themes and are not covered.
-- **A label's capitals and its `0.06em` spacing have no token**; they are written once, in
+- **A label's capitals and its `0.05em` spacing have no token**; they are written once, in
   `.ui-text-label`.
 
 ### The type guard
@@ -2066,15 +2071,149 @@ One change each, each checked against a screenshot (#1920):
    remaining lines follow);
 3. the Explorer, with the Panel's Repos and Memory halves (moved:
    [below](#the-explorer-and-the-panels-halves-on-the-roles));
-4. the tab strips and the status bar;
-5. Settings;
-6. Notices and dialogs;
-7. Welcome;
+4. the tab strips and the status bar (moved: [below](#the-tab-strips-and-the-status-bar-on-the-roles));
+5. Settings (moved: [below](#settings-on-the-roles));
+6. Notices and dialogs (moved: [below](#notices-and-dialogs-on-the-roles));
+7. Welcome (moved: [below](#the-welcome-on-the-roles));
 8. the view tabs (Todos, Memory, a task's changes, the skills' pages): their `.none` and
    `.pending` sentences wear `ui-text-secondary`, and `.view-body`'s muted goes (#3938).
 
 Along the way the section label gets one spelling (`ui-text-label`, which is `.sidebar-title`'s
-type today), and the two largest size tokens are each read by a role or removed.
+type today), and the two largest size tokens are each read by a role or removed (`lg` is the
+title's; `xl` is read by no word, [above](#where-todays-pixels-and-the-table-disagree)).
+
+### The section label, one spelling
+
+The section label was written in each place that drew one: capitals spaced `0.04em`, `0.05em`
+or `0.06em`, at the medium or the strong weight, in a family's sheet or a view's rule. It is
+written once now, in `ui-text-label` (`0.05em`, strong, 11px), and every label wears it (#1920):
+a tree's, a list's, a menu's and a select's group header; a table's column names; a card's tile
+label; the panel section's title; the title bar switcher's header; Start a chat's labels; a
+session record's and a dispatch's section headings. `type.guard.test.ts` refuses capitals or a
+letter spacing anywhere else.
+
+- **A family keeps its tier.** The label's colour is `text.secondary`; a tree's, a list's and
+  the title bar's group headers keep the quiet tier and a table's column names the muted, by the
+  family's own rule, which outranks the role's colour.
+- **A group named by data is written as its name** (a project, a day): a menu's and a select's
+  wears the secondary instead of the label; a tree's and a list's take the capitals off in the
+  family's `[data-named]` rule. A frame that labels its groups (the Chats list's
+  workspaces, #3484) is the exception, and labels them as any group: the frame's group heads move
+  from the medium weight spaced `0.06em` to the label's strong, spaced `0.05em`.
+
+### The Welcome, on the roles
+
+The Welcome drew its heading and the wordmark at `--font-size-xl` (20px), above the title, and
+its lede, its next steps and its section headings in rules of its own. Now (#1920):
+
+| word                                                                   | role                                | before                    | after                    |
+| ---------------------------------------------------------------------- | ----------------------------------- | ------------------------- | ------------------------ |
+| a door page's heading: "Welcome to purlis", "Add another project", … | `ui-text-title`                     | 20px, strong              | 16px, strong             |
+| the wordmark at the side                                               | `ui-text-title`                     | 20px, strong              | 16px, strong             |
+| the lede under the heading                                             | `ui-text-body`                      | 14px, secondary           | 13px, primary            |
+| a section's heading: "Recent projects", "On this machine", …          | `ui-text-label`                     | 13px, strong, secondary   | 11px, strong, capitals   |
+| a first run's next steps; "Run purlis elsewhere"                       | `ui-text-secondary`                 | 14px or 12px, secondary   | 12px, secondary          |
+| a recent project's path; "purlis will ask about this one"              | `ui-text-meta ui-text-code`; `ui-text-meta` | 11px; 12px muted  | 11px, quiet              |
+
+What it settled:
+
+- **Nothing is above the title.** The Welcome's heading was the one place a page was titled at
+  20px; it is the title every view and dialog wears.
+- **A section of a door page is labelled as any group is**, with the section label, so its
+  headings read as the Explorer's and the Panel's do.
+
+Not moved with it: a door page's sentences (`.welcome-pane .came-back`), which share the
+window-wide `.came-back` with lines in many dialogs and tabs, and move with that class (#6389).
+
+### Notices and dialogs, on the roles
+
+Each family ranked its own words: a dialog's title at the title's size by a rule of its own,
+its subtitle muted, its description in the secondary grey at the dialog's 14px; a Notice's card
+title at the medium weight, and its sub-line muted at 12px under a `ui-text-meta` that the
+family's rule outranked. Now (#1920):
+
+| word                                       | role                              | before                 | after                 |
+| ------------------------------------------ | --------------------------------- | ---------------------- | --------------------- |
+| a dialog's title                           | `ui-text-title`                   | 16px, strong           | the same              |
+| a dialog's subtitle | `ui-text-secondary` | 12px, muted | 12px, muted: the same |
+| a dialog's description | `ui-text-body` | 14px, secondary | 13px, secondary |
+| a dialog's summary, before its answers | `ui-text-secondary` | 12px, quiet | 12px, quiet: the same |
+| a Notice card's title                      | `ui-text-body ui-text-strong`     | 13px, medium           | 13px, strong          |
+| whose a Notice is                          | `ui-text-strong`                  | strong                 | the same              |
+| a Notice row's sub-line                    | `ui-text-meta`                    | 12px, muted            | 11px, quiet           |
+
+What it settled:
+
+- **A dialog's description is what it asks**, so it is the body's size, as an ask's words are.
+- **A dialog's parts keep the dialog's tiers** (the subtitle muted, the description secondary,
+  the summary quiet): the parts manifest measures each on the dialog's fill (`DIALOG_TIERS`,
+  `parts_dialog.rs`) and reads it from `dialog.css`, so the colour stays the family's and the
+  role gives the size and weight, as a tab's does.
+- **A role a family's rule outranked was no role.** The Notice's sub-line wore the meta and was
+  drawn by the family at 12px muted; the family's rule is gone.
+
+Not moved with it, and still on their own tokens: a dialog's own 14px root, which its body's
+other words inherit (the dialog's size in the parts manifest), the generic `h3`, `h4`, `.where`
+and `.value` inside a dialog in `App.css`, and a Notice's message, whose size is its placement's
+(a pane's row, the Inbox, a card).
+
+### Settings, on the roles
+
+Settings ranked its words in rules of its own, on the aligned form of #2919: a page's title at
+`--font-size-xl`, help lines at 11px in one place and 12px in another, in the muted and the quiet
+greys. Now (#1920):
+
+| word                                                                  | role                    | before                          | after                     |
+| --------------------------------------------------------------------- | ----------------------- | ------------------------------- | ------------------------- |
+| a page's title (`.ui-setting-head h2`)                                | `ui-text-title`         | 20px, strong                    | 16px, strong              |
+| a page's blurb                                                        | `ui-text-secondary`     | 14px, muted                     | 12px, secondary           |
+| where a page is kept; its file                                        | `ui-text-secondary`; `ui-text-code` | 12px, quiet; mono, secondary | 12px, secondary; mono |
+| a group's heading on a page; in a dialog                              | `ui-text-heading`       | 14px, strong; 13px              | 14px, strong              |
+| a group's line and a row's help (`.ui-setting-help`, everywhere)      | `ui-text-secondary`     | 12px quiet on a page, 11px muted elsewhere | 12px, secondary |
+| the level's about line                                                | `ui-text-secondary`     | 12px, secondary                 | the same                  |
+| a collection entry's name (`.ui-collection-head h3`)                  | `ui-text-heading`       | 12px, primary                   | 14px, strong              |
+| a collection's "done" line; where a record is; a machine's path       | `ui-text-meta`          | 11px; secondary, quiet, quiet   | 11px, quiet               |
+| "Edit as TOML" over the files' links (`.ui-settings-raw-label`)       | `ui-text-label`         | 11px, muted                     | 11px, strong, capitals    |
+| a host in the hosts table; a key on a row's ⋯ menu                    | `ui-text-code`          | mono                            | the same                  |
+| a row's label (`.ui-setting-label`)                                   | none: the medium weight | 14px, medium                    | the same                  |
+| a refused write, under its row                                        | none: `danger.text`     | 11px                            | the same                  |
+
+What it settled:
+
+- **A help line is the secondary, wherever it is.** The same class drew 12px quiet words on a
+  page and 11px muted ones in a dialog; it is one role now, in both.
+- **A form's label keeps the medium weight** (#2317) and wears no role, since no role is medium.
+  Whether a label should be the body (13px, regular) is open for the operator's ruling.
+- **A page's title is the title.** It was the one user of `--font-size-xl` in Settings.
+
+### The tab strips and the status bar, on the roles
+
+Their words already sat on the scale, each family writing its own size token: a tab's 13px, a
+page tab's count 11px, the status bar's 12px. Now each wears its role, and the family keeps the
+tier its state gives the words (#1920):
+
+| word                                                         | role                                       | before                      | after       |
+| ------------------------------------------------------------ | ------------------------------------------ | --------------------------- | ----------- |
+| a tab's words, on every strip (the tabs family's `tab`)      | `ui-text-body`, in the tab's tier          | 13px; quiet, primary chosen | the same    |
+| a page tab's words (`page-tabs`)                             | `ui-text-body`, in the tab's tier          | 13px; muted, primary chosen | the same    |
+| a page tab's count                                           | `ui-text-meta`                             | 11px, quiet                 | the same    |
+| a status item's words, a cell's and a pill's (`status-item`) | `ui-text-secondary`, in the item's tier    | 12px, primary               | the same    |
+| the status bar itself                                        | `ui-text-secondary`                        | 12px                        | the same    |
+
+What it settled:
+
+- **A family's part wears its role, and its state's tier outranks the role's colour.** The tab
+  and the status item set their colour in a rule of the family (two attributes, so above one
+  class in the same layer), and a theme's parts are a layer above both. A role on the part
+  gives the size and the weight; the family's tier, a tone or a theme gives the colour. That is
+  the Explorer's rule for a tree row's name, on a family's part.
+- **A count on a status item keeps its pill's colour**: the count pill's ground is the control's,
+  and the meta's colour is measured on the window's.
+
+Not moved with it, and still on their own rules: a pane's breadcrumbs and its header's words
+(`.pane-crumbs`, `paneFrame.css`), the title bar's own words (`titlebar.css`), and the editor's
+toolbar over a file, which a chosen file tab joins, and the task a chat's tab names after its
+own (`.tab-task`), muted: a word read after the name with no role of its own (#6389).
 
 ### The Explorer and the Panel's halves, on the roles
 
@@ -2138,7 +2277,7 @@ notes, two of them under 11px. Now:
 | a finished task's name, "Finished (n)", a finished task's note           | `ui-text-secondary`            | 11.9px, primary (the note muted)        | 12px, secondary                |
 | a finished task's report; where it was written                           | `ui-text-body`; `-secondary`   | 11.9px, primary; 11px, muted            | 13px, primary; 12px, secondary |
 | a folded row's task count; "Stopping…"                                   | `ui-text-meta` (the count strong) | 10.5px and 10.7px, regular, muted    | 11px, muted; the count 600     |
-| a workspace's heading over its sessions (the list grouped)               | `ui-text-label`                | 10.1px, regular, muted, spaced `0.04em` | 11px, strong, secondary, `0.06em` |
+| a workspace's heading over its sessions (the list grouped)               | `ui-text-label`                | 10.1px, regular, muted, spaced `0.04em` | 11px, strong, secondary, `0.05em` |
 | a row's card: its name; its sentences and values; a fact's word          | body strong; secondary; meta   | 13px strong; 13px primary; 13px muted   | 13px strong; 12px secondary; 11px muted |
 
 What it settled, for the surfaces that follow:

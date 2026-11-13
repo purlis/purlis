@@ -61,6 +61,7 @@ export function studio(skills: StudioSkill[], over: Partial<Studio> = {}): Studi
     workspace: null,
     persona: null,
     workspaces: ["ops"],
+    personas: [],
     levels: [{ level: { at: "project", local: false }, label: "project" }],
     skills,
     harnesses: [],

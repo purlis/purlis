@@ -261,3 +261,53 @@ export function parseFootprints(text: string, asked: number[]): Footprints {
       said.length > 0 ? said.join("; ") : `footprint printed nothing for pid ${missing.join(", ")}`,
   };
 }
+
+/** What footprint said once the pids it could not read were checked against the living. */
+export interface LivingFootprints extends Footprints {
+  /** Pids asked about that exited before footprint read them: dropped from the reading. */
+  gone: number[];
+  /** Pids asked about that are still alive and footprint did not read: worth asking again. */
+  unread: number[];
+}
+
+/**
+ * Reads footprint's `text` for the pids `asked`, knowing which pids are `alive` in a listing
+ * taken after it ran.
+ *
+ * **A web content process can exit between the `ps` that listed it and the footprint call**:
+ * WebKit ends a prewarmed or swapped one when it likes (main's run 43334827097, where footprint
+ * said `Unable to find pid for process matching '23518'`). Such a pid is `gone` and dropped, not
+ * an error: it holds no memory now. A pid footprint did not read that is still alive is
+ * `unread`, and stays an error in footprint's words, as is a reading with nothing left in it.
+ * A missing reading is never a silent `null`.
+ */
+export function footprintsOfTheLiving(
+  text: string,
+  asked: number[],
+  alive: number[],
+): LivingFootprints {
+  const living = new Set(alive);
+  const read = parseFootprints(text, asked);
+  const missing = asked.filter((pid) => !(pid in read.byPid));
+  const gone = missing.filter((pid) => !living.has(pid));
+  const unread = missing.filter((pid) => living.has(pid));
+  if (unread.length > 0) {
+    return {
+      ...parseFootprints(
+        text,
+        asked.filter((pid) => !gone.includes(pid)),
+      ),
+      gone,
+      unread,
+    };
+  }
+  if (missing.length === asked.length && asked.length > 0) {
+    return {
+      byPid: read.byPid,
+      error: `every web content process asked about exited before footprint read it: pid ${gone.join(", ")}`,
+      gone,
+      unread,
+    };
+  }
+  return { byPid: read.byPid, error: null, gone, unread };
+}

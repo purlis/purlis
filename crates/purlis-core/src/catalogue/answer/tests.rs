@@ -46,8 +46,17 @@ fn tool(root: &Path, name: &str, args: Value) -> String {
     .unwrap_or_else(|why| panic!("{name}: {why}"))
 }
 
+/// No forge: a test of a query that reads the plane never reaches one.
+fn no_forge(_: &crate::forge::pr::Repo) -> Box<dyn crate::forge::ForgeBackend> {
+    panic!("a query of the plane asked a forge")
+}
+
 fn answered(root: &Path, name: &str, args: Value) -> Answer {
-    ask(root, "alpha", query(name), &args, at(), now())
+    let forge = crate::catalogue::milestones::Reach {
+        caller: crate::forge::Caller::window().background(),
+        backend_of: &no_forge,
+    };
+    ask(root, "alpha", query(name), &args, &forge, at(), now())
 }
 
 fn data(root: &Path, name: &str, args: Value) -> Value {
@@ -239,8 +248,64 @@ fn every_query_answers_data_of_its_own_shape_in_an_empty_workspace() {
     for query in CATALOGUE.iter() {
         let args = match query.name {
             "session_record_read" => json!({ "file": "20261109-120000-x.md" }),
+            // A workspace with no repo has none to read milestones of: its own test below.
+            crate::catalogue::milestones::NAME => continue,
+            // The app answers it, from its own record of its chats (#6235).
+            "chats" => continue,
             _ => json!({}),
         };
         data(p.path(), query.name, args);
     }
+}
+
+#[test]
+fn forge_milestones_in_a_workspace_with_no_repo_is_refused_with_a_sentence_and_no_forge() {
+    let p = project();
+    let answer = answered(p.path(), crate::catalogue::milestones::NAME, json!({}));
+    assert_eq!(answer.outcome, Err(ErrorKind::Refused));
+    assert_eq!(
+        answer.to_json()["error"]["message"],
+        "This workspace has no repo yet, so it has no milestones to show."
+    );
+}
+
+#[test]
+fn the_chats_are_the_app_s_to_answer_and_the_plane_alone_answers_failed() {
+    let p = project();
+    assert_eq!(
+        answered(p.path(), "chats", json!({})).outcome,
+        Err(ErrorKind::Failed)
+    );
+    assert_eq!(
+        answered(p.path(), "chats", json!({ "history": "yes" })).outcome,
+        Err(ErrorKind::Refused),
+        "its parameters are checked before anything is asked"
+    );
+}
+
+#[test]
+fn the_chats_answer_is_of_its_own_shape() {
+    use crate::catalogue::chats;
+    let open = [chats::Chat {
+        id: "01KA00000000000000000000A0".into(),
+        name: "a chat".into(),
+        persona: None,
+        harness: None,
+        workspace: Some("alpha".into()),
+        parent: Some(chats::Parent {
+            id: "chat-3".into(),
+            relation: chats::Relation::HandedOffFrom,
+            workspace: Some("alpha".into()),
+        }),
+        facts: chats::Facts::default(),
+        started: Some(1_762_862_400),
+        last_activity: None,
+        session_record: Some("20261111-120000-x.md".into()),
+    }];
+    let asked = chats::Asked {
+        history: false,
+        limit: chats::HISTORY_DEFAULT,
+    };
+    let data = chats::answer(&open, &[], "alpha", asked);
+    fits(&(query("chats").result)(), &data, "chats");
 }

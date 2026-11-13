@@ -203,7 +203,7 @@ export function NoticeSaid({
 /** **A card's title** (#3344): what happened, before its one sentence. */
 export function NoticeTitle({ children }: { children: ReactNode }) {
   return (
-    <strong data-scope="notice" data-part="title">
+    <strong data-scope="notice" data-part="title" className="ui-text-body ui-text-strong">
       {children}
     </strong>
   );
@@ -212,7 +212,7 @@ export function NoticeTitle({ children }: { children: ReactNode }) {
 /** **Whose it is**, for a chat that is not on screen: the first words of what it says. */
 export function NoticeWhose({ children }: { children: ReactNode }) {
   return (
-    <strong data-scope="notice" data-part="whose">
+    <strong data-scope="notice" data-part="whose" className="ui-text-strong">
       {children}
     </strong>
   );

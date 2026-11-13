@@ -465,8 +465,9 @@ fn the_guard_counts_calls_and_so_fails_on_a_second_one() {
 
 /// **Who asks a forge as the window with nobody waiting** (ADR 0070 §5, amended
 /// 2026-10-14): the app's look at a save's request, and the refresh of a workspace's
-/// request states when the person brings it forward. Every other call that runs with
-/// nobody at the keyboard is a trigger's. A third use fails this, and is a ruling first.
+/// request states when the person brings it forward; and a page's forge query (#6233, the
+/// operator's ruling of 2026-11-11, ADR 0122 as amended that day). Every other call that runs
+/// with nobody at the keyboard is a trigger's. A fourth use fails this, and is a ruling first.
 #[test]
 fn only_the_look_and_the_refresh_on_coming_forward_ask_as_the_window_with_nobody_waiting() {
     let unattended = concat!("Caller::window()", ".background()");
@@ -488,6 +489,7 @@ fn only_the_look_and_the_refresh_on_coming_forward_ask_as_the_window_with_nobody
     assert_eq!(
         uses,
         [
+            "app/src-tauri/src/artifacts/calls.rs",
             "app/src-tauri/src/panels.rs",
             "crates/purlis-core/src/planegit.rs"
         ]

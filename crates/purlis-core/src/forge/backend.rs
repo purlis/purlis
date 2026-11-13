@@ -613,6 +613,42 @@ pub trait WorkItems {
         number: u64,
         body: &str,
     ) -> Result<String, ForgeError>;
+
+    /// The milestones of the repo at `path`, as `caller`, each with how many of its issues are
+    /// open and closed: the open ones, or with `all` the closed ones too, in the forge's own
+    /// order. A page's `purlis.forge_milestones` (#6233). Strict. A forge purlis does not read
+    /// them from yet answers that it cannot.
+    fn milestone_progress(
+        &self,
+        _caller: &Caller,
+        path: &str,
+        _all: bool,
+    ) -> Result<Vec<MilestoneProgress>, ForgeError> {
+        // GitLab's milestones are read by #6476; until then it answers this.
+        Err(ForgeError::new(format!(
+            "purlis does not read the milestones of {path} on this forge yet"
+        )))
+    }
+}
+
+/// One milestone and its progress, in the forge's own words: what `purlis.forge_milestones`
+/// answers a page (#6233).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MilestoneProgress {
+    pub number: u64,
+    pub title: String,
+    /// Its description, empty when it has none.
+    pub description: String,
+    /// When it is due, as the forge wrote it (RFC 3339), or none.
+    pub due_on: Option<String>,
+    /// `open` or `closed`.
+    pub state: String,
+    pub open_issues: u64,
+    pub closed_issues: u64,
+    /// Its page.
+    pub url: String,
+    /// When it last changed, as the forge wrote it (RFC 3339).
+    pub updated_at: String,
 }
 
 /// A new issue, in the neutral model.

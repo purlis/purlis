@@ -72,6 +72,13 @@ export const SETTINGS_GROUPS: Readonly<
     { id: "project.harness", label: "Harness & profiles" },
     // Behind the Skill studio's flag (#4610): offered only while it is on.
     { id: "project.skills", label: "Skills" },
+    // Behind the same flag (#6031).
+    {
+      id: "project.skill-sources",
+      label: "Skill sources",
+      also: ["skill policy", "skill_policy", "allow list", "block list", "minimum age"],
+    },
+    { id: "project.skill-acts", label: "Recorded skill acts", also: ["skill audit", "audit"] },
     { id: "project.sandbox", label: "Sandbox" },
     { id: "project.sandbox.mine", label: "Your hosts" },
     { id: "project.sandbox.yours", label: "Your level" },

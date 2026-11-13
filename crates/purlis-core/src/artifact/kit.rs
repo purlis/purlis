@@ -62,10 +62,10 @@ declare namespace PurlisPage {{
   /** Why an answer has no data. */
   type ErrorKind = {kinds};
 
-  /** Every answer: its data or why there is none, when it was answered, and where its next page starts. */
+  /** Every answer: its data or why there is none (with a sentence for the reader, where purlis has one), when it was answered, and where its next page starts. */
   type Envelope<T> =
     | {{ data: T; at: string; cursor?: string; error?: never }}
-    | {{ error: {{ kind: ErrorKind }}; at: string; data?: never; cursor?: never }};
+    | {{ error: {{ kind: ErrorKind; message?: string }}; at: string; data?: never; cursor?: never }};
 
   /** What the port answers an ask with: its envelope and the ask's `id`, or `null` for an ask that was no ask. */
   type Answer<T = unknown> = Envelope<T> & {{ id: number | null }};
@@ -114,7 +114,7 @@ declare namespace PurlisPage {{
   }}
 
   /** One query's fixture: its envelope without `at`, which the mock answers with the time it answers. */
-  type Fixture<T> = {{ data: T; cursor?: string }} | {{ error: {{ kind: ErrorKind }} }};
+  type Fixture<T> = {{ data: T; cursor?: string }} | {{ error: {{ kind: ErrorKind; message?: string }} }};
 
   /** What the mock answers from, in {FIXTURES_FILE} beside the page. A data file with no fixture is fetched from the page's folder. */
   interface Fixtures {{

@@ -551,6 +551,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // answers the question before it is asked.
     "allow_project_expects",
     "decline_project_expects",
+    // Not now on a persona's Allow (ADR 0121, amended 2026-11-12): the person's answer to it,
+    // as its Allow is, so no chat puts the question away before it is seen.
+    "persona_allow_not_now",
     // The person's answer to the project's sandbox off (#2071, SO-8): theirs alone, so no chat
     // turns its own sandbox off through a link.
     "answer_team_sandbox_off",
@@ -813,6 +816,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     // project, the person's own press in their window. A chat's change is a draft (SK-9).
     "skill_new",
     "skill_save",
+    // Write skills:<name> on a hint's row of a skill's tab (#5874): one save of its SKILL.md.
+    "skill_hint_write",
     "skill_rename",
     "skill_copy",
     "skill_move",
@@ -931,6 +936,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_install_widenings",
     "skill_install",
     "skill_updates",
+    // An org's skill controls and the skill acts this machine recorded (#6031): read only, the
+    // person's window alone, as the rest of the studio is.
+    "skill_policy",
+    "skill_acts",
     "skill_update_review",
     "skill_update",
     // Extension skill sources (#3092, #3089): each asks an extension the person approved, and an
@@ -978,6 +987,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_choose_remote_docker",
     "pool_setup_machine",
     "pool_setup_ssh_hosts",
+    "pool_setup_podman_connections",
     "pool_setup_connect",
     "pool_setup_trust",
     "pool_setup_name",
@@ -1219,6 +1229,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // served to anything else.
     "chat_by_number",
     "chat_screen",
+    // Whether this machine keeps tasks' screens, and turning it off, which deletes them (#6306):
+    // Settings' row alone. A chat never reads how many are kept nor deletes them.
+    "task_screens",
+    "set_task_screens",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on

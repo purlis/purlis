@@ -1,6 +1,6 @@
 ---
 name: purlis-secrets
-description: When a task needs a purlis vault's credential — a password, token or key — use it without its value entering the chat. Use when a command needs a secret, or to store one. Not for a site login (purlis-browser), a persona (purlis-persona), a repo (purlis-repo-work), a new chat (purlis-handoff) or memory (purlis-tidy-memory).
+description: When a task needs a purlis vault's credential — a password, token or key — use it without its value in the chat. Use when a command needs a secret, or to store one. Not for a site login (purlis-browser), a persona (purlis-persona), a repo (purlis-repo-work), a new chat (purlis-handoff) or memory (purlis-tidy-memory).
 ---
 
 # Using a purlis vault
