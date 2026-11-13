@@ -123,6 +123,7 @@ export function ChatLogTab({
           <EmptyState
             headline="No block rows to show"
             body={
+              // Block rows themselves come with T1-29 (#6420); until it lands, the filter can only count.
               blocks === undefined
                 ? "Nothing was blocked in this chat on this machine."
                 : "This version counts this chat's blocks and does not list them yet."
