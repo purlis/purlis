@@ -181,8 +181,9 @@ impl Aim {
 
 /// **Whether `block` is proof toward the block loop** (Q235, Q237): a guard's, the sandbox's, a
 /// policy's or a project's, reported plainly. Never the harness's own check (R-208), never a
-/// report that is qualified (R-209).
-fn counts(block: &Block) -> bool {
+/// report that is qualified (R-209). The turn's finish row counts by it too
+/// ([`crate::eventlog::finishes`]).
+pub(crate) fn counts(block: &Block) -> bool {
     block.qualifier.is_none()
         && match block.source {
             Source::Guard | Source::Sandbox | Source::Policy | Source::ProjectSetting => true,

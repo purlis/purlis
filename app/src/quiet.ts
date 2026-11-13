@@ -10,8 +10,9 @@
  * schedule. While Quiet the ✋ still counts and nothing else in the window changes.
  *
  * **When Quiet ends, one summary heads Asks** ({@link QuietSummaryOf}): "While you were quiet:
- * 3 asks, 2 finished, 1 failed, 1 stopped after a block" (R-182), each part a link, until all of it has been seen (#6002). The
- * core says what came in while it held (`Ended`); the updates of the same span are counted here.
+ * 3 asks, 2 finished, 1 failed, 1 stopped after a block" (R-182), each part a link, until all
+ * of it has been seen (#6002). The core says what came in while it held (`Ended`); the updates
+ * of the same span are counted here.
  *
  * Not a "focus mode": that name is #2921's, the window with its rail and bars put away.
  */

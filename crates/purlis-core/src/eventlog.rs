@@ -44,8 +44,8 @@ use crate::state::run::{Cause, RunState};
 
 pub mod browsing;
 pub mod chatlog;
-pub mod finishes;
 mod entry;
+pub mod finishes;
 pub mod questions;
 pub mod reasons;
 pub mod secretasks;

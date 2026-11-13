@@ -11,30 +11,40 @@
 //! ([`crate::state::Event::word`]), so this reads every harness that reports them alike.
 //!
 //! **Unresolved, decided at the turn's end** (R-178, B2): a block that is proof, as the block
-//! loop takes one ([`crate::looping`]: a guard's, the sandbox's, a policy's or a project's,
-//! reported plainly), with **no later call on the same target that came back** (a
-//! `hook.PostToolUse` of the same tool and the same keyed digest of its arguments; a failed
-//! retry is none) **and no Allow** of any of the chat's asks after it in the turn. Counted **one
-//! a target** (R-179): two blocks of one call are one. A block of an earlier turn is never this
-//! turn's.
+//! loop takes one (`crate::looping::counts`: a guard's, the sandbox's, a policy's or a
+//! project's, reported plainly), with **no later call on the same target that came back** (an
+//! event of the same tool and the same keyed digest of its arguments, under any of the
+//! recorder's post-tool words, `hook.posttooluse*`; a failed retry, `hook.posttoolusefailure*`,
+//! is none) **and, for a sandbox block, no Allow of a sandbox ask** after it in the turn (Q263).
+//! An Allow of another kind of ask resolves nothing. Counted **one a target** (R-179): two
+//! blocks of one call are one. A block of an earlier turn is never this turn's.
 //!
 //! **Accepted limits:** a block that names no arguments (a held connection no call was heard
-//! for) is resolved only by an Allow; a tool no post-tool hook names (Grep, say) is never heard
-//! to come back, so a block of it stays unresolved unless allowed. Both err toward saying a
-//! block stopped the turn. Nothing is kept: the finishes are read from the log each time.
+//! for) is resolved only by a sandbox ask's Allow; a tool no post-tool hook names (Grep, say) is
+//! never heard to come back, so a block of it stays unresolved unless allowed. Both err toward
+//! saying a block stopped the turn. **A turn that never ends** (no `hook.stop`, or a
+//! `hook.stopfailure`) gets no finish, and its blocks are seen in the Chat log only (Q263).
+//! Nothing is kept: the finishes are read from the log each time.
 
 use std::io;
 use std::path::Path;
 
-use super::Event;
-use super::stops::{self, Answer, AskAnswered, Block, Source, TARGET_CHARS, Target};
+use super::stops::{self, Answer, AskAnswered, AskGroup, Block, Source, TARGET_CHARS, Target};
+use super::{Event, Phase};
 
 /// The kind a turn's prompt is recorded under.
 const PROMPT: &str = "hook.userpromptsubmit";
 /// The kind a turn's end is recorded under.
 const TURN_ENDED: &str = "hook.stop";
-/// The kind a call that came back is recorded under.
-const CAME_BACK: &str = "hook.PostToolUse";
+/// The start of a failed call's post-tool words, which are no call that came back.
+const FAILED: &str = "posttoolusefailure";
+
+/// **Whether an event of `kind` is a call that came back**: one of the recorder's post-tool
+/// kinds, `hook.` and a post-tool word it answers ([`super::phase`]), and not a failed call's.
+fn came_back(kind: &str) -> bool {
+    kind.strip_prefix("hook.")
+        .is_some_and(|word| super::phase(word) == Some(Phase::Post) && !word.starts_with(FAILED))
+}
 
 /// How a finish ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,16 +70,17 @@ pub struct Finish {
 }
 
 /// What a block was aimed at: its tool, its arguments' keyed digest, and its target where it
-/// names no digest.
+/// names no digest; and who blocked it, since only a sandbox block is resolved by an Allow.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Aim {
+    source: Source,
     tool: String,
     args: Option<String>,
     target: Option<Target>,
 }
 
 /// **The blocks of the turn so far**, each with its aim, as they stand: a later success on its
-/// aim, or any Allow, takes it out.
+/// aim, or, for a sandbox block, a sandbox ask's Allow, takes it out.
 #[derive(Debug, Default)]
 struct Turn {
     unresolved: Vec<Aim>,
@@ -79,6 +90,7 @@ impl Turn {
     fn blocked(&mut self, block: Block) {
         let target = block.target.filter(|_| block.args.is_none());
         let aim = Aim {
+            source: block.source,
             tool: block.tool,
             args: block.args,
             target,
@@ -93,23 +105,14 @@ impl Turn {
             .retain(|aim| !(aim.tool == tool && aim.args.as_deref() == Some(args)));
     }
 
-    fn allowed(&mut self) {
-        self.unresolved.clear();
+    /// A sandbox ask was allowed: every sandbox block of the turn is resolved, and no other.
+    fn sandbox_allowed(&mut self) {
+        self.unresolved.retain(|aim| aim.source != Source::Sandbox);
     }
 
     fn count(&self) -> u32 {
         u32::try_from(self.unresolved.len()).unwrap_or(u32::MAX)
     }
-}
-
-/// **Whether `block` is proof**: the loop rule's own test (Q235, Q237), so a block the sidebar
-/// would not count never stops a turn either.
-fn counts(block: &Block) -> bool {
-    block.qualifier.is_none()
-        && match block.source {
-            Source::Guard | Source::Sandbox | Source::Policy | Source::ProjectSetting => true,
-            Source::HarnessCheck => false,
-        }
 }
 
 /// **The finishes of chat `chat` among `events`**, oldest first, each with its turn's
@@ -144,21 +147,23 @@ pub fn finishes(events: &[Event], chat: &str) -> Vec<Finish> {
             }
             stops::BLOCK => {
                 if let Ok(block) = serde_json::from_value::<Block>(event.body.clone())
-                    && counts(&block)
+                    // The loop rule's own test (Q235, Q237): a block the sidebar would not
+                    // count never stops a turn either.
+                    && crate::looping::counts(&block)
                 {
                     turn.blocked(block);
                 }
             }
             stops::ASK_ANSWERED => {
                 if let Ok(AskAnswered {
+                    ask: AskGroup::Sandbox,
                     answer: Answer::Allowed,
-                    ..
                 }) = serde_json::from_value(event.body.clone())
                 {
-                    turn.allowed();
+                    turn.sandbox_allowed();
                 }
             }
-            CAME_BACK => {
+            kind if came_back(kind) => {
                 let word = |field: &str| event.body.get(field).and_then(serde_json::Value::as_str);
                 if let (Some(tool), Some(args)) = (word("tool"), word("args")) {
                     // As a block writes its tool: one short line (`stops::line_tool`).

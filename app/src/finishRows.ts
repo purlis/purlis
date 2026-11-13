@@ -120,6 +120,10 @@ const NONE: readonly FinishedTurn[] = [];
  * listens to the chats outside React**, so a move redraws nothing here (`MovedRenders`): only
  * an answer that differs from the last one does. An answer for another project, or one that is
  * no list (an older build), is none.
+ *
+ * **Only the newest answer is kept** (Q263): each read is numbered, and one that answers after
+ * a later read has answered is dropped. **A read that failed is asked again on the next move**,
+ * whatever moved.
  */
 export function useFinishedTurns(plane: PlaneId, chats: Chats): readonly FinishedTurn[] {
   const { store } = chats;
@@ -128,22 +132,35 @@ export function useFinishedTurns(plane: PlaneId, chats: Chats): readonly Finishe
     let live = true;
     let asked: string | undefined;
     let said = "";
+    /** The number of the last read sent, and of the newest one that has answered. */
+    let sent = 0;
+    let answered = 0;
     const ask = () => {
       const ends = endsOf(store.statesFor(chats.plane));
       if (ends === asked) return;
       asked = ends;
       const sessions = ends === "" ? [] : ends.split(",").map((one) => Number(one.split(":")[0]));
       if (sessions.length === 0) return;
+      const read = ++sent;
+      const failed = () => {
+        // Asked again on the next move, unless a later read has been sent since.
+        if (read === sent) asked = undefined;
+      };
       void commands
         .finishedTurns(plane, sessions)
         .then((answer) => {
-          if (!live || answer.status !== "ok" || !Array.isArray(answer.data)) return;
+          if (!live || read < answered) return;
+          if (answer.status !== "ok" || !Array.isArray(answer.data)) {
+            failed();
+            return;
+          }
+          answered = read;
           const now = JSON.stringify(answer.data);
           if (now === said) return;
           said = now;
           setHeld({ plane, turns: answer.data });
         })
-        .catch(() => undefined);
+        .catch(failed);
     };
     ask();
     const stop = store.subscribe(ask);
