@@ -2213,9 +2213,20 @@ pub fn latest_for(root: &Path, chat: &ChatRef) -> Option<Record> {
 /// store at all is nothing counted.
 pub fn tally(root: &Path) -> io::Result<std::collections::BTreeMap<String, u64>> {
     let mut counts = std::collections::BTreeMap::new();
+    each_kept(root, |record| {
+        if let Some(persona) = record.persona {
+            *counts.entry(persona).or_default() += 1;
+        }
+    })?;
+    Ok(counts)
+}
+
+/// Every record the store keeps, each read once, for [`tally`] and [`dispatched_into`]: an
+/// error where the store is there and cannot be read, and nothing where there is no store.
+fn each_kept(root: &Path, mut each: impl FnMut(Record)) -> io::Result<()> {
     let entries = match std::fs::read_dir(dir(root)) {
         Ok(entries) => entries,
-        Err(none) if none.kind() == io::ErrorKind::NotFound => return Ok(counts),
+        Err(none) if none.kind() == io::ErrorKind::NotFound => return Ok(()),
         Err(why) => return Err(why),
     };
     for entry in entries {
@@ -2223,11 +2234,32 @@ pub fn tally(root: &Path) -> io::Result<std::collections::BTreeMap<String, u64>>
         let Some(id) = name.to_str().and_then(|name| name.strip_suffix(".json")) else {
             continue;
         };
-        if let Some(persona) = read(root, id).and_then(|record| record.persona) {
-            *counts.entry(persona).or_default() += 1;
+        if let Some(record) = read(root, id) {
+            each(record);
         }
     }
-    Ok(counts)
+    Ok(())
+}
+
+/// **Where each persona was dispatched**: of every record this machine keeps that names a
+/// persona and a workspace, how many went into each workspace, by persona and then workspace
+/// (#2935). The Skill studio's picker offers a persona in a workspace only where it was
+/// dispatched. A dispatch at the project's root names no workspace and is not counted. An
+/// error where the store is there and cannot be read, as [`tally`] says.
+pub fn dispatched_into(
+    root: &Path,
+) -> io::Result<std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>> {
+    let mut into = std::collections::BTreeMap::<_, std::collections::BTreeMap<_, u64>>::new();
+    each_kept(root, |record| {
+        if let (Some(persona), Some(workspace)) = (record.persona, record.place.workspace) {
+            *into
+                .entry(persona)
+                .or_default()
+                .entry(workspace)
+                .or_default() += 1;
+        }
+    })?;
+    Ok(into)
 }
 
 /// The dispatches listed on the session record at `path`: the ones its chat asked for, of

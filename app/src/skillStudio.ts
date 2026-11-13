@@ -37,8 +37,10 @@ export type StudioAt = "root" | "workspace" | "persona";
 /** **Whose chats the studio shows**: `name` is the workspace's or the persona's, empty at the root.
  *  `where`, in a workspace, is the clone the chat it previews starts in (#4227), whose repo
  *  skills count against its budget too; left out for a chat at the workspace's root. It is no
- *  part of the scope's key ({@link scopeKey}): the studio's one read covers every place. */
-export type StudioScope = { at: StudioAt; name: string; where?: string };
+ *  part of the scope's key ({@link scopeKey}): the studio's one read covers every place.
+ *  `into`, for a persona, is the workspace it was dispatched into (#2935): its chats there, as
+ *  a dispatched chat sees them; left out for the persona at the project's root. */
+export type StudioScope = { at: StudioAt; name: string; where?: string; into?: string };
 
 /**
  * **Each kind of scope, in one place**: the prefix of its view key (and so of the studio's
@@ -63,6 +65,10 @@ const SCOPES: Record<
   },
 };
 
+/** What comes between a persona's name and the workspace it was dispatched into, in a scope's
+ *  key and in its words: no plain name holds it. */
+const INTO_KEY = "/";
+
 /** A chat at the project's root. */
 export const AT_THE_ROOT: StudioScope = { at: "root", name: "" };
 
@@ -76,38 +82,60 @@ export function asPersona(persona: string): StudioScope {
   return { at: "persona", name: persona };
 }
 
+/** **A chat as `persona` in `workspace`** (#2935): one the persona was dispatched into, as a
+ *  chat dispatched there sees its skills, the workspace's and the persona's both. */
+export function asPersonaIn(persona: string, workspace: string | undefined): StudioScope {
+  return workspace === undefined ? asPersona(persona) : { ...asPersona(persona), into: workspace };
+}
+
 /** The workspace and the persona a scope names, as the core takes them: `null` for none. */
 export function whoseChats(scope: StudioScope): {
   workspace: string | null;
   persona: string | null;
 } {
   return {
-    workspace: scope.at === "workspace" ? scope.name : null,
+    workspace: scope.at === "workspace" ? scope.name : (scope.into ?? null),
     persona: scope.at === "persona" ? scope.name : null,
   };
 }
 
+/** The persona's name, then the workspace it was dispatched into where it names one. */
+function namedInto(scope: StudioScope): string {
+  return scope.into === undefined ? scope.name : `${scope.name}${INTO_KEY}${scope.into}`;
+}
+
 /** What the studio's view is keyed by for `scope`: the one encoding of a scope. */
 export function scopeKey(scope: StudioScope): string {
-  return `${SCOPES[scope.at].prefix}${scope.name}`;
+  return `${SCOPES[scope.at].prefix}${scope.at === "persona" ? namedInto(scope) : scope.name}`;
 }
 
 /** The scope a studio view's key names. */
 export function scopeOfKey(key: string): StudioScope {
   if (key === "") return AT_THE_ROOT;
   const persona = SCOPES.persona.prefix;
-  return key.startsWith(persona) ? asPersona(key.slice(persona.length)) : inWorkspace(key);
+  if (!key.startsWith(persona)) return inWorkspace(key);
+  const [name = "", into] = key.slice(persona.length).split(INTO_KEY);
+  return asPersonaIn(name, into || undefined);
 }
 
-/** Two scopes are one: whose chats, and where the chat previewed starts. */
+/** Two scopes are one: whose chats, where the chat previewed starts, and where a persona's was
+ *  dispatched. */
 export function sameScope(one: StudioScope, other: StudioScope): boolean {
-  return one.at === other.at && one.name === other.name && one.where === other.where;
+  return (
+    one.at === other.at &&
+    one.name === other.name &&
+    one.where === other.where &&
+    one.into === other.into
+  );
 }
 
 /** **`scope`, its chat started in `where`** (#4227): a clone of its workspace, or `undefined`
- *  for the workspace's root. */
+ *  for the workspace's root. A persona's keeps the workspace it was dispatched into. */
 export function startedIn(scope: StudioScope, where: string | undefined): StudioScope {
-  const whose: StudioScope = { at: scope.at, name: scope.name };
+  const whose: StudioScope =
+    scope.into === undefined
+      ? { at: scope.at, name: scope.name }
+      : { at: scope.at, name: scope.name, into: scope.into };
   return where === undefined || scope.at !== "workspace" ? whose : { ...whose, where };
 }
 
@@ -383,7 +411,10 @@ function placeOfTarget(key: string): (StudioPlace & { newTab?: boolean }) | unde
     const grading = gradingOf(read.grading);
     return {
       page,
-      scope: { at: scope.at, name: String(scope.name ?? "") },
+      scope:
+        scope.at === "persona" && typeof scope.into === "string" && scope.into !== ""
+          ? asPersonaIn(String(scope.name ?? ""), scope.into)
+          : { at: scope.at, name: String(scope.name ?? "") },
       ...(typeof read.skill === "string" ? { skill: read.skill } : {}),
       ...(tab === undefined ? {} : { tab }),
       ...(typeof read.run === "string" ? { run: read.run } : {}),
@@ -483,12 +514,17 @@ export function studioHistoryOf(plane: string, view: ViewRef): string {
 /** The studio on `scope`'s chats, as a sentence names it (`Skill studio · ops`). Its tab is
  *  called {@link SKILL_STUDIO_TITLE} whatever scope it shows, as there is one per project. */
 export function skillStudioTitle(scope: StudioScope): string {
-  return SCOPES[scope.at].title(scope.name);
+  return `${SCOPES[scope.at].title(scope.name)}${inTheWorkspace(scope)}`;
 }
 
-/** Whose chat `scope` is, as the studio's picker names it. */
+/** Whose chat `scope` is, as the studio's picker names it: `A chat as steward in smart-ide`. */
 export function scopeChat(scope: StudioScope): string {
-  return SCOPES[scope.at].chat(scope.name);
+  return `${SCOPES[scope.at].chat(scope.name)}${inTheWorkspace(scope)}`;
+}
+
+/** ` in <workspace>` for a persona dispatched into one, else nothing. */
+function inTheWorkspace(scope: StudioScope): string {
+  return scope.at === "persona" && scope.into !== undefined ? ` in ${scope.into}` : "";
 }
 
 /** The catalogue row that opens the studio on a scope's chats, before the scope's key (#2767): the

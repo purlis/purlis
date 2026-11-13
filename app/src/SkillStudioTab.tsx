@@ -1238,12 +1238,12 @@ export function SkillStudioTab({
       whose={[
         AT_THE_ROOT,
         ...(studio?.workspaces ?? []).map(inWorkspace),
-        // The scope shown is always among them, while its skills are still being read too.
-        ...(scope.at === "persona" ||
-        (scope.at === "workspace" && !(studio?.workspaces ?? []).includes(scope.name))
+        // The workspace shown is always among them, while its skills are still being read too.
+        ...(scope.at === "workspace" && !(studio?.workspaces ?? []).includes(scope.name)
           ? [startedIn(scope, undefined)]
           : []),
       ]}
+      personas={studio?.personas ?? []}
       places={studio?.places ?? []}
       onScope={(next) => go({ page, scope: next })}
     />
@@ -2186,7 +2186,7 @@ export function SkillStudioTab({
     const chats = router?.chats ?? [];
     const chat = routedChat;
     const by: SkillPinner | null = pinnerOf(scope);
-    const budgetWorkspace = scope.at === "workspace" ? scope.name : null;
+    const budgetWorkspace = workspace;
     list = pageList(
       "When a chat's list of skills is over its budget, a router decides which it sees. The router is asked at a chat's start.",
       held(() =>

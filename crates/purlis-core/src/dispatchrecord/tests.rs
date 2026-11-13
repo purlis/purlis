@@ -1322,6 +1322,55 @@ fn the_tally_counts_every_dispatch_a_persona_was_given_running_or_ended() {
     );
 }
 
+#[test]
+fn where_each_persona_was_dispatched_counts_its_dispatches_by_workspace_and_never_the_root() {
+    let (_d, root) = project();
+    // No store yet: no persona was dispatched anywhere, and that is an answer.
+    assert!(dispatched_into(&root).unwrap().is_empty());
+
+    let to = |persona: Option<&str>, workspace: Option<&str>| Opening {
+        persona: persona.map(str::to_owned),
+        place: Place {
+            workspace: workspace.map(str::to_owned),
+            ..Place::default()
+        },
+        ..a_handoff()
+    };
+    let mut second = 0;
+    let mut open_one = |persona, workspace| {
+        second += 1;
+        open(
+            &root,
+            to(persona, workspace),
+            at(&format!("2026-10-07T12:00:{second:02}Z")),
+        )
+        .unwrap();
+    };
+    open_one(Some("steward"), Some("smart-ide"));
+    open_one(Some("steward"), Some("smart-ide"));
+    open_one(Some("steward"), Some("billing"));
+    // At the project's root: no workspace to look at it in.
+    open_one(Some("steward"), None);
+    open_one(Some("qa"), Some("billing"));
+    // A chat started as no persona is nobody's.
+    open_one(None, Some("smart-ide"));
+
+    let into = dispatched_into(&root).unwrap();
+
+    assert_eq!(
+        into.into_iter()
+            .map(|(persona, places)| (persona, places.into_iter().collect::<Vec<_>>()))
+            .collect::<Vec<_>>(),
+        [
+            ("qa".to_owned(), vec![("billing".to_owned(), 1)]),
+            (
+                "steward".to_owned(),
+                vec![("billing".to_owned(), 1), ("smart-ide".to_owned(), 2)]
+            ),
+        ]
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn a_store_that_cannot_be_read_is_an_error_and_never_a_count_of_nothing() {
