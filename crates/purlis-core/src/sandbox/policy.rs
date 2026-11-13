@@ -475,6 +475,13 @@ impl Locks {
         self.no_opt_out || self.team_never
     }
 
+    /// Whether an administrator's policy, and not the project's own `policy = "never"`,
+    /// forbids starting a chat without the sandbox: the tier that holds the level
+    /// ([`super::protection::Tier::Policy`]).
+    pub fn policy_forbids_opt_out(&self) -> bool {
+        self.no_opt_out
+    }
+
     /// **The most each dispatch limit may be** (#1440): a ceiling over the project's, a
     /// workspace's, a persona's and your own. A limit it does not name is not capped.
     pub fn dispatch_ceiling(&self) -> &crate::dispatchlimits::Level {

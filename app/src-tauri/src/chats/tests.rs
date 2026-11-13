@@ -12085,3 +12085,37 @@ fn a_timed_out_hold_is_written_to_the_event_log_as_one_sandbox_block() {
         "one stop.block, from the sandbox"
     );
 }
+
+/// R-227, Q238: a chat the window starts records, in its run's start, the protection this start
+/// resolved: the project's sandbox where its file turns it on, and purlis's default floor where
+/// it does not, never the project's.
+#[test]
+fn a_chat_the_window_starts_records_the_tier_of_the_sandbox_it_resolved() {
+    for (manifest, level, tier) in [
+        ("[sandbox]\nmode = \"on\"\n", "on", "project"),
+        ("", "floor", "purlis"),
+    ] {
+        let plane = tempfile::tempdir().expect("a plane");
+        std::fs::write(plane.path().join(purlis_core::plane::MANIFEST), manifest)
+            .expect("charter.toml");
+        let chats = restartable_chats_of(plane.path(), Pretend::default());
+        let protection: std::sync::Arc<Mutex<Vec<serde_json::Value>>> = std::sync::Arc::default();
+        let told = std::sync::Arc::clone(&protection);
+        chats.when_a_run_begins(Box::new(move |_, _, _, attributes, _| {
+            lock(&told).push(serde_json::to_value(&attributes.protection).expect("json"));
+        }));
+
+        let session = chats
+            .start(&a_chat_in_with(plane.path(), None), SIZE)
+            .expect("starts");
+
+        let protection = lock(&protection).clone();
+        assert_eq!(protection.len(), 1, "{manifest:?}: one run began");
+        assert_eq!(
+            protection[0]["layers"],
+            serde_json::json!([{"layer": "sandbox", "level": level, "tier": tier}]),
+            "{manifest:?}"
+        );
+        chats.close(session).expect("ends");
+    }
+}
