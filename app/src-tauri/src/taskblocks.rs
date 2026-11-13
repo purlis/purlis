@@ -453,7 +453,7 @@ impl Blocks {
         true
     }
 
-    fn since(&self) -> std::sync::MutexGuard<'_, HashMap<u32, Vec<(HeldBlock, u64)>>> {
+    fn since(&self) -> std::sync::MutexGuard<'_, HashMap<u32, Vec<(HeldBlock, u64, Refused)>>> {
         self.since.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
