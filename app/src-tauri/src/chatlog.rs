@@ -3,13 +3,22 @@
 
 //! **A chat's Chat log, for its tab** (R-224, R-227, R-233, R-310; ADR 0124 decision 11): the
 //! rows of its story, read from this machine's event log through `purlis_core::eventlog::
-//! chatlog::rows`, oldest first. Phase 1 draws its start and its end.
+//! chatlog::rows`, oldest first. Phase 1 draws its start, its end and its blocks (T1-29).
 //!
 //! **Pull-only** (R-225): read when the tab opens, told to no window, and nothing here counts
 //! or marks a row as new. It holds nothing of its own: the Chat log is a query of the event
 //! log, and the event log holds no chat's words.
+//!
+//! **A block's reason comes from memory, never the log** (R-340, Q185): what a harness's own
+//! check said as it refused a call is held by the app as the hook channel hears it
+//! ([`HARNESS_REASONS`]) and put on the block's row here, as written. A restarted app holds
+//! none, so the row then has none.
+
+use std::sync::LazyLock;
 
 use purlis_core::eventlog::chatlog::{self, Row};
+use purlis_core::eventlog::reasons::Reasons;
+use purlis_core::eventlog::stops::{Block, Target};
 use purlis_core::sandbox::protection::InForce;
 
 use crate::planes::PlaneId;
@@ -57,7 +66,22 @@ pub enum ChatLogRow {
         cause: String,
         code: Option<i32>,
     },
+    /// A call was blocked: by whom, how much its report is worth, at what, and why it said.
+    Blocked {
+        at: Option<String>,
+        tool: String,
+        source: String,
+        qualifier: Option<String>,
+        target_kind: Option<String>,
+        target: Option<String>,
+        harness: String,
+        reason: Option<String>,
+    },
 }
+
+/// **The reasons the harnesses' own checks gave, for the app's life** (R-340): held as the
+/// hook channel hears them (`hooks.rs`), read as a Chat log is, never written.
+pub(crate) static HARNESS_REASONS: LazyLock<Reasons> = LazyLock::new(Reasons::default);
 
 /// A chat's Chat log: whether purlis knows the chat, and its rows.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
@@ -93,8 +117,27 @@ fn protection_of(in_force: InForce) -> StartProtection {
     }
 }
 
-/// The window's row for the core's `row`.
-fn row_of(row: Row) -> ChatLogRow {
+/// A closed word's own spelling, as the log writes it.
+fn word_of(value: impl serde::Serialize) -> String {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|word| word.as_str().map(str::to_owned))
+        .unwrap_or_else(|| purlis_core::eventlog::UNKNOWN.to_owned())
+}
+
+/// A block's target, as its kind's word and its value.
+fn target_of(target: &Target) -> (String, String) {
+    match target {
+        Target::Host(host) => ("host".to_owned(), host.as_str().to_owned()),
+        Target::Folder(folder) => ("folder".to_owned(), folder.as_str().to_owned()),
+        Target::Service(service) => ("service".to_owned(), service.as_str().to_owned()),
+        Target::GuardArm(arm) => ("guard_arm".to_owned(), arm.as_str().to_owned()),
+    }
+}
+
+/// The window's row for the core's `row`, a block's with the reason `reason` finds for its
+/// call.
+fn row_of(row: Row, reason: &dyn Fn(&str) -> Option<String>) -> ChatLogRow {
     match row {
         Row::Started {
             at_ms,
@@ -116,11 +159,60 @@ fn row_of(row: Row) -> ChatLogRow {
             cause,
             code: code.and_then(|code| i32::try_from(code).ok()),
         },
+        Row::Blocked {
+            at_ms,
+            block,
+            call,
+            harness,
+        } => {
+            let (tool, source, qualifier, target) = match block {
+                Some(Block {
+                    tool,
+                    source,
+                    qualifier,
+                    target,
+                    ..
+                }) => (
+                    tool,
+                    word_of(source),
+                    qualifier.map(word_of),
+                    target.as_ref().map(target_of),
+                ),
+                None => (
+                    purlis_core::eventlog::UNKNOWN.to_owned(),
+                    purlis_core::eventlog::UNKNOWN.to_owned(),
+                    None,
+                    None,
+                ),
+            };
+            let (target_kind, target) = target.unzip();
+            ChatLogRow::Blocked {
+                at: at(at_ms),
+                tool,
+                source,
+                qualifier,
+                target_kind,
+                target,
+                harness,
+                reason: call.as_deref().and_then(reason),
+            }
+        }
     }
 }
 
-/// The Chat log of the chat with id `chat` (`None`: purlis does not know it) in `events`.
+/// The Chat log of the chat with id `chat` (`None`: purlis does not know it) in `events`, with
+/// no reason for any block.
+#[cfg(test)]
 fn chat_log_of(events: &[purlis_core::eventlog::Event], chat: Option<&str>) -> ChatLog {
+    chat_log_with(events, chat, &|_| None)
+}
+
+/// [`chat_log_of`], each block with the reason `reason` finds for its call (R-340).
+fn chat_log_with(
+    events: &[purlis_core::eventlog::Event],
+    chat: Option<&str>,
+    reason: &dyn Fn(&str) -> Option<String>,
+) -> ChatLog {
     match chat {
         None => ChatLog {
             known: false,
@@ -130,7 +222,7 @@ fn chat_log_of(events: &[purlis_core::eventlog::Event], chat: Option<&str>) -> C
             known: true,
             rows: chatlog::rows(events, chat)
                 .into_iter()
-                .map(row_of)
+                .map(|row| row_of(row, reason))
                 .collect(),
         },
     }
@@ -159,7 +251,10 @@ pub(crate) async fn chat_log(
     };
     crate::off_the_window("reading a chat's log", move || {
         let events = purlis_core::eventlog::read(&dir).map_err(|why| why.to_string())?;
-        Ok(chat_log_of(&events, chat.as_deref()))
+        let root = plane.root();
+        Ok(chat_log_with(&events, chat.as_deref(), &|call| {
+            HARNESS_REASONS.of(root, session, call)
+        }))
     })
     .await
 }

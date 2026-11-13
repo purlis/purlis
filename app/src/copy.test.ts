@@ -215,7 +215,7 @@ describe("no retired term on what the window shows (FR-3, ADR 0072, #602)", () =
 });
 
 describe("a stop is Blocked, never Refused (R-170)", () => {
-  const REFUSED = "the word is Blocked, not Refused";
+  const REFUSED = "the word is Blocked, not `Refused`";
 
   it("refuses Refused as a label or a sentence's first word", () => {
     expect(refusedWord("Refused", "shown")).toEqual([REFUSED]);

@@ -80,7 +80,7 @@ export const KIND_SAID: Record<UpdateKind, string> = {
   doctor: "Doctor",
   resumed: "Came back",
   sandbox: "Sandbox",
-  "refused-away": "Refused while you were away",
+  "refused-away": "Blocked while you were away",
   "smart-close": "Smart close stopped",
   "report-undelivered": "Report not delivered",
   "commit-refused": "Commit refused",

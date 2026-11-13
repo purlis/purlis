@@ -46,6 +46,7 @@ pub mod browsing;
 pub mod chatlog;
 mod entry;
 pub mod questions;
+pub mod reasons;
 pub mod secretasks;
 pub mod stops;
 pub use entry::Entry;

@@ -4,12 +4,56 @@
 import { useEffect, useState } from "react";
 import { commands, type ChatLog, type ChatLogRow, type PlaneId } from "./bindings";
 import { EmptyState } from "./ui/empty-state/EmptyState";
-import { atSaid, rowSaid } from "./chatLog";
+import { Disclosure } from "./ui/disclosure/Disclosure";
+import { BlockTag } from "./BlockTag";
+import { atSaid, blockSourceSaid, blockTags, rowSaid, type BlockRow } from "./chatLog";
+
+/** What the reason is, above it: the words of the harness's own check, never purlis's. */
+const REASON_OF = "The check's reason, as written";
+
+/**
+ * **A block row** (R-183, R-185 to R-188, R-340; T1-29): its action sentence, the tags of its
+ * source beside it, and its detail, which always names the source and, while the app runs and
+ * holds it, shows the harness's reason as written. The reason is the chat's side's text: drawn
+ * as one text node, never parsed or marked up, and nowhere but the detail.
+ */
+function BlockedRow({ row }: { row: BlockRow }) {
+  const tags = blockTags(row);
+  // The reason is in the page only while its detail is open: a closed panel is hidden, and still
+  // a copy a find or a screen reader's browse could reach.
+  const [open, setOpen] = useState(false);
+  return (
+    <Disclosure
+      size="sm"
+      isExpanded={open}
+      onExpandedChange={setOpen}
+      label={<span className="chat-log-said ui-text-body">{rowSaid(row)}</span>}
+      trail={
+        tags.length === 0 ? undefined : (
+          <span className="chat-log-tags">
+            {tags.map((tag) => (
+              <BlockTag key={tag.kind} kind={tag.kind} word={tag.word} />
+            ))}
+          </span>
+        )
+      }
+    >
+      <p className="chat-log-source ui-text-secondary">{blockSourceSaid(row)}</p>
+      {open && row.reason !== null && (
+        <figure className="chat-log-reason-of">
+          <figcaption className="ui-text-secondary">{REASON_OF}</figcaption>
+          <bdi className="chat-log-reason ui-text-body">{row.reason}</bdi>
+        </figure>
+      )}
+    </Disclosure>
+  );
+}
 
 /**
  * **The Chat log as it is drawn** (R-310, R-227, R-233): the chat's own simple timeline, apart
  * from its transcript, one line per row, oldest first. Its first row is the start, its last the
- * end and its result. It only reads, and nothing in it is pressed in phase 1.
+ * end and its result; a block between opens its detail, and nothing else in it is pressed in
+ * phase 1.
  */
 export function ChatLogRows({ name, rows }: { name: string; rows: readonly ChatLogRow[] }) {
   return (
@@ -17,7 +61,11 @@ export function ChatLogRows({ name, rows }: { name: string; rows: readonly ChatL
       {rows.map((row, at) => (
         <li key={`${row.kind}:${row.at ?? ""}:${at}`} className="chat-log-row" data-kind={row.kind}>
           <span className="chat-log-at ui-text-secondary">{atSaid(row.at)}</span>
-          <span className="chat-log-said ui-text-body">{rowSaid(row)}</span>
+          {row.kind === "blocked" ? (
+            <BlockedRow row={row} />
+          ) : (
+            <span className="chat-log-said ui-text-body">{rowSaid(row)}</span>
+          )}
         </li>
       ))}
     </ol>

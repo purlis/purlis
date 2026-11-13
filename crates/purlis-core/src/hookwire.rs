@@ -2683,6 +2683,8 @@ enum Line {
     /// After every other kind: it requires `serve`, which none of them carries. The connection
     /// is parked as a slot of the chat's door from the app's acceptance on ([`serve`], #3316).
     Serve(serve::ServeAsk),
+    /// After every other kind: it requires `harness_reason`, which none of them carries.
+    Reason(HarnessReason),
 }
 
 impl Ask {
@@ -2734,6 +2736,7 @@ impl Line {
             Self::SecretExec(ask) => ask.chat,
             Self::Frames(hello) => hello.chat,
             Self::Serve(ask) => ask.chat,
+            Self::Reason(said) => said.chat,
         }
     }
 }
@@ -3008,6 +3011,50 @@ pub struct Doing {
 
 /// What hears a [`Doing`]. Nothing is answered: the hook does not wait for it.
 pub type DoingHeard = Box<dyn Fn(Doing) + Send + Sync + 'static>;
+
+/// **The reason a harness's own check gave for refusing a call** (R-340, Q185, T1-29), as it
+/// wrote it: what the window shows, never parsed, in the detail of the block that call is.
+///
+/// **Never recorded, anywhere**, as a [`Touching`] is not: a line of its own, sent once and never
+/// spooled ([`tell_reason`]), which the app holds in memory for the app's life
+/// ([`crate::eventlog::reasons::Reasons`]) and hands the window with the block's row. It is not
+/// a [`ToolCall`], whose line the event log keeps and the spool writes to disk: the reason can
+/// quote a command, so the log keeps only the block's source and its arguments' digest.
+///
+/// It is the chat's side's word, so the window shows it as inert text, as written.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct HarnessReason {
+    /// The app's number for the chat whose call was refused, from [`CHAT_ENV`].
+    pub chat: u32,
+    /// The harness's id for the call, which its tool line and its block's tool event carry:
+    /// what the app finds the block's reason by. None where the harness gave none, and then
+    /// no block is given it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub call: Option<String>,
+    /// The reason, as the harness wrote it.
+    pub harness_reason: String,
+}
+
+impl HarnessReason {
+    /// **The reason in the payload of a harness's own refusal** (`PermissionDenied`'s
+    /// `reason`), for chat `chat`: its text as written and the call's id (`tool_use_id`).
+    /// None where the payload has no reason in words: nothing is guessed for a harness whose
+    /// hook says none.
+    pub fn of_denial(chat: u32, data: &serde_json::Value) -> Option<Self> {
+        let harness_reason = data.get("reason")?.as_str()?.to_owned();
+        Some(Self {
+            chat,
+            call: data
+                .get("tool_use_id")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned),
+            harness_reason,
+        })
+    }
+}
+
+/// What hears a [`HarnessReason`]. Nothing is answered: the hook does not wait for it.
+pub type ReasonHeard = Box<dyn Fn(HarnessReason) + Send + Sync + 'static>;
 
 /// What a chat's turn ended saying (#1981): the harness's own last message of the turn, as its
 /// `Stop` hook is handed it. What a task that ended its turns without a report is reported
@@ -3348,6 +3395,8 @@ pub struct Hearing {
     pub secret_exec: SecretExecuting,
     /// Every `serve`: its connection parked as a slot of the chat's door, or refused (#3316).
     pub serve: Serves,
+    /// Every [`HarnessReason`].
+    pub reason: ReasonHeard,
 }
 
 /// Sends one report to the socket at `path`. Answers whether it was written: what the app made
@@ -3420,6 +3469,20 @@ pub fn tell_doing(
     doing: &Doing,
 ) -> io::Result<()> {
     one_line_with_a_deadline(path, token, doing)
+}
+
+/// Tells the app at `path` the reason its chat's harness gave for refusing a call (R-340).
+/// Answers whether it was written.
+///
+/// [`tell`]'s shape and deadline, and **never spooled**, as a [`Touching`] is not: a spool is a
+/// file the reason, which can quote a command, would then be in (Q185).
+#[cfg(unix)]
+pub fn tell_reason(
+    path: &std::path::Path,
+    token: Option<&ChatToken>,
+    said: &HarnessReason,
+) -> io::Result<()> {
+    one_line_with_a_deadline(path, token, said)
 }
 
 /// Tells the app at `path` what its chat's turn put out (#1981). Answers whether it was written.
@@ -3984,6 +4047,7 @@ impl Listener {
                 crate::secrets::brokered::not_answered(writer);
             }),
             serve: serve::refusing(),
+            reason: Box::new(|_| {}),
         };
         hearing.serve = serve;
         self.hear(hearing)
@@ -4073,6 +4137,7 @@ impl Listener {
                 crate::secrets::brokered::not_answered(writer);
             }),
             serve: serve::refusing(),
+            reason: Box::new(|_| {}),
         })
     }
 
@@ -4647,6 +4712,7 @@ fn serve(
             Line::Blocked(blocked) => (hearing.blocked)(blocked),
             Line::Doing(doing) => (hearing.doing)(doing),
             Line::Output(output) => (hearing.output)(output),
+            Line::Reason(said) => (hearing.reason)(said),
             Line::SecretExec(ask) => {
                 // Held for as long as the command runs, so the turn is let go first, as an
                 // ask's is. The asker's stdin may be quiet for as long as the child is, so no
@@ -4933,7 +4999,8 @@ fn refuse_with(line: &Line, why: &str, writer: &mut std::os::unix::net::UnixStre
         | Line::Touching(_)
         | Line::Blocked(_)
         | Line::Doing(_)
-        | Line::Output(_) => return,
+        | Line::Output(_)
+        | Line::Reason(_) => return,
     };
     if let Ok(mut said) = said {
         said.push(b'\n');

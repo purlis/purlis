@@ -543,7 +543,7 @@ function Cards({
             card.preview ? "Preview" : undefined,
             isChosen ? (gallery.yours !== null ? "Chosen here" : "Drawn here") : undefined,
             card.refused
-              ? "Refused"
+              ? "Not applied"
               : card.warnings.length > 0
                 ? `${card.warnings.length} ${card.warnings.length === 1 ? "warning" : "warnings"}`
                 : undefined,
@@ -867,7 +867,9 @@ function checkRow(group: string, at: ThemeAt | null): LiveSetting {
         card === undefined
           ? undefined
           : [
-              ...card.said.map((one) => (card.refused ? `Refused: ${one}` : `Left out: ${one}`)),
+              ...card.said.map((one) =>
+                card.refused ? `Not applied: ${one}` : `Left out: ${one}`,
+              ),
               ...card.floors,
               ...card.warnings,
             ];

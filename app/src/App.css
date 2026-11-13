@@ -9491,3 +9491,28 @@ nav.piece-files-head {
   padding-inline-end: var(--space-3);
   border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
+
+/* A block row (T1-29): its tags beside its sentence, and its detail under it. The reason is the
+   harness's text as written: its spaces and lines kept, a long word broken, never parsed. */
+.chat-log-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-inline-start: var(--space-2);
+}
+
+.chat-log-row [data-scope="badge"] svg {
+  margin-inline-end: var(--space-1);
+  vertical-align: middle;
+}
+
+.chat-log-source,
+.chat-log-reason-of {
+  margin: var(--space-1) 0 0;
+}
+
+.chat-log-reason {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

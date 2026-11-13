@@ -2292,6 +2292,14 @@ fn tell_the_host_about_the_tool_call(
         skill,
     };
     let token = hookwire::ChatToken::from_env();
+    // The harness's own check's reason (R-340, Q185): on a line of its own, before the tool
+    // line whose block it is the detail of, sent once and never spooled, so the app holds it in
+    // memory and no record holds it. A reason the app missed is one nobody is shown.
+    if word == purlis_core::hookreg::HARNESS_DENIED
+        && let Some(said) = hookwire::HarnessReason::of_denial(chat, &data)
+    {
+        let _ = hookwire::tell_reason(std::path::Path::new(&socket), token.as_ref(), &said);
+    }
     if let Err(why) = hookwire::deliver_tool(std::path::Path::new(&socket), token.as_ref(), &call) {
         let _ = writeln!(std::io::stderr(), "{} {word} ({why})", hookwire::NOT_TAKEN);
     }

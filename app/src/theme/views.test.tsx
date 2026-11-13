@@ -802,7 +802,7 @@ const ORDINARY: Answers = {
             "Ended",
             "Tool calls",
             "Errors",
-            "Refused",
+            "Blocked",
             "Asks",
             "Tokens",
             "Time",
