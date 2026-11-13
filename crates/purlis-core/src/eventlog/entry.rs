@@ -61,6 +61,11 @@ pub enum Entry {
     /// The start whose run was held goes on: its `run.started` is written now
     /// ([`Recorder::begun`]).
     Begun { plane: PathBuf, number: u32 },
+    /// **Chat `number`'s run is replaced at once** (ADR 0076 §2, ADR 0067 as amended
+    /// 2026-10-16, Q247): a restart for project settings, told just before the window closes
+    /// it. Its run ends `completed` for `superseded` here, sub-agents and all, so the close
+    /// that follows ends nothing more ([`Recorder::end_run_with`]).
+    Superseded { plane: PathBuf, number: u32 },
     /// The start whose run was held was put aside: its run is never said, and what its program
     /// still sends is of no run ([`Recorder::taken_back`], #2252).
     TakenBack { plane: PathBuf, number: u32 },
@@ -214,6 +219,10 @@ impl Recorder {
                 }
             }
             Entry::Begun { plane, number } => Ok(self.begun(&plane, number)?.into_iter().collect()),
+            Entry::Superseded { plane, number } => {
+                let _ = (plane, number);
+                Ok(Vec::new())
+            }
             Entry::TakenBack { plane, number } => {
                 self.taken_back(&plane, number);
                 Ok(Vec::new())

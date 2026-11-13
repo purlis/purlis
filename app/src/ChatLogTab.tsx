@@ -40,9 +40,19 @@ export function ChatLogTab({
 }) {
   const [log, setLog] = useState<ChatLog>();
   const [said, setSaid] = useState<string>();
+  // The runner the chat runs on, as the open chats say it (`OpenChat.pool`): its log is kept
+  // there, not here (Q247). `null` for a chat on this machine, or one not open.
+  const [runner, setRunner] = useState<string | null>(null);
   useEffect(() => {
     if (session === undefined) return;
     let gone = false;
+    void commands
+      .openedChats(plane)
+      .then((open) => {
+        if (gone || open.status === "error") return;
+        setRunner(open.data.find((one) => one.session === session)?.pool ?? null);
+      })
+      .catch(() => {});
     void commands
       .chatLog(plane, session)
       .then((done) => {
@@ -67,7 +77,11 @@ export function ChatLogTab({
     return (
       <EmptyState
         headline="Nothing is logged for this chat on this machine"
-        body="Its start is logged by the machine it runs on. A chat started before purlis kept this log has none."
+        body={
+          runner === null
+            ? "This chat started before purlis kept this log, so it has none."
+            : `This chat runs on ${runner}; its log is kept there.`
+        }
       />
     );
   return <ChatLogRows name={name} rows={log.rows} />;

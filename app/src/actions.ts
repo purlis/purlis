@@ -5042,7 +5042,7 @@ function readingRows(session: number, name: string): Offer[] {
         { verb: "openView", view: chatLogView(session), title: chatLogTitle(name) },
         name,
       ),
-      note: `${name}'s story: its start, what stopped it and its end, in a tab of its own.`,
+      note: `${name}'s story: its start and its end, in a tab of its own.`,
     },
   ];
 }

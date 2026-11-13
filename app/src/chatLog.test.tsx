@@ -64,8 +64,14 @@ describe("the Chat log start row is one line built from the start event", () => 
       "Started · what protected it was not recorded",
     );
     expect(
-      startSaid(started({ layers: [{ layer: "sandbox", level: "floor", tier: "unknown" }] })),
+      startSaid(started({ layers: [{ layer: "sandbox", level: "floor", tier: "workspace" }] })),
     ).toContain("Basic sandbox, set by a tier this version does not know");
+  });
+
+  it("says a layer whose setter the event could not tell as not known", () => {
+    expect(
+      startSaid(started({ layers: [{ layer: "sandbox", level: "on", tier: "unknown" }] })),
+    ).toContain("Full sandbox, who set it is not known");
   });
 });
 
@@ -78,6 +84,12 @@ describe("the Chat log lists the chat end and its result", () => {
     );
     expect(endSaid(ended({ state: "stopped", cause: "operator", code: null }))).toBe(
       "Ended · stopped by you",
+    );
+  });
+
+  it("says a run the project's settings replaced was started again, never closed (Q247)", () => {
+    expect(endSaid(ended({ state: "completed", cause: "superseded", code: null }))).toBe(
+      "Ended · started again because the project's settings changed",
     );
   });
 

@@ -58,6 +58,9 @@ const TIER_SAID: Readonly<Record<string, string>> = {
   purlis: "purlis's default",
 };
 
+/** What a layer's line says where the start event could not tell who set it. */
+const TIER_UNKNOWN = "who set it is not known";
+
 /** Why a run began, as the start row says it. */
 const CAUSE_SAID: Readonly<Record<string, string>> = {
   start: "Started",
@@ -68,7 +71,10 @@ const CAUSE_SAID: Readonly<Record<string, string>> = {
 function layerSaid(layer: StartProtection["layers"][number]): string {
   const level =
     LEVEL_SAID[layer.level as keyof typeof LEVEL_SAID] ?? `${layer.layer} ${layer.level}`;
-  const by = TIER_SAID[layer.tier] ?? "set by a tier this version does not know";
+  const by =
+    layer.tier === "unknown"
+      ? TIER_UNKNOWN
+      : (TIER_SAID[layer.tier] ?? "set by a tier this version does not know");
   return `${level}, ${by}`;
 }
 
@@ -109,8 +115,14 @@ const STOPPED_SAID: Readonly<Record<string, string>> = {
   killed: "stopped by Stop all",
 };
 
-/** **The end row's line** (R-233): that the chat ended, and its result. */
+/**
+ * **The end row's line** (R-233): that the chat ended, and its result. A run the project's
+ * settings replaced at once ended `superseded` (ADR 0076 §2, Q247): its own line says so, and
+ * the start row after it is the run that took its place.
+ */
 export function endSaid(row: Extract<ChatLogRow, { kind: "ended" }>): string {
+  if (row.cause === "superseded")
+    return "Ended · started again because the project's settings changed";
   if (row.state === "completed") return "Ended · done";
   if (row.state === "stopped") return `Ended · ${STOPPED_SAID[row.cause] ?? "stopped"}`;
   if (row.cause === "host-crash") return "Ended · failed, as purlis stopped while it ran";

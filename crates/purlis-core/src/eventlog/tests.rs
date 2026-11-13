@@ -4569,3 +4569,50 @@ fn a_start_whose_protection_sync_fails_is_still_begun_with_its_routing_record() 
         .collect();
     assert_eq!(kinds, ["run.started", "skill.routed"]);
 }
+
+#[test]
+fn the_runs_a_writer_ended_are_held_no_more_than_the_runs_it_began_and_each_still_ends_once() {
+    // T1-27's review: a chat's own run ends once (`ended_runs`), and what remembers it is held
+    // as `begun` is, to [`RUNS_HELD`]. One chat run again and again leaves its old runs behind.
+    let dir = tempfile::tempdir().unwrap();
+    let mut host = recorder(dir.path());
+    let (plane, chat) = (Path::new("/p"), crate::reopen::mint());
+    let attributes = Attributes::default();
+    for _ in 0..=RUNS_HELD {
+        let run = crate::reopen::mint();
+        host.begin(
+            plane,
+            1,
+            RunOf {
+                chat: &chat,
+                run: &run,
+            },
+            Began::Reopen,
+            &attributes,
+        )
+        .unwrap();
+        host.end_run_with(
+            plane,
+            1,
+            RunState::Completed,
+            Cause::Exited(crate::state::run::Exit::Code(0)),
+        )
+        .unwrap();
+    }
+
+    assert!(
+        host.ended_runs.len() < RUNS_HELD,
+        "held {} runs' ends",
+        host.ended_runs.len()
+    );
+    // The run in force is still known to have ended: told again, it writes nothing.
+    let again = host
+        .end_run_with(
+            plane,
+            1,
+            RunState::Completed,
+            Cause::Exited(crate::state::run::Exit::Code(0)),
+        )
+        .unwrap();
+    assert!(again.is_empty(), "{again:?}");
+}

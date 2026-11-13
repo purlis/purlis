@@ -2476,6 +2476,16 @@ describe("Close other tabs (#4762)", () => {
   });
 });
 
+describe("a chat's Chat log row in the palette", () => {
+  it("promises only what phase 1's Chat log shows: its start and its end", () => {
+    const tabs = openTab(noTabs(), 7, "one");
+
+    expect(by(catalogue(now({ tabs })), "chat.log:7")?.note).toBe(
+      "one's story: its start and its end, in a tab of its own.",
+    );
+  });
+});
+
 describe("the catalogue as the tabs change", () => {
   it("grows a tab's rows per tab, and a chat's rows per chat, as tabs open", () => {
     let tabs: Tabs = noTabs();

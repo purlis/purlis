@@ -97,7 +97,11 @@ const ENDED: ChatLogRow = {
   code: 0,
 };
 
-function core(rows: (session: number) => ChatLogRow[] = (session) => [started(session)]) {
+/** What the core reads for chat `session`: a chat on a runner has its log kept on the runner,
+ *  so this machine's log holds none of it (Q247). */
+const here = (session: number): ChatLogRow[] => (session === 9 ? [] : [started(session)]);
+
+function core(rows: (session: number) => ChatLogRow[] = here) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   mockIPC(
     (cmd, args) => {
@@ -136,10 +140,14 @@ function core(rows: (session: number) => ChatLogRow[] = (session) => [started(se
     },
     { shouldMockEvents: true },
   );
+  everyAsked = () => asked.map(({ cmd }) => cmd);
   return {
     asked: (cmd: string) => asked.filter((one) => one.cmd === cmd).map(({ args }) => args),
   };
 }
+
+/** Every command the window sent the core, by name, in the latest {@link core}. */
+let everyAsked: () => string[] = () => [];
 
 const selected = () =>
   within(stripNamed("Tabs")).getByRole("tab", { selected: true }).textContent ?? "";
@@ -157,7 +165,6 @@ describe("a chat's Chat log tab", () => {
     ["a chat of the person's", 3, "steward 3"],
     ["a task", 7, "talk"],
     ["a handoff", 8, "moved"],
-    ["a chat on a runner", 9, "far"],
   ])("every chat has a Chat log tab: %s's opens its own timeline", async (_, session, name) => {
     const { asked } = core();
     render(<App />);
@@ -169,6 +176,35 @@ describe("a chat's Chat log tab", () => {
     const [start] = within(log).getAllByRole("listitem");
     // That chat's own start, as the core read it.
     expect(start.textContent).toContain(`c0ffee${session}`);
+  });
+
+  it("every chat has a Chat log tab: a chat on a runner's names the runner its log is kept on", async () => {
+    const { asked } = core();
+    render(<App />);
+    await screen.findAllByTestId("pane");
+    await chatList("far");
+    await pressMenuPath("Open", "Chat log");
+
+    expect(
+      await screen.findByText("This chat runs on docker; its log is kept there."),
+    ).toBeInTheDocument();
+    expect(selected()).toContain("Chat log · far");
+    expect(asked("chat_log")).toContainEqual({ plane: PLANE, session: 9 });
+    // Not the words for a chat older than the log, which this is not.
+    expect(screen.queryByText(/before purlis kept this log/)).toBeNull();
+  });
+
+  it("says a chat on this machine with nothing logged is older than the log", async () => {
+    core(() => []);
+    render(<App />);
+    await screen.findAllByTestId("pane");
+    await chatList("steward 3");
+    await pressMenuPath("Open", "Chat log");
+
+    expect(
+      await screen.findByText("This chat started before purlis kept this log, so it has none."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/its log is kept there/)).toBeNull();
   });
 
   it("the Chat log tab shows no count, no New marker and notifies nobody", async () => {
@@ -191,6 +227,8 @@ describe("a chat's Chat log tab", () => {
     // Nothing read it again, nothing told the person: it is read when it is opened.
     expect(asked("chat_log")).toHaveLength(reads);
     expect(within(log).getAllByRole("listitem")).toHaveLength(1);
+    // And no system notification was asked for, of any kind.
+    expect(everyAsked().filter((cmd) => cmd.startsWith("plugin:notification|"))).toEqual([]);
   });
 
   it("is offered from the palette as the chat's Chat log", async () => {

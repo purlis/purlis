@@ -6923,9 +6923,10 @@ fn a_chat_whose_program_ends_ends_its_sub_agents_runs_in_the_event_log() {
 }
 
 #[test]
-fn a_run_ended_to_start_its_chat_again_ends_its_sub_agents_runs_in_the_event_log() {
-    // ADR 0076 §6: a run replaced at once (ADR 0067 as amended 2026-10-16) is no end of
-    // its chat, and its sub-agents' runs still end with it, stopped as a close stops them.
+fn a_run_ended_to_start_its_chat_again_ends_superseded_with_its_sub_agents_in_the_event_log() {
+    // ADR 0076 §2 and §6, Q247: a run replaced at once (ADR 0067 as amended 2026-10-16) is no
+    // end of its chat. It has ended superseded, never "stopped as you closed it", and its
+    // sub-agents' runs end with it the same way.
     let dir = tempfile::tempdir().expect("a directory");
     let logs = dir.path().join("events");
     let events = an_event_log(&logs);
@@ -6947,9 +6948,16 @@ fn a_run_ended_to_start_its_chat_again_ends_its_sub_agents_runs_in_the_event_log
         runs_ended(&logs),
         [(
             children[0].clone(),
-            Some(run),
-            "stopped".to_owned(),
-            "closed".to_owned()
+            Some(run.clone()),
+            "completed".to_owned(),
+            "superseded".to_owned()
+        )]
+    );
+    assert_eq!(
+        own_runs_ended(&logs),
+        [(
+            run,
+            serde_json::json!({"state": "completed", "cause": "superseded"})
         )]
     );
     assert!(

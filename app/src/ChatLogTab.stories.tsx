@@ -97,3 +97,31 @@ export const StartNotRecorded: Story = {
     await expect(said(start)?.textContent).toBe("Started · what protected it was not recorded");
   },
 };
+
+/**
+ * **A run the project's settings replaced** (ADR 0076 §2, Q247): it ended superseded, and its
+ * end row says it was started again, never that it was closed. The start after it is the run
+ * that took its place.
+ */
+export const RestartedForProjectSettings: Story = {
+  args: {
+    rows: [
+      START,
+      {
+        kind: "ended",
+        at: "2026-11-13T09:20:00Z",
+        state: "completed",
+        cause: "superseded",
+        code: null,
+      },
+      { ...START, at: "2026-11-13T09:20:01Z", cause: "reopen" },
+    ],
+  },
+  play: async ({ canvas }) => {
+    const [, end, again] = rowsOf(canvas);
+    await expect(said(end)?.textContent).toBe(
+      "Ended · started again because the project's settings changed",
+    );
+    await expect(said(again)?.textContent).toMatch(/^Started again in its conversation · /);
+  },
+};

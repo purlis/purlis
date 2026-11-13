@@ -846,6 +846,8 @@ pub struct Chats {
     reattached: Mutex<Option<Starting>>,
     /// Told of the run each start begins, before its program runs (ADR 0066).
     beginning: Mutex<Option<Beginning>>,
+    /// Told the number of a run about to be replaced at once ([`Self::when_a_run_is_replaced`]).
+    replaced_told: Mutex<Option<Box<dyn Fn(u32) + Send + Sync>>>,
     /// What asks a chat's router extension at its start (SK-15b): none until the app hands one,
     /// so a chat whose workspace or persona chose one is routed by the built-in router.
     router: Mutex<Option<Arc<dyn purlis_core::skills::router::AskRouter>>>,
@@ -1641,6 +1643,7 @@ impl Chats {
             starting: Mutex::new(None),
             reattached: Mutex::new(None),
             beginning: Mutex::new(None),
+            replaced_told: Mutex::new(None),
             router: Mutex::new(None),
             routed: Mutex::new(None),
             prompt_fallback_moved: Mutex::new(None),
@@ -1770,6 +1773,13 @@ impl Chats {
     /// begins: the chat's id, which a relaunch keeps, a new run's id, and why (ADR 0066).
     pub fn when_a_run_begins(&self, tell: Beginning) {
         *lock(&self.beginning) = Some(tell);
+    }
+
+    /// Calls `tell` with a run's number as it is about to be replaced at once (ADR 0076 §2, ADR
+    /// 0067 as amended 2026-10-16, Q247): a restart for project settings, while its program
+    /// still runs, so the event log ends it `superseded` before its close is heard.
+    pub fn when_a_run_is_replaced(&self, tell: Box<dyn Fn(u32) + Send + Sync>) {
+        *lock(&self.replaced_told) = Some(tell);
     }
 
     /// Asks a chat's router extension at its start with `router` (SK-15b, ADR 0102 §5).
