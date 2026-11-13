@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794594727739,
+  "lastUpdate": 1794597802491,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -48594,6 +48594,48 @@ window.BENCHMARK_DATA = {
             "value": 103.75655850000001,
             "unit": "ms",
             "extra": "median of 5 runs: 102.970, 103.349, 103.757, 104.121, 104.894 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "df2a65e8945c29d39debc897fd0a640a108ea176",
+          "message": "Stalls name their culprits; an auto-save fetch no longer redraws the whole window (H9) (#6509)\n\n* WIP: stalls name their culprits; an auto-save move names what moved (H9)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M7A637BTFH57BDG9CK2S6ER3\nPurlis-Persona: steward\n\n* Stalls say dark when the screen withheld frames; bindings for the new stall fields (H9)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M7A637BTFH57BDG9CK2S6ER3\nPurlis-Persona: steward\n\n* Drop a needless borrow clippy names (H9)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7A637BTFH57BDG9CK2S6ER3\nPurlis-Persona: steward\n\n* Format, a full stall in the diagnostics test, and the UI RPC client regenerated for the new stall fields (H9)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7AWK7VTP7HPN5E6EP9Q9N79\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-13T18:08:04Z",
+          "tree_id": "13a9bc97e587bb42a6df83be670cb8e23af8ba9a",
+          "url": "https://github.com/purlis/purlis/commit/df2a65e8945c29d39debc897fd0a640a108ea176"
+        },
+        "date": 1794597797245,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.67224,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.662, 0.663, 0.672, 0.683, 0.711 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.589275,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.217, 16.572, 16.589, 16.651, 16.833 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.6887135,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.979, 101.628, 101.689, 103.461, 103.489 ms"
           }
         ]
       }
