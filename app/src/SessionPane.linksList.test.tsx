@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { Terminal } from "@xterm/xterm";
 import { letGoOfKeptTerminals } from "./keptTerminals";
 import { LINK_CORE } from "./paneLinkCore";
 import { ReadOnlyTerminal } from "./ReadOnlyTerminal";
+import { listLinksOf } from "./paneLinksOpen";
 import { SessionPane } from "./SessionPane";
 
 /**
@@ -139,6 +140,19 @@ async function listed() {
 }
 
 describe("Links in this pane…", () => {
+  it("opens when the window asks for this pane's, as its palette, ⋯ and head rows do (#6332)", async () => {
+    const term = await opened();
+    await write(term, "see https://a.example/one");
+    expect(listLinksOf("/planes/one", 2)).toBe(false);
+    act(() => {
+      expect(listLinksOf("/planes/one", 1)).toBe(true);
+    });
+    const dialog = await screen.findByRole("dialog", { name: "Links in this pane" });
+    expect(await within(dialog).findByRole("option")).toHaveAccessibleName("https://a.example/one");
+    cleanup();
+    expect(listLinksOf("/planes/one", 1)).toBe(false);
+  });
+
   it("opens on ⇧⌘L in the pane and lists the links on screen, newest first", async () => {
     const { dialog } = await listed();
     const rows = within(dialog).getAllByRole("option");

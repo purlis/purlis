@@ -172,6 +172,28 @@ fn an_ended_chat_links_to_its_record_and_opening_it_shows_its_card() {
 }
 
 #[test]
+fn a_chat_no_dispatch_started_links_to_its_closed_record() {
+    // #6304: a chat the person started by hand and closed, kept by the app as it closed.
+    let (_dir, root) = project();
+    let closed = crate::chatrecords::ChatRecord {
+        number: 702,
+        id: "01K6CHATS0000000000000000C".to_owned(),
+        title: "Tidy the changelog".to_owned(),
+        started: "2026-11-12T09:00:00Z".to_owned(),
+        ended: "2026-11-12T09:40:00Z".to_owned(),
+        started_by: crate::chatrecords::StartedBy::Person,
+        place: "smart-ide".to_owned(),
+    };
+    crate::chatrecords::keep(&root, &closed).unwrap();
+    let links = links(vec![open(652, MINE_ID)]);
+
+    assert_eq!(
+        goes(links.resolve(&chat("chat 702"), &pane_of_652(&root))),
+        (702, Goes::Closed(Box::new(closed)))
+    );
+}
+
+#[test]
 fn a_restarted_chat_is_reached_through_its_ulid_under_its_number_now() {
     let (_dir, root) = project();
     finished_641(&root);

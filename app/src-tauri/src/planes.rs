@@ -1600,6 +1600,8 @@ impl Held {
         // a chat started again in its place is marked afresh.
         self.held_dispatches.forget(session);
         self.unattended.forget(session);
+        // And when it last moved, which `purlis.chats` says (#6235).
+        crate::chatlisting::closed(&self.id, session);
         // Nothing else is remembered of it, and a command waiting on it is told (#1441).
         crate::dispatched::closed(self, session, task_of);
         // **Whatever waited on it waits no more** (#1491): the chat that asked for it and

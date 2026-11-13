@@ -186,10 +186,14 @@ describe("a chat's one list (#4753)", () => {
         .map((id) => id.replace(`:${session}`, ":N"));
 
     // A chat with no tab has every row a chat in a tab has, but what is chat 1's own: the work
-    // link it holds, and the Go to of the handoff it made.
-    const own = (id: string) => id.startsWith("chat.workunlink:") || id.startsWith("chat.handed:");
+    // link it holds, the Go to of the handoff it made, and the links on its pane's screen
+    // (#6332): a chat no pane draws has none.
+    const own = (id: string) =>
+      id.startsWith("chat.workunlink:") ||
+      id.startsWith("chat.handed:") ||
+      id.startsWith("chat.links:");
     expect(shape(3)).toEqual(shape(1).filter((id) => !own(id)));
-    expect(shape(2)).toEqual(shape(3));
+    expect(shape(2).filter((id) => !id.startsWith("chat.links:"))).toEqual(shape(3));
   });
 
   describe("the pane foot's presses (#5204, spec #5191 stories 33 to 37)", () => {

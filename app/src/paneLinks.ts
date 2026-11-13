@@ -320,8 +320,10 @@ function placeOf(pane: Terminal, x: number, y: number, width: number): LinkPlace
 }
 
 /** **A link on screen**, as *Links in this pane…* lists it (#6220) and the terminal's menu
- *  offers the one under the pointer (#6219): its candidate and the core's answer for it. */
-export type ScreenLink = { candidate: LinkCandidate; seen: LinkSeen };
+ *  offers the one under the pointer (#6219): its candidate and the core's answer for it, and
+ *  where it was drawn as it was read, which a chat's card opened from either stands beside
+ *  (#6442): both close on the press, so the row it was picked on is gone. */
+export type ScreenLink = { candidate: LinkCandidate; seen: LinkSeen; place?: LinkPlace };
 
 /** **A pane with its link hook registered**: let go of by `dispose`. */
 export type LinkedPane = IDisposable & {
@@ -458,15 +460,12 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
                 leave();
               }
               on = here;
-              current = { candidate, seen };
               const lines = [...rows.values()];
-              if (opens) draw(lines);
               const top = lines[0];
-              hands.hovered({
-                seen,
-                text: found.text,
-                place: placeOf(pane, top.x, top.y, top.width),
-              });
+              const place = placeOf(pane, top.x, top.y, top.width);
+              current = { candidate, seen, place };
+              if (opens) draw(lines);
+              hands.hovered({ seen, text: found.text, place });
             },
             leave() {
               clearTimeout(leaving);
@@ -491,11 +490,11 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
 }
 
 /** The candidates on `pane`'s screen, newest first, each once: {@link LinkedPane.onScreen}. */
-function onScreenNewestFirst(pane: Terminal): Found[] {
+function onScreenNewestFirst(pane: Terminal): (Found & { place: LinkPlace })[] {
   const buffer = pane.buffer.active;
   const top = buffer.viewportY;
   const bottom = top + pane.rows - 1;
-  const found: Found[] = [];
+  const found: (Found & { place: LinkPlace })[] = [];
   for (let y = top; y <= bottom;) {
     const wrapped = wrappedAt(pane, y);
     if (wrapped === undefined) break;
@@ -503,10 +502,15 @@ function onScreenNewestFirst(pane: Terminal): Found[] {
     const last = rows.length === 0 ? y : Math.max(y, ...rows);
     for (const one of candidatesIn(wrapped.text)) {
       if (cutShort(one, wrapped)) continue;
-      const shown = wrapped.cells
+      // Where it is drawn: its first row on screen, from its first cell there.
+      const cells = wrapped.cells
         .slice(one.start, one.end)
-        .some((cell) => cell.y >= top && cell.y <= bottom);
-      if (shown) found.push(one);
+        .filter((cell) => cell.y >= top && cell.y <= bottom);
+      const first = cells[0];
+      if (first === undefined) continue;
+      const onItsRow = cells.filter((cell) => cell.y === first.y);
+      const width = onItsRow[onItsRow.length - 1].x - first.x + 1;
+      found.push({ ...one, place: placeOf(pane, first.x, first.y, width) });
     }
     y = last + 1;
   }
@@ -554,6 +558,8 @@ async function screenLinks(
   const answers = await Promise.all(found.map((one) => answerOf.get(linkKey(one)) ?? null));
   return found.flatMap((one, at) => {
     const seen = answers[at];
-    return seen === null ? [] : [{ candidate: { kind: one.kind, text: one.text }, seen }];
+    return seen === null
+      ? []
+      : [{ candidate: { kind: one.kind, text: one.text }, seen, place: one.place }];
   });
 }
