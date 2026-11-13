@@ -75,7 +75,7 @@ describe("work asked for of a window", () => {
     // The display wakes: frames come as they should again, and the window is drawn first.
     drawAt((at += 16));
     expect(run).not.toHaveBeenCalled();
-    drawAt((at += 16));
+    drawAt(at + 16);
     expect(run).toHaveBeenCalledTimes(1);
   });
 
