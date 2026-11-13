@@ -98,7 +98,7 @@ const SKILLS: ChatSkills = {
   missing: null,
 };
 
-/** The core: one chat in alpha, the Skill studio on. Who each read of the studio was for, and
+/** The core: one chat in alpha. Who each read of the studio was for, and
  *  how many times a chat's set was read. */
 function core() {
   const studioFor: (string | null)[] = [];

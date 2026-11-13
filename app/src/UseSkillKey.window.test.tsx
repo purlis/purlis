@@ -84,7 +84,7 @@ const SKILLS: ChatSkills = {
   missing: null,
 };
 
-/** The core: one chat in alpha, the Skill studio on. What the window asked, by command. */
+/** The core: one chat in alpha. What the window asked, by command. */
 function core() {
   const asked: string[] = [];
   mockIPC(
