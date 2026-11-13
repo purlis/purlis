@@ -1036,7 +1036,11 @@ fn a_clone_there_at_start_raises_trust_this_clone_and_after_the_press_the_mint_s
         config_root: Some(config.path()),
         ends_seen: None,
     };
-    let mint = || token_for(&chat, &gh, &|| Err("the key is read only to mint".to_owned()));
+    let mint = || {
+        token_for(&chat, &gh, &|| {
+            Err("the key is read only to mint".to_owned())
+        })
+    };
 
     mint().unwrap_err();
     let raised = crate::windowonly::every(root);

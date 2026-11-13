@@ -59,16 +59,29 @@ pub const NO_RECORDED_CLONE: &str = "no clone in this chat's workspace that purl
 
 /// **A mint refused for a clone purlis has no record of raises Trust this clone** (R-330,
 /// R-328): each github.com clone of the chat's workspace with no record, at the one address its
-/// remote names, is one ask for the chat ([`crate::windowonly`]). Answers what the chat is told,
-/// naming the ask, or `None` where there is no such clone, and so nothing to ask.
+/// remote names, is one ask for the chat ([`crate::windowonly`]). Only a clone the mint would
+/// count once trusted is asked for: one there as the chat started ([`there_at_start`]) whose
+/// git directory no chat writes ([`held_from_chats`]), as [`remotes_of_workspace`] filters
+/// them (Q249). Answers what the chat is told, naming the ask, or `None` where there is no such
+/// clone, and so nothing to ask.
 fn trust_asked(chat: &For<'_>) -> Option<String> {
     let config_root = chat.config_root?;
     let plane = crate::workspaces::Plane::open(chat.root.to_path_buf());
     let workspace = chat.folder.and_then(|folder| plane.workspace_of(folder))?;
+    let clones = crate::repos::clones(chat.root, &workspace).ok()?.repos;
+    let clones = match chat.started {
+        Some(started) => there_at_start(clones, started),
+        None => clones,
+    };
+    let counted: Vec<String> = held_from_chats(clones, &grantable_beside(chat.root, chat.writes))
+        .iter()
+        .map(|repo| crate::sandbox::local::clone_key(&repo.path))
+        .collect();
     let folders: Vec<String> =
         super::gitcredential::vouch::unvouched_clones(chat.root, config_root)
             .into_iter()
             .filter(|clone| clone.workspace == workspace)
+            .filter(|clone| counted.contains(&crate::sandbox::local::clone_key(&clone.path)))
             .filter_map(|clone| {
                 let place = clone.place?;
                 place

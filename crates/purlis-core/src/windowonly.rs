@@ -16,8 +16,8 @@
 //! of ([`crate::forge::apptoken::token_for`], R-330), whose control is **Trust this clone**.
 //!
 //! The refusals are kept in memory alone, by project, as the tokens they stand in for are
-//! ([`crate::forge::apptoken`]): they are this run's, and a chat's go when it ends
-//! ([`forget`]).
+//! ([`crate::forge::apptoken`]): they are this run's, a chat's go when it ends
+//! ([`forget`]), and a project's when it ends ([`project_ended`]).
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -106,10 +106,20 @@ fn tell(root: &Path) {
 }
 
 /// **Raises chat `session`'s refusal in the project at `root`, whose way out is `control`**:
-/// one ask per chat and control. Answers whether it is new.
+/// one ask per chat and control. A chat's earlier Trust this clone for the same folder at
+/// another place goes: its remote changed, so that ask's press would trust nothing, and the new
+/// ask replaces it rather than stacking. Answers whether it is new.
 pub fn raise(root: &Path, session: u32, control: Control) -> bool {
     let new = {
         let mut raised = RAISED.lock().unwrap_or_else(|e| e.into_inner());
+        let Control::TrustClone { folder, .. } = &control;
+        raised.retain(|one| {
+            let Control::TrustClone { folder: theirs, .. } = &one.control;
+            !(one.root == root
+                && one.session == session
+                && theirs == folder
+                && one.control != control)
+        });
         let already = raised
             .iter()
             .any(|one| one.root == root && one.session == session && one.control == control);
@@ -165,6 +175,18 @@ pub fn forget(root: &Path, session: u32) {
     if gone {
         tell(root);
     }
+}
+
+/// **The project at `root` ended**: every refusal raised in it goes, and so does its listener,
+/// as [`crate::forge::apptoken::project_ended`] forgets its tokens.
+pub fn project_ended(root: &Path) {
+    RAISED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .retain(|one| one.root != root);
+    TOLD.lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .retain(|(at, _)| at != root);
 }
 
 /// From now on, `told` is told each time project `root`'s refusals move: one listener per

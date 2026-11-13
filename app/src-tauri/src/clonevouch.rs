@@ -11,8 +11,8 @@
 //! clone of the ask a refused GitHub App token raises (R-330), and clears that ask.
 //!
 //! Both are the window's alone (`WINDOW_ONLY`): trusting a clone is what lets saves push it and
-//! chats in its workspace use the person's GitHub access with it, so no link and no chat may ask
-//! or press it.
+//! chats in its workspace use the person's GitHub access with it, so no link and no chat may
+//! press it. A chat's refused mint raises the ask (Q181), and only the person presses it.
 
 use purlis_core::forge::gitcredential::vouch;
 use purlis_core::forge::route::HostScope;
