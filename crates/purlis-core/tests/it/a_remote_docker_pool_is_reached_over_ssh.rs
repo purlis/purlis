@@ -590,8 +590,8 @@ fn pool_now(config: &std::path::Path, name: &str) -> purlis_core::runners::Pool 
 /// is refused with nothing kept; the one shown is kept as the pool's pin, its route as it was.
 #[test]
 fn a_pool_whose_host_key_changed_is_trusted_again_by_the_key_confirmed_and_works() {
-    use purlis_core::poolsetup::{Pressed, connecting, pinchange};
     purlis_core::unsteered!();
+    use purlis_core::poolsetup::{Pressed, connecting, pinchange};
     let Some(fixture) = fixture() else { return };
     let remote = trusted(&fixture, "again");
     forward::let_go("again");
@@ -654,8 +654,8 @@ fn a_pool_whose_host_key_changed_is_trusted_again_by_the_key_confirmed_and_works
 /// key confirmed is the one trusted, and the engine there now is kept.
 #[test]
 fn a_pool_whose_engine_changed_is_trusted_again_with_the_engine_there_now() {
-    use purlis_core::poolsetup::{Pressed, connecting, pinchange};
     purlis_core::unsteered!();
+    use purlis_core::poolsetup::{Pressed, connecting, pinchange};
     let Some(fixture) = fixture() else { return };
     let mut remote = trusted(&fixture, "reset");
     forward::let_go("reset");

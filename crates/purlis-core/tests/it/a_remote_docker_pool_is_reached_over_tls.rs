@@ -214,8 +214,8 @@ fn a_key_kept_in_a_vault_entry_reaches_the_engine_and_is_left_on_no_disk() {
 /// kept as its pin, its route and files as they were.
 #[test]
 fn a_pool_whose_ca_changed_is_trusted_again_by_the_ca_confirmed_and_works() {
-    use purlis_core::poolsetup::{Pressed, pinchange};
     purlis_core::unsteered!();
+    use purlis_core::poolsetup::{Pressed, pinchange};
     let Some(fixture) = fixture() else { return };
     let files = fixture.files("ca.pem");
     let mut remote = fixture.trusted(&files);
