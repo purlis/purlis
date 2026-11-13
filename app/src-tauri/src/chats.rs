@@ -872,6 +872,11 @@ pub struct Chats {
     /// The chats told what their settings left out on the way to a runner, by session, so a chat
     /// started again says it once (#3867).
     left_out_told: Mutex<std::collections::HashSet<u32>>,
+    /// The window's asks of which chats run on an older sandbox, and of why each runs at its
+    /// level, each read once per burst (felt speed round 4, H10): a restart of every chat asked
+    /// ten times in 48 seconds, each ask compiling every chat's sandbox beside the others.
+    older_asks: purlis_core::burst::Burst<Option<OlderSandbox>>,
+    level_asks: purlis_core::burst::Burst<Vec<LevelWhy>>,
     /// The skills each chat's persona names that it started without (SK-5, #2768), by session:
     /// what its tab's Notice says until it is put away ([`Self::skills_missing`]).
     skills_missing: Mutex<HashMap<u32, SkillsMissing>>,
@@ -1646,6 +1651,8 @@ impl Chats {
             trusting: Mutex::new(None),
             late_notes: Mutex::new(HashMap::new()),
             left_out_told: Mutex::new(std::collections::HashSet::new()),
+            older_asks: purlis_core::burst::Burst::default(),
+            level_asks: purlis_core::burst::Burst::default(),
             skills_missing: Mutex::new(HashMap::new()),
             project_settings: crate::projectsettings::Watch::new(),
             sizes: Mutex::new(HashMap::new()),
@@ -4106,13 +4113,20 @@ impl Chats {
     /// ([`Running::confines`]) with what the same start compiles now, never by a settings file
     /// having been written: a change that compiles to the same sandbox leaves nothing behind.
     ///
-    /// git is asked once about the project's local file for every chat compared (#2179).
+    /// git is asked once about the project's local file for every chat compared (#2179), and
+    /// the plane's folders are walked once for every start compiled
+    /// ([`purlis_core::sandbox::planted::read_once`]). **Read once per burst** ([`Self::older_asks`]):
+    /// an ask while one reads waits for the next read, which every ask that came meanwhile shares.
     pub fn on_older_sandbox(&self) -> Option<OlderSandbox> {
-        purlis_core::profiles::git_asked_once(|| {
-            self.on_older_sandbox_on(
-                &purlis_core::sandbox::Machine::this(),
-                &purlis_core::sandbox::backend::installed,
-            )
+        self.older_asks.ask(|| {
+            purlis_core::profiles::git_asked_once(|| {
+                purlis_core::sandbox::planted::read_once(|| {
+                    self.on_older_sandbox_on(
+                        &purlis_core::sandbox::Machine::this(),
+                        &purlis_core::sandbox::backend::installed,
+                    )
+                })
+            })
         })
     }
 
@@ -4264,9 +4278,14 @@ impl Chats {
     ///
     /// Each distinct start is read once per ask, as in [`Self::on_older_sandbox`] (#2157): the
     /// window asks whenever a chat opens or closes, and on every focus.
+    /// Read once per burst, with the plane walked once, as [`Self::on_older_sandbox`] is.
     pub fn level_whys(&self) -> Vec<LevelWhy> {
-        purlis_core::profiles::git_asked_once(|| {
-            self.level_whys_on(&purlis_core::sandbox::Machine::this())
+        self.level_asks.ask(|| {
+            purlis_core::profiles::git_asked_once(|| {
+                purlis_core::sandbox::planted::read_once(|| {
+                    self.level_whys_on(&purlis_core::sandbox::Machine::this())
+                })
+            })
         })
     }
 
