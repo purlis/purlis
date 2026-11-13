@@ -14,9 +14,11 @@
 //!   the limit is, the chat going on once a look finds it within the limit again
 //!   ([`let_go_of_budgets`]); or Stop, the stop the limit made before (asked for its report,
 //!   then ended).
-//! - **A loop** is `purlis_core::looping`'s: the same command failing again and again, or its
-//!   asks refused again and again. Asked: It's fine, continue, which starts its counts again; or
-//!   Stop, the window's Stop.
+//! - **A loop** is `purlis_core::looping`'s: the same command failing again and again, its
+//!   asks refused again and again, or blocks on the same target (R-206), heard from its hook
+//!   lines ([`called`]) and from the stops the app writes ([`stopped`]), the person's Allow
+//!   starting the block count again ([`allowed`]). Asked: It's fine, continue, which starts its
+//!   counts again; or Stop, the window's Stop.
 //!
 //! **What moves a pause is a named cause** (ADR 0076): the app's own clock and counts, from the
 //! chat's hooks and the person's answers, and the person's answer to the ask. Nothing a chat
@@ -183,6 +185,32 @@ impl Pauses {
         self.inner().loops.answered(chat, refused, limits)
     }
 
+    /// Chat `chat` had `stop` written, under `call` where it was held under one: the block loop
+    /// it makes (R-206), a call counted once (Q253).
+    pub fn stopped(
+        &self,
+        chat: u32,
+        stop: &purlis_core::eventlog::stops::Stop,
+        call: Option<&str>,
+    ) -> Option<looping::Why> {
+        self.inner().loops.stopped_under(chat, stop, call)
+    }
+
+    /// The person allowed a sandbox ask of chat `chat`'s: its block count starts again (R-211).
+    pub fn allowed(&self, chat: u32) {
+        self.inner().loops.allowed(chat);
+    }
+
+    /// Chat `call.chat`'s hook line said it made or ended `call`, reported from outside its
+    /// reach where `verified`: the block loop it makes (R-206, R-210).
+    pub fn called(
+        &self,
+        call: &purlis_core::hookwire::ToolCall,
+        verified: bool,
+    ) -> Option<looping::Why> {
+        self.inner().loops.called(call.chat, call, verified)
+    }
+
     /// **The person's answer `option` to chat `chat`'s pause**: its pause ends, and what is
     /// left to do is answered. Continue keeps that budget from pausing it again; It's fine and
     /// Stop on a loop start its counts again.
@@ -285,6 +313,39 @@ pub(crate) fn answered(held: &Held, chat: u32, refused: bool) {
     let limits = looping::Limits::of(&crate::stuck::limits_of(held, chat));
     if let Some(why) = held.pauses().answered(chat, refused, &limits) {
         pause(held, chat, Why::Looping(why), now());
+    }
+}
+
+/// **Chat `chat` had `stop` written** by the app (a held connection's block, a merge's hold),
+/// under `call`, the harness's id for the call it was held under, where one was heard: three
+/// blocks on the same target pause it (R-206), each call counted once (Q253); a hold never
+/// counts (R-215).
+pub(crate) fn stopped(
+    held: &Held,
+    chat: u32,
+    stop: &purlis_core::eventlog::stops::Stop,
+    call: Option<&str>,
+) {
+    if let Some(why) = held.pauses().stopped(chat, stop, call) {
+        pause(held, chat, Why::Looping(why), now());
+    }
+}
+
+/// **The person allowed a sandbox ask of chat `chat`'s** (R-211, Q253), on any of its paths: a
+/// held connection's Notice, the question for several tasks, the chooser, an ask answered late.
+/// Its block count starts again, as an Allow of a hook's ask starts it ([`answered`]).
+pub(crate) fn allowed(held: &Held, chat: u32) {
+    held.pauses().allowed(chat);
+}
+
+/// **Chat `call.chat`'s hook line said it made or ended `call`**: a guard's deny is a block
+/// toward the loop, counted only where its chat's hooks report from outside its reach (R-209,
+/// Q235), the harness's own check's never (R-208), and a different call that came back resets
+/// the count (R-210).
+pub(crate) fn called(held: &Held, call: &purlis_core::hookwire::ToolCall) {
+    let verified = held.chats().reports_from_outside_its_reach(call.chat);
+    if let Some(why) = held.pauses().called(call, verified) {
+        pause(held, call.chat, Why::Looping(why), now());
     }
 }
 

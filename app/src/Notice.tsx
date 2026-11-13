@@ -51,7 +51,7 @@ import { Twist } from "./ui/disclosure/Disclosure";
 import { TextField } from "./ui/field/Field";
 import { PanelSectionTitle } from "./ui/panel/Panel";
 import { EmptyState } from "./ui/empty-state/EmptyState";
-import { KEPT } from "./dismissals";
+import { KEPT } from "./keptCauses";
 import { aboutOf, kindOf, searchFinds } from "./noticeKinds";
 import { controlReached, useAskedControl } from "./windowControls";
 import {
