@@ -152,9 +152,12 @@ impl Project for Held {
     }
 
     fn record(&self, chat: u32, stop: Stop) {
-        if let Err(why) = self.hooks().record_stop(Held::root(self), chat, stop) {
+        if let Err(why) = self.hooks().write_stop(chat, stop.clone()) {
             tracing::warn!("purlis: chat {chat}'s held merge was not recorded: {why}");
         }
+        // A hold never counts toward the block loop; a block written for a raise that failed
+        // does (R-207, R-215).
+        crate::pausing::stopped(self, chat, &stop);
     }
 
     fn moved(&self) {

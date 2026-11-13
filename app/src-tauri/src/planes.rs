@@ -4022,8 +4022,10 @@ impl Planes {
             let weak = Arc::downgrade(&held);
             Arc::new(move |chat, stop| match weak.upgrade() {
                 Some(strong) => {
-                    let written = strong.hooks.write_stop(chat, stop);
+                    let written = strong.hooks.write_stop(chat, stop.clone());
                     strong.block_withdrawn(chat);
+                    // And toward the block loop, which pauses it (R-206).
+                    crate::pausing::stopped(&strong, chat, &stop);
                     written
                 }
                 None => Ok(()),
@@ -4034,6 +4036,8 @@ impl Planes {
             Arc::new(move |call| {
                 if let Some(strong) = weak.upgrade() {
                     strong.chats().called(call);
+                    // And toward the block loop (R-206, R-210).
+                    crate::pausing::called(&strong, call);
                 }
             })
         });

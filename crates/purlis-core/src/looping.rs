@@ -30,6 +30,9 @@ use crate::stuck::Failing;
 /// for both, so a person who raises one raises the other.
 pub const LOOPING_IS_STUCK_TIMES: u32 = 2;
 
+/// **How many blocks on the same target are a loop** (R-206, Q133): three.
+pub const BLOCKED_TIMES: u32 = 3;
+
 /// The two thresholds in force for one chat.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Limits {
@@ -60,6 +63,8 @@ pub enum Why {
     Failing { times: u32 },
     /// The person refused this many of its asks in a row.
     Refused { times: u32 },
+    /// It was blocked this many times on the same target.
+    Blocked { times: u32 },
 }
 
 impl Why {
@@ -68,6 +73,7 @@ impl Why {
         match self {
             Self::Failing { times } => format!("the same command failed {times} times in a row"),
             Self::Refused { times } => format!("{times} of its asks were refused in a row"),
+            Self::Blocked { times } => format!("it was blocked {times} times on the same thing"),
         }
     }
 }
@@ -77,6 +83,15 @@ impl Why {
 struct Counted {
     failing: Failing,
     refused: u32,
+    /// The target of its latest blocks, and how many in a row.
+    blocked: Option<(Aim, u32)>,
+}
+
+/// **What a block was aimed at** (R-206): the tool plus its argument digest.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Aim {
+    tool: String,
+    args: Option<String>,
 }
 
 /// What has been counted of each chat of one project, in memory.
@@ -112,6 +127,35 @@ impl Loops {
         (refused && times == limits.refused_times).then_some(Why::Refused { times })
     }
 
+    /// Chat `chat` had `stop` written: whether that makes it a loop, told only as the count
+    /// reaches [`BLOCKED_TIMES`].
+    pub fn stopped(&mut self, chat: u32, stop: &crate::eventlog::stops::Stop) -> Option<Why> {
+        let crate::eventlog::stops::Stop::Block(block) = stop else {
+            return None;
+        };
+        let aim = Aim {
+            tool: block.tool.clone(),
+            args: block.args.clone(),
+        };
+        let counted = self.chats.entry(chat).or_default();
+        let times = match counted.blocked.take() {
+            Some((was, times)) if was == aim => times.saturating_add(1),
+            _ => 1,
+        };
+        counted.blocked = Some((aim, times));
+        (times == BLOCKED_TIMES).then_some(Why::Blocked { times })
+    }
+
+    /// Chat `chat`'s hook line said it made or ended `call`. Not yet counted.
+    pub fn called(
+        &mut self,
+        _chat: u32,
+        _call: &crate::hookwire::ToolCall,
+        _verified: bool,
+    ) -> Option<Why> {
+        None
+    }
+
     /// **"It's fine, continue"**: every count of chat `chat` starts again.
     pub fn fine(&mut self, chat: u32) {
         self.chats.remove(&chat);
@@ -125,3 +169,6 @@ impl Loops {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod blocked_tests;
