@@ -360,6 +360,8 @@ pub struct Held {
     secret_fills: crate::secretfills::Fills,
     /// The workspaces each chat asked the person to remove, until they answer (qw356).
     removal_asks: crate::removalasks::Asked,
+    /// The merges its chats' hooks held, each an ask until the person answers (R-114).
+    merge_holds: crate::mergeholds::MergeHolds,
     /// Each chat's browsers, and what the person said they may reach (#2013).
     browsers: crate::chatbrowsers::ChatBrowsers,
     /// The person's Allows of a persona's tools on a pool, and the runner chats' commands that
@@ -796,6 +798,11 @@ impl Held {
     /// (qw356).
     pub fn removal_asks(&self) -> &crate::removalasks::Asked {
         &self.removal_asks
+    }
+
+    /// The merges its chats' hooks held, for the person's press (R-114, R-115).
+    pub fn merge_holds(&self) -> &crate::mergeholds::MergeHolds {
+        &self.merge_holds
     }
 
     /// Each chat's browsers, and what the person said they may reach (#2013).
@@ -1531,6 +1538,7 @@ impl Held {
         self.login_grants.forget(session);
         self.secret_fills.forget(session);
         self.removal_asks.forget(session);
+        self.merge_holds.forget(session);
         // What its runner's commands wait on goes with it (#2047).
         self.pool_tools.forget(session);
         // And what it waits on or declined of a vault (#5068).
@@ -5378,6 +5386,7 @@ impl Planes {
             login_grants: crate::loginasks::Grants::default(),
             secret_fills: crate::secretfills::Fills::default(),
             removal_asks: crate::removalasks::Asked::default(),
+            merge_holds: crate::mergeholds::MergeHolds::default(),
             browsers: crate::chatbrowsers::ChatBrowsers::default()
                 .noting(self.browser_driver.clone(), &browsers_root)
                 .telling(Arc::clone(&browsers_listed))

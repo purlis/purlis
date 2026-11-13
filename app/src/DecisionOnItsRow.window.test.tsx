@@ -413,3 +413,119 @@ describe("a high-risk ask on its row (ADR 0121 decision 8, #6011)", () => {
     );
   });
 });
+
+/** A merge chat 3's hook held (R-114): Asks alone draws it until the merge row (T1-40). It is
+ *  high-risk (Q239): the core always sends its risk. */
+const MERGE: Shown = {
+  session: 3,
+  ask: "merge:3:o/r#12",
+  says: "Merge request 12 of o/r at 0123456789ab? There is no undo.",
+  options: [
+    { id: "merge", label: "Merge", allows: true },
+    { id: "dont-merge", label: "Don't merge", allows: false },
+  ],
+  source: "merge-hold",
+  chain: ["steward 3"],
+  answer: {
+    via: "merge-hold",
+    repo: "o/r",
+    number: 12,
+    head: "0123456789abcdef0123456789abcdef01234567",
+  },
+  risk: {
+    class: "merge",
+    why: "Merges request 12 of o/r into main, with no undo",
+    confirm: "Merge request 12 of o/r into main?",
+  },
+};
+
+describe("a held merge in Asks (R-115)", () => {
+  /** Presses Merge, then the Merge it asks once more with (Q239), each once read. */
+  const mergeTwice = async () => {
+    await press.click(await screen.findByRole("button", { name: "Merge" }));
+    const again = screen.getByRole("group", { name: "Merge request 12 of o/r into main?" });
+    await read();
+    await press.click(within(again).getByRole("button", { name: "Merge" }));
+  };
+
+  it("is high-risk: it says so, and keyboard triage passes it by", async () => {
+    const { view } = await opened([MERGE]);
+    const row = rowOf(view, "steward 3");
+
+    expect(row.querySelector(".inbox-risk")).toHaveTextContent(
+      "High risk Merges request 12 of o/r into main, with no undo",
+    );
+    expect(row).toHaveAttribute("data-risk");
+  });
+
+  it("asks once more before Merge acts, and Cancel takes the question back", async () => {
+    const { view, asked } = await opened([MERGE]);
+    const row = rowOf(view, "steward 3");
+    await answersOf(row);
+    const merge = await screen.findByRole("button", { name: "Merge" });
+    await read();
+
+    await press.click(merge);
+
+    expect(asked("merge_held_request")).toEqual([]);
+    const again = screen.getByRole("group", { name: "Merge request 12 of o/r into main?" });
+    await press.click(within(again).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("group", { name: "Merge request 12 of o/r into main?" })).toBeNull();
+    expect(asked("merge_held_request")).toEqual([]);
+  });
+
+  /** Opens the merge ask's answers, behind its Answer, once its row has been read. */
+  const answersOf = async (row: HTMLElement) => {
+    await read();
+    await press.click(within(row).getByRole("button", { name: /^Answer/ }));
+  };
+
+  it("holds a Merge pressed just after its answers were drawn to the settle guard", async () => {
+    const { view, asked } = await opened([MERGE]);
+    const row = rowOf(view, "steward 3");
+    await answersOf(row);
+
+    await press.click(await screen.findByRole("button", { name: "Merge" }));
+
+    expect(asked("merge_held_request")).toEqual([]);
+  });
+
+  it("asks the app to merge exactly the request and head the ask was raised at", async () => {
+    const { view, asked } = await opened([MERGE]);
+    const row = rowOf(view, "steward 3");
+    await answersOf(row);
+    await screen.findByRole("button", { name: "Merge" });
+    await read();
+
+    await mergeTwice();
+
+    await waitFor(() =>
+      expect(asked("merge_held_request")).toEqual([
+        {
+          plane: PLANE,
+          session: 3,
+          repo: "o/r",
+          number: 12,
+          head: "0123456789abcdef0123456789abcdef01234567",
+        },
+      ]),
+    );
+  });
+
+  it("sends Don't merge, which merges nothing", async () => {
+    const { view, asked } = await opened([MERGE]);
+    const row = rowOf(view, "steward 3");
+    await answersOf(row);
+    const dont = await screen.findByRole("button", { name: "Don't merge" });
+    await read();
+
+    await press.click(dont);
+
+    await waitFor(() =>
+      expect(asked("dont_merge_held_request")).toEqual([
+        expect.objectContaining({ session: 3, repo: "o/r", number: 12 }),
+      ]),
+    );
+    expect(asked("merge_held_request")).toEqual([]);
+  });
+});

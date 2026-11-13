@@ -398,6 +398,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // chat answers its own ask. The removal has no command here: it is the window's own Delete
     // workspace, which the question opens.
     "keep_asked_workspace",
+    // Merge and Don't merge on a merge a chat's hook held (R-115, R-036): the app merges on the
+    // person's press alone. No chat answers its own ask.
+    "merge_held_request",
+    "dont_merge_held_request",
     // What a chat's browser may reach, on its first browser call's Ask (#2013): the person's
     // answer alone. No chat answers its own Ask.
     "allow_chat_browser",

@@ -511,6 +511,7 @@ export const SOURCE_SAID: Record<Shown["source"], string> = {
   confirmation: "A command waits on your confirmation",
   budget: "Paused at its budget",
   looping: "Paused, as it may be looping",
+  "merge-hold": "Asks you to merge a request",
 };
 
 /** Why a task's question reached the person, as its row says it. */

@@ -56,6 +56,7 @@ mod clonevouch;
 mod createproject;
 mod curation;
 mod layout;
+mod mergeholds;
 mod pane_links;
 mod questiontrail;
 // The Devices view (#2052).

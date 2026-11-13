@@ -187,6 +187,19 @@ pub struct MergeAs {
     pub message: String,
 }
 
+/// **Where an open request stands, as a merge ask needs it** ([`super::backend::Requests::head`]):
+/// the commit it is at, the branch it merges into, and whether the repo merges it by squashing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HeadAt {
+    /// The head commit, as the forge names it.
+    pub sha: String,
+    /// The branch it merges into.
+    pub base: String,
+    /// Whether the repo's own method squashes: GitHub's where it allows squash merges and no
+    /// merge commits, GitLab's `squash_on_merge`.
+    pub squash: bool,
+}
+
 /// What `merge_at` got the forge to do, when it did not refuse.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MergedAt {

@@ -62,6 +62,10 @@ const PLACES = {
   confirmation: { at: "no-chat" },
   budget: { at: "pane" },
   looping: { at: "pane" },
+  "merge-hold": {
+    at: "asks-only",
+    debt: "a held merge is listed in Asks alone until its chat's pane draws the merge row (T1-40, R-120); its Merge and Don't merge are the window's, through the settle guard",
+  },
 } as const satisfies Record<AskSource, Place>;
 
 /** Each kind's place, as any place: a kind may move to or from Asks alone. */
@@ -128,6 +132,6 @@ describe("every kind of ask has a drawn place", () => {
       Object.entries(PLACE)
         .filter(([, place]) => place.at === "asks-only")
         .map(([source]) => source),
-    ).toEqual([]);
+    ).toEqual(["merge-hold"]);
   });
 });

@@ -347,6 +347,10 @@ pub fn answer(
         // reason. The line names a workspace; the app removes nothing for it, and holds the
         // question for the person on the tab of the chat whose token the line carries.
         Ask::Removal(removal) => crate::removalasks::asked(held, &removal),
+        // A merge the chat's hook held (R-114): no ticket, for the removal's reason. The app
+        // merges nothing for it; it answers before it reads the forge, and holds the ask for
+        // the person once it has.
+        Ask::Merge(merge) => crate::mergeholds::asked(&held.weak(), &merge),
         // A brokered git action (#1335): no ticket, for the record's reason — the line names
         // only the chat whose token it carries, and what it asks is checked against the app's
         // record of that chat.

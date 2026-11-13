@@ -53,7 +53,7 @@ mod scene;
 use scene::{MERGE, SAVE, SHA, Scene};
 
 /// Every case, by the seam method it covers. The parity test compares this with the traits.
-const CASES: [&str; 33] = [
+const CASES: [&str; 34] = [
     "owned",
     "about",
     "reachable",
@@ -62,6 +62,7 @@ const CASES: [&str; 33] = [
     "open_draft",
     "state",
     "body",
+    "head",
     "set_body",
     "by_head",
     "request_auto_merge",
@@ -467,6 +468,24 @@ mod cases {
             over.backend
                 .body(&over.caller, &scene.path("api"), &open(scene)),
             Ok(BODY.to_string())
+        );
+        spent(&over);
+    }
+
+    pub fn head(kind: &str, how: How) {
+        let Some(over) = over(kind, "head", how) else {
+            return;
+        };
+        let scene = &over.scene;
+        assert_eq!(
+            over.backend
+                .head(&over.caller, &scene.path("api"), &open(scene)),
+            Ok(purlis_core::forge::pr::HeadAt {
+                sha: "0123456789abcdef0123456789abcdef01234567".to_string(),
+                base: "main".to_string(),
+                // Both recordings are of a repo that merges only by squashing.
+                squash: true,
+            })
         );
         spent(&over);
     }
@@ -1284,6 +1303,12 @@ macro_rules! contract {
             fn body_reads_the_requests_description_whole() {
                 purlis_core::unsteered!();
                 super::cases::body(stringify!($forge), super::How::$how);
+            }
+            #[test]
+            $(#[$attr])?
+            fn head_reads_the_commit_the_base_and_the_method_the_request_merges_by() {
+                purlis_core::unsteered!();
+                super::cases::head(stringify!($forge), super::How::$how);
             }
             #[test]
             $(#[$attr])?

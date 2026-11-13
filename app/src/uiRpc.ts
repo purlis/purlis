@@ -480,6 +480,8 @@ export const commands = {
 	keepVaultBlocked: __WINDOW_ONLY_RESULT,
 	putAwayRefusedVault: __WINDOW_ONLY_RESULT,
 	keepAskedWorkspace: __WINDOW_ONLY_RESULT,
+	mergeHeldRequest: __WINDOW_ONLY_RESULT,
+	dontMergeHeldRequest: __WINDOW_ONLY_RESULT,
 	allowChatBrowser: __WINDOW_ONLY_RESULT,
 	keepChatBrowserOff: __WINDOW_ONLY_RESULT,
 	answerPoolLogin: __WINDOW_ONLY_RESULT,
@@ -3153,6 +3155,11 @@ export type AnswerPath =
  *  the window's own, opening Settings where the limit is.
  */
 { via: "paused" } | 
+/**
+ *  `merge_held_request` for Merge and `dont_merge_held_request` for Don't merge, each for
+ *  request `number` of `repo` at `head`, the key the ask was raised at (R-115).
+ */
+{ via: "merge-hold"; repo: string; number: number; head: string } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -3636,7 +3643,12 @@ export type AskSource =
  *  **A chat paused as looping** (#6015, ADR 0121 decision 20): the same command failing
  *  again and again, or its asks refused again and again. It's fine, continue, or Stop.
  */
-"looping";
+"looping" | 
+/**
+ *  **A merge a chat's hook held** (R-114, R-115): the chat never merges. Merge is the
+ *  app's own forge call, on the person's press, and Don't merge merges nothing.
+ */
+"merge-hold";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -12279,7 +12291,9 @@ export type RiskClass = "protected-push" | "production-host" | "outside-project"
 /**  A delete its command or tool plainly says (#6178). */
 "delete" | 
 /**  A credential handed from a purlis vault to a chat's program, a page or a runner (#6178). */
-"vault-use";
+"vault-use" | 
+/**  A merge a chat's hook held, which the app performs on the person's press (Q239). */
+"merge";
 
 /**  A risk, and the core's words for it. */
 export type RiskMark = {
