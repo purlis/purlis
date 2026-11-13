@@ -209,19 +209,19 @@ fn doctor_says_a_pool_whose_ca_changed_and_exits_1() {
             engine: "ABCD:EFGH:IJKL".to_owned(),
         },
     };
-    let pool = purlis_core::runners::Pool::new(
-        "builds",
-        image,
-        purlis_core::runners::Set::default(),
-    )
-    .unwrap()
-    .on_engine(Some(remote.into()));
+    let pool =
+        purlis_core::runners::Pool::new("builds", image, purlis_core::runners::Set::default())
+            .unwrap()
+            .on_engine(Some(remote.into()));
     purlis_core::runners::record_pool(&config.path().join("config"), &pool).unwrap();
 
     let out = doctor(config.path(), &["builds"]);
     assert_eq!(out.status.code(), Some(1), "{out:?}");
     let said = String::from_utf8_lossy(&out.stdout);
-    assert!(said.contains("Pool builds: build-box's CA changed"), "{said}");
+    assert!(
+        said.contains("Pool builds: build-box's CA changed"),
+        "{said}"
+    );
     assert!(said.contains(&fingerprint(&pinned).shown()), "{said}");
     assert!(said.contains(&fingerprint(&ca).shown()), "{said}");
     assert!(said.contains("Check and trust again"), "{said}");

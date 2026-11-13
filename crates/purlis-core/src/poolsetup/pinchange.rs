@@ -246,10 +246,7 @@ pub fn doctor_said(pool: &str, reached: Result<&str, &Finding>) -> (String, u8) 
                 1,
             ),
             None => (
-                format!(
-                    "Pool {pool}: {}\n",
-                    crate::poolsetup::connect_said(finding)
-                ),
+                format!("Pool {pool}: {}\n", crate::poolsetup::connect_said(finding)),
                 1,
             ),
         },

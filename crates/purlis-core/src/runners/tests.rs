@@ -2023,8 +2023,9 @@ fn a_pool_pinned_again_keeps_only_its_new_pin() {
         vec![kept.clone().on(Some(again.clone()))]
     );
     // Over TLS, the same: only the CA and engine pinned.
-    let tls = pool("over-tls", Set::default())
-        .on_engine(Some(tls_remote(crate::tlsroute::KeyFrom::File("/k.pem".into())).into()));
+    let tls = pool("over-tls", Set::default()).on_engine(Some(
+        tls_remote(crate::tlsroute::KeyFrom::File("/k.pem".into())).into(),
+    ));
     record_pool(config.path(), &tls).unwrap();
     let mut tls_again = tls_remote(crate::tlsroute::KeyFrom::File("/k.pem".into()));
     tls_again.pin.ca = crate::tlsroute::Fingerprint::of_der(b"another ca");

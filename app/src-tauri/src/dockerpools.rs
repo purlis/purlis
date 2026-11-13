@@ -162,7 +162,7 @@ pub enum PoolLink {
     /// **Its machine's pin no longer holds** (#6270, ADR 0123 §3): another host key, CA or
     /// engine. Nothing is sent there until the person checks it and trusts it again, and removing
     /// the pool forgets it here, leaving its runner there.
-    PinChanged { change: PoolPinChanged },
+    PinChanged { change: Box<PoolPinChanged> },
 }
 
 /// **A pool on another machine whose pin no longer holds** (#6270, ADR 0123 §3): what the
@@ -649,7 +649,9 @@ pub async fn docker_pool_link(name: String) -> Result<PoolLink, String> {
                 Ok(machine) => machine,
                 Err(why) => {
                     return Ok(match pin_change_of(&machine, &name) {
-                        Some(change) => PoolLink::PinChanged { change },
+                        Some(change) => PoolLink::PinChanged {
+                            change: Box::new(change),
+                        },
                         None => PoolLink::Down { why },
                     });
                 }

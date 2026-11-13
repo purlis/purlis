@@ -1745,7 +1745,11 @@ pub fn forget(config_root: &Path, name: &str) -> Result<(), Refused> {
     forget_locked(config_root, name, &lock(config_root))
 }
 
-pub(crate) fn forget_locked(config_root: &Path, name: &str, _locked: &Locked) -> Result<(), Refused> {
+pub(crate) fn forget_locked(
+    config_root: &Path,
+    name: &str,
+    _locked: &Locked,
+) -> Result<(), Refused> {
     let mut held = load(config_root)?;
     let before = held.runners.len();
     held.runners.retain(|kept| kept.name() != name);

@@ -724,6 +724,8 @@ export function madeAgainSaid(
       return `${made} purlis could not read the old runner's home, so it kept it in case it holds conversations. Bring back or discard what it holds in Devices.`;
     case "removed":
       return made;
+    case "elsewhere":
+      return `${made} The old runner stays on the engine you trusted before, with its home: purlis remembers it, and \`purlis pool left-behind\` lists it.`;
   }
 }
 

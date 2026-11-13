@@ -1103,10 +1103,9 @@ fn make_again_as(
         // On another machine, `docker` reaches only the engine its pin names, so this is the one
         // the person trusted again (#6270): the runner is made here, and nothing of the old one,
         // on the engine trusted before, is carried, read or removed.
-        Some(Missing::OnAnotherEngine) if pool.on_another_machine() => (
-            crate::dockerpool::Gone { home_kept: false },
-            true,
-        ),
+        Some(Missing::OnAnotherEngine) if pool.on_another_machine() => {
+            (crate::dockerpool::Gone { home_kept: false }, true)
+        }
         // Made here, it would be a second runner on the wrong engine (#4166).
         Some(Missing::OnAnotherEngine) => {
             return Err(Refused::Other(format!(

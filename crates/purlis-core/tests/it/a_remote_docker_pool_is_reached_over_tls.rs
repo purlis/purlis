@@ -230,13 +230,10 @@ fn a_pool_whose_ca_changed_is_trusted_again_by_the_ca_confirmed_and_works() {
         "0".repeat(64)
     ))
     .expect("an image");
-    let pool = purlis_core::runners::Pool::new(
-        "swapped-ca",
-        image,
-        purlis_core::runners::Set::default(),
-    )
-    .expect("a pool")
-    .on_engine(Some(remote.clone().into()));
+    let pool =
+        purlis_core::runners::Pool::new("swapped-ca", image, purlis_core::runners::Set::default())
+            .expect("a pool")
+            .on_engine(Some(remote.clone().into()));
     purlis_core::runners::record_pool(&config, &pool).expect("kept");
     assert!(matches!(
         purlis_core::sshroute::pool::docker_of(&fixture.docker, &pool),

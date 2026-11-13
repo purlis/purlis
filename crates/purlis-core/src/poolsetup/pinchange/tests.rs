@@ -83,10 +83,16 @@ fn a_changed_engine_says_its_runners_are_on_another_engine_until_it_is_trusted()
         let change = of("builds", &engine_changed(podman)).expect("a pin change");
         assert_eq!(change.what, Changed::Engine);
         let said = said(&change);
-        assert!(said.contains("OLD:ENGINE") && said.contains("NEW:ENGINE"), "{said}");
+        assert!(
+            said.contains("OLD:ENGINE") && said.contains("NEW:ENGINE"),
+            "{said}"
+        );
         assert!(said.contains("reset or reinstalled"), "{said}");
         assert!(said.contains("on another engine"), "{said}");
-        assert!(!said.contains("removed"), "never said to be removed: {said}");
+        assert!(
+            !said.contains("removed"),
+            "never said to be removed: {said}"
+        );
         assert!(
             said.contains("Once you trust this one, you can make the runner again"),
             "{said}"
@@ -167,7 +173,10 @@ fn doctor_says_another_finding_in_pool_setups_words_and_a_pin_that_holds_exits_0
     };
     let (said, code) = doctor_said("builds", Err(&refused));
     assert_eq!(code, 1);
-    assert!(said.contains(&crate::poolsetup::connect_said(&refused)), "{said}");
+    assert!(
+        said.contains(&crate::poolsetup::connect_said(&refused)),
+        "{said}"
+    );
     let (said, code) = doctor_said("builds", Ok("build-box"));
     assert_eq!(code, 0);
     assert_eq!(

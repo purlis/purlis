@@ -5105,7 +5105,10 @@ fn a_pool_on_another_machine_makes_its_runner_again_on_the_engine_trusted_now() 
     let again = make_again_here(config.path(), &fake, &ours).unwrap();
 
     assert_eq!(again.old_home, OldHome::Elsewhere);
-    assert!(!again.sign_ins_kept, "nothing is carried from another engine");
+    assert!(
+        !again.sign_ins_kept,
+        "nothing is carried from another engine"
+    );
     assert_eq!(again.kept.name(), AGAIN_NAMED);
     assert_eq!(
         runners::runner_for(config.path(), "first").unwrap().name(),

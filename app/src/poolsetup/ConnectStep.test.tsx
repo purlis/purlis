@@ -536,11 +536,13 @@ describe("ConnectStep", () => {
         command: null,
         url: null,
       },
-      machine: {
-        ...step({}).machine!,
+      machine: tlsMachine({
+        route: "ssh://sam@build-box",
+        host: "build-box",
+        over: "ssh",
         key: { algorithm: "ED25519", fingerprint: OTHER },
         trusted: { algorithm: "ED25519", fingerprint: FINGERPRINT },
-      },
+      }),
     });
     const made = (one: PoolSetupStep): PoolSetupShown => ({ ...shown(one), pool: "builds" });
 
@@ -550,14 +552,17 @@ describe("ConnectStep", () => {
       render(<ConnectStep step={changed} shown={made(changed)} plane="p" {...props} />);
       await userEvent.click(await screen.findByRole("button", { name: "Check and trust again" }));
       await waitFor(() => expect(props.onShown).toHaveBeenCalledWith(made(metAgain)));
-      expect(calls.find((call) => call.cmd === "pool_setup_check_and_trust_again")?.args).toEqual(
-        { plane: "p", pool: "builds" },
-      );
+      expect(calls.find((call) => call.cmd === "pool_setup_check_and_trust_again")?.args).toEqual({
+        plane: "p",
+        pool: "builds",
+      });
       expect(calls.some((call) => call.cmd === "pool_setup_trust_again")).toBe(false);
     });
 
     it("shows the key it shows now beside the one trusted, and trusts that one for the pool", async () => {
-      const calls = core({ pool_setup_trust_again: () => made(step({ state: "done", next: null })) });
+      const calls = core({
+        pool_setup_trust_again: () => made(step({ state: "done", next: null })),
+      });
       const props = { onShown: vi.fn(), changed: vi.fn(), onNext: vi.fn() };
       render(<ConnectStep step={metAgain} shown={made(metAgain)} plane="p" {...props} />);
       expect(await screen.findByText(OTHER)).toBeInTheDocument();
