@@ -141,6 +141,9 @@ export function onItsPane(asks: readonly Shown[], session: number): Shown[] {
 export type Answered = {
   /** When, in ms since the epoch. */
   at: number;
+  /** The chat that asked, by which the chips list its sentence (ADR 0121, amended 2026-11-12,
+   *  decision 9); 0 or left out where no chat asked (a change purlis holds, a sign-in). */
+  session?: number;
   chain: readonly string[];
   says: string;
   /** The answer as its button read, or a reply's words. */
@@ -225,7 +228,13 @@ export function useAnsweredWhenGone(
     for (const [key, { ask, answer }] of touched.current) {
       if (listed.has(key)) continue;
       touched.current.delete(key);
-      noteAnswered(plane, { at: Date.now(), chain: ask.chain, says: ask.says, answer });
+      noteAnswered(plane, {
+        at: Date.now(),
+        session: ask.session,
+        chain: ask.chain,
+        says: ask.says,
+        answer,
+      });
     }
   });
   return useCallback((ask: Shown, answer: string) => {
