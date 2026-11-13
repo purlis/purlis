@@ -127,11 +127,12 @@ fn place_of(moved: &crate::state::Move) -> usize {
         Move::BlockedWhileWaiting => 20,
         Move::Replied => 21,
         Move::Said { .. } => 22,
+        Move::BlockWithdrawn => 23,
     }
 }
 
 /// How many places [`place_of`] names.
-const EVERY_MOVE: usize = 23;
+const EVERY_MOVE: usize = 24;
 
 /// One of every move, in an order in which each moves something a reader can see: chat 1 takes
 /// them all, and chat 2 is opened only to be closed.
@@ -255,6 +256,8 @@ fn one_of_every_move() -> Vec<(u32, crate::state::Move)> {
             },
         ),
         (1, Move::BlockedWhileWaiting),
+        // Its ask withdrawn as the chat stopped waiting on it (R-290): the wait is back.
+        (1, Move::BlockWithdrawn),
         // A background turn over the wait that raised, which the person's line ends (#4562).
         (
             1,

@@ -345,6 +345,13 @@ impl Hosted {
             }
             return Ok(Vec::new());
         }
+        // The chat moved on (R-290): a proxy that asks nobody holds nothing to give up.
+        if let ReachChange::GiveUp { target } = change {
+            if let Some(board) = &self.board {
+                board.give_up(target);
+            }
+            return Ok(Vec::new());
+        }
         let Some(board) = &self.board else {
             return Err("this chat's proxy asks nobody, so it holds no ask to answer".into());
         };
@@ -372,7 +379,9 @@ impl Hosted {
                 }
                 Vec::new()
             }
-            ReachChange::WithdrawPort { .. } | ReachChange::HoldAsksOpen { .. } => Vec::new(),
+            ReachChange::WithdrawPort { .. }
+            | ReachChange::HoldAsksOpen { .. }
+            | ReachChange::GiveUp { .. } => Vec::new(),
         })
     }
 

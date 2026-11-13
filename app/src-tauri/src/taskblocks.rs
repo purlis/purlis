@@ -157,10 +157,67 @@ pub struct Blocks {
     /// held, so the person may still answer one, and listed by no ask until they take it up
     /// ([`Self::taken_up`]) or a command of the chat is refused the same.
     quiet: Mutex<HashMap<u32, Vec<HeldBlock>>>,
-    /// The blocks of each open chat whose held connection gave up with nobody's answer, and
-    /// when, in seconds since 1970 (#6007): still answerable, and an Allow tells the chat to
-    /// retry. Until it is answered, held again, or the chat ends.
-    gave_up: Mutex<HashMap<u32, Vec<(HeldBlock, u64)>>>,
+    /// What each open chat's hook lines said of its calls (R-290, Q240): what tells when it
+    /// has moved on from a connection held now.
+    calls: Mutex<HashMap<u32, Calls>>,
+}
+
+/// **What a chat's hook lines said of its calls** (R-290, Q240), for the connections it holds.
+#[derive(Default)]
+struct Calls {
+    /// The tool of its latest pre-tool call, by the harness's name for it.
+    latest: Option<String>,
+    /// Its calls open now, each heard by its pre-tool line with an id, and no post-tool line yet.
+    open: Vec<Call>,
+    /// Each connection its proxy holds now, with the calls open when it was asked about.
+    held: Vec<Under>,
+    /// The held connections written as blocks, until the call they were held under is over:
+    /// a line of the same refusal heard meanwhile is that block's echo ([`Blocks::echoes`]).
+    written: Vec<Under>,
+}
+
+/// One call a hook line named.
+#[derive(Debug, Clone)]
+struct Call {
+    id: String,
+    agent: Option<String>,
+    tool: Option<String>,
+}
+
+/// A held connection, and the calls it may be held under.
+struct Under {
+    block: HeldBlock,
+    /// Its host and port, as the proxy's board names it.
+    target: String,
+    /// The calls open when it was asked about: none where no line named its call.
+    calls: Vec<Call>,
+    /// The ids of those whose post-tool line was heard since.
+    ended: Vec<String>,
+    /// Whether the board was told to give it up.
+    given_up: bool,
+}
+
+impl Under {
+    /// **Whether a pre-tool call by `agent` is its chat moving on from it** (Q240): every call
+    /// it may be held under has ended, and `agent` made one of them. A sub-agent's call, a
+    /// parallel call and a call while it was held under no call are not.
+    fn moved_on_by(&self, agent: Option<&str>) -> bool {
+        !self.calls.is_empty()
+            && self.calls.iter().all(|call| self.ended.contains(&call.id))
+            && self.calls.iter().any(|call| call.agent.as_deref() == agent)
+    }
+
+    /// The tool of the call it was held under, where one was open: the newest.
+    fn tool(&self) -> Option<String> {
+        self.calls.last().and_then(|call| call.tool.clone())
+    }
+}
+
+/// What a held connection's withdrawn ask leaves ([`Blocks::stopped_waiting`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Withdrawn {
+    /// The tool of the call it was held under, by the harness's name, where one was heard.
+    pub tool: Option<String>,
 }
 
 impl Blocks {
@@ -310,7 +367,13 @@ impl Blocks {
     /// it, until it is answered, it no longer waits ([`Self::no_longer_waits`]), or the chat
     /// ends. At most [`MOST_WAITING_PER_CHAT`] wait at once, the oldest going first.
     pub fn heard_waiting(&self, session: u32, block: HeldBlock) {
-        self.forget_gave_up(session, &block);
+        // The same refusal, heard unnamed before, is this one now (#1903): one ask, never two.
+        if block.names_a_host() {
+            let unnamed = HeldBlock::unnamed_host(&block.operation, &block.kind);
+            if self.holds(session, &unnamed) {
+                self.answered(session, &unnamed);
+            }
+        }
         {
             let mut waiting = self.waiting();
             let mine = waiting.entry(session).or_default();
@@ -335,41 +398,167 @@ impl Blocks {
         }
     }
 
-    /// `block` of chat `session` waits on the person no longer because its held connection
-    /// gave up with nobody's answer, at `at` (#6007): it stays, timed out and answerable.
-    pub fn gave_up(&self, session: u32, block: &HeldBlock, at: u64) {
-        self.no_longer_waits(session, block);
-        let mut gave_up = self.gave_ups();
-        let mine = gave_up.entry(session).or_default();
-        mine.retain(|(one, _)| one != block);
-        mine.push((block.clone(), at));
-        if mine.len() > MOST_WAITING_PER_CHAT {
-            mine.remove(0);
+    /// **Chat `session` stopped waiting on `block`, its held connection** (R-290, Q154): the
+    /// connection timed out, or was given up as the chat moved on, so the ask is withdrawn.
+    /// What it leaves, where it was an ask until now: once only, whoever asks first, so the
+    /// refusal becomes one block, never two.
+    pub fn stopped_waiting(&self, session: u32, block: &HeldBlock) -> Option<Withdrawn> {
+        let was = {
+            let mut waiting = self.waiting();
+            let mine = waiting.get_mut(&session)?;
+            let before = mine.len();
+            mine.retain(|one| one != block);
+            let was = mine.len() != before;
+            if mine.is_empty() {
+                waiting.remove(&session);
+            }
+            was
+        };
+        if !was {
+            return None;
+        }
+        // Taken before the answer forgets it.
+        let under = self.calls().get_mut(&session).and_then(|mine| {
+            mine.held
+                .iter()
+                .position(|one| one.block == *block)
+                .map(|at| mine.held.remove(at))
+        });
+        self.answered(session, block);
+        let mut calls = self.calls();
+        let mine = calls.entry(session).or_default();
+        let tool = under
+            .as_ref()
+            .and_then(Under::tool)
+            .or_else(|| mine.latest.clone());
+        // Its echo is dropped until the call it was held under is over (Q240).
+        mine.written.retain(|one| one.block != *block);
+        mine.written.push(under.unwrap_or_else(|| Under {
+            block: block.clone(),
+            target: String::new(),
+            calls: Vec::new(),
+            ended: Vec::new(),
+            given_up: true,
+        }));
+        if mine.written.len() > MOST_WAITING_PER_CHAT {
+            mine.written.remove(0);
+        }
+        Some(Withdrawn { tool })
+    }
+
+    /// **Chat `session`'s proxy holds a connection to `target`, a host and port, for `block`,
+    /// and the person is asked** (R-290, Q240): the calls open now are the ones it may be held
+    /// under. A new ask, never the echo of a block written before.
+    pub fn held_live(&self, session: u32, block: &HeldBlock, target: &str) {
+        let mut calls = self.calls();
+        let mine = calls.entry(session).or_default();
+        mine.written.retain(|one| one.block != *block);
+        mine.held.retain(|one| one.block != *block);
+        let open = mine.open.clone();
+        mine.held.push(Under {
+            block: block.clone(),
+            target: target.to_owned(),
+            calls: open,
+            ended: Vec::new(),
+            given_up: false,
+        });
+        if mine.held.len() > MOST_WAITING_PER_CHAT {
+            mine.held.remove(0);
         }
     }
 
-    /// When `block` of chat `session` gave up with nobody's answer, where it did and is still
-    /// held (#6007).
-    pub fn gave_up_at(&self, session: u32, block: &HeldBlock) -> Option<u64> {
-        self.gave_ups()
-            .get(&session)?
-            .iter()
-            .find(|(one, _)| one == block)
-            .map(|(_, at)| *at)
-    }
-
-    fn gave_ups(&self) -> std::sync::MutexGuard<'_, HashMap<u32, Vec<(HeldBlock, u64)>>> {
-        self.gave_up.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    fn forget_gave_up(&self, session: u32, block: &HeldBlock) {
-        let mut gave_up = self.gave_ups();
-        if let Some(mine) = gave_up.get_mut(&session) {
-            mine.retain(|(one, _)| one != block);
-            if mine.is_empty() {
-                gave_up.remove(&session);
+    /// **Chat `session`'s hook line said it made, or ended, `call`** (R-290, Q240). Answers the
+    /// held connections, by host and port, it has moved on from now: each one's every call has
+    /// ended and the same agent made this next call. Each is answered once, for the proxy's
+    /// board to give up, so the one timeout path withdraws its ask and writes its block.
+    pub fn called(&self, call: &purlis_core::hookwire::ToolCall) -> Vec<String> {
+        let mut calls = self.calls();
+        let mine = calls.entry(call.chat).or_default();
+        // A call comes back, or the harness's own check refused it: either way it is over.
+        if call.tool_hook.starts_with("posttooluse")
+            || call.tool_hook == purlis_core::hookreg::HARNESS_DENIED
+        {
+            if let Some(id) = &call.call {
+                // An agent's calls come back in turn: one of its calls ending ends every call
+                // it made before, whose own end was never heard (a failed Edit is no
+                // `PostToolUse`).
+                if let Some(at) = mine.open.iter().position(|one| one.id == *id) {
+                    let agent = mine.open[at].agent.clone();
+                    let others: Vec<Call> = mine
+                        .open
+                        .drain(..=at)
+                        .filter(|one| one.agent != agent)
+                        .collect();
+                    mine.open.splice(0..0, others);
+                }
+                for under in mine.held.iter_mut().chain(mine.written.iter_mut()) {
+                    let Some(at) = under.calls.iter().position(|one| one.id == *id) else {
+                        continue;
+                    };
+                    let agent = under.calls[at].agent.clone();
+                    for one in &under.calls[..=at] {
+                        if one.agent == agent && !under.ended.contains(&one.id) {
+                            under.ended.push(one.id.clone());
+                        }
+                    }
+                }
+            }
+            return Vec::new();
+        }
+        if !call.tool_hook.starts_with("pretooluse") {
+            return Vec::new();
+        }
+        let agent = call.agent.as_deref();
+        mine.latest.clone_from(&call.tool);
+        let mut moved_on = Vec::new();
+        for under in &mut mine.held {
+            if !under.given_up && under.moved_on_by(agent) {
+                under.given_up = true;
+                moved_on.push(under.target.clone());
             }
         }
+        // The call a written block was held under is over: a line of it now is no echo.
+        mine.written
+            .retain(|under| !(under.calls.is_empty() || under.moved_on_by(agent)));
+        // Only a call whose post-tool line will be heard is open until it is: never one its
+        // guard refused, which never runs, nor one of a tool no post-tool hook names (Grep).
+        let comes_back = call.decision != purlis_core::hookwire::Decision::Deny
+            && call
+                .tool
+                .as_deref()
+                .is_some_and(purlis_core::hookreg::comes_back);
+        if let Some(id) = call.call.as_ref().filter(|_| comes_back) {
+            mine.open.retain(|one| one.id != *id);
+            mine.open.push(Call {
+                id: id.clone(),
+                agent: call.agent.clone(),
+                tool: call.tool.clone(),
+            });
+            if mine.open.len() > MOST_WAITING_PER_CHAT {
+                mine.open.remove(0);
+            }
+        }
+        moved_on
+    }
+
+    /// **Whether `block`, heard of chat `session`, is the echo of a held connection's block
+    /// written already** (Q240): the same host, or a host unnamed, under the same operation
+    /// and kind, before the call it was held under is over. It is dropped, never held again as
+    /// an ask beside its block.
+    pub fn echoes(&self, session: u32, block: &HeldBlock) -> bool {
+        self.calls().get(&session).is_some_and(|mine| {
+            mine.written.iter().any(|one| {
+                one.block == *block
+                    || (block.what == GrantWhat::Host
+                        && block.target.is_empty()
+                        && one.block.operation == block.operation
+                        && one.block.kind == block.kind)
+            })
+        })
+    }
+
+    fn calls(&self) -> std::sync::MutexGuard<'_, HashMap<u32, Calls>> {
+        self.calls.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Whether chat `session` is held on `block` now.
@@ -382,7 +571,9 @@ impl Blocks {
     /// `block` of chat `session` was answered: it is held no longer.
     pub fn answered(&self, session: u32, block: &HeldBlock) {
         self.no_longer_waits(session, block);
-        self.forget_gave_up(session, block);
+        if let Some(mine) = self.calls().get_mut(&session) {
+            mine.held.retain(|one| one.block != *block);
+        }
         self.loud(session, |one| one == block);
         self.noticed().remove(&session);
         let mut held = self.held();
@@ -408,7 +599,7 @@ impl Blocks {
         self.since().remove(&session);
         self.waiting().remove(&session);
         self.quiet().remove(&session);
-        self.gave_ups().remove(&session);
+        self.calls().remove(&session);
     }
 
     fn noticed(&self) -> std::sync::MutexGuard<'_, HashMap<u32, u32>> {
@@ -434,16 +625,24 @@ impl Blocks {
 /// or a folder to write, named whole, a host the report did not name, which the person
 /// types on the chat's own Notice, or a socket or a service the person may choose
 /// ([`crate::hooks::ChatBlocked::choose`], #1884). One read back is held quietly
-/// ([`Blocks::heard_quietly`]).
-pub fn heard(chats: &crate::chats::Chats, told: &crate::hooks::ChatBlocked) {
+/// ([`Blocks::heard_quietly`]). Whether it was heard: not the echo of a held connection's block
+/// written already ([`Blocks::echoes`], Q240), which is dropped, and the window not told of it.
+pub fn heard(chats: &crate::chats::Chats, told: &crate::hooks::ChatBlocked) -> bool {
     let Some(block) = held_of(told) else {
-        return;
+        return true;
     };
+    // The same refusal as a held connection's block written already (Q240): its echo from the
+    // post-tool detector, or the proxy's own raise of its ask landing late. Never an ask beside
+    // its block.
+    if chats.blocks().echoes(told.session, &block) {
+        return false;
+    }
     if told.quiet.is_some() {
         chats.blocks().heard_quietly(told.session, block);
     } else {
         chats.blocks().heard(told.session, block);
     }
+    true
 }
 
 /// The block a chat is held on for what the window is `told`, or none where no answer names it.

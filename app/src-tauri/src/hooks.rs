@@ -328,6 +328,10 @@ pub struct Hooks {
     /// the fact, for `answering`'s reason. The chats' record listens, so the conversation a
     /// relaunch resumes is the one the chat is in now (Q10).
     following: Arc<Mutex<Option<Following>>>,
+    /// Told each tool call a chat's hook line says it made — a slot filled after the fact, for
+    /// `answering`'s reason. The chats listen, so a chat that moved on stops waiting on its
+    /// held connections (R-290).
+    calls: Arc<Mutex<Option<Called>>>,
     /// The host's event log, once the app has one (FD-9) — a slot filled after the fact, so
     /// a project is opened the same way with or without it. Every line the channel hears from
     /// a chat's hooks is recorded there, whether or not it moved the board.
@@ -2324,6 +2328,9 @@ pub type WaitsOf = Arc<dyn Fn(u32, bool) -> purlis_core::state::Waits + Send + S
 /// ADR 0066), that run's id, which is the chat's current run from now on.
 pub type Following = Arc<dyn Fn(u32, &str, Option<&str>) + Send + Sync + 'static>;
 
+/// Who is told each tool call a chat's hook line says it made ([`Hooks::tell_calls_to`]).
+pub type Called = Arc<dyn Fn(&purlis_core::hookwire::ToolCall) + Send + Sync + 'static>;
+
 /// What answers an ask, told which connection it came on.
 pub type Answering = Arc<dyn Fn(u64, Ask) -> Answer + Send + Sync + 'static>;
 
@@ -2406,6 +2413,7 @@ impl Hooks {
             answering: Arc::new(Mutex::new(None)),
             heard: Arc::new(Mutex::new(None)),
             following: Arc::new(Mutex::new(None)),
+            calls: Arc::new(Mutex::new(None)),
             all_reports: Arc::new(Mutex::new(None)),
             waits: Arc::new(Mutex::new(None)),
             saved: Arc::new(Mutex::new(None)),
@@ -2504,6 +2512,7 @@ impl Hooks {
         let answering: Arc<Mutex<Option<Answering>>> = Arc::new(Mutex::new(None));
         let heard: Arc<Mutex<Option<Heard>>> = Arc::new(Mutex::new(None));
         let following: Arc<Mutex<Option<Following>>> = Arc::new(Mutex::new(None));
+        let calls: Arc<Mutex<Option<Called>>> = Arc::new(Mutex::new(None));
         let all_reports: Arc<Mutex<Option<Heard>>> = Arc::new(Mutex::new(None));
         let waits: Arc<Mutex<Option<WaitsOf>>> = Arc::new(Mutex::new(None));
         let saved: Arc<Mutex<Option<SavedHeard>>> = Arc::new(Mutex::new(None));
@@ -2850,6 +2859,7 @@ impl Hooks {
                 let board = Arc::clone(&board);
                 let plane = plane.clone();
                 let skill_runs = Arc::clone(&skill_runs);
+                let calls = Arc::clone(&calls);
                 Box::new(move |call| {
                     // The skill run on the chat's tab: opened by a call that starts a skill,
                     // and counted by every call inside it (SK-3).
@@ -2879,6 +2889,11 @@ impl Hooks {
                             moved(what);
                         }
                     }
+                    // Its chat waits on its held connections no longer (R-290).
+                    let called = calls.lock().unwrap_or_else(PoisonError::into_inner).clone();
+                    if let Some(called) = called {
+                        called(&call);
+                    }
                     spooled.heard_from(call.chat);
                     recorded
                 })
@@ -2893,6 +2908,7 @@ impl Hooks {
             answering,
             heard,
             following,
+            calls,
             all_reports,
             waits,
             saved,
@@ -3619,6 +3635,35 @@ impl Hooks {
         *self.saved.lock().unwrap_or_else(PoisonError::into_inner) = Some(saved);
     }
 
+    /// Who is told, from now on, each tool call a chat's hook line says it made (R-290).
+    pub fn tell_calls_to(&self, called: Called) {
+        *self.calls.lock().unwrap_or_else(PoisonError::into_inner) = Some(called);
+    }
+
+    /// **Writes chat `number`'s `stop` into the event log** (R-290), made durable before it
+    /// answers; `Ok` with nothing written where this machine has no event log open.
+    /// Written straight into the log, never carried back with a hook line being heard, unlike
+    /// [`Hooks::record_stop`].
+    pub fn write_stop(
+        &self,
+        number: u32,
+        stop: purlis_core::eventlog::stops::Stop,
+    ) -> std::io::Result<()> {
+        let events = self
+            .events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        match events {
+            Some(events) => events.record(Entry::Stop {
+                plane: self.plane.root().to_path_buf(),
+                number: Some(number),
+                stop,
+            }),
+            None => Ok(()),
+        }
+    }
+
     /// Who is told, from now on, each time a chat's own harness moves it onto another
     /// conversation.
     ///
@@ -3809,6 +3854,12 @@ impl ChatBoard for Hooks {
     fn blocked_while_waiting(&self, session: u32) -> Option<Moved> {
         moving(&mut self.board(), &self.plane, session, |board| {
             board.blocked_while_waiting(session)
+        })
+    }
+
+    fn block_withdrawn(&self, session: u32) -> Option<Moved> {
+        moving(&mut self.board(), &self.plane, session, |board| {
+            board.block_withdrawn(session)
         })
     }
 
