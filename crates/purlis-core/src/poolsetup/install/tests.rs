@@ -131,6 +131,17 @@ fn a_new_signing_key_is_an_ed25519_key_in_pkcs8_pem() {
     let der = base64::engine::general_purpose::STANDARD
         .decode(body)
         .unwrap();
+    // PKCS#8 v1, as `openssl genpkey -algorithm ed25519` writes it: version 0 and the 32-byte
+    // seed, no public key. OpenSSL refuses the v2 ring writes, and the guide's step 6 has the
+    // admin read the key's public half with OpenSSL (#4495).
+    assert_eq!(der.len(), 48, "{der:02x?}");
+    assert_eq!(
+        der[..16],
+        [
+            0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22,
+            0x04, 0x20
+        ]
+    );
     // As the operator reads it (vouch.rs).
     let pair = ring::signature::Ed25519KeyPair::from_pkcs8_maybe_unchecked(&der).unwrap();
     // Its public half is the key the operator's Pools will name (#4495).

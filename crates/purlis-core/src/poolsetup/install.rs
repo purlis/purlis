@@ -468,21 +468,32 @@ pub fn apply(
     Ok(None)
 }
 
-/// **A new Ed25519 key in PKCS#8 PEM**, the form the operator reads (`vouch.rs`, which takes
-/// PKCS#8 v1, as `openssl genpkey -algorithm ed25519` makes it, or v2, as `ring` makes it): held
-/// in memory only, for the one `kubectl create secret` that keeps it in the cluster. With its
-/// public half, the key the operator's Pools will name.
+/// **A new Ed25519 key in PKCS#8 PEM**, the form the operator reads (`vouch.rs`): held in memory
+/// only, for the one `kubectl create secret` that keeps it in the cluster. With its public half,
+/// the key the operator's Pools will name.
+///
+/// Written as PKCS#8 v1, version 0 and the seed alone, as `openssl genpkey -algorithm ed25519`
+/// writes it: `ring` makes a v2 whose public key OpenSSL refuses to read, and the guide has the
+/// admin read the key's public half from its Secret with OpenSSL (#4495).
 fn signing_key() -> Result<(String, crate::clusterpool::OperatorKey), Refused> {
     let rng = ring::rand::SystemRandom::new();
-    let der = ring::signature::Ed25519KeyPair::generate_pkcs8(&rng)
+    let v2 = ring::signature::Ed25519KeyPair::generate_pkcs8(&rng)
         .map_err(|_| Refused::Other("no new key could be made on this machine".into()))?;
-    let pair = ring::signature::Ed25519KeyPair::from_pkcs8(der.as_ref())
+    let pair = ring::signature::Ed25519KeyPair::from_pkcs8(v2.as_ref())
         .map_err(|_| Refused::Other("the new key could not be read back".into()))?;
     let public: [u8; 32] = ring::signature::KeyPair::public_key(&pair)
         .as_ref()
         .try_into()
         .map_err(|_| Refused::Other("the new key's public half isn't 32 bytes".into()))?;
-    let body = base64::engine::general_purpose::STANDARD.encode(der.as_ref());
+    let der = pkcs8_v1(v2.as_ref())
+        .ok_or_else(|| Refused::Other("the new key could not be written for OpenSSL".into()))?;
+    // The v1 must name the same key, or nothing is kept.
+    let again = ring::signature::Ed25519KeyPair::from_pkcs8_maybe_unchecked(&der)
+        .map_err(|_| Refused::Other("the new key could not be read back".into()))?;
+    if ring::signature::KeyPair::public_key(&again).as_ref() != public {
+        return Err(Refused::Other("the new key could not be read back".into()));
+    }
+    let body = base64::engine::general_purpose::STANDARD.encode(&der);
     let lines: Vec<String> = body
         .as_bytes()
         .chunks(64)
@@ -497,6 +508,23 @@ fn signing_key() -> Result<(String, crate::clusterpool::OperatorKey), Refused> {
         ),
         crate::clusterpool::OperatorKey::of_public(public),
     ))
+}
+
+/// The DER of an Ed25519 PKCS#8 v1 key up to its 32-byte seed (RFC 8410 §7).
+const PKCS8_V1_ED25519: [u8; 16] = [
+    0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20,
+];
+
+/// `v2`, a PKCS#8 v2 Ed25519 key as `ring` writes it, as the v1 that holds its seed alone.
+fn pkcs8_v1(v2: &[u8]) -> Option<Vec<u8>> {
+    // `ring`'s v2: the SEQUENCE's header, version 1, the algorithm, then the seed's OCTET STRING
+    // in an OCTET STRING, the same bytes as v1's from the algorithm on.
+    let seed = v2
+        .windows(PKCS8_V1_ED25519.len() - 5)
+        .position(|at| at == &PKCS8_V1_ED25519[5..])
+        .map(|at| at + PKCS8_V1_ED25519.len() - 5)?;
+    let seed = v2.get(seed..seed + 32)?;
+    Some([&PKCS8_V1_ED25519[..], seed].concat())
 }
 
 /// PEM's label for a PKCS#8 key.
