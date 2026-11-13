@@ -1410,3 +1410,53 @@ fn a_narrowed_chats_fill_press_is_judged_as_the_persona_it_was_started_as() {
 
     assert_eq!(heard.try_recv(), Ok(Heard::Allowed));
 }
+
+/// #5242: the Allow kept for a fill that never went in stands only for that chat's retry of
+/// exactly the notice the person pressed on, on the same runner or none, and for one call.
+#[test]
+fn an_allow_kept_for_an_unfilled_fill_is_for_exactly_its_notice_and_one_call() {
+    let fills = Fills::default();
+    let shown = wait("https://dash.example.test").digest();
+    fills.keep_unfilled(chat(7), None, shown.clone());
+
+    let other_key = FillWait {
+        key: "another-key".into(),
+        ..wait("https://dash.example.test")
+    }
+    .digest();
+    assert!(
+        !fills.take_unfilled(chat(7), None, &other_key),
+        "another key"
+    );
+    let other_site = wait("https://other.example.test").digest();
+    assert!(
+        !fills.take_unfilled(chat(7), None, &other_site),
+        "another site"
+    );
+    assert!(!fills.take_unfilled(chat(8), None, &shown), "another chat");
+    let dealt_again = Chat {
+        session: 7,
+        id: Some("01JX0000000000000000000099"),
+    };
+    assert!(
+        !fills.take_unfilled(dealt_again, None, &shown),
+        "a chat dealt its number"
+    );
+    assert!(
+        !fills.take_unfilled(chat(7), Some("ci"), &shown),
+        "on a runner"
+    );
+
+    assert!(fills.take_unfilled(chat(7), None, &shown), "its own retry");
+    assert!(
+        !fills.take_unfilled(chat(7), None, &shown),
+        "used by that one call"
+    );
+
+    fills.keep_unfilled(chat(7), None, shown.clone());
+    fills.forget(7);
+    assert!(
+        !fills.take_unfilled(chat(7), None, &shown),
+        "gone with its chat"
+    );
+}

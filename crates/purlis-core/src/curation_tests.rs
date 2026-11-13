@@ -1284,6 +1284,43 @@ fn persona_lint_warns_when_a_curation_prompt_names_a_built_in_skill_by_its_old_n
     );
 }
 
+/// #5725: a prompt naming `purlis-building-ui`, which purlis retired, by any name it had is told
+/// it was removed, never sent to write the name an older one was renamed to.
+#[test]
+fn persona_lint_warns_when_a_curation_prompt_names_the_retired_building_skill_5725() {
+    for named in [
+        "purlis-building-ui",
+        "purlis:building-ui",
+        "charter:purlis-building-ui",
+        "purlis-building-purlis-ui",
+        "purlis:building-purlis-ui",
+    ] {
+        let dir = plane(&["ops"], &[], None);
+        let root = dir.path();
+        declare(
+            root,
+            "ops",
+            "look",
+            &format!("---\nlabel: Look\non: workspace\n---\n\nUse {named} on {{subject.name}}.\n"),
+        );
+        let issues: Vec<(Level, String)> = lint(root, "ops")
+            .into_iter()
+            .map(|issue| (issue.level, issue.message))
+            .collect();
+        assert_eq!(
+            issues,
+            vec![(
+                Level::Warn,
+                "curation/look.md: the prompt names `purlis-building-ui`, which purlis removed: \
+                 its guide is `docs/building-ui.md` in the purlis repository. Take it out of the \
+                 prompt"
+                    .to_owned()
+            )],
+            "{named}"
+        );
+    }
+}
+
 #[test]
 fn every_built_in_curation_prompt_names_a_skill_by_the_name_it_has_now_5724() {
     for builtin in BUILTINS {

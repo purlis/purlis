@@ -15,6 +15,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { forgetStudio, renderStudio } from "./SkillStudioTab.testkit";
 import { AT_THE_ROOT } from "./skillStudio";
 import { PROJECT } from "./skillChanges";
+import { NO_SKILL_POLICY } from "./skillPolicy.testkit";
 
 afterEach(() => {
   cleanup();
@@ -88,6 +89,7 @@ function core(
         first,
       };
     asked.push({ cmd, args: given });
+    if (cmd === "skill_policy") return NO_SKILL_POLICY;
     const answer = answers[cmd];
     if (answer !== undefined) return answer(given);
     if (cmd === "skills_deleted" || cmd === "skill_drafts" || cmd === "skill_sources") return [];

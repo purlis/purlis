@@ -1288,7 +1288,19 @@ function Overview({
         <ReadingRows what={`what ${name} names`} testid="skill-page-reading" />
       ) : (
         <>
-          <SkillUses name={name} details={details.data} />
+          <SkillUses
+            name={name}
+            details={details.data}
+            busy={busy}
+            onWrite={
+              level === null
+                ? undefined
+                : (hint) =>
+                    change("The reference was not written", () =>
+                      commands.skillHintWrite(plane, level, name, hint),
+                    )
+            }
+          />
           <SkillPinnedBy
             name={name}
             pinners={details.data.pinned_by}

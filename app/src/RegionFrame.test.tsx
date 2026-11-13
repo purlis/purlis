@@ -254,8 +254,8 @@ function WithViews({
   badges,
   panels = [],
   previews,
-  pulse,
-  onPulsed,
+  bounce,
+  onBounced,
 }: {
   from: Arrangement;
   to?: Arrangement;
@@ -266,8 +266,8 @@ function WithViews({
   panels?: { view: PanelViewId; name: string; mark: LucideIcon }[];
   /** The views behind a preview that is on (#3266). */
   previews?: readonly ViewId[];
-  pulse?: ViewId;
-  onPulsed?: () => void;
+  bounce?: ViewId;
+  onBounced?: () => void;
 }) {
   const [arrangement, setArrangement] = useState(from);
   return (
@@ -279,8 +279,8 @@ function WithViews({
         views={VIEWS}
         panels={panels}
         previews={previews}
-        pulse={pulse}
-        onPulsed={onPulsed}
+        bounce={bounce}
+        onBounced={onBounced}
         badges={badges ?? { chats: badge }}
         onPick={onPick}
         centre={<div data-testid="centre">centre</div>}
@@ -459,14 +459,14 @@ describe("the right side's activity bar (#1678)", () => {
     );
   });
 
-  it("pulses the one icon it is told to, and says when its pulse has ended (ADR 0121 decision 24)", () => {
-    const onPulsed = vi.fn();
-    render(<WithViews from={DEFAULT_ARRANGEMENT} pulse="asks" onPulsed={onPulsed} />);
+  it("bounces the one icon it is told to, and says when its bounce has ended (#6343)", () => {
+    const onBounced = vi.fn();
+    render(<WithViews from={DEFAULT_ARRANGEMENT} bounce="asks" onBounced={onBounced} />);
 
     const asks = within(right()).getByRole("tab", { name: /^Asks\b/ });
-    expect(asks).toHaveAttribute("data-pulse", "true");
+    expect(asks).toHaveAttribute("data-bounce", "true");
     expect(within(right()).getByRole("tab", { name: /^Updates\b/ })).not.toHaveAttribute(
-      "data-pulse",
+      "data-bounce",
     );
     // jsdom has no AnimationEvent, so React listens for the prefixed name, and the animation's
     // name is put on a plain event, as an engine's carries it.
@@ -475,11 +475,11 @@ describe("the right side's activity bar (#1678)", () => {
       Object.defineProperty(event, "animationName", { value: animationName });
       act(() => void asks.dispatchEvent(event));
     };
-    // Another animation on the item is not the pulse ending.
+    // Another animation on the item is not the bounce ending.
     ended("purlis-swap");
-    expect(onPulsed).not.toHaveBeenCalled();
-    ended("purlis-first-pulse");
-    expect(onPulsed).toHaveBeenCalledOnce();
+    expect(onBounced).not.toHaveBeenCalled();
+    ended("purlis-hand-bounce");
+    expect(onBounced).toHaveBeenCalledOnce();
   });
 
   it("gives each extension's panel a tab after purlis's own, named and marked as it says", () => {

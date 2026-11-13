@@ -197,9 +197,8 @@ built-in's description is written as a trigger (spec #5714, Q15 and Q30):
    `evals/sources.json`), the same list its near-miss tests come from, so the boundary
    is written once and measured.
 5. **About 290 characters**, because every built-in's description together is at most 5,000
-   (Q37), and 5,350 while purlis-building-ui still ships (ADR 0102, amended 2026-11-09; #5725):
-   Codex's and opencode's default budgets are 8,000 characters, so the built-ins leave about
-   3,000 for the plane's own skills (at least 2,800, and 2,500 until then). One
+   (Q37; ADR 0102, amended 2026-11-13): Codex's and opencode's default budgets are 8,000
+   characters, so the built-ins leave about 3,000 for the plane's own skills (at least 2,800). One
    description is never over 1,024, where Codex cuts it, and is plain YAML: no `: ` or ` #` in
    it. A longer description takes its characters from another built-in's.
 
@@ -208,8 +207,8 @@ The shipped-skill check
 description without the word purlis, over 1,024 characters, or whose "Not for" clauses leave out
 a declared neighbour, the built-ins' descriptions together over that cap
 (`purlis_core::skills::BUILT_IN_DESCRIPTIONS_MOST`, naming the biggest), and a built-in without trigger tests (`evals/triggers.json`), an
-`evals/sources.json` that reads, or a tier, so no built-in ships unmeasured. A neighbour purlis does not ship, such as the
-plane's building-purlis-ui skill, is named in the description's prose and its requests are plain
+`evals/sources.json` that reads, or a tier, so no built-in ships unmeasured. A neighbour purlis does not ship, such as a
+skill of the plane's own, is named in the description's prose and its requests are plain
 negatives. The trigger grade measures the rest. A built-in's trigger bar, strict
 (≥95% recall, ≤5% false triggers) or standard (≥85%, ≤5%), is the `tier` of the same
 sources file; moving a skill between bars is a reviewed change.

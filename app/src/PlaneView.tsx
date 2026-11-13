@@ -242,6 +242,7 @@ import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
 import { elsewhereCount, handSaid, type Elsewhere } from "./InboxElsewhere";
 import type { AllChatsFilter } from "./InboxAsks";
 import { useAsksArrival } from "./asksArrival";
+import { useHandBounce } from "./useHandBounce";
 import { sayAboutThisMachine, useAboutThisMachine } from "./windowprefs";
 import { drawWhatIsInForce } from "./Extensions";
 import { useScreenReaderMode } from "./screenReader";
@@ -292,7 +293,7 @@ import {
 } from "./inboxUpdates";
 import { useInboxOpenTold } from "./askNotices";
 import { ReportDraftNotices, undoAlwaysSend, type SentDraft } from "./ReportDraftNotices";
-import { useAnsweredWhenGone } from "./inboxRules";
+import { useAnswered, useAnsweredWhenGone } from "./inboxRules";
 import { usePermissionAsks } from "./permissionAsks";
 import { useDismissals } from "./dismissals";
 import { dormantCause, dormantSays, type ChipNotices } from "./ChipNotices";
@@ -519,7 +520,7 @@ import {
   type TaskEndHand,
   type TaskEndInline,
 } from "./TaskEnd";
-import { giveKeyboardTo } from "./paneKeyboard";
+import { giveKeyboardTo, giveKeyboardToTheFocusedPane } from "./paneKeyboard";
 import { endedState } from "./EndedBand";
 import { useHeldAmong } from "./dispatchesHeld";
 import { useRefusedAmong } from "./vaultRefusals";
@@ -764,6 +765,7 @@ import {
   type SeenRows,
 } from "./seen";
 import { SeenRowsOf } from "./seenRows";
+import { listLinksOf } from "./paneLinksOpen";
 
 /** Whether two lists of the right side's extension panels draw the same tabs. */
 const samePanels = (a: readonly PanelTab[], b: readonly PanelTab[]) =>
@@ -1358,6 +1360,7 @@ export const PlaneView = memo(function PlaneView({
    *  its workspace's chip in the title bar too (#3650), with one dismissal. */
   const staleClones = useStaleClones({
     plane,
+    shown: inFront,
     dismissed,
     dismiss,
     settle: settleNotices,
@@ -4730,6 +4733,7 @@ export const PlaneView = memo(function PlaneView({
   /**
    * **The keyboard goes into the focused pane of `next`** (#4767): its chat's terminal, or, in a
    * pane with nothing or a view, its first control once it is drawn: New chat, or the view.
+   * Either is owed only until the person puts the keyboard somewhere else (#6232).
    */
   const keyboardInto = useCallback(
     (next: Tabs) => {
@@ -4738,13 +4742,7 @@ export const PlaneView = memo(function PlaneView({
         giveKeyboardTo(plane, session);
         return;
       }
-      setTimeout(() => {
-        const pane = document.querySelector<HTMLElement>(".pane.focused");
-        const into =
-          pane?.querySelector<HTMLElement>('[data-scope="view-frame"][data-part="root"]') ??
-          pane?.querySelector<HTMLElement>("button");
-        into?.focus();
-      });
+      giveKeyboardToTheFocusedPane();
     },
     [plane],
   );
@@ -8915,6 +8913,8 @@ export const PlaneView = memo(function PlaneView({
       // A chat's Ask {persona}… and Use skill… open their dialogs: the one way in to each.
       askPersona: openAskPersona,
       useSkill: openUseSkill,
+      // The pane's own list (#6332): the pane drawing the chat says how to open it.
+      listLinks: (session) => void listLinksOf(plane, session),
       showChatSkills: (session) => askChatSkills(plane, session),
       openStudioChat: (session) => {
         const link = studioLinks[session];
@@ -8929,6 +8929,8 @@ export const PlaneView = memo(function PlaneView({
       removeWorkspace,
       // The verb is only ever a needs-you item's Go, or the palette's row for one.
       showChat: showNeeding,
+      // A pane's chat link (#6217): that chat, and nothing a needs-you item's Go does.
+      focusChat: showChat,
       reopenTask: async (id) => {
         const why = await reopenById(id);
         return why === undefined ? { ok: true } : { ok: false, refused: why };
@@ -9111,6 +9113,7 @@ export const PlaneView = memo(function PlaneView({
       resumeSession,
       runAction,
       sendKey,
+      showChat,
       showNeeding,
       reopenById,
       goBack,
@@ -11599,13 +11602,29 @@ export const PlaneView = memo(function PlaneView({
    * its chat in a new session, and the pane moves on to it before the ask is read as gone.
    */
   const touchOnPane = useAnsweredWhenGone(plane, waiting);
+  /** **The personas whose Allow the project's asks list** (ADR 0121, amended 2026-11-12): their
+   *  Notice is drawn from that ask, so one answer settles both. Nothing before the first read. */
+  const personasAsked = useMemo(
+    () =>
+      waiting?.flatMap((ask) => (ask.answer.via === "persona-allow" ? [ask.answer.persona] : [])),
+    [waiting],
+  );
   /** **The ✋'s count: this project's asks alone** (#6341, ADR 0121 amended 2026-11-12,
    *  decision 1). Another project's are on its own tab, and on the Dock badge's total. */
   const hand = waiting?.length ?? 0;
-  /** **A Blocking ask arriving** (ADR 0121 decisions 24 and 25, #6020): said once, politely,
-   *  and the first one on this machine that arrives while Asks is closed pulses the ✋. One in
+  /** **A Blocking ask arriving** (ADR 0121 decision 25, #6020): said once, politely. One in
    *  another project is still said, as its notification still comes. */
-  const arrival = useAsksArrival(waiting, elsewhereCount(plane, elsewhere), inFront && asksShown);
+  const arrival = useAsksArrival(waiting, elsewhereCount(plane, elsewhere));
+  /** **The ✋'s bounce** (#6343, ADR 0121 amended 2026-11-12): as an ask arrives here, and as a
+   *  reminder on its backoff while one waits; any answer and Asks opening restart it. */
+  const [lastAnswered] = useAnswered(plane);
+  const handBounce = useHandBounce({
+    waiting: hand > 0,
+    arrived: arrival.here,
+    answered: lastAnswered,
+    opened: inFront && asksShown,
+    inFront,
+  });
   /**
    * **Snooze all on Asks** (#5647): the core keeps what each chat held, and lists a snoozed
    * chat's asks apart until it asks something new, or until the time it was snoozed for runs out
@@ -11880,8 +11899,9 @@ export const PlaneView = memo(function PlaneView({
       {/* **The project turned the sandbox off** (#2071, SO-8): reaches each person only on
           their one Accept. */}
       <TeamSandboxOffNotice plane={plane} />
-      {/* **A persona's hosts wait for you** (#1362): asked on each machine, never told. */}
-      <PersonaHostsNotice plane={plane} />
+      {/* **A persona's hosts wait for you** (#1362): asked on each machine, never told. A
+          Blocking ask too (ADR 0121, amended 2026-11-12), and drawn from that ask. */}
+      <PersonaHostsNotice plane={plane} asked={personasAsked} />
       {/* The doctor's findings that stand as Notices, each with its fix (#1250). */}
       <DoctorNotices
         doctor={doctor}
@@ -12492,8 +12512,8 @@ export const PlaneView = memo(function PlaneView({
                 // The Lower icons' are drawn the same way, so they are there while their half of the
                 // Panel is away (P-9, #1739): Changes' count, and Repos' only once a clone is behind.
                 // **What is New in each view** (#6002): a pip beside its badge, until seen.
-                pulse={arrival.pulse ? "asks" : undefined}
-                onPulsed={arrival.pulsed}
+                bounce={handBounce.bouncing ? "asks" : undefined}
+                onBounced={handBounce.bounced}
                 fresh={{
                   asks: newAsks(waiting, seen),
                   updates: newUpdates(

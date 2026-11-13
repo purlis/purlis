@@ -90,7 +90,7 @@ export function RawLinks({
     // The panel family's page navigation (`ViewNav`, #2930), as the groups above it are: one Tab
     // stop, the arrows between the files, and the file on screen `aria-current="page"`.
     <div className="ui-settings-raw">
-      <p className="ui-settings-raw-label" aria-hidden="true">
+      <p className="ui-settings-raw-label ui-text-label" aria-hidden="true">
         {heading}
       </p>
       <ViewNav
@@ -161,19 +161,19 @@ export function RawEditor({
   return (
     <section className="ui-setting-group ui-raw" aria-labelledby={heading}>
       <h2 id={heading}>{name}</h2>
-      <p className="ui-setting-help">
+      <p className="ui-setting-help ui-text-secondary">
         {raw.as === "TOML" ? "The whole file, comments and all." : "The whole file."} {raw.kept}
         {!file.exists && " Not created yet: the first save creates it."} Nothing is written until
         you save, and purlis refuses text it would not read.
       </p>
       {/* Mounted whatever it says, so a screen reader hears its first sentence (#1198). */}
-      <p className="ui-setting-help" role="status">
+      <p className="ui-setting-help ui-text-secondary" role="status">
         {moved &&
           `${name} changed on disk since this edit began. The file as it now is is beside your edit, and both are kept: take what you want from it, then Keep my edit to save yours over it, or Discard to take up the file.`}
       </p>
       <Suspense
         fallback={
-          <p className="ui-setting-help" aria-busy="true">
+          <p className="ui-setting-help ui-text-secondary" aria-busy="true">
             Opening the editor…
           </p>
         }

@@ -72,7 +72,7 @@ function Head({ title, lead, take }: { title: string; lead?: ReactNode; take: bo
   }, []);
   return (
     <header className="agent-identity-head">
-      <h2 ref={ref} tabIndex={-1} className="agent-identity-title">
+      <h2 ref={ref} tabIndex={-1} className="agent-identity-title ui-text-title">
         {title}
       </h2>
       {lead && <p className="agent-identity-lead">{lead}</p>}

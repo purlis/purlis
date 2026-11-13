@@ -443,6 +443,18 @@ impl HarnessAdapter for ClaudeCode {
         }
     }
 
+    /// Auto mode deny rules in the person's Claude Code settings ([`settings_keep_auto_from_a_task`]),
+    /// the machine's managed policy files among them, which an environment that does not look
+    /// past the chat's own variables ([`crate::harness_plugin::Env::process`]) does not read.
+    fn auto_kept_from_a_task(&self, env: &crate::harness_plugin::Env<'_>) -> Option<String> {
+        let managed = if env.process {
+            crate::footerclaim::managed()
+        } else {
+            Vec::new()
+        };
+        settings_keep_auto_from_a_task(env, &managed)
+    }
+
     fn outcome_refused(&self, env: &crate::harness_plugin::Env<'_>) -> Option<String> {
         let dir = env.dir("CLAUDE_CONFIG_DIR", ".claude")?;
         let text = std::fs::read_to_string(dir.join("settings.json")).ok()?;
@@ -1252,6 +1264,57 @@ fn settings_keep_a_grade_from_running(env: &crate::harness_plugin::Env<'_>) -> O
         ),
         None => unreadable(),
     }
+}
+
+/// What a task's pane says where it starts asking for [`settings_keep_auto_from_a_task`].
+const AUTO_KEPT: &str = "This task asks before it acts, not in auto mode: your Claude Code \
+     settings hold auto mode deny rules, and with them Claude Code refuses every call it cannot \
+     check, without asking you. Remove the rules from autoMode in those settings to let tasks \
+     run in auto mode.";
+
+/// **Why a task may not start in auto mode under the person's Claude Code settings** (#6315), or
+/// `None`: settings that hold auto mode deny rules (`autoMode.soft_deny` or `autoMode.hard_deny`
+/// naming any rule but Claude Code's own `$defaults`). With them, Claude Code asks nobody in
+/// place of auto mode's check when the check gives no answer, and refuses the call, so a task
+/// in a tab nobody watches loses every tool that needs the check for the rest of its session
+/// (2.1.322's own reading). Claude Code reads them from the person's settings, the managed
+/// ones the config directory holds from the server (`remote-settings.json`), and the
+/// `managed` policy files; never from a project's, which a repo controls. A file that is not
+/// there or does not read holds no rule.
+fn settings_keep_auto_from_a_task(
+    env: &crate::harness_plugin::Env<'_>,
+    managed: &[std::path::PathBuf],
+) -> Option<String> {
+    let config = env.dir("CLAUDE_CONFIG_DIR", ".claude");
+    let mine = config
+        .iter()
+        .flat_map(|dir| [dir.join("settings.json"), dir.join("remote-settings.json")]);
+    managed
+        .iter()
+        .cloned()
+        .chain(mine)
+        .filter(|file| {
+            std::fs::metadata(file)
+                .is_ok_and(|meta| meta.is_file() && meta.len() <= MOST_SETTINGS_BYTES as u64)
+        })
+        .filter_map(|file| std::fs::read_to_string(file).ok())
+        .any(|text| holds_auto_mode_deny_rules(&text))
+        .then(|| AUTO_KEPT.to_owned())
+}
+
+/// **Whether settings `text` hold an auto mode deny rule of their own**: an entry of
+/// `autoMode.soft_deny` or `autoMode.hard_deny` other than `$defaults`, which stands for Claude
+/// Code's own rules.
+fn holds_auto_mode_deny_rules(text: &str) -> bool {
+    let Ok(settings) = serde_json::from_str::<serde_json::Value>(text) else {
+        return false;
+    };
+    ["soft_deny", "hard_deny"].iter().any(|list| {
+        settings
+            .pointer(&format!("/autoMode/{list}"))
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|rules| rules.iter().any(|rule| rule.as_str() != Some("$defaults")))
+    })
 }
 
 /// **Whether a person's own Claude Code settings, `text`, are how Claude Code signs in**: a helper

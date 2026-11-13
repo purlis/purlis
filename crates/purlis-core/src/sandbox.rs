@@ -2353,6 +2353,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             app.join(crate::chatscreens::DIR_NAME),
             Access::ReadWrite,
         );
+        // Every closed chat's record (#6304), neither read nor written: its title and who
+        // started it are the person's, and the list of what they ran is not a chat's to read.
+        deny(
+            Class::Integrity,
+            app.join(crate::chatrecords::DIR_NAME),
+            Access::ReadWrite,
+        );
         // What a look found in each chat's folders, and what it knows of them, neither read nor
         // written: it decides what the person is told, and only the app needs it ([`arrived`]).
         deny(Class::Integrity, app.join(arrived::DIR), Access::ReadWrite);

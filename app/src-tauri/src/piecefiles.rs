@@ -21,7 +21,7 @@ use std::path::Path;
 
 use base64::Engine as _;
 use purlis_core::files::{self, Branch, Entry, Kind, Mark, Opened, Reader, workspace};
-use purlis_core::youreditor::{self, Editor, Launch};
+use purlis_core::youreditor::{self, Checked, Editor, Launch};
 
 use crate::chats::NoTurnsFrom;
 use crate::planes::{PlaneId, Planes};
@@ -1251,11 +1251,13 @@ pub(crate) async fn started(program: String, args: Vec<std::ffi::OsString>) -> R
 /// One file of a branch, opened in your editor at a line (RC-20). Refused, in the core's
 /// sentence, for any path the light editor would refuse.
 // The path is checked by `purlis_core::files::in_your_editor` exactly as `piece_file`
-// checks it, and the editor is handed the resolved absolute path: as a URL to the operating
-// system's opener, or as one argument of the program `$VISUAL`/`$EDITOR` names, never through
-// a shell: a terminal editor in a shell tab of its own (`editortab`, #1042), which is why the
-// command is the window's alone (`WINDOW_ONLY`). Not a doc comment, because the generated
-// bindings carry those.
+// checks it, and held as it was checked (`Checked`, #3185): the launch is asked for right
+// before it happens, and refused when the path no longer leads to that file. The editor's own
+// open, later, is narrowed, not closed. The editor is handed the resolved absolute path: as
+// a URL to the operating system's opener, or as one argument of the program
+// `$VISUAL`/`$EDITOR` names, never through a shell: a terminal editor in a shell tab of its
+// own (`editortab`, #1042), which is why the command is the window's alone (`WINDOW_ONLY`).
+// Not a doc comment, because the generated bindings carry those.
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
 #[specta::specta]
@@ -1273,7 +1275,7 @@ pub async fn open_in_your_editor(
     use tauri_plugin_opener::OpenerExt as _;
     let var = purlis_core::envvar::var;
     let held = planes.held(&plane)?;
-    let launch = launch_of(
+    let checked = launch_of(
         &crate::reader(),
         held.root(),
         branch(&workspace, &repo, &piece),
@@ -1282,7 +1284,8 @@ pub async fn open_in_your_editor(
         editor,
         &var,
     )?;
-    match launch {
+    // Asked again right before the launch: still the file checked (#3185).
+    match checked.launch().map_err(|refused| refused.to_string())? {
         Launch::Url(url) => app
             .opener()
             .open_url(&url, None::<&str>)
@@ -1315,13 +1318,14 @@ pub async fn open_their_agents_md(
     use tauri_plugin_opener::OpenerExt as _;
     let var = |name: &str| std::env::var(name).ok();
     let held = planes.held(&plane)?;
-    let launch = purlis_core::guest::their_agents_md_in_your_editor(
+    let checked = purlis_core::guest::their_agents_md_in_your_editor(
         held.root(),
         branch(&workspace, &repo, &piece),
         editor.into(),
         &var,
     )?;
-    match launch {
+    // Asked again right before the launch: still the file checked (#3185).
+    match checked.launch().map_err(|refused| refused.to_string())? {
         Launch::Url(url) => app
             .opener()
             .open_url(&url, None::<&str>)
@@ -1365,7 +1369,7 @@ fn launch_of(
     line: u32,
     editor: YourEditor,
     var: &dyn Fn(&str) -> Option<String>,
-) -> Result<Launch, String> {
+) -> Result<Checked, String> {
     if branch.is_workspace_files() {
         return in_workspace_files(plane, branch.ws, |files| {
             files.in_your_editor(path, line, editor.into(), var)

@@ -26,6 +26,7 @@
  */
 import { Children, type ComponentPropsWithRef, type ReactNode, type Ref } from "react";
 import { Button as AriaButton, type ButtonProps as AriaButtonProps } from "react-aria-components";
+import clsx from "clsx";
 import { discloses, pressable, renderPressed, usePressTip, type Native } from "../pressable";
 import { Tipped, Tooltip, type Tip } from "../tooltip/Tooltip";
 
@@ -114,6 +115,11 @@ function parts(
   return out.flatMap((part, at) => (at === 0 || (at === 1 && iconed) ? [part] : [" ", part]));
 }
 
+/** **An item's words are the secondary's size** (#1920): where and what, read beside the work.
+ *  Its colour is the family's (`status.css`), which outranks the role's, so a tone, a variant
+ *  and a theme's parts still tint it. */
+const ROLE = "ui-text-secondary";
+
 /** The root's own attributes. */
 function root({
   variant = "bar",
@@ -159,7 +165,7 @@ export function StatusItem(props: StatusItemProps) {
       <AriaButton
         {...(aria as AriaButtonProps)}
         ref={ref}
-        className={className}
+        className={clsx(ROLE, className)}
         {...root({ variant, tone, strong, shrinks })}
         render={renderPressed(native, tip, own, { disclosure: discloses(rest) })}
       >
@@ -184,11 +190,17 @@ export function StatusCell({
   count,
   children,
   tooltip,
+  className,
   ...rest
 }: Drawn & Omit<ComponentPropsWithRef<"span">, "style" | "children" | "title">) {
   return (
     <Tooltip tip={tooltip}>
-      <span {...rest} {...root({ variant, tone, strong, shrinks })} data-static="">
+      <span
+        {...rest}
+        className={clsx(ROLE, className)}
+        {...root({ variant, tone, strong, shrinks })}
+        data-static=""
+      >
         {parts({ icon, count, children }, true)}
       </span>
     </Tooltip>

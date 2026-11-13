@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import process from "node:process";
 import { config as base } from "./wdio.conf.js";
@@ -32,11 +32,12 @@ const fresh = process.env.PURLIS_POOL_PLANE === undefined;
 const plane = (process.env.PURLIS_POOL_PLANE ??= copyFixturePlane());
 
 /**
- * **Pool setup's Docker path, in the real window** (#4985, #4484's first acceptance criterion): a
- * spec opens Pool setup and presses each step's main button to Try it's last screen, on this
- * machine's Docker, with a pool of the runner image this build makes. Its own run, on Linux alone,
- * because it needs a Docker daemon, that image in a registry of the job's own, and a profile whose
- * harness reports its start on the runner, none of which another run has.
+ * **Pool setup's Docker path, in the real window** (#4985, #4484's first acceptance criterion),
+ * and its cluster path on the job's kind cluster (#4494): a spec opens Pool setup and presses each
+ * step's main button to Try it's last screen, on this machine's Docker or that cluster, with a
+ * pool of the runner image this build makes. Its own run, on Linux alone, because it needs a
+ * Docker daemon, that image in a registry of the job's own, and a profile whose harness reports
+ * its start on the runner, none of which another run has.
  *
  * **What stands in for an account.** The profile is a Claude Code one, kept in this run's own
  * machine store, pinned to the version the runner image keeps installed. There, that `claude`
@@ -53,6 +54,16 @@ const environment = theRunsEnvironment(plane, {
   // as a person's window has their own.
   ...(process.env.SSH_AUTH_SOCK ? { SSH_AUTH_SOCK: process.env.SSH_AUTH_SOCK } : {}),
 });
+// The kubeconfig the job's kind cluster was made in (#4494), where a person's own is: kubectl's
+// default, in the home the app is given. The window's kubectl is never handed `KUBECONFIG`
+// (`purlis_core::clusterpool::CLEARED`), so it reads this one on every call, and Pool setup keeps
+// none of it.
+if (process.env.KUBECONFIG) {
+  const kube = join(environment.HOME, ".kube");
+  mkdirSync(kube, { recursive: true, mode: 0o700 });
+  copyFileSync(process.env.KUBECONFIG, join(kube, "config"));
+  chmodSync(join(kube, "config"), 0o600);
+}
 const programs = declarePoolsClaudeProfile(
   plane,
   environment.CHARTER_CONFIG_HOME,

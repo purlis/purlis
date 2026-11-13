@@ -50,6 +50,7 @@ import { focusSafely } from "react-aria/private/interactions/focusSafely";
 import { useProjectShown } from "../../projectShown";
 import { moves } from "../../workspaceSlide";
 import { pressableTrigger } from "../trigger";
+import { keptOffPages } from "./offPage";
 
 /** How near the window's edge a popover or a menu may come, in px (R59). */
 export const EDGE = 8;
@@ -306,6 +307,8 @@ export function Surface({
   shouldCloseOnInteractOutside?: (element: Element) => boolean;
   /** Along the side it opens on, in px: a notice card's nudge that places it again (#3648). */
   crossOffset?: number;
+  /** What it is kept inside, flipped and shifted to stay in: the window when left out. */
+  boundaryElement?: Element;
   children: ReactNode;
 }) {
   const shown = useProjectShown();
@@ -431,10 +434,31 @@ export function AnchoredPopover({
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [isOpen, onOpenChange]);
+  // **Clear of a native page** (#6226): beside its trigger, with an artifact's page across that
+  // side, it stands under its trigger instead (over it where there is no room), in the region
+  // around the trigger and at its width, read as it comes up, before it is painted.
+  const side = surface.side ?? "bottom";
+  const [kept, setKept] = useState<{ region: Element; width: number } | null>(null);
+  useLayoutEffect(() => {
+    const region = isOpen ? keptOffPages(triggerRef.current, side) : null;
+    setKept(
+      region === null ? null : { region, width: region.getBoundingClientRect().width - 2 * EDGE },
+    );
+  }, [isOpen, side, triggerRef]);
+  const clear =
+    kept === null
+      ? {}
+      : {
+          side: "bottom" as const,
+          boundaryElement: kept.region,
+          style: { ...surface.style, maxInlineSize: kept.width },
+          "data-kept-off-page": "",
+        };
   return (
     <Surface
       isNonModal
       {...surface}
+      {...clear}
       triggerRef={triggerRef}
       isOpen={isOpen}
       onOpenChange={onOpenChange}

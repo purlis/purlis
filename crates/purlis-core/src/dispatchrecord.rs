@@ -2213,9 +2213,20 @@ pub fn latest_for(root: &Path, chat: &ChatRef) -> Option<Record> {
 /// store at all is nothing counted.
 pub fn tally(root: &Path) -> io::Result<std::collections::BTreeMap<String, u64>> {
     let mut counts = std::collections::BTreeMap::new();
+    each_kept(root, |record| {
+        if let Some(persona) = record.persona {
+            *counts.entry(persona).or_default() += 1;
+        }
+    })?;
+    Ok(counts)
+}
+
+/// Every record the store keeps, each read once, for [`tally`] and [`dispatched_into`]: an
+/// error where the store is there and cannot be read, and nothing where there is no store.
+fn each_kept(root: &Path, mut each: impl FnMut(Record)) -> io::Result<()> {
     let entries = match std::fs::read_dir(dir(root)) {
         Ok(entries) => entries,
-        Err(none) if none.kind() == io::ErrorKind::NotFound => return Ok(counts),
+        Err(none) if none.kind() == io::ErrorKind::NotFound => return Ok(()),
         Err(why) => return Err(why),
     };
     for entry in entries {
@@ -2223,11 +2234,32 @@ pub fn tally(root: &Path) -> io::Result<std::collections::BTreeMap<String, u64>>
         let Some(id) = name.to_str().and_then(|name| name.strip_suffix(".json")) else {
             continue;
         };
-        if let Some(persona) = read(root, id).and_then(|record| record.persona) {
-            *counts.entry(persona).or_default() += 1;
+        if let Some(record) = read(root, id) {
+            each(record);
         }
     }
-    Ok(counts)
+    Ok(())
+}
+
+/// **Where each persona was dispatched**: of every record this machine keeps that names a
+/// persona and a workspace, how many went into each workspace, by persona and then workspace
+/// (#2935). The Skill studio's picker offers a persona in a workspace only where it was
+/// dispatched. A dispatch at the project's root names no workspace and is not counted. An
+/// error where the store is there and cannot be read, as [`tally`] says.
+pub fn dispatched_into(
+    root: &Path,
+) -> io::Result<std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>> {
+    let mut into = std::collections::BTreeMap::<_, std::collections::BTreeMap<_, u64>>::new();
+    each_kept(root, |record| {
+        if let (Some(persona), Some(workspace)) = (record.persona, record.place.workspace) {
+            *into
+                .entry(persona)
+                .or_default()
+                .entry(workspace)
+                .or_default() += 1;
+        }
+    })?;
+    Ok(into)
 }
 
 /// The dispatches listed on the session record at `path`: the ones its chat asked for, of
@@ -2720,5 +2752,44 @@ pub(crate) mod reads {
     /// The reads since the last call, and counting begins again.
     pub(crate) fn taken() -> usize {
         READS.with(|reads| reads.replace(0))
+    }
+}
+
+/// **[`drawn`], read again only once the store has changed** (#6235): what a page's
+/// `purlis.chats` feed reads its history from at every move of a board. A look is one
+/// folder's time and a counter, as [`Running`]'s is, and one that could not be trusted
+/// ([`Seen::settled`]) reads again at the next.
+///
+/// **Slim**: each record is kept without its brief, its talk and its report's text, which
+/// nothing that draws a list of chats reads.
+#[derive(Debug, Default)]
+pub struct Drawing {
+    seen: Option<Seen>,
+    drawn: Drawn,
+}
+
+impl Drawing {
+    /// [`drawn`] of the project at `root`, looked at now.
+    pub fn drawn(&mut self, root: &Path) -> &Drawn {
+        self.drawn_at(root, std::time::SystemTime::now())
+    }
+
+    /// [`Self::drawn`], looked at `now`. The look is taken before the read, so a write
+    /// during it is a change at the next look.
+    pub fn drawn_at(&mut self, root: &Path, now: std::time::SystemTime) -> &Drawn {
+        let seen = Seen::now(root);
+        if self.seen.as_ref() != Some(&seen) {
+            let mut drawn = drawn(root);
+            for record in &mut drawn.records {
+                record.brief.clear();
+                record.talk.clear();
+                if let Some(report) = record.report.as_mut() {
+                    report.text.clear();
+                }
+            }
+            self.drawn = drawn;
+            self.seen = seen.settled(now).then_some(seen);
+        }
+        &self.drawn
     }
 }

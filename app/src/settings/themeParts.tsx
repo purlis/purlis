@@ -239,13 +239,13 @@ export function ThemePartsRead({
   const read = useManifest();
   if (read === undefined)
     return (
-      <p id={ids.id} className="ui-setting-help" role="status">
+      <p id={ids.id} className="ui-setting-help ui-text-secondary" role="status">
         Reading the parts manifest…
       </p>
     );
   if ("trouble" in read)
     return (
-      <p id={ids.id} className="ui-setting-help" role="status">
+      <p id={ids.id} className="ui-setting-help ui-text-secondary" role="status">
         purlis could not read the parts manifest: {read.trouble}
       </p>
     );
@@ -277,9 +277,9 @@ export function ThemeParts({
       className="flex flex-col gap-2"
     >
       {families.length === 0 ? (
-        <p className="ui-setting-help">{setSaid(name, set)}</p>
+        <p className="ui-setting-help ui-text-secondary">{setSaid(name, set)}</p>
       ) : (
-        <p className="ui-setting-help flex flex-wrap items-center gap-1">
+        <p className="ui-setting-help ui-text-secondary flex flex-wrap items-center gap-1">
           {setSaid(name, set)}
           {families.map((family) => (
             <Tooltip key={family.name} tip={family.description}>
@@ -291,7 +291,7 @@ export function ThemeParts({
         </p>
       )}
       {families.length > 0 && alsoSaid(set) !== "" && (
-        <p className="ui-setting-help">{alsoSaid(set)}</p>
+        <p className="ui-setting-help ui-text-secondary">{alsoSaid(set)}</p>
       )}
       <Disclosure label="Show each part" size="sm">
         <PartsTree manifest={manifest} set={set} />
@@ -325,7 +325,7 @@ export function PartsTree({
     <div className="flex flex-col gap-2">
       <ListFilter noun={PARTS} total={shown.parts} query={query} onQuery={setQuery} controls={id} />
       {shown.families.length === 0 ? (
-        <p className="ui-setting-help" role="status">
+        <p className="ui-setting-help ui-text-secondary" role="status">
           {noMatchSaid(PARTS, query)}
         </p>
       ) : (

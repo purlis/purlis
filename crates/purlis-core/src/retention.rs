@@ -315,6 +315,8 @@ pub fn on_open(plane: &Path, now: SystemTime) -> Swept {
     // A task's kept screen goes with its record and at the record's age (#6214), whatever the
     // record of open chats says: no screen outlives what it was kept for.
     crate::chatscreens::on_open(plane, now);
+    // A closed chat's record goes at a dispatch record's age (#6304).
+    crate::chatrecords::sweep(plane, now);
     let Some(record) = returning(plane) else {
         return Swept {
             reports: sweep_reports(plane, now),

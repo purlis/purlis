@@ -29,8 +29,10 @@ pub const DIR: &str = "docker-settings";
 /// The most of Docker's own `config.json` purlis reads: one larger is taken as holding nothing.
 const MOST_READ: u64 = 1024 * 1024;
 
-/// The variables a run is given, and those it is not handed from the window.
-pub const CLEARED: &[&str] = &["DOCKER_CONTEXT"];
+/// The variables a run is given, and those it is not handed from the window: Docker's context,
+/// and Podman's named connection, either of which would reach an engine other than the one a run
+/// is pointed at (#6269).
+pub const CLEARED: &[&str] = &["DOCKER_CONTEXT", "CONTAINER_CONNECTION"];
 
 /// **Docker's settings `read`, as purlis hands them on**: `auths` as it is, and `credsStore`
 /// and each of `credHelpers` where `held` says the helper of that name is in Docker's own
@@ -435,6 +437,12 @@ pub fn prepare(from: &Source<'_>) -> Result<Prepared, Refused> {
         None => engine(from.docker_host, &places)?,
     };
     if let Some(host) = host {
+        // Podman's own client takes its engine from `CONTAINER_HOST`, and Docker's from
+        // `DOCKER_HOST`: a pool's forward is named to both, so a Podman pool's runs reach it
+        // too (#6269).
+        if from.forwarded.is_some() {
+            env.push(("CONTAINER_HOST", host.clone().into()));
+        }
         env.push(("DOCKER_HOST", host.into()));
     }
     Ok(Prepared { folder, lock, env })

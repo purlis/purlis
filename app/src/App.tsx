@@ -2119,6 +2119,7 @@ function App() {
       endChat: () => undefined,
       askPersona: () => undefined,
       useSkill: () => undefined,
+      listLinks: () => undefined,
       showChatSkills: () => undefined,
       openStudioChat: () => undefined,
       unlinkWorkItem: async () => nowhere(),
@@ -2137,6 +2138,7 @@ function App() {
       createWorkspace: () => undefined,
       removeWorkspace: () => undefined,
       showChat: () => undefined,
+      focusChat: () => undefined,
       reopenTask: async () => nowhere(),
       paneBack: () => undefined,
       showChatTasks: () => undefined,
@@ -2749,7 +2751,8 @@ function App() {
   }, [windowDoes]);
 
   const pressHere = useCallback((plane: string, offer: Offer) => {
-    if (offer.does.verb === "showChat") setShowing({ at: "plane", plane });
+    if (offer.does.verb === "showChat" || offer.does.verb === "focusChat")
+      setShowing({ at: "plane", plane });
     void reportsNow.current[plane]?.run(offer);
   }, []);
   /** A row for a chat in ANOTHER window is carried out there, and that window comes to the
@@ -3456,7 +3459,7 @@ function App() {
         {/* What has contributed what to this window (ADR 0041 item 5). Mounted only
           while it is asked for: it reads every installed extension's files to re-take its
           fingerprint, and a launch does not pay for that unless somebody looked. */}
-        {extensions && <Extensions onClose={() => setExtensions(false)} />}
+        {extensions && <Extensions onClose={() => setExtensions(false)} plane={inFront} />}
 
         {asking && <QuitWarning chats={everyEnding} onQuit={quit} onCancel={dontQuit} />}
 

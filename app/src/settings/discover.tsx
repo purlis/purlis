@@ -76,7 +76,7 @@ export function discoverRow(
             </Button>
             {fixed !== undefined &&
               fixed.said.map((line, at) => (
-                <p key={at} className="ui-setting-help">
+                <p key={at} className="ui-setting-help ui-text-secondary">
                   {line}
                 </p>
               ))}

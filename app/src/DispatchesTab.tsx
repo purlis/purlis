@@ -443,9 +443,9 @@ export function DispatchesTab({
                             : [row.messages === 1 ? "1 message" : `${row.messages} messages`]),
                         ].join(" · ")}
                       </p>
-                      <h2>Brief</h2>
+                      <h2 className="ui-text-label">Brief</h2>
                       <pre>{row.brief}</pre>
-                      <h2>Report</h2>
+                      <h2 className="ui-text-label">Report</h2>
                       {row.report === null ? (
                         <p className="none">
                           {row.ended === null ? "Not reported yet." : "It ended with none."}
@@ -457,7 +457,7 @@ export function DispatchesTab({
                           them: said as its claim, never as a fact purlis checked. */}
                       {row.changed !== null && (
                         <>
-                          <h2>What it says changed</h2>
+                          <h2 className="ui-text-label">What it says changed</h2>
                           <pre>{row.changed}</pre>
                         </>
                       )}

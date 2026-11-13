@@ -111,4 +111,38 @@ export function forgetKeyboard(): void {
   drawn.clear();
   held = false;
   forgive();
+  paneOwed?.();
+}
+
+/** The pane's control owed the keyboard once it is drawn ({@link giveKeyboardToTheFocusedPane}), and how to stop owing it. */
+let paneOwed: (() => void) | undefined;
+
+/**
+ * **The keyboard into the focused pane once it is drawn** (#4767): in a pane with nothing or a
+ * view, its first control: the view's frame, or New chat. It is owed only until the person puts
+ * the keyboard somewhere themselves, as a terminal is ({@link giveKeyboardTo}): a menu they
+ * opened before the pane was drawn keeps it, and is not closed by a focus it never asked for
+ * (#6232). The body is not somewhere: it is where the keyboard falls when what had it closed.
+ */
+export function giveKeyboardToTheFocusedPane(): void {
+  paneOwed?.();
+  const moved = (event: FocusEvent) => {
+    if (event.target === document.body || event.target === document.documentElement) return;
+    stop();
+  };
+  const timer = setTimeout(() => {
+    stop();
+    const pane = document.querySelector<HTMLElement>(".pane.focused");
+    const into =
+      pane?.querySelector<HTMLElement>('[data-scope="view-frame"][data-part="root"]') ??
+      pane?.querySelector<HTMLElement>("button");
+    into?.focus();
+  });
+  const stop = () => {
+    clearTimeout(timer);
+    document.removeEventListener("focusin", moved);
+    if (paneOwed === stop) paneOwed = undefined;
+  };
+  paneOwed = stop;
+  document.addEventListener("focusin", moved);
 }

@@ -3439,6 +3439,64 @@ fn an_ask_that_pushes_to_a_protected_branch_reaches_production_or_writes_outside
     );
 }
 
+/// **A persona's Allow is counted with the project's asks** (ADR 0121, amended 2026-11-12): read
+/// from the project's committed hosts as Settings reads them, one ask for the persona, gone once
+/// the person allows the list as shown, and put away by Not now until the list changes.
+#[test]
+fn a_personas_allow_waiting_on_this_machine_is_counted_until_it_is_allowed_or_put_away() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = dir.path().join("project");
+    std::fs::create_dir_all(&root).expect("the project");
+    let manifest = |hosts: &str| {
+        std::fs::write(
+            purlis_core::names::manifest(&root),
+            format!(
+                "schema = 1\n\n[sandbox]\nmode = \"on\"\n\n[sandbox.personas.devops]\nhosts = [{hosts}]\n"
+            ),
+        )
+        .expect("its manifest");
+    };
+    manifest("\"10.0.0.5:6443\"");
+    let planes = crate::planes::Planes::telling(
+        std::sync::Arc::new(|_| {}),
+        crate::Shipped::default(),
+        None,
+    );
+    let id = planes.open(&root);
+    let held = planes.held(&id).expect("held");
+    let persona_asks = || -> Vec<Shown> {
+        every_ask(&held)
+            .asks
+            .into_iter()
+            .filter(|ask| ask.source == AskSource::PersonaAllow)
+            .collect()
+    };
+
+    let asks = persona_asks();
+    let [ask] = asks.as_slice() else {
+        panic!("one ask for devops: {asks:?}");
+    };
+    assert_eq!(ask.ask, "persona-allow:devops");
+    let AnswerPath::PersonaAllow { persona, digest } = &ask.answer else {
+        panic!("answered as its Notice is: {:?}", ask.answer);
+    };
+    assert_eq!(persona, "devops");
+
+    // Not now puts it away while the list stands; a changed list asks again.
+    held.persona_later().say(persona, digest);
+    assert!(persona_asks().is_empty(), "put away by Not now");
+    manifest("\"10.0.0.5:6443\", \"10.0.0.6:6443\"");
+    let asks = persona_asks();
+    assert_eq!(asks.len(), 1, "a changed list asks again: {asks:?}");
+
+    // Allowed as shown, it is no longer asked.
+    let AnswerPath::PersonaAllow { digest, .. } = &asks[0].answer else {
+        panic!("{:?}", asks[0].answer);
+    };
+    purlis_core::sandbox::local::allow_persona_hosts(&root, "devops", digest).expect("kept");
+    assert!(persona_asks().is_empty(), "allowed as shown");
+}
+
 // Delete, vault use and a push that names no branch (#6178).
 
 #[test]

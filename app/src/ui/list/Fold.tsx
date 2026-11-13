@@ -107,6 +107,7 @@ function FoldRow({
       ref={said}
       isDisabled={chooses}
       onAction={() => onOpen(!open)}
+      className={part === "header" ? "ui-text-label" : undefined}
       data-scope="list"
       data-part={part}
       data-size={size}

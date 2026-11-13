@@ -54,7 +54,7 @@ function Row({
   return (
     <section className="agent-identity-row" aria-label={row.host}>
       <header className="agent-identity-row-head">
-        <h2 ref={heading} tabIndex={-1} className="agent-identity-title">
+        <h2 ref={heading} tabIndex={-1} className="agent-identity-title ui-text-title">
           {row.host}
         </h2>
         {proved && <Badge variant="ok">Set up</Badge>}

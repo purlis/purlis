@@ -276,15 +276,19 @@ const listed = (plane: string | undefined): LiveSetting => ({
       error: now.refused === undefined ? undefined : [now.refused],
       control: (ids) => (
         <div role="group" aria-labelledby={ids.labelledBy} aria-describedby={ids.describedBy}>
-          {now.read.state === "reading" && <p className="ui-setting-help">Reading…</p>}
+          {now.read.state === "reading" && (
+            <p className="ui-setting-help ui-text-secondary">Reading…</p>
+          )}
           {now.read.state === "trouble" && (
-            <p className="ui-setting-help" role="alert">
+            <p className="ui-setting-help ui-text-secondary" role="alert">
               {now.read.trouble}
             </p>
           )}
           {now.read.state === "read" &&
             (now.read.profiles.length === 0 ? (
-              <p className="ui-setting-help">This machine keeps no profile of its own yet.</p>
+              <p className="ui-setting-help ui-text-secondary">
+                This machine keeps no profile of its own yet.
+              </p>
             ) : (
               // **A table of the profiles** (#6301, as Your hosts is, #2919 R65, R67): a table of
               // controls, since a row holds several buttons, each its own Tab stop. A row a
@@ -317,21 +321,23 @@ const listed = (plane: string | undefined): LiveSetting => ({
                             <HarnessIcon icon={profile.icon} kind={profile.kind} />
                             {profile.name}
                           </span>
-                          <span className="ui-setting-help">{note(profile)}</span>
-                          <span className="ui-record-where">{profile.folder}</span>
+                          <span className="ui-setting-help ui-text-secondary">{note(profile)}</span>
+                          <span className="ui-record-where ui-text-meta">{profile.folder}</span>
                         </span>
                       </ControlRowHeading>
                       <ControlCell heading="Sign-in">
                         <span className="ui-record-lines">
-                          <span className="ui-setting-help">{signedIn(profile)}</span>
+                          <span className="ui-setting-help ui-text-secondary">
+                            {signedIn(profile)}
+                          </span>
                           {onPools(profile.name).map((line) => (
-                            <span key={line} className="ui-setting-help">
+                            <span key={line} className="ui-setting-help ui-text-secondary">
                               {line}
                             </span>
                           ))}
                           {profile.origin === "made" &&
                             (plane === undefined ? (
-                              <span className="ui-setting-help">
+                              <span className="ui-setting-help ui-text-secondary">
                                 Open a project to sign in from its window, or run{" "}
                                 <code>purlis profile sign-in {profile.name}</code> in your terminal.
                               </span>
@@ -358,7 +364,7 @@ const listed = (plane: string | undefined): LiveSetting => ({
                               />
                             ))}
                           {profile.commands_can_read_sign_in !== null && (
-                            <span className="ui-setting-help">
+                            <span className="ui-setting-help ui-text-secondary">
                               {profile.commands_can_read_sign_in}
                             </span>
                           )}
@@ -366,7 +372,9 @@ const listed = (plane: string | undefined): LiveSetting => ({
                       </ControlCell>
                       <ControlCell heading="Pin">
                         <span className="ui-record-lines">
-                          <span className="ui-setting-help">{pinNote(profile)}</span>
+                          <span className="ui-setting-help ui-text-secondary">
+                            {pinNote(profile)}
+                          </span>
                           {offeredVersion(profile) !== undefined && (
                             <EntryButton
                               label="Update the pin"
@@ -413,7 +421,7 @@ const listed = (plane: string | undefined): LiveSetting => ({
               </ControlTable>
             ))}
           {now.said !== undefined && (
-            <p className="ui-setting-help" role="status">
+            <p className="ui-setting-help ui-text-secondary" role="status">
               {now.said}
             </p>
           )}

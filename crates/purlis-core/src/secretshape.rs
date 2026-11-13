@@ -27,6 +27,11 @@
 //!   ([`variable_name_len`], [`is_a_variable_name`]): capitals, digits and underscores, in
 //!   words, one of which is a word a credential's name carries, standing alone as the value's
 //!   first word. The line is read on from the end of the name, so it excuses nothing after it.
+//! - **Nor is a code expression** (#6292): `token = std::env::var(…)?`, `api_key =
+//!   os.getenv(…)`, `token = cfg.token`, `token=$(gh auth token)` say where a credential comes
+//!   from, in a script or a patch that must match its source byte for byte
+//!   ([`code_expression_len`]). A literal anywhere in one that reads as a value — a quoted
+//!   argument, a segment, a fallback — keeps the assignment refused.
 //!
 //! # Why the lookahead is gone and the match is still Python's
 //!
@@ -499,6 +504,298 @@ fn variable_name_len(value: &str) -> Option<usize> {
     (!given_a_value && !looks_like_a_value(next)).then_some(at)
 }
 
+/// The most trailing digits one word of a code identifier may end in (`sha256`, `oauth2`, `s3`).
+/// A word that ends in more, or carries a digit anywhere else (`hunter2is`), is a value.
+const CODE_WORD_DIGITS_MAX: usize = 3;
+
+/// The most characters a segment of a code expression may hold with no underscore in it. A
+/// longer run of letters and digits is a literal, however its case falls.
+const CODE_SEGMENT_UNPARTED_MAX: usize = 23;
+
+/// Whether `segment`, one identifier of a code expression (between `.`, `::` or `->`, or a
+/// word of a call's arguments outside its quotes), reads as a name a program gives something
+/// and not as a literal: at most [`VARIABLE_NAME_MAX`] characters, and
+/// [`CODE_SEGMENT_UNPARTED_MAX`] when no underscore parts it; at most [`VARIABLE_DIGITS_MAX`]
+/// digits, each word's (parted by underscores and by a capital after a small letter or a digit)
+/// only at its end and at most [`CODE_WORD_DIGITS_MAX`] of them; and no issuer's prefix in
+/// front ([`CREDENTIAL_PREFIXES`]). A number alone is a literal of code, and reads as one.
+fn reads_as_an_identifier(segment: &str) -> bool {
+    let bytes = segment.as_bytes();
+    if bytes.iter().all(u8::is_ascii_digit) {
+        return true;
+    }
+    let words_read_as_names = segment.split('_').all(|part| {
+        let mut words = vec![0];
+        for (at, pair) in part.as_bytes().windows(2).enumerate() {
+            if !pair[0].is_ascii_uppercase() && pair[1].is_ascii_uppercase() {
+                words.push(at + 1);
+            }
+        }
+        words.push(part.len());
+        words.windows(2).all(|span| {
+            let word = &part.as_bytes()[span[0]..span[1]];
+            let digits = word.iter().rev().take_while(|b| b.is_ascii_digit()).count();
+            digits <= CODE_WORD_DIGITS_MAX
+                && word[..word.len() - digits]
+                    .iter()
+                    .all(|b| !b.is_ascii_digit())
+        })
+    });
+    segment.len() <= VARIABLE_NAME_MAX
+        && (segment.len() <= CODE_SEGMENT_UNPARTED_MAX || segment.contains('_'))
+        && bytes.iter().filter(|b| b.is_ascii_digit()).count() <= VARIABLE_DIGITS_MAX
+        && words_read_as_names
+        && !CREDENTIAL_PREFIXES
+            .iter()
+            .any(|prefix| segment.starts_with(prefix))
+}
+
+/// Whether `name`, a code expression's one identifier with nothing round it, is written as code
+/// names a variable and a value is not: in snake case (`access_token`, two or more small-letter
+/// words) or in camel case (`accessToken`, a small letter first and a capital after it). A
+/// single word (`letmein`) or a capital first is no sign of code, and stays a value.
+fn written_as_code(name: &str) -> bool {
+    let bytes = name.as_bytes();
+    let snake = name.split('_').count() >= 2
+        && name.split('_').all(|word| {
+            word.bytes().next().is_some_and(|b| b.is_ascii_lowercase())
+                && word
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+        });
+    let camel = bytes.first().is_some_and(u8::is_ascii_lowercase)
+        && bytes.iter().any(u8::is_ascii_uppercase)
+        && bytes.iter().all(u8::is_ascii_alphanumeric);
+    snake || camel
+}
+
+/// The end of the identifier that starts at `at`, when one does and it reads as one
+/// ([`reads_as_an_identifier`]).
+fn identifier_end(bytes: &[u8], at: usize) -> Option<usize> {
+    if !bytes
+        .get(at)
+        .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
+    {
+        return None;
+    }
+    let end = at
+        + bytes[at..]
+            .iter()
+            .take_while(|b| b.is_ascii_alphanumeric() || **b == b'_')
+            .count();
+    // Every byte read is ASCII, so both ends are character boundaries.
+    reads_as_an_identifier(std::str::from_utf8(&bytes[at..end]).ok()?).then_some(end)
+}
+
+/// The end of the bracketed part that opens at `at` (`(`, `[` or `{`), on its own line, when
+/// what is inside reads as code: every quoted string's words not a value
+/// ([`looks_like_a_value`]), and every run of letters, digits and underscores outside them an
+/// identifier or a number ([`reads_as_an_identifier`]).
+fn bracketed_end(value: &str, at: usize) -> Option<usize> {
+    let bytes = value.as_bytes();
+    let mut open = Vec::new();
+    let mut i = at;
+    while let Some(&b) = bytes.get(i) {
+        match b {
+            b'\n' => return None,
+            b'(' | b'[' | b'{' => open.push(b),
+            b')' | b']' | b'}' => {
+                let closes = match b {
+                    b')' => b'(',
+                    b']' => b'[',
+                    _ => b'{',
+                };
+                if open.pop() != Some(closes) {
+                    return None;
+                }
+                if open.is_empty() {
+                    return Some(i + 1);
+                }
+            }
+            b'"' | b'\'' | b'`' => {
+                let end = quoted_end(value, i)?;
+                let inside = &value[i + 1..end - 1];
+                if inside
+                    .split(crate::memstore::is_python_space)
+                    .any(looks_like_a_value)
+                {
+                    return None;
+                }
+                i = end;
+                continue;
+            }
+            _ if b.is_ascii_alphanumeric() || b == b'_' => {
+                let end = i + bytes[i..]
+                    .iter()
+                    .take_while(|b| b.is_ascii_alphanumeric() || **b == b'_')
+                    .count();
+                if !reads_as_an_identifier(&value[i..end]) {
+                    return None;
+                }
+                i = end;
+                continue;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+/// The end of the quoted string that opens at `at`, after its closing quote, on its own line;
+/// a backslash escapes the character after it.
+fn quoted_end(value: &str, at: usize) -> Option<usize> {
+    let bytes = value.as_bytes();
+    let quote = bytes[at];
+    let mut i = at + 1;
+    while let Some(&b) = bytes.get(i) {
+        match b {
+            b'\n' => return None,
+            b'\\' => i += 1,
+            _ if b == quote => return Some(i + 1),
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+/// The end of the code expression that starts at `at`, and whether it is written as code:
+/// an identifier with a member path (`.`, `?.`, `::`, `->`), a call, an index, `?` or `!`
+/// after it; a shell variable (`$name`, `${name}`) or command substitution (`$(…)`); behind
+/// `await`, `new`, `&` or `*`. An identifier with nothing round it is code only when it is
+/// written as code names a variable ([`written_as_code`]).
+fn expression_end(value: &str, mut at: usize) -> Option<(usize, bool)> {
+    let bytes = value.as_bytes();
+    let mut code = false;
+    for keyword in ["await ", "new "] {
+        if value[at..].starts_with(keyword) {
+            at += keyword.len();
+            code = true;
+            break;
+        }
+    }
+    while matches!(bytes.get(at), Some(b'&' | b'*')) {
+        at += 1;
+        code = true;
+    }
+    if value[at..].starts_with("$(") {
+        return Some((bracketed_end(value, at + 1)?, true));
+    }
+    if value[at..].starts_with("${") {
+        let end = identifier_end(bytes, at + 2)?;
+        return (bytes.get(end) == Some(&b'}')).then_some((end + 1, true));
+    }
+    if bytes.get(at) == Some(&b'$') {
+        at += 1;
+        code = true;
+    }
+    let first = at;
+    at = identifier_end(bytes, at)?;
+    let alone = at;
+    loop {
+        let rest = &value[at..];
+        if let Some(sep) = ["::", "->", "?.", "."]
+            .iter()
+            .find(|sep| rest.starts_with(**sep))
+            && let Some(end) = identifier_end(bytes, at + sep.len())
+        {
+            at = end;
+        } else if rest.starts_with(['(', '[']) {
+            at = bracketed_end(value, at)?;
+        } else if (rest.starts_with('?') && !rest.starts_with("??"))
+            || (rest.starts_with('!') && !rest.starts_with("!="))
+        {
+            at += 1;
+        } else {
+            break;
+        }
+    }
+    code |= at > alone || written_as_code(&value[first..alone]);
+    Some((at, code))
+}
+
+/// How many bytes of `value`, the start of an assignment's value, are a code expression and
+/// what is written round it, or `None` when the value does not start with one standing alone:
+/// what a script or a patch assigns to a credential's name, which says where the credential
+/// comes from and holds none (#6292).
+///
+/// The expression ([`expression_end`]) may be opened by a backtick (code in a sentence) or by a
+/// double quote round a shell expansion (`"$(…)"`), closed again after it; it may be followed
+/// by fallbacks (`or`, `||`, `??`), each another expression or a quoted string of fewer than
+/// six non-blank characters, since a longer one is a value written in; and then, as after a
+/// variable's name ([`variable_name_len`]), one closing quote, up to four of `,` `.` `;` `)`
+/// `]` `}`, and the end of the word, with no value after it on the line.
+///
+/// A literal anywhere in it that reads as a value (a quoted argument, a segment, a word of a
+/// command) keeps the whole assignment refused, and the line is read on from its end.
+fn code_expression_len(value: &str) -> Option<usize> {
+    let bytes = value.as_bytes();
+    let opened = match (bytes.first(), bytes.get(1)) {
+        (Some(b'`'), _) => Some(b'`'),
+        (Some(b'"'), Some(b'$')) => Some(b'"'),
+        _ => None,
+    };
+    let (mut at, code) = expression_end(value, usize::from(opened.is_some()))?;
+    if !code {
+        return None;
+    }
+    loop {
+        let blanks = value[at..].len() - value[at..].trim_start_matches([' ', '\t']).len();
+        let rest = &value[at + blanks..];
+        let Some(op) = ["||", "??", "or "].iter().find(|op| rest.starts_with(**op)) else {
+            break;
+        };
+        let operand = at + blanks + op.len();
+        let operand = operand + value[operand..].len()
+            - value[operand..].trim_start_matches([' ', '\t']).len();
+        at = if bytes.get(operand).is_some_and(|b| b"'\"`".contains(b)) {
+            let end = quoted_end(value, operand)?;
+            let written = value[operand + 1..end - 1]
+                .chars()
+                .filter(|c| !crate::memstore::is_python_space(*c))
+                .count();
+            if written >= 6 {
+                return None;
+            }
+            end
+        } else {
+            match expression_end(value, operand)? {
+                (end, true) => end,
+                (_, false) => return None,
+            }
+        };
+    }
+    match (opened, bytes.get(at)) {
+        (Some(quote), Some(next)) if *next == quote => at += 1,
+        (Some(_), _) => return None,
+        (None, Some(next)) if b"'\"`".contains(next) => at += 1,
+        (None, _) => {}
+    }
+    let mut marks = 0;
+    while marks < 4
+        && bytes
+            .get(at)
+            .is_some_and(|b| matches!(b, b',' | b'.' | b';' | b')' | b']' | b'}'))
+    {
+        at += 1;
+        marks += 1;
+    }
+    // Every byte read outside a quoted string is ASCII, and a quoted string ends at its ASCII
+    // quote, so `at` is a character boundary.
+    let after = &value[at..];
+    if after
+        .chars()
+        .next()
+        .is_some_and(|c| !crate::memstore::is_python_space(c))
+    {
+        return None;
+    }
+    let next = after.trim_start_matches([' ', '\t']);
+    let given_a_value = next.starts_with([':', '=']);
+    (!given_a_value && !looks_like_a_value(next)).then_some(at)
+}
+
 /// The most characters of the word after a name that are read; a longer run is no word.
 const NEXT_WORD_MAX: usize = 128;
 
@@ -579,8 +876,9 @@ fn secret_at(text: &str) -> Option<Hit> {
 ///   engine happened to consume. Resuming at the end instead would step over a real assignment
 ///   later on the same line, which is the same defect the folded lookahead above exists to
 ///   avoid;
-/// - a value that is a variable's name ([`variable_name_len`]) is stepped over, and the line is
-///   read on from the end of the name, so an assignment after it is still asked;
+/// - a value that is a variable's name ([`variable_name_len`]) or a code expression
+///   ([`code_expression_len`]) is stepped over, and the line is read on from the end of it, so
+///   an assignment after it is still asked;
 /// - a value that names where a credential lives ([`names_where_a_credential_lives`]) is the
 ///   whole rest of its line, and the walk carries on from there.
 ///
@@ -596,8 +894,10 @@ fn assignment_at(text: &str) -> Option<(std::ops::Range<usize>, std::ops::Range<
             continue;
         }
         let value = caps.name("value").expect("the rule has a value group");
-        if let Some(named) = variable_name_len(&text[value.start()..]) {
-            // A name is at least three characters, so this always advances.
+        let named = variable_name_len(&text[value.start()..])
+            .or_else(|| code_expression_len(&text[value.start()..]));
+        if let Some(named) = named {
+            // A name or an expression is at least one character, so this always advances.
             at = value.start() + named;
             continue;
         }
@@ -2879,10 +3179,10 @@ mod variable_name_tests {
             "PASSWORD_1",
             "SECRET_KEY_123",
             "ROOT_42_PASS",
-            // Lower case anywhere.
+            // Lower case anywhere, that is not a code identifier either (`deploy_token` is
+            // one, and passes: `code_expression_tests`).
             "Deploy_Token",
             "DEPLOY_TOKEn",
-            "deploy_token",
             // Underscores that do not part words.
             "_DEPLOY_TOKEN",
             "DEPLOY_TOKEN_",
@@ -2984,6 +3284,184 @@ mod variable_name_tests {
             }
             let then_a_value = [
                 "token = DEPLOY_TOKEN ".repeat(names).as_str(),
+                "token: hunter2is",
+            ]
+            .concat();
+            assert_eq!(secret_kind(&then_a_value), ASSIGNMENT);
+        });
+    }
+}
+
+#[cfg(test)]
+mod code_expression_tests {
+    use super::{found, kind_as_read, secret_kind};
+
+    const ASSIGNMENT: Option<&str> = Some("credential assignment");
+
+    #[test]
+    fn a_value_that_is_a_code_expression_is_not_a_credential() {
+        // What a script or a patch assigns to a credential's name: where the value comes from,
+        // and no value. It must match its source byte for byte, so rewording is no remedy
+        // (#6292).
+        for text in [
+            // Rust.
+            "let token = std::env::var(\"GITHUB_TOKEN\")?;",
+            "let password = rpassword::read_password()?;",
+            "let secret = config.secret.clone();",
+            "let api_key = env::var(\"OPENAI_API_KEY\").unwrap_or_default();",
+            "let token = fetch_token(&client, scope).await?;",
+            "Client { token: &cfg.token, user }",
+            "let secret = format!(\"{}:{}\", user, pass);",
+            // Python.
+            "api_key = os.environ[\"OPENAI_API_KEY\"]",
+            "token = os.getenv(\"GITHUB_TOKEN\")",
+            "password = getpass.getpass(\"Password: \")",
+            "secret = settings.SECRET_KEY",
+            "self.token = token_from(request.headers)",
+            "token = access_token",
+            "password = os.environ.get(\"DB_PASSWORD\") or default_password",
+            // JavaScript and TypeScript.
+            "const token = process.env.GITHUB_TOKEN;",
+            "const apiKey = await getApiKey(user.id);",
+            "this.password = options.password ?? defaults.password;",
+            "const secret = new TextEncoder().encode(raw);",
+            "{ token: accessToken, secret: clientSecret }",
+            "const token = req.headers?.authorization!;",
+            // Shell.
+            "TOKEN=$(gh auth token)",
+            "TOKEN=\"$(security find-generic-password -s forge -w)\"",
+            "token=$github_token",
+            "password=\"${db_password}\"",
+            // PHP's member arrow.
+            "$password = $request->input('password');",
+            // Code in a sentence.
+            "the client reads `token = vault.read(\"forge\")` at start",
+        ] {
+            assert_eq!(secret_kind(text), None, "{text}");
+            assert_eq!(kind_as_read(None, text), None, "{text}");
+            assert_eq!(found(text), None, "{text}");
+        }
+    }
+
+    #[test]
+    fn a_literal_beside_or_inside_code_is_still_refused() {
+        // Each sample is put together here, so no line of this file spells one whole.
+        let hex = "9f86d081884c7d65".repeat(2);
+        let letters = "xKqLmNpRsTvWyZaB".repeat(2);
+        let base64 = ["dGhpcyBpcyBub3Qg", "YSByZWFsIGtleQ"].concat();
+        for value in [
+            // A quoted literal is a value, whatever is round it.
+            "\"hunter2is\"".to_owned(),
+            "'sixchars'".to_owned(),
+            // A bare word that no identifier reads as: a letter and a digit between letters,
+            // a run of hex, a long run of letters, base64.
+            "hunter2is".to_owned(),
+            hex.clone(),
+            letters.clone(),
+            base64.clone(),
+            // A plain word, as a password is written, is no identifier of code.
+            "letmein".to_owned(),
+            "changeme".to_owned(),
+            // A literal as a call's argument or a path's segment.
+            format!("hash(\"{hex}\")"),
+            format!("Secret::new(\"{base64}\")"),
+            "decrypt(\"hunter2is\")".to_owned(),
+            format!("$(echo {hex})"),
+            "cfg.x9f2k1q".to_owned(),
+            format!("keys.{letters}"),
+            // A literal for a fallback.
+            "os.getenv(\"DB_PASSWORD\") or \"changeme\"".to_owned(),
+            "process.env.TOKEN || 'hunter2is'".to_owned(),
+            "options.password ?? \"letmein\"".to_owned(),
+            // A call with what reads as a value straight after it on the line.
+            "get_token() hunter2is".to_owned(),
+            // A shell expansion with a default, which may be the value.
+            "${db_password:-hunter2is}".to_owned(),
+            // An identifier behind an issuer's prefix is a token, not code.
+            "hf_abcdefgh".to_owned(),
+            "npm_session_token".to_owned(),
+        ] {
+            for text in [
+                format!("token = {value}"),
+                format!("let password = {value};"),
+                format!("`secret: {value}`"),
+            ] {
+                assert_eq!(secret_kind(&text), ASSIGNMENT, "{text}");
+                assert_eq!(kind_as_read(None, &text), ASSIGNMENT, "{text}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_token_by_its_shape_is_refused_wherever_code_puts_it() {
+        let gh = ["ghp", "_0123456789abcdefABCDEF0123456789abcd"].concat();
+        let openai = ["sk-", "proj-", &"Ab3xQ9".repeat(8)].concat();
+        let aws = ["AKIA", "IOSFODNN7EXAMPLE"].concat();
+        for text in [
+            format!("let token = Token::new(\"{gh}\");"),
+            format!("api_key = os.environ.get(\"OPENAI_API_KEY\", \"{openai}\")"),
+            format!("const secret = config.secret || \"{aws}\";"),
+            format!("token = {gh}"),
+        ] {
+            assert!(secret_kind(&text).is_some(), "{text}");
+            assert!(kind_as_read(None, &text).is_some(), "{text}");
+        }
+    }
+
+    #[test]
+    fn each_bound_of_code_holds_at_its_edge() {
+        // Each limit, just inside and just outside, so moving one is seen.
+        let unparted = |n: usize| ["cfg.a", &"b".repeat(n - 1)].concat();
+        for (value, refused) in [
+            // Trailing digits of a word: three, then four.
+            ("cfg.sha256", false),
+            ("cfg.build1234", true),
+            // Digits of a segment: four, then five.
+            ("cfg.v12_s34", false),
+            ("cfg.v12_s34_x5", true),
+            // A segment with no underscore: twenty-three characters, then twenty-four.
+            (unparted(23).as_str(), false),
+            (unparted(24).as_str(), true),
+            // A quoted fallback: five non-blank characters, then six.
+            ("cfg.token or \"abcde\"", false),
+            ("cfg.token or \"abcdef\"", true),
+            // Marks after the expression: four, then five.
+            ("cfg.token)]};", false),
+            ("cfg.token)]};,", true),
+            // A number alone is code; a bare identifier needs a sign of it.
+            ("get_token(30, 42)", false),
+            ("tokenValue", false),
+            ("tokenvalue", true),
+            ("Token_Value", true),
+            ("token_Value", true),
+            ("token__value", true),
+        ] {
+            let text = format!("token = {value}");
+            let expected = if refused { ASSIGNMENT } else { None };
+            assert_eq!(secret_kind(&text), expected, "{text}");
+        }
+    }
+
+    #[test]
+    fn code_excuses_nothing_after_it_on_its_line() {
+        let then_a_value = "token = os.getenv(\"GITHUB_TOKEN\"), password = hunter2is";
+        assert_eq!(secret_kind(then_a_value), ASSIGNMENT);
+        let on_the_next_line = "token = cfg.token\npassword: hunter2is\n";
+        assert_eq!(found(on_the_next_line).map(|f| f.line), Some(2));
+    }
+
+    #[test]
+    fn many_code_values_on_one_line_read_in_linear_time() {
+        crate::lineartime::reads_in_linear_time(1 << 11, |values| {
+            for text in [
+                "token = cfg.token, ".repeat(values),
+                "token = env::var(\"GITHUB_TOKEN\")?; ".repeat(values),
+                "token=$(gh auth token) ".repeat(values),
+            ] {
+                assert_eq!(secret_kind(&text), None);
+            }
+            let then_a_value = [
+                "token = cfg.token ".repeat(values).as_str(),
                 "token: hunter2is",
             ]
             .concat();

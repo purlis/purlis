@@ -163,7 +163,7 @@ export function ForgeTokenSignIn({
       />
 
       {help !== undefined && (
-        <div className="ui-setting-help" aria-live="polite">
+        <div className="ui-setting-help ui-text-secondary" aria-live="polite">
           <p>
             Make a token on {help.host} with {help.scopes.length === 1 ? "the scope" : "the scopes"}{" "}
             {help.scopes.map((scope, i) => (

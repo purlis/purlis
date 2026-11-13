@@ -1108,7 +1108,7 @@ export function StartChat({
           {/* Busy while each row's details are read (#4736): a screen reader, and a scenario
               spec, can tell the rows are not final yet. */}
           <div className="start-chat-section" aria-busy={pending} ref={cards}>
-            <h3 className="start-chat-label" id={harnessLabel}>
+            <h3 className="start-chat-label ui-text-label" id={harnessLabel}>
               Harness
             </h3>
             <OptionCards
@@ -1144,7 +1144,7 @@ export function StartChat({
 
           {runsOn !== undefined && (
             <section className="start-chat-section" aria-labelledby={runsOnLabel}>
-              <h3 className="start-chat-label" id={runsOnLabel}>
+              <h3 className="start-chat-label ui-text-label" id={runsOnLabel}>
                 Runs on
               </h3>
               <RunsOnRow
@@ -1159,7 +1159,7 @@ export function StartChat({
           )}
 
           <div className="start-chat-section">
-            <label className="start-chat-label" htmlFor={nameLabel}>
+            <label className="start-chat-label ui-text-label" htmlFor={nameLabel}>
               Name
             </label>
             <TextField
@@ -1207,7 +1207,7 @@ export function StartChat({
           {/* While the details are read, the sandbox is checked, and its room kept (#4736). */}
           {pending && (
             <section className="start-chat-section" aria-labelledby={`${nameLabel}-sandbox`}>
-              <h3 className="start-chat-label" id={`${nameLabel}-sandbox`}>
+              <h3 className="start-chat-label ui-text-label" id={`${nameLabel}-sandbox`}>
                 Sandbox
               </h3>
               <Reserved as="div" texts={[OPT_OUT_SAID]}>
@@ -1219,7 +1219,7 @@ export function StartChat({
             or cannot be applied is not a stray line under the Name box. */}
           {sandbox !== null && (
             <section className="start-chat-section" aria-labelledby={`${nameLabel}-sandbox`}>
-              <h3 className="start-chat-label" id={`${nameLabel}-sandbox`}>
+              <h3 className="start-chat-label ui-text-label" id={`${nameLabel}-sandbox`}>
                 Sandbox
               </h3>
               {sandbox.state === "sandboxed" && locked === null && (

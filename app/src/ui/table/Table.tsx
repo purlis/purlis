@@ -274,6 +274,7 @@ export function TableHeader({ children }: { children: ReactNode }) {
         <AriaColumn
           id="purlis:choose"
           textValue="Choose"
+          className="ui-text-label"
           data-scope="table"
           data-part="head"
           data-choose=""
@@ -287,6 +288,7 @@ export function TableHeader({ children }: { children: ReactNode }) {
         <AriaColumn
           id="purlis:menu"
           textValue="Actions"
+          className="ui-text-label"
           data-scope="table"
           data-part="head"
           data-actions=""
@@ -343,6 +345,7 @@ export function TableColumn({
       {...chosen.attributes}
       style={chosen.style}
       allowsSorting={allowsSorting}
+      className="ui-text-label"
       data-scope="table"
       data-part="head"
       data-align={align}

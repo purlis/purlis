@@ -3718,8 +3718,10 @@ fn the_record_opens_in_your_editor_at_its_own_path_and_a_link_does_not() {
 
     std::fs::create_dir_all(record.parent().unwrap()).unwrap();
     std::fs::write(&record, "{ not json").unwrap();
-    match record_in_your_editor(config.path(), crate::youreditor::Editor::Variable, &editor) {
-        Ok(crate::youreditor::Launch::Program { program, args }) => {
+    match record_in_your_editor(config.path(), crate::youreditor::Editor::Variable, &editor)
+        .map(|checked| checked.launch())
+    {
+        Ok(Ok(crate::youreditor::Launch::Program { program, args })) => {
             assert_eq!(program, "ed");
             assert_eq!(args.last().map(Path::new), Some(record.as_path()));
         }

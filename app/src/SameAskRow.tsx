@@ -146,6 +146,7 @@ export function SameAsk({
         allowed += 1;
         noteAnswered(where, {
           at: Date.now(),
+          session: ask.session,
           chain: ask.chain,
           says: ask.says,
           answer: option.label,

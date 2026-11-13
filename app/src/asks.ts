@@ -25,6 +25,7 @@ import {
   type Asking,
   type EntriesOf,
   type GrantLevel,
+  type PlaneChanged,
   type Press,
   type RunGrantPress,
   type RunLink,
@@ -53,6 +54,7 @@ import {
 } from "./signingAsked";
 import { refusalsAnswered } from "./vaultRefusals";
 import { asDrawn, asNamed } from "./projectExpects";
+import { concerns, followPlaneChanged, SETTINGS } from "./planeChanged";
 
 /** The event the core sends each time a command's confirmation comes or goes (`poolsignin_confirm`). */
 export const POOL_SIGN_IN_CONFIRM = "pool-sign-in-confirm";
@@ -144,6 +146,21 @@ export function useAsks(planes: readonly string[]): {
     for (const plane of wanted) reader.read(plane);
   }, [key, reader]);
   useEffect(() => {
+    // **A project's settings changed on disk** (a pull, a branch switched, a hand's edit): what
+    // its personas wait for, and what it expects of this machine, may read differently, and no
+    // event of the asks says so (ADR 0121, amended 2026-11-12).
+    const stops = (key === "" ? [] : key.split("\n")).map((plane) =>
+      followPlaneChanged(
+        [plane],
+        () => SETTINGS,
+        () => reader.soon(plane),
+      ),
+    );
+    return () => {
+      for (const stop of stops) stop();
+    };
+  }, [key, reader]);
+  useEffect(() => {
     // Listening again after a cleanup (React's StrictMode runs every effect twice) reads what it
     // watches again, since a read made while it was stopped was dropped.
     reader.start();
@@ -160,7 +177,19 @@ export function useAsks(planes: readonly string[]): {
     // read again.
     stops.push(listen(POOL_SIGN_IN_CONFIRM, () => reader.soonAll()).catch(() => undefined));
     const offSandbox = onSandboxCommand(() => reader.soonAll());
+    // **What a project expects is read again where its Notice reads it** (#6000): as its
+    // settings change on disk (a pull or a hand comes to declare it) and as the window comes
+    // back (an Allow in another window). The consent is an ask too, derived from the same state,
+    // so a list not read then left its Notice up and the ✋ counting nothing.
+    stops.push(
+      listen<PlaneChanged>("plane-changed", (said) => {
+        if (concerns(said.payload.answers, SETTINGS)) reader.soon(said.payload.plane);
+      }).catch(() => undefined),
+    );
+    const cameBack = () => reader.soonAll();
+    window.addEventListener("focus", cameBack);
     return () => {
+      window.removeEventListener("focus", cameBack);
       offSandbox();
       moved.delete(reader.soon);
       reader.stop();
@@ -788,6 +817,22 @@ export async function answerTaken(
         if (answered === undefined) break;
         const done = await answered;
         if (done.status === "ok") sandboxCommandReturned();
+        return done.status === "ok" ? { status: "ok" } : done;
+      }
+      case "persona-allow": {
+        // A persona's hosts and tools waiting for an Allow here (ADR 0121, amended 2026-11-12):
+        // its Notice's own Allow, sent the digest the row showed, so a list changed since is
+        // refused and asks anew; Not now puts it away while the project is open. Either way its
+        // Notice, drawn from this same ask, goes with it.
+        const answered =
+          option === "allow"
+            ? commands.allowPersonaHosts(plane, path.persona, path.digest)
+            : option === "not-now"
+              ? commands.personaAllowNotNow(plane, path.persona, path.digest)
+              : undefined;
+        if (answered === undefined) break;
+        const done = await answered;
+        if (done.status === "ok" && option === "allow") sandboxCommandReturned();
         return done.status === "ok" ? { status: "ok" } : done;
       }
       case "paused":

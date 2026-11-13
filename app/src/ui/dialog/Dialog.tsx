@@ -797,11 +797,11 @@ function DialogRows({ props, names }: { props: DialogProps; names: ReturnType<ty
   return (
     <>
       <header data-scope="dialog" data-part="header">
-        <h2 id={titled} data-scope="dialog" data-part="title">
+        <h2 id={titled} data-scope="dialog" data-part="title" className="ui-text-title">
           {title}
         </h2>
         {subtitle !== undefined && (
-          <p id={subtitled} data-scope="dialog" data-part="subtitle">
+          <p id={subtitled} data-scope="dialog" data-part="subtitle" className="ui-text-secondary">
             {subtitle}
           </p>
         )}
@@ -812,7 +812,12 @@ function DialogRows({ props, names }: { props: DialogProps; names: ReturnType<ty
         <FooterPlace.Provider value={place}>
           <div data-scope="dialog" data-part="body">
             {description !== undefined && (
-              <div id={described} data-scope="dialog" data-part="description">
+              <div
+                id={described}
+                data-scope="dialog"
+                data-part="description"
+                className="ui-text-body"
+              >
                 {description}
               </div>
             )}
@@ -821,7 +826,12 @@ function DialogRows({ props, names }: { props: DialogProps; names: ReturnType<ty
         </FooterPlace.Provider>
         <div data-scope="dialog" data-part="separator" aria-hidden="true" />
         <footer data-scope="dialog" data-part="footer">
-          <div ref={setSummaryAt} data-scope="dialog" data-part="summary">
+          <div
+            ref={setSummaryAt}
+            data-scope="dialog"
+            data-part="summary"
+            className="ui-text-secondary"
+          >
             {inside ? null : summary}
           </div>
           <div ref={setActions} data-scope="dialog" data-part="actions">
