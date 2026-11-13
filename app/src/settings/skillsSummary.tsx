@@ -50,7 +50,7 @@ export function projectSkillsGroup(plane: PlaneId): SettingsGroup {
 /**
  * **Settings › Skill sources at the project** (#6031, `prototype/skill-policy` A): this project's
  * `[skill_policy]` read only, each key saying it is set in `file`, the team's shared file, which
- * only a reviewed change to it changes. Behind the studio's flag.
+ * only a reviewed change to it changes.
  */
 export function projectSkillSourcesGroup(plane: PlaneId, file: string): SettingsGroup {
   return {
@@ -65,7 +65,7 @@ export function projectSkillSourcesGroup(plane: PlaneId, file: string): Settings
 
 /**
  * **Settings › Recorded skill acts** (#6031, SK-11): each install, update and removal of a skill
- * from a source this machine's audit recorded, newest first. Behind the studio's flag.
+ * from a source this machine's audit recorded, newest first.
  */
 export function projectSkillActsGroup(plane: PlaneId): SettingsGroup {
   return {
