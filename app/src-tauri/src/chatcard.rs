@@ -257,8 +257,9 @@ pub(crate) fn keep_screens_at_quit(
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 tracing::info!(
-                    "purlis: {left} task screen(s) did not come in time as purlis quit, and \
-                     were not kept"
+                    "purlis: {} did not come in time as purlis quit, and {} not kept",
+                    purlis_core::counts::counted(left, "task screen", "task screens"),
+                    purlis_core::counts::plural(left, "was", "were")
                 );
                 break;
             }

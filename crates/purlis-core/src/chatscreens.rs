@@ -352,10 +352,9 @@ fn forget_all_held(root: &Path) -> Result<usize, String> {
     match stayed.first() {
         None => Ok(went),
         Some(why) => Err(format!(
-            "{} kept screen{} could not be deleted ({why}). Check that purlis may change {}, \
-             then turn it off again.",
-            stayed.len(),
-            if stayed.len() == 1 { "" } else { "s" },
+            "{} could not be deleted ({why}). Check that purlis may change {}, then turn it off \
+             again.",
+            crate::counts::counted(stayed.len(), "kept screen", "kept screens"),
             dir(root).display()
         )),
     }
