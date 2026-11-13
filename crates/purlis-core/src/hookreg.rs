@@ -230,6 +230,17 @@ pub const HANDLERS: [Handler; 20] = [
 /// before a `SendMessage`, so its end says nothing in a chat's line either (#1460).
 pub const NO_OPS: [&str; 2] = ["posttooluse-bash", "posttooluse-message"];
 
+/// **Whether a call of `tool`, by Claude Code's name for it, is heard as it comes back**: some
+/// `PostToolUse` hook's matcher names it (Q240). A call of a tool none names, such as Grep, has
+/// no post-tool line to wait for. Each such matcher is a list of whole names, never a pattern.
+pub fn comes_back(tool: &str) -> bool {
+    HANDLERS.iter().any(|h| {
+        h.hears_a_call_come_back()
+            && h.matcher
+                .is_some_and(|matcher| matcher.split('|').any(|name| name == tool))
+    })
+}
+
 /// The handler for `name`, if this binary answers it.
 pub fn find(name: &str) -> Option<&'static Handler> {
     HANDLERS.iter().find(|h| h.name == name)
@@ -308,6 +319,34 @@ mod tests {
         for h in HANDLERS {
             let tool_event = matches!(h.event, "PreToolUse" | "PostToolUse" | "PostToolUseFailure");
             assert_eq!(h.matcher.is_some(), tool_event, "{}", h.name);
+        }
+    }
+
+    #[test]
+    fn a_tool_a_post_tool_hook_names_comes_back_and_grep_does_not() {
+        for tool in ["Bash", "Read", "Edit", "Write", "Task", "Skill"] {
+            assert!(comes_back(tool), "{tool}");
+        }
+        for tool in [
+            "Grep",
+            "mcp__purlis__dispatch",
+            "mcp__purlis__memory_add",
+            "",
+        ] {
+            assert!(!comes_back(tool), "{tool}");
+        }
+    }
+
+    #[test]
+    fn every_post_tool_matcher_is_a_list_of_whole_names() {
+        for h in HANDLERS.iter().filter(|h| h.hears_a_call_come_back()) {
+            let matcher = h.matcher.unwrap_or_default();
+            assert!(
+                matcher.split('|').all(|name| !name.is_empty()
+                    && name.chars().all(|c| c.is_alphanumeric() || c == '_')),
+                "{}: {matcher}",
+                h.name
+            );
         }
     }
 

@@ -1904,6 +1904,14 @@ impl Held {
         }
     }
 
+    /// A held connection's ask of chat `session`'s was withdrawn as a block (R-290, Q240): the
+    /// needs-you mark [`Self::blocked_while_waiting`] set for it is taken back.
+    pub(crate) fn block_withdrawn(&self, session: u32) {
+        if let Some(moved) = self.board().block_withdrawn(session) {
+            (self.tell)(moved);
+        }
+    }
+
     /// Chat `closed` has closed with `orphaned` still waiting for its next turn: each open chat
     /// it started that had sent its report, and whose report is one of those, needs the person.
     ///
@@ -3898,7 +3906,12 @@ impl Planes {
                             block.line.sandbox_blocked,
                         );
                     }
-                    crate::taskblocks::heard(strong.chats(), &told);
+                    // The echo of a held connection's block written already, from the
+                    // post-tool detector or the proxy's own raise landing late (Q240): dropped,
+                    // never an ask beside its block, and never a second block (T1-10).
+                    if !crate::taskblocks::heard(strong.chats(), &told) {
+                        return;
+                    }
                     // The chat now waits on the person for this Notice, until its turn moves
                     // on: what the chat that asked for it is told (#1663). purlis's own block
                     // is a bug to report, which the chat is not told to wait on, and neither is
@@ -4009,6 +4022,30 @@ impl Planes {
             Arc::new(move || {
                 if let Some(strong) = weak.upgrade() {
                     strong.chats().asks_may_have_moved();
+                }
+            })
+        });
+        // A held connection a chat stopped waiting on is one block in the event log (R-290,
+        // Q154), and a chat's next tool call is when it stops waiting. Its ask is withdrawn as
+        // it is written, so the needs-you mark that ask set goes with it (Q240); the pane's
+        // Notice, drawn from the asks registry, goes as the registry is told it moved. Weak
+        // for the handoff's reason.
+        held.chats().write_stops_with({
+            let weak = Arc::downgrade(&held);
+            Arc::new(move |chat, stop| match weak.upgrade() {
+                Some(strong) => {
+                    let written = strong.hooks.write_stop(chat, stop);
+                    strong.block_withdrawn(chat);
+                    written
+                }
+                None => Ok(()),
+            })
+        });
+        held.hooks.tell_calls_to({
+            let weak = Arc::downgrade(&held);
+            Arc::new(move |call| {
+                if let Some(strong) = weak.upgrade() {
+                    strong.chats().called(call);
                 }
             })
         });

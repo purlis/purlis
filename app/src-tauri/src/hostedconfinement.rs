@@ -323,6 +323,18 @@ impl Board for HostBoard {
         }
     }
 
+    /// Sent only to a host that knows it (1.87, R-290): an older one's connection is a block
+    /// once its hold runs out.
+    fn give_up(&self, target: &str) -> bool {
+        if self.link.version() < purlis_session_protocol::session::KNOWS_GIVE_UP {
+            return false;
+        }
+        self.change(ReachChange::GiveUp {
+            target: target.to_owned(),
+        });
+        true
+    }
+
     fn allowed_live(&self) -> Vec<(String, By)> {
         self.now()
             .allowed_live

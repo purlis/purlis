@@ -265,13 +265,9 @@ impl Locks {
     /// With the project's own `[sandbox] policy = "never"` beside them (#2071 PR C), which
     /// requires the full sandbox as [`Self::forbids_opt_out`] does, said as the project's.
     pub fn of(root: &Path) -> Self {
-        #[cfg(any(test, feature = "test-support"))]
-        let locks = TEST_LOCKS.with(|locks| locks.borrow().clone());
-        #[cfg(not(any(test, feature = "test-support")))]
-        let locks = Self::read(Path::new(MACHINE_FILE));
         let held = Self {
             team_never: super::team::Team::of(root).policy == super::team::Policy::Never,
-            ..locks
+            ..Self::of_this_machine()
         };
         // An outcome eval's shell reaches no host and writes no cache (#4476,
         // [`holding_to_its_folder`]), and keeps no Allow, as every grade's chat.
@@ -301,6 +297,16 @@ impl Locks {
             };
         }
         held
+    }
+
+    /// **This machine's locks alone** ([`MACHINE_FILE`]), with no project's beside them: for a
+    /// project not made yet, whose own policy there is nothing of to read.
+    pub fn of_this_machine() -> Self {
+        #[cfg(any(test, feature = "test-support"))]
+        let locks = TEST_LOCKS.with(|locks| locks.borrow().clone());
+        #[cfg(not(any(test, feature = "test-support")))]
+        let locks = Self::read(Path::new(MACHINE_FILE));
+        locks
     }
 
     /// The policy file at `path`: none where there is no file, its locks where it is one purlis

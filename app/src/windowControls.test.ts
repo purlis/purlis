@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { CLONE_VOUCH } from "./CloneVouchNotice";
 import { familyOf } from "./Notice";
 import { NOTICE_KINDS } from "./noticeKinds";
+import { PLACED_CONTROLS, placedControlsNamedIn } from "./placedControls";
 import { WINDOW_CONTROLS, controlsNamedIn, goToSays } from "./windowControls";
 
 /**
@@ -81,9 +82,6 @@ function literalsOf(text: string): string[] {
   return [...code.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((found) => found[1]);
 }
 
-/** Drawn by the window in a view or in Settings: linked by T1-48 (Q234), through
- *  `SettingsLink` or a view's route. */
-const T1_48 = "drawn by the window, in a view or in Settings: T1-48 links it (Q234)";
 /** Read by a chat, whose words can carry no link: the refusal raises an ask (Q181). */
 const CHAT = "read by a chat or its agent, which no link reaches: Q181 (the refusal raises an ask)";
 /** Printed in a terminal by the `purlis` command. */
@@ -112,16 +110,11 @@ const UNLINKED: Readonly<Record<string, string>> = {
   "crates/purlis-core/src/doctor/fix/move_into_repos.rs: Fix": BESIDE,
   "crates/purlis-core/src/doctor/sandbox.rs: File report": BESIDE,
   "crates/purlis-core/src/personaverbs/select.rs: Allow": CHAT,
-  "crates/purlis-core/src/planegit.rs: Resolve": T1_48,
+  // Followed only by `purlis` in a terminal (`follow_while`); the window's own sign-in draws
+  // the button beside its own words (Q246).
+  "crates/purlis-core/src/profilestore/sign_in/terminal.rs: Open in terminal": CLI,
   "crates/purlis-core/src/planegit.rs: Update": CHAT,
-  "crates/purlis-core/src/planegit/bringin.rs: Resolve": T1_48,
-  "crates/purlis-core/src/planegit/resolve.rs: Resolve": T1_48,
-  "crates/purlis-core/src/planegit/resolvefolder.rs: Resolve": T1_48,
-  "crates/purlis-core/src/planegit/update.rs: Resolve": T1_48,
   "crates/purlis-core/src/planegit/update.rs: Update": CHAT,
-  "crates/purlis-core/src/poolsetup/signins.rs: Remove": T1_48,
-  "crates/purlis-core/src/profilestore/pin.rs: Update the pin": T1_48,
-  "crates/purlis-core/src/profilestore/sign_in/terminal.rs: Open in terminal": T1_48,
   "crates/purlis-core/src/projectgit.rs: Save": CHAT,
   "crates/purlis-core/src/rootupdate.rs: Update": CHAT,
   "crates/purlis-core/src/sandbox/level_why.rs: Confirm": BESIDE,
@@ -131,7 +124,6 @@ const UNLINKED: Readonly<Record<string, string>> = {
   "crates/purlis-core/src/secrets/vaultcmd.rs: Allow": CHAT,
   "crates/purlis-core/src/settings/hosts.rs: Confirm": BESIDE,
   "crates/purlis-core/src/signingsetup/retry.rs: Sign and retry": CHAT,
-  "crates/purlis-core/src/skills/levels.rs: Accept the folders": T1_48,
 };
 
 describe("the window controls the core's messages name", () => {
@@ -144,7 +136,7 @@ describe("the window controls the core's messages name", () => {
       ),
     ),
   ].sort();
-  const linked = new Set(WINDOW_CONTROLS.map((control) => control.words));
+  const linked = new Set([...WINDOW_CONTROLS, ...PLACED_CONTROLS].map((control) => control.words));
 
   it("finds the messages it holds the window to, the linked one among them", () => {
     expect(named).toContain("crates/purlis-core/src/forge/gitcredential.rs: Trust this clone");
@@ -184,6 +176,65 @@ describe("the window controls the core's messages name", () => {
       "If you made this clone yourself, press Trust this clone on its notice in the window";
     expect(controlsNamedIn(message).map(goToSays)).toEqual(["Go to Trust this clone"]);
     expect(controlsNamedIn("Session saved")).toEqual([]);
+  });
+
+  /** The controls R-357 names, each where it stands, and a core message that names it. */
+  const R_357: readonly [string, string][] = [
+    ["Resolve", "Nothing was changed here: press Resolve in the Saving view to settle it"],
+    ["Update the pin", "To resume it on 3.0.0, press Update the pin in Settings › You › Profiles"],
+    [
+      "Accept the folders",
+      "open the project once in the purlis app and press Accept the folders in the Skill studio's Needs you",
+    ],
+    ["Remove", "or use Remove on the pool in Settings › You › This machine › Pools."],
+  ];
+
+  it("gives no Go to Open in terminal, which only a terminal prints (Q246)", () => {
+    expect(
+      placedControlsNamedIn("Sign in with Open in terminal on 'work''s line in Settings › Pools"),
+    ).toEqual([]);
+  });
+
+  it("gives no Go to Resolve where a resolve is open, which draws Abort in its place", () => {
+    expect(placedControlsNamedIn("Abort it and press Resolve again.")).toEqual([]);
+    expect(placedControlsNamedIn("Nothing moved: Abort, then Resolve again.")).toEqual([]);
+  });
+
+  /**
+   * **Where a placed control is named and no Go to is drawn**, exactly: `<path>: <label>`, with
+   * why. Resolve again is said while a resolve is open, where the Saving view draws Abort and
+   * not Resolve, so a Go to Resolve would find nothing.
+   */
+  const SAID_IN_PLACE: Readonly<Record<string, string>> = {
+    "crates/purlis-core/src/planegit/resolve.rs: Resolve": "during a resolve: Abort stands there",
+    "crates/purlis-core/src/planegit/resolvefolder.rs: Resolve":
+      "during a resolve: Abort stands there",
+  };
+
+  it("gives every core message naming a control in a view or in Settings its Go to", () => {
+    // A label linked is not enough: the message's words must be ones its Go to is found by.
+    const missed = sources(join(ROOT, "crates")).flatMap((path) =>
+      literalsOf(readFileSync(path, "utf8")).flatMap((literal) =>
+        controlsSaid(literal)
+          .filter((label) => PLACED_CONTROLS.some((one) => one.words === label))
+          .filter((label) => !placedControlsNamedIn(literal).some((one) => one.words === label))
+          .map((label) => `${relative(ROOT, path)}: ${label}`),
+      ),
+    );
+    expect([...new Set(missed)].sort()).toEqual(Object.keys(SAID_IN_PLACE).sort());
+  });
+
+  it("links each control R-357 names, so no message names one of them with no link", () => {
+    for (const [words, message] of R_357) {
+      expect(linked.has(words), words).toBe(true);
+      expect(
+        placedControlsNamedIn(message).map((one) => one.words),
+        message,
+      ).toEqual([words]);
+    }
+    expect(
+      Object.keys(UNLINKED).filter((one) => R_357.some(([words]) => one.endsWith(`: ${words}`))),
+    ).toEqual([]);
   });
 });
 

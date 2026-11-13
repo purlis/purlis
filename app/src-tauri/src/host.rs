@@ -977,6 +977,11 @@ pub trait ChatBoard: Send + Sync {
     /// person has the next move. Nothing when no reader would see a difference.
     fn blocked_while_waiting(&self, session: u32) -> Option<Moved>;
 
+    /// The held connection whose ask ended chat `session`'s wait on its own work is a block
+    /// now, its ask withdrawn (R-290, `purlis_core::state::Board::block_withdrawn`): the
+    /// needs-you mark that ask set is taken back. Nothing when no reader would see a difference.
+    fn block_withdrawn(&self, session: u32) -> Option<Moved>;
+
     /// A task chat `session` asked for failed, ended without a report, or did not start
     /// (#1491): a needs-you item on it. Nothing when no reader would see a difference.
     fn task_failed(&self, session: u32, failed: purlis_core::state::FailedTask) -> Option<Moved>;

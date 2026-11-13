@@ -5556,7 +5556,7 @@ export const PlaneView = memo(function PlaneView({
     (link: SettingsLink) => {
       const to = landing(link, plane);
       if (to === undefined) return;
-      linkToGroup(to.place, link.group, link.setting);
+      linkToGroup(to.place, link.group, link.setting, link.control);
       showView(to.view, to.title, to.workspace);
     },
     [plane, showView],
@@ -11703,7 +11703,7 @@ export const PlaneView = memo(function PlaneView({
   }, [alerts, plane, noticesListed, showNotices, windowLines?.count]);
 
   /** The element this project draws into, in the window only while it is in front. */
-  const host = useProjectHost();
+  const host = useProjectHost(plane);
   /**
    * **A workspace switch slides the workspace in** (#2916, R114): its side panel, its work and
    * docked tabs, its right panel and its bottom halves, which are the regions; the activity bars

@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useState } from "react";
-import { commands } from "./bindings";
+import { commands, type ProtectionWord } from "./bindings";
 import { type ForgeAsk, ForgeQuestion } from "./ForgeQuestion";
 import { useNewerTrouble } from "./pickTrouble";
+import { ProtectionRow, useProtection, useSetupProtection, YourLevel } from "./ProtectionRow";
 import { Choice, Field, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
 import { Dialog } from "./ui/dialog/Dialog";
@@ -73,9 +74,16 @@ export function NewProject({
   forgeAsk?: ForgeAsk;
   onEdit?: () => void;
   making: boolean;
-  onCreate: (path: string, planeIsThisRepo: boolean, adopt: string) => void;
-  /** Opens a repo into this machine's local project (FR-4). */
-  onOpenRepo: (path: string) => void;
+  /** Makes the project, at the Protection row's level (T1-24). */
+  onCreate: (
+    path: string,
+    planeIsThisRepo: boolean,
+    adopt: string,
+    protection: ProtectionWord,
+  ) => void;
+  /** Opens a repo into this machine's local project (FR-4), at the Protection row's level: null
+   *  where that project is there already and keeps its own (Q241). */
+  onOpenRepo: (path: string, protection: ProtectionWord | null) => void;
   /** Whether that is happening right now. */
   opening: boolean;
   onCancel: () => void;
@@ -86,6 +94,10 @@ export function NewProject({
   const [path, keepPath] = useState("");
   const [adopt, keepAdopt] = useState("");
   const [planeIsThisRepo, keepPlaneIsThisRepo] = useState(false);
+  // **The Protection row** (T1-24): one for the dialog, which both of its acts send, bounded by
+  // the core (Q241).
+  const setup = useSetupProtection();
+  const [protection, setProtection] = useProtection(setup);
   const setRepo = (value: string) => {
     keepRepo(value);
     onEdit?.();
@@ -132,14 +144,15 @@ export function NewProject({
   const [advanced, setAdvanced] = useState(false);
   const openRepo = () => {
     started();
-    if (repo.trim() !== "" && !opening) onOpenRepo(repo.trim());
+    if (repo.trim() !== "" && !opening) onOpenRepo(repo.trim(), setup?.yours ? null : protection);
   };
   const create = () => {
     started();
     // The box and the adopt field are two answers to one question — which repository this plane
     // starts from — so a ticked box sends no repo, rather than sending both and letting the core
     // rank them.
-    if (ready) onCreate(path.trim(), planeIsThisRepo, planeIsThisRepo ? "" : adopt.trim());
+    if (ready)
+      onCreate(path.trim(), planeIsThisRepo, planeIsThisRepo ? "" : adopt.trim(), protection);
   };
   return (
     <Dialog
@@ -185,6 +198,19 @@ export function NewProject({
           </>
         )}
       />
+      {/* **One Protection row** for both acts (T1-24; Q115). Open repo into the local project
+          already there writes no level, so the dialog shows the one it keeps (Q241). */}
+      {setup?.yours && !advanced && !making ? (
+        <YourLevel level={setup.yours} />
+      ) : (
+        <ProtectionRow
+          value={protection}
+          onChange={setProtection}
+          setup={setup}
+          disabled={making || opening}
+        />
+      )}
+
       {/* The core's refusal, all of it, for whichever form was sent last. */}
       {said && (
         <p className="trouble said-in-full" role="alert">

@@ -96,7 +96,7 @@ export function Onboarding({
   const withGit = useCallback((act: () => unknown) => void gate.withGit(act), [gate]);
   const { onOpenRepo } = welcome;
   const openRepoWithGit = useCallback<WelcomeProps["onOpenRepo"]>(
-    (path, template) => withGit(() => onOpenRepo(path, template)),
+    (path, template, protection) => withGit(() => onOpenRepo(path, template, protection)),
     [onOpenRepo, withGit],
   );
 

@@ -513,3 +513,56 @@ fn a_connection_held_open_still_gives_up_at_the_most_it_is_held_open() {
     );
     assert!(began.elapsed() >= Duration::from_millis(200));
 }
+
+/// R-290 (Q240): the chat moved on from a held connection, so the board gives it up now: it is
+/// refused as a timeout is, told as one, so the one path that writes a timeout's block writes
+/// it. A retry to the same host after that is a new ask the person sees, never a hold nobody
+/// sees.
+#[test]
+fn a_held_connection_given_up_times_out_now_and_a_retry_is_asked_again() {
+    let (asks, heard) = board(Duration::from_secs(30), Duration::from_millis(20));
+    let waiting = held(&asks, "api.example.com", 443);
+    until_holding(&asks, 1);
+    std::thread::sleep(Duration::from_millis(80));
+    assert!(!asks.give_up("other.example.com:443"), "nothing held there");
+    assert!(asks.give_up("api.example.com:443"), "one held there");
+    assert_eq!(waiting.join().unwrap(), Answer::TimedOut);
+    assert_eq!(
+        *heard.lock().unwrap(),
+        vec![
+            Heard::Asked(vec!["api.example.com:443".to_owned()]),
+            Heard::TimedOut("api.example.com:443".to_owned()),
+        ]
+    );
+    let retry = held(&asks, "api.example.com", 443);
+    until_holding(&asks, 1);
+    std::thread::sleep(Duration::from_millis(80));
+    assert_eq!(
+        heard.lock().unwrap().last(),
+        Some(&Heard::Asked(vec!["api.example.com:443".to_owned()])),
+        "the retry is asked about again"
+    );
+    asks.keep_blocked(&host("api.example.com"));
+    assert_eq!(retry.join().unwrap(), Answer::Refused);
+}
+
+/// R-290 (Q240): an Allow that reaches a held connection before the board gives it up carries
+/// it, and nothing is told timed out, so no block is written for a connection that went on.
+#[test]
+fn an_allow_before_the_give_up_carries_the_connection_and_tells_no_timeout() {
+    let (asks, heard) = board(Duration::from_secs(30), Duration::from_millis(20));
+    let waiting = held(&asks, "api.example.com", 443);
+    until_holding(&asks, 1);
+    asks.allow(&host("api.example.com"), By::Chat);
+    asks.give_up("api.example.com:443");
+    assert_eq!(waiting.join().unwrap(), Answer::Allowed(By::Chat));
+    assert!(
+        !heard
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|one| matches!(one, Heard::TimedOut(_))),
+        "no timeout told: {:?}",
+        heard.lock().unwrap()
+    );
+}
