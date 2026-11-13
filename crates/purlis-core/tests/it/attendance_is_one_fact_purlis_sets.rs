@@ -363,3 +363,128 @@ fn attendance_moves_one_way() {
         }
     }
 }
+
+/// **Q271**: on Claude Code, a line that cannot prove it came from the chat's armed hook still
+/// lowers attendance where it says the prompts are off. Its mode is not read (R-095), but the
+/// fact is never weaker than the old mark, which heard every line's bypass bit. A line saying
+/// any other mode, unproven, leaves the fact as it was.
+///
+/// Mutation that shows it red: have [`Fact::heard`] read `detail.claude_code_mode` alone, as it
+/// did before Q271.
+#[test]
+fn an_unproven_bypass_line_makes_a_claude_code_chat_unattended() {
+    purlis_core::unsteered!();
+    for event in EVENTS {
+        let mut report = line("claude-code", event, Some("bypassPermissions"));
+        report.mode_unproven();
+        assert_eq!(report.detail.claude_code_mode, None, "its mode is not read");
+        assert!(report.detail.unattended, "its bypass bit stands");
+        let mut fact = claude_code_chat(Some("default"));
+        fact.heard(&report);
+        assert_eq!(
+            fact.attendance(),
+            Attendance::Unattended,
+            "an unproven bypass {event:?} lowers the fact"
+        );
+        assert_eq!(fact.reported(), None, "and reports no mode");
+    }
+    for said in measured_modes() {
+        if said == "bypassPermissions" {
+            continue;
+        }
+        let mut report = line("claude-code", Event::Stop, Some(said.as_str()));
+        report.mode_unproven();
+        let mut fact = claude_code_chat(Some("default"));
+        fact.heard(&report);
+        assert_eq!(
+            fact.attendance(),
+            Attendance::Attended,
+            "an unproven {said:?} is not read at all"
+        );
+    }
+}
+
+/// **Q271, R-289**: a Codex or opencode chat's bypass bit is never read by the fact, proven or
+/// not: Codex names `bypassPermissions` for every chat, and only how purlis started a chat
+/// on another harness than Claude Code says whether it is attended.
+///
+/// Mutation that shows it red: have [`Fact::heard`] read `detail.unattended` on every harness,
+/// not only where the fact holds a Claude Code mode.
+#[test]
+fn a_codex_or_opencode_chats_bypass_bit_is_never_read_by_the_fact() {
+    purlis_core::unsteered!();
+    for (harness, registry, program) in [
+        (Harness::Codex, "codex", "codex"),
+        (Harness::Opencode, "opencode", "opencode"),
+    ] {
+        let mut fact = Fact::at_start(Begun::Person, Some(harness), &words(&[program]));
+        for event in EVENTS {
+            let mut report = line(registry, event, Some("bypassPermissions"));
+            assert!(report.detail.unattended, "the old reader's bit is set");
+            fact.heard(&report);
+            report.mode_unproven();
+            fact.heard(&report);
+            assert_eq!(
+                fact.attendance(),
+                Attendance::Attended,
+                "{harness:?} {event:?}"
+            );
+        }
+    }
+}
+
+/// **Q271, R-318**: a resume or a relaunch carries the chat's fact forward. A chat that was
+/// unattended stays so whatever the new start is, and whatever its hook then reports; one that
+/// was attended is lowered by a start that is unattended, and kept by one that is not.
+///
+/// Mutation that shows it red: have [`Fact::resumed`] return [`Fact::at_start`] of the new
+/// start, ignoring `prior`.
+#[test]
+fn a_chat_flipped_unattended_and_then_resumed_stays_unattended() {
+    purlis_core::unsteered!();
+    let mut flipped = claude_code_chat(Some("default"));
+    flipped.heard(&line("claude-code", Event::Stop, Some("acceptEdits")));
+    assert_eq!(flipped.attendance(), Attendance::Unattended);
+    for command in [
+        words(&["claude"]),
+        words(&["claude", "--permission-mode", "default"]),
+        words(&["claude", "--permission-mode", "acceptEdits"]),
+    ] {
+        let mut resumed =
+            Fact::resumed(flipped, Begun::Person, Some(Harness::ClaudeCode), &command);
+        assert_eq!(
+            resumed.attendance(),
+            Attendance::Unattended,
+            "resumed as {command:?}"
+        );
+        for said in measured_modes() {
+            resumed.heard(&line("claude-code", Event::Stop, Some(said.as_str())));
+            assert_eq!(
+                resumed.attendance(),
+                Attendance::Unattended,
+                "resumed as {command:?}, then {said:?}"
+            );
+        }
+    }
+    for harness in Harness::ALL {
+        let task = Fact::at_start(Begun::Task, Some(harness), &words(&["harness"]));
+        assert_eq!(
+            Fact::resumed(task, Begun::Person, Some(harness), &words(&["harness"])).attendance(),
+            Attendance::Unattended,
+            "a task relaunched by a person on {harness:?}"
+        );
+        let attended = Fact::at_start(Begun::Person, Some(harness), &words(&["harness"]));
+        assert_eq!(
+            Fact::resumed(attended, Begun::Person, Some(harness), &words(&["harness"]))
+                .attendance(),
+            Attendance::Attended,
+            "an attended chat resumed by a person on {harness:?}"
+        );
+        assert_eq!(
+            Fact::resumed(attended, Begun::Runner, Some(harness), &words(&["harness"]))
+                .attendance(),
+            Attendance::Unattended,
+            "an attended chat relaunched by a runner on {harness:?}"
+        );
+    }
+}
