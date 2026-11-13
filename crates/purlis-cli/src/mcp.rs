@@ -253,6 +253,10 @@ impl ServerHandler for Server {
         if name == chattools::SECRET_ASK {
             return Ok(done(blocking(move || crate::secret::ask_tool(&args)).await));
         }
+        // The one tool that reads the forge (#6233): as this chat, on its own CLI login.
+        if name == chattools::FORGE_MILESTONES {
+            return Ok(done(blocking(move || forge_milestones(&args)).await));
+        }
         if name == chattools::DISPATCH_LIST {
             return Ok(done(
                 blocking(|| crate::dispatch::list().map_err(|why| in_the_chat(&why.for_a_tool())))
@@ -288,6 +292,18 @@ impl ServerHandler for Server {
             .await,
         ))
     }
+}
+
+/// **[`chattools::FORGE_MILESTONES`] for the chat this server serves**, asked as
+/// `Caller::mcp(<chat>)`: ADR 0070's route sends it on the chat's own `gh` login, and refuses it
+/// where that login was imported as the person's. Never the person's sign-in.
+fn forge_milestones(args: &serde_json::Map<String, serde_json::Value>) -> Result<String, String> {
+    let here = crate::Here::read()?;
+    let place = here.place(None);
+    let chat = std::env::var(purlis_core::hookwire::CHAT_ENV).unwrap_or_default();
+    chattools::forge_milestones(here.plane.root(), &place, args, &chat, &|repo| {
+        repo.backend()
+    })
 }
 
 /// Whether the project's skills reach this chat ([`purlis_core::skills::reach_chats_here`]): the

@@ -24,9 +24,12 @@
 //!   never created.
 //! - **Names, never paths.** A todo is closed by its slug and a record read by its file name,
 //!   each checked by the store that owns it, which also refuses a link out of the project.
-//! - **No credential, and no human power.** No tool reads a vault, the environment, the audit
-//!   or a forge: `change_status` is the record half of `charter change show`, because the forge
-//!   half signs in as the person (ADR 0077). `ask_operator` asks through the harness, which
+//! - **No credential, and no human power.** No tool reads a vault, the environment or the
+//!   audit: `change_status` is the record half of `charter change show`, because the forge
+//!   half signs in as the person (ADR 0077). **One tool reads the forge**, and as the chat,
+//!   never as the person: [`FORGE_MILESTONES`] asks as `Caller::mcp`, which ADR 0070's route
+//!   sends on the chat's own CLI login and refuses where that login was imported as the
+//!   person's (the operator's ruling of 2026-11-11, ADR 0122 as amended that day). `ask_operator` asks through the harness, which
 //!   shows the question to the person; nothing here answers it.
 
 use std::path::Path;
@@ -42,6 +45,11 @@ pub const SERVER: &str = crate::names::PLUGIN_NAME.write;
 
 /// The `charter` subcommand that serves the tools over stdio.
 pub const SUBCOMMAND: &str = "mcp";
+
+/// The tool that lists the milestones of a repo of this chat's workspace with their progress
+/// (#6233): `purlis.forge_milestones`, a page's query too. [`call`] does not answer it: it asks
+/// the forge as the chat that called it, whose id only the server holds ([`forge_milestones`]).
+pub const FORGE_MILESTONES: &str = crate::catalogue::milestones::NAME;
 
 /// The one tool [`call`] does not answer: only the server, which holds the connection to the
 /// harness, can ask the person through it.
@@ -627,7 +635,7 @@ fn wait_seconds() -> Value {
 }
 
 /// Every tool, in the order a harness lists them.
-pub static TOOLS: [Tool; 32] = [
+pub static TOOLS: [Tool; 33] = [
     Tool {
         name: "todo_list",
         description: "List the open todos of the workspace this chat works in, oldest first, \
@@ -915,6 +923,14 @@ pub static TOOLS: [Tool; 32] = [
                 "additionalProperties": false,
             })
         },
+        read_only: true,
+    },
+    Tool {
+        name: FORGE_MILESTONES,
+        description: "The milestones of a GitHub repo of this workspace, each with its open and \
+                      closed issue counts, due date and page. Only a repo whose clone is in \
+                      this workspace; the open milestones unless state is all.",
+        schema: crate::catalogue::milestones::parameters,
         read_only: true,
     },
     Tool {
@@ -1406,6 +1422,11 @@ pub fn call(
             "{tool} is answered by the app through purlis's MCP server, not here"
         ));
     }
+    if tool == FORGE_MILESTONES {
+        return Err(format!(
+            "{tool} asks the forge as the chat that called it, so purlis's MCP server answers it"
+        ));
+    }
     // FR-24, at every write and not only when the server started: the server lives as long
     // as the chat, and the project can be moved to a newer format under it.
     if !spec.read_only
@@ -1584,6 +1605,50 @@ fn run(
         }
         other => Err(format!("purlis has no tool {}", crate::shown::short(other))),
     }
+}
+
+/// **[`FORGE_MILESTONES`] for chat `chat`** at `place`: the milestones of a repo of its
+/// workspace, asked as `Caller::mcp(chat)` through `backend_of`, one line each.
+pub fn forge_milestones(
+    root: &Path,
+    place: &Place,
+    args: &Map<String, Value>,
+    chat: &str,
+    backend_of: &dyn Fn(&crate::forge::pr::Repo) -> Box<dyn crate::forge::ForgeBackend>,
+) -> Result<String, String> {
+    let ws = workspace_name(place)?;
+    let reach = crate::catalogue::milestones::Reach {
+        caller: crate::forge::Caller::mcp(chat),
+        backend_of,
+    };
+    let data =
+        crate::catalogue::milestones::read(root, ws, args, &reach).map_err(|why| why.message)?;
+    let path = data["path"].as_str().unwrap_or_default();
+    let listed = data["milestones"].as_array().cloned().unwrap_or_default();
+    if listed.is_empty() {
+        return Ok(format!(
+            "{path} has no {} milestones.",
+            data["state"].as_str().unwrap_or("open")
+        ));
+    }
+    let mut lines = vec![format!("{path}: {} milestones", listed.len())];
+    for m in &listed {
+        let open = m["open_issues"].as_u64().unwrap_or(0);
+        let closed = m["closed_issues"].as_u64().unwrap_or(0);
+        let due = m["due_on"].as_str().map_or_else(
+            || "no due date".to_owned(),
+            |d| format!("due {}", &d[..d.len().min(10)]),
+        );
+        lines.push(format!(
+            "#{} {} · {closed}/{} closed · {due} · {} · {}",
+            m["number"],
+            crate::shown::line(m["title"].as_str().unwrap_or_default()),
+            open + closed,
+            m["state"].as_str().unwrap_or_default(),
+            m["url"].as_str().unwrap_or_default(),
+        ));
+    }
+    Ok(lines.join("\n"))
 }
 
 /// The session records at `place`, newest first.
