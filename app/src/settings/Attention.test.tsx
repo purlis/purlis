@@ -106,6 +106,7 @@ describe("the Attention page", () => {
       "Quiet now",
       "Quiet while you type",
       "Asks that stop a chat",
+      "Remind me",
       "Notify when a task fails",
       "Notify when a long task finishes",
       "Long means more than",
@@ -161,6 +162,29 @@ describe("notifications per source", () => {
 
     await userEvent.click(screen.getByRole("switch"));
     await waitFor(() => expect(screen.getByRole("textbox")).toBeDisabled());
+  });
+});
+
+describe("Remind me (#6344)", () => {
+  it("offers Off, Gently and Often, Gently picked until changed, each saying what it does", () => {
+    render(<Row id="you.notifications.remind" />);
+    expect(screen.getAllByRole("radio")).toHaveLength(3);
+    expect(screen.getByRole("radio", { name: /^Off/ })).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: /^Gently/ })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /^Often/ })).not.toBeChecked();
+    expect(
+      screen.getByText("No reminders. The ✋ still bounces when an ask arrives."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Every 5 minutes.")).toBeInTheDocument();
+  });
+
+  it("keeps the pace picked in the layout file", async () => {
+    render(<Row id="you.notifications.remind" />);
+    await userEvent.click(screen.getByRole("radio", { name: /^Often/ }));
+    expect(notificationPrefs().remind).toBe("often");
+    await waitFor(() => expect(screen.getByRole("radio", { name: /^Often/ })).toBeChecked());
+    await userEvent.click(screen.getByRole("radio", { name: /^Off/ }));
+    expect(notificationPrefs().remind).toBe("off");
   });
 });
 

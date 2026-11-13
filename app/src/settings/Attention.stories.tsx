@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **You › Attention** (#6019, ADR 0121 decision 22): Quiet, the notifications per source, the
- * Expiring sound and the project's Stuck? thresholds on one page. Drawn as it opens, with long
+ * **You › Attention** (#6019, ADR 0121 decision 22): Quiet, Remind me (#6344), the notifications
+ * per source, the Expiring sound and the project's Stuck? thresholds on one page. Drawn as it opens, with long
  * finishes turned off, and in a project with its Stuck? row; held to axe, walked by the keyboard
  * and pictured in every pictured theme cell (`docs/component-stories.md`), the high-contrast
  * appearances among them; a pull request's `stories` run draws those pictures, never a hand
@@ -118,6 +118,29 @@ export const AsItOpens: Story = {
     expectFocusInSight();
     await userEvent.keyboard(" ");
     await waitFor(() => expect(notificationPrefs().quiet.on).toBe(true));
+  },
+};
+
+/**
+ * **Remind me**: Gently picked as it opens, each pace saying what it does. The arrow keys move
+ * the pick within the group, from Gently to Often, which is kept.
+ */
+export const RemindMe: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const group = await canvas.findByRole("region", { name: "Attention" });
+    const remind = within(group).getByRole("radiogroup", { name: "Remind me" });
+    const gently = within(remind).getByRole("radio", { name: /^Gently/ });
+    await expect(gently).toBeChecked();
+    await expect(within(remind).getByText("Every 5 minutes.")).toBeInTheDocument();
+    gently.focus();
+    await untilFocused(() => gently, "Gently takes the keyboard");
+    expectFocusInSight();
+    await userEvent.keyboard("{ArrowDown}");
+    await waitFor(() => expect(notificationPrefs().remind).toBe("often"));
+    await untilFocused(
+      () => within(remind).getByRole("radio", { name: /^Often/ }),
+      "the arrow moves the pick to Often",
+    );
   },
 };
 

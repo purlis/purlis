@@ -8,8 +8,11 @@
  * one. `useHandBounce` (`useHandBounce.ts`) feeds it from the timer and the handlers.
  *
  * - **On a new ask** the ✋ bounces (3 times, the stylesheet's `purlis-hand-bounce`).
- * - **As a reminder**, while a Blocking ask waits in the project in front, it bounces again on a
- *   backoff of 5, 10, 20, 40 minutes, then every 60 ({@link REMIND_AFTER_MINUTES}).
+ * - **As a reminder**, while a Blocking ask waits in the project in front, it bounces again at
+ *   the pace the person picked in Settings › Attention › Remind me (#6344, {@link Remind}):
+ *   Gently, the default, on a backoff of 5, 10, 20, 40 minutes, then every 60
+ *   ({@link REMIND_AFTER_MINUTES}); Often every 5 minutes; Off never, though a new ask still
+ *   bounces.
  * - **Resets** to 5 minutes on a new ask, any answer, or Asks opening.
  * - **Stops** when nothing waits.
  * - **Holds** ({@link Holds}): a reminder due while held is not played and not made up later; the
@@ -18,13 +21,24 @@
  * An Expiring ask's sound is its own (decision 12) and is never an event here.
  */
 
+/** How often the ✋ reminds: never, on the backoff, or every 5 minutes (#6344). */
+export const REMINDS = ["off", "gently", "often"] as const;
+export type Remind = (typeof REMINDS)[number];
+
 /** The minutes between reminders, from a reset: the last is repeated for ever ("Gently"). */
 export const REMIND_AFTER_MINUTES = [5, 10, 20, 40, 60] as const;
 
+/** The minutes between reminders at "Often": the backoff's first, fixed. */
+export const OFTEN_MINUTES = REMIND_AFTER_MINUTES[0];
+
 const MINUTE = 60_000;
 
-/** How long after reminder `step` (0 for the first after a reset) the next one is due, in ms. */
-export function remindAfter(step: number): number {
+/**
+ * How long after reminder `step` (0 for the first after a reset) the next one is due, in ms, at
+ * a pace that reminds at all.
+ */
+export function remindAfter(step: number, remind: Exclude<Remind, "off"> = "gently"): number {
+  if (remind === "often") return OFTEN_MINUTES * MINUTE;
   const at = Math.min(step, REMIND_AFTER_MINUTES.length - 1);
   return REMIND_AFTER_MINUTES[at] * MINUTE;
 }
@@ -55,10 +69,12 @@ export type Schedule = {
   due: number | null;
   /** How many bounces have played: a higher number is a new bounce to play. */
   bounces: number;
+  /** How often it reminds, as Settings › Attention › Remind me says. */
+  remind: Remind;
 };
 
-/** Nothing waits, and nothing has bounced. */
-export const STILL: Schedule = { waiting: false, step: 0, due: null, bounces: 0 };
+/** Nothing waits, nothing has bounced, and it reminds gently. */
+export const STILL: Schedule = { waiting: false, step: 0, due: null, bounces: 0, remind: "gently" };
 
 /** What moves the schedule. `at` is the clock's time, in ms since 1970. */
 export type BounceEvent =
@@ -71,13 +87,15 @@ export type BounceEvent =
   /** Whether a Blocking ask waits, as the project's asks were read. */
   | { kind: "waiting"; waiting: boolean; at: number }
   /** The timer: a reminder that has come due plays, unless held. */
-  | { kind: "tick"; at: number; holds: Holds };
+  | { kind: "tick"; at: number; holds: Holds }
+  /** The person changed Remind me: the new pace starts from now. */
+  | { kind: "remind"; remind: Remind; at: number };
 
-/** The backoff from its start, at `at`, with whatever waits. */
+/** The backoff from its start, at `at`, with whatever waits; nothing is due at Off. */
 const restarted = (s: Schedule, at: number): Schedule => ({
   ...s,
   step: 0,
-  due: s.waiting ? at + remindAfter(0) : null,
+  due: s.waiting && s.remind !== "off" ? at + remindAfter(0, s.remind) : null,
 });
 
 /** **The schedule after `event`.** Returns `s` itself when nothing changed. */
@@ -93,15 +111,19 @@ export function reduceBounce(s: Schedule, event: BounceEvent): Schedule {
     case "waiting":
       if (event.waiting === s.waiting) return s;
       return restarted({ ...s, waiting: event.waiting }, event.at);
+    case "remind":
+      if (event.remind === s.remind) return s;
+      return restarted({ ...s, remind: event.remind }, event.at);
     case "tick": {
-      if (s.due === null || event.at < s.due) return s;
+      if (s.due === null || s.remind === "off" || event.at < s.due) return s;
+      const pace = s.remind;
       const step = s.step + 1;
       // From when it was due, so a late timer neither drifts the schedule nor makes one up.
-      let due = s.due + remindAfter(step);
+      let due = s.due + remindAfter(step, pace);
       let next = step;
       while (due <= event.at) {
         next += 1;
-        due += remindAfter(next);
+        due += remindAfter(next, pace);
       }
       return {
         ...s,
