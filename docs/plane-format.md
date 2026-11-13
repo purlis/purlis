@@ -347,6 +347,8 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`app/dispatches/<id>.json` — a dispatch's record](#appdispatchesidjson--a-dispatchs-record)
   - [`app/dispatches/ended.json` — the summary of ended dispatches](#appdispatchesendedjson--the-summary-of-ended-dispatches)
   - [`app/dispatches/refused-while-away.json`](#appdispatchesrefused-while-awayjson)
+  - [`app/chat-screens/<ULID>.screen` — a dispatched task's last screen](#appchat-screensulidscreen--a-dispatched-tasks-last-screen)
+  - [`app/chat-screens/.lock`](#appchat-screenslock)
   - [`app/spend/<chat>.json` — what a chat's harness says its session has cost](#appspendchatjson--what-a-chats-harness-says-its-session-has-cost)
   - [`app/spend/<chat>.limit.json` — when a chat's usage limit resets](#appspendchatlimitjson--when-a-chats-usage-limit-resets)
   - [`app/arrived/<chat>.json` — what can run later and has appeared in a chat's folders](#apparrivedchatjson--what-can-run-later-and-has-appeared-in-a-chats-folders)
@@ -7492,6 +7494,36 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
 - **Tier:** Clone state — deleting it empties the list of what was refused while you were
   away, forgets what you dismissed, and changes no grant and no never (ADR 0069).
 - **Git:** gitignored (under `/.purlis/`).
+
+### `app/chat-screens/<ULID>.screen` — a dispatched task's last screen
+- **What:** what a dispatched task's chat showed as it closed, its scrollback with it, as the
+  escape sequences that draw it (#6214, #6305): what *Read it* on its closed chat's card draws,
+  read-only. Kept only for a chat a dispatch record names as its worker, and only where
+  `[task_screens] keep` in this machine's local settings file is not `false`
+  (`chatscreens::keeps`).
+- **Format:** the screen's bytes, at most `chatscreens::MOST_SCREEN_BYTES`, mode 0600 in a
+  0700 folder, replaced whole (`rewrite::replace`) and read through no link. Named by the chat's
+  ULID and nothing else. A write killed before its rename leaves
+  `.purlis-generated.<ULID>.screen.<pid>.<tag>.tmp`.
+- **Written by:** the app as a task's chat closes, and as it quits for a task that had finished
+  (`chatscreens::keep`), under [`.lock`](#appchat-screenslock).
+- **Removed by:** the project's open (`chatscreens::on_open`): a screen no dispatch record
+  names, one not written for 30 days (`retention::KEEP_FOR`), the oldest past 200 screens or
+  256 MiB (`MOST_KEPT`, `MOST_KEPT_BYTES`), and a killed write's temp older than
+  `chatscreens::LOCK_WAIT`. Turning keeping off deletes every screen and every such temp at once
+  (`chatscreens::set_keep`), and says how many could not be deleted.
+- **Held:** as an integrity path: no sandboxed chat reads or writes the folder
+  (`sandbox`'s denial of `chatscreens::DIR_NAME`).
+- **Tier:** Clone state, transient — never committed and never carried; deleting
+  it costs only the screens *Read it* would draw.
+
+### `app/chat-screens/.lock`
+- **Format:** empty file, mode 0600, used with `flock(LOCK_EX)`, waited on at most
+  `chatscreens::LOCK_WAIT` (5 s).
+- **What:** every write and every delete of the screens beside it holds it, so a screen a
+  keep was writing as keeping was turned off is deleted with the rest instead of landing after
+  them (#6451's review).
+- **Tier:** Clone state, transient — deleted, it is made again by the next write.
 
 ### `app/arrived/<chat>.json` — what can run later and has appeared in a chat's folders
 - **Format:** JSON, written whole: `{"v": 1, "name"?, "watched": {"folders": [...], "home"?,

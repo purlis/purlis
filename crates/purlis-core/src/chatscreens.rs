@@ -23,6 +23,10 @@
 //!   screen is kept or shown ([`kept`] answers nothing), and every kept screen is deleted, by
 //!   [`set_keep`] at once and, for a hand edit, the next time the setting is read: a keep, a
 //!   read or the project's open.
+//! - **One write or delete at a time**: each holds the store's lock ([`LOCK_NAME`]), so a
+//!   screen being written as keeping is turned off goes with the rest ([`keep`]). A write
+//!   killed before its rename leaves a temp file, which a delete or the sweep takes once it is
+//!   older than [`LOCK_WAIT`].
 //! - **Read as the app wrote it**: named by a ULID and nothing else, at most
 //!   [`MOST_SCREEN_BYTES`], written whole through a temp file and opened following no link, so a
 //!   file put there by anything else is never shown.
@@ -59,6 +63,11 @@ const SUFFIX: &str = ".screen";
 /// its rename, and is deleted ([`temps_left`]).
 pub const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// The store's lock, in its folder: every write and every delete of the store holds its
+/// `flock` ([`locked`]), so a keep that read the setting on cannot land after the delete that
+/// turning it off makes.
+pub const LOCK_NAME: &str = ".lock";
+
 /// The store of the project at `root`.
 pub fn dir(root: &Path) -> PathBuf {
     crate::names::state(root).join("app").join(DIR_NAME)
@@ -78,16 +87,48 @@ fn path_of(root: &Path, id: &str) -> Option<PathBuf> {
 /// for an id that is not a ULID, a screen past [`MOST_SCREEN_BYTES`], and where this machine
 /// keeps none ([`keeps`]), which deletes every kept screen. A screen kept for the chat before is
 /// replaced whole.
+///
+/// **The setting is read again with the store's lock held** ([`locked`]), and the screen
+/// written under it: turning keeping off writes the setting, then deletes under the same lock,
+/// so a screen is either deleted by it or never written.
 pub fn keep(root: &Path, id: &str, screen: &str) -> std::io::Result<()> {
+    let off = || std::io::Error::other("this machine keeps no task's screen");
     if !keeps(root) {
         let _ = forget_all(root);
-        return Err(std::io::Error::other("this machine keeps no task's screen"));
+        return Err(off());
     }
     let path = path_of(root, id)
         .ok_or_else(|| std::io::Error::other("a chat's screen is kept by its ULID"))?;
+    crate::keptscreen::made_private(&dir(root))?;
+    let _held = locked(root)?;
+    if !keeps(root) {
+        let _ = forget_all_held(root);
+        return Err(off());
+    }
     crate::keptscreen::write(&[dir(root)], &path, screen)?;
     held_to_the_total(root);
     Ok(())
+}
+
+/// **The store's lock, held**: the `flock` of [`LOCK_NAME`] in its folder, which must be
+/// there. Waits at most [`LOCK_WAIT`] for another holder.
+fn locked(root: &Path) -> std::io::Result<crate::filelock::Held> {
+    let path = dir(root).join(LOCK_NAME);
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true).write(true).create(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.mode(0o600);
+    }
+    let file = crate::contain::nofollow(&mut options).open(&path)?;
+    crate::filelock::lock_within(file, LOCK_WAIT, "the kept task screens")
+}
+
+/// Whether the store's folder is there: where it is not, nothing is kept and nothing is being
+/// written, since a write makes the folder before it takes the lock.
+fn there(root: &Path) -> bool {
+    std::fs::symlink_metadata(dir(root)).is_ok_and(|meta| meta.is_dir())
 }
 
 /// **What chat `id` showed as it closed**, where this clone kept it and keeps screens at all:
@@ -241,6 +282,13 @@ pub fn sweep(root: &Path, named: impl Fn(&str) -> bool, now: SystemTime) -> usiz
     if !keeps(root) {
         return forget_all(root).unwrap_or(0);
     }
+    if !there(root) {
+        return 0;
+    }
+    // Refused the lock, the next open sweeps.
+    let Ok(_held) = locked(root) else {
+        return 0;
+    };
     let gone = every_kept(root)
         .into_iter()
         .filter(|one| {
@@ -270,7 +318,24 @@ pub fn on_open(root: &Path, now: SystemTime) -> usize {
 /// **Takes away every kept screen** of the project at `root`, and every temp file a write killed
 /// before its rename left ([`temps_left`]): what turning the setting off does. Answers how many
 /// went, or, where any stayed, how many and why, in words for the window.
+///
+/// It holds the store's lock ([`locked`]) while it deletes, so a write it raced lands first and
+/// goes with the rest.
 pub fn forget_all(root: &Path) -> Result<usize, String> {
+    if !there(root) {
+        return Ok(0);
+    }
+    let _held = locked(root).map_err(|why| {
+        format!(
+            "The kept screens were not deleted: purlis could not take their lock ({why}). Turn \
+             it off again."
+        )
+    })?;
+    forget_all_held(root)
+}
+
+/// [`forget_all`], with the store's lock held.
+fn forget_all_held(root: &Path) -> Result<usize, String> {
     let mut paths: Vec<PathBuf> = every_kept(root)
         .iter()
         .filter_map(|one| path_of(root, &one.id))

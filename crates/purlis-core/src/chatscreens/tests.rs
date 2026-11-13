@@ -285,6 +285,7 @@ fn a_screen_is_replaced_whole_and_leaves_no_temp_file() {
     let names: Vec<String> = std::fs::read_dir(dir(&root))
         .unwrap()
         .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .filter(|name| name != LOCK_NAME)
         .collect();
     assert_eq!(names, vec![format!("{CHAT}.screen")]);
 }
@@ -394,4 +395,33 @@ fn a_screen_that_could_not_be_deleted_is_said_and_still_counted() {
     );
     assert!(!keeps(&root), "the setting is off all the same");
     assert_eq!(counted, (1, 3), "the row counts what is really there");
+}
+
+#[test]
+fn a_screen_written_as_keeping_is_turned_off_does_not_stay() {
+    // #6451's review: keep checks the setting, then writes. Turned off between the two, the
+    // screen landed after every screen was deleted, and stayed.
+    let (_dir, root) = settable();
+    let turning_off = std::rc::Rc::new(std::cell::RefCell::new(None));
+    let _hook = crate::rewrite::hook::set({
+        let (root, turning_off) = (root.clone(), std::rc::Rc::clone(&turning_off));
+        move |_, _| {
+            let root = root.clone();
+            *turning_off.borrow_mut() = Some(std::thread::spawn(move || set_keep(&root, false)));
+            // Long enough for a turn-off that does not wait for the write to finish first.
+            std::thread::sleep(Duration::from_millis(300));
+            Ok(())
+        }
+    });
+
+    let _ = keep(&root, CHAT, "landed after the delete");
+    let turned_off = turning_off
+        .borrow_mut()
+        .take()
+        .expect("turned off")
+        .join()
+        .unwrap();
+
+    assert_eq!(turned_off, Ok(()));
+    assert!(!dir(&root).join(format!("{CHAT}{SUFFIX}")).exists());
 }
