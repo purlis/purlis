@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794554865132,
+  "lastUpdate": 1794558099670,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -48090,6 +48090,48 @@ window.BENCHMARK_DATA = {
             "value": 102.523032,
             "unit": "ms",
             "extra": "median of 5 runs: 102.069, 102.231, 102.523, 102.639, 103.044 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "039af1a20beb1385cba304a7a2b2cc9e335d8628",
+          "message": "Guards read a heredoc body nothing runs as data (#6293) (#6352)\n\nThe branch-folder, project-git, plane-root, commit-hook and release-floor\nguards split a line with a lexer that knows no heredoc, so every line of a\nbody was read as a command: a ledger append or a script written to a file\nthat named git was refused. They now read heredoc::commands_a_shell_runs:\na body is kept only where a program that runs text is handed it, and an\nunquoted body keeps its command substitutions, in place.\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M776VZX7S53THVVVYJH7F7V3\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-13T06:07:44Z",
+          "tree_id": "bd741253ebd25162af32929c14f24aad9972eda9",
+          "url": "https://github.com/purlis/purlis/commit/039af1a20beb1385cba304a7a2b2cc9e335d8628"
+        },
+        "date": 1794558093895,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5232030000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.511, 0.518, 0.523, 0.525, 0.528 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.147901,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.092, 16.093, 16.148, 16.173, 16.530 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.762805,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.175, 100.415, 102.763, 103.319, 103.679 ms"
           }
         ]
       }
