@@ -113,6 +113,8 @@ impl PoolAdding {
             trust: self.trust.clone(),
             // A Podman connection's key file is the one Connect kept with its route (#6269).
             identity: None,
+            // A tcp:// machine's files are the ones Connect kept for it (#6267).
+            tls: None,
         }
     }
 }

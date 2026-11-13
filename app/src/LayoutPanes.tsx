@@ -514,7 +514,10 @@ export function PaneFrame({
                   gone={said?.gone}
                 />
               ) : (
-                head && line.has("name") && <span className="pane-name">{head.chat.name}</span>
+                head &&
+                line.has("name") && (
+                  <span className="pane-name ui-text-heading">{head.chat.name}</span>
+                )
               )}
               {/* **Its number beside its name** (#6212): the chat's current one, so a chat
               started again says its new number; while the pane shows a task, the task's. */}
@@ -567,7 +570,7 @@ export function PaneFrame({
               {/* **harness · workspace on a pane with no foot** (spec #5191): a shell's and a
               one-job program's keep their heads. */}
               {line.has("where") && saysWhere(head, harness) && (
-                <span className="pane-head-where">
+                <span className="pane-head-where ui-text-secondary">
                   <PaneWhere
                     head={head}
                     harness={harness}
@@ -734,7 +737,7 @@ export function ChatFoot({
 /** **A chat's number on its pane's head** (#6212): `#641`, beside its name or the path to the task
  *  it shows. Its stories draw this one, so the window's and theirs cannot drift apart. */
 export function PaneNumber({ session }: { session: number }) {
-  return <span className="pane-number">{chatNumberSaid(session)}</span>;
+  return <span className="pane-number ui-text-meta">{chatNumberSaid(session)}</span>;
 }
 
 /**

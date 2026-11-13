@@ -72,7 +72,7 @@ export function DeleteVault({
         if (!deleting) onCancel();
       }}
       title={`Delete vault ${vault}?`}
-      description={<p className="came-back">{fate(holds)}</p>}
+      description={<p className="came-back ui-text-secondary">{fate(holds)}</p>}
       initialFocus="field"
       cancel={{ isDisabled: deleting, onPress: onCancel }}
       main={{
@@ -96,7 +96,7 @@ export function DeleteVault({
 
       {holds !== undefined && holds.secrets.length > 0 && (
         <>
-          <h3>What it holds</h3>
+          <h3 className="ui-text-heading">What it holds</h3>
           <ul className="at-risk" aria-label={`Secrets in ${vault}`}>
             {holds.secrets.map((key) => (
               <li key={key}>{key}</li>

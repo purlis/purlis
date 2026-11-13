@@ -458,7 +458,7 @@ export function RemoveProfile({
     <AlertDialog
       onClose={onCancel}
       title={removal.adopted ? `Forget ${removal.name}?` : `Remove ${removal.name}?`}
-      description={<p className="came-back">{removal.says}</p>}
+      description={<p className="came-back ui-text-secondary">{removal.says}</p>}
       main={{
         children: removal.adopted ? "Forget profile" : "Remove profile",
         variant: "danger",
@@ -467,7 +467,7 @@ export function RemoveProfile({
     >
       {!removal.adopted && conversations.length > 0 && (
         <>
-          <h3>Conversations that go</h3>
+          <h3 className="ui-text-heading">Conversations that go</h3>
           <ul className="at-risk" aria-label={`Conversations of ${removal.name}`}>
             {conversations.map((one) => (
               <li key={one}>{one}</li>

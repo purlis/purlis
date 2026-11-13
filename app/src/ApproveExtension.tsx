@@ -76,7 +76,7 @@ export function ApproveExtension({
         onPress: () => onApprove(ask),
       }}
     >
-      <h3>{ask.first ? "What it declares" : "What it declares now"}</h3>
+      <h3 className="ui-text-heading">{ask.first ? "What it declares" : "What it declares now"}</h3>
       <ul className="contributes">
         {ask.declares.map((line) => (
           <li key={line}>{line}</li>
@@ -85,11 +85,11 @@ export function ApproveExtension({
 
       {/* charter's own words, rendered as given. See this module's header for why nothing here
           rewrites, shortens or softens them. */}
-      <p className="came-back runs-as-you" id="approve-extension-runs-as-you">
+      <p className="came-back ui-text-body runs-as-you" id="approve-extension-runs-as-you">
         {ask.runs_as_you}
       </p>
-      <p className="came-back">{ask.fingerprint_note}</p>
-      {ask.state_note ? <p className="came-back">{ask.state_note}</p> : null}
+      <p className="came-back ui-text-secondary">{ask.fingerprint_note}</p>
+      {ask.state_note ? <p className="came-back ui-text-secondary">{ask.state_note}</p> : null}
     </Dialog>
   );
 }

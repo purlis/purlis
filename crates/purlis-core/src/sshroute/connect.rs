@@ -59,6 +59,30 @@ pub enum Finding {
     },
     /// The engine there is a Podman, and this machine has no `podman` to reach it with (#6269).
     NeedsPodman { host: String },
+    /// **Over Docker's TLS API** (#6267, ADR 0123 §7): a file the pool names can't be used.
+    TlsFile {
+        host: String,
+        file: String,
+        why: String,
+    },
+    /// The CA file no longer holds the certificate the pool is pinned to: both fingerprints, as
+    /// a person compares them.
+    CaChanged {
+        host: String,
+        pinned: String,
+        now: String,
+        file: String,
+    },
+    /// The server's certificate isn't signed by the CA named.
+    NotSignedByCa { host: String, ca: String },
+    /// The server's certificate has expired.
+    ServerExpired { host: String },
+    /// The server's certificate is for other names than the one connected to: those names.
+    WrongName { host: String, name: String },
+    /// The server refused the client certificate.
+    ClientRefused { host: String, cert: String },
+    /// The server says the client certificate has expired.
+    ClientExpired { host: String, cert: String },
     /// Something else went wrong on this machine (no ssh, a folder that couldn't be made).
     Here(String),
 }

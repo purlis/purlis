@@ -88,7 +88,7 @@ export function ApprovePlane({
     >
       {ask.changes.length > 0 && (
         <>
-          <h3>What changed</h3>
+          <h3 className="ui-text-heading">What changed</h3>
           <ul className="changes">
             {ask.changes.map((change) => (
               <li key={change}>{change}</li>
@@ -97,16 +97,18 @@ export function ApprovePlane({
         </>
       )}
 
-      <h3>{ask.first ? "What this project contributes" : "What it contributes now"}</h3>
+      <h3 className="ui-text-heading">
+        {ask.first ? "What this project contributes" : "What it contributes now"}
+      </h3>
       {nothing && (
-        <p className="came-back">
+        <p className="came-back ui-text-secondary">
           Nothing purlis can enumerate: it enables no plugins, sets no environment, grants no
           persona a tool, brings no font files, and its record names no chat to start.
         </p>
       )}
       {contributes.plugins.length > 0 && (
         <section>
-          <h4>Plugins it enables in every chat</h4>
+          <h4 className="ui-text-meta">Plugins it enables in every chat</h4>
           <ul className="contributes">
             {contributes.plugins.map(([name, how]) => (
               <li key={name}>
@@ -121,7 +123,7 @@ export function ApprovePlane({
         <section>
           {/* Values and not only names: an `env` whose PATH gains a directory is a different
                 grant from the one that was approved, and a list of names could not show it. */}
-          <h4>Environment it sets on every harness</h4>
+          <h4 className="ui-text-meta">Environment it sets on every harness</h4>
           <ul className="contributes">
             {contributes.env.map(([name, value]) => (
               <li key={name}>
@@ -138,7 +140,7 @@ export function ApprovePlane({
           {/* Each persona's grant as the trust record keeps it: the tools, and the digest
                 of any script of its own a tool runs. Only what is approved here runs without a
                 prompt, so a grant that changes later asks again. */}
-          <h4>Tools its personas may run without a prompt</h4>
+          <h4 className="ui-text-meta">Tools its personas may run without a prompt</h4>
           <ul className="contributes">
             {contributes.grants.map(([persona, grant]) => (
               <li key={persona}>
@@ -154,13 +156,13 @@ export function ApprovePlane({
           {/* Each font file by its path in the project, its size and its sha-256 (the full
                 digest on hover): the window draws a face from the project only when it is
                 approved here with that digest, so a face that changes later asks again. */}
-          <h4>Font files its themes bring</h4>
+          <h4 className="ui-text-meta">Font files its themes bring</h4>
           <FontFiles fonts={contributes.fonts} />
         </section>
       )}
       {contributes.starts.length > 0 && (
         <section>
-          <h4>Programs opening it would start</h4>
+          <h4 className="ui-text-meta">Programs opening it would start</h4>
           <ul className="contributes">
             {contributes.starts.map(([what]) => (
               <li key={what}>
@@ -175,7 +177,7 @@ export function ApprovePlane({
           {/* Drawn, and deliberately drawn apart from the list above. The record chooses
                 which of THIS machine's own harness profiles runs and never what it runs, and
                 `profiletrust` shows a new or changed command line before it runs. */}
-          <h4>Chats it would start on your own harness profiles</h4>
+          <h4 className="ui-text-meta">Chats it would start on your own harness profiles</h4>
           <ul className="contributes">
             {contributes.profiles.map(([what]) => (
               <li key={what}>
@@ -186,7 +188,7 @@ export function ApprovePlane({
         </section>
       )}
 
-      <p className="came-back" id="approve-plane-unjudged">
+      <p className="came-back ui-text-secondary" id="approve-plane-unjudged">
         purlis can only list what it can read. A project&rsquo;s persona charters, memory and todos
         are text a model reads and acts on. purlis makes no judgement about them.
       </p>
@@ -198,7 +200,7 @@ export function ApprovePlane({
               {fontsOf(fonts)}
             </p>
           )}
-          <p className="came-back">
+          <p className="came-back ui-text-secondary">
             Font files are read by your system&rsquo;s font engine; allow only fonts you or your
             team added.
           </p>
@@ -275,7 +277,7 @@ function FontFiles({ fonts }: { fonts: [string, string][] }) {
         </div>
       ))}
       {more > 0 && (
-        <p className="came-back">
+        <p className="came-back ui-text-secondary">
           and {more} more font file{more === 1 ? "" : "s"}
         </p>
       )}

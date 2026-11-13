@@ -258,7 +258,7 @@ pub const PLAIN_TCP: &str = "purlis doesn't connect to Docker over plain tcp://:
                              reach that port can run anything on that machine. Use ssh:// \
                              instead, or turn on TLS for Docker there.";
 
-fn split_port(hostport: &str) -> Result<(&str, Option<u16>), String> {
+pub(crate) fn split_port(hostport: &str) -> Result<(&str, Option<u16>), String> {
     // An IPv6 address is written in brackets, as ssh:// URLs write it.
     if let Some(rest) = hostport.strip_prefix('[') {
         let Some((inside, after)) = rest.split_once(']') else {
@@ -297,7 +297,7 @@ fn a_user(user: &str) -> bool {
 /// A machine's name, an alias of the person's SSH settings, or an address: letters, digits,
 /// dots, dashes and underscores, or an IPv6 address other than the unspecified `::`; never one
 /// ssh could take for an option.
-fn a_host(host: &str) -> bool {
+pub(crate) fn a_host(host: &str) -> bool {
     !host.is_empty()
         && host.len() <= 253
         && !host.starts_with('-')

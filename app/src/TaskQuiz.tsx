@@ -146,7 +146,7 @@ export function TaskQuiz({
       <div className="task-quiz-row">
         <KindMark kind="reply" />
         <div className="task-quiz-words">
-          <div className="task-quiz-title">
+          <div className="task-quiz-title ui-text-body">
             <span className="inbox-who ui-text-strong">{open ? who : `${who}: `}</span>
             {!open && <ChatText className="task-quiz-first" whole text={firstLineOf(ask.says)} />}
           </div>
@@ -199,7 +199,11 @@ export function TaskQuiz({
               {why.note !== null && (
                 <div className="task-quiz-note">
                   <span className="task-quiz-note-who ui-text-meta">{`${why.from}'s note`}</span>
-                  <ChatText className="task-quiz-note-words" whole text={why.note} />
+                  <ChatText
+                    className="task-quiz-note-words ui-text-secondary"
+                    whole
+                    text={why.note}
+                  />
                 </div>
               )}
             </>

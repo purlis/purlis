@@ -162,14 +162,15 @@ fn a_runner_made_on_rootless_podman_there_is_checked_as_rootless_podman_writes_i
         .expect("made, and checked as it was made");
     // The profile Podman read is the one kept there, beside the socket the sshd shares, and
     // its folder is gone once the run has read it (#6269): not a file of this side's.
-    let options = purlis_core::forklock::output(docker.command().args([
-        "container",
-        "inspect",
-        "--format",
-        "{{json .HostConfig.SecurityOpt}}",
-        made.container.as_str(),
-    ]))
-    .expect("podman runs");
+    let options =
+        purlis_core::forklock::output(docker.command().expect("a bare docker command").args([
+            "container",
+            "inspect",
+            "--format",
+            "{{json .HostConfig.SecurityOpt}}",
+            made.container.as_str(),
+        ]))
+        .expect("podman runs");
     let options = String::from_utf8_lossy(&options.stdout).into_owned();
     let socket = remote.route.socket().expect("a socket").to_owned();
     let beside = std::path::Path::new(&socket).parent().expect("its folder");
