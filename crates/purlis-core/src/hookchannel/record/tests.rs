@@ -55,6 +55,7 @@ fn a_chat_with_a_sub_agent(log: &EventLog, root: &Path, number: u32) {
             args: None,
             decision: crate::hookwire::Decision::None,
             rule: None,
+            arm: None,
             hook_ms: 1,
             agent: Some("agent-1".into()),
             at_ms: 0,

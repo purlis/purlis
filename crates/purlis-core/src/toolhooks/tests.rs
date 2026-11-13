@@ -17,11 +17,18 @@ struct Plane {
 
 impl Plane {
     fn new() -> Self {
+        let plane = Self::without_a_vault();
+        std::fs::create_dir_all(plane.root.join(".charter/vaults")).unwrap();
+        std::fs::write(plane.root.join(".charter/vaults/db.json"), "{\"k\": \"v\"}").unwrap();
+        plane
+    }
+
+    /// A plane with no vault file: what a test runs in where a chat's sandbox refuses a folder
+    /// named for a vault. The leak guard refuses a read by its path alone.
+    fn without_a_vault() -> Self {
         let dir = tempfile::tempdir().unwrap();
         let root = std::fs::canonicalize(dir.path()).unwrap();
         std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
-        std::fs::create_dir_all(root.join(".charter/vaults")).unwrap();
-        std::fs::write(root.join(".charter/vaults/db.json"), "{\"k\": \"v\"}").unwrap();
         let mut env = HashMap::new();
         env.insert("PURLIS_SESSION_ID".to_string(), "chat-1".to_string());
         // The machine store a log's name is read from (FD-25): this fixture's own, holding no
@@ -1470,4 +1477,74 @@ fn a_judge_reads_what_was_copied_in_whatever_its_name() {
         panic!("refused");
     };
     assert_eq!(refused.reason, JUDGE_READ_RULE);
+}
+
+/// Q235: a proposed change or a draft skill hands the write to the person, so the deny the
+/// hook gives for it is not a guard's block: recorded as the hook sends it, it writes no
+/// `stop.block`, as a guard's deny beside it does.
+#[test]
+fn a_proposed_change_or_a_draft_writes_no_block() {
+    let plane = sandboxed_claude(Plane::without_a_vault());
+    let draft = serde_json::json!({
+        "tool_name": "Write",
+        "cwd": plane.cwd(),
+        "tool_input": {"file_path": "skills/triage/SKILL.md", "content": "drafted\n"},
+    });
+    let mut denied = Vec::new();
+    for payload in [edit_of_the_manifest(&plane), draft] {
+        let answer = plane.ask(payload, |hook| pretooluse_edit_proposing(hook, &|_| true));
+        let Answer::Deny(verdict) = answer else {
+            panic!("refused, not {answer:?}");
+        };
+        denied.push(verdict);
+    }
+    assert_eq!(denied[0].denial, crate::proposed::PROPOSED_SAID);
+    assert_eq!(denied[1].denial, crate::skills::verbs::drafts::DRAFTED_SAID);
+    let guard = plane.ask(
+        serde_json::json!({
+            "tool_name": "Read",
+            "cwd": plane.cwd(),
+            "tool_input": {"file_path": ".charter/vaults/db.json"},
+        }),
+        pretooluse_read,
+    );
+    let Answer::Deny(guard) = guard else {
+        panic!("the leak guard refuses the read, not {guard:?}");
+    };
+    denied.push(guard);
+
+    let log = tempfile::tempdir().unwrap();
+    let mut host = crate::eventlog::Recorder::new(
+        crate::eventlog::Log::open(log.path(), "01J9ZZDEVICE0000000000000").unwrap(),
+        crate::eventlog::ArgsKey::open(log.path()).unwrap(),
+    );
+    for verdict in &denied {
+        let call = crate::hookwire::ToolCall {
+            chat: 7,
+            tool_hook: "pretooluse".to_owned(),
+            tool: Some("Write".to_owned()),
+            call: None,
+            args: None,
+            decision: crate::hookwire::Decision::Deny,
+            rule: Some(verdict.reason.clone()),
+            arm: verdict.arm.map(|arm| arm.id().to_owned()),
+            hook_ms: 1,
+            agent: None,
+            at_ms: 0,
+            skill: None,
+        };
+        host.tool(Path::new("/planes/one"), &call, std::time::Instant::now())
+            .unwrap();
+    }
+    let blocks: Vec<_> = crate::eventlog::read(log.path())
+        .unwrap()
+        .into_iter()
+        .filter(|event| event.kind == crate::eventlog::stops::BLOCK)
+        .collect();
+    assert_eq!(blocks.len(), 1, "only the leak guard's deny: {blocks:?}");
+    assert_eq!(
+        blocks[0].body["target"],
+        serde_json::json!({ "guard_arm": "A" }),
+        "the leak guard on Read names its arm"
+    );
 }

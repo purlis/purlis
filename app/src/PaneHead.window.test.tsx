@@ -178,8 +178,8 @@ describe("a chat's pane head", () => {
     expect(within(head()).queryByText("alpha")).toBeNull();
     // The badge moved from the tab to the head (#4760) and on to the foot (#5204): named for a
     // screen reader.
-    expect(within(head()).queryByRole("img", { name: "floor" })).toBeNull();
-    expect(within(foot()).getByRole("img", { name: "floor" })).toBeInTheDocument();
+    expect(within(head()).queryByRole("img", { name: "basic sandbox" })).toBeNull();
+    expect(within(foot()).getByRole("img", { name: "basic sandbox" })).toBeInTheDocument();
     const strip = document.querySelector('[data-strip="Tabs"]') as HTMLElement;
     expect(strip.querySelector(".tab-sandbox")).toBeNull();
   });
@@ -189,7 +189,7 @@ describe("a chat's pane head", () => {
 
     const tree = await findTree("Chats of this project");
     const row = await findRow(tree, new RegExp(`^${NAME}`));
-    expect(within(row).getByRole("img", { name: "floor" })).toBeInTheDocument();
+    expect(within(row).getByRole("img", { name: "basic sandbox" })).toBeInTheDocument();
   });
 
   it("ends with the bell and ⋯, a divider, then Split right and Split down, its tab's only pane having no Close (#5203, #5318)", async () => {
@@ -444,7 +444,7 @@ describe("a narrow pane's head", () => {
   it("keeps every part in a pane 520px wide", async () => {
     await aPaneOf(520);
 
-    expect(within(foot()).getByRole("img", { name: "floor" })).toBeInTheDocument();
+    expect(within(foot()).getByRole("img", { name: "basic sandbox" })).toBeInTheDocument();
     expect(controls()).toContain("Split down");
   });
 

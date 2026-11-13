@@ -194,6 +194,25 @@ fn a_file_tool_the_guard_refuses_names_no_file() {
 }
 
 #[test]
+fn a_file_tool_the_harness_refused_names_no_file() {
+    // Claude Code's own check refused the write (`PermissionDenied`, R-094): the tool never
+    // ran, so no marker goes up for it, though its pre hook named the file before.
+    let heard = hook(
+        purlis_core::hookreg::HARNESS_DENIED,
+        &serde_json::json!({
+            "hook_event_name": "PermissionDenied",
+            "tool_name": "Write",
+            "tool_use_id": "toolu_2",
+            "tool_input": {"file_path": format!("/w/branch/{CANARY}.rs"), "content": "x"},
+            "cwd": "/w/branch",
+            "reason": "Writes outside the task",
+        }),
+    );
+    assert_eq!(named(&heard), Vec::<&str>::new());
+    the_call(&heard);
+}
+
+#[test]
 fn a_shell_command_names_no_file() {
     // All Codex's armed hook sees, and Claude Code's and opencode's Bash.
     let heard = hook(

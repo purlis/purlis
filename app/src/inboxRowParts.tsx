@@ -35,7 +35,13 @@ export const standsFirst = () => false;
  * row's render. So each answer's own box is read after each render, on every change that can
  * move it, and again at the press: one that differs is a move.
  */
-export function useSettledPlace<T extends HTMLElement>(here: string) {
+export function useSettledPlace<T extends HTMLElement>(
+  here: string,
+  /** **Heard as the row is attached** (#6002): a row a list draws anew (a scope picked, #6340)
+   *  is attached after its drawing is said, and nothing may draw it again, so what has to read
+   *  the row, such as its watch to be seen, reads it here too. */
+  attached?: () => void,
+) {
   const [placed, setPlaced] = useState(() => ({ here, at: placedAt() }));
   if (placed.here !== here) setPlaced({ here, at: placedAt() });
   const drawn = useRef<T>(null);
@@ -56,12 +62,16 @@ export function useSettledPlace<T extends HTMLElement>(here: string) {
   // One function for the row's life: a new one each render would detach the row and attach it
   // again on every commit, and whatever reads `drawn` in between would find no row (#6002).
   const lastMovedAt = useRef(movedAt);
+  const lastAttached = useRef(attached);
   useLayoutEffect(() => {
     lastMovedAt.current = movedAt;
+    lastAttached.current = attached;
   });
   const drawnAt = useCallback((row: T | null) => {
     drawn.current = row;
-    if (row !== null) lastMovedAt.current();
+    if (row === null) return;
+    lastMovedAt.current();
+    lastAttached.current?.();
   }, []);
   return { drawn, drawnAt, tooSoon, readPlaces };
 }

@@ -290,6 +290,10 @@ mod at_start {
                 if let Some(one) = asks.open().into_iter().next() {
                     break one;
                 }
+                if start.is_finished() {
+                    // Without this a run that ends before it asks leaves the test spinning for ever.
+                    panic!("it ended without asking: {:?}", start.join());
+                }
                 std::thread::yield_now();
             };
             assert_eq!(
