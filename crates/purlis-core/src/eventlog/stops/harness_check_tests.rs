@@ -235,3 +235,105 @@ fn a_harness_check_block_is_unverified_unless_claude_code_reports_from_outside_t
         );
     }
 }
+
+/// Every block written since event `from`.
+fn blocks_since(dir: &Path, from: usize) -> Vec<crate::eventlog::Event> {
+    read(dir)
+        .unwrap()
+        .into_iter()
+        .skip(from)
+        .filter(|event| event.kind == BLOCK)
+        .collect()
+}
+
+/// The block is as durable as its tool event: the writer makes durable the last event an
+/// entry answers, so a harness denial's entry answers its tool event and then its block.
+#[test]
+fn a_harness_denial_entry_answers_its_block_last_so_the_writer_makes_it_durable() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut host = recorder(dir.path());
+    begun(&mut host, 7, Harness::ClaudeCode, "seatbelt");
+    let written = heard(
+        &mut host,
+        line(7, crate::hookreg::HARNESS_DENIED, CLAUDE_CODE_DENIED),
+    );
+    let kinds: Vec<&str> = written.iter().map(|event| event.kind.as_str()).collect();
+    assert_eq!(kinds, ["hook.permissiondenied", BLOCK]);
+    assert_eq!(written[1].body["source"], "harness_check");
+}
+
+/// FD-30: a harness denial drained from the spool of a chat the recorder knows is its tool
+/// event and its block, each with the line's spool number, and the drain is answered the block,
+/// so the drain makes both durable.
+#[cfg(unix)]
+#[test]
+fn a_drained_harness_denial_of_a_known_chat_writes_its_event_and_its_block_both_spooled() {
+    use crate::hookwire::spool::{Drained, Spooled};
+    let dir = tempfile::tempdir().unwrap();
+    let mut host = recorder(dir.path());
+    begun(&mut host, 7, Harness::ClaudeCode, "seatbelt");
+    let from = read(dir.path()).unwrap().len();
+    let answered = host
+        .spooled(
+            Path::new(PLANE),
+            Drained::Line {
+                chat: 7,
+                seq: 5,
+                line: Spooled::Tool(line(7, crate::hookreg::HARNESS_DENIED, CLAUDE_CODE_DENIED)),
+            },
+        )
+        .unwrap();
+    assert_eq!(answered.kind, BLOCK);
+    let written: Vec<_> = read(dir.path()).unwrap().into_iter().skip(from).collect();
+    let kinds: Vec<&str> = written.iter().map(|event| event.kind.as_str()).collect();
+    assert_eq!(kinds, ["hook.permissiondenied", BLOCK], "{written:#?}");
+    for event in &written {
+        assert_eq!(event.body["spooled"], 5, "{}", event.kind);
+    }
+    assert_eq!(written[1].body["source"], "harness_check");
+}
+
+/// FD-30: a harness denial drained for a chat the recorder does not know (one that had closed)
+/// is one block, of no run, under the chat's number and its spool number.
+#[cfg(unix)]
+#[test]
+fn a_drained_harness_denial_of_a_chat_not_known_writes_one_block_under_its_number() {
+    use crate::hookwire::spool::{Drained, Spooled};
+    let dir = tempfile::tempdir().unwrap();
+    let mut host = recorder(dir.path());
+    let answered = host
+        .spooled(
+            Path::new(PLANE),
+            Drained::Line {
+                chat: 9,
+                seq: 3,
+                line: Spooled::Tool(line(9, crate::hookreg::HARNESS_DENIED, CLAUDE_CODE_DENIED)),
+            },
+        )
+        .unwrap();
+    assert_eq!(answered.kind, BLOCK);
+    let blocks = blocks_since(dir.path(), 0);
+    assert_eq!(blocks.len(), 1, "{blocks:#?}");
+    assert_eq!(blocks[0].chat, None);
+    assert_eq!(blocks[0].body["chat_number"], 9);
+    assert_eq!(blocks[0].body["spooled"], 3);
+    assert_eq!(blocks[0].body["source"], "harness_check");
+    assert_eq!(blocks[0].body["qualifier"], "unverified");
+}
+
+/// A line is at most one block: a `permissiondenied` line forged with a guard's `deny` is the
+/// harness check's block alone, never a guard's beside it.
+#[test]
+fn a_permission_denied_line_forged_as_a_deny_writes_exactly_one_block() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut host = recorder(dir.path());
+    begun(&mut host, 7, Harness::ClaudeCode, "seatbelt");
+    let forged = ToolCall {
+        decision: Decision::Deny,
+        ..line(7, crate::hookreg::HARNESS_DENIED, CLAUDE_CODE_DENIED)
+    };
+    heard(&mut host, forged);
+    let blocks = blocks_since(dir.path(), 0);
+    assert_eq!(blocks.len(), 1, "{blocks:#?}");
+    assert_eq!(blocks[0].body["source"], "harness_check");
+}
