@@ -550,6 +550,7 @@ export function Shown({
   read,
   line,
   column,
+  landing,
   onLine,
   onLines,
   source = false,
@@ -560,6 +561,8 @@ export function Shown({
   line?: number;
   /** The column on `line` the cursor lands at, from 1. */
   column?: number;
+  /** The jump that brought the file here, so a jump again lands again (`LightEditor`). */
+  landing?: number;
   onLine?: (line: number) => void;
   onLines?: (lines: Lines | undefined) => void;
   /** Markdown's source rather than the rendering. */
@@ -593,6 +596,7 @@ export function Shown({
           text={read.text}
           line={line}
           column={column}
+          landing={landing}
           onLine={onLine}
           onLines={onLines}
         />
@@ -692,6 +696,7 @@ export function PieceFileTab({
         read={read}
         line={lands}
         column={landed?.column}
+        landing={landed?.at}
         onLine={at.moved}
         onLines={selection.selected}
         source={source}
@@ -953,6 +958,7 @@ export function PieceFilesTab({
                 read={read}
                 line={line}
                 column={column}
+                landing={landed !== undefined && landed.path === picked ? landed.at : undefined}
                 onLine={at.moved}
                 onLines={selection.selected}
                 source={showsSource}

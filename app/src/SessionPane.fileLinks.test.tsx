@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { Terminal } from "@xterm/xterm";
@@ -299,16 +299,15 @@ describe("a file path in a chat's pane", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("opens a file at the project's root at its line and column (#6356)", async () => {
-    opens = [
-      {
-        answer: "file",
-        target: `/planes/one/${AT_THE_ROOT}`,
-        at: { in: "project", path: "README.md" },
-        line: 3,
-        column: 5,
-      },
-    ];
+  it("opens a file at the project's root at its line and column, each time (#6356)", async () => {
+    const root = {
+      answer: "file",
+      target: `/planes/one/${AT_THE_ROOT}`,
+      at: { in: "project", path: "README.md" },
+      line: 3,
+      column: 5,
+    };
+    opens = [root, root];
     render(<PaneAndRootTab />);
     const term = made[0];
     await waitFor(() => expect(term.cols).toBe(80));
@@ -322,6 +321,16 @@ describe("a file path in a chat's pane", () => {
 
     await waitFor(() => expect(cursorOf()).toEqual({ line: 3, column: 5 }), { timeout: 3000 });
     expect(screen.getByTestId("light-editor")).toHaveTextContent(/the third line/);
+
+    // The cursor moves off, and the same link is opened again: it lands there again.
+    const editor = document.querySelector<HTMLElement>(".cm-editor");
+    const view = editor === null ? null : EditorView.findFromDOM(editor);
+    if (view === null) throw new Error("the tab drew no editor");
+    act(() => view.dispatch({ selection: { anchor: 0 } }));
+    expect(cursorOf()).toEqual({ line: 1, column: 1 });
+    click(drawn, 6, 0, { ctrlKey: true });
+    await waitFor(() => expect(asked("pane_link_open")).toHaveLength(2));
+    await waitFor(() => expect(cursorOf()).toEqual({ line: 3, column: 5 }), { timeout: 3000 });
   });
 
   it("is no link when the core finds no file, and says nothing on its hover", async () => {
