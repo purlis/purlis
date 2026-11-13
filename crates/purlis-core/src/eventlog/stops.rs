@@ -282,7 +282,7 @@ pub enum LoopRule {
     Failing,
     /// The person refusing its asks again and again ([`crate::looping::Why::Refused`]).
     Refused,
-    /// Blocks on the same target.
+    /// Blocks on the same target ([`crate::looping::Why::Blocked`]).
     Blocked,
 }
 
