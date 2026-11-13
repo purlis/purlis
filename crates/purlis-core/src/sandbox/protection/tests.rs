@@ -32,6 +32,9 @@ fn project(dir: &Path, manifest: &str) -> String {
     )
     .unwrap();
     git(dir, &["init", "-q"]);
+    // CI's runner has no identity of its own, so the fixture names one (every commit here).
+    git(dir, &["config", "user.name", "t"]);
+    git(dir, &["config", "user.email", "t@example.invalid"]);
     git(dir, &["add", "charter.toml", ".gitignore"]);
     git(dir, &["commit", "-q", "-m", "the project"]);
     git(dir, &["rev-parse", "HEAD"]).out.trim().to_owned()
