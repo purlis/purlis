@@ -15,7 +15,7 @@ import { MessageForm, MessageLinks } from "./ui/message/Message";
  * the wider grants under the line, then the refusals. Each is the band's own way out
  * (`FixWay`), and each grant asks the row's settle guard (`mayAct`, ADR 0097) before it does
  * anything, as an Allow in Asks always has; a refusal is never held (#1695), but on an ask whose
- * every answer is held (`holdsEvery`, a loop's pause, T1-36).
+ * every answer is held (`holdsEvery`, a block loop's pause, T1-36).
  *
  * An ask that offers a reason with its refusal (a sandbox's Keep blocked) opens its box only once
  * Keep blocked is pressed, and the keyboard stays on Keep blocked: a second press sends the
@@ -88,7 +88,7 @@ export function AskDecision({
   /** Its Allows are grants (ADR 0097 §6): an ask of Allow and Keep blocked. Any other ask's
    *  answers are plain, the one its source suggests the primary (#2241). */
   grants: boolean;
-  /** **Every answer waits for the row to settle** (T1-36), its refusals too: a loop's pause. */
+  /** **Every answer waits for the row to settle** (T1-36), its refusals too: a block loop's pause. */
   holdsEvery?: boolean;
   /** **What its answers let run is on screen** (#1146): an edit's change is drawn. Until then no
    *  answer is drawn, only the row's other links. */

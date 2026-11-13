@@ -3693,6 +3693,9 @@ impl Planes {
                     // cancelling (#1459), is sent its last-turn prompt when the turn it was in
                     // ends, and is ended when that last turn does (#1448).
                     crate::stopping::reported(&held, report.chat);
+                    // A chat told to stop trying mid-turn is typed the line once it waits
+                    // (Q267 amended). After a stop's: a chat now in its last turn is told nothing.
+                    crate::pausing::reported(&held, report.chat);
                 }
             })
         });

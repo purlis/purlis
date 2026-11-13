@@ -389,7 +389,10 @@ fn a_running_chat_is_told_to_stop_trying_only_at_its_turns_end() {
         one.asking = true;
     });
     turn_ended_sending(&pauses, TASK, || at_turn_end(prompt, false), &send);
-    assert!(typed.borrow().is_empty(), "nothing typed while it runs or asks");
+    assert!(
+        typed.borrow().is_empty(),
+        "nothing typed while it runs or asks"
+    );
 
     turn_ended_sending(&pauses, TASK, || at_turn_end(waiting(), false), &send);
     assert_eq!(*typed.borrow(), [(TASK, stop_trying_typed().into_bytes())]);
@@ -405,7 +408,10 @@ fn a_kept_stop_trying_line_is_dropped_when_its_chat_ends_or_is_being_stopped() {
         one.ended = true;
         one.waiting = true;
     });
-    for (said, look) in [("ended", (ended, false)), ("its last turn", (waiting(), true))] {
+    for (said, look) in [
+        ("ended", (ended, false)),
+        ("its last turn", (waiting(), true)),
+    ] {
         let pauses = Pauses::default();
         let (typed, send) = typing();
         tell_sending(&pauses, TASK, || telling(running(), false), &send);
