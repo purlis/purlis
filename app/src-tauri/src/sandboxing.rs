@@ -2214,15 +2214,17 @@ pub async fn allow_sandbox_block(
         // count again (R-211, Q253).
         crate::pausing::allowed(&held, session);
         // Answered: neither this Notice nor a question for several tasks answers it again.
-        held.chats().blocks().answered(session, &block);
-        // R-229: the person's Allow, in the chat's Chat log, once the block is answered, so a
-        // dismissal racing it finds nothing left to answer and writes nothing (Q262).
-        crate::chatlog::answered_in_the_window(
-            held.hooks(),
-            session,
-            purlis_core::eventlog::stops::AskGroup::Sandbox,
-            true,
-        );
+        // R-229: the person's Allow, in the chat's Chat log, only where this Allow let the
+        // block go: a dismissal racing it that let it go first wrote the one answer (Q262
+        // amended).
+        if held.chats().blocks().answered(session, &block) {
+            crate::chatlog::answered_in_the_window(
+                held.hooks(),
+                session,
+                purlis_core::eventlog::stops::AskGroup::Sandbox,
+                true,
+            );
+        }
         Ok(allowed)
     })
     .await
@@ -2438,7 +2440,10 @@ pub(crate) fn keep_block(
     audit: Audit<'_>,
 ) -> Option<crate::taskblocks::HeldBlock> {
     let block = crate::taskblocks::shown_one(chats.blocks(), session, shown).ok()?;
-    chats.blocks().answered(session, &block);
+    // An Allow racing this that let the block go first is the one answer (Q262 amended).
+    if !chats.blocks().answered(session, &block) {
+        return None;
+    }
     if block.what == GrantWhat::Host
         && let Ok(host) = sandbox::grant::host(&block.target)
     {

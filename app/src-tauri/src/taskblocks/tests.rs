@@ -220,7 +220,10 @@ fn only_the_answer_that_lets_a_block_go_says_it_did() {
     let npm = held(&seen(4, NPM));
     blocks.heard(4, npm.clone());
     assert!(blocks.answered(4, &npm), "the first answer lets it go");
-    assert!(!blocks.answered(4, &npm), "the second finds nothing left to answer");
+    assert!(
+        !blocks.answered(4, &npm),
+        "the second finds nothing left to answer"
+    );
     assert!(
         !blocks.answered(5, &npm),
         "a chat never held on it has nothing to answer"

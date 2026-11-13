@@ -4774,32 +4774,32 @@ pub fn forget_sandbox_block(
 ) -> Result<bool, String> {
     let held = planes.held(&plane)?;
     let blocks = held.chats().blocks();
-    Ok(
-        match crate::taskblocks::shown_one(blocks, session, &shown) {
-            Ok(block) => {
-                blocks.answered(session, &block);
-                // R-229: the person's Keep blocked, in the chat's Chat log.
-                crate::chatlog::answered_in_the_window(
-                    held.hooks(),
-                    session,
-                    purlis_core::eventlog::stops::AskGroup::Sandbox,
-                    false,
-                );
-                // The person's no, kept where the Inbox's look back reads it (#1700).
-                if block.what == crate::sandboxing::GrantWhat::Host {
-                    crate::network::record_kept_blocked(
-                        planes.network(),
-                        held.root(),
-                        held.chats(),
-                        session,
-                        &block.target,
-                    );
-                }
-                true
-            }
-            Err(_) => false,
-        },
-    )
+    let Ok(block) = crate::taskblocks::shown_one(blocks, session, &shown) else {
+        return Ok(false);
+    };
+    // An Allow racing this that let the block go first is the one answer (Q262 amended):
+    // this writes nothing.
+    if !blocks.answered(session, &block) {
+        return Ok(false);
+    }
+    // R-229: the person's Keep blocked, in the chat's Chat log.
+    crate::chatlog::answered_in_the_window(
+        held.hooks(),
+        session,
+        purlis_core::eventlog::stops::AskGroup::Sandbox,
+        false,
+    );
+    // The person's no, kept where the Inbox's look back reads it (#1700).
+    if block.what == crate::sandboxing::GrantWhat::Host {
+        crate::network::record_kept_blocked(
+            planes.network(),
+            held.root(),
+            held.chats(),
+            session,
+            &block.target,
+        );
+    }
+    Ok(true)
 }
 
 mod consents;

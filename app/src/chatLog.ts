@@ -161,9 +161,12 @@ const ASK_SAID: Readonly<Record<string, string>> = {
 /** The groups whose Allow lets the chat go on, and whose refusal stops it. */
 const GOES_ON = new Set(["loop_pause", "budget"]);
 
-/** What an Allow of a group says where it is not the group's usual words (Q262). */
+/**
+ * What an Allow of a group says where it is not the group's usual words (Q262). A budget's
+ * Raise and Continue are both `allowed`, so its line is true of both (Q262 amended).
+ */
 const ALLOWED_SAID: Readonly<Record<string, string>> = {
-  budget: "Raised its budget",
+  budget: "Let it go on past its budget",
 };
 
 /** Who answered, as an ask's row says it. */
