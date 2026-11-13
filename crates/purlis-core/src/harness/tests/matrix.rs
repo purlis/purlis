@@ -110,8 +110,10 @@ const MATRIX: [Row; 10] = [
                     name: "a_permission_denied_hook_line_writes_one_block_from_the_harness_own_check",
                 },
             ),
-            // R-325's core half, the block from a reported rejection and none guessed, is
-            // named; the Can't tell the window shows is R-100's.
+            // R-325's core half, a block from a reported rejection and none guessed, is tested
+            // in `HARNESS_CHECK` on a fixture, and no cell names that test: Codex is not armed
+            // with the word, so no Codex rejection is reported today. The Can't tell the window
+            // shows is owed by R-100.
             cell(
                 "Can't tell (no denial signal yet; a hook-reported rejection becomes a block)",
                 owed("R-100"),

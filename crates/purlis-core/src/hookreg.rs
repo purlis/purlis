@@ -175,7 +175,9 @@ pub const HANDLERS: [Handler; 20] = [
     // line the host writes as a block by that check ([`HARNESS_DENIED`]). Its own event, never
     // a tool event's group, so a version that does not know the event loses this hook alone:
     // Claude Code 2.1.323's `claude plugin validate` says of an event it does not know "entry
-    // ignored at runtime". It answers nothing, so the check's refusal stands.
+    // ignored at runtime". Measured on claude 2.1.323 only: no version from before the event
+    // has been run with this file (an open measurement). It answers nothing, so the check's
+    // refusal stands.
     Handler {
         name: HARNESS_DENIED,
         event: "PermissionDenied",

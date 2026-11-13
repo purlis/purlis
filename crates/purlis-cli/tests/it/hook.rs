@@ -1613,7 +1613,9 @@ fn a_harness_version_that_does_not_know_permission_denied_still_starts_and_its_o
 {
     // R-094's hook-contract guard: Claude Code drops a hooks.json entry of an event it does not
     // know, and keeps the rest (2.1.323's `claude plugin validate`: "unknown hook event; entry
-    // ignored at runtime"). So the `PermissionDenied` hook is an event of its own, holding that
+    // ignored at runtime"). Measured on claude 2.1.323 only: this test assumes that behaviour,
+    // and no version from before the event has been run with the generated file (an open
+    // measurement). So the `PermissionDenied` hook is an event of its own, holding that
     // word alone, and an older version that drops it keeps every other hook, the Bash guard
     // first among them, which still answers.
     let mut doc: serde_json::Value =
