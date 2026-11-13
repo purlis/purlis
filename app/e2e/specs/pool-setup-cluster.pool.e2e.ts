@@ -105,15 +105,35 @@ async function myOwnIsOn(): Promise<boolean> {
  * press, as a person's, then a wait for the mark to be kept and read back.
  */
 async function markAsMyOwn(): Promise<void> {
-  const control = await $(MY_OWN);
-  await control.waitForExist({ timeout: 60_000 }).catch(async () => {
-    throw new Error(`no This is my own in Settings: ${await settingsSay()}`);
-  });
-  await control.scrollIntoView({ block: "center" });
-  if (!(await myOwnIsOn())) await control.click();
-  await browser.waitUntil(myOwnIsOn, { timeout: 60_000, interval: 1_000 }).catch(async () => {
-    throw new Error(`This is my own never turned on: ${await settingsSay()}`);
-  });
+  await $(MY_OWN)
+    .waitForExist({ timeout: 60_000 })
+    .catch(async () => {
+      throw new Error(`no This is my own in Settings: ${await settingsSay()}`);
+    });
+  // Found afresh at each look: the row is drawn again as the pools are read again, and a press
+  // that found the switch of the row before is lost. Pressed until one press lands, never after.
+  let pressed = false;
+  await browser
+    .waitUntil(
+      async () => {
+        if (await myOwnIsOn().catch(() => false)) return true;
+        if (!pressed) {
+          const control = await $(MY_OWN);
+          pressed = await control
+            .scrollIntoView({ block: "center" })
+            .then(() => control.click())
+            .then(
+              () => true,
+              () => false,
+            );
+        }
+        return false;
+      },
+      { timeout: 60_000, interval: 1_000 },
+    )
+    .catch(async () => {
+      throw new Error(`This is my own never turned on: ${await settingsSay()}`);
+    });
 }
 
 /** What the cluster pool's row in Settings › Pools says, for a failure to name. */
@@ -127,9 +147,18 @@ async function settingsSay(): Promise<string> {
 
 describe("Pool setup on a kind cluster", () => {
   let wereOpen: string[] | null = null;
+  let walked = false;
 
   after(async () => {
-    if (wereOpen !== null) await closeTheViewTabsOpenedSince(wereOpen);
+    // A walk that stopped part way leaves its setup unfinished, which the next Add a pool goes
+    // on with, with Start over: pressed, so the other specs of the run begin at Where.
+    if (wereOpen === null) return;
+    await closeTheViewTabsOpenedSince(wereOpen);
+    if (walked) return;
+    await runFromThePalette("Add a pool", "pool.add")
+      .then(() => press("Start over", 30_000))
+      .catch(() => undefined);
+    await closeTheViewTabsOpenedSince(wereOpen);
   });
 
   it("walks from Add a cluster pool to a real chat started on the cluster, with no terminal", async () => {
@@ -191,6 +220,8 @@ describe("Pool setup on a kind cluster", () => {
         throw new Error(`Try it never passed: ${await theStepSays()}`);
       });
     await expect($("aria/" + `Open a chat on ${POOL}`)).toBeClickable();
+
+    walked = true;
 
     // No step opened a shell, or any tab but its own, Settings and Try it's chat.
     const added = await tabsAdded();
