@@ -1172,7 +1172,7 @@ mod cases {
         }
         // The open milestones, each with its issue counts, in the forge's order.
         let read = read.unwrap();
-        let shown: Vec<(u64, &str, &str, Option<&str>, u64, u64)> = read
+        let shown: Vec<_> = read
             .iter()
             .map(|m| {
                 (
