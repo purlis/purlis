@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794558099670,
+  "lastUpdate": 1794561472435,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -48132,6 +48132,48 @@ window.BENCHMARK_DATA = {
             "value": 102.762805,
             "unit": "ms",
             "extra": "median of 5 runs: 99.175, 100.415, 102.763, 103.319, 103.679 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "9d3d73229d64b1786ed9b3d3b27dbe396be391e9",
+          "message": "Run grant: mysqlaccess, mytop, the DBI-address tools, ps-admin, the test runners, myrocks_hotbackup and init scripts refused (#6185, #6187) (#6318)\n\n* Run grant: mysqlaccess, mytop, the DBI-address tools and ps-admin refused whole (#6185)\n\nEach checked against its own source. mysqlaccess splits --host=<rhost> on\nwhite space into the client's arguments, so a host carries --plugin-dir and\n--default-auth; mytop, mysql_convert_table_format and mysql_setpermission join\ntheir host into a DBI address that DBD::MariaDB and DBD::mysql split at each ;\ninto attributes, mariadb_read_default_file among them; Percona Server's\nps-admin sources its --config-file as shell. Refused on NOT_FOR_A_RUN_GRANT by\nevery name their packages ship, with run_grants tests seen red first (not one\nof the declared tools, not runs other programs). ps_mysqld_helper reads no\nargument and is left alone. ADR 0112 amendment and a Security fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77CQ427MVJ33EG04ZY2V06H\nPurlis-Persona: steward\n\n* Run grant: mysqlxtest, mysqltest_safe_process, myrocks_hotbackup and rcmysql refused, and any init script (#6187)\n\nEach checked against its own source. mysqlxtest's script runs -->system;\nmysqltest_safe_process execvps what follows --; myrocks_hotbackup hands\nos.system its --extra_wdt_sender_options and stream file names, and ssh its\n--destination first. rcmysql is PXC's link to /etc/init.d/mysql, whose file\nname is the client's, so a Run grant judged by the resolved name reached the\nclient's row and rcmysql start started the server. Refused by name, and a Run\ngrant now also refuses any program that resolves into an init.d folder,\nwhatever it or its link is called. run_grants tests seen red first, the link\none with a notice asking to allow mysql. ADR 0112 amendment and fragment\nextended.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77CQ427MVJ33EG04ZY2V06H\nPurlis-Persona: steward\n\n* Run grant: service refused too, as MySQL's SLES rcmysql links to it (#6187, review round 1)\n\nThe review found MySQL's own SLES packages link rcmysql to /usr/sbin/service\n(packaging/rpm-sles/mysql.spec.in), which a Run grant judges by its target's\nname. service runs /etc/init.d/<name> or has systemctl act on the unit\n(init-system-helpers script/service), so it is refused, and every rc* link to\nit with it; run_grants test seen red first. The DBD drivers split an address\nat : or ;, not only ;. The fragment is renamed for both issues. systemctl and\nstart-stop-daemon, init scripts reached through a further link, and RocksDB's\nldb and sst_dump are filed as #6320, #6321 and #6322.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77CQ427MVJ33EG04ZY2V06H\nPurlis-Persona: steward\n\n* Run grant: mysql_keyring_encryption_test refused too; it loads the component it is named (#6187, review round 2)\n\nPercona Server's test package ships it with mysqlxtest and\nmysqltest_safe_process; it loads file://<--component_dir>/<--keyring> as a\ncomponent (components/test/keyring_encryption_test, percona-server 8.0), as\nthe refused mysql_migrate_keyring does. run_grants test seen red first. The\nservice test cites the review it came from. ndb_error_reporter and\nndb_size.pl, brew, and more service managers are filed as #6324, #6325 and on\n#6320.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77CQ427MVJ33EG04ZY2V06H\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-13T06:07:53Z",
+          "tree_id": "a3f09e31b52db090a1e0685ffd1a0d13eb0a143b",
+          "url": "https://github.com/purlis/purlis/commit/9d3d73229d64b1786ed9b3d3b27dbe396be391e9"
+        },
+        "date": 1794561465757,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.559312,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.549, 0.553, 0.559, 0.560, 0.570 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.384855,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.356, 16.379, 16.385, 16.547, 16.609 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.375733,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.439, 101.735, 102.376, 102.490, 102.749 ms"
           }
         ]
       }
