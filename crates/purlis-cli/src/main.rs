@@ -6018,6 +6018,12 @@ fn doctor(
         }
         for id in ids {
             let lines = match (id, identity) {
+                // Its own step: it keeps the record of the clones it moves (R-339, Q260).
+                (FixId::MoveIntoRepos, _) => {
+                    let fixed = move_into_repos_recording(doctor.root());
+                    fix_failed |= !fixed.complete();
+                    fixed.lines()
+                }
                 (FixId::GitIdentity, Some((name, email))) => {
                     match registry::identity::apply(doctor.root(), name, email) {
                         Ok(fixed) => {
@@ -6063,6 +6069,23 @@ fn doctor(
         );
     }
     ExitCode::from(purlis_core::doctor::exit_code(&rows).max(u8::from(fix_failed)))
+}
+
+/// **`purlis doctor --fix move-into-repos`** (R-339, Q260): the move keeps the record of clones
+/// where a clone's remote is unchanged, and trusts no new clone. This binary holds no host scope,
+/// so the move names the clones it left untrusted in one line that says to trust them in purlis's
+/// window, in Asks › Trust these clones.
+fn move_into_repos_recording(root: &std::path::Path) -> purlis_core::doctor::fix::Fixed {
+    use purlis_core::doctor::fix::{self as registry, move_into_repos};
+
+    let open = &move_into_repos::open_in_record;
+    let Some(config_root) = purlis_core::machine::config_root_if_there() else {
+        return registry::apply_moving_into_repos(root, open, None);
+    };
+    let records = move_into_repos::Records {
+        config_root: &config_root,
+    };
+    registry::apply_moving_into_repos_with(root, open, None, Some(&records))
 }
 
 /// `purlis harness show <name>`: the declaration on stdout under one comment line naming

@@ -90,6 +90,9 @@ const CLI = "printed by the purlis command in a terminal, which no link reaches"
 const BESIDE = "said in the view the control stands in, beside it";
 /** Names a control on another program's page (a forge's), not the window's. */
 const ELSEWHERE = "a control on a forge's own page, not the window's";
+/** Names the one ask for the clones purlis has no record of, in Asks, whose row T1-42 draws (#6433). */
+const TRUST_THESE =
+  "names the Trust these clones ask in Asks, which links once T1-42 draws its row (#6433)";
 
 /**
  * **The core messages that name a window control and link nowhere yet**, exactly: `<path>:
@@ -109,8 +112,10 @@ const UNLINKED: Readonly<Record<string, string>> = {
   "crates/purlis-core/src/chattools.rs: Update": CHAT,
   "crates/purlis-core/src/dispatchplace.rs: Discard": CHAT,
   "crates/purlis-core/src/dispatchplace.rs: Merge": CHAT,
+  "crates/purlis-core/src/doctor/clones.rs: Trust these clones": TRUST_THESE,
   "crates/purlis-core/src/doctor/fix/identity.rs: Doctor": CHAT,
   "crates/purlis-core/src/doctor/fix/move_into_repos.rs: Fix": BESIDE,
+  "crates/purlis-core/src/doctor/fix/move_into_repos.rs: Trust these clones": TRUST_THESE,
   "crates/purlis-core/src/doctor/sandbox.rs: File report": BESIDE,
   "crates/purlis-core/src/personaverbs/select.rs: Allow": CHAT,
   // Followed only by `purlis` in a terminal (`follow_while`); the window's own sign-in draws

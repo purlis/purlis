@@ -1169,6 +1169,7 @@ fn kind_said(ask: &Shown) -> &'static str {
         AskSource::Looping => "Paused, as it may be looping",
         AskSource::MergeHold => "Asks you to merge a request",
         AskSource::TrustClone => "Asks you to trust a clone",
+        AskSource::TrustClones => "Asks you to trust clones purlis did not clone",
     }
 }
 
