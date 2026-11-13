@@ -21,7 +21,7 @@ import {
   type FinishedTask,
   type PlaneId,
 } from "./bindings";
-import { qualifierOf, shownOf } from "./finished";
+import { qualifierOf, shownOf, whyNoReopen } from "./finished";
 import { capitalised, endedAt } from "./chatEnded";
 import { chatNumberIn, chatNumberSaid, numberedName } from "./chatNumber";
 import type { ViewRef } from "./tabs";
@@ -152,6 +152,18 @@ const NO_CHAT: ChatLookup = { is: "no_chat" };
 /** What a number the palette was asked for names: the number, and the core's lookup of it. */
 export type ByNumber = { number: number; lookup: ChatLookup };
 
+/**
+ * What a card's palette row says it shows: its card, with *Read it* and *Reopen* named only where
+ * the card has them enabled, so the row never offers a button the card draws disabled.
+ */
+function showsItsCard(card: ChatCard): string {
+  const can = [
+    card.screen_kept ? "Read it" : undefined,
+    card.task !== null && whyNoReopen(card.task) === undefined ? "Reopen" : undefined,
+  ].filter((one) => one !== undefined);
+  return can.length === 0 ? "Shows its card." : `Shows its card, with ${can.join(" and ")}.`;
+}
+
 /** Whether palette row `offer` is a finished chat's, which opens its card in place. */
 export function opensACard(offer: Offer): boolean {
   return offer.id.startsWith("chat.card:");
@@ -175,7 +187,7 @@ export function numberRows(byNumber: ByNumber | undefined): Offer[] {
         reason: "",
         does: { verb: "nothing" },
         name: lookup.card.title,
-        note: `${cardWhen(lookup.card)}. Shows its card, with Read it and Reopen.`,
+        note: `${cardWhen(lookup.card)}. ${showsItsCard(lookup.card)}`,
         chat: number,
       },
     ];
