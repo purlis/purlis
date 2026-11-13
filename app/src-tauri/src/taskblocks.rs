@@ -474,12 +474,32 @@ impl Blocks {
     pub fn called(&self, call: &purlis_core::hookwire::ToolCall) -> Vec<String> {
         let mut calls = self.calls();
         let mine = calls.entry(call.chat).or_default();
-        if call.tool_hook.starts_with("posttooluse") {
+        // A call comes back, or the harness's own check refused it: either way it is over.
+        if call.tool_hook.starts_with("posttooluse")
+            || call.tool_hook == purlis_core::hookreg::HARNESS_DENIED
+        {
             if let Some(id) = &call.call {
-                mine.open.retain(|one| one.id != *id);
+                // An agent's calls come back in turn: one of its calls ending ends every call
+                // it made before, whose own end was never heard (a failed Edit is no
+                // `PostToolUse`).
+                if let Some(at) = mine.open.iter().position(|one| one.id == *id) {
+                    let agent = mine.open[at].agent.clone();
+                    let others: Vec<Call> = mine
+                        .open
+                        .drain(..=at)
+                        .filter(|one| one.agent != agent)
+                        .collect();
+                    mine.open.splice(0..0, others);
+                }
                 for under in mine.held.iter_mut().chain(mine.written.iter_mut()) {
-                    if under.calls.iter().any(|one| one.id == *id) && !under.ended.contains(id) {
-                        under.ended.push(id.clone());
+                    let Some(at) = under.calls.iter().position(|one| one.id == *id) else {
+                        continue;
+                    };
+                    let agent = under.calls[at].agent.clone();
+                    for one in &under.calls[..=at] {
+                        if one.agent == agent && !under.ended.contains(&one.id) {
+                            under.ended.push(one.id.clone());
+                        }
                     }
                 }
             }
@@ -500,7 +520,14 @@ impl Blocks {
         // The call a written block was held under is over: a line of it now is no echo.
         mine.written
             .retain(|under| !(under.calls.is_empty() || under.moved_on_by(agent)));
-        if let Some(id) = &call.call {
+        // Only a call whose post-tool line will be heard is open until it is: never one its
+        // guard refused, which never runs, nor one of a tool no post-tool hook names (Grep).
+        let comes_back = call.decision != purlis_core::hookwire::Decision::Deny
+            && call
+                .tool
+                .as_deref()
+                .is_some_and(purlis_core::hookreg::comes_back);
+        if let Some(id) = call.call.as_ref().filter(|_| comes_back) {
             mine.open.retain(|one| one.id != *id);
             mine.open.push(Call {
                 id: id.clone(),

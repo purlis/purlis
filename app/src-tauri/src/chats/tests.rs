@@ -11635,6 +11635,7 @@ mod moved_on {
     use std::time::Duration;
 
     use purlis_core::eventlog::stops::{Source, Stop, Target};
+    use purlis_core::hookwire::Decision;
     use purlis_core::sandbox::asks::{Answer, Asks};
 
     use super::*;
@@ -11753,13 +11754,25 @@ mod moved_on {
         /// A hook line of chat 9's: `hook` of call `id` of `tool`, by `agent` (the main one
         /// where none).
         pub fn line(&self, hook: &str, id: Option<&str>, tool: &str, agent: Option<&str>) {
+            self.line_deciding(hook, id, tool, agent, Decision::default());
+        }
+
+        /// A hook line as [`Self::line`], whose hook answered `decision`.
+        pub fn line_deciding(
+            &self,
+            hook: &str,
+            id: Option<&str>,
+            tool: &str,
+            agent: Option<&str>,
+            decision: Decision,
+        ) {
             self.chats.called(&purlis_core::hookwire::ToolCall {
                 chat: CHAT,
                 tool_hook: hook.to_owned(),
                 tool: Some(tool.to_owned()),
                 call: id.map(str::to_owned),
                 args: None,
-                decision: purlis_core::hookwire::Decision::default(),
+                decision,
                 rule: None,
                 arm: None,
                 hook_ms: 0,
@@ -11921,6 +11934,99 @@ mod moved_on {
         live.line("pretooluse", Some("call-3"), "Read", None);
         live.settle();
         assert_eq!(live.blocks_of("api.example.com").len(), 1, "never a second");
+    }
+
+    /// Q240: the held call ended and the same agent made its next call: one block, refused
+    /// now, whatever came before it.
+    fn moves_on_to_one_block(live: &Live) {
+        let held = live.hold("api.example.com");
+        live.line("posttooluse-blocked", Some("call-1"), "Bash", None);
+        live.line("pretooluse", Some("call-2"), "Bash", None);
+        live.until(
+            |live| live.board.holding() == 0,
+            "given up on the next call, long before its timeout",
+        );
+        assert_eq!(
+            held.join().expect("answered"),
+            Answer::TimedOut,
+            "refused now"
+        );
+        live.until(
+            |live| live.blocks_of("api.example.com").len() == 1,
+            "one block",
+        );
+        assert_eq!(live.asks_of("api.example.com"), 0, "the ask is withdrawn");
+    }
+
+    /// Q240: a Grep has no post-tool line (no `PostToolUse` hook names it), so it never stays
+    /// open: a Grep before the held call does not keep the chat from moving on.
+    #[test]
+    fn a_grep_before_the_held_call_does_not_stop_moving_on() {
+        let live = live(Duration::from_secs(30));
+        live.line("pretooluse-read", Some("grep-1"), "Grep", None);
+        live.line("pretooluse", Some("call-1"), "Bash", None);
+        moves_on_to_one_block(&live);
+    }
+
+    /// Q240: a call its guard refused never runs and has no post-tool line: it does not keep
+    /// the chat from moving on.
+    #[test]
+    fn a_denied_call_before_the_held_call_does_not_stop_moving_on() {
+        let live = live(Duration::from_secs(30));
+        live.line_deciding("pretooluse", Some("denied-1"), "Bash", None, Decision::Deny);
+        live.line("pretooluse", Some("call-1"), "Bash", None);
+        moves_on_to_one_block(&live);
+    }
+
+    /// Q240: a sub-agent's Grep, made before the held call, never comes back either; the main
+    /// agent's calls ending says nothing of it, so it must never have been open.
+    #[test]
+    fn a_sub_agents_grep_before_the_held_call_does_not_stop_moving_on() {
+        let live = live(Duration::from_secs(30));
+        live.line("pretooluse-read", Some("grep-1"), "Grep", Some("agent-a"));
+        live.line("pretooluse", Some("call-1"), "Bash", None);
+        moves_on_to_one_block(&live);
+    }
+
+    /// Q240: a sub-agent's call its guard refused, made before the held call, never runs; the
+    /// main agent's calls ending says nothing of it, so it must never have been open.
+    #[test]
+    fn a_sub_agents_denied_call_before_the_held_call_does_not_stop_moving_on() {
+        let live = live(Duration::from_secs(30));
+        live.line_deciding(
+            "pretooluse",
+            Some("denied-1"),
+            "Bash",
+            Some("agent-a"),
+            Decision::Deny,
+        );
+        live.line("pretooluse", Some("call-1"), "Bash", None);
+        moves_on_to_one_block(&live);
+    }
+
+    /// Q240: a call the harness's own check refused is over when that refusal is heard.
+    #[test]
+    fn a_sub_agents_call_the_harness_refused_does_not_stop_moving_on() {
+        let live = live(Duration::from_secs(30));
+        live.line("pretooluse", Some("refused-1"), "Bash", Some("agent-a"));
+        live.line(
+            purlis_core::hookreg::HARNESS_DENIED,
+            Some("refused-1"),
+            "Bash",
+            Some("agent-a"),
+        );
+        live.line("pretooluse", Some("call-1"), "Bash", None);
+        moves_on_to_one_block(&live);
+    }
+
+    /// Q240: a failed Edit has no post-tool line (its failure is no `PostToolUse`): the same
+    /// agent's later call ending is what closes it, so it does not keep the chat from moving on.
+    #[test]
+    fn a_failed_edit_before_the_held_call_does_not_stop_moving_on() {
+        let live = live(Duration::from_secs(30));
+        live.line("pretooluse-edit", Some("edit-1"), "Edit", None);
+        live.line("pretooluse", Some("call-1"), "Bash", None);
+        moves_on_to_one_block(&live);
     }
 
     /// Q240: after the chat moved on, a retry to the same host is a new ask the person sees,
