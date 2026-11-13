@@ -80,6 +80,19 @@ export function cardWhen(card: ChatCard): string {
 export const ORDINARY_NO_REOPEN =
   "It cannot be reopened from here: purlis keeps the conversation of a dispatched task only.";
 
+/**
+ * Why *Reopen* does nothing on the card of a handoff, or of a task that ended owing no report: a
+ * dispatch started it, but only a task that owed a report has a finished row to reopen.
+ */
+export const DISPATCHED_NO_REOPEN =
+  "It cannot be reopened: purlis reopens a task that owed a report, and this chat was handed off or owed none. Start a new chat to go on.";
+
+/** Why *Reopen* on `card` does nothing, or nothing where it reopens. */
+export function whyCardCannotReopen(card: ChatCard): string | undefined {
+  if (card.task !== null) return whyNoReopen(card.task);
+  return card.dispatched ? DISPATCHED_NO_REOPEN : ORDINARY_NO_REOPEN;
+}
+
 /** What *Read it* says where nothing was kept: the person's ruling of 2026-11-11. */
 export const SCREEN_NOT_KEPT = "Its screen was not kept.";
 
@@ -159,7 +172,7 @@ export type ByNumber = { number: number; lookup: ChatLookup };
 function showsItsCard(card: ChatCard): string {
   const can = [
     card.screen_kept ? "Read it" : undefined,
-    card.task !== null && whyNoReopen(card.task) === undefined ? "Reopen" : undefined,
+    whyCardCannotReopen(card) === undefined ? "Reopen" : undefined,
   ].filter((one) => one !== undefined);
   return can.length === 0 ? "Shows its card." : `Shows its card, with ${can.join(" and ")}.`;
 }

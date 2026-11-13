@@ -57,6 +57,10 @@ pub(crate) struct ChatCard {
     pub started_by: String,
     /// Whether its last screen was kept: *Read it* is disabled where it was not.
     pub screen_kept: bool,
+    /// Whether a dispatch started it. True with no task for a handoff, or a task that ended
+    /// owing no report: its card is drawn from its chat's record, and *Reopen* says why it does
+    /// nothing in words of its own.
+    pub dispatched: bool,
 }
 
 /// What a card says of a task the person dispatched themselves.
@@ -124,6 +128,7 @@ pub(crate) fn card_of(
         } else {
             record.asker.chat.name.clone()
         },
+        dispatched: true,
     })
 }
 
@@ -145,7 +150,21 @@ pub(crate) fn card_of_chat(held: &Held, chat: &purlis_core::chatrecords::ChatRec
             purlis_core::chatrecords::StartedBy::Person => STARTED_BY_YOU.to_owned(),
             purlis_core::chatrecords::StartedBy::Chat { name } => name.clone(),
         },
+        dispatched: dispatched(held.root(), chat),
     }
+}
+
+/// Whether a dispatch record names chat `chat` as its worker, by its ULID: a handoff, or a task
+/// that ended owing no report, whose card the lookup draws from its chat's record.
+fn dispatched(root: &std::path::Path, chat: &purlis_core::chatrecords::ChatRecord) -> bool {
+    let worker = dispatchrecord::ChatRef {
+        chat: chat.number,
+        id: Some(chat.id.clone()),
+        ..Default::default()
+    };
+    dispatchrecord::ledger(root)
+        .latest_for(root, &worker)
+        .is_some()
 }
 
 /// **Keeps chat `session`'s last screen as it closes for good**, where it is a dispatched task

@@ -4,7 +4,15 @@
 import { describe, expect, it } from "vitest";
 import type { ChatCard } from "./bindings";
 import { narrow } from "./actions";
-import { cardRowId, cardWhen, numberRows, opensACard, outcomeOf } from "./closedChat";
+import {
+  ORDINARY_NO_REOPEN,
+  cardRowId,
+  cardWhen,
+  numberRows,
+  opensACard,
+  outcomeOf,
+  whyCardCannotReopen,
+} from "./closedChat";
 
 const TASK: NonNullable<ChatCard["task"]> = {
   id: "01K9DISPATCH0000000000000A",
@@ -35,6 +43,7 @@ const CARD: ChatCard = {
   place: "smart-ide",
   started_by: "steward 4",
   screen_kept: true,
+  dispatched: true,
   task: TASK,
 };
 
@@ -82,6 +91,16 @@ describe("a chat found by its number in the palette (#6214)", () => {
     );
     // A chat no dispatch started: no screen and no task, so neither.
     expect(note({ ...CARD, screen_kept: false, task: null })).toMatch(/\. Shows its card\.$/);
+  });
+
+  it("says why Reopen does nothing in words that fit how the chat was started", () => {
+    expect(whyCardCannotReopen(CARD)).toBeUndefined();
+    const ordinary = { ...CARD, task: null, dispatched: false };
+    expect(whyCardCannotReopen(ordinary)).toBe(ORDINARY_NO_REOPEN);
+    // A handoff, or a task that owed no report: a dispatch started it, so not the ordinary words.
+    const handedOff = whyCardCannotReopen({ ...ordinary, dispatched: true });
+    expect(handedOff).toMatch(/^It cannot be reopened/);
+    expect(handedOff).not.toBe(ORDINARY_NO_REOPEN);
   });
 
   it("the card says how and when it ended, and that its chat has closed", () => {
