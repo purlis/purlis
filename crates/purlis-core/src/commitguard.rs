@@ -172,7 +172,9 @@ pub fn hook_skip_hit(cmd: &str, cwd: &str) -> Option<(&'static str, String)> {
             crate::doctor::fix::rename_plane::FROM_A_CHAT.to_owned() + ".",
         ));
     }
-    let segments = shellseg::segment_argv(cmd);
+    // A heredoc body nothing runs is data, and only the substitutions of one the shell
+    // expands run (#6293).
+    let segments = shellseg::segment_argv(&crate::heredoc::commands_a_shell_runs(cmd));
     let exported = shellwrap::exported_env_shared(&segments);
     // The list only grows, so each export is looked at once, in the first segment that
     // inherits it: a line of exports stays linear.
@@ -377,6 +379,25 @@ mod tests {
             "echo git commit --no-verify",
         ] {
             assert_eq!(refused(cmd), None, "{cmd}");
+        }
+    }
+
+    /// A heredoc body nothing runs is data (#6293), and what a shell does run is still read.
+    #[test]
+    fn a_heredoc_body_nothing_runs_skips_no_hooks() {
+        for cmd in [
+            "cat >> ledger.md <<'EOF'\n- never `git commit --no-verify`\nEOF",
+            "cat > p.sh <<-\"EOF\"\n\tgit push --no-verify\n\tEOF",
+            "cat > notes.md <<EOF\ngit commit -n by $USER\nEOF",
+        ] {
+            assert_eq!(refused(cmd), None, "{cmd}");
+        }
+        for cmd in [
+            "cat > f <<'EOF'\nnotes\nEOF\ngit commit -n -m x",
+            "bash <<'EOF'\ngit commit -n -m x\nEOF",
+            "cat > f <<EOF\n$(git commit -n -m x)\nEOF",
+        ] {
+            assert_eq!(refused(cmd), Some("-n"), "{cmd}");
         }
     }
 
