@@ -1060,6 +1060,9 @@ function App() {
         return;
       }
       const made = answer.data.opened;
+      const protectionSaid = answer.data.protection_said;
+      if (protectionSaid)
+        setReport({ from: "setup.protection", refused: true, words: protectionSaid });
       if (made === null) {
         // The repo's remote did not say which forge (#839): asked in the dialog, and the
         // answer makes the project.
@@ -1094,6 +1097,9 @@ function App() {
     // Said once, on the window's line: the repo is open either way, and a forge that was not
     // added names its own fix (Settings › Project › Forges).
     if (forge_said) setReport({ from: "repo.forge", refused: false, words: forge_said });
+    // The Protection row's answer the core did not keep (Q241): the project is open all the same.
+    if (repo.protection_said)
+      setReport({ from: "setup.protection", refused: true, words: repo.protection_said });
     const plane = opened.plane;
     const ask = opened.ask;
     setFirstChat((was) => ({
@@ -1203,6 +1209,9 @@ function App() {
             return;
           }
           const made = answer.data.opened;
+          const protectionSaid = answer.data.protection_said;
+          if (protectionSaid)
+            setReport({ from: "setup.protection", refused: true, words: protectionSaid });
           if (made === null) {
             setRepoForgeAsk({
               why: answer.data.asks_forge ?? "",

@@ -201,6 +201,9 @@ pub struct OpenedRepo {
     /// already tracks it or the remote names none.
     #[specta(optional)]
     pub forge_said: Option<String>,
+    /// Why the Protection row's answer was not kept for the project it made (Q241), where it was
+    /// not: the window says it on its line. Null when it was kept, or nothing was made.
+    pub protection_said: Option<String>,
 }
 
 /// What opening a repo on the first run came to: opened, or a question about the forge.
@@ -475,21 +478,28 @@ pub async fn open_repo(
     let data = data_home()?;
     let forge = forge.map(Kind::from);
     let made = tauri::async_runtime::spawn_blocking(move || {
-        let (root, taken) = match taken_in(&data, Path::new(&path), &template.into(), forge)? {
-            Taken::In(root, taken) => (root, taken),
-            Taken::AsksForge(why) => return Ok(Err(why)),
-        };
-        protect(&root, protection)?;
+        let (root, taken, protection_said) =
+            match taken_at_level(&data, Path::new(&path), &template.into(), forge, protection)? {
+                (Taken::In(root, taken, _), said) => (root, taken, said),
+                (Taken::AsksForge(why), _) => return Ok(Err(why)),
+            };
         let here = firstrun::harnesses_here();
         let harness = firstrun::only_ready(&here);
         let none_installed = noharness::none_installed(&here);
         // Counted, not written: the tab that offers them is where the operator says yes.
         let instructions = offered(&root, &taken.workspace);
-        Ok::<_, String>(Ok((root, taken, harness, none_installed, instructions)))
+        Ok::<_, String>(Ok((
+            root,
+            taken,
+            harness,
+            none_installed,
+            instructions,
+            protection_said,
+        )))
     })
     .await
     .map_err(|err| format!("purlis could not open the repo: {err}"))??;
-    let (root, taken, harness, none_installed, instructions) = match made {
+    let (root, taken, harness, none_installed, instructions, protection_said) = match made {
         Ok(made) => made,
         Err(why) => {
             return Ok(RepoAnswer {
@@ -508,6 +518,7 @@ pub async fn open_repo(
             none_installed,
             instructions,
             forge_said: forge_said(&taken.forge),
+            protection_said,
             template: taken.template,
         }),
         asks_forge: None,
@@ -575,11 +586,72 @@ impl From<ProtectionWord> for purlis_core::sandbox::personal::Choice {
     }
 }
 
-/// Writes the Protection row's answer, where one was given, for the project at `root`.
-pub(crate) fn protect(root: &Path, protection: Option<ProtectionWord>) -> Result<(), String> {
-    match protection {
-        None => Ok(()),
-        Some(word) => purlis_core::sandbox::personal::chosen_at_setup(root, word.into()),
+/// **What setup's Protection row shows** (Q241): the levels a new project may take on this
+/// machine, and, where the local project is there already, its level, which Open repo keeps.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct SetupProtection {
+    /// The lowest level the row offers: an option below it is out of reach, with `why`.
+    pub lowest: ProtectionWord,
+    /// The level the row starts at.
+    pub default: ProtectionWord,
+    /// Why nothing below `lowest` may be chosen, where a policy holds it.
+    pub why: Option<String>,
+    /// The local project's level, where the project is there already: Open repo goes into it
+    /// and writes none (shown read-only, "Your level: … · change it in Settings").
+    pub yours: Option<ProtectionWord>,
+}
+
+/// What setup's Protection row shows, read from the core ([`SetupProtection`]).
+#[tauri::command]
+#[specta::specta]
+pub fn setup_protection() -> Result<SetupProtection, String> {
+    Ok(setup_protection_in(&data_home()?))
+}
+
+fn setup_protection_in(data: &Path) -> SetupProtection {
+    let bound = purlis_core::sandbox::team::allowed_levels_for_a_new_project();
+    // The level a chat started in the window runs at there: the person's own as far as it is
+    // confirmed, within the project's bound.
+    let yours = firstrun::local_plane(data)
+        .canonicalize()
+        .ok()
+        .filter(|root| purlis_core::names::has_manifest(root))
+        .map(|root| purlis_core::sandbox::team::level_for(&root, None).into());
+    SetupProtection {
+        lowest: bound.lowest.into(),
+        default: bound.default.into(),
+        why: bound.why,
+        yours,
+    }
+}
+
+impl From<purlis_core::sandbox::personal::Choice> for ProtectionWord {
+    fn from(choice: purlis_core::sandbox::personal::Choice) -> Self {
+        use purlis_core::sandbox::personal::Choice;
+        match choice {
+            Choice::On => Self::On,
+            Choice::Floor => Self::Floor,
+            Choice::Off => Self::Off,
+        }
+    }
+}
+
+/// Keeps the Protection row's answer, where one was given, for the project at `root`, **only when
+/// this call `made` it** (Q241): a project already there keeps its level, and any lowering goes
+/// through Settings' change protocol (Q117, Q118). Answers the window's sentence when the answer
+/// was not kept ([`purlis_core::sandbox::personal::chosen_at_setup`]), never an error: the
+/// project is made by now, and setup finishes in one press (R-064).
+pub(crate) fn protect(
+    root: &Path,
+    made: bool,
+    protection: Option<ProtectionWord>,
+) -> Option<String> {
+    if !made {
+        return None;
+    }
+    match purlis_core::sandbox::personal::chosen_at_setup(root, protection?.into()) {
+        purlis_core::sandbox::personal::AtSetup::Kept => None,
+        purlis_core::sandbox::personal::AtSetup::NotKept(said) => Some(said),
     }
 }
 
@@ -735,8 +807,8 @@ pub fn move_the_local_project() {
 /// What [`taken_in`] came to.
 #[derive(Debug)]
 enum Taken {
-    /// The local plane, with the repo in it.
-    In(PathBuf, firstrun::TakenIn),
+    /// The local plane, with the repo in it, and whether this call made the plane.
+    In(PathBuf, firstrun::TakenIn, bool),
     /// The forge has to be asked first, and why. Nothing was made.
     AsksForge(String),
 }
@@ -762,8 +834,8 @@ fn taken_in(
     let from = forge.map_or(firstrun::ForgeFrom::Repo(repo), |kind| {
         firstrun::ForgeFrom::Answered { kind, repo }
     });
-    let root = match firstrun::ensure_local_plane(data, from) {
-        Ok(root) => root,
+    let (root, made) = match firstrun::local_plane_ensured(data, from) {
+        Ok(ensured) => (ensured.root, ensured.made),
         Err(firstrun::NotMade::AsksForForge(why)) => return Ok(Taken::AsksForge(why)),
         Err(firstrun::NotMade::Refused(why)) => return Err(why),
     };
@@ -783,7 +855,24 @@ fn taken_in(
             repo.display()
         );
     }
-    Ok(Taken::In(root, taken))
+    Ok(Taken::In(root, taken, made))
+}
+
+/// [`taken_in`], with the Protection row's answer kept for the plane (T1-24), and the sentence
+/// the window says when it was not kept.
+fn taken_at_level(
+    data: &Path,
+    repo: &Path,
+    choice: &firstrun::Choice,
+    forge: Option<Kind>,
+    protection: Option<ProtectionWord>,
+) -> Result<(Taken, Option<String>), String> {
+    let taken = taken_in(data, repo, choice, forge)?;
+    let said = match &taken {
+        Taken::In(root, _, made) => protect(root, *made, protection),
+        Taken::AsksForge(_) => None,
+    };
+    Ok((taken, said))
 }
 
 #[cfg(test)]
@@ -870,7 +959,7 @@ mod tests {
     /// The plane and the repo taken in, from a run that was not asked a question.
     fn taken(answer: Taken) -> (PathBuf, firstrun::TakenIn) {
         match answer {
-            Taken::In(root, taken) => (root, taken),
+            Taken::In(root, taken, _) => (root, taken),
             Taken::AsksForge(why) => panic!("asked for the forge: {why}"),
         }
     }
@@ -1252,6 +1341,68 @@ mod tests {
         );
         assert_eq!(taken.workspace, "widget");
         assert_eq!(taken.clone, root.join("workspaces/widget/repos/widget"));
+    }
+
+    /// Q241 (T1-24's review, 1): **setup writes a level only for a project it made.** A repo
+    /// opened into the local project already there, at the row's preselected Basic sandbox, keeps
+    /// the project's level as it was: a full sandbox kept at an earlier setup, and a level the
+    /// person set in Settings. Setup never lowers a level; Settings' change protocol does.
+    #[test]
+    fn a_repo_opened_into_the_local_project_already_there_keeps_its_level() {
+        use purlis_core::sandbox::personal::{self, Choice};
+        for earlier in [Choice::On, Choice::Off] {
+            let dir = tempfile::tempdir().expect("a directory");
+            let data = dir.path().join("data");
+            let (made, said) = taken_at_level(
+                &data,
+                &a_repo(&dir.path().join("one")),
+                &firstrun::Choice::NoTemplate,
+                GITHUB,
+                Some(ProtectionWord::from(earlier)),
+            )
+            .expect("the first repository");
+            assert_eq!(said, None);
+            let (root, _) = taken(made);
+            assert_eq!(personal::of(&root).level, Some(earlier));
+
+            let (again, said) = taken_at_level(
+                &data,
+                &a_repo(&dir.path().join("two")),
+                &firstrun::Choice::NoTemplate,
+                GITHUB,
+                Some(ProtectionWord::Floor),
+            )
+            .expect("the second repository");
+
+            assert_eq!(said, None);
+            assert_eq!(taken(again).0, root);
+            assert_eq!(personal::of(&root).level, Some(earlier), "{earlier:?}");
+            assert_eq!(personal::in_force(&root).level, Some(earlier));
+        }
+    }
+
+    /// Q241: **the row reads the local project's level once it is there**, so Open repo shows it
+    /// read-only, and offers the machine's bound for a project not made yet.
+    #[test]
+    fn the_setup_row_shows_the_local_project_s_level_once_it_is_there() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let data = dir.path().join("data");
+        let fresh = setup_protection_in(&data);
+        assert_eq!(
+            (fresh.lowest, fresh.default, fresh.yours),
+            (ProtectionWord::Off, ProtectionWord::Floor, None)
+        );
+
+        taken_at_level(
+            &data,
+            &a_repo(&dir.path().join("one")),
+            &firstrun::Choice::NoTemplate,
+            GITHUB,
+            Some(ProtectionWord::On),
+        )
+        .expect("the first repository");
+
+        assert_eq!(setup_protection_in(&data).yours, Some(ProtectionWord::On));
     }
 
     #[test]

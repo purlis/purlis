@@ -94,6 +94,9 @@ pub struct CreateOnForge {
     pub template: Option<String>,
     /// Where it goes: absolute, from [`new_project_folder`].
     pub folder: String,
+    /// The Protection row's answer (T1-24), kept as the person's own level for the project once
+    /// it is made. Null keeps none.
+    pub protection: Option<crate::firstrun::ProtectionWord>,
 }
 
 /// How far a creation has got: the stage running, its place, and every stage's words, so the
@@ -213,6 +216,7 @@ pub async fn create_project_on_forge(
 ) -> Result<Option<String>, String> {
     let _scope = host_scope()?;
     let kind = Kind::from(ask.forge);
+    let protection = ask.protection;
     let off = start_running()?;
     let stopped = Arc::clone(&off);
     let answer = tauri::async_runtime::spawn_blocking(move || {
@@ -273,7 +277,15 @@ pub async fn create_project_on_forge(
         *running = None;
     }
     match answer.map_err(|err| format!("purlis could not create the project: {err}"))?? {
-        Ok(Created::Made { folder, .. }) => Ok(Some(folder.display().to_string())),
+        Ok(Created::Made { folder, .. }) => {
+            // The Protection row's answer, for the project this call made (T1-24, Q241). What
+            // was not kept never stops the project opening: it is in the app's log, and the
+            // row offered only what this machine allows.
+            if let Some(said) = crate::firstrun::protect(&folder, true, protection) {
+                tracing::warn!("purlis: {said}");
+            }
+            Ok(Some(folder.display().to_string()))
+        }
         Ok(Created::CalledOff { left, .. }) if left.is_empty() => Ok(None),
         Ok(Created::CalledOff { left, .. }) => Err(format!("Cancelled. {}", left.join(" "))),
         Err(refused) => Err(refused.sentence),

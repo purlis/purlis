@@ -1458,6 +1458,8 @@ export const commands = {
 "floor" | 
 /**  No sandbox. */
 "off" | null) => typedError<RepoAnswer, string>(__TAURI_INVOKE("open_repo", { path, template, forge, protection })),
+	/**  What setup's Protection row shows, read from the core ([`SetupProtection`]). */
+	setupProtection: () => typedError<SetupProtection, string>(__TAURI_INVOKE("setup_protection")),
 	/**
 	 *  The project template that fits the repo at `path`, by id, or `null` when none does or `path`
 	 *  is not a full path to a directory: what the first run's "Fits the repo" says it will pick
@@ -8253,6 +8255,11 @@ export type CreateOnForge = {
 	template: string | null,
 	/**  Where it goes: absolute, from [`new_project_folder`]. */
 	folder: string,
+	/**
+	 *  The Protection row's answer (T1-24), kept as the person's own level for the project once
+	 *  it is made. Null keeps none.
+	 */
+	protection: ProtectionWord | null,
 };
 
 /**
@@ -12537,6 +12544,11 @@ export type OpenedRepo = {
 	 *  already tracks it or the remote names none.
 	 */
 	forge_said?: string | null,
+	/**
+	 *  Why the Protection row's answer was not kept for the project it made (Q241), where it was
+	 *  not: the window says it on its line. Null when it was kept, or nothing was made.
+	 */
+	protection_said: string | null,
 };
 
 /**  **Where a link that opens without asking opens.** */
@@ -14231,6 +14243,11 @@ export type ProjectAnswer = {
 	 *  asks GitHub or GitLab and calls again with the answer. Nothing was made.
 	 */
 	asks_forge: string | null,
+	/**
+	 *  Why the Protection row's answer was not kept for the project this call made (Q241), where
+	 *  it was not: the window says it on its line. Null otherwise.
+	 */
+	protection_said: string | null,
 };
 
 /**
@@ -17021,6 +17038,24 @@ export type SetupNew = {
 	vault: string,
 	op_vault: string,
 	op_item: string | null,
+};
+
+/**
+ *  **What setup's Protection row shows** (Q241): the levels a new project may take on this
+ *  machine, and, where the local project is there already, its level, which Open repo keeps.
+ */
+export type SetupProtection = {
+	/**  The lowest level the row offers: an option below it is out of reach, with `why`. */
+	lowest: ProtectionWord,
+	/**  The level the row starts at. */
+	default: ProtectionWord,
+	/**  Why nothing below `lowest` may be chosen, where a policy holds it. */
+	why: string | null,
+	/**
+	 *  The local project's level, where the project is there already: Open repo goes into it
+	 *  and writes none (shown read-only, "Your level: … · change it in Settings").
+	 */
+	yours: ProtectionWord | null,
 };
 
 /**  A ticked vault that was not given the token. */

@@ -23,7 +23,7 @@ import { type ForgeAsk, ForgeQuestion } from "./ForgeQuestion";
 import { rememberedParent, rememberParent } from "./CreateOnForge";
 import { DoorPage } from "./DoorPage";
 import { useNewerTrouble } from "./pickTrouble";
-import { PROTECTION_PRESET, ProtectionRow } from "./ProtectionRow";
+import { ProtectionRow, useProtection, useSetupProtection, YourLevel } from "./ProtectionRow";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
 import { Form } from "./ui/field/Field";
@@ -82,16 +82,21 @@ export function FirstRun({
   where?: ReactNode;
   /** **A project on a forge** (#1819): given, it is drawn in place of the page's own body (a
    *  repo on this machine, in the project purlis keeps here), with the templates this purlis
-   *  ships once the machine has been read. */
-  elsewhere?: (templates: TemplateRow[] | undefined) => ReactNode;
+   *  ships once the machine has been read, and the Protection row's answer it makes the project
+   *  at (T1-24). */
+  elsewhere?: (templates: TemplateRow[] | undefined, protection: ProtectionWord) => ReactNode;
 }) {
   const [found, setFound] = useState<FirstRunFound>();
   /** Why purlis could not look at this machine, in the core's words: said, not swallowed. */
   const [unread, setUnread] = useState<string>();
   const [typed, setTyped] = useState("");
   const [template, setTemplate] = useState(FITS);
-  // **The Protection row** (T1-24): one for the page, which both of its acts send.
-  const [protection, setProtection] = useState<ProtectionWord>(PROTECTION_PRESET);
+  // **The Protection row** (T1-24): one for the page, which every act that makes a project sends,
+  // bounded by the core (Q241). A repo opened into the local project already there sends none:
+  // that project keeps its level, which the page shows.
+  const setup = useSetupProtection();
+  const [protection, setProtection] = useProtection(setup);
+  const forTheRepo = setup?.yours ? undefined : protection;
   // The template that fits a typed path, by id, with the path it was asked about: `null` when
   // none fits. A folder picked in the dialog opens at once, so this is the typed path's alone,
   // and an answer about a path no longer typed is not shown.
@@ -142,20 +147,20 @@ export function FirstRun({
       .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
       .then((answer) => {
         if (answer.status === "error") pickFailed(answer.error);
-        else if (answer.data) onOpenRepo(answer.data, choiceOf(template), protection);
+        else if (answer.data) onOpenRepo(answer.data, choiceOf(template), forTheRepo);
       });
-  }, [onOpenRepo, template, protection, pickFailed, started]);
+  }, [onOpenRepo, template, forTheRepo, pickFailed, started]);
 
   return (
     <DoorPage title="Create a project" className="first-run" onBack={onBack}>
+      {/* **One Protection row** for every act below, wherever the project lives (T1-24; Q115,
+          Q241). */}
+      <ProtectionRow value={protection} onChange={setProtection} setup={setup} disabled={opening} />
       {where}
       {elsewhere ? (
-        elsewhere(found?.templates)
+        elsewhere(found?.templates, protection)
       ) : (
         <>
-          {/* **One Protection row** for both acts below (T1-24; Q115). */}
-          <ProtectionRow value={protection} onChange={setProtection} disabled={opening} />
-
           {/* Nothing but a name is needed: a project with no repo yet, on this Mac (#1810 story 8). */}
           <OnThisMac
             onMake={(folder, chosen) => onMake(folder, chosen, protection)}
@@ -164,6 +169,7 @@ export function FirstRun({
           />
 
           <h2>Or start from a repo you already have</h2>
+          {setup?.yours && <YourLevel level={setup.yours} />}
 
           {/* **The template first** (#1719): both acts below open the repo with it, so it is seen
           before either is pressed. Until the machine is read, a line stands where it will be,
@@ -222,7 +228,7 @@ export function FirstRun({
               event.preventDefault();
               started();
               if (typed.trim() && !opening)
-                onOpenRepo(typed.trim(), choiceOf(template), protection);
+                onOpenRepo(typed.trim(), choiceOf(template), forTheRepo);
             }}
           >
             <SettingRow

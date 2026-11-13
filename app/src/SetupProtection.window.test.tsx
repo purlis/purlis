@@ -16,6 +16,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type {
   ProtectionWord,
+  SetupProtection,
   SettingsEdit,
   SettingsField,
   SettingsFile,
@@ -79,8 +80,13 @@ function withLevel(local: SettingsFile, level: string): SettingsFile {
   };
 }
 
-/** The core: the welcome on a machine through the guided steps once, and the project's files. */
-function core() {
+/** A machine with no policy and no local project yet: every level, Basic sandbox first. */
+const FRESH: SetupProtection = { lowest: "off", default: "floor", why: null, yours: null };
+const FOLDER = "/home/dev/Projects/garden";
+
+/** The core: the welcome on a machine through the guided steps once, and the project's files.
+ *  `setup` is what the Protection row is told (Q241). */
+function core(setup: SetupProtection = FRESH) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   const files: Record<SettingsWhich, SettingsFile> = {
     shared: file("shared"),
@@ -111,6 +117,25 @@ function core() {
           };
         case "first_run_found":
           return { harnesses: [], forges: [], templates: [] };
+        case "setup_protection":
+          return setup;
+        case "new_project_folder":
+          return FOLDER;
+        case "forge_owners":
+          return {
+            host: "github.com",
+            login: "octocat",
+            owners: [{ name: "octocat", title: "The Octocat", mine: true }],
+          };
+        case "create_project_on_forge":
+          return new Promise(() => undefined);
+        case "create_project":
+          keep(given.protection);
+          return {
+            opened: { plane: PLANE, ask: null },
+            asks_forge: null,
+            protection_said: null,
+          };
         case "open_repo":
           keep(given.protection);
           return {
@@ -245,5 +270,78 @@ describe("setup's Protection row, in the window", () => {
     await waitFor(() => expect(levelIn(files.local)).toBe("off"));
     fireEvent.blur(picker);
     await waitFor(() => expect(selectNamed("This project")).toHaveTextContent("No sandbox"));
+  });
+
+  it("First run's local create finishes in one press and writes the level", async () => {
+    const { calls, files } = core();
+    render(<App />);
+    const person = userEvent.setup();
+    await person.click(await screen.findByRole("button", { name: "Create a project" }));
+    const row = await screen.findByRole("radiogroup", { name: "Protection" });
+    await person.click(within(row).getByRole("radio", { name: SAID.off }));
+    await person.type(screen.getByLabelText("Name"), "garden");
+    const create = await screen.findByRole("button", { name: "Create project" });
+    await waitFor(() => expect(create).toBeEnabled());
+    await person.click(create);
+    await waitFor(() => expect(calls("create_project")).toHaveLength(1));
+    expect(calls("create_project")[0].args).toMatchObject({ path: FOLDER, protection: "off" });
+    await waitFor(() =>
+      expect(screen.queryByRole("radiogroup", { name: "Protection" })).not.toBeInTheDocument(),
+    );
+    expect(levelIn(files.local)).toBe("off");
+  });
+
+  it("a local project already there shows its level read-only, and Open repo writes none (Q241)", async () => {
+    const { calls, files } = core({ ...FRESH, yours: "on" });
+    files.local = withLevel(files.local, "on");
+    render(<App />);
+    const person = userEvent.setup();
+    await person.click(await screen.findByRole("button", { name: "Create a project" }));
+    expect(
+      await screen.findByText("Your level: Full sandbox · change it in Settings"),
+    ).toBeInTheDocument();
+    await person.type(screen.getByLabelText("Or type the repo's path"), REPO);
+    await person.click(screen.getByRole("button", { name: "Open repo" }));
+    await waitFor(() => expect(calls("open_repo")).toHaveLength(1));
+    expect(calls("open_repo")[0].args).toMatchObject({ path: REPO, protection: null });
+    expect(levelIn(files.local)).toBe("on");
+  });
+
+  it("options below a required tier are out of reach, with the reason, and its default is chosen (Q241)", async () => {
+    const why = "Policy forbids starting a chat without the sandbox. Set by Platform team.";
+    const { calls, files } = core({ lowest: "on", default: "on", why, yours: null });
+    render(<App />);
+    const person = userEvent.setup();
+    await person.click(await screen.findByRole("button", { name: "Create a project" }));
+    const row = await screen.findByRole("radiogroup", { name: "Protection" });
+    await waitFor(() => expect(within(row).getByRole("radio", { name: SAID.on })).toBeChecked());
+    expect(within(row).getByRole("radio", { name: SAID.floor })).toBeDisabled();
+    expect(within(row).getByRole("radio", { name: SAID.off })).toBeDisabled();
+    expect(screen.getByText(why, { exact: false })).toBeInTheDocument();
+    // Still one press.
+    await person.type(screen.getByLabelText("Or type the repo's path"), REPO);
+    await person.click(screen.getByRole("button", { name: "Open repo" }));
+    await waitFor(() => expect(calls("open_repo")).toHaveLength(1));
+    expect(calls("open_repo")[0].args).toMatchObject({ protection: "on" });
+    expect(levelIn(files.local)).toBe("on");
+  });
+
+  it("the forge-hosted create shows the row and sends its answer (review 3)", async () => {
+    const { calls } = core();
+    render(<App />);
+    const person = userEvent.setup();
+    await person.click(await screen.findByRole("button", { name: "Create a project" }));
+    await person.click(await screen.findByRole("radio", { name: /^GitHub/ }));
+    const row = await screen.findByRole("radiogroup", { name: "Protection" });
+    await person.click(within(row).getByRole("radio", { name: SAID.on }));
+    await person.type(await screen.findByLabelText("Name"), "garden");
+    const create = await screen.findByRole("button", { name: "Create project" });
+    await waitFor(() => expect(create).toBeEnabled());
+    await person.click(create);
+    await waitFor(() => expect(calls("create_project_on_forge")).toHaveLength(1));
+    expect(calls("create_project_on_forge")[0].args.ask).toMatchObject({
+      name: "garden",
+      protection: "on",
+    });
   });
 });

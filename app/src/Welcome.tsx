@@ -377,10 +377,11 @@ export function Welcome({
         elsewhere={
           where === "mac"
             ? undefined
-            : (templates) => (
+            : (templates, protection) => (
                 <CreateOnForge
                   forge={where}
                   templates={templates}
+                  protection={protection}
                   onOpen={open}
                   onNeedsSignIn={signInFirst}
                   withGit={withGit}

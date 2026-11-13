@@ -890,26 +890,27 @@ pub async fn create_project(
 ) -> Result<ProjectAnswer, String> {
     let forge = forge.map(purlis_core::forge::Kind::from);
     crate::off_the_window("making the project", move || {
-        match make_from_template(
+        match made_at_level(
             std::path::Path::new(&path),
             plane_is_this_repo,
             adopt,
             forge,
             template.as_deref(),
+            protection,
         ) {
-            Ok(root) => Ok(ProjectAnswer {
-                // The Protection row's answer, kept as the person's own level (T1-24).
-                opened: Some({
-                    crate::firstrun::protect(&root, protection)?;
+            Ok((root, protection_said)) => Ok(ProjectAnswer {
+                opened: Some(
                     app.state::<Planes>()
                         .open_if_approved(&root)
-                        .map(Opened::from)?
-                }),
+                        .map(Opened::from)?,
+                ),
                 asks_forge: None,
+                protection_said,
             }),
             Err(NotMade::AsksForForge(why)) => Ok(ProjectAnswer {
                 opened: None,
                 asks_forge: Some(why),
+                protection_said: None,
             }),
             Err(NotMade::Refused(why)) => Err(why),
         }
@@ -926,6 +927,26 @@ pub struct ProjectAnswer {
     /// Why the repo's remote does not say which forge the project's repos are on: the window
     /// asks GitHub or GitLab and calls again with the answer. Nothing was made.
     pub asks_forge: Option<String>,
+    /// Why the Protection row's answer was not kept for the project this call made (Q241), where
+    /// it was not: the window says it on its line. Null otherwise.
+    pub protection_said: Option<String>,
+}
+
+/// [`make_from_template`], with the Protection row's answer kept as the person's own level
+/// (T1-24) for a project this call made, and the window's sentence where it was not kept.
+fn made_at_level(
+    at: &std::path::Path,
+    plane_is_this_repo: bool,
+    adopt: Option<String>,
+    forge: Option<purlis_core::forge::Kind>,
+    template: Option<&str>,
+    protection: Option<crate::firstrun::ProtectionWord>,
+) -> Result<(std::path::PathBuf, Option<String>), NotMade> {
+    let already = is_a_project(at);
+    let root = make_from_template(at, plane_is_this_repo, adopt, forge, template)?;
+    // A folder that is a project already only opens: its level stays its own (Q241).
+    let said = crate::firstrun::protect(&root, !already, protection);
+    Ok((root, said))
 }
 
 /// [`scaffold_at`], then the template, in a project that was not there before. An id purlis does
@@ -944,9 +965,7 @@ fn make_from_template(
             })
         })
         .transpose()?;
-    let already = at
-        .canonicalize()
-        .is_ok_and(|root| purlis_core::plane::find_root(&root).is_ok_and(|found| found == root));
+    let already = is_a_project(at);
     let root = scaffold_at(at, plane_is_this_repo, adopt, forge)?;
     if let (Some(template), false) = (template, already) {
         purlis_core::template::apply(&root, template, None).map_err(|why| {
@@ -958,6 +977,12 @@ fn make_from_template(
         })?;
     }
     Ok(root)
+}
+
+/// Whether `at` is a project's root already, which making one there only opens.
+fn is_a_project(at: &std::path::Path) -> bool {
+    at.canonicalize()
+        .is_ok_and(|root| purlis_core::plane::find_root(&root).is_ok_and(|found| found == root))
 }
 
 /// Scaffolds the plane and answers with the directory to open, or with why nothing was made.
@@ -1300,6 +1325,27 @@ mod tests {
         make_from_template(&at, false, None, GITHUB, Some(template.id.as_str())).expect("opens it");
 
         assert!(!root.join(a_persona_file(template)).exists());
+    }
+
+    /// Q241 (T1-24's review, 1): **New project's Create at a folder that is a project already
+    /// only opens it, and writes no level**: its own stays as the person set it.
+    #[test]
+    fn creating_a_project_where_one_is_already_keeps_its_level() {
+        use crate::firstrun::ProtectionWord;
+        use purlis_core::sandbox::personal;
+        let dir = tempfile::tempdir().expect("a directory");
+        let at = dir.path().join("made");
+        let (root, said) = made_at_level(&at, false, None, GITHUB, None, Some(ProtectionWord::On))
+            .expect("a project");
+        assert_eq!(said, None);
+        assert_eq!(personal::of(&root).level, Some(personal::Choice::On));
+
+        let (again, said) =
+            made_at_level(&at, false, None, GITHUB, None, Some(ProtectionWord::Floor))
+                .expect("opens it");
+
+        assert_eq!((again, said), (root.clone(), None));
+        assert_eq!(personal::of(&root).level, Some(personal::Choice::On));
     }
 
     #[test]
