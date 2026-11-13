@@ -776,9 +776,9 @@ export async function answerTaken(
           );
         break;
       case "sandbox-expects": {
-        // What the project expects of this machine (#6000): its Notice's own two commands, sent
-        // the items as the row drew them. Either way its Notice reads again: one answer settles
-        // both.
+        // What the project expects of this machine (#6000), answered here alone while it can be
+        // (R-205): the window's two commands, sent the items as the row drew them. Either way
+        // Settings › Sandbox reads again.
         const answered =
           option === "allow"
             ? commands.allowProjectExpects(plane, asDrawn(path.items))
