@@ -14,7 +14,7 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
-import type { ChatBlocks, ChatLog, OpenChat } from "./bindings";
+import type { ChatBlocks, ChatLog, ChatLogRow, OpenChat } from "./bindings";
 import { aTabForEachChat } from "./laidOut.testkit";
 import { chatList, pressMenuPath } from "./menus.testkit";
 import { findTree } from "./ui/tree/tree.testkit";
@@ -81,9 +81,9 @@ const logged = (session: number) => `01K6CHAT00000000000000000${session}`;
 /**
  * The stand-in core. `blocks` are each chat's blocks, oldest first, and may be added to; the
  * count it answers is the verified ones after the look the window asks from, as the core's
- * `chatlog::Blocks::since` is.
+ * `chatlog::Blocks::since` is. `logs` are the rows each chat's Chat log reads, none by default.
  */
-function core(blocks: Record<number, Held[]>) {
+function core(blocks: Record<number, Held[]>, logs: Record<number, ChatLogRow[]> = {}) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   const seen = new Set<string>();
   mockIPC(
@@ -121,7 +121,7 @@ function core(blocks: Record<number, Held[]>) {
         return [...seen];
       }
       if (cmd === "chat_log") {
-        const read: ChatLog = { known: true, rows: [] };
+        const read: ChatLog = { known: true, rows: logs[given.session as number] ?? [] };
         return read;
       }
       if (cmd === "chat_blocks")
@@ -289,5 +289,41 @@ describe("the blocked marker", () => {
     expect(filter).toHaveAttribute("aria-pressed", "true");
     // The count of unverified reports is in the Chat log, never on the sidebar.
     expect(await screen.findByText("2 blocked, 1 unverified")).toBeInTheDocument();
+  });
+
+  it("the Chat log filtered to blocks lists the chat's block rows and nothing else", async () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    const block: ChatLogRow = {
+      kind: "blocked",
+      at: "2026-11-13T09:10:00Z",
+      tool: "Bash",
+      source: "sandbox",
+      qualifier: null,
+      target_kind: null,
+      target: null,
+      harness: "claude",
+      reason: null,
+    };
+    const ended: ChatLogRow = {
+      kind: "ended",
+      at: "2026-11-13T10:00:00Z",
+      state: "completed",
+      cause: "exited",
+      code: 0,
+    };
+    core({ 7: [{ id: "01A" }] }, { 7: [block, ended] });
+    render(<App />);
+    await screen.findAllByTestId("pane");
+    const row = await rowOf("talk");
+
+    await userEvent.click(
+      await within(row).findByRole("button", { name: "1 new blocked" }, { timeout: 3000 }),
+    );
+
+    const log = await screen.findByRole("list", { name: "Chat log of talk" });
+    const rows = within(log).getAllByRole("listitem");
+    expect(rows.map((one) => one.dataset.kind)).toEqual(["blocked"]);
+    expect(rows[0]).toHaveTextContent("Blocked by the sandbox");
+    expect(screen.queryByText("No block rows to show")).toBeNull();
   });
 });
