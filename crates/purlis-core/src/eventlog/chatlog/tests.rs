@@ -368,3 +368,161 @@ fn a_block_whose_body_does_not_read_back_is_counted_as_unreadable() {
     assert_eq!(counted.per_chat.get(ONE), Some(&unreadable));
     assert_eq!(counted.all, unreadable);
 }
+
+/// R-233 (core): **a chat's end and its result reach its timeline as one event of the log**.
+/// Each fixture chat starts, and its program ends through the host's own end path: chat one's
+/// exits 0 and is done, chat two's exits 3 and has failed. Its timeline ends with one
+/// `run.ended` of the chat's own run, saying the result.
+#[test]
+fn a_chats_end_and_result_are_in_its_timeline_query() {
+    use crate::hookchannel::{how_its_run_ended, its_run_ends};
+    use crate::session::Exit;
+
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path();
+    let plane = Path::new(PLANE);
+    let mut written = Log::open(log, DEVICE).unwrap();
+    for (chat, run) in [(ONE, RUN_ONE), (TWO, RUN_TWO)] {
+        run_started(&mut written, chat, run, None);
+    }
+    drop(written);
+    let host = std::sync::Mutex::new(recorder(log));
+    for (number, exit) in [(4, Exit::Code(0)), (5, Exit::Code(3))] {
+        let (state, cause) = how_its_run_ended(None, &exit);
+        its_run_ends(&host, plane, number, state, cause);
+    }
+    drop(host);
+
+    for (chat, run, state, code) in [(ONE, RUN_ONE, "completed", 0), (TWO, RUN_TWO, "failed", 3)] {
+        let timeline = timeline_in(log, chat).unwrap();
+        let ends: Vec<&Event> = timeline
+            .iter()
+            .filter(|event| event.kind == "run.ended" && event.parent_run.is_none())
+            .collect();
+        assert_eq!(ends.len(), 1, "one end of the chat's own run: {timeline:?}");
+        let end = timeline.last().unwrap();
+        assert_eq!(
+            end.kind, "run.ended",
+            "the end is the timeline's last event"
+        );
+        assert_eq!(end.run.as_deref(), Some(run));
+        assert_eq!(end.parent_run, None);
+        assert_eq!(
+            end.body,
+            serde_json::json!({"state": state, "cause": "exited", "code": code}),
+        );
+    }
+}
+
+const CHILD: &str = "01K6RUN0000000000000000009";
+const CLEARED: &str = "01K6RUN000000000000000000A";
+
+/// R-227 (row) and R-233, and how a child run shows (T1-03's review): **the Chat log's start
+/// row is built from the start event, and its end row from the end event**. The start row
+/// carries the four fields the event recorded, read leniently: an event with no `protection`,
+/// or `"unknown"`, gives a row with none. A sub-agent's run starting and ending, and a
+/// `/clear`'s run, which copy what the chat started under, are no start or end row: the
+/// Chat log is the chat's story, and its sub-agents' stops are still its rows (T1-28).
+#[test]
+fn the_start_and_end_rows_are_built_from_the_start_and_end_events() {
+    use crate::sandbox::protection::{Layer, Tier};
+
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path();
+    let mut written = Log::open(log, DEVICE).unwrap();
+    let protection = serde_json::json!({
+        "layers": [{"layer": "sandbox", "level": "floor", "tier": "project"}],
+        "charter_commit": "4f2a9c1",
+        "charter_dirty": true,
+        "answers_in_force": [],
+    });
+    let mut started = serde_json::json!({"cause": "start", "persona": "steward"});
+    started["protection"] = protection;
+    written
+        .append(Some(ONE), Some(RUN_ONE), None, "run.started", started)
+        .unwrap();
+    written
+        .append(
+            Some(ONE),
+            Some(CHILD),
+            Some(RUN_ONE),
+            "run.started",
+            serde_json::json!({"cause": "child"}),
+        )
+        .unwrap();
+    written
+        .append(
+            Some(ONE),
+            Some(CHILD),
+            Some(RUN_ONE),
+            "run.ended",
+            serde_json::json!({"state": "completed", "cause": "child-ended"}),
+        )
+        .unwrap();
+    written
+        .append(
+            Some(ONE),
+            Some(CLEARED),
+            None,
+            "run.started",
+            serde_json::json!({"cause": "clear"}),
+        )
+        .unwrap();
+    written
+        .append(
+            Some(ONE),
+            Some(CLEARED),
+            None,
+            "run.ended",
+            serde_json::json!({"state": "failed", "cause": "exited", "code": 3}),
+        )
+        .unwrap();
+    run_started(&mut written, TWO, RUN_TWO, Some("unknown"));
+    drop(written);
+    let events = crate::eventlog::read(log).unwrap();
+
+    let drawn = rows(&events, ONE);
+    assert_eq!(
+        drawn.len(),
+        2,
+        "a start and an end, and no child's: {drawn:?}"
+    );
+    let Row::Started {
+        cause, protection, ..
+    } = &drawn[0]
+    else {
+        panic!("the first row is the start: {drawn:?}");
+    };
+    assert_eq!(cause, "start");
+    assert_eq!(
+        protection.as_ref(),
+        Some(&InForce {
+            layers: vec![Layer {
+                layer: "sandbox".to_owned(),
+                level: "floor".to_owned(),
+                tier: Tier::Project,
+            }],
+            charter_commit: "4f2a9c1".to_owned(),
+            charter_dirty: true,
+            answers_in_force: Vec::new(),
+        })
+    );
+    let Row::Ended {
+        state, cause, code, ..
+    } = &drawn[1]
+    else {
+        panic!("the last row is the end: {drawn:?}");
+    };
+    assert_eq!(
+        (state.as_str(), cause.as_str(), *code),
+        ("failed", "exited", Some(3))
+    );
+
+    assert!(matches!(
+        rows(&events, TWO).as_slice(),
+        [Row::Started {
+            protection: None,
+            ..
+        }]
+    ));
+}

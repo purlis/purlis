@@ -6699,11 +6699,13 @@ fn a_call_by(chat: u32, agent: &str) -> purlis_core::hookwire::ToolCall {
 }
 
 /// The `run.ended` events in the log in `dir`, as (run, parent run, state, cause).
+/// The `run.ended` of each sub-agent in the log at `dir`: run, parent, state and cause. A chat's own
+/// run's end, with no parent, is [`own_runs_ended`]'s.
 fn runs_ended(dir: &Path) -> Vec<(String, Option<String>, String, String)> {
     purlis_core::eventlog::read(dir)
         .expect("the log reads")
         .into_iter()
-        .filter(|event| event.kind == "run.ended")
+        .filter(|event| event.kind == "run.ended" && event.parent_run.is_some())
         .map(|event| {
             (
                 event.run.unwrap_or_default(),
@@ -6712,6 +6714,16 @@ fn runs_ended(dir: &Path) -> Vec<(String, Option<String>, String, String)> {
                 event.body["cause"].as_str().unwrap_or_default().to_owned(),
             )
         })
+        .collect()
+}
+
+/// The runs of chats (not sub-agents) whose `run.ended` is in the log at `dir`, with its body.
+fn own_runs_ended(dir: &Path) -> Vec<(String, serde_json::Value)> {
+    purlis_core::eventlog::read(dir)
+        .expect("the log reads")
+        .into_iter()
+        .filter(|event| event.kind == "run.ended" && event.parent_run.is_none())
+        .map(|event| (event.run.unwrap_or_default(), event.body))
         .collect()
 }
 
@@ -6786,7 +6798,7 @@ fn a_run_that_ends_ends_each_of_its_live_sub_agents_in_its_own_end_state_and_cau
     let plane = Path::new("/plane");
     let (run, children) = a_chat_with_sub_agents(&events, plane, 4, &["agent-1", "agent-2"]);
 
-    its_children_end(
+    its_run_ends(
         events.held().expect("held here"),
         plane,
         4,
@@ -6812,7 +6824,7 @@ fn a_run_that_ends_ends_each_of_its_live_sub_agents_in_its_own_end_state_and_cau
 
     // A stop by the host is `stopped`, for the stop's own cause.
     let (run, children) = a_chat_with_sub_agents(&events, plane, 5, &["agent-3"]);
-    its_children_end(
+    its_run_ends(
         events.held().expect("held here"),
         plane,
         5,
@@ -6830,7 +6842,7 @@ fn a_run_that_ends_ends_each_of_its_live_sub_agents_in_its_own_end_state_and_cau
     );
 
     // Ended once: a second end of the same run writes nothing more.
-    its_children_end(
+    its_run_ends(
         events.held().expect("held here"),
         plane,
         5,
@@ -6838,6 +6850,8 @@ fn a_run_that_ends_ends_each_of_its_live_sub_agents_in_its_own_end_state_and_cau
         Cause::Exited(Exit::Code(0)),
     );
     assert_eq!(runs_ended(dir.path()).len(), 3);
+    // Each chat's own run ended once too, after its sub-agents (R-233).
+    assert_eq!(own_runs_ended(dir.path()).len(), 2);
 }
 
 #[test]
@@ -6846,9 +6860,9 @@ fn a_run_with_no_sub_agent_live_writes_no_end_for_one() {
     let dir = tempfile::tempdir().expect("a directory");
     let events = an_event_log(dir.path());
     let plane = Path::new("/plane");
-    a_chat_with_sub_agents(&events, plane, 4, &[]);
+    let (run, _) = a_chat_with_sub_agents(&events, plane, 4, &[]);
 
-    its_children_end(
+    its_run_ends(
         events.held().expect("held here"),
         plane,
         4,
@@ -6856,7 +6870,7 @@ fn a_run_with_no_sub_agent_live_writes_no_end_for_one() {
         Cause::Exited(Exit::Code(0)),
     );
     // And a chat the log never heard of is no error.
-    its_children_end(
+    its_run_ends(
         events.held().expect("held here"),
         plane,
         9,
@@ -6865,6 +6879,14 @@ fn a_run_with_no_sub_agent_live_writes_no_end_for_one() {
     );
 
     assert!(runs_ended(dir.path()).is_empty());
+    // The chat's own run still ends; the one the log never heard of writes nothing.
+    assert_eq!(
+        own_runs_ended(dir.path()),
+        [(
+            run,
+            serde_json::json!({"state": "completed", "cause": "exited", "code": 0})
+        )]
+    );
 }
 
 #[test]

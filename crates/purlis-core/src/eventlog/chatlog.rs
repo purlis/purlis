@@ -24,6 +24,7 @@ use std::path::Path;
 
 use super::Event;
 use super::stops::{self, Block, Qualifier};
+use crate::sandbox::protection::InForce;
 
 /// **Whether an event of `kind` is part of a chat's story**: its runs starting and ending, its
 /// stops ([`stops`]: blocks, holds, loop pauses and answers to asks), and the grants and
@@ -46,6 +47,84 @@ pub fn timeline(events: &[Event], chat: &str) -> Vec<Event> {
 /// [`timeline`] of the log in `dir`, read through [`super::read`].
 pub fn timeline_in(dir: &Path, chat: &str) -> io::Result<Vec<Event>> {
     Ok(timeline(&super::read(dir)?, chat))
+}
+
+/// **A row the Chat log draws** of a chat's timeline (R-227, R-233). Phase 1 draws a start and
+/// an end; the other rows are T1-28's, and a kind of story event with no row here is drawn by
+/// none yet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Row {
+    /// A start of the chat's own run that resolved the protection it runs under.
+    Started {
+        /// When it was written, in milliseconds since 1970, where its id says.
+        at_ms: Option<u64>,
+        /// Why the run began, as `run.started` says it (`start`, `reopen`, `fresh`, ...).
+        cause: String,
+        /// The protection it recorded; `None` where the event has none, says `unknown`, or
+        /// has one of a shape this version cannot read (T1-06's three shapes).
+        protection: Option<InForce>,
+    },
+    /// The end of the chat's own run, and its result.
+    Ended {
+        at_ms: Option<u64>,
+        /// `completed`, `failed` or `stopped`.
+        state: String,
+        /// Why: `exited`, `host-crash`, or the stop's word.
+        cause: String,
+        /// The exit code, where the program left one.
+        code: Option<i64>,
+    },
+}
+
+/// **The rows of chat `chat`'s Chat log** among `events`, oldest first: read from its
+/// [`timeline`], so the log holds nothing a row does not.
+///
+/// **Only the chat's own runs start and end rows** (T1-27's ruling on T1-03's review). A run
+/// with a `parent_run` is a sub-agent's: its start and end are the trace of the chat's work,
+/// not its story, and its stops are still the chat's rows. A `/clear`'s run (and a sub-agent's)
+/// carries a copy of what the run before it started under, so it is no start of its own; a
+/// relaunch (`reopen`, `fresh`) resolved its protection anew, and is.
+pub fn rows(events: &[Event], chat: &str) -> Vec<Row> {
+    timeline(events, chat)
+        .into_iter()
+        .filter(|event| event.parent_run.is_none())
+        .filter_map(|event| {
+            let word = |field: &str| {
+                event
+                    .body
+                    .get(field)
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or(super::UNKNOWN)
+                    .to_owned()
+            };
+            let at_ms = super::written_at_ms(&event.ulid);
+            match event.kind.as_str() {
+                "run.started" => {
+                    let cause = word("cause");
+                    (!matches!(cause.as_str(), "clear" | "child")).then(|| Row::Started {
+                        at_ms,
+                        cause,
+                        protection: event
+                            .body
+                            .get("protection")
+                            .and_then(|said| serde_json::from_value(said.clone()).ok()),
+                    })
+                }
+                "run.ended" => Some(Row::Ended {
+                    at_ms,
+                    state: word("state"),
+                    cause: word("cause"),
+                    code: event.body.get("code").and_then(serde_json::Value::as_i64),
+                }),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+/// [`rows`] of the log in `dir`, read through [`super::read`].
+pub fn rows_in(dir: &Path, chat: &str) -> io::Result<Vec<Row>> {
+    Ok(rows(&super::read(dir)?, chat))
 }
 
 /// **How many of each kind of stop.** A block whose report is qualified, `unverified` or

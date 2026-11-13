@@ -6725,6 +6725,18 @@ impl Chats {
         lock(&self.open).get(&session).map(|one| one.chat.clone())
     }
 
+    /// **The id of chat `session`** (ADR 0066), open here or ended here on purpose and still
+    /// kept ([`Self::close`]): what the event log knows it by. `None` for a number that is
+    /// neither, or a chat not given an id.
+    pub fn logged_id_of(&self, session: u32) -> Option<String> {
+        if let Some(one) = lock(&self.open).get(&session) {
+            return one.chat.identity.id.clone();
+        }
+        lock(&self.let_go)
+            .get(&session)
+            .and_then(|was| was.identity.id.clone())
+    }
+
     /// **What a dispatch is decided over**: every chat this app has open and every one it is
     /// about to start, by its number for each, handed to `decide` with whether a number is a
     /// chat still starting (which counts as working: it is about to be).

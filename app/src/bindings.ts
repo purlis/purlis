@@ -3472,6 +3472,11 @@ export const commands = {
 	 */
 	questionTrail: (plane: PlaneId, key: string, at: string) => typedError<QuestionStep[], string>(__TAURI_INVOKE("question_trail", { plane, key, at })),
 	/**
+	 *  **Chat `session`'s Chat log** (R-224): its rows, from this machine's event log, oldest
+	 *  first. Read when its tab opens, off the window's thread, as it reads the log.
+	 */
+	chatLog: (plane: PlaneId, session: number) => typedError<ChatLog, string>(__TAURI_INVOKE("chat_log", { plane, session })),
+	/**
 	 *  **The question a task is paused on, for the window to show before the person answers it**
 	 *  (#1496): chat `session`'s question to its asking chat. `null` where there is none to
 	 *  answer: the chat is no task, has reported or ended, or asks nothing now.
@@ -7721,6 +7726,25 @@ export type ChatHeld = {
 	plane: PlaneId,
 	session: number,
 };
+
+/**  A chat's Chat log: whether purlis knows the chat, and its rows. */
+export type ChatLog = {
+	/**  purlis knows the chat by its number: open, or ended here and still kept. */
+	known: boolean,
+	rows: ChatLogRow[],
+};
+
+/**  One row of a chat's Chat log. */
+export type ChatLogRow = 
+/**
+ *  The chat's run started (`cause`: `start`, `reopen`, `fresh`, ...), with the protection
+ *  it recorded, or none where its event has none this version can read.
+ */
+{ kind: "started"; 
+/**  When (UTC, RFC 3339), where the event's id says. */
+at: string | null; cause: string; protection: StartProtection | null } | 
+/**  The chat's run ended: `completed`, `failed` or `stopped`, why, and its exit code. */
+{ kind: "ended"; at: string | null; state: string; cause: string; code: number | null };
 
 /**  What a number names, as the window is sent it. */
 export type ChatLookup = 
@@ -14507,6 +14531,19 @@ export type ProposedWhole = {
 	why: string | null,
 };
 
+/**  One layer's protection at a start, as the start row says it. */
+export type ProtectionLayer = {
+	/**  The layer: `sandbox`, the one a tier sets in phase 1. */
+	layer: string,
+	/**  Its level's word: `on`, `floor` or `off`. */
+	level: string,
+	/**
+	 *  Who set it: `policy`, `project`, `person`, `unconfirmed`, `chat`, `purlis` or
+	 *  `unknown`.
+	 */
+	tier: string,
+};
+
 /**  What a yes hands back. */
 export type PublishAccepted = {
 	base: string,
@@ -18624,6 +18661,17 @@ export type StartOptions = {
 	 *  window's type so a picker drawn from an older answer says the number in words.
 	 */
 	next_number?: number | null,
+};
+
+/**  The protection a start recorded (R-227): the four fields of its `run.started`. */
+export type StartProtection = {
+	layers: ProtectionLayer[],
+	/**  The last commit of `charter.toml`: a commit, `none` or `unknown`. */
+	charter_commit: string,
+	/**  The working `charter.toml` differed from that commit. */
+	charter_dirty: boolean,
+	/**  How many answers were in force: none until phase 2. */
+	answers_in_force: number,
 };
 
 /**

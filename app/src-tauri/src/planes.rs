@@ -5154,7 +5154,7 @@ impl Planes {
                                 Some(purlis_core::state::run::StopBy::Closed),
                                 &exit,
                             );
-                            its_children_end(events, &events_root, session, state, cause);
+                            its_run_ends(events, &events_root, session, state, cause);
                         }
                         return;
                     }
@@ -5198,7 +5198,7 @@ impl Planes {
                                 .is_some_and(|held| held.chats.recorded_chat(session).is_none()),
                         );
                         let (state, cause) = how_its_run_ended(by, &exit);
-                        its_children_end(log, &events_root, session, state, cause);
+                        its_run_ends(log, &events_root, session, state, cause);
                     }
                     // A persona chat that still owed its asking chat a report has ended
                     // without one: that chat is told it failed, now (#1443). Before the
@@ -6390,7 +6390,7 @@ fn the_host_s_stop(
 
 /// What a chat's end leaves in the event log, read and written as both binaries' session hosts
 /// do (#2494).
-pub(crate) use purlis_core::hookchannel::{how_its_run_ended, its_children_end};
+pub(crate) use purlis_core::hookchannel::{how_its_run_ended, its_run_ends};
 
 #[path = "planes/tab_windows.rs"]
 mod tab_windows;
