@@ -152,10 +152,16 @@ fn the_chat_log_hands_the_window_its_rows_and_what_heads_it() {
                 answer,
                 by,
             },
-            ChatLogRow::Held { tool, arm, .. } => ChatLogRow::Held {
+            ChatLogRow::Held {
+                tool,
+                arm,
+                sub_agent,
+                ..
+            } => ChatLogRow::Held {
                 at: None,
                 tool,
                 arm,
+                sub_agent,
             },
             ChatLogRow::LoopPaused { rule, times, .. } => ChatLogRow::LoopPaused {
                 at: None,
@@ -189,6 +195,7 @@ fn the_chat_log_hands_the_window_its_rows_and_what_heads_it() {
                 at: None,
                 tool: word("Bash"),
                 arm: Some(word("merge-hold")),
+                sub_agent: false,
             },
             ChatLogRow::LoopPaused {
                 at: None,
@@ -200,7 +207,7 @@ fn the_chat_log_hands_the_window_its_rows_and_what_heads_it() {
     assert_eq!(
         read.summary,
         ChatLogSummary {
-            allowed: 2,
+            allowed: 1,
             by_your_rules: 1,
             unverified: true,
             ran_as_you: true,

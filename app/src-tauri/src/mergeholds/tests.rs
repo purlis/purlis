@@ -169,6 +169,48 @@ fn a_held_merge_is_asked_once_and_a_try_again_at_a_moved_head_is_a_new_ask() {
     assert_eq!(project.holds_recorded(), 2);
 }
 
+/// R-229, Q261: **a held merge's ask is written raised beside its hold, and the person's press
+/// as its answer**: Merge allowed, Don't merge refused, each by the window that pressed it.
+#[test]
+fn a_held_merges_ask_is_written_raised_and_the_press_as_its_answer() {
+    use purlis_core::eventlog::stops::{
+        Answer as Said, AnsweredBy, AskAnswered, AskGroup, AskRaised,
+    };
+    let project = Fake::new();
+    assert!(matches!(
+        answer(&project, &project.ask(12)),
+        Answer::MergeHeld { .. }
+    ));
+    super::answered(&project, 4, true);
+    super::answered(&project, 4, false);
+
+    let asks: Vec<Stop> = project
+        .recorded
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(chat, stop)| *chat == 4 && !matches!(stop, Stop::Hold(_)))
+        .map(|(_, stop)| stop.clone())
+        .collect();
+    let by = |answer| {
+        Stop::AskAnswered(AskAnswered {
+            ask: AskGroup::Hold,
+            answer,
+            by: AnsweredBy::Window,
+        })
+    };
+    assert_eq!(
+        asks,
+        [
+            Stop::AskRaised(AskRaised {
+                ask: AskGroup::Hold
+            }),
+            by(Said::Allowed),
+            by(Said::Refused),
+        ]
+    );
+}
+
 /// Q239 (S3): every way the app raises no ask answers the hook No, in words that say why, and
 /// holds and records nothing: the hook's refusal is then a block, which the event log writes.
 #[test]

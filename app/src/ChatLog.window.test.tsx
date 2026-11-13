@@ -340,7 +340,7 @@ describe("the rows of a chat's Chat log (T1-28)", () => {
       const log = await opened("steward 3");
 
       const said = lines.map((line) => screen.getByText(line));
-      const allowed = screen.getByText("4 allowed");
+      const allowed = screen.getByText("4 allowed · 0 by your rules");
       for (const line of said) {
         expect(
           line.compareDocumentPosition(allowed) & Node.DOCUMENT_POSITION_FOLLOWING,
@@ -350,6 +350,34 @@ describe("the rows of a chat's Chat log (T1-28)", () => {
       if (!summary.ran_as_you) expect(screen.queryByText(/^Ran as you/)).toBeNull();
     },
   );
+
+  it("the allowed line says both counts, by your rules even at 0", async () => {
+    // R-234, Q261: the second count is said whatever it is, so 0 reads as 0, never as unsaid.
+    core(() => [started(3)], { ...QUIET, allowed: 12, by_your_rules: 0 });
+    render(<App />);
+    await opened("steward 3");
+
+    expect(screen.getByText("12 allowed · 0 by your rules")).toBeInTheDocument();
+  });
+
+  it("a sub-agent's hold says it is its helper's", async () => {
+    // R-231, Q261: a stop under a sub-agent's run is still the chat's row, marked as its helper's.
+    const held = (sub_agent: boolean): ChatLogRow => ({
+      kind: "held",
+      at: at(20),
+      tool: "Bash",
+      arm: null,
+      sub_agent,
+    });
+    core(() => [started(3), held(false), held(true)]);
+    render(<App />);
+    const log = await opened("steward 3");
+
+    expect(linesOf(log, "held")).toEqual([
+      "Held a Bash call · purlis asked you first",
+      "Held a Bash call · purlis asked you first · from one of its helpers",
+    ]);
+  });
 
   it("a chat that reads neither has no honesty line", async () => {
     core(() => [started(3)]);

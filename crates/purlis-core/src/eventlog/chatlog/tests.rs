@@ -698,11 +698,11 @@ fn tool_event(
     .unwrap();
 }
 
-/// R-234 (core): **the Chat log's summary counts the chat's allowed calls, and of them those
-/// allowed by the person's rules**, from its tool events' decision and rule: 212 calls purlis's
-/// hook let through, 9 of them allowed by an entry of the Allowed list, give 212 and 9. A call
-/// refused or asked about is not allowed; a call's post hook is the same call, never a second;
-/// another chat's calls are its own.
+/// R-234 (core), Q261: **the Chat log's summary counts the chat's allowed calls, and of them
+/// those allowed by the person's rules**, from its tool events' decision and rule: of 212 calls,
+/// 100 purlis's hook allowed, 9 of them by an entry of the Allowed list, give 100 and 9. A call
+/// its hook had no say on (`none`) is not counted as allowed, nor one refused or asked about; a
+/// call's post hook is the same call, never a second; another chat's calls are its own.
 #[test]
 fn the_timeline_query_counts_allowed_calls_and_those_by_your_rules() {
     assert_eq!(
@@ -749,7 +749,11 @@ fn the_timeline_query_counts_allowed_calls_and_those_by_your_rules() {
     let events = crate::eventlog::read(dir.path()).unwrap();
 
     let read = summary(&events, ONE);
-    assert_eq!((read.allowed, read.by_your_rules), (212, 9));
+    assert_eq!(
+        (read.allowed, read.by_your_rules),
+        (100, 9),
+        "`allow` alone is allowed: `none` is a call the hook had no say on"
+    );
     let two = summary(&events, TWO);
     assert_eq!((two.allowed, two.by_your_rules), (1, 1));
 }
@@ -871,7 +875,13 @@ fn a_protection_change_a_hold_and_a_loop_pause_are_rows() {
                 actor_kind,
                 actor,
             },
-            Row::Held { hold, .. } => Row::Held { at_ms: None, hold },
+            Row::Held {
+                hold, sub_agent, ..
+            } => Row::Held {
+                at_ms: None,
+                hold,
+                sub_agent,
+            },
             Row::LoopPaused { pause, .. } => Row::LoopPaused { at_ms: None, pause },
             other => other,
         })
@@ -895,8 +905,92 @@ fn a_protection_change_a_hold_and_a_loop_pause_are_rows() {
             Row::Held {
                 at_ms: None,
                 hold: Hold { args: None, ..hold },
+                sub_agent: false,
             },
             Row::LoopPaused { at_ms: None, pause },
         ]
     );
+}
+
+/// R-235 (core), Q261: **the honesty lines are taken over the whole chat**, never its latest
+/// start alone: a chat that ran once unverified, or once with No sandbox, says so for good, a
+/// later start under better protection notwithstanding; and a chat whose sandbox was lifted for
+/// a run (`trust.sandbox.off`) ran as the person, whatever its start said.
+#[test]
+fn the_honesty_lines_are_taken_over_every_start_and_any_sandbox_lifted() {
+    const THREE: &str = "01K6CHAT000000000000000006";
+    let dir = tempfile::tempdir().unwrap();
+    let mut log = Log::open(dir.path(), DEVICE).unwrap();
+    // A Codex start, whose hooks run within its reach, then a Claude Code one at the floor.
+    started_as(&mut log, ONE, "codex", "seatbelt", "floor");
+    started_as(&mut log, ONE, "claude", "seatbelt", "floor");
+    // A start at No sandbox, then one at the floor.
+    started_as(&mut log, TWO, "claude", "seatbelt", "off");
+    started_as(&mut log, TWO, "claude", "seatbelt", "floor");
+    // A start at the floor, then its sandbox lifted for a run.
+    started_as(&mut log, THREE, "claude", "seatbelt", "floor");
+    log.append(
+        Some(THREE),
+        Some(RUN_ONE),
+        None,
+        "trust.sandbox.off",
+        serde_json::json!({"actor_kind": "human", "actor": "operator", "scope": "local-ui"}),
+    )
+    .unwrap();
+    drop(log);
+    let events = crate::eventlog::read(dir.path()).unwrap();
+
+    let flags = |chat| {
+        let read = summary(&events, chat);
+        (read.unverified, read.ran_as_you)
+    };
+    assert_eq!(flags(ONE), (true, false), "unverified once is unverified");
+    assert_eq!(flags(TWO), (false, true), "No sandbox once ran as you");
+    assert_eq!(
+        flags(THREE),
+        (false, true),
+        "a sandbox lifted for a run ran as you"
+    );
+}
+
+/// R-235 (core), Q261, Q235: **a chat with no start in the log reads unverified**: verified is
+/// an allowlist, and nothing says how a chat with no start ran.
+#[test]
+fn a_chat_with_no_start_in_the_log_reads_unverified() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut log = Log::open(dir.path(), DEVICE).unwrap();
+    tool_event(&mut log, ONE, "pretooluse", "allow", "toolu_1", None);
+    drop(log);
+    let events = crate::eventlog::read(dir.path()).unwrap();
+
+    let read = summary(&events, ONE);
+    assert!(read.unverified, "no start: nothing vouches for its reports");
+    assert!(!read.ran_as_you, "nothing says it ran with No sandbox");
+}
+
+/// R-231 (core), Q261: **a sub-agent's stop row is marked as the sub-agent's**: a hold written
+/// under a run with a parent is still a row of the chat's, and says it is its sub-agent's; one
+/// under the chat's own run says nothing of the kind.
+#[test]
+fn a_sub_agents_stop_row_is_marked_as_the_sub_agents() {
+    const CHILD: &str = "01K6RUN0000000000000000009";
+    let dir = tempfile::tempdir().unwrap();
+    let mut log = Log::open(dir.path(), DEVICE).unwrap();
+    run_started(&mut log, ONE, RUN_ONE, None);
+    let hold = serde_json::json!({"tool": "Bash", "target": {"guard_arm": "merge-hold"}});
+    log.append(Some(ONE), Some(RUN_ONE), None, stops::HOLD, hold.clone())
+        .unwrap();
+    log.append(Some(ONE), Some(CHILD), Some(RUN_ONE), stops::HOLD, hold)
+        .unwrap();
+    drop(log);
+    let events = crate::eventlog::read(dir.path()).unwrap();
+
+    let marks: Vec<bool> = rows(&events, ONE)
+        .into_iter()
+        .filter_map(|row| match row {
+            Row::Held { sub_agent, .. } => Some(sub_agent),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(marks, [false, true], "the chat's own hold, then its sub-agent's");
 }
