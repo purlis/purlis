@@ -14,6 +14,7 @@ import { resultOf } from "./actionResult";
 import { Notice, NoticeList, type NoticeAction } from "./Notice";
 import type { SettingsLink } from "./settings/links";
 import { ProgressBar } from "./ui/meter/Meter";
+import { goToPlaced, goToPlacedSays, placedControlsNamedIn } from "./placedControls";
 import { controlsNamedIn, goToControl, goToSays } from "./windowControls";
 
 /**
@@ -85,6 +86,14 @@ export function ActionResultNotice({
   if (project !== undefined)
     for (const control of controlsNamedIn(names))
       fixes.push({ label: goToSays(control), onPress: () => goToControl(control, project, names) });
+  // **A control in a view or in Settings its words name** (R-357): Go to it, which opens where it
+  // stands with the keyboard on it. Settings needs no project; a view is the project's.
+  for (const control of placedControlsNamedIn(names))
+    if (project !== undefined || "settings" in control.at)
+      fixes.push({
+        label: goToPlacedSays(control),
+        onPress: () => goToPlaced(control, project, names, onSettings),
+      });
   if (details !== undefined)
     fixes.push({
       label: "Details",

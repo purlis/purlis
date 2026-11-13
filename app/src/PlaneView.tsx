@@ -5556,7 +5556,7 @@ export const PlaneView = memo(function PlaneView({
     (link: SettingsLink) => {
       const to = landing(link, plane);
       if (to === undefined) return;
-      linkToGroup(to.place, link.group, link.setting);
+      linkToGroup(to.place, link.group, link.setting, link.control);
       showView(to.view, to.title, to.workspace);
     },
     [plane, showView],

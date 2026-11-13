@@ -1938,13 +1938,15 @@ export function SkillStudioTab({
         />
       );
   } else if (page === "needs") {
-    const shown = needShown(needs, need);
+    // The item a way in named (R-357's Accept the folders), until the person chooses another.
+    const chosen = need ?? at.item;
+    const shown = needShown(needs, chosen);
     list = pageList(
       NEEDS_YOU_LEAD,
       held(() => (
         <NeedsYouList
           needs={needs}
-          chosen={needs.some((one) => one.id === need) ? need : undefined}
+          chosen={needs.some((one) => one.id === chosen) ? chosen : undefined}
           onChoose={(id) => setNeed(id)}
         />
       )),

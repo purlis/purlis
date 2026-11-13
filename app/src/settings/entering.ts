@@ -3,7 +3,13 @@
 
 import { useEffect, type RefObject } from "react";
 import { settingsLevelOf, type ViewRef } from "../tabs";
-import { focusedSetting, linkedSetting, settingsPlace } from "./links";
+import {
+  focusedSetting,
+  linkedControl,
+  linkedSetting,
+  settingsPlace,
+  type LinkedControl,
+} from "./links";
 import { reveal } from "../ui/reveal";
 
 /**
@@ -160,9 +166,20 @@ export function landOnTheSetting(place: string, holder: HTMLElement | null): boo
   );
   if (row === undefined) return undefined;
   // The control, never the label's info mark or badge, which come before it (DS-8).
-  const control = (row.querySelector(".ui-setting-control") ?? row).querySelector<HTMLElement>(
-    "input, select, textarea, button, [tabindex]",
-  );
+  const box = row.querySelector(".ui-setting-control") ?? row;
+  const asked = linkedControl(place);
+  const own = asked === undefined ? undefined : controlSaying(box, asked);
+  const control =
+    own ?? box.querySelector<HTMLElement>("input, select, textarea, button, [tabindex]");
+  // **A control the link names, not drawn yet** (R-357): the keyboard waits on the row's first,
+  // and the next try looks for it again, until the person moves or the way in lapses.
+  if (asked !== undefined && own === undefined) {
+    if (control !== null && !control.contains(document.activeElement)) {
+      reveal(row);
+      control.focus({ preventScroll: true });
+    }
+    return false;
+  }
   // A row with nothing to focus is as near as the link can land.
   if (control === null) {
     focusedSetting(place);
@@ -177,6 +194,25 @@ export function landOnTheSetting(place: string, holder: HTMLElement | null): boo
   const landed = control.contains(document.activeElement);
   if (landed) focusedSetting(place);
   return landed;
+}
+
+/** The button in `box` whose name starts with `asked.words`: the one whose name holds
+ *  `asked.about`, or that stands in a part named so, first. */
+function controlSaying(box: Element, asked: LinkedControl): HTMLElement | undefined {
+  const nameOf = (one: Element) => one.getAttribute("aria-label") ?? one.textContent?.trim() ?? "";
+  const saying = [...box.querySelectorAll<HTMLElement>('button, [role="button"]')].filter(
+    (one) => nameOf(one).startsWith(asked.words) && one.getAttribute("aria-disabled") !== "true",
+  );
+  const { about } = asked;
+  if (about === undefined) return saying[0];
+  // Its own name, or the label of a part it stands in (a pool's sign-in group).
+  const holds = (one: HTMLElement) => {
+    if (nameOf(one).includes(about)) return true;
+    for (let at = one.parentElement; at !== null && at !== box; at = at.parentElement)
+      if (at.getAttribute("aria-label")?.includes(about) === true) return true;
+    return false;
+  };
+  return saying.find(holds) ?? saying[0];
 }
 
 /**
