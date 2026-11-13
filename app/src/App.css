@@ -7375,8 +7375,11 @@ nav.piece-files-head {
   width: 22%;
 }
 
+/* "Where it comes from" is the longest heading: in the label role's capitals, spaced 0.05em
+   (#6443), it needs more than a third of the width to fit whole on macOS's fonts. Action, whose
+   heading is the shortest, gives the room. */
 .dispatch-table thead th:nth-child(2) {
-  width: 32%;
+  width: 35%;
 }
 
 /* "Workspace" in the label role's capitals and tracking fits whole on macOS's fonts too. */
@@ -7385,7 +7388,7 @@ nav.piece-files-head {
 }
 
 .dispatch-table thead th:nth-child(4) {
-  width: 23%;
+  width: 20%;
 }
 
 /* A persona's row group is named in bold above a hairline. The cell is the shared table's
