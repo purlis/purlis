@@ -38,6 +38,7 @@ import {
   type ScreenLink,
 } from "./paneLinks";
 import { usePaneLinks } from "./PaneLinkSurfaces";
+import { usePaneLinkChats } from "./PaneLinkChats";
 import { isKey } from "./keys/registry";
 import { moveAlong } from "./tabSequence";
 import { TerminalMenu, type PaneMenu } from "./TerminalMenu";
@@ -161,7 +162,9 @@ export function SessionPane({
   const fromKeys = useRef(false);
   /** **Its links' surfaces** (`PaneLinkSurfaces.tsx`, #6215): a hovered link's tooltip, and the
    *  window's answer to one ⌘-clicked that did not simply open. An ask accepted opens the
-   *  target it showed, resolved again by the core. */
+   *  target it showed, resolved again by the core. A chat link (#6217) runs what it shows as
+   *  the pane's own rows run: the chat, or its card's *Read it* and *Reopen*. */
+  const { onChat, surfaces: chatSurfaces } = usePaneLinkChats(menu?.onPress);
   const {
     hands: linkHands,
     surfaces: linkSurfaces,
@@ -172,6 +175,7 @@ export function SessionPane({
     colour: () => linkColour(inForce()),
     // *Links in this pane…* (#6220) reads the screen of the terminal this pane draws now.
     onScreen: () => shownLive.current?.links.onScreen() ?? Promise.resolve([]),
+    onChat,
   });
   /** Says something in the pane, in the terminal's own hand, while it is up. */
   const saying = useRef<(trouble: string) => void>(() => {});
@@ -433,6 +437,7 @@ export function SessionPane({
       </div>
       {finding && <FindBar search={finding.search} asked={finding.asked} onClose={closeFind} />}
       {linkSurfaces}
+      {chatSurfaces}
     </>
   );
 }

@@ -971,6 +971,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_choose_remote_docker",
     "pool_setup_machine",
     "pool_setup_ssh_hosts",
+    "pool_setup_podman_connections",
     "pool_setup_connect",
     "pool_setup_trust",
     "pool_setup_name",

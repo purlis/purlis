@@ -111,6 +111,8 @@ impl PoolAdding {
             width: self.width,
             on: self.on.clone(),
             trust: self.trust.clone(),
+            // A Podman connection's key file is the one Connect kept with its route (#6269).
+            identity: None,
         }
     }
 }

@@ -518,7 +518,7 @@ import {
   type TaskEndHand,
   type TaskEndInline,
 } from "./TaskEnd";
-import { giveKeyboardTo } from "./paneKeyboard";
+import { giveKeyboardTo, giveKeyboardToTheFocusedPane } from "./paneKeyboard";
 import { endedState } from "./EndedBand";
 import { useHeldAmong } from "./dispatchesHeld";
 import { useRefusedAmong } from "./vaultRefusals";
@@ -1358,6 +1358,7 @@ export const PlaneView = memo(function PlaneView({
    *  its workspace's chip in the title bar too (#3650), with one dismissal. */
   const staleClones = useStaleClones({
     plane,
+    shown: inFront,
     dismissed,
     dismiss,
     settle: settleNotices,
@@ -4730,6 +4731,7 @@ export const PlaneView = memo(function PlaneView({
   /**
    * **The keyboard goes into the focused pane of `next`** (#4767): its chat's terminal, or, in a
    * pane with nothing or a view, its first control once it is drawn: New chat, or the view.
+   * Either is owed only until the person puts the keyboard somewhere else (#6232).
    */
   const keyboardInto = useCallback(
     (next: Tabs) => {
@@ -4738,13 +4740,7 @@ export const PlaneView = memo(function PlaneView({
         giveKeyboardTo(plane, session);
         return;
       }
-      setTimeout(() => {
-        const pane = document.querySelector<HTMLElement>(".pane.focused");
-        const into =
-          pane?.querySelector<HTMLElement>('[data-scope="view-frame"][data-part="root"]') ??
-          pane?.querySelector<HTMLElement>("button");
-        into?.focus();
-      });
+      giveKeyboardToTheFocusedPane();
     },
     [plane],
   );
@@ -8929,6 +8925,8 @@ export const PlaneView = memo(function PlaneView({
       removeWorkspace,
       // The verb is only ever a needs-you item's Go, or the palette's row for one.
       showChat: showNeeding,
+      // A pane's chat link (#6217): that chat, and nothing a needs-you item's Go does.
+      focusChat: showChat,
       reopenTask: async (id) => {
         const why = await reopenById(id);
         return why === undefined ? { ok: true } : { ok: false, refused: why };
@@ -9111,6 +9109,7 @@ export const PlaneView = memo(function PlaneView({
       resumeSession,
       runAction,
       sendKey,
+      showChat,
       showNeeding,
       reopenById,
       goBack,

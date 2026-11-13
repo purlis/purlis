@@ -58,44 +58,57 @@ const STARTED_BY_YOU: &str = "you";
 /// **What `number` names in `held`'s project**: the one entry point the palette and a pane's
 /// links call.
 pub(crate) fn lookup(held: &Held, number: u32) -> ChatLookup {
-    let open: Vec<chatlookup::OpenChat> = crate::dispatches::open_chats(held)
+    let open = open_chats(held);
+    match chatlookup::by_number_in(held.root(), number, &open) {
+        Found::Open { number } => ChatLookup::Open { number },
+        Found::Restarted { now } => ChatLookup::Restarted { now },
+        Found::NoChat => ChatLookup::NoChat,
+        Found::Ended(record) => match card_of(held, number, &record, &open) {
+            Some(card) => ChatLookup::Ended {
+                card: Box::new(card),
+            },
+            None => ChatLookup::NoChat,
+        },
+    }
+}
+
+/// The open chats of `held`'s project, as the core's lookup is handed them.
+pub(crate) fn open_chats(held: &Held) -> Vec<chatlookup::OpenChat> {
+    crate::dispatches::open_chats(held)
         .into_iter()
         .map(|one| chatlookup::OpenChat {
             number: one.session,
             id: one.id,
         })
-        .collect();
-    match chatlookup::by_number_in(held.root(), number, &open) {
-        Found::Open { number } => ChatLookup::Open { number },
-        Found::Restarted { now } => ChatLookup::Restarted { now },
-        Found::NoChat => ChatLookup::NoChat,
-        Found::Ended(record) => {
-            let asker = open
-                .iter()
-                .find(|one| chatlookup::is(&record.asker.chat, one))
-                .map_or(0, |one| one.number);
-            let (Some(chat), Some(task)) = (
-                record.worker.chat.id.clone(),
-                crate::finished::card_row(held, &record, asker),
-            ) else {
-                // A handoff, or a task's chat with no id: no card to draw.
-                return ChatLookup::NoChat;
-            };
-            ChatLookup::Ended {
-                card: Box::new(ChatCard {
-                    number,
-                    screen_kept: purlis_core::chatscreens::is_kept(held.root(), &chat),
-                    chat,
-                    task,
-                    started_by: if record.asker.by_person {
-                        STARTED_BY_YOU.to_owned()
-                    } else {
-                        record.asker.chat.name.clone()
-                    },
-                }),
-            }
-        }
-    }
+        .collect()
+}
+
+/// **The card of chat `number`, ended with `record`**, given the chats open now: what the
+/// palette's finished row and a pane's `chat 641` link (#6217) show. None for a handoff, or a
+/// task's chat with no id: no card to draw.
+pub(crate) fn card_of(
+    held: &Held,
+    number: u32,
+    record: &dispatchrecord::Record,
+    open: &[chatlookup::OpenChat],
+) -> Option<ChatCard> {
+    let asker = open
+        .iter()
+        .find(|one| chatlookup::is(&record.asker.chat, one))
+        .map_or(0, |one| one.number);
+    let chat = record.worker.chat.id.clone()?;
+    let task = crate::finished::card_row(held, record, asker)?;
+    Some(ChatCard {
+        number,
+        screen_kept: purlis_core::chatscreens::is_kept(held.root(), &chat),
+        chat,
+        task,
+        started_by: if record.asker.by_person {
+            STARTED_BY_YOU.to_owned()
+        } else {
+            record.asker.chat.name.clone()
+        },
+    })
 }
 
 /// **Keeps chat `session`'s last screen as it closes for good**, where it is a dispatched task

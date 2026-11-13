@@ -452,6 +452,7 @@ pub(crate) fn in_a_remote_docker_pool() -> Option<Target> {
     // Its forwards and settings beside this target's own config home, inside the test fence.
     let folder = tempfile::tempdir().expect("a folder for the machine's settings");
     let docker = docker.with_settings_in(folder.path().join("docker-settings"));
+    let route = purlis_core::sshroute::Route::parse(&route).expect("the fixture's route");
     let met =
         purlis_core::poolsetup::connecting::meet(&docker, &route).expect("the machine is met");
     let remote = purlis_core::poolsetup::connecting::trust(&docker, &route, &met.key.fingerprint())

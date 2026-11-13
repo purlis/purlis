@@ -858,3 +858,39 @@ fn a_skills_entry_by_a_built_in_skills_old_name_still_resolves_and_is_a_warning_
         ]
     );
 }
+
+/// #5725: `purlis-building-ui` was retired (the person's ruling of 2026-11-12), and no skill
+/// took its place. An entry naming it by any name it had is one warning that it was removed and
+/// where its guide is now, and not also a skill its chats start without.
+#[test]
+fn a_skills_entry_naming_the_retired_building_skill_says_it_was_removed_5725() {
+    let bundle = tempfile::tempdir().unwrap();
+    skill_folder(&bundle.path().join("skills"), "purlis-handoff");
+    let home = tempfile::tempdir().unwrap();
+    let removed = |shown: &str| {
+        format!(
+            "`skills:` entry '{shown}' names `purlis-building-ui`, which purlis removed: its \
+             guide is `docs/building-ui.md` in the purlis repository. Take the entry off the list"
+        )
+    };
+    for written in [
+        "purlis:purlis-building-ui",
+        "purlis-building-ui",
+        "charter:purlis-building-ui",
+        "purlis:building-ui",
+        "purlis-building-purlis-ui",
+        "purlis:building-purlis-ui",
+    ] {
+        let p = naming(written);
+        let l = Linter::new(p.root(), p.root())
+            .with_home(Some(home.path().to_path_buf()))
+            .with_built_in(Some(bundle.path().join("skills")))
+            .with_studio(true);
+        let said = removed(written);
+        assert_eq!(
+            messages(&l.definition("s")),
+            vec![(Level::Warn, said.as_str())],
+            "{written}"
+        );
+    }
+}

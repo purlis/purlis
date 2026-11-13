@@ -75,6 +75,8 @@ pub struct PoolSetupKey {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct PoolSetupMachine {
     pub route: Option<String>,
+    /// The key file the route signs in with, where a Podman connection names one (#6269).
+    pub identity: Option<String>,
     pub host: Option<String>,
     /// The key it showed at Connect to, to confirm.
     pub key: Option<PoolSetupKey>,
@@ -225,6 +227,7 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
                 other: step.other.as_ref().map(action_shown),
                 machine: step.machine.as_ref().map(|machine| PoolSetupMachine {
                     route: machine.route.clone(),
+                    identity: machine.identity.clone(),
                     host: machine.host.clone(),
                     key: machine.key.as_ref().map(key),
                     known: machine.known,
@@ -379,18 +382,25 @@ pub async fn pool_setup_choose_cluster(context: Option<String>) -> Result<(), St
 /// nothing.
 #[tauri::command]
 #[specta::specta]
-pub async fn pool_setup_machine(route: Option<String>) -> Result<(), String> {
+pub async fn pool_setup_machine(
+    route: Option<String>,
+    identity: Option<String>,
+) -> Result<(), String> {
     #[cfg(unix)]
     {
         crate::off_the_window("keeping your choice", move || {
-            purlis_core::poolsetup::choose_machine(&config_root()?, route.as_deref())
-                .map_err(|why| why.to_string())
+            purlis_core::poolsetup::choose_machine(
+                &config_root()?,
+                route.as_deref(),
+                identity.as_deref().map(std::path::Path::new),
+            )
+            .map_err(|why| why.to_string())
         })
         .await
     }
     #[cfg(not(unix))]
     {
-        let _ = route;
+        let _ = (route, identity);
         Err(crate::dockerpools::NOT_HERE.to_owned())
     }
 }
@@ -451,6 +461,40 @@ pub async fn pool_setup_ssh_hosts() -> Result<Vec<String>, String> {
         crate::off_the_window("reading your SSH hosts", || {
             let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
             Ok(purlis_core::sshroute::hosts_here(home.as_deref()))
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// A connection of Podman's own, as Connect offers it (#6269): its name, the route to that
+/// machine's Podman socket, and the key file it signs in with, where it names one.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolSetupPodmanConnection {
+    pub name: String,
+    pub route: String,
+    pub identity: Option<String>,
+}
+
+/// **The person's Podman connections** (`podman system connection list`), for Connect to offer
+/// (#6269). It contacts no machine: this machine's `podman` lists what it keeps.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_podman_connections() -> Result<Vec<PoolSetupPodmanConnection>, String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("reading your Podman connections", || {
+            Ok(purlis_core::sshroute::podman_connections_here()
+                .into_iter()
+                .map(|one| PoolSetupPodmanConnection {
+                    name: one.name,
+                    route: one.route.spelled(),
+                    identity: one.route.identity().map(|path| path.display().to_string()),
+                })
+                .collect())
         })
         .await
     }
@@ -692,14 +736,16 @@ pub async fn pool_setup_connect(
         crate::off_the_window("contacting the machine", move || {
             use purlis_core::poolsetup::{self, Pressed};
             let config = config_root()?;
-            let route = poolsetup::read_choices(&config)
+            let chosen = poolsetup::read_choices(&config)
                 .map_err(|why| why.to_string())?
                 .connect
-                .map(|chosen| chosen.route)
                 .ok_or_else(|| "Pick the machine first.".to_owned())?;
             let docker = poolsetup::docker_here()
                 .ok_or_else(|| "purlis found no docker command on this machine.".to_owned())?;
-            let pressed = match poolsetup::connecting::meet(&docker, &route) {
+            let met = chosen
+                .route_read()
+                .and_then(|route| poolsetup::connecting::meet(&docker, &route));
+            let pressed = match met {
                 Ok(met) => Pressed::Met(met),
                 Err(finding) => Pressed::Found(finding),
             };
@@ -730,14 +776,16 @@ pub async fn pool_setup_trust(
         crate::off_the_window("checking the machine", move || {
             use purlis_core::poolsetup::{self, Pressed};
             let config = config_root()?;
-            let route = poolsetup::read_choices(&config)
+            let chosen = poolsetup::read_choices(&config)
                 .map_err(|why| why.to_string())?
                 .connect
-                .map(|chosen| chosen.route)
                 .ok_or_else(|| "Pick the machine first.".to_owned())?;
             let docker = poolsetup::docker_here()
                 .ok_or_else(|| "purlis found no docker command on this machine.".to_owned())?;
-            match poolsetup::connecting::trust(&docker, &route, &fingerprint) {
+            let trusted = chosen
+                .route_read()
+                .and_then(|route| poolsetup::connecting::trust(&docker, &route, &fingerprint));
+            match trusted {
                 Ok(remote) => {
                     poolsetup::trusted(&config, &remote).map_err(|why| why.to_string())?;
                     read_shown(&config, &root, None)
