@@ -1667,6 +1667,13 @@ fn the_forms_a_run_grant_refuses_by_name_leave_curl_and_the_usual_tools_offered(
         "gptx",
         "ptar",
         "pt_online_schema_change",
+        // RocksDB's `ldb` and `sst_dump`, as MariaDB's RocksDB plugin and Percona's packages ship
+        // them (#6322): their `--env_uri` and `--fs_uri` go through RocksDB's object registry,
+        // which loads no library, and neither runs a command
+        "mariadb-ldb",
+        "mysql_ldb",
+        "ldb",
+        "sst_dump",
     ] {
         assert!(!super::not_for_a_run_grant(name), "{name}");
     }

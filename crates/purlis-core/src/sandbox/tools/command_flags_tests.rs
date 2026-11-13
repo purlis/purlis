@@ -789,3 +789,22 @@ fn a_jump_users_brackets_and_a_zone_in_an_ssh_uri_with_a_user_are_offered_no_run
     refused("ssh", "-o ProxyJump", &[&["-o", "ProxyJump=[x]@b", "host"]]);
     offered("ssh", &["-J u@[::1] host", "-J ssh://u@[::1]:22 host"]);
 }
+
+/// RocksDB's `ldb` and `sst_dump`, as MariaDB's RocksDB plugin ships them (#6322): their
+/// `--env_uri` and `--fs_uri` name an object RocksDB's registry makes, which loads no library
+/// (`tools/ldb_cmd.cc`, `env/env.cc`, `utilities/object_registry.cc`, RocksDB 79f08d7, as
+/// MariaDB 11.4 pins it), so their usual commands stay offered, by the prefix that takes
+/// `mariadb-ldb` and `mysql_ldb` to the mysql tools' row too.
+#[test]
+fn rocksdbs_ldb_and_sst_dump_are_offered_with_their_usual_commands() {
+    for program in ["mariadb-ldb", "mysql_ldb", "ldb", "sst_dump"] {
+        offered(
+            program,
+            &[
+                "--db=/var/lib/mysql/#rocksdb scan",
+                "--db=/var/lib/mysql/#rocksdb --env_uri=x get key",
+                "--file=/var/lib/mysql/#rocksdb/000001.sst --command=raw",
+            ],
+        );
+    }
+}

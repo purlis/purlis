@@ -62,3 +62,28 @@ judged as it was found for the grant, with the folders a chat may write left out
 judged are the ones on the way to what runs. A program whose links never sit in `init.d` is
 offered as before. `/etc/rc.d/<name>` (BSD, Slackware) is not taken in: no package is known to
 link it onto the search path, and its folder's name is a common one.
+
+## RocksDB's ldb and sst_dump, found harmless (#6322)
+
+RocksDB's `ldb` and `sst_dump` ship as `mariadb-ldb` and `sst_dump` in Debian's
+`mariadb-plugin-rocksdb` (`MYSQL_ADD_EXECUTABLE` in `storage/rocksdb/CMakeLists.txt`,
+github.com/MariaDB/server, 11.4), as `mysql_ldb` in Percona's, and as `ldb` beside RocksDB's
+own. Checked at the RocksDB that MariaDB 11.4 pins (`storage/rocksdb/rocksdb` at
+`79f08d7ffa6d34d9ca3357777bcb335884a56cfb`, github.com/facebook/rocksdb):
+
+- `--env_uri` and `--fs_uri` (and `--backup_env_uri`, `--backup_fs_uri`) are handed to
+  `Env::CreateFromUri` (`tools/ldb_cmd.cc:303`, `tools/sst_dump_tool.cc:352`), which makes the
+  object through the object registry (`env/env.cc:713`). Neither the registry
+  (`utilities/object_registry.cc`), the options loader (`options/customizable.cc`,
+  `options/options_parser.cc`, `utilities/options/options_util.cc`) nor `env/env.cc` calls
+  `LoadLibrary` or `dlopen`; the one `dlopen` is `PosixEnv::LoadLibrary`
+  (`env/env_posix.cc:247-268`), which none of the tools' paths reach.
+- Neither `tools/ldb_cmd.cc`, `tools/ldb_tool.cc` nor `tools/sst_dump_tool.cc` calls `system`,
+  `popen` or an `exec`.
+- MariaDB's `mariadb-ldb` is `tools/mysql_ldb.cc`: `MY_INIT`, MyRocks's comparator, and
+  `LDBTool::Run`; it reads no defaults file.
+
+What they do is read and write the RocksDB folder their `--db` names, as the arguments the
+person reads say. They keep no row of their own: `mariadb-ldb` and `mysql_ldb` reach the mysql
+tools' row by their prefix, which none of their usual commands trips, and tests pin all four
+names as offered.
