@@ -3,6 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import App from "./App";
@@ -14,6 +15,7 @@ import { onTheWire } from "./chatEvents.testkit";
 import { aTabForEachChat } from "./laidOut.testkit";
 import { sandboxCommandReturned } from "./sandboxAsked";
 import { SANDBOX_ALLOW_SAID } from "./allowLabels";
+import { SCOPE_LABEL } from "./InboxAsks";
 
 /**
  * **Asks holds asks only** (R-240, R-171, R-195, R-205), on the real window with the core
@@ -316,5 +318,32 @@ describe("Asks holds asks only", () => {
       ),
     );
     expect(screen.queryByRole("button", { name: "Allow on this machine" })).toBeNull();
+  });
+
+  it("with a chat focused, the Project chip counts the sandbox consent and lists its row", async () => {
+    // Q255: the consent asks about no chat, so it is listed under Project alone, and Asks opens
+    // on Chat. Its Notice draws nothing beside it (R-205), so the Project chip's count is how it
+    // is found while chat 4 has focus.
+    core({ registry: () => [CONSENT], sandbox: () => EXPECTING });
+    render(<App />);
+    await screen.findByRole("tabpanel", { name: "Asks" });
+    await screen.findByTestId("pane");
+    const scopes = () => within(screen.getByRole("radiogroup", { name: SCOPE_LABEL }));
+
+    // Chat is picked, with the focused chat's asks: none.
+    await waitFor(() =>
+      expect(scopes().getByRole("radio", { checked: true })).toHaveAccessibleName("Chat"),
+    );
+    const project = scopes().getByRole("radio", { name: /^Project/ });
+    expect(project).toHaveAccessibleName("Project, 1 waiting on you");
+    expect(askRows().some((each) => each.textContent?.includes("com.example.helper"))).toBe(false);
+
+    await userEvent.click(project);
+    const row = await waitFor(() => {
+      const one = askRows().find((each) => each.textContent?.includes("com.example.helper"));
+      expect(one).toBeDefined();
+      return one as HTMLElement;
+    });
+    expect(within(row).getByRole("button", { name: "Allow on this machine" })).toBeInTheDocument();
   });
 });
