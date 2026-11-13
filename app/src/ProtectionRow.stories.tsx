@@ -10,6 +10,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import type { SetupProtection } from "./bindings";
 import { FirstRun } from "./FirstRun";
 import { NewProject } from "./NewProject";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
@@ -21,8 +22,9 @@ type Acts = {
   onCreate?: ReturnType<typeof fn>;
 };
 
-const meta = {
-  beforeEach: () => {
+/** The core faked at its command boundary, `setup` being what it says of this machine's bound. */
+function machine(setup: SetupProtection | null) {
+  return () => {
     mockIPC((cmd) => {
       if (cmd === "first_run_found")
         return {
@@ -31,10 +33,21 @@ const meta = {
           templates: [],
         };
       if (cmd === "new_project_folder") return "/home/dev/Projects/billing-api";
+      if (cmd === "setup_protection") return setup;
       return null;
     });
     return () => clearMocks();
-  },
+  };
+}
+
+/** Why the machine's policy holds a new project at Full sandbox, as the core says it. */
+export const POLICY_WHY = "Your team's policy keeps every project at Full sandbox.";
+
+/** A machine whose policy allows nothing below Full sandbox, and starts the row there. */
+const BOUND: SetupProtection = { lowest: "on", default: "on", why: POLICY_WHY, yours: null };
+
+const meta = {
+  beforeEach: machine(null),
 } satisfies Meta<Acts>;
 
 export default meta;
@@ -101,5 +114,85 @@ export const InNewProject: Story = {
     await userEvent.click(within(dialog).getByRole("button", { name: "Open repo" }));
     await expect(args.onOpenRepo).toHaveBeenCalledTimes(1);
     await expect(args.onOpenRepo).toHaveBeenCalledWith("/home/dev/widget", "on");
+  },
+};
+
+/**
+ * Below the bound, out of reach: Basic sandbox and No sandbox are disabled, the row says the
+ * policy's reason, and the arrow keys pass over them, so the choice stays on Full sandbox.
+ */
+async function expectHeldAtFull(row: HTMLElement) {
+  const full = within(row).getByRole("radio", { name: /^Full sandbox/ });
+  const below = [/^Basic sandbox/, /^No sandbox/].map((name) =>
+    within(row).getByRole("radio", { name }),
+  );
+  await waitFor(() => expect(full).toBeChecked());
+  for (const one of below) await expect(one).toBeDisabled();
+  const described = (row.getAttribute("aria-describedby") ?? "")
+    .split(" ")
+    .map((id) => row.ownerDocument.getElementById(id)?.textContent ?? "")
+    .join(" ");
+  await expect(described).toContain(POLICY_WHY);
+  await expect(
+    within(row.ownerDocument.body).getByText(POLICY_WHY, { exact: false }),
+  ).toBeVisible();
+  full.focus();
+  await untilFocused(() => full, "the row starts on Full sandbox");
+  expectFocusInSight();
+  for (const key of ["{ArrowDown}", "{ArrowUp}", "{ArrowRight}", "{ArrowLeft}"]) {
+    await userEvent.keyboard(key);
+    await untilFocused(() => full, `${key} passes over the options out of reach`);
+    await expect(full).toBeChecked();
+    for (const one of below) await expect(one).not.toBeChecked();
+    expectFocusInSight();
+  }
+}
+
+/** New project on a machine whose policy allows nothing below Full sandbox (Q241). */
+export const BoundByAPolicy: Story = {
+  args: { onOpenRepo: fn(), onCreate: fn() },
+  beforeEach: machine(BOUND),
+  render: (args) => (
+    <NewProject
+      making={false}
+      opening={false}
+      onCreate={args.onCreate as never}
+      onOpenRepo={args.onOpenRepo as never}
+      onCancel={() => undefined}
+    />
+  ),
+  play: async ({ canvasElement, args }) => {
+    const dialog = await waitFor(() =>
+      within(canvasElement.ownerDocument.body).getByRole("dialog", { name: "New project" }),
+    );
+    await expectHeldAtFull(rowIn(dialog));
+    await userEvent.type(within(dialog).getByLabelText("Repo"), "/home/dev/widget");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Open repo" }));
+    await expect(args.onOpenRepo).toHaveBeenCalledWith("/home/dev/widget", "on");
+  },
+};
+
+/**
+ * First run where this machine's local project is there already: its repo section says the
+ * level that project keeps, read-only, and the row above, for a project setup makes, is still
+ * held by the policy.
+ */
+export const YourLevelReadOnly: Story = {
+  args: { onOpenRepo: fn(), onMake: fn() },
+  beforeEach: machine({ ...BOUND, yours: "on" }),
+  render: (args) => (
+    <FirstRun
+      onOpenRepo={args.onOpenRepo as never}
+      onMake={args.onMake as never}
+      onBack={() => undefined}
+      opening={false}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      await canvas.findByText("Your level: Full sandbox · change it in Settings"),
+    ).toBeVisible();
+    await expectHeldAtFull(await waitFor(() => rowIn(canvasElement)));
   },
 };

@@ -65,8 +65,8 @@ export function useProtection(
  * goes with the page's own main button, so setup still takes one press at every choice, and the
  * core keeps it as the person's own level for a project it made, the value Settings › Project ›
  * Sandbox › Your level reads (Q236). Options below what this machine's policy requires are out
- * of reach, with its reason, and the row starts at the policy's level (Q241). No sandbox's own
- * lines are T1-25's.
+ * of reach, with its reason and never "(recommended)", and the row starts at the policy's level
+ * (Q241). No sandbox's own lines are T1-25's.
  */
 export function ProtectionRow({
   value,
@@ -96,7 +96,10 @@ export function ProtectionRow({
           disabled={disabled}
           options={ORDER.map((one) => ({
             value: one,
-            label: one === PROTECTION_PRESET ? `${LEVEL_SAID[one]} (recommended)` : LEVEL_SAID[one],
+            label:
+              one === PROTECTION_PRESET && offered(setup, one)
+                ? `${LEVEL_SAID[one]} (recommended)`
+                : LEVEL_SAID[one],
             says: PROTECTION_HELP[one],
             disabled: !offered(setup, one),
           }))}
@@ -111,5 +114,5 @@ export function ProtectionRow({
  * machine has already, setup writes no level, and the page says the one it keeps.
  */
 export function YourLevel({ level }: { level: ProtectionWord }) {
-  return <p className="came-back">{`Your level: ${LEVEL_SAID[level]} · change it in Settings`}</p>;
+  return <p className="your-level">{`Your level: ${LEVEL_SAID[level]} · change it in Settings`}</p>;
 }

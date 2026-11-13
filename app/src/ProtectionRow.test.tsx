@@ -134,3 +134,28 @@ describe("setup's Protection row", () => {
     }
   });
 });
+
+describe("setup's Protection row under a policy (Q241)", () => {
+  it("options below the policy's level are out of reach, with its reason, and the arrows pass over them", async () => {
+    await walk(composed.BoundByAPolicy);
+  });
+
+  it("an existing local project's level is shown read-only, beside the row the policy holds", async () => {
+    await walk(composed.YourLevelReadOnly);
+  });
+
+  it("Basic sandbox is not called recommended where the policy puts it out of reach", async () => {
+    for (const Story of [composed.BoundByAPolicy, composed.YourLevelReadOnly]) {
+      const body = await drawn(Story);
+      const row = await waitFor(() => within(body).getByRole("radiogroup", { name: "Protection" }));
+      const basic = await waitFor(() => {
+        const one = within(row).getByRole("radio", { name: /^Basic sandbox/ });
+        expect(one).toBeDisabled();
+        return one;
+      });
+      expect(basic).toHaveAccessibleName("Basic sandbox");
+      expect(row.textContent).not.toContain("recommended");
+      cleanup();
+    }
+  });
+});
