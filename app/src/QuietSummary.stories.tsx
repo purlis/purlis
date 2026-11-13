@@ -10,6 +10,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { InboxUpdate, QuietNow, Shown } from "./bindings";
+import { finishUpdates } from "./finishRows";
 import { AsksQuiet } from "./QuietSummary";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
 
@@ -35,6 +36,15 @@ const update = (key: string, kind: InboxUpdate["kind"]): InboxUpdate => ({
   read: false,
 });
 
+/** A turn of chat 3's that ended after a block still unresolved (T1-31), as its row is noted. */
+const STOPPED_AFTER_A_BLOCK: InboxUpdate = {
+  ...finishUpdates(
+    [{ session: 3, key: "01TURN", at: 1_500, failed: false, blocked: 1 }],
+    () => "steward 3",
+  )[0],
+  read: false,
+};
+
 const ENDED: QuietNow = {
   quiet: false,
   by_hand: false,
@@ -48,13 +58,13 @@ const ENDED: QuietNow = {
   },
 };
 
-function Asks() {
+function Asks({ more = [] }: { more?: readonly InboxUpdate[] }) {
   return (
     <div style={{ inlineSize: 360 }}>
       <AsksQuiet
         plane={PLANE}
         asks={[ask(3, "p1"), ask(4, "p2")]}
-        updates={[update("done", "task-done"), update("failed", "task-failed")]}
+        updates={[update("done", "task-done"), update("failed", "task-failed"), ...more]}
         isNew={() => true}
         onGoToAsk={() => undefined}
         onShowUpdates={() => undefined}
@@ -128,5 +138,29 @@ export const QuietNowOn: Story = {
     // Off again: the window holds one Quiet, and the next story starts with it off.
     await userEvent.keyboard(" ");
     await expect(turn).toHaveAttribute("aria-pressed", "false");
+  },
+};
+
+/** **Quiet summary has a stopped after a block bucket** (T1-31, R-182): its count, a link to
+ *  Updates, reached by Tab after what failed. */
+export const QuietSummaryHasAStoppedAfterABlockBucket: Story = {
+  args: { more: [STOPPED_AFTER_A_BLOCK] },
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByText(/While you were quiet/);
+    for (const name of ["Quiet now", "2 asks: go to them", "1 finished: open Updates"]) {
+      await userEvent.tab();
+      await untilFocused(() => canvas.getByRole("button", { name }), `Tab reaches ${name}`);
+    }
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "1 failed: open Updates" }),
+      "Tab reaches what failed",
+    );
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "1 stopped after a block: open Updates" }),
+      "Tab reaches what stopped after a block",
+    );
+    expectFocusInSight();
   },
 };

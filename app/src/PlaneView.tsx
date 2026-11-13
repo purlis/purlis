@@ -251,6 +251,7 @@ import { PersonaMarks, ReloadPersonaMarks } from "./PersonaMark";
 import { usePersonaMarks } from "./usePersonaMarks";
 import { taskChangesTitle, taskChangesView } from "./taskChanges";
 import { heldFor as blockHeldFor, type HeldBlock, useSandboxBlocks } from "./sandboxBlocks";
+import { finishUpdates, groupedFinishes, useFinishedTurns } from "./finishRows";
 import { taskBlockGroups, whoseOf, withoutGrouped, type TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksAnswered, TaskBlocksNotice } from "./TaskBlocksNotice";
 import {
@@ -11306,6 +11307,8 @@ export const PlaneView = memo(function PlaneView({
    * and kept a day on this machine whether or not the project is in front, and drawn after the
    * asks with what each source offers on it.
    */
+  /** Each chat's finishes as the core counts them, asked as a turn ends (T1-31, R-178). */
+  const finishedTurns = useFinishedTurns(plane, chats);
   const derivedUpdates = useMemo(() => {
     const at = seenAt();
     return [
@@ -11317,6 +11320,8 @@ export const PlaneView = memo(function PlaneView({
       ...reasonUpdates(foundFor, refusals, nameOf, at),
       ...browserAskUpdates(browserAsksEnded, nameOf),
       ...reportSentUpdates(sentDrafts),
+      // Each chat's turn that ended, or run that failed: its finish row (T1-31, R-241).
+      ...finishUpdates(finishedTurns, nameOf),
       // A chat that reads Stuck? (#6014): a Should-know line while it does.
       ...stuckUpdates(noticedChats, nameOf, at),
       // A chat another chat started, announced and not looked at yet (#4759).
@@ -11331,6 +11336,7 @@ export const PlaneView = memo(function PlaneView({
   }, [
     sidebar,
     browserAsksEnded,
+    finishedTurns,
     sentDrafts,
     noticedChats,
     finishedTasks,
@@ -11460,9 +11466,13 @@ export const PlaneView = memo(function PlaneView({
     const away = new Map((awayRefused ?? []).map((one) => [awayUpdateKey(one), one]));
     const open = (session: number | null) =>
       session !== null && tabHolding(tabs, session) !== undefined ? session : undefined;
-    const rows = keptUpdates?.map((update): UpdateRow => {
-      const read = () => settleUpdates([update.key], "read");
-      const put = () => settleUpdates([update.key], "dismissed");
+    // Identical finish rows of several chats are one row (R-181): it reads and puts away each.
+    const grouped = keptUpdates === undefined ? undefined : groupedFinishes(keptUpdates);
+    const members = new Map(grouped?.map(({ update, keys }) => [update.key, keys]));
+    const each = (keys: readonly string[]) => keys.flatMap((key) => members.get(key) ?? [key]);
+    const rows = grouped?.map(({ update, keys }): UpdateRow => {
+      const read = () => settleUpdates(keys, "read");
+      const put = () => settleUpdates(keys, "dismissed");
       const task = tasks.get(update.key);
       // A chat that arrived is in no pane (#4759): Go to it shows it while it is listed.
       const session =
@@ -11556,8 +11566,9 @@ export const PlaneView = memo(function PlaneView({
       rows,
       opened: openedUpdate,
       // The lines of the list shown (#5646): Mine's or Project's, never the other's.
-      onMarkAllRead: (keys: readonly string[]) => settleUpdates(keys, "read"),
-      onDismissAll: (keys: readonly string[]) => {
+      onMarkAllRead: (keys: readonly string[]) => settleUpdates(each(keys), "read"),
+      onDismissAll: (shown: readonly string[]) => {
+        const keys = each(shown);
         const these = new Set(keys);
         // Each update a source lists is put away there too, as its own Dismiss would.
         for (const one of keptUpdates ?? []) {

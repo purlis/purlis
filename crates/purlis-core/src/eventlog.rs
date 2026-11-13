@@ -46,6 +46,7 @@ pub mod blockedlog;
 pub mod browsing;
 pub mod chatlog;
 mod entry;
+pub mod finishes;
 pub mod questions;
 pub mod reasons;
 pub mod secretasks;

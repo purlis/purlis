@@ -1502,6 +1502,9 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "find_files",
     "find_files_end",
     "finished_tasks",
+    // Each chat's finishes and its turn's unresolved blocks, for its finish rows (R-178,
+    // T1-31): a read of the event log.
+    "finished_turns",
     "first_frame",
     "first_run_found",
     "forge_token_help",
