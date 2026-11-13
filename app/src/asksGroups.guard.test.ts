@@ -68,6 +68,8 @@ const GROUP_OF = {
   "persona-allow": "consent",
   // Trust this clone (T1-14): what the clone may run and change, before it is trusted.
   "trust-clone": "consent",
+  // Trust these clones (T1-15): the project's unrecorded clones, trusted by one press.
+  "trust-clones": "consent",
   confirmation: "consent",
   // What purlis refused the chat and raised as an ask (R-114).
   "merge-hold": "hold",
