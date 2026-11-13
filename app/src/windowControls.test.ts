@@ -117,6 +117,9 @@ const UNLINKED: Readonly<Record<string, string>> = {
   "crates/purlis-core/src/doctor/fix/move_into_repos.rs: Fix": BESIDE,
   "crates/purlis-core/src/doctor/fix/move_into_repos.rs: Trust these clones": TRUST_THESE,
   "crates/purlis-core/src/doctor/sandbox.rs: File report": BESIDE,
+  // A merge refused for want of a press asked once more, or for a ruleset that changed, is shown
+  // on the merge row and its pane, beside the Merge it names (Q269).
+  "crates/purlis-core/src/mergehold.rs: Merge": BESIDE,
   "crates/purlis-core/src/personaverbs/select.rs: Allow": CHAT,
   // Followed only by `purlis` in a terminal (`follow_while`); the window's own sign-in draws
   // the button beside its own words (Q246).
