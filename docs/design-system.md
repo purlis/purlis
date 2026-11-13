@@ -1963,7 +1963,7 @@ fixed size, weight and colour from the tokens, and a surface wears it instead.
 | body      | `ui-text-body`      | what the surface is about: a row's name, an ask's words   | `--font-size-md`, 13px   | regular | `text.primary`   |
 | secondary | `ui-text-secondary` | where, who, a help line under a field                     | `--font-size-sm`, 12px   | regular | `text.secondary` |
 | meta      | `ui-text-meta`      | age, kind, counts, shortcuts: read last                   | `--font-size-xs`, 11px   | regular | `text.quiet`     |
-| label     | `ui-text-label`     | a section label over a group, in capitals spaced `0.06em` | `--font-size-xs`, 11px   | strong  | `text.secondary` |
+| label     | `ui-text-label`     | a section label over a group, in capitals spaced `0.05em` | `--font-size-xs`, 11px   | strong  | `text.secondary` |
 | code      | `ui-text-code`      | a command, a path, a host: `--font-mono`                  | the role it sits in      | regular | inherited        |
 
 `ui-text-strong` is a modifier and not a role: the one strong line of a row is a body at the
@@ -2011,7 +2011,12 @@ window differ, the window was kept and the difference is recorded here for the m
   title and drawn by nothing.** The table puts the title on `lg` and the heading on `base`.
   Today's titles are `1rem` (14px) and its section headings `0.85rem` to `0.95rem`, so each
   steps up when its surface moves, which is a change to see in a screenshot first. `xl` has no
-  role.
+  role, and since the migrations no word reads it (#1920): the Welcome's heading, a settings
+  page's, a pool's setup and the agent identity flow's wear the title. What still reads it is
+  two marks, icons sized by the text around them (a persona's mark in Start a chat, a door
+  card's mark), and Tailwind's `text-xl`, pointed at it so it has no value of its own.
+  `primitives/text.test.ts` holds that list. Taking `font-size.xl` out of the theme format is
+  the operator's call, since a theme may set it.
 - **The Welcome page's `h1` is `1.5rem` (21px)**, above the scale's top step.
 - **Counts and matches were weight 700** (five rules), which no token names. The geometry snap
   rule (#2313, 2026-10-17) takes a weight with no token to the nearest one, so the counts on the
@@ -2026,7 +2031,7 @@ window differ, the window was kept and the difference is recorded here for the m
   because nothing else should name it, is given once with the 14px root size in
   `theme/geometry.css`, the core. The terminal and the editor take their type from their own
   themes and are not covered.
-- **A label's capitals and its `0.06em` spacing have no token**; they are written once, in
+- **A label's capitals and its `0.05em` spacing have no token**; they are written once, in
   `.ui-text-label`.
 
 ### The type guard
@@ -2073,7 +2078,27 @@ One change each, each checked against a screenshot (#1920):
    `.pending` sentences wear `ui-text-secondary`, and `.view-body`'s muted goes (#3938).
 
 Along the way the section label gets one spelling (`ui-text-label`, which is `.sidebar-title`'s
-type today), and the two largest size tokens are each read by a role or removed.
+type today), and the two largest size tokens are each read by a role or removed (`lg` is the
+title's; `xl` is read by no word, [above](#where-todays-pixels-and-the-table-disagree)).
+
+### The section label, one spelling
+
+The section label was written in each place that drew one: capitals spaced `0.04em`, `0.05em`
+or `0.06em`, at the medium or the strong weight, in a family's sheet or a view's rule. It is
+written once now, in `ui-text-label` (`0.05em`, strong, 11px), and every label wears it (#1920):
+a tree's, a list's, a menu's and a select's group header; a table's column names; a card's tile
+label; the panel section's title; the title bar switcher's header; Start a chat's labels; a
+session record's and a dispatch's section headings. `type.guard.test.ts` refuses capitals or a
+letter spacing anywhere else.
+
+- **A family keeps its tier.** The label's colour is `text.secondary`; a tree's, a list's and
+  the title bar's group headers keep the quiet tier and a table's column names the muted, by the
+  family's own rule, which outranks the role's colour.
+- **A group named by data is written as its name** (a project, a day): a menu's and a select's
+  wears the secondary instead of the label; a tree's and a list's take the capitals off in the
+  family's `[data-named]` rule. A frame that labels its groups (the Chats list's
+  workspaces, #3484) is the exception, and labels them as any group: the frame's group heads move
+  from the medium weight spaced `0.06em` to the label's strong, spaced `0.05em`.
 
 ### The Welcome, on the roles
 
@@ -2251,7 +2276,7 @@ notes, two of them under 11px. Now:
 | a finished task's name, "Finished (n)", a finished task's note           | `ui-text-secondary`            | 11.9px, primary (the note muted)        | 12px, secondary                |
 | a finished task's report; where it was written                           | `ui-text-body`; `-secondary`   | 11.9px, primary; 11px, muted            | 13px, primary; 12px, secondary |
 | a folded row's task count; "Stopping…"                                   | `ui-text-meta` (the count strong) | 10.5px and 10.7px, regular, muted    | 11px, muted; the count 600     |
-| a workspace's heading over its sessions (the list grouped)               | `ui-text-label`                | 10.1px, regular, muted, spaced `0.04em` | 11px, strong, secondary, `0.06em` |
+| a workspace's heading over its sessions (the list grouped)               | `ui-text-label`                | 10.1px, regular, muted, spaced `0.04em` | 11px, strong, secondary, `0.05em` |
 | a row's card: its name; its sentences and values; a fact's word          | body strong; secondary; meta   | 13px strong; 13px primary; 13px muted   | 13px strong; 12px secondary; 11px muted |
 
 What it settled, for the surfaces that follow:

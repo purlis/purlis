@@ -14,6 +14,7 @@ import { forgetStudio, renderStudioAt } from "./SkillStudioTab.testkit";
 import { AT_THE_ROOT, sourceKey, type StudioScope } from "./skillStudio";
 import { PROJECT } from "./skillChanges";
 import { skill, studio } from "./skillsListing.testkit";
+import { NO_SKILL_POLICY } from "./skillPolicy.testkit";
 
 afterEach(() => {
   cleanup();
@@ -66,6 +67,8 @@ function core(
     const answer = answers[cmd];
     if (answer !== undefined) return answer(given);
     switch (cmd) {
+      case "skill_policy":
+        return NO_SKILL_POLICY;
       case "skill_studio":
         return studio([], { workspaces: ["ops"] });
       case "skill_sources":

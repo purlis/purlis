@@ -260,6 +260,23 @@ fn a_screen_not_written_for_its_record_s_age_goes_whatever_names_it() {
 }
 
 #[test]
+fn a_screen_last_written_exactly_thirty_days_ago_goes() {
+    // plane-format.md: "last written 30 days or more before", as a dispatch record is.
+    let (_dir, root) = project();
+    keep(&root, CHAT, "old").unwrap();
+    let written = SystemTime::now() - Duration::from_secs(3600);
+    std::fs::File::options()
+        .write(true)
+        .open(dir(&root).join(format!("{CHAT}.screen")))
+        .unwrap()
+        .set_modified(written)
+        .unwrap();
+    let now = written + crate::retention::KEEP_FOR;
+    assert_eq!(sweep(&root, |_| true, now), 1);
+    assert!(!is_kept(&root, CHAT));
+}
+
+#[test]
 fn a_screen_is_replaced_whole_and_leaves_no_temp_file() {
     let (_dir, root) = project();
     keep(&root, CHAT, "first").unwrap();

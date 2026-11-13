@@ -24,7 +24,8 @@ use super::fetch::{SourceFile, fetch};
 use super::install::{Written, level_parts, paths_fit};
 use super::lock::{self, Kept, Locked};
 use super::review::{
-    Accepted, SkillReview, digest_of, met_at, review_of, reviews_of, sha256, summary_of, wrote,
+    Accepted, Hints, SkillReview, digest_of, met_at, review_of, reviews_of, sha256, summary_of,
+    wrote,
 };
 use super::widen::{self, Widening};
 use super::{Origin, Pin, Remote, SkillSource, Source, listed, write};
@@ -47,6 +48,9 @@ pub struct Offer {
     pub newer: Pin,
     /// Whether the copy was edited here since it was installed.
     pub edited: bool,
+    /// What the project's controls would refuse of it, said before its review (#6031): its
+    /// source or skill not allowed, or the newer commit too young, with when it can be taken.
+    pub refused: Option<super::policy::Refused>,
 }
 
 /// What an installed skill could not be asked about, and why.
@@ -177,6 +181,10 @@ pub fn updates(plane: &Path, studio: Option<Studio<'_>>) -> Updates {
         });
     }
     let mut asked: Vec<(Origin, Result<Pin, String>)> = Vec::new();
+    // The org's controls, read once, and when each newer commit was made, asked once per source
+    // and only while they hold a minimum age (#6031).
+    let policy = super::policy::of(plane);
+    let mut made: Vec<(Origin, Option<u64>)> = Vec::new();
     for (kept, one) in &locked {
         match may(plane, *kept, one) {
             May::Ask => {}
@@ -223,6 +231,7 @@ pub fn updates(plane: &Path, studio: Option<Studio<'_>>) -> Updates {
         };
         match newest {
             Ok(pin) if pin != one.pin => out.offers.push(Offer {
+                refused: refused_before(plane, &policy, &mut made, one, &pin),
                 name: one.name.clone(),
                 level: one.level.0.clone(),
                 source: one.source.clone(),
@@ -245,6 +254,40 @@ pub fn updates(plane: &Path, studio: Option<Studio<'_>>) -> Updates {
         .collect();
     super::checked::asked(plane, &answered);
     out
+}
+
+/// **What the controls `policy` would refuse of updating `one` to `pin`**, before its review
+/// (#6031). A git source's newer commit is asked when it was made, once per source in `made`,
+/// while the controls hold a minimum age; where that cannot be read, only the lists are held to,
+/// and the review says the rest. An extension's revision cannot say, so the controls say so.
+fn refused_before(
+    plane: &Path,
+    policy: &Result<Option<super::policy::Policy>, String>,
+    made: &mut Vec<(Origin, Option<u64>)>,
+    one: &Locked,
+    pin: &Pin,
+) -> Option<super::policy::Refused> {
+    let name = one.at_source();
+    let Pin::Commit(commit) = pin else {
+        return super::policy::refused_before(policy, &one.source, name, pin, None);
+    };
+    if !super::policy::asks_age(policy) {
+        return super::policy::listed_before(policy, &one.source, name);
+    }
+    let at = match made.iter().find(|(origin, _)| *origin == one.source) {
+        Some((_, at)) => *at,
+        None => {
+            let at = source_of(plane, one)
+                .ok()
+                .and_then(|source| super::fetch::newest_made(plane, &source, commit));
+            made.push((one.source.clone(), at));
+            at
+        }
+    };
+    match at {
+        Some(at) => super::policy::refused_before(policy, &one.source, name, pin, Some(at)),
+        None => super::policy::listed_before(policy, &one.source, name),
+    }
 }
 
 /// How a file changes in an update.
@@ -523,7 +566,12 @@ pub(super) fn reviewed_update(
     };
     let was = pinned.unwrap_or_else(|| here.clone());
     let met_here = met_at(plane, level);
-    let reviewed = reviews_of(source, std::slice::from_ref(&at_source), &met_here)?;
+    let reviewed = reviews_of(
+        source,
+        std::slice::from_ref(&at_source),
+        &met_here,
+        Hints::Every,
+    )?;
     let mut skills = reviewed.into_iter();
     let review = skills.next().unwrap_or_else(|| {
         let held_names: Vec<String> = found.iter().map(|f| f.name.clone()).collect();
@@ -751,6 +799,7 @@ pub(super) fn plan_from(
         source,
         std::slice::from_ref(&at_source),
         &met_at(plane, level),
+        Hints::Every,
     )?;
     if !accepted.is(&Accepted::of(&newer, &reviewed))
         || reviewed.first().is_none_or(|s| s.name != at_source)

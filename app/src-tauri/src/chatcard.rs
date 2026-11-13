@@ -57,6 +57,10 @@ pub(crate) struct ChatCard {
     pub started_by: String,
     /// Whether its last screen was kept: *Read it* is disabled where it was not.
     pub screen_kept: bool,
+    /// Whether a dispatch started it. True with no task for a handoff, or a task that ended
+    /// owing no report: its card is drawn from its chat's record, and *Reopen* says why it does
+    /// nothing in words of its own.
+    pub dispatched: bool,
 }
 
 /// What a card says of a task the person dispatched themselves.
@@ -94,8 +98,8 @@ pub(crate) fn open_chats(held: &Held) -> Vec<chatlookup::OpenChat> {
 }
 
 /// **The card of chat `number`, ended with `record`**, given the chats open now: what the
-/// palette's finished row and a pane's `chat 641` link (#6217) show. None for a handoff, or a
-/// task's chat with no id: no card to draw.
+/// palette's finished row and a pane's `chat 641` link (#6217) show. None where the record
+/// makes no card (`chatlookup::makes_a_card`): a handoff's, or a task's chat with no id.
 pub(crate) fn card_of(
     held: &Held,
     number: u32,
@@ -106,6 +110,9 @@ pub(crate) fn card_of(
         .iter()
         .find(|one| chatlookup::is(&record.asker.chat, one))
         .map_or(0, |one| one.number);
+    if !chatlookup::makes_a_card(record) {
+        return None;
+    }
     let chat = record.worker.chat.id.clone()?;
     let task = crate::finished::card_row(held, record, asker)?;
     Some(ChatCard {
@@ -121,6 +128,7 @@ pub(crate) fn card_of(
         } else {
             record.asker.chat.name.clone()
         },
+        dispatched: true,
     })
 }
 
@@ -142,7 +150,21 @@ pub(crate) fn card_of_chat(held: &Held, chat: &purlis_core::chatrecords::ChatRec
             purlis_core::chatrecords::StartedBy::Person => STARTED_BY_YOU.to_owned(),
             purlis_core::chatrecords::StartedBy::Chat { name } => name.clone(),
         },
+        dispatched: dispatched(held.root(), chat),
     }
+}
+
+/// Whether a dispatch record names chat `chat` as its worker, by its ULID: a handoff, or a task
+/// that ended owing no report, whose card the lookup draws from its chat's record.
+fn dispatched(root: &std::path::Path, chat: &purlis_core::chatrecords::ChatRecord) -> bool {
+    let worker = dispatchrecord::ChatRef {
+        chat: chat.number,
+        id: Some(chat.id.clone()),
+        ..Default::default()
+    };
+    dispatchrecord::ledger(root)
+        .latest_for(root, &worker)
+        .is_some()
 }
 
 /// **Keeps chat `session`'s last screen as it closes for good**, where it is a dispatched task
