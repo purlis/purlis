@@ -1671,3 +1671,32 @@ fn the_forms_a_run_grant_refuses_by_name_leave_curl_and_the_usual_tools_offered(
         assert!(!super::not_for_a_run_grant(name), "{name}");
     }
 }
+
+/// A program reached through links that never sit in an `init.d` folder is no init script, and
+/// one reached through a link in `init.d` that points on out of it is, whatever the last file is
+/// called (#6321).
+#[cfg(unix)]
+#[test]
+fn a_program_is_an_init_script_only_where_it_or_a_link_on_the_way_sits_in_init_d() {
+    let system = tempfile::tempdir().unwrap();
+    let system = system.path().canonicalize().unwrap();
+    let (opt, init_d, lib, bin) = (
+        system.join("opt/tool/bin"),
+        system.join("etc/init.d"),
+        system.join("lib/init"),
+        system.join("bin"),
+    );
+    for folder in [&opt, &init_d, &lib, &bin] {
+        std::fs::create_dir_all(folder).unwrap();
+    }
+    std::fs::write(opt.join("tool"), "").unwrap();
+    std::os::unix::fs::symlink(opt.join("tool"), bin.join("tool")).unwrap();
+    assert!(!super::an_init_script(&bin.join("tool"), &opt.join("tool")));
+    std::fs::write(lib.join("upstart-job"), "").unwrap();
+    std::os::unix::fs::symlink(lib.join("upstart-job"), init_d.join("job")).unwrap();
+    std::os::unix::fs::symlink(init_d.join("job"), bin.join("rcjob")).unwrap();
+    assert!(super::an_init_script(
+        &bin.join("rcjob"),
+        &lib.join("upstart-job")
+    ));
+}

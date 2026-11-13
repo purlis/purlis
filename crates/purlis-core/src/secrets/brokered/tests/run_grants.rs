@@ -3042,6 +3042,49 @@ fn a_link_to_an_init_script_is_offered_no_run_grant_whatever_its_name() {
     );
 }
 
+/// A link that reaches an init script's place and points on out of it (#6321), as Ubuntu's
+/// Upstart jobs were laid out (`/etc/init.d/<job> -> /lib/init/upstart-job`): what runs sits
+/// outside `init.d`, under a name no row reads, but the link in `init.d` is the service's script.
+#[cfg(unix)]
+#[test]
+fn a_link_through_an_init_script_that_points_on_out_of_init_d_is_offered_no_run_grant() {
+    use std::os::unix::fs::PermissionsExt;
+    let project = project();
+    let asks = Asks::new(project.path());
+    let system = tempfile::tempdir().unwrap();
+    let system = system.path().canonicalize().unwrap();
+    let (scripts, lib, sbin) = (
+        system.join("etc/init.d"),
+        system.join("lib/init"),
+        system.join("sbin"),
+    );
+    for folder in [&scripts, &lib, &sbin] {
+        std::fs::create_dir_all(folder).unwrap();
+    }
+    let job = lib.join("upstart-job");
+    std::fs::write(&job, "#!/bin/sh\nexit 0\n").unwrap();
+    std::fs::set_permissions(&job, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::os::unix::fs::symlink(&job, scripts.join("database")).unwrap();
+    std::os::unix::fs::symlink(scripts.join("database"), sbin.join("rcdatabase")).unwrap();
+    let mut want = printenv(project.path(), &["."]);
+    want.command = vec!["rcdatabase".to_owned(), "start".to_owned()];
+    // Judged as a system folder is, outside the temporary folders.
+    crate::sandbox::tools::TEMPS_HERE.with(|temps| *temps.borrow_mut() = Some(Vec::new()));
+    let frames = run_searching(
+        &the_chat(project.path()),
+        want,
+        &asks,
+        Duration::ZERO,
+        vec![sbin],
+    );
+    crate::sandbox::tools::TEMPS_HERE.with(|temps| *temps.borrow_mut() = None);
+    assert!(asks.open_runs().is_empty(), "{frames:?}");
+    assert!(
+        refusal(&frames).0.contains("runs other programs"),
+        "{frames:?}"
+    );
+}
+
 /// `systemctl` (#6320): `systemctl link <path>` makes a unit of the file it is named, which
 /// `start` then runs, and `import-environment <VAR>` copies a value the run was handed into the
 /// service manager's environment, where `show-environment` reads it back and every unit started

@@ -47,3 +47,18 @@ The issue's comment raised six more, each checked too:
 
 All are refused whole, on `NOT_FOR_A_RUN_GRANT`. A persona can still declare any of them as a
 tool.
+
+## An init script reached through a link that points on out of init.d (#6321)
+
+The 2026-11-12 amendment refused a program whose path, as its links resolve, sits in an
+`init.d` folder. It judged only that last path, so a link that lands in `init.d` on a name that
+is itself a link pointing on out of it was not caught: Ubuntu's Upstart jobs were laid out so,
+`/etc/init.d/<job> -> /lib/init/upstart-job`, and the script that runs is named for no service.
+Whether any package still ships that layout was not settled, so the check is made whole rather
+than argued: following a program's links now reports the folder of every link on the way
+(`held_outside`'s walk), and a Run grant refuses the program where the path it was found at,
+the path it runs as, or any link on the way sits in a folder named `init.d`. The program is
+judged as it was found for the grant, with the folders a chat may write left out, so the links
+judged are the ones on the way to what runs. A program whose links never sit in `init.d` is
+offered as before. `/etc/rc.d/<name>` (BSD, Slackware) is not taken in: no package is known to
+link it onto the search path, and its folder's name is a common one.

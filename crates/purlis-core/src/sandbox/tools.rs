@@ -530,8 +530,15 @@ const MOST_LINKS: usize = 40;
 ///
 /// A run is of this path, so no link a chat could change later is on the way to what runs.
 pub(crate) fn held_outside(program: &Path, written: &[PathBuf]) -> Option<PathBuf> {
+    walked(program, written).map(|(real, _)| real)
+}
+
+/// [`held_outside`], with the folder each link on the way sits in, as it is with every link
+/// before it resolved, in the order they are met (#6321).
+fn walked(program: &Path, written: &[PathBuf]) -> Option<(PathBuf, Vec<PathBuf>)> {
     use std::path::Component;
     let mut done = PathBuf::new();
+    let mut folders = Vec::new();
     let mut rest: std::collections::VecDeque<std::ffi::OsString> = Default::default();
     let start = |path: &Path, done: &mut PathBuf, rest: &mut std::collections::VecDeque<_>| {
         let mut parts = Vec::new();
@@ -572,10 +579,11 @@ pub(crate) fn held_outside(program: &Path, written: &[PathBuf]) -> Option<PathBu
         if links > MOST_LINKS || inside_any(&done, written) {
             return None;
         }
+        folders.push(done.clone());
         let target = std::fs::read_link(&next).ok()?;
         start(&target, &mut done, &mut rest);
     }
-    (!inside_any(&done, written)).then_some(done)
+    (!inside_any(&done, written)).then_some((done, folders))
 }
 
 /// **Every folder a chat in the project at `root` may write, whatever the chat**: every folder
@@ -1447,6 +1455,16 @@ pub(crate) fn for_chat_on(
     resolved
 }
 
+/// Every folder [`resolve_beside`] leaves out of the search for a program: the project, what
+/// the chat may write, the temporary folders and what any chat in the project may write.
+fn all_written(root: &Path, writable: &[PathBuf], temps: &[PathBuf]) -> Vec<PathBuf> {
+    let mut written: Vec<PathBuf> = vec![root.to_path_buf()];
+    written.extend(writable.iter().cloned());
+    written.extend(temps.iter().cloned());
+    written.extend(any_chat_writes(root));
+    written
+}
+
 /// [`resolve`], with `temps` as the temporary folders.
 pub(crate) fn resolve_beside(
     root: &Path,
@@ -1460,10 +1478,7 @@ pub(crate) fn resolve_beside(
     if tools.is_empty() {
         return None;
     }
-    let mut written: Vec<PathBuf> = vec![root.to_path_buf()];
-    written.extend(writable.iter().cloned());
-    written.extend(temps.iter().cloned());
-    written.extend(any_chat_writes(root));
+    let written = all_written(root, writable, temps);
     let mut ready = Vec::new();
     let mut left = Vec::new();
     let mut absent = Vec::new();
@@ -2302,8 +2317,17 @@ pub fn for_run_grant(
         }));
     };
     // A link may lead to one: `vimdiff` to `vim`, `editor` to `vim.basic`, `rcmysql` to the
-    // server's init script, whose file name is the client's.
-    if not_for_a_run_grant(&file_name_of(&ready.program)) || an_init_script(&ready.program) {
+    // server's init script, whose file name is the client's, or through one (#6321).
+    // As `resolve_beside` found it, so the links judged are the ones on the way to what runs.
+    let found = found_in(
+        &name,
+        &search_dirs(),
+        &all_written(root, written, &temp_folders()),
+    )
+    .map(|(found, _)| found);
+    if not_for_a_run_grant(&file_name_of(&ready.program))
+        || an_init_script(found.as_deref().unwrap_or(&ready.program), &ready.program)
+    {
         return Err(runs_others(&name));
     }
     if !names(&ready, asked.program) {
@@ -2321,15 +2345,26 @@ pub fn for_run_grant(
     Ok(ready)
 }
 
-/// **Whether `program` is a service's init script** (#6187): a file in an `init.d` folder
-/// (`/etc/init.d`, `/etc/rc.d/init.d`), whatever its own name. A script there starts and stops
-/// the service it is named for, and is named as the service is, so the server's is `mysql`, the
-/// client's name: judged by its name, `rcmysql start` would reach the client's row.
-fn an_init_script(program: &Path) -> bool {
-    program
-        .parent()
-        .and_then(Path::file_name)
-        .is_some_and(|folder| folder.eq_ignore_ascii_case("init.d"))
+/// **Whether `found`, which runs as `real`, is a service's init script** (#6187): a file in an
+/// `init.d` folder (`/etc/init.d`, `/etc/rc.d/init.d`), whatever its own name, as found, as it
+/// runs, or as any link on the way sits (#6321: Upstart's `/etc/init.d/<job>` linked on out to
+/// `/lib/init/upstart-job`). A script there starts and stops the service it is named for, and
+/// is named as the service is, so the server's is `mysql`, the client's name: judged by its
+/// name, `rcmysql start` would reach the client's row.
+fn an_init_script(found: &Path, real: &Path) -> bool {
+    let in_init_d = |file: &Path| {
+        file.parent()
+            .and_then(Path::file_name)
+            .is_some_and(|folder| folder.eq_ignore_ascii_case("init.d"))
+    };
+    let links_in_init_d = walked(found, &[]).is_some_and(|(_, folders)| {
+        folders.iter().any(|folder| {
+            folder
+                .file_name()
+                .is_some_and(|name| name.eq_ignore_ascii_case("init.d"))
+        })
+    });
+    in_init_d(found) || in_init_d(real) || links_in_init_d
 }
 
 /// The longest variable name a person is asked to allow: it is drawn among the app's own facts.
