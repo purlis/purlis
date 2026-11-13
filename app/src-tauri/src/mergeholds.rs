@@ -36,7 +36,7 @@ use purlis_core::forge::pr::Repo as OnForge;
 use purlis_core::harness::asks::{Admitted, Answerer};
 use purlis_core::hookwire::{Answer, MergeAsk};
 use purlis_core::mergehold::{
-    self, Base, ByForge, HeadSha, Holds, MergeKey, Raised, Repo, Request,
+    self, Base, ByForge, HeadSha, Holds, Invalid, MergeKey, Raised, Repo, Request,
 };
 
 use crate::planes::{Held, PlaneId, Planes};
@@ -134,17 +134,13 @@ impl Project for Held {
     }
 
     fn read(&self, on: &OnForge, number: u64) -> Result<mergehold::Read, String> {
-        let (tell, heard) = std::sync::mpsc::channel();
-        let on = on.clone();
-        std::thread::Builder::new()
-            .name("merge-hold".to_owned())
-            .spawn(move || {
-                let _ = tell.send(mergehold::read(on.backend().as_ref(), &on.path, number));
-            })
-            .map_err(|why| why.to_string())?;
-        heard
-            .recv_timeout(mergehold::THE_FORGE_IS_READ_WITHIN)
-            .map_err(|_| "the forge did not answer in time".to_owned())?
+        mergehold::read(
+            on.backend().into(),
+            &on.path,
+            number,
+            mergehold::THE_FORGE_IS_READ_WITHIN,
+            crate::sandboxing::now_secs(),
+        )
     }
 
     fn record(&self, chat: u32, stop: Stop) {
@@ -233,6 +229,7 @@ fn raise(project: &dyn Project, ask: &MergeAsk) -> Result<String, String> {
         repo: Some(repo.clone()),
         number: ask.request.number,
     };
+    let holds = project.holds();
     let resolve = |request: &Request| -> Result<(MergeKey, mergehold::Facts), String> {
         let read = project
             .read(&on, request.number)
@@ -243,9 +240,16 @@ fn raise(project: &dyn Project, ask: &MergeAsk) -> Result<String, String> {
             head: HeadSha::try_from(read.at.sha.as_str()).map_err(|why| why.to_string())?,
             base: Base::try_from(read.at.base.as_str()).map_err(|why| why.to_string())?,
         };
+        // Refused before it is raised, so a read on another forge never refreshes the ask.
+        if holds.forge_of(chat, &key).is_some_and(|was| was != on) {
+            return Err(format!(
+                "chat {chat} has this merge waiting on the person already, on another forge \
+                 than {}, so purlis does not ask it again here.",
+                on.forge.host
+            ));
+        }
         Ok((key, read.facts))
     };
-    let holds = project.holds();
     let (key, raised) = mergehold::asked(
         &holds.holds,
         chat,
@@ -270,17 +274,9 @@ fn raise(project: &dyn Project, ask: &MergeAsk) -> Result<String, String> {
                  Merge"
             );
         }
-        // Still the one ask, at the head and base it was raised at. A moved head is `New`: the
-        // ask at the old head is gone (Q242).
-        Raised::Already => {
-            if holds.forge_of(chat, &key).as_ref() != Some(&on) {
-                return Err(format!(
-                    "chat {chat} has this merge waiting on the person already, on another forge \
-                     than {}, so purlis does not ask it again here.",
-                    on.forge.host
-                ));
-            }
-        }
+        // Still the one ask, at the head and base it was raised at, showing the new read's facts
+        // (Q248). A moved head is `New`: the ask at the old head is gone (Q242).
+        Raised::Already => {}
         Raised::TooMany => {
             return Err(format!(
                 "chat {chat} has {} merges waiting on the person already, which is as many as \
@@ -293,12 +289,10 @@ fn raise(project: &dyn Project, ask: &MergeAsk) -> Result<String, String> {
     Ok(mergehold::handed_said(&request))
 }
 
-/// The repo and head a press names, checked as they are made.
-fn key_of(repo: &str, head: &str) -> Result<(Repo, HeadSha), String> {
-    Ok((
-        Repo::try_from(repo).map_err(|why| why.to_string())?,
-        HeadSha::try_from(head).map_err(|why| why.to_string())?,
-    ))
+/// The repo and head a press names, checked as they are made: a refusal is the core's
+/// [`Invalid`], which names the part and never the value.
+fn key_of(repo: &str, head: &str) -> Result<(Repo, HeadSha), Invalid> {
+    Ok((Repo::try_from(repo)?, HeadSha::try_from(head)?))
 }
 
 /// The window, as the answerer of every press here: the one client that sends these commands.
@@ -380,7 +374,7 @@ fn waiting(
     number: u32,
     head: &str,
 ) -> Result<(MergeKey, OnForge), String> {
-    let (repo, head) = key_of(repo, head)?;
+    let (repo, head) = key_of(repo, head).map_err(|why| why.to_string())?;
     let not_held = || mergehold::NotMerged::NotHeld.to_string();
     let key = holds
         .holds

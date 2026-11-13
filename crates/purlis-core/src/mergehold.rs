@@ -409,6 +409,9 @@ pub struct Facts {
     /// The checks at the ask's head.
     pub checks: crate::forge::checks::Checks,
     pub ruleset: Ruleset,
+    /// When the forge was read for these facts, in seconds since 1970: a try again at the same
+    /// head reads it again, and the newer read replaces these ([`Holds::raise`]).
+    pub read_at: u64,
 }
 
 /// **A request, as the forge says it stands**: where it is ([`HeadAt`](crate::forge::pr::HeadAt)),
@@ -419,46 +422,93 @@ pub struct Read {
     pub facts: Facts,
 }
 
-/// **Reads request `number` of the repo at `path` from the forge** for a merge ask, every call
-/// as the window, so with the app's own forge login and never a chat's token (R-146): where it
-/// stands, then the checks at its head and whether a ruleset protects its base, those two at
-/// once, so the read fits in [`THE_FORGE_IS_READ_WITHIN`]. A request that cannot be read is
-/// why nobody is asked; checks or a ruleset the forge does not say are unknown, never passed or
-/// none.
+/// **Reads request `number` of the repo at `path` from the forge** for a merge ask at `now`,
+/// every call as the window, so with the app's own forge login and never a chat's token
+/// (R-146). **The head alone gates the ask** (Q248): where the request stands must be read
+/// within `within`, or nobody is asked. The checks at its head and whether a ruleset protects its
+/// base are read alongside it, and one the forge has not given by then, or fails to give, is
+/// unknown, never passed or none, and the ask is still raised. A late read is left to finish on
+/// its own and never waited for.
 pub fn read(
-    backend: &dyn crate::forge::backend::ForgeBackend,
+    backend: std::sync::Arc<dyn crate::forge::backend::ForgeBackend>,
     path: &str,
     number: u64,
+    within: std::time::Duration,
+    now: u64,
 ) -> Result<Read, String> {
-    let app = crate::forge::backend::Caller::window();
-    let pr = crate::forge::pr::Pr {
-        number,
-        url: String::new(),
+    let by = std::time::Instant::now() + within;
+    let left = || by.saturating_duration_since(std::time::Instant::now());
+    let late = "the forge did not say in time";
+    let head = {
+        let path = path.to_owned();
+        alongside(&backend, move |forge| {
+            let pr = crate::forge::pr::Pr {
+                number,
+                url: String::new(),
+            };
+            forge.head(&crate::forge::backend::Caller::window(), &path, &pr)
+        })
     };
-    let at = backend
-        .head(&app, path, &pr)
+    let at = head
+        .recv_timeout(left())
+        .map_err(|_| "the forge did not answer in time".to_owned())?
         .map_err(|why| why.to_string())?;
-    let (checks, ruleset) = std::thread::scope(|both| {
-        let checks = both.spawn(|| backend.checks_at(&app, path, &at.sha, number));
-        let ruleset = match backend.ruleset_protects(&app, path, &at.base) {
-            Ok(true) => Ruleset::Protects,
-            Ok(false) => Ruleset::None,
-            Err(why) => Ruleset::Unknown(why.to_string()),
-        };
-        let checks = checks
-            .join()
-            .unwrap_or_else(|panicked| std::panic::resume_unwind(panicked));
-        (checks, ruleset)
-    });
+    let checks = {
+        let (path, sha) = (path.to_owned(), at.sha.clone());
+        alongside(&backend, move |forge| {
+            forge.checks_at(
+                &crate::forge::backend::Caller::window(),
+                &path,
+                &sha,
+                number,
+            )
+        })
+    };
+    let ruleset = {
+        let (path, base) = (path.to_owned(), at.base.clone());
+        alongside(&backend, move |forge| {
+            forge.ruleset_protects(&crate::forge::backend::Caller::window(), &path, &base)
+        })
+    };
+    let checks = checks
+        .recv_timeout(left())
+        .unwrap_or_else(|_| crate::forge::checks::Checks::unknown(late));
+    let ruleset = match ruleset.recv_timeout(left()) {
+        Ok(Ok(true)) => Ruleset::Protects,
+        Ok(Ok(false)) => Ruleset::None,
+        Ok(Err(why)) => Ruleset::Unknown(why.to_string()),
+        Err(_) => Ruleset::Unknown(late.to_owned()),
+    };
     Ok(Read {
         facts: Facts {
             title: at.title.clone(),
             author: at.author.clone(),
             checks,
             ruleset,
+            read_at: now,
         },
         at,
     })
+}
+
+/// Runs `read` against `backend` on a thread of its own and hands back where its answer comes.
+/// The thread is never joined: a read that comes too late finishes, and its answer is dropped.
+/// A thread that cannot be started sends nothing, so it reads as late.
+fn alongside<T: Send + 'static>(
+    backend: &std::sync::Arc<dyn crate::forge::backend::ForgeBackend>,
+    read: impl FnOnce(&dyn crate::forge::backend::ForgeBackend) -> T + Send + 'static,
+) -> std::sync::mpsc::Receiver<T> {
+    let (tell, heard) = std::sync::mpsc::channel();
+    let backend = std::sync::Arc::clone(backend);
+    let started = std::thread::Builder::new()
+        .name("merge-hold".to_owned())
+        .spawn(move || {
+            let _ = tell.send(read(backend.as_ref()));
+        });
+    if let Err(why) = started {
+        tracing::warn!("purlis: a merge ask's read could not start: {why}");
+    }
+    heard
 }
 
 /// **Where the request stands now**, as the forge says at a press.
@@ -634,6 +684,8 @@ impl Holds {
     /// **A moved head is a new ask** (Q242): a try again at another head or base than the
     /// waiting ask's retires it and raises a new one in its place, waiting since `now`, so a key
     /// is never rewritten under an ask the person may be looking at.
+    /// **A try again at the same head refreshes what the ask shows** (Q248): it is the one ask
+    /// still, waiting since it was first raised, and the newer read's `facts` replace the old.
     pub fn raise(&self, session: u32, key: MergeKey, facts: Facts, now: u64) -> Raised {
         let mut held = self.lock();
         if let Some(at) = held
@@ -641,6 +693,7 @@ impl Holds {
             .position(|one| one.session == session && one.key.same_request(&key))
         {
             if held[at].key == key {
+                held[at].facts = facts;
                 return Raised::Already;
             }
             held.remove(at);

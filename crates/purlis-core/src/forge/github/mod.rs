@@ -528,6 +528,16 @@ impl WorkItems for GitHub {
     }
 }
 
+/// The rule types a GitHub ruleset gates a merge with (Q248): a request's reviews, its checks,
+/// its deployments, a merge queue, or who may update the branch. Others gate no merge.
+const MERGE_GATES: [&str; 5] = [
+    "pull_request",
+    "required_status_checks",
+    "required_deployments",
+    "merge_queue",
+    "update",
+];
+
 impl Requests for GitHub {
     fn open_or_update(
         &self,
@@ -684,7 +694,15 @@ impl Requests for GitHub {
         })
     }
 
-    /// The rules GitHub's rulesets give the branch: any is a ruleset protecting it.
+    /// **Whether a merge into `branch` is gated** (Q248): by a rule GitHub's rulesets give the
+    /// branch that gates one ([`MERGE_GATES`]), else by its classic branch protection where it
+    /// requires reviews or checks, or restricts who pushes. Rules that gate no merge (deletion,
+    /// force pushes, linear history, signatures, message patterns) do not count.
+    ///
+    /// What this cannot see: who may bypass a ruleset (its bypass actors), and classic
+    /// protection the app's login may not read (GitHub answers it only to a repo's admins), which
+    /// is an error, so unknown, never none. A slash in the branch's name is percent-encoded, as
+    /// [`quote`] does every path part.
     fn ruleset_protects(
         &self,
         caller: &Caller,
@@ -692,18 +710,34 @@ impl Requests for GitHub {
         branch: &str,
     ) -> Result<bool, ForgeError> {
         let (owner, name) = owner_name(path);
-        let api = format!(
-            "repos/{}/{}/rules/branches/{}",
-            quote(owner),
-            quote(name),
-            quote(branch)
-        );
+        let repo = format!("repos/{}/{}", quote(owner), quote(name));
+        let api = format!("{repo}/rules/branches/{}", quote(branch));
         let doing = format!("reading the rules for {branch} in {path}");
         let rules = self.0.ask(caller, &Call::get(&api, LIST_TIMEOUT), &doing)?;
-        rules
+        let rules = rules
             .as_array()
-            .map(|rules| !rules.is_empty())
-            .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub answered no list")))
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub answered no list")))?;
+        if rules
+            .iter()
+            .any(|rule| MERGE_GATES.contains(&rule["type"].as_str().unwrap_or_default()))
+        {
+            return Ok(true);
+        }
+        let api = format!("{repo}/branches/{}/protection", quote(branch));
+        let doing = format!("reading the branch protection of {branch} in {path}");
+        let not_protected = |reply: &super::transport::Reply| {
+            reply.status == Some(404) || reply.err.contains("(HTTP 404)")
+        };
+        let Some(protection) = self.0.found(caller, &api, &doing, not_protected)? else {
+            return Ok(false);
+        };
+        Ok([
+            "required_pull_request_reviews",
+            "required_status_checks",
+            "restrictions",
+        ]
+        .iter()
+        .any(|gate| !protection[*gate].is_null()))
     }
 
     fn body(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<String, ForgeError> {

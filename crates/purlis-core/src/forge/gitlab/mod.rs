@@ -177,6 +177,17 @@ fn no_such_group(answer: &Reply) -> bool {
         || both.contains("404 Group Not Found")
 }
 
+/// Whether GitLab answered that no protected branch has the name asked: a `404`, by its status
+/// where the transport saw one, else by `glab`'s `(HTTP 404)` or GitLab's own `404 Not found`.
+/// Never any reply that only has `404` in it: a branch named `fix-404` whose read failed is a
+/// failure, not none.
+fn no_protected_branch(answer: &Reply) -> bool {
+    let both = answer.both();
+    answer.status == Some(404)
+        || both.contains("(HTTP 404)")
+        || both.to_lowercase().contains("404 not found")
+}
+
 /// One GitLab repo as a neutral record (Python's `_normalize`). Its name is its `path`, the
 /// name in its URL, else its display `name`.
 fn normalize(raw: &Value) -> RepoRecord {
@@ -699,7 +710,12 @@ impl Requests for GitLab {
         })
     }
 
-    /// The project's protected branch of that name: GitLab answers 404 where there is none.
+    /// The project's protected branch of that name: GitLab answers 404 where there is none
+    /// ([`no_protected_branch`]).
+    ///
+    /// What this cannot see: a protected branch that lets developers merge still reads as
+    /// protecting it, and a wildcard protection (`release/*`) is not found by this exact-name
+    /// lookup, so reads as none.
     fn ruleset_protects(
         &self,
         caller: &Caller,
@@ -712,8 +728,10 @@ impl Requests for GitLab {
             quote(branch)
         );
         let doing = format!("reading whether {branch} is protected in {path}");
-        let none = |reply: &Reply| reply.status == Some(404) || reply.both().contains("404");
-        Ok(self.0.found(caller, &api, &doing, none)?.is_some())
+        Ok(self
+            .0
+            .found(caller, &api, &doing, no_protected_branch)?
+            .is_some())
     }
 
     fn state(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<State, ForgeError> {

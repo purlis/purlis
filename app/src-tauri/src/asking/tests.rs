@@ -1542,6 +1542,7 @@ fn a_held_merge(session: u32) -> purlis_core::mergehold::Waits {
                 failed: Vec::new(),
             },
             ruleset: purlis_core::mergehold::Ruleset::Protects,
+            read_at: 40,
         },
         since: 40,
     }

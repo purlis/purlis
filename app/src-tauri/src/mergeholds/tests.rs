@@ -57,6 +57,7 @@ fn facts() -> mergehold::Facts {
             failed: Vec::new(),
         },
         ruleset: mergehold::Ruleset::Protects,
+        read_at: 40,
     }
 }
 
@@ -534,7 +535,9 @@ fn a_try_again_at_the_same_head_replaces_the_asks_facts_with_the_new_read() {
     ));
     let since = project.holds.every()[0].since;
 
-    *project.read.lock().unwrap() = Ok(at(HEAD));
+    let mut passed = at(HEAD);
+    passed.facts.read_at = 50;
+    *project.read.lock().unwrap() = Ok(passed);
     assert!(matches!(
         answer(&project, &project.ask(12)),
         Answer::MergeHeld { .. }
@@ -545,6 +548,7 @@ fn a_try_again_at_the_same_head_replaces_the_asks_facts_with_the_new_read() {
         panic!("one ask: {waiting:?}");
     };
     assert_eq!(one.facts.checks.ci, Ci::Passed, "the new read's checks");
+    assert_eq!(one.facts.read_at, 50, "when the new read was made");
     assert_eq!(one.since, since, "still the ask first raised");
     assert_eq!(project.holds_recorded(), 1, "no second hold");
 }

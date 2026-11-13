@@ -230,7 +230,14 @@ fn the_ruleset_check_uses_the_apps_forge_login_not_the_chats_token() {
     let backend =
         crate::forge::Forge::default_of(crate::forge::Kind::GitHub).backend_for(logins.clone());
 
-    let read = read(backend.as_ref(), "o/r", 12).expect("the forge was read");
+    let read = read(
+        std::sync::Arc::from(backend),
+        "o/r",
+        12,
+        THE_FORGE_IS_READ_WITHIN,
+        40,
+    )
+    .expect("the forge was read");
 
     assert_eq!(read.facts.ruleset, Ruleset::Protects);
     assert!(
@@ -318,7 +325,14 @@ fn a_slow_checks_read_is_unknown_and_the_ask_is_still_raised() {
     }));
     let started = std::time::Instant::now();
 
-    let read = read(backend.as_ref(), "o/r", 12).expect("the head was read in time");
+    let read = read(
+        std::sync::Arc::from(backend),
+        "o/r",
+        12,
+        THE_FORGE_IS_READ_WITHIN,
+        40,
+    )
+    .expect("the head was read in time");
 
     assert!(
         started.elapsed() < THE_FORGE_IS_READ_WITHIN * 2,
@@ -354,7 +368,14 @@ fn a_failed_ruleset_read_is_unknown_never_none() {
         "out": "{\"message\": \"Server Error\"}", "err": "gh: Server Error (HTTP 500)"});
     let backend = github_over(recorded(request_12(refused)));
 
-    let read = read(backend.as_ref(), "o/r", 12).expect("the head was read");
+    let read = read(
+        std::sync::Arc::from(backend),
+        "o/r",
+        12,
+        THE_FORGE_IS_READ_WITHIN,
+        40,
+    )
+    .expect("the head was read");
 
     let Ruleset::Unknown(why) = &read.facts.ruleset else {
         panic!("{:?}", read.facts.ruleset);
