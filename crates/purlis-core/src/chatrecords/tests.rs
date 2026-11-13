@@ -153,3 +153,34 @@ fn a_file_that_is_not_one_purlis_wrote_reads_as_none() {
         assert!(every(&root).is_empty(), "{text}");
     }
 }
+
+#[test]
+fn the_sweep_takes_a_chat_ended_exactly_thirty_days_ago_as_a_dispatch_record_is() {
+    // `retention` collects a dispatch record "30 days or more" after its end.
+    let (_dir, root) = project();
+    keep(&root, &chat(702, ID, "2026-10-14T00:00:00Z")).unwrap();
+    keep(&root, &chat(703, OTHER, "2026-10-14T00:00:01Z")).unwrap();
+    assert_eq!(sweep(&root, at("2026-11-13T00:00:00Z")), 1);
+    assert_eq!(
+        every(&root)
+            .iter()
+            .map(|one| one.number)
+            .collect::<Vec<_>>(),
+        vec![703]
+    );
+}
+
+#[test]
+fn a_chat_that_ended_in_the_future_is_aged_from_the_files_last_write() {
+    // A clock far ahead wrote its end: it is aged as a dispatch record whose end stands in the
+    // future is, from when the file was written, and is not kept on for ever.
+    let (_dir, root) = project();
+    let now = SystemTime::now();
+    let stamp = |time: SystemTime| chrono::DateTime::<chrono::Utc>::from(time).to_rfc3339();
+    let a_year = std::time::Duration::from_secs(365 * 24 * 3600);
+    let a_month = std::time::Duration::from_secs(31 * 24 * 3600);
+    keep(&root, &chat(702, ID, &stamp(now + a_year))).unwrap();
+    assert_eq!(sweep(&root, now), 0, "written just now");
+    assert_eq!(sweep(&root, now + a_month), 1);
+    assert!(every(&root).is_empty());
+}

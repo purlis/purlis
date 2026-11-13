@@ -24,8 +24,8 @@
 //!   every sandboxed chat for reading and for writing, as it denies the dispatch records and the
 //!   kept screens. A chat's title is the person's, and so is the list of what they ran.
 //! - **Swept like a dispatch record** ([`sweep`], run at the project's open from
-//!   [`crate::retention::on_open`]): a chat that ended more than
-//!   [`crate::retention::KEEP_FOR`] (30 days) ago goes. Held to [`MOST_KEPT`] besides, the
+//!   [`crate::retention::on_open`]): a chat that ended
+//!   [`crate::retention::KEEP_FOR`] (30 days) or more ago goes. Held to [`MOST_KEPT`] besides, the
 //!   oldest close going first.
 //! - **Read as the app wrote it**: one file of at most [`MOST_FILE_BYTES`], opened following no
 //!   link, written whole through a temp file at 0600 under the folder's lock. An entry that does
@@ -248,31 +248,28 @@ pub fn keep(root: &Path, chat: &ChatRecord) -> std::io::Result<()> {
     write_all(root, std::iter::once(entry).chain(others))
 }
 
-/// **Takes away every chat that ended more than [`crate::retention::KEEP_FOR`] before `now`**,
+/// **Takes away every chat that ended [`crate::retention::KEEP_FOR`] or more before `now`**,
 /// and every entry that does not hold together, in the project at `root`: what a dispatch
-/// record is swept at. Answers how many went.
+/// record is swept at (`dispatchrecord::aged_from`). An end that stands more than
+/// `dispatchrecord::END_SKEW` past `now` was written by a clock far ahead, and is aged
+/// from the file's last write instead, so it is not kept on for ever. Answers how many went.
 pub fn sweep(root: &Path, now: SystemTime) -> usize {
     let file = path(root);
-    if !std::fs::symlink_metadata(&file).is_ok_and(|meta| meta.is_file()) {
+    let Ok(meta) = std::fs::symlink_metadata(&file) else {
+        return 0;
+    };
+    if !meta.is_file() {
         return 0;
     }
     let Ok(_held) = locked(root) else {
         return 0;
     };
+    let written = meta.modified().unwrap_or(now);
     let values = read_values(&file);
     let before = values.len();
-    let now: chrono::DateTime<chrono::Utc> = now.into();
     let kept: Vec<serde_json::Value> = values
         .into_iter()
-        .filter(|value| {
-            sound(value.clone()).is_some_and(|chat| {
-                chrono::DateTime::parse_from_rfc3339(&chat.ended).is_ok_and(|ended| {
-                    (now - ended.with_timezone(&chrono::Utc))
-                        .to_std()
-                        .map_or(true, |age| age <= crate::retention::KEEP_FOR)
-                })
-            })
-        })
+        .filter(|value| sound(value.clone()).is_some_and(|chat| !due(&chat, written, now)))
         .collect();
     let gone = before - kept.len();
     if gone == 0 {
@@ -285,6 +282,19 @@ pub fn sweep(root: &Path, now: SystemTime) -> usize {
             0
         }
     }
+}
+
+/// Whether `chat`, in a file last written at `written`, is [`crate::retention::KEEP_FOR`] or
+/// more old at `now`: aged from its end, or from `written` where its end stands in the future.
+fn due(chat: &ChatRecord, written: SystemTime, now: SystemTime) -> bool {
+    let latest = chrono::DateTime::<chrono::Utc>::from(now) + crate::dispatchrecord::END_SKEW;
+    let from = chrono::DateTime::parse_from_rfc3339(&chat.ended)
+        .ok()
+        .map(|ended| ended.with_timezone(&chrono::Utc))
+        .filter(|ended| *ended <= latest)
+        .map_or(written, SystemTime::from);
+    now.duration_since(from)
+        .is_ok_and(|age| age >= crate::retention::KEEP_FOR)
 }
 
 #[cfg(test)]
