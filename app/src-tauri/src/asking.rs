@@ -963,11 +963,18 @@ pub fn tell(plane: &PlaneId, hooks: &HookAsks, telling: &Telling) {
 
 /// What hears a permission hook's ask on `plane`'s channel: held in `hooks` until it is
 /// answered, its hook goes away, or its deadline passes, and the window told each change.
-pub fn permitting(plane: PlaneId, hooks: Arc<HookAsks>, telling: Telling) -> Permitting {
+/// `raised` is told of each ask held before the window is.
+pub fn permitting(
+    plane: PlaneId,
+    hooks: Arc<HookAsks>,
+    telling: Telling,
+    raised: purlis_core::hookwire::permission::Raising,
+) -> Permitting {
     let told = Arc::clone(&hooks);
-    purlis_core::hookwire::permission::held_in(
+    purlis_core::hookwire::permission::held_in_and_told(
         hooks,
         Arc::new(move || tell(&plane, &told, &telling)),
+        raised,
     )
 }
 
@@ -4771,6 +4778,13 @@ pub fn forget_sandbox_block(
         match crate::taskblocks::shown_one(blocks, session, &shown) {
             Ok(block) => {
                 blocks.answered(session, &block);
+                // R-229: the person's Keep blocked, in the chat's Chat log.
+                crate::chatlog::answered_in_the_window(
+                    held.hooks(),
+                    session,
+                    purlis_core::eventlog::stops::AskGroup::Sandbox,
+                    false,
+                );
                 // The person's no, kept where the Inbox's look back reads it (#1700).
                 if block.what == crate::sandboxing::GrantWhat::Host {
                     crate::network::record_kept_blocked(

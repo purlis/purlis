@@ -123,6 +123,23 @@ pub fn held_in(
     hooks: std::sync::Arc<crate::harness::hooked::HookAsks>,
     changed: std::sync::Arc<dyn Fn() + Send + Sync + 'static>,
 ) -> Permitting {
+    held_in_and_told(
+        hooks,
+        changed,
+        std::sync::Arc::new(|_: &crate::harness::asks::Raised| {}),
+    )
+}
+
+/// What [`held_in_and_told`] tells of each ask it holds.
+pub type Raising = std::sync::Arc<dyn Fn(&crate::harness::asks::Raised) + Send + Sync + 'static>;
+
+/// [`held_in`], telling `raised` of each ask it holds **before anything else is told of it**,
+/// so what a host writes of it as raised (R-229) comes before any answer to it can.
+pub fn held_in_and_told(
+    hooks: std::sync::Arc<crate::harness::hooked::HookAsks>,
+    changed: std::sync::Arc<dyn Fn() + Send + Sync + 'static>,
+    raised: Raising,
+) -> Permitting {
     Box::new(move |asked: PermissionAsked| {
         let held = hooks
             .raise_after(
@@ -146,6 +163,7 @@ pub fn held_in(
             hooks.withdraw(&id);
             return None;
         };
+        raised(&held.raised);
         changed();
         let (hooks, changed) = (
             std::sync::Arc::clone(&hooks),

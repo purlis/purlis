@@ -344,8 +344,9 @@ const isLevel = (option: string): option is GrantLevel =>
  */
 export const OPENS_DELETE_WORKSPACE = "remove";
 
-/** **Raise the budget** on a chat paused at its budget (#6015): the window's own answer, which
- *  opens Settings › Project › Dispatch at its limits and sends nothing. */
+/** **Raise the budget** on a chat paused at its budget (#6015): opens Settings › Project ›
+ *  Dispatch at its limits, and answers the ask, which leaves the chat paused until a look finds
+ *  it within the new limit (Q261). */
 export const RAISE_THE_BUDGET = "raise";
 
 /** What is said when an ask names no path the window can send. */
@@ -837,12 +838,11 @@ export async function answerTaken(
       }
       case "paused":
         // A chat paused at its budget or as looping (#6015): Raise the budget opens Settings where
-        // the limit is, and the chat goes on once a look finds it within the new limit. Every
-        // other answer is the core's: Continue and It's fine let it go on, Stop stops it.
+        // the limit is and answers the ask, and the chat goes on once a look finds it within the
+        // new limit (Q261). Continue and It's fine let it go on, Stop stops it.
         if (option === RAISE_THE_BUDGET) {
           askSettingsLink(plane, { group: "project.dispatch", setting: "project.dispatch.limits" });
           opened = true;
-          return { status: "ok" };
         }
         return commands.answerPause(plane, ask.session, option);
       case "confirmation":

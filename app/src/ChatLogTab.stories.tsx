@@ -201,7 +201,7 @@ export const Asks: Story = {
  */
 export const Held: Story = {
   args: {
-    rows: [START, { kind: "held", at: at(20), tool: "Bash", arm: "merge-hold" }],
+    rows: [START, { kind: "held", at: at(20), tool: "Bash", arm: "merge-hold", sub_agent: false }],
   },
   play: async ({ canvas }) => {
     await expect(linesOf(canvas, "held")).toEqual([

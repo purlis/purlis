@@ -1142,9 +1142,16 @@ pub async fn allow_sandbox_block_for_tasks(
             &held.audit_then_record(network.as_ref()),
             (crate::sandboxing::now_secs(), &|told| tell(told)),
         )?;
-        // Each task allowed starts its block count again (R-211, Q253).
+        // Each task allowed starts its block count again (R-211, Q253), and is the person's
+        // Allow in its Chat log (R-229).
         for task in &done.answered {
             crate::pausing::allowed(&held, *task);
+            crate::chatlog::answered_in_the_window(
+                held.hooks(),
+                *task,
+                purlis_core::eventlog::stops::AskGroup::Sandbox,
+                true,
+            );
         }
         Ok(done)
     })
@@ -1164,7 +1171,17 @@ pub fn keep_sandbox_block_for_tasks(
 ) -> Result<Vec<u32>, String> {
     let held = planes.held(&plane)?;
     let audit = held.audit_then_record(planes.network());
-    keep_blocked(held.chats(), session, &seen, reason.as_deref(), &audit)
+    let kept = keep_blocked(held.chats(), session, &seen, reason.as_deref(), &audit)?;
+    // R-229: each task's Keep blocked, in its Chat log.
+    for task in &kept {
+        crate::chatlog::answered_in_the_window(
+            held.hooks(),
+            *task,
+            purlis_core::eventlog::stops::AskGroup::Sandbox,
+            false,
+        );
+    }
+    Ok(kept)
 }
 
 /// [`keep_sandbox_block_for_tasks`] on `chats`.

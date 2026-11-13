@@ -309,6 +309,23 @@ pub enum AskGroup {
     HookGiveUp,
 }
 
+impl AskGroup {
+    /// **The group of an ask the harness asks registry holds** ([`crate::harness::asks`]), read
+    /// from the ask: a harness's own permission prompt, whatever its action. A sandbox ask, a
+    /// hold, a pause and a consent are raised elsewhere, each under its own group; an ask of
+    /// another group that comes to the registry is named here first.
+    pub fn of(ask: &crate::harness::model::Ask) -> Self {
+        match ask.action {
+            crate::harness::model::Action::Unsaid
+            | crate::harness::model::Action::Command { .. }
+            | crate::harness::model::Action::Edit { .. }
+            | crate::harness::model::Action::Tool { .. }
+            | crate::harness::model::Action::Elicit { .. }
+            | crate::harness::model::Action::Question { .. } => Self::HarnessPrompt,
+        }
+    }
+}
+
 /// What the person answered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -352,16 +369,26 @@ pub struct AskAnswered {
 impl AskAnswered {
     /// **The answer the asks registry applied** (HP-5), to an ask of group `ask`: allowed where
     /// the option chosen allows, refused for a reject or a cancel, and by the human scope it came
-    /// through.
+    /// through ([`crate::harness::asks::Applied::by`]).
     pub fn applied(ask: AskGroup, applied: &crate::harness::asks::Applied) -> Self {
+        Self::chosen(ask, &applied.choice, applied.by)
+    }
+
+    /// **`choice`, chosen by `by` for an ask of group `ask`**: [`Self::applied`]'s rule, for an
+    /// answer the registry holds no longer, one to an ask that lapsed (#6007).
+    pub fn chosen(
+        ask: AskGroup,
+        choice: &crate::harness::model::Choice,
+        by: crate::harness::asks::Answerer,
+    ) -> Self {
         Self {
             ask,
-            answer: match applied.choice.kind {
+            answer: match choice.kind {
                 crate::harness::model::ChoiceKind::Allow => Answer::Allowed,
                 crate::harness::model::ChoiceKind::Reject
                 | crate::harness::model::ChoiceKind::Cancel => Answer::Refused,
             },
-            by: applied.by.into(),
+            by: by.into(),
         }
     }
 }

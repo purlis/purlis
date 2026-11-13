@@ -992,5 +992,9 @@ fn a_sub_agents_stop_row_is_marked_as_the_sub_agents() {
             _ => None,
         })
         .collect();
-    assert_eq!(marks, [false, true], "the chat's own hold, then its sub-agent's");
+    assert_eq!(
+        marks,
+        [false, true],
+        "the chat's own hold, then its sub-agent's"
+    );
 }

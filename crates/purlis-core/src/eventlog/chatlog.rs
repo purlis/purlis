@@ -19,8 +19,8 @@
 //! [`Tally`] has a bucket for it. A raised ask is no stop and is never counted.
 //!
 //! **What heads a Chat log is a query of its own** ([`summary`]): the tool events its allowed
-//! counts are read from, and the start its honesty lines are, are the trace, never the story,
-//! so [`timeline`] leaves the tool events out.
+//! counts are read from, and the starts and lifted sandboxes its honesty lines are, are the
+//! trace, never the story, so [`timeline`] leaves the tool events out.
 
 use std::collections::BTreeMap;
 use std::io;
@@ -100,7 +100,13 @@ pub enum Row {
         answered: AskAnswered,
     },
     /// **A hold** (R-231): an action purlis refused to the chat and raised as an ask.
-    Held { at_ms: Option<u64>, hold: Hold },
+    Held {
+        at_ms: Option<u64>,
+        hold: Hold,
+        /// It was written under a sub-agent's run (one with a `parent_run`): still the chat's
+        /// row, marked as its sub-agent's (Q261).
+        sub_agent: bool,
+    },
     /// **A loop pause** (R-232): the rule that paused the chat, and at how many times.
     LoopPaused {
         at_ms: Option<u64>,
@@ -115,7 +121,8 @@ pub enum Row {
 /// with a `parent_run` is a sub-agent's: its start and end are the trace of the chat's work,
 /// not its story, and its stops are still the chat's rows. A `/clear`'s run (and a sub-agent's)
 /// carries a copy of what the run before it started under, so it is no start of its own; a
-/// relaunch (`reopen`, `fresh`) resolved its protection anew, and is.
+/// relaunch (`reopen`, `fresh`) resolved its protection anew, and is. A stop written under a
+/// sub-agent's run says so (Q261): in phase 1, a hold.
 pub fn rows(events: &[Event], chat: &str) -> Vec<Row> {
     timeline(events, chat)
         .into_iter()
@@ -162,7 +169,11 @@ pub fn rows(events: &[Event], chat: &str) -> Vec<Row> {
                 stops::ASK_ANSWERED => {
                     read(&event).map(|answered| Row::AskAnswered { at_ms, answered })
                 }
-                stops::HOLD => read(&event).map(|hold| Row::Held { at_ms, hold }),
+                stops::HOLD => read(&event).map(|hold| Row::Held {
+                    at_ms,
+                    hold,
+                    sub_agent: !own,
+                }),
                 stops::LOOP_PAUSE => read(&event).map(|pause| Row::LoopPaused { at_ms, pause }),
                 _ => None,
             }
@@ -181,45 +192,64 @@ const SANDBOX_OFF: &str = "trust.sandbox.off";
 const SANDBOX_ON: &str = "trust.sandbox.on";
 
 /// **What heads a chat's Chat log** (R-234, R-235): its allowed calls, collapsed into one
-/// count with those allowed by the person's rules, and the honesty lines its start event says.
+/// count with those allowed by the person's rules, and the honesty lines over the whole chat.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Summary {
-    /// The calls purlis's hook let through.
+    /// The calls purlis's hook allowed.
     pub allowed: u32,
     /// Of those, the calls an entry in the person's Allowed list allowed.
     pub by_your_rules: u32,
-    /// What reports the chat's calls is within its own reach, so its reports are not checked.
+    /// What reports the chat's calls was within its own reach at some start, or nothing says
+    /// how it ran, so its reports are not checked.
     pub unverified: bool,
-    /// The chat ran with No sandbox: as the person, with all they can reach.
+    /// The chat ran with No sandbox at some point: as the person, with all they can reach.
     pub ran_as_you: bool,
 }
 
-/// **What heads chat `chat`'s Chat log** among `events` ([`Summary`]), from its tool events and
-/// its latest start.
+/// **What heads chat `chat`'s Chat log** among `events` ([`Summary`]), from its tool events,
+/// every start of it, and its sandbox lifted for a run.
 ///
-/// - **Allowed** (R-234): each call whose tool event before it ran (a `PreToolUse` hook's,
-///   [`super::phase`]) says purlis's hook let it through, `allow` or `none`, once per call by
-///   its id under its run, so its post hook, or a second pre hook, is never a second call. A
-///   call refused (`deny`) or asked about (`ask`) is not counted.
+/// - **Allowed** (R-234, Q261): each call whose tool event before it ran (a `PreToolUse`
+///   hook's, [`super::phase`]) says purlis's hook allowed it, `allow`, once per call by its id
+///   under its run, so its post hook, or a second pre hook, is never a second call. A call the
+///   hook had no say on (`none`), refused (`deny`) or asked about (`ask`) is not counted.
 /// - **By your rules**: of those, each allowed by an entry of the person's Allowed list, which
 ///   its `allow` names as its `rule`.
-/// - **Unverified** (R-235): the chat's hooks report from within its reach, as its start's
-///   harness and sandbox say ([`stops::reported_from_outside_its_reach`]), the rule a block's
-///   report takes.
-/// - **Ran as you**: its start's sandbox layer was at `off`, No sandbox; where the start did
-///   not record its protection, a start with no sandbox backend (`none`).
+/// - **Unverified** (R-235, Q261): any start of the chat's says its hooks report from within its
+///   reach, as its harness and sandbox say ([`stops::reported_from_outside_its_reach`]), the
+///   rule a block's report takes; and a chat with no start in the log is unverified, since
+///   verified is an allowlist (Q235) and nothing says how it ran.
+/// - **Ran as you** (Q261): any start's sandbox layer was at `off`, No sandbox (where a start
+///   did not record its protection, one with no sandbox backend, `none`), or its sandbox was
+///   lifted for a run (`trust.sandbox.off`).
 ///
-/// A chat with no start in the log says neither line: nothing says how it ran.
+/// **The counts are only as good as the chat's hook lines** (Q235): a chat whose hooks run
+/// within its reach can write lines that say `allow` for calls it never made, and so inflate
+/// its own counts. The Unverified line says so for such a chat.
 pub fn summary(events: &[Event], chat: &str) -> Summary {
     let mut summary = Summary::default();
+    let mut started = false;
     let mut calls = std::collections::HashSet::new();
-    let mut start = None;
     for event in events
         .iter()
         .filter(|event| event.chat.as_deref() == Some(chat))
     {
-        if event.kind == "run.started" && event.parent_run.is_none() {
-            start = Some(event);
+        if event.kind == "run.started" {
+            let attributes: super::Attributes =
+                serde_json::from_value(event.body.clone()).unwrap_or_default();
+            started = true;
+            summary.unverified |= !stops::reported_from_outside_its_reach(&attributes);
+            summary.ran_as_you |= match &attributes.protection {
+                Some(in_force) => in_force
+                    .layers
+                    .iter()
+                    .any(|layer| layer.layer == SANDBOX && layer.level == "off"),
+                None => attributes.sandbox.as_deref() == Some("none"),
+            };
+            continue;
+        }
+        if event.kind == SANDBOX_OFF {
+            summary.ran_as_you = true;
             continue;
         }
         let Some(hook) = event.kind.strip_prefix("hook.") else {
@@ -229,8 +259,7 @@ pub fn summary(events: &[Event], chat: &str) -> Summary {
             continue;
         }
         let said = |field: &str| event.body.get(field).and_then(serde_json::Value::as_str);
-        let decision = said("decision");
-        if !matches!(decision, Some("allow" | "none")) {
+        if said("decision") != Some("allow") {
             continue;
         }
         if let Some(call) = said("call")
@@ -239,22 +268,11 @@ pub fn summary(events: &[Event], chat: &str) -> Summary {
             continue;
         }
         summary.allowed = summary.allowed.saturating_add(1);
-        if decision == Some("allow") && said("rule").is_some() {
+        if said("rule").is_some() {
             summary.by_your_rules = summary.by_your_rules.saturating_add(1);
         }
     }
-    if let Some(start) = start {
-        let attributes: super::Attributes =
-            serde_json::from_value(start.body.clone()).unwrap_or_default();
-        summary.unverified = !stops::reported_from_outside_its_reach(&attributes);
-        summary.ran_as_you = match &attributes.protection {
-            Some(in_force) => in_force
-                .layers
-                .iter()
-                .any(|layer| layer.layer == SANDBOX && layer.level == "off"),
-            None => attributes.sandbox.as_deref() == Some("none"),
-        };
-    }
+    summary.unverified |= !started;
     summary
 }
 

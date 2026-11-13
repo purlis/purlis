@@ -221,11 +221,19 @@ export function askSaid(row: AskRow): string {
 /** The arm a held merge is held at (`purlis_core::mergehold::REASON`). */
 const MERGE_HOLD = "merge-hold";
 
-/** **A hold's line** (R-231): what purlis held for the person. Grants are phase 3's rows. */
+/** What a stop row under one of the chat's sub-agents ends with (Q261). */
+const OF_A_HELPER = " · from one of its helpers";
+
+/**
+ * **A hold's line** (R-231): what purlis held for the person, and, where it was held under one
+ * of the chat's sub-agents, that it was its helper's (Q261). Grants are phase 3's rows.
+ */
 export function holdSaid(row: Extract<ChatLogRow, { kind: "held" }>): string {
-  if (row.arm === MERGE_HOLD) return "Held a merge · purlis merges it only when you press Merge";
+  const helper = row.sub_agent ? OF_A_HELPER : "";
+  if (row.arm === MERGE_HOLD)
+    return `Held a merge · purlis merges it only when you press Merge${helper}`;
   const call = row.tool === "" || row.tool === "unknown" ? "a call" : `a ${row.tool} call`;
-  return `Held ${call} · purlis asked you first`;
+  return `Held ${call} · purlis asked you first${helper}`;
 }
 
 /** **A loop pause's line** (R-232): which rule paused the chat, and at how many times. */
@@ -278,15 +286,12 @@ export function honestyLines(summary: ChatLogSummary): string[] {
 }
 
 /**
- * **The allowed calls, in one line** (R-234): `212 allowed · 9 by your rules`, the second count
- * only where a rule of the person's allowed one; none for a chat with no allowed call.
+ * **The allowed calls, in one line** (R-234): `212 allowed · 9 by your rules`, both counts
+ * always, so none by the person's rules reads as 0 (Q261); none for a chat with no allowed call.
  */
 export function allowedSaid(summary: ChatLogSummary): string | null {
   if (summary.allowed === 0) return null;
-  const allowed = `${summary.allowed} allowed`;
-  return summary.by_your_rules === 0
-    ? allowed
-    : `${allowed} · ${summary.by_your_rules} by your rules`;
+  return `${summary.allowed} allowed · ${summary.by_your_rules} by your rules`;
 }
 
 /** A row's time, as the timeline shows it: `2026-11-13 09:00 UTC`, or nothing. */

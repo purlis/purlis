@@ -678,7 +678,12 @@ fn an_edit_raised_on_the_hook_channel_is_drawn_in_its_row_and_its_allow_goes_bac
         move |asking| told.lock().unwrap().push(asking)
     });
     let telling: Telling = Arc::new(Mutex::new(Some(teller)));
-    let hear = permitting(plane.clone(), Arc::clone(&hooks), telling);
+    let hear = permitting(
+        plane.clone(),
+        Arc::clone(&hooks),
+        telling,
+        Arc::new(|_: &purlis_core::harness::asks::Raised| {}),
+    );
 
     let waiting = hear(PermissionAsked {
         chat: 5,

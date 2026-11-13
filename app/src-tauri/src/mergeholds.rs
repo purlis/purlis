@@ -29,7 +29,7 @@
 use std::path::Path;
 use std::sync::{Mutex, PoisonError, Weak};
 
-use purlis_core::eventlog::stops::{Hold, Stop, Target};
+use purlis_core::eventlog::stops::{AskGroup, AskRaised, Hold, Stop, Target};
 use purlis_core::forge::backend::{Caller, ForgeBackend};
 use purlis_core::forge::pr::{HeadAt, Pr, Repo as OnForge};
 use purlis_core::harness::asks::{Admitted, Answerer};
@@ -272,6 +272,13 @@ fn raise(project: &dyn Project, ask: &MergeAsk) -> Result<String, String> {
                     args: None,
                 }),
             );
+            // R-229: the ask the hold waits on, raised in the chat's Chat log.
+            project.record(
+                chat,
+                Stop::AskRaised(AskRaised {
+                    ask: AskGroup::Hold,
+                }),
+            );
             tracing::info!(
                 "purlis: chat {chat}'s merge is held; nothing is merged until the person presses \
                  Merge"
@@ -348,8 +355,21 @@ pub fn pressed(
         head,
         &OnForge::backend,
     );
+    // Where the forge refused, the ask waits again, unanswered.
+    if merged.is_ok() {
+        answered(held, session, true);
+    }
     held.chats().asks_may_have_moved();
     merged
+}
+
+/// **The person's press on chat `session`'s merge ask, Merge or not** (R-229), in its Chat log:
+/// by the window, the one client that presses.
+pub(crate) fn answered(project: &dyn Project, session: u32, merge: bool) {
+    project.record(
+        session,
+        Stop::AskAnswered(crate::chatlog::in_the_window(AskGroup::Hold, merge)),
+    );
 }
 
 /// The press of chat `session`'s ask in `holds`, through the forge its repo is on, which
@@ -418,6 +438,7 @@ pub fn dont_merge_held_request(
     {
         return Err(mergehold::NotMerged::NotHeld.to_string());
     }
+    answered(&*held, session, false);
     held.merge_holds().prune();
     held.chats().asks_may_have_moved();
     Ok(())

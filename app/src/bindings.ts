@@ -7870,7 +7870,9 @@ at: string | null; cause: string; protection: StartProtection | null } |
  *  purlis held an action and asked the person: the tool, and the guard's arm it was held
  *  at, where it names one (`merge-hold`).
  */
-{ kind: "held"; at: string | null; tool: string; arm: string | null } | 
+{ kind: "held"; at: string | null; tool: string; arm: string | null; 
+/**  It was held under one of the chat's sub-agents. */
+sub_agent: boolean } | 
 /**  The chat was paused as looping: the rule's word and how many times. */
 { kind: "loop_paused"; at: string | null; rule: string; times: number };
 

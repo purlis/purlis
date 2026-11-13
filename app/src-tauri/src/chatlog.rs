@@ -7,12 +7,20 @@
 //! and between them its protection changes, its asks and their answers, its holds and its loop
 //! pauses (T1-28); its blocks are T1-29's.
 //!
+//! **What writes an ask** (R-229, Q261): loop and budget pauses (`crate::pausing`), harness
+//! prompts (`crate::hooks`, raised as the hook holds the ask and answered as the registry
+//! applies it, a late answer included), sandbox asks (`crate::sandboxing`,
+//! `crate::taskblocks`) and a held merge (`crate::mergeholds`). Consent, a hook's give-up and an
+//! answer from `purlis inbox` write none yet: a follow-up's.
+//!
 //! **Pull-only** (R-225): read when the tab opens, told to no window, and nothing here counts
 //! or marks a row as new. It holds nothing of its own: the Chat log is a query of the event
 //! log, and the event log holds no chat's words.
 
 use purlis_core::eventlog::chatlog::{self, Row, Summary};
-use purlis_core::eventlog::stops::{Stop, Target};
+use purlis_core::eventlog::stops::{
+    Answer, AnsweredBy, AskAnswered, AskGroup, AskRaised, Stop, Target,
+};
 use purlis_core::sandbox::protection::InForce;
 
 use crate::planes::PlaneId;
@@ -83,6 +91,8 @@ pub enum ChatLogRow {
         at: Option<String>,
         tool: String,
         arm: Option<String>,
+        /// It was held under one of the chat's sub-agents.
+        sub_agent: bool,
     },
     /// The chat was paused as looping: the rule's word and how many times.
     LoopPaused {
@@ -191,13 +201,18 @@ fn row_of(row: Row) -> ChatLogRow {
             answer: word_of(answered.answer),
             by: word_of(answered.by),
         },
-        Row::Held { at_ms, hold } => ChatLogRow::Held {
+        Row::Held {
+            at_ms,
+            hold,
+            sub_agent,
+        } => ChatLogRow::Held {
             at: at(at_ms),
             arm: match hold.target {
                 Some(Target::GuardArm(arm)) => Some(arm.as_str().to_owned()),
                 _ => None,
             },
             tool: hold.tool,
+            sub_agent,
         },
         Row::LoopPaused { at_ms, pause } => ChatLogRow::LoopPaused {
             at: at(at_ms),
@@ -279,6 +294,36 @@ pub(crate) fn record(hooks: &crate::hooks::Hooks, chat: u32, stop: Stop) {
     let kind = stop.kind();
     if let Err(why) = hooks.write_stop(chat, stop) {
         tracing::warn!("purlis: chat {chat}'s {kind} was not written to its log: {why}");
+    }
+}
+
+/// **Chat `chat` raised an ask of group `ask`** (R-229), in its Chat log ([`record`]).
+pub(crate) fn raised(hooks: &crate::hooks::Hooks, chat: u32, ask: AskGroup) {
+    record(hooks, chat, Stop::AskRaised(AskRaised { ask }));
+}
+
+/// **The person answered chat `chat`'s ask of group `ask` in the window**, `allowed` it or not
+/// (R-229), in its Chat log: an answer the window's own command applied, not the asks registry,
+/// so by the window's answerer ([`crate::asking::the_window`]).
+pub(crate) fn answered_in_the_window(
+    hooks: &crate::hooks::Hooks,
+    chat: u32,
+    ask: AskGroup,
+    allowed: bool,
+) {
+    record(hooks, chat, Stop::AskAnswered(in_the_window(ask, allowed)));
+}
+
+/// The person's answer to an ask of group `ask` in the window, `allowed` it or not.
+pub(crate) fn in_the_window(ask: AskGroup, allowed: bool) -> AskAnswered {
+    AskAnswered {
+        ask,
+        answer: if allowed {
+            Answer::Allowed
+        } else {
+            Answer::Refused
+        },
+        by: AnsweredBy::from(crate::asking::the_window()),
     }
 }
 

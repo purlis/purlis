@@ -6,7 +6,8 @@
 //! was paused for and the answers that settle it (`crate::pausing`).
 //!
 //! - **Budget reached**: Continue, Raise the budget, Stop. Raise the budget opens the window's
-//!   Settings where the limit is, and the chat goes on once a look finds it within the limit.
+//!   Settings where the limit is and answers the ask, and the chat goes on once a look finds it
+//!   within the limit.
 //! - **Looping**: It's fine, continue, or Stop.
 
 use super::{AnswerPath, AskSource, Offered, Shown, said_inertly};
@@ -14,7 +15,8 @@ use crate::pausing::{Paused, Why};
 
 /// The option id of a budget's Continue.
 pub const CONTINUE: &str = "continue";
-/// The option id of a budget's Raise the budget, which the window answers by opening Settings.
+/// The option id of a budget's Raise the budget, which the window answers by opening Settings,
+/// and sends as the ask's answer (Q261).
 pub const RAISE: &str = "raise";
 /// The option id of a loop's It's fine, continue.
 pub const FINE: &str = "fine";

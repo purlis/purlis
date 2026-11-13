@@ -2213,6 +2213,13 @@ pub async fn allow_sandbox_block(
         // The person's Allow on the held connection, now it has succeeded, starts its block
         // count again (R-211, Q253).
         crate::pausing::allowed(&held, session);
+        // R-229: the person's Allow, in the chat's Chat log.
+        crate::chatlog::answered_in_the_window(
+            held.hooks(),
+            session,
+            purlis_core::eventlog::stops::AskGroup::Sandbox,
+            true,
+        );
         // Answered: neither this Notice nor a question for several tasks answers it again.
         held.chats().blocks().answered(session, &block);
         Ok(allowed)
@@ -2400,6 +2407,13 @@ pub fn keep_sandbox_block(
     let Some(block) = keep_block(held.chats(), session, &shown, reason.as_deref(), &audit) else {
         return Ok(());
     };
+    // R-229: the person's Keep blocked, in the chat's Chat log.
+    crate::chatlog::answered_in_the_window(
+        held.hooks(),
+        session,
+        purlis_core::eventlog::stops::AskGroup::Sandbox,
+        false,
+    );
     // The person's no, kept where the Inbox's look back reads it (#1700).
     if block.what == GrantWhat::Host {
         crate::network::record_kept_blocked(
