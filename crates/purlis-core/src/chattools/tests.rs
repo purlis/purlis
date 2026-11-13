@@ -1710,3 +1710,162 @@ fn the_queries_tool_answers_what_purlis_queries_json_prints() {
         "it reads no workspace"
     );
 }
+
+/// The `forge_milestones` tool (#6233): a workspace `alpha` with the clone `api` of
+/// `acme/api`, recorded in the project's inventory, and a forge that keeps who asked it.
+mod forge_milestones_tool {
+    use std::sync::{Arc, Mutex};
+
+    use super::*;
+    use crate::forge::backend::{Principal, Surface, Transports};
+    use crate::forge::route::{AccountState, Route};
+    use crate::forge::transport::{Call, NoAnswer, Reply, Transport};
+    use crate::forge::{Caller, Failure, Forge, ForgeError};
+
+    fn plane() -> tempfile::TempDir {
+        let p = project(&["alpha"]);
+        let clone = p.path().join("workspaces/alpha/repos/api");
+        std::fs::create_dir_all(&clone).unwrap();
+        assert!(crate::testgit::run(&clone, &["init", "-q"]).ok());
+        assert!(
+            crate::testgit::run(
+                &clone,
+                &["remote", "add", "origin", "https://github.com/acme/api.git"]
+            )
+            .ok()
+        );
+        std::fs::create_dir_all(p.path().join("inventory")).unwrap();
+        std::fs::write(
+            p.path().join("inventory/repos.json"),
+            json!({ "group": "acme", "count": 1, "repos": [{
+                "name": "api", "path_with_namespace": "acme/api",
+                "ssh_url": "git@github.com:acme/api.git", "forge": "github"
+            }]})
+            .to_string(),
+        )
+        .unwrap();
+        p
+    }
+
+    /// Answers every milestone list with `listed`, and keeps each caller and path asked.
+    struct Recording {
+        listed: Value,
+        /// Routes each caller as one whose CLI login the person imported, as the real route
+        /// does, when set.
+        imported: bool,
+        callers: Mutex<Vec<Caller>>,
+        asked: Arc<Mutex<Vec<String>>>,
+    }
+
+    struct Answers(Value, Arc<Mutex<Vec<String>>>);
+
+    impl Transport for Answers {
+        fn send(&self, _forge: &Forge, call: &Call) -> Result<Reply, NoAnswer> {
+            self.1.lock().unwrap().push(call.path().to_owned());
+            Ok(Reply::of(0, self.0.to_string(), String::new()))
+        }
+        fn check_auth(&self, _forge: &Forge) -> Result<(), ForgeError> {
+            Ok(())
+        }
+    }
+
+    impl Transports for Recording {
+        fn for_caller(&self, caller: &Caller) -> Result<Arc<dyn Transport>, ForgeError> {
+            self.callers.lock().unwrap().push(caller.clone());
+            let state = AccountState {
+                signed_in: self.imported,
+                imported_from_cli: self.imported,
+                prefer_cli: false,
+            };
+            match crate::forge::route::route(state, caller) {
+                Route::Refused(why) => Err(ForgeError::of(Failure::Forbidden, why)),
+                _ => Ok(Arc::new(Answers(self.listed.clone(), self.asked.clone()))),
+            }
+        }
+    }
+
+    fn milestone(due_on: Value) -> Value {
+        json!({
+            "number": 7, "title": "M7", "description": "", "due_on": due_on,
+            "state": "open", "open_issues": 1, "closed_issues": 3,
+            "html_url": "https://github.com/acme/api/milestone/7",
+            "updated_at": "2026-11-10T09:00:00Z"
+        })
+    }
+
+    fn recording(listed: Value, imported: bool) -> Arc<Recording> {
+        Arc::new(Recording {
+            listed,
+            imported,
+            callers: Mutex::new(Vec::new()),
+            asked: Arc::new(Mutex::new(Vec::new())),
+        })
+    }
+
+    fn ask(root: &std::path::Path, given: Value, forge: &Arc<Recording>) -> Result<String, String> {
+        let forge = forge.clone();
+        forge_milestones(
+            root,
+            &in_ws("alpha"),
+            &args(given),
+            "chat-7",
+            &move |repo| repo.forge.backend_for(forge.clone()),
+        )
+    }
+
+    #[test]
+    fn a_chat_asks_the_forge_as_itself_over_mcp_never_as_the_person() {
+        let p = plane();
+        let forge = recording(json!([milestone(json!("2026-11-30T07:00:00Z"))]), false);
+        let said = ask(p.path(), json!({}), &forge).unwrap();
+        assert!(said.starts_with("acme/api: 1 milestones"), "{said}");
+        assert!(said.contains("due 2026-11-30"), "{said}");
+        let callers = forge.callers.lock().unwrap().clone();
+        assert!(!callers.is_empty());
+        for caller in &callers {
+            assert_eq!(caller, &Caller::mcp("chat-7"));
+            assert_eq!(caller.surface(), Surface::Mcp);
+            assert_eq!(caller.principal(), &Principal::Chat("chat-7".into()));
+        }
+    }
+
+    #[test]
+    fn a_chat_whose_cli_login_the_person_imported_is_refused_with_a_sentence() {
+        let p = plane();
+        let forge = recording(json!([milestone(Value::Null)]), true);
+        assert_eq!(
+            ask(p.path(), json!({}), &forge),
+            Err("purlis may not read the milestones of acme/api with this login.".into())
+        );
+        assert!(forge.asked.lock().unwrap().is_empty(), "nothing was sent");
+    }
+
+    #[test]
+    fn arguments_the_tool_does_not_take_are_refused_before_the_forge_is_asked() {
+        let p = plane();
+        let forge = recording(json!([]), false);
+        for given in [
+            json!({ "repo": 5 }),
+            json!({ "state": true }),
+            json!({ "owner": "acme" }),
+        ] {
+            let refused = ask(p.path(), given.clone(), &forge).unwrap_err();
+            assert!(
+                refused.contains("repo") && refused.contains("state"),
+                "{given}: {refused}"
+            );
+        }
+        assert!(forge.callers.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_due_date_in_any_script_is_cut_on_a_character() {
+        let p = plane();
+        let forge = recording(
+            json!([milestone(json!("２０２６年十一月三十日まで"))]),
+            false,
+        );
+        let said = ask(p.path(), json!({}), &forge).unwrap();
+        assert!(said.contains("due ２０２６年十一月三十 "), "{said}");
+    }
+}

@@ -616,19 +616,31 @@ pub trait WorkItems {
 
     /// The milestones of the repo at `path`, as `caller`, each with how many of its issues are
     /// open and closed: the open ones, or with `all` the closed ones too, in the forge's own
-    /// order. A page's `purlis.forge_milestones` (#6233). Strict. A forge purlis does not read
-    /// them from yet answers that it cannot.
+    /// order, at most [`MILESTONE_PAGES`] pages of them. A page's `purlis.forge_milestones`
+    /// (#6233). Strict. A forge purlis does not read them from yet answers that it cannot.
     fn milestone_progress(
         &self,
         _caller: &Caller,
         path: &str,
         _all: bool,
-    ) -> Result<Vec<MilestoneProgress>, ForgeError> {
+    ) -> Result<Milestones, ForgeError> {
         // GitLab's milestones are read by #6476; until then it answers this.
         Err(ForgeError::new(format!(
             "purlis does not read the milestones of {path} on this forge yet"
         )))
     }
+}
+
+/// The most pages of milestones [`WorkItems::milestone_progress`] reads: a page that asks
+/// once a minute asks a few requests at most, never a thousand (#6233).
+pub const MILESTONE_PAGES: usize = 3;
+
+/// A repo's milestones, as many as [`MILESTONE_PAGES`] pages hold.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Milestones {
+    pub listed: Vec<MilestoneProgress>,
+    /// Whether the forge may list more than these: its last page read was full.
+    pub cut: bool,
 }
 
 /// One milestone and its progress, in the forge's own words: what `purlis.forge_milestones`
