@@ -19,7 +19,7 @@
 use std::path::{Component, Path, PathBuf};
 
 use unicode_normalization::UnicodeNormalization as _;
-use unicode_properties::{GeneralCategoryGroup, UnicodeGeneralCategory as _};
+use unicode_properties::{GeneralCategory, GeneralCategoryGroup, UnicodeGeneralCategory as _};
 
 use super::file::at_line;
 use super::{Asking, Candidate, Kind, Opening, Pane, Resolved, Target};
@@ -97,22 +97,14 @@ fn ask_first(text: &str, target: Target, said: &str) -> Opening {
 
 /// **What a marked link's `text` says that its `target` is not**, in the words the ask shows
 /// ("docs.purlis.dev", "src/lib.rs"), or `None` when no word of it reads as an address or a path
-/// naming another target. Reads no file: a path is compared by its name, resolved through its
-/// links where it is absolute.
+/// naming another target. Where a word's reading as a host is uncertain, it says so: a false ask
+/// costs one click, and a missed one opens the wrong place. Reads no file's contents: a path is
+/// compared by its name, resolved through its links where it is absolute.
 pub fn misleading(text: &str, target: &Target, pane: &Pane) -> Option<String> {
     if text.chars().count() > MOST_TEXT {
         let start: String = text.chars().take(64).collect();
         return Some(format!("{start}…"));
     }
-    let seen = as_seen(text);
-    words(&seen)
-        .flat_map(reads_of)
-        .find_map(|reads| differs(&reads, target, pane))
-}
-
-/// **`text` as a reader sees it**: characters that draw nothing dropped (a blank one is a
-/// space), wide letters and look-alike dots folded (NFKC, and the ideographic full stops).
-fn as_seen(text: &str) -> String {
     let drawn: String = text
         .chars()
         .filter_map(|c| {
@@ -123,13 +115,22 @@ fn as_seen(text: &str) -> String {
             }
         })
         .collect();
-    drawn
-        .nfkc()
-        .map(|c| match c {
-            '\u{3002}' | '\u{FF61}' | '\u{FE12}' | '\u{FE52}' | '\u{2024}' => '.',
-            c => c,
-        })
-        .collect()
+    words(&drawn).find_map(|word| {
+        if let Some(said) = uncertain(word) {
+            return Some(said);
+        }
+        let seen = folded(word);
+        let seen = trimmed(&seen);
+        if seen.is_empty() {
+            return None;
+        }
+        match target {
+            Target::Url(url) => differs_from_web(seen, url),
+            Target::File(file) => differs_from_file(seen, &file.path, pane),
+            // A marked link's target is read only as a web address or a file, never as a chat.
+            Target::Chat(_) => None,
+        }
+    })
 }
 
 /// Whether `c` is punctuation or a symbol, in Unicode's classes.
@@ -140,219 +141,309 @@ fn punctuation(c: char) -> bool {
     )
 }
 
-/// **The words of `seen`**, each with the punctuation a sentence puts around it taken off. A
-/// word ends at a space, a quote, or punctuation no address is written with (a dash, a bracket
-/// of another script, an ellipsis).
-fn words(seen: &str) -> impl Iterator<Item = &str> {
-    seen.split(|c: char| {
-        c.is_whitespace() || matches!(c, '\'' | '"' | '`') || (!c.is_ascii() && punctuation(c))
+/// Whether `c` is a combining mark: it draws over the character before it.
+fn mark(c: char) -> bool {
+    c.general_category_group() == GeneralCategoryGroup::Mark
+}
+
+/// Whether `c`, inside a word, may stand for a dot: any character outside ASCII that is no
+/// letter or digit of a word (punctuation, a symbol, a modifier letter or a mark).
+fn may_be_a_dot(c: char) -> bool {
+    !c.is_ascii()
+        && (punctuation(c) || mark(c) || c.general_category() == GeneralCategory::ModifierLetter)
+}
+
+/// **The words of `text`**: it split at spaces, quotes, and the brackets and dashes no address
+/// is written with. Punctuation inside a word stays, where it may stand for a dot.
+fn words(text: &str) -> impl Iterator<Item = &str> {
+    text.split(|c: char| {
+        c.is_whitespace()
+            || matches!(c, '\'' | '"' | '`')
+            || (!c.is_ascii()
+                && matches!(
+                    c.general_category(),
+                    GeneralCategory::OpenPunctuation
+                        | GeneralCategory::ClosePunctuation
+                        | GeneralCategory::InitialPunctuation
+                        | GeneralCategory::FinalPunctuation
+                        | GeneralCategory::DashPunctuation
+                ))
     })
-    .map(trimmed)
     .filter(|word| !word.is_empty())
 }
 
+/// **`word` as a reader sees it**: wide letters folded (NFKC), marks dropped, and the
+/// ideographic full stops read as dots.
+fn folded(word: &str) -> String {
+    let unmarked: String = word.nfkd().filter(|c| !mark(*c)).collect();
+    unmarked
+        .nfkc()
+        .map(|c| match c {
+            '\u{3002}' | '\u{FF61}' | '\u{FE12}' | '\u{FE52}' | '\u{2024}' => '.',
+            c => c,
+        })
+        .collect()
+}
+
+/// **Why `word` is uncertain**, the words the ask shows, or `None`: a mark in a word that reads
+/// as a host without it or with it read as a dot, or a character that may stand for a dot
+/// ([`may_be_a_dot`]) in a word that reads as a host with it read as one.
+fn uncertain(word: &str) -> Option<String> {
+    let kept: String = word
+        .nfkc()
+        .map(|c| match c {
+            '\u{3002}' | '\u{FF61}' | '\u{FE12}' | '\u{FE52}' | '\u{2024}' => '.',
+            c => c,
+        })
+        .collect();
+    let kept = trimmed(&kept);
+    if !kept.chars().any(may_be_a_dot) {
+        return None;
+    }
+    let bare: String = kept.chars().filter(|c| !mark(*c)).collect();
+    let mut dotted = String::new();
+    for c in kept.chars() {
+        let c = if may_be_a_dot(c) { '.' } else { c };
+        if !(c == '.' && dotted.ends_with('.')) {
+            dotted.push(c);
+        }
+    }
+    let dotted = dotted.trim_matches('.');
+    let reads = |text: &str| authority(text.split('/').next().unwrap_or_default()).is_some();
+    (reads(&bare) || reads(dotted)).then(|| {
+        if reads(&bare) && bare.chars().all(|c| !may_be_a_dot(c)) {
+            bare
+        } else {
+            kept.to_owned()
+        }
+    })
+}
+
 /// `word` without the punctuation before and after it: never a path's leading `/`, `~/`, `./`
-/// or `../`, nor a trailing `/`.
+/// or `../`, nor a trailing `/`, nor the brackets of an IPv6 address (`[::1]:8080`).
 fn trimmed(word: &str) -> &str {
     let mut start = word;
     while let Some(c) = start.chars().next() {
         let keeps = c == '/'
             || start.starts_with("~/")
             || start.starts_with("./")
-            || start.starts_with("../");
+            || start.starts_with("../")
+            || bracketed_ip(start).is_some();
         if keeps || !punctuation(c) {
             break;
         }
         start = &start[c.len_utf8()..];
     }
-    start.trim_end_matches(|c: char| c != '/' && punctuation(c))
+    let kept = start.trim_end_matches(|c: char| c != '/' && punctuation(c));
+    match bracketed_ip(start) {
+        // Its closing bracket, and a port after it, stay.
+        Some(closes) if kept.len() < closes => &start[..closes],
+        _ => kept,
+    }
 }
 
-/// What one word of a marked link's text reads as.
+/// Where the `[…]` around an IPv6 address `text` starts with ends (just past its `]`), if it
+/// does start with one.
+fn bracketed_ip(text: &str) -> Option<usize> {
+    let inner = text.strip_prefix('[')?;
+    let end = inner.find(']')?;
+    inner[..end]
+        .parse::<std::net::Ipv6Addr>()
+        .is_ok()
+        .then_some(end + 2)
+}
+
+/// A host a word names, as a browser would be handed it, and the port it names, if it does.
 #[derive(Debug)]
-enum Reads {
-    /// A web address, or a host with a path or a port after it.
-    Address {
-        host: String,
-        /// The scheme it was written with, if it was.
-        scheme: Option<String>,
-        /// The port it names, if it does.
-        port: Option<u16>,
-        /// A name written before an `@`, which a reader takes for the host.
-        before_at: Option<String>,
-    },
-    /// A path: its words, without a `:line[:col]`.
-    Path(String),
-    /// A name with a dot in it and nothing after it, which reads as a host (`github.com`) or a
-    /// file's name (`README.md`) alike: as it was written, and as a host.
-    Name { written: String, host: String },
+struct Authority {
+    host: String,
+    port: Option<u16>,
+    /// Written as a name and no more (`github.com`, `README.md`), which reads as a host or a
+    /// file's name alike; not with a port, nor as `localhost` or an IP address.
+    name_only: bool,
 }
 
-/// What `word` reads as: nothing, or one reading, or two where it has an `@` (an email's
-/// domain, and the name before it).
-fn reads_of(word: &str) -> Vec<Reads> {
-    if let Some((scheme, _)) = word.split_once("://") {
-        return vec![addressed(word, scheme)];
-    }
-    let (words, _, _) = at_line(word);
-    if ["/", "~/", "./", "../"]
-        .iter()
-        .any(|start| words.starts_with(start))
-    {
-        return vec![Reads::Path(words.to_owned())];
-    }
-    let (first, slashed) = match words.split_once('/') {
-        Some((first, _)) => (first, true),
-        None => (words, false),
-    };
-    if let Some((before, domain)) = first.rsplit_once('@') {
-        // An email, or a name before a host: the domain, and the name a reader may take for one.
-        let mut read: Vec<Reads> = Vec::new();
-        if let Some((host, port)) = host_like(domain) {
-            read.push(Reads::Address {
-                host,
-                scheme: None,
-                port,
-                before_at: None,
-            });
-        }
-        if let Some((host, _)) = host_like(before) {
-            read.push(Reads::Name {
-                written: before.to_owned(),
-                host,
-            });
-        }
-        if read.is_empty() && slashed {
-            read.push(Reads::Path(words.to_owned()));
-        }
-        return read;
-    }
-    match host_like(first) {
-        Some((host, port)) if slashed || port.is_some() => vec![Reads::Address {
-            host,
-            scheme: None,
-            port,
-            before_at: None,
-        }],
-        Some((host, _)) => vec![Reads::Name {
-            written: words.to_owned(),
-            host,
-        }],
-        None if slashed => vec![Reads::Path(words.to_owned())],
-        None => Vec::new(),
-    }
-}
-
-/// `word`, written with `scheme://`, as what it reads as: a `file:` address its path, any other
-/// its host, scheme, port and any name before an `@`.
-fn addressed(word: &str, scheme: &str) -> Reads {
-    let parsed = url::Url::parse(word).ok();
-    if scheme.eq_ignore_ascii_case("file") {
-        let path = parsed
-            .and_then(|url| url.to_file_path().ok())
-            .map_or_else(|| word.to_owned(), |path| path.display().to_string());
-        return Reads::Path(path);
-    }
-    let Some(url) = parsed else {
-        return Reads::Address {
-            host: word.to_lowercase(),
-            scheme: None,
-            port: None,
-            before_at: None,
-        };
-    };
-    let before_at = match (url.username(), url.password()) {
-        ("", None) => None,
-        (name, None) => Some(name.to_owned()),
-        (name, Some(password)) => Some(format!("{name}:{password}")),
-    };
-    Reads::Address {
-        host: url.host_str().unwrap_or_default().to_owned(),
-        scheme: Some(url.scheme().to_owned()),
-        port: url.port(),
-        before_at,
-    }
-}
-
-/// `word` as a host, and the port after it, if it reads as one: two labels at least, the last
-/// letters only and two of them at least (`v1.2` and `e.g` are none). The host as a browser
-/// would be handed it: lowercased, and an international name in its ASCII form.
-fn host_like(word: &str) -> Option<(String, Option<u16>)> {
-    let (host, port) = match word.rsplit_once(':') {
-        Some((host, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => {
-            (host, Some(port.parse::<u16>().ok()?))
-        }
-        _ => (word, None),
-    };
-    let labels: Vec<&str> = host.split('.').collect();
-    let last = labels.last()?;
-    let reads = labels.len() >= 2
-        && labels.iter().all(|label| {
-            !label.is_empty()
-                && label
-                    .chars()
-                    .all(|c| c.is_alphanumeric() || matches!(c, '-' | '_'))
-        })
-        && last.chars().count() >= 2
-        && last.chars().all(char::is_alphabetic);
-    if !reads {
+/// **`text` as a host and a port, if it reads as one**: an IP address (`127.0.0.1`, `[::1]`),
+/// `localhost`, a single name with a port (`dev:3000`), or two labels at least whose last is
+/// letters only (`v1.2` and `e.g` are none) or an international one (`xn--p1ai`). A host the
+/// browser could not read is still a host here, so it differs from every target.
+fn authority(text: &str) -> Option<Authority> {
+    if text.is_empty() {
         return None;
     }
-    let ascii = url::Url::parse(&format!("https://{host}/"))
+    let (host, port) = if text.starts_with('[') {
+        let end = text.find(']')?;
+        let rest = &text[end + 1..];
+        let port = match rest.strip_prefix(':') {
+            Some(port) => Some(port.parse::<u16>().ok()?),
+            None if rest.is_empty() => None,
+            None => return None,
+        };
+        (&text[..=end], port)
+    } else {
+        match text.rsplit_once(':') {
+            Some((host, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => {
+                (host, Some(port.parse::<u16>().ok()?))
+            }
+            Some(_) => return None,
+            None => (text, None),
+        }
+    };
+    if host.is_empty() {
+        return None;
+    }
+    let ip = host
+        .strip_prefix('[')
+        .and_then(|inner| inner.strip_suffix(']'))
+        .is_some_and(|inner| inner.parse::<std::net::Ipv6Addr>().is_ok())
+        || host.parse::<std::net::Ipv4Addr>().is_ok();
+    let labels: Vec<&str> = host.split('.').collect();
+    let labelled = labels.iter().all(|label| {
+        !label.is_empty()
+            && label
+                .chars()
+                .all(|c| c.is_alphanumeric() || matches!(c, '-' | '_'))
+    });
+    let named = labelled
+        && match labels.as_slice() {
+            [one] => {
+                one.eq_ignore_ascii_case("localhost")
+                    || (port.is_some() && one.chars().any(char::is_alphabetic))
+            }
+            [.., last] => {
+                (last.chars().count() >= 2 && last.chars().all(char::is_alphabetic))
+                    || last
+                        .get(..4)
+                        .is_some_and(|start| start.eq_ignore_ascii_case("xn--"))
+            }
+            [] => false,
+        };
+    if !ip && !named {
+        return None;
+    }
+    let read = url::Url::parse(&format!("https://{host}/"))
         .ok()
         .and_then(|url| url.host_str().map(str::to_owned))
         .unwrap_or_else(|| host.to_lowercase());
-    Some((ascii, port))
+    Some(Authority {
+        host: read,
+        port,
+        name_only: !ip && port.is_none() && labels.len() >= 2,
+    })
 }
 
-/// **What `reads` says that `target` is not**, or `None` where it names it: the same host, port
-/// and no weaker scheme, or the same file.
-fn differs(reads: &Reads, target: &Target, pane: &Pane) -> Option<String> {
-    match (reads, target) {
-        (
-            Reads::Address {
-                host,
-                scheme,
-                port,
-                before_at,
-            },
-            Target::Url(url),
-        ) => {
-            if let Some(before) = before_at {
-                return Some(before.clone());
-            }
-            if url.host_str() != Some(host.as_str()) {
-                return Some(host.clone());
-            }
-            if scheme.as_deref() == Some("https") && url.scheme() == "http" {
-                return Some(format!("https://{host}"));
-            }
-            // A port either names outright: the text's against the target's, or a target's own
-            // port where the text names none. A scheme's own port is no port named.
-            let differs = match port {
-                Some(said) => url.port_or_known_default() != Some(*said),
-                None => url.port().is_some(),
-            };
-            differs.then(|| match port {
-                Some(port) => format!("{host}:{port}"),
-                None => host.clone(),
-            })
+/// Whether `text` starts as a path does: from `/`, `~/`, `./` or `../`.
+fn path_like(text: &str) -> bool {
+    ["/", "~/", "./", "../"]
+        .iter()
+        .any(|start| text.starts_with(start))
+}
+
+/// **What `word` says that the web address `url` is not**: another host or port, a weaker scheme,
+/// a name before an `@`, an email's domain, or a path or a file.
+fn differs_from_web(word: &str, url: &url::Url) -> Option<String> {
+    if let Some((scheme, _)) = word.split_once("://") {
+        let Ok(said) = url::Url::parse(word) else {
+            return Some(word.to_owned());
+        };
+        if scheme.eq_ignore_ascii_case("file") {
+            return Some(word.to_owned());
         }
-        (Reads::Address { host, .. }, Target::File(_)) => Some(host.clone()),
-        (Reads::Path(path), Target::File(file)) => {
-            (!same_file(path, &file.path, pane)).then(|| path.clone())
+        match (said.username(), said.password()) {
+            ("", None) => {}
+            (name, None) => return Some(name.to_owned()),
+            (name, Some(password)) => return Some(format!("{name}:{password}")),
         }
-        (Reads::Path(path), Target::Url(_)) => Some(path.clone()),
-        // A name names a web address by its host alone, and on its scheme's own port.
-        (Reads::Name { written, host }, Target::Url(url)) => {
-            (url.host_str() != Some(host.as_str()) || url.port().is_some()).then(|| written.clone())
+        let host = said.host_str().unwrap_or_default().to_owned();
+        if url.host_str() != Some(host.as_str()) {
+            return Some(host);
         }
-        (Reads::Name { written, .. }, Target::File(file)) => (file.path.file_name()
-            != Some(std::ffi::OsStr::new(written.as_str())))
-        .then(|| written.clone()),
-        // A marked link's target is read only as a web address or a file, never as a chat.
-        (_, Target::Chat(_)) => None,
+        if said.scheme() == "https" && url.scheme() == "http" {
+            return Some(format!("https://{host}"));
+        }
+        return ports_differ(said.port(), url).then(|| at_port(&host, said.port()));
     }
+    if path_like(word) {
+        return Some(word.to_owned());
+    }
+    let first = word.split('/').next().unwrap_or_default();
+    if let Some((before, domain)) = first.rsplit_once('@') {
+        // A name a reader may take for the host, then an email's domain.
+        if let Some(name) = authority(before)
+            && url.host_str() != Some(name.host.as_str())
+        {
+            return Some(before.to_owned());
+        }
+        let domain = authority(domain)?;
+        return (url.host_str() != Some(domain.host.as_str()) || ports_differ(domain.port, url))
+            .then(|| at_port(&domain.host, domain.port));
+    }
+    let Some(said) = authority(first) else {
+        // Words with a `/` and no host before it are a path.
+        return word.contains('/').then(|| word.to_owned());
+    };
+    if said.name_only && !word.contains('/') {
+        // A name names a web address by its host alone, on its scheme's own port.
+        return (url.host_str() != Some(said.host.as_str()) || url.port().is_some())
+            .then(|| word.to_owned());
+    }
+    if url.host_str() != Some(said.host.as_str()) {
+        return Some(at_port(&said.host, said.port));
+    }
+    ports_differ(said.port, url).then(|| at_port(&said.host, said.port))
+}
+
+/// Whether a port the text names (or none) differs from `url`'s: the text's against the
+/// target's, or the target's own where the text names none. A scheme's own port is none named.
+fn ports_differ(said: Option<u16>, url: &url::Url) -> bool {
+    match said {
+        Some(said) => url.port_or_known_default() != Some(said),
+        None => url.port().is_some(),
+    }
+}
+
+/// `host`, with `:port` where the text named one.
+fn at_port(host: &str, port: Option<u16>) -> String {
+    match port {
+        Some(port) => format!("{host}:{port}"),
+        None => host.to_owned(),
+    }
+}
+
+/// **What `word` says that the file `file` is not**: another path or file name, or a web
+/// address, a host or an email.
+fn differs_from_file(word: &str, file: &Path, pane: &Pane) -> Option<String> {
+    if let Some((scheme, _)) = word.split_once("://") {
+        if !scheme.eq_ignore_ascii_case("file") {
+            return Some(word.to_owned());
+        }
+        let path = url::Url::parse(word)
+            .ok()
+            .and_then(|url| url.to_file_path().ok())
+            .map_or_else(|| word.to_owned(), |path| path.display().to_string());
+        return (!same_file(&path, file, pane)).then_some(path);
+    }
+    let (words, _, _) = at_line(word);
+    if path_like(words) {
+        return (!same_file(words, file, pane)).then(|| words.to_owned());
+    }
+    if let Some((first, _)) = words.split_once('/') {
+        // A host before a path is a web address; anything else is a path.
+        if authority(first).is_some_and(|said| said.name_only || said.port.is_some()) {
+            return Some(first.to_owned());
+        }
+        return (!same_file(words, file, pane)).then(|| words.to_owned());
+    }
+    if let Some((_, domain)) = words.rsplit_once('@') {
+        return authority(domain).map(|said| said.host);
+    }
+    // `main.rs:12` is a file's name at a line before it is a host at a port.
+    let said = authority(words).or_else(|| authority(word))?;
+    if said.name_only {
+        // A name names a file by its own name.
+        return (file.file_name() != Some(std::ffi::OsStr::new(words))).then(|| words.to_owned());
+    }
+    Some(word.to_owned())
 }
 
 /// Whether `words`, a path as a program printed it, names `file` (absolute, resolved): the

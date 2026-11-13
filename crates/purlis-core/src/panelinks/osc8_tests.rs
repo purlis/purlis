@@ -613,3 +613,128 @@ fn a_missing_file_says_so_rather_than_nothing() {
         Resolved::NotALink(_)
     ));
 }
+
+/// Whether opening `text` marked as a link to `target` asks first about its words.
+fn asks_about_its_words(text: &str, target: &str) -> bool {
+    matches!(
+        links().open(&marked(text, target), &here(), &Asks::default(), None),
+        Opening::Ask {
+            about: Asking::Misleading,
+            ..
+        }
+    )
+}
+
+#[test]
+fn a_character_that_may_stand_for_a_dot_inside_a_host_asks() {
+    for dot in [
+        '\u{A4F8}',
+        '\u{0702}',
+        '\u{10101}',
+        '\u{2E33}',
+        '\u{0589}',
+        '\u{06D4}',
+        '\u{00B7}',
+        '\u{2027}',
+        '\u{22C5}',
+        '\u{1D16D}',
+        '\u{30FB}',
+        '\u{2219}',
+    ] {
+        let text = format!("paypal{dot}com");
+        assert!(
+            asks_about_its_words(&text, "https://evil.example/"),
+            "U+{:04X}",
+            u32::from(dot)
+        );
+        // And so it does where the target is the host it seems to name: its reading is uncertain.
+        assert!(
+            asks_about_its_words(&text, "https://paypal.com/"),
+            "U+{:04X} to the same host",
+            u32::from(dot)
+        );
+    }
+}
+
+#[test]
+fn a_mark_drawn_over_a_host_asks() {
+    for over in [
+        '\u{0332}', '\u{0335}', '\u{0336}', '\u{0338}', '\u{0347}', '\u{0359}', '\u{20D2}',
+        '\u{20E8}', '\u{0489}', '\u{1AB0}',
+    ] {
+        for text in [
+            format!("paypal.com{over}"),
+            format!("pay{over}pal.com"),
+            format!("paypal.{over}com"),
+        ] {
+            assert!(
+                asks_about_its_words(&text, "https://evil.example/"),
+                "U+{:04X} in {text:?}",
+                u32::from(over)
+            );
+            assert!(
+                asks_about_its_words(&text, "https://paypal.com/"),
+                "U+{:04X} in {text:?} to the same host",
+                u32::from(over)
+            );
+        }
+    }
+}
+
+#[test]
+fn a_single_name_with_a_port_and_localhost_are_hosts() {
+    assert_eq!(
+        asks_saying("localhost:3000", "http://localhost:9999/"),
+        "its text says localhost:3000"
+    );
+    assert_eq!(
+        asks_saying("localhost", "https://evil.example/"),
+        "its text says localhost"
+    );
+    assert_eq!(
+        asks_saying("dev:3000", "http://evil.example:3000/"),
+        "its text says dev:3000"
+    );
+    assert!(opens("localhost:3000", "http://localhost:3000/x"));
+    assert!(opens("localhost", "http://localhost/"));
+    // A time is no host.
+    assert!(opens("12:30", "https://purlis.dev/"));
+}
+
+#[test]
+fn an_ip_address_is_a_host_and_port() {
+    for text in ["127.0.0.1", "127.0.0.1:8080", "[::1]", "[::1]:8080"] {
+        assert!(
+            asks_about_its_words(text, "https://evil.example/"),
+            "{text}"
+        );
+    }
+    assert_eq!(
+        asks_saying("127.0.0.1:8080", "http://127.0.0.1:9090/"),
+        "its text says 127.0.0.1:8080"
+    );
+    assert!(opens("127.0.0.1:8080", "http://127.0.0.1:8080/"));
+    assert!(opens("[::1]:8080", "http://[::1]:8080/"));
+}
+
+#[test]
+fn an_international_last_label_is_a_host() {
+    assert_eq!(
+        asks_saying("paypal.xn--p1ai", "https://evil.example/"),
+        "its text says paypal.xn--p1ai"
+    );
+    assert!(opens("purlis.xn--p1ai", "https://purlis.xn--p1ai/"));
+}
+
+#[test]
+fn plain_words_of_any_script_still_open() {
+    for text in [
+        "Нажмите здесь",
+        "Cliquez ici",
+        "naïve café",
+        "日本語のドキュメント",
+        "the docs",
+    ] {
+        assert!(opens(text, "https://purlis.dev/docs"), "{text}");
+    }
+}
