@@ -461,10 +461,10 @@ export const commands = {
 	 */
 	grantableFolders: (plane: PlaneId) => typedError<GrantableFolders, string>(__TAURI_INVOKE("grantable_folders", { plane })),
 	/**
-	 *  **Open hosts and Blocked lately** for Settings' Network page (#1662).
+	 *  **Open hosts and the Blocked log** for Settings' Network page (#1662, T1-32).
 	 * 
 	 *  Off the window's thread (#1949): it reads the project's manifest, the administrator's policy
-	 *  and this machine's network record.
+	 *  and this machine's event log.
 	 */
 	sandboxNetwork: (plane: PlaneId) => typedError<SandboxNetwork, string>(__TAURI_INVOKE("sandbox_network", { plane })),
 	/**  **A chat's Network view** (#1662): what chat `session` reaches now, and what it was refused. */
@@ -4012,7 +4012,7 @@ export type BlockShown = {
 };
 
 /**
- *  One row of **Blocked lately**, or of a chat's refusals: what was refused, the newest time,
+ *  One row of the **Blocked log**, or of a chat's refusals: what was refused, the newest time,
  *  and how often.
  */
 export type BlockedLately = {
@@ -13268,7 +13268,7 @@ export type SandboxGrant = {
 };
 
 /**
- *  **Settings' Network page** (#1662): Open hosts and Blocked lately. Allowed is the list
+ *  **Settings' Network page** (#1662): Open hosts and the Blocked log. Allowed is the list
  *  `sandbox_grants` answers.
  */
 export type SandboxNetwork = {

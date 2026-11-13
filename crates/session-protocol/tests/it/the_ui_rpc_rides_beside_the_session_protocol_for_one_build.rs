@@ -310,7 +310,7 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
     // And the person's acts named beside them: a task's merge and discard (#1511), the answer
     // to a chat's sandbox block and to several tasks' (#1538, #1508), and the Allow of a
     // persona's hosts on this machine (#1362), the delete of a task's merged branch whose
-    // folder is gone (#1472), Allow on Settings' Blocked lately (#1662), and Keep blocked on a
+    // folder is gone (#1472), Allow on Settings' Blocked log (#1662), and Keep blocked on a
     // sandbox host ask (#1690).
     for command in [
         "task_branch_merge",

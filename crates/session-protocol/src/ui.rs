@@ -631,7 +631,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "quiet_typed",
     // Starts the person's editor on this machine's extension record (#1296).
     "open_extension_record",
-    // Allow on Settings' Blocked lately (#1662): widens what every chat here reaches.
+    // Allow on a row of Settings' Blocked log (#1662): widens what every chat here reaches.
     "allow_blocked_host",
     // A service on this Mac added by its port on Settings' Network page (#1970): widens what
     // every chat here, or one chat, reaches.
