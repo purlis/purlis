@@ -65,6 +65,7 @@ fn no_key_then_made_then_added_then_listed_then_verified() {
         commit: "0123abc".to_owned(),
         code: "A1B2C3".to_owned(),
         on: None,
+        project: None,
     };
     let Heard::Checked(checked) =
         answered_over(&verified, &github(), "octocat", &asked, None).unwrap()
@@ -144,7 +145,7 @@ mod over_the_window_line {
                 key: line,
                 on: None,
             },
-            |asked| windowline::ask_on(&socket, asked, within),
+            |asked| windowline::ask_on(&socket, asked, within, &mut |_| {}),
         );
         assert_eq!(reached, Reached::Heard(Heard::KeyOnAccount { on: true }));
     }
@@ -156,6 +157,7 @@ mod over_the_window_line {
             commit: "0123abc".to_owned(),
             code: "A1B2C3".to_owned(),
             on: None,
+            project: None,
         };
         assert_eq!(reach(asked(), |_| Answered::NoWindow), Reached::NoWindow);
         assert_eq!(reach(asked(), |_| Answered::NoAnswer), Reached::NoAnswer);
@@ -682,6 +684,7 @@ fn a_gitlab_check_from_the_command_is_held_to_this_devices_key() {
         commit: "0123abc".to_owned(),
         code: "A1B2C3".to_owned(),
         on: Some(OnForge::of(&gitlab())),
+        project: None,
     };
     let mine = gitlab_recording("commit_verified", &signer);
     let Heard::Checked(checked) =

@@ -4429,7 +4429,7 @@ fn machine_profile(verb: &ProfileCommand) -> ExitCode {
                 let reached = purlis_core::windowline::reach_the_pools(
                     store.config_root(),
                     &gone.name,
-                    purlis_core::windowline::ask,
+                    |asked| purlis_core::windowline::ask(asked, &mut |line| eprintln!("{line}")),
                 );
                 #[cfg(not(unix))]
                 let reached = "";
@@ -4894,8 +4894,7 @@ fn confirmed_in_the_window(config: &std::path::Path, pool: &str, name: &str) -> 
             "confirm signing '{name}' in on pool {pool} in the purlis window, if it shows the \
              code {code}…"
         );
-        eprintln!("{}", pool::waiting_on_the_window(project.as_deref()));
-        purlis_core::windowline::ask(asked)
+        purlis_core::windowline::ask(asked, &mut |line| eprintln!("{line}"))
     })
 }
 
@@ -4957,7 +4956,7 @@ fn kept_first(
 ) -> Result<purlis_core::profilestore::sign_in::Standing, String> {
     purlis_core::windowline::kept_first(pool, name, standing, |asked| {
         eprintln!("it does not keep '{name}': asking the purlis window to keep it there…");
-        purlis_core::windowline::ask(asked)
+        purlis_core::windowline::ask(asked, &mut |line| eprintln!("{line}"))
     })
 }
 

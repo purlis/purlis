@@ -112,7 +112,7 @@ impl NextStart {
 fn with(level: Choice) -> &'static str {
     match level {
         Choice::On => "the full sandbox",
-        Choice::Floor => "the floor",
+        Choice::Floor => "the basic sandbox",
         Choice::Off => "no sandbox",
     }
 }
