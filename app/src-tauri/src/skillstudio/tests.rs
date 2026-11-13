@@ -86,6 +86,7 @@ fn the_studio_shows_nothing_while_its_flag_is_off() {
             workspace: None,
             persona: None,
             workspaces: Vec::new(),
+            personas: Vec::new(),
             levels: Vec::new(),
             skills: Vec::new(),
             harnesses: Vec::new(),
@@ -235,6 +236,85 @@ fn the_studio_as_a_persona_lists_its_own_skills_and_one_it_names_whatever_was_gr
             ("deploy", Level::Project, true, "project"),
             ("triage", Level::Persona, true, "persona"),
         ]
+    );
+}
+
+#[test]
+fn the_studio_carries_the_projects_personas_each_with_its_role_and_where_it_was_dispatched() {
+    // #2935: the picker lists "A chat as <persona>" for each, and a persona in a workspace only
+    // where it was dispatched, most chats first.
+    use purlis_core::dispatchrecord::{Mode, Opening, Place, open};
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plane");
+    for workspace in ["alpha", "beta"] {
+        std::fs::create_dir_all(root.join("workspaces").join(workspace)).unwrap();
+    }
+    std::fs::create_dir_all(root.join("personas/ops")).unwrap();
+    std::fs::write(
+        root.join("personas/ops/persona.md"),
+        "---\nrole: Operations\n---\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("personas/reviewer")).unwrap();
+    std::fs::write(root.join("personas/reviewer/persona.md"), "---\n---\n").unwrap();
+    let mut second = 0;
+    let mut dispatch = |workspace: &str| {
+        second += 1;
+        let opening = Opening {
+            mode: Mode::Task,
+            asker: Default::default(),
+            persona: Some("ops".to_owned()),
+            worker: Default::default(),
+            task: None,
+            place: Place {
+                workspace: Some(workspace.to_owned()),
+                ..Place::default()
+            },
+            brief: String::new(),
+            report_owed: true,
+        };
+        let now = chrono::DateTime::parse_from_rfc3339(&format!("2026-11-13T09:00:{second:02}Z"))
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        open(&root, opening, now).unwrap();
+    };
+    dispatch("beta");
+    dispatch("alpha");
+    dispatch("alpha");
+    // A workspace the project no longer has is no place to look at a chat in.
+    dispatch("gone");
+
+    let read = studio(&root, None, true, None, None, &no_harness());
+
+    assert_eq!(
+        read.personas,
+        [
+            StudioPersona {
+                name: "ops".to_owned(),
+                role: Some("Operations".to_owned()),
+                dispatched_into: vec![
+                    StudioDispatchedInto {
+                        workspace: "alpha".to_owned(),
+                        chats: 2
+                    },
+                    StudioDispatchedInto {
+                        workspace: "beta".to_owned(),
+                        chats: 1
+                    },
+                ],
+            },
+            StudioPersona {
+                name: "reviewer".to_owned(),
+                role: None,
+                dispatched_into: Vec::new(),
+            },
+        ]
+    );
+    assert!(
+        studio(&root, None, false, None, None, &no_harness())
+            .personas
+            .is_empty(),
+        "off, nothing is read"
     );
 }
 

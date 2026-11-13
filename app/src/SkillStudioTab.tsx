@@ -74,7 +74,6 @@ import {
   AT_THE_ROOT,
   SKILL_PAGE_TAB_NAMES,
   SKILL_STUDIO_VIEW,
-  asPersona,
   backIsTo,
   STUDIO_PAGE_NAMES,
   STUDIO_START,
@@ -90,6 +89,7 @@ import {
   sameScope,
   scopeChat,
   scopeKey,
+  scopeListing,
   samePlace,
   skillOfRowId,
   skillRowId,
@@ -323,19 +323,11 @@ function builtInStandsOut(
   );
 }
 
-/** The scope whose Library lists a skill at `level`: a workspace's or a persona's own, else the
- *  scope shown. */
-function scopeOfLevel(level: SkillLevel, shown: StudioScope): StudioScope {
-  if (level.at === "workspace") return { at: "workspace", name: level.name };
-  if (level.at === "persona") return asPersona(level.name);
-  return shown;
-}
-
 /** **The scope whose Library lists a new skill made at `level`** (#3684): a workspace's or a
  *  persona's own; a project skill starts granted to the project's root alone, so the root's
  *  Library is the one sure to list it. */
 function scopeOfNew(level: SkillLevel, shown: StudioScope): StudioScope {
-  return level.at === "project" ? AT_THE_ROOT : scopeOfLevel(level, shown);
+  return level.at === "project" ? AT_THE_ROOT : scopeListing(level, shown);
 }
 
 /** Whether `skill`, a row of the studio showing `scope`, is at `level`. */
@@ -587,7 +579,7 @@ export function SkillStudioTab({
     if (graded === undefined || open === undefined || studio === undefined) return;
     if (open.at !== "scorecard" && open.at !== "chat") return;
     if (open.grade !== graded.grade || at.skill === undefined) return;
-    const there = scopeOfLevel(graded.level, at.scope);
+    const there = scopeListing(graded.level, at.scope);
     if (!sameScope(there, at.scope)) {
       if (there.at === "workspace" && !studio.workspaces.includes(there.name)) return;
       history.replace({ ...at, scope: there });
@@ -946,7 +938,7 @@ export function SkillStudioTab({
           return;
         }
         setCopying(undefined);
-        go({ page: "library", scope: scopeOfLevel(level, scope), skill: skillRowNamed(to) });
+        go({ page: "library", scope: scopeListing(level, scope), skill: skillRowNamed(to) });
         setSaid({
           tone: "news",
           label: "Copy made",
@@ -1238,12 +1230,12 @@ export function SkillStudioTab({
       whose={[
         AT_THE_ROOT,
         ...(studio?.workspaces ?? []).map(inWorkspace),
-        // The scope shown is always among them, while its skills are still being read too.
-        ...(scope.at === "persona" ||
-        (scope.at === "workspace" && !(studio?.workspaces ?? []).includes(scope.name))
+        // The workspace shown is always among them, while its skills are still being read too.
+        ...(scope.at === "workspace" && !(studio?.workspaces ?? []).includes(scope.name)
           ? [startedIn(scope, undefined)]
           : []),
       ]}
+      personas={studio?.personas ?? []}
       places={studio?.places ?? []}
       onScope={(next) => go({ page, scope: next })}
     />
@@ -2016,7 +2008,7 @@ export function SkillStudioTab({
               async () => {
                 go({
                   page: "library",
-                  scope: scopeOfLevel(one.level, scope),
+                  scope: scopeListing(one.level, scope),
                   skill: skillRowNamed(one.name),
                 });
                 return undefined;
@@ -2186,7 +2178,6 @@ export function SkillStudioTab({
     const chats = router?.chats ?? [];
     const chat = routedChat;
     const by: SkillPinner | null = pinnerOf(scope);
-    const budgetWorkspace = scope.at === "workspace" ? scope.name : null;
     list = pageList(
       "When a chat's list of skills is over its budget, a router decides which it sees. The router is asked at a chat's start.",
       held(() =>
@@ -2212,7 +2203,7 @@ export function SkillStudioTab({
                   () => Promise.resolve({ tone: "news", label: "Router changed", text }),
                 )
               }
-              budgetWorkspace={budgetWorkspace}
+              budgetWorkspace={workspace}
               onBudget={(write, told) =>
                 change(
                   "The skill budget was not changed",
@@ -2220,7 +2211,7 @@ export function SkillStudioTab({
                     commands
                       .skillBudgetSet(
                         plane,
-                        budgetWorkspace,
+                        workspace,
                         write.program.key,
                         write.skills,
                         write.chars,

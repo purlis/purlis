@@ -18817,6 +18817,11 @@ export type Studio = {
 	persona: string | null,
 	/**  Every workspace of the project, which it can be shown for. */
 	workspaces: string[],
+	/**
+	 *  **Every persona of the project** (#2935), which it can be shown as, each with the
+	 *  workspaces it was dispatched into. Empty while the studio is off.
+	 */
+	personas: StudioPersona[],
 	/**  Every level a skill can be made at or moved to, with its words (#2770). */
 	levels: StudioLevel[],
 	skills: StudioSkill[],
@@ -18915,6 +18920,15 @@ export type StudioClone = {
 	 *  Preview line ([`StudioRouter::preview`] at the root).
 	 */
 	preview: string,
+};
+
+/**
+ *  **A workspace a persona was dispatched into** (#2935), and how many of the dispatches this
+ *  machine keeps went there (`purlis_core::dispatchrecord::dispatched_into`).
+ */
+export type StudioDispatchedInto = {
+	workspace: string,
+	chats: number,
 };
 
 /**
@@ -19019,6 +19033,19 @@ export type StudioNotSupported = {
 	title: string,
 	/**  Why its chats get no skills, in one line. */
 	said: string,
+};
+
+/**
+ *  **A persona the studio can be shown as** (#2935): its name, its role, and each workspace of
+ *  the project it was dispatched into, where its chats can be looked at as a dispatched chat
+ *  sees them.
+ */
+export type StudioPersona = {
+	name: string,
+	/**  Its role, as its `persona.md` says it; `None` where it says none. */
+	role: string | null,
+	/**  Each workspace it was dispatched into, most chats first, then by name. */
+	dispatched_into: StudioDispatchedInto[],
 };
 
 /**  One chat a router extension was asked about at its start. */
