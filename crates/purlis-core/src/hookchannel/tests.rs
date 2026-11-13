@@ -212,7 +212,18 @@ fn one_of_every_move() -> Vec<(u32, crate::state::Move)> {
         ),
         (1, Move::Answered),
         // Its permission hook gave up, and the prompt it left in the pane is answered (R-204).
-        (1, Move::HookGaveUp { asker: Asker::Chat }),
+        (
+            1,
+            Move::HookGaveUp {
+                speaker: Speaker {
+                    pid: None,
+                    conversation: Conversation::Named(
+                        "0199a2f4-1c2b-7f00-8000-000000000001".into(),
+                    ),
+                },
+                asker: Asker::Chat,
+            },
+        ),
         (1, Move::Answered),
         // A turn that ends on a background shell of its own, whose wait lapses (#3878).
         (

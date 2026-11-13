@@ -48,14 +48,23 @@ const DECIDES: { file: string; places: (source: string) => string[]; at_least: n
     places: (source) => functionsNamed(source, "held_or_given_up"),
     at_least: 1,
   },
-  // The board: a give-up is a wait on its harness's permission prompt, the chat's and the board's.
+  // The board: a give-up is a wait on its harness's permission prompt, kept by its asker, and
+  // every place that raises or withdraws a wait on a prompt (Q266): the chat's and the board's.
   {
     file: "crates/purlis-core/src/state.rs",
-    places: (source) => [
-      ...functionsNamed(source, "hook_gave_up"),
-      ...functionsNamed(source, "waits_in_its_terminal"),
-    ],
-    at_least: 4,
+    places: (source) =>
+      [
+        "hook_gave_up",
+        "waits_in_its_terminal",
+        "asked",
+        "tool_said",
+        "child_tool_said",
+        "answered_by",
+        "waits_on_its_prompt",
+        "helper_gone",
+        "helper_tool_said",
+      ].flatMap((name) => functionsNamed(source, name)),
+    at_least: 14,
   },
   // The app: what it tells the board of a give-up.
   {
@@ -63,17 +72,60 @@ const DECIDES: { file: string; places: (source: string) => string[]; at_least: n
     places: (source) => functionsNamed(source, "told_it_gave_up"),
     at_least: 1,
   },
-  // Asks: which chats it lists as waiting in their terminal.
+  // Asks: which chats it lists as waiting in their terminal, and the whole of what it lists.
   {
     file: "app/src-tauri/src/asking.rs",
-    places: (source) => linesNaming(source, "in_its_terminal"),
-    at_least: 3,
+    places: (source) => [
+      ...linesNaming(source, "in_its_terminal"),
+      ...functionsNamed(source, "derive").map((place) => shownAlone(place)),
+    ],
+    at_least: 4,
   },
 ];
 
-/** What the terminal shows or the chat printed: none of it is a cause (ADR 0076). */
-const TERMINAL_OUTPUT =
-  /\b(pty|Pty|screen|Screen|scrollback|Scrollback|vt100|transcript|Transcript|keystroke|output|Output|last_said|last_message|said_before|ReadOnlyTerminal)\w*|chat-screens/;
+/**
+ * **What `derive` shows and never decides by**: a question's text is what the chat's turn last
+ * ended on (#4550), read only where the chat is not at its prompt (`None => question(…)`). It is
+ * the row's words, never why the row is there, so it alone is taken out before the place is read.
+ * A place that no longer reads it fails, so this cannot hide anything else.
+ */
+const SHOWN_NOT_DECIDED = "(waiting.last_message)(session)";
+
+function shownAlone(place: string): string {
+  expect(place, "derive shows a question's last message").toContain(SHOWN_NOT_DECIDED);
+  return place.replace(SHOWN_NOT_DECIDED, "");
+}
+
+/**
+ * What the terminal shows or the chat printed: none of it is a cause (ADR 0076). A word is found
+ * inside any name, in any case: `read_screen`, `readScreen`, `ReadScreen` and `READ_SCREEN` alike.
+ * Only a lowercase start wants no letter before it, so `pty` is found in `read_pty` and `readPty`
+ * but not in `is_empty`.
+ */
+const TERMINAL_WORDS = [
+  "pty",
+  "screen",
+  "scrollback",
+  "vt100",
+  "transcript",
+  "keystroke",
+  "output",
+  "last_said",
+  "last_message",
+  "said_before",
+  "read_only_terminal",
+  "readonlyterminal",
+];
+const TERMINAL_OUTPUT = new RegExp(
+  [
+    ...TERMINAL_WORDS.flatMap((word) => {
+      const camel = word.replace(/_(.)/g, (_, next: string) => next.toUpperCase());
+      const cap = camel[0].toUpperCase() + camel.slice(1);
+      return [`(?<![a-zA-Z])${word}`, `(?<![a-zA-Z])${camel}`, cap, word.toUpperCase()];
+    }),
+    "chat-screens",
+  ].join("|"),
+);
 
 describe("nothing_reads_terminal_output_to_tell_waiting", () => {
   it.each(DECIDES)("$file decides from a named cause alone", ({ file, places, at_least }) => {

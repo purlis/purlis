@@ -19,6 +19,9 @@ use std::sync::{Arc, Mutex};
 /// The conversation each chat is in.
 const A: &str = "11111111-2222-4333-8444-555555555555";
 
+/// The conversation of a harness nested in the chat, which holds its token.
+const B: &str = "99999999-8888-4777-8666-555555555555";
+
 /// The chat's number.
 const CHAT: u32 = 7;
 
@@ -73,6 +76,7 @@ fn asked(on: On, payload: serde_json::Value) -> PermissionAsked {
         permission_request: on.source,
         payload,
         ran_for_ms: None,
+        speaker: speaker(on),
     }
 }
 
@@ -106,7 +110,7 @@ fn host(on: On) -> Host {
             board
                 .lock()
                 .expect("the board")
-                .hook_gave_up(left.chat, &left.asker);
+                .hook_gave_up(left.chat, &left.speaker, &left.asker);
             gave_up.lock().expect("the list").push(left.why);
         })
     });
@@ -271,27 +275,198 @@ fn a_held_ask_is_no_give_up() {
     }
 }
 
-#[test]
-fn a_helper_s_give_up_stands_past_the_chat_s_own_tools() {
-    // A helper's hook gave up (#1644): the prompt is that helper's, so a tool of the chat's own
-    // coming back says nothing of it, and the chat still waits in its terminal.
-    let on = HARNESSES[0];
-    let host = host(on);
+/// A report of helper `agent`'s, on `on`'s hooks.
+fn from_helper(on: On, event: Event, agent: &str) -> Report {
+    Report {
+        agent: Some(agent.to_owned()),
+        ..report(on, event)
+    }
+}
+
+/// A helper `a1`'s ask, too big to hold: its hook gives up.
+fn a_helper_gives_up(host: &Host, on: On) {
     let mut payload = bash(&"x".repeat(MOST_ASK_BYTES + 1));
     payload["agent_id"] = serde_json::Value::from("a1");
     assert!((host.hear)(asked(on, payload)).is_none());
     assert!(host.waits_in_its_terminal());
+}
+
+#[test]
+fn a_helper_s_give_up_stands_until_that_helper_moves_on() {
+    // A helper's hook gave up (#1644, Q266): the prompt in the pane is that helper's. A tool of
+    // the chat's own coming back says nothing of it, nor does an ask of that helper's answered in
+    // the window; the helper's end does.
+    let on = HARNESSES[0];
+    let host = host(on);
+    a_helper_gives_up(&host, on);
 
     host.answered_in_the_pane(on);
     assert!(
         host.waits_in_its_terminal(),
         "the chat's own tools are not the helper's"
     );
+    host.board
+        .lock()
+        .expect("the board")
+        .answered_by(CHAT, &Asker::Helper("a1".to_owned()));
+    assert!(
+        host.waits_in_its_terminal(),
+        "an answer in the window is not the pane's"
+    );
+
+    host.board
+        .lock()
+        .expect("the board")
+        .reported(&from_helper(on, Event::SubagentStop, "a1"));
+    assert!(!host.waits_in_its_terminal(), "the helper ended");
+}
+
+#[test]
+fn a_helper_s_give_up_goes_with_its_own_tool_line() {
+    // The person answered the helper's prompt in the pane: a tool of that helper's own began past
+    // it and came back (#1644).
+    use crate::doing::{Kind, Said as Tool};
+    let on = HARNESSES[0];
+    let host = host(on);
+    a_helper_gives_up(&host, on);
+
+    let mut board = host.board.lock().expect("the board");
+    board.child_tool_said_by(
+        CHAT,
+        "a1",
+        &speaker(on),
+        &Tool::Began {
+            kind: Kind::Command,
+            name: None,
+        },
+    );
+    board.child_tool_said_by(
+        CHAT,
+        "a1",
+        &speaker(on),
+        &Tool::Ended {
+            kind: Some(Kind::Command),
+        },
+    );
+    assert!(!board.waits_in_its_terminal(CHAT));
+}
+
+#[test]
+fn at_the_32_open_cap_answering_another_ask_in_the_window_leaves_the_terminal_row() {
+    // Q266: a give-up is its asker's. The 32 asks the window holds are the chat's too, and
+    // answering one of them there says nothing of the prompt the 33rd left in the pane, whoever
+    // the window read as asking it.
+    for on in HARNESSES {
+        for answered in [Asker::Chat, Asker::Unread] {
+            let host = host(on);
+            assert!(give_up(&host, on, "the 32-open cap").is_none());
+            assert!(host.waits_in_its_terminal());
+
+            host.board
+                .lock()
+                .expect("the board")
+                .answered_by(CHAT, &answered);
+            let why = format!("{:?}, answered as {answered:?}", on.source);
+            assert!(host.waits_in_its_terminal(), "{why}: the pane's prompt stands");
+            assert_eq!(host.prompt(), Some(Prompt::Permission), "{why}");
+
+            host.answered_in_the_pane(on);
+            assert!(!host.waits_in_its_terminal(), "{why}: answered in the pane");
+        }
+    }
+}
+
+#[test]
+fn the_chat_s_own_give_up_answered_in_its_pane_while_a_helper_still_asks_clears_the_chat_s_part()
+{
+    // Q266: the chat's own prompt, answered in its pane, was the only one in the pane. Its helper
+    // still asks, in the window, so the chat still waits, but no longer in its terminal.
+    let on = HARNESSES[0];
+    let host = host(on);
+    assert!(give_up(&host, on, "TooBig").is_none());
+    host.board
+        .lock()
+        .expect("the board")
+        .reported(&from_helper(on, Event::Notification, "a1"));
+    assert!(host.waits_in_its_terminal());
+
+    host.answered_in_the_pane(on);
+    assert!(!host.waits_in_its_terminal(), "its own prompt was answered");
     assert!(
         host.board
             .lock()
             .expect("the board")
-            .answered_by(CHAT, &Asker::Helper("a1".to_owned()))
+            .waits_on_its_prompt(CHAT),
+        "its helper still asks"
     );
-    assert!(!host.waits_in_its_terminal());
+}
+
+#[test]
+fn the_turn_s_end_clears_every_give_up() {
+    for on in HARNESSES {
+        let host = host(on);
+        assert!(give_up(&host, on, "TooBig").is_none());
+        host.board
+            .lock()
+            .expect("the board")
+            .reported(&report(on, Event::Stop));
+        assert!(!host.waits_in_its_terminal(), "{:?}", on.source);
+        assert_eq!(host.prompt(), None, "{:?}", on.source);
+    }
+}
+
+#[test]
+fn a_harness_nested_in_the_chat_never_marks_it_waiting_in_its_terminal() {
+    // Q266: a give-up counts only from the run the chat adopted, as `Board::tool_said_by` holds a
+    // tool line. A harness nested in the chat holds its token and sits in its process tree.
+    for on in HARNESSES {
+        let host = host(on);
+        let nested = Speaker {
+            pid: on.pid.map(|pid| pid + 1),
+            conversation: Conversation::Named(B.to_owned()),
+        };
+        assert!(
+            (host.hear)(PermissionAsked {
+                speaker: nested,
+                ..asked(on, bash(&"x".repeat(MOST_ASK_BYTES + 1)))
+            })
+            .is_none()
+        );
+        assert_eq!(
+            host.gave_up.lock().expect("the list").len(),
+            1,
+            "{:?}: its hook is still told no option",
+            on.source
+        );
+        assert!(!host.waits_in_its_terminal(), "{:?}", on.source);
+        assert_eq!(host.prompt(), None, "{:?}", on.source);
+    }
+}
+
+#[test]
+fn a_chat_started_at_its_folder_trust_prompt_with_no_hook_yet_is_can_t_tell() {
+    // R-351: the harness asks whether to trust its folder before any hook of it loads, so
+    // nothing reports the chat. The real board lists no Terminal ask, and its state reads Can't
+    // tell, by the same reading as the window's All chats.
+    use crate::catalogue::chats::{Facts, Mark, mark};
+    for on in HARNESSES {
+        let mut board = Board::new();
+        board.opened(CHAT, Some(on.harness), None);
+
+        assert!(!board.waits_in_its_terminal(CHAT), "{:?}", on.source);
+        assert_eq!(board.its_prompt(CHAT), None, "{:?}", on.source);
+        let needs_you = board.needs_you().contains(&CHAT);
+        assert!(!needs_you, "{:?}", on.source);
+        let facts = Facts {
+            board: Some(board.state(CHAT)),
+            needs_you,
+            ..Facts::default()
+        };
+        assert_eq!(
+            mark(&facts),
+            (Mark::CantTell, "no-hook-heard"),
+            "{:?}",
+            on.source
+        );
+    }
 }
