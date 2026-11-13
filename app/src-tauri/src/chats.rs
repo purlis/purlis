@@ -2818,7 +2818,7 @@ impl Chats {
         };
         // **Pool setup's Get help chat is held from every cluster at each start** (#4497,
         // story 60), as at its first: a relaunch, a restart and a move all come through here.
-        let ready = purlis_core::poolsetup::help::ready_again(chat, &start, &self.project)?;
+        let ready = purlis_core::start::ready(&start, &self.project)?;
         // The core's start knows no chat, so it says "nothing recorded"; this chat may know
         // better — a workspace rename left it without its conversation (charter#367).
         let ready = purlis_core::start::Ready {
