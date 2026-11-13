@@ -69,6 +69,7 @@ fn line(chat: u32, word: &str, payload: &str) -> ToolCall {
         agent: None,
         at_ms: 0,
         skill: None,
+        arm: None,
     }
 }
 
