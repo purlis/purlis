@@ -34,6 +34,7 @@ fn the_command_says_every_setting_the_person_set() {
         suspend_after: Some("12h".into()),
         frames: Some(5),
         width: Some(1280),
+        ..Asked::default()
     };
     assert_eq!(
         asked.command(),
@@ -135,4 +136,82 @@ fn a_team_s_image_that_breaks_the_contract_makes_nothing() {
         "no runner was made: {}",
         fake.file("log")
     );
+}
+
+#[test]
+fn a_pool_on_another_machine_names_it_and_the_key_trusted_in_the_command() {
+    let asked = Asked {
+        name: "build-box".into(),
+        image: image(),
+        on: Some("ssh://me@build-box/var/run/docker.sock".into()),
+        trust: Some("SHA256:dmeCC9oOb+c7VYVBSUAdgQchZHZQyXKWgKnGQxfh2rA".into()),
+        ..Asked::default()
+    };
+    assert_eq!(
+        asked.command(),
+        format!(
+            "purlis pool add build-box --image {} --on \
+             ssh://me@build-box/var/run/docker.sock --trust \
+             SHA256:dmeCC9oOb+c7VYVBSUAdgQchZHZQyXKWgKnGQxfh2rA",
+            image()
+        )
+    );
+}
+
+#[test]
+fn a_route_or_fingerprint_that_isnt_one_never_reaches_the_command() {
+    let asked = Asked {
+        name: "build-box".into(),
+        image: image(),
+        on: Some("ssh://-oProxyCommand=x".into()),
+        trust: Some("SHA256:$(id)".into()),
+        ..Asked::default()
+    };
+    assert_eq!(
+        asked.command(),
+        format!("purlis pool add build-box --image {}", image())
+    );
+}
+
+/// The machine Connect kept is the one `--on` names whether or not the socket or the key file is
+/// named again (#6269): the kept route, with both, is what the pool is made with, and nothing is
+/// contacted.
+#[test]
+fn the_machine_connect_kept_is_taken_with_its_socket_and_key_file_wherever_the_ask_leaves_them_out()
+{
+    let config = tempfile::tempdir().unwrap();
+    let identity = std::path::Path::new("/home/me/.ssh/id_ed25519");
+    let kept = crate::sshroute::Route::parse("ssh://me@build-box:2222/run/podman/podman.sock")
+        .unwrap()
+        .with_identity(identity)
+        .unwrap();
+    let remote = crate::runners::Remote {
+        route: kept.clone(),
+        pin: crate::sshroute::Pin {
+            host_key: crate::sshroute::HostKey::parse(
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiGzfjDDJsgYLYCmdkf8Fel9sE6Ma14Y2+c33Y/qZ2n",
+            )
+            .unwrap(),
+            engine: crate::sshroute::EnginePin::Podman {
+                socket: "/run/podman/podman.sock".into(),
+                graph_root: "/var/lib/containers/storage".into(),
+            },
+        },
+    };
+    super::super::trusted(config.path(), &remote).unwrap();
+    // A docker that is never run: nothing is contacted for a machine already trusted.
+    let docker = Docker::at("/nonexistent/docker");
+    for (on, with) in [
+        ("ssh://me@build-box:2222", None),
+        ("ssh://me@build-box:2222/run/podman/podman.sock", None),
+        ("ssh://me@build-box:2222", Some("/home/me/.ssh/id_ed25519")),
+    ] {
+        let asked = Asked {
+            on: Some(on.into()),
+            identity: with.map(str::to_owned),
+            ..Asked::default()
+        };
+        let found = remote_of(config.path(), &docker, &asked).unwrap().unwrap();
+        assert_eq!(found, remote, "{on} {with:?}");
+    }
 }

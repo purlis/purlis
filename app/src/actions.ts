@@ -29,9 +29,11 @@
  * gave travels to the operator as the core's own sentence rather than as whatever a `catch`
  * decided to say about it.
  */
+import { chatScreenTitle, chatScreenView } from "./closedChat";
 import { splitRefused } from "./paneFold";
 import type { Size } from "./paneDrop";
 import type {
+  ChatCard,
   ChatWorktree,
   Curations,
   ExtensionCommand,
@@ -65,6 +67,7 @@ import {
 } from "./skillStudio";
 import { backSaid } from "./chatState";
 import { listed as namesListed } from "./chatMoves";
+import { chatNumberIn } from "./chatNumber";
 import { handedOff, tasksOf, type ListedChat } from "./chatsTree";
 import { MAIN } from "./here";
 import {
@@ -108,6 +111,8 @@ import {
 import { RESTORING_HAS_NO_CLOSE } from "./restoringChats";
 import { SIDE_KEYS_SAID } from "./sideKeys";
 import { SETTINGS_GROUPS } from "./settings/catalogue";
+import { everySetting, keyOf } from "./settings/search";
+import { inAFile, type Level } from "./settings/groups";
 
 /** The Workspace level's Skills group (#2767), behind the Skill studio's flag. */
 const WORKSPACE_SKILLS = "workspace.skills";
@@ -118,6 +123,7 @@ import {
   changesTitle,
   changesView,
   chatOf,
+  chatShownBy,
   contentsOf,
   hasOnePane,
   ONE_JOB_STAYS,
@@ -462,7 +468,16 @@ export type Does =
    *  second press on a sentence the operator has read. A `force` here would be a row that
    *  discards work with nobody warned — the same objection `worktree.discard` records. */
   | { verb: "removeWorkspace"; workspace: string }
+  /** A needs-you item's Go (and the palette's row for one): a chat whose task failed goes to
+   *  that task, and the failure is looked at as it is shown. */
   | { verb: "showChat"; session: number }
+  /** **Shows chat `session`**, in its tab or the workspace it is in, and nothing more: a pane's
+   *  `chat 641` link (#6217). Never a needs-you item's Go, so a failure the chat is flagged for
+   *  is neither gone to nor taken as looked at. */
+  | { verb: "focusChat"; session: number }
+  /** **Reopen** on a closed chat's card (#6214): finished task `id`'s conversation started
+   *  again as an ordinary chat, as Reopen on its finished row does (#1485). */
+  | { verb: "reopenTask"; id: string }
   /** ⌘⇧H (#4757): the focused pane goes back to the chat it showed before. Nothing ends. */
   | { verb: "paneBack" }
   /** Gives a task a tab of its own (#1489). Nothing ends, and nothing is asked. */
@@ -707,7 +722,14 @@ export type Does =
   /** Opens Settings at one group (#1201): a row per group, by the group's address. A You group
    *  carries the project in front when there is one, and none when the window has no project;
    *  a Project group carries its project, and a Workspace group its project and workspace. */
-  | { verb: "openSettingsGroup"; group: string; plane?: string; workspace?: string }
+  | {
+      verb: "openSettingsGroup";
+      group: string;
+      plane?: string;
+      workspace?: string;
+      /** The setting of the group whose field the link lands on (#2920). */
+      setting?: string;
+    }
   | { verb: "readAgain" }
   | { verb: "taskBranch"; id: string; act: "merge" | "discard" }
   /** Opens a new chat for one curation action on one subject, with the action's prompt typed
@@ -782,6 +804,19 @@ export type Offer = {
    * own words are, never as a name.
    */
   also?: readonly string[];
+  /**
+   * **Listed only once words are typed** (#2920): a row among a hundred alike, every setting's,
+   * which a person finds by what they want to change. With nothing typed the palette lists what
+   * the window does, and these would bury it.
+   */
+  whenTyped?: true;
+  /**
+   * **The chat this row goes to, by its current number** (#6213): on the rows that bring a chat
+   * on screen (Switch to tab, Show task), so typing `641` or `#641` finds chat 641 there, ahead
+   * of any row whose title merely holds those digits ({@link narrow}). Never drawn: the tab's
+   * hover and the pane's head say it (#6212).
+   */
+  chat?: number;
   /**
    * What this row does that its title cannot fit, for a row whose consequence is worth a
    * second sentence. Drawn beside the row in the palette, and as the tooltip of a button that
@@ -1196,6 +1231,10 @@ export type Doing = {
    *  core's guard. */
   removeWorkspace: (workspace: string) => void;
   showChat: (session: number) => void;
+  /** Shows chat `session` and does nothing more (#6217): no needs-you item is gone to. */
+  focusChat: (session: number) => void;
+  /** Reopens finished task `id` (#6214): a refusal is the core's sentence. */
+  reopenTask: (id: string) => Promise<Ran>;
   /** The focused pane goes back to the chat it showed before, or to where that chat is. */
   paneBack: () => void;
   /** Gives a task a tab of its own, in front. */
@@ -2365,11 +2404,13 @@ export function catalogue(now: Now): Offer[] {
   for (const tab of now.tabs.order) {
     const name = tabNameOf(now.tabs.byId[tab]);
     const title = `Switch to tab ${name}`;
-    offers.push(
+    // Found by the number of the chat it shows (#6213), as its tooltip says it (#6212).
+    const chat = chatShownBy(now.tabs, tab);
+    const row =
       tab === now.tabs.inFront
         ? cannot(`tab.select:${tab}`, title, "It is already in front.", name)
-        : can(`tab.select:${tab}`, title, { verb: "selectTab", tab }, name),
-    );
+        : can(`tab.select:${tab}`, title, { verb: "selectTab", tab }, name);
+    offers.push(chat === undefined ? row : { ...row, chat });
   }
 
   // **Rename…** (#5343): a tab's own, which its dialog says the meaning of: the chat of a tab
@@ -3434,6 +3475,7 @@ export function catalogue(now: Now): Offer[] {
   );
   offers.push(...taskEndRows(now.listed ?? [], now.stopping ?? []));
   offers.push(...taskRows(now.listed ?? []));
+  offers.push(...tablessRows(now.listed ?? []));
   offers.push(...handedOffRows(now.listed ?? []));
   offers.push(...placeRows(now.tabs, now.listed ?? [], now.nameOf));
   offers.push(besideInFront(now.tabs, now.listed ?? [], now.nameOf));
@@ -3582,6 +3624,16 @@ export function catalogue(now: Now): Offer[] {
   });
 
   offers.push(can("charter.quit", "Quit purlis", { verb: "quit" }));
+
+  // **Every setting, last** (#2920): a hundred rows a person finds by typing what they want to
+  // change, listed only then (`whenTyped`).
+  offers.push(
+    ...settingRows(
+      now.plane,
+      now.focused === OUTSIDE ? undefined : now.focused,
+      now.skillStudio ?? false,
+    ),
+  );
 
   return readOnlyOffers(offers, now.readOnly);
 }
@@ -3784,6 +3836,11 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
     case "showChat":
       doing.showChat(does.session);
       return DID;
+    case "focusChat":
+      doing.focusChat(does.session);
+      return DID;
+    case "reopenTask":
+      return doing.reopenTask(does.id);
     case "paneBack":
       doing.paneBack();
       return DID;
@@ -4009,12 +4066,13 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       // with the group shown and puts the keyboard in it. With no project there is no window
       // of one to ask: the group is shown at You's place and Your settings… opens it.
       if (does.plane === undefined) {
-        linkToGroup(settingsPlace("you"), does.group);
+        linkToGroup(settingsPlace("you"), does.group, does.setting);
         doing.openYourSettings();
       } else
         askSettingsLink(does.plane, {
           group: does.group,
           ...(does.workspace === undefined ? {} : { workspace: does.workspace }),
+          ...(does.setting === undefined ? {} : { setting: does.setting }),
         });
       return DID;
     case "curate":
@@ -4111,6 +4169,51 @@ function settingsGroupRows(
       note: `${workspace}: Settings at its level, at ${one.label}.`,
     });
   return rows;
+}
+
+/** What each level's rows are called, as its groups' rows are ({@link settingsGroupRows}). */
+const LEVEL_ROWS: Readonly<Record<Level, string>> = {
+  you: "Your settings",
+  project: "Project settings",
+  workspace: "Workspace settings",
+  persona: "Persona settings",
+};
+
+/**
+ * **One row per setting, at every level** (#2920, N27; #2814·4): "Your settings: Text › Window
+ * text size", "Project settings: Saving › Mode". Each lands on the setting's field, through the
+ * same link as its group's row, and says what the setting is for in the setting's own help.
+ *
+ * The settings are the levels' builders' over files nothing is read into (`settings/search.ts`),
+ * the same list the Settings search finds in, at the same levels as the group rows: You always,
+ * the project in front's, and the focused workspace's.
+ */
+function settingRows(
+  plane: string | undefined,
+  workspace: string | undefined,
+  skillStudio: boolean,
+): Offer[] {
+  return everySetting({ plane, workspace, skillStudio }).flatMap(({ level, groups }) =>
+    groups.flatMap((group) =>
+      group.settings.map((setting) => ({
+        ...can(
+          `settings.setting:${setting.id}${level === "workspace" ? `:${workspace}` : ""}`,
+          `${LEVEL_ROWS[level]}: ${group.label} › ${setting.label}`,
+          {
+            verb: "openSettingsGroup",
+            group: group.id,
+            setting: setting.id,
+            ...(plane === undefined ? {} : { plane }),
+            ...(level === "workspace" ? { workspace } : {}),
+          } satisfies Does,
+        ),
+        ...(setting.help === "" ? {} : { note: setting.help }),
+        // Found by its key too, as Copy key gives it, and by its group's other words (#5688).
+        also: [...(inAFile(setting) ? [keyOf(setting)] : []), ...(group.also ?? [])],
+        whenTyped: true as const,
+      })),
+    ),
+  );
 }
 
 /**
@@ -4502,13 +4605,37 @@ export function taskRows(listed: readonly ListedChat[]): Offer[] {
     .filter((chat) => chat.mode === "task")
     .map((chat) => {
       const asker = chat.from === null ? "" : `, asked by ${chat.from}`;
-      return can(
+      return {
+        ...can(
+          taskShowId(chat.session),
+          `Show task ${chat.name} in ${chat.workspace}${asker}`,
+          { verb: "showChat", session: chat.session },
+          chat.name,
+        ),
+        // Found by its number (#6213), in whichever workspace it works.
+        chat: chat.session,
+      };
+    });
+}
+
+/**
+ * **A row for each chat no tab of this window holds** (#6213): `chat.show:<session>`, as a
+ * task's, so a chat of any workspace of the project is found by its number, or its name, and
+ * shown where it works. A task has its own row ({@link taskRows}), and a chat with a tab here
+ * its `Switch to tab` row.
+ */
+export function tablessRows(listed: readonly ListedChat[]): Offer[] {
+  return listed
+    .filter((chat) => chat.mode !== "task" && !chat.tab)
+    .map((chat) => ({
+      ...can(
         taskShowId(chat.session),
-        `Show task ${chat.name} in ${chat.workspace}${asker}`,
+        `Show chat ${chat.name} in ${chat.workspace}`,
         { verb: "showChat", session: chat.session },
         chat.name,
-      );
-    });
+      ),
+      chat: chat.session,
+    }));
 }
 
 /**
@@ -5633,9 +5760,16 @@ export function inPalette(offers: readonly Offer[]): Offer[] {
  * `ss`. Both sides get the same treatment, so a row is never unfindable by its own text.
  */
 export function matches(query: string, offer: Offer): boolean {
+  if (isTheChat(query, offer)) return true;
   const want = query.toLowerCase();
   const verb = offer.id.split(":")[0].toLowerCase();
   return offer.title.toLowerCase().includes(want) || verb.includes(want) || isAlso(want, offer);
+}
+
+/** Whether `query` asks for a chat by its number, `641` or `#641`, and this row goes to it. */
+function isTheChat(query: string, offer: Offer): boolean {
+  const number = chatNumberIn(query);
+  return number !== undefined && offer.chat === number;
 }
 
 /** Whether `want`, lower-cased, is in one of the row's other words ({@link Offer.also}). */
@@ -5711,13 +5845,19 @@ function aboutWhatIsInFront(offer: Offer): boolean {
  */
 export function narrow(query: string, offers: readonly Offer[]): Offer[] {
   const want = query.trim();
-  if (want === "") return [...offers];
+  if (want === "") return offers.filter((offer) => offer.whenTyped !== true);
   const kept = offers.filter((offer) => matches(want, offer));
+  // **A chat asked for by its number comes before everything** (#6213): `641` is the chat a
+  // coordinator named, never the title that happens to hold those digits.
+  const numbered = kept.filter((offer) => isTheChat(want, offer));
   const whole = want.toLowerCase();
-  const exact = kept.filter((offer) => offer.title.toLowerCase() === whole);
-  const rest = kept.filter((offer) => !exact.includes(offer));
+  const exact = kept.filter(
+    (offer) => !numbered.includes(offer) && offer.title.toLowerCase() === whole,
+  );
+  const rest = kept.filter((offer) => !numbered.includes(offer) && !exact.includes(offer));
   const found = rest.filter((offer) => byItsWords(want, offer));
   return [
+    ...numbered,
     ...exact,
     ...found.filter(aboutWhatIsInFront),
     ...found.filter((offer) => !aboutWhatIsInFront(offer)),
@@ -6547,3 +6687,29 @@ export function pinToWorkspaceRow(at: BranchPath): Offer {
 /** Why a page of the plane root offers no Pin to workspace. */
 const PLANE_ROOT_PAGE =
   "A page is pinned to a workspace. Open it from that workspace's files to pin it there.";
+
+/** ***Read it* on a closed chat's card** (#6214): its kept last screen, read-only, in a view tab
+ *  named by the card's title. */
+export function readItOffer(card: ChatCard): Offer {
+  const title = chatScreenTitle(card);
+  return can(`chat.read:${card.chat}`, title, {
+    verb: "openView",
+    view: chatScreenView(card),
+    title,
+  });
+}
+
+/** **A pane's `chat 641` link, ⌘-clicked** (#6217): the chat open under `session`, shown in its
+ *  tab or the workspace it is in. */
+export function showLinkedChatOffer(session: number): Offer {
+  return can(`chat.link:${session}`, `Show chat #${session}`, { verb: "focusChat", session });
+}
+
+/** ***Reopen* on a closed chat's card** (#6214): its task's conversation started again as an
+ *  ordinary chat, as Reopen on its finished row does. */
+export function reopenTaskOffer(card: ChatCard): Offer {
+  return can(`chat.reopen:${card.task.id}`, `Reopen ${card.task.name}`, {
+    verb: "reopenTask",
+    id: card.task.id,
+  });
+}

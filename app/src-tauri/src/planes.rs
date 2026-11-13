@@ -2071,6 +2071,8 @@ impl Held {
     /// through the same gated [`Records::write`] as every other, so a plane whose record this
     /// launch never put back is left exactly as it was.
     fn let_go(&self, to_update: bool) {
+        // Nobody is told of its standing any more (H6c).
+        purlis_core::planegit::tell_when_standing_moves(&self.root, None);
         // Auto-save first: ending the chats below tells the worker each one ended, and a plane
         // being let go of is saved once, at quit, not by a worker racing that save.
         drop(
@@ -4997,6 +4999,16 @@ impl Planes {
             chats.skills_now(),
             Arc::clone(&self.changes),
         );
+        // A reader of the kept standing (the Saving rows, the alerts) was answered from an older
+        // one and the newer one differs: the window is told the git answer moved, and reads it
+        // again (H6c).
+        purlis_core::planegit::tell_when_standing_moves(&root, {
+            let changes = Arc::clone(&changes);
+            let plane = id.clone();
+            Some(Arc::new(move || {
+                changes(plane.clone(), Some(vec![purlis_core::planechange::saved()]));
+            }))
+        });
         // Before a chat can end, so its end is one the worker hears. Where the chats run: in
         // the session host, the host saves the plane, and this window starts none of its own.
         let autosave = chats.sessions().keep_saving(&root, {

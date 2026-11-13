@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen, untilStopped } from "./here";
 import {
   commands,
   SKILL_GRADES,
@@ -466,18 +466,20 @@ export function GradesRunningPage({
   useEffect(() => {
     let live = true;
     let toldSince = false;
-    const listening = listen<SkillGradesStep>(SKILL_GRADES, (told) => {
+    const heard = listen<SkillGradesStep>(SKILL_GRADES, (told) => {
       if (!live || told.payload.plane !== plane || told.payload.batch !== batch) return;
       toldSince = true;
       setStep(told.payload);
-    })
-      .then((stop) => {
+    });
+    const stop = untilStopped(heard);
+    const listening = heard.then(
+      () => {
         if (live) setDeaf(undefined);
-        return stop;
-      })
-      .catch((err: unknown) => {
+      },
+      (err: unknown) => {
         if (live) setDeaf(String(err));
-      });
+      },
+    );
     void listening
       .then(() => commands.skillGradesRunning(latest.current.plane))
       .then((answer) => {
@@ -496,7 +498,7 @@ export function GradesRunningPage({
       });
     return () => {
       live = false;
-      void listening.then((stop) => stop?.()).catch(() => undefined);
+      stop();
     };
   }, [plane, batch, again]);
 

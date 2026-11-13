@@ -115,17 +115,16 @@
 
 [data-scope="dialog"][data-part="title"] {
   margin: 0;
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-strong);
   line-height: var(--line-height-tight);
   overflow-wrap: anywhere;
   text-wrap: balance;
 }
 
+/* Its size is the secondary's (`ui-text-secondary`, #1920); its colour the dialog's own tier,
+   which the parts manifest measures (`DIALOG_TIERS`) and which outranks the role's. */
 [data-scope="dialog"][data-part="subtitle"] {
   margin: var(--space-2) 0 0;
   color: var(--text-muted);
-  font-size: var(--font-size-sm);
   overflow-wrap: anywhere;
 }
 
@@ -158,6 +157,7 @@
   margin-block-end: 0;
 }
 
+/* The body's size (`ui-text-body`, #1920), in the dialog's secondary tier (`DIALOG_TIERS`). */
 [data-scope="dialog"][data-part="description"] {
   margin-block-end: var(--space-5);
   color: var(--text-secondary);
@@ -192,12 +192,12 @@
   display: none;
 }
 
+/* The secondary's size (`ui-text-secondary`, #1920), in the dialog's quiet tier (`DIALOG_TIERS`). */
 [data-scope="dialog"][data-part="summary"] {
   flex: 1 1 auto;
+  color: var(--text-quiet);
   min-inline-size: 0;
   overflow: hidden;
-  color: var(--text-quiet);
-  font-size: var(--font-size-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

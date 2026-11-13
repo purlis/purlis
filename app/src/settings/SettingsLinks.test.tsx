@@ -114,7 +114,7 @@ const settingsTabs = () =>
 const nav = () => screen.getByRole("navigation", { name: "Groups" });
 const group = (name: string) => within(nav()).getByRole("button", { name });
 const level = (name: string) => screen.getByRole("radio", { name });
-const filterBox = () => screen.getByRole("searchbox", { name: "Filter settings" });
+const filterBox = () => screen.getByRole("searchbox", { name: "Search settings" });
 
 /** Opens the doctor from the status line and presses the row's way into Settings. */
 async function fromTheDoctor() {

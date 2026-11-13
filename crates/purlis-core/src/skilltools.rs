@@ -47,7 +47,7 @@ use crate::chattools::{Tool, no_arguments, one_string};
 use crate::counts::{counted, plural};
 use crate::harness::Harness;
 use crate::skills::runs::{Level, StartedBy};
-use crate::skills::{Effective, Route, SkillSet};
+use crate::skills::{Effective, Reference, Route, SkillSet};
 
 /// The tool that lists the chat's skills.
 pub const SKILL_LIST: &str = "skill_list";
@@ -317,6 +317,10 @@ fn load(
     start: &dyn Fn(&str),
 ) -> Result<String, String> {
     let effective = purlis_skills::by_name(set, name).ok_or_else(|| {
+        // A built-in purlis retired (#5725): said so, and where what it said is now.
+        if let Some((skill, now)) = Reference::written_retired(name) {
+            return format!("`{skill}` was removed from purlis, so no chat can load it: {now}");
+        }
         format!(
             "this chat has no skill named {}: skill_find finds one by what it does, and \
              skill_list lists them",

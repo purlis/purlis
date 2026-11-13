@@ -94,7 +94,7 @@ const SKILLS: ChatSkills = {
   ],
   budget: null,
   repos: [],
-  not_supported: null,
+  none_because: null,
   routing: null,
   missing: null,
 };

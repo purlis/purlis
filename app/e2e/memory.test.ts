@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   HARNESS,
   harnessMemory,
+  footprintsOfTheLiving,
   parseFootprints,
   parseProcesses,
   runs,
@@ -259,6 +260,48 @@ describe("parseFootprints", () => {
     expect(parseFootprints("", [702])).toEqual({
       byPid: {},
       error: "footprint printed nothing for pid 702",
+    });
+  });
+});
+
+describe("footprintsOfTheLiving", () => {
+  // `footprint -p 34498 -p 23518` after WebKit ended 23518 (a prewarmed web content process)
+  // between the `ps` that listed it and the footprint call, as main's run 43334827097 saw.
+  const ONE_GONE = [
+    "footprint: Unable to find pid for process matching '23518'",
+    "======================================================================",
+    "com.apple.WebKit.WebContent [34498]: 64-bit    Footprint: 3007 MB (16384 bytes per page)",
+    "Auxiliary data:",
+    "    phys_footprint: 3007 MB",
+    "    phys_footprint_peak: 4096 MB",
+  ].join("\n");
+  const READ_34498 = { 34498: { footprintKb: 3007 * 1024, peakKb: 4096 * 1024 } };
+
+  it("drops a web content process that exited before footprint read it, and is no error", () => {
+    expect(footprintsOfTheLiving(ONE_GONE, [34498, 23518], [1, 34498])).toEqual({
+      byPid: READ_34498,
+      error: null,
+      gone: [23518],
+      unread: [],
+    });
+  });
+
+  it("names a pid footprint could not read that is still alive, to be asked again", () => {
+    expect(footprintsOfTheLiving(ONE_GONE, [34498, 23518], [34498, 23518])).toEqual({
+      byPid: READ_34498,
+      error: "footprint: Unable to find pid for process matching '23518'",
+      gone: [],
+      unread: [23518],
+    });
+  });
+
+  it("is an error when every web content process asked about has exited", () => {
+    const said = "footprint: Unable to find pid for process matching '23518'";
+    expect(footprintsOfTheLiving(said, [23518], [34498])).toEqual({
+      byPid: {},
+      error: "every web content process asked about exited before footprint read it: pid 23518",
+      gone: [23518],
+      unread: [],
     });
   });
 });

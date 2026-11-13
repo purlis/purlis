@@ -348,6 +348,13 @@ async function pressTheEmptyPanesNewChat(): Promise<void> {
  * It is `role="alertdialog"` rather than `dialog`: the dialog family's `AlertDialog`
  * (`ui/dialog/Dialog.tsx`), which is the one for a question the operator did not go looking for.
  */
+/**
+ * How long one look in the page may take before a red run says the window held it (#6227): a
+ * look answers in milliseconds, and a main thread held by a command answers it only once it
+ * lets go.
+ */
+const A_HELD_LOOK_MS = 5_000;
+
 export async function answerTheAsk(ending: string): Promise<void> {
   // The question is about the row that was pressed; its title says which. Looked for by that,
   // afresh at every look: `endEveryChat` asks one after another, and a node held from the last
@@ -365,9 +372,33 @@ export async function answerTheAsk(ending: string): Promise<void> {
     },
     { timeout: 20_000, timeoutMsg: `the question about ${ending} was never asked` },
   );
-  const answer = await $('[role="alertdialog"]').$(`button=${word}`);
-  await answer.waitForClickable({ timeout: 20_000 });
-  await answer.click();
+  // Found and pressed in one look in the page (#6227): a button held from a look before is one
+  // the question may have drawn again since. A look the window answers late is said apart: a
+  // window whose main thread is held (a close waiting on its host, `slow.jsonl`'s
+  // `core_stall`) answers the look that pressed only once it lets go, and that is no question
+  // left without its answer.
+  // The look still out counts too: WebdriverIO gives up while it is pending once an earlier
+  // look has come back.
+  let slowestLook = 0;
+  let lookedAt: number | null = null;
+  const longestLook = () => Math.max(slowestLook, lookedAt === null ? 0 : Date.now() - lookedAt);
+  await browser.waitUntil(
+    async () => {
+      lookedAt = Date.now();
+      const pressed = await browser.execute(pressTheAnswer, ending, word);
+      slowestLook = longestLook();
+      lookedAt = null;
+      return pressed;
+    },
+    {
+      timeout: 20_000,
+      interval: 200,
+      timeoutMsg: () =>
+        longestLook() >= A_HELD_LOOK_MS
+          ? `the window took ${Math.round(longestLook() / 1000)} s to answer one look at the question about ${ending}: its main thread was held`
+          : `the question about ${ending} never offered ${word}`,
+    },
+  );
   await theDialogHasGone("alertdialog", ending, `the question about ${ending} never went`);
 }
 
@@ -407,20 +438,14 @@ export async function endEveryChat(most = 200): Promise<void> {
   for (let pressed = 0; pressed < most; pressed++) {
     await openThePalette();
     await $("#palette-query").addValue("End chat");
-    const row = await browser.execute(() => {
-      const found = document.querySelector<HTMLElement>(
-        '[id^="palette-row-chat.end:"]:not([aria-disabled="true"])',
-      );
-      found?.click();
-      return found?.id ?? null;
-    });
-    if (row === null) {
+    const ending = await browser.execute(pressEndChat);
+    if (ending === null) {
       await browser.keys(["Escape"]);
       await $(PALETTE).waitForDisplayed({ reverse: true, timeout: 10_000 });
       await clearEndedPanes(undefined, most);
       return;
     }
-    await answerTheAsk("");
+    await answerTheAsk(ending);
   }
   throw new Error(`${most} presses did not end every chat`);
 }
@@ -437,15 +462,8 @@ export const ENDED_BAND = '[data-cause^="chat-ended:"]';
  */
 export async function clearEndedPanes(session?: number, most = 200): Promise<void> {
   const cause = session === undefined ? ENDED_BAND : `[data-cause="chat-ended:${session}"]`;
-  /** Presses Clear pane, by its name, on a band drawn now; whether there was one. */
-  const clearedOne = async () => {
-    const band = await $(cause);
-    if (!(await band.isExisting())) return false;
-    const clear = await band.$("aria/Clear pane");
-    if (!(await clear.isExisting())) return false;
-    await clear.click();
-    return true;
-  };
+  /** Presses Clear pane on a band drawn now; whether there was one. */
+  const clearedOne = () => browser.execute(pressClearPane, cause);
   let cleared = 0;
   for (let pass = 0; pass < most; pass++) {
     let found = false;
@@ -467,6 +485,70 @@ export async function clearEndedPanes(session?: number, most = 200): Promise<voi
     }
     if (!found) return;
   }
+}
+
+/**
+ * **Presses Clear pane on the first band `cause` names that offers it** (#4756, #6227), and
+ * answers whether it did. **Run in the page**, so the band is the one drawn now: clearing one
+ * pane of a split draws the tab again, and the other pane's band with it, and a band WebdriverIO
+ * had found 100 ms before was a node no longer in the window.
+ */
+export function pressClearPane(cause: string): boolean {
+  // Everything it needs is inside it: a script `browser.execute` runs sees nothing of this module.
+  for (const band of document.querySelectorAll(cause)) {
+    const clear = [...band.querySelectorAll<HTMLElement>('button, [role="button"]')].find(
+      (one) =>
+        !one.hasAttribute("disabled") &&
+        one.getAttribute("aria-disabled") !== "true" &&
+        [one.getAttribute("aria-label"), one.textContent].some(
+          (said) => (said ?? "").trim() === "Clear pane",
+        ),
+    );
+    if (clear === undefined) continue;
+    clear.click();
+    return true;
+  }
+  return false;
+}
+
+/**
+ * **Presses the palette's first End chat row that can run, and answers its title** (#6227), or
+ * `null` with none left; a row with no title is refused, never pressed. The question it asks is titled the row's title and a `?`, so the title
+ * is what the spec waits for: with no name, any question offering Close was "the question
+ * about " in a red run's words. **Run in the page**, as {@link aDialogOffers} is.
+ */
+export function pressEndChat(): string | null {
+  const row = document.querySelector<HTMLElement>(
+    '[id^="palette-row-chat.end:"]:not([aria-disabled="true"])',
+  );
+  if (row === null) return null;
+  const title = (row.querySelector(".palette-title")?.textContent ?? "").trim();
+  // A title of none would wait for any question at all, which is what #6227 was.
+  if (title === "") throw new Error(`the palette's ${row.id} has no title to wait for`);
+  row.click();
+  return title;
+}
+
+/**
+ * **Presses the button whose words are `word` on the question (an `alertdialog`) that says
+ * `ending`** (#6227), and answers whether one was there to press. **Run in the page**, as {@link aDialogOffers} is: a
+ * button held from a look before is one the question may have drawn again since.
+ */
+export function pressTheAnswer(ending: string, word: string): boolean {
+  for (const dialog of document.querySelectorAll('[role="alertdialog"]')) {
+    if (!(dialog.textContent ?? "").includes(ending)) continue;
+    // Asked for by role as well as tag, and all inside it, as `pressClearPane` is.
+    const answer = [...dialog.querySelectorAll<HTMLElement>('button, [role="button"]')].find(
+      (one) =>
+        !one.hasAttribute("disabled") &&
+        one.getAttribute("aria-disabled") !== "true" &&
+        (one.textContent ?? "").trim() === word,
+    );
+    if (answer === undefined) continue;
+    answer.click();
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -698,10 +780,19 @@ export async function showView(
     | "Vaults",
 ): Promise<void> {
   // On whichever bar holds it: a sidebar's, or the Lower icons of its half of the Panel.
-  const tab = await $(`.activity-bar [role="tab"][aria-label="${name}"]`);
-  await tab.waitForExist({ timeout: 30_000 });
-  if ((await tab.getAttribute("aria-selected")) !== "true") await tab.click();
-  await browser.waitUntil(async () => (await tab.getAttribute("aria-selected")) === "true", {
+  const tab = `.activity-bar [role="tab"][aria-label="${name}"]`;
+  await $(tab).waitForExist({ timeout: 30_000 });
+  // Looked up afresh for the press and read afresh at each look after it (#6227): the bar is
+  // drawn again as a view arrives, and a tab held from before is a node that may have left the
+  // window. Pressed by the driver, not by `click()` in the page: a press from the page selects
+  // a tab without moving the strip's one Tab stop to it (`keyboard-reach.e2e.ts`).
+  const shown = (selector: string) =>
+    browser.execute(
+      (css: string) => document.querySelector(css)?.getAttribute("aria-selected") === "true",
+      selector,
+    );
+  if (!(await shown(tab))) await $(tab).click();
+  await browser.waitUntil(async () => shown(tab), {
     timeout: 10_000,
     timeoutMsg: `the ${name} view never opened`,
   });

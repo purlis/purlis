@@ -3,7 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render } from "@testing-library/react";
-import type { Terminal } from "@xterm/xterm";
+import { Terminal } from "@xterm/xterm";
 import { DEFAULT_THEME, drawIn, xtermLook, xtermTheme } from "../theme/theme";
 import { drawTerminalFont } from "../theme/terminalFont";
 import { PURLIS_LIGHT } from "../theme/handed.testkit";
@@ -113,5 +113,17 @@ describe("the sign-in strip's terminal and the theme in force", () => {
 
     expect(() => drawIn(PURLIS_LIGHT)).not.toThrow();
     expect(was.options.theme).toEqual(xtermTheme(DEFAULT_THEME));
+  });
+});
+
+describe("the sign-in strip's terminal and links", () => {
+  it("has none: no link provider is registered on it, as every pane's has (#6215)", () => {
+    const registered = vi.spyOn(Terminal.prototype, "registerLinkProvider");
+
+    terminal();
+
+    expect(made).toHaveLength(1);
+    expect(registered).not.toHaveBeenCalled();
+    registered.mockRestore();
   });
 });

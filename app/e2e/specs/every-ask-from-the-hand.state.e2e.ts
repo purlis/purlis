@@ -50,8 +50,9 @@ import { PROJECTS, ask, inFront, keepTheNotices, openFromTheStrip } from "../swi
  * project is then brought to the front, and from there, with **no view opened by the test**, each
  * kind must be:
  *
- * - **counted** by the ✋, as "+N elsewhere", and that N is how many rows Asks lists for the
- *   other projects;
+ * - **counted** on its own project's tab on the rail, and the tabs' counts are how many rows
+ *   Asks lists for the other projects; the ✋ counts the project in front alone (#6341, ADR 0121
+ *   amended 2026-11-12, decision 1), so it never counts them;
  * - **listed** by Asks, which opens on all projects, as a row of its own under its project's
  *   chat, saying what it asks (#1921);
  * - **answerable in place**: its row is titled as its kind is, and a decision's options stand on
@@ -82,8 +83,6 @@ import { PROJECTS, ask, inFront, keepTheNotices, openFromTheStrip } from "../swi
  * is ended, its projects are closed, and the launch's project is in front.
  */
 
-/** The title bar's hand. */
-const HAND = '[data-testid="title-bar"] [data-testid="needs-you-button"]';
 /** The Asks view, wherever the right side's bar draws it. */
 const INBOX = '[role="tabpanel"][data-view="asks"]';
 /** The right bar's ✋: its count is in its name, after "Asks". */
@@ -151,21 +150,31 @@ async function toFront(plane: string): Promise<void> {
   );
 }
 
-/** What Asks lists of the window's other projects, project by project, and what the ✋ counts
- *  elsewhere; one pass. */
+/** What Asks lists of the window's other projects, project by project, and what their tabs on
+ *  the rail count between them (#6341); one pass. */
 async function elsewhere(roots: readonly string[]): Promise<{
   counted: number | null;
   lines: { root: string; count: number; says: string[]; texts: string[] }[];
 }> {
   return browser.execute(
-    (tab: string, inbox: string, all: string[]) => {
-      const [, badge] = (document.querySelector(tab)?.getAttribute("aria-labelledby") ?? "").split(
-        /\s+/,
-      );
-      const said = badge ? (document.getElementById(badge)?.textContent ?? "") : "";
-      const counted = /\+(\d+) elsewhere/.exec(said);
+    (strip: string, inbox: string, all: string[]) => {
+      // Each project's tab says its count in its description: "1 waiting".
+      const tabSays = (root: string) => {
+        const tab = [...document.querySelectorAll<HTMLElement>(`${strip} [role="tab"]`)].find(
+          (one) => one.getAttribute("data-directory") === root,
+        );
+        if (tab === undefined) return null;
+        const said = (tab.getAttribute("aria-describedby") ?? "")
+          .split(/\s+/)
+          .map((id) => document.getElementById(id)?.textContent ?? "")
+          .join(" ");
+        return Number(/\b(\d+) waiting\b/.exec(said)?.[1] ?? 0);
+      };
+      const counts = all.map(tabSays);
       return {
-        counted: counted ? Number(counted[1]) : null,
+        counted: counts.some((one) => one === null)
+          ? null
+          : counts.reduce<number>((sum, one) => sum + (one ?? 0), 0),
         lines: all.map((root) => {
           const rows = [
             ...document.querySelectorAll<HTMLElement>(
@@ -181,7 +190,7 @@ async function elsewhere(roots: readonly string[]): Promise<{
         }),
       };
     },
-    ASKS_TAB,
+    PROJECTS,
     INBOX,
     [...roots],
   );
@@ -549,7 +558,9 @@ describe("every Blocking ask, found from the ✋ alone (#6001)", function () {
       expect(await inFront()).toBe(front);
 
       // **From the ✋ alone**: the hand is the one thing pressed, and only if Asks is not open.
-      if (!(await $(INBOX).isDisplayed())) await $(HAND).click();
+      // The right bar's ✋: the title bar's is drawn only where the project in front has asks,
+      // and here none waits in it (#6341).
+      if (!(await $(INBOX).isDisplayed())) await $(ASKS_TAB).click();
       await $(INBOX)
         .waitForDisplayed({ timeout: 20_000 })
         .catch(() => {
@@ -557,7 +568,7 @@ describe("every Blocking ask, found from the ✋ alone (#6001)", function () {
         });
 
       // **Counted and listed** (#1921): the asking project's ask is a row of its own here, saying
-      // what it asks, and the ✋ counts, elsewhere, every row another project has here.
+      // what it asks, and the other projects' tabs count every row they have here (#6341).
       const roots = [mine.root, walled.root];
       let seen = await elsewhere(roots);
       const listed = () => {
@@ -580,7 +591,7 @@ describe("every Blocking ask, found from the ✋ alone (#6001)", function () {
         .catch(async () => {
           const kept = await keepTheNotices(`every-ask-${kind.source}`);
           throw new Error(
-            `${kind.name}: not counted or not listed from the ✋. The ✋ counts ${seen.counted} elsewhere; ` +
+            `${kind.name}: not counted or not listed from the ✋. Their tabs count ${seen.counted}; ` +
               `the rows say ${JSON.stringify(seen.lines)}; Asks says: ${await asksSaid()} (kept: ${kept})`,
           );
         });

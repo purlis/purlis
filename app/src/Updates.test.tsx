@@ -493,6 +493,49 @@ describe("useUpdates", () => {
     }
   });
 
+  it("leaves none of its listens behind when it goes before they answer (#6303)", async () => {
+    clearMocks();
+    const answer: (() => void)[] = [];
+    const stopped: unknown[] = [];
+    let id = 0;
+    mockIPC((cmd, args) => {
+      if (cmd === "plugin:event|listen") {
+        const mine = ++id;
+        return new Promise((resolve) => answer.push(() => resolve(mine)));
+      }
+      if (cmd === "plugin:event|unlisten") stopped.push((args as { event: string }).event);
+      return null;
+    });
+    const hook = renderHook(() => useUpdates());
+    await waitFor(() => expect(answer).toHaveLength(3));
+    hook.unmount();
+
+    // Every listen answers only once the hook is gone.
+    await act(async () => {
+      for (const now of answer.splice(0)) now();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(stopped.sort()).toEqual(["update://checked", "update://failed", "update://installed"]);
+  });
+
+  it("rejects nothing when it goes after the window's event bridge has (#6303)", async () => {
+    const unhandled: unknown[] = [];
+    const note = (e: unknown) => unhandled.push(e);
+    process.on("unhandledRejection", note);
+    try {
+      const hook = await mounted();
+      clearMocks();
+      hook.unmount();
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", note);
+    }
+  });
+
   it("shows the offer a check found, and goes quiet when a check finds none", async () => {
     const { result } = await mounted();
 

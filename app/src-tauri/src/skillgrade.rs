@@ -2830,7 +2830,7 @@ const A_SCREEN_IS_WHOLE_AFTER: Duration = Duration::from_millis(300);
 /// a host may send in pieces, so everything the view is sent until it is quiet for
 /// [`A_SCREEN_IS_WHOLE_AFTER`], at most [`A_SCREEN_TAKES_AT_MOST`] and
 /// `grades::kept::MOST_SCREEN_BYTES`. `None` where no view could be opened or nothing came.
-fn screen_of(host: &dyn crate::host::SessionHost, session: u32) -> Option<String> {
+pub(crate) fn screen_of(host: &dyn crate::host::SessionHost, session: u32) -> Option<String> {
     let (send, pieces) = std::sync::mpsc::channel();
     let mut text = crate::sessions::Utf8Stream::default();
     let view = host

@@ -1599,6 +1599,7 @@ fn a_login(chat: u32, call_id: &str) -> Ask {
         Browsing::LogIn {
             login: "shop-login".into(),
             suggested: None,
+            start: None,
         },
     )
 }
@@ -1706,6 +1707,7 @@ fn one_chat_cannot_crowd_out_anothers_logins_that_wait() {
             Browsing::LogIn {
                 login: name.into(),
                 suggested: None,
+                start: None,
             },
         )
     };

@@ -333,6 +333,39 @@ fn the_look_finds_a_save_the_platform_did_not_tell() {
     );
 }
 
+#[test]
+fn a_burst_the_platform_could_not_name_over_an_unchanged_theme_redraws_nothing() {
+    let places = Places::new();
+    put(&places.project(), "team", &dark("Team", json!({})));
+    let watched = watched(&places);
+    let mut held = Some(Look::of(&watched));
+    assert_eq!(watched.decide_unnamed(&mut held), Reload::Nothing);
+    assert_eq!(watched.decide_unnamed(&mut held), Reload::Nothing);
+}
+
+#[test]
+fn a_burst_the_platform_could_not_name_redraws_for_a_save_inside_it_once() {
+    let places = Places::new();
+    put(&places.project(), "team", &dark("Team", json!({})));
+    let watched = watched(&places);
+    let mut held = Some(Look::of(&watched));
+    std::fs::write(places.project().join("team/theme.json"), "{}{}{}").unwrap();
+    assert_eq!(watched.decide_unnamed(&mut held), redraw());
+    // The look it compared with is the one held now: the same save is not heard twice.
+    assert_eq!(watched.decide_unnamed(&mut held), Reload::Nothing);
+}
+
+#[test]
+fn a_burst_the_platform_could_not_name_with_no_look_held_redraws_and_holds_one() {
+    let places = Places::new();
+    put(&places.project(), "team", &dark("Team", json!({})));
+    let watched = watched(&places);
+    let mut held = None;
+    assert_eq!(watched.decide_unnamed(&mut held), redraw());
+    assert!(held.is_some());
+    assert_eq!(watched.decide_unnamed(&mut held), Reload::Nothing);
+}
+
 // ---------------------------------------------------------------------------------------
 // How a run of changes is paced
 // ---------------------------------------------------------------------------------------

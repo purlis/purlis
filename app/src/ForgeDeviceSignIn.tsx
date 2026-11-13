@@ -150,14 +150,14 @@ export function ForgeDeviceSignIn({
             <Button onPress={() => copy(step.code.user_code)}>Copy code</Button>
           </SettingActions>
           {copied !== undefined && (
-            <p className="ui-setting-help" role="status">
+            <p className="ui-setting-help ui-text-secondary" role="status">
               {copied ? "The code is on the clipboard." : "purlis could not copy the code."}
             </p>
           )}
-          <p className="ui-setting-help">
+          <p className="ui-setting-help ui-text-secondary">
             Or go to <code>{step.code.verification_uri}</code> on any device.
           </p>
-          <div className="ui-setting-help">
+          <div className="ui-setting-help ui-text-secondary">
             <p>GitHub will ask you to let purlis reach:</p>
             <ul>
               {step.code.scopes.map((scope) => (

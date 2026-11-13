@@ -248,6 +248,10 @@ pub enum RiskClass {
     ProtectedPush,
     ProductionHost,
     OutsideProject,
+    /// A delete its command or tool plainly says (#6178).
+    Delete,
+    /// A credential handed from a purlis vault to a chat's program, a page or a runner (#6178).
+    VaultUse,
 }
 
 impl From<purlis_core::askrisk::Risk> for RiskShown {
@@ -258,6 +262,8 @@ impl From<purlis_core::askrisk::Risk> for RiskShown {
                 Class::ProtectedPush => RiskClass::ProtectedPush,
                 Class::ProductionHost => RiskClass::ProductionHost,
                 Class::OutsideProject => RiskClass::OutsideProject,
+                Class::Delete => RiskClass::Delete,
+                Class::VaultUse => RiskClass::VaultUse,
             },
             why: risk.why,
             confirm: risk.confirm,
@@ -265,15 +271,30 @@ impl From<purlis_core::askrisk::Risk> for RiskShown {
     }
 }
 
-/// **What a yes to the action `ask` asks for risks** (#6011), against the project's `facts`.
-pub fn risk_of_action(action: &Action, facts: &purlis_core::askrisk::Facts) -> Option<RiskShown> {
-    match action {
-        Action::Command { line } => facts.of_command(line),
+/// **What a yes to the permission `ask` risks** (#6011), against the project's `facts`. A push
+/// that names no branch is read by where `pushes` says its folder's branch lands (#6178), and an
+/// edit the harness's own protocol names a delete (ACP's `delete` kind) is one.
+pub fn risk_of_action(
+    ask: &purlis_core::harness::model::Ask,
+    facts: &purlis_core::askrisk::Facts,
+    pushes: purlis_core::askrisk::PushesIn<'_>,
+) -> Option<RiskShown> {
+    use purlis_core::harness::model::Risk;
+    match &ask.action {
+        Action::Command { line } => facts.of_command_in(line, pushes),
+        Action::Edit { path } if ask.risk == Risk::Delete => facts
+            .of_write(path)
+            .or_else(|| Some(purlis_core::askrisk::delete_of(path))),
         Action::Edit { path } => facts.of_write(path),
         Action::Tool { input, .. } => facts.of_tool(input),
         Action::Unsaid | Action::Elicit { .. } | Action::Question { .. } => None,
     }
     .map(RiskShown::from)
+}
+
+/// **The vault use an Allow on it would make** (#6178): `what` handed from `vault` to `to`.
+fn vault_use(what: &str, vault: Option<&str>, to: &str) -> Option<RiskShown> {
+    Some(purlis_core::askrisk::vault_use(what, vault, to).into())
 }
 
 /// **An ask to allow a program, as its row draws it** (ADR 0112, #5239). Every field is the app's
@@ -1099,7 +1120,8 @@ fn level_scope(level: crate::sandboxing::GrantLevel) -> Option<RuleScope> {
 }
 
 /// **Whether `ask` is high-risk** (ADR 0121 decision 8, #6011): one is never offered a rule. It
-/// is so where its row is marked risky, as `asksSame.ts`'s `highRisk` reads it (#6177).
+/// is so where its row carries a risk (#6178), the same predicate as `asksSame.ts`'s `highRisk`
+/// (#6177).
 pub fn high_risk(ask: &Shown) -> bool {
     ask.risk.is_some()
 }
@@ -2194,7 +2216,8 @@ pub fn secret_fill(
         expires: None,
         blocks: None,
         timed_out: None,
-        risk: None,
+        // **A vault use** (#6178): its Allow puts a vault's secret into a page.
+        risk: vault_use(&wait.key, Some(&wait.vault), &format!("a field on {site}")),
         writes: None,
         lines: None,
         last_message: None,
@@ -2307,7 +2330,12 @@ pub fn browser_login(
         expires: None,
         blocks: None,
         timed_out: None,
-        risk: None,
+        // **A vault use** (#6178): its Allow fills a vault's login on the site.
+        risk: vault_use(
+            &format!("login {}", proposal.login),
+            Some(&proposal.vault),
+            &domain,
+        ),
         writes: None,
         lines: None,
         last_message: None,
@@ -2415,7 +2443,12 @@ pub fn pool_login(waits: &crate::chatbrowsers::PoolLoginWaits) -> Shown {
         expires: None,
         blocks: None,
         timed_out: None,
-        risk: None,
+        // **A vault use** (#6178): its Allow fills the login on the pool's runner.
+        risk: vault_use(
+            &format!("{persona}'s {login}"),
+            None,
+            &format!("the runner of pool {pool}"),
+        ),
         writes: None,
         lines: None,
         last_message: None,
@@ -2488,7 +2521,12 @@ pub fn pool_tool(waits: &crate::pooltools::PoolToolWaits) -> Shown {
         expires: None,
         blocks: None,
         timed_out: None,
-        risk: None,
+        // **A vault use** (#6178): its Allow sends the tool its values on the pool's runner.
+        risk: vault_use(
+            &format!("{persona}'s values"),
+            Some(vault),
+            &format!("{tool} on pool {pool}"),
+        ),
         writes: None,
         lines: None,
         last_message: None,
@@ -2924,7 +2962,17 @@ pub fn run_grant(
         expires: None,
         blocks: None,
         timed_out: None,
-        risk: None,
+        // **A vault use** (#6178): a program Allow hands the vault's values to the chat's run.
+        // A Fill stores a value, and a vault's own Allow tags it: neither hands one over.
+        risk: (open.offer == Offer::Program)
+            .then(|| {
+                vault_use(
+                    &open.keys().join(", "),
+                    Some(&bound.vault),
+                    &bound.program.display().to_string(),
+                )
+            })
+            .flatten(),
         writes: None,
         lines: None,
         last_message: None,
@@ -3909,6 +3957,9 @@ pub struct Waiting<'a> {
     pub runner_of: &'a dyn Fn(u32) -> Option<String>,
     /// **What the project knows that an ask's risk is read against** (#6011).
     pub risk: &'a purlis_core::askrisk::Facts,
+    /// **Where a push that names no branch lands** (#6178): for chat `session`, from the folder
+    /// a `git -C` names in its own (`""` for none), as git there says.
+    pub pushes: &'a dyn Fn(u32, &str) -> Option<purlis_core::askrisk::Pushes>,
 }
 
 /// **The asks of one project, one per thing that waits** (#1690): each source's adapter, then
@@ -3923,7 +3974,9 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
         .iter()
         .cloned()
         .filter_map(|raised| {
-            let risk = risk_of_action(&raised.ask.action, waiting.risk);
+            let session = raised.chat.parse().unwrap_or(0);
+            let pushes = |folder: &str| (waiting.pushes)(session, folder);
+            let risk = risk_of_action(&raised.ask, waiting.risk, &pushes);
             permission(raised).map(|shown| Shown { risk, ..shown })
         })
         .collect();
@@ -4445,6 +4498,9 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         held_open: crate::asknotify::holds_asks_open(),
         runner_of: &|session| chats.runner_of(session),
         risk: &risk,
+        pushes: &|session, folder| {
+            purlis_core::askrisk::pushes_from(&chats.folder_of(session)?.join(folder))
+        },
     };
     let task_questions: Vec<Shown> = crate::dispatched::reached_the_person(held)
         .into_iter()

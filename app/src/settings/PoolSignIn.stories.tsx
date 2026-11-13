@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **A profile's sign-in on a pool's runner, in place** (#4042, spec #4023, prototype Variant A):
- * the strip a profile's line opens into, at each step the core says, Claude Code's and, approved
- * in the browser, Codex's (#4044). Each is drawn in every cell of the theme matrix, light and dark
- * among them.
+ * **A profile's sign-in on a pool's runner** (#4042, spec #4023, prototype Variant A): the strip
+ * a profile's Sign in opens under the pool's list of profiles (#6301), at each step the core
+ * says, Claude Code's and, approved in the browser, Codex's (#4044). Each is drawn in every cell
+ * of the theme matrix, light and dark among them.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState, type FormEvent } from "react";
@@ -29,8 +29,8 @@ function Strip({
 }) {
   const [code, setCode] = useState("");
   return (
-    <div className="ui-machine-entry" style={{ inlineSize: 640 }}>
-      <span className="ui-machine-name">work</span>
+    // Under the pool's list of profiles, as a pool's row draws it (#6301).
+    <div style={{ inlineSize: 640 }}>
       <SignInStrip
         pool="builds"
         profile="work"

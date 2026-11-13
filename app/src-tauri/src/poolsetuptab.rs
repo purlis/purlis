@@ -47,11 +47,72 @@ pub struct PoolSetupStep {
     pub skippable: bool,
     pub see: Option<PoolSetupSee>,
     pub checks: Vec<PoolSetupCheck>,
+    /// A second way on, beside `next`: on Where, the other kind (ADR 0123 §6).
+    pub other: Option<PoolSetupAction>,
+    /// The machine, on Connect (#6266).
+    pub machine: Option<PoolSetupMachine>,
+    /// What a finding is, by its key (`pool-pin-changed`, `plain-tcp`, …).
+    pub cause: Option<String>,
+    /// The choice purlis didn't recommend, where there is one (Where's other place, #4492).
+    pub also: Option<PoolSetupAction>,
+    /// Install's parts, each with its own button (#4493).
+    pub parts: Vec<PoolSetupPart>,
+    /// How the step is undone by hand, never by a button: uninstalling from a cluster.
+    pub undo: Option<PoolSetupSee>,
+}
+
+/// A host key, as Connect shows it (#6266).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolSetupKey {
+    pub algorithm: String,
+    pub fingerprint: String,
+}
+
+/// The machine of a pool on another machine, as Connect shows it (#6266).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolSetupMachine {
+    pub route: Option<String>,
+    /// The key file the route signs in with, where a Podman connection names one (#6269).
+    pub identity: Option<String>,
+    pub host: Option<String>,
+    /// The key it showed at Connect to, to confirm.
+    pub key: Option<PoolSetupKey>,
+    /// Whether the person's own ssh knows that key for it; null where it knows none.
+    pub known: Option<bool>,
+    /// The key trusted for it.
+    pub trusted: Option<PoolSetupKey>,
+    /// The key it shows now, where that isn't the one trusted.
+    pub now: Option<PoolSetupKey>,
+    /// The engine's id trusted for it.
+    pub engine: Option<String>,
+}
+
+/// One part of a cluster's install (#4493): `upstream`, `definitions`, `signing-key` or
+/// `operator`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolSetupPart {
+    pub id: String,
+    pub name: String,
+    pub done: bool,
+    pub line: String,
+    pub next: Option<PoolSetupAction>,
+}
+
+/// The kubeconfig's contexts, by name alone, for Where's Options on a cluster (#4492).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolSetupContexts {
+    pub names: Vec<String>,
+    pub recommended: Option<String>,
+    pub chosen: Option<String>,
+    /// The chosen cluster's Pools, by name, where its operator runs (#4494).
+    pub pools: Vec<String>,
 }
 
 /// What the tab draws.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct PoolSetupShown {
+    /// The kind of pool this setup makes: `docker`, `cluster` (#4492) or `remote-docker` (#6266).
+    pub kind: String,
     /// The pool this setup made.
     pub pool: Option<String>,
     /// The name typed on the Pool step, for the box to hold.
@@ -63,6 +124,9 @@ pub struct PoolSetupShown {
     pub noticed: bool,
     /// Pools this machine keeps that this setup isn't on.
     pub others: Vec<String>,
+    /// The name a new pool is recommended, which no pool here has (#6256).
+    pub recommended: String,
+    pub contexts: PoolSetupContexts,
 }
 
 /// What the Pool step's button did: nothing made, and why, where a team's image breaks the
@@ -81,6 +145,17 @@ fn word(value: &impl serde::Serialize) -> String {
         .unwrap_or_default()
 }
 
+#[cfg(unix)]
+fn action_shown(next: &purlis_core::poolsetup::Action) -> PoolSetupAction {
+    PoolSetupAction {
+        id: word(&next.id),
+        label: next.label.clone(),
+        does: next.does.clone(),
+        command: next.command.clone(),
+        url: next.url.clone(),
+    }
+}
+
 /// What the core answered, as the window takes it.
 #[cfg(unix)]
 pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
@@ -88,12 +163,25 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
         setup,
         name,
         noticed,
+        recommended,
     } = found;
+    let key = |key: &purlis_core::poolsetup::connecting::KeyShown| PoolSetupKey {
+        algorithm: key.algorithm.clone(),
+        fingerprint: key.fingerprint.clone(),
+    };
     PoolSetupShown {
         pool: setup.pool.clone(),
         name,
         noticed,
+        recommended,
         others: setup.others.clone(),
+        kind: word(&setup.kind),
+        contexts: PoolSetupContexts {
+            names: setup.contexts.names.clone(),
+            recommended: setup.contexts.recommended.clone(),
+            chosen: setup.contexts.chosen.clone(),
+            pools: setup.contexts.pools.clone(),
+        },
         at: setup.at.as_ref().map(word),
         steps: setup
             .steps
@@ -104,13 +192,35 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
                 state: word(&step.state),
                 line: step.line.clone(),
                 findings: step.findings.clone(),
-                next: step.next.as_ref().map(|next| PoolSetupAction {
-                    id: word(&next.id),
-                    label: next.label.clone(),
-                    does: next.does.clone(),
-                    command: next.command.clone(),
-                    url: next.url.clone(),
+                next: step.next.as_ref().map(action_shown),
+                also: step.also.as_ref().map(action_shown),
+                parts: step
+                    .parts
+                    .iter()
+                    .map(|part| PoolSetupPart {
+                        id: word(&part.id),
+                        name: part.name.to_owned(),
+                        done: part.done,
+                        line: part.line.clone(),
+                        next: part.next.as_ref().map(action_shown),
+                    })
+                    .collect(),
+                undo: step.undo.as_ref().map(|undo| PoolSetupSee {
+                    note: undo.note.clone(),
+                    text: undo.text.clone(),
                 }),
+                other: step.other.as_ref().map(action_shown),
+                machine: step.machine.as_ref().map(|machine| PoolSetupMachine {
+                    route: machine.route.clone(),
+                    identity: machine.identity.clone(),
+                    host: machine.host.clone(),
+                    key: machine.key.as_ref().map(key),
+                    known: machine.known,
+                    trusted: machine.trusted.as_ref().map(key),
+                    now: machine.now.as_ref().map(key),
+                    engine: machine.engine.clone(),
+                }),
+                cause: step.cause.map(str::to_owned),
                 skippable: step.skippable,
                 see: step.see.as_ref().map(|see| PoolSetupSee {
                     note: see.note.clone(),
@@ -152,11 +262,13 @@ pub async fn pool_setup(
             use purlis_core::poolsetup::{self, Here};
             let config = config_root()?;
             let docker = poolsetup::docker_here();
+            let kubectl = poolsetup::cluster::kubectl_here();
             let here = Here {
                 config: &config,
                 plane: Some(&root),
                 docker: docker.as_ref(),
                 engine: Docker::engine_on_this_machine(),
+                kubectl: kubectl.as_ref().map_err(String::as_str),
             };
             Ok(shown(
                 poolsetup::resumed(&here).map_err(|why| why.to_string())?,
@@ -169,6 +281,18 @@ pub async fn pool_setup(
         let _ = root;
         Err(crate::dockerpools::NOT_HERE.to_owned())
     }
+}
+
+/// **Check again** (#6266): [`pool_setup`], with every pool on another machine whose forward
+/// has been failing tried again and looked at again now, not after its wait.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_check_again(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<PoolSetupShown, String> {
+    purlis_core::sshroute::pool::look_again();
+    pool_setup(planes, plane).await
 }
 
 /// **Keeps that the person chose Docker on Where.** Nothing else changes.
@@ -190,6 +314,301 @@ pub async fn pool_setup_choose_docker() -> Result<(), String> {
     {
         Err(crate::dockerpools::NOT_HERE.to_owned())
     }
+}
+
+/// **Keeps that the person chose Docker on another machine on Where** (#6266). Nothing else
+/// changes, here or there.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_choose_remote_docker() -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("keeping your choice", || {
+            purlis_core::poolsetup::choose_kind(
+                &config_root()?,
+                purlis_core::poolsetup::Kind::RemoteDocker,
+            )
+            .map_err(|why| why.to_string())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Keeps that the person chose their team's cluster on Where**, through kubeconfig context
+/// `context` (#4492): its name alone. Nothing on the cluster changes. With no context, only the
+/// kind is kept, as Add a cluster pool… opens Pool setup: Where then recommends a context.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_choose_cluster(context: Option<String>) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("keeping your choice", move || {
+            use purlis_core::poolsetup::{self, Kind};
+            let config = config_root()?;
+            if let Some(context) = context {
+                return poolsetup::choose_cluster(&config, &context).map_err(|why| why.to_string());
+            }
+            poolsetup::choose_kind(&config, Kind::Cluster).map_err(|why| why.to_string())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = context;
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Keeps the machine picked or typed on Connect**, or forgets it (#6266). It contacts
+/// nothing.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_machine(
+    route: Option<String>,
+    identity: Option<String>,
+) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("keeping your choice", move || {
+            purlis_core::poolsetup::choose_machine(
+                &config_root()?,
+                route.as_deref(),
+                identity.as_deref().map(std::path::Path::new),
+            )
+            .map_err(|why| why.to_string())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (route, identity);
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Applies one part of a cluster's install** (#4493), on that part's own button: `upstream`,
+/// `definitions`, `signing-key` or `operator`, to the cluster chosen on Where, with the person's
+/// own kubectl and sign-in.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_install(part: String) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("installing on your cluster", move || {
+            use purlis_core::poolsetup::{self, install::PartId};
+            let part: PartId = serde_json::from_value(serde_json::Value::String(part.clone()))
+                .map_err(|_| format!("there is no part of the install called {part}"))?;
+            let kubectl = poolsetup::cluster::kubectl_here()?;
+            poolsetup::install_part(&config_root()?, &kubectl, part).map_err(|why| why.to_string())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = part;
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Makes the Pool `name` in the cluster chosen on Where** (#4494), of runner image `image` by
+/// digest, on the Pool step's own button, with the person's own kubectl and sign-in.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_cluster_pool(name: String, image: String) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("making a pool in your cluster", move || {
+            use purlis_core::poolsetup;
+            let kubectl = poolsetup::cluster::kubectl_here()?;
+            poolsetup::create_cluster_pool(&config_root()?, &kubectl, &name, &image)
+                .map_err(|why| why.to_string())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (name, image);
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **The machines the person's SSH settings name**, for Connect to offer (#6266). It contacts
+/// nothing.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_ssh_hosts() -> Result<Vec<String>, String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("reading your SSH hosts", || {
+            let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+            Ok(purlis_core::sshroute::hosts_here(home.as_deref()))
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// A connection of Podman's own, as Connect offers it (#6269): its name, the route to that
+/// machine's Podman socket, and the key file it signs in with, where it names one.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolSetupPodmanConnection {
+    pub name: String,
+    pub route: String,
+    pub identity: Option<String>,
+}
+
+/// **The person's Podman connections** (`podman system connection list`), for Connect to offer
+/// (#6269). It contacts no machine: this machine's `podman` lists what it keeps.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_podman_connections() -> Result<Vec<PoolSetupPodmanConnection>, String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("reading your Podman connections", || {
+            Ok(purlis_core::sshroute::podman_connections_here()
+                .into_iter()
+                .map(|one| PoolSetupPodmanConnection {
+                    name: one.name,
+                    route: one.route.spelled(),
+                    identity: one.route.identity().map(|path| path.display().to_string()),
+                })
+                .collect())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Keeps the cluster operator's image named under Install's Options** (#4493), or none.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_operator_image(image: Option<String>) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("keeping your choice", move || {
+            purlis_core::poolsetup::choose_operator_image(&config_root()?, image.as_deref())
+                .map_err(|why| why.to_string())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = image;
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Connect to <machine>** (#6266, ADR 0123 §3): the key the machine Connect keeps shows, met
+/// with nothing signed in, and what is read, with it laid over Connect. Nothing is kept.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_connect(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<PoolSetupShown, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    #[cfg(unix)]
+    {
+        crate::off_the_window("contacting the machine", move || {
+            use purlis_core::poolsetup::{self, Pressed};
+            let config = config_root()?;
+            let chosen = poolsetup::read_choices(&config)
+                .map_err(|why| why.to_string())?
+                .connect
+                .ok_or_else(|| "Pick the machine first.".to_owned())?;
+            let docker = poolsetup::docker_here()
+                .ok_or_else(|| "purlis found no docker command on this machine.".to_owned())?;
+            let met = chosen
+                .route_read()
+                .and_then(|route| poolsetup::connecting::meet(&docker, &route));
+            let pressed = match met {
+                Ok(met) => Pressed::Met(met),
+                Err(finding) => Pressed::Found(finding),
+            };
+            read_shown(&config, &root, Some(pressed))
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = root;
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Trust this machine** (#6266, ADR 0123 §3): the machine met again, its key held to
+/// `fingerprint`, the one the person saw, the sign-in and the engine checked, and the pin kept
+/// for the Pool step. What went wrong is laid over Connect, and nothing is kept then.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_trust(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    fingerprint: String,
+) -> Result<PoolSetupShown, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    #[cfg(unix)]
+    {
+        crate::off_the_window("checking the machine", move || {
+            use purlis_core::poolsetup::{self, Pressed};
+            let config = config_root()?;
+            let chosen = poolsetup::read_choices(&config)
+                .map_err(|why| why.to_string())?
+                .connect
+                .ok_or_else(|| "Pick the machine first.".to_owned())?;
+            let docker = poolsetup::docker_here()
+                .ok_or_else(|| "purlis found no docker command on this machine.".to_owned())?;
+            let trusted = chosen
+                .route_read()
+                .and_then(|route| poolsetup::connecting::trust(&docker, &route, &fingerprint));
+            match trusted {
+                Ok(remote) => {
+                    poolsetup::trusted(&config, &remote).map_err(|why| why.to_string())?;
+                    read_shown(&config, &root, None)
+                }
+                Err(finding) => read_shown(&config, &root, Some(Pressed::Found(finding))),
+            }
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (root, fingerprint);
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// What Pool setup shows now, with `pressed` laid over Connect.
+#[cfg(unix)]
+fn read_shown(
+    config: &std::path::Path,
+    root: &std::path::Path,
+    pressed: Option<purlis_core::poolsetup::Pressed>,
+) -> Result<PoolSetupShown, String> {
+    use purlis_core::dockerpool::Docker;
+    use purlis_core::poolsetup::{self, Here};
+    let docker = poolsetup::docker_here();
+    let kubectl = poolsetup::cluster::kubectl_here();
+    let here = Here {
+        config,
+        plane: Some(root),
+        docker: docker.as_ref(),
+        engine: Docker::engine_on_this_machine(),
+        kubectl: kubectl.as_ref().map_err(String::as_str),
+    };
+    Ok(shown(
+        poolsetup::resumed_pressed(&here, pressed).map_err(|why| why.to_string())?,
+    ))
 }
 
 /// **Keeps the name typed on the Pool step**, or none, so coming back finds it.
@@ -226,6 +645,43 @@ pub async fn pool_setup_pool(name: String) -> Result<(), String> {
     #[cfg(not(unix))]
     {
         let _ = name;
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Add a pool** (#6256): starts a new pool's setup, unless one was started and not finished.
+/// `true` where setup goes on with that one, for the tab to say so with Start over.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_add() -> Result<bool, String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("starting a new pool", || {
+            purlis_core::poolsetup::start_adding(&config_root()?)
+                .map(|found| found == purlis_core::poolsetup::Adding::Continuing)
+                .map_err(|why| why.to_string())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Start over** (#6256): forgets the unfinished setup, and keeps any pool it made.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_start_over() -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("starting over", || {
+            purlis_core::poolsetup::start_over(&config_root()?).map_err(|why| why.to_string())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
         Err(crate::dockerpools::NOT_HERE.to_owned())
     }
 }
@@ -463,14 +919,9 @@ pub async fn pool_setup_move_runner(app: tauri::AppHandle, pool: String) -> Resu
             let image = purlis_core::dockerpool::Image::pinned(&image).map_err(|why| why.0)?;
             let machine = crate::runnerlinks::Machine::here(&config_root()?)?;
             let desktop = machine.desktop()?.pinned();
-            match purlis_core::pools::follow(
-                &machine.config,
-                &machine.docker,
-                &pool,
-                &image,
-                &desktop,
-            )
-            .map_err(|why| crate::dockerpools::refused_said(&why.to_string()))?
+            let docker = machine.for_pool(&pool)?.docker;
+            match purlis_core::pools::follow(&machine.config, &docker, &pool, &image, &desktop)
+                .map_err(|why| crate::dockerpools::refused_said(&why.to_string()))?
             {
                 Some(_) => Ok(()),
                 None => Err(format!(
@@ -528,7 +979,8 @@ pub async fn pool_setup_wake(pool: String) -> Result<(), String> {
             let machine = crate::runnerlinks::Machine::here(&config_root()?)?;
             let kept = purlis_core::runners::runner_for(&machine.config, &pool)
                 .map_err(|why| why.to_string())?;
-            crate::runnerlinks::checked_or_woken(&machine.docker, &machine.config, &kept, true)
+            let docker = machine.for_pool(&pool)?.docker;
+            crate::runnerlinks::checked_or_woken(&docker, &machine.config, &kept, true)
                 .map_err(|why| why.0)
         })
         .await
@@ -928,6 +1380,8 @@ fn try_on(
         plane: Some(&root),
         docker,
         engine: purlis_core::dockerpool::Docker::engine_on_this_machine(),
+        // Try it asks nothing of a cluster: a cluster pool's chat start answers for its runner.
+        kubectl: Err("not asked"),
     };
     let facts = poolsetup::read_pool(&here, pool).map_err(|why| why.to_string())?;
     let (set, _check) = purlis_core::profiles::for_launch(&root);

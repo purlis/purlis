@@ -144,6 +144,19 @@ export const commands = {
 	 *  window names, and with `always`, keeps its host on this machine first.
 	 */
 	artifactLinkOpen: (label: string, always: boolean) => typedError<null, string>(__TAURI_INVOKE("artifact_link_open", { label, always })),
+	/**  **What each candidate on a line is**, in order: a link, or none. What a hover shows. */
+	paneLinkResolve: (from: LinkFrom, candidates: LinkCandidate[]) => __TAURI_INVOKE<(LinkSeen | null)[]>("pane_link_resolve", { from, candidates }),
+	/**
+	 *  **Opens a link a pane found** (⌘-click, Ctrl+click off a Mac): the candidate's text,
+	 *  resolved again here. `token` is the one-use token of the ask the window was handed.
+	 */
+	paneLinkOpen: (from: LinkFrom, candidate: LinkCandidate, token: string | null) => __TAURI_INVOKE<LinkOpened>("pane_link_open", { from, candidate, token }),
+	/**
+	 *  **A file outside the project, read for its editor tab**: only one opened in the pane `from`
+	 *  names by an answered ask, in this run of the app and within the hour, and only while it is
+	 *  still the file it was then. Read from `/` one folder at a time with no link followed.
+	 */
+	paneLinkFile: (from: LinkFrom, path: string) => typedError<LinkFile, string>(__TAURI_INVOKE("pane_link_file", { from, path })),
 	/**
 	 *  **The pinned artifacts of project `plane`, in every workspace, that say any word of
 	 *  `query`**, best first: at most [`MOST`].
@@ -3349,6 +3362,9 @@ export const commands = {
 	 *  another open task, of that chat or of any other (#1511, #1534, V100-68): what its tab warns
 	 *  about, by every task's name. There are no file locks between tasks, so a file two of them
 	 *  change cannot be told apart afterwards.
+	 * 
+	 *  Off the window's thread: every open task's folder is resolved on the disk, once for each
+	 *  folder shared (H6b).
 	 */
 	tasksSharingAFolder: (plane: PlaneId, session: number) => typedError<SharedFolder[], string>(__TAURI_INVOKE("tasks_sharing_a_folder", { plane, session })),
 	/**
@@ -3357,8 +3373,21 @@ export const commands = {
 	 *  name, or `null` where none is. `place` is the dialog's word for where it works: `null` for
 	 *  that chat's folder, `workspace:<name>` for another workspace, `worktree` for a branch of its
 	 *  own, of which nothing is said. It starts nothing and changes nothing.
+	 * 
+	 *  Off the window's thread: the place is read from the workspace and the open tasks' folders
+	 *  resolved on the disk (H6b).
 	 */
 	taskFolderShared: (plane: PlaneId, session: number, place: string | null) => typedError<string | null, string>(__TAURI_INVOKE("task_folder_shared", { plane, session, place })),
+	/**
+	 *  **What `number` names** (#6214): an open chat, one open again under another number, a
+	 *  closed one's card, or no chat. On a blocking thread, as it reads the dispatch records.
+	 */
+	chatByNumber: (plane: PlaneId, number: number) => typedError<ChatLookup, string>(__TAURI_INVOKE("chat_by_number", { plane, number })),
+	/**
+	 *  **What chat `chat` showed as it closed** (#6214), where this machine kept it: what *Read it*
+	 *  draws read-only. Null where nothing was kept.
+	 */
+	chatScreen: (plane: PlaneId, chat: string) => typedError<string | null, string>(__TAURI_INVOKE("chat_screen", { plane, chat })),
 	/**
 	 *  The finished tasks of the project's open chats, oldest first, for the rows under each
 	 *  (#1485). On a blocking thread, as it reads every record.
@@ -3811,7 +3840,8 @@ export const commands = {
 	 *  mistake.
 	 * 
 	 *  On a blocking thread, because the plane-root alert asks git for a status per project and a
-	 *  window that waited on eight of them would miss its frame.
+	 *  window that waited on eight of them would miss its frame; each project read beside the
+	 *  others, from its kept standing (H6c).
 	 */
 	alertsEverywhere: () => typedError<PlaneAlerts[], string>(__TAURI_INVOKE("alerts_everywhere")),
 	/**
@@ -4141,12 +4171,74 @@ export const commands = {
 	dockerPools: () => typedError<PoolsShown, string>(__TAURI_INVOKE("docker_pools")),
 	/**  **Each step's state, read now**: the pool this setup made, else a new one's. */
 	poolSetup: (plane: PlaneId) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup", { plane })),
+	/**
+	 *  **Check again** (#6266): [`pool_setup`], with every pool on another machine whose forward
+	 *  has been failing tried again and looked at again now, not after its wait.
+	 */
+	poolSetupCheckAgain: (plane: PlaneId) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup_check_again", { plane })),
 	/**  **Keeps that the person chose Docker on Where.** Nothing else changes. */
 	poolSetupChooseDocker: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_docker")),
+	/**
+	 *  **Keeps that the person chose Docker on another machine on Where** (#6266). Nothing else
+	 *  changes, here or there.
+	 */
+	poolSetupChooseRemoteDocker: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_remote_docker")),
+	/**
+	 *  **Keeps the machine picked or typed on Connect**, or forgets it (#6266). It contacts
+	 *  nothing.
+	 */
+	poolSetupMachine: (route: string | null, identity: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_machine", { route, identity })),
+	/**
+	 *  **The machines the person's SSH settings name**, for Connect to offer (#6266). It contacts
+	 *  nothing.
+	 */
+	poolSetupSshHosts: () => typedError<string[], string>(__TAURI_INVOKE("pool_setup_ssh_hosts")),
+	/**
+	 *  **The person's Podman connections** (`podman system connection list`), for Connect to offer
+	 *  (#6269). It contacts no machine: this machine's `podman` lists what it keeps.
+	 */
+	poolSetupPodmanConnections: () => typedError<PoolSetupPodmanConnection[], string>(__TAURI_INVOKE("pool_setup_podman_connections")),
+	/**
+	 *  **Connect to <machine>** (#6266, ADR 0123 §3): the key the machine Connect keeps shows, met
+	 *  with nothing signed in, and what is read, with it laid over Connect. Nothing is kept.
+	 */
+	poolSetupConnect: (plane: PlaneId) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup_connect", { plane })),
+	/**
+	 *  **Trust this machine** (#6266, ADR 0123 §3): the machine met again, its key held to
+	 *  `fingerprint`, the one the person saw, the sign-in and the engine checked, and the pin kept
+	 *  for the Pool step. What went wrong is laid over Connect, and nothing is kept then.
+	 */
+	poolSetupTrust: (plane: PlaneId, fingerprint: string) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup_trust", { plane, fingerprint })),
+	/**
+	 *  **Keeps that the person chose their team's cluster on Where**, through kubeconfig context
+	 *  `context` (#4492): its name alone. Nothing on the cluster changes. With no context, only the
+	 *  kind is kept, as Add a cluster pool… opens Pool setup: Where then recommends a context.
+	 */
+	poolSetupChooseCluster: (context: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_cluster", { context })),
+	/**
+	 *  **Applies one part of a cluster's install** (#4493), on that part's own button: `upstream`,
+	 *  `definitions`, `signing-key` or `operator`, to the cluster chosen on Where, with the person's
+	 *  own kubectl and sign-in.
+	 */
+	poolSetupInstall: (part: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_install", { part })),
+	/**  **Keeps the cluster operator's image named under Install's Options** (#4493), or none. */
+	poolSetupOperatorImage: (image: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_operator_image", { image })),
+	/**
+	 *  **Makes the Pool `name` in the cluster chosen on Where** (#4494), of runner image `image` by
+	 *  digest, on the Pool step's own button, with the person's own kubectl and sign-in.
+	 */
+	poolSetupClusterPool: (name: string, image: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_cluster_pool", { name, image })),
 	/**  **Keeps the name typed on the Pool step**, or none, so coming back finds it. */
 	poolSetupName: (name: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_name", { name })),
 	/**  **Keeps that this setup goes on with pool `name`**, once it has made it. */
 	poolSetupPool: (name: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_pool", { name })),
+	/**
+	 *  **Add a pool** (#6256): starts a new pool's setup, unless one was started and not finished.
+	 *  `true` where setup goes on with that one, for the tab to say so with Start over.
+	 */
+	poolSetupAdd: () => typedError<boolean, string>(__TAURI_INVOKE("pool_setup_add")),
+	/**  **Start over** (#6256): forgets the unfinished setup, and keeps any pool it made. */
+	poolSetupStartOver: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_start_over")),
 	/**
 	 *  **The command that does what the Pool step's button would do with `adding`**: See what this
 	 *  does, from the value the button sends (Q30). It reads nothing and changes nothing.
@@ -7565,6 +7657,31 @@ export type ChatBrowser = {
 };
 
 /**
+ *  **A closed or finished chat's card** (#6214, the prototype's S6): "#641 · <title>", how and
+ *  when it ended, who started it, where it ran, its report, and whether *Read it* and *Reopen*
+ *  can do anything.
+ */
+export type ChatCard = {
+	/**  The number it was looked up by: the chat's when it worked. */
+	number: number,
+	/**  Its ULID: what *Read it* asks for its screen by. */
+	chat: string,
+	/**
+	 *  Its task as its finished row has it: its name, how it ended and when, its report
+	 *  (masked), where it ran, and whether it reopens. `id` is its dispatch record's, which
+	 *  *Reopen* names.
+	 */
+	task: FinishedTask,
+	/**
+	 *  Who started it: "you" where the person dispatched it, else the asking chat's name as
+	 *  the person saw it then.
+	 */
+	started_by: string,
+	/**  Whether its last screen was kept: *Read it* is disabled where it was not. */
+	screen_kept: boolean,
+};
+
+/**
  *  What a `chat-events` batch carries of a chat's doing, and what `chat_doings` answers a list
  *  of: one chat's line, or that it has none. It travels in memory only.
  */
@@ -7602,11 +7719,31 @@ export type ChatEvents = {
 	events: ChatEvent[],
 };
 
+/**  **What the window shows for a chat link opened.** */
+export type ChatGo = 
+/**  The pane's own chat: nothing more. */
+{ to: "this_chat" } | 
+/**  Chat `session`, in its tab or its workspace. */
+{ to: "chat"; session: number } | 
+/**  An ended chat's card, beside the link. */
+{ to: "card"; card: ChatCard };
+
 /**  A chat the window has open, by its plane and its session. */
 export type ChatHeld = {
 	plane: PlaneId,
 	session: number,
 };
+
+/**  What a number names, as the window is sent it. */
+export type ChatLookup = 
+/**  An open chat answers to it: the window shows that chat. */
+{ is: "open"; number: number } | 
+/**  The chat it was is open now under `now`: started again, or reopened. */
+{ is: "restarted"; now: number } | 
+/**  The chat has ended: its card, boxed as it is the one large answer. */
+{ is: "ended"; card: ChatCard } | 
+/**  No chat had it, or none purlis kept a record of. */
+{ is: "no_chat" };
 
 /**
  *  **A chat's move as the window draws it** (#2048): what `chat-move` tells, and each row of
@@ -7718,6 +7855,15 @@ export type ChatRestart = {
 	not_yet: string | null,
 };
 
+/**  **What the chat a `chat 641` link names is**, for its hover's second line. */
+export type ChatSeen = 
+/**  The pane's own chat: ⌘-click does nothing more. */
+{ is: "this_chat"; number: number } | 
+/**  Open under `number`; `workspace` where that is another workspace than the pane's chat's. */
+{ is: "open"; number: number; workspace: string | null } | 
+/**  Ended: its card, which ⌘-click shows. */
+{ is: "ended"; card: ChatCard };
+
 /**  One skill Use skill… offers a chat. */
 export type ChatSkill = {
 	/**  Its name, which [`use_skill`] is handed back. */
@@ -7783,10 +7929,12 @@ export type ChatSkills = {
 	 */
 	repos: string[],
 	/**
-	 *  Why the chat gets no skills, where its harness is a declared one skills are not supported
-	 *  on (SK-30): said in place of the words for a tool purlis does not know.
+	 *  Why the chat is offered no skills, where that is not that it runs a tool purlis does not
+	 *  know: its harness is a declared one skills are not supported on (SK-30), its runner said
+	 *  none (#4218), or it is not running now (#6196). Said in place of the words for a tool purlis
+	 *  does not know, which are what the list says where this is null (#6302).
 	 */
-	not_supported: string | null,
+	none_because: string | null,
 	/**
 	 *  How its router extension did at its start (SK-15b): null for a chat routed by the
 	 *  built-in router, which is asked nothing.
@@ -10893,6 +11041,12 @@ export type KeptMark =
 /**  What the person's key did (#2014). */
 export type KeyAct = "down" | "up";
 
+/**
+ *  **What the pane's pattern took a candidate for**: a hint, never trusted for more. The wire's
+ *  half of the core's [`Kind`]; a kind's resolver is the core's `LinkKind`.
+ */
+export type KindHint = "url" | "file" | "chat";
+
 /**  One context of the person's kubeconfig, as Point kubectl at it lists it. */
 export type KubeContext = {
 	/**  Its name, as kubectl knows it. */
@@ -11119,6 +11273,94 @@ export type LinesShown = {
 	 *  that way; the row then says only the count.
 	 */
 	shown: string[],
+};
+
+/**  **What an ask is about**, which picks the window's question. */
+export type LinkAsk = 
+/**  A link, asked about in general words. */
+{ about: "link" } | 
+/**  A file outside the chat's home (the prototype's S7), and that home where it has one. */
+{ about: "file-outside"; home: LinkHome | null };
+
+/**  **Text a pane found that may be a link**: the words as printed, and the pattern's hint. */
+export type LinkCandidate = {
+	kind: KindHint,
+	text: string,
+};
+
+/**  **What ⌘-click on a link would do**, said on its hover. */
+export type LinkDoes = 
+/**  It opens, without asking, `into` the browser or an editor tab. */
+{ does: "opens"; into: OpensIn } | 
+/**  It asks first, and why: where it is, in the window's words ("outside smart-ide"). */
+{ does: "asks"; reason: string } | 
+/**  It will not open, and the sentence that says why. */
+{ does: "refused"; reason: string };
+
+/**
+ *  **A file outside the project, as its tab reads it**: the file, or that no answered ask in
+ *  this pane opened it (the window says how to open it again).
+ */
+export type LinkFile = { read: "file"; file: PieceFile } | { read: "not-opened" };
+
+/**
+ *  **Where the window reads a file a link opens**: the place its light editor reads it by and
+ *  its path there, or, outside the project, its path in full ([`pane_link_file`]).
+ */
+export type LinkFileAt = 
+/**  A branch's folder, or with no piece the repo's own folder. */
+{ in: "branch"; workspace: string; repo: string; piece: string | null; path: string } | 
+/**  A workspace's own files. */
+{ in: "workspace"; workspace: string; path: string } | 
+/**  The project's own files. */
+{ in: "project"; path: string } | 
+/**  Not in the project. */
+{ in: "outside"; path: string };
+
+/**
+ *  **Where a candidate was found**: the pane's project and the chat it draws, where it has them
+ *  (a saved chat's read-only terminal has neither).
+ */
+export type LinkFrom = {
+	plane: PlaneId | null,
+	session: number | null,
+};
+
+/**  **What a chat counts as its own**, for the ask that says a file is not in it, with its folder. */
+export type LinkHome = { is: "workspace"; name: string; folder: string } | { is: "project"; folder: string };
+
+/**  **The open command's answer.** */
+export type LinkOpened = 
+/**  Opened: `target` is what was opened. */
+{ answer: "opened"; kind: KindHint; target: string } | 
+/**  A chat link: what the window shows for it. */
+{ answer: "chat"; go: ChatGo } | 
+/**
+ *  A file, for the window to show in an editor tab at its line and column: never handed to
+ *  the system, so nothing runs.
+ */
+{ answer: "file"; target: string; at: LinkFileAt; line: number | null; column: number | null } | 
+/**
+ *  Not opened yet: the window asks, showing its text and where it goes. Answered, the same
+ *  candidate is sent again with `token`, which opens it once.
+ */
+{ answer: "ask"; reason: string; shown: string; target: string; token: string; about: LinkAsk } | 
+/**  Not opened, and the sentence the window shows. */
+{ answer: "refused"; reason: string };
+
+/**
+ *  **What a hover over a candidate shows**: its kind, its target in full (its own text, where it
+ *  is no link), what the hover's first line says (`shown`: a file in the chat's workspace from
+ *  the workspace, D2; a chat as "#641 · <title>") and what opening it does. A chat link says
+ *  what the chat is too.
+ */
+export type LinkSeen = {
+	kind: KindHint,
+	target: string,
+	shown: string,
+	does: LinkDoes,
+	/**  What the chat a chat link names is: none for every other kind. */
+	chat: ChatSeen | null,
 };
 
 /**  One repo the person can get. */
@@ -12304,6 +12546,15 @@ export type OpenedRepo = {
 	forge_said?: string | null,
 };
 
+/**  **Where a link that opens without asking opens.** */
+export type OpensIn = 
+/**  The person's browser. */
+"browser" | 
+/**  One of purlis's editor tabs. */
+"editor-tab" | 
+/**  purlis's window itself: a chat shown in its tab, or a closed chat's card. */
+"window";
+
 /**  One file that goes. */
 export type OutgoingFile = {
 	/**  Its path, under its skill's folder. */
@@ -13259,6 +13510,10 @@ export type PoolAdding = {
 	frames: number | null,
 	/**  The widest frame its runner's browsers are watched at over the link, in pixels (#3297). */
 	width: number | null,
+	/**  The machine its engine is on, for a pool on another machine (#6266): Connect's route. */
+	on?: string | null,
+	/**  The fingerprint of the host key trusted at Connect for that machine (#6266). */
+	trust?: string | null,
 };
 
 /**
@@ -13542,6 +13797,15 @@ export type PoolSetupCheck = {
 	more: string | null,
 };
 
+/**  The kubeconfig's contexts, by name alone, for Where's Options on a cluster (#4492). */
+export type PoolSetupContexts = {
+	names: string[],
+	recommended: string | null,
+	chosen: string | null,
+	/**  The chosen cluster's Pools, by name, where its operator runs (#4494). */
+	pools: string[],
+};
+
 /**
  *  What the Pool step's button did: nothing made, and why, where a team's image breaks the
  *  contract; none where the pool was made.
@@ -13558,6 +13822,30 @@ export type PoolSetupFailed = {
 	step: string | null,
 };
 
+/**  A host key, as Connect shows it (#6266). */
+export type PoolSetupKey = {
+	algorithm: string,
+	fingerprint: string,
+};
+
+/**  The machine of a pool on another machine, as Connect shows it (#6266). */
+export type PoolSetupMachine = {
+	route: string | null,
+	/**  The key file the route signs in with, where a Podman connection names one (#6269). */
+	identity: string | null,
+	host: string | null,
+	/**  The key it showed at Connect to, to confirm. */
+	key: PoolSetupKey | null,
+	/**  Whether the person's own ssh knows that key for it; null where it knows none. */
+	known: boolean | null,
+	/**  The key trusted for it. */
+	trusted: PoolSetupKey | null,
+	/**  The key it shows now, where that isn't the one trusted. */
+	now: PoolSetupKey | null,
+	/**  The engine's id trusted for it. */
+	engine: string | null,
+};
+
 /**  A limit a profile is over. */
 export type PoolSetupOver = {
 	/**  The limit's key, as `pool_limit_set` takes it. */
@@ -13567,6 +13855,28 @@ export type PoolSetupOver = {
 	raise_to: number | null,
 	/**  What its runner's older purlis holds it to, and what helps, where only that does (#5175). */
 	older_runner: OlderRunner | null,
+};
+
+/**
+ *  One part of a cluster's install (#4493): `upstream`, `definitions`, `signing-key` or
+ *  `operator`.
+ */
+export type PoolSetupPart = {
+	id: string,
+	name: string,
+	done: boolean,
+	line: string,
+	next: PoolSetupAction | null,
+};
+
+/**
+ *  A connection of Podman's own, as Connect offers it (#6269): its name, the route to that
+ *  machine's Podman socket, and the key file it signs in with, where it names one.
+ */
+export type PoolSetupPodmanConnection = {
+	name: string,
+	route: string,
+	identity: string | null,
 };
 
 /**  One of this machine's profiles against a pool's limit (#4482). */
@@ -13591,6 +13901,8 @@ export type PoolSetupSee = {
 
 /**  What the tab draws. */
 export type PoolSetupShown = {
+	/**  The kind of pool this setup makes: `docker`, `cluster` (#4492) or `remote-docker` (#6266). */
+	kind: string,
 	/**  The pool this setup made. */
 	pool: string | null,
 	/**  The name typed on the Pool step, for the box to hold. */
@@ -13602,6 +13914,9 @@ export type PoolSetupShown = {
 	noticed: boolean,
 	/**  Pools this machine keeps that this setup isn't on. */
 	others: string[],
+	/**  The name a new pool is recommended, which no pool here has (#6256). */
+	recommended: string,
+	contexts: PoolSetupContexts,
 };
 
 /**  This machine's profiles against pool `pool`'s limits (#4482). */
@@ -13622,6 +13937,18 @@ export type PoolSetupStep = {
 	skippable: boolean,
 	see: PoolSetupSee | null,
 	checks: PoolSetupCheck[],
+	/**  A second way on, beside `next`: on Where, the other kind (ADR 0123 §6). */
+	other: PoolSetupAction | null,
+	/**  The machine, on Connect (#6266). */
+	machine: PoolSetupMachine | null,
+	/**  What a finding is, by its key (`pool-pin-changed`, `plain-tcp`, …). */
+	cause: string | null,
+	/**  The choice purlis didn't recommend, where there is one (Where's other place, #4492). */
+	also: PoolSetupAction | null,
+	/**  Install's parts, each with its own button (#4493). */
+	parts: PoolSetupPart[],
+	/**  How the step is undone by hand, never by a button: uninstalling from a cluster. */
+	undo: PoolSetupSee | null,
 };
 
 /**  What Try it found. */
@@ -15137,7 +15464,11 @@ export type ReviewedSkill = {
 };
 
 /**  Which risk an ask carries ([`RiskShown`]). */
-export type RiskClass = "protected-push" | "production-host" | "outside-project";
+export type RiskClass = "protected-push" | "production-host" | "outside-project" | 
+/**  A delete its command or tool plainly says (#6178). */
+"delete" | 
+/**  A credential handed from a purlis vault to a chat's program, a page or a runner (#6178). */
+"vault-use";
 
 /**  A risk, and the core's words for it. */
 export type RiskMark = {

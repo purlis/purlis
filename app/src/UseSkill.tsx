@@ -12,12 +12,11 @@ import {
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent,
 } from "react";
 import { TriangleAlert } from "lucide-react";
 import { Field, SettingRow } from "./settings/components";
 import { Dialog } from "./ui/dialog/Dialog";
-import { ListFilter, noMatchSaid } from "./ui/list/ListFilter";
+import { ListFilter, noMatchSaid, quickPickKeys } from "./ui/list/ListFilter";
 import { ListBox, ListOption } from "./ui/list/List";
 import { RowBelow, RowDescription, RowLabel } from "./ui/list/Row";
 import { Button, IconButton } from "./ui/button/Button";
@@ -149,21 +148,8 @@ export function UseSkill({
     setValues(boxesOf(skill));
   };
 
-  /** **The filter's keys, as a palette's** (S8): Enter takes the first match, and the down arrow
-   *  goes into the list, where the arrows walk it and Enter takes the one on. */
-  const filterKey = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      const first = shown[0];
-      if (first !== undefined) pick(first);
-    } else if (event.key === "ArrowDown") {
-      event.preventDefault();
-      document
-        .getElementById(listId)
-        ?.querySelector<HTMLElement>('[role="option"]:not([aria-disabled="true"])')
-        ?.focus();
-    }
-  };
+  /** **The filter's keys, as a quick picker's** (S8, `ui/list`). */
+  const filterKey = quickPickKeys(listId, () => shown[0], pick);
 
   // **On the dialog family** (#2910): picking a skill that takes arguments asks for them in
   // place, and Back returns to the list. Its answers are the footer's: Cancel, Back and Type it.
@@ -210,7 +196,7 @@ export function UseSkill({
               ) : listed.length === 0 ? (
                 <p className="honest" data-testid="use-skill-none">
                   {!skills.known
-                    ? (skills.not_supported ??
+                    ? (skills.none_because ??
                       "This chat runs no tool purlis knows, so it has no skills to use here.")
                     : "This chat has no skills. The Skills view shows why any skill is left out."}
                 </p>

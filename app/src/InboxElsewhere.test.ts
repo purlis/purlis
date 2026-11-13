@@ -3,12 +3,12 @@
 
 import { describe, expect, it, vi } from "vitest";
 import type { Shown } from "./bindings";
-import { askingUntold, handCount, theirAsks, type Elsewhere } from "./InboxElsewhere";
+import { askingUntold, elsewhereCount, theirAsks, type Elsewhere } from "./InboxElsewhere";
 import type { Needing } from "./NeedsYou";
 
 /**
- * **Every open project's asks, as the ✋ counts them and Asks lists them** (#1921, ADR 0121
- * decision 4): this window's other projects and the other windows', ask by ask where their
+ * **Every other open project's asks, as Asks lists them and their arrival is said** (#1921, ADR
+ * 0121 decision 4): this window's other projects and the other windows', ask by ask where their
  * registry was read and told, and a chat at a time where it was not.
  */
 
@@ -49,7 +49,7 @@ describe("another window's asks, told ask by ask (#1921)", () => {
   });
 
   it("counts a told window's asks, not its chats, and an untold window's chats", () => {
-    expect(handCount("/here", 1, told)).toEqual({ total: 1 + 1 + 2 + 1, elsewhere: 4 });
+    expect(elsewhereCount("/here", told)).toBe(1 + 2 + 1);
   });
 
   it("lists every other project's asks, this window's and the others', and not its own", () => {
@@ -69,6 +69,6 @@ describe("another window's asks, told ask by ask (#1921)", () => {
       there: [{ plane: "/web", project: "web", count: 1, asks: [ask(4, "w")] }],
     });
     expect(theirAsks("/here", moved)).toHaveLength(1);
-    expect(handCount("/here", 0, moved).elsewhere).toBe(1);
+    expect(elsewhereCount("/here", moved)).toBe(1);
   });
 });

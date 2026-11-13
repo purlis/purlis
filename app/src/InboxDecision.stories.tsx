@@ -157,6 +157,46 @@ const LOOPING: Shown = {
   chain: ["steward 8"],
 };
 
+/** A permission that deletes a folder (#6178): high risk, asked once more. */
+const DELETE: Shown = {
+  ...PUSH,
+  ask: "ask-2",
+  says: "Run rm -rf build",
+  risk: { class: "delete", why: "Deletes build", confirm: "Allow deleting build?" },
+};
+
+/** A secret fill (#6178): a vault's key into a page, answered in its form, asked once more. */
+const VAULT_FILL: Shown = {
+  session: 7,
+  ask: "secret-fill:1",
+  says: "Wants to put dash-api-key from vault qa into a field on dash.example.test",
+  options: [
+    { id: "once", label: "Allow once", allows: true, preselected: null },
+    { id: "keep", label: "Keep blocked", allows: false, preselected: null },
+  ],
+  source: "secret-fill",
+  chain: ["steward 7"],
+  answer: { via: "secret-fill", id: 1, shown: "digest" },
+  fill: {
+    key: "dash-api-key",
+    vault: "qa",
+    site: "dash.example.test",
+    page: "https://dash.example.test/settings",
+    label: "API key",
+    browser: "b1",
+    warnings: [],
+    card: false,
+    multi_line: false,
+    vault_too: false,
+    code: false,
+  },
+  risk: {
+    class: "vault-use",
+    why: "Hands dash-api-key from vault qa to a field on dash.example.test",
+    confirm: "Allow handing dash-api-key to a field on dash.example.test?",
+  },
+};
+
 const ASKS = {
   RUN_GRANT,
   RUN_NEEDS_A_VALUE,
@@ -167,6 +207,8 @@ const ASKS = {
   PUSH,
   BUDGET,
   LOOPING,
+  DELETE,
+  VAULT_FILL,
 } as const;
 
 /** The Inbox as wide as the window's side of it, holding one ask. */
@@ -405,5 +447,52 @@ export const ALoopOnItsRow: Story = {
       await untilFocused(() => canvas.getByRole("button", { name }), `→ reaches ${name}`);
       expectFocusInSight();
     }
+  },
+};
+
+/** **A delete's row** (#6178): "High risk" and what it deletes said first, and its Allow asks
+ *  once more under the line, as a protected push's does. */
+export const ADeleteOnItsRow: Story = {
+  args: { ask: "DELETE" },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvasElement.querySelector(".inbox-risk")).toHaveTextContent(
+      "High risk Deletes build",
+    );
+    await userEvent.tab();
+    await untilFocused(rowIn(canvasElement), "Tab lands on the row");
+    await userEvent.keyboard("{ArrowRight}");
+    const allow = canvas.getByRole("button", { name: "Allow once" });
+    await untilFocused(() => allow, "→ reaches Allow once");
+    await new Promise((done) => setTimeout(done, SETTLE_MS + 50));
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(allow).toHaveAttribute("aria-expanded", "true"));
+    await expect(canvas.getByRole("group", { name: "Allow deleting build?" })).toBeVisible();
+    expectFocusInSight();
+  },
+};
+
+/** **A vault use's row** (#6178): its risk said first; in the form its Answer opens, Allow once
+ *  asks once more ("Allow handing dash-api-key to…?") before it fills anything, and Cancel takes
+ *  the question back. */
+export const AVaultUseOnItsRow: Story = {
+  args: { ask: "VAULT_FILL" },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvasElement.querySelector(".inbox-risk")).toHaveTextContent(
+      "Hands dash-api-key from vault qa to a field on dash.example.test",
+    );
+    await userEvent.click(canvas.getByRole("button", { name: /^Answer/ }));
+    const allow = await canvas.findByRole("button", { name: "Allow once" });
+    await new Promise((done) => setTimeout(done, SETTLE_MS + 50));
+    await userEvent.click(allow);
+    await waitFor(() => expect(allow).toHaveAttribute("aria-expanded", "true"));
+    const again = canvas.getByRole("group", {
+      name: "Allow handing dash-api-key to a field on dash.example.test?",
+    });
+    await expect(again).toBeVisible();
+    expectFocusInSight();
+    await userEvent.click(within(again).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(allow).toHaveAttribute("aria-expanded", "false"));
   },
 };

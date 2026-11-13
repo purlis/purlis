@@ -141,11 +141,11 @@
     },
     {
       "query": "Add a new dialog to purlis's own app with the component families in app/src/ui.",
-      "source": "Boundary (the plane's building-purlis-ui skill, decisions.md of spec #5714 Q30): code in a purlis checkout; a plain negative."
+      "source": "Boundary (building purlis's own window, which docs/building-ui.md covers since purlis-building-ui was retired, #5725; decisions.md of spec #5714 Q30): code in a purlis checkout; a plain negative."
     },
     {
       "query": "Fix the screenshot baseline of the Notice story in my purlis checkout.",
-      "source": "Boundary (the plane's building-purlis-ui skill, decisions.md of spec #5714 Q30): code in a purlis checkout; a plain negative."
+      "source": "Boundary (building purlis's own window, which docs/building-ui.md covers since purlis-building-ui was retired, #5725; decisions.md of spec #5714 Q30): code in a purlis checkout; a plain negative."
     },
     {
       "query": "Explain what a git worktree is.",

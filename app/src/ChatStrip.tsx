@@ -28,9 +28,9 @@ import { movedAt, sameList, useChatsSelect, type Chats } from "./chatState";
 import {
   byLastActivity,
   chatOf,
+  chatShownBy,
   contentsOf,
   panesOf,
-  taskShownIn,
   type Pinned,
   type Tabs,
 } from "./tabs";
@@ -53,19 +53,11 @@ import { Doer, ShowMore, Pin, Closer } from "./StripMarks";
 import { NewTabButton } from "./NewTabButton";
 import type { NewTabRow } from "./newTabList";
 import { TIPS_BELOW } from "./ui/tooltip/Tooltip";
+import { numberedName } from "./chatNumber";
 
 /** What a tab with no tasks hands its chip, the same lists every time. */
 export const NO_ROWS: readonly ChatRow[] = [];
 export const NO_ENDED: readonly Ended[] = [];
-
-/**
- * **The chat tab `id` shows** (#1486): the task its first pane is switched to, and otherwise
- * the tab's own chat. Nothing for a tab that opened on a view. What a thing dropped on the tab
- * is handed to, since the tab reads as the chat it shows.
- */
-function chatShownBy(tabs: Tabs, id: number): number | undefined {
-  return taskShownIn(tabs, id) ?? chatOf(tabs, id);
-}
 
 /**
  * **What a tab holds, as the tabs family draws it** (#2914): a chat, a view, or one file in an
@@ -77,12 +69,21 @@ function variantOf(tabs: Tabs, id: number): TabVariant {
   return isFileView(lead.view) ? "file" : "view";
 }
 
-/** A chat tab's tooltip: where a handed-off chat came from, and the work item it works on. */
-function tabTip(from: string | undefined, workItem: string | undefined): string | undefined {
-  const lines = [from, workItem === undefined ? undefined : workItemSaid(workItem)].filter(
-    (line): line is string => line !== undefined,
+/**
+ * **A chat tab's tooltip**: the chat it shows by its number and the tab's name, `#641 · steward 4`
+ * (#6212), then where a handed-off chat came from and the work item it works on. The number is
+ * the chat's current one, read off the pane, so a chat started again says its new number.
+ */
+function tabTip(
+  named: { number: number; name: string } | undefined,
+  from: string | undefined,
+  workItem: string | undefined,
+): string | undefined {
+  return tipLines(
+    named === undefined ? undefined : numberedName(named.number, named.name),
+    from,
+    workItem === undefined ? undefined : workItemSaid(workItem),
   );
-  return lines.length === 0 ? undefined : lines.join("\n");
 }
 
 /**
@@ -153,6 +154,11 @@ export function ChatStrip({
     [hidden, naming, shown, tabs],
   );
   const faceAt = (id: number) => faces.get(id) ?? faceOf(tabs, id, naming);
+  // The chat a tab shows, by its number and the tab's name: what its hover leads with (#6212).
+  const namedChatOf = (id: number) => {
+    const number = chatShownBy(tabs, id);
+    return number === undefined ? undefined : { number, name: faceAt(id).name };
+  };
   const along = useTabStrip({
     keys: drawn,
     selected: tabs.inFront === undefined ? undefined : String(tabs.inFront),
@@ -286,14 +292,16 @@ export function ChatStrip({
                             ? WRAPPING_UP
                             : panesOf(tabs, id).some((one) => restoring.has(one.session))
                               ? RESTORING
-                              : // A split lists its panes on hover, in reading order (#4762),
-                                // and a tab says how many of its tasks run (#5341).
+                              : // The chat it shows by its number (#6212), a split's panes in
+                                // reading order under it (#4762), and how many of its tasks
+                                // run (#5341).
                                 tipLines(
-                                  splitTip(faceAt(id)) ??
-                                    tabTip(
-                                      handedFrom[chatOf(tabs, id) ?? -1],
-                                      workItems[chatOf(tabs, id) ?? -1],
-                                    ),
+                                  tabTip(
+                                    namedChatOf(id),
+                                    handedFrom[chatOf(tabs, id) ?? -1],
+                                    workItems[chatOf(tabs, id) ?? -1],
+                                  ),
+                                  splitTip(faceAt(id)),
                                   runningSaid(tasksRunningOf(id)),
                                 )
                         }

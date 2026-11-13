@@ -578,6 +578,15 @@ export function Ask({
   const [reason, setReason] = useState("");
   /** The site as the person changed it, on a login's ask (#4595). */
   const [typed, setTyped] = useTypedSite(ask);
+  /** **The grant pressed on a high-risk ask answered in its form, asking once more** (#6178),
+   *  as a decision's does (`AskDecision`, #6011): with what a secret's notice gave, read only
+   *  once its Allow there is pressed, and the words its pressed button showed, which the
+   *  question's own Allow repeats. */
+  const [asking, setAsking] = useState<{
+    option: Offered;
+    given?: () => SecretAskGiven;
+    said: string;
+  }>();
   const who = chainSaid(ask.chain);
   /** A secret's one notice draws its own answers (#5080). */
   const secretNotice = ask.secret != null || ask.run != null;
@@ -610,6 +619,8 @@ export function Ask({
     open ? "open" : "",
     // A login's notice drawn anew has to be read anew (#4595).
     ask.answer.via === "browser-login" || ask.answer.via === "secret-fill" ? ask.answer.shown : "",
+    // The question asked once more is drawn anew, and its Allow waits to settle (#6178).
+    asking === undefined ? "" : `confirming ${asking.option.id}`,
   ].join("\n");
   const { drawn, drawnAt, tooSoon, readPlaces } = useSettledPlace<HTMLElement>(here);
   // **New until seen** (#6002): its accent bar, until it has been in sight for about a second.
@@ -634,6 +645,17 @@ export function Ask({
     if (!tooSoon()) return true;
     setSaid(MOVED_JUST_NOW);
     return false;
+  };
+  /** **A press in its form** (#6178): a grant on a high-risk ask asks once more under its
+   *  answers, its Allow saying what the button pressed said (`said`, the option's label unless
+   *  the form drew other words), a second press of it takes the question back, and every other
+   *  answer acts. */
+  const answerOrAsk = (option: Offered, given?: () => SecretAskGiven, said = option.label) => {
+    if (ask.risk != null && option.allows) {
+      setAsking(asking?.option.id === option.id ? undefined : { option, given, said });
+      return;
+    }
+    answer(option, given);
   };
   /** Whether `option` is an Allow on an ask of Allow and Keep blocked (ADR 0097 §6). */
   const grants = (option: Offered) => option.allows && ALLOW_OR_KEEP.has(ask.source);
@@ -743,7 +765,7 @@ export function Ask({
             chat={who === "" ? "The chat" : who}
             entries={() => secretAskEntries(plane, ask)}
             busy={busy}
-            onAnswer={answer}
+            onAnswer={answerOrAsk}
             onSaid={setSaid}
           />
         )}
@@ -778,11 +800,33 @@ export function Ask({
                 className={option.allows ? "inbox-answer allows" : "inbox-answer"}
                 aria-disabled={busy || undefined}
                 aria-busy={busy || undefined}
-                onPress={() => answer(option)}
+                aria-expanded={
+                  ask.risk != null && option.allows ? asking?.option.id === option.id : undefined
+                }
+                onPress={() => answerOrAsk(option)}
               >
                 {option.label}
               </Button>
             ))}
+          </ButtonRow>
+        )}
+        {/* **Asked once more** (ADR 0121 decision 8, #6178): only the Allow here answers, held
+              by the settle guard as every grant is; Cancel takes the question back. */}
+        {ask.risk != null && asking !== undefined && (
+          <ButtonRow className="inbox-answers" role="group" aria-label={ask.risk.confirm}>
+            <span className="ask-confirm ui-text-strong">{ask.risk.confirm}</span>
+            <Button
+              variant={grants(asking.option) ? "grants" : "primary"}
+              className="inbox-answer allows"
+              aria-disabled={busy || undefined}
+              aria-busy={busy || undefined}
+              onPress={() => answer(asking.option, asking.given)}
+            >
+              {asking.said}
+            </Button>
+            <Button variant="secondary" onPress={() => setAsking(undefined)}>
+              Cancel
+            </Button>
           </ButtonRow>
         )}
       </WithWrites>

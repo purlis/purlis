@@ -35,6 +35,9 @@ use crate::profilestore::sign_in::Standing;
 use crate::runners::{self, Refused};
 
 pub mod asked;
+pub mod cluster;
+pub mod connecting;
+pub mod install;
 pub mod signins;
 pub mod trying;
 
@@ -49,15 +52,40 @@ const FORGE_PROGRAMS: [&str; 2] = ["gh", "glab"];
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
     Docker,
+    /// **Docker on another machine, reached over SSH** (#6266, ADR 0123 §1).
+    #[serde(rename = "remote-docker")]
+    RemoteDocker,
+    /// A team's Kubernetes cluster, through purlis's cluster operator (#4492).
+    Cluster,
 }
 
 impl Kind {
-    /// **The steps of this kind, in order** (Q35).
+    /// **The steps of this kind, in order** (Q35): a kind is its list, and a later kind (an SSH
+    /// host, Docker on another machine) adds its list and the readings of any step of its own.
     #[must_use]
     pub fn steps(self) -> &'static [StepId] {
         match self {
             Kind::Docker => &[
                 StepId::Where,
+                StepId::Pool,
+                StepId::Signins,
+                StepId::Identity,
+                StepId::Try,
+            ],
+            Kind::Cluster => &[
+                StepId::Where,
+                StepId::Check,
+                StepId::Install,
+                StepId::Pool,
+                StepId::Signins,
+                StepId::Identity,
+                StepId::Try,
+            ],
+            // Only Connect is new: the others are the Docker kind's, reading the pool's own
+            // engine (ADR 0123 §6).
+            Kind::RemoteDocker => &[
+                StepId::Where,
+                StepId::Connect,
                 StepId::Pool,
                 StepId::Signins,
                 StepId::Identity,
@@ -72,6 +100,12 @@ impl Kind {
 #[serde(rename_all = "lowercase")]
 pub enum StepId {
     Where,
+    /// The machine, its key and its engine (#6266).
+    Connect,
+    /// A cluster's: doctor's findings, before anything changes (#4492).
+    Check,
+    /// A cluster's: upstream, definitions, signing key and operator, each on its own button (#4493).
+    Install,
     Pool,
     Signins,
     Identity,
@@ -84,6 +118,9 @@ impl StepId {
     pub fn name(self) -> &'static str {
         match self {
             StepId::Where => "Where chats run",
+            StepId::Connect => "Connect",
+            StepId::Check => "Check the cluster",
+            StepId::Install => "Install",
             StepId::Pool => "Pool",
             StepId::Signins => "Sign-ins",
             StepId::Identity => "Agent identity",
@@ -132,6 +169,23 @@ pub enum ActionId {
     GetDocker,
     StartDocker,
     UseDocker,
+    /// Keeps the cluster, on the context chosen, as where chats run (#4492).
+    UseCluster,
+    /// kubectl isn't on this machine: its own install page.
+    GetKubectl,
+    /// The install's parts, each on its own button (#4493).
+    InstallUpstream,
+    InstallDefinitions,
+    MakeSigningKey,
+    InstallOperator,
+    /// The operator's image, by its digest, is named under Options first.
+    ChooseOperatorImage,
+    /// Makes a Pool in the cluster, of purlis's runner image (#4494).
+    CreateClusterPool,
+    /// Claims this person's runner of a Pool in the cluster and pairs it here (#4494).
+    AddClusterPool,
+    /// A cluster pool is marked as the person's own on its row, in Settings › Pools (#4071).
+    MarkAsOwn,
     CreatePool,
     MakeRunnerAgain,
     UseOtherDocker,
@@ -145,6 +199,18 @@ pub enum ActionId {
     SetUpIdentity,
     AllowTool,
     StartTestChat,
+    /// Where: set up a pool on another machine (ADR 0123 §6).
+    UseRemoteDocker,
+    /// Connect: contact the machine, which only reads its key.
+    ConnectMachine,
+    /// Connect: pin the key shown, then check the engine there.
+    TrustMachine,
+    /// Connect: go back to the pick of the machine.
+    ChangeMachine,
+    /// Connect: plain `tcp://` was refused; the same host over SSH.
+    UseSshInstead,
+    /// A pin that no longer holds: show what the machine shows now, to trust again.
+    CheckAndTrustAgain,
 }
 
 /// The one thing to do on a step: its button, what the button does, and, where one exists, the
@@ -190,6 +256,8 @@ pub struct Check {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CheckOf {
+    /// One of doctor's lines, on Check the cluster (#4492).
+    Cluster,
     Chat,
     Signins,
     Identity,
@@ -210,6 +278,22 @@ pub struct Step {
     pub see: Option<See>,
     /// What it checks, for Try it: a skipped step reads "works, except for this" (Q32).
     pub checks: Vec<Check>,
+    /// **A second way on**, beside `next` (ADR 0123 §6): on Where, the other kind.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub other: Option<Action>,
+    /// The machine, on Connect (#6266).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub machine: Option<connecting::Machine>,
+    /// What a finding is, by its key, for the window to draw its card by (`pool-pin-changed`,
+    /// `plain-tcp`, …).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cause: Option<&'static str>,
+    /// The choice purlis didn't recommend, for the person to take instead (story 4 of #4469).
+    pub also: Option<Action>,
+    /// Install's parts, each with its own button (#4493).
+    pub parts: Vec<install::Part>,
+    /// What undoes the step by hand, where only that does (uninstalling from a cluster, story 56).
+    pub undo: Option<See>,
 }
 
 /// The whole answer.
@@ -222,6 +306,18 @@ pub struct Setup {
     pub steps: Vec<Step>,
     /// Pools this machine keeps that this setup isn't on, for a person to go on with by pressing.
     pub others: Vec<String>,
+    /// The kubeconfig's contexts, the one recommended and the one chosen, for Where's Options.
+    pub contexts: Contexts,
+}
+
+/// **The contexts a cluster can be reached by** (#4492): names only, never what they sign in with.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct Contexts {
+    pub names: Vec<String>,
+    pub recommended: Option<String>,
+    pub chosen: Option<String>,
+    /// The chosen cluster's Pools, by name, where its operator runs (#4494).
+    pub pools: Vec<String>,
 }
 
 impl Setup {
@@ -282,6 +378,9 @@ pub enum SignIns {
     CannotTell(String),
     /// Each profile chosen for the pool.
     Read(Vec<(String, Profile)>),
+    /// A cluster pool the person hasn't marked as their own: no profile of theirs goes there
+    /// (#4071), so nothing is asked of its runner.
+    NotYours,
 }
 
 /// An agent's forge identity, as this plane's personas declare one.
@@ -316,17 +415,23 @@ pub struct PoolFacts {
     pub name: String,
     pub runner: Runner,
     pub sign_ins: SignIns,
+    /// Where the pool is a cluster's, what this machine keeps of it (#4494).
+    pub cluster: Option<cluster::KeptHere>,
 }
 
 /// Everything read, before it means anything.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Facts {
     pub engine: Engine,
+    /// Connect's facts, for a pool on another machine (#6266): `None` for this machine's.
+    pub connect: Option<connecting::Connecting>,
     pub pool: Option<PoolFacts>,
     pub identity: Identity,
     /// Whether the project's clones have a remote on a forge: with none, gh and git push have
     /// nothing to be checked against (C on #4469).
     pub repos: bool,
+    /// The cluster the person can reach, as far as it was read (#4492).
+    pub cluster: cluster::ClusterFacts,
 }
 
 /// **A person's choices, the only thing stored** (tier: Machine, device-bound).
@@ -334,6 +439,11 @@ pub struct Facts {
 pub struct Choices {
     /// The kind chosen on Where, before there is a pool.
     pub kind: Option<Kind>,
+    /// The kubeconfig context chosen on Where for a cluster (#4492): its name, nothing of what it
+    /// signs in with.
+    pub context: Option<String>,
+    /// The cluster operator's image, by its digest, named under Install's Options (#4493).
+    pub operator_image: Option<String>,
     /// The name typed on the Pool step, for the box to hold.
     pub name: Option<String>,
     /// That no pool had `name` when it was typed: one that has it now was made since, by hand.
@@ -345,6 +455,28 @@ pub struct Choices {
     /// When a real chat was last seen to start on each pool, from Try it (#4483), in seconds
     /// since the epoch: the proof setup ends on, which nothing else could read back.
     pub tried: BTreeMap<String, u64>,
+    /// **The machine Connect read, and the pin the person trusted there** (#6266), for a pool on
+    /// another machine before it is made.
+    pub connect: Option<Chosen>,
+}
+
+/// **What Connect keeps** (#6266, `connect` in `pool-setup.json`): the machine, as the person
+/// gave it (with the socket found once the engine was checked), and the pin, only once the
+/// person pressed Trust this machine.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Chosen {
+    pub route: String,
+    /// The key file a Podman connection signs in with, where the machine was picked from one
+    /// (#6269).
+    pub identity: Option<PathBuf>,
+    pub trusted: Option<crate::sshroute::Pin>,
+}
+
+impl Chosen {
+    /// **The route, read, signing in with its key file where one was chosen.**
+    pub fn route_read(&self) -> Result<crate::sshroute::Route, crate::sshroute::connect::Finding> {
+        connecting::route_of(&self.route, self.identity.as_deref())
+    }
 }
 
 /// What this machine calls itself in a sentence.
@@ -413,7 +545,10 @@ impl Reading {
     }
 }
 
-fn where_reading(facts: &Facts, choices: &Choices) -> Reading {
+fn where_reading(kind: Kind, facts: &Facts, choices: &Choices) -> Reading {
+    if kind == Kind::RemoteDocker {
+        return remote_where_reading(facts, choices);
+    }
     match facts.engine {
         Engine::Missing => Reading::attention(
             "You need Docker first. It runs your chats in a container on this machine, apart \
@@ -463,6 +598,73 @@ fn where_reading(facts: &Facts, choices: &Choices) -> Reading {
     }
 }
 
+/// **Where, for a pool on another machine** (ADR 0123 §6): Docker's own command is all it needs
+/// here, to reach the engine there.
+fn remote_where_reading(facts: &Facts, choices: &Choices) -> Reading {
+    if facts.engine == Engine::Missing {
+        return Reading::attention(
+            "purlis reaches Docker on another machine with Docker's own command on this one, and \
+             finds none here. Install Docker, or only its command, then purlis checks again by \
+             itself.",
+            Some(Action {
+                id: ActionId::GetDocker,
+                label: "Open Docker's install page".to_owned(),
+                does: "Opens Docker's own page in your browser. purlis doesn't install anything, \
+                       and checks again by itself."
+                    .to_owned(),
+                command: None,
+                url: Some(docker_install_page().to_owned()),
+            }),
+        );
+    }
+    if facts.pool.is_some() || choices.kind == Some(Kind::RemoteDocker) {
+        return Reading::done("Docker on another machine");
+    }
+    Reading::to_do(
+        "Chats run in a container on another machine with Docker, reached over SSH.",
+        action(
+            ActionId::UseRemoteDocker,
+            "Set up Docker on another machine",
+            "Saves your choice. Nothing on this machine or the other one changes yet.",
+        ),
+    )
+}
+
+/// **The second way on of a step**, beside its next (ADR 0123 §6): on Where, before there is a
+/// pool, the other kind.
+fn other_of(kind: Kind, id: StepId, facts: &Facts) -> Option<Action> {
+    if id != StepId::Where || facts.pool.is_some() {
+        return None;
+    }
+    match kind {
+        Kind::Docker => action(
+            ActionId::UseRemoteDocker,
+            "Set up Docker on another machine",
+            "Opens the guide for a pool on another machine with Docker, reached over SSH.",
+        ),
+        Kind::RemoteDocker => action(
+            ActionId::UseDocker,
+            "Use this machine's Docker",
+            "Goes back to running chats in Docker on this machine.",
+        ),
+        // A cluster's Where goes back to Docker ([`cluster::also`]), and on from there.
+        Kind::Cluster => None,
+    }
+}
+
+/// The machine a pool's runner is made on, in a sentence.
+fn made_on(facts: &Facts) -> String {
+    facts
+        .connect
+        .as_ref()
+        .and_then(|connect| connect.route.as_deref())
+        .and_then(|route| crate::sshroute::Route::parse(route).ok())
+        .map_or_else(
+            || this_machine().to_owned(),
+            |route| route.host().to_owned(),
+        )
+}
+
 fn pool_reading(facts: &Facts) -> Reading {
     let Some(pool) = &facts.pool else {
         return Reading::to_do(
@@ -470,7 +672,10 @@ fn pool_reading(facts: &Facts) -> Reading {
             action(
                 ActionId::CreatePool,
                 "Create the pool",
-                "Makes one container, its runner, in Docker on this machine.",
+                format!(
+                    "Makes one container, its runner, in Docker on {}.",
+                    made_on(facts)
+                ),
             ),
         );
     };
@@ -586,6 +791,21 @@ fn sign_ins_reading(facts: &Facts) -> Reading {
             );
         }
         SignIns::Read(profiles) => profiles,
+        SignIns::NotYours => {
+            return Reading::to_do(
+                format!(
+                    "Pool {name} isn't marked as your own, so purlis keeps no profile of yours on \
+                     its runner. Your cluster's admins, and whoever holds its nodes, can read \
+                     what a runner holds. Mark it on its row once you accept that."
+                ),
+                action(
+                    ActionId::MarkAsOwn,
+                    "Open Settings › Pools",
+                    "Opens your pools, where This is my own is on the pool's row. Only you can \
+                     turn it on.",
+                ),
+            );
+        }
     };
     if profiles.is_empty() {
         return Reading::to_do(
@@ -799,12 +1019,25 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
     let mut at = None;
     let mut steps = Vec::with_capacity(kind.steps().len());
     for &id in kind.steps() {
-        let reading = match id {
-            StepId::Where => where_reading(facts, choices),
-            StepId::Pool => pool_reading(facts),
-            StepId::Signins => sign_ins_reading(facts),
-            StepId::Identity => identity_reading(facts),
-            StepId::Try => try_reading(facts, choices),
+        let mut machine = None;
+        let mut cause = None;
+        let reading = match (kind, id) {
+            (Kind::Cluster, StepId::Where) => cluster::where_reading(facts, choices),
+            (_, StepId::Where) => where_reading(kind, facts, choices),
+            (_, StepId::Connect) => {
+                let (reading, shown, why) =
+                    connecting::reading(&facts.connect.clone().unwrap_or_default());
+                machine = Some(shown);
+                cause = why;
+                reading
+            }
+            (_, StepId::Check) => cluster::check_reading(facts),
+            (_, StepId::Install) => cluster::install_reading(facts, choices),
+            (Kind::Cluster, StepId::Pool) => cluster::pool_reading(facts),
+            (_, StepId::Pool) => pool_reading(facts),
+            (_, StepId::Signins) => sign_ins_reading(facts),
+            (_, StepId::Identity) => identity_reading(facts),
+            (_, StepId::Try) => try_reading(facts, choices),
         };
         let state = if reading.finished {
             StepState::Done
@@ -829,8 +1062,30 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
             findings: if says { reading.findings } else { Vec::new() },
             next: if says { reading.next } else { None },
             skippable: id.skippable(),
-            see: see_of(id, facts),
+            see: see_of(kind, id, facts, choices),
             checks: Vec::new(),
+            other: if says {
+                other_of(kind, id, facts)
+            } else {
+                None
+            },
+            machine,
+            cause: if says { cause } else { None },
+            parts: if id == StepId::Install && says {
+                cluster::parts_of(facts, choices)
+            } else {
+                Vec::new()
+            },
+            undo: if id == StepId::Install {
+                cluster::undo_of(facts)
+            } else {
+                None
+            },
+            also: if id == StepId::Where && state != StepState::Done && facts.pool.is_none() {
+                cluster::also(kind, facts)
+            } else {
+                None
+            },
         });
     }
     if let (Some(name), Some(at)) = (
@@ -840,12 +1095,23 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
         let checks = try_checks(&steps, name, choices.tried.contains_key(name), facts.repos);
         steps[at].checks = checks;
     }
+    if let Some(check) = steps.iter_mut().find(|step| step.id == StepId::Check)
+        && check.state != StepState::Later
+    {
+        check.checks = cluster::checks_of(facts);
+    }
     Setup {
         kind,
         pool,
         at,
         steps,
         others: Vec::new(),
+        contexts: Contexts {
+            names: facts.cluster.contexts.clone(),
+            recommended: facts.cluster.recommended().map(str::to_owned),
+            chosen: facts.cluster.chosen.clone(),
+            pools: facts.cluster.pools.clone().unwrap_or_default(),
+        },
     }
 }
 
@@ -937,7 +1203,12 @@ fn try_checks(steps: &[Step], pool: &str, tried: bool, repos: bool) -> Vec<Check
 
 /// **What `id` does by hand**, where it has commands of its own. The Pool step's, before there is
 /// a pool, depend on what the person chose, so they are [`asked::Asked::command`]'s.
-fn see_of(id: StepId, facts: &Facts) -> Option<See> {
+fn see_of(kind: Kind, id: StepId, facts: &Facts, choices: &Choices) -> Option<See> {
+    if kind == Kind::Cluster
+        && let Some(see) = cluster::see_of(id, facts, choices)
+    {
+        return Some(see);
+    }
     let pool = facts.pool.as_ref();
     if let (
         StepId::Identity,
@@ -957,7 +1228,13 @@ fn see_of(id: StepId, facts: &Facts) -> Option<See> {
         });
     }
     match (id, pool) {
-        (StepId::Where, _) => Some(See {
+        (StepId::Connect, _) => Some(connecting::by_hand(
+            facts
+                .connect
+                .as_ref()
+                .and_then(|connect| connect.route.as_deref()),
+        )),
+        (StepId::Where, _) if kind != Kind::Cluster => Some(See {
             note: "This is how purlis asks after Docker. It only reads.".to_owned(),
             text: "docker version".to_owned(),
         }),
@@ -1000,28 +1277,182 @@ pub struct Here<'a> {
     pub docker: Option<&'a Docker>,
     /// The socket of this machine's engine, or why it isn't on this machine.
     pub engine: Result<PathBuf, String>,
+    /// This machine's kubectl, through which a cluster is reached with the person's own
+    /// sign-in, or why there is none ([`cluster::kubectl_here`]).
+    pub kubectl: Result<&'a crate::clusterpool::Kubectl, &'a str>,
 }
 
 /// **Reads pool `pool`'s setup, or a new Docker pool's where `pool` is `None`.** Reads everything
 /// again, and changes nothing. Refused where there is no such Docker pool on this machine.
 pub fn read(here: &Here<'_>, pool: Option<&str>) -> Result<Setup, Refused> {
+    read_pressed(here, pool, None)
+}
+
+/// **What a press of Connect found**, laid over what is read (#6266): the key met by Connect to,
+/// or what went wrong. Nothing of it is kept.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Pressed {
+    Met(connecting::Met),
+    Found(crate::sshroute::connect::Finding),
+}
+
+/// **[`read`], with what a press of Connect just found** laid over Connect's facts.
+pub fn read_pressed(
+    here: &Here<'_>,
+    pool: Option<&str>,
+    pressed: Option<Pressed>,
+) -> Result<Setup, Refused> {
     let choices = read_choices(here.config)?;
-    let engine = engine_of(here);
+    let kept = match pool {
+        Some(name) => runners::pools(here.config)?
+            .into_iter()
+            .find(|one| one.name() == name),
+        None => None,
+    };
+    // On another machine where the pool is, or a new pool's choice on Where says so; the other
+    // kinds are told apart below, once the pool and the contexts are read ([`kind_of`]).
+    let remote = match (&kept, pool) {
+        (Some(kept), _) => kept.remote().is_some(),
+        (None, None) => choices.kind == Some(Kind::RemoteDocker),
+        (None, Some(_)) => false,
+    };
+    let kind = if remote {
+        Kind::RemoteDocker
+    } else {
+        Kind::Docker
+    };
+    let (engine, docker, mut connect) = match (
+        kind,
+        kept.as_ref()
+            .and_then(|kept| kept.remote().map(|remote| (kept, remote))),
+    ) {
+        // A pool on another machine: its own engine, through its forward, pin checked.
+        (_, Some((kept, remote))) => {
+            let connect = connecting::Connecting {
+                route: Some(remote.route.spelled()),
+                identity: remote
+                    .route
+                    .identity()
+                    .map(|path| path.display().to_string()),
+                trusted: Some(remote.pin.clone()),
+                ..connecting::Connecting::default()
+            };
+            match here.docker {
+                None => (Engine::Missing, None, connect),
+                Some(docker) => match crate::sshroute::pool::docker_of(docker, kept) {
+                    Ok(through) => (Engine::Ready, Some(through), connect),
+                    Err(finding) => (
+                        Engine::NotAnswering,
+                        None,
+                        connecting::Connecting {
+                            finding: Some(finding),
+                            ..connect
+                        },
+                    ),
+                },
+            }
+        }
+        (Kind::RemoteDocker, None) => {
+            let connect = connecting::Connecting {
+                route: choices.connect.as_ref().map(|chosen| chosen.route.clone()),
+                identity: choices
+                    .connect
+                    .as_ref()
+                    .and_then(|chosen| chosen.identity.as_ref())
+                    .map(|path| path.display().to_string()),
+                trusted: choices
+                    .connect
+                    .as_ref()
+                    .and_then(|chosen| chosen.trusted.clone()),
+                ..connecting::Connecting::default()
+            };
+            let engine = if here.docker.is_some() {
+                Engine::Ready
+            } else {
+                Engine::Missing
+            };
+            (engine, None, connect)
+        }
+        (_, None) => (
+            engine_of(here),
+            here.docker.cloned(),
+            connecting::Connecting::default(),
+        ),
+    };
+    match pressed {
+        Some(Pressed::Met(met)) => connect.met = Some(met),
+        Some(Pressed::Found(finding)) => connect.finding = Some(finding),
+        None => {}
+    }
     let pool = pool
-        .map(|name| pool_facts(here, name, engine))
+        .map(|name| pool_facts(here, name, engine, docker.as_ref()))
         .transpose()?;
     // Each clone's remotes, read once: a git process a clone.
     let hosts = here
         .plane
         .map(crate::forge::agentidentity::hosts_of_the_project)
         .unwrap_or_default();
+    // Contexts are read from the kubeconfig alone; the cluster itself only on a cluster's setup.
+    let contexts = cluster::read(
+        here.kubectl.map_err(str::to_owned),
+        choices.context.as_deref(),
+        false,
+    );
+    let on_a_cluster = pool.as_ref().map(|pool| pool.cluster.is_some());
+    let kind = if remote {
+        kind
+    } else {
+        kind_of(&choices, engine, on_a_cluster, &contexts)
+    };
+    let cluster = if kind == Kind::Cluster {
+        cluster::read(
+            here.kubectl.map_err(str::to_owned),
+            pool.as_ref()
+                .and_then(|pool| pool.cluster.as_ref())
+                .map(|kept| kept.context.as_str())
+                .or(choices.context.as_deref()),
+            true,
+        )
+    } else {
+        contexts
+    };
     let facts = Facts {
         engine,
+        connect: remote.then_some(connect),
         pool,
         identity: identity_in(here.plane, &hosts),
         repos: !hosts.is_empty(),
+        cluster,
     };
-    Ok(of(Kind::Docker, &facts, &choices))
+    Ok(of(kind, &facts, &choices))
+}
+
+/// **What a finding of Connect says**, in Pool setup's words: the same wherever it is shown.
+#[must_use]
+pub fn connect_said(finding: &crate::sshroute::connect::Finding) -> String {
+    connecting::said(finding)
+}
+
+/// **The kind a setup is on** (#4492): a pool's own, else the one chosen on Where, else the one
+/// purlis recommends: Docker where it is ready or no cluster is named, else the cluster.
+fn kind_of(
+    choices: &Choices,
+    engine: Engine,
+    on_a_cluster: Option<bool>,
+    cluster: &cluster::ClusterFacts,
+) -> Kind {
+    match on_a_cluster {
+        Some(true) => return Kind::Cluster,
+        Some(false) => return Kind::Docker,
+        None => {}
+    }
+    choices
+        .kind
+        .unwrap_or(if engine == Engine::Ready || cluster.contexts.is_empty() {
+            Kind::Docker
+        } else {
+            Kind::Cluster
+        })
 }
 
 fn engine_of(here: &Here<'_>) -> Engine {
@@ -1036,25 +1467,36 @@ fn engine_of(here: &Here<'_>) -> Engine {
 /// **How pool `name`'s runner and its sign-ins stand, read now** (#4483): what Try it picks its
 /// profile by ([`trying::profile_to_try`]). It reads as [`read`] does, and changes nothing.
 pub fn read_pool(here: &Here<'_>, name: &str) -> Result<PoolFacts, Refused> {
-    pool_facts(here, name, engine_of(here))
+    let kept = runners::pools(here.config)?
+        .into_iter()
+        .find(|one| one.name() == name);
+    if let (Some(kept), Some(docker)) = (kept.filter(|kept| kept.remote().is_some()), here.docker) {
+        return match crate::sshroute::pool::docker_of(docker, &kept) {
+            Ok(through) => pool_facts(here, name, Engine::Ready, Some(&through)),
+            Err(_) => pool_facts(here, name, Engine::NotAnswering, None),
+        };
+    }
+    pool_facts(here, name, engine_of(here), here.docker)
 }
 
-fn pool_facts(here: &Here<'_>, name: &str, engine: Engine) -> Result<PoolFacts, Refused> {
+fn pool_facts(
+    here: &Here<'_>,
+    name: &str,
+    engine: Engine,
+    docker: Option<&Docker>,
+) -> Result<PoolFacts, Refused> {
     if !runners::pools(here.config)?
         .iter()
         .any(|pool| pool.name() == name)
     {
-        return Err(Refused::Other(
-            if runners::profiles_of(here.config, name).is_ok() {
-                format!(
-                    "pool {name} is on a cluster, and Pool setup reads only Docker pools so far"
-                )
-            } else {
-                format!("there is no pool named {name} on this machine")
-            },
-        ));
+        return match cluster::pool_kept(here, name)? {
+            Some(facts) => Ok(facts),
+            None => Err(Refused::Other(format!(
+                "there is no pool named {name} on this machine"
+            ))),
+        };
     }
-    let docker = here.docker.filter(|_| engine == Engine::Ready);
+    let docker = docker.filter(|_| engine == Engine::Ready);
     let runner = runner_of(here.config, docker, name);
     let sign_ins = match (&runner, docker) {
         // Whether it is awake or not: waking it would help nothing.
@@ -1070,6 +1512,7 @@ fn pool_facts(here: &Here<'_>, name: &str, engine: Engine) -> Result<PoolFacts, 
         name: name.to_owned(),
         runner,
         sign_ins,
+        cluster: None,
     })
 }
 
@@ -1101,8 +1544,13 @@ fn runner_of(config: &Path, docker: Option<&Docker>, name: &str) -> Runner {
 }
 
 fn sign_ins_of(here: &Here<'_>, docker: &Docker, name: &str) -> SignIns {
-    // Only a Docker shown to be on this machine reaches here (`Engine::Ready`).
-    let (Ok(engine), Ok(kept)) = (&here.engine, runners::runner_for(here.config, name)) else {
+    // Only a Docker shown to be on this machine, or a pool's own on another machine through its
+    // pinned forward (#6266), reaches here (`Engine::Ready`).
+    let engine = match docker.forwarded() {
+        Some(socket) => Ok(socket.to_path_buf()),
+        None => here.engine.clone(),
+    };
+    let (Ok(engine), Ok(kept)) = (&engine, runners::runner_for(here.config, name)) else {
         return SignIns::NotAsked;
     };
     let default = here
@@ -1298,12 +1746,60 @@ pub fn read_choices(config: &Path) -> Result<Choices, Refused> {
     }
     Ok(Choices {
         kind: held.kind,
+        context: held.context,
+        operator_image: held.operator_image,
         name: held.name,
         name_free: held.name_free,
         pool: held.pool,
         skipped: held.skipped,
         tried: held.tried,
+        connect: match held.connect {
+            None => None,
+            Some(connect) => Some(chosen_from(connect).ok_or_else(unreadable)?),
+        },
     })
+}
+
+/// The `connect` kept, read: a route as it was given, its key file where one is, and a whole
+/// pin where there is one.
+fn chosen_from(held: HeldConnect) -> Option<Chosen> {
+    let identity = match held.identity {
+        None => None,
+        Some(identity) => {
+            let identity = PathBuf::from(identity);
+            // Only a path a route can sign in with is kept.
+            crate::sshroute::Route::parse(&held.route)
+                .ok()?
+                .with_identity(&identity)
+                .ok()?;
+            Some(identity)
+        }
+    };
+    let trusted = match held.trusted {
+        None => None,
+        Some(pin) => {
+            let route = crate::sshroute::Route::parse(&held.route).ok()?;
+            route.socket()?;
+            Some(crate::sshroute::Pin::from_json(pin.as_object()?)?)
+        }
+    };
+    (held.route.len() <= 512).then_some(Chosen {
+        route: held.route,
+        identity,
+        trusted,
+    })
+}
+
+/// `connect`, as the file holds it.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HeldConnect {
+    route: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    identity: Option<String>,
+    /// A pin, as a pool's `pin` in `runners.json` ([`crate::sshroute::Pin::to_json`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    trusted: Option<serde_json::Value>,
 }
 
 /// The file's form. Its fields are spelled out and not flattened from [`Choices`]: flattening
@@ -1314,6 +1810,10 @@ struct Held {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     kind: Option<Kind>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    context: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    operator_image: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     name: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     name_free: bool,
@@ -1323,17 +1823,26 @@ struct Held {
     skipped: BTreeMap<String, Vec<StepId>>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     tried: BTreeMap<String, u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    connect: Option<HeldConnect>,
 }
 
 fn write_choices(config: &Path, choices: Choices) -> Result<(), Refused> {
     let held = Held {
         version: 1,
         kind: choices.kind,
+        context: choices.context,
+        operator_image: choices.operator_image,
         name: choices.name,
         name_free: choices.name_free,
         pool: choices.pool,
         skipped: choices.skipped,
         tried: choices.tried,
+        connect: choices.connect.map(|chosen| HeldConnect {
+            route: chosen.route,
+            identity: chosen.identity.map(|path| path.display().to_string()),
+            trusted: chosen.trusted.map(|pin| pin.to_json()),
+        }),
     };
     let text = serde_json::to_string_pretty(&held)
         .map_err(|why| Refused::Other(format!("your Pool setup choices: {why}")))?;
@@ -1351,6 +1860,140 @@ pub fn choose_kind(config: &Path, kind: Kind) -> Result<(), Refused> {
     let _locked = runners::lock(config);
     let mut choices = read_choices(config)?;
     choices.kind = Some(kind);
+    // Another kind on Where forgets the machine Connect read.
+    if kind != Kind::RemoteDocker {
+        choices.connect = None;
+    }
+    write_choices(config, choices)
+}
+
+/// **Keeps the machine picked or typed on Connect** (#6266), or forgets it (`None`): never a pin,
+/// which only [`trusted`] keeps. Refused for an address too long to be one.
+pub fn choose_machine(
+    config: &Path,
+    route: Option<&str>,
+    identity: Option<&Path>,
+) -> Result<(), Refused> {
+    let route = route.map(str::trim).filter(|route| !route.is_empty());
+    if route.is_some_and(|route| route.len() > 512) {
+        return Err(Refused::Other(
+            "that address is too long to be a machine's".to_owned(),
+        ));
+    }
+    // A key file is kept only with a route it can sign in to (a Podman connection's, #6269).
+    let identity = match (route, identity) {
+        (Some(route), Some(identity)) => {
+            connecting::route_of(route, Some(identity))
+                .map_err(|finding| Refused::Other(connect_said(&finding)))?;
+            Some(identity.to_path_buf())
+        }
+        _ => None,
+    };
+    let _locked = runners::lock(config);
+    let mut choices = read_choices(config)?;
+    choices.kind = Some(Kind::RemoteDocker);
+    choices.connect = route.map(|route| Chosen {
+        route: route.to_owned(),
+        identity,
+        trusted: None,
+    });
+    write_choices(config, choices)
+}
+
+/// **Forgets the machine Connect read** (#6266), once a pool is made on it.
+pub fn forget_machine(config: &Path) -> Result<(), Refused> {
+    let _locked = runners::lock(config);
+    let mut choices = read_choices(config)?;
+    if choices.connect.take().is_some() {
+        write_choices(config, choices)?;
+    }
+    Ok(())
+}
+
+/// **Keeps what the person trusted on Connect** (#6266): the route with its socket, and the pin
+/// the Pool step's pool is made with.
+pub fn trusted(config: &Path, remote: &crate::runners::Remote) -> Result<(), Refused> {
+    let _locked = runners::lock(config);
+    let mut choices = read_choices(config)?;
+    choices.kind = Some(Kind::RemoteDocker);
+    choices.connect = Some(Chosen {
+        route: remote.route.spelled(),
+        identity: remote.route.identity().map(Path::to_path_buf),
+        trusted: Some(remote.pin.clone()),
+    });
+    write_choices(config, choices)
+}
+
+/// **Keeps that the person chose their team's cluster on Where, through kubeconfig context
+/// `context`** (#4492): its name alone, nothing of what it signs in with. Refused for a name no
+/// context could have.
+pub fn choose_cluster(config: &Path, context: &str) -> Result<(), Refused> {
+    if !crate::clusterpool::is_context(context) {
+        return Err(Refused::Other(format!(
+            "\"{}\" isn't a kubeconfig context's name",
+            crate::shown::short(context)
+        )));
+    }
+    let _locked = runners::lock(config);
+    let mut choices = read_choices(config)?;
+    choices.kind = Some(Kind::Cluster);
+    choices.context = Some(context.to_owned());
+    write_choices(config, choices)
+}
+
+/// **Applies part `part` of the install to the cluster chosen on Where** (#4493), with the
+/// person's own sign-in through `kubectl`, on Install's own button. Refused where no cluster was
+/// chosen, so nothing is applied to a context the person didn't pick.
+pub fn install_part(
+    config: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    part: install::PartId,
+) -> Result<(), Refused> {
+    let choices = read_choices(config)?;
+    let (Some(Kind::Cluster), Some(context)) = (choices.kind, choices.context.as_deref()) else {
+        return Err(Refused::Other(
+            "nothing was applied: choose your team's cluster on Where first".to_owned(),
+        ));
+    };
+    install::apply(
+        &kubectl.clone().with_context(context),
+        part,
+        choices.operator_image.as_deref(),
+    )
+}
+
+/// **Makes the Pool `name` in the cluster chosen on Where** (#4494), of runner image `image` by
+/// digest, with the person's own sign-in, on the Pool step's own button. Refused where no
+/// cluster was chosen.
+pub fn create_cluster_pool(
+    config: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    name: &str,
+    image: &str,
+) -> Result<(), Refused> {
+    let choices = read_choices(config)?;
+    let (Some(Kind::Cluster), Some(context)) = (choices.kind, choices.context.as_deref()) else {
+        return Err(Refused::Other(
+            "nothing was made: choose your team's cluster on Where first".to_owned(),
+        ));
+    };
+    cluster::create_pool(&kubectl.clone().with_context(context), name, image)
+}
+
+/// **Keeps the cluster operator's image named under Install's Options** (#4493), or none. Refused
+/// for an image not named by its digest, so the operator runs only what was checked.
+pub fn choose_operator_image(config: &Path, image: Option<&str>) -> Result<(), Refused> {
+    if let Some(image) = image
+        && !install::is_by_digest(image)
+    {
+        return Err(Refused::Other(format!(
+            "name the operator's image by its digest, {}@sha256: and 64 hex digits",
+            install::OPERATOR_REPOSITORY
+        )));
+    }
+    let _locked = runners::lock(config);
+    let mut choices = read_choices(config)?;
+    choices.operator_image = image.map(str::to_owned);
     write_choices(config, choices)
 }
 
@@ -1369,11 +2012,25 @@ pub fn choose_name(config: &Path, name: Option<&str>) -> Result<(), Refused> {
     write_choices(config, choices)
 }
 
+/// The names of the pools this machine keeps, Docker's and clusters' (#4494).
+fn kept_pools(config: &Path) -> Result<Vec<String>, Refused> {
+    let mut names: Vec<String> = runners::pools(config)?
+        .iter()
+        .map(|pool| pool.name().to_owned())
+        .collect();
+    names.extend(
+        runners::cluster_pools(config)?
+            .iter()
+            .map(|pool| pool.name().to_owned()),
+    );
+    Ok(names)
+}
+
 /// **Keeps that this setup goes on with pool `name`**, once it has made it. Refused for a pool
 /// this machine doesn't keep.
 pub fn choose_pool(config: &Path, name: &str) -> Result<(), Refused> {
     let _locked = runners::lock(config);
-    if !runners::pools(config)?.iter().any(|one| one.name() == name) {
+    if !kept_pools(config)?.iter().any(|one| one == name) {
         return Err(Refused::Other(format!(
             "there is no pool named {name} on this machine"
         )));
@@ -1382,6 +2039,8 @@ pub fn choose_pool(config: &Path, name: &str) -> Result<(), Refused> {
     choices.pool = Some(name.to_owned());
     choices.name = None;
     choices.name_free = false;
+    // What Connect kept is the pool's now (#6266).
+    choices.connect = None;
     write_choices(config, choices)
 }
 
@@ -1393,6 +2052,8 @@ pub struct Resumed {
     pub name: Option<String>,
     /// The pool was made by hand, from the name typed, and purlis noticed.
     pub noticed: bool,
+    /// The name a new pool is recommended: one no pool here has.
+    pub recommended: String,
 }
 
 /// **Where the person stopped**: the setup of the pool it made where that is still kept, else of a
@@ -1400,27 +2061,113 @@ pub struct Resumed {
 ///
 /// A name typed never picks a pool that was already there: only one that came after it does.
 pub fn resumed(here: &Here<'_>) -> Result<Resumed, Refused> {
+    resumed_pressed(here, None)
+}
+
+/// **[`resumed`], with what a press of Connect just found** laid over Connect's facts (#6266).
+pub fn resumed_pressed(here: &Here<'_>, pressed: Option<Pressed>) -> Result<Resumed, Refused> {
     let choices = read_choices(here.config)?;
-    let kept = runners::pools(here.config)?;
-    let is_kept = |name: &&str| kept.iter().any(|pool| pool.name() == *name);
-    let chosen = choices.pool.as_deref().filter(is_kept);
-    let by_hand = choices
-        .name
-        .as_deref()
-        .filter(|_| chosen.is_none() && choices.name_free)
-        .filter(is_kept);
-    let mut setup = read(here, chosen.or(by_hand))?;
-    let noticed = by_hand.is_some();
+    let kept = kept_pools(here.config)?;
+    let on = pool_of(&choices, &kept);
+    let mut setup = read_pressed(here, on, pressed)?;
+    let noticed = on.is_some() && on != choices.pool.as_deref();
+    let recommended = recommended_name(&kept);
     setup.others = kept
-        .iter()
-        .map(|pool| pool.name().to_owned())
+        .into_iter()
         .filter(|name| setup.pool.as_ref() != Some(name))
         .collect();
     Ok(Resumed {
         setup,
         name: choices.name,
         noticed,
+        recommended,
     })
+}
+
+/// **What Add a pool found** ([`start_adding`], #6256).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Adding {
+    /// Nothing unfinished: setup starts at its first step, nothing filled in.
+    New,
+    /// A new pool's setup was started and not finished: setup goes on with it, and says so.
+    Continuing,
+}
+
+/// The pool a setup is on, from what was chosen: the one it made where that is still kept, else
+/// one made since, by hand, under the name typed ([`resumed`]).
+fn pool_of<'a>(choices: &'a Choices, kept: &[String]) -> Option<&'a str> {
+    let is_kept = |name: &&str| kept.iter().any(|pool| pool == name);
+    let chosen = choices.pool.as_deref().filter(is_kept);
+    chosen.or_else(|| {
+        choices
+            .name
+            .as_deref()
+            .filter(|_| choices.name_free)
+            .filter(is_kept)
+    })
+}
+
+/// **Add a pool: a new pool's setup, unless one was started and not finished** (#6256). A setup
+/// is finished once a real chat started on its pool (Try it's proof, [`tried`]): that pool's
+/// setup is then reached from its own Open setup, never from Add. Read from what is kept alone,
+/// so Docker being down never makes a finished setup look unfinished.
+///
+/// Starting new forgets what this setup chose, and nothing of any pool's: each pool keeps its
+/// skips and its proof.
+pub fn start_adding(config: &Path) -> Result<Adding, Refused> {
+    let _locked = runners::lock(config);
+    let choices = read_choices(config)?;
+    let kept = kept_pools(config)?;
+    let unfinished = match pool_of(&choices, &kept) {
+        Some(pool) => !choices.tried.contains_key(pool),
+        None => choices.name.is_some(),
+    };
+    if unfinished {
+        return Ok(Adding::Continuing);
+    }
+    forget_the_new_one(config, choices)?;
+    Ok(Adding::New)
+}
+
+/// **Start over**: forgets the unfinished setup, so the next read is a new pool's from its first
+/// step. A pool it made stays, with what was chosen for it.
+pub fn start_over(config: &Path) -> Result<(), Refused> {
+    let _locked = runners::lock(config);
+    let choices = read_choices(config)?;
+    forget_the_new_one(config, choices)
+}
+
+/// Forgets the kind, the context, the name and the pool this setup chose, writing only where one
+/// was. The operator's image stays: it names what the person checked, whatever setup is next.
+fn forget_the_new_one(config: &Path, choices: Choices) -> Result<(), Refused> {
+    if choices.kind.is_none()
+        && choices.context.is_none()
+        && choices.name.is_none()
+        && choices.pool.is_none()
+    {
+        return Ok(());
+    }
+    write_choices(
+        config,
+        Choices {
+            kind: None,
+            context: None,
+            name: None,
+            name_free: false,
+            pool: None,
+            ..choices
+        },
+    )
+}
+
+/// **The name a new pool is recommended** (#6256): `docker`, else the first `docker-<n>` no pool
+/// here has.
+fn recommended_name(kept: &[String]) -> String {
+    let taken = |name: &str| kept.iter().any(|pool| pool == name);
+    std::iter::once("docker".to_owned())
+        .chain((2..).map(|n| format!("docker-{n}")))
+        .find(|name| !taken(name))
+        .unwrap_or_default()
 }
 
 /// **This machine's `docker`**, where it has one, found as a pool's is.
@@ -1440,7 +2187,7 @@ pub fn skip(config: &Path, pool: &str, step: StepId) -> Result<(), Refused> {
         )));
     }
     let _locked = runners::lock(config);
-    if !runners::pools(config)?.iter().any(|one| one.name() == pool) {
+    if !kept_pools(config)?.iter().any(|one| one == pool) {
         return Err(Refused::Other(format!(
             "there is no pool named {pool} on this machine"
         )));
@@ -1457,7 +2204,7 @@ pub fn skip(config: &Path, pool: &str, step: StepId) -> Result<(), Refused> {
 /// on. Refused for a pool this machine doesn't keep.
 pub fn tried(config: &Path, pool: &str, at: u64) -> Result<(), Refused> {
     let _locked = runners::lock(config);
-    if !runners::pools(config)?.iter().any(|one| one.name() == pool) {
+    if !kept_pools(config)?.iter().any(|one| one == pool) {
         return Err(Refused::Other(format!(
             "there is no pool named {pool} on this machine"
         )));

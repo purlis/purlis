@@ -8,16 +8,28 @@ import {
   commands,
   type PlaneId,
   type PoolSetupAction,
+  type PoolSetupContexts,
   type PoolSetupShown,
   type PoolSetupStep,
 } from "./bindings";
 import { Notice } from "./Notice";
-import { Action, SeeWhat, StepHead } from "./poolsetup/parts";
+import { CheckStep, ClusterPoolStep, ContextOptions, InstallStep } from "./poolsetup/ClusterSteps";
+import { ConnectStep } from "./poolsetup/ConnectStep";
+import { Action, Recommended, Say, SeeWhat, StepHead } from "./poolsetup/parts";
 import { IdentityStep } from "./poolsetup/IdentityStep";
 import { NOTHING_CHOSEN, PoolStep, type Chosen } from "./poolsetup/PoolStep";
 import { SignInsStep } from "./poolsetup/SignInsStep";
 import { TryStep } from "./poolsetup/TryStep";
+import {
+  readReleaseImage,
+  startANewPoolSetup,
+  startPoolSetupOver,
+  usePoolSetupStart,
+} from "./pools";
+import { Button } from "./ui/button/Button";
 import { Card } from "./ui/card/Card";
+import { OptionCard, OptionCards } from "./ui/choice/Radio";
+import { Server } from "lucide-react";
 import { STEP_STATES, StepList, type StepState } from "./ui/steps/Steps";
 
 /**
@@ -36,6 +48,12 @@ import { STEP_STATES, StepList, type StepState } from "./ui/steps/Steps";
  * **Each step has two more levels** (#4481, Q30): Options, with every setting and the recommended
  * value marked, and See what this does, with the commands the button runs ({@link SeeWhat}). A pool
  * made by hand under the name typed is noticed, and setup follows it.
+ *
+ * **Add a pool… starts a new pool's setup** (#6256): from its first step, the name empty and one
+ * no pool has recommended. A new pool's setup started and not finished is gone on with instead,
+ * and the tab says so, with Start over. A finished pool's setup is reached only from its own Open
+ * setup, and its last screen offers Add another pool. Each start draws the tab from its first
+ * read ({@link usePoolSetupStart}).
  *
  * Every step has its screen. Agent identity sets one up with the flow the Agent identity tab uses
  * (#4490). Try it ends setup on a real chat started on the pool (#4483), and its last screen opens
@@ -82,21 +100,38 @@ const WHERE_TITLE = "Where should your chats run?";
 const WHERE_LEAD =
   "Right now your chats run directly on this machine. A pool gives each chat a separate machine, so it can work on its own.";
 
-/** The Where step: what purlis found of Docker, and the one thing to do about it. */
+/**
+ * The Where step: what purlis found of Docker or of the person's cluster, the one thing to do
+ * about it, and the place purlis didn't recommend, to take instead (#4492).
+ */
 function Where({
   step,
+  kind,
+  contexts,
   onNext,
   onChose,
+  onChoseRemote,
+  onChoseCluster,
   onRecheck,
   said,
 }: {
   step: PoolSetupStep;
+  /** Where the chats of this setup run: `docker`, `cluster` or `remote-docker` (#6266). */
+  kind: string;
+  contexts: PoolSetupContexts;
   onNext: () => void;
   onChose: () => void;
+  onChoseRemote: () => void;
+  onChoseCluster: (context: string) => void;
   onRecheck: () => void;
   said: (trouble: string) => void;
 }) {
+  const [picking, pick] = useState(kind === "remote-docker" ? "remote" : "local");
   const next = step.next;
+  const [context, setContext] = useState<string | undefined>(
+    contexts.chosen ?? contexts.recommended ?? undefined,
+  );
+  const cluster = kind === "cluster";
   const press = (action: PoolSetupAction) => {
     if (action.url) void openUrl(action.url);
     else if (action.id === "start-docker") {
@@ -104,8 +139,72 @@ function Where({
         if (answer.status === "error") said(answer.error);
       });
     } else if (action.id === "use-docker") onChose();
-    else onRecheck();
+    else if (action.id === "use-cluster") {
+      const to = context ?? contexts.recommended ?? contexts.names[0];
+      if (to === undefined) said("Choose a context under Options first.");
+      else onChoseCluster(to);
+    } else onRecheck();
   };
+  const also = step.also;
+  const other = also && (
+    <Button variant="secondary" onPress={() => press(also)}>
+      {also.label}
+    </Button>
+  );
+  // **This machine, or another one with Docker** (ADR 0123 §6, #6265): offered while there is no
+  // pool, the core's own next for each.
+  if (step.other && step.state !== "attention") {
+    const local = kind === "docker" ? next : step.other;
+    const remote = kind === "remote-docker" ? next : step.other;
+    const chosen = picking === "remote" ? remote : local;
+    const here = kind === "docker" && step.state !== "attention";
+    // The core's own words for each way on, and Continue where it is already the one chosen.
+    const chosenAlready =
+      step.state === "done" && picking === (kind === "docker" ? "local" : "remote");
+    const mainLabel = chosenAlready ? "Continue" : (chosen?.label ?? "Continue");
+    return (
+      <>
+        <StepHead title={WHERE_TITLE} lead={WHERE_LEAD} />
+        <OptionCards aria-label="Where your chats run" value={picking} onChange={pick}>
+          <OptionCard
+            value="local"
+            icon={<Server size={18} />}
+            title={
+              <span className="pool-setup-choice">This machine {here && <Recommended />}</span>
+            }
+            detail="Docker on this machine runs your chats, each in its own container."
+          />
+          <OptionCard
+            value="remote"
+            icon={<Server size={18} />}
+            title={<span className="pool-setup-choice">Another machine with Docker</span>}
+            detail="A second Mac, a Linux box or a server, reached over SSH. Your chats keep running there while this machine sleeps."
+          />
+        </OptionCards>
+        {step.see && <SeeWhat text={step.see.text} note={step.see.note} />}
+        <Action
+          does={
+            step.state === "done" && picking === (kind === "docker" ? "local" : "remote")
+              ? undefined
+              : chosen?.does
+          }
+          main={mainLabel}
+          reserve={[local?.label, remote?.label, "Continue"].filter(
+            (one): one is string => one !== undefined,
+          )}
+          onMain={() => {
+            if (picking === "remote") {
+              if (kind === "remote-docker" && step.state === "done") onNext();
+              else onChoseRemote();
+            } else if (kind === "docker" && step.state === "done") onNext();
+            else onChose();
+          }}
+        >
+          {picking === "local" && other}
+        </Action>
+      </>
+    );
+  }
   // Nothing here can do it for the person: the words say what to do, and the recheck notices.
   const onlySaid = next?.id === "use-local-docker";
   return (
@@ -129,6 +228,8 @@ function Where({
         <p className="pool-setup-p">
           <strong>Chats will run on:</strong> {step.line}.
         </p>
+      ) : cluster ? (
+        <Findings step={step} />
       ) : (
         <>
           <Findings step={step} />
@@ -138,16 +239,21 @@ function Where({
           </p>
         </>
       )}
+      {cluster && step.state !== "done" && (
+        <ContextOptions contexts={contexts} value={context} onChange={setContext} />
+      )}
       {step.see && <SeeWhat text={step.see.text} note={step.see.note} />}
       {next && onlySaid ? (
-        <Action does={next.does} />
+        <Action does={next.does}>{other}</Action>
       ) : next ? (
         <Action
           does={next.does}
           main={next.label}
           icon={next.url ? <ExternalLink aria-hidden size={14} /> : undefined}
           onMain={() => press(next)}
-        />
+        >
+          {other}
+        </Action>
       ) : (
         <Action main="Continue" onMain={onNext} />
       )}
@@ -171,13 +277,7 @@ function Found({ step, onRecheck }: { step: PoolSetupStep; onRecheck: () => void
   );
 }
 
-export function PoolSetupTab({
-  plane,
-  workspace,
-  onOpenChat,
-  onOpenIdentity,
-  onOpenSettings,
-}: {
+type TabProps = {
   plane: PlaneId;
   /** The workspace the tab is filed in, where it is in one: where Try it starts its chat. */
   workspace?: string;
@@ -187,6 +287,26 @@ export function PoolSetupTab({
   onOpenIdentity?: () => void;
   /** Opens the project's Settings, where a persona's tool is allowed. */
   onOpenSettings?: () => void;
+  /** Opens Your settings, where a cluster pool is marked as the person's own (#4071). */
+  onOpenPools?: () => void;
+};
+
+export function PoolSetupTab(props: TabProps) {
+  const start = usePoolSetupStart();
+  return <PoolSetupGuide key={start.count} {...props} continuing={start.continuing} />;
+}
+
+function PoolSetupGuide({
+  plane,
+  workspace,
+  onOpenChat,
+  onOpenIdentity,
+  onOpenSettings,
+  onOpenPools,
+  continuing,
+}: TabProps & {
+  /** Add went on with a new pool's unfinished setup: the tab says so, with Start over. */
+  continuing: boolean;
 }) {
   const [read, setRead] = useState<Read>({ state: "reading" });
   const [showing, setShowing] = useState<string>();
@@ -198,6 +318,17 @@ export function PoolSetupTab({
   }>({ making: false });
   const [typed, setTyped] = useState<string>();
   const [chosen, choose] = useState<Chosen>(NOTHING_CHOSEN);
+  // The runner image this build names, for a Pool made in a cluster (#4494).
+  const [releaseImage, setReleaseImage] = useState<string>();
+  useEffect(() => {
+    let gone = false;
+    void readReleaseImage().then((read) => {
+      if (!gone && "image" in read) setReleaseImage(read.image);
+    });
+    return () => {
+      gone = true;
+    };
+  }, []);
   const reads = useRef(0);
   /** The read on its way, so a slow Docker is waited for and never asked twice at once. */
   const reading = useRef(0);
@@ -321,10 +452,49 @@ export function PoolSetupTab({
               {trouble}
             </Notice>
           )}
+          {continuing && setup.at !== null && (
+            <Say
+              tone="news"
+              title="Continuing the pool you started"
+              actions={
+                <Button
+                  onPress={() => {
+                    setTrouble(undefined);
+                    void startPoolSetupOver().then((why) => why && setTrouble(why));
+                  }}
+                >
+                  Start over
+                </Button>
+              }
+            >
+              {madePool === null
+                ? "Your choices so far are filled in. Start over to begin a new pool from the first step."
+                : `Start over to begin a new pool from the first step. Pool ${madePool} stays, in Settings, under Pools.`}
+            </Say>
+          )}
           {step?.id === "where" ? (
             <Where
+              key={setup.kind}
               step={step}
+              kind={setup.kind}
+              onChoseRemote={() => {
+                setTrouble(undefined);
+                setShowing(undefined);
+                void commands.poolSetupChooseRemoteDocker().then((answer) => {
+                  if (answer.status === "error") setTrouble(answer.error);
+                  else reread();
+                });
+              }}
+              contexts={setup.contexts}
               said={setTrouble}
+              onChoseCluster={(context) => {
+                setTrouble(undefined);
+                setShowing(undefined);
+                void commands.poolSetupChooseCluster(context).then((answer) => {
+                  if (answer.status === "error") setTrouble(answer.error);
+                  else reread();
+                });
+              }}
               onNext={() => after("where")}
               onRecheck={reread}
               onChose={() => {
@@ -336,6 +506,39 @@ export function PoolSetupTab({
                 });
               }}
             />
+          ) : step?.id === "check" ? (
+            <CheckStep step={step} onNext={() => after("check")} onRecheck={reread} />
+          ) : step?.id === "install" ? (
+            <InstallStep step={step} onNext={() => after("install")} changed={reread} />
+          ) : step?.id === "pool" && setup.kind === "cluster" ? (
+            <ClusterPoolStep
+              step={step}
+              contexts={setup.contexts}
+              image={releaseImage}
+              onNext={() => after("pool")}
+              changed={() => {
+                setShowing(undefined);
+                reread();
+              }}
+            />
+          ) : step?.id === "connect" ? (
+            <ConnectStep
+              step={step}
+              shown={setup}
+              plane={plane}
+              onShown={(now) => setRead({ state: "read", shown: now })}
+              changed={() => {
+                setShowing(undefined);
+                reread();
+              }}
+              onNext={() => after("connect")}
+            />
+          ) : step?.id === "signins" && step.next?.id === "mark-as-own" ? (
+            <>
+              <StepHead title={step.name} />
+              <Findings step={step} />
+              <Action does={step.next.does} main={step.next.label} onMain={onOpenPools} />
+            </>
           ) : step?.id === "pool" ? (
             <PoolStep
               step={step}
@@ -385,6 +588,7 @@ export function PoolSetupTab({
                 reread();
               }}
               onGo={(id) => setShowing(id)}
+              onAddAnother={() => void startANewPoolSetup()}
               onOpenChat={(triedIn) => onOpenChat?.(madePool, triedIn ?? workspace)}
             />
           ) : (

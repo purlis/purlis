@@ -25,7 +25,7 @@ import type {
 import { forgetShown, windowShown } from "./test-shown";
 import { stripNamed, showThePanel } from "./test-strips";
 import { offeredIn, pickIn, selectNamed } from "./ui/select/select.testkit";
-import { cellsOf, tipInTable } from "./ui/table/table.testkit";
+import { cellsOf, findGrid, tipInTable } from "./ui/table/table.testkit";
 
 /**
  * **The Dispatches tab** (#1452) against the whole window: it is offered from the Sessions
@@ -302,7 +302,7 @@ const selected = () => within(strip()).getByRole("tab", { selected: true }).text
 async function opened(): Promise<HTMLElement> {
   const panel = await showThePanel("Sessions");
   await userEvent.click(await within(panel).findByRole("button", { name: "Open dispatches" }));
-  return screen.findByRole("grid", { name: "Dispatches" });
+  return findGrid(screen, "Dispatches");
 }
 
 /** The tasks the table lists, top to bottom. */
@@ -367,7 +367,7 @@ describe("the Dispatches tab", () => {
     await userEvent.type(within(palette).getByRole("combobox"), "dispatches");
     await userEvent.click(await within(palette).findByRole("option", { name: /Open dispatches/ }));
 
-    expect(await screen.findByRole("grid", { name: "Dispatches" })).toBeInTheDocument();
+    expect(await findGrid(screen, "Dispatches")).toBeInTheDocument();
     expect(selected()).toContain("Dispatches");
   });
 

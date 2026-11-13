@@ -1047,6 +1047,10 @@ mod drawn_looks_tests;
 mod laid_grounds_tests;
 
 #[cfg(test)]
+#[path = "allow_kept_tests.rs"]
+mod allow_kept_tests;
+
+#[cfg(test)]
 #[path = "hot_count_tints_tests.rs"]
 mod hot_count_tints_tests;
 #[cfg(test)]
@@ -1375,6 +1379,70 @@ fn shown_in(states: &[State]) -> String {
 /// as each shows on every ground the family is drawn on, the nearest ground counting, and the
 /// edges where they stand out. Two pairs drawn alike are measured once.
 pub(super) fn allow_from_primary(theme: &ResolvedTheme) -> Vec<AllowLook> {
+    let key: Vec<String> = allow_reads()
+        .iter()
+        .map(|token| theme.value(token).to_owned())
+        .collect();
+    if let Some(found) = ALLOW_KEPT.with(|kept| kept.borrow().get(&key).cloned()) {
+        return found;
+    }
+    let found = allow_from_primary_measured(theme);
+    ALLOW_KEPT.with(|kept| {
+        let mut kept = kept.borrow_mut();
+        if kept.len() >= MOST_ALLOW_KEPT {
+            kept.clear();
+        }
+        kept.insert(key, found.clone());
+    });
+    found
+}
+
+/// How many sets of [`allow_reads`]' values a thread keeps [`allow_from_primary`]'s answer for.
+const MOST_ALLOW_KEPT: usize = 4096;
+
+thread_local! {
+    /// What [`allow_from_primary`] answered, by the values of every token it reads
+    /// ([`allow_reads`]) (#3597): a hold measures it at each of 360 degrees, and a walk's points
+    /// and its rounds draw the same few fills and grounds again and again.
+    static ALLOW_KEPT: std::cell::RefCell<rustc_hash::FxHashMap<Vec<String>, Vec<AllowLook>>> =
+        std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+}
+
+/// **Every token [`allow_from_primary`] reads of a theme**: the grounds of each family with an
+/// answer that grants and the grounds a wash among them is laid on ([`grounds`]), and the fill
+/// and edge of each look of Allow and the primary ([`look_apart`] without the words). The pairs
+/// are the defaults', no theme's, so the set is found once.
+fn allow_reads() -> &'static [&'static str] {
+    static READS: OnceLock<Vec<&'static str>> = OnceLock::new();
+    READS.get_or_init(|| {
+        let mut reads: Vec<&'static str> = Vec::new();
+        for (family, pairs) in allow_pairs() {
+            for ground in family.grounds {
+                reads.push(ground);
+                reads.extend(
+                    WASH_LAID_ON
+                        .iter()
+                        .filter(|(wash, _)| wash == ground)
+                        .flat_map(|(_, under)| under.iter().copied()),
+                );
+            }
+            for one in pairs {
+                reads.extend([
+                    one.allow.fill,
+                    one.allow.border,
+                    one.primary.fill,
+                    one.primary.border,
+                ]);
+            }
+        }
+        reads.sort_unstable();
+        reads.dedup();
+        reads
+    })
+}
+
+/// [`allow_from_primary`], measured.
+fn allow_from_primary_measured(theme: &ResolvedTheme) -> Vec<AllowLook> {
     let mut found = Vec::new();
     for (family, pairs) in allow_pairs() {
         let on = grounds(theme, family);
@@ -4050,9 +4118,17 @@ const STANDS_ON: &[(&str, &[&str])] = &[
     ("card-button", &["badge"]),
     ("code", &["tooltip"]),
     ("combobox", &["tooltip"]),
+    // A popover on a dialog: beside a palette row (#6214, the closed chat's card).
     (
         "dialog",
-        &["button", "field", "list", "text-input", "tooltip"],
+        &[
+            "button",
+            "field",
+            "list",
+            "popover",
+            "text-input",
+            "tooltip",
+        ],
     ),
     (
         "list",
@@ -4146,9 +4222,11 @@ const STANDS_ON: &[(&str, &[&str])] = &[
             "view-nav",
         ],
     ),
+    // A badge on a popover: a closed chat's card says its outcome in one (#6214).
     (
         "popover",
         &[
+            "badge",
             "button",
             "field",
             "menu",
@@ -4190,6 +4268,7 @@ const STANDS_ON: &[(&str, &[&str])] = &[
             "button",
             "card",
             "checkbox",
+            "disclosure",
             "field",
             "message",
             "notice",

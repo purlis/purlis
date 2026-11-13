@@ -47,6 +47,7 @@ mod browserproof;
 mod browsers;
 mod changes;
 mod chatbrowsers;
+mod chatcard;
 mod chatevents;
 mod chatmoves;
 mod chats;
@@ -55,6 +56,7 @@ mod clonevouch;
 mod createproject;
 mod curation;
 mod layout;
+mod pane_links;
 mod questiontrail;
 // The Devices view (#2052).
 mod clusterpools;
@@ -99,6 +101,7 @@ mod mainwatch;
 mod personaskills;
 mod regenerate;
 mod routergrade;
+mod scriptless;
 mod signingsetup;
 mod signinwatch;
 mod skillchange;
@@ -1374,7 +1377,8 @@ async fn workspace_repos(
 /// mistake.
 ///
 /// On a blocking thread, because the plane-root alert asks git for a status per project and a
-/// window that waited on eight of them would miss its frame.
+/// window that waited on eight of them would miss its frame; each project read beside the
+/// others, from its kept standing (H6c).
 #[tauri::command]
 #[specta::specta]
 async fn alerts_everywhere(
@@ -1390,10 +1394,22 @@ async fn alerts_everywhere(
             Some((plane, root))
         })
         .collect();
+    // Each project on a thread of its own (H6c): one busy project's git standing no longer holds
+    // every project after it. Answered in the order the projects were listed.
     tauri::async_runtime::spawn_blocking(move || {
-        held.into_iter()
-            .map(|(plane, root)| alerts::of(plane, &root))
-            .collect()
+        std::thread::scope(|scope| {
+            let reading: Vec<_> = held
+                .iter()
+                .map(|(plane, root)| scope.spawn(move || alerts::of(plane.clone(), root)))
+                .collect();
+            reading
+                .into_iter()
+                .map(|one| {
+                    one.join()
+                        .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+                })
+                .collect()
+        })
     })
     .await
     .map_err(|err| format!("reading the alerts did not finish: {err}"))
@@ -3904,7 +3920,9 @@ pub fn run() {
         // No webview navigates off the app, whatever a page it draws links to (FM-2 review).
         .plugin(navguard::plugin())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_notification::init())
+        // Its commands and setup, but no page script in any webview (#6120): purlis sends
+        // notifications from Rust, and an artifact's page would run the shim its ACL refuses.
+        .plugin(scriptless::notification())
         // Registered in every build so a broken updater config fails CI's app build, and
         // inert until asked: nothing checks unless `updates::watch` or a command does.
         .plugin(tauri_plugin_updater::Builder::new().build());
@@ -3929,6 +3947,7 @@ pub fn run() {
         .manage(artifacts::Artifacts::default())
         // The links its pages followed, waiting on the person (#5956, ADR 0122 §5).
         .manage(artifact_links::Links::default())
+        .manage(pane_links::PaneLinkAsks::default())
         .register_uri_scheme_protocol(purlis_core::artifact::serve::SCHEME, |ctx, request| {
             artifacts::serve(ctx.app_handle(), ctx.webview_label(), &request)
         })
@@ -5014,6 +5033,10 @@ pub fn run() {
                 if let Some(host) = app.try_state::<sessionhost::SessionHost>() {
                     host.end();
                 }
+                // Once no chat links over them: every SSH forward to a pool on another machine
+                // ends now, with nothing left to the other machine to end (ADR 0123 §8, as
+                // amended 2026-11-12).
+                purlis_core::sshroute::forward::let_go_of_all();
                 // A secret a vault's Copy put on the clipboard does not outlive the app: its
                 // clear was waiting on a timer that ends here.
                 app.state::<vaults::SystemClipboard>().clear_at_exit();

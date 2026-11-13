@@ -47,7 +47,7 @@ export function DoorPage({
           </Button>
         )}
         {/* `-1`: reached by the page appearing, never by Tab, which goes on to the acts. */}
-        <h1 id={id} tabIndex={-1} ref={heading}>
+        <h1 id={id} className="ui-text-title" tabIndex={-1} ref={heading}>
           {title}
         </h1>
       </header>
@@ -74,7 +74,7 @@ export function Launcher({ side, children }: { side?: ReactNode; children: React
     <section className="welcome" aria-label="purlis">
       <div className="welcome-side">
         <div className="welcome-side-in">
-          <p className="welcome-brand">purlis</p>
+          <p className="welcome-brand ui-text-title">purlis</p>
           {side}
         </div>
       </div>

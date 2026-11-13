@@ -809,13 +809,19 @@ pub(crate) fn shared_by(held: &Held, asker: u32) -> Vec<SharedFolder> {
 /// change cannot be told apart afterwards.
 #[tauri::command]
 #[specta::specta]
-pub(crate) fn tasks_sharing_a_folder(
+///
+/// Off the window's thread: every open task's folder is resolved on the disk, once for each
+/// folder shared (H6b).
+pub(crate) async fn tasks_sharing_a_folder(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     session: u32,
 ) -> Result<Vec<SharedFolder>, String> {
     let held = planes.held(&plane)?;
-    Ok(shared_by(&held, session))
+    crate::off_the_window("reading which tasks share a folder", move || {
+        Ok(shared_by(&held, session))
+    })
+    .await
 }
 
 /// What the dialog asking for a task from chat `session`'s tab says before it starts one at
@@ -848,14 +854,20 @@ pub(crate) fn sharing_before_asking(
 /// own, of which nothing is said. It starts nothing and changes nothing.
 #[tauri::command]
 #[specta::specta]
-pub(crate) fn task_folder_shared(
+///
+/// Off the window's thread: the place is read from the workspace and the open tasks' folders
+/// resolved on the disk (H6b).
+pub(crate) async fn task_folder_shared(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     session: u32,
     place: Option<String>,
 ) -> Result<Option<String>, String> {
     let held = planes.held(&plane)?;
-    Ok(sharing_before_asking(&held, session, place.as_deref()))
+    crate::off_the_window("reading whether a task's folder is shared", move || {
+        Ok(sharing_before_asking(&held, session, place.as_deref()))
+    })
+    .await
 }
 
 #[cfg(test)]

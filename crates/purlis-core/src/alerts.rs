@@ -332,9 +332,10 @@ pub struct Asking<'a> {
     /// The directory the asker stands in — charter's `NESTED_ORIGIN` is asked of it. The app
     /// stands in the plane it opened.
     pub standing: &'a Path,
-    /// Whether the asker holds the plane's shared standing ([`crate::planegit::shared_standing`],
-    /// FD-11): the app does, and the root's tracked dirt is read from it rather than from a
-    /// `git status` of the alerts' own. The status line is a process of its own per render,
+    /// Whether the asker holds the plane's shared standing ([`crate::planegit::kept_standing`],
+    /// FD-11): the app does, and the root's tracked dirt is read from it, answered at once from
+    /// the last standing while a newer one is read (H6c), rather than from a `git status` of the
+    /// alerts' own. The status line is a process of its own per render,
     /// where nothing is shared, and asks git itself.
     pub shared: bool,
 }
@@ -507,7 +508,7 @@ fn plane_root(root: &Path, shared: bool) -> Option<Alert> {
     // surrounding repository.
     let gitdir = git_dir(root).ok()??;
     let dirty = if shared {
-        crate::planegit::shared_standing(root).tracked
+        crate::planegit::kept_standing(root).tracked
     } else {
         tracked_dirty(root)
     };

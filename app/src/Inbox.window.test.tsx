@@ -2464,6 +2464,64 @@ describe("a secret fill (#5115)", () => {
     expect(screen.getByTestId("fill-site")).toHaveTextContent("labels API key");
     expect(screen.getByRole("button", { name: "Allow once" })).toBeInTheDocument();
   });
+
+  it("as a vault use, asks once more before it fills, and only that Allow answers (#6178)", async () => {
+    const calls = core();
+    const confirm = "Allow handing dash-api-key to a field on dash.example.test?";
+    draw([
+      {
+        session: 7,
+        ask: "secret-fill:1",
+        says: "Wants to put dash-api-key from vault qa into a field on dash.example.test",
+        options: [
+          { id: "once", label: "Allow once", allows: true, preselected: null },
+          { id: "keep", label: "Keep blocked", allows: false, preselected: null },
+        ],
+        source: "secret-fill",
+        chain: ["steward 7"],
+        answer: { via: "secret-fill", id: 1, shown: "digest" },
+        risk: {
+          class: "vault-use",
+          why: "Hands dash-api-key from vault qa to a field on dash.example.test",
+          confirm,
+        },
+      },
+    ]);
+    read();
+    await userEvent.click(screen.getByRole("button", { name: "Allow once" }));
+    const again = screen.getByRole("group", { name: confirm });
+    expect(calls.some(({ cmd }) => cmd === "answer_secret_fill")).toBe(false);
+
+    // The question just drawn is read before its Allow acts (ADR 0097).
+    read();
+    await userEvent.click(within(again).getByRole("button", { name: "Allow once" }));
+    await waitFor(() => expect(calls.some(({ cmd }) => cmd === "answer_secret_fill")).toBe(true));
+  });
+
+  it("as a run with values, asks once more with the words its pressed button said (#6178)", async () => {
+    const calls = core();
+    const confirm = "Allow handing STRIPE_API_KEY to curl?";
+    draw([
+      {
+        ...runAsk(),
+        risk: {
+          class: "vault-use",
+          why: "Hands STRIPE_API_KEY from vault team to curl",
+          confirm,
+        },
+      },
+    ]);
+    read();
+    await userEvent.type(screen.getByLabelText("Value of STRIPE_API_KEY"), "s3cret");
+    await userEvent.click(screen.getByRole("button", { name: "Fill and allow once" }));
+    const again = screen.getByRole("group", { name: confirm });
+    expect(within(again).queryByRole("button", { name: "Allow once" })).toBeNull();
+    expect(calls.some(({ cmd }) => cmd === "answer_run_grant")).toBe(false);
+
+    read();
+    await userEvent.click(within(again).getByRole("button", { name: "Fill and allow once" }));
+    await waitFor(() => expect(calls.some(({ cmd }) => cmd === "answer_run_grant")).toBe(true));
+  });
 });
 
 describe("a secret ask's Remember (#5240)", () => {

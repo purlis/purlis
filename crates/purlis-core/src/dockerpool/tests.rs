@@ -1091,7 +1091,8 @@ fn a_sign_in_on_a_runner_runs_docker_with_settings_of_purliss_own_and_no_hooks()
     assert_eq!(
         line,
         format!(
-            "/usr/bin/env -u DOCKER_CONTEXT DOCKER_CONFIG=/data/purlis/docker-settings/sign-in \
+            "/usr/bin/env -u DOCKER_CONTEXT -u CONTAINER_CONNECTION \
+             DOCKER_CONFIG=/data/purlis/docker-settings/sign-in \
              DOCKER_CLI_HOOKS=false /usr/local/bin/docker --config \
              /data/purlis/docker-settings/sign-in --host unix:///var/run/docker.sock exec -it \
              --user 10001:10001 {ID} {PURLIS} profile sign-in work\n"
@@ -1225,6 +1226,60 @@ impl FakeDocker {
     pub(crate) fn set(&self, name: &str, text: &str) {
         std::fs::write(self.dir.path().join(name), text).unwrap();
     }
+}
+
+/// **A Podman on another machine reads the runner's profile there** (#6269): Podman's client
+/// sends the profile's path, not its contents, and the engine reads it on its own machine. So the
+/// profile is kept there first, over the pinned SSH, in a folder of its own beside the engine's
+/// socket, the run names that path, and the folder is removed once the run has read it.
+#[test]
+fn a_podman_on_another_machine_is_given_the_runners_profile_there() {
+    let fake = FakeDocker::new(&inspected());
+    let there = "/run/user/1000/podman/purlis-kept.Ab12Cd34";
+    let ssh_dir = tempfile::tempdir().unwrap();
+    let at = |name: &str| ssh_dir.path().join(name).display().to_string();
+    let script = format!(
+        "#!/bin/sh\necho \"$*\" >> '{log}'\ncase \"$*\" in *mktemp*) cat > '{given}'; \
+         echo '{there}/{SECCOMP_FILE}' ;; esac\n",
+        log = at("log"),
+        given = at("given"),
+    );
+    stand_in::program(ssh_dir.path(), "ssh", &script);
+    let reach = crate::sshroute::Reach {
+        ssh: ssh_dir.path().join("ssh"),
+        route: crate::sshroute::Route::parse("ssh://me@build-box/run/user/1000/podman/podman.sock")
+            .unwrap(),
+        pool: "far".to_owned(),
+        key: crate::sshroute::HostKey::parse(
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiGzfjDDJsgYLYCmdkf8Fel9sE6Ma14Y2+c33Y/qZ2n",
+        )
+        .unwrap(),
+        settings_in: fake.file_path("settings"),
+    };
+    let _ = fake.docker().reaching(reach).make(&runner());
+    let log = fake.file("log");
+    let run = log
+        .lines()
+        .find(|line| line.starts_with("run --detach"))
+        .unwrap_or_else(|| panic!("a run: {log}"));
+    assert!(
+        run.contains(&format!("seccomp={there}/{SECCOMP_FILE} ")),
+        "the run names the profile kept there: {run}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(at("given")).unwrap_or_default(),
+        SECCOMP_PROFILE,
+        "the profile is given there as it is"
+    );
+    let ssh_log = std::fs::read_to_string(at("log")).unwrap_or_default();
+    assert!(
+        ssh_log.contains("mktemp -d -p /run/user/1000/podman purlis-kept.XXXXXXXX"),
+        "kept beside the engine's socket: {ssh_log}"
+    );
+    assert!(
+        ssh_log.contains(&format!("rm -rf -- {there}")),
+        "the folder there is removed once the run has read it: {ssh_log}"
+    );
 }
 
 #[test]
@@ -2374,7 +2429,14 @@ fn rootless_podmans_runtime_config_is_held_to_the_pools_own() {
     let made = rootless_runner("measured-8364", &own);
     let (store, config) = rootless_store(&made);
     assert_eq!(
-        check_oci(&own, &made, &config, &store, Seccomp::Runners),
+        check_oci(
+            &own,
+            &made,
+            &config,
+            &store,
+            Seccomp::Runners,
+            &is_file_here
+        ),
         Ok(())
     );
     for (case, name) in [
@@ -2385,14 +2447,29 @@ fn rootless_podmans_runtime_config_is_held_to_the_pools_own() {
         let made = rootless_runner(name, &oci);
         let (store, config) = rootless_store(&made);
         assert!(
-            check_oci(&oci, &made, &config, &store, Seccomp::Runners).is_err(),
+            check_oci(
+                &oci,
+                &made,
+                &config,
+                &store,
+                Seccomp::Runners,
+                &is_file_here
+            )
+            .is_err(),
             "{case} passed"
         );
     }
     let changed = |change: &dyn Fn(&mut serde_json::Value)| {
         let mut oci = own.clone();
         change(&mut oci);
-        check_oci(&oci, &made, &config, &store, Seccomp::Runners)
+        check_oci(
+            &oci,
+            &made,
+            &config,
+            &store,
+            Seccomp::Runners,
+            &is_file_here,
+        )
     };
     // A device named for the runtime.
     assert!(
@@ -2464,17 +2541,69 @@ fn rootless_podmans_runtime_config_is_held_to_the_pools_own() {
     let elsewhere = store
         .graph_root
         .join("overlay-containers/other/userdata/config.json");
-    assert!(check_oci(&own, &made, &elsewhere, &store, Seccomp::Runners).is_err());
+    assert!(
+        check_oci(
+            &own,
+            &made,
+            &elsewhere,
+            &store,
+            Seccomp::Runners,
+            &is_file_here
+        )
+        .is_err()
+    );
     assert!(
         check_oci(
             &serde_json::json!({}),
             &made,
             &config,
             &store,
-            Seccomp::Runners
+            Seccomp::Runners,
+            &is_file_here
         )
         .is_err()
     );
+}
+
+/// **Podman's init on another machine is judged there** (#6269): `--init` binds the `catatonit`
+/// of the machine the engine runs on, so whether it is a file there is that machine's to say,
+/// not this one's, where it may be nowhere at all (a Mac) or somewhere else (another Linux).
+#[test]
+fn podmans_init_on_another_machine_is_judged_on_that_machine() {
+    let own = rootless_now("made-oci");
+    let made = rootless_runner("measured-8364", &own);
+    let (store, config) = rootless_store(&made);
+    let there = "/usr/libexec/podman-on-the-other-machine-only/catatonit";
+    assert!(!std::path::Path::new(there).exists());
+    let mut oci = own.clone();
+    oci["mounts"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "destination": "/run/podman-init",
+            "type": "bind",
+            "source": there,
+            "options": ["bind", "ro", "rprivate"],
+        }));
+    let asked = std::cell::RefCell::new(Vec::new());
+    let a_file_there = |path: &std::path::Path| {
+        asked.borrow_mut().push(path.to_path_buf());
+        path == std::path::Path::new(there)
+    };
+    assert_eq!(
+        check_oci(
+            &oci,
+            &made,
+            &config,
+            &store,
+            Seccomp::Runners,
+            &a_file_there
+        ),
+        Ok(())
+    );
+    assert_eq!(*asked.borrow(), [std::path::PathBuf::from(there)]);
+    // Nothing there, or not a file there: refused.
+    assert!(check_oci(&oci, &made, &config, &store, Seccomp::Runners, &|_| false).is_err());
 }
 
 /// A runtime config that is no file, such as a FIFO a reader would wait on for ever, is refused
@@ -2546,16 +2675,43 @@ fn rootless_podmans_runtime_config_on_the_runtimes_default_holds_a_profile() {
         .unwrap()
         .retain(|rule| rule["names"] != serde_json::json!(["pidfd_getfd"]));
     assert_eq!(
-        check_oci(&default, &made, &config, &store, Seccomp::RuntimeDefault),
+        check_oci(
+            &default,
+            &made,
+            &config,
+            &store,
+            Seccomp::RuntimeDefault,
+            &is_file_here
+        ),
         Ok(())
     );
     let mut none = own.clone();
     none["linux"].as_object_mut().unwrap().remove("seccomp");
-    assert!(check_oci(&none, &made, &config, &store, Seccomp::RuntimeDefault).is_err());
+    assert!(
+        check_oci(
+            &none,
+            &made,
+            &config,
+            &store,
+            Seccomp::RuntimeDefault,
+            &is_file_here
+        )
+        .is_err()
+    );
     // A profile that allows every call it does not name is no default of Podman's.
     let mut open = default.clone();
     open["linux"]["seccomp"]["defaultAction"] = "SCMP_ACT_ALLOW".into();
-    assert!(check_oci(&open, &made, &config, &store, Seccomp::RuntimeDefault).is_err());
+    assert!(
+        check_oci(
+            &open,
+            &made,
+            &config,
+            &store,
+            Seccomp::RuntimeDefault,
+            &is_file_here
+        )
+        .is_err()
+    );
 }
 
 /// Docker's runner is held to the runner's profile rule for rule, however its text is spaced.
@@ -2614,7 +2770,14 @@ fn rootless_podmans_compiled_profile_is_exactly_the_runners() {
     let changed = |change: &dyn Fn(&mut serde_json::Value)| {
         let mut oci = own.clone();
         change(&mut oci["linux"]["seccomp"]);
-        check_oci(&oci, &made, &config, &store, Seccomp::Runners)
+        check_oci(
+            &oci,
+            &made,
+            &config,
+            &store,
+            Seccomp::Runners,
+            &is_file_here,
+        )
     };
     assert_eq!(changed(&|_| {}), Ok(()));
     fn rules(seccomp: &serde_json::Value) -> Vec<serde_json::Value> {
@@ -2675,7 +2838,17 @@ fn rootless_podmans_compiled_profile_is_exactly_the_runners() {
     }
     let mut none = own.clone();
     none["linux"].as_object_mut().unwrap().remove("seccomp");
-    assert!(check_oci(&none, &made, &config, &store, Seccomp::Runners).is_err());
+    assert!(
+        check_oci(
+            &none,
+            &made,
+            &config,
+            &store,
+            Seccomp::Runners,
+            &is_file_here
+        )
+        .is_err()
+    );
 }
 
 /// The runner's profile is the Moby project's default, as pinned beside it byte for byte
@@ -2727,12 +2900,39 @@ fn rootless_podmans_runner_of_the_earlier_profile_is_told_apart() {
     let made = rootless_runner("measured-8364", &earlier);
     let (store, config) = rootless_store(&made);
     assert_eq!(
-        check_oci(&earlier, &made, &config, &store, Seccomp::RunnersEarlier),
+        check_oci(
+            &earlier,
+            &made,
+            &config,
+            &store,
+            Seccomp::RunnersEarlier,
+            &is_file_here
+        ),
         Ok(())
     );
-    assert!(check_oci(&earlier, &made, &config, &store, Seccomp::Runners).is_err());
+    assert!(
+        check_oci(
+            &earlier,
+            &made,
+            &config,
+            &store,
+            Seccomp::Runners,
+            &is_file_here
+        )
+        .is_err()
+    );
     let now = rootless_now("made-oci");
-    assert!(check_oci(&now, &made, &config, &store, Seccomp::RunnersEarlier).is_err());
+    assert!(
+        check_oci(
+            &now,
+            &made,
+            &config,
+            &store,
+            Seccomp::RunnersEarlier,
+            &is_file_here
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -4236,4 +4436,41 @@ fn a_container_made_the_pools_way_passes_with_every_field_its_engine_writes() {
         let passed = checked_on_its_engine(host, &full);
         assert!(passed.is_ok(), "{host}: {passed:?}");
     }
+}
+
+/// **An engine that didn't answer is never read as one with no id** (#6266): `docker info`
+/// exits 0 with its server half failed, so its errors are what is said.
+#[test]
+fn docker_infos_server_errors_are_said_and_its_id_read_only_where_it_answered() {
+    assert_eq!(
+        engine_id_in(r#"{"ID":"1c50e52b-f50b-4376-924e-1af9245eb420","ServerErrors":null}"#)
+            .unwrap(),
+        "1c50e52b-f50b-4376-924e-1af9245eb420"
+    );
+    let why = engine_id_in(
+        r#"{"ID":"","ServerErrors":["Cannot connect to the Docker daemon at unix:///x.sock"]}"#,
+    )
+    .unwrap_err();
+    assert!(
+        why.0.contains("Cannot connect to the Docker daemon"),
+        "{why}"
+    );
+    assert!(engine_id_in(r#"{"ID":""}"#).is_err());
+    assert!(engine_id_in("not json").is_err());
+}
+
+/// A Podman reached by Docker's client says so in its components (#6269): its id is drawn anew
+/// at every ask, so it is never taken as Docker's.
+#[test]
+fn a_podman_answering_dockers_client_is_told_by_its_engines_name() {
+    assert!(is_podman_engine(
+        r#"[{"Name":"Podman Engine","Version":"4.9.3","Details":{"APIVersion":"4.9.3"}}]"#
+    ));
+    assert!(!is_podman_engine(
+        r#"[{"Name":"Engine","Version":"28.0.1"},{"Name":"containerd","Version":"1.7"}]"#
+    ));
+    assert!(!is_podman_engine(""));
+    assert!(!is_podman_engine(
+        "template: :1: can't evaluate field Components"
+    ));
 }

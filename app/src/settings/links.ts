@@ -83,6 +83,11 @@ export function focusedSetting(place: string): void {
   if (was?.setting !== undefined) put(place, { group: was.group, linked: was.linked });
 }
 
+/** The setting the last link to `place` named, until a tab has focused it. */
+export function linkedSetting(place: string): string | undefined {
+  return shown.get(place)?.setting;
+}
+
 /** The window event a view sends to follow a link into Settings in its project's window: the
  *  Saving view's Notice does (NO-7, #1232), as its ways out send `WAY_OUT`. */
 export const SETTINGS_LINK = "charter-settings-link";

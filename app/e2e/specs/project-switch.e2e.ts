@@ -87,6 +87,34 @@ async function aChatIn(plane: string): Promise<number> {
       ),
     { timeout: 30_000, timeoutMsg: "the chat this spec opened never came to the front" },
   );
+  // **And its program has printed the sentinel** (#6237): a switch to this project waits for
+  // its pane to paint it, so a chat whose program never got that far is said here, with what
+  // its screen shows, and not by the switch a minute later.
+  const screen = `[data-testid="pane"][data-session="${mine}"] .xterm-rows`;
+  let shows = "";
+  await browser
+    .waitUntil(
+      async () => {
+        shows = await browser.execute(
+          (rows: string) => document.querySelector<HTMLElement>(rows)?.innerText ?? "",
+          screen,
+        );
+        return shows.includes(PAINTED);
+      },
+      { timeout: 30_000, interval: 200 },
+    )
+    .catch(async () => {
+      const running = await ask<number[]>("running_sessions", { plane });
+      const last =
+        shows
+          .split("\n")
+          .filter((line) => line.trim() !== "")
+          .at(-1) ?? "";
+      throw new Error(
+        `the chat this spec opened in ${plane} never printed ${PAINTED}: its screen ends ` +
+          `${JSON.stringify(last)}, and the project's running chats are [${running.join(", ")}]`,
+      );
+    });
   return mine;
 }
 

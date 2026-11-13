@@ -178,9 +178,11 @@ pub struct ChatSkills {
     /// The clones of its workspace it works in, by name, whose repo skills its harness reads
     /// (#3462): what the Skills view narrows a chat's repo skills to. None for a chat in no clone.
     pub repos: Vec<String>,
-    /// Why the chat gets no skills, where its harness is a declared one skills are not supported
-    /// on (SK-30): said in place of the words for a tool purlis does not know.
-    pub not_supported: Option<String>,
+    /// Why the chat is offered no skills, where that is not that it runs a tool purlis does not
+    /// know: its harness is a declared one skills are not supported on (SK-30), its runner said
+    /// none (#4218), or it is not running now (#6196). Said in place of the words for a tool purlis
+    /// does not know, which are what the list says where this is null (#6302).
+    pub none_because: Option<String>,
     /// How its router extension did at its start (SK-15b): null for a chat routed by the
     /// built-in router, which is asked nothing.
     pub routing: Option<SkillRouting>,
@@ -279,7 +281,7 @@ impl ChatSkills {
             own: None,
             budget: None,
             repos: Vec::new(),
-            not_supported: None,
+            none_because: None,
             routing: None,
             missing: None,
         }
@@ -296,6 +298,16 @@ const COPIED: crate::references::Copied = crate::references::Copied {
 
 /// Why a skill is typed into no chat that runs no tool purlis knows: the words Use skill… says.
 const NO_TOOL: &str = "This chat runs no tool purlis knows, so it has no skills to use here.";
+
+/// Why a skill is typed into no chat that is no longer among the open ones (#6196): restarted,
+/// ended, or replaced on resume. It ran a tool purlis knows; what ended is its run.
+const NOT_RUNNING: &str = "This chat isn't running now, so nothing was typed. Pick the skill \
+     again in the chat's tab.";
+
+/// Why chat_skills lists no skills for a chat that is no longer among the open ones (#6196), as
+/// [`NOT_RUNNING`] says it of a pick, before anything is picked.
+const NOT_RUNNING_LISTED: &str = "This chat isn't running now, so it has no skills to offer. \
+     Open Use skill… again from the chat's tab.";
 
 /// Why a runner's chat is offered no skills where its runner did not say which it armed it with
 /// (#4218): the words Use skill… and the chip say.
@@ -388,7 +400,7 @@ fn from_its_runner(
 ) -> ChatSkills {
     let (crate::chats::RunnersWord::Said(armed), Some(harness)) = (word, harness) else {
         return ChatSkills {
-            not_supported: matches!(word, crate::chats::RunnersWord::NotSaid)
+            none_because: matches!(word, crate::chats::RunnersWord::NotSaid)
                 .then(|| NOT_SAID_BY_ITS_RUNNER.to_owned()),
             ..ChatSkills::none(true)
         };
@@ -442,7 +454,7 @@ pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSki
             twins: purlis_core::skills::twins_said(&skills.twins),
         }),
         repos: Vec::new(),
-        not_supported: None,
+        none_because: None,
         routing: None,
         missing: None,
     }
@@ -462,35 +474,35 @@ pub(crate) async fn chat_skills(
         if !purlis_core::skills::studio_on_here() {
             return Ok(ChatSkills::none(false));
         }
-        let Some(chat) = held.chats().skills_of(session) else {
-            return Ok(shown(None));
-        };
-        if let Some(word) = &chat.runners_word {
-            return Ok(from_its_runner(
-                word,
-                chat.harness,
-                chat.workspace.as_deref(),
-            ));
-        }
-        let mut shown = shown(
-            of_this_chat(&held, &chat)
-                .map(|(skills, _)| skills)
-                .as_ref(),
-        );
-        if shown.known {
-            shown.repos = repos_of_the_chat(&held, &chat);
-            shown.routing = chat
-                .start
-                .routed
-                .as_deref()
-                .map(|routed| SkillRouting::of(routed, chat.last_prompt.as_ref()));
-            shown.missing = held.chats().skills_missing(session);
-        } else {
-            shown.not_supported = chat.not_supported.clone();
-        }
-        Ok(shown)
+        Ok(skills_shown(&held, session))
     })
     .await
+}
+
+/// [`chat_skills`] of `held`'s chat `session`, with the Skill studio on.
+fn skills_shown(held: &Held, session: u32) -> ChatSkills {
+    let Some(chat) = held.chats().skills_of(session) else {
+        return ChatSkills {
+            none_because: Some(NOT_RUNNING_LISTED.to_owned()),
+            ..shown(None)
+        };
+    };
+    if let Some(word) = &chat.runners_word {
+        return from_its_runner(word, chat.harness, chat.workspace.as_deref());
+    }
+    let mut shown = shown(of_this_chat(held, &chat).map(|(skills, _)| skills).as_ref());
+    if shown.known {
+        shown.repos = repos_of_the_chat(held, &chat);
+        shown.routing = chat
+            .start
+            .routed
+            .as_deref()
+            .map(|routed| SkillRouting::of(routed, chat.last_prompt.as_ref()));
+        shown.missing = held.chats().skills_missing(session);
+    } else {
+        shown.none_because = chat.not_supported.clone();
+    }
+    shown
 }
 
 /// **Types skill `skill` of chat `session`'s set into it, in its harness's syntax, with `values`
@@ -516,19 +528,33 @@ pub(crate) fn use_skill(
     if !purlis_core::skills::studio_on_here() {
         return Err("The Skill studio is not turned on on this machine.".to_owned());
     }
+    skill_used(&held, session, &skill, &values, &|text| {
+        clipboard.put_text(text)
+    })
+}
+
+/// [`use_skill`] in `held`'s chat `session`, with the Skill studio on and `copy` as the
+/// clipboard.
+fn skill_used(
+    held: &std::sync::Arc<Held>,
+    session: u32,
+    skill: &str,
+    values: &[String],
+    copy: &dyn Fn(&str) -> Result<(), String>,
+) -> Result<Handed, String> {
     let chat = held
         .chats()
         .skills_of(session)
-        .ok_or_else(|| NO_TOOL.to_owned())?;
-    let (skills, salt) = of_this_chat(&held, &chat).ok_or_else(|| {
+        .ok_or_else(|| NOT_RUNNING.to_owned())?;
+    let (skills, salt) = of_this_chat(held, &chat).ok_or_else(|| {
         match &chat.runners_word {
             Some(crate::chats::RunnersWord::NotSaid) => Some(NOT_SAID_BY_ITS_RUNNER.to_owned()),
             _ => chat.not_supported.clone(),
         }
         .unwrap_or_else(|| NO_TOOL.to_owned())
     })?;
-    let typing = typing_of(&skills, salt.as_ref(), &skill, &values)?;
-    typed_and_held(&held, session, typing, &|text| clipboard.put_text(text))
+    let typing = typing_of(&skills, salt.as_ref(), skill, values)?;
+    typed_and_held(held, session, typing, copy)
 }
 
 /// What Use skill… types to start `skill` of `skills` with `values`, its text digested under

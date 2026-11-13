@@ -88,7 +88,7 @@ const SKILLS: ChatSkills = {
   skills: [SKILL],
   budget: null,
   repos: [],
-  not_supported: null,
+  none_because: null,
   routing: null,
   missing: null,
 };
@@ -109,8 +109,9 @@ const RUNNING: Moved = {
 const WAITING: Moved = { ...RUNNING, state: "waiting", moved_at: 2, sequence: 2 };
 
 /** The core: chat 4 owed a restart, which starts it again as session 9; the studio on. */
-/** The sentence the core refuses a pick with for a session no longer among its open chats. */
-const NO_TOOL = "This chat runs no tool purlis knows, so it has no skills to use here.";
+/** What the core refuses a pick with for a session no longer among its open chats (#6196). */
+const NOT_RUNNING =
+  "This chat isn't running now, so nothing was typed. Pick the skill again in the chat's tab.";
 
 /** `held`, where given, is what the first `use_skill` waits for before the core refuses it. */
 function core(held?: Promise<void>) {
@@ -141,7 +142,7 @@ function core(held?: Promise<void>) {
       if (cmd === "use_skill") {
         picks += 1;
         if (held !== undefined && picks === 1)
-          return held.then(() => Promise.reject(new Error(NO_TOOL)));
+          return held.then(() => Promise.reject(new Error(NOT_RUNNING)));
         return { kind: "typed", text: "/deploy" };
       }
       if (cmd === "about_charter") return new Promise(() => {});

@@ -489,7 +489,10 @@ fn asked_about_the_login(
     gone: &dyn Fn() -> bool,
     finds: FindsForm<'_>,
 ) -> Option<Answer> {
-    let Browsing::LogIn { login, suggested } = &browse.asked else {
+    let Browsing::LogIn {
+        login, suggested, ..
+    } = &browse.asked
+    else {
         return None;
     };
     let suggested = suggested.as_ref()?;
