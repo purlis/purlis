@@ -2074,6 +2074,37 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "mariadb-dumpslow",
     "mysql_find_rows",
     "mariadb-find-rows",
+    // A host value that reaches the client's flags or a DBI address (#6185): `mysqlaccess` splits
+    // its command line, `--host=` and the host among it, on white space into the client's
+    // arguments; `mytop`, `mysql_convert_table_format` and `mysql_setpermission` join the host
+    // into a `DBI:MariaDB:` address its driver splits at each `:` or `;` into attributes, among them
+    // a file of settings the client library reads. Percona Server's `ps-admin` `source`s its
+    // `--config-file` as a shell file and expands its user and host unquoted into the client's
+    // command line.
+    "mysqlaccess",
+    "mariadb-access",
+    "mytop",
+    "mysql_convert_table_format",
+    "mariadb-convert-table-format",
+    "mysql_setpermission",
+    "mariadb-setpermission",
+    "ps-admin",
+    // The test suite's runners and RocksDB's hot backup (#6187): `mysqlxtest`'s script, from its
+    // `-f` or its input, runs a shell command at each `-->system`, as `mysqltest`'s does, and
+    // `mysqltest_safe_process` runs the program it is given after `--`; `myrocks_hotbackup` hands
+    // `os.system` a command its `--extra_wdt_sender_options` is formatted into, and ssh its
+    // `--destination` first. `rcmysql`, a link to the server's init script, starts the server
+    // (and is judged by its target's folder too, [`an_init_script`]). MySQL's own SLES packages
+    // link `rcmysql` to `service` instead, which runs the init script it is named, or has
+    // `systemctl` act on the unit, so every `rc*` link to it is refused by its target's name.
+    "mysqlxtest",
+    "mysqltest_safe_process",
+    "myrocks_hotbackup",
+    "rcmysql",
+    "service",
+    // Shipped with the test runners in Percona Server's packages: `mysql_keyring_encryption_test`
+    // loads `file://<--component_dir>/<--keyring>` as a component, as `mysql_migrate_keyring` does.
+    "mysql_keyring_encryption_test",
     // The client and its test built with the server inside them: what `--server-arg` hands the
     // server (`--plugin-load`, `--plugin-dir`) loads code from a file it names.
     "mysql_embedded",
@@ -2247,8 +2278,9 @@ pub fn for_run_grant(
             format!("no {name} was found outside the folders a chat may write")
         }));
     };
-    // A link may lead to one: `vimdiff` to `vim`, `editor` to `vim.basic`.
-    if not_for_a_run_grant(&file_name_of(&ready.program)) {
+    // A link may lead to one: `vimdiff` to `vim`, `editor` to `vim.basic`, `rcmysql` to the
+    // server's init script, whose file name is the client's.
+    if not_for_a_run_grant(&file_name_of(&ready.program)) || an_init_script(&ready.program) {
         return Err(runs_others(&name));
     }
     if !names(&ready, asked.program) {
@@ -2264,6 +2296,17 @@ pub fn for_run_grant(
         ));
     }
     Ok(ready)
+}
+
+/// **Whether `program` is a service's init script** (#6187): a file in an `init.d` folder
+/// (`/etc/init.d`, `/etc/rc.d/init.d`), whatever its own name. A script there starts and stops
+/// the service it is named for, and is named as the service is, so the server's is `mysql`, the
+/// client's name: judged by its name, `rcmysql start` would reach the client's row.
+fn an_init_script(program: &Path) -> bool {
+    program
+        .parent()
+        .and_then(Path::file_name)
+        .is_some_and(|folder| folder.eq_ignore_ascii_case("init.d"))
 }
 
 /// The longest variable name a person is asked to allow: it is drawn among the app's own facts.

@@ -14,8 +14,24 @@ fn window() -> crate::harness::asks::Answerer {
 
 /// `wanted` run with `asks`, on a search path of the system's own folders, as the app's would be.
 fn run_with(asker: &Asker, wanted: Wanted, asks: &Asks, within: Duration) -> Vec<Frame> {
-    crate::sandbox::tools::SEARCH_HERE
-        .with(|dirs| *dirs.borrow_mut() = Some(vec!["/usr/bin".into(), "/bin".into()]));
+    run_searching(
+        asker,
+        wanted,
+        asks,
+        within,
+        vec!["/usr/bin".into(), "/bin".into()],
+    )
+}
+
+/// [`run_with`], with its program looked for in `search`.
+fn run_searching(
+    asker: &Asker,
+    wanted: Wanted,
+    asks: &Asks,
+    within: Duration,
+    search: Vec<PathBuf>,
+) -> Vec<Frame> {
+    crate::sandbox::tools::SEARCH_HERE.with(|dirs| *dirs.borrow_mut() = Some(search));
     let (reader, _keep) = held_open();
     let wire = Wire::default();
     serve_asking(
@@ -2895,6 +2911,135 @@ fn the_perl_log_readers_run_a_file_name_ending_in_a_pipe_so_they_are_offered_no_
 #[test]
 fn innotop_loads_the_perl_plugins_its_configuration_names_so_it_is_offered_no_run_grant() {
     refused_as_running_others("innotop");
+}
+
+/// `mysqlaccess` (`mariadb-access` on Debian, #6185): it appends `--host=` and its `--rhost`
+/// value to the client's command line and splits the line on white space into the client's
+/// arguments (MariaDB's `scripts/mysqlaccess.sh`, its `Connect` and its dump of the grant
+/// tables), so a host value of `x --plugin-dir=… --default-auth=…` has the client load a plugin
+/// from a folder it names. Its prefix took it to the tools' row, which reads no `-H`.
+#[test]
+fn mysqlaccess_splits_its_host_into_the_clients_flags_so_it_is_offered_no_run_grant() {
+    for name in ["mysqlaccess", "mariadb-access"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The tools that build a Perl DBI address from their host value (#6185): `mytop`,
+/// `mysql_convert_table_format` and `mysql_setpermission` join it, unquoted, into a
+/// `DBI:MariaDB:` or `DBI:mysql:` address (MariaDB's `scripts/mytop.sh`,
+/// `scripts/mysql_convert_table_format.sh`, `scripts/mysql_setpermission.sh`), whose driver
+/// splits it at each `:` or `;` into its attributes (`parse_dsn` in DBD::MariaDB, `_OdbcParse` in
+/// DBD::mysql). A host of `x;mariadb_read_default_file=…` names a file of settings the client
+/// library reads, which can name a plugin folder and an authentication plugin from it. None of
+/// the client's own flags is in the command, so no row read the value.
+#[test]
+fn the_tools_that_put_their_host_in_a_dbi_address_are_offered_no_run_grant() {
+    for name in [
+        "mytop",
+        "mysql_convert_table_format",
+        "mariadb-convert-table-format",
+        "mysql_setpermission",
+        "mariadb-setpermission",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// Percona Server's `ps-admin` (#6185): its `--config-file` is `source`d as a shell file, and its
+/// `--user` and `--host` values are expanded unquoted into the client's command line
+/// (`scripts/ps-admin.sh`, Percona Server 8.0). Its name starts with neither `mysql` nor
+/// `mariadb`, so no row read it.
+#[test]
+fn ps_admin_runs_its_configuration_file_as_a_shell_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("ps-admin");
+}
+
+/// The test suite's runners (#6187), which MySQL's test package and Percona XtraDB Cluster's
+/// ship in the programs' folder: `mysqlxtest` reads a script, from its `-f` or its input, whose
+/// `-->system` and `-->system_in_background` run a shell command
+/// (`mysql-test/suite/x/r/mysqlxtest_help.result`, github.com/mysql/mysql-server, 8.0), as
+/// `mysqltest`'s do, and `mysqltest_safe_process` runs the program and arguments it is given
+/// after `--` (`execvp`, `mysql-test/lib/My/SafeProcess/safe_process.cc`). Their prefix took
+/// them to the tools' row, which reads neither the script nor `--`.
+#[test]
+fn the_test_suites_runners_run_a_command_they_are_handed_so_they_are_offered_no_run_grant() {
+    for name in ["mysqlxtest", "mysqltest_safe_process"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// `myrocks_hotbackup`, in Debian's `mariadb-plugin-rocksdb` (#6187): its
+/// `--extra_wdt_sender_options` is formatted into a command `os.system` runs, its
+/// `--destination` is ssh's first argument, and the file names it streams are joined to a
+/// command `os.system` runs (`storage/rocksdb/myrocks_hotbackup.py`, MariaDB 11.4). Its name
+/// starts with neither `mysql` nor `mariadb`, so no row read it.
+#[test]
+fn myrocks_hotbackup_hands_a_shell_its_options_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("myrocks_hotbackup");
+}
+
+/// `rcmysql`, which Percona XtraDB Cluster's packages built without systemd link to the server's
+/// init script (`build-ps/percona-xtradb-cluster.spec`): `rcmysql start` starts the server.
+#[test]
+fn rcmysql_starts_the_server_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("rcmysql");
+}
+
+/// `service`, which MySQL's own SLES packages link `rcmysql` to (`packaging/rpm-sles/mysql.spec.in`,
+/// first review of #6318): it runs the init script it is named, `/etc/init.d/<name>`, or has
+/// `systemctl` act on the unit (Debian's init-system-helpers, `script/service`). Every `rc*` link
+/// to it resolves to `service`, so refusing it refuses them.
+#[test]
+fn service_runs_the_init_script_it_is_named_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("service");
+}
+
+/// Percona Server's `mysql_keyring_encryption_test`, shipped with the test runners
+/// (`build-ps/percona-server.spec`, second review of #6318): it loads
+/// `file://<--component_dir>/<--keyring>` as a component, a shared library
+/// (`components/test/keyring_encryption_test/options.cc`, `components.cc`), as
+/// `mysql_migrate_keyring` does. Its prefix took it to the tools' row, which reads neither flag.
+#[test]
+fn the_keyring_encryption_test_loads_the_component_it_is_named_so_it_is_offered_no_run_grant() {
+    refused_as_running_others("mysql_keyring_encryption_test");
+}
+
+/// A link to a service's init script, by whatever name (#6187): the script's own file name is the
+/// service's, `mysql` for the server's, which the client's row reads as the client's, so the
+/// script is judged by its folder. It starts and stops the service it is for, which no row reads.
+#[cfg(unix)]
+#[test]
+fn a_link_to_an_init_script_is_offered_no_run_grant_whatever_its_name() {
+    use std::os::unix::fs::PermissionsExt;
+    let project = project();
+    let asks = Asks::new(project.path());
+    let system = tempfile::tempdir().unwrap();
+    let system = system.path().canonicalize().unwrap();
+    let (scripts, sbin) = (system.join("etc/init.d"), system.join("sbin"));
+    std::fs::create_dir_all(&scripts).unwrap();
+    std::fs::create_dir_all(&sbin).unwrap();
+    let script = scripts.join("mysql");
+    std::fs::write(&script, "#!/bin/sh\nexit 0\n").unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::os::unix::fs::symlink(&script, sbin.join("rcdatabase")).unwrap();
+    let mut want = printenv(project.path(), &["."]);
+    want.command = vec!["rcdatabase".to_owned(), "start".to_owned()];
+    // Judged as a system folder is, outside the temporary folders.
+    crate::sandbox::tools::TEMPS_HERE.with(|temps| *temps.borrow_mut() = Some(Vec::new()));
+    let frames = run_searching(
+        &the_chat(project.path()),
+        want,
+        &asks,
+        Duration::ZERO,
+        vec![sbin],
+    );
+    crate::sandbox::tools::TEMPS_HERE.with(|temps| *temps.borrow_mut() = None);
+    assert!(asks.open_runs().is_empty(), "{frames:?}");
+    assert!(
+        refusal(&frames).0.contains("runs other programs"),
+        "{frames:?}"
+    );
 }
 
 /// The client built with the server inside it: what `--server-arg` hands the embedded server
