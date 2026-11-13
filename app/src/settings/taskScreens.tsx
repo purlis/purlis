@@ -2,7 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState } from "react";
-import { commands, type PlaneId, type TaskScreens } from "../bindings";
+import {
+  commands,
+  TASK_SCREENS_KEPT_FOR_DAYS,
+  TASK_SCREENS_MOST_KEPT,
+  TASK_SCREENS_MOST_KEPT_MIB,
+  type PlaneId,
+  type TaskScreens,
+} from "../bindings";
 import { AlertDialog } from "../ui/dialog/Dialog";
 import { Choice } from "./components";
 import type { LiveSetting } from "./groups";
@@ -30,7 +37,7 @@ export function taskScreensSetting(plane: PlaneId): LiveSetting {
       label: "On this machine",
       help: "Kept in purlis.local.toml, which only this machine reads.",
     },
-    help: "When a dispatched task's chat closes, purlis keeps its last screen and scrollback, so Read it on the chat's card can show it. Never your own chats. Kept on this machine only: set in purlis.local.toml, kept in the project's state folder, out of every chat's reach, at most 200 screens, and each deleted with its task's record after 30 days. Turning it off deletes every kept screen.",
+    help: `When a dispatched task's chat closes, purlis keeps its last screen and scrollback, so Read it on the chat's card can show it. Never your own chats. Kept on this machine only: set in purlis.local.toml, kept in the project's state folder, out of every chat's reach. It keeps at most ${TASK_SCREENS_MOST_KEPT} screens and ${TASK_SCREENS_MOST_KEPT_MIB} MiB, deleting the oldest first. When the project opens, a screen is deleted ${TASK_SCREENS_KEPT_FOR_DAYS} days after it was kept, or once its task's record is gone. Turning it off deletes every kept screen.`,
     writes: "local",
     useControl: function useTaskScreens() {
       const [read, setRead] = useState<TaskScreens>();

@@ -8,6 +8,11 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { LiveSetting } from "./groups";
 import { dispatchGroup } from "./dispatch";
 import { TASK_SCREENS } from "./taskScreens";
+import {
+  TASK_SCREENS_KEPT_FOR_DAYS,
+  TASK_SCREENS_MOST_KEPT,
+  TASK_SCREENS_MOST_KEPT_MIB,
+} from "../bindings";
 
 /**
  * **Settings › Project › Dispatch › Keep task screens** (#6306): the switch shows
@@ -61,9 +66,24 @@ describe("the Keep task screens row", () => {
     expect(setting?.help).toMatch(/last screen/);
     expect(setting?.help).toMatch(/dispatched task/);
     expect(setting?.help).toMatch(/purlis\.local\.toml/);
-    expect(setting?.help).toMatch(/30 days/);
     expect(setting?.help).toMatch(/deletes every kept screen/);
     expect((setting as LiveSetting).writes).toBe("local");
+  });
+
+  it("says when a screen goes and the store's caps, in the core's numbers", () => {
+    // #6451's review: 30 days from when it was kept, swept as the project opens, and 256 MiB.
+    const help = dispatchGroup(PLANE).settings.find((one) => one.id === TASK_SCREENS)?.help;
+    expect(help).toContain(`${TASK_SCREENS_KEPT_FOR_DAYS} days after it was kept`);
+    expect(help).toMatch(/when the project opens/i);
+    expect(help).toContain(
+      `at most ${TASK_SCREENS_MOST_KEPT} screens and ${TASK_SCREENS_MOST_KEPT_MIB} MiB`,
+    );
+    expect(help).toContain(`${TASK_SCREENS_MOST_KEPT_MIB} MiB`);
+    expect([
+      TASK_SCREENS_MOST_KEPT,
+      TASK_SCREENS_KEPT_FOR_DAYS,
+      TASK_SCREENS_MOST_KEPT_MIB,
+    ]).toEqual([200, 30, 256]);
   });
 
   it("shows the setting the core reads, on by default", async () => {
