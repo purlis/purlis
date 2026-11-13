@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794526869032,
+  "lastUpdate": 1794529501201,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -47922,6 +47922,48 @@ window.BENCHMARK_DATA = {
             "value": 101.841988,
             "unit": "ms",
             "extra": "median of 5 runs: 100.903, 101.431, 101.842, 102.286, 103.184 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "36f2440f6f682ff20493b6d7baad377c5f2a1d13",
+          "message": "fixes main: a menu opened as a tab closes stays open (#6232) (#6454)\n\nThe keyboard a close (or Close pane, a pane focus, a tab select) sends into the\npane now in front is handed over on a timer. Under load the timer fired after a\ncontext menu had opened, focused New chat, and React Aria closed the menu on\nthe blur: artifact-isolation's '6. store' waited 20 s for a menu that had been\nopen for 15-120 ms. Hammered on CI (close, then right-click at once), 7 of 300\ncycles missed, every one at that frame.\n\nThe pane's control is now owed the keyboard only until the person puts it\nsomewhere else, as a chat's terminal already was (paneKeyboard's movedOn).\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M78JE3KX94JNKDB6Q5X72SM6\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-12T23:36:32Z",
+          "tree_id": "c5b62995ef554ddd290c9321e396441cd90d98bc",
+          "url": "https://github.com/purlis/purlis/commit/36f2440f6f682ff20493b6d7baad377c5f2a1d13"
+        },
+        "date": 1794529495580,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.332326,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.329, 0.331, 0.332, 0.337, 0.342 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6660655,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.197, 16.661, 16.666, 16.683, 16.724 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.327301,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.540, 100.908, 101.327, 101.453, 101.688 ms"
           }
         ]
       }
