@@ -355,70 +355,55 @@ pub fn engine_pin(
         Ok(crate::dockerpool::EngineSaid::PodmanOverDocker) => {
             Err(Finding::NeedsPodman { host: host() })
         }
-        Err(why) => Err(silent_or_refused(
-            opening.ssh,
-            opening.route,
-            opening.pool,
-            opening.key,
-            opening.settings_in,
-            why.0,
-        )),
+        Err(why) => Err(silent_or_refused(opening, why.0)),
     }
 }
 
 /// **Why an engine didn't answer through a forward that opened** (#6349): the machine's SSH
 /// server refusing to forward its socket, where [`forwarding_refused`] finds it does, else the
 /// engine itself, with what was said.
-pub fn silent_or_refused(
-    ssh: &Path,
-    route: &Route,
-    pool: &str,
-    key: &HostKey,
-    settings_in: &Path,
-    said: String,
-) -> Finding {
-    if forwarding_refused(ssh, route, pool, key, settings_in) {
-        Finding::ForwardingRefused {
-            host: route.host().to_owned(),
-        }
+pub fn silent_or_refused(opening: &super::forward::Opening<'_>, said: String) -> Finding {
+    let host = opening.route.host().to_owned();
+    if forwarding_refused(opening) {
+        Finding::ForwardingRefused { host }
     } else {
-        Finding::EngineSilent {
-            host: route.host().to_owned(),
-            said,
-        }
+        Finding::EngineSilent { host, said }
     }
 }
 
 /// **Whether the machine's SSH server refuses to forward the engine's socket** (#6349), by a check
-/// of its own: ssh asks it for one channel to the socket ([`super::forward_check_args`]) and ends
-/// with 255 where it is refused. ssh ends with 255 for a sign-in it was refused too, so a 255 is
-/// taken as a refused forward only where the sign-in, made again, is let in. A local forward opens
-/// on this machine alone, so a server that refuses it is found only by asking it for a channel.
-/// What ssh said is never read.
+/// of its own. A local forward opens on this machine alone, so a server that refuses it is found
+/// only by asking it for a channel: ssh asks for one to the socket ([`super::forward_check_args`])
+/// and ends with 255 where it isn't opened. ssh ends with 255 too for a sign-in refused, a lost
+/// connection, and a channel the server opened to a socket that took no connection, so a 255 is
+/// taken as a refused forward only where the probe, run right after, signs in and finds the
+/// socket there and usable ([`super::probe_args`]). What ssh said is never read.
+///
+/// What it can't tell apart: a socket left behind by an engine that ended without removing it,
+/// on a machine that forwards. That is said as a refused forward, and Check again asks again.
 #[must_use]
-pub fn forwarding_refused(
-    ssh: &Path,
-    route: &Route,
-    pool: &str,
-    key: &HostKey,
-    settings_in: &Path,
-) -> bool {
-    let Ok(folder) = crate::dockerpool::settings::run_folder(settings_in) else {
+pub fn forwarding_refused(opening: &super::forward::Opening<'_>) -> bool {
+    let (route, pool) = (opening.route, opening.pool);
+    let Ok(folder) = crate::dockerpool::settings::run_folder(opening.settings_in) else {
         return false;
     };
-    let Ok(known_hosts) = folder.keep("known_hosts", super::known_hosts(pool, key).as_bytes())
-    else {
+    let Ok(known_hosts) = folder.keep(
+        "known_hosts",
+        super::known_hosts(pool, opening.key).as_bytes(),
+    ) else {
         return false;
     };
     let Ok(args) = super::forward_check_args(route, pool, &known_hosts) else {
         return false;
     };
-    let asked = super::run(ssh, &args);
-    if !matches!(asked, Ok(super::Ran { code: Some(255), .. })) {
+    if !matches!(
+        super::run(opening.ssh, &args),
+        Ok(super::Ran { code: Some(255), .. })
+    ) {
         return false;
     }
-    super::run(ssh, &super::sign_in_args(route, pool, &known_hosts))
-        .is_ok_and(|signed_in| signed_in.code == Some(0))
+    super::run(opening.ssh, &super::probe_args(route, pool, &known_hosts))
+        .is_ok_and(|probed| probed.code == Some(0))
 }
 
 /// **Whether `pin` still holds for the engine `docker` reaches through the pool's forward**: the

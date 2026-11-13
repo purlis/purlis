@@ -14,18 +14,31 @@ client meets a closed connection, and Connect said only that Docker didn't answe
 
 ## How it is found
 
-The check runs only when the engine doesn't answer through a forward that opened: at Connect's
-Trust this machine, before a pool's runner is made, checked or linked, and in the look again at a
-forward that won't open. It is one more `ssh`, pinned like the others, that asks the server for
-a single channel to the engine's socket with `-W <socket>`. `-W` runs nothing there and exits
-255 if the channel is refused. Its standard input is empty, so an opened channel ends at once.
+The check runs only when the engine doesn't answer through a forward just opened. That happens
+at Connect's Trust this machine, and before a pool's runner is made, checked or linked, once for
+each time its forward opens. It is one more `ssh`, pinned like the others, that asks the server
+for a single channel to the engine's socket with `-W <socket>`. `-W` runs nothing there and exits
+255 if the channel isn't opened. Its standard input is empty, so an opened channel ends at once.
 
-ssh also exits 255 when the sign-in is refused. So a 255 counts as a refused forward only when a
-sign-in made right after it is let in. What ssh said is never read. The finding is
-`forwarding-refused`. It names the server and tells the person to ask its admin to allow
-forwarding for their account (`AllowStreamLocalForwarding`). The window shows it on the line
-Docker answers there, as Docker's other causes are shown.
+ssh also exits 255 for other reasons:
+
+- a sign-in it was refused
+- a lost connection
+- a channel the server opened to a socket that took no connection
+
+So a 255 counts as a refused forward only when the probe, run right after it, signs in and finds
+the socket there and usable (`PROBE`). What ssh said is never read.
+
+One case still can't be told apart. On a machine that does forward, an engine that ended without
+removing its socket leaves a file that passes the probe and takes no connection. That is said as
+a refused forward, and Check again asks again.
+
+The finding is `forwarding-refused`. It names the server and tells the person what to ask its
+admin for: `DisableForwarding` and `AllowStreamLocalForwarding` in sshd_config, or `restrict` and
+`no-port-forwarding` on their key. The window shows it on the line Docker answers there, as
+Docker's other causes are shown.
 
 A pool whose forward is refused lets go of the forward and waits, with the same back-off and the
 same remembered finding as a forward that won't open (`sshroute::pool::Failing`). So a surface
-that keeps asking doesn't contact the machine at every ask.
+that keeps asking doesn't contact the machine at every ask. A forward that won't open at all is
+never asked this, because a refusing server doesn't stop it from opening.

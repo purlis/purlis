@@ -282,7 +282,7 @@ const FORWARDING_REFUSED = connect({
   state: "attention",
   cause: "forwarding-refused",
   findings: [
-    "The SSH server on build-box doesn't allow forwarding, and purlis reaches Docker there by forwarding its socket. Ask its admin to allow forwarding for your account (`AllowStreamLocalForwarding` in sshd_config), then check again.",
+    "The SSH server on build-box doesn't allow forwarding, and purlis reaches Docker there by forwarding its socket. Ask its admin to allow it for your account (`DisableForwarding` and `AllowStreamLocalForwarding` in sshd_config, or `restrict` and `no-port-forwarding` on your key), then check again.",
   ],
   next: action("check-again", "Check again", "Contacts the machine again. It changes nothing."),
 });

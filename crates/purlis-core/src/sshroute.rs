@@ -717,8 +717,10 @@ pub fn probe_args(route: &Route, pool: &str, known_hosts: &Path) -> Vec<String> 
 
 /// **The forward check's arguments** (#6349): ssh, pinned, asks the machine's SSH server for one
 /// channel to the engine's socket with `-W`, which runs no command there and ends ssh with 255
-/// where the server refuses that channel (`-W` exits on a forward that fails). Its standard input
-/// is empty, so a channel opened ends at once. Refused for a route whose socket isn't known yet.
+/// where the channel isn't opened. `-W` implies `ExitOnForwardFailure` and `ClearAllForwardings`,
+/// and the person's ssh_config could turn either off, so both are on the command line, where
+/// ssh takes the first value. Its standard input is empty, so a channel opened ends at once.
+/// Refused for a route whose socket isn't known yet.
 pub fn forward_check_args(
     route: &Route,
     pool: &str,

@@ -694,15 +694,17 @@ fn a_file_is_read_there_only_where_it_is_a_plain_file_at_a_plain_path() {
     }
 }
 
-/// An `ssh` that ends with `w` when asked for a channel with `-W`, and with `signed_in` otherwise.
+/// An `ssh` that ends with `w` when asked for a channel with `-W`, lets a sign-in (`true` there)
+/// in, and ends a probe with `probed`.
 #[cfg(unix)]
-fn an_ssh_ending(folder: &Path, w: i32, signed_in: i32) -> std::path::PathBuf {
+fn an_ssh_ending(folder: &Path, w: i32, probed: i32) -> std::path::PathBuf {
     use std::os::unix::fs::PermissionsExt as _;
     let ssh = folder.join("ssh");
     std::fs::write(
         &ssh,
         format!(
-            "#!/bin/sh\nfor a in \"$@\"; do [ \"$a\" = -W ] && exit {w}; done\nexit {signed_in}\n"
+            "#!/bin/sh\nfor a in \"$@\"; do [ \"$a\" = -W ] && exit {w}; last=$a; done\n\
+             [ \"$last\" = true ] && exit 0\nexit {probed}\n"
         ),
     )
     .unwrap();
@@ -712,34 +714,40 @@ fn an_ssh_ending(folder: &Path, w: i32, signed_in: i32) -> std::path::PathBuf {
 
 #[cfg(unix)]
 #[test]
-fn a_forward_is_taken_as_refused_only_where_the_channel_fails_and_the_sign_in_is_let_in() {
+fn a_forward_is_taken_as_refused_only_where_the_channel_fails_and_the_probe_holds() {
     let route = Route::parse("ssh://me@box/var/run/docker.sock").unwrap();
-    for (w, signed_in, refused) in [
-        // The server signs the person in and refuses the channel.
+    for (w, probed, refused) in [
+        // The server signs the person in, the socket is there, and the channel isn't opened.
         (255, 0, true),
-        // ssh's 255 for a sign-in refused too: not a refusal to forward.
+        // ssh's 255 for a sign-in refused or a connection lost: not a refusal to forward.
         (255, 255, false),
+        // A channel opened to a socket that isn't there any more: the engine's.
+        (255, PROBE_NONE, false),
+        (255, PROBE_NOT_ALLOWED, false),
         // The channel opened: whatever is wrong is the engine's.
         (0, 0, false),
         (1, 0, false),
     ] {
         let dir = tempfile::tempdir().unwrap();
-        let ssh = an_ssh_ending(dir.path(), w, signed_in);
+        let ssh = an_ssh_ending(dir.path(), w, probed);
+        let (links, settings) = (dir.path().join("l"), dir.path().join("s"));
+        let key = key();
+        let opening = forward::Opening {
+            ssh: &ssh,
+            route: &route,
+            pool: "build",
+            key: &key,
+            engine_links: &links,
+            settings_in: &settings,
+        };
         assert_eq!(
-            connect::forwarding_refused(&ssh, &route, "build", &key(), &dir.path().join("s")),
+            connect::forwarding_refused(&opening),
             refused,
-            "-W ended {w}, the sign-in {signed_in}"
+            "-W ended {w}, the probe {probed}"
         );
         assert_eq!(
             matches!(
-                connect::silent_or_refused(
-                    &ssh,
-                    &route,
-                    "build",
-                    &key(),
-                    &dir.path().join("s"),
-                    "EOF".to_owned()
-                ),
+                connect::silent_or_refused(&opening, "EOF".to_owned()),
                 connect::Finding::ForwardingRefused { .. }
             ),
             refused

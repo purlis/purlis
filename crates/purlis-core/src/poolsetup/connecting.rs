@@ -341,8 +341,9 @@ fn said_with_next(finding: &Finding) -> (String, Option<Action>) {
         Finding::ForwardingRefused { host } => (
             format!(
                 "The SSH server on {host} doesn't allow forwarding, and purlis reaches Docker \
-                 there by forwarding its socket. Ask its admin to allow forwarding for your \
-                 account (`AllowStreamLocalForwarding` in sshd_config), then check again."
+                 there by forwarding its socket. Ask its admin to allow it for your account \
+                 (`DisableForwarding` and `AllowStreamLocalForwarding` in sshd_config, or \
+                 `restrict` and `no-port-forwarding` on your key), then check again."
             ),
             check_again(),
         ),
