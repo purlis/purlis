@@ -526,3 +526,78 @@ fn the_start_and_end_rows_are_built_from_the_start_and_end_events() {
         }]
     ));
 }
+
+/// R-174 (core): **the blocked marker's count is the verified blocks after the last look**,
+/// from a running tally of the log fed through its subscription ([`super::super::subscribe`]),
+/// never a read of the whole log on each refresh. Chat one is blocked plainly and unverified
+/// before the look and after it; chat two's block is its own. Each look is the latest block's
+/// id the marker was drawn from, and a look at the latest block sets the count to 0.
+#[test]
+fn the_marker_count_is_the_verified_blocks_after_the_last_look() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path();
+    let plane = Path::new(PLANE);
+    let mut host = recorder(log);
+    let mut tally = Blocks::default();
+    let mut feed = super::super::subscribe(log, 0);
+    let mut fed = |tally: &mut Blocks| {
+        for delivery in feed.poll().unwrap() {
+            tally.take(delivery);
+        }
+    };
+
+    // Before any look: every block of the chat counts, the unverified one apart.
+    host.stop(plane, Some(4), &block(None)).unwrap();
+    host.stop(plane, Some(4), &block(Some(Qualifier::Unverified)))
+        .unwrap();
+    host.stop(plane, Some(5), &block(None)).unwrap();
+    fed(&mut tally);
+    let before = tally.since(ONE, None);
+    assert_eq!((before.blocks, before.unverified), (1, 1), "{before:?}");
+    let looked = before.latest.clone().expect("the latest block's id");
+
+    // A look at the latest block: nothing is new.
+    let now = tally.since(ONE, Some(&looked));
+    assert_eq!((now.blocks, now.unverified), (0, 0), "{now:?}");
+    assert_eq!(now.latest.as_deref(), Some(looked.as_str()));
+
+    // Later blocks count, verified apart from unverified; a can't-tell one and a hold do not.
+    host.stop(plane, Some(4), &block(None)).unwrap();
+    host.stop(plane, Some(4), &block(None)).unwrap();
+    host.stop(plane, Some(4), &block(Some(Qualifier::Unverified)))
+        .unwrap();
+    host.stop(plane, Some(4), &block(Some(Qualifier::CantTell)))
+        .unwrap();
+    host.stop(
+        plane,
+        Some(4),
+        &Stop::Hold(Hold {
+            tool: "Bash".to_owned(),
+            target: None,
+            args: None,
+        }),
+    )
+    .unwrap();
+    fed(&mut tally);
+    let after = tally.since(ONE, Some(&looked));
+    assert_eq!((after.blocks, after.unverified), (2, 1), "{after:?}");
+    // It is the fleet counts' own bucket (T1-03): the sidebar's count is `Tally.blocks` alone.
+    assert_eq!(after.tally.blocks, after.blocks);
+    assert_eq!(after.tally.cant_tell_blocks, 1);
+    assert_eq!(after.tally.holds, 0, "a hold is no block");
+
+    // Another chat's blocks are its own.
+    let two = tally.since(TWO, None);
+    assert_eq!((two.blocks, two.unverified), (1, 0), "{two:?}");
+
+    // A new look sets it to 0.
+    let again = after.latest.expect("the latest block's id");
+    let cleared = tally.since(ONE, Some(&again));
+    assert_eq!((cleared.blocks, cleared.unverified), (0, 0), "{cleared:?}");
+
+    // A chat with no block has nothing to show, and no point to look at.
+    assert_eq!(
+        tally.since("01K6CHAT000000000000000009", None),
+        Marker::default()
+    );
+}
