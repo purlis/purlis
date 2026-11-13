@@ -189,6 +189,7 @@ mod tests {
             why: Why::Looping(purlis_core::looping::Why::Blocked { times: 3 }),
             since: 1_000,
             held: vec![3],
+            raised: false,
         }
     }
 

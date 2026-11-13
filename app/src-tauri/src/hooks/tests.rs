@@ -499,6 +499,7 @@ fn a_harness_prompt_is_written_raised_and_answered_with_the_answer_the_registry_
                     payload: serde_json::json!({"tool_name": "Bash",
                             "tool_input": {"command": "npm test"}}),
                     ran_for_ms: None,
+                    speaker: Default::default(),
                 },
                 std::time::Duration::from_secs(30),
             )
