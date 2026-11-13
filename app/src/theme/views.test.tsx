@@ -1590,6 +1590,42 @@ const STATES: State[] = [
     drawn: /Not sandboxed: can reach anything/,
   },
   {
+    name: "a chat's Chat log, its start and its end (R-224)",
+    view: { from: null, view: "chat-log", key: "3" },
+    answers: {
+      chat_log: {
+        known: true,
+        rows: [
+          {
+            kind: "started",
+            at: "2026-11-13T09:00:00Z",
+            cause: "start",
+            protection: {
+              layers: [{ layer: "sandbox", level: "floor", tier: "project" }],
+              charter_commit: "4f2a9c1",
+              charter_dirty: false,
+              answers_in_force: 0,
+            },
+          },
+          {
+            kind: "ended",
+            at: "2026-11-13T10:00:00Z",
+            state: "completed",
+            cause: "exited",
+            code: 0,
+          },
+        ],
+      },
+    },
+    drawn: /Ended · done/,
+  },
+  {
+    name: "a chat's Chat log with nothing logged on this machine",
+    view: { from: null, view: "chat-log", key: "3" },
+    answers: { chat_log: { known: true, rows: [] } },
+    drawn: /Nothing is logged for this chat on this machine/,
+  },
+  {
     name: "what one task changed, on its own branch (#1511)",
     view: { from: null, view: "task-changes", key: "01K6TASK" },
     answers: {

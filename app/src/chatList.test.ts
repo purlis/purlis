@@ -344,7 +344,7 @@ describe("a chat's one list (#4753)", () => {
     for (const harness of ["chat.useskill", "chat.ask", "chat.restart", "chat.fresh", "chat.move"])
       expect(kinds(6), harness).not.toContain(harness);
     // A shell keeps what is not the harness's: its name, its reads, its end.
-    for (const kept of ["chat.rename", "chat.activity", "chat.network", "chat.end"])
+    for (const kept of ["chat.rename", "chat.activity", "chat.network", "chat.log", "chat.end"])
       expect(kinds(6), kept).toContain(kept);
     // A task ends by Stop and get its report or Close now, never End…; any other chat by End….
     expect(kinds(4)).not.toContain("chat.end");
@@ -384,7 +384,7 @@ describe("a chat's one list (#4753)", () => {
       palette
         .filter((offer) => offer.id.startsWith("chat.") && offer.id.endsWith(":1"))
         .map((offer) => offer.id),
-    ).toEqual(["chat.activity:1", "chat.network:1"]);
+    ).toEqual(["chat.activity:1", "chat.network:1", "chat.log:1"]);
     expect(palette.some((offer) => offer.id === "chat.end:2")).toBe(true);
   });
 

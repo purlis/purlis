@@ -4936,6 +4936,24 @@ impl Planes {
                     }
                 }
             }));
+            // A run replaced at once, a restart for project settings, has ended superseded
+            // (ADR 0076 §2, Q247): told before its close, so the host that writes the log ends
+            // it so, and its close then ends nothing more.
+            chats.when_a_run_is_replaced(Box::new({
+                let (events, root) = (events.clone(), root.clone());
+                move |session| {
+                    let superseded = events.record(purlis_core::eventlog::Entry::Superseded {
+                        plane: root.clone(),
+                        number: session,
+                    });
+                    if let Err(why) = superseded {
+                        tracing::warn!(
+                            "purlis: a replaced run's end was not written to the event log \
+                             ({why})"
+                        );
+                    }
+                }
+            }));
             // A start put aside is taken back: its program's later lines are of no run (#2252).
             chats.when_a_held_start_is_settled(Box::new(move |session, how| {
                 let plane = root.clone();
@@ -5189,21 +5207,24 @@ impl Planes {
                     }
                     // A run ended so that the same chat starts again at once (ADR 0067 as
                     // amended 2026-10-16) has not ended the chat: what follows its place says
-                    // so. Its sub-agents' runs still end with it, stopped as a close stops
-                    // them (ADR 0076 §6), and nothing else here is done for it. Where the
-                    // session host writes the event log, it ends them as the program ends
-                    // there (#2003).
+                    // so. It has ended superseded, its sub-agents' runs with it (ADR 0076 §2,
+                    // §6, Q247), and nothing else here is done for it. A restart said so before
+                    // it closed the run ([`crate::chats::Chats::when_a_run_is_replaced`]), so
+                    // this writes nothing more there; where the session host writes the event
+                    // log, it was told the same, and its end there writes nothing more (#2003).
                     if me
                         .get()
                         .and_then(std::sync::Weak::upgrade)
                         .is_some_and(|held| held.chats.replaced(session))
                     {
                         if let Some(events) = events.as_ref().and_then(hooks::Events::held) {
-                            let (state, cause) = how_its_run_ended(
-                                Some(purlis_core::state::run::StopBy::Closed),
-                                &exit,
+                            its_run_ends(
+                                events,
+                                &events_root,
+                                session,
+                                purlis_core::state::run::RunState::Completed,
+                                purlis_core::state::run::Cause::Superseded,
                             );
-                            its_children_end(events, &events_root, session, state, cause);
                         }
                         return;
                     }
@@ -5247,7 +5268,7 @@ impl Planes {
                                 .is_some_and(|held| held.chats.recorded_chat(session).is_none()),
                         );
                         let (state, cause) = how_its_run_ended(by, &exit);
-                        its_children_end(log, &events_root, session, state, cause);
+                        its_run_ends(log, &events_root, session, state, cause);
                     }
                     // A persona chat that still owed its asking chat a report has ended
                     // without one: that chat is told it failed, now (#1443). Before the
@@ -6439,7 +6460,7 @@ fn the_host_s_stop(
 
 /// What a chat's end leaves in the event log, read and written as both binaries' session hosts
 /// do (#2494).
-pub(crate) use purlis_core::hookchannel::{how_its_run_ended, its_children_end};
+pub(crate) use purlis_core::hookchannel::{how_its_run_ended, its_run_ends};
 
 #[path = "planes/tab_windows.rs"]
 mod tab_windows;
