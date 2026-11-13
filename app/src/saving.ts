@@ -12,8 +12,9 @@ import {
   type RepoSaving,
   type SaveMerge,
 } from "./bindings";
+import { AFTER_GIT_MOVED_MS } from "./afterGitMoved";
 import { followPlaneChanged, GIT, usePlaneChanged } from "./planeChanged";
-import { everyWhileShown } from "./whileShown";
+import { aBeatSince, everyWhileShown } from "./whileShown";
 
 /** The window event a finished save sends, so every reader of the save standing reads again —
  *  the title bar after the Saving tab's button, and the tab after the title bar's. */
@@ -165,6 +166,7 @@ export function usePlaneSaving(
       () => {
         if (shownNow.current) read();
       },
+      AFTER_GIT_MOVED_MS.planeSaving,
     );
     return () => {
       gone = true;
@@ -190,8 +192,7 @@ export function usePlaneSaving(
   // as its project was opened or its git standing moved, is the one the beat would have read.
   // A switch to a project read a moment ago asks nothing more (`projectSwitch.cost.test.tsx`).
   const catchUp = useCallback(() => {
-    const at = askedAt.current;
-    if (at === undefined || performance.now() - at >= SAVING_REREAD_MS) readAgain.current();
+    if (aBeatSince(askedAt.current, SAVING_REREAD_MS)) readAgain.current();
   }, []);
   useRereads(reread, beat, catchUp);
 
@@ -297,7 +298,12 @@ export function useRepoSaving(
    *  changes nothing still draws the hook's owner once before React lets it go. */
   const drawn = useRef(repos);
   const [asked, setAsked] = useState(0);
-  const changed = usePlaneChanged(plane === undefined ? [] : [plane], GIT);
+  // At its own turn after a move (`afterGitMoved.ts`, H8).
+  const changed = usePlaneChanged(
+    plane === undefined ? [] : [plane],
+    GIT,
+    AFTER_GIT_MOVED_MS.workspaceSaving,
+  );
   const key = keyOf(plane, workspace);
 
   useEffect(() => {

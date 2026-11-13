@@ -452,8 +452,6 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "task_ending",
             "all_tasks_ending",
             "stopping_chats",
-            "tasks_sharing_a_folder",
-            "task_folder_shared",
             "vault_refusals",
             // A chat's failed MCP server starts, read and put away (qw381): in memory.
             "mcp_failures",
@@ -535,7 +533,9 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
         // the fixed words a Keep blocked tells a chat. What each types takes its turn in the
         // chat's lane, behind what its pane queued, but waits for the lane no longer than
         // `inputlanes::A_TURN_WAITS_AT_MOST` and is refused past it; then it waits for the host
-        // as before (ADR 0108). `async` would lose the order these keep.
+        // as before (ADR 0108), except a close: the host's answer to it changes nothing here, so
+        // it is waited for no longer than `hostedsessions::A_CLOSE_WAITS_AT_MOST` on this
+        // thread, and heard off it after (#6227). `async` would lose the order these keep.
         "INPUT_ORDER",
         &[
             "type_installer",

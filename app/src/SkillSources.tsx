@@ -27,6 +27,7 @@ import {
   type StudioLevel,
   type UpdateReview,
 } from "./bindings";
+import { agoSaid } from "./ages";
 import { counted } from "./dispatches";
 import { Notice, type NoticeAction } from "./Notice";
 import { Choice, Field, SettingRow } from "./settings/components";
@@ -148,15 +149,7 @@ function offerFor(updates: SkillUpdates | undefined, key: string, name: string) 
  * moved) is just now.
  */
 export function checkedAgo(seconds: number, now: Date): string {
-  if (seconds < 60) return "checked just now";
-  if (seconds < 3600)
-    return `checked ${counted(Math.floor(seconds / 60), "minute", "minutes")} ago`;
-  if (seconds < 86_400)
-    return `checked ${counted(Math.floor(seconds / 3600), "hour", "hours")} ago`;
-  const days = Math.floor(seconds / 86_400);
-  if (days < 30) return `checked ${counted(days, "day", "days")} ago`;
-  const at = new Date(now.getTime() - seconds * 1000);
-  return `checked ${at.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
+  return `checked ${agoSaid(seconds, now)}`;
 }
 
 /**

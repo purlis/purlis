@@ -362,7 +362,7 @@ describe("needs you, across windows", () => {
     does: { verb: "showChat" as const, session },
   });
 
-  it("counts a chat asking in another window, and goes there to show it", async () => {
+  it("lists a chat asking in another window in the Asks in front, never on its hand, and goes there to show it", async () => {
     const { fire, asked } = core({
       launch: ONE,
       windows: ["main", "window-1"],
@@ -380,14 +380,13 @@ describe("needs you, across windows", () => {
       }),
     );
 
-    // The hand opens the Inbox in front, which lists the chat in the other window as a group
-    // of its own (#1695: the hand's list retired, and nothing it named is lost), and its Go to
-    // chat goes there.
-    const hand = await screen.findByRole("button", { name: "1 chat needs you" });
-    await userEvent.click(hand);
+    // The Asks in front, where the side opens (#5644), lists the chat in the other window as a
+    // group of its own (#1695: the hand's list retired, and nothing it named is lost), and its
+    // Go to chat goes there. It opens on All projects (#5999), so the chat is listed at once.
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
-    // It opens on All projects (#5999, ADR 0121 decision 4), so the chat is listed at once.
     const group = await within(inbox).findByRole("rowgroup", { name: "two.3" });
+    // The hand counts the project in front alone, where nothing waits (#6341): it draws none.
+    expect(screen.queryByRole("button", { name: /needs? you/ })).toBeNull();
     expect(within(group).getByText("In another window")).toBeInTheDocument();
     await userEvent.click(within(group).getByRole("button", { name: /^Go to chat two\.3/ }));
 
@@ -455,12 +454,13 @@ describe("needs you, across windows", () => {
         ],
       }),
     );
-    await screen.findByRole("button", { name: "1 chat needs you" });
+    const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
+    await within(inbox).findByRole("rowgroup", { name: "two.3" });
 
     fire("windows-changed", ["main"]);
 
-    await vi.waitFor(() =>
-      expect(screen.queryByRole("button", { name: "1 chat needs you" })).toBeNull(),
+    await waitFor(() =>
+      expect(within(inbox).queryByRole("rowgroup", { name: "two.3" })).toBeNull(),
     );
   });
 });

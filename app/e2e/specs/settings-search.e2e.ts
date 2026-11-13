@@ -1,0 +1,183 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+import { $, browser, expect } from "@wdio/globals";
+import { closesTheTabsItOpens, runFromThePalette } from "../reach.js";
+import { SETTINGS_GROUPS, openProjectSettings, settingsAt } from "../settingsTab.js";
+
+/**
+ * **One settings search across every level, in the real WebView** (#2920, N27; #2814·4): a
+ * search walked as the operator makes it.
+ *
+ * - From Settings at the Project level, typed words find settings at You and at the Project
+ *   level on one page, the nav's first, each under its level and page.
+ * - A match at another level is a way there: pressed, it lands on its field at You, with the
+ *   keyboard in it and the search done.
+ * - Set here narrows to what the Project level's files hold: the fixture project's
+ *   `charter.toml` sets `[memory] share`, and every row left carries the set-here mark.
+ * - From the palette, a setting's own row lands on its field.
+ *
+ * What jsdom cannot say: that the WebView draws it, and that the keyboard lands in a real field.
+ * `SettingsSearch.test.tsx` holds the behaviour. **Nothing is written**; it closes the Settings
+ * tabs it opened.
+ */
+
+const BOX = '[aria-label="Search settings"]';
+
+/** What the page of every match draws: its title, its sections' headings, and its rows, each
+ *  by its setting and whether it carries the set-here mark. */
+async function found() {
+  return browser.execute(() => {
+    const page = document.querySelector(".ui-settings-found");
+    return {
+      title: page?.querySelector("h2")?.textContent ?? "",
+      sections: [...(page?.querySelectorAll<HTMLElement>(".ui-settings-found-section") ?? [])]
+        .filter((one) => !one.hidden)
+        .map((one) => one.querySelector("h3")?.textContent ?? ""),
+      rows: [...(page?.querySelectorAll<HTMLElement>("[data-setting]") ?? [])].map((row) => ({
+        setting: row.dataset.setting ?? "",
+        setHere: row.querySelector('[role="img"][aria-label="Set at this level"]') !== null,
+      })),
+      first: (() => {
+        // The nav's first page, asked for by its role: a native button's own, or one said.
+        const nav = document.querySelector('nav[aria-label="Groups"]');
+        const one = nav?.querySelector('[role="button"], button:not([role])');
+        return {
+          words: one?.textContent ?? "",
+          current: one?.getAttribute("aria-current") ?? "",
+        };
+      })(),
+    };
+  });
+}
+
+/** The setting whose row holds the keyboard, if one does. */
+async function focusedSetting(): Promise<string> {
+  return browser.execute(
+    () => document.activeElement?.closest<HTMLElement>("[data-setting]")?.dataset.setting ?? "",
+  );
+}
+
+/** The Set here toggle's `aria-pressed`, asked for by its role and its accessible name: a toggle
+ *  button is a button with `aria-pressed`, its name its words. */
+async function setHerePressed(): Promise<string> {
+  return browser.execute(
+    () =>
+      [
+        ...document.querySelectorAll<HTMLElement>(
+          '[role="button"][aria-pressed], button:not([role])[aria-pressed]',
+        ),
+      ]
+        .find((one) => (one.getAttribute("aria-label") ?? one.textContent)?.trim() === "Set here")
+        ?.getAttribute("aria-pressed") ?? "",
+  );
+}
+
+/** Presses Set here, and waits until the toggle says it is `to`. */
+async function pressSetHere(to: "true" | "false"): Promise<void> {
+  await browser.execute(() => {
+    [
+      ...document.querySelectorAll<HTMLElement>(
+        '[role="button"][aria-pressed], button:not([role])[aria-pressed]',
+      ),
+    ]
+      .find((one) => (one.getAttribute("aria-label") ?? one.textContent)?.trim() === "Set here")
+      ?.click();
+  });
+  await browser.waitUntil(async () => (await setHerePressed()) === to, {
+    timeout: 10_000,
+    timeoutMsg: `Set here, pressed, never said ${to}`,
+  });
+}
+
+/** Where the keyboard is, in words, for a step that missed. */
+async function keyboardAt(): Promise<string> {
+  return browser.execute(() => {
+    const at = document.activeElement;
+    if (at === null) return "nothing";
+    const row = at.closest<HTMLElement>("[data-setting]")?.dataset.setting;
+    return `${at.tagName.toLowerCase()} "${(at.getAttribute("aria-label") ?? at.textContent ?? "").trim().slice(0, 40)}"${row ? ` in ${row}` : ""}`;
+  });
+}
+
+/** Types `words` into the search box, from empty. */
+async function search(words: string): Promise<void> {
+  const box = await $(BOX);
+  await box.waitForDisplayed({ timeout: 20_000 });
+  await box.clearValue();
+  await box.addValue(words);
+}
+
+describe("one settings search across every level, in the real WebView", () => {
+  closesTheTabsItOpens();
+
+  it("finds what the words name at every level, on the nav's first page", async () => {
+    await openProjectSettings();
+    await search("theme");
+
+    await browser.waitUntil(
+      async () => {
+        const { sections } = await found();
+        return sections.includes("You › Theme") && sections.includes("Project › Appearance");
+      },
+      { timeout: 20_000, timeoutMsg: "the search never found You's and the project's themes" },
+    );
+    const { title, first } = await found();
+    expect(title).toMatch(/^\d+ settings found$/);
+    expect(first.words).toMatch(/^All results/);
+    expect(first.current).toBe("page");
+  });
+
+  it("lands on a field at another level, with the keyboard in it", async () => {
+    await search("window text size");
+    const go = await $('[aria-label="Go to Text: Window text size"]');
+    await go.waitForDisplayed({ timeout: 20_000 });
+    await go.click();
+
+    await browser.waitUntil(async () => (await focusedSetting()) === "you.text.window", {
+      timeout: 20_000,
+      timeoutMsg: "the keyboard never landed on You's window text size",
+    });
+    expect(await $(BOX).getValue()).toBe("");
+  });
+
+  it("narrows to what this level's files set, with Set here", async () => {
+    await settingsAt("Project", "Saving");
+    await $(SETTINGS_GROUPS).waitForDisplayed({ timeout: 20_000 });
+    await pressSetHere("true");
+
+    await browser.waitUntil(
+      async () => (await found()).rows.some((one) => one.setting === "project.saving.memory.share"),
+      { timeout: 20_000, timeoutMsg: "Set here never listed [memory] share" },
+    );
+    const { rows, sections } = await found();
+    expect(sections.every((one) => one.startsWith("Project › "))).toBe(true);
+    expect(rows.every((one) => one.setHere)).toBe(true);
+
+    await pressSetHere("false");
+    await browser.waitUntil(async () => (await found()).title === "", {
+      timeout: 10_000,
+      timeoutMsg: "Set here, pressed again, left the matches on screen",
+    });
+  });
+
+  it("lands on a field from the palette's row for it", async () => {
+    await runFromThePalette(
+      "Saving › Target branch",
+      "settings.setting:project.saving.plane.branch",
+    );
+
+    let last = "";
+    await browser
+      .waitUntil(
+        async () => {
+          last = await keyboardAt();
+          return (await focusedSetting()) === "project.saving.plane.branch";
+        },
+        { timeout: 20_000, timeoutMsg: "the palette's row never landed on Target branch" },
+      )
+      .catch((missed: unknown) => {
+        throw new Error(`${String(missed)}; the keyboard was on ${last}`);
+      });
+  });
+});

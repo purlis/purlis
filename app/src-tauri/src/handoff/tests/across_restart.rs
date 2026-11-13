@@ -2051,10 +2051,12 @@ fn a_chat_with_no_own_work_is_resumed_after_its_host_s_crash_with_no_wake_line()
 
 /// **Reopen all with many chats** (story 28): each is told what ended, and they start at
 /// Reopen all's pace, never more at once than it lets through, so the wake lines never start
-/// every turn together.
+/// every turn together. A start hands its place back before it waits on its host (felt speed
+/// round 2, H4): its own part stays within the gate's places, and the waits on the host within
+/// their own, larger bound.
 #[test]
 fn reopen_all_tells_many_chats_what_ended_at_its_own_pace() {
-    const CHATS: usize = 8;
+    const CHATS: usize = 12;
     let plane = a_plane_with_personas();
     let host = Pretend::default();
     let planes = planes_on(&host);
@@ -2074,7 +2076,7 @@ fn reopen_all_tells_many_chats_what_ended_at_its_own_pace() {
     relaunched.takes(std::time::Duration::from_millis(60));
     let planes_again = planes_on(&relaunched);
 
-    let (_again, _held, opened) = reopens(
+    let (_again, held_again, opened) = reopens(
         &plane,
         (host, planes, held),
         &planes_again,
@@ -2086,11 +2088,17 @@ fn reopen_all_tells_many_chats_what_ended_at_its_own_pace() {
     for chat in chats {
         is_told_its_shell_ended(&relaunched, chat, "put back by Reopen all");
     }
-    let most = relaunched.most_at_once() as usize;
+    let (places, _) = held_again.chats().gate().most_seen();
+    let at_once = crate::restoring::at_once();
     assert!(
-        most <= crate::restoring::at_once(),
-        "{most} chats started at once, past Reopen all's {}",
-        crate::restoring::at_once()
+        places <= at_once,
+        "{places} starts held a place at once, past Reopen all's {at_once}"
+    );
+    let most = relaunched.most_at_once() as usize;
+    let on_the_host = at_once * crate::restoring::ON_THE_HOST_PER_PLACE;
+    assert!(
+        most <= on_the_host,
+        "{most} chats waited on their host at once, past Reopen all's {on_the_host}"
     );
     // And at its pace, not one by one: the gate lets a project start all but one at once.
     assert!(

@@ -20,6 +20,7 @@ import {
 import { SKILL_CHAT, type SkillChatAsk } from "./skillDraftAsks";
 import { StudioChatsHere, type StudioChatsLent } from "./studioChats";
 import type { GradeRow, SkillDraft, SkillDraftFile, SkillLevel } from "./bindings";
+import { findGrid } from "./ui/table/table.testkit";
 
 afterEach(() => {
   cleanup();
@@ -234,7 +235,7 @@ describe("a skill's Grades tab (S6)", () => {
       "Latest grade · 2026-10-28 10:00 UTC · Claude Code · sonnet · $1.92",
     );
 
-    const list = await screen.findByRole("grid", { name: "Grades of deploy" });
+    const list = await findGrid(screen, "Grades of deploy");
     await waitFor(() => expect(within(list).getAllByRole("row")).toHaveLength(4));
     const [, graded, limit, interrupted] = within(list).getAllByRole("row");
     expect(graded).toHaveTextContent("Graded");
@@ -276,7 +277,7 @@ describe("a skill's Grades tab (S6)", () => {
     cleanup();
     core({ skill_grades: grades([GRADES[2]]) });
     renderTab();
-    await screen.findByRole("grid", { name: "Grades of deploy" });
+    await findGrid(screen, "Grades of deploy");
     expect(screen.queryByTestId("skill-checks-answer")).toBeNull();
   });
 
@@ -550,7 +551,7 @@ describe("a skill's Grades tab (S6)", () => {
   it("keeps a skill's grades in reach after its checks are gone", async () => {
     const onGrading = renderTabWith(grades(GRADES, 0));
     await screen.findByTestId("skill-checks-none");
-    const list = await screen.findByRole("grid", { name: "Grades of deploy" });
+    const list = await findGrid(screen, "Grades of deploy");
     fireEvent.click(
       await within(list).findByRole("button", {
         name: "Scorecard of the grade of 2026-10-28 10:00 UTC",
@@ -567,8 +568,9 @@ describe("a skill's Grades tab (S6)", () => {
       },
     });
     renderTab();
-    // React Aria draws the grid before it fills in its columns (#4950): wait for the columns.
-    const list = await screen.findByRole("grid", { name: "Grades of deploy" });
+    // React Aria fills in a grid after drawing it (#4950): findGrid waits for a row, and the
+    // columns are waited for in turn.
+    const list = await findGrid(screen, "Grades of deploy");
     const names = (await within(list).findAllByRole("columnheader")).map((one) => one.textContent);
     expect(names).toEqual(
       expect.arrayContaining([
@@ -581,7 +583,7 @@ describe("a skill's Grades tab (S6)", () => {
     cleanup();
     core();
     renderTab();
-    const only = await screen.findByRole("grid", { name: "Grades of deploy" });
+    const only = await findGrid(screen, "Grades of deploy");
     await within(only).findByRole("columnheader", { name: "Graded" });
     expect(within(only).queryByRole("columnheader", { name: /Does the job/ })).toBeNull();
   });

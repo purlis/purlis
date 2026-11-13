@@ -12,7 +12,15 @@ import { standingOnPool } from "./PoolProfiles";
 import { Button } from "../ui/button/Button";
 import { AlertDialog } from "../ui/dialog/Dialog";
 import { Form } from "../ui/field/Field";
-import { Badge } from "../ui/badge/Badge";
+import {
+  ControlBody,
+  ControlCell,
+  ControlColumn,
+  ControlHead,
+  ControlRow,
+  ControlRowHeading,
+  ControlTable,
+} from "../ui/table/ControlTable";
 
 /**
  * **You › Profiles** (#2034, ADR 0095): this machine's own profiles, each available in every
@@ -268,99 +276,152 @@ const listed = (plane: string | undefined): LiveSetting => ({
       error: now.refused === undefined ? undefined : [now.refused],
       control: (ids) => (
         <div role="group" aria-labelledby={ids.labelledBy} aria-describedby={ids.describedBy}>
-          {now.read.state === "reading" && <p className="ui-setting-help">Reading…</p>}
+          {now.read.state === "reading" && (
+            <p className="ui-setting-help ui-text-secondary">Reading…</p>
+          )}
           {now.read.state === "trouble" && (
-            <p className="ui-setting-help" role="alert">
+            <p className="ui-setting-help ui-text-secondary" role="alert">
               {now.read.trouble}
             </p>
           )}
           {now.read.state === "read" &&
             (now.read.profiles.length === 0 ? (
-              <p className="ui-setting-help">This machine keeps no profile of its own yet.</p>
+              <p className="ui-setting-help ui-text-secondary">
+                This machine keeps no profile of its own yet.
+              </p>
             ) : (
-              <ul className="ui-machine-list">
-                {now.read.profiles.map((profile) => (
-                  <li key={profile.name} className="ui-machine-entry">
-                    <HarnessIcon icon={profile.icon} kind={profile.kind} />
-                    <span className="ui-machine-name">{profile.name}</span>
-                    <span className="ui-machine-path">{profile.folder}</span>
-                    <Badge variant="accent">{note(profile)}</Badge>
-                    <span className="ui-setting-help">{signedIn(profile)}</span>
-                    {onPools(profile.name).map((line) => (
-                      <span key={line} className="ui-setting-help">
-                        {line}
-                      </span>
-                    ))}
-                    {profile.origin === "made" &&
-                      (plane === undefined ? (
-                        <span className="ui-setting-help">
-                          Open a project to sign in from its window, or run{" "}
-                          <code>purlis profile sign-in {profile.name}</code> in your terminal.
+              // **A table of the profiles** (#6301, as Your hosts is, #2919 R65, R67): a table of
+              // controls, since a row holds several buttons, each its own Tab stop. A row a
+              // profile: its icon and name heading it, its harness and folder under them; how
+              // and where it signs in; its pin; and its own actions at its end, one under
+              // another, so four columns fit the page.
+              <ControlTable
+                className="profiles-table ui-record-table"
+                // Its columns as the view sizes them, as the dispatch grants' are: Pin and the
+                // actions as wide as their buttons, the profile and its sign-in sharing the rest.
+                fixed
+                stacks
+                aria-label="This machine's profiles"
+                aria-describedby={ids.describedBy}
+              >
+                <ControlHead>
+                  <ControlColumn>Profile</ControlColumn>
+                  <ControlColumn>Sign-in</ControlColumn>
+                  <ControlColumn width="10rem">Pin</ControlColumn>
+                  <ControlColumn actions hideName width="8.5rem">
+                    Actions
+                  </ControlColumn>
+                </ControlHead>
+                <ControlBody>
+                  {now.read.profiles.map((profile) => (
+                    <ControlRow key={profile.name}>
+                      <ControlRowHeading>
+                        <span className="ui-record-lines">
+                          <span className="profiles-name">
+                            <HarnessIcon icon={profile.icon} kind={profile.kind} />
+                            {profile.name}
+                          </span>
+                          <span className="ui-setting-help ui-text-secondary">{note(profile)}</span>
+                          <span className="ui-record-where ui-text-meta">{profile.folder}</span>
                         </span>
-                      ) : profile.plans.length > 0 ? (
-                        // A harness that serves several plans is signed in to the one purlis
-                        // names (opencode: ChatGPT or GitHub Copilot, never a Claude plan).
-                        profile.plans.map((plan) => (
+                      </ControlRowHeading>
+                      <ControlCell heading="Sign-in">
+                        <span className="ui-record-lines">
+                          <span className="ui-setting-help ui-text-secondary">
+                            {signedIn(profile)}
+                          </span>
+                          {onPools(profile.name).map((line) => (
+                            <span key={line} className="ui-setting-help ui-text-secondary">
+                              {line}
+                            </span>
+                          ))}
+                          {profile.origin === "made" &&
+                            (plane === undefined ? (
+                              <span className="ui-setting-help ui-text-secondary">
+                                Open a project to sign in from its window, or run{" "}
+                                <code>purlis profile sign-in {profile.name}</code> in your terminal.
+                              </span>
+                            ) : profile.plans.length > 0 ? (
+                              // A harness that serves several plans is signed in to the one purlis
+                              // names (opencode: ChatGPT or GitHub Copilot, never a Claude plan).
+                              profile.plans.map((plan) => (
+                                <EntryButton
+                                  key={plan.id}
+                                  label={`Sign in to ${plan.title}`}
+                                  spoken={`Sign in to ${plan.title}: ${profile.name}`}
+                                  disabled={now.busy}
+                                  onClick={() => askProfileSignIn(plane, profile.name, plan.id)}
+                                />
+                              ))
+                            ) : (
+                              <EntryButton
+                                label={
+                                  profile.standing === "signed-in" ? "Sign in again" : "Sign in"
+                                }
+                                spoken={`${profile.standing === "signed-in" ? "Sign in again" : "Sign in"}: ${profile.name}`}
+                                disabled={now.busy}
+                                onClick={() => askProfileSignIn(plane, profile.name)}
+                              />
+                            ))}
+                          {profile.commands_can_read_sign_in !== null && (
+                            <span className="ui-setting-help ui-text-secondary">
+                              {profile.commands_can_read_sign_in}
+                            </span>
+                          )}
+                        </span>
+                      </ControlCell>
+                      <ControlCell heading="Pin">
+                        <span className="ui-record-lines">
+                          <span className="ui-setting-help ui-text-secondary">
+                            {pinNote(profile)}
+                          </span>
+                          {offeredVersion(profile) !== undefined && (
+                            <EntryButton
+                              label="Update the pin"
+                              spoken={`Update the pin of ${profile.name} to ${offeredVersion(profile)}`}
+                              disabled={now.busy}
+                              onClick={() => {
+                                const version = offeredVersion(profile) ?? "";
+                                void acting(
+                                  () => commands.machineProfilePin(profile.name, version),
+                                  () =>
+                                    `${profile.name}: its chats run on ${profile.harness} ${version} from now on.`,
+                                );
+                              }}
+                            />
+                          )}
+                        </span>
+                      </ControlCell>
+                      <ControlCell actions>
+                        <span className="profiles-actions">
+                          {profile.origin === "made" && !profile.sandbox_only && (
+                            <EntryButton
+                              label="Import again"
+                              spoken={`Import again: ${profile.name}`}
+                              disabled={now.busy}
+                              onClick={() =>
+                                void acting(
+                                  () => commands.machineProfileImport(profile.name),
+                                  (done) => importedSays(profile.name, done),
+                                )
+                              }
+                            />
+                          )}
                           <EntryButton
-                            key={plan.id}
-                            label={`Sign in to ${plan.title}`}
-                            spoken={`Sign ${profile.name} in to ${plan.title}`}
+                            label="Remove…"
+                            spoken={`Remove ${profile.name}`}
                             disabled={now.busy}
-                            onClick={() => askProfileSignIn(plane, profile.name, plan.id)}
+                            onClick={() => void askRemove(profile)}
                           />
-                        ))
-                      ) : (
-                        <EntryButton
-                          label={profile.standing === "signed-in" ? "Sign in again" : "Sign in"}
-                          spoken={`Sign ${profile.name} in`}
-                          disabled={now.busy}
-                          onClick={() => askProfileSignIn(plane, profile.name)}
-                        />
-                      ))}
-                    <Badge variant="accent">{pinNote(profile)}</Badge>
-                    {offeredVersion(profile) !== undefined && (
-                      <EntryButton
-                        label="Update the pin"
-                        spoken={`Update the pin of ${profile.name} to ${offeredVersion(profile)}`}
-                        disabled={now.busy}
-                        onClick={() => {
-                          const version = offeredVersion(profile) ?? "";
-                          void acting(
-                            () => commands.machineProfilePin(profile.name, version),
-                            () =>
-                              `${profile.name}: its chats run on ${profile.harness} ${version} from now on.`,
-                          );
-                        }}
-                      />
-                    )}
-                    {profile.commands_can_read_sign_in !== null && (
-                      <span className="ui-setting-help">{profile.commands_can_read_sign_in}</span>
-                    )}
-                    {profile.origin === "made" && !profile.sandbox_only && (
-                      <EntryButton
-                        label="Import again"
-                        spoken={`Import the settings of ${profile.name} again`}
-                        disabled={now.busy}
-                        onClick={() =>
-                          void acting(
-                            () => commands.machineProfileImport(profile.name),
-                            (done) => importedSays(profile.name, done),
-                          )
-                        }
-                      />
-                    )}
-                    <EntryButton
-                      label="Remove…"
-                      spoken={`Remove ${profile.name}`}
-                      disabled={now.busy}
-                      onClick={() => void askRemove(profile)}
-                    />
-                  </li>
-                ))}
-              </ul>
+                        </span>
+                      </ControlCell>
+                    </ControlRow>
+                  ))}
+                </ControlBody>
+              </ControlTable>
             ))}
           {now.said !== undefined && (
-            <p className="ui-setting-help" role="status">
+            <p className="ui-setting-help ui-text-secondary" role="status">
               {now.said}
             </p>
           )}

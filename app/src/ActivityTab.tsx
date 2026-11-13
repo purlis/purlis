@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { Activity as ActivityMark, LoaderCircle, TriangleAlert } from "lucide-react";
 import { AnswerQuestion } from "./AnswerQuestion";
 import { QuestionTrail } from "./QuestionTrail";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Notice } from "./Notice";
+import { listen, untilStopped } from "./here";
 import {
   commands,
   type Activity,
@@ -184,35 +184,31 @@ export function ActivityTab({
   useEffect(() => {
     if (session === undefined) return;
     let left = false;
-    let stop: (() => void) | undefined;
     /** Lines heard before the first read answered. */
     let early: ActivityLine[] | undefined = [];
-    void (async () => {
-      try {
-        const unlisten = await listen<ActivityHeard>(ACTIVITY_HEARD, (event) => {
-          if (left || event.payload.plane !== plane) return;
-          const line = event.payload.line;
-          if (early !== undefined) {
-            early.push(line);
-            return;
-          }
-          setSaid((was) =>
-            was?.read === undefined
-              ? was
-              : { read: { ...was.read, timeline: heard(was.read.timeline, line) } },
-          );
-          setTold((was) => {
-            if (!was.has(line.from_key)) return was;
-            const less = new Map(was);
-            less.delete(line.from_key);
-            return less;
-          });
-        });
-        if (left) unlisten();
-        else stop = unlisten;
-      } catch {
-        // No window to listen in: a unit test, or a webview being torn down.
+    const listening = listen<ActivityHeard>(ACTIVITY_HEARD, (event) => {
+      if (left || event.payload.plane !== plane) return;
+      const line = event.payload.line;
+      if (early !== undefined) {
+        early.push(line);
+        return;
       }
+      setSaid((was) =>
+        was?.read === undefined
+          ? was
+          : { read: { ...was.read, timeline: heard(was.read.timeline, line) } },
+      );
+      setTold((was) => {
+        if (!was.has(line.from_key)) return was;
+        const less = new Map(was);
+        less.delete(line.from_key);
+        return less;
+      });
+    });
+    const stop = untilStopped(listening);
+    void (async () => {
+      // No window to listen in (a unit test, or a webview being torn down) still reads.
+      await listening.catch(() => undefined);
       const answer = await commands
         .activity(plane, session)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
@@ -231,7 +227,7 @@ export function ActivityTab({
     })();
     return () => {
       left = true;
-      stop?.();
+      stop();
     };
   }, [plane, session, again]);
 

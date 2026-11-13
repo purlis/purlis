@@ -145,7 +145,7 @@ export function FirstRun({
           {/* Nothing but a name is needed: a project with no repo yet, on this Mac (#1810 story 8). */}
           <OnThisMac onMake={onMake} making={opening} templates={found?.templates} />
 
-          <h2>Or start from a repo you already have</h2>
+          <h2 className="ui-text-label">Or start from a repo you already have</h2>
 
           {/* **The template first** (#1719): both acts below open the repo with it, so it is seen
           before either is pressed. Until the machine is read, a line stands where it will be,

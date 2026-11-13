@@ -34,7 +34,8 @@ struct Hosted {
     stopped: Mutex<Vec<String>>,
     /// Programs that have ended in the host.
     ended: Mutex<Vec<String>>,
-    /// The address of each login it performed, and its program (#2016).
+    /// The address each login it performed opened at, its start where it has one (#6291), and
+    /// its program (#2016).
     logins: Mutex<Vec<(String, String)>>,
     /// The kept login each browser started from, in order (#2021).
     kept: Mutex<Vec<Option<purlis_session_protocol::browsing::KeptLogin>>>,
@@ -215,10 +216,10 @@ impl Driver for Hosted {
                 "the password field did not go within the time allowed".into(),
             ));
         }
-        self.logins
-            .lock()
-            .unwrap()
-            .push((program.to_owned(), login.address.clone()));
+        self.logins.lock().unwrap().push((
+            program.to_owned(),
+            login.start.clone().unwrap_or(login.address),
+        ));
         Ok(Browsed {
             settled: true,
             note: Some("the password field is gone from https://shop.example.test since purlis submitted the login".into()),
@@ -387,6 +388,7 @@ fn logins(name: &str) -> super::ReadLogin {
             identity: Some(IDENTITY.into()),
             suggested: false,
             form: None,
+            start: None,
         },
         opens: name == "kept-login",
         identity: IDENTITY.into(),
@@ -1682,6 +1684,7 @@ fn log_in(name: &str) -> Browsing {
     Browsing::LogIn {
         login: name.into(),
         suggested: None,
+        start: None,
     }
 }
 
@@ -1716,6 +1719,39 @@ fn a_browser_login_is_performed_in_the_chats_browser_and_no_value_reaches_the_ch
     assert!(
         hosted.acts.lock().unwrap().is_empty(),
         "a login is no act of the agent's"
+    );
+}
+
+/// #6291 (the operator's ruling of 2026-11-12): a declared login's sign-in starts where the chat
+/// named it, as written, on its own site; anywhere else it is refused before the browser is
+/// handed anything.
+#[test]
+fn a_login_starts_where_the_chat_named_it_on_its_own_site_and_nowhere_else() {
+    let started = |start: &str| Browsing::LogIn {
+        login: "shop-login".into(),
+        suggested: None,
+        start: Some(start.into()),
+    };
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    browsers.allow(3, false);
+
+    let elsewhere = "https://evil.test/authorize?state=s3cr3t";
+    let why = refusal(answered(&browsers, &hosted, &ask(3, started(elsewhere))).0);
+    assert!(
+        why.contains("was not filled") && why.contains("https://evil.test"),
+        "{why}"
+    );
+    assert!(!why.contains("s3cr3t"), "{why}");
+    assert!(hosted.logins.lock().unwrap().is_empty());
+
+    let start = "https://shop.example.test/login?next=%2Fcart%3Fa%3D1#top";
+    let (answer, _) = answered(&browsers, &hosted, &ask(3, started(start)));
+    assert!(matches!(answer, Answer::Browsed { .. }), "{answer:?}");
+    assert_eq!(
+        *hosted.logins.lock().unwrap(),
+        [("program-1".to_owned(), start.to_owned())]
     );
 }
 

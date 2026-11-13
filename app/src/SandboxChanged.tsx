@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useRef, useMemo, useState, useSyncExternalStore } from "react";
+import { dequal } from "dequal/lite";
 import {
   commands,
   type LevelWhy,
@@ -108,15 +109,14 @@ export function useOlderSandbox(
   shown = true,
 ): OlderSandbox | null | undefined {
   const [older, setOlder] = useState<OlderSandbox | null>();
-  const [focused, setFocused] = useState(0);
-  const shownNow = useRef(shown);
+  const held = useRef(older);
+  /** Asks again, outside a render: set by the effect that asks while the project is in front. */
+  const askAgain = useRef<() => void>(() => {});
+  // **Neither a focus nor an equal answer draws the project's view again** (felt speed, round 3,
+  // H7): a focus asks where it is heard, never counted in the view's state, and an answer equal
+  // to the one held sets nothing.
   useEffect(() => {
-    shownNow.current = shown;
-  }, [shown]);
-  useEffect(() => {
-    const again = () => {
-      if (shownNow.current) setFocused((n) => n + 1);
-    };
+    const again = () => askAgain.current();
     window.addEventListener("focus", again);
     // **And when this machine's policy changes** (#1431): the core reads its file now and
     // then, and says so, so a policy that lands is told with nothing else moving.
@@ -140,26 +140,32 @@ export function useOlderSandbox(
   useEffect(() => {
     if (!shown) return;
     let gone = false;
-    void commands
-      .chatsOnOlderSandbox(plane)
-      .then((said) => {
-        if (gone || said.status !== "ok") return;
-        const now = answered(said.data);
-        keepAnswer(plane, now);
-        setOlder(now);
-      })
-      .catch(() => undefined)
-      // After it, never beside it: why a chat runs at its level is on a hover or a Notice, so it
-      // does not add to what a project coming to the front waits on (#5207).
-      .then(() => (gone ? undefined : commands.chatsLevelWhy(plane)))
-      .then((said) => {
-        if (!gone && said?.status === "ok") keepWhys(plane, said.data);
-      })
-      .catch(() => undefined);
+    const ask = () =>
+      void commands
+        .chatsOnOlderSandbox(plane)
+        .then((said) => {
+          if (gone || said.status !== "ok") return;
+          const now = answered(said.data);
+          keepAnswer(plane, now);
+          if (held.current !== undefined && dequal(held.current, now)) return;
+          held.current = now;
+          setOlder(now);
+        })
+        .catch(() => undefined)
+        // After it, never beside it: why a chat runs at its level is on a hover or a Notice, so
+        // it does not add to what a project coming to the front waits on (#5207).
+        .then(() => (gone ? undefined : commands.chatsLevelWhy(plane)))
+        .then((said) => {
+          if (!gone && said?.status === "ok") keepWhys(plane, said.data);
+        })
+        .catch(() => undefined);
+    askAgain.current = ask;
+    ask();
     return () => {
       gone = true;
+      askAgain.current = () => {};
     };
-  }, [plane, asked, focused, shown]);
+  }, [plane, asked, shown]);
   return older;
 }
 

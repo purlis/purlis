@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { PoolProfileRow, PoolProfiles as PoolProfilesAnswered } from "../bindings";
 import {
   ASK_AGAIN_WHILE_FETCHING_MS,
@@ -13,6 +13,8 @@ import {
 } from "../pools";
 import { OfferToRaise } from "../RaiseLimit";
 import { Button } from "../ui/button/Button";
+import { List, ListRow } from "../ui/list/List";
+import { RowBelow, RowDescription, RowLabel, RowTrail } from "../ui/list/Row";
 import { Menu, MenuItem, MenuTrigger } from "../ui/menu/Menu";
 import { askProfileSignIn, askProfileSignOut } from "./links";
 import { PoolSignIn, approvesIn, drivenPlan, type SignInStanding } from "./PoolSignIn";
@@ -62,8 +64,8 @@ export function standingOnPool(pool: string, row: PoolProfileRow): string {
  * in there. Add a profile… adds another of this machine's, and Remove, asked first, takes one
  * off, its sign-in there with it; neither is offered while a sign-in runs on the pool.
  * Sign in on a Claude Code or Codex profile, or an opencode profile's Copilot or ChatGPT plan,
- * opens its line in place into a sign-in strip that drives the harness's own login with no
- * terminal ({@link PoolSignIn}, #4042, #4044, #4045). Another opens a shell tab in the project
+ * opens a sign-in strip under the list, which drives the harness's own login with no terminal
+ * while the profile's line says where it stands ({@link PoolSignIn}, #4042, #4044, #4045). Another opens a shell tab in the project
  * `plane`'s window, where the core types the runner's own sign-in, which the person drives; with
  * no project open, it says how to sign in from a terminal instead.
  * Nothing of this machine's sign-in goes to the runner. Each line says where it stands, and a
@@ -106,7 +108,11 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
   }, [pool, plane, asked, fetching]);
   const rows = signing !== undefined && heldRows !== undefined ? heldRows : asked;
   if (rows === undefined || rows === "asking") {
-    return <p className="ui-setting-help">Asking the runner about this machine&apos;s profiles…</p>;
+    return (
+      <p className="ui-setting-help ui-text-secondary">
+        Asking the runner about this machine&apos;s profiles…
+      </p>
+    );
   }
   const again = (
     <Button size="sm" onPress={() => void askProfiles(pool, plane)}>
@@ -116,7 +122,7 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
   if (!("kept" in rows)) {
     return (
       <>
-        <p className="ui-setting-help" role="alert">
+        <p className="ui-setting-help ui-text-secondary" role="alert">
           {rows.trouble}
         </p>
         {again}
@@ -192,11 +198,11 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
     );
   // Said above its profiles, so it stays in sight while a sign-in's strip is open.
   const lasts = rows.fresh_claim ? (
-    <p className="ui-setting-help">{lastsOnlyForThisClaim(pool)}</p>
+    <p className="ui-setting-help ui-text-secondary">{lastsOnlyForThisClaim(pool)}</p>
   ) : null;
   const told =
     said === undefined ? null : (
-      <p className="ui-setting-help" role="status">
+      <p className="ui-setting-help ui-text-secondary" role="status">
         {said}
       </p>
     );
@@ -204,7 +210,7 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
     return (
       <>
         {lasts}
-        <p className="ui-setting-help">
+        <p className="ui-setting-help ui-text-secondary">
           {rows.addable.length === 0
             ? "This machine keeps no profile of its own yet."
             : `No profile is on pool ${pool}: its chats start on the profiles its runner has of its own.`}
@@ -214,202 +220,236 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
       </>
     );
   }
+  /** What a row offers, at its end, and what it says under its words (a question asked, or
+   *  why it offers nothing here). */
+  const offers = (row: PoolProfileRow): { trail: ReactNode; below: string | null } => {
+    let trail: ReactNode = null;
+    let below: string | null = null;
+    // A sign-in's strip, a limit's form: drawn under the list, which they would not fit in.
+    if (signing === row.name) return { trail, below };
+    if (row.not_kept === null && row.standing !== "signed-in") {
+      if (DRIVEN.has(row.kind))
+        trail = (
+          <Button
+            size="sm"
+            aria-label={`Sign in: ${row.name} on pool ${pool}`}
+            isDisabled={out?.running === true}
+            onPress={() => open(row)}
+          >
+            Sign in
+          </Button>
+        );
+      else if (plane === undefined && !row.plans.some((one) => drivenPlan(row.kind, one.id)))
+        below = "Open a project to sign it in from its window.";
+      else if (row.plans.length > 0) {
+        trail = row.plans
+          .filter((one) => plane !== undefined || drivenPlan(row.kind, one.id))
+          .map((one) => (
+            <Button
+              key={one.id}
+              size="sm"
+              aria-label={`Sign in to ${one.title}: ${row.name} on pool ${pool}`}
+              isDisabled={out?.running === true}
+              onPress={() =>
+                drivenPlan(row.kind, one.id) ? open(row, one.id) : signIn(row, one.id)
+              }
+            >
+              {`Sign in to ${one.title}`}
+            </Button>
+          ));
+        if (plane === undefined)
+          below = "Open a project to sign its other plans in from its window.";
+      } else
+        trail = (
+          <Button
+            size="sm"
+            aria-label={`Sign in: ${row.name} on pool ${pool}`}
+            isDisabled={out?.running === true}
+            onPress={() => signIn(row)}
+          >
+            Sign in
+          </Button>
+        );
+    }
+    // Neither Sign out nor Remove is offered on any row while a sign-in runs on the pool.
+    if (signing !== undefined) return { trail, below };
+    if (row.not_kept === null && row.standing === "signed-in" && removing !== row.name) {
+      if (!SIGNS_OUT.has(row.kind)) {
+        if (row.kind !== "opencode") below = `${row.harness} signs out only in its own terminal.`;
+        else if (plane === undefined)
+          below = `${row.harness} signs out in a terminal: open a project to sign ${row.name} out here.`;
+        else {
+          below = SIGNS_OUT_IN_A_TERMINAL_ON;
+          trail = (
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={`Sign out in a terminal: ${row.name} on pool ${pool}`}
+              onPress={() => askProfileSignOut(plane, row.name, pool)}
+            >
+              Sign out in a terminal
+            </Button>
+          );
+        }
+      } else if (out?.name === row.name && !out.running) {
+        below = `Sign ${row.name} out on pool ${pool}? A chat with it does not start there until it signs in again.`;
+        trail = (
+          <>
+            <Button
+              variant="danger"
+              size="sm"
+              aria-label={`Yes, sign out: ${row.name} on pool ${pool}`}
+              onPress={() => void signOut(row.name)}
+            >
+              Sign out
+            </Button>
+            <Button
+              size="sm"
+              aria-label={`Keep ${row.name} signed in on pool ${pool}`}
+              onPress={() => setOut(undefined)}
+            >
+              Keep
+            </Button>
+          </>
+        );
+      } else
+        trail = (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={`Sign out: ${row.name} on pool ${pool}`}
+            isDisabled={out?.running === true}
+            onPress={() => {
+              setRemoving(undefined);
+              setOut({ name: row.name, running: false });
+            }}
+          >
+            Sign out
+          </Button>
+        );
+    }
+    if (out?.name !== row.name) {
+      if (removing === row.name) {
+        // Asked after what the row already says, which stays (how to sign it in).
+        below = [
+          below,
+          `Remove ${row.name} from pool ${pool}? Its runner forgets it, and its sign-in there goes with it.`,
+        ]
+          .filter(Boolean)
+          .join(" ");
+        trail = (
+          <>
+            {trail}
+            <Button
+              variant="danger"
+              size="sm"
+              aria-label={`Yes, remove ${row.name} from pool ${pool}`}
+              onPress={() => void remove(row.name)}
+            >
+              Remove
+            </Button>
+            <Button
+              size="sm"
+              aria-label={`Keep ${row.name} on pool ${pool}`}
+              onPress={() => setRemoving(undefined)}
+            >
+              Keep
+            </Button>
+          </>
+        );
+      } else
+        trail = (
+          <>
+            {trail}
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={`Remove ${row.name} from pool ${pool}`}
+              isDisabled={out?.running === true}
+              onPress={() => setRemoving(row.name)}
+            >
+              Remove
+            </Button>
+          </>
+        );
+    }
+    return { trail, below };
+  };
+  const signingRow = rows.kept.find((row) => row.name === signing);
   return (
     <>
       {lasts}
-      <ul className="ui-machine-list" aria-label={`Profiles on pool ${pool}`}>
-        {rows.kept.map((row) => (
-          <li key={row.name} className="ui-machine-entry">
-            <span className="ui-machine-name">{row.name}</span>
-            <span className="ui-setting-help">
-              {signing === row.name
-                ? STANDING_SAID[strip]
-                : out?.name === row.name && out.running
-                  ? `Signing out on pool ${pool}…`
-                  : failed.has(row.name) && row.standing !== "signed-in"
-                    ? STANDING_SAID.failed
-                    : standingOnPool(pool, row)}
-            </span>
-            {/* Where a limit kept it off the runner, the form is here, and asks again (#4397). */}
-            {row.not_kept !== null && row.limit !== null && (
+      {/* **The profiles, as rows of the list family** (#6301): a row a profile, its name, where
+          it stands on the pool as its line, and what it offers at its end, which → reaches; a
+          question asked about it under its words. */}
+      <List aria-label={`Profiles on pool ${pool}`} className="pool-profiles" disallowTypeAhead>
+        {rows.kept.map((row) => {
+          const { trail, below } = offers(row);
+          return (
+            <ListRow key={row.name} id={row.name} textValue={row.name}>
+              <RowLabel>{row.name}</RowLabel>
+              <RowDescription>
+                {signing === row.name
+                  ? STANDING_SAID[strip]
+                  : out?.name === row.name && out.running
+                    ? `Signing out on pool ${pool}…`
+                    : failed.has(row.name) && row.standing !== "signed-in"
+                      ? STANDING_SAID.failed
+                      : standingOnPool(pool, row)}
+              </RowDescription>
+              {trail !== null && <RowTrail>{trail}</RowTrail>}
+              {below !== null && <RowBelow>{below}</RowBelow>}
+            </ListRow>
+          );
+        })}
+      </List>
+      {/* Where a limit kept a profile off the runner, its form, which asks again (#4397). */}
+      {rows.kept
+        .filter((row) => row.not_kept !== null && row.limit !== null)
+        .map((row) =>
+          row.limit === null ? null : (
+            // Named by its profile, as it stands apart from its row.
+            <section
+              key={`${row.name}:${row.not_kept}`}
+              className="pool-profile-raise"
+              aria-label={`${row.name}'s limit on pool ${pool}`}
+            >
+              <p className="ui-setting-help ui-text-secondary">{`${row.name}: ${row.not_kept}.`}</p>
               <OfferToRaise
-                key={row.not_kept}
                 offer={row.limit}
                 action="Save to the pool and ask again"
                 onRaised={() => void askProfiles(pool, plane)}
               />
-            )}
-            {signing === row.name ? (
-              <PoolSignIn
-                pool={pool}
-                profile={row.name}
-                kind={row.kind}
-                harness={row.harness}
-                provider={plan}
-                onEnd={ended}
-                onStanding={setStrip}
-                onTerminal={
-                  plane === undefined
-                    ? undefined
-                    : () => {
-                        ended(false);
-                        // The harness's browser flow in a terminal has no way back to the
-                        // runner, so a login approved in the browser runs its device flow there.
-                        signIn(row, plan, approvesIn(row.kind, plan) || undefined);
-                      }
+            </section>
+          ),
+        )}
+      {signingRow !== undefined && (
+        <PoolSignIn
+          pool={pool}
+          profile={signingRow.name}
+          kind={signingRow.kind}
+          harness={signingRow.harness}
+          provider={plan}
+          onEnd={ended}
+          onStanding={setStrip}
+          onTerminal={
+            plane === undefined
+              ? undefined
+              : () => {
+                  ended(false);
+                  // The harness's browser flow in a terminal has no way back to the runner, so
+                  // a login approved in the browser runs its device flow there.
+                  signIn(signingRow, plan, approvesIn(signingRow.kind, plan) || undefined);
                 }
-              />
-            ) : (
-              row.not_kept === null &&
-              row.standing !== "signed-in" &&
-              (DRIVEN.has(row.kind) ? (
-                <Button
-                  aria-label={`Sign ${row.name} in on pool ${pool}`}
-                  isDisabled={out?.running === true}
-                  onPress={() => open(row)}
-                  className="ui-setting-reset"
-                >
-                  Sign in
-                </Button>
-              ) : plane === undefined && !row.plans.some((one) => drivenPlan(row.kind, one.id)) ? (
-                <span className="ui-setting-help">
-                  Open a project to sign it in from its window.
-                </span>
-              ) : row.plans.length > 0 ? (
-                <>
-                  {row.plans
-                    .filter((one) => plane !== undefined || drivenPlan(row.kind, one.id))
-                    .map((one) => (
-                      <Button
-                        key={one.id}
-                        aria-label={`Sign ${row.name} in to ${one.title} on pool ${pool}`}
-                        isDisabled={out?.running === true}
-                        onPress={() =>
-                          drivenPlan(row.kind, one.id) ? open(row, one.id) : signIn(row, one.id)
-                        }
-                        className="ui-setting-reset"
-                      >
-                        {`Sign in to ${one.title}`}
-                      </Button>
-                    ))}
-                  {plane === undefined && (
-                    <span className="ui-setting-help">
-                      Open a project to sign its other plans in from its window.
-                    </span>
-                  )}
-                </>
-              ) : (
-                <Button
-                  aria-label={`Sign ${row.name} in on pool ${pool}`}
-                  isDisabled={out?.running === true}
-                  onPress={() => signIn(row)}
-                  className="ui-setting-reset"
-                >
-                  Sign in
-                </Button>
-              ))
-            )}
-            {signing === undefined &&
-              row.not_kept === null &&
-              row.standing === "signed-in" &&
-              removing !== row.name &&
-              (!SIGNS_OUT.has(row.kind) ? (
-                row.kind !== "opencode" ? (
-                  <span className="ui-setting-help">
-                    {`${row.harness} signs out only in its own terminal.`}
-                  </span>
-                ) : plane === undefined ? (
-                  <span className="ui-setting-help">
-                    {`${row.harness} signs out in a terminal: open a project to sign ${row.name} out here.`}
-                  </span>
-                ) : (
-                  <>
-                    <span className="ui-setting-help">{SIGNS_OUT_IN_A_TERMINAL_ON}</span>
-                    <Button
-                      variant="ghost"
-                      aria-label={`Sign out ${row.name} on pool ${pool} in a terminal`}
-                      onPress={() => askProfileSignOut(plane, row.name, pool)}
-                      className="ui-setting-reset"
-                    >
-                      Sign out in a terminal
-                    </Button>
-                  </>
-                )
-              ) : out?.name === row.name && !out.running ? (
-                <>
-                  <span className="ui-setting-help">
-                    {`Sign ${row.name} out on pool ${pool}? A chat with it does not start there until it signs in again.`}
-                  </span>
-                  <Button
-                    variant="danger"
-                    aria-label={`Yes, sign out ${row.name} on pool ${pool}`}
-                    onPress={() => void signOut(row.name)}
-                    className="ui-setting-reset"
-                  >
-                    Sign out
-                  </Button>
-                  <Button
-                    aria-label={`Keep ${row.name} signed in on pool ${pool}`}
-                    onPress={() => setOut(undefined)}
-                    className="ui-setting-reset"
-                  >
-                    Keep
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  variant="ghost"
-                  aria-label={`Sign out ${row.name} on pool ${pool}`}
-                  isDisabled={out?.running === true}
-                  onPress={() => {
-                    setRemoving(undefined);
-                    setOut({ name: row.name, running: false });
-                  }}
-                  className="ui-setting-reset"
-                >
-                  Sign out
-                </Button>
-              ))}
-            {signing === undefined &&
-              out?.name !== row.name &&
-              (removing === row.name ? (
-                <>
-                  <span className="ui-setting-help">
-                    {`Remove ${row.name} from pool ${pool}? Its runner forgets it, and its sign-in there goes with it.`}
-                  </span>
-                  <Button
-                    variant="danger"
-                    aria-label={`Yes, remove ${row.name} from pool ${pool}`}
-                    onPress={() => void remove(row.name)}
-                    className="ui-setting-reset"
-                  >
-                    Remove
-                  </Button>
-                  <Button
-                    aria-label={`Keep ${row.name} on pool ${pool}`}
-                    onPress={() => setRemoving(undefined)}
-                    className="ui-setting-reset"
-                  >
-                    Keep
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  variant="ghost"
-                  aria-label={`Remove ${row.name} from pool ${pool}`}
-                  isDisabled={out?.running === true}
-                  onPress={() => setRemoving(row.name)}
-                  className="ui-setting-reset"
-                >
-                  Remove
-                </Button>
-              ))}
-          </li>
-        ))}
-      </ul>
+          }
+        />
+      )}
       {told}
       {outSaid !== undefined && (
-        <p className="ui-setting-help" role={outSaid.trouble ? "alert" : "status"}>
+        <p
+          className="ui-setting-help ui-text-secondary"
+          role={outSaid.trouble ? "alert" : "status"}
+        >
           {outSaid.text}
         </p>
       )}

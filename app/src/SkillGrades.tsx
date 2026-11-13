@@ -19,7 +19,7 @@
  *   ({@link GradingAt}), with their own crumbs, never tabs of their own.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen, untilStopped } from "./here";
 import {
   commands,
   SKILL_GRADE,
@@ -387,28 +387,32 @@ export function GradesTab({
   useEffect(() => {
     const isOurs = (now: { plane: string; skill: string; level: SkillLevel }) =>
       now.plane === plane && now.skill === name && sameLevel(now.level, ours.current);
-    const ended = listen<SkillGradeStep>(SKILL_GRADE, (event) => {
-      const now = event.payload;
-      // A draft's grade is the draft's page's: it moves nothing on the skill's own tab (#2780).
-      if (now.draft !== null || !isOurs(now)) return;
-      // A grade that starts while the tab is open (one after an edit) is read, so it is shown.
-      if (now.ended === null) {
-        if (runningNow.current !== now.grade) setAgain((n) => n + 1);
-        return;
-      }
-      setAgain((n) => n + 1);
-      graded.current?.();
-      if (now.said !== null) setSaid(endedSaid(now));
-    }).catch(() => undefined);
-    const waits = listen<SkillGradeAfterEditStep>(SKILL_GRADE_AFTER_EDIT, (event) => {
-      const now = event.payload;
-      if (!isOurs(now)) return;
-      setSaid(now.said);
-      setAgain((n) => n + 1);
-    }).catch(() => undefined);
+    const ended = untilStopped(
+      listen<SkillGradeStep>(SKILL_GRADE, (event) => {
+        const now = event.payload;
+        // A draft's grade is the draft's page's: it moves nothing on the skill's own tab (#2780).
+        if (now.draft !== null || !isOurs(now)) return;
+        // A grade that starts while the tab is open (one after an edit) is read, so it is shown.
+        if (now.ended === null) {
+          if (runningNow.current !== now.grade) setAgain((n) => n + 1);
+          return;
+        }
+        setAgain((n) => n + 1);
+        graded.current?.();
+        if (now.said !== null) setSaid(endedSaid(now));
+      }),
+    );
+    const waits = untilStopped(
+      listen<SkillGradeAfterEditStep>(SKILL_GRADE_AFTER_EDIT, (event) => {
+        const now = event.payload;
+        if (!isOurs(now)) return;
+        setSaid(now.said);
+        setAgain((n) => n + 1);
+      }),
+    );
     return () => {
-      void ended.then((stop) => stop?.()).catch(() => undefined);
-      void waits.then((stop) => stop?.()).catch(() => undefined);
+      ended();
+      waits();
     };
   }, [plane, name]);
 

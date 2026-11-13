@@ -26,7 +26,6 @@
 //!
 //! **Tier:** Machine, device-bound, transient, never committed: what this machine's chats showed.
 
-use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
 
 /// **A name this module puts in a path**: a plain one ([`super::plain`]) that is more than dots,
@@ -81,9 +80,8 @@ impl Of {
 /// How many of a skill's grades keep their chats: the newest.
 pub const KEPT_GRADES: usize = 3;
 
-/// The most bytes of one chat's screen kept: a screen past it is not kept, since cutting it
-/// would cut the sequences that draw it.
-pub const MOST_SCREEN_BYTES: usize = 4 * 1024 * 1024;
+/// The most bytes of one chat's screen kept ([`crate::keptscreen::MOST_SCREEN_BYTES`]).
+pub const MOST_SCREEN_BYTES: usize = crate::keptscreen::MOST_SCREEN_BYTES;
 
 /// The most grade folders of one skill looked at: a folder with more is swept no further.
 const MOST_GRADE_FOLDERS: usize = 600;
@@ -121,20 +119,6 @@ fn screen_path(root: &Path, of: &Of, grade: &str, chat: &str) -> Option<(PathBuf
     Some((grade_dir.join(format!("{chat}.{SCREEN}")), dirs))
 }
 
-/// `dir` made where it is not, private, and refused where it is not a folder of its own.
-fn made_private(dir: &Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(dir)?;
-    if !std::fs::symlink_metadata(dir)?.is_dir() {
-        return Err(std::io::Error::other("the folder is not a folder"));
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
-    }
-    Ok(())
-}
-
 /// **Keeps `screen`, what chat `chat` of `skill`'s grade `grade` showed as it ended**, in the
 /// project at `root`. Refused for a name that is not plain and a screen past
 /// [`MOST_SCREEN_BYTES`]; written whole, private, following no link.
@@ -153,23 +137,8 @@ pub fn keep_of(root: &Path, of: &Of, grade: &str, chat: &str, screen: &str) -> s
     crate::appstate::made(root).map_err(std::io::Error::other)?;
     let (path, on_the_way) = screen_path(root, of, grade, chat)
         .ok_or_else(|| std::io::Error::other("a name is not a plain one"))?;
-    if screen.len() > MOST_SCREEN_BYTES {
-        return Err(std::io::Error::other("the screen is too big to keep"));
-    }
-    // The record's folder, the skill's (or the router's and its scope's) and the grade's, each
-    // made private and checked to be no link before the next is made inside it.
-    for dir in &on_the_way {
-        made_private(dir)?;
-    }
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt as _;
-        options.mode(0o600);
-    }
-    let mut file = crate::contain::nofollow(&mut options).open(&path)?;
-    file.write_all(screen.as_bytes())
+    // The record's folder, the skill's (or the router's and its scope's) and the grade's.
+    crate::keptscreen::write(&on_the_way, &path, screen)
 }
 
 /// **What chat `chat` of `skill`'s grade `grade` showed as it ended**, where this machine kept
@@ -190,24 +159,7 @@ pub fn of_draft(skill: &str) -> Of {
 /// [`kept`], of `of`'s grade `grade`: a skill's, or a router's (#3617).
 pub fn kept_of(root: &Path, of: &Of, grade: &str, chat: &str) -> Option<String> {
     let (path, folders) = screen_path(root, of, grade, chat)?;
-    if !folders
-        .iter()
-        .all(|dir| std::fs::symlink_metadata(dir).is_ok_and(|meta| meta.is_dir()))
-    {
-        return None;
-    }
-    let meta = std::fs::symlink_metadata(&path).ok()?;
-    if !meta.is_file() || meta.len() > MOST_SCREEN_BYTES as u64 {
-        return None;
-    }
-    let mut options = std::fs::OpenOptions::new();
-    options.read(true);
-    let file = crate::contain::nofollow(&mut options).open(&path).ok()?;
-    let mut text = String::new();
-    file.take(MOST_SCREEN_BYTES as u64)
-        .read_to_string(&mut text)
-        .ok()?;
-    Some(text)
+    crate::keptscreen::read(&folders, &path)
 }
 
 /// **The grades of `of` whose chats this machine keeps**, newest first.
@@ -275,7 +227,7 @@ pub fn renamed(root: &Path, old: &str, new: &str) {
     if old == new || !std::fs::symlink_metadata(&from).is_ok_and(|meta| meta.is_dir()) {
         return;
     }
-    if made_private(&to).is_err() {
+    if crate::keptscreen::made_private(&to).is_err() {
         return;
     }
     for grade in grades_kept(root, &old) {

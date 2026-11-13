@@ -10,6 +10,7 @@ import type { GoneProject, MachineProject, ThisMachine } from "../bindings";
 import { forgetThisLaunch } from "../regions";
 import { machineChanged } from "./thisMachine";
 import { GLOBAL } from "../windowprefs";
+import { findGrid } from "../ui/table/table.testkit";
 
 /**
  * **Settings › You › This machine** (ST-2, #1226), in the whole window: the machine store's
@@ -158,12 +159,42 @@ async function thisMachine() {
 
 /** The list a row of the group draws, by the row's name. */
 const listOf = (name: string) => screen.getByRole("group", { name });
-const entries = (name: string) =>
-  within(listOf(name))
-    .queryAllByRole("listitem")
-    .map((item) => item.textContent);
+/** The table a list is drawn as (#6301): the table family's, named by its row. */
+const tableOf = (name: string) => within(listOf(name)).queryByRole("grid", { name });
+/** Its rows' words, one string a row, the columns' names left out. */
+const entries = (name: string) => {
+  const table = tableOf(name);
+  if (table === null) return [];
+  return within(table)
+    .getAllByRole("row")
+    .filter((row) => within(row).queryAllByRole("columnheader").length === 0)
+    .map((row) => row.textContent);
+};
 
 describe("You › This machine", () => {
+  it("draws each list as a table: a row a project, its name heading the row (#6301)", async () => {
+    await thisMachine();
+
+    const table = await findGrid(screen, "Recent projects");
+    expect(
+      within(table)
+        .getAllByRole("columnheader")
+        .map((one) => one.textContent),
+    ).toEqual(["Project", "Where", "Status", "Locate", "Forget"]);
+    expect(
+      within(table)
+        .getAllByRole("rowheader")
+        .map((one) => one.textContent),
+    ).toEqual(["plane", "old"]);
+    expect(within(table).getByRole("button", { name: "Locate old" })).toBeTruthy();
+    // Pins name a workspace, which has no folder of its own; approvals offer no Locate….
+    expect(
+      within(await findGrid(screen, "Approved projects"))
+        .getAllByRole("columnheader")
+        .map((one) => one.textContent),
+    ).toEqual(["Project", "Where", "Revoke"]);
+  });
+
   it("lists the recents, every pin with the dangling one marked, the approvals and the channel", async () => {
     await thisMachine();
 
@@ -173,13 +204,16 @@ describe("You › This machine", () => {
         "old/mnt/usb/oldgoneLocate…Forget",
       ]),
     );
-    expect(entries("Pins")).toEqual([
-      `plane${PLANE}Unpin`,
-      "ide in planeUnpin",
-      "renamed in planegone, kept dormantForget",
-      "docs in planeUnpin",
-    ]);
-    expect(entries("Approved projects")).toEqual([`plane${PLANE}Revoke`]);
+    // Each table fills in its rows on its own render (#6372), so each is waited for.
+    await waitFor(() =>
+      expect(entries("Pins")).toEqual([
+        `plane${PLANE}Unpin`,
+        "ide in planeUnpin",
+        "renamed in planegone, kept dormantForget",
+        "docs in planeUnpin",
+      ]),
+    );
+    await waitFor(() => expect(entries("Approved projects")).toEqual([`plane${PLANE}Revoke`]));
     expect(await screen.findByRole("radio", { name: "stable" })).toBeChecked();
   });
 
@@ -382,9 +416,7 @@ describe("You › This machine", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: "Revoke plane" }));
 
-    await waitFor(() =>
-      expect(within(listOf("Approved projects")).queryAllByRole("listitem")).toHaveLength(0),
-    );
+    await waitFor(() => expect(tableOf("Approved projects")).toBeNull());
     expect(listOf("Approved projects")).toHaveTextContent(
       "No project is approved on this machine.",
     );

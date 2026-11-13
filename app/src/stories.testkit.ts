@@ -264,10 +264,31 @@ export async function untilSettled(inside: Element): Promise<void> {
   );
 }
 
+/**
+ * **Words in a dialog, once they are seen** (#6360): a dialog fades in as it opens, so words it
+ * shows can be found while it is still transparent. This waits for the dialog's scrim to settle
+ * (`untilSettled`), then reads whether the words are seen until they are, as the fade's end is
+ * the engine's (stories run 42857403995).
+ */
+export async function untilSeenInDialog(words: Element): Promise<void> {
+  await untilSettled(words.closest('[data-scope="dialog"][data-part="scrim"]') ?? words);
+  await waitFor(() => expect(words).toBeVisible(), { timeout: SETTLES_WITHIN_MS });
+}
+
 /** The families whose native input is hidden inside the part that draws it (#2907). */
 const CHOICE_SCOPES = ["checkbox", "radio", "switch", "segment", "option-card", "slider"]
   .map((scope) => `[data-scope="${scope}"]`)
   .join(", ");
+
+/** **A pen that writes in `element`'s font**: a canvas context whose `measureText` says how
+ *  much room the element's words take as the element draws them. */
+export function penFor(element: Element): CanvasRenderingContext2D {
+  const pen = document.createElement("canvas").getContext("2d");
+  if (pen === null) throw new Error("no canvas to measure words with");
+  const style = getComputedStyle(element);
+  pen.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+  return pen;
+}
 
 /** The points of a box a person looks at: its centre and a point just inside each corner, at
  *  least `round` px in for a box whose corners are rounded that far. */

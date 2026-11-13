@@ -220,12 +220,10 @@ not a token: words with no size of their own (a list row's, a paragraph's) follo
 No token reaches the title bar's height yet. **Corners are a family's parts.** The rail's
 project buttons, the title bar's workspace chips, the session tabs and their `×` are rounded
 through their parts ([Session tabs](#session-tabs)), a list's rows by `radius.control` (the list
-family, since manifest version 11; `radius.md` before #3177), and the tree family's rows by
-`radius.control` too (the Changes view's, since the next release's manifest version). The tree
-rows still drawn by hand (the Explorer's and the Chats list's) join when they move to the tree
-family (#2911); until then no key reaches their corners. **The focus ring tokens reach every
-focus ring**, a tab's `×` closer's among them; a ring that sits half as far out or in draws half
-the offset. Under
+family, since manifest version 11; `radius.md` before #3177), and every tree's rows by
+`radius.control` and the `tree` family's parts (`tree.root.corner-radius`, since manifest version
+13; [Component parts](#component-parts)). **The focus ring tokens reach every focus ring**, a
+tab's `×` closer's among them; a ring that sits half as far out or in draws half the offset. Under
 forced colours the ring is drawn in the system's `Highlight` at the theme's width and offset:
 forced colours replace colour, not geometry.
 
@@ -421,7 +419,7 @@ each option is a menu's row, so `menu.root.hover.fill` reaches an option too. A 
 held at 3:1 as an icon is; the placeholder and the chevron fall back to the quiet tier.
 
 A box a person gives a value to (`text-input`, `textarea`, `select`, `combobox`) is refused in
-`invalid` (since NEXT): `text-input.root.invalid.border-colour` reaches every refused one-line box.
+`invalid` (manifest version 13, #3110): `text-input.root.invalid.border-colour` reaches every refused one-line box.
 Its edge is what says a value is refused, so such a box keeps its edge's width (`border-width` 0
 on its root refuses the theme; a transparent `border-colour` draws no edge at rest, with
 `invalid.border-colour` the refused one), and in any
@@ -572,12 +570,12 @@ of their corners is clamped to half their own box (`min(r, 50%)`; `full` is `50%
 its words in that height. `panel.root.corner-radius` sets one panel's corners over the theme's
 `panel.corner-radius` token, which sets every panel's.
 **The tooltip** (`tooltip`, manifest version 5, #2908) has a `root`, its surface, and a `detail`, an icon button's
-second line, and since the next release's manifest version (#2921) a `shortcut`, the key that does what its target
+second line, and a `shortcut` (`tooltip.shortcut`, manifest version 13, #2921), the key that does what its target
 does, after its words. A theme sets the surface's fill, words, edge colour and width, corners and shadow;
 its size is its words', so none of its sizes is a theme's. Purlis draws it with corners of 8 and
 no edge: `"tooltip.root.corner-radius": 8`, `"tooltip.root.border-width": 0`.
 
-**The activity family** (manifest version 10, #2917; its words reworded in the next release's manifest version, #3144): `activity`, a
+**The activity family** (`activity`, manifest version 10, #2917; its words reworded in manifest version 13, #3144) is a
 view's icon on a side's bar: `bar` (an icon in a side's column, the left bar beside the project
 rail and the right one at the window's edge) and `tab` (tabs across a side panel's top, which no
 bar of the window draws since the left bar became a column); its `item`
@@ -585,7 +583,7 @@ bar of the window draws since the left bar became a column); its `item`
 `indicator`, the mark along a chosen item's edge. Purlis draws the family default; Purlis
 Classic's own `parts` give its square items and accent edge (`activity.indicator.selected.fill`).
 
-**The panel separator** (the next release's manifest version, #3143): `panel-separator`, the handle between two
+**The panel separator** (`panel-separator`, manifest version 13, #3143) is the handle between two
 panels that resizes them (a side's edge, the line under the work, the line between the bottom
 panel's halves, a split between panes). Its `root` is the handle and its `grip` a short mark at
 its middle, drawn over what is either side of it, so a wider look never changes the handle's box.
@@ -602,7 +600,7 @@ on it, in place of a ring the handle's length. Purlis Classic's own `parts` draw
 (`panel-separator.root.hover.fill: accent.base`, `panel-separator.grip.hover.fill: transparent`,
 and the same for `pressed` and `focused`).
 
-**The view frame** (the next release's manifest version, #3666, #3667): `view-frame` lays a view
+**The view frame** (`view-frame`, manifest version 13, #3666, #3667) lays a view
 tab out as pages: its `nav` (the page navigation's column), the page's `list` pane with its
 `head` and `lead` line, the `item` pane with its sticky page `header` and the item's `name`, and
 the top `bar` with back and forward (`history`), the `path` of the view's pages, the `crumb`
@@ -611,38 +609,35 @@ where the person is and the `crumb-separator`. It draws no state. A page in its 
 `indicator` at the current page's start edge, which tells it apart by more than colour. Both
 built-ins draw the family default.
 
-**Page tabs** (the next release's manifest version, #3668): `page-tabs`, the tabs inside a page.
+**Page tabs** (`page-tabs`, manifest version 13, #3668) are the tabs inside a page.
 Its root is a `tab` (React Aria's state attributes), with its `label`, its `count` (quiet words,
 in room kept for three figures) and its `indicator` under the chosen tab; the `list` row and the
 chosen tab's `panel` are drawn around it. No state changes a size. Both built-ins draw the family
 default.
 
-**The disclosure** (the next release's manifest version, #3675): `disclosure`, a button that
+**The disclosure** (`disclosure`, manifest version 13, #3675) is a button that
 shows and hides the region under it. Its `root` holds the `trigger` row (the room around the
 trigger and any mark after it; the trigger itself is a quiet ghost of the button family, which
 `button.*` reaches), the `twist` that turns in it (its colour, held at its floor), and the
 `panel` it shows (its ground, edge, corners and room). It draws no state: opening it turns the
 twist, which is a transform. Both built-ins draw the family default.
 
-**The review page** (the next release's manifest version, #3672): `review-page`, a page whose
+**The review page** (`review-page`, manifest version 13, #3672) is a page whose
 `body` scrolls over a fixed action `bar`, with the bar's `summary` (what the main action does and
 spends, held at its floor) and its `answers` (the dialog's answer row, whose buttons are the button
 family's). The bar's edge is not a theme's: the bar is a consent surface where it holds a grant,
 so no part sets the line over it. It draws no state. Both built-ins draw the family default.
 
-**The table** (the next release's manifest version, #2911): `table`. Its `root` is a table's row,
+**The table** (`table`, manifest version 13, #2911): its `root` is a table's row,
 at rest and in each state (`fill`, `text`); `frame` is the card that holds the table; `head` a
 column's name; `cell` a cell's room; `rule` the rule between rows and under the columns' names,
 none by default (Purlis Classic fills it, `table.rule.fill: border.subtle`); and `bar` the bar
 over a table that chooses.
 
-**The tree** (the next release's manifest version, #2911): `tree`, a tree's row. Its `root` takes
+**The tree** (`tree`, manifest version 13, #2911) is a tree's row. Its `root` takes
 every property but `padding`, which is its indentation (each level one step in) and stays the
 family's; `body` is the tree that holds the rows; `twist` the chevron that opens and closes a
 row's rows, a mark; `lead` and `trail` its marks and its end; and `header` a group's name.
-
-The tree rows still drawn by hand are not a family with parts today: they are drawn as the note
-under [Geometry](#geometry) says.
 
 ### Session tabs
 

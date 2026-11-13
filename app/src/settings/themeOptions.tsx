@@ -115,23 +115,23 @@ export function OptionsList({
       aria-labelledby={ids.labelledBy}
       aria-describedby={ids.describedBy}
     >
-      {said !== undefined && <p className="ui-setting-help">{said}</p>}
+      {said !== undefined && <p className="ui-setting-help ui-text-secondary">{said}</p>}
       {options?.map((option) =>
         onChoose === undefined ? (
           <Tooltip key={option.id} tip={option.description || undefined}>
-            <p className="ui-setting-help">
+            <p className="ui-setting-help ui-text-secondary">
               {option.label}: {valueLabel(option)} <OptionBadge badge={optionBadge(option)} />
             </p>
           </Tooltip>
         ) : (
           <div key={option.id} className="flex flex-col gap-1">
-            <p className="ui-setting-help">
+            <p className="ui-setting-help ui-text-secondary">
               {/* The group's name is the option's alone; its badge is said as its own. */}
               <span id={`${ids.id}-${option.id}-name`}>{option.label}</span>{" "}
               <OptionBadge badge={optionBadge(option)} />
             </p>
             {option.description && (
-              <p id={`${ids.id}-${option.id}-says`} className="ui-setting-help">
+              <p id={`${ids.id}-${option.id}-says`} className="ui-setting-help ui-text-secondary">
                 {option.description}
               </p>
             )}

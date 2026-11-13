@@ -157,23 +157,37 @@ fn the_chat_in_front_starts_first_and_the_rest_in_the_records_order() {
     chats.begin_put_back(&a_record_of(5, 4), &|_| None);
     chats.finish_put_back(SIZE);
 
-    let started: Vec<u32> = host.asked().into_iter().map(|(number, _)| number).collect();
-    assert_eq!(started, [4, 1, 2, 3, 5]);
+    // The order each was taken in: which reaches the host first is not that order, since a
+    // start waits for the host's answer with no place held.
+    assert_eq!(*super::lock(&chats.taken), [4, 1, 2, 3, 5]);
+    assert_eq!(host.asked().len(), 5);
 }
 
-/// One project takes all the gate's places but one: the last is another project's
-/// (`restoring::Gate::enter`).
+/// The gate holds back what a start does before its line is composed, and not the wait for the
+/// host's answer (felt speed round 2, H4): more of one project's starts wait on the host at once
+/// than the two places it takes (`restoring::Gate::enter`). How many places there are at most is
+/// `restoring::tests::no_more_start_at_once_than_the_gate_lets`.
 #[test]
-fn no_more_chats_start_at_once_than_the_gate_lets_one_project() {
+fn more_starts_wait_on_the_host_at_once_than_the_gate_has_places() {
     let host = Pretend::default();
-    host.takes(Duration::from_millis(10));
+    for number in 1..=12 {
+        host.hangs_number(number);
+    }
     let (chats, _project) = chats_on(&host, 3);
-
     chats.begin_put_back(&a_record_of(12, 1), &|_| None);
-    let opened = chats.finish_put_back(SIZE);
 
-    assert_eq!(opened.len(), 12);
-    assert_eq!(host.most_at_once(), 2);
+    std::thread::scope(|scope| {
+        let starting = scope.spawn(|| chats.finish_put_back(SIZE));
+        let side_by_side = within_soon(|| host.most_at_once() >= 3);
+        for number in 1..=12 {
+            host.lets_go(number);
+        }
+        assert_eq!(starting.join().expect("it finishes").len(), 12);
+        assert!(
+            side_by_side,
+            "no more than two starts waited on the host at once"
+        );
+    });
 }
 
 #[test]
@@ -332,13 +346,20 @@ fn a_record_built_as_a_chat_is_found_not_to_start_holds_it_once() {
 #[test]
 fn a_quit_while_chats_come_back_keeps_the_ones_not_started_and_starts_no_more() {
     let host = Pretend::default();
-    host.hangs_number(1);
-    let (chats, _project) = chats_on(&host, 1);
+    let (chats, project) = chats_on(&host, 1);
     chats.begin_put_back(&a_record_of(4, 1), &|_| None);
+    // The gate's one place is taken, so every start of the launch waits at it. A start under
+    // way as the quit begins is `a_start_that_returns_into_a_quit_keeps_its_chat_in_every_record_after`.
+    let held = chats
+        .gate
+        .enter(project.path(), &|| crate::restoring::Rank {
+            heavy: false,
+            behind: false,
+            hidden: false,
+        });
 
     std::thread::scope(|scope| {
         let starting = scope.spawn(|| chats.finish_put_back(SIZE));
-        until("the first start is under way", || host.most_at_once() == 1);
 
         let mut last = None;
         chats.write_last(|record| last = Some(record.clone()));
@@ -349,19 +370,14 @@ fn a_quit_while_chats_come_back_keeps_the_ones_not_started_and_starts_no_more() 
         );
         chats.end_all();
 
-        host.lets_go(1);
+        drop(held);
         starting.join().expect("it finishes");
     });
 
-    assert_eq!(
-        host.asked()
-            .into_iter()
-            .map(|(number, _)| number)
-            .collect::<Vec<_>>(),
-        [1],
+    assert!(
+        host.asked().is_empty(),
         "no chat started after the quit began"
     );
-    assert!(host.running().is_empty(), "and the one under way was ended");
 }
 
 /// #3114: a start that returns once the quit has begun is ended, and its chat is still one to
@@ -373,21 +389,24 @@ fn a_quit_while_chats_come_back_keeps_the_ones_not_started_and_starts_no_more() 
 fn a_start_that_returns_into_a_quit_keeps_its_chat_in_every_record_after() {
     let host = Pretend::default();
     host.hangs_number(1);
+    host.hangs_number(2);
     let (chats, _project) = chats_on(&host, 1);
     chats.begin_put_back(&a_record_of(2, 1), &|_| None);
 
     std::thread::scope(|scope| {
         let starting = scope.spawn(|| chats.finish_put_back(SIZE));
-        until("the first start is under way", || host.most_at_once() == 1);
+        // Both, since a start waits on the host with no place held.
+        until("both starts are under way", || host.most_at_once() == 2);
         // The quit begins: it writes its record, and nothing is written after it.
         chats.write_last(|_| {});
         host.lets_go(1);
+        host.lets_go(2);
         starting.join().expect("it finishes");
     });
 
     assert!(
         host.running().is_empty(),
-        "the start that returned into the quit was ended"
+        "the starts that returned into the quit were ended"
     );
     let record = chats.record();
     assert_eq!(
@@ -417,13 +436,18 @@ fn the_window_is_told_as_each_chat_starts_or_does_not() {
     chats.begin_put_back(&a_record_of(3, 3), &|_| None);
     chats.finish_put_back(SIZE);
 
-    let told: Vec<(u32, Option<u32>, usize)> = told
-        .lock()
-        .unwrap()
+    // In the order each settled, which two starts waiting on the host at once may swap.
+    let told = told.lock().unwrap().clone();
+    let mut each: Vec<(u32, Option<u32>)> = told
         .iter()
-        .map(|moved| (moved.number, moved.session, moved.left))
+        .map(|moved| (moved.number, moved.session))
         .collect();
-    assert_eq!(told, [(3, Some(3), 2), (1, Some(1), 1), (2, None, 0)]);
+    each.sort_unstable();
+    assert_eq!(each, [(1, Some(1)), (2, None), (3, Some(3))]);
+    // Each counted as it settled: how many were left is said once each.
+    let mut left: Vec<usize> = told.iter().map(|moved| moved.left).collect();
+    left.sort_unstable();
+    assert_eq!(left, [0, 1, 2]);
 }
 
 #[test]
@@ -448,4 +472,59 @@ fn a_chat_recorded_with_no_number_or_anothers_is_drawn_under_one_of_its_own() {
         drawn,
         "and each starts as the number its tab was drawn under"
     );
+}
+
+/// Whether `done` holds within [`SOON`]: for a test that must let a hung start go before it
+/// says what it found, or its thread is never joined.
+fn within_soon(done: impl Fn() -> bool) -> bool {
+    let began = Instant::now();
+    while !done() {
+        if began.elapsed() >= SOON {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    true
+}
+
+/// Felt speed round 2, H4: a start kept its place at the gate while it waited for the session
+/// host, so a launch's later chats queued behind programs that were only coming up (a shell that
+/// needed 0.2 s waited 11 s). Once its line is composed it hands its place back.
+#[test]
+fn a_start_waiting_on_the_host_holds_no_place_at_the_gate() {
+    let host = Pretend::default();
+    host.hangs_number(1);
+    host.hangs_number(2);
+    // The fewest places a gate has: one project takes two of them.
+    let (chats, _project) = chats_on(&host, 3);
+    chats.begin_put_back(&a_record_of(4, 1), &|_| None);
+
+    std::thread::scope(|scope| {
+        let starting = scope.spawn(|| chats.finish_put_back(SIZE));
+        let others_came = within_soon(|| chats.open_now().len() == 2);
+        host.lets_go(1);
+        host.lets_go(2);
+        assert_eq!(starting.join().expect("it finishes").len(), 4);
+        assert!(
+            others_came,
+            "the chats behind two starts waiting on the host did not start meanwhile"
+        );
+    });
+}
+
+/// Felt speed round 2, H4: a shell starts in a fraction of a second and a harness's start takes
+/// seconds, so a launch's shells are taken before its harnesses, the one in front among them.
+#[test]
+fn a_launch_takes_its_shells_before_its_harnesses() {
+    let host = Pretend::default();
+    let (chats, _project) = chats_on(&host, 1);
+    let mut record = a_record_of(4, 1);
+    for number in [1, 2] {
+        record.chats[number - 1].profile = Some("a-profile-no-test-has".to_owned());
+    }
+
+    chats.begin_put_back(&record, &|_| None);
+    chats.finish_put_back(SIZE);
+
+    assert_eq!(*super::lock(&chats.taken), [3, 4, 1, 2]);
 }

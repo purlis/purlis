@@ -182,6 +182,9 @@ import {
 import { Explorer, type SearchKeyHere, type Spot } from "./Explorer";
 import { keptChanged } from "./branchFolders";
 import {
+  isPlaneRoot,
+  outsideFileTitle,
+  outsideFileView,
   pieceFileTitle,
   pieceFileView,
   pieceFilesTitle,
@@ -189,6 +192,7 @@ import {
   workspaceFiles,
   type Place,
 } from "./pieceViews";
+import { useOutsideFileAsks } from "./paneLinkFiles";
 import { searchFromFocus, searchOf, searchView } from "./contentSearch";
 import { ChangesView, reposGap, uncommitted } from "./ChangesView";
 import { SearchTab } from "./SearchTab";
@@ -234,7 +238,7 @@ import { Notice, NoticeInCentre, NoticeOf, type NoticesDot } from "./Notice";
 import { ReadOnlyLine, ReadOnlyMendable, ReadOnlySaid, useReadOnly } from "./ReadOnlyLine";
 import { LivesHere } from "./LivesHere";
 import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
-import { handCount, handSaid, theirAsks, type Elsewhere } from "./InboxElsewhere";
+import { elsewhereCount, handSaid, theirAsks, type Elsewhere } from "./InboxElsewhere";
 import type { AllChatsFilter } from "./InboxAsks";
 import { useAsksArrival } from "./asksArrival";
 import { sayAboutThisMachine, useAboutThisMachine } from "./windowprefs";
@@ -514,7 +518,7 @@ import {
   type TaskEndHand,
   type TaskEndInline,
 } from "./TaskEnd";
-import { giveKeyboardTo } from "./paneKeyboard";
+import { giveKeyboardTo, giveKeyboardToTheFocusedPane } from "./paneKeyboard";
 import { endedState } from "./EndedBand";
 import { useHeldAmong } from "./dispatchesHeld";
 import { useRefusedAmong } from "./vaultRefusals";
@@ -1354,6 +1358,7 @@ export const PlaneView = memo(function PlaneView({
    *  its workspace's chip in the title bar too (#3650), with one dismissal. */
   const staleClones = useStaleClones({
     plane,
+    shown: inFront,
     dismissed,
     dismiss,
     settle: settleNotices,
@@ -4726,6 +4731,7 @@ export const PlaneView = memo(function PlaneView({
   /**
    * **The keyboard goes into the focused pane of `next`** (#4767): its chat's terminal, or, in a
    * pane with nothing or a view, its first control once it is drawn: New chat, or the view.
+   * Either is owed only until the person puts the keyboard somewhere else (#6232).
    */
   const keyboardInto = useCallback(
     (next: Tabs) => {
@@ -4734,13 +4740,7 @@ export const PlaneView = memo(function PlaneView({
         giveKeyboardTo(plane, session);
         return;
       }
-      setTimeout(() => {
-        const pane = document.querySelector<HTMLElement>(".pane.focused");
-        const into =
-          pane?.querySelector<HTMLElement>('[data-scope="view-frame"][data-part="root"]') ??
-          pane?.querySelector<HTMLElement>("button");
-        into?.focus();
-      });
+      giveKeyboardToTheFocusedPane();
     },
     [plane],
   );
@@ -5448,6 +5448,14 @@ export const PlaneView = memo(function PlaneView({
     if (opened && inFront) rereadAlerts?.();
   }, [noticesShown, inFront, rereadAlerts]);
 
+  /** A file outside the project a pane's link opened (#6216), in a read-only tab of its own. */
+  const outsideFile = useCallback(
+    ({ session, path }: { session: number | null; path: string }) =>
+      showView(outsideFileView(session, path), outsideFileTitle(path)),
+    [showView],
+  );
+  useOutsideFileAsks(plane, outsideFile);
+
   /** A file ⌘P found here (FM-7), opened in its file tab the way the explorer opens one. */
   const fileHandled = useRef(fileAsked?.at);
   useEffect(() => {
@@ -5456,7 +5464,8 @@ export const PlaneView = memo(function PlaneView({
     // A jump to a line (a search hit) opens the branch's file tab, which picks the file and
     // lands on the line (`fileJump.ts`); a file ⌘P found opens in a tab of its own.
     const { place, path } = fileAsked;
-    const jump = fileAsked.line !== undefined;
+    // The plane root has no branch's file tab to land in: its file opens in a tab of its own.
+    const jump = fileAsked.line !== undefined && !isPlaneRoot(place);
     showView(
       jump ? pieceFilesView(place) : pieceFileView(place, path),
       jump ? pieceFilesTitle(place) : pieceFileTitle(place, path),
@@ -7506,10 +7515,10 @@ export const PlaneView = memo(function PlaneView({
    * and it takes the focused pane as any chat started does (#4758). It is an ordinary chat from then on. A
    * refusal is the row's to say.
    */
-  const reopenFinished = useCallback(
-    async (task: FinishedTask): Promise<string | undefined> => {
+  const reopenById = useCallback(
+    async (id: string): Promise<string | undefined> => {
       const said = await commands
-        .reopenFinishedTask(plane, task.id, STARTING_SIZE.columns, STARTING_SIZE.rows)
+        .reopenFinishedTask(plane, id, STARTING_SIZE.columns, STARTING_SIZE.rows)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
       if (said.status === "error") return said.error;
       const chat = said.data;
@@ -7527,6 +7536,11 @@ export const PlaneView = memo(function PlaneView({
       return undefined;
     },
     [focused, noteStarted, plane, rereadFinished, showResumed],
+  );
+  /** The same, from a finished task's row. */
+  const reopenFinished = useCallback(
+    (task: FinishedTask): Promise<string | undefined> => reopenById(task.id),
+    [reopenById],
   );
   /**
    * **Resume, on the band of a pane left on a task that ended** (#4757, #4756): its finished row
@@ -8911,6 +8925,12 @@ export const PlaneView = memo(function PlaneView({
       removeWorkspace,
       // The verb is only ever a needs-you item's Go, or the palette's row for one.
       showChat: showNeeding,
+      // A pane's chat link (#6217): that chat, and nothing a needs-you item's Go does.
+      focusChat: showChat,
+      reopenTask: async (id) => {
+        const why = await reopenById(id);
+        return why === undefined ? { ok: true } : { ok: false, refused: why };
+      },
       paneBack: goBack,
       ownTab,
       beside: besideOf,
@@ -9089,7 +9109,9 @@ export const PlaneView = memo(function PlaneView({
       resumeSession,
       runAction,
       sendKey,
+      showChat,
       showNeeding,
+      reopenById,
       goBack,
       ownTab,
       besideOf,
@@ -11559,11 +11581,13 @@ export const PlaneView = memo(function PlaneView({
    * its chat in a new session, and the pane moves on to it before the ask is read as gone.
    */
   const touchOnPane = useAnsweredWhenGone(plane, waiting);
-  /** The ✋'s count: every open project's asks, and how many are outside this one (#5999). */
-  const hand = handCount(plane, waiting?.length ?? 0, elsewhere);
+  /** **The ✋'s count: this project's asks alone** (#6341, ADR 0121 amended 2026-11-12,
+   *  decision 1). Another project's are on its own tab, and on the Dock badge's total. */
+  const hand = waiting?.length ?? 0;
   /** **A Blocking ask arriving** (ADR 0121 decisions 24 and 25, #6020): said once, politely,
-   *  and the first one on this machine that arrives while Asks is closed pulses the ✋. */
-  const arrival = useAsksArrival(waiting, hand.elsewhere, inFront && asksShown);
+   *  and the first one on this machine that arrives while Asks is closed pulses the ✋. One in
+   *  another project is still said, as its notification still comes. */
+  const arrival = useAsksArrival(waiting, elsewhereCount(plane, elsewhere), inFront && asksShown);
   /**
    * **Snooze all on Asks** (#5647): the core keeps what each chat held, and lists a snoozed
    * chat's asks apart until it asks something new, or until the time it was snoozed for runs out
@@ -12475,10 +12499,9 @@ export const PlaneView = memo(function PlaneView({
                       )}
                     </QueueRead>
                   ),
-                  // The ✋'s count (#1692, I-2; ADR 0121 decision 4): every open project's asks, in
-                  // its tone, on the bar, so it is there while the side is put away. Those outside
-                  // this project are said as "+N elsewhere"; Asks' scope never narrows it.
-                  asks: <ActivityCount count={hand.total} said={handSaid(hand)} tone="needs-you" />,
+                  // The ✋'s count (#1692, I-2; #6341): this project's asks, in its tone, on the
+                  // bar, so it is there while the side is put away. Asks' scope never narrows it.
+                  asks: <ActivityCount count={hand} said={handSaid(hand)} tone="needs-you" />,
                   // The unread lines From your chats (#5646, ADR 0119): the bell's count, in the plain
                   // colours, since a result is news of the person's own work and asks nothing.
                   // Project is never counted.

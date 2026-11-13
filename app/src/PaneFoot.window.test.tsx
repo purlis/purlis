@@ -423,7 +423,7 @@ describe("a narrow pane drops parts from its two lines, and has them back (#5206
     skillsOf = {
       known: true,
       skills: [],
-      not_supported: null,
+      none_because: null,
       routing: null,
       missing: null,
       changed: null,
@@ -531,7 +531,7 @@ describe("the foot's skills warning and studio chip (#5204, #5205, #5206)", () =
   const PAST_ITS_BUDGET = {
     known: true,
     skills: [],
-    not_supported: null,
+    none_because: null,
     routing: null,
     missing: null,
     changed: null,

@@ -7,9 +7,11 @@ use crate::dockerpool::tests::{FakeDocker, inspected};
 fn facts(engine: Engine) -> Facts {
     Facts {
         engine,
+        connect: None,
         pool: None,
         identity: Identity::None,
         repos: true,
+        cluster: cluster::ClusterFacts::default(),
     }
 }
 
@@ -19,6 +21,7 @@ fn on_a_pool(runner: Runner, sign_ins: SignIns) -> Facts {
             name: "dev-box".into(),
             runner,
             sign_ins,
+            cluster: None,
         }),
         ..facts(Engine::Ready)
     }
@@ -45,6 +48,9 @@ fn signed_in() -> SignIns {
 }
 
 use StepState::{Attention, Current, Done, Later, Skipped};
+
+/// What a test machine has instead of kubectl.
+const NO_KUBECTL: &str = "purlis found no kubectl on this machine";
 
 #[test]
 fn docker_has_the_five_steps_of_the_ruling_in_order() {
@@ -482,6 +488,7 @@ fn read_tells_docker_missing_from_docker_not_answering_from_docker_ready() {
             plane: None,
             docker,
             engine: Ok("/var/run/docker.sock".into()),
+            kubectl: Err(NO_KUBECTL),
         };
         let setup = read(&here, None).unwrap();
         assert_eq!(next(&setup, StepId::Where), expected);
@@ -497,6 +504,7 @@ fn read_refuses_a_pool_this_machine_has_not() {
         plane: None,
         docker: None,
         engine: Err("none".into()),
+        kubectl: Err(NO_KUBECTL),
     };
     let why = read(&here, Some("nowhere")).unwrap_err().to_string();
     assert!(why.contains("no pool named nowhere"), "{why}");
@@ -512,6 +520,7 @@ fn read_picks_up_a_choice_made_since_the_last_read() {
         plane: None,
         docker: Some(&docker),
         engine: Ok("/var/run/docker.sock".into()),
+        kubectl: Err(NO_KUBECTL),
     };
     assert_eq!(read(&here, None).unwrap().at, Some(StepId::Where));
     choose_kind(config.path(), Kind::Docker).unwrap();
@@ -542,6 +551,7 @@ fn a_docker_that_answers_and_is_not_on_this_machine_reads_as_elsewhere() {
         plane: None,
         docker: Some(&docker),
         engine: Err("tcp://user:secret@host".into()),
+        kubectl: Err(NO_KUBECTL),
     };
     let setup = read(&here, None).unwrap();
     assert_eq!(next(&setup, StepId::Where), ActionId::UseLocalDocker);
@@ -590,6 +600,7 @@ fn coming_back_finds_the_name_given_before_the_pool_is_made() {
         plane: None,
         docker: None,
         engine: Err("none".into()),
+        kubectl: Err(NO_KUBECTL),
     };
     let found = resumed(&here).unwrap();
     assert_eq!((found.setup.pool, found.name), (None, None));
@@ -609,6 +620,7 @@ fn a_name_typed_never_picks_a_pool_and_the_pool_made_is_gone_on_with() {
         plane: None,
         docker: None,
         engine: Err("none".into()),
+        kubectl: Err(NO_KUBECTL),
     };
     runners::record_pool(
         config.path(),
@@ -674,6 +686,7 @@ fn here(config: &Path) -> Here<'_> {
         plane: None,
         docker: None,
         engine: Err("no engine here".to_owned()),
+        kubectl: Err(NO_KUBECTL),
     }
 }
 
@@ -921,4 +934,104 @@ fn a_docker_pool_with_no_runner_that_starts_chats_is_not_offered_and_one_not_kep
         ],
         "a pool not kept here is offered; a Docker pool kept with no runner is not"
     );
+}
+
+/// A setup that ended on Try it, on pool `name`, as Pool setup leaves it.
+fn a_setup_finished_on(config: &Path, name: &str) {
+    a_pool_kept(config, name);
+    choose_kind(config, Kind::Docker).unwrap();
+    choose_pool(config, name).unwrap();
+    tried(config, name, 1).unwrap();
+}
+
+#[test]
+fn adding_a_pool_after_a_finished_setup_starts_a_new_one_with_nothing_filled_in() {
+    let config = tempfile::tempdir().unwrap();
+    a_setup_finished_on(config.path(), "dev-box");
+
+    assert_eq!(start_adding(config.path()).unwrap(), Adding::New);
+
+    let found = resumed(&here(config.path())).unwrap();
+    assert_eq!((found.setup.pool, found.name), (None, None));
+    assert!(!found.noticed);
+    assert_eq!(found.setup.others, ["dev-box"]);
+    assert_eq!(
+        read_choices(config.path()).unwrap().kind,
+        None,
+        "Where is asked again"
+    );
+}
+
+#[test]
+fn a_finished_pool_keeps_its_proof_and_skips_when_a_new_setup_starts() {
+    let config = tempfile::tempdir().unwrap();
+    a_setup_finished_on(config.path(), "dev-box");
+    skip(config.path(), "dev-box", StepId::Identity).unwrap();
+
+    start_adding(config.path()).unwrap();
+
+    let chose = read_choices(config.path()).unwrap();
+    assert_eq!(chose.tried.get("dev-box"), Some(&1));
+    assert_eq!(chose.skipped.get("dev-box"), Some(&vec![StepId::Identity]));
+}
+
+#[test]
+fn adding_a_pool_while_a_new_one_is_unfinished_continues_it() {
+    let config = tempfile::tempdir().unwrap();
+    a_pool_kept(config.path(), "dev-box");
+    choose_pool(config.path(), "dev-box").unwrap();
+
+    assert_eq!(start_adding(config.path()).unwrap(), Adding::Continuing);
+    assert_eq!(
+        resumed(&here(config.path())).unwrap().setup.pool.as_deref(),
+        Some("dev-box")
+    );
+}
+
+#[test]
+fn adding_a_pool_with_only_a_name_typed_continues_with_the_name() {
+    let config = tempfile::tempdir().unwrap();
+    choose_name(config.path(), Some("dev-box")).unwrap();
+
+    assert_eq!(start_adding(config.path()).unwrap(), Adding::Continuing);
+    assert_eq!(
+        resumed(&here(config.path())).unwrap().name.as_deref(),
+        Some("dev-box")
+    );
+}
+
+#[test]
+fn adding_a_pool_with_only_docker_chosen_starts_at_where() {
+    let config = tempfile::tempdir().unwrap();
+    choose_kind(config.path(), Kind::Docker).unwrap();
+
+    assert_eq!(start_adding(config.path()).unwrap(), Adding::New);
+    assert_eq!(read_choices(config.path()).unwrap().kind, None);
+}
+
+#[test]
+fn starting_over_forgets_the_unfinished_setup_and_keeps_its_pool() {
+    let config = tempfile::tempdir().unwrap();
+    a_pool_kept(config.path(), "dev-box");
+    choose_kind(config.path(), Kind::Docker).unwrap();
+    choose_pool(config.path(), "dev-box").unwrap();
+
+    start_over(config.path()).unwrap();
+
+    let found = resumed(&here(config.path())).unwrap();
+    assert_eq!((found.setup.pool, found.name), (None, None));
+    assert_eq!(found.setup.others, ["dev-box"], "the pool stays");
+    assert_eq!(start_adding(config.path()).unwrap(), Adding::New);
+}
+
+#[test]
+fn a_new_pool_is_recommended_a_name_no_pool_has() {
+    let config = tempfile::tempdir().unwrap();
+    assert_eq!(resumed(&here(config.path())).unwrap().recommended, "docker");
+
+    a_pool_kept(config.path(), "docker");
+    a_pool_kept(config.path(), "docker-2");
+    let recommended = resumed(&here(config.path())).unwrap().recommended;
+    assert_eq!(recommended, "docker-3");
+    assert!(runners::usable_pool_name(&recommended).is_ok());
 }

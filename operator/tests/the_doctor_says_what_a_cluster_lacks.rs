@@ -61,7 +61,7 @@ fn bare() -> Fake {
 
 /// Written out here, not taken from the doctor: an independent account of what the vendored
 /// manifest installs, so a change to the doctor's own list is a change these tests read.
-const UPSTREAM_DEFINITIONS: [&str; 4] = [
+const AGENT_SANDBOX_DEFINITIONS: [&str; 4] = [
     "sandboxes.agents.x-k8s.io",
     "sandboxtemplates.extensions.agents.x-k8s.io",
     "sandboxwarmpools.extensions.agents.x-k8s.io",
@@ -70,7 +70,7 @@ const UPSTREAM_DEFINITIONS: [&str; 4] = [
 
 /// The pinned upstream release applied, as its vendored manifest makes it.
 fn with_upstream(mut fake: Fake, tag: &str) -> Fake {
-    for name in UPSTREAM_DEFINITIONS {
+    for name in AGENT_SANDBOX_DEFINITIONS {
         fake.definitions.insert(name.into(), vec!["v1beta1".into()]);
     }
     fake.controller = controller(vec![format!(

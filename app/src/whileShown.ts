@@ -104,6 +104,17 @@ export function everyWhileShown(ms: number, read: Read): () => void {
 }
 
 /**
+ * Whether a beat of `ms` has passed since `at` (the monotonic clock), as it would have for a
+ * read that last asked then: a read never asked has had its beat. For a read the beat skipped
+ * while its project was behind another, to ask once as it comes back only when the beat would
+ * have asked meanwhile (`saving.ts`). A beat is time, so a test that runs no beat runs none here
+ * either (`projectSwitch.cost.test.tsx`).
+ */
+export function aBeatSince(at: number | undefined, ms: number): boolean {
+  return at === undefined || performance.now() - at >= ms;
+}
+
+/**
  * {@link everyWhileShown} for a component: `read` on every beat of `ms` while `on` and mounted.
  * The latest `read` is the one called, so a caller need not keep it stable.
  *

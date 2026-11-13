@@ -181,7 +181,16 @@ fn a_popover_fill_the_rows_cannot_be_read_on_draws_the_popover_back() {
     let theme = shaped(
         "purlis-classic",
         "light",
-        json!({ "popover.root.popover.fill": "layer.divider" }),
+        // A badge's words held clear (#6214: a badge stands on a popover), so what falls is the
+        // title bar's.
+        json!({
+            "popover.root.popover.fill": "layer.divider",
+            "badge.root.text": "text.primary",
+            "badge.root.neutral.text": "text.primary",
+            "badge.root.accent.text": "text.primary",
+            "badge.root.ok.text": "text.primary",
+            "badge.root.waiting.text": "text.primary",
+        }),
     );
     let fell = parts::fallen(&theme);
     assert!(

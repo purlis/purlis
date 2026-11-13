@@ -23,8 +23,9 @@ use std::collections::BTreeMap;
 /// The finalizer each Claim the operator acts on carries until its runner is removed.
 pub const FINALIZER: &str = "runners.purlis.dev/runner";
 
-/// What every runner namespace's name starts with.
-pub const NAMESPACE_PREFIX: &str = "purlis-runners-";
+/// What every runner namespace's name starts with: the doctor's, which looks for the mark below
+/// outside it.
+pub use purlis_cluster_doctor::NAMESPACE_PREFIX;
 
 /// How many hex digits of the requester's SHA-256 a runner namespace's name holds.
 pub const HASH_DIGITS: usize = 16;
@@ -37,7 +38,7 @@ pub const OWNER_ROLE: &str = "purlis-runner-owner";
 pub const QUOTA: &str = "purlis-person";
 
 /// The label, and its value, on each runner namespace the operator makes.
-pub const MANAGED_BY: (&str, &str) = ("app.kubernetes.io/managed-by", "purlis-cluster-operator");
+pub use purlis_cluster_doctor::MANAGED_BY;
 
 /// The label, and its value, that has the cluster admit only pods meeting the restricted Pod
 /// Security Standard to a runner namespace (#3824). Only the namespaces made since carry it: the

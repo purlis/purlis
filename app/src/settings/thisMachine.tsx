@@ -1,13 +1,14 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useSyncExternalStore, type ReactNode } from "react";
+import { useSyncExternalStore } from "react";
 import { commands, type MachineProject, type ThisMachine } from "../bindings";
-import { Choice } from "./components";
+import { Choice, type RowIds } from "./components";
 import type { LiveSetting, SettingsGroup } from "./groups";
 import { channelMoved, readChannel, useUpdateChannel } from "../updateChannel";
 import { Button } from "../ui/button/Button";
 import { Badge } from "../ui/badge/Badge";
+import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "../ui/table/Table";
 
 /**
  * **You › This machine** (ST-2, #1226; V91r): what this machine's store holds — its recent
@@ -205,15 +206,16 @@ function useMachine(setting: string) {
 
 /** What stands in for a list until the store has been read, or why it could not be. */
 function waiting(read: Read) {
-  if (read.state === "reading") return <p className="ui-setting-help">Reading…</p>;
+  if (read.state === "reading")
+    return <p className="ui-setting-help ui-text-secondary">Reading…</p>;
   if (read.state === "trouble")
     return (
-      <p className="ui-setting-help" role="alert">
+      <p className="ui-setting-help ui-text-secondary" role="alert">
         {read.trouble}
       </p>
     );
   if (read.machine.forgetful !== null)
-    return <p className="ui-setting-help">{read.machine.forgetful}</p>;
+    return <p className="ui-setting-help ui-text-secondary">{read.machine.forgetful}</p>;
   return undefined;
 }
 
@@ -228,37 +230,101 @@ function EntryButton({ action, label, onAction }: EntryAction) {
   );
 }
 
-/** One entry of a list: what it is, what is said about it, and its action (or two). */
-function Entry({
-  name,
-  path,
-  note,
-  before,
-  ...main
-}: {
+/** One entry of a list, a row of its table: what it is, what is said about it, and its action
+ *  (or two). */
+type Entry = {
+  /** What tells it from the others: React's key and the table's row id. */
+  key: string;
   name: string;
   path?: string;
   note?: string;
   /** An action offered before the entry's own, as Locate… is before Forget. */
   before?: EntryAction;
-} & EntryAction) {
+} & EntryAction;
+
+/** A list's table's columns: what its rows are, whether it says a status, and its actions'
+ *  names. */
+type Columns = {
+  /** What each row is: its column's name ("Project", "Pin"). */
+  what: string;
+  /** Its rows may say something about themselves (gone). */
+  status?: true;
+  /** The column of the action offered before the main one, on the rows that have it. */
+  before?: string;
+  /** The column of each row's own action. */
+  action: string;
+};
+
+/**
+ * **A list, as the table family's table** (#6301, #2919's R65 and R67): a row an entry, its name
+ * heading the row, then where it is and what is said of it, and its actions at its end, each in a
+ * column of its own so it stands in one place on every row. A row with no `before` keeps its
+ * empty cell. Named by the setting's row, and described by its help.
+ */
+function EntryTable({
+  ids,
+  label,
+  columns,
+  entries,
+}: {
+  ids: RowIds;
+  label: string;
+  columns: Columns;
+  entries: readonly Entry[];
+}) {
   return (
-    <li className="ui-machine-entry">
-      <span className="ui-machine-name">{name}</span>
-      {path !== undefined && <span className="ui-machine-path">{path}</span>}
-      {note !== undefined && <Badge variant="accent">{note}</Badge>}
-      {before !== undefined && <EntryButton {...before} />}
-      <EntryButton {...main} />
-    </li>
+    <Table className="ui-record-table" aria-label={label} aria-describedby={ids.describedBy} stacks>
+      <TableHeader>
+        <TableColumn id="what" isRowHeader>
+          {columns.what}
+        </TableColumn>
+        <TableColumn id="where">Where</TableColumn>
+        {columns.status === true ? <TableColumn id="status">Status</TableColumn> : null}
+        {columns.before === undefined ? null : (
+          <TableColumn id="before" align="end" hideName>
+            {columns.before}
+          </TableColumn>
+        )}
+        <TableColumn id="action" align="end" hideName>
+          {columns.action}
+        </TableColumn>
+      </TableHeader>
+      <TableBody>
+        {entries.map(({ key, name, path, note, before, ...main }) => (
+          <TableRow key={key} id={key} textValue={name}>
+            <TableCell>{name}</TableCell>
+            <TableCell heading="Where">
+              {path === undefined ? null : (
+                <span className="ui-record-where ui-text-meta">{path}</span>
+              )}
+            </TableCell>
+            {columns.status === true ? (
+              <TableCell heading="Status">
+                {note === undefined ? null : <Badge variant="accent">{note}</Badge>}
+              </TableCell>
+            ) : null}
+            {columns.before === undefined ? null : (
+              <TableCell align="end">
+                {before === undefined ? null : <EntryButton {...before} />}
+              </TableCell>
+            )}
+            <TableCell align="end">
+              <EntryButton {...main} />
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
-/** A list setting: its entries, or what it says when there are none. */
+/** A list setting: its entries as a table, or what it says when there are none. */
 function list(
   id: string,
   label: string,
   help: string,
-  draw: (machine: ThisMachine) => { empty: string; entries: ReactNode[] },
+  columns: Columns,
+  draw: (machine: ThisMachine) => { empty: string; entries: Entry[] },
 ): LiveSetting {
   return {
     id,
@@ -277,9 +343,9 @@ function list(
           return (
             <div role="group" aria-labelledby={ids.labelledBy} aria-describedby={ids.describedBy}>
               {entries.length === 0 ? (
-                <p className="ui-setting-help">{empty}</p>
+                <p className="ui-setting-help ui-text-secondary">{empty}</p>
               ) : (
-                <ul className="ui-machine-list">{entries}</ul>
+                <EntryTable ids={ids} label={label} columns={columns} entries={entries} />
               )}
             </div>
           );
@@ -293,28 +359,25 @@ const recents = list(
   "you.machine.recents",
   "Recent projects",
   "The projects purlis offers when it opens. Forget takes one off this machine, with its pins and approval; it is asked about again the next time it is opened. One that has moved or gone can be located where it is now, or forgotten.",
+  { what: "Project", status: true, before: "Locate", action: "Forget" },
   (machine) => ({
     empty: "No recent projects.",
-    entries: machine.projects.map((one) => (
-      <Entry
-        key={one.path}
-        name={one.name}
-        path={one.path}
-        note={one.gone === null ? undefined : "gone"}
-        before={
-          one.gone === null
-            ? undefined
-            : { action: "Locate…", label: `Locate ${one.name}`, onAction: () => void locate(one) }
-        }
-        action="Forget"
-        label={`Forget ${one.name}`}
-        onAction={() =>
-          acting("you.machine.recents", () =>
-            commands.forgetProject(one.path).then((done) => settling(one.path, done)),
-          )
-        }
-      />
-    )),
+    entries: machine.projects.map((one) => ({
+      key: one.path,
+      name: one.name,
+      path: one.path,
+      note: one.gone === null ? undefined : "gone",
+      before:
+        one.gone === null
+          ? undefined
+          : { action: "Locate…", label: `Locate ${one.name}`, onAction: () => void locate(one) },
+      action: "Forget",
+      label: `Forget ${one.name}`,
+      onAction: () =>
+        acting("you.machine.recents", () =>
+          commands.forgetProject(one.path).then((done) => settling(one.path, done)),
+        ),
+    })),
   }),
 );
 
@@ -367,34 +430,33 @@ const pins = list(
   "you.machine.pins",
   "Pins",
   "The projects and workspaces you pinned, first in the opener and on the workspace strip. A pin to a workspace that is gone is kept dormant: off the strip, and back in its place if the workspace returns. Forget removes it for good.",
+  { what: "Pin", status: true, action: "Unpin" },
   (machine) => ({
     empty: "Nothing is pinned.",
-    entries: machine.projects.flatMap((one) => [
+    entries: machine.projects.flatMap((one): Entry[] => [
       ...(one.pinned
         ? [
-            <Entry
-              key={`${one.path}\u0000`}
-              name={one.name}
-              path={one.path}
-              note={one.gone === null ? undefined : "gone"}
-              action="Unpin"
-              label={`Unpin ${one.name}`}
-              onAction={() => unpin(one)}
-            />,
+            {
+              key: `${one.path}\u0000`,
+              name: one.name,
+              path: one.path,
+              note: one.gone === null ? undefined : "gone",
+              action: "Unpin",
+              label: `Unpin ${one.name}`,
+              onAction: () => unpin(one),
+            },
           ]
         : []),
       ...one.workspace_pins.map((pin) => {
         const action = pin.gone ? "Forget" : "Unpin";
-        return (
-          <Entry
-            key={`${one.path}\u0000${pin.name}`}
-            name={`${pin.name} in ${one.name}`}
-            note={pin.gone ? "gone, kept dormant" : undefined}
-            action={action}
-            label={`${action} ${pin.name} in ${one.name}`}
-            onAction={() => unpin(one, pin.name)}
-          />
-        );
+        return {
+          key: `${one.path}\u0000${pin.name}`,
+          name: `${pin.name} in ${one.name}`,
+          note: pin.gone ? "gone, kept dormant" : undefined,
+          action,
+          label: `${action} ${pin.name} in ${one.name}`,
+          onAction: () => unpin(one, pin.name),
+        };
       }),
     ]),
   }),
@@ -404,20 +466,19 @@ const approvals = list(
   "you.machine.approvals",
   "Approved projects",
   "The projects you approved opening on this machine, with what they start. Revoke takes the approval back: the project stays in your recents, and opening it asks again.",
+  { what: "Project", action: "Revoke" },
   (machine) => ({
     empty: "No project is approved on this machine.",
     entries: machine.projects
       .filter((one) => one.approved)
-      .map((one) => (
-        <Entry
-          key={one.path}
-          name={one.name}
-          path={one.path}
-          action="Revoke"
-          label={`Revoke ${one.name}`}
-          onAction={() => acting("you.machine.approvals", () => commands.revokeApproval(one.path))}
-        />
-      )),
+      .map((one) => ({
+        key: one.path,
+        name: one.name,
+        path: one.path,
+        action: "Revoke",
+        label: `Revoke ${one.name}`,
+        onAction: () => acting("you.machine.approvals", () => commands.revokeApproval(one.path)),
+      })),
   }),
 );
 

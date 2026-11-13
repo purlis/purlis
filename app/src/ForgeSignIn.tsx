@@ -145,7 +145,9 @@ export function ForgeSignIn({
       )}
       {forges && (
         <>
-          <h2 id="forge-sign-in-found">On this machine</h2>
+          <h2 id="forge-sign-in-found" className="ui-text-label">
+            On this machine
+          </h2>
           <ul className="first-run-found" aria-labelledby="forge-sign-in-found">
             {forges.map((row) => (
               <li key={row.cli}>

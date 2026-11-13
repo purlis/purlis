@@ -19,7 +19,7 @@
  *   tokens against its cap, with Stop fixed at the bottom. A grade's chats are drawn nowhere.
  */
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen, untilStopped } from "./here";
 import {
   commands,
   SKILL_GRADE,
@@ -1028,21 +1028,23 @@ export function RunningGradePage<Step extends RunningStepShown>({
     let live = true;
     // Whether a step was told since this read was asked for: only that is newer than what it says.
     let toldSince = false;
-    const listening = listen<Step>(event, (told) => {
+    const heard = listen<Step>(event, (told) => {
       const now = told.payload;
       // A page left is told nothing: its listener lets go only once the listen under way settles.
       if (!live) return;
       if (now.plane !== plane || now.grade !== grade || !latest.current.isOurs(now)) return;
       toldSince = true;
       setStep(now);
-    })
-      .then((stop) => {
+    });
+    const stop = untilStopped(heard);
+    const listening = heard.then(
+      () => {
         if (live) setDeaf(undefined);
-        return stop;
-      })
-      .catch((err: unknown) => {
+      },
+      (err: unknown) => {
         if (live) setDeaf(String(err));
-      });
+      },
+    );
     void listening
       .then(() => latest.current.read())
       .then((answer) => {
@@ -1071,7 +1073,7 @@ export function RunningGradePage<Step extends RunningStepShown>({
       });
     return () => {
       live = false;
-      void listening.then((stop) => stop?.()).catch(() => undefined);
+      stop();
     };
   }, [event, plane, grade, again]);
 

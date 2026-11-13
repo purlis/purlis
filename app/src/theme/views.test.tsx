@@ -1360,6 +1360,14 @@ const STATES: State[] = [
     answers: { devices: DEVICES_SHOWN, device_runner: answer },
     drawn,
   })),
+  // A kept screen is drawn by xterm, which this window cannot run: its picture is the
+  // terminal's own stories' (`ReadOnlyTerminal.stories.tsx`).
+  {
+    name: "a closed task whose screen was not kept (#6214)",
+    view: { from: null, view: "chat-screen", key: "01K6W0RKER000000000000000B" },
+    answers: { chat_screen: null },
+    drawn: /screen is not kept/,
+  },
   {
     name: "a pinned artifact, its bar naming who pinned it",
     view: { from: null, view: "artifact", key: "alpha/backlog-state" },
@@ -1929,6 +1937,14 @@ const STATES: State[] = [
     view: { from: null, view: "plane-file", key: "docs/guide.md" },
     answers: { plane_file: { kind: "text", text: "A guide to the project\n" } },
     drawn: /A guide to the project/,
+  },
+  {
+    name: "a file outside the project a pane's link opened (#6216)",
+    view: { from: null, view: "outside-file", key: "7//etc/hosts" },
+    answers: {
+      pane_link_file: { read: "file", file: { kind: "text", text: "127.0.0.1 localhost\n" } },
+    },
+    drawn: /127\.0\.0\.1 localhost/,
   },
   {
     name: "what changed in one of a branch's files",

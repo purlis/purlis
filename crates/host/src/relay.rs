@@ -1450,6 +1450,11 @@ fn refused(why: &CallError) -> Refusal {
 }
 
 impl session::Host for Relay {
+    /// Said in this host's log where it came late (#6437).
+    fn answered(&self, word: &'static str, waited: std::time::Duration, ran: std::time::Duration) {
+        crate::lateness::say_if_late(word, waited, ran);
+    }
+
     async fn call(&self, command: Command, peer: &Peer) -> Result<Answer, Refusal> {
         // A kept login stays on the device it was made on (#2021, #2050): a browser on another
         // host is never opened from one, and keeps none.
@@ -1684,12 +1689,24 @@ impl session::Host for Relay {
     }
 }
 
-/// Why a login isn't sent on to a runner of `version`: it starts no login clean (#5272).
+/// Why a login isn't sent on to a runner of `version`: it starts no login clean (#5272), or it
+/// would drop where the chat named the login's start and open its page (#6291).
 fn no_login_for(
     command: &Command,
     version: purlis_session_protocol::version::Version,
 ) -> Option<String> {
-    (matches!(command, Command::LogIn { .. }) && version < session::KNOWS_CLEAN_LOGINS).then(|| {
+    let Command::LogIn { login, .. } = command else {
+        return None;
+    };
+    if login.start.is_some() && version < session::KNOWS_LOGIN_START {
+        return Some(format!(
+            "the runner this host relays to speaks session protocol {}.{}, which can't start a \
+             login where you named it, so nothing was filled. Update purlis on the runner, or call \
+             browser_login without `start`",
+            version.major, version.minor
+        ));
+    }
+    (version < session::KNOWS_CLEAN_LOGINS).then(|| {
         format!(
             "the runner this host relays to speaks session protocol {}.{}, which doesn't start a \
              login clean on its site, so nothing was filled. Update purlis on the runner, then \

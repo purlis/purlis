@@ -11,6 +11,7 @@ import { expect, userEvent, waitFor, within } from "storybook/test";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { PoolSetupShown, PoolSetupStep } from "./bindings";
 import { PoolSetupTab } from "./PoolSetupTab";
+import { forgetPoolSetupStarts, startANewPoolSetup } from "./pools";
 import { expectFocusInSight } from "./stories.testkit";
 
 const step = (id: string, name: string, state: string, more: Partial<PoolSetupStep> = {}) =>
@@ -24,6 +25,12 @@ const step = (id: string, name: string, state: string, more: Partial<PoolSetupSt
     skippable: id === "signins" || id === "identity",
     see: null,
     checks: [],
+    other: null,
+    machine: null,
+    cause: null,
+    also: null,
+    parts: [],
+    undo: null,
     ...more,
   }) as PoolSetupStep;
 
@@ -34,11 +41,14 @@ const LATER = [
 ];
 
 const WHERE = (where: Partial<PoolSetupStep>, state: string): PoolSetupShown => ({
+  kind: "docker",
   pool: null,
   name: null,
   at: "where",
   noticed: false,
+  recommended: "docker",
   others: [],
+  contexts: { names: [], recommended: null, chosen: null, pools: [] },
   steps: [step("where", "Where chats run", state, where), step("pool", "Pool", "later"), ...LATER],
 });
 
@@ -53,11 +63,14 @@ const CREATE = {
 };
 
 const POOL_FORM: PoolSetupShown = {
+  kind: "docker",
   pool: null,
   name: null,
   at: "pool",
   noticed: false,
+  recommended: "docker",
   others: [],
+  contexts: { names: [], recommended: null, chosen: null, pools: [] },
   steps: [
     DONE_WHERE,
     step("pool", "Pool", "current", {
@@ -176,6 +189,44 @@ export const DockerIsStopped: Story = {
 };
 
 export const NameThePool: Story = { beforeEach: faked(POOL_FORM) };
+
+/** A second pool: the name box empty, and a name no pool has recommended (#6256). */
+export const NameASecondPool: Story = {
+  beforeEach: faked({ ...POOL_FORM, others: ["docker"], recommended: "docker-2" }),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const name = await canvas.findByRole("textbox", { name: /Name/ });
+    await expect(name).toHaveValue("");
+    await expect(name).toHaveAttribute("placeholder", "docker-2");
+    await canvas.findByText(/Recommended: docker-2\./);
+  },
+};
+
+/** Add a pool… went on with a new pool's unfinished setup: it says so, with Start over (#6256). */
+export const ContinuingThePoolYouStarted: Story = {
+  beforeEach: async () => {
+    mockIPC((cmd) => {
+      if (cmd === "pool_setup") return { ...POOL_FORM, name: "builds", others: ["docker"] };
+      if (cmd === "pool_setup_add") return true;
+      if (cmd === "runner_image_of_this_version") return { state: "ours", image: "img@sha256:a" };
+      if (cmd === "pool_setup_command") return "purlis pool add builds --image img@sha256:a";
+      return null;
+    });
+    await startANewPoolSetup();
+    return forgetPoolSetupStarts;
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByText("Continuing the pool you started");
+    const over = await canvas.findByRole("button", { name: "Start over" });
+    over.focus();
+    await expect(over).toHaveFocus();
+    await expectFocusInSight();
+    await userEvent.tab();
+    await expect(canvas.getByRole("textbox", { name: /Name/ })).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
 
 export const ThePoolWasRefused: Story = {
   beforeEach: faked(POOL_FORM),
@@ -303,11 +354,14 @@ export const ThatNameIsTaken: Story = {
 /** Made by hand from See what this does: purlis noticed, and setup follows it. */
 export const MadeByHand: Story = {
   beforeEach: faked({
+    kind: "docker",
     pool: "dev-box",
     name: "dev-box",
     at: "signins",
     noticed: true,
+    recommended: "docker",
     others: [],
+    contexts: { names: [], recommended: null, chosen: null, pools: [] },
     steps: [
       DONE_WHERE,
       step("pool", "Pool", "done", { line: "dev-box" }),
@@ -329,11 +383,14 @@ export const NoRunnerImageNamed: Story = {
 
 export const ThePoolIsMade: Story = {
   beforeEach: faked({
+    kind: "docker",
     pool: "dev-box",
     name: "dev-box",
     at: "signins",
     noticed: false,
+    recommended: "docker",
     others: [],
+    contexts: { names: [], recommended: null, chosen: null, pools: [] },
     steps: [
       DONE_WHERE,
       step("pool", "Pool", "done", { line: "dev-box" }),
@@ -355,11 +412,14 @@ export const ThePoolIsMade: Story = {
 
 export const TheRunnerWasRemoved: Story = {
   beforeEach: faked({
+    kind: "docker",
     pool: "dev-box",
     name: "dev-box",
     at: "pool",
     noticed: false,
+    recommended: "docker",
     others: [],
+    contexts: { names: [], recommended: null, chosen: null, pools: [] },
     steps: [
       DONE_WHERE,
       step("pool", "Pool", "attention", {
@@ -428,11 +488,14 @@ export const ReadingFailed: Story = {
 
 export const ARunnerBeingMade: Story = {
   beforeEach: faked({
+    kind: "docker",
     pool: "dev-box",
     name: "dev-box",
     at: "pool",
     noticed: false,
+    recommended: "docker",
     others: [],
+    contexts: { names: [], recommended: null, chosen: null, pools: [] },
     steps: [
       DONE_WHERE,
       step("pool", "Pool", "attention", {

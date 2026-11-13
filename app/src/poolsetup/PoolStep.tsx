@@ -380,7 +380,16 @@ export function PoolStep({
   const { chosen } = adding;
   const team = chosen.image === "team" || named === undefined;
   const using = team ? chosen.team.trim() : (named ?? "");
-  const wanted = asked(name, using, chosen);
+  // An empty box is the recommended name, one no pool here has (#6256), as an empty limit is its own.
+  const recommended = shown.recommended ?? "";
+  const naming = name.trim() === "" ? recommended : name;
+  // A pool on another machine is made there, with the key trusted at Connect (#6266).
+  const machine = shown.steps.find((one) => one.id === "connect")?.machine;
+  const plain = asked(naming, using, chosen);
+  const wanted =
+    plain && machine?.trusted && machine.route
+      ? { ...plain, on: machine.route, trust: machine.trusted.fingerprint }
+      : plain;
   const wantedKey = JSON.stringify(wanted);
 
   // What See what this does shows is the core's spelling of what Create would send (Q30).
@@ -425,10 +434,10 @@ export function PoolStep({
     clearTimeout(keeping.current);
     keeping.current = setTimeout(keep, KEEP_NAME_MS);
   };
-  const taken = shown.others.includes(name.trim());
+  const taken = shown.others.includes(naming.trim());
 
   const create = async () => {
-    if (name.trim() === "")
+    if (naming.trim() === "")
       return adding.set({ making: false, refused: "Give the pool a name first." });
     if (using === "") return adding.set({ making: false, refused: IMAGE_NOT_NAMED });
     if (wanted === undefined)
@@ -464,6 +473,7 @@ export function PoolStep({
       breaks={breaks}
       named={named}
       name={name}
+      recommended={recommended}
       typing={typing}
       taken={taken}
       others={shown.others}
@@ -497,6 +507,7 @@ function NewPool({
   breaks,
   named,
   name,
+  recommended,
   typing,
   taken,
   others,
@@ -514,6 +525,8 @@ function NewPool({
   breaks: readonly string[];
   named: string | undefined;
   name: string;
+  /** The name an empty box gives the pool. */
+  recommended: string;
   typing: (to: string) => void;
   taken: boolean;
   others: readonly string[];
@@ -575,8 +588,15 @@ function NewPool({
             label="Name"
             value={name}
             onChange={typing}
-            help="Small letters, digits and dashes."
-            error={taken ? `You already have a pool called ${name.trim()}.` : undefined}
+            placeholder={recommended || undefined}
+            help={
+              recommended
+                ? `Small letters, digits and dashes. Recommended: ${recommended}.`
+                : "Small letters, digits and dashes."
+            }
+            error={
+              taken ? `You already have a pool called ${name.trim() || recommended}.` : undefined
+            }
           />
           {others.length > 0 && (
             <section className="pool-setup-others" aria-label="Your pools">

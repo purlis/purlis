@@ -30,6 +30,7 @@ import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
 import { onTheWire } from "./chatEvents.testkit";
 import { aTabForEachChat } from "./laidOut.testkit";
 import { findTree, rowsOf } from "./ui/tree/tree.testkit";
+import { hoverTipOf } from "./ui/tooltip/tooltip.testkit";
 
 /** The core says the chat moved, and the window draws it: the chat stores tell their readers
  *  once a frame (`heldStore.ts`), and this test reads the result on the next line. */
@@ -232,6 +233,25 @@ describe("Restart chat on a chat's tab", () => {
     expect(asked("ask_chat_restart")).toEqual(ASKED);
     expect(await screen.findByText("session 9")).toBeInTheDocument();
     expect(screen.queryByText("session 4")).toBeNull();
+  });
+
+  // #6212: a chat is named by its number wherever the window names it, and a restart gives it a
+  // new one, so its tab and its head say the new number from then on.
+  it("says the chat's number on its tab's hover and its head, and the new one once restarted", async () => {
+    await aChat();
+    await act(() => moved(WAITING));
+    const tab = () => within(stripNamed("Tabs")).getByRole("tab", { name: /claude 4/ });
+    const number = () => document.querySelector(".pane-head .pane-number")?.textContent;
+    // The tab's own name follows the number, whatever the strip calls it.
+    const name = () => tab().querySelector(".tab-name")?.textContent;
+    expect(await hoverTipOf(tab())).toBe(`#4 · ${name()}`);
+    expect(number()).toBe("#4");
+
+    await userEvent.click(within(await chatMenu()).getByRole("menuitem", { name: "Restart" }));
+    expect(await screen.findByText("session 9")).toBeInTheDocument();
+
+    await waitFor(() => expect(number()).toBe("#9"));
+    expect(await hoverTipOf(tab())).toBe(`#9 · ${name()}`);
   });
 
   it("waits for the turn to end mid-turn, and its row says so", async () => {

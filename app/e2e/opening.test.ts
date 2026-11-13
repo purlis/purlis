@@ -9,7 +9,10 @@ import {
   FIRST_ASK,
   STARTS_WITHOUT_THE_SANDBOX,
   aDialogOffers,
+  pressEndChat,
+  pressTheAnswer,
   pressTheCloseAnswer,
+  pressClearPane,
   showsTheQuestion,
   tickStartWithoutTheSandbox,
   whatCameInsteadOfThePicker,
@@ -391,5 +394,155 @@ describe("a scenario that opens a project through the trust gate", () => {
       "these press Open project in whichever dialog came first; call " +
         "openThroughTheTrustQuestion() from opening.ts",
     ).toEqual([]);
+  });
+});
+
+/**
+ * **A press looks its button up in the page as it presses** (#6227). The axe spec's last step
+ * clicked a node WebdriverIO had found before the window drew it again ("Element is no longer
+ * attached to the DOM"): clearing one pane of a split draws the tab again, and its other pane's
+ * band with it, and a question can be drawn again under its answer. These run in the page, so
+ * there is no node to hold between the look and the press.
+ */
+describe("a press that holds no node", () => {
+  function clicks(button: HTMLElement): () => number {
+    let pressed = 0;
+    button.addEventListener("click", () => pressed++);
+    return () => pressed;
+  }
+
+  /** `parent`, drawn with a button for each of `words`, which it answers. */
+  function drawnWith(parent: HTMLElement, ...words: string[]): HTMLButtonElement[] {
+    const made = words.map((said) => {
+      const button = document.createElement("button");
+      button.textContent = said;
+      return button;
+    });
+    parent.append(...made);
+    document.body.append(parent);
+    return made;
+  }
+
+  function aBand(cause: string, ...buttons: string[]): HTMLButtonElement[] {
+    const band = document.createElement("div");
+    band.setAttribute("data-cause", cause);
+    return drawnWith(band, ...buttons);
+  }
+
+  function aQuestion(asks: string, ...buttons: string[]): HTMLButtonElement[] {
+    const dialog = document.createElement("section");
+    dialog.setAttribute("role", "alertdialog");
+    dialog.append(asks);
+    return drawnWith(dialog, ...buttons);
+  }
+
+  it("presses Clear pane on the band drawn now, not Resume", () => {
+    const [resume, clear] = aBand("chat-ended:4", "Resume", "Clear pane");
+    const resumed = clicks(resume);
+    const cleared = clicks(clear);
+    expect(pressClearPane('[data-cause^="chat-ended:"]')).toBe(true);
+    expect([resumed(), cleared()]).toEqual([0, 1]);
+  });
+
+  it("presses the band drawn in place of the one there was", () => {
+    aBand("chat-ended:4", "Clear pane")[0].parentElement?.remove();
+    const cleared = clicks(aBand("chat-ended:4", "Clear pane")[0]);
+    expect(pressClearPane('[data-cause="chat-ended:4"]')).toBe(true);
+    expect(cleared()).toBe(1);
+  });
+
+  it("presses a Clear pane drawn with the button role, not the tag", () => {
+    const band = document.createElement("div");
+    band.setAttribute("data-cause", "chat-ended:4");
+    const clear = document.createElement("span");
+    clear.setAttribute("role", "button");
+    clear.textContent = "Clear pane";
+    band.append(clear);
+    document.body.append(band);
+    const cleared = clicks(clear);
+    expect(pressClearPane('[data-cause="chat-ended:4"]')).toBe(true);
+    expect(cleared()).toBe(1);
+  });
+
+  it("presses nothing while no band of that cause is drawn, or its Clear pane is off", () => {
+    aBand("chat-ended:5", "Clear pane");
+    expect(pressClearPane('[data-cause="chat-ended:4"]')).toBe(false);
+    const [off] = aBand("chat-ended:4", "Clear pane");
+    off.disabled = true;
+    expect(pressClearPane('[data-cause="chat-ended:4"]')).toBe(false);
+  });
+
+  it("presses the question's answer by its words, never Cancel", () => {
+    const [cancel, close] = aQuestion("End chat steward 4?", "Cancel", "Close");
+    const cancelled = clicks(cancel);
+    const closed = clicks(close);
+    expect(pressTheAnswer("steward 4", "Close")).toBe(true);
+    expect([cancelled(), closed()]).toEqual([0, 1]);
+  });
+
+  it("presses the answer of the question about the chat it names, not another still up", () => {
+    const going = clicks(aQuestion("End chat steward 3?", "Close")[0]);
+    const asked = clicks(aQuestion("End chat steward 4?", "Close")[0]);
+    expect(pressTheAnswer("steward 4", "Close")).toBe(true);
+    expect([going(), asked()]).toEqual([0, 1]);
+  });
+
+  it("presses nothing while the answer is off or no question offers it", () => {
+    expect(pressTheAnswer("", "Close")).toBe(false);
+    const [, close] = aQuestion("End chat steward 4?", "Cancel", "Close");
+    close.disabled = true;
+    expect(pressTheAnswer("", "Close")).toBe(false);
+    expect(pressTheAnswer("", "End")).toBe(false);
+  });
+
+  // WebdriverIO sends a script as its source text, so the page runs it with none of this
+  // module around it: a constant it named from here was "Can't find variable" in every spec
+  // that ended a chat. Rebuilt from its text, it must still press.
+  it("presses from its own text alone, as browser.execute sends it", () => {
+    const sent = <F>(script: F): F => new Function(`return (${String(script)})`)() as F;
+    const cleared = clicks(aBand("chat-ended:4", "Clear pane")[0]);
+    expect(sent(pressClearPane)('[data-cause="chat-ended:4"]')).toBe(true);
+    const closed = clicks(aQuestion("End chat steward 4?", "Close")[0]);
+    expect(sent(pressTheAnswer)("steward 4", "Close")).toBe(true);
+    const ended = clicks(aRow("chat.end:5", "End chat steward 5…")[0]);
+    expect(sent(pressEndChat)()).toBe("End chat steward 5…");
+    expect([cleared(), closed(), ended()]).toEqual([1, 1, 1]);
+  });
+
+  /** The palette's row `id`, titled `title`, as the palette draws it. */
+  function aRow(id: string, title: string): HTMLElement[] {
+    const row = document.createElement("div");
+    row.id = `palette-row-${id}`;
+    row.setAttribute("role", "option");
+    const titled = document.createElement("span");
+    titled.className = "palette-title";
+    titled.textContent = title;
+    row.append(titled);
+    document.body.append(row);
+    return [row];
+  }
+
+  // The question is waited for by the title of the row pressed (#6227): with no name, any
+  // question offering Close was "the question about " in a red run's words.
+  it("presses the first End chat row the palette offers and answers its title", () => {
+    const pressed = clicks(aRow("chat.end:4", "End chat steward 4…")[0]);
+    const after = clicks(aRow("chat.end:5", "End chat steward 5…")[0]);
+    expect(pressEndChat()).toBe("End chat steward 4…");
+    expect([pressed(), after()]).toEqual([1, 0]);
+  });
+
+  it("refuses an End chat row with no title, and presses nothing", () => {
+    const [row] = aRow("chat.end:4", "");
+    const pressed = clicks(row);
+    expect(() => pressEndChat()).toThrow("has no title");
+    expect(pressed()).toBe(0);
+  });
+
+  it("presses no End chat row that is off, and answers null with none left", () => {
+    const [off] = aRow("chat.end:4", "End chat steward 4");
+    off.setAttribute("aria-disabled", "true");
+    const pressed = clicks(off);
+    expect(pressEndChat()).toBeNull();
+    expect(pressed()).toBe(0);
   });
 });

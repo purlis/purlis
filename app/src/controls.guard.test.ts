@@ -433,6 +433,8 @@ const NOT_A_STRIP = new Set(["chart-bar", "state-bar", "activity-bar"]);
 export const PANE_LINE_CHIPS = [
   "pane-persona",
   "pane-name",
+  // Its number beside its name (#6212).
+  "pane-number",
   "tab-sandbox",
   "pane-state-mark",
   "pane-wrapping",
@@ -782,6 +784,8 @@ export const HEAD_ROW: ChipRow = {
     PaneCrumbs: "pane-crumbs",
     // Its state, and its tasks' button where it has tasks (#5341).
     PaneTasksWord: "pane-state-mark",
+    // Its number beside its name (#6212).
+    PaneNumber: "pane-number",
   },
 };
 

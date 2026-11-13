@@ -47,6 +47,8 @@ export function inherited(element: Element, property: string): string | undefine
 
 /** The roles' table (`primitives/text.test.ts` holds the classes to it). */
 export const ROLES = {
+  title: { class: "ui-text-title", size: 16, weight: "600", colour: "--text-primary" },
+  heading: { class: "ui-text-heading", size: 14, weight: "600", colour: "--text-primary" },
   body: { class: "ui-text-body", size: 13, weight: "400", colour: "--text-primary" },
   secondary: { class: "ui-text-secondary", size: 12, weight: "400", colour: "--text-secondary" },
   meta: { class: "ui-text-meta", size: 11, weight: "400", colour: "--text-quiet" },

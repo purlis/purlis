@@ -64,7 +64,7 @@ export function ChooseProfiles({ pool, plane }: { pool: string; plane: string | 
     read && asked !== undefined && asked !== "asking" && "kept" in asked ? asked : undefined;
 
   const told = said !== undefined && (
-    <p className="ui-setting-help" role="status">
+    <p className="ui-setting-help ui-text-secondary" role="status">
       {said}
     </p>
   );
@@ -87,7 +87,7 @@ export function ChooseProfiles({ pool, plane }: { pool: string; plane: string | 
     return (
       <>
         {told}
-        <p className="ui-setting-help">{`Profile ${at.now + 1} of ${at.names.length}: ${one.name}`}</p>
+        <p className="ui-setting-help ui-text-secondary">{`Profile ${at.now + 1} of ${at.names.length}: ${one.name}`}</p>
         <PoolSignIn
           key={one.name}
           pool={pool}
@@ -119,7 +119,11 @@ export function ChooseProfiles({ pool, plane }: { pool: string; plane: string | 
     return <PoolProfiles pool={pool} plane={plane} />;
   }
   if (rows === undefined || ticked === undefined) {
-    return <p className="ui-setting-help">Asking the runner about this machine&apos;s profiles…</p>;
+    return (
+      <p className="ui-setting-help ui-text-secondary">
+        Asking the runner about this machine&apos;s profiles…
+      </p>
+    );
   }
   // On a pool just added, what it keeps is the project's default: one profile, or none.
   const byDefault = rows.kept.length === 1 ? rows.kept[0]?.name : undefined;
@@ -172,7 +176,7 @@ export function ChooseProfiles({ pool, plane }: { pool: string; plane: string | 
       role="group"
       aria-label={`Profiles that sign in on pool ${pool}`}
     >
-      <p className="ui-setting-help">
+      <p className="ui-setting-help ui-text-secondary">
         Which of your profiles should chats on {pool} use? Each one you pick signs in on its runner
         once, there; nothing of this machine&apos;s sign-in goes there.
       </p>
