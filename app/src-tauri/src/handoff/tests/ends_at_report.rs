@@ -904,6 +904,35 @@ fn a_task_that_had_reported_when_the_app_quit_has_its_screen_kept() {
 }
 
 #[test]
+fn a_task_s_screen_kept_at_a_quit_reads_on_its_card_after_the_next_launch() {
+    // #6305's promise, end to end (#6451's review): the next launch's open sweeps the store
+    // (`retention::on_open`) and leaves the screen its record names, and the card reads it.
+    let (plane, host, quit, id, held, steward, task) = a_steward_and_its_task();
+    let (_, finished, _) = a_reported_task_and_one_working(&host, &held, &id, steward, task);
+    let at_quit = held.chats().record();
+    drop(held);
+    bounded("the app quitting", move || quit.let_go_of_all());
+    drop(host);
+
+    let relaunched = Pretend::default();
+    let planes = planes_on(&relaunched);
+    let again = planes.open(&plane.root);
+    let held = planes.held(&again).expect("held");
+    let back = crate::finished::put_back_without_the_finished(held.root(), &at_quit);
+    held.chats().put_back(&back, A_SIZE);
+
+    let crate::chatcard::ChatLookup::Ended { card } = crate::chatcard::lookup(&held, task) else {
+        panic!("the finished task is a card");
+    };
+    assert!(card.screen_kept, "Read it is there");
+    assert_eq!(
+        purlis_core::chatscreens::kept(held.root(), &finished).as_deref(),
+        Some("check prod: all green\r\n"),
+        "and draws what the task showed"
+    );
+}
+
+#[test]
 fn a_quit_is_not_held_past_its_deadline_by_a_task_screen_that_will_not_come() {
     // #6451's review: a host whose view of a finished task never answers (a pool's runner on a
     // half-open link waits out its answer wait) holds the quit no longer than its deadline.
