@@ -49,9 +49,14 @@ impl<'a> Turns<'a> {
     }
 
     fn block(&mut self, args: &str, qualifier: Option<Qualifier>) -> &mut Self {
+        self.block_by(Source::Guard, args, qualifier)
+    }
+
+    /// A block of `Bash` with `args` by `source`.
+    fn block_by(&mut self, source: Source, args: &str, qualifier: Option<Qualifier>) -> &mut Self {
         let body = serde_json::to_value(Stop::Block(Block {
             tool: "Bash".to_owned(),
-            source: Source::Guard,
+            source,
             qualifier,
             target: None,
             args: Some(args.to_owned()),
@@ -60,12 +65,13 @@ impl<'a> Turns<'a> {
         self.write(None, crate::eventlog::stops::BLOCK, body)
     }
 
-    /// A call of `Bash` with `args` that came back (`PostToolUse`), or failed.
+    /// A call of `Bash` with `args` that came back, or failed, under the kinds the recorder
+    /// writes for them (`tool_kind`): `hook.` and the hook's own word.
     fn came_back(&mut self, args: &str, failed: bool) -> &mut Self {
         let kind = if failed {
-            "hook.PostToolUseFailure"
+            "hook.posttoolusefailure-blocked"
         } else {
-            "hook.PostToolUse"
+            "hook.posttooluse-blocked"
         };
         self.write(
             None,
@@ -75,11 +81,11 @@ impl<'a> Turns<'a> {
     }
 
     fn answered(&mut self, answer: Answer) -> &mut Self {
-        let body = serde_json::to_value(Stop::AskAnswered(AskAnswered {
-            ask: AskGroup::Sandbox,
-            answer,
-        }))
-        .unwrap();
+        self.answered_ask(AskGroup::Sandbox, answer)
+    }
+
+    fn answered_ask(&mut self, ask: AskGroup, answer: Answer) -> &mut Self {
+        let body = serde_json::to_value(Stop::AskAnswered(AskAnswered { ask, answer })).unwrap();
         self.write(None, crate::eventlog::stops::ASK_ANSWERED, body)
     }
 
@@ -114,11 +120,11 @@ fn a_turns_unresolved_blocks_are_counted_at_its_end() {
         .stop();
     assert_eq!(counted(dir.path(), CHAT), vec![0], "block then success");
 
-    // Block, then an Allow: resolved.
+    // A sandbox block, then the sandbox ask's Allow: resolved.
     let dir = tempfile::tempdir().unwrap();
     Turns::in_dir(dir.path(), CHAT)
         .prompt()
-        .block(PUSH, None)
+        .block_by(Source::Sandbox, PUSH, None)
         .answered(Answer::Allowed)
         .stop();
     assert_eq!(counted(dir.path(), CHAT), vec![0], "block then Allow");
@@ -189,4 +195,58 @@ fn a_finished_turn_and_a_failed_run_are_each_a_finish() {
         "each finish names its own event: {finishes:?}"
     );
     assert_eq!(finishes_in(dir.path(), OTHER).unwrap().len(), 1);
+}
+
+/// Q263: only a sandbox ask's Allow resolves, and only a sandbox block; an Allow of another
+/// kind of ask resolves nothing, and a guard's block stands through any Allow.
+#[test]
+fn only_a_sandbox_asks_allow_resolves_and_only_a_sandbox_block() {
+    let dir = tempfile::tempdir().unwrap();
+    Turns::in_dir(dir.path(), CHAT)
+        .prompt()
+        .block(PUSH, None)
+        .answered_ask(AskGroup::HarnessPrompt, Answer::Allowed)
+        .stop()
+        .prompt()
+        .block(PUSH, None)
+        .answered(Answer::Allowed)
+        .stop()
+        .prompt()
+        .block_by(Source::Sandbox, PUSH, None)
+        .answered_ask(AskGroup::Consent, Answer::Allowed)
+        .stop()
+        .prompt()
+        .block(PUSH, None)
+        .block_by(Source::Sandbox, LIST, None)
+        .answered(Answer::Allowed)
+        .stop();
+    assert_eq!(counted(dir.path(), CHAT), vec![1, 1, 1, 1]);
+}
+
+/// Q263: a call comes back under every post-tool word the recorder writes (`posttooluse`,
+/// `posttooluse-blocked`, ...), never under a failure's (`posttoolusefailure-*`), and the
+/// harness-agnostic words are read off the recorder's own registry, not spelled here.
+#[test]
+fn a_call_comes_back_under_the_recorders_own_post_tool_words() {
+    for (kind, left) in [
+        ("hook.posttooluse", 0),
+        ("hook.posttooluse-blocked", 0),
+        ("hook.posttooluse-bash", 0),
+        ("hook.posttoolusefailure-blocked", 1),
+        ("hook.posttoolusefailure-purlis", 1),
+        ("hook.PostToolUse", 1),
+        ("hook.pretooluse", 1),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        Turns::in_dir(dir.path(), CHAT)
+            .prompt()
+            .block(PUSH, None)
+            .write(
+                None,
+                kind,
+                serde_json::json!({ "decision": "allow", "hook_ms": 1, "tool": "Bash", "args": PUSH }),
+            )
+            .stop();
+        assert_eq!(counted(dir.path(), CHAT), vec![left], "{kind}");
+    }
 }
