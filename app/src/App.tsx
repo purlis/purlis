@@ -33,6 +33,7 @@ import {
   type RelaunchQuestion,
   type SlowStart,
   type TabWindow,
+  type ProtectionWord,
   type TemplateChoice,
 } from "./bindings";
 import type { ForgeAsk } from "./ForgeQuestion";
@@ -1045,12 +1046,13 @@ function App() {
       path: string,
       planeIsThisRepo: boolean,
       adopt: string,
+      protection: ProtectionWord | null,
       forge: ForgeWord | null = null,
     ) => {
       setMakingProject(true);
       setCreateForgeAsk(undefined);
       const answer = await commands
-        .createProject(path, planeIsThisRepo, adopt === "" ? null : adopt, forge, null)
+        .createProject(path, planeIsThisRepo, adopt === "" ? null : adopt, forge, null, protection)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
       setMakingProject(false);
       if (answer.status === "error") {
@@ -1058,13 +1060,16 @@ function App() {
         return;
       }
       const made = answer.data.opened;
+      const protectionSaid = answer.data.protection_said;
+      if (protectionSaid)
+        setReport({ from: "setup.protection", refused: true, words: protectionSaid });
       if (made === null) {
         // The repo's remote did not say which forge (#839): asked in the dialog, and the
         // answer makes the project.
         const why = answer.data.asks_forge ?? "";
         setCreateForgeAsk({
           why,
-          answer: (named) => void makeProject(path, planeIsThisRepo, adopt, named),
+          answer: (named) => void makeProject(path, planeIsThisRepo, adopt, protection, named),
         });
         return;
       }
@@ -1092,6 +1097,9 @@ function App() {
     // Said once, on the window's line: the repo is open either way, and a forge that was not
     // added names its own fix (Settings › Project › Forges).
     if (forge_said) setReport({ from: "repo.forge", refused: false, words: forge_said });
+    // The Protection row's answer the core did not keep (Q241): the project is open all the same.
+    if (repo.protection_said)
+      setReport({ from: "setup.protection", refused: true, words: repo.protection_said });
     const plane = opened.plane;
     const ask = opened.ask;
     setFirstChat((was) => ({
@@ -1132,11 +1140,12 @@ function App() {
     async (
       path: string,
       template: TemplateChoice,
+      protection: ProtectionWord | null,
       forge: ForgeWord | null = null,
     ): Promise<RepoTried> => {
       setOpeningRepo(true);
       const answer = await commands
-        .openRepo(path, template, forge)
+        .openRepo(path, template, forge, protection)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
       setOpeningRepo(false);
       if (answer.status === "error") return { refused: answer.error };
@@ -1152,15 +1161,20 @@ function App() {
    * screen. The question's answer opens it again, with the forge named.
    */
   const firstRunRepo = useCallback(
-    (path: string, template: TemplateChoice, forge: ForgeWord | null = null) => {
+    (
+      path: string,
+      template: TemplateChoice,
+      protection?: ProtectionWord,
+      forge: ForgeWord | null = null,
+    ) => {
       setRepoTrouble(undefined);
       setRepoForgeAsk(undefined);
-      void openRepo(path, template, forge).then(({ refused, asksForge }) => {
+      void openRepo(path, template, protection ?? null, forge).then(({ refused, asksForge }) => {
         setRepoTrouble(refused);
         if (asksForge !== undefined)
           setRepoForgeAsk({
             why: asksForge,
-            answer: (named) => firstRunRepo(path, template, named),
+            answer: (named) => firstRunRepo(path, template, protection, named),
           });
       });
     },
@@ -1175,56 +1189,72 @@ function App() {
    * **It lives only on this Mac, so nothing asks which forge** (#1810 story 8): with no repo to read
    * one from, the project is written with the first run's default (publishing leaves it: #4627).
    */
-  const firstRunMake = useCallback((folder: string, template: string | null, forge: ForgeWord) => {
-    setRepoTrouble(undefined);
-    setRepoForgeAsk(undefined);
-    setOpeningRepo(true);
-    void commands
-      .createProject(folder, false, null, forge, template)
-      .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
-      .then((answer) => {
-        setOpeningRepo(false);
-        if (answer.status === "error") {
-          setRepoTrouble(answer.error);
-          return;
-        }
-        const made = answer.data.opened;
-        if (made === null) {
-          setRepoForgeAsk({
-            why: answer.data.asks_forge ?? "",
-            answer: (named) => firstRunMake(folder, template, named),
-          });
-          return;
-        }
-        if (made.plane === null) {
-          const ask = made.ask;
-          if (ask)
-            setApproving((queue) =>
-              queue.some((q) => q.path === ask.path) ? queue : [...queue, ask],
-            );
-          return;
-        }
-        const plane = made.plane;
-        setPlanes((was) => (was.includes(plane) ? was : [...was, plane]));
-        setShowing({ at: "plane", plane });
-        if (stepsNow.current.awaiting)
-          stepsNow.current.arrived({ plane, cwd: plane, workspace: "" });
-      });
-  }, []);
+  const firstRunMake = useCallback(
+    (
+      folder: string,
+      template: string | null,
+      protection: ProtectionWord | undefined,
+      forge: ForgeWord,
+    ) => {
+      setRepoTrouble(undefined);
+      setRepoForgeAsk(undefined);
+      setOpeningRepo(true);
+      void commands
+        .createProject(folder, false, null, forge, template, protection ?? null)
+        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
+        .then((answer) => {
+          setOpeningRepo(false);
+          if (answer.status === "error") {
+            setRepoTrouble(answer.error);
+            return;
+          }
+          const made = answer.data.opened;
+          const protectionSaid = answer.data.protection_said;
+          if (protectionSaid)
+            setReport({ from: "setup.protection", refused: true, words: protectionSaid });
+          if (made === null) {
+            setRepoForgeAsk({
+              why: answer.data.asks_forge ?? "",
+              answer: (named) => firstRunMake(folder, template, protection, named),
+            });
+            return;
+          }
+          if (made.plane === null) {
+            const ask = made.ask;
+            if (ask)
+              setApproving((queue) =>
+                queue.some((q) => q.path === ask.path) ? queue : [...queue, ask],
+              );
+            return;
+          }
+          const plane = made.plane;
+          setPlanes((was) => (was.includes(plane) ? was : [...was, plane]));
+          setShowing({ at: "plane", plane });
+          if (stepsNow.current.awaiting)
+            stepsNow.current.arrived({ plane, cwd: plane, workspace: "" });
+        });
+    },
+    [],
+  );
 
   /** The same, from the New project dialog, which closes once the repo is open. */
   const dialogRepo = useCallback(
-    (path: string, forge: ForgeWord | null = null) => {
+    (path: string, protection: ProtectionWord | null, forge: ForgeWord | null = null) => {
       setCreateTrouble(undefined);
       setCreateForgeAsk(undefined);
       // The New project dialog lays out no template: the first run is where one is chosen
       // (FR-17).
-      void openRepo(path, { kind: "no-template" }, forge).then(({ refused, asksForge }) => {
-        if (asksForge !== undefined)
-          setCreateForgeAsk({ why: asksForge, answer: (named) => dialogRepo(path, named) });
-        else if (refused === undefined) setCreating(false);
-        else setCreateTrouble(refused);
-      });
+      void openRepo(path, { kind: "no-template" }, protection, forge).then(
+        ({ refused, asksForge }) => {
+          if (asksForge !== undefined)
+            setCreateForgeAsk({
+              why: asksForge,
+              answer: (named) => dialogRepo(path, protection, named),
+            });
+          else if (refused === undefined) setCreating(false);
+          else setCreateTrouble(refused);
+        },
+      );
     },
     [openRepo],
   );
@@ -3275,8 +3305,8 @@ function App() {
                         // Create a project's act, on every window: a repo into this machine's project
                         // (FR-4), laid out from the template picked beside it (FR-17).
                         onOpenRepo={firstRunRepo}
-                        onMakeProject={(folder, template) =>
-                          firstRunMake(folder, template, "github")
+                        onMakeProject={(folder, template, protection) =>
+                          firstRunMake(folder, template, protection, "github")
                         }
                         onSignInToForge={(row) => {
                           setRepoTrouble(undefined);
@@ -3388,10 +3418,10 @@ function App() {
             forgeAsk={createForgeAsk}
             onEdit={() => setCreateForgeAsk(undefined)}
             making={makingProject}
-            onCreate={(path, planeIsThisRepo, adopt) =>
-              void makeProject(path, planeIsThisRepo, adopt)
+            onCreate={(path, planeIsThisRepo, adopt, protection) =>
+              void makeProject(path, planeIsThisRepo, adopt, protection)
             }
-            onOpenRepo={(path) => dialogRepo(path)}
+            onOpenRepo={(path, protection) => dialogRepo(path, protection)}
             opening={openingRepo}
             onCancel={() => {
               setCreating(false);

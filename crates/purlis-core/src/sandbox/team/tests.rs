@@ -635,3 +635,30 @@ fn a_sha_256_repository_s_off_is_called_local() {
     assert!(!written_ancestor(root.path(), &sha, &sha));
     assert_eq!(written_arrival(root.path(), &sha), None);
 }
+
+/// Q241 (T1-24's review, 2): **setup's row is bounded before the project is there.** A project
+/// not made yet has no policy of its own, so its bound is this machine's: every level, Basic
+/// sandbox by default, or the full sandbox alone where an administrator's lock requires it,
+/// with the lock's reason.
+#[test]
+fn a_new_project_s_bound_is_this_machine_s_lock() {
+    use crate::sandbox::policy::{Locks, set_for_this_test};
+    set_for_this_test(Locks::none());
+    assert_eq!(allowed_levels_for_a_new_project(), Bound::local(false));
+
+    set_for_this_test(Locks::parse(
+        r#"{"owner": "Platform team", "sandbox": {"opt-out": false}}"#,
+        Path::new("/Library/Application Support/purlis/policy.json"),
+    ));
+    let bound = allowed_levels_for_a_new_project();
+    set_for_this_test(Locks::none());
+    assert_eq!((bound.lowest, bound.default), (On, On));
+    assert!(!bound.allows(Floor) && !bound.allows(Off));
+    assert!(
+        bound
+            .why
+            .as_deref()
+            .is_some_and(|why| why.contains("Platform team")),
+        "{bound:?}"
+    );
+}

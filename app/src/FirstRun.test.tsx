@@ -206,9 +206,9 @@ describe("the first run's project template (FR-17)", () => {
 
     const select = await findSelectNamed("Project template");
     const page = select.closest(".first-run") as HTMLElement;
-    // Where it lives (#1819, ruling Q2), a new project's name and template, the repo's template
-    // and the path.
-    expect(page.querySelectorAll(".ui-setting-row")).toHaveLength(5);
+    // Where it lives (#1819, ruling Q2), the Protection row (T1-24), a new project's name and
+    // template, the repo's template and the path.
+    expect(page.querySelectorAll(".ui-setting-row")).toHaveLength(6);
     // The deleted dialog classes are `settings/oldFormClasses.test.ts`'s to hold (#1210).
     expect(page.querySelector(".by-path")).toBeNull();
     const box = screen.getByLabelText("Or type the repo's path");
@@ -270,7 +270,7 @@ describe("the first run's project template (FR-17)", () => {
 
     await vi.waitFor(() =>
       expect(calls("open_repo").map((one) => one.args)).toEqual([
-        { path: REPO, template: { kind: "named", id: "rust" }, forge: null },
+        { path: REPO, template: { kind: "named", id: "rust" }, forge: null, protection: "floor" },
       ]),
     );
   });
@@ -284,7 +284,7 @@ describe("the first run's project template (FR-17)", () => {
 
     await vi.waitFor(() =>
       expect(calls("open_repo").map((one) => one.args)).toEqual([
-        { path: REPO, template: { kind: "no-template" }, forge: null },
+        { path: REPO, template: { kind: "no-template" }, forge: null, protection: "floor" },
       ]),
     );
   });
@@ -398,6 +398,7 @@ describe("the first run", () => {
           adopt: null,
           forge: "github",
           template: null,
+          protection: "floor",
         },
       ]),
     );
@@ -446,7 +447,7 @@ describe("the first run", () => {
     const person = await openRepoByPath(REPO);
 
     expect(calls("open_repo").map((one) => one.args)).toEqual([
-      { path: REPO, template: { kind: "fits" }, forge: null },
+      { path: REPO, template: { kind: "fits" }, forge: null, protection: "floor" },
     ]);
     // The first chat is asked for by itself: the harness picker, which ADR 0022 keeps.
     const picker = await screen.findByRole("dialog", { name: "Start a chat" });
@@ -708,8 +709,8 @@ describe("the first run", () => {
 
     await vi.waitFor(() =>
       expect(calls("open_repo").map((one) => one.args)).toEqual([
-        { path: REPO, template: { kind: "fits" }, forge: null },
-        { path: REPO, template: { kind: "fits" }, forge: "gitlab" },
+        { path: REPO, template: { kind: "fits" }, forge: null, protection: "floor" },
+        { path: REPO, template: { kind: "fits" }, forge: "gitlab", protection: "floor" },
       ]),
     );
     expect(await screen.findByRole("dialog", { name: "Start a chat" })).toBeInTheDocument();

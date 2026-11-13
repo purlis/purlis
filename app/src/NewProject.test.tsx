@@ -57,6 +57,8 @@ function core(
     /** Refuses once the forge is answered: a refusal that comes after the question. */
     refusesWithForge?: string;
     pickFails?: string;
+    /** Why the Protection row's answer was not kept (Q241). */
+    protectionSaid?: string;
   } = {},
 ) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
@@ -97,6 +99,7 @@ function core(
           },
         },
         asks_forge: null,
+        protection_said: over.protectionSaid ?? null,
       };
     }
     return null;
@@ -186,7 +189,7 @@ describe("making a project", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Open repo" }));
 
     expect(calls("open_repo").map((one) => one.args)).toEqual([
-      { path: REPO, template: { kind: "no-template" }, forge: null },
+      { path: REPO, template: { kind: "no-template" }, forge: null, protection: "floor" },
     ]);
     expect(calls("create_project")).toEqual([]);
   });
@@ -243,7 +246,14 @@ describe("making a project", () => {
     await userEvent.click(await createProject(dialog));
 
     expect(calls("create_project").map((one) => one.args)).toEqual([
-      { path: MADE, planeIsThisRepo: false, adopt: null, forge: null, template: null },
+      {
+        path: MADE,
+        planeIsThisRepo: false,
+        adopt: null,
+        forge: null,
+        template: null,
+        protection: "floor",
+      },
     ]);
   });
 
@@ -259,7 +269,14 @@ describe("making a project", () => {
     await userEvent.click(await createProject(dialog));
 
     expect(calls("create_project").map((one) => one.args)).toEqual([
-      { path: MADE, planeIsThisRepo: false, adopt: REPO, forge: null, template: null },
+      {
+        path: MADE,
+        planeIsThisRepo: false,
+        adopt: REPO,
+        forge: null,
+        template: null,
+        protection: "floor",
+      },
     ]);
   });
 
@@ -285,6 +302,7 @@ describe("making a project", () => {
       adopt: null,
       forge: null,
       template: null,
+      protection: "floor",
     });
   });
 
@@ -315,8 +333,22 @@ describe("making a project", () => {
 
     await vi.waitFor(() =>
       expect(calls("create_project").map((one) => one.args)).toEqual([
-        { path: MADE, planeIsThisRepo: false, adopt: null, forge: null, template: null },
-        { path: MADE, planeIsThisRepo: false, adopt: null, forge: "github", template: null },
+        {
+          path: MADE,
+          planeIsThisRepo: false,
+          adopt: null,
+          forge: null,
+          template: null,
+          protection: "floor",
+        },
+        {
+          path: MADE,
+          planeIsThisRepo: false,
+          adopt: null,
+          forge: "github",
+          template: null,
+          protection: "floor",
+        },
       ]),
     );
     expect(await screen.findByRole("dialog", { name: "Open this project?" })).toBeInTheDocument();
@@ -350,6 +382,25 @@ describe("making a project", () => {
 
     const question = await screen.findByRole("dialog", { name: "Open this project?" });
     expect(question).toHaveTextContent(MADE);
+  });
+
+  it("New project's Create finishes in one press at the row's level, and says a level the core did not keep (T1-24, Q241)", async () => {
+    const said =
+      "This project's policy requires the full sandbox. Your choice, no sandbox, was not kept: chats here start at full sandbox. Change it in Settings › Project › Sandbox.";
+    const { calls } = core({ answer: { plane: MADE, ask: null }, protectionSaid: said });
+    render(<App />);
+    const dialog = await askForOne();
+    const row = within(dialog).getByRole("radiogroup", { name: "Protection" });
+    await userEvent.click(within(row).getByRole("radio", { name: /^No sandbox/ }));
+    await userEvent.type(within(dialog).getByLabelText("Folder"), MADE);
+
+    await userEvent.click(await createProject(dialog));
+
+    await vi.waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "New project" })).not.toBeInTheDocument(),
+    );
+    expect(calls("create_project").map((one) => one.args.protection)).toEqual(["off"]);
+    expect((await screen.findAllByText(said)).length).toBeGreaterThan(0);
   });
 
   it("takes the project straight into the window when the gate already said yes", async () => {

@@ -386,6 +386,71 @@ pub fn set_by_you(
         .map_err(|why| format!("purlis could not keep your level on this machine: {why}"))
 }
 
+/// **The Protection row's answer at setup** (T1-24, R-010; Q236): `choice` written as this
+/// project's `[sandbox] level` in this machine's file and recorded as yours, so it is the very
+/// value Settings › Project › Sandbox › Your level reads and changes, a chat's start honours it,
+/// and nothing asks again. Basic sandbox is written too, as `floor`, so the answer is kept. The
+/// committed file is never touched: what the team recommends or requires is its own (Q158).
+///
+/// **The policy first** (Q241): a level the project's policy or this machine's forbids
+/// ([`super::team::allowed_levels`]) is never written, and nothing else is either. It is never an
+/// error: setup has made the project by now and finishes in one press (R-064), so what was not
+/// kept comes back as the window's sentence.
+pub fn chosen_at_setup(root: &Path, choice: Choice) -> AtSetup {
+    let bound = super::team::allowed_levels(root);
+    if !bound.allows(choice) {
+        let why = bound
+            .why
+            .unwrap_or_else(|| format!("{} is not a level you may choose here.", choice.said()));
+        return AtSetup::NotKept(format!(
+            "{why} Your choice, {}, was not kept: chats here start at {}. Change it in \
+             Settings › Project › Sandbox.",
+            choice.said(),
+            bound.default.said()
+        ));
+    }
+    match written_at_setup(root, choice) {
+        Ok(()) => AtSetup::Kept,
+        Err(why) => AtSetup::NotKept(format!("{why}. Set it in Settings › Project › Sandbox.")),
+    }
+}
+
+/// What [`chosen_at_setup`] came to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[must_use]
+pub enum AtSetup {
+    /// The choice is the person's own level for the project.
+    Kept,
+    /// Nothing was kept, and the sentence the window says why in.
+    NotKept(String),
+}
+
+fn written_at_setup(root: &Path, choice: Choice) -> Result<(), String> {
+    use crate::settings::{self, Edit, Step, Value, Which};
+    let kept =
+        |why: String| format!("purlis could not keep your protection on this machine: {why}");
+    let base = settings::read(root, Which::Local).map_err(kept)?;
+    let text = settings::edited(
+        &base.text,
+        &[Edit {
+            path: vec![
+                Step::Key(super::TABLE.to_owned()),
+                Step::Key(LEVEL.to_owned()),
+            ],
+            value: Some(Value::Text(choice.word().to_owned())),
+        }],
+    )
+    .map_err(kept)?;
+    settings::save(
+        root,
+        Which::Local,
+        base.exists.then_some(base.text.as_str()),
+        &text,
+    )
+    .map_err(|reasons| kept(reasons.join(" ")))?;
+    set_by_you(root, None, Some(choice))
+}
+
 /// Takes off the record each slot `local`, this machine's file as Settings read or wrote it
 /// (`None`: there is none), no longer sets, as [`super::local::forget_hosts_not_in`] does for
 /// hosts: a level taken out by hand and written back later is not confirmed again. A file that
