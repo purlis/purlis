@@ -177,6 +177,7 @@ import {
 import { FOCUS_BACK, FOCUS_MODE, useFocusMode } from "./keys/focusMode";
 import { unsavedOf } from "./SavingView";
 import { useRailMode } from "./railMode";
+import { Measured } from "./slowLog";
 
 /**
  * Puts the app's own `charter` on a terminal's `PATH`, and answers what the core said — the
@@ -3308,52 +3309,55 @@ function App() {
           their splits and their chat states and draw nothing at all. */}
             <div className="project-views" ref={setProjectSlot} />
             {planes.map((plane) => (
-              <PlaneView
-                key={plane}
-                plane={plane}
-                inFront={plane === inFront}
-                kept={keptDrawn.has(plane)}
-                slot={projectSlot}
-                projects={drawn}
-                pinnedProjects={pinnedProjects}
-                window={windowDoes}
-                onReport={onReport}
-                onSessionRows={onSessionRows}
-                alerts={alertsOfEach.get(plane) ?? alerts}
-                statusNotices={plane === inFront ? statusNotices : undefined}
-                contributed={contributedPanels}
-                views={extensionViews}
-                commands={extensionCommands}
-                settingsAsked={settingsAsk?.plane === plane ? settingsAsk.at : undefined}
-                savingAsked={savingAsk?.plane === plane ? savingAsk.at : undefined}
-                poolSetupAsked={poolSetupAsk?.plane === plane ? poolSetupAsk.at : undefined}
-                licencesAsked={licencesAsk?.plane === plane ? licencesAsk.at : undefined}
-                focusMode={focusMode.on}
-                tabWindow={tabWindow?.number}
-                settingsTabAsked={settingsTabAsk?.plane === plane ? settingsTabAsk.at : undefined}
-                settingsLinkAsked={settingsLinkAsk?.plane === plane ? settingsLinkAsk : undefined}
-                yourSettingsAsked={
-                  yourSettingsAsk?.plane === plane ? yourSettingsAsk.at : undefined
-                }
-                firstChatAsked={firstChat?.plane === plane ? firstChat : undefined}
-                shellAsked={shellAsk?.plane === plane ? shellAsk : undefined}
-                fileAsked={fileAsk?.plane === plane ? fileAsk : undefined}
-                artifactAsked={artifactAsk?.plane === plane ? artifactAsk : undefined}
-                closeAsked={closeAsk?.plane === plane ? closeAsk : undefined}
-                onAsking={onAsking}
-                awayRefused={awayRefusals.held[plane]}
-                onAway={answerAway}
-                waiting={registry.held[plane]}
-                questions={registry.questions[plane]}
-                inboxAsked={inboxAsk?.plane === plane ? inboxAsk.at : undefined}
-                inboxGroup={inboxAsk?.plane === plane ? inboxAsk.session : undefined}
-                inboxUpdate={inboxAsk?.plane === plane ? inboxAsk.update : undefined}
-                elsewhere={elsewhere}
-                everyChat={everyChat}
-                windowLines={plane === inFront ? windowLines : undefined}
-                profileNames={profileNames.of[plane]}
-                onSeen={plane === inFront ? onSeen : undefined}
-              />
+              // What each project costs to draw, for a stall to name (`slowLog.ts`, H9): the
+              // one in front apart from the ones behind it.
+              <Measured key={plane} id={plane === inFront ? "PlaneView" : "PlaneView (behind)"}>
+                <PlaneView
+                  plane={plane}
+                  inFront={plane === inFront}
+                  kept={keptDrawn.has(plane)}
+                  slot={projectSlot}
+                  projects={drawn}
+                  pinnedProjects={pinnedProjects}
+                  window={windowDoes}
+                  onReport={onReport}
+                  onSessionRows={onSessionRows}
+                  alerts={alertsOfEach.get(plane) ?? alerts}
+                  statusNotices={plane === inFront ? statusNotices : undefined}
+                  contributed={contributedPanels}
+                  views={extensionViews}
+                  commands={extensionCommands}
+                  settingsAsked={settingsAsk?.plane === plane ? settingsAsk.at : undefined}
+                  savingAsked={savingAsk?.plane === plane ? savingAsk.at : undefined}
+                  poolSetupAsked={poolSetupAsk?.plane === plane ? poolSetupAsk.at : undefined}
+                  licencesAsked={licencesAsk?.plane === plane ? licencesAsk.at : undefined}
+                  focusMode={focusMode.on}
+                  tabWindow={tabWindow?.number}
+                  settingsTabAsked={settingsTabAsk?.plane === plane ? settingsTabAsk.at : undefined}
+                  settingsLinkAsked={settingsLinkAsk?.plane === plane ? settingsLinkAsk : undefined}
+                  yourSettingsAsked={
+                    yourSettingsAsk?.plane === plane ? yourSettingsAsk.at : undefined
+                  }
+                  firstChatAsked={firstChat?.plane === plane ? firstChat : undefined}
+                  shellAsked={shellAsk?.plane === plane ? shellAsk : undefined}
+                  fileAsked={fileAsk?.plane === plane ? fileAsk : undefined}
+                  artifactAsked={artifactAsk?.plane === plane ? artifactAsk : undefined}
+                  closeAsked={closeAsk?.plane === plane ? closeAsk : undefined}
+                  onAsking={onAsking}
+                  awayRefused={awayRefusals.held[plane]}
+                  onAway={answerAway}
+                  waiting={registry.held[plane]}
+                  questions={registry.questions[plane]}
+                  inboxAsked={inboxAsk?.plane === plane ? inboxAsk.at : undefined}
+                  inboxGroup={inboxAsk?.plane === plane ? inboxAsk.session : undefined}
+                  inboxUpdate={inboxAsk?.plane === plane ? inboxAsk.update : undefined}
+                  elsewhere={elsewhere}
+                  everyChat={everyChat}
+                  windowLines={plane === inFront ? windowLines : undefined}
+                  profileNames={profileNames.of[plane]}
+                  onSeen={plane === inFront ? onSeen : undefined}
+                />
+              </Measured>
             ))}
 
             {/* Settings drawn where the opener is, with no project open (#1206). */}
