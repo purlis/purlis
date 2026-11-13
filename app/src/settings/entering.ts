@@ -80,7 +80,12 @@ export function enterSettings(place: string): void {
 
 /** The way in standing now, if it has not run out of time. */
 function standing(): typeof asked {
-  if (asked !== undefined && Date.now() > asked.until) forgetEntering();
+  if (asked !== undefined && Date.now() > asked.until) {
+    // **A link that lapsed forgets itself** (R-357, Q246): the setting or control it named never
+    // took the keyboard, so the next plain way in lands on the group nav, as before it (#1206).
+    if (!asked.landed) focusedSetting(asked.place);
+    forgetEntering();
+  }
   return asked;
 }
 
@@ -196,20 +201,29 @@ export function landOnTheSetting(place: string, holder: HTMLElement | null): boo
   return landed;
 }
 
-/** The button in `box` whose name starts with `asked.words`: the one whose name holds
- *  `asked.about`, or that stands in a part named so, first. */
+/** Whether `name` holds `words` as whole words: never "tests" in "tests-2", nor "Remove pool" in
+ *  "Remove pooling". */
+function holdsWords(name: string, words: string): boolean {
+  const escaped = words.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|\\s)${escaped}(?=$|\\s)`).test(name);
+}
+
+/** The button in `box` whose name starts with `asked.words`, as whole words: the one whose name
+ *  holds `asked.about`, or that stands in a part named so, first. */
 function controlSaying(box: Element, asked: LinkedControl): HTMLElement | undefined {
   const nameOf = (one: Element) => one.getAttribute("aria-label") ?? one.textContent?.trim() ?? "";
   const saying = [...box.querySelectorAll<HTMLElement>('button, [role="button"]')].filter(
-    (one) => nameOf(one).startsWith(asked.words) && one.getAttribute("aria-disabled") !== "true",
+    (one) =>
+      (nameOf(one) === asked.words || nameOf(one).startsWith(`${asked.words} `)) &&
+      one.getAttribute("aria-disabled") !== "true",
   );
   const { about } = asked;
   if (about === undefined) return saying[0];
   // Its own name, or the label of a part it stands in (a pool's sign-in group).
   const holds = (one: HTMLElement) => {
-    if (nameOf(one).includes(about)) return true;
+    if (holdsWords(nameOf(one), about)) return true;
     for (let at = one.parentElement; at !== null && at !== box; at = at.parentElement)
-      if (at.getAttribute("aria-label")?.includes(about) === true) return true;
+      if (holdsWords(at.getAttribute("aria-label") ?? "", about)) return true;
     return false;
   };
   return saying.find(holds) ?? saying[0];

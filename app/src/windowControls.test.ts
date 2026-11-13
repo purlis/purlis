@@ -110,6 +110,9 @@ const UNLINKED: Readonly<Record<string, string>> = {
   "crates/purlis-core/src/doctor/fix/move_into_repos.rs: Fix": BESIDE,
   "crates/purlis-core/src/doctor/sandbox.rs: File report": BESIDE,
   "crates/purlis-core/src/personaverbs/select.rs: Allow": CHAT,
+  // Followed only by `purlis` in a terminal (`follow_while`); the window's own sign-in draws
+  // the button beside its own words (Q246).
+  "crates/purlis-core/src/profilestore/sign_in/terminal.rs: Open in terminal": CLI,
   "crates/purlis-core/src/planegit.rs: Update": CHAT,
   "crates/purlis-core/src/planegit/update.rs: Update": CHAT,
   "crates/purlis-core/src/projectgit.rs: Save": CHAT,
@@ -183,9 +186,30 @@ describe("the window controls the core's messages name", () => {
       "Accept the folders",
       "open the project once in the purlis app and press Accept the folders in the Skill studio's Needs you",
     ],
-    ["Open in terminal", "Sign in with Open in terminal on 'work''s line in Settings › Pools"],
     ["Remove", "or use Remove on the pool in Settings › You › This machine › Pools."],
   ];
+
+  it("gives no Go to Open in terminal, which only a terminal prints (Q246)", () => {
+    expect(
+      placedControlsNamedIn("Sign in with Open in terminal on 'work''s line in Settings › Pools"),
+    ).toEqual([]);
+  });
+
+  it("gives no Go to Resolve where a resolve is open, which draws Abort in its place", () => {
+    expect(placedControlsNamedIn("Abort it and press Resolve again.")).toEqual([]);
+    expect(placedControlsNamedIn("Nothing moved: Abort, then Resolve again.")).toEqual([]);
+  });
+
+  /**
+   * **Where a placed control is named and no Go to is drawn**, exactly: `<path>: <label>`, with
+   * why. Resolve again is said while a resolve is open, where the Saving view draws Abort and
+   * not Resolve, so a Go to Resolve would find nothing.
+   */
+  const SAID_IN_PLACE: Readonly<Record<string, string>> = {
+    "crates/purlis-core/src/planegit/resolve.rs: Resolve": "during a resolve: Abort stands there",
+    "crates/purlis-core/src/planegit/resolvefolder.rs: Resolve":
+      "during a resolve: Abort stands there",
+  };
 
   it("gives every core message naming a control in a view or in Settings its Go to", () => {
     // A label linked is not enough: the message's words must be ones its Go to is found by.
@@ -194,10 +218,10 @@ describe("the window controls the core's messages name", () => {
         controlsSaid(literal)
           .filter((label) => PLACED_CONTROLS.some((one) => one.words === label))
           .filter((label) => !placedControlsNamedIn(literal).some((one) => one.words === label))
-          .map((label) => `${relative(ROOT, path)}: ${label}: ${literal}`),
+          .map((label) => `${relative(ROOT, path)}: ${label}`),
       ),
     );
-    expect(missed).toEqual([]);
+    expect([...new Set(missed)].sort()).toEqual(Object.keys(SAID_IN_PLACE).sort());
   });
 
   it("links each control R-357 names, so no message names one of them with no link", () => {

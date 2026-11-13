@@ -3,22 +3,30 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { Said } from "./actions";
 import { ActionResultNotice } from "./ActionResultNotice";
-import type { MachineProfileRow, PlaneSaving, PoolProfileRow, PoolSignInStep } from "./bindings";
+import type { MachineProfileRow, PlaneSaving, PoolSetupStep } from "./bindings";
+import { PLACED_CONTROLS, goToPlaced, type PlacedControl } from "./placedControls";
+import { SignInsStep } from "./poolsetup/SignInsStep";
 import { SaveConflict } from "./SavingResolve";
 import { OPEN_SAVING } from "./saving";
 import { SKILL_STUDIO_ASKED, type SkillStudioAsk } from "./skillStudio";
 import { forgetStudio, renderStudioAt, STUDIO_HISTORY } from "./SkillStudioTab.testkit";
 import { need, skill, studio } from "./skillsListing.testkit";
 import { openViewAt } from "./ui/panel/viewHistory";
-import { forgetEntering, enterSettings, useEnteringFocus } from "./settings/entering";
+import { forgetEntering, enterSettings, PATIENCE, useEnteringFocus } from "./settings/entering";
+import { Button } from "./ui/button/Button";
 import type { LiveSetting, SettingsGroup } from "./settings/groups";
-import { linkToGroup, settingsPlace, type SettingsLink } from "./settings/links";
-import { PoolProfiles } from "./settings/PoolProfiles";
+import {
+  linkToGroup,
+  SETTINGS_LINK,
+  settingsPlace,
+  type SettingsLink,
+  type SettingsLinkAsk,
+} from "./settings/links";
 import { POOLS, poolsGroup } from "./settings/pools";
 import { profilesGroup } from "./settings/profiles";
 
@@ -29,9 +37,9 @@ vi.mock("./settings/SignInTerminal", () => ({
 
 /**
  * **Each window message that names a control links to it focused** (R-357, T1-48): a result
- * whose words name Resolve, Update the pin, Accept the folders, Open in terminal or Remove on
- * the pool carries Go to that control, and pressing it opens where the control stands (the
- * Saving view, the Skill studio's Needs you, Settings › You › Profiles, Settings › Pools) with
+ * whose words name Resolve, Update the pin, Accept the folders or Remove on the pool carries
+ * Go to that control, and pressing it opens where the control stands (the
+ * Saving view, the Skill studio's Needs you, Settings › You › Profiles, Settings › You › This machine › Pools) with
  * the keyboard on it. Each message is the core's own words.
  */
 
@@ -86,6 +94,25 @@ function Row({ id, children }: { id: string; children: ReactNode }) {
   );
 }
 
+/** Pool setup's Sign-ins step, as the core reads it. */
+const SIGN_INS: PoolSetupStep = {
+  id: "signins",
+  name: "Sign-ins",
+  state: "current",
+  line: null,
+  findings: [],
+  next: { id: "choose-profiles", label: "Choose profiles", does: "", command: null, url: null },
+  skippable: true,
+  also: null,
+  parts: [],
+  undo: null,
+  see: null,
+  other: null,
+  machine: null,
+  cause: null,
+  checks: [],
+};
+
 const go = async (name: string) =>
   userEvent.click(await screen.findByRole("button", { name: `Go to ${name}` }));
 
@@ -121,10 +148,10 @@ describe("each window message that names a control links to it focused", () => {
         return () => window.removeEventListener(OPEN_SAVING, asked);
       }, []);
       return (
-        <>
+        <div className="project-view" data-plane={PLANE}>
           <Result words="notes.md on the remote and this machine both changed. Nothing was changed here: press Resolve in the Saving view to settle it" />
           {open && <SaveConflict plane={PLANE} saving={saving} />}
-        </>
+        </div>
       );
     }
     render(<Window />);
@@ -206,7 +233,16 @@ describe("each window message that names a control links to it focused", () => {
       // The window opens its studio where it was asked (`PlaneView`).
       const at = asked as SkillStudioAsk;
       act(() => openViewAt(STUDIO_HISTORY, { page: at.page, scope: at.scope, item: at.item }));
-      renderStudioAt({ page: at.page, scope: at.scope, item: at.item });
+      renderStudioAt(
+        { page: at.page, scope: at.scope, item: at.item },
+        {
+          wrap: (tab) => (
+            <div className="project-view" data-plane="p">
+              {tab}
+            </div>
+          ),
+        },
+      );
 
       await waitFor(() =>
         expect(screen.getByRole("button", { name: "Accept the folders" })).toHaveFocus(),
@@ -216,51 +252,7 @@ describe("each window message that names a control links to it focused", () => {
     }
   });
 
-  it("Open in terminal: opens Settings › Pools with the keyboard on the profile's Open in terminal", async () => {
-    const a_profile = (name: string): PoolProfileRow => ({
-      name,
-      kind: "claude",
-      harness: "Claude Code",
-      standing: "signed-out",
-      not_kept: null,
-      limit: null,
-      plans: [],
-    });
-    const steps: PoolSignInStep[] = [
-      { at: "could-not-follow", said: "Choose your sign-in method: [1] [2]" },
-    ];
-    mockIPC((cmd) => {
-      if (cmd === "pool_profiles") return { kept: [a_profile("work")], addable: [] };
-      if (cmd === "pool_sign_in_start") return 7;
-      if (cmd === "pool_sign_in_next") return steps.shift() ?? new Promise(() => undefined);
-      return null;
-    });
-    render(
-      <>
-        <Result
-          words={
-            "purlis could not follow this sign-in, so it ended it. Sign in with Open in terminal on 'work''s line in Settings › Pools, where the harness asks you itself. It said:\nChoose"
-          }
-        />
-        <Row id={`${POOLS}.list`}>
-          <PoolProfiles pool="builds" plane={PLANE} />
-        </Row>
-      </>,
-    );
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Sign in: work on pool builds" }),
-    );
-    const signing = await screen.findByRole("group", { name: "Signing work in on builds" });
-    await within(signing).findByRole("button", { name: "Open in terminal" });
-
-    await go("Open in terminal");
-
-    await waitFor(() =>
-      expect(within(signing).getByRole("button", { name: "Open in terminal" })).toHaveFocus(),
-    );
-  });
-
-  it("Remove on the pool: opens Settings › You › This machine › Pools with the keyboard on that pool's Remove", async () => {
+  it("Remove on the pool: Pool setup › Sign-ins › See what this does opens Settings › You › This machine › Pools with the keyboard on that pool's Remove", async () => {
     const limits = { cpus: "2", memory_mib: 4096, processes: 1024, tmp_mib: 1024 };
     const pool = (name: string) => ({
       name,
@@ -282,17 +274,117 @@ describe("each window message that names a control links to it focused", () => {
       if (cmd === "pool_profiles") return { kept: [], addable: [] };
       if (cmd === "pool_named_by" || cmd === "pool_held_runners" || cmd === "projects_not_held")
         return [];
+      if (cmd === "pool_setup_sizes") return { most_mib: 128, most_files: 8192, profiles: [] };
+      if (cmd === "pool_setup_sign_ins_by_hand")
+        return {
+          note: "No command takes work off yet. Pool tests names none of its profiles, so it keeps the profile a new chat in your project gets. Tick another profile and this shows a command for it, or use Remove on the pool in Settings › You › This machine › Pools.",
+          text: "",
+        };
       return null;
     });
+    // The project's window follows a link a tab asks for (`PlaneView`).
+    const heard = (event: Event) => follow((event as CustomEvent<SettingsLinkAsk>).detail.link);
+    window.addEventListener(SETTINGS_LINK, heard);
+    try {
+      render(
+        <>
+          <SignInsStep step={SIGN_INS} pool="tests" plane={PLANE} changed={() => undefined} />
+          <SettingAt group={poolsGroup(PLANE)} id={`${POOLS}.list`} />
+        </>,
+      );
+      await userEvent.click(await screen.findByRole("button", { name: "See what this does" }));
+      await screen.findByRole("button", { name: "Remove pool tests" });
+
+      await go("Remove on the pool");
+
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Remove pool tests" })).toHaveFocus(),
+      );
+    } finally {
+      window.removeEventListener(SETTINGS_LINK, heard);
+    }
+  });
+});
+
+describe("a link whose control never appears", () => {
+  it("forgets itself when it lapses, so a later plain way into Settings lands on the group nav", async () => {
+    /** A Settings tab at You: its nav, and a row whose control the link names is never drawn. */
+    function Tab() {
+      const holder = useRef<HTMLDivElement>(null);
+      useEnteringFocus(YOU, holder);
+      return (
+        <>
+          <Button>Elsewhere</Button>
+          <div ref={holder}>
+            <nav className="ui-settings-nav" aria-label="Groups">
+              <Button aria-current="page">Pools</Button>
+            </nav>
+            <div data-setting={`${POOLS}.list`}>
+              <div className="ui-setting-control">
+                <Button>Add a pool</Button>
+              </div>
+            </div>
+          </div>
+        </>
+      );
+    }
+    render(<Tab />);
+    follow({
+      group: "you.machine.pools",
+      setting: `${POOLS}.list`,
+      control: { words: "Remove pool", about: "gone" },
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Add a pool" })).toHaveFocus());
+
+    // The way in lapses with the named control never drawn.
+    await act(() => new Promise((done) => setTimeout(done, PATIENCE + 2 * 50)));
+    act(() => screen.getByRole("button", { name: "Elsewhere" }).focus());
+    // ⌘,: a plain way in, naming no setting.
+    act(() => enterSettings(YOU));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Pools" })).toHaveFocus());
+  });
+});
+
+describe("a Go to into a view", () => {
+  it("puts the keyboard on the control in its own project's view, not another project's", async () => {
+    mockIPC(() => null);
     render(
       <>
-        <Result words="No command takes work off yet. Pool tests names none of its profiles, so it keeps the profile a new chat in your project gets. Tick another profile and this shows a command for it, or use Remove on the pool in Settings › You › This machine › Pools." />
-        <SettingAt group={poolsGroup(PLANE)} id={`${POOLS}.list`} />
+        <div className="project-view" data-plane="/home/dev/other">
+          <Button>Resolve</Button>
+        </div>
+        <div className="project-view" data-plane={PLANE}>
+          <Button aria-describedby="here">Resolve</Button>
+          <span id="here">this project</span>
+        </div>
       </>,
     );
-    await screen.findByRole("button", { name: "Remove pool tests" });
+    const resolve = PLACED_CONTROLS.find((one) => one.words === "Resolve") as PlacedControl;
 
-    await go("Remove on the pool");
+    act(() => goToPlaced(resolve, PLANE, "press Resolve in the Saving view", () => undefined));
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { description: "this project" })).toHaveFocus(),
+    );
+  });
+});
+
+describe("a Settings link that names a row's control", () => {
+  it("lands on the control whose name holds its words and its pool as whole words", async () => {
+    render(
+      <Row id={`${POOLS}.list`}>
+        <Button>Remove pooling tests</Button>
+        <Button>Remove pool tests-2</Button>
+        <Button>Remove pool tests</Button>
+      </Row>,
+    );
+
+    follow({
+      group: "you.machine.pools",
+      setting: `${POOLS}.list`,
+      control: { words: "Remove pool", about: "tests" },
+    });
 
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Remove pool tests" })).toHaveFocus(),

@@ -36,9 +36,10 @@ const POOLS_LIST: SettingsLink = { group: "you.machine.pools", setting: "you.mac
 
 export const PLACED_CONTROLS: readonly PlacedControl[] = [
   {
-    // `planegit/update.rs`'s TO_RESOLVE, `planegit/bringin.rs`, and a resolve's "Resolve again".
+    // `planegit/update.rs`'s TO_RESOLVE and `planegit/bringin.rs`. Not a resolve's "Resolve
+    // again": that is said while the resolve is open, where Abort stands in Resolve's place.
     words: "Resolve",
-    names: /\bResolve (?:in the Saving view|again)\b/,
+    names: /\bResolve in the Saving view\b/,
     goTo: "Resolve",
     at: { view: "saving" },
   },
@@ -57,14 +58,6 @@ export const PLACED_CONTROLS: readonly PlacedControl[] = [
     names: /\bAccept the folders\b/,
     goTo: "Accept the folders",
     at: { view: "skill-studio", need: "review:project-folders" },
-  },
-  {
-    // `profilestore/sign_in/terminal.rs`: a sign-in on a pool purlis could not follow.
-    words: "Open in terminal",
-    names: /\bOpen in terminal\b/,
-    goTo: "Open in terminal",
-    about: /\bon '(.+?)''s line\b/,
-    at: { settings: POOLS_LIST },
   },
   {
     // `poolsetup/signins.rs`: a profile a pool that names none keeps.
@@ -104,7 +97,14 @@ export function goToPlaced(
   if (project === undefined) return;
   if (at.view === "saving") askSavingTab(project);
   else askSkillStudio(project, AT_THE_ROOT, "needs", at.need);
-  reach(control.words);
+  reach(control.words, project);
+}
+
+/** The element the project `project` draws its view into (`projectShown.useProjectHost`). */
+function viewOf(project: string): HTMLElement | undefined {
+  return [...document.querySelectorAll<HTMLElement>(".project-view")].find(
+    (one) => one.dataset.plane === project,
+  );
 }
 
 /** How many frames in a row the control must keep the keyboard before the reach is done: the
@@ -112,11 +112,12 @@ export function goToPlaced(
 const HELD_FOR = 3;
 
 /**
- * **Puts the keyboard on the button that says `words`** once the window draws it, and back on it
+ * **Puts the keyboard on the button that says `words`** once the project `project`'s view draws
+ * it (another project's same button is not it), and back on it
  * while the view that opened takes it, until it has held it for {@link HELD_FOR} frames. The
  * person's own click or key, or {@link ASK_WAITS_MS} without it, ends it.
  */
-export function reach(words: string): void {
+export function reach(words: string, project: string): void {
   const until = Date.now() + ASK_WAITS_MS;
   let held = 0;
   let frame = 0;
@@ -126,7 +127,9 @@ export function reach(words: string): void {
   };
   const step = () => {
     if (Date.now() > until) return end();
-    const control = [...document.querySelectorAll<HTMLElement>('button, [role="button"]')].find(
+    const view = viewOf(project);
+    const buttons = view?.querySelectorAll<HTMLElement>('button, [role="button"]') ?? [];
+    const control = [...buttons].find(
       (one) => one.textContent?.trim() === words && one.getAttribute("aria-disabled") !== "true",
     );
     if (control === undefined) held = 0;
