@@ -804,3 +804,70 @@ fn a_tls_file_a_chat_could_reach_another_way_is_refused_at_connect() {
         other => panic!("a CA in a folder chats write was taken: {other:?}"),
     }
 }
+
+/// A connection whose writes after its first `passed` go through and then fail with a broken
+/// pipe, as a socket the engine closed once it refused the client does.
+struct ClosedAfter {
+    inner: std::os::unix::net::UnixStream,
+    writes: usize,
+    passed: usize,
+}
+
+impl Read for ClosedAfter {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.inner.read(buf)
+    }
+}
+
+impl Write for ClosedAfter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.writes += 1;
+        self.inner.write_all(buf)?;
+        if self.writes > self.passed {
+            return Err(std::io::ErrorKind::BrokenPipe.into());
+        }
+        Ok(buf.len())
+    }
+    // rustls writes a flight as several buffers at once: each goes whole, so the engine reads
+    // the flight whole.
+    fn write_vectored(&mut self, bufs: &[std::io::IoSlice<'_>]) -> std::io::Result<usize> {
+        let whole: Vec<u8> = bufs.iter().flat_map(|buf| buf.iter().copied()).collect();
+        self.write(&whole)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+/// **A refused client certificate is said as refused even where the engine closed first**: a
+/// write can fail with a broken pipe before the engine's alert is read, and the alert waiting
+/// there is what says why, not the pipe.
+#[test]
+fn a_refused_client_is_said_as_refused_when_the_write_meets_a_closed_pipe() {
+    let pki = Pki::new();
+    let route = Route::parse("tcp://localhost").unwrap();
+    let files = pki.files("stranger");
+    let material = Through {
+        route: route.clone(),
+        files: files.clone(),
+        ca: pki.fingerprint("ca"),
+        engine: None,
+    }
+    .material()
+    .unwrap();
+    let (ours, theirs) = std::os::unix::net::UnixStream::pair().unwrap();
+    serve(&pki, "server", "ca", theirs);
+    let config = client_config(route.host(), &files, &material).unwrap();
+    // The hello goes as it is; the certificate's flight reaches the engine, then the pipe breaks.
+    let mut tcp = ClosedAfter {
+        inner: ours,
+        writes: 0,
+        passed: 1,
+    };
+    match handshake_over(&mut tcp, &route, &files, config) {
+        Err(Finding::ClientRefused { cert, .. }) => {
+            assert_eq!(cert, pki.at("stranger.pem").display().to_string());
+        }
+        other => panic!("{other:?}"),
+    }
+}

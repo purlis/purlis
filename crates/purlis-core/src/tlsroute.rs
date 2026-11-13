@@ -642,20 +642,31 @@ fn handshake_over(
         .map_err(|_| Finding::NoSuchName { host: host.clone() })?;
     let mut tls = rustls::ClientConnection::new(Arc::new(config), name)
         .map_err(|why| Finding::Here(format!("purlis couldn't start TLS to {host}: {why}")))?;
-    let mut stream = rustls::Stream::new(&mut tls, tcp);
     let ping = format!(
         "GET /_ping HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
         route.host()
     );
     let mut answer = Vec::new();
-    let went = stream
-        .write_all(ping.as_bytes())
-        .and_then(|()| stream.flush())
-        .and_then(|()| (&mut stream).take(4096).read_to_end(&mut answer).map(drop));
+    let went = {
+        let mut stream = rustls::Stream::new(&mut tls, &mut *tcp);
+        stream
+            .write_all(ping.as_bytes())
+            .and_then(|()| stream.flush())
+            .and_then(|()| (&mut stream).take(4096).read_to_end(&mut answer).map(drop))
+    };
     if let Err(why) = went {
         // A peer that closes once it answered is a finished answer, not a failure.
         let closed = why.kind() == std::io::ErrorKind::UnexpectedEof && !answer.is_empty();
         if !closed {
+            // Under TLS 1.3 an engine refuses the client's certificate after the client has
+            // sent it, so a write can meet the closed pipe first: the alert waiting to be read
+            // is what says why.
+            let ours = why
+                .get_ref()
+                .is_some_and(|inner| inner.is::<rustls::Error>());
+            if !ours && let Some(alert) = alert_waiting(&mut tls, tcp) {
+                return Err(finding_of_tls(&alert, &host, &ca_file, &cert_file));
+            }
             return Err(finding_of(&why, &host, &ca_file, &cert_file));
         }
     }
@@ -670,6 +681,26 @@ fn handshake_over(
                 .to_owned(),
         })
     }
+}
+
+/// **The error the peer's last records say**, read after a write failed: an alert it sent before
+/// it closed. `None` where it sent nothing more, or nothing rustls reads as an error.
+fn alert_waiting(tls: &mut rustls::ClientConnection, tcp: &mut impl Read) -> Option<rustls::Error> {
+    if let Some(inner) = tls.process_new_packets().err() {
+        return Some(inner);
+    }
+    // At most a few records: the peer closes once its alert is sent.
+    for _ in 0..8 {
+        match tls.read_tls(tcp) {
+            Ok(0) | Err(_) => return None,
+            Ok(_) => {
+                if let Err(error) = tls.process_new_packets() {
+                    return Some(error);
+                }
+            }
+        }
+    }
+    None
 }
 
 fn client_config(
