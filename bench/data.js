@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794601110340,
+  "lastUpdate": 1794603803950,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -48678,6 +48678,48 @@ window.BENCHMARK_DATA = {
             "value": 101.404649,
             "unit": "ms",
             "extra": "median of 5 runs: 100.903, 101.228, 101.405, 102.159, 102.783 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a2ac0ebe9159696f772aee5191682cb1ef4662e6",
+          "message": "skillControls test waits for every row it reads (#6542) (#6555)\n\nThe grid was awaited but its rows were read at once; each policy row reads\nits controls on its own hook, so the rows after the first, and the controls\nrow (first drawn saying Reading…), were read without waiting too. Every read\nnow waits for what it checks.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B7R20TAZ395VY28MX8H5CH\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-13T20:27:04Z",
+          "tree_id": "7dcd3b83b71e7a440ae5faf274d8f082e2a8fb6c",
+          "url": "https://github.com/purlis/purlis/commit/a2ac0ebe9159696f772aee5191682cb1ef4662e6"
+        },
+        "date": 1794603799006,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.678947,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.663, 0.678, 0.679, 0.707, 0.739 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.697578999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.623, 16.645, 16.698, 16.704, 16.716 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.91428,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.548, 101.267, 101.914, 102.085, 103.512 ms"
           }
         ]
       }
