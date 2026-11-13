@@ -6086,6 +6086,7 @@ impl Chats {
         // The GitHub App tokens minted for it are revoked, in the background (#3808).
         purlis_core::forge::apptoken::chat_ended(&self.project, session);
         let mut last_of = None;
+        let mut closed_chat = None;
         if let Some(gone) = gone {
             // A chat's grants end with it (D-1348-1): kept only while a session of that chat is
             // open, which a restart for a grant is, since it starts before the old one ends.
@@ -6104,6 +6105,14 @@ impl Chats {
                     self.took_back(id);
                     drop(grants);
                     last_of = Some(id.to_owned());
+                    closed_chat = crate::chatcard::closed_record(
+                        session,
+                        id,
+                        &gone.chat,
+                        gone.harness,
+                        gone.workspace.as_deref(),
+                        chrono::Utc::now(),
+                    );
                 }
             }
             // A chat the studio started stays on its skill's Runs (#5248). Not as the project is
@@ -6148,6 +6157,13 @@ impl Chats {
             .filter(|_| a_chat && !self.ending.load(Ordering::SeqCst))
         {
             crate::chatcard::keep_screen_on_close(&self.project, self.sessions(), session, id);
+            // **And every chat's record, dispatched or not** (#6304): what its card shows once
+            // it is looked up by number. A task's dispatch record answers before it.
+            if let Some(record) = closed_chat.as_ref()
+                && let Err(why) = purlis_core::chatrecords::keep(&self.project, record)
+            {
+                tracing::info!("purlis: chat {session}'s record was not kept as it closed ({why})");
+            }
         }
         let closed = self.sessions.close(session);
         self.write_it_down();

@@ -26,6 +26,9 @@ const PLANE = "/projects/alpha" as unknown as PlaneId;
 const CARD: ChatCard = {
   number: 641,
   chat: "01K6W0RKER000000000000000B",
+  title: "Signed commits #5607",
+  ended: "2026-11-11T11:08:00",
+  place: "smart-ide",
   started_by: "steward 4",
   screen_kept: true,
   task: {
@@ -121,7 +124,7 @@ describe("a closed chat found by its number in the palette", () => {
     const card = await screen.findByRole("dialog", { name: "#641 · Signed commits #5607" });
     await userEvent.click(within(card).getByRole("button", { name: "Reopen" }));
     await waitFor(() => expect(ran).toHaveLength(1));
-    expect(ran[0].does).toEqual({ verb: "reopenTask", id: CARD.task.id });
+    expect(ran[0].does).toEqual({ verb: "reopenTask", id: CARD.task?.id });
   });
 
   it("Escape takes the card down first, and the palette stays", async () => {
@@ -138,6 +141,41 @@ describe("a closed chat found by its number in the palette", () => {
       expect(screen.queryByRole("dialog", { name: "#641 · Signed commits #5607" })).toBeNull(),
     );
     expect(screen.getByRole("dialog", { name: "Command palette" })).toBeInTheDocument();
+  });
+
+  it("a chat no dispatch started opens its card, Closed, with Read it and Reopen disabled", async () => {
+    // #6304: the app kept its number, title and times as it closed, and no screen.
+    const ordinary: ChatCard = {
+      number: 702,
+      chat: "01K6CHATS0000000000000000C",
+      title: "Tidy the changelog",
+      ended: "2026-11-12T09:40:00",
+      place: "smart-ide",
+      started_by: "you",
+      screen_kept: false,
+      task: null,
+    };
+    core((n) => (n === 702 ? { is: "ended", card: ordinary } : { is: "no_chat" }));
+    const onRun = vi.fn((): Ran => ({ ok: true }));
+    render(<Palette offers={[]} chats={{ plane: PLANE }} onRun={onRun} />);
+    const palette = await open();
+    await userEvent.keyboard("702");
+    await userEvent.click(
+      await within(palette).findByRole("option", {
+        name: /Show closed chat #702 · Tidy the changelog/,
+      }),
+    );
+    const card = await screen.findByRole("dialog", { name: "#702 · Tidy the changelog" });
+    expect(within(card).getByText("Closed")).toBeInTheDocument();
+    expect(
+      within(card).getByText("Its screen was not kept.", { selector: "p" }),
+    ).toBeInTheDocument();
+    expect(within(card).queryByText("Report")).toBeNull();
+    expect(within(card).getByText("you")).toBeInTheDocument();
+    // The family keeps a disabled button focusable, so its reason is heard: aria-disabled.
+    for (const name of ["Read it", "Reopen"])
+      expect(within(card).getByRole("button", { name })).toHaveAttribute("aria-disabled", "true");
+    expect(onRun).not.toHaveBeenCalled();
   });
 
   it("a number no chat had adds no row, and words are never looked up", async () => {
