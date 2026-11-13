@@ -371,18 +371,27 @@ impl Recorder {
     /// **The block a guard's deny is** (R-316, R-101, R-102): for a tool call purlis's hook
     /// refused, its `stop.block` body, source guard, with the gate's arm as its target where the
     /// line names one the gate has, and the arguments' hash keyed as the tool event's is; none
-    /// for a call that was not refused. `unverified` unless the chat ran on a harness whose hooks
-    /// report from outside its reach and the host knows it was sandboxed (`attributes`, none for
-    /// a chat of no run): at No sandbox the chat can reach whatever reports for it.
+    /// for a call that was not refused, and for one that handed its write to the person (a
+    /// proposed change or a draft skill, Q235: [`crate::toolhooks::hands_the_write_over`]).
+    /// `unverified` unless the chat ran on a harness whose hooks report from outside its reach,
+    /// under a backend that leaves them there (`attributes`, none for a chat of no run;
+    /// [`reported_from_outside_its_reach`]): at No sandbox the chat can reach whatever reports
+    /// for it.
     ///
-    /// Written beside the line's own tool event and as durable as it is (the hook lines' one
-    /// `fsync`), never under the recorder's lock as a person's act is: denies come at hook pace.
+    /// Written just after the line's own tool event, and answered last, so the writer that makes
+    /// the tool event durable makes the block durable with it (the hook lines' one `fsync`),
+    /// never under the recorder's lock as a person's act is: denies come at hook pace.
     pub(super) fn guard_block(
         &self,
         call: &crate::hookwire::ToolCall,
         attributes: Option<&super::Attributes>,
     ) -> Option<serde_json::Value> {
-        if call.decision != crate::hookwire::Decision::Deny {
+        if call.decision != crate::hookwire::Decision::Deny
+            || call
+                .rule
+                .as_deref()
+                .is_some_and(crate::toolhooks::hands_the_write_over)
+        {
             return None;
         }
         let block = Block {
@@ -400,18 +409,31 @@ impl Recorder {
                 .and_then(|arm| Target::guard_arm(arm.id()).ok()),
             args: call.args.as_deref().map(|hash| self.key.digest(hash)),
         };
-        serde_json::to_value(block).ok()
+        match serde_json::to_value(block) {
+            Ok(body) => Some(body),
+            Err(why) => {
+                tracing::warn!("purlis: a guard's block was not written ({why})");
+                None
+            }
+        }
     }
 }
 
+/// The sandbox backends, as a run's `sandbox` attribute names them, that leave a harness's
+/// hooks outside the sandbox they give its tools (Q235): Seatbelt on macOS and bubblewrap,
+/// Claude Code's own on Linux before purlis wrapped it. An allowlist: `landlock`, purlis's own
+/// wrap, holds a harness whole, a Claude Code chat's included (#4083, ADR 0067 as amended
+/// 2026-11-10), and a word not named here is not trusted to be either.
+const HOOKS_LEFT_OUTSIDE: [&str; 2] = ["seatbelt", "bubblewrap"];
+
 /// Whether a run with `attributes` reports from outside the chat's reach: a harness whose hooks
 /// run outside it ([`crate::harness::Harness::guard_reports_from_outside_the_chats_reach`]), under
-/// a sandbox the host recorded. A sandbox not known (`unknown`, or no attribute) is not one.
+/// a backend the host recorded that leaves them there ([`HOOKS_LEFT_OUTSIDE`]).
 fn reported_from_outside_its_reach(attributes: &super::Attributes) -> bool {
     let sandboxed = attributes
         .sandbox
         .as_deref()
-        .is_some_and(|word| !word.is_empty() && word != super::NONE && word != super::UNKNOWN);
+        .is_some_and(|word| HOOKS_LEFT_OUTSIDE.contains(&word));
     let outside = attributes
         .harness
         .as_deref()

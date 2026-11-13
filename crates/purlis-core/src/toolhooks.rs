@@ -261,12 +261,35 @@ fn targets(input: &Value) -> Vec<String> {
 
 /// A `PreToolUse` refusal with charter's words around it.
 fn deny(reason: String) -> Answer {
-    Answer::Deny(Verdict {
+    Answer::Deny(refused(reason))
+}
+
+/// A refusal no gate arm gave, saying `reason`.
+fn refused(reason: String) -> Verdict {
+    Verdict {
         arm: None,
-        reason: reason.chars().take(70).collect(),
+        reason: rule_of(&reason),
         shape: None,
         denial: reason,
-    })
+    }
+}
+
+/// The rule a deny that says `said` is tallied by: its first 70 characters.
+fn rule_of(said: &str) -> String {
+    said.chars().take(70).collect()
+}
+
+/// **Whether a deny's `rule` is one that handed the write to the person** (Q235): a proposed
+/// change ([`crate::proposed::PROPOSED_SAID`]) or a draft skill
+/// ([`crate::skills::verbs::drafts::DRAFTED_SAID`]). The harness was refused, but no guard
+/// refused it, so the event log writes no block for it.
+pub fn hands_the_write_over(rule: &str) -> bool {
+    [
+        crate::proposed::PROPOSED_SAID,
+        crate::skills::verbs::drafts::DRAFTED_SAID,
+    ]
+    .iter()
+    .any(|said| rule_of(said) == rule)
 }
 
 /// `hookSpecificOutput` for `event`, as `json.dumps` writes it.
@@ -308,7 +331,11 @@ pub fn pretooluse_read(hook: &Hook) -> Answer {
     // `_names_a_vault_path` and nothing else — the Bash route's predicate, with no private
     // half of the answer here (#462).
     if named.iter().any(|t| leakguard::names_a_vault_path(t)) {
-        return deny(leakguard::READ_REASON.to_string());
+        // The leak guard's own arm, A, as the Bash route's refusal names it.
+        return Answer::Deny(Verdict {
+            arm: Some(crate::toolgate::Arm::Leak),
+            ..refused(leakguard::READ_REASON.to_string())
+        });
     }
     // `Grep` walks; `Read` opens one file. A `Grep` with no path searches the directory it
     // stands in, which is the commonest spelling of the search that read every vault (#474).

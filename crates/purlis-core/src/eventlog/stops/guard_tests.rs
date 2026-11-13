@@ -315,9 +315,19 @@ fn every_rule_the_tool_gate_can_deny_with_writes_one_block_event_with_source_gua
 
 /// A chat begun on `harness`, sandboxed or at No sandbox, as the host begins one.
 fn begun(host: &mut Recorder, number: u32, harness: Harness, sandboxed: bool) {
+    begun_under(
+        host,
+        number,
+        harness,
+        if sandboxed { "seatbelt" } else { NONE },
+    );
+}
+
+/// A chat begun on `harness` under the sandbox backend the host records as `sandbox`.
+fn begun_under(host: &mut Recorder, number: u32, harness: Harness, sandbox: &str) {
     let attributes = Attributes {
         harness: Some(harness.name().to_owned()),
-        sandbox: Some(if sandboxed { "seatbelt" } else { NONE }.to_owned()),
+        sandbox: Some(sandbox.to_owned()),
         ..Attributes::default()
     };
     let chat = crate::reopen::mint();
@@ -351,22 +361,37 @@ fn qualifier_of_a_deny(dir: &Path, host: &mut Recorder, number: u32) -> serde_js
     blocks[0].body["qualifier"].clone()
 }
 
-/// R-101: on Codex and opencode the guard's hook runs inside the chat's reach, so its report
-/// is tagged `unverified`; Claude Code's, under its sandbox, runs outside it and is not.
+/// R-101, Q235: a guard's report is verified only where its hook runs outside the chat's
+/// sandbox: a Claude Code chat (whose sandbox does not hold what it starts) under a backend
+/// that leaves its hooks outside, Seatbelt or bubblewrap. Codex and opencode run theirs inside
+/// the wrap, a Claude Code chat purlis wraps whole (`landlock`, #4083) runs its hooks inside
+/// it too, and a backend word nobody named is not trusted.
 #[test]
-fn a_guard_report_from_codex_or_opencode_is_tagged_unverified() {
+fn a_guard_report_is_verified_only_from_claude_code_under_a_backend_that_leaves_its_hooks_outside()
+{
     let dir = tempfile::tempdir().unwrap();
     let mut host = recorder(dir.path());
-    for (number, harness, said) in [
-        (1, Harness::Codex, serde_json::json!("unverified")),
-        (2, Harness::Opencode, serde_json::json!("unverified")),
-        (3, Harness::ClaudeCode, serde_json::Value::Null),
+    let unverified = serde_json::json!("unverified");
+    let verified = serde_json::Value::Null;
+    let mut number = 0;
+    for (harness, sandbox, said) in [
+        (Harness::Codex, "seatbelt", &unverified),
+        (Harness::Codex, "bubblewrap", &unverified),
+        (Harness::Codex, "landlock", &unverified),
+        (Harness::Opencode, "seatbelt", &unverified),
+        (Harness::Opencode, "landlock", &unverified),
+        (Harness::ClaudeCode, "seatbelt", &verified),
+        (Harness::ClaudeCode, "bubblewrap", &verified),
+        (Harness::ClaudeCode, "landlock", &unverified),
+        (Harness::ClaudeCode, "firejail", &unverified),
+        (Harness::ClaudeCode, "Seatbelt", &unverified),
     ] {
-        begun(&mut host, number, harness, true);
+        number += 1;
+        begun_under(&mut host, number, harness, sandbox);
         assert_eq!(
-            qualifier_of_a_deny(dir.path(), &mut host, number),
+            &qualifier_of_a_deny(dir.path(), &mut host, number),
             said,
-            "{harness:?}, sandboxed"
+            "{harness:?} under {sandbox}"
         );
     }
 }
@@ -387,4 +412,182 @@ fn a_guard_report_from_a_no_sandbox_chat_is_tagged_unverified() {
     }
     // A chat the host was never told of.
     assert_eq!(qualifier_of_a_deny(dir.path(), &mut host, 9), "unverified");
+}
+
+/// A deny line no gate arm gave (`arm: None`): A11, a file tool's guard, a guard that crashed
+/// or did not answer.
+fn denied_by_no_arm(chat: u32) -> ToolCall {
+    ToolCall {
+        arm: None,
+        rule: Some("guard-crashed".to_owned()),
+        ..denied(chat, "ls", &case(Arm::Leak).verdict().unwrap())
+    }
+}
+
+/// R-316: a deny that names no arm of the gate is still one block with source guard, and no
+/// target, since nothing names which rule refused.
+#[test]
+fn a_deny_with_no_arm_writes_one_block_with_no_target() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut host = recorder(dir.path());
+    begun(&mut host, 4, Harness::ClaudeCode, true);
+    host.tool(Path::new(PLANE), &denied_by_no_arm(4), Instant::now())
+        .unwrap();
+    let blocks = blocks_since(dir.path(), 0);
+    assert_eq!(blocks.len(), 1);
+    assert_eq!(blocks[0].body["source"], "guard");
+    assert!(blocks[0].body.get("target").is_none(), "{}", blocks[0].body);
+}
+
+/// R-316: a line that is not a deny (allowed, asked, or said nothing) writes no block.
+#[test]
+fn a_tool_line_that_is_not_a_deny_writes_no_block() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut host = recorder(dir.path());
+    begun(&mut host, 4, Harness::ClaudeCode, true);
+    for decision in [Decision::Allow, Decision::Ask, Decision::None] {
+        let call = ToolCall {
+            decision,
+            arm: Some(Arm::Leak.id().to_owned()),
+            ..denied_by_no_arm(4)
+        };
+        host.tool(Path::new(PLANE), &call, Instant::now()).unwrap();
+    }
+    assert_eq!(blocks_since(dir.path(), 0), Vec::new());
+}
+
+/// R-316: a deny from a chat whose start was taken back is of no run, and its block is too,
+/// under the chat's number.
+#[test]
+fn a_deny_from_a_chat_of_no_run_writes_one_block_under_its_number() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut host = recorder(dir.path());
+    let (chat, run) = (crate::reopen::mint(), crate::reopen::mint());
+    host.begin_held(
+        Path::new(PLANE),
+        6,
+        RunOf {
+            chat: &chat,
+            run: &run,
+        },
+        Began::Start,
+        &Attributes::default(),
+        None,
+    );
+    host.taken_back(Path::new(PLANE), 6);
+    host.tool(Path::new(PLANE), &denied_by_no_arm(6), Instant::now())
+        .unwrap();
+    let blocks = blocks_since(dir.path(), 0);
+    assert_eq!(blocks.len(), 1);
+    assert_eq!(blocks[0].body["chat_number"], 6);
+    assert_eq!(blocks[0].chat, None);
+    assert_eq!(blocks[0].body["qualifier"], "unverified");
+}
+
+/// R-316, FD-30: a deny drained from the spool of a chat the recorder does not know (one that
+/// had closed) is written as one block, of no run, under its number and its spool number.
+#[cfg(unix)]
+#[test]
+fn a_deny_drained_for_a_chat_not_known_writes_one_block_under_its_number() {
+    use crate::hookwire::spool::{Drained, Spooled};
+    let dir = tempfile::tempdir().unwrap();
+    let mut host = recorder(dir.path());
+    host.spooled(
+        Path::new(PLANE),
+        Drained::Line {
+            chat: 8,
+            seq: 3,
+            line: Spooled::Tool(denied_by_no_arm(8)),
+        },
+    )
+    .unwrap();
+    let blocks = blocks_since(dir.path(), 0);
+    assert_eq!(blocks.len(), 1);
+    assert_eq!(blocks[0].body["chat_number"], 8);
+    assert_eq!(blocks[0].body["spooled"], 3);
+    assert_eq!(blocks[0].chat, None);
+}
+
+/// R-316: the arm comes from the chat's side of the channel, so a word that is no arm's id is
+/// never written: not as the target, and not anywhere in the log.
+#[test]
+fn a_spoofed_arm_on_the_line_writes_no_target_and_is_not_on_disk() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut host = recorder(dir.path());
+    begun(&mut host, 4, Harness::ClaudeCode, true);
+    let long = "Z".repeat(200);
+    for spoofed in ["rm -rf /", "a2", long.as_str()] {
+        let from = read(dir.path()).unwrap().len();
+        let call = ToolCall {
+            arm: Some(spoofed.to_owned()),
+            ..denied_by_no_arm(4)
+        };
+        host.tool(Path::new(PLANE), &call, Instant::now()).unwrap();
+        let blocks = blocks_since(dir.path(), from);
+        assert_eq!(blocks.len(), 1, "{spoofed}");
+        assert!(blocks[0].body.get("target").is_none(), "{spoofed}");
+    }
+    let mut on_disk = String::new();
+    for file in walk(dir.path()) {
+        on_disk.push_str(&String::from_utf8_lossy(&std::fs::read(file).unwrap()));
+    }
+    for spoofed in ["rm -rf /", "\"a2\"", long.as_str()] {
+        assert!(!on_disk.contains(spoofed), "`{spoofed}` is on disk");
+    }
+}
+
+/// Every file below `dir`.
+fn walk(dir: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            files.extend(walk(&path));
+        } else {
+            files.push(path);
+        }
+    }
+    files
+}
+
+/// The block is as durable as its tool event: the writer makes durable the last event an
+/// entry answers, so a deny's entry answers its tool event and then its block.
+#[test]
+fn a_deny_entry_answers_its_block_last_so_the_writer_makes_it_durable() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut host = recorder(dir.path());
+    begun(&mut host, 4, Harness::ClaudeCode, true);
+    let written = host
+        .apply(crate::eventlog::Entry::Tool {
+            plane: PathBuf::from(PLANE),
+            call: denied_by_no_arm(4),
+        })
+        .unwrap();
+    let kinds: Vec<&str> = written.iter().map(|event| event.kind.as_str()).collect();
+    assert_eq!(kinds, ["hook.pretooluse", BLOCK]);
+}
+
+/// The same for a drained deny: the drain makes durable the event `spooled` answers, which is
+/// its block, whether the chat is known or not.
+#[cfg(unix)]
+#[test]
+fn a_drained_deny_answers_its_block_so_the_drain_makes_it_durable() {
+    use crate::hookwire::spool::{Drained, Spooled};
+    let dir = tempfile::tempdir().unwrap();
+    let mut host = recorder(dir.path());
+    begun(&mut host, 4, Harness::ClaudeCode, true);
+    for chat in [4, 9] {
+        let answered = host
+            .spooled(
+                Path::new(PLANE),
+                Drained::Line {
+                    chat,
+                    seq: 2,
+                    line: Spooled::Tool(denied_by_no_arm(chat)),
+                },
+            )
+            .unwrap();
+        assert_eq!(answered.kind, BLOCK, "chat {chat}");
+        assert_eq!(answered.body["spooled"], 2, "chat {chat}");
+    }
 }

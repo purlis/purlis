@@ -60,11 +60,11 @@ const fn cell(value: &'static str, test: Test) -> Cell {
     Cell { value, test }
 }
 
-/// R-101: a guard's block from each harness, plain from Claude Code's and unverified from
-/// Codex's and opencode's.
+/// R-101: a guard's block from each harness, plain from Claude Code's under a backend that
+/// leaves its hooks outside (Q235), and unverified from Codex's and opencode's.
 const GUARD_REPORTED: Test = Test::Named {
     file: "src/eventlog/stops/guard_tests.rs",
-    name: "a_guard_report_from_codex_or_opencode_is_tagged_unverified",
+    name: "a_guard_report_is_verified_only_from_claude_code_under_a_backend_that_leaves_its_hooks_outside",
 };
 
 /// ADR 0124's table, for Basic and Full sandbox (at No sandbox every report is unverified).

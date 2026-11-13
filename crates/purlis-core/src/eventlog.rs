@@ -1377,6 +1377,15 @@ pub const COMMIT_REFUSED: &str = "hook.commit_refused";
 /// `body` with `spooled`, the number a drained line had in its chat's spool, when it had one
 /// (FD-30): the one place an event is marked as having come through the spool. Added after
 /// what the body already says, so every event keeps its keys in the order it always had.
+/// The last of the events one line wrote, which [`and_its_block`](Recorder::and_its_block)
+/// answers never empty: what a drain makes durable through.
+#[cfg(unix)]
+fn last_of(mut written: Vec<Event>) -> Event {
+    written
+        .pop()
+        .expect("a line's events start with its tool event")
+}
+
 fn spooled_as(mut body: serde_json::Value, seq: Option<u64>) -> serde_json::Value {
     if let Some(seq) = seq {
         body["spooled"] = seq.into();
@@ -1965,24 +1974,27 @@ impl Recorder {
         call: &crate::hookwire::ToolCall,
         now: Instant,
     ) -> io::Result<Event> {
-        self.tool_spooled(plane, call, now, None)
+        let mut written = self.tool_spooled(plane, call, now, None)?;
+        Ok(written.swap_remove(0))
     }
 
-    /// [`Recorder::tool`], saying the spool number a drained call had.
+    /// [`Recorder::tool`], saying the spool number a drained call had, and answering every event
+    /// written: the tool event, then the block a guard's deny is ([`stops`]), last, so a writer
+    /// that makes the last event durable makes both so.
     fn tool_spooled(
         &mut self,
         plane: &Path,
         call: &crate::hookwire::ToolCall,
         now: Instant,
         spooled: Option<u64>,
-    ) -> io::Result<Event> {
+    ) -> io::Result<Vec<Event>> {
         let Some(top) = self.identity(plane, call.chat)? else {
             let body = spooled_as(self.tool_body(call), spooled);
             let event = self.of_no_run(call.chat, &tool_kind(call), body)?;
-            if let Some(block) = self.guard_block(call, None) {
-                self.of_no_run(call.chat, stops::BLOCK, block)?;
-            }
-            return Ok(event);
+            let block = self.guard_block(call, None);
+            return Ok(self.and_its_block(event, block, spooled, |log, block| {
+                log.of_no_run(call.chat, stops::BLOCK, block)
+            }));
         };
         let who = Who::of(&top.attributes);
         let block = self.guard_block(call, Some(&top.attributes));
@@ -1999,10 +2011,34 @@ impl Recorder {
             }
         }
         let event = self.append(&under, &tool_kind(call), body)?;
+        Ok(self.and_its_block(event, block, spooled, |log, block| {
+            log.append(&under, stops::BLOCK, block)
+        }))
+    }
+
+    /// `event`, a tool event written, and the guard's `block` for its call written after it by
+    /// `write`, with the spool number a drained call had. **The line is taken once its tool event
+    /// is written:** a block that cannot be written is said in the host's log and not answered as
+    /// the line's failure, since a line answered as not taken is spooled and drained again, and
+    /// its tool event would be written twice.
+    fn and_its_block(
+        &mut self,
+        event: Event,
+        block: Option<serde_json::Value>,
+        spooled: Option<u64>,
+        write: impl FnOnce(&mut Self, serde_json::Value) -> io::Result<Event>,
+    ) -> Vec<Event> {
+        let mut written = vec![event];
         if let Some(block) = block {
-            self.append(&under, stops::BLOCK, block)?;
+            match write(self, spooled_as(block, spooled)) {
+                Ok(block) => written.push(block),
+                Err(why) => tracing::warn!(
+                    "purlis: a guard's block after event {} was not written ({why})",
+                    written[0].seq
+                ),
+            }
         }
-        Ok(event)
+        written
     }
 
     /// What a tool event's body says of its call, before any duration.
@@ -2080,7 +2116,8 @@ impl Recorder {
                     return self.report_spooled(plane, &report, Followed::No, None, Some(seq));
                 }
                 (Spooled::Tool(call), Some(_)) => {
-                    return self.tool_spooled(plane, &call, Instant::now(), Some(seq));
+                    let written = self.tool_spooled(plane, &call, Instant::now(), Some(seq))?;
+                    return Ok(last_of(written));
                 }
                 (Spooled::Refused(refused), Some(_)) => {
                     return self.refused_spooled(plane, refused.chat, Some(seq));
@@ -2092,10 +2129,11 @@ impl Recorder {
                 (Spooled::Tool(call), None) => {
                     let body = spooled_as(self.tool_body(&call), Some(seq));
                     let event = self.of_no_run(number, &tool_kind(&call), body)?;
-                    if let Some(block) = self.guard_block(&call, None) {
-                        self.of_no_run(number, stops::BLOCK, block)?;
-                    }
-                    return Ok(event);
+                    let block = self.guard_block(&call, None);
+                    let written = self.and_its_block(event, block, Some(seq), |log, block| {
+                        log.of_no_run(number, stops::BLOCK, block)
+                    });
+                    return Ok(last_of(written));
                 }
                 (Spooled::Refused(_), None) => (
                     COMMIT_REFUSED.to_owned(),
