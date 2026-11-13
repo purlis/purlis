@@ -605,7 +605,7 @@ fn the_window_s_words_for_a_chat_link_are_these() {
 /// Asked of the bounded reader, as the window's resolver asks it.
 #[cfg(unix)]
 #[test]
-fn a_file_git_ignores_in_a_branch_is_no_link_as_the_editor_refuses_it() {
+fn a_file_git_ignores_in_a_clone_or_a_piece_is_no_link_as_the_editor_refuses_it() {
     let here = here();
     let project = here.pane.project.clone().expect("a project");
     let clone = project.join("workspaces/smart-ide/repos/app");
@@ -671,6 +671,34 @@ fn a_file_git_ignores_in_a_branch_is_no_link_as_the_editor_refuses_it() {
         LinkDoes::Opens {
             into: OpensIn::EditorTab
         }
+    );
+    assert!(purlis_core::files::open(&project, branch, "src/main.rs").is_ok());
+
+    // A piece of the clone, its own branch folder, is read the same way.
+    let piece = project.join("workspaces/smart-ide/.worktrees/app/feature");
+    let at = piece.to_str().expect("a path");
+    git(&["worktree", "add", "-q", "-b", "feature", at]);
+    std::fs::write(piece.join("debug.log"), "secret-ish\n").expect("written");
+    let in_piece = Pane {
+        folder: Some(piece.clone()),
+        ..here.pane.clone()
+    };
+    assert_eq!(
+        seen(&resolver(), &in_piece, &file("debug.log")).map(|seen| seen.does),
+        Some(LinkDoes::Refused {
+            reason: purlis_core::panelinks::NOT_OFFERED.into()
+        })
+    );
+    let branch = purlis_core::files::Branch::piece("smart-ide", "app", "feature");
+    assert!(matches!(
+        purlis_core::files::open(&project, branch, "debug.log"),
+        Err(purlis_core::files::Refused::NotOffered(_))
+    ));
+    assert_eq!(
+        seen(&resolver(), &in_piece, &file("src/main.rs:1")).map(|seen| seen.does),
+        Some(LinkDoes::Opens {
+            into: OpensIn::EditorTab
+        })
     );
     assert!(purlis_core::files::open(&project, branch, "src/main.rs").is_ok());
 }
