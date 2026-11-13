@@ -1354,7 +1354,7 @@ function App() {
       return;
     }
     if (levelOf(link.group) !== "you") return;
-    linkToGroup(settingsPlace("you"), link.group, link.setting);
+    linkToGroup(settingsPlace("you"), link.group, link.setting, link.control);
     showSettingsAlone(setSettingsAlone);
   }, []);
 

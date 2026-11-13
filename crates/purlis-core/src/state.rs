@@ -665,6 +665,10 @@ pub struct Chat {
     /// into what it would have been once the wait's limit passes with no wake.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     own_work: Option<crate::ownwork::OwnWork>,
+    /// **The wait on its own work a sandbox block's ask ended** ([`Chat::blocked_while_waiting`],
+    /// R-290): given back if that ask is withdrawn ([`Chat::block_withdrawn`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    blocked_over: Option<crate::ownwork::OwnWork>,
     /// **The turn it is in is a background turn, begun over a wait on the person** (#4562): the
     /// needs-you item it stood in stays, with its reasons, until the person answers. Meaningful
     /// only while the turn runs ([`Chat::background_turn`]).
@@ -771,6 +775,7 @@ impl Chat {
             children: children::Children::default(),
             held: false,
             own_work: None,
+            blocked_over: None,
             over_a_wait: false,
             own_work_out: false,
             failed: Vec::new(),
@@ -1280,9 +1285,27 @@ impl Chat {
             return false;
         }
         let was = self.seen();
-        self.own_work = None;
+        self.blocked_over = self.own_work.take();
         self.own_work_out = true;
         self.needs_you = true;
+        was != self.seen()
+    }
+
+    /// **The held connection whose ask ended its wait on its own work is a block now, its ask
+    /// withdrawn** (R-290, Q240): the needs-you mark that ask set is taken back, and the chat
+    /// waits on its own work again, as it did. Nothing where no such ask ended a wait, or the
+    /// chat has moved since. Answers whether anything a reader can see changed.
+    pub fn block_withdrawn(&mut self) -> bool {
+        let Some(work) = self.blocked_over.take() else {
+            return false;
+        };
+        if self.ended || self.own_work.is_some() || !self.own_work_out || !self.needs_you {
+            return false;
+        }
+        let was = self.seen();
+        self.own_work = Some(work);
+        self.own_work_out = false;
+        self.needs_you = false;
         was != self.seen()
     }
 
@@ -1949,6 +1972,17 @@ impl Board {
             .chats
             .get_mut(&number)
             .is_some_and(|tracked| tracked.chat.blocked_while_waiting());
+        self.stamp(number, changed)
+    }
+
+    /// A held connection's ask that ended chat `number`'s wait on its own work was withdrawn
+    /// ([`Chat::block_withdrawn`], R-290). Answers whether anything a reader can see changed.
+    pub fn block_withdrawn(&mut self, number: u32) -> bool {
+        self.tell(number, || Move::BlockWithdrawn);
+        let changed = self
+            .chats
+            .get_mut(&number)
+            .is_some_and(|tracked| tracked.chat.block_withdrawn());
         self.stamp(number, changed)
     }
 

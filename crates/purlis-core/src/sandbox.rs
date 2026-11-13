@@ -5452,6 +5452,9 @@ pub trait Board: Send + Sync + std::fmt::Debug {
     /// Whether a connection held past its hold waits on, while the person is Quiet
     /// ([`asks::Asks::hold_open`], #6007).
     fn hold_open(&self, open: bool);
+    /// The chat moved on from what is held on `target`, a host and port ([`asks::Asks::give_up`],
+    /// R-290): whether one was held there, so it ends now as a timeout does.
+    fn give_up(&self, target: &str) -> bool;
 }
 
 impl Board for asks::Asks {
@@ -5485,6 +5488,10 @@ impl Board for asks::Asks {
 
     fn hold_open(&self, open: bool) {
         asks::Asks::hold_open(self, open);
+    }
+
+    fn give_up(&self, target: &str) -> bool {
+        asks::Asks::give_up(self, target)
     }
 }
 

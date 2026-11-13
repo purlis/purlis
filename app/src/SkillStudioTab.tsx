@@ -73,6 +73,7 @@ import {
 import {
   AT_THE_ROOT,
   SKILL_PAGE_TAB_NAMES,
+  SKILL_STUDIO_ASKED,
   SKILL_STUDIO_VIEW,
   asPersona,
   backIsTo,
@@ -98,6 +99,7 @@ import {
   studioHistoryOf,
   useStudioStart,
   whoseChats,
+  type SkillStudioAsk,
   type SourcesAt,
   type StudioPage,
   type StudioPlace,
@@ -440,6 +442,17 @@ export function SkillStudioTab({
   const [switched, setSwitched] = useState(0);
   // The item of Needs you chosen, by its id: on a wide tab the first is shown until one is.
   const [need, setNeed] = useState<string>();
+  // A way in from outside that names an item of Needs you (R-357's Go to) beats one chosen
+  // before it: the item it names is the one shown.
+  useEffect(() => {
+    const asked = (event: Event) => {
+      const wanted = (event as CustomEvent<SkillStudioAsk>).detail;
+      if (wanted.plane === plane && wanted.page === "needs" && wanted.item !== undefined)
+        setNeed(undefined);
+    };
+    window.addEventListener(SKILL_STUDIO_ASKED, asked);
+    return () => window.removeEventListener(SKILL_STUDIO_ASKED, asked);
+  }, [plane]);
   const [query, setQuery] = useState("");
   const [chips, setChips] = useState<ReadonlySet<Chip>>(new Set());
   /** The source the Library is narrowed to (#5331), by its label; "" for every source. */
@@ -1938,13 +1951,15 @@ export function SkillStudioTab({
         />
       );
   } else if (page === "needs") {
-    const shown = needShown(needs, need);
+    // The item a way in named (R-357's Accept the folders), until the person chooses another.
+    const chosen = need ?? at.item;
+    const shown = needShown(needs, chosen);
     list = pageList(
       NEEDS_YOU_LEAD,
       held(() => (
         <NeedsYouList
           needs={needs}
-          chosen={needs.some((one) => one.id === need) ? need : undefined}
+          chosen={needs.some((one) => one.id === chosen) ? chosen : undefined}
           onChoose={(id) => setNeed(id)}
         />
       )),

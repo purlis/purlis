@@ -259,3 +259,5 @@
 {"reply":{"re":210,"ok":{"reach_changed":{"retry":[]}}}}
 {"call":{"id":211,"command":"hold","program":"01J9ZQ8000000000000000000D","still":true}}
 {"reply":{"re":211,"ok":"done"}}
+{"call":{"id":212,"command":"change_reach","confinement":"01J9CNFNMNT0000000000000000","change":"give_up","target":"api.example.com:443"}}
+{"reply":{"re":212,"ok":{"reach_changed":{"retry":[]}}}}

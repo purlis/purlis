@@ -46,6 +46,8 @@ pub enum Move {
     OwnWorkLapsed { now: i64, waits: Waits },
     /// [`Board::blocked_while_waiting`].
     BlockedWhileWaiting,
+    /// [`Board::block_withdrawn`] (R-290).
+    BlockWithdrawn,
     /// [`Board::task_failed`].
     TaskFailed { failed: FailedTask },
     /// [`Board::failures_seen`].
@@ -188,6 +190,7 @@ impl Board {
             Move::Rested => self.rested(number),
             Move::OwnWorkLapsed { now, waits } => self.own_work_lapsed(number, now, waits),
             Move::BlockedWhileWaiting => self.blocked_while_waiting(number),
+            Move::BlockWithdrawn => self.block_withdrawn(number),
             Move::TaskFailed { failed } => self.task_failed(number, failed),
             Move::FailuresSeen => self.failures_seen(number),
             Move::FailureCleared { id } => self.failure_cleared(number, &id),
