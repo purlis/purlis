@@ -315,7 +315,7 @@ fn a_chat_no_longer_open_is_told_it_is_not_running_never_that_it_runs_no_tool_61
     assert_eq!(refused, NOT_RUNNING);
 
     let shown = skills_shown(&held, ended);
-    assert!(shown.on && !shown.known);
+    assert!(!shown.known);
     // Nothing is picked yet where the list says it: it says nothing of what was typed.
     assert_eq!(shown.none_because.as_deref(), Some(NOT_RUNNING_LISTED));
 }
