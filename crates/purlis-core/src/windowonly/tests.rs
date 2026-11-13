@@ -116,3 +116,52 @@ fn a_chat_s_refusals_go_when_it_ends_and_no_other_chat_s() {
     let left: Vec<u32> = every(root).iter().map(|one| one.session).collect();
     assert_eq!(left, [5]);
 }
+
+#[test]
+fn a_new_ask_for_a_clone_at_another_place_replaces_the_chat_s_old_one() {
+    let plane = tempfile::tempdir().unwrap();
+    let root = plane.path();
+    let moved = Control::TrustClone {
+        folder: "workspaces/ws/api".to_owned(),
+        place: "github.com/acme/moved".to_owned(),
+    };
+    raise(root, 4, trust_api());
+    raise(root, 5, trust_api());
+
+    // The clone's remote changed: chat 4's old ask would be a dead button, so the new one
+    // replaces it rather than stacking. Chat 5's stays until chat 5 is refused again.
+    assert!(raise(root, 4, moved.clone()));
+
+    let left: Vec<(u32, Control)> = every(root)
+        .into_iter()
+        .map(|one| (one.session, one.control))
+        .collect();
+    assert_eq!(left, [(5, trust_api()), (4, moved)]);
+}
+
+#[test]
+fn a_project_that_ended_keeps_no_ask_and_tells_no_one() {
+    let plane = tempfile::tempdir().unwrap();
+    let other = tempfile::tempdir().unwrap();
+    let root = plane.path();
+    let told = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    telling(root, {
+        let told = Arc::clone(&told);
+        Arc::new(move || {
+            told.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        })
+    });
+    raise(root, 4, trust_api());
+    raise(other.path(), 4, trust_api());
+    let told_before = told.load(std::sync::atomic::Ordering::SeqCst);
+
+    project_ended(root);
+
+    assert_eq!(every(root), []);
+    assert_eq!(every(other.path()).len(), 1, "another project's ask stays");
+    // Its listener is gone: an ask raised later tells no one.
+    raise(root, 6, trust_api());
+    assert_eq!(told.load(std::sync::atomic::Ordering::SeqCst), told_before);
+    project_ended(root);
+    project_ended(other.path());
+}
