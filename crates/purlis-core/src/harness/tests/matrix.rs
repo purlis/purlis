@@ -55,6 +55,16 @@ const fn here(name: &'static str) -> Test {
     Test::Named { file: THIS, name }
 }
 
+/// Where files and egress are confirmed enforced on each harness (R-353).
+const ENFORCED: &str = "src/sandbox/enforced_tests.rs";
+
+const fn enforced(name: &'static str) -> Test {
+    Test::Named {
+        file: ENFORCED,
+        name,
+    }
+}
+
 const fn owed(by: &'static str) -> Test {
     Test::Owed { by }
 }
@@ -77,15 +87,15 @@ const MATRIX: [Row; 10] = [
         cells: [
             cell(
                 "enforced (Bash in the sandbox; file tools by deny rules; web tools denied)",
-                owed("R-353"),
+                enforced("files_and_egress_are_enforced_on_claude_code"),
             ),
             cell(
                 "enforced (the whole process, its hooks and MCP servers, in purlis's wrap)",
-                owed("R-353"),
+                enforced("files_and_egress_are_enforced_on_codex"),
             ),
             cell(
                 "enforced (the whole process in purlis's wrap)",
-                owed("R-353"),
+                enforced("files_and_egress_are_enforced_on_opencode"),
             ),
         ],
     },

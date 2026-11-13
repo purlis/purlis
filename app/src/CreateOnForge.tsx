@@ -4,7 +4,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { Channel } from "@tauri-apps/api/core";
-import { commands, type CreateProgress, type ForgeOwners, type TemplateRow } from "./bindings";
+import {
+  commands,
+  type CreateProgress,
+  type ForgeOwners,
+  type ProtectionWord,
+  type TemplateRow,
+} from "./bindings";
 import { REMEMBERED_PARENT } from "./GetProject";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
@@ -218,9 +224,13 @@ export function CreateOnForge({
   templates,
   onOpen,
   onNeedsSignIn,
+  protection,
   withGit = (act) => void act(),
 }: {
   forge: Exclude<Where, "mac">;
+  /** The Protection row's answer, kept as the person's own level for the project made (T1-24).
+   *  None keeps no level. */
+  protection?: ProtectionWord;
   /** The templates this purlis ships, once the machine has been read. */
   templates: readonly TemplateRow[] | undefined;
   /** Opens a folder through the trust question: the welcome's own open. */
@@ -289,6 +299,7 @@ export function CreateOnForge({
           private: visibility === "private",
           template: template === EMPTY ? null : template,
           folder: folder.folder,
+          protection: protection ?? null,
         },
         progress,
       )
@@ -300,7 +311,7 @@ export function CreateOnForge({
       setDoing({ kind: "asking" });
       onOpen(answer.data);
     }
-  }, [forge, owner, folder, typed, visibility, template, onOpen]);
+  }, [forge, owner, folder, typed, visibility, template, protection, onOpen]);
 
   const choose = useCallback(() => {
     setUnpicked(undefined);

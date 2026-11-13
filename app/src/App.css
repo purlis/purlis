@@ -7362,6 +7362,14 @@ nav.piece-files-head {
   color: var(--text-muted);
 }
 
+/* Setup's read-only line of the level a local project there already keeps (`ProtectionRow.tsx`,
+   Q241): said in the settings family's own help tokens, a step up so it reads as the answer. */
+.your-level {
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
 /* A row's refusal line in a form, there from the start so its words are heard as they land
    (#3291): empty, it takes no place in the row's grid, so nothing moves and no gap is added. It
    stays in the accessibility tree. */

@@ -2413,7 +2413,8 @@ pub(crate) fn keep_block(
     audit: Audit<'_>,
 ) -> Option<crate::taskblocks::HeldBlock> {
     let block = crate::taskblocks::shown_one(chats.blocks(), session, shown).ok()?;
-    chats.blocks().answered(session, &block);
+    // The person's no: the ask leaves, and the refusal is one block from now on (T1-10).
+    chats.blocks().kept_blocked(session, &block);
     if block.what == GrantWhat::Host
         && let Ok(host) = sandbox::grant::host(&block.target)
     {

@@ -8319,6 +8319,8 @@ mod claude_wrap_tests;
 #[cfg(test)]
 mod codex_tests;
 #[cfg(test)]
+mod enforced_tests;
+#[cfg(test)]
 mod floor_tests;
 #[cfg(test)]
 mod forge_moved_tests;

@@ -242,6 +242,7 @@ macro_rules! app_commands {
                 dispatchaway::dismiss_dispatch_away,
                 dispatchaway::never_dispatch_away,
                 firstrun::open_repo,
+                firstrun::setup_protection,
                 firstrun::template_that_fits,
                 firstrun::open_local_project,
                 firstrun::repo_instructions,

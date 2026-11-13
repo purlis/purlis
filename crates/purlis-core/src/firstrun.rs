@@ -105,6 +105,25 @@ impl std::fmt::Display for NotMade {
     }
 }
 
+/// What [`local_plane_ensured`] found: the local plane, and whether this call made it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ensured {
+    /// The plane's root.
+    pub root: PathBuf,
+    /// Whether this call made it, rather than finding it there.
+    pub made: bool,
+}
+
+/// [`ensure_local_plane`], saying whether this call made the plane.
+pub fn local_plane_ensured(data_home: &Path, forge: ForgeFrom<'_>) -> Result<Ensured, NotMade> {
+    let at = local_plane(data_home);
+    let root = at.canonicalize().ok();
+    if let Some(root) = root.filter(|root| crate::names::has_manifest(root)) {
+        return Ok(Ensured { root, made: false });
+    }
+    made_local_plane(data_home, &at, forge).map(|root| Ensured { root, made: true })
+}
+
 /// The local plane in the data home `data_home`, made first when it is not there yet.
 ///
 /// Refused when the data home is inside a project or a git work tree, where purlis's data home
@@ -115,11 +134,11 @@ impl std::fmt::Display for NotMade {
 /// remote: `git remote` is empty until the operator shares it. Its `[[forge]]` comes from
 /// `forge`, by `charter init`'s rule: a repo's `origin`, else the operator's answer.
 pub fn ensure_local_plane(data_home: &Path, forge: ForgeFrom<'_>) -> Result<PathBuf, NotMade> {
-    let at = local_plane(data_home);
-    let root = at.canonicalize().ok();
-    if let Some(root) = root.filter(|root| crate::names::has_manifest(root)) {
-        return Ok(root);
-    }
+    local_plane_ensured(data_home, forge).map(|ensured| ensured.root)
+}
+
+/// The local plane made at `at`, in the data home `data_home`: [`ensure_local_plane`]'s making.
+fn made_local_plane(data_home: &Path, at: &Path, forge: ForgeFrom<'_>) -> Result<PathBuf, NotMade> {
     if let Some(why) = crate::datahome::refusal(data_home) {
         return Err(NotMade::Refused(format!(
             "purlis keeps its local project in its data home, and {why}. Set PURLIS_DATA_HOME \
@@ -140,7 +159,7 @@ pub fn ensure_local_plane(data_home: &Path, forge: ForgeFrom<'_>) -> Result<Path
             Err(why) => return Err(NotMade::AsksForForge(why)),
         },
     };
-    std::fs::create_dir_all(&at).map_err(|why| {
+    std::fs::create_dir_all(at).map_err(|why| {
         NotMade::Refused(format!("purlis could not make {} ({why}).", at.display()))
     })?;
     let root = at
@@ -987,6 +1006,20 @@ mod tests {
         let again = ensure_local_plane(config.path(), GITHUB).expect("a second call answers");
         assert_eq!(again, root);
         assert!(root.join("mine.txt").is_file());
+    }
+
+    /// Q241 (T1-24's review, 1): **the call that made the local plane says so**, and a call that
+    /// found it there says it did not, so setup writes a level only for a project it made.
+    #[test]
+    fn the_local_plane_says_whether_this_call_made_it() {
+        let config = tempfile::tempdir().expect("a config home");
+
+        let first = local_plane_ensured(config.path(), GITHUB).expect("the local plane is made");
+        let again = local_plane_ensured(config.path(), GITHUB).expect("a second call answers");
+
+        assert!(first.made, "the first call made it");
+        assert!(!again.made, "the second call found it there");
+        assert_eq!(again.root, first.root);
     }
 
     /// A repo with one commit, made through `testgit` so it never asks the developer's
