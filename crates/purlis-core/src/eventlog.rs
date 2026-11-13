@@ -1389,6 +1389,9 @@ fn tool_kind(call: &crate::hookwire::ToolCall) -> String {
     match phase(&call.tool_hook) {
         Some(_) => format!("hook.{}", call.tool_hook),
         None if call.tool_hook == crate::hookwire::SKILL_LOAD => SKILL_LOADED.to_owned(),
+        None if call.tool_hook == crate::hookreg::HARNESS_DENIED => {
+            format!("hook.{}", crate::hookreg::HARNESS_DENIED)
+        }
         None => UNKNOWN_HOOK.to_owned(),
     }
 }
@@ -1978,7 +1981,11 @@ impl Recorder {
     ) -> io::Result<Event> {
         let Some(top) = self.identity(plane, call.chat)? else {
             let body = spooled_as(self.tool_body(call), spooled);
-            return self.of_no_run(call.chat, &tool_kind(call), body);
+            let event = self.of_no_run(call.chat, &tool_kind(call), body)?;
+            if let Some(block) = self.harness_check_block(call) {
+                self.of_no_run(call.chat, stops::BLOCK, block)?;
+            }
+            return Ok(event);
         };
         let who = Who::of(&top.attributes);
         let under = self.under(top, call.agent.as_deref())?;
@@ -1993,7 +2000,11 @@ impl Recorder {
                 body["tool_ms"] = ms.into();
             }
         }
-        self.append(&under, &tool_kind(call), body)
+        let event = self.append(&under, &tool_kind(call), body)?;
+        if let Some(block) = self.harness_check_block(call) {
+            self.append(&under, stops::BLOCK, block)?;
+        }
+        Ok(event)
     }
 
     /// What a tool event's body says of its call, before any duration.

@@ -13,10 +13,11 @@
 //! There is no field for a command, its arguments or output, or the harness's `reason` text:
 //! the reason is held in memory for the row's detail while the app runs, and never written.
 //!
-//! **What writes them comes later**: the guard denies, the harness's own check, the sandbox
-//! refusals, the merge hold, the loop rule and the asks each write their kind in their own
-//! slice. Here the kinds exist, with their shapes, and the window's entry carries them
-//! ([`super::Entry::Stop`]).
+//! **What writes them**: the harness's own check's refusal is written as a block by the
+//! recorder, beside the tool event of its hook's line (R-094, R-325,
+//! [`Recorder::harness_check_block`]). The guard denies, the sandbox refusals, the merge hold,
+//! the loop rule and the asks each write their kind in their own slice; the window's entry
+//! carries them ([`super::Entry::Stop`]).
 
 use std::io;
 use std::path::Path;
@@ -367,8 +368,38 @@ impl Recorder {
         .map_err(io::Error::other)?;
         self.audited(plane, number, stop.kind(), body)
     }
+
+    /// **The block the harness's own check is** (R-094, R-325): for the line of the hook that
+    /// hears a harness's own refusal ([`crate::hookreg::HARNESS_DENIED`]), its `stop.block`
+    /// body, source [`Source::HarnessCheck`], with the tool by the harness's name and the
+    /// arguments' hash keyed as the tool event's is; none for any other line, so a harness
+    /// whose hooks report no refusal gets no block guessed for it. No target: the line names
+    /// nothing the writer resolved itself. The check's `reason` is not on the line at all.
+    pub(super) fn harness_check_block(
+        &self,
+        call: &crate::hookwire::ToolCall,
+    ) -> Option<serde_json::Value> {
+        if call.tool_hook != crate::hookreg::HARNESS_DENIED {
+            return None;
+        }
+        let block = Block {
+            tool: crate::shown::readable(
+                call.tool.as_deref().unwrap_or(super::UNKNOWN),
+                TARGET_CHARS,
+            ),
+            source: Source::HarnessCheck,
+            qualifier: None,
+            target: None,
+            args: call.args.as_deref().map(|hash| self.key.digest(hash)),
+        };
+        serde_json::to_value(block).ok()
+    }
 }
 
 #[cfg(test)]
 #[path = "stops/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "stops/harness_check_tests.rs"]
+mod harness_check_tests;

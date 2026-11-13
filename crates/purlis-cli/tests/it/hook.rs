@@ -1500,3 +1500,86 @@ fn every_hook_the_bundled_plugin_wires_answers_an_ordinary_call_with_exit_zero()
     }
     assert_eq!(ran, purlis_core::hookreg::HANDLERS.len());
 }
+
+#[cfg(unix)]
+#[test]
+fn a_harness_version_that_does_not_know_permission_denied_still_starts_and_its_other_hooks_answer()
+{
+    // R-094's hook-contract guard: Claude Code drops a hooks.json entry of an event it does not
+    // know, and keeps the rest (2.1.323's `claude plugin validate`: "unknown hook event; entry
+    // ignored at runtime"). So the `PermissionDenied` hook is an event of its own, holding that
+    // word alone, and an older version that drops it keeps every other hook, the Bash guard
+    // first among them, which still answers.
+    let mut doc: serde_json::Value =
+        serde_json::from_str(&purlis_core::plugin::hooks_json()).expect("the hooks file");
+    let words = |hooks: &serde_json::Value| -> Vec<String> {
+        hooks
+            .as_object()
+            .expect("events")
+            .values()
+            .flat_map(|groups| groups.as_array().expect("groups").iter())
+            .flat_map(|group| group["hooks"].as_array().expect("hooks").iter())
+            .map(|hook| {
+                let command = hook["command"].as_str().expect("a command");
+                command.rsplit(' ').next().unwrap_or_default().to_owned()
+            })
+            .collect()
+    };
+    let denied = purlis_core::hookreg::HARNESS_DENIED;
+    assert_eq!(
+        words(&serde_json::json!({ "PermissionDenied": doc["hooks"]["PermissionDenied"] })),
+        [denied],
+        "the event holds its word alone"
+    );
+
+    // What a version that does not know the event runs.
+    doc["hooks"]
+        .as_object_mut()
+        .expect("events")
+        .remove("PermissionDenied");
+    let mut kept = words(&doc["hooks"]);
+    kept.sort_unstable();
+    let mut every_other: Vec<String> = purlis_core::hookreg::HANDLERS
+        .iter()
+        .map(|handler| handler.name.to_owned())
+        .filter(|name| name != denied)
+        .collect();
+    every_other.sort_unstable();
+    assert_eq!(kept, every_other, "every other hook is still wired");
+
+    // And its Bash guard, as that file spells it, answers an ordinary call.
+    let group = doc["hooks"]["PreToolUse"]
+        .as_array()
+        .expect("PreToolUse")
+        .iter()
+        .find(|group| group["matcher"] == "Bash")
+        .expect("the Bash guard");
+    let command = group["hooks"][0]["command"].as_str().expect("a command");
+    let plane = tempfile::tempdir().expect("a directory");
+    std::fs::write(plane.path().join("charter.toml"), "schema = 1\n").expect("the marker");
+    let mut child = support::command("/bin/sh")
+        .args(["-c", command])
+        .current_dir(plane.path())
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        // The fence is the temporary folder the plane was made in, wherever that is.
+        .env("TMPDIR", std::env::temp_dir())
+        .env("CHARTER_ROOT", plane.path())
+        .env("CHARTER_HARNESS", "claude-code")
+        .env("PURLIS_TEST_GUARD_DEADLINE_MS", VERDICT_BUDGET_MS)
+        .env(purlis_core::plugin::BINARY_ENV, CHARTER)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("sh runs");
+    stand_in::feed(&mut child, bash("ls").as_bytes());
+    let out = child.wait_with_output().expect("it finishes");
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "the guard did not answer: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(decision(&String::from_utf8_lossy(&out.stdout)), None);
+}

@@ -48,6 +48,9 @@ const HARNESSES: [Harness; 3] = [Harness::ClaudeCode, Harness::Codex, Harness::O
 
 const THIS: &str = "src/harness/tests/matrix.rs";
 
+/// Where the harness's own check's blocks are confirmed (R-094, R-325).
+const HARNESS_CHECK: &str = "src/eventlog/stops/harness_check_tests.rs";
+
 const fn here(name: &'static str) -> Test {
     Test::Named { file: THIS, name }
 }
@@ -93,10 +96,18 @@ const MATRIX: [Row; 10] = [
     Row {
         layer: "The harness's own check's block reported",
         cells: [
-            cell("enforced (`PermissionDenied`)", owed("R-094")),
+            cell(
+                "enforced (`PermissionDenied`)",
+                Test::Named {
+                    file: HARNESS_CHECK,
+                    name: "a_permission_denied_hook_line_writes_one_block_from_the_harness_own_check",
+                },
+            ),
+            // R-325's core half, the block from a reported rejection and none guessed, is
+            // named; the Can't tell the window shows is R-100's.
             cell(
                 "Can't tell (no denial signal yet; a hook-reported rejection becomes a block)",
-                owed("R-100, R-325"),
+                owed("R-100"),
             ),
             cell("Can't tell (no denial signal)", owed("R-097")),
         ],
