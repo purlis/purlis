@@ -10,6 +10,7 @@ import {
   on,
   press,
   pressTheOneOf,
+  showing,
   tabsAdded,
   theStepSays,
   watchTheTabs,
@@ -108,9 +109,17 @@ describe("Pool setup on a kind cluster", () => {
     await on("Where chats run");
     await press("Continue with this cluster");
 
-    // Check the cluster: doctor finds only agent-sandbox missing, which Install adds.
-    await on("Check the cluster", MAKING);
-    await press("Continue", MAKING);
+    // Check the cluster: doctor finds only agent-sandbox missing, which Install adds, so Check is
+    // done and the guide goes on to Install by itself; its Continue is pressed only where it waits.
+    await browser
+      .waitUntil(async () => ["Check the cluster", "Install"].includes(await showing()), {
+        timeout: MAKING,
+        interval: 500,
+      })
+      .catch(async () => {
+        throw new Error(`Pool setup never checked the cluster; it shows ${await showing()}`);
+      });
+    if ((await showing()) === "Check the cluster") await press("Continue");
 
     // Install, a part at a time, each offered once the one before it is there.
     await on("Install");
