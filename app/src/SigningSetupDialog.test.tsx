@@ -606,7 +606,8 @@ describe("the Signed commits card", () => {
     };
     render(<Card />);
     expect(await screen.findByText("On")).toBeTruthy();
-    expect(screen.getByText("Verified on GitHub ✓")).toBeTruthy();
+    // The badge can be drawn before the accounts' rows: wait for the row, as the GitLab case does.
+    expect(await screen.findByText("Verified on GitHub ✓")).toBeTruthy();
     expect(screen.getByText("Commits as octocat@example.com")).toBeTruthy();
     const details = screen.getByRole("button", { name: "Details" });
     // Until Details is opened, nothing says SSH or Ed25519.
