@@ -241,6 +241,75 @@ pub struct RiskShown {
     pub confirm: String,
 }
 
+/// **What a merge row shows of its request** (T1-40; R-120, R-147, Q248), every one of them read
+/// from the forge with the app's own login, never from the chat
+/// (`purlis_core::mergehold::Facts`).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct MergeShown {
+    /// The request's title, written out inertly: its author may be the chat, so the row draws it
+    /// as text the chat may have written (Q248).
+    pub title: String,
+    /// Who opened it, by the forge's login, written out inertly.
+    pub author: String,
+    /// The branch it merges into: the ask's key's.
+    pub base: String,
+    /// The checks at its head, as one of the five words: `PASSED`, `FAILED`, `RUNNING`, `NOT
+    /// RUN` or `UNKNOWN`.
+    pub checks: String,
+    /// When the forge was read for these, in seconds since 1970: "Checks PASSED as of 14:02".
+    pub read_at: u32,
+    /// Whether a ruleset protects the base, as purlis read it.
+    pub ruleset: RulesetShown,
+}
+
+/// **Whether a ruleset protects a merge's base** (R-147), as its row shows it and its Merge hands
+/// back (R-150).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum RulesetShown {
+    /// A ruleset protects it.
+    Protects,
+    /// None does.
+    None,
+    /// The forge did not say.
+    Unknown,
+}
+
+impl From<purlis_core::mergehold::Seen> for RulesetShown {
+    fn from(seen: purlis_core::mergehold::Seen) -> Self {
+        use purlis_core::mergehold::Seen;
+        match seen {
+            Seen::Protects => Self::Protects,
+            Seen::None => Self::None,
+            Seen::Unknown => Self::Unknown,
+        }
+    }
+}
+
+impl From<RulesetShown> for purlis_core::mergehold::Seen {
+    fn from(shown: RulesetShown) -> Self {
+        match shown {
+            RulesetShown::Protects => Self::Protects,
+            RulesetShown::None => Self::None,
+            RulesetShown::Unknown => Self::Unknown,
+        }
+    }
+}
+
+impl MergeShown {
+    /// What a merge row shows of `facts`, read for a request into `base`.
+    pub fn of(facts: &purlis_core::mergehold::Facts, base: &str) -> Self {
+        Self {
+            title: said_inertly(&facts.title),
+            author: said_inertly(&facts.author),
+            base: base.to_owned(),
+            checks: facts.checks.ci.word().to_owned(),
+            read_at: u32::try_from(facts.read_at).unwrap_or(u32::MAX),
+            ruleset: facts.ruleset.seen().into(),
+        }
+    }
+}
+
 /// Which risk an ask carries ([`RiskShown`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
@@ -746,11 +815,15 @@ pub enum AnswerPath {
     /// the window's own, opening Settings where the limit is.
     Paused,
     /// `merge_held_request` for Merge and `dont_merge_held_request` for Don't merge, each for
-    /// request `number` of `repo` at `head`, the key the ask was raised at (R-115).
+    /// request `number` of `repo` at `head`, the key the ask was raised at (R-115). `facts` are
+    /// what the row shows of it, as the forge last gave them (T1-40): Merge hands back the
+    /// ruleset state among them, which it is bound to (R-150), and `reread_held_merge` reads
+    /// them again before Merge asks once more (Q248).
     MergeHold {
         repo: String,
         number: u32,
         head: String,
+        facts: MergeShown,
     },
     /// `vouch_clone` for Trust this clone, on the clone at `folder` (relative to the project)
     /// at `place`, the address its remote named when the refusal was raised (R-330): the clone
@@ -2027,6 +2100,7 @@ pub fn merge_hold(waits: &purlis_core::mergehold::Waits) -> Shown {
             repo: key.repo.as_str().to_owned(),
             number: u32::try_from(key.number).unwrap_or(u32::MAX),
             head: key.head.as_str().to_owned(),
+            facts: MergeShown::of(&waits.facts, key.base.as_str()),
         },
         // Since when is the registry's to say, as for every ask (`Waiting::since`).
         since: None,

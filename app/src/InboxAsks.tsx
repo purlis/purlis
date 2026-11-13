@@ -32,6 +32,8 @@ import { RunFacts, SecretAskNotice, type SecretAskGiven } from "./SecretAskNotic
 import { AskDecision, REASON_TYPED_MOST, waysOf } from "./AskDecision";
 import { RuleOffer, ruleMadeOf } from "./AskRules";
 import { SecretFillSite } from "./SecretFillNotice";
+import { MergeFacts } from "./MergeFacts";
+import { confirmationOf, rereadMerge } from "./mergeHold";
 import { Button, ButtonRow, IconButton } from "./ui/button/Button";
 import {
   MessageBody,
@@ -593,15 +595,16 @@ export function Ask({
    *  as a decision's does (`AskDecision`, #6011): with what a secret's notice gave, read only
    *  once its Allow there is pressed, and the words its pressed button showed, which the
    *  question's own Allow repeats. It holds only for the ask, the question and the answer it
-   *  was asked of (Q242): where the row moves under it (a held merge at a new head, say), the
-   *  question is taken back, and nothing the person pressed carries over. */
+   *  was asked of (Q242): where the row moves under it (a held merge at a new head, say, or its
+   *  facts refreshed, Q248), the question is taken back, and nothing the person pressed carries
+   *  over. A held merge's is asked of what the forge says when it is asked (`rereadMerge`). */
   const [askedOf, setAsking] = useState<{
     option: Offered;
     given?: () => SecretAskGiven;
     said: string;
     of: string;
   }>();
-  const question = [ask.ask, ask.risk?.confirm ?? "", JSON.stringify(ask.answer)].join("\n");
+  const question = confirmationOf(ask);
   const asking = askedOf?.of === question ? askedOf : undefined;
   const who = chainSaid(ask.chain);
   /** A secret's one notice draws its own answers (#5080). */
@@ -675,9 +678,24 @@ export function Ask({
    *  answer acts. */
   const answerOrAsk = (option: Offered, given?: () => SecretAskGiven, said = option.label) => {
     if (ask.risk != null && option.allows) {
-      setAsking(
-        asking?.option.id === option.id ? undefined : { option, given, said, of: question },
-      );
+      if (asking?.option.id === option.id || ask.answer.via !== "merge-hold") {
+        setAsking(
+          asking?.option.id === option.id ? undefined : { option, given, said, of: question },
+        );
+        return;
+      }
+      // **A held merge is read again before it asks once more** (Q248): the question is asked
+      // of what the forge says now, and shown once the row does.
+      if (busy) return;
+      setBusy(true);
+      setSaid(undefined);
+      void rereadMerge(plane, ask)
+        .catch((err: unknown) => ({ refused: String(err), question: undefined }))
+        .then(({ question: of, refused }) => {
+          if (refused !== undefined) setSaid(refused);
+          else if (of !== undefined) setAsking({ option, given, said, of });
+        })
+        .finally(() => setBusy(false));
       return;
     }
     answer(option, given);
@@ -696,7 +714,9 @@ export function Ask({
     // **An Allow waits for the row to settle** (#1695), as an update's does: with the hand's
     // list retired, the Inbox is where a permission or a host is allowed from outside its
     // pane, and an ask joining above must not put another's Allow under the pointer.
-    if (option.allows && tooSoon()) {
+    // On a held merge, Don't merge waits as Merge does (T1-40, ADR 0097): both act on the head
+    // the row names, and neither may land on a row just drawn.
+    if ((option.allows || ask.source === "merge-hold") && tooSoon()) {
       setSaid(MOVED_JUST_NOW);
       return;
     }
@@ -978,6 +998,14 @@ export function Ask({
               </span>
             )}
           </Tooltip>
+        )}
+        {/* **What a merge row shows of its request** (T1-40): the forge's facts, the checks as of
+              their read, the ruleset state with the gap beside it, and the title last, as text
+              the chat may have written. */}
+        {ask.answer.via === "merge-hold" && (
+          <p className="inbox-merge ui-text-secondary">
+            <MergeFacts facts={ask.answer.facts} />
+          </p>
         )}
         {shape.said !== undefined && (
           <ChatText

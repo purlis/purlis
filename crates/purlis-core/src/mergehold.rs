@@ -26,10 +26,13 @@
 //!   the forge, never from the chat, whose line carries none of them (R-119); and whether a
 //!   ruleset protects the base is read with the app's own forge login (R-146).
 //!
+//! - **A press is bound to what the person was shown** (R-150, Q248): it says the ruleset state
+//!   its row showed ([`Seen`]), and merges only while that is the state the ask holds, which a
+//!   re-read just before the press refreshes ([`Holds::refresh`]).
+//!
 //! **Not here yet** (each its ticket's): A4's refusal of an unattended merge still answers first
-//! (its precedence is read with attendance, R-145, #6409); the merge row in the window (R-120,
-//! #6431), and the ruleset state on it (R-147). A line whose request cannot be read (a raw API
-//! call, a merge with no number) is refused with no ask.
+//! (its precedence is read with attendance, R-145, #6409). A line whose request cannot be read (a
+//! raw API call, a merge with no number) is refused with no ask.
 //!
 //! In memory only, in the app: a relaunch holds none, and the chat's next try asks again.
 
@@ -400,6 +403,26 @@ pub enum Ruleset {
     Unknown(String),
 }
 
+/// **The ruleset state a person was shown** (R-150): what a press says it saw, and what it is
+/// held to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Seen {
+    Protects,
+    None,
+    Unknown,
+}
+
+impl Ruleset {
+    /// The state this read gives, as a row shows it.
+    pub fn seen(&self) -> Seen {
+        match self {
+            Ruleset::Protects => Seen::Protects,
+            Ruleset::None => Seen::None,
+            Ruleset::Unknown(_) => Seen::Unknown,
+        }
+    }
+}
+
 /// **What a merge ask shows of its request** (R-119, R-146), every one of them read from the
 /// forge when the ask was raised, never from the chat. Its base is the key's ([`MergeKey`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -637,6 +660,16 @@ pub struct Waits {
     pub since: u64,
 }
 
+/// What a re-read did to a waiting ask ([`Holds::refresh`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Refreshed {
+    /// The request is at the ask's head and base still: the ask shows the new read.
+    Same,
+    /// The request moved to another head or base: the ask, which its head can no longer merge,
+    /// is retired for one at where it is now (Q242).
+    Moved,
+}
+
 /// What became of a raise ([`Holds::raise`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Raised {
@@ -665,6 +698,13 @@ pub enum NotMerged {
          was merged"
     )]
     BaseMoved { was: String, now: String },
+    /// Whether a ruleset protects the base is not what the person was shown (R-150). The ask
+    /// still waits, showing what purlis read last.
+    #[error(
+        "whether a ruleset protects the base changed since you were shown it, so nothing was \
+         merged. Read the request again, then merge"
+    )]
+    RulesetChanged,
 }
 
 /// **The merge asks the app holds**, until the person answers.
@@ -710,6 +750,42 @@ impl Holds {
         Raised::New
     }
 
+    /// **A re-read of chat `session`'s waiting ask for `was`** (Q248), as the forge gives it now:
+    /// at `now` (the key the read gives) and showing `facts`, which keep the time they were
+    /// read. At the same head and base it is the one ask still, waiting since it was raised; at
+    /// another, the ask at `was` is retired and one at `now` waits from the read (Q242). An ask
+    /// that waits no more is never raised again by a re-read.
+    pub fn refresh(
+        &self,
+        session: u32,
+        was: &MergeKey,
+        now: MergeKey,
+        facts: Facts,
+    ) -> Result<Refreshed, NotMerged> {
+        let mut held = self.lock();
+        let at = held
+            .iter()
+            .position(|one| one.session == session && one.key == *was)
+            .ok_or(NotMerged::NotHeld)?;
+        if now == *was {
+            held[at].facts = facts;
+            return Ok(Refreshed::Same);
+        }
+        if !was.same_request(&now) {
+            return Err(NotMerged::NotHeld);
+        }
+        let since = facts.read_at;
+        held.remove(at);
+        held.retain(|one| !(one.session == session && one.key.same_request(&now)));
+        held.push(Waits {
+            session,
+            key: now,
+            facts,
+            since,
+        });
+        Ok(Refreshed::Moved)
+    }
+
     /// Every merge ask that waits, oldest first.
     pub fn every(&self) -> Vec<Waits> {
         self.lock().clone()
@@ -737,13 +813,17 @@ impl Holds {
 
     /// **The person's press**: chat `session`'s ask for `key` is taken out, so a second press
     /// merges nothing, the forge is read again, and asked to merge exactly `key` by the repo's
-    /// own method, only while it still merges into `key.base` (Q239). Where the base moved or
-    /// the forge refuses, the ask waits again, as it was. `by` is the human who pressed, which
-    /// no chat can be.
+    /// own method, only while it still merges into `key.base` (Q239). `seen` is the ruleset
+    /// state the person's row showed: unless it is the one the ask holds, nothing is merged and
+    /// the ask waits, showing what purlis read (R-150). Where the base moved or the forge
+    /// refuses, the ask waits again, as it was, unless the chat's try again raised a newer ask
+    /// for the request meanwhile: then one row stands for it, the newer. `by` is the human who
+    /// pressed, which no chat can be.
     pub fn press(
         &self,
         session: u32,
         key: &MergeKey,
+        seen: Seen,
         by: Answerer,
         forge: &dyn MergeForge,
     ) -> Result<(HumanScope, Merged), NotMerged> {
@@ -753,6 +833,9 @@ impl Holds {
                 .iter()
                 .position(|one| one.session == session && one.key == *key)
                 .ok_or(NotMerged::NotHeld)?;
+            if held[at].facts.ruleset.seen() != seen {
+                return Err(NotMerged::RulesetChanged);
+            }
             held.remove(at)
         };
         let merged = forge
@@ -772,7 +855,13 @@ impl Holds {
         match merged {
             Ok(merged) => Ok((by.scope(), merged)),
             Err(why) => {
-                self.lock().push(taken);
+                let mut held = self.lock();
+                if !held
+                    .iter()
+                    .any(|one| one.session == session && one.key.same_request(key))
+                {
+                    held.push(taken);
+                }
                 Err(why)
             }
         }

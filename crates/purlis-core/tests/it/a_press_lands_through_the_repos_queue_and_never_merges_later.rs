@@ -15,7 +15,7 @@ use purlis_core::forge::backend::Caller;
 use purlis_core::forge::recorded::Recorded;
 use purlis_core::forge::{Forge, Kind};
 use purlis_core::harness::asks::{Admitted, Answerer};
-use purlis_core::mergehold::{ByForge, Holds, MergeKey, Merged, NotMerged};
+use purlis_core::mergehold::{ByForge, Holds, MergeKey, Merged, NotMerged, Seen};
 use serde_json::{Value, json};
 
 const HEAD: &str = "6dcb09b5b57875f334f61aebed695e2e4193db5e";
@@ -61,7 +61,7 @@ fn pressed(kind: Kind, exchanges: Vec<Value>) -> (Result<Merged, NotMerged>, Hol
     };
     let window = Answerer::admitted(Admitted::LocalUi).unwrap();
     let merged = holds
-        .press(4, &key(), window, &forge)
+        .press(4, &key(), Seen::None, window, &forge)
         .map(|(_, merged)| merged);
     let unspent = transport
         .unspent()

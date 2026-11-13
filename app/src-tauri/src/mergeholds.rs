@@ -21,9 +21,12 @@
 //! ([`dont_merge_held_request`]) merges nothing. Both are the window's alone (`purlis_session_protocol::ui::WINDOW_ONLY`), and each presses as the window,
 //! which is the only answerer a command here can be: nothing a chat sends answers (V16a).
 //!
-//! **Debt** (the merge row, R-120): no window draws the ask's row yet. Asks lists it, as
-//! `asks-only` (`app/src/askPlaces.guard.test.ts`), and the press waits on that row, which goes
-//! through the settle guard as every press does (ADR 0097).
+//! **The person's press is bound to what they were shown** (T1-40; R-150, Q248): the window
+//! re-reads the request before Merge asks once more ([`reread_held_merge`]), so the question is
+//! asked of what the forge says now, with the time it was read; and a press re-reads it again,
+//! then hands back the ruleset state its row showed, merging only while that is the state the
+//! read gives. A re-read that finds the head moved retires the ask for one at the new head
+//! (Q242), so nothing merges at a head the person was not shown.
 //!
 //! In memory only: a relaunch holds none, and the chat's next try asks again.
 
@@ -36,8 +39,10 @@ use purlis_core::forge::pr::Repo as OnForge;
 use purlis_core::harness::asks::{Admitted, Answerer};
 use purlis_core::hookwire::{Answer, MergeAsk};
 use purlis_core::mergehold::{
-    self, Base, ByForge, HeadSha, Holds, Invalid, MergeKey, Raised, Repo, Request,
+    self, Base, ByForge, HeadSha, Holds, Invalid, MergeKey, Raised, Refreshed, Repo, Request, Seen,
 };
+
+use crate::asking::{MergeShown, RulesetShown};
 
 use crate::planes::{Held, PlaneId, Planes};
 
@@ -304,9 +309,98 @@ fn the_window() -> Result<Answerer, String> {
     Answerer::admitted(Admitted::LocalUi).ok_or_else(|| "only the window answers".to_owned())
 }
 
-/// **Merge**, pressed on chat `session`'s merge ask: the app asks the forge, with its own login,
-/// to merge request `number` of `repo` at exactly `head`. The ask is answered at the press, so a
-/// second press merges nothing; where the forge refuses, it waits again and the refusal is said.
+/// **What a re-read of a held merge found** (Q248): the head the request is at now, and what its
+/// row shows of it, with the time the forge was read.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct MergeReread {
+    /// The head the request is at now: another than the ask's, and that ask is retired for one
+    /// at this head (Q242).
+    pub head: String,
+    pub facts: MergeShown,
+}
+
+/// **Read chat `session`'s held merge again**, of request `number` of `repo` at `head`, before
+/// Merge asks once more (Q248): the forge is read with the app's own login, and the ask shows
+/// what it says now, with the time of the read. A head that moved retires the ask for one at the
+/// new head. An ask that waits no more is not raised again.
+#[tauri::command]
+#[specta::specta]
+pub async fn reread_held_merge(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    session: u32,
+    repo: String,
+    number: u32,
+    head: String,
+) -> Result<MergeReread, String> {
+    let held = planes.held(&plane)?;
+    tauri::async_runtime::spawn_blocking(move || reread_shown(&held, session, &repo, number, &head))
+        .await
+        .map_err(|why| why.to_string())?
+}
+
+/// [`reread`] of chat `session`'s ask in `held`, as the window is told it.
+fn reread_shown(
+    held: &Held,
+    session: u32,
+    repo: &str,
+    number: u32,
+    head: &str,
+) -> Result<MergeReread, String> {
+    let (now, facts, _) = reread(held, session, repo, number, head)?;
+    Ok(MergeReread {
+        head: now.head.as_str().to_owned(),
+        facts: MergeShown::of(&facts, now.base.as_str()),
+    })
+}
+
+/// The re-read of chat `session`'s ask for request `number` of `repo` at `head`, in `project`:
+/// the key the forge gives now, what it says of the request, and whether the ask moved.
+pub(crate) fn reread(
+    project: &dyn Project,
+    session: u32,
+    repo: &str,
+    number: u32,
+    head: &str,
+) -> Result<(MergeKey, mergehold::Facts, Refreshed), String> {
+    let holds = project.holds();
+    let (was, on) = waiting(holds, session, repo, number, head)?;
+    let read = project
+        .read(&on, u64::from(number))
+        .map_err(|why| format!("purlis could not read it from the forge again ({why})."))?;
+    let now = key_at(&was, &read.at).map_err(|why| why.to_string())?;
+    let refreshed = holds
+        .holds
+        .refresh(session, &was, now.clone(), read.facts.clone())
+        .map_err(|why| why.to_string());
+    // The ask at the new head is on the forge the old one was raised on.
+    if refreshed == Ok(Refreshed::Moved) {
+        holds.on_forge(session, &now, on);
+    }
+    holds.prune();
+    project.moved();
+    let refreshed = refreshed?;
+    Ok((now, read.facts, refreshed))
+}
+
+/// The key of `was`'s request where the forge says it stands (`at`), checked as it is made: a
+/// refusal is the core's [`Invalid`], which names the part and never the value.
+fn key_at(was: &MergeKey, at: &purlis_core::forge::pr::HeadAt) -> Result<MergeKey, Invalid> {
+    let head = HeadSha::try_from(at.sha.as_str())?;
+    let base = Base::try_from(at.base.as_str())?;
+    Ok(MergeKey {
+        repo: was.repo.clone(),
+        number: was.number,
+        head,
+        base,
+    })
+}
+
+/// **Merge**, pressed on chat `session`'s merge ask: the app reads the request from the forge
+/// again, then asks it, with its own login, to merge request `number` of `repo` at exactly
+/// `head`, only while the ruleset state the row showed (`ruleset`) is the one it read (R-150).
+/// The ask is answered at the press, so a second press merges nothing; where the forge refuses,
+/// it waits again and the refusal is said.
 #[tauri::command]
 #[specta::specta]
 pub async fn merge_held_request(
@@ -316,41 +410,58 @@ pub async fn merge_held_request(
     repo: String,
     number: u32,
     head: String,
+    ruleset: RulesetShown,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
-    tauri::async_runtime::spawn_blocking(move || pressed(&held, session, &repo, number, &head))
-        .await
-        .map_err(|why| why.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        pressed(&held, session, &repo, number, &head, ruleset.into())
+    })
+    .await
+    .map_err(|why| why.to_string())?
 }
 
-/// The person pressed Merge on chat `session`'s ask for request `number` of `repo` at `head`.
+/// The person pressed Merge on chat `session`'s ask for request `number` of `repo` at `head`,
+/// shown `seen`.
 pub fn pressed(
     held: &Held,
     session: u32,
     repo: &str,
     number: u32,
     head: &str,
+    seen: Seen,
 ) -> Result<(), String> {
-    let merged = press(
-        held.merge_holds(),
-        session,
-        repo,
-        number,
-        head,
-        &OnForge::backend,
-    );
+    // A moved head or base is another ask, which the person has not been shown (Q242).
+    let merged = reread(held, session, repo, number, head).and_then(|(_, _, refreshed)| {
+        if refreshed == Refreshed::Moved {
+            return Err(MOVED.to_owned());
+        }
+        press(
+            held.merge_holds(),
+            session,
+            repo,
+            number,
+            head,
+            seen,
+            &OnForge::backend,
+        )
+    });
     held.chats().asks_may_have_moved();
     merged
 }
 
-/// The press of chat `session`'s ask in `holds`, through the forge its repo is on, which
-/// `backend_of` makes the client of: the forge's own, in the app.
+/// What a press says where the re-read found the request at another head or base than its row's.
+const MOVED: &str = "the request moved to another head or base since you were asked, so nothing \
+                     was merged. It is asked again where it is now.";
+
+/// The press of chat `session`'s ask in `holds`, shown `seen`, through the forge its repo is on,
+/// which `backend_of` makes the client of: the forge's own, in the app.
 fn press(
     holds: &MergeHolds,
     session: u32,
     repo: &str,
     number: u32,
     head: &str,
+    seen: Seen,
     backend_of: &dyn Fn(&OnForge) -> Box<dyn ForgeBackend>,
 ) -> Result<(), String> {
     let (key, on) = waiting(holds, session, repo, number, head)?;
@@ -362,7 +473,7 @@ fn press(
     };
     let pressed = holds
         .holds
-        .press(session, &key, the_window()?, &forge)
+        .press(session, &key, seen, the_window()?, &forge)
         .map_err(|why| why.to_string());
     holds.prune();
     let (_, merged) = pressed?;

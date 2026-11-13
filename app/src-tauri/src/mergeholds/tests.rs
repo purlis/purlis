@@ -12,7 +12,7 @@ use purlis_core::eventlog::stops::Stop;
 use purlis_core::forge::checks::{Checks, Ci};
 use purlis_core::forge::pr::{HeadAt, Repo as OnForge};
 use purlis_core::hookwire::{Answer, MergeAsk};
-use purlis_core::mergehold::{self, Request};
+use purlis_core::mergehold::{self, Request, Seen};
 
 use super::{MergeHolds, Project, answer};
 
@@ -362,7 +362,15 @@ fn a_press_merges_through_the_forge_only_at_the_head_its_ask_is_at() {
     let untouched = recorded(Vec::new());
     let backend_of = |on: &OnForge| on.forge.backend_over(untouched.clone());
     assert_eq!(
-        super::press(&project.holds, 4, "o/r", 12, HEAD, &backend_of),
+        super::press(
+            &project.holds,
+            4,
+            "o/r",
+            12,
+            HEAD,
+            Seen::Protects,
+            &backend_of
+        ),
         Err(mergehold::NotMerged::NotHeld.to_string()),
         "the ask at the old head is gone"
     );
@@ -376,7 +384,15 @@ fn a_press_merges_through_the_forge_only_at_the_head_its_ask_is_at() {
     let transport = recorded(a_github_merge_at_head());
     let backend_of = |on: &OnForge| on.forge.backend_over(transport.clone());
     assert_eq!(
-        super::press(&project.holds, 4, "o/r", 12, HEAD, &backend_of),
+        super::press(
+            &project.holds,
+            4,
+            "o/r",
+            12,
+            HEAD,
+            Seen::Protects,
+            &backend_of
+        ),
         Ok(())
     );
     assert!(project.holds.every().is_empty());
@@ -413,8 +429,8 @@ fn a_press_reaches_the_forge_its_ask_was_raised_on_by_host_and_path() {
         reached.lock().unwrap().push(on.forge.host.clone());
         on.forge.backend_over(recorded(Vec::new()))
     };
-    let _ = super::press(&holds, 4, "o/r", 12, HEAD, &backend_of);
-    let _ = super::press(&holds, 5, "o/r", 12, MOVED, &backend_of);
+    let _ = super::press(&holds, 4, "o/r", 12, HEAD, Seen::Protects, &backend_of);
+    let _ = super::press(&holds, 5, "o/r", 12, MOVED, Seen::Protects, &backend_of);
     assert_eq!(*reached.lock().unwrap(), ["github.com", "ghe.example.com"]);
 }
 
@@ -508,7 +524,15 @@ fn a_press_on_a_repo_with_a_merge_queue_queues_it_at_the_asks_head_through_the_f
     let backend_of = |on: &OnForge| on.forge.backend_over(transport.clone());
 
     assert_eq!(
-        super::press(&project.holds, 4, "o/r", 12, HEAD, &backend_of),
+        super::press(
+            &project.holds,
+            4,
+            "o/r",
+            12,
+            HEAD,
+            Seen::Protects,
+            &backend_of
+        ),
         Ok(())
     );
     assert!(project.holds.every().is_empty());

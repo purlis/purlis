@@ -1596,6 +1596,14 @@ fn a_held_merge_is_one_ask_in_asks_offering_merge_and_dont_merge() {
             repo: "o/r".to_owned(),
             number: 12,
             head: "0123456789abcdef0123456789abcdef01234567".to_owned(),
+            facts: MergeShown {
+                title: "Add the parser".to_owned(),
+                author: "octo".to_owned(),
+                base: "main".to_owned(),
+                checks: "PASSED".to_owned(),
+                read_at: 40,
+                ruleset: RulesetShown::Protects,
+            },
         }
     );
     assert!(ask.says.contains("There is no undo"), "{}", ask.says);
