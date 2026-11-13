@@ -207,7 +207,7 @@ const YOUNG = {
 
 /** An org's controls (#6031): Superpowers allowed, platform-skills not, one skill blocked. */
 const POLICY = {
-  file: "charter.toml",
+  file: "purlis.toml",
   state: {
     kind: "set",
     allow: ["https://github.com/obra/superpowers", "the extension acme-registry"],
@@ -345,7 +345,7 @@ function core({
           },
         ];
       case "skill_policy":
-        return controls ? POLICY : { file: "charter.toml", state: { kind: "none" }, sources: [] };
+        return controls ? POLICY : { file: "purlis.toml", state: { kind: "none" }, sources: [] };
       case "skill_updates":
         return {
           offers: controls

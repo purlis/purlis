@@ -19,7 +19,7 @@ afterEach(() => {
 });
 
 const SET = {
-  file: "charter.toml",
+  file: "purlis.toml",
   state: {
     kind: "set",
     allow: ["https://github.com/acme/skills", "pdf from https://github.com/anthropics/skills"],
@@ -48,11 +48,11 @@ function answering(answers: Record<string, unknown>) {
 }
 
 describe("Settings › Skill sources", () => {
-  it("shows each key of [skill_policy] read only, saying it is set in charter.toml", async () => {
+  it("shows each key of [skill_policy] read only, saying it is set in purlis.toml", async () => {
     answering({ skill_policy: SET });
-    const group = projectSkillSourcesGroup("p", "charter.toml");
+    const group = projectSkillSourcesGroup("p", "purlis.toml");
     expect(group.kept).toBe(
-      "Kept in charter.toml, which your team sees. Read only here: change it by a reviewed change to that file.",
+      "Kept in purlis.toml, which your team sees. Read only here: change it by a reviewed change to that file.",
     );
     render(<Rows settings={group.settings as LiveSetting[]} />);
 
@@ -69,7 +69,7 @@ describe("Settings › Skill sources", () => {
     expect(screen.getByTestId("skill-policy-exempt")).toHaveTextContent("9f3c1d27a0b4");
     expect(screen.getAllByText("Team")).toHaveLength(4);
     expect(screen.getByTestId("skill-policy-allow")).toHaveAccessibleDescription(
-      expect.stringContaining("Set in charter.toml, which your team sees.") as string,
+      expect.stringContaining("Set in purlis.toml, which your team sees.") as string,
     );
     // Nothing on the page writes it.
     expect(screen.queryByRole("button")).toBeNull();
@@ -77,31 +77,31 @@ describe("Settings › Skill sources", () => {
   });
 
   it("says where a project has no controls, and why a table cannot be read", async () => {
-    answering({ skill_policy: { file: "charter.toml", state: { kind: "none" }, sources: [] } });
+    answering({ skill_policy: { file: "purlis.toml", state: { kind: "none" }, sources: [] } });
     const { unmount } = render(
-      <Rows settings={projectSkillSourcesGroup("p", "charter.toml").settings as LiveSetting[]} />,
+      <Rows settings={projectSkillSourcesGroup("p", "purlis.toml").settings as LiveSetting[]} />,
     );
     expect(await screen.findByTestId("skill-policy-controls")).toHaveTextContent(
-      "None: charter.toml holds no [skill_policy], so a skill installs from any source and no install, update or removal is audited.",
+      "None: purlis.toml holds no [skill_policy], so a skill installs from any source and no install, update or removal is audited.",
     );
     expect(screen.queryByTestId("skill-policy-allow")).toBeNull();
     unmount();
 
     answering({
       skill_policy: {
-        file: "charter.toml",
+        file: "purlis.toml",
         state: {
           kind: "refused",
-          why: "this project's [skill_policy] in charter.toml could not be read (an entry names neither one source nor one extension, or an empty skill), so nothing is installed or updated until it is fixed",
+          why: "this project's [skill_policy] in purlis.toml could not be read (an entry names neither one source nor one extension, or an empty skill), so nothing is installed or updated until it is fixed",
         },
         sources: [],
       },
     });
     render(
-      <Rows settings={projectSkillSourcesGroup("p", "charter.toml").settings as LiveSetting[]} />,
+      <Rows settings={projectSkillSourcesGroup("p", "purlis.toml").settings as LiveSetting[]} />,
     );
     expect(await screen.findByTestId("skill-policy-controls")).toHaveTextContent(
-      /^This project's \[skill_policy\] in charter\.toml could not be read/,
+      /^This project's \[skill_policy\] in purlis\.toml could not be read/,
     );
   });
 });

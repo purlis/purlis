@@ -3,7 +3,7 @@
 
 /**
  * **Settings › Skill sources and Recorded skill acts** (#6031, `prototype/skill-policy` A): an
- * org's `[skill_policy]` read only, each key set in charter.toml, then the skill acts this machine
+ * org's `[skill_policy]` read only, each key set in purlis.toml, then the skill acts this machine
  * recorded as a table. Drawn, held to axe, walked by the keyboard and pictured in every pictured
  * theme cell (`docs/component-stories.md`). The core is faked at its command boundary.
  */
@@ -17,7 +17,7 @@ import type { LiveSetting, SettingsGroup } from "./groups";
 import { projectSkillActsGroup, projectSkillSourcesGroup } from "./skillsSummary";
 
 const SET = {
-  file: "charter.toml",
+  file: "purlis.toml",
   state: {
     kind: "set",
     allow: [
@@ -33,7 +33,7 @@ const SET = {
   sources: [],
 };
 
-const NONE = { file: "charter.toml", state: { kind: "none" }, sources: [] };
+const NONE = { file: "purlis.toml", state: { kind: "none" }, sources: [] };
 
 const ACTS = {
   acts: [
@@ -85,7 +85,7 @@ function Group({ group }: { group: SettingsGroup }) {
 function SkillControls({ controls }: { controls: "set" | "none" }) {
   return (
     <div data-controls={controls}>
-      <Group group={projectSkillSourcesGroup("p1", "charter.toml")} />
+      <Group group={projectSkillSourcesGroup("p1", "purlis.toml")} />
       <Group group={projectSkillActsGroup("p1")} />
     </div>
   );
@@ -114,7 +114,7 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** **An org's controls**: each key read only, set in charter.toml, and the acts recorded. Tab
+/** **An org's controls**: each key read only, set in purlis.toml, and the acts recorded. Tab
  *  reaches the table of acts. */
 export const Set: Story = {
   play: async ({ canvas }) => {
@@ -134,7 +134,7 @@ export const None: Story = {
   args: { controls: "none" },
   play: async ({ canvas }) => {
     await expect(await canvas.findByTestId("skill-policy-controls")).toHaveTextContent(
-      "None: charter.toml holds no [skill_policy]",
+      "None: purlis.toml holds no [skill_policy]",
     );
     await expect(await canvas.findByTestId("skill-acts-none")).toBeInTheDocument();
   },

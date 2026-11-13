@@ -174,8 +174,15 @@ export function SkillActsTable({ acts, ids }: { acts: SkillActs; ids: RowIds }) 
         No skill install, update or removal is recorded on this machine yet.
       </p>
     );
+  // In a group of its own, as Accounts' table is (#6301): the row's control slot sizes to it, so
+  // the table, which stacks by its frame's width, has the slot's width to read.
   return (
-    <>
+    <div
+      id={ids.id}
+      role="group"
+      aria-labelledby={ids.labelledBy}
+      aria-describedby={ids.describedBy}
+    >
       <Table
         className="ui-record-table"
         aria-label="Recorded skill acts"
@@ -217,7 +224,7 @@ export function SkillActsTable({ acts, ids }: { acts: SkillActs; ids: RowIds }) 
       {acts.more && (
         <p className="ui-setting-help">Older acts are recorded too; the newest 50 are listed.</p>
       )}
-    </>
+    </div>
   );
 }
 

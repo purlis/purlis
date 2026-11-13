@@ -1934,7 +1934,7 @@ describe("an org's skill controls (#6031)", () => {
   const SAID =
     "This project's controls apply: 1 source allowed, 1 skill blocked, commits at least 7 days old.";
   const POLICY = {
-    file: "charter.toml",
+    file: "purlis.toml",
     state: {
       kind: "set",
       allow: ["https://github.com/acme/skills"],
