@@ -1255,6 +1255,8 @@ pub fn forget_pool_locked(config_root: &Path, name: &str, _locked: &Locked) -> R
     if held.pools.len() + held.clusters.len() != before {
         write(config_root, &held)?;
     }
+    // A pin change found of it goes with it (#6270).
+    crate::poolsetup::pinchange::holds(name);
     // A choice left behind must never stop a removal, which has already changed the record.
     if let Err(why) = crate::poolsetup::forget_pool_locked(config_root, name) {
         tracing::warn!("purlis: pool {name}'s Pool setup choices are kept: {why}");
@@ -1743,7 +1745,7 @@ pub fn forget(config_root: &Path, name: &str) -> Result<(), Refused> {
     forget_locked(config_root, name, &lock(config_root))
 }
 
-fn forget_locked(config_root: &Path, name: &str, _locked: &Locked) -> Result<(), Refused> {
+pub(crate) fn forget_locked(config_root: &Path, name: &str, _locked: &Locked) -> Result<(), Refused> {
     let mut held = load(config_root)?;
     let before = held.runners.len();
     held.runners.retain(|kept| kept.name() != name);

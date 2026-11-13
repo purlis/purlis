@@ -5120,3 +5120,46 @@ fn a_pool_on_another_machine_makes_its_runner_again_on_the_engine_trusted_now() 
     let left = runners::left::read(config.path()).unwrap();
     assert_eq!(left.len(), 1, "the old one is remembered as left behind");
 }
+
+/// **A pool whose machine is no longer trusted is removed by forgetting it here** (#6270, ADR
+/// 0123 §3): nothing is sent to a machine whose pin doesn't hold, so its runner's container and
+/// home stay there, and the words say what they are and how to remove them on it.
+#[test]
+fn a_pool_on_a_machine_no_longer_trusted_is_forgotten_here_and_nothing_is_sent_there() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let kept = a_pool_added(config.path(), &fake, &ours);
+    on_another_machine(config.path());
+    std::fs::write(fake.file_path("log"), "").unwrap();
+
+    let left = forget_untrusted(config.path(), "first").unwrap();
+
+    assert_eq!(fake.file("log"), "", "nothing was run");
+    assert!(left.contains("build-box"), "{left}");
+    assert!(
+        left.contains(&format!(
+            "docker container rm --force {}",
+            kept.made.container.as_str()
+        )),
+        "{left}"
+    );
+    assert!(
+        left.contains(&format!(
+            "docker volume rm --force {}",
+            kept.made.runner.volume()
+        )),
+        "{left}"
+    );
+    assert!(runners::runner_for(config.path(), "first").is_err());
+    assert!(runners::pools(config.path()).unwrap().is_empty());
+}
+
+#[test]
+fn a_pool_on_this_machine_is_never_only_forgotten() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_added(config.path(), &fake, &desktop());
+    assert!(forget_untrusted(config.path(), "first").is_err());
+    assert_eq!(runners::pools(config.path()).unwrap().len(), 1);
+}

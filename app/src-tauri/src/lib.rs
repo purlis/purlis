@@ -3428,6 +3428,8 @@ fn commands() -> Builder<tauri::Wry> {
             "POOL_MINTS_WITHOUT_ASKING",
             clusterpools::POOL_MINTS_WITHOUT_ASKING,
         )
+        // The event a pool's pin found changed, or holding again, raises its Notice on (#6270).
+        .constant("POOL_PIN_CHANGED", dockerpools::POOL_PIN_CHANGED)
         // The event the engine's downloads changed on (#2207).
         .constant("ENGINE_DOWNLOAD", enginedownload::ENGINE_DOWNLOAD)
         // What `theme_specimen` answers while the painter draws another specimen (#2331): the
@@ -4230,6 +4232,14 @@ pub fn run() {
                 let window = app.handle().clone();
                 purlis_core::pools::telling_of_minting(Box::new(move || {
                     let _ = window.emit(clusterpools::POOL_MINTS_WITHOUT_ASKING, ());
+                }));
+            }
+            // A pool's pin found changed, or holding again, raises or puts away its Notice
+            // (#6270).
+            {
+                let window = app.handle().clone();
+                purlis_core::poolsetup::pinchange::telling(Box::new(move || {
+                    let _ = window.emit(dockerpools::POOL_PIN_CHANGED, ());
                 }));
             }
             // A finish leans on that lock, and is refused without it.

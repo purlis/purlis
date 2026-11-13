@@ -4242,6 +4242,19 @@ export const commands = {
 	 */
 	poolSetupTrust: (plane: PlaneId, fingerprint: string) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup_trust", { plane, fingerprint })),
 	/**
+	 *  **Check and trust again** (#6270, ADR 0123 §3): pool `pool`'s machine met again as Connect
+	 *  to meets a new one, without its pin, laid over Connect for the person to check: the key it
+	 *  shows now, or the CA its file holds now. Nothing is kept.
+	 */
+	poolSetupCheckAndTrustAgain: (plane: PlaneId, pool: string) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup_check_and_trust_again", { plane, pool })),
+	/**
+	 *  **Trust this machine, for a pool met again** (#6270, ADR 0123 §3): pool `pool`'s machine met
+	 *  again and held to `fingerprint`, the one the person saw, its engine read anew, and that pin
+	 *  kept for the pool in place of the one that no longer held. What went wrong is laid over
+	 *  Connect, and nothing is kept then.
+	 */
+	poolSetupTrustAgain: (plane: PlaneId, pool: string, fingerprint: string) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup_trust_again", { plane, pool, fingerprint })),
+	/**
 	 *  **Keeps the TLS files named under Connect's Options** for a `tcp://` machine (#6267, ADR
 	 *  0123 §4): the CA, the client certificate, and the key's file or a vault entry of this project's
 	 *  (`key_vault` and `key_name`), or forgets them where `ca` is empty. Their paths and names alone
@@ -4369,6 +4382,13 @@ export const commands = {
 	 *  let go of.
 	 */
 	dockerPoolLink: (name: string) => typedError<PoolLink, string>(__TAURI_INVOKE("docker_pool_link", { name })),
+	/**
+	 *  **The pools on another machine whose pin was found changed** (#6270, ADR 0123 §3), each as its
+	 *  Notice says it. It contacts no machine: each was found where a run for the pool was refused,
+	 *  and goes once its pin holds again or the pool is removed. The window's alone
+	 *  (`ui::WINDOW_ONLY`).
+	 */
+	poolsPinChanged: () => typedError<PoolPinChanged[], string>(__TAURI_INVOKE("pools_pin_changed")),
 	/**
 	 *  **The Docker pools whose runner was removed outside purlis** (#4149): Docker has no
 	 *  container of its id. What a refused start's Notice offers to make again; a pool whose Docker
@@ -5867,6 +5887,8 @@ export const ENGINE_SANDBOX_NEEDED = "engine-sandbox-needed" as const;
 export const PERSONA_SCOPE_KEY = "persona/" as const;
 
 export const POOL_MINTS_WITHOUT_ASKING = "pool-mints-without-asking" as const;
+
+export const POOL_PIN_CHANGED = "pool-pin-changed" as const;
 
 export const PROJECT_READY = "project-ready" as const;
 
@@ -12271,7 +12293,12 @@ export type OldHome =
  */
 "held" | 
 /**  It could not be read, so it is kept, held, all the same. */
-"unread";
+"unread" | 
+/**
+ *  It is on the engine trusted before, on the pool's other machine (#6270): nothing of it
+ *  was read or removed on the engine trusted now, and `purlis pool left-behind` lists it.
+ */
+"elsewhere";
 
 /**  **What helps a profile over what a pool's older runner takes** (#5175): by what makes its image. */
 export type OlderRunner = 
@@ -13734,7 +13761,13 @@ export type PoolLink =
  *  Docker points at another engine than the one that made it (#4166): its container may be
  *  there still, so it is not said to be removed and Make the runner again is not offered.
  */
-{ state: "on_another_engine" };
+{ state: "on_another_engine" } | 
+/**
+ *  **Its machine's pin no longer holds** (#6270, ADR 0123 §3): another host key, CA or
+ *  engine. Nothing is sent there until the person checks it and trusts it again, and removing
+ *  the pool forgets it here, leaving its runner there.
+ */
+{ state: "pin_changed"; change: PoolPinChanged };
 
 /**
  *  **A project, and its workspaces, that name a pool** (#4678): what removing the pool sets back
@@ -13776,6 +13809,26 @@ export type PoolOwed = {
 	opened: number,
 	/**  Whether it is open in a window now, so it brings the work back on its own. */
 	open_now: boolean,
+};
+
+/**
+ *  **A pool on another machine whose pin no longer holds** (#6270, ADR 0123 §3): what the
+ *  window's Notice (cause `pool-pin-changed`) says, in the core's words, the same as `purlis pool
+ *  doctor`'s.
+ */
+export type PoolPinChanged = {
+	pool: string,
+	host: string,
+	/**  `key`, `ca` or `engine`. */
+	what: string,
+	/**
+	 *  What was pinned, and what the machine shows now: a key's or a CA's SHA-256, or an
+	 *  engine's id.
+	 */
+	pinned: string,
+	now: string,
+	title: string,
+	said: string,
 };
 
 /**  One of this machine's profiles, as a pool's runner stands with it. */

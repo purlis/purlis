@@ -215,6 +215,56 @@ pub fn remove_discarding(
     Ok(removed)
 }
 
+/// **Removes pool `name`, on a machine whose pin no longer holds, by forgetting it here** (#6270,
+/// ADR 0123 §3): nothing is sent to that machine, so its runners' containers and homes stay there.
+/// What stays, and the commands that remove it on that machine, are answered. Refused for a pool
+/// on this machine.
+pub fn forget_untrusted(config_root: &Path, name: &str) -> Result<String, Refused> {
+    let locked = runners::lock(config_root);
+    let pool = runners::pools(config_root)?
+        .into_iter()
+        .find(|pool| pool.name() == name)
+        .ok_or_else(|| Refused::Other(format!("no pool named {name} is on this machine")))?;
+    let host = match pool.remote_engine() {
+        Some(runners::RemoteEngine::Ssh(remote)) => remote.route.host().to_owned(),
+        Some(runners::RemoteEngine::Tls(remote)) => remote.route.host().to_owned(),
+        None => {
+            return Err(Refused::Other(format!(
+                "pool {name} runs on this machine's Docker, so it is removed, never only \
+                 forgotten"
+            )));
+        }
+    };
+    let of_it: Vec<runners::Kept> = runners::read(config_root)?
+        .into_iter()
+        .filter(|kept| kept.pool() == name)
+        .collect();
+    let mut left = Vec::new();
+    for kept in &of_it {
+        runners::forget_locked(config_root, kept.name(), &locked)?;
+        let (id, volume) = (kept.made.container.as_str(), kept.made.runner.volume());
+        left.push(format!(
+            "Runner {}'s container {id} and its home volume {volume} stay on {host}, with \
+             everything chats left in them. To remove them, run this on {host}: docker \
+             container rm --force {id} && docker volume rm --force {volume}",
+            kept.name()
+        ));
+    }
+    runners::forget_pool_locked(config_root, name, &locked)?;
+    crate::machine::update(config_root, |store| {
+        for recent in &mut store.recents {
+            recent.forget_pool(name);
+        }
+    })
+    .map_err(|why| {
+        Refused::Other(format!(
+            "pool {name} was forgotten, but the workspaces that ran their chats on it could not \
+             be set back to this machine: {why}"
+        ))
+    })?;
+    Ok(left.join(" "))
+}
+
 /// `runner a`, or `runners a, b and c`, for a sentence the window shows.
 fn runners_said(names: &[String]) -> String {
     match names {
