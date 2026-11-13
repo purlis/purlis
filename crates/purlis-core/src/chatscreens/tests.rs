@@ -425,3 +425,22 @@ fn a_screen_written_as_keeping_is_turned_off_does_not_stay() {
     assert_eq!(turned_off, Ok(()));
     assert!(!dir(&root).join(format!("{CHAT}{SUFFIX}")).exists());
 }
+
+#[test]
+fn a_filesystem_that_cannot_flock_still_keeps_deletes_and_sweeps() {
+    // #6508's review: the lock is best effort, as `rewrite`'s is: a filesystem with no `flock`
+    // (ENOLCK) is not a reason to keep nothing, refuse to turn it off, or never sweep.
+    let (_dir, root) = settable();
+    no_flock::here(|| {
+        keep(&root, CHAT, "kept\r\n").expect("kept without a lock");
+        assert_eq!(kept(&root, CHAT).as_deref(), Some("kept\r\n"));
+
+        let later = SystemTime::now() + crate::retention::KEEP_FOR + Duration::from_secs(60);
+        assert_eq!(sweep(&root, |_| true, later), 1, "the 30 days still run");
+        assert_eq!(kept(&root, CHAT), None);
+
+        keep(&root, OTHER, "kept\r\n").expect("kept without a lock");
+        assert_eq!(set_keep(&root, false), Ok(()), "off still deletes");
+        assert!(!is_kept(&root, OTHER));
+    });
+}

@@ -111,8 +111,12 @@ pub fn keep(root: &Path, id: &str, screen: &str) -> std::io::Result<()> {
 }
 
 /// **The store's lock, held**: the `flock` of [`LOCK_NAME`] in its folder, which must be
-/// there. Waits at most [`LOCK_WAIT`] for another holder.
-fn locked(root: &Path) -> std::io::Result<crate::filelock::Held> {
+/// there. Waits at most [`LOCK_WAIT`] for another holder, and refuses past it.
+///
+/// **`None` where the filesystem cannot `flock`** (#6508's review): the lock is best effort, as
+/// [`crate::rewrite`]'s is. What is lost without it is only the race it closes, and refusing
+/// would keep nothing, never let keeping be turned off, and never sweep.
+fn locked(root: &Path) -> std::io::Result<Option<crate::filelock::Held>> {
     let path = dir(root).join(LOCK_NAME);
     let mut options = std::fs::OpenOptions::new();
     options.read(true).write(true).create(true).truncate(false);
@@ -122,7 +126,62 @@ fn locked(root: &Path) -> std::io::Result<crate::filelock::Held> {
         options.mode(0o600);
     }
     let file = crate::contain::nofollow(&mut options).open(&path)?;
-    crate::filelock::lock_within(file, LOCK_WAIT, "the kept task screens")
+    #[cfg(test)]
+    let taken = if no_flock::on() {
+        Err(no_flock::refusal())
+    } else {
+        crate::filelock::lock_within(file, LOCK_WAIT, "the kept task screens")
+    };
+    #[cfg(not(test))]
+    let taken = crate::filelock::lock_within(file, LOCK_WAIT, "the kept task screens");
+    match taken {
+        Ok(held) => Ok(Some(held)),
+        Err(why) if cannot_flock(&why) => {
+            tracing::debug!("purlis: the kept task screens are written unlocked here ({why})");
+            Ok(None)
+        }
+        Err(why) => Err(why),
+    }
+}
+
+/// Whether `why` is a filesystem that has no `flock`, rather than a holder or a failure.
+fn cannot_flock(why: &std::io::Error) -> bool {
+    if why.kind() == std::io::ErrorKind::Unsupported {
+        return true;
+    }
+    #[cfg(unix)]
+    if let Some(code) = why.raw_os_error() {
+        return [libc::ENOLCK, libc::EOPNOTSUPP, libc::ENOTSUP].contains(&code);
+    }
+    false
+}
+
+/// A filesystem that cannot `flock`, for the tests: the store's lock is refused as such a
+/// filesystem refuses it, on this thread, while [`here`] runs.
+#[cfg(test)]
+mod no_flock {
+    use std::cell::Cell;
+
+    thread_local!(static ON: Cell<bool> = const { Cell::new(false) });
+
+    pub(super) fn here<T>(work: impl FnOnce() -> T) -> T {
+        ON.with(|on| on.set(true));
+        let done = work();
+        ON.with(|on| on.set(false));
+        done
+    }
+
+    pub(super) fn on() -> bool {
+        ON.with(Cell::get)
+    }
+
+    /// What `flock` answers on a filesystem with no locks (NFS without `lockd`).
+    pub(super) fn refusal() -> std::io::Error {
+        #[cfg(unix)]
+        return std::io::Error::from_raw_os_error(libc::ENOLCK);
+        #[cfg(not(unix))]
+        return std::io::Error::from(std::io::ErrorKind::Unsupported);
+    }
 }
 
 /// Whether the store's folder is there: where it is not, nothing is kept and nothing is being

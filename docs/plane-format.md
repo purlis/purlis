@@ -7626,7 +7626,8 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   `chatscreens::LOCK_WAIT` (5 s).
 - **What:** every write and every delete of the screens beside it holds it, so a screen a
   keep was writing as keeping was turned off is deleted with the rest instead of landing after
-  them (#6451's review).
+  them (#6451's review). Best effort, as `rewrite`'s lock is: on a filesystem that cannot
+  `flock`, the store is written and deleted unlocked (#6508's review).
 - **Tier:** Clone state, rebuildable — deleted, it is made again by the next write.
 
 ### `app/hooks.sock`
