@@ -735,7 +735,7 @@ export const InstallReview: Story = {
 
 /** **A skill that comes along by a hint** (#5874, `prototype/skill-hints` A): ticked, with why it
  *  may be left out under its box. Space unticks it, and it waits under Left out of this install
- *  to be ticked back. */
+ *  to be ticked back, which the picture shows. */
 export const InstallReviewHint: Story = {
   args: {
     at: { at: "install", source: SOURCE, label: SUPERPOWERS.label, skill: "hints-at-tdd" },
@@ -757,6 +757,8 @@ export const InstallReviewHint: Story = {
     });
     await waitFor(() => expect(left).not.toBeChecked());
     await expect(within(review).queryByTestId("reviewed-test-driven-development")).toBeNull();
+    // The picture shows where the hinted skill waits to be ticked back.
+    left.scrollIntoView({ block: "center" });
   },
 };
 
