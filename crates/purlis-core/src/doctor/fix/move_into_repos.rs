@@ -327,11 +327,11 @@ pub fn apply(
     apply_with(root, open, shown, None)
 }
 
-/// **[`apply`], keeping the record of clones and offering the trust in the same step** (R-339,
-/// Q184): with `records`, each clone purlis has a record of keeps it where it moved to (the
-/// record is kept by the clone's path), and each it has none of ([`offered`]) is trusted where
-/// it moved to on the person's yes ([`Records::trust`]), at the one address its remote named
-/// before the move and still names. Without the yes nothing is trusted, and the move says so.
+/// **[`apply`], keeping the record of clones** (R-339, Q260): with `records`, each clone purlis
+/// has a record of keeps it where it moved to (the record is kept by the clone's path), while its
+/// remote is unchanged. **It never trusts a new clone**: the clones it moves that purlis has none
+/// of ([`offered`]) are named in one line that tells the person to trust them in purlis's window,
+/// in Asks › Trust these clones, which is a press there alone (Q181, Q249).
 pub fn apply_with(
     root: &Path,
     open: &dyn Fn(&Path, &str) -> Vec<String>,
@@ -359,6 +359,7 @@ pub fn apply_with(
     }
     let finished = !said.is_empty();
     let mut refused = Vec::new();
+    let mut untrusted = Vec::new();
     for one in &planned {
         let expected = match shown {
             None => None,
@@ -386,7 +387,13 @@ pub fn apply_with(
             Ok(lines) => {
                 said.extend(lines);
                 if let (Some(records), Some(before)) = (records, before) {
-                    said.extend(after_the_move(root, &one.workspace, before, records));
+                    said.extend(after_the_move(
+                        root,
+                        &one.workspace,
+                        before,
+                        records,
+                        &mut untrusted,
+                    ));
                 }
                 if let Some(line) = unresumable_said(&one.unresumable) {
                     said.push(line);
@@ -398,6 +405,13 @@ pub fn apply_with(
             }
         }
     }
+    if !untrusted.is_empty() {
+        said.push(format!(
+            "• purlis did not trust {}: it did not clone them. Trust them in purlis's window, in \
+             Asks › Trust these clones, only if you made them yourself",
+            untrusted.join(", ")
+        ));
+    }
     if refused.len() == planned.len() && !finished {
         return Fixed::Refused(refused.join(" "));
     }
@@ -407,20 +421,17 @@ pub fn apply_with(
     }
 }
 
-/// **The record of clones a move keeps, and the trust it offers in the same step** (R-339,
-/// Q184): [`apply_with`]'s.
+/// **The record of clones a move keeps** (R-339, Q260): [`apply_with`]'s. It holds no host
+/// scope, so the move trusts no new clone.
 pub struct Records<'a> {
     /// The config home the record of clones is kept in.
     pub config_root: &'a Path,
-    /// The person's yes to trusting the clones the move offers ([`offered`]), with the host's
-    /// scope, which only the person's own process holds. `None` trusts nothing.
-    pub trust: Option<&'a crate::forge::route::HostScope>,
 }
 
-/// **The clones the move offers to trust** (R-339): those at a workspace's root it would move
-/// that purlis has no record of in the config home at `config_root`, each with the addresses its
-/// remote names ([`crate::forge::gitcredential::vouch::unvouched_clones`]). The confirmation
-/// shows them and asks. Nothing is trusted here.
+/// **The clones the move leaves for the window to trust** (R-339, Q260): those at a workspace's
+/// root it would move that purlis has no record of in the config home at `config_root`, each
+/// with the addresses its remote names
+/// ([`crate::forge::gitcredential::vouch::unvouched_clones`]). Nothing is trusted here.
 pub fn offered(
     root: &Path,
     config_root: &Path,
@@ -445,8 +456,8 @@ struct Before {
     name: String,
     /// The address purlis has it recorded at, where it has a record of it.
     recorded: Option<String>,
-    /// Where purlis has none: the one address its remote names, which the move offers to trust
-    /// at, or `None` where it names more than one.
+    /// Where purlis has none: the one address its remote names, which the window's Trust these
+    /// clones would trust it at, or `None` where it names more than one.
     offered: Option<Option<String>>,
 }
 
@@ -473,12 +484,14 @@ fn before_the_move(root: &Path, ws: &str, config_root: &Path) -> Vec<Before> {
 }
 
 /// After workspace `ws` moved: each clone purlis had a record of is recorded again where it now
-/// is, and each it had none of is trusted there on the person's yes. What it did, line by line.
+/// is, while its remote is unchanged, and each it had none of is trusted not, and added to
+/// `untrusted` as `folder (address)` for [`apply_with`]'s one line. What it did, line by line.
 fn after_the_move(
     root: &Path,
     ws: &str,
     before: Vec<Before>,
     records: &Records<'_>,
+    untrusted: &mut Vec<String>,
 ) -> Vec<String> {
     let Ok(holdings) = repofolder::holdings(root, ws) else {
         return Vec::new();
@@ -520,26 +533,13 @@ fn after_the_move(
             }
             continue;
         }
-        match (one.offered, records.trust) {
-            (None, _) => {}
-            (Some(None), _) => said.push(format!(
+        match one.offered {
+            None => {}
+            Some(None) => said.push(format!(
                 "• {folder} was not trusted: its remote names more than one address. Give origin \
                  one address, then trust it with Trust these clones in the window's Asks"
             )),
-            (Some(Some(place)), Some(host)) => match crate::windowonly::trust_this_clone(
-                host,
-                records.config_root,
-                root,
-                &folder,
-                &place,
-            ) {
-                Ok(trusted) => said.push(format!("✓ trusted {folder} at {trusted}")),
-                Err(why) => said.push(format!("✗ {folder} was not trusted: {why}")),
-            },
-            (Some(Some(place)), None) => said.push(format!(
-                "• {folder} ({place}) was not trusted: purlis did not clone it. Trust it with \
-                 Trust these clones in the window's Asks, only if you made it yourself"
-            )),
+            Some(Some(place)) => untrusted.push(format!("{folder} ({place})")),
         }
     }
     said

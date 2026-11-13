@@ -496,9 +496,11 @@ asks it rather than the forge CLI, so the window's git needs no `gh` or `glab`:
   chat's own *Trust this clone* already asks for, so each clone is asked for once (Q257).
   `purlis doctor` lists the clones in its `unrecorded clones` row, and names one whose remote
   names several addresses with the fix: give origin one address. `purlis doctor --fix
-  move-into-repos`, run in your own terminal (stdin and stderr both), asks whether to trust the
-  ones it moves in the same step. A clone purlis has a record of keeps it through the move,
-  since the record is kept by the clone's path, while its remote is the one it was recorded at.
+  move-into-repos` moves clones and trusts no new one: the purlis binary holds no host scope
+  (Q260), so it asks nothing, and one line names the clones it moved that purlis has no record
+  of and says to trust them in purlis's window, in Asks › Trust these clones. A clone purlis has
+  a record of keeps it through the move, since the record is kept by the clone's path, while its
+  remote is the one it was recorded at.
 - **A fetch is held to the same remote** (#1851). The fetches and pulls the window's git makes
   by the remote's name (auto-save's fetch, a repo sync, a restore's pull, and the fetch after
   purlis merges a save's request itself, #1864) get purlis's helper only when every address the

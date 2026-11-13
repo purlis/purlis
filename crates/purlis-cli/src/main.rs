@@ -6010,10 +6010,9 @@ fn doctor(
         }
         for id in ids {
             let lines = match (id, identity) {
-                // Its own step: it asks, in the person's terminal, whether to trust the clones it
-                // moves that purlis has no record of (R-339).
+                // Its own step: it keeps the record of the clones it moves (R-339, Q260).
                 (FixId::MoveIntoRepos, _) => {
-                    let fixed = move_into_repos_asking(doctor.root());
+                    let fixed = move_into_repos_recording(doctor.root());
                     fix_failed |= !fixed.complete();
                     fixed.lines()
                 }
@@ -6064,43 +6063,19 @@ fn doctor(
     ExitCode::from(purlis_core::doctor::exit_code(&rows).max(u8::from(fix_failed)))
 }
 
-/// **`purlis doctor --fix move-into-repos`**, in the person's own terminal (R-339, Q184): the
-/// move keeps the record of clones, and where it moves clones purlis has no record of, it lists
-/// them and asks whether to trust them too, in the same step. A chat, which holds no host scope,
-/// and a run with no terminal to ask in trust nothing, and the move says which it left.
-fn move_into_repos_asking(root: &std::path::Path) -> purlis_core::doctor::fix::Fixed {
+/// **`purlis doctor --fix move-into-repos`** (R-339, Q260): the move keeps the record of clones
+/// where a clone's remote is unchanged, and trusts no new clone. This binary holds no host scope,
+/// so the move names the clones it left untrusted in one line that says to trust them in purlis's
+/// window, in Asks › Trust these clones.
+fn move_into_repos_recording(root: &std::path::Path) -> purlis_core::doctor::fix::Fixed {
     use purlis_core::doctor::fix::{self as registry, move_into_repos};
-    use std::io::{BufRead, IsTerminal, Write};
 
     let open = &move_into_repos::open_in_record;
     let Some(config_root) = purlis_core::machine::config_root_if_there() else {
         return registry::apply_moving_into_repos(root, open, None);
     };
-    let scope = purlis_core::forge::route::HostScope::claim();
-    let offered = move_into_repos::offered(root, &config_root);
-    // Asked only where both ends are the person's terminal: the question is read on stderr and
-    // answered on stdin, so a run whose stdin alone is a terminal (its stderr piped to a file or
-    // a program) is not asked. This is not the boundary: a chat could run the command in a
-    // pseudo-terminal of its own. The boundary is the sandbox, which denies chats the config
-    // home the record of clones is kept in, so no chat's yes records anything.
-    let asked = !offered.is_empty()
-        && scope.is_some()
-        && std::io::stdin().is_terminal()
-        && std::io::stderr().is_terminal();
-    let yes = asked && {
-        eprintln!("Move into repos/ moves clones purlis did not clone:");
-        for clone in &offered {
-            eprintln!("  {} ({})", clone.folder, clone.remote_said());
-        }
-        eprint!("Trust them too? Only if you made them yourself. [y/N] ");
-        let _ = std::io::stderr().flush();
-        let mut answer = String::new();
-        std::io::stdin().lock().read_line(&mut answer).is_ok()
-            && matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes")
-    };
     let records = move_into_repos::Records {
         config_root: &config_root,
-        trust: if yes { scope.as_ref() } else { None },
     };
     registry::apply_moving_into_repos_with(root, open, None, Some(&records))
 }

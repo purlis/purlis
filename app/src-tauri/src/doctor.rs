@@ -277,18 +277,15 @@ fn moved_into_repos(
             repos: one.repos.clone(),
         })
         .collect();
-    // A clone purlis has a record of keeps it where it moves to; the window's confirmation
-    // trusts no new one (R-339's yes is the terminal's, #6433). None in a test build: the config
-    // home a test's window would read is outside its fence.
+    // A clone purlis has a record of keeps it where it moves to; the move trusts no new one,
+    // which is Trust these clones' press (Q260). None in a test build: the config home a test's
+    // window would read is outside its fence.
     let config_root = (!purlis_core::fence::FENCED)
         .then(purlis_core::machine::config_root)
         .flatten();
-    let records = config_root.as_deref().map(|config_root| {
-        purlis_core::doctor::fix::move_into_repos::Records {
-            config_root,
-            trust: None,
-        }
-    });
+    let records = config_root
+        .as_deref()
+        .map(|config_root| purlis_core::doctor::fix::move_into_repos::Records { config_root });
     let applied = registry::apply_moving_into_repos_with(
         root,
         &|_, ws| open_in(&open(), ws),
