@@ -4,10 +4,14 @@
 import { OTHER_SCOPES } from "./AskDecision";
 
 /**
- * **Keyboard triage** (ADR 0121 decision 9, #6016; amended 2026-11-10): ⌘⇧I (Ctrl+Shift+I)
- * opens Asks with the first ask's lead focused, answering one moves the keyboard to the next
- * ask's, there are keys for later, go to chat, snooze and stop, and when Asks is empty or the
- * person leaves it, the keyboard goes back to where it was before ⌘⇧I.
+ * **Keyboard triage** (ADR 0121 decision 9, #6016; amended 2026-11-10 and 2026-11-12): ⌘⇧I
+ * (Ctrl+Shift+I) opens Asks with the first ask's lead focused, answering one moves the keyboard
+ * to the next ask's, there are keys for later, go to chat, snooze and stop, and when Asks is
+ * empty or the person leaves it, the keyboard goes back to where it was before ⌘⇧I.
+ *
+ * **It walks the scope in view** (decision 8, #6346): the rows Asks lists under the chip picked,
+ * Chat when it opens, wrapping past the last to the first. It never goes into another scope or
+ * another project: those asks are not rows of this list.
  *
  * What is decided here is where the keyboard goes, read off the rows the list family drew
  * (#3123, ruling B: grid rows, ↑ and ↓ between rows, ← and → through a row's buttons). Nothing
@@ -32,7 +36,7 @@ export const HIGH_RISK = "data-risk";
  *    the keyboard as it is drawn** (#2980, `grantFocus.guard.test.ts`), and a row the keyboard
  *    was moved onto is one drawn to it. Allow stays one → away, pressed on purpose. Nor is it
  *    **Other scopes…**, which answers nothing: it only opens more grants;
- * 4. its **Go to chat**, or a project's **Go to project**: a row answered elsewhere;
+ * 4. its **Go to chat**: a row answered elsewhere;
  * 5. the row itself.
  */
 export function leadOf(row: HTMLElement): HTMLElement {
@@ -92,8 +96,7 @@ export const ASKS_LIST = '[data-view="asks"] .inbox-list';
 
 /**
  * **Triage, from ⌘⇧I until the person leaves Asks**: on, and the element the keyboard was on when
- * it began. One for the window, as the keyboard is: it follows Go to project into another
- * project's Asks (the next ask can be that project's).
+ * it began. One for the window, as the keyboard is.
  */
 let triage: { from: HTMLElement | null } | undefined;
 
@@ -165,7 +168,7 @@ export function triageKeySaid(key: TriageKey, mac: boolean): string {
 
 /** What each key's button is named by, on the row it is pressed on (`ChatActions`). */
 const BUTTONS: Readonly<Record<Exclude<TriageKey, "later">, string>> = {
-  go: '.inbox-go, [aria-label^="Go to chat "], [aria-label^="Go to project "]',
+  go: '.inbox-go, [aria-label^="Go to chat "]',
   snooze: '[aria-label^="Snooze "]',
   stop: '[aria-label^="Stop "]',
 };
