@@ -283,9 +283,9 @@ fn init_in_an_empty_directory_leaves_exactly_the_plane_the_python_charter_leaves
             Node::File(text.replacen(from, to, 1).into_bytes()),
         );
     }
-    // And the sandbox, which every project charter makes now runs its chats in (ADR 0067 §1,
-    // ruling V21 1 and 5): the block `init` writes after `[memory]`, ahead of the front door's
-    // `[persona]` that it sets afterwards.
+    // And the sandbox block `init` writes after `[memory]`, ahead of the front door's `[persona]`
+    // that it sets afterwards: the default egress and no `mode`, so the project's chats start at
+    // each person's own level, the floor unless they chose another (Q114, Q201).
     let manifest = PathBuf::from("charter.toml");
     let Some(Node::File(python)) = want.get(&manifest) else {
         panic!("the fixture has a charter.toml");
@@ -301,7 +301,7 @@ fn init_in_an_empty_directory_leaves_exactly_the_plane_the_python_charter_leaves
         Node::File(
             text.replacen(
                 persona,
-                "\n[sandbox]\nmode = \"on\"\negress = [\"model-providers\", \"forge\", \
+                "\n[sandbox]\negress = [\"model-providers\", \"forge\", \
                  \"toolchains\"]\n\n[persona]\n",
                 1,
             )

@@ -723,6 +723,7 @@ export function Ask({
         if (opened === true) return;
         noteAnswered(plane, {
           at: Date.now(),
+          session: ask.session,
           chain: ask.chain,
           says: ask.says,
           answer: option.label,
