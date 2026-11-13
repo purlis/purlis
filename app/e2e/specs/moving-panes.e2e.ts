@@ -113,33 +113,35 @@ async function pickUp(session: number): Promise<void> {
 }
 
 /**
- * Waits until the panes hold still: no finite animation runs on a pane or a preview, and two
- * looks a beat apart read the same frames. A fixed pause read them mid-motion on a loaded
- * runner, so a drop seemed to land off its preview (#6229).
+ * Where every pane's frame is, to a tenth of a pixel, once two looks 100 ms apart agree. A fixed
+ * pause read the frames mid-motion on a loaded runner, so a drop seemed to land off its preview
+ * (#6229).
  */
-async function panesStill(): Promise<void> {
+async function framesOnceStill(): Promise<Record<number, Pane>> {
+  const shape = (panes: Record<number, Pane>) =>
+    JSON.stringify(
+      Object.entries(panes).map(([session, { frame }]) => [
+        session,
+        ...[frame.left, frame.top, frame.width, frame.height].map((n) => Math.round(n * 10)),
+      ]),
+    );
   let last = "";
-  await browser.waitUntil(
-    async () => {
-      const moving = await browser.execute(() =>
-        document.getAnimations().some((one) => {
-          if (one.playState !== "running") return false;
-          const effect = one.effect as KeyframeEffect | null;
-          if (effect === null || effect.getTiming().iterations === Infinity) return false;
-          const target = effect.target;
-          return (
-            target instanceof Element &&
-            target.closest('.pane-frame, [data-scope="pane-preview"]') !== null
-          );
-        }),
-      );
-      const now = JSON.stringify(await panesNow());
-      const still = !moving && now === last;
-      last = now;
-      return still;
-    },
-    { timeout: 10_000, interval: 100, timeoutMsg: "the panes never held still" },
-  );
+  let panes: Record<number, Pane> = {};
+  try {
+    await browser.waitUntil(
+      async () => {
+        panes = await panesNow();
+        const now = shape(panes);
+        const still = now === last;
+        last = now;
+        return still;
+      },
+      { timeout: 5_000, interval: 100 },
+    );
+  } catch {
+    throw new Error(`the panes' frames never held still; the last look: ${last}`);
+  }
+  return panes;
 }
 
 /** Moves the pointer, and waits for the target's wait and the panes' motion to be over. */
@@ -152,7 +154,6 @@ async function moveTo(x: number, y: number): Promise<void> {
     y,
   );
   await browser.pause(400);
-  await panesStill();
 }
 
 /** The sizes a preview says it will take, as drawn on the panes. */
@@ -276,7 +277,7 @@ describe("a pane dragged in the window", () => {
     const target = natural[left].frame;
     await pickUp(right);
     await moveTo(target.left + target.width / 2, target.top + 4);
-    const promised = await panesNow();
+    const promised = await framesOnceStill();
     const said = await labels();
     expect(await gridChanges()).toEqual([]);
     await browser.execute(
@@ -291,12 +292,11 @@ describe("a pane dragged in the window", () => {
       timeoutMsg: "a terminal's grid never changed after the drop",
     });
     await browser.pause(1_000);
-    await panesStill();
     const told = await gridChanges();
     console.log(
       `moving-panes: changed ${JSON.stringify(told)}; the labels said ${JSON.stringify(said)}`,
     );
-    const dropped = await panesNow();
+    const dropped = await framesOnceStill();
     // Once each: the layout's one change is the one the observer heard.
     expect(told.filter(({ session }) => session === left)).toHaveLength(1);
     expect(told.filter(({ session }) => session === right)).toHaveLength(1);
