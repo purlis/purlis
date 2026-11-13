@@ -143,7 +143,7 @@ export function YourRepos({
       )}
 
       {listing !== undefined && (
-        <ul className="your-repos-hosts" aria-label="Your forges">
+        <ul className="your-repos-hosts ui-text-secondary" aria-label="Your forges">
           {listing.reaches.map((reach) => (
             <li key={`${reach.host} ${reach.login ?? ""}`}>
               {reach.trouble ??

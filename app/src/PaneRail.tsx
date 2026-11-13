@@ -105,7 +105,7 @@ export function PaneRail({
             </Button>
             {notes > 0 && (
               <span
-                className="pane-rail-count"
+                className="pane-rail-count ui-text-meta ui-text-strong"
                 data-trouble={one.holds.trouble > 0 ? "" : undefined}
                 aria-hidden="true"
               >

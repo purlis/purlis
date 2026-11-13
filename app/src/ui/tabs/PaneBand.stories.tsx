@@ -247,7 +247,7 @@ function Pane({
           }
         >
           <div className="pane-chips">
-            <span className="pane-name">work</span>
+            <span className="pane-name ui-text-heading">work</span>
           </div>
         </PaneHead>
         <NoticePaneRow

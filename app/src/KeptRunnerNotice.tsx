@@ -135,24 +135,24 @@ export function LetRunnerGo({
       description={
         notChecked != null ? (
           <>
-            <p className="came-back">{notCheckedLost(notChecked)}</p>
-            <p className="came-back">
+            <p className="came-back ui-text-secondary">{notCheckedLost(notChecked)}</p>
+            <p className="came-back ui-text-secondary">
               {`Pool ${pool} and its runner now stay as they are. There is no undo.`}
             </p>
           </>
         ) : (
           <>
-            <p className="came-back pool-named-lead" id={lead}>
+            <p className="came-back ui-text-secondary pool-named-lead" id={lead}>
               Its container and home are removed from your Docker, and this work is lost with them:
             </p>
-            <ul className="came-back pool-named-by" aria-labelledby={lead}>
+            <ul className="came-back ui-text-secondary pool-named-by" aria-labelledby={lead}>
               {left.map((one) => (
                 <li key={one}>
                   <bdi>{one}</bdi>
                 </li>
               ))}
             </ul>
-            <p className="came-back">
+            <p className="came-back ui-text-secondary">
               {`Pool ${pool} and its runner now stay as they are. There is no undo.`}
             </p>
           </>
