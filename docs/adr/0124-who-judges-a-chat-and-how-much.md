@@ -614,7 +614,7 @@ report on every harness is unverified (decision 5), so the table is for Basic an
 
 | Layer | Claude Code | Codex | opencode |
 |---|---|---|---|
-| Sandbox: files and egress | enforced (Bash in the sandbox; file tools by deny rules; web tools denied); confirmed by its test | enforced (the whole process, its hooks and MCP servers, in purlis's wrap); confirmed by its test | enforced (the whole process in purlis's wrap); confirmed by its test |
+| Sandbox: files and egress | enforced (Bash in the sandbox; file tools by deny rules where a denial class holds the path; web tools denied at Full sandbox and allowed at Basic sandbox, whose proxy carries every host); confirmed by its test | enforced (the whole process, its hooks and MCP servers, in purlis's wrap); confirmed by its test | enforced (the whole process in purlis's wrap); confirmed by its test |
 | A guard's block reported | enforced (the hook runs outside the chat's reach); confirmed by its test | unverified; confirmed by its test | unverified; confirmed by its test |
 | The harness's own check's block reported | enforced (`PermissionDenied`); confirmed by its test | Can't tell (no denial signal yet; a hook-reported rejection becomes a block); confirmed by its test | Can't tell (no denial signal); confirmed by its test |
 | The harness's prompts and asks reach Asks | enforced (the hook); confirmed by its test | Can't tell (rejected, never asked); confirmed by its test | enforced (held in the window); confirmed by its test |

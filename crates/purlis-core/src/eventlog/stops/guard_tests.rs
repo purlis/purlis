@@ -396,6 +396,74 @@ fn a_guard_report_is_verified_only_from_claude_code_under_a_backend_that_leaves_
     }
 }
 
+/// T1-10, Q254 (extending Q235): a sandbox refusal the chat's own hook line reported is
+/// `unverified` on every harness and under every backend. On Claude Code under Seatbelt or
+/// bubblewrap the hook runs outside the sandbox, but it reads the command's own output, which the
+/// chat can write, so the recorder never clears it as it clears a guard's deny. purlis's proxy's
+/// own word is written plain on every harness.
+///
+/// A pin of `Recorder::stop`; its mutation: the qualifier cleared for a run whose hooks report
+/// from outside its reach (`reported_from_outside_its_reach`), as a guard's deny is.
+#[test]
+fn a_sandbox_block_its_hook_reported_is_unverified_on_every_harness() {
+    use crate::sandboxblock::stop::{Reported, sandbox_block};
+    let dir = tempfile::tempdir().unwrap();
+    let mut host = recorder(dir.path());
+    let unverified = serde_json::json!("unverified");
+    let plain = serde_json::Value::Null;
+    let mut number = 0;
+    for (harness, sandbox, reported, said) in [
+        (
+            Harness::ClaudeCode,
+            "seatbelt",
+            Reported::ByItsHook,
+            &unverified,
+        ),
+        (
+            Harness::ClaudeCode,
+            "bubblewrap",
+            Reported::ByItsHook,
+            &unverified,
+        ),
+        (
+            Harness::ClaudeCode,
+            "landlock",
+            Reported::ByItsHook,
+            &unverified,
+        ),
+        (Harness::Codex, "seatbelt", Reported::ByItsHook, &unverified),
+        (
+            Harness::Opencode,
+            "landlock",
+            Reported::ByItsHook,
+            &unverified,
+        ),
+        (
+            Harness::ClaudeCode,
+            "seatbelt",
+            Reported::ByTheProxy,
+            &plain,
+        ),
+        (Harness::Codex, "seatbelt", Reported::ByTheProxy, &plain),
+        (Harness::Opencode, "landlock", Reported::ByTheProxy, &plain),
+    ] {
+        number += 1;
+        begun_under(&mut host, number, harness, sandbox);
+        let stop = sandbox_block(
+            crate::sandboxblock::Kind::Host,
+            Some("api.example.com"),
+            Path::new(PLANE),
+            Some("Bash"),
+            reported,
+        );
+        let event = host.stop(Path::new(PLANE), Some(number), &stop).unwrap();
+        assert_eq!(
+            &event.body["qualifier"], said,
+            "{harness:?} under {sandbox}, {reported:?}"
+        );
+    }
+}
+
 /// R-102: at No sandbox the chat can reach whatever reports for it, so on every harness the
 /// guard's report is tagged `unverified`; so is a chat the host cannot say is sandboxed.
 #[test]
