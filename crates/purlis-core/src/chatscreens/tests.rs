@@ -326,20 +326,31 @@ fn a_killed_write_s_temp(root: &Path, id: &str, age: Duration) -> PathBuf {
 }
 
 #[test]
-fn turning_keeping_off_takes_a_killed_write_s_temp_and_leaves_a_write_under_way() {
+fn turning_keeping_off_takes_every_temp_a_killed_write_left() {
     // #6451's review: a temp left by a write killed before its rename holds a whole screen, and
-    // nothing named `<ULID>.screen` points at it.
+    // nothing named `<ULID>.screen` points at it. With the store's lock held, even one a moment
+    // old is no write under way (#6508's review): every write holds that lock.
     let (_dir, root) = settable();
     let killed = a_killed_write_s_temp(&root, CHAT, LOCK_WAIT + Duration::from_secs(1));
-    let under_way = a_killed_write_s_temp(&root, OTHER, Duration::ZERO);
+    let just_killed = a_killed_write_s_temp(&root, OTHER, Duration::ZERO);
 
     set_keep(&root, false).unwrap();
 
     assert!(!killed.exists(), "the killed write's screen goes");
-    assert!(
-        under_way.exists(),
-        "a write younger than the lock wait may be live"
-    );
+    assert!(!just_killed.exists(), "and so does one killed a moment ago");
+}
+
+#[test]
+fn turning_keeping_off_unlocked_leaves_a_write_that_may_be_under_way() {
+    // Where the filesystem cannot `flock`, a young temp may be a write that is not waiting.
+    let (_dir, root) = settable();
+    let killed = a_killed_write_s_temp(&root, CHAT, LOCK_WAIT + Duration::from_secs(1));
+    let under_way = a_killed_write_s_temp(&root, OTHER, Duration::ZERO);
+
+    no_flock::here(|| set_keep(&root, false)).unwrap();
+
+    assert!(!killed.exists());
+    assert!(under_way.exists(), "a write younger than the lock wait may be live");
 }
 
 #[test]

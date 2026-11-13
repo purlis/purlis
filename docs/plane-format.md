@@ -7611,8 +7611,9 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   (`chatscreens::on_open`, from `retention::on_open`): a screen whose chat no dispatch record
   names goes, and so does one last written 30 days or more before, so a screen never outlives
   its record. A write killed before its rename leaves
-  `.purlis-generated.<ULID>.screen.<pid>.<tag>.tmp`, a whole screen nothing reads: the open's
-  sweep and turning keeping off delete it once it is older than `chatscreens::LOCK_WAIT`, so a
+  `.purlis-generated.<ULID>.screen.<pid>.<tag>.tmp`, a whole screen nothing reads. Turning
+  keeping off deletes it at once, holding the lock every write holds; the open's sweep, and an
+  off where the filesystem cannot `flock`, once it is older than `chatscreens::LOCK_WAIT`, so a
   write under way is never deleted. Every write and delete holds
   [`.lock`](#appchat-screenslock). Turning keeping off says how many screens could not be
   deleted, and the Settings row counts them (#6451's review).

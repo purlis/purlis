@@ -25,8 +25,8 @@
 //!   read or the project's open.
 //! - **One write or delete at a time**: each holds the store's lock ([`LOCK_NAME`]), so a
 //!   screen being written as keeping is turned off goes with the rest ([`keep`]). A write
-//!   killed before its rename leaves a temp file, which a delete or the sweep takes once it is
-//!   older than [`LOCK_WAIT`].
+//!   killed before its rename leaves a temp file: turning keeping off takes it at once, with
+//!   the lock held, and the sweep once it is older than [`LOCK_WAIT`].
 //! - **Read as the app wrote it**: named by a ULID and nothing else, at most
 //!   [`MOST_SCREEN_BYTES`], written whole through a temp file and opened following no link, so a
 //!   file put there by anything else is never shown.
@@ -100,9 +100,9 @@ pub fn keep(root: &Path, id: &str, screen: &str) -> std::io::Result<()> {
     let path = path_of(root, id)
         .ok_or_else(|| std::io::Error::other("a chat's screen is kept by its ULID"))?;
     crate::keptscreen::made_private(&dir(root))?;
-    let _held = locked(root)?;
+    let held = locked(root)?;
     if !keeps(root) {
-        let _ = forget_all_held(root);
+        let _ = forget_all_held(root, held.is_some());
         return Err(off());
     }
     crate::keptscreen::write(&[dir(root)], &path, screen)?;
@@ -291,10 +291,11 @@ fn a_screen_s_temp(name: &str) -> bool {
         })
 }
 
-/// **The temp files of the writes that were killed before their rename**, last written longer
-/// ago than [`LOCK_WAIT`] before `now`: a younger one may be a write under way, which is never
-/// deleted.
-fn temps_left(root: &Path, now: SystemTime) -> Vec<PathBuf> {
+/// **The temp files of the writes that were killed before their rename**: with `every`, all of
+/// them, which only a caller holding the store's lock may ask for, since every write holds it
+/// while its temp is there (#6508's review). Otherwise only those last written longer ago than
+/// [`LOCK_WAIT`] before `now`: a younger one may be a write under way, which is never deleted.
+fn temps_left(root: &Path, now: SystemTime, every: bool) -> Vec<PathBuf> {
     let Ok(reader) = std::fs::read_dir(dir(root)) else {
         return Vec::new();
     };
@@ -308,7 +309,7 @@ fn temps_left(root: &Path, now: SystemTime) -> Vec<PathBuf> {
                 .filter(std::fs::Metadata::is_file)
                 .and_then(|meta| meta.modified().ok())
                 .and_then(|written| now.duration_since(written).ok())
-                .is_some_and(|age| age > LOCK_WAIT)
+                .is_some_and(|age| every || age > LOCK_WAIT)
         })
         .map(|entry| entry.path())
         .collect()
@@ -358,7 +359,7 @@ pub fn sweep(root: &Path, named: impl Fn(&str) -> bool, now: SystemTime) -> usiz
         })
         .filter(|one| forget(root, &one.id))
         .count();
-    let temps = temps_left(root, now)
+    let temps = temps_left(root, now, false)
         .into_iter()
         .filter(|temp| self::gone(temp).is_ok())
         .count();
@@ -384,22 +385,23 @@ pub fn forget_all(root: &Path) -> Result<usize, String> {
     if !there(root) {
         return Ok(0);
     }
-    let _held = locked(root).map_err(|why| {
+    let held = locked(root).map_err(|why| {
         format!(
             "The kept screens were not deleted: purlis could not take their lock ({why}). Turn \
              it off again."
         )
     })?;
-    forget_all_held(root)
+    forget_all_held(root, held.is_some())
 }
 
-/// [`forget_all`], with the store's lock held.
-fn forget_all_held(root: &Path) -> Result<usize, String> {
+/// [`forget_all`], with the store's lock held where `locked`, which takes every temp file a write
+/// left ([`temps_left`]); where the filesystem has no lock, only the old ones.
+fn forget_all_held(root: &Path, locked: bool) -> Result<usize, String> {
     let mut paths: Vec<PathBuf> = every_kept(root)
         .iter()
         .filter_map(|one| path_of(root, &one.id))
         .collect();
-    paths.extend(temps_left(root, SystemTime::now()));
+    paths.extend(temps_left(root, SystemTime::now(), locked));
     let mut went = 0;
     let mut stayed: Vec<std::io::Error> = Vec::new();
     for path in &paths {
