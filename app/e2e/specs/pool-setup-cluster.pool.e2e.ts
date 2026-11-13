@@ -93,12 +93,6 @@ async function type(name: string, value: string): Promise<void> {
 
 /** Settings › Pools' switch of the one cluster pool kept here, by its role and its label. */
 const MY_OWN = '//*[@role="switch"][ancestor::label[normalize-space()="This is my own"]]';
-/**
- * Its row, as a person presses it: React Aria draws the switch's input hidden, a pixel square
- * that WebDriver can neither bring into view nor press where it is, so its label is pressed.
- */
-const MY_OWN_ROW = '//label[normalize-space()="This is my own"][.//*[@role="switch"]]';
-
 /** Whether This is my own says on. */
 async function myOwnIsOn(): Promise<boolean> {
   const control = await $(MY_OWN);
@@ -107,31 +101,39 @@ async function myOwnIsOn(): Promise<boolean> {
 }
 
 /**
- * **Turns This is my own on**, in Settings › Pools, for the one cluster pool kept here: one
- * press, as a person's, then a wait for the mark to be kept and read back.
+ * **Turns This is my own on**, in Settings › Pools, for the one cluster pool kept here, as a
+ * keyboard does: the switch focused and Space pressed, once. React Aria draws its input hidden,
+ * and a pointer press at where it is drawn lands on whatever the row is redrawn under, as the
+ * pools are read again; Space is the switch's own.
  */
 async function markAsMyOwn(): Promise<void> {
-  await $(MY_OWN_ROW)
-    .waitForDisplayed({ timeout: 60_000 })
+  await $(MY_OWN)
+    .waitForExist({ timeout: 60_000 })
     .catch(async () => {
       throw new Error(`no This is my own in Settings: ${await settingsSay()}`);
     });
-  // Found afresh at each look: the row is drawn again as the pools are read again, and a press
-  // that found the row before is lost. Pressed until one press lands, never after.
   let pressed = false;
   await browser
     .waitUntil(
       async () => {
         if (await myOwnIsOn().catch(() => false)) return true;
         if (!pressed) {
-          const row = await $(MY_OWN_ROW);
-          pressed = await row
-            .scrollIntoView({ block: "center" })
-            .then(() => row.click())
-            .then(
-              () => true,
-              () => false,
-            );
+          const focused = await browser.execute((path: string) => {
+            const found = document.evaluate(
+              path,
+              document,
+              null,
+              XPathResult.FIRST_ORDERED_NODE_TYPE,
+              null,
+            ).singleNodeValue;
+            if (!(found instanceof HTMLElement)) return false;
+            found.focus();
+            return document.activeElement === found;
+          }, MY_OWN);
+          if (focused) {
+            await browser.keys(" ");
+            pressed = true;
+          }
         }
         return false;
       },
