@@ -26,6 +26,7 @@
 import type { ComponentPropsWithoutRef, CSSProperties, ReactNode, Ref } from "react";
 import { mergeProps, useFocusRing, useHover, useId } from "react-aria";
 import { PanelLeft, RotateCw, X } from "lucide-react";
+import { RoundCount } from "../badge/Badge";
 import { IconButton } from "../button/Button";
 import { Tooltip, type Tip } from "../tooltip/Tooltip";
 import { useTabStripRow, type TabStrip } from "../tabs/TabStrip";
@@ -173,14 +174,9 @@ export function RailProject({
           {/* Its failed mark (#5324): a "!" at its bottom left, which a shape and not a colour
             alone says; its words are its description's and its tooltip's. */}
           {load?.failed && <span data-scope="rail" data-part="failed" aria-hidden="true" />}
-          {waiting > 0 && (
-            <span
-              data-scope="rail"
-              data-part="badge"
-              data-count={waiting > 99 ? "99+" : String(waiting)}
-              aria-hidden="true"
-            />
-          )}
+          {/* The badge family's round count (#6342): one character, 9+ above 9; the real
+            number is its description's. Never drawn again as it changes, so it slides. */}
+          <RoundCount count={waiting} at="mark" />
           {unsaved !== undefined && (
             <span
               data-scope="rail"
@@ -376,7 +372,7 @@ export function RailBelow({ waiting, onPress }: { waiting: number; onPress: () =
         data-scope="rail"
         data-part="below"
       >
-        <span data-scope="rail" data-part="badge" data-count={String(waiting)} aria-hidden="true" />
+        <RoundCount count={waiting} at="mark" />
       </button>
     </Tooltip>
   );

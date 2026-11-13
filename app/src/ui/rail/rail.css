@@ -59,7 +59,7 @@
   flex: none;
 }
 
-/* Something waits below the list's fold (N5): its count at the foot, in the badge's colours. */
+/* Something waits below the list's fold (N5): its count at the foot, the same round count. */
 [data-part="below"][data-scope="rail"] {
   display: grid;
   flex: none;
@@ -68,10 +68,6 @@
   border: 0;
   background-color: transparent;
   cursor: default;
-}
-
-[data-part="below"][data-scope="rail"] > [data-part="badge"][data-scope="rail"] {
-  position: static;
 }
 
 [data-part="below"][data-scope="rail"]:focus-visible {
@@ -128,10 +124,6 @@
   content: attr(data-letters);
 }
 
-[data-part="badge"][data-scope="rail"]::before {
-  content: attr(data-count);
-}
-
 [data-part="monogram"][data-scope="rail"] {
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-strong);
@@ -144,24 +136,12 @@
     0 0 0 3.5px var(--focus-ring);
 }
 
-/* What waits on the person there: 16px, amber, out of the top right corner (R79). */
-[data-part="badge"][data-scope="rail"] {
+/* What waits on the person there (R79): the badge family's round count (#6342), out of the
+   button's top right corner, ringed in the rail's ground (the count's own default). */
+[data-part="button"][data-scope="rail"] > [data-scope="count"][data-part="round"] {
   position: absolute;
   inset-block-start: calc(var(--space-2) * -1 - 1px);
   inset-inline-end: calc(var(--space-2) * -1 - 1px);
-  display: inline-grid;
-  place-items: center;
-  box-sizing: border-box;
-  min-inline-size: 16px;
-  block-size: 16px;
-  padding-inline: var(--space-2);
-  border-radius: var(--radius-full);
-  color: var(--state-waiting);
-  background-color: var(--surface-overlay);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-strong);
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
 }
 
 /* Its unsaved work (charter-app#302): a dot at the bottom right, in the waiting colour, or the

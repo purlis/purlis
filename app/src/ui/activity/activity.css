@@ -219,11 +219,28 @@
   content: attr(data-count) / "";
 }
 
-/* **What waits on the person is hot** (R120): the hot count's own role (#3098), which a theme
-   restyles through its tokens; a count rule of `parts` never reaches it. */
+/* **What waits on the person is hot** (R120): the badge family's round count (#6342), in the
+   hot count's own role (#3098), which a theme restyles through its tokens; a count rule of
+   `parts` never reaches it. This part only places it: its centre on the 18px icon's top right
+   corner (9px in from the 36px item's), ringed in the bar's ground. */
 [data-scope="activity"][data-part="count"][data-tone="needs-you"] {
-  background-color: var(--needs-you-count);
-  color: var(--needs-you-count-text);
+  --count-ground: var(--activity-ground, var(--surface-deep));
+  display: block;
+  inline-size: 16px;
+  min-inline-size: 0;
+  block-size: 16px;
+  padding: 0;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+[data-scope="activity"][data-part="count"][data-tone="needs-you"]::before {
+  content: none;
+}
+
+[data-scope="activity"][data-part="count"][data-tone="needs-you"]
+  > [data-scope="count"][data-part="round"] {
+  display: grid;
 }
 
 /* **A Notice needs fixing** (ADR 0119, #5645): a dot in the danger colour where a count would

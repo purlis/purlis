@@ -123,3 +123,90 @@
 [data-scope="count"][data-away] {
   display: none;
 }
+
+/* **A round count** (ADR 0121, amended 2026-11-12, decisions 6 and 7; #6342): what waits on the
+   person, as one small circle in the ✋'s colour holding one character (1 to 9, then 9+), so a
+   change never moves anything. 16px on a mark's corner, ringed in the ground under it; 14px
+   inline after words. Its character is drawn from `data-drawn`, with no alternative text of its
+   own: what is said is the real number, its `said` or its host's. */
+[data-scope="count"][data-part="round"] {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  box-sizing: border-box;
+  inline-size: 16px;
+  block-size: 16px;
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  color: var(--needs-you-count-text);
+  background-color: var(--needs-you-count);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-strong);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+
+[data-scope="count"][data-part="round"][data-at="mark"] {
+  box-shadow: 0 0 0 2px var(--count-ground, var(--surface-deep));
+}
+
+[data-scope="count"][data-part="round"][data-at="inline"] {
+  inline-size: 14px;
+  block-size: 14px;
+}
+
+[data-scope="count"][data-part="round"]::before {
+  display: inline-block;
+  content: attr(data-drawn) / "";
+}
+
+/* 9+ is two glyphs in the same circle: drawn a touch tighter, never wider. */
+[data-scope="count"][data-part="round"][data-drawn="9+"] {
+  letter-spacing: -0.06em;
+}
+
+/* **A changed drawn value slides in once**, from below as it rises and from above as it falls.
+   Two keyframes of the same motion alternate (`data-slide`), so each change starts it again
+   without the element being drawn again. Reduced motion stops it (`theme/reduced-motion.css`). */
+[data-scope="count"][data-part="round"][data-slide="a"][data-slide-dir="up"]::before {
+  animation: count-round-up-a var(--motion-duration-leave) var(--motion-easing-enter);
+}
+
+[data-scope="count"][data-part="round"][data-slide="b"][data-slide-dir="up"]::before {
+  animation: count-round-up-b var(--motion-duration-leave) var(--motion-easing-enter);
+}
+
+[data-scope="count"][data-part="round"][data-slide="a"][data-slide-dir="down"]::before {
+  animation: count-round-down-a var(--motion-duration-leave) var(--motion-easing-enter);
+}
+
+[data-scope="count"][data-part="round"][data-slide="b"][data-slide-dir="down"]::before {
+  animation: count-round-down-b var(--motion-duration-leave) var(--motion-easing-enter);
+}
+
+@keyframes count-round-up-a {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes count-round-up-b {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes count-round-down-a {
+  from {
+    transform: translateY(-100%);
+  }
+}
+
+@keyframes count-round-down-b {
+  from {
+    transform: translateY(-100%);
+  }
+}

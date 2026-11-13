@@ -29,6 +29,7 @@ import {
   type ReactNode,
 } from "react";
 import { mergeProps, useToolbar } from "react-aria";
+import { RoundCount } from "../badge/Badge";
 import { Tooltip } from "../tooltip/Tooltip";
 import { useWindowLeft } from "../windowLeft";
 
@@ -180,6 +181,17 @@ export function ActivityCount({
   drawn?: string;
 }) {
   if (count <= 0) return null;
+  // What needs the person is the badge family's round count (#6342): one character, centred on
+  // the icon's top right corner; this part places it and keeps the sentence.
+  if (tone === "needs-you")
+    return (
+      <span data-scope="activity" data-part="count" data-tone={tone}>
+        <RoundCount count={count} at="mark" />
+        <span data-scope="activity" data-part="said">
+          {said}
+        </span>
+      </span>
+    );
   return (
     // The number is drawn by the stylesheet from `data-count`: no text of the item's own, so its
     // name stays its view's alone (axe's label and content match, WCAG 2.5.3).
