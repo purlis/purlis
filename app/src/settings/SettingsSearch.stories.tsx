@@ -63,6 +63,7 @@ const meta = {
       if (cmd === "sandbox_network") throw new Error("not in this story");
       // So does the Skills groups' budget, on every machine since the studio's flag went (#2786).
       if (cmd === "skill_studio") throw new Error("not in this story");
+      if (cmd === "skill_policy" || cmd === "skill_acts") throw new Error("not in this story");
       return null;
     });
     return () => clearMocks();
