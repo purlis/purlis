@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794565464855,
+  "lastUpdate": 1794567981740,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -48216,6 +48216,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9941885,
             "unit": "ms",
             "extra": "median of 5 runs: 100.890, 101.987, 101.994, 102.455, 102.709 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "92cda29f03e9a917d268ba1912d2676c59a1099f",
+          "message": "Open in your editor: a terminal editor for the extension record, and the file checked is the file launched (#6202)\n\n* extensions: the record opens in a shell tab for a terminal editor\n\nOpen in your editor on the extension record starts a terminal $VISUAL or\n$EDITOR in a shell tab of the project in front, standing in the record's\nfolder, as a harness declaration's Open file does, with the editor, its\nwords, +1 and the record as an argument vector no shell reads. A windowed\neditor and a linked one open as before. With no project in front the core\nrefuses with a sentence the dialog draws, instead of starting the editor\nwith no terminal.\n\nopen_extension_record takes the project in front (bindings.ts\nregenerated; uiRpc.ts carries no signature for a window-only command, so\nit does not change). editortab::shown is the tab half of\neditortab::started, which both now use.\n\nCloses #1894\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M73YH1V5CSPKX6X6BJQNED8N\nPurlis-Persona: steward\n\n* Open in your editor: a terminal editor for the extension record, and the file checked is the file launched\n\nThe extension record's Open file starts a terminal $VISUAL or $EDITOR in a shell tab of the project in front, as a harness declaration's does, and says why when no project is open (#1894). Every route that hands a file to your editor holds it as it was checked, and the launch refuses a file swapped for a link or replaced since (#3185); the editor's own later open is narrowed, not closed (ADR 0081 amendment 2026-11-11).\n\nCloses #1894\n\nCloses #3185\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6NNY9XEPAS77MVHST9XKGAY\nPurlis-Persona: steward\n\n* youreditor: only a checked file can be launched; name the sentence each swap gets\n\nReview of 0341313ce: youreditor::launch is pub(crate), so outside the core only Checked::launch hands out a launch. The changelog fragment and the ADR 0081 amendment now say a link on the way is refused as reached through a link, and another file in its place as changed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6NNY9XEPAS77MVHST9XKGAY\nPurlis-Persona: steward\n\n* extensions: the record's command takes the project in front as front\n\nA command that names a plane as a bare string fails no_command_takes_its_plane_as_a_bare_string (charter-app#127), and Option<PlaneId> is generated as string | null. The parameter is front, as move_projects names the project in front.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6NNY9XEPAS77MVHST9XKGAY\nPurlis-Persona: steward\n\n* ci: the macOS Seatbelt confinement job restores the app job's cache and gets 75 minutes\n\nIts rust-cache key was its own job name, which nothing saves (save-if: false), so every run that\ntouched the confinement built every dependency cold and ran out of its 40 minutes while still\ncompiling purlis-core's lib tests (job 130462236655, no test failed). It now restores the macOS\n`app` job's cache, which main saves, and its budget fits a cold build of its four test targets.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M79WS379WJJBTQ121GAJ0PN4\nPurlis-Persona: steward\n\n* test(stories): the closed chat card's switcher-row story is pictured once the card has gone\n\nRead it closes the card, and the play ended before its exit finished, so the picture raced the\npopover out: the baselines had it leaving, #6202's webkit 11/12 (purlis_light-high-contrast_compact)\ncaught it gone. The play now waits for the dialog to be gone, as its Escape step already does,\nand the story's baselines are deleted so its run draws them of the settled page.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M79WS379WJJBTQ121GAJ0PN4\nPurlis-Persona: steward\n\n* test(stories): baselines for the closed chat card's switcher-row story, of the settled page\n\nDrawn by run 43395006255 after the play waits for the card to be gone: the row, focused again,\nand what Read it said, in every theme and both browsers.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M79WS379WJJBTQ121GAJ0PN4\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-13T10:19:19Z",
+          "tree_id": "cd9c520b04e3de565fec99e449306c8544569b1f",
+          "url": "https://github.com/purlis/purlis/commit/92cda29f03e9a917d268ba1912d2676c59a1099f"
+        },
+        "date": 1794567976268,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6942775000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.688, 0.688, 0.694, 0.700, 0.713 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.741163,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.662, 16.698, 16.741, 16.753, 16.960 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.2752615,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.011, 102.079, 102.275, 102.570, 102.917 ms"
           }
         ]
       }
