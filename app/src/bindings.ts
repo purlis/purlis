@@ -1259,7 +1259,8 @@ export const commands = {
 	stuckFine: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("stuck_fine", { plane, session })),
 	/**
 	 *  **Answers chat `session`'s pause with `option`** (#6015): Continue, It's fine, continue, or
-	 *  Stop, as its ask in Asks offers them.
+	 *  Stop, as its ask in Asks offers them; for a block loop (T1-36), Tell it to stop trying, which
+	 *  types purlis's one line when the chat next waits, Let it keep trying, or Stop chat.
 	 */
 	answerPause: (plane: PlaneId, session: number, option: string) => typedError<null, string>(__TAURI_INVOKE("answer_pause", { plane, session, option })),
 	/**
