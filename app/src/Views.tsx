@@ -38,6 +38,7 @@ import {
   KeyRound,
   LayoutGrid,
   ListChecks,
+  ListOrdered,
   LoaderCircle,
   MonitorSmartphone,
   ScrollText,
@@ -116,7 +117,9 @@ import type { PieceFilesTab as FilesTab } from "./editor/PieceFiles";
 import { SESSION_VIEW, sessionTitle, sessionView } from "./sessions";
 import { ActivityTab } from "./ActivityTab";
 import { ChatNetworkTab } from "./ChatNetworkTab";
+import { ChatLogTab } from "./ChatLogTab";
 import { CHAT_NETWORK_VIEW, chatNetworkSession, isChatNetwork } from "./chatNetwork";
+import { CHAT_LOG_VIEW, chatLogName, chatLogSession, isChatLog } from "./chatLog";
 import { ACTIVITY_VIEW, activitySession, isActivity } from "./activity";
 import { DispatchesTab } from "./DispatchesTab";
 import { TaskChangesTab } from "./TaskChangesTab";
@@ -375,6 +378,8 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   [ACTIVITY_VIEW]: Activity,
   /** One chat's Network (#1662). */
   [CHAT_NETWORK_VIEW]: Globe,
+  /** One chat's Chat log (R-224, `chatLog.ts`). */
+  [CHAT_LOG_VIEW]: ListOrdered,
   [MEMORY_VIEW]: Brain,
   /** One todo (#1214), drawn as the Todos panel marks one. */
   [TODO_VIEW]: CircleDashed,
@@ -914,6 +919,15 @@ export function ViewPane({
             key={`${plane}\u0000${view.key}`}
             plane={plane}
             session={chatNetworkSession(view)}
+          />
+        ) : isChatLog(view) ? (
+          /* One chat's Chat log (R-224): its own timeline, read from the core's query of the
+             event log as it opens, and never again by itself (R-225). Keyed by the chat. */
+          <ChatLogTab
+            key={`${plane}\u0000${view.key}`}
+            plane={plane}
+            session={chatLogSession(view)}
+            name={chatLogName(title)}
           />
         ) : isSession(view) ? (
           /* A session record (SI-8d): read-only Markdown the window renders from the core's

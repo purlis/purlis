@@ -9463,3 +9463,23 @@ nav.piece-files-head {
   overflow: hidden;
   white-space: pre-wrap;
 }
+
+/* **A chat's Chat log** (R-224, R-310, T1-27): its own simple timeline, one line a row, apart
+   from the transcript; drawn like the Activity's lines, with nothing to press in phase 1. */
+.chat-log {
+  max-width: 70rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-sm);
+}
+
+.chat-log-row {
+  display: grid;
+  grid-template-columns: 10.5rem minmax(0, 1fr);
+  gap: var(--space-1) var(--space-5);
+  align-items: baseline;
+  padding-block: var(--space-2);
+  padding-inline-end: var(--space-3);
+  border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
+}

@@ -2078,6 +2078,9 @@ describe("carrying out a row", () => {
         "openView:charter/browsers/,Browsers",
         "openView:charter/chat-network/7,Network · one",
         "openView:charter/chat-network/8,Network · two",
+        // A chat's Chat log, one row per chat tab (R-224).
+        "openView:charter/chat-log/7,Chat log · one",
+        "openView:charter/chat-log/8,Chat log · two",
         "openView:charter/todo/alpha/20260302-091400-review,Review the plan",
         "pickVault",
         "createVault",
@@ -2519,6 +2522,7 @@ describe("the catalogue as the tabs change", () => {
       "chat.moveto:7",
       "chat.activity:7",
       "chat.network:7",
+      "chat.log:7",
       "chat.end:7",
     ]);
   });
@@ -2896,8 +2900,9 @@ describe("the palette at fifty chats", () => {
     // behind are menu-only. 1275 since #5644: Show the Asks view and Show the Updates view, where
     // Show the Inbox view was. 1276 since #5645: Show the Notices view. 1277 since #5688: Your
     // settings: Reports. 1278 since #6017: Quiet now. 1382 since #2920: one row per setting of
-    // You's and the project's (104), whatever the number of chats.
-    expect(offers).toHaveLength(1382);
+    // You's and the project's (104), whatever the number of chats. 1432 since T1-27: each of the
+    // fifty chats' Chat log (R-224).
+    expect(offers).toHaveLength(1432);
     // Fifty tabs of one chat each: the palette has their chats' Rename chat rows instead.
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.rename:"))).toHaveLength(0);
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.closeOthers:"))).toHaveLength(
