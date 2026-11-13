@@ -1118,11 +1118,6 @@ body {
 
 .start-chat-label {
   margin: 0;
-  color: var(--text-muted);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-strong);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 /* What stops a start, under the persona: drawn only when there is something to say. */
@@ -2566,7 +2561,6 @@ body {
   margin: 0 0 var(--space-3);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-strong);
-  letter-spacing: 0.05em;
   color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
@@ -5898,11 +5892,6 @@ nav.piece-files-head {
 
 .dispatch-read h2 {
   margin: 0 0 var(--space-2);
-  color: var(--text-muted);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-strong);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 
 .dispatch-read pre {
@@ -6104,11 +6093,6 @@ nav.piece-files-head {
 
 .session-dispatches h2 {
   margin: 0 0 var(--space-2);
-  color: var(--text-muted);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-strong);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 
 .session-dispatches ul {
@@ -7379,13 +7363,16 @@ nav.piece-files-head {
 }
 
 /* Settings › Project › Dispatch (#1504): the one table of who may dispatch to whom, the shared
-   table family's fixed `ControlTable` (#2911). A row group per persona; under it each target, with a row for
-   every grant that covers the pair. The columns are fixed shares of the width, so nothing a cell
-   says moves another column; a question is a row of its own across the whole table, under the
-   row it is about; and words break between words, a name only where it is longer than its
-   column. */
+   table family's `ControlTable` (#2911). A row group per persona; under it each target, with a row
+   for every grant that covers the pair. The columns take these shares of the width, and none is
+   narrower than its name: the table lays itself out as the limits table does, so a column's name
+   in the label role, its capitals and its tracking, is the least its column is, whatever font
+   draws it (#6443). A fixed layout held the shares exactly, and cut "Where it comes from" in
+   macOS's WebView once the label role spaced it. Words a cell says break anywhere, so no name
+   widens its column; only a name or a control does. A question is a row of its own across the
+   whole table, under the row it is about. */
 .dispatch-table tbody :is(th, td) {
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
 }
 
 .dispatch-table thead th:nth-child(1) {
@@ -7396,7 +7383,6 @@ nav.piece-files-head {
   width: 32%;
 }
 
-/* "Workspace" in the label role's capitals and tracking fits whole on macOS's fonts too. */
 .dispatch-table thead th:nth-child(3) {
   width: 23%;
 }
@@ -8865,8 +8851,6 @@ nav.piece-files-head {
 }
 .pool-setup-title {
   margin: 0;
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-strong);
   line-height: var(--line-height-tight);
   outline: none;
 }
@@ -9040,8 +9024,6 @@ nav.piece-files-head {
 }
 .agent-identity-title {
   margin: 0;
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-strong);
   line-height: var(--line-height-tight);
   outline: none;
 }
