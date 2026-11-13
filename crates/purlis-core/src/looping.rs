@@ -27,7 +27,9 @@
 //!   come back, so the rule errs toward pausing). A success is taken at its hook line's word,
 //!   so an unverified chat's own lines can reset its count; and a sandboxed chat holds its own
 //!   hook token, so it can send a "verified" deny about itself, which can only pause itself. A
-//!   chat that dodges the pause so only keeps being blocked, and each block is purlis's own
+//!   chat holding its hook token could also reuse one call id for every call, so each block
+//!   after the first is taken as the same call's and never counted (the Q235 class). A chat
+//!   that dodges the pause so only keeps being blocked, and each block is purlis's own
 //!   observation.
 //!
 //! **What it hears is what already flows** (ADR 0076): each command a chat ran and whether it
@@ -262,7 +264,8 @@ impl Loops {
     /// chat's reach where `verified` (`stops::reported_from_outside_its_reach`): the block it is,
     /// if any, counted as [`Loops::stopped`] counts one (`stops::block_of_line`, the recorder's
     /// own rule); otherwise, where the call came back, it resets the block count of every aim
-    /// but its own (R-210). A call allowed but not yet come back is no success.
+    /// but its own (R-210). A call allowed but not yet come back is no success, nor is one a
+    /// block was counted under (Q253).
     pub fn called(
         &mut self,
         chat: u32,
@@ -275,8 +278,16 @@ impl Loops {
         let came_back = crate::hookreg::find(&call.tool_hook)
             .is_some_and(crate::hookreg::Handler::hears_a_call_come_back);
         if came_back && let Some(counted) = self.chats.get_mut(&chat) {
-            let aim = Aim::of_call(call);
-            counted.blocked.retain(|(was, _)| *was == aim);
+            // A call a block was counted under is no success, even where it exits 0, as
+            // `curl … || true` does: it clears no other aim (Q253).
+            let blocked_under_it = call
+                .call
+                .as_deref()
+                .is_some_and(|id| counted.calls.iter().any(|one| one == id));
+            if !blocked_under_it {
+                let aim = Aim::of_call(call);
+                counted.blocked.retain(|(was, _)| *was == aim);
+            }
         }
         None
     }

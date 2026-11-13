@@ -2179,9 +2179,6 @@ pub async fn allow_sandbox_block(
     let tell = planes.block_teller();
     crate::off_the_window(ANSWERING_SANDBOX, move || {
         let block = crate::taskblocks::shown_one(held.chats().blocks(), session, &shown)?;
-        // The person's Allow on the held connection starts its block count again, kept or
-        // told again as it stands (R-211, Q253).
-        crate::pausing::allowed(&held, session);
         let root = held.root().to_path_buf();
         let allowed = match allow_held(
             &root,
@@ -2203,6 +2200,9 @@ pub async fn allow_sandbox_block(
             }
             answered => answered?,
         };
+        // The person's Allow on the held connection, now it has succeeded, starts its block
+        // count again (R-211, Q253).
+        crate::pausing::allowed(&held, session);
         // Answered: neither this Notice nor a question for several tasks answers it again.
         held.chats().blocks().answered(session, &block);
         Ok(allowed)
