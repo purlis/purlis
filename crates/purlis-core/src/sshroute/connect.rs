@@ -46,8 +46,8 @@ pub enum Finding {
     /// The engine at the socket didn't answer through the forward: what was said.
     EngineSilent { host: String, said: String },
     /// The machine's SSH server signs the person in and refuses to forward the engine's socket
-    /// (#6349): `DisableForwarding`, `AllowStreamLocalForwarding no`, or a key's
-    /// `no-port-forwarding`. Found by [`forwarding_refused`], never from what ssh said.
+    /// (#6349): `AllowTcpForwarding no`, `AllowStreamLocalForwarding no`, `DisableForwarding`,
+    /// or a key's `no-port-forwarding`. Found by [`forwarding_refused`], never from what ssh said.
     ForwardingRefused { host: String },
     /// The engine answers with another id than the pinned one, or, for a Podman, another socket
     /// or graph root (#6269).

@@ -527,7 +527,12 @@ fn an_sshd_that_refuses_forwarding_is_named_at_connect_and_for_a_pool_already_th
     let refused = Finding::ForwardingRefused {
         host: "127.0.0.1".to_owned(),
     };
-    for setting in ["DisableForwarding yes", "AllowStreamLocalForwarding no"] {
+    // `AllowTcpForwarding no` too: sshd turns off its local forwards, the socket's among them.
+    for setting in [
+        "DisableForwarding yes",
+        "AllowStreamLocalForwarding no",
+        "AllowTcpForwarding no",
+    ] {
         sshd_reads_first(&fixture, setting);
         // Connect: the sign-in and the socket hold, and the forward is named, not Docker.
         assert_eq!(
@@ -554,11 +559,4 @@ fn an_sshd_that_refuses_forwarding_is_named_at_connect_and_for_a_pool_already_th
         );
         pool::look_again();
     }
-    // TCP forwarding alone is not the socket's: `AllowTcpForwarding no` leaves it forwarded.
-    sshd_reads_first(&fixture, "AllowTcpForwarding no");
-    assert!(
-        trust_found(&fixture, "connecting").is_ok(),
-        "AllowTcpForwarding no"
-    );
-    forward::let_go("connecting");
 }

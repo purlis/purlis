@@ -6,8 +6,10 @@ Records the choice [#6349](https://github.com/purlis/purlis/issues/6349) made. I
 ## What goes wrong
 
 An SSH server can sign the person in and still refuse to forward the engine's socket:
-`DisableForwarding yes`, `AllowStreamLocalForwarding no`, or `no-port-forwarding` on the key in
-`authorized_keys`. `AllowTcpForwarding no` does not refuse it, because it applies only to TCP.
+`AllowTcpForwarding no`, `AllowStreamLocalForwarding no`, `DisableForwarding yes`, or
+`no-port-forwarding` on the key in `authorized_keys`. `AllowTcpForwarding no` refuses it although
+the socket isn't TCP: sshd turns off all of its local forwards, the socket's too. The remote parity
+job sets each of the three.
 The pool's `ssh -T -L` opens all the same, because a local forward binds on this machine alone.
 The server refuses only the channel of each connection made through the forward. So Docker's
 client meets a closed connection, and Connect said only that Docker didn't answer there.
@@ -34,8 +36,8 @@ removing its socket leaves a file that passes the probe and takes no connection.
 a refused forward, and Check again asks again.
 
 The finding is `forwarding-refused`. It names the server and tells the person what to ask its
-admin for: `DisableForwarding` and `AllowStreamLocalForwarding` in sshd_config, or `restrict` and
-`no-port-forwarding` on their key. The window shows it on the line Docker answers there, as
+admin for: `AllowTcpForwarding`, `AllowStreamLocalForwarding` and `DisableForwarding` in
+sshd_config, or `restrict` and `no-port-forwarding` on their key. The window shows it on the line Docker answers there, as
 Docker's other causes are shown.
 
 A pool whose forward is refused lets go of the forward and waits, with the same back-off and the

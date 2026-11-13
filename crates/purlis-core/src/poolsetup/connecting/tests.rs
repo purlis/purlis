@@ -280,8 +280,9 @@ fn an_ssh_server_that_refuses_forwarding_is_named_with_what_to_ask_its_admin() {
         [
             "The SSH server on build-box doesn't allow forwarding, and purlis reaches Docker \
              there by forwarding its socket. Ask its admin to allow it for your account \
-             (`DisableForwarding` and `AllowStreamLocalForwarding` in sshd_config, or \
-             `restrict` and `no-port-forwarding` on your key), then check again."
+             (`AllowTcpForwarding`, `AllowStreamLocalForwarding` and `DisableForwarding` in \
+             sshd_config, or `restrict` and `no-port-forwarding` on your key), then check \
+             again."
         ]
     );
     assert_eq!(step.next.unwrap().id, ActionId::CheckAgain);
