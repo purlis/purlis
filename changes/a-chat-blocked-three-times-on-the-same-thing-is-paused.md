@@ -7,4 +7,9 @@
   another call that succeeds, or your answer that it may go on starts the count again. The
   harness's own permission check never counts, nor does a report purlis cannot verify (a chat
   whose hooks run inside its own sandbox), nor a merge waiting on you in Asks. A reworded
-  retry is a different call, so it starts a count of its own.
+  retry is a different call, so it starts a count of its own. Each call counts once, however
+  many connections it held, and calls that take turns are counted apart, so blocks that
+  alternate between two calls still pause it. Your Allow on a held connection, in the question
+  for several tasks, in the chooser, or on an ask answered late starts the count again. Only a
+  call to a tool purlis hears come back (a command, a file edit) counts as a success, so a
+  search that succeeds in between does not start the count again.

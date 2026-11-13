@@ -155,9 +155,10 @@ impl Project for Held {
         if let Err(why) = self.hooks().write_stop(chat, stop.clone()) {
             tracing::warn!("purlis: chat {chat}'s held merge was not recorded: {why}");
         }
-        // A hold never counts toward the block loop; a block written for a raise that failed
-        // does (R-207, R-215).
-        crate::pausing::stopped(self, chat, &stop);
+        // Only a hold is recorded here, and a hold never counts toward the block loop (R-215):
+        // told it all the same, so a stop the app writes has one road to the count. A raise
+        // that failed writes nothing here (T1-11).
+        crate::pausing::stopped(self, chat, &stop, None);
     }
 
     fn moved(&self) {

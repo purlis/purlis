@@ -15,9 +15,20 @@
 //!   plainly. The harness's own check never counts (R-208, Q153), nor does a report that is
 //!   `unverified` or `cant_tell` (R-209), which neither resets nor suppresses the count
 //!   (R-103); a refusal whose ask is open, a hold, is no block (R-215). Counted apart from the
-//!   person's refusals and from the cool-off (R-350). **Known limits:** a reworded retry is a
-//!   different target (Q133); and a sandboxed chat holds its own hook token, so it can send a
-//!   "verified" deny about itself (Q235), which can only pause itself.
+//!   person's refusals and from the cool-off (R-350). Counted per aim, in a map of at most
+//!   [`AIMS_KEPT`] aims, the oldest dropped, so blocked calls that alternate still pause; and a
+//!   call counts once, however many connections it held (Q253). An Allow on any path (a hook's
+//!   ask, a held connection, the chooser, a late answer), a different call that came back and
+//!   Let it keep trying clear every aim (R-210, R-211, R-218).
+//!
+//!   **Accepted limits** (Q133, Q235, Q253): a reworded retry is a different target. Only a
+//!   tool with a post-tool line resets the count by succeeding (R-210 is narrower than "any
+//!   different success": a call to a tool no post-tool hook names, Grep say, is never heard to
+//!   come back, so the rule errs toward pausing). A success is taken at its hook line's word,
+//!   so an unverified chat's own lines can reset its count; and a sandboxed chat holds its own
+//!   hook token, so it can send a "verified" deny about itself, which can only pause itself. A
+//!   chat that dodges the pause so only keeps being blocked, and each block is purlis's own
+//!   observation.
 //!
 //! **What it hears is what already flows** (ADR 0076): each command a chat ran and whether it
 //! failed, as its harness's hooks said, and each answer the person gave its asks. Never its
@@ -42,6 +53,13 @@ pub const LOOPING_IS_STUCK_TIMES: u32 = 2;
 
 /// **How many blocks on the same target are a loop** (R-206, Q133): three.
 pub const BLOCKED_TIMES: u32 = 3;
+
+/// **How many aims' block counts a chat keeps** (Q253): past this, the oldest is dropped.
+pub const AIMS_KEPT: usize = 16;
+
+/// **How many calls a chat keeps as counted already** (Q253): a call counts once toward the
+/// block loop, however many connections it held; past this, the oldest is forgotten.
+const CALLS_KEPT: usize = 16;
 
 /// The two thresholds in force for one chat.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,8 +111,38 @@ impl Why {
 struct Counted {
     failing: Failing,
     refused: u32,
-    /// The target of its latest blocks, and how many in a row.
-    blocked: Option<(Aim, u32)>,
+    /// Each target it was blocked on, and how many times with no reset between, oldest
+    /// first: at most [`AIMS_KEPT`] (Q253).
+    blocked: Vec<(Aim, u32)>,
+    /// The calls a block was counted for already, oldest first: at most [`CALLS_KEPT`].
+    calls: Vec<String>,
+}
+
+impl Counted {
+    /// One more block on `aim`: how many it makes, with `aim` the newest kept.
+    fn blocked_on(&mut self, aim: Aim) -> u32 {
+        let times = match self.blocked.iter().position(|(was, _)| *was == aim) {
+            Some(at) => self.blocked.remove(at).1.saturating_add(1),
+            None => 1,
+        };
+        self.blocked.push((aim, times));
+        if self.blocked.len() > AIMS_KEPT {
+            self.blocked.remove(0);
+        }
+        times
+    }
+
+    /// Whether a block under `call` was counted already; remembered as counted from now.
+    fn counted_already(&mut self, call: &str) -> bool {
+        if self.calls.iter().any(|one| one == call) {
+            return true;
+        }
+        self.calls.push(call.to_owned());
+        if self.calls.len() > CALLS_KEPT {
+            self.calls.remove(0);
+        }
+        false
+    }
 }
 
 /// **What a block was aimed at** (R-206): the tool plus its argument digest, as its hook sent
@@ -168,7 +216,7 @@ impl Loops {
         counted.refused = if refused {
             counted.refused.saturating_add(1)
         } else {
-            counted.blocked = None;
+            counted.blocked.clear();
             0
         };
         let times = counted.refused;
@@ -179,6 +227,13 @@ impl Loops {
     /// reaches [`BLOCKED_TIMES`] (R-206). A block that is no proof ([`counts`]), and any stop
     /// that is no block (a hold, whose ask is open, R-215), leave the count as it is.
     pub fn stopped(&mut self, chat: u32, stop: &Stop) -> Option<Why> {
+        self.stopped_under(chat, stop, None)
+    }
+
+    /// [`Loops::stopped`] for a block written under `call`, the harness's id for the call it was
+    /// held under, where one was heard: a call counts once, however many connections it held
+    /// (Q253).
+    pub fn stopped_under(&mut self, chat: u32, stop: &Stop, call: Option<&str>) -> Option<Why> {
         let Stop::Block(block) = stop else {
             return None;
         };
@@ -187,19 +242,27 @@ impl Loops {
         }
         let aim = Aim::of(block)?;
         let counted = self.chats.entry(chat).or_default();
-        let times = match counted.blocked.take() {
-            Some((was, times)) if was == aim => times.saturating_add(1),
-            _ => 1,
-        };
-        counted.blocked = Some((aim, times));
+        if call.is_some_and(|call| counted.counted_already(call)) {
+            return None;
+        }
+        let times = counted.blocked_on(aim);
         (times == BLOCKED_TIMES).then_some(Why::Blocked { times })
+    }
+
+    /// **The person allowed a sandbox ask of chat `chat`'s** (R-211, Q253): a held connection's,
+    /// the chooser's or one answered late. Its block count starts again; its refusals' count is
+    /// [`Loops::answered`]'s alone.
+    pub fn allowed(&mut self, chat: u32) {
+        if let Some(counted) = self.chats.get_mut(&chat) {
+            counted.blocked.clear();
+        }
     }
 
     /// **Chat `chat`'s hook line said it made or ended `call`**, reported from outside the
     /// chat's reach where `verified` (`stops::reported_from_outside_its_reach`): the block it is,
     /// if any, counted as [`Loops::stopped`] counts one (`stops::block_of_line`, the recorder's
-    /// own rule); otherwise, where the call came back, a call aimed elsewhere resets the block
-    /// count (R-210). A call allowed but not yet come back is no success.
+    /// own rule); otherwise, where the call came back, it resets the block count of every aim
+    /// but its own (R-210). A call allowed but not yet come back is no success.
     pub fn called(
         &mut self,
         chat: u32,
@@ -213,9 +276,7 @@ impl Loops {
             .is_some_and(crate::hookreg::Handler::hears_a_call_come_back);
         if came_back && let Some(counted) = self.chats.get_mut(&chat) {
             let aim = Aim::of_call(call);
-            if counted.blocked.as_ref().is_some_and(|(was, _)| *was != aim) {
-                counted.blocked = None;
-            }
+            counted.blocked.retain(|(was, _)| *was == aim);
         }
         None
     }

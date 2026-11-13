@@ -2035,13 +2035,16 @@ impl Held {
         // chat's same request, and the chat is told on its next turn to make it again. The
         // board is not moved: the chat still waits on its harness's own prompt, if it does.
         if let Some(late) = self.hooks.answer(session, ask, option)? {
+            let allowed = late.choice.kind == purlis_core::harness::model::ChoiceKind::Allow;
+            // An Allow answered late starts the block count again too (R-211, Q253).
+            if allowed {
+                crate::pausing::allowed(self, session);
+            }
             self.chats.tell_outcome(
                 session,
                 purlis_core::askoutcome::Outcome {
                     about: purlis_core::askoutcome::About::Permission { asked: late.said },
-                    answer: purlis_core::askoutcome::Answer::AnsweredLate {
-                        allowed: late.choice.kind == purlis_core::harness::model::ChoiceKind::Allow,
-                    },
+                    answer: purlis_core::askoutcome::Answer::AnsweredLate { allowed },
                 },
             );
             self.chats.asks_may_have_moved();
@@ -4020,12 +4023,13 @@ impl Planes {
         // for the handoff's reason.
         held.chats().write_stops_with({
             let weak = Arc::downgrade(&held);
-            Arc::new(move |chat, stop| match weak.upgrade() {
+            Arc::new(move |chat, stop, call| match weak.upgrade() {
                 Some(strong) => {
                     let written = strong.hooks.write_stop(chat, stop.clone());
                     strong.block_withdrawn(chat);
-                    // And toward the block loop, which pauses it (R-206).
-                    crate::pausing::stopped(&strong, chat, &stop);
+                    // And toward the block loop, which pauses it (R-206), the call it was held
+                    // under counted once (Q253).
+                    crate::pausing::stopped(&strong, chat, &stop, call.as_deref());
                     written
                 }
                 None => Ok(()),

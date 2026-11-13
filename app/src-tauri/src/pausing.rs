@@ -16,8 +16,9 @@
 //!   then ended).
 //! - **A loop** is `purlis_core::looping`'s: the same command failing again and again, its
 //!   asks refused again and again, or blocks on the same target (R-206), heard from its hook
-//!   lines ([`called`]) and from the stops the app writes ([`stopped`]). Asked: It's fine, continue, which starts its counts again; or
-//!   Stop, the window's Stop.
+//!   lines ([`called`]) and from the stops the app writes ([`stopped`]), the person's Allow
+//!   starting the block count again ([`allowed`]). Asked: It's fine, continue, which starts its
+//!   counts again; or Stop, the window's Stop.
 //!
 //! **What moves a pause is a named cause** (ADR 0076): the app's own clock and counts, from the
 //! chat's hooks and the person's answers, and the person's answer to the ask. Nothing a chat
@@ -184,13 +185,20 @@ impl Pauses {
         self.inner().loops.answered(chat, refused, limits)
     }
 
-    /// Chat `chat` had `stop` written: the block loop it makes (R-206).
+    /// Chat `chat` had `stop` written, under `call` where it was held under one: the block loop
+    /// it makes (R-206), a call counted once (Q253).
     pub fn stopped(
         &self,
         chat: u32,
         stop: &purlis_core::eventlog::stops::Stop,
+        call: Option<&str>,
     ) -> Option<looping::Why> {
-        self.inner().loops.stopped(chat, stop)
+        self.inner().loops.stopped_under(chat, stop, call)
+    }
+
+    /// The person allowed a sandbox ask of chat `chat`'s: its block count starts again (R-211).
+    pub fn allowed(&self, chat: u32) {
+        self.inner().loops.allowed(chat);
     }
 
     /// Chat `call.chat`'s hook line said it made or ended `call`, reported from outside its
@@ -308,12 +316,26 @@ pub(crate) fn answered(held: &Held, chat: u32, refused: bool) {
     }
 }
 
-/// **Chat `chat` had `stop` written** by the app (a held connection's block, a merge's hold):
-/// three blocks on the same target pause it (R-206); a hold never counts (R-215).
-pub(crate) fn stopped(held: &Held, chat: u32, stop: &purlis_core::eventlog::stops::Stop) {
-    if let Some(why) = held.pauses().stopped(chat, stop) {
+/// **Chat `chat` had `stop` written** by the app (a held connection's block, a merge's hold),
+/// under `call`, the harness's id for the call it was held under, where one was heard: three
+/// blocks on the same target pause it (R-206), each call counted once (Q253); a hold never
+/// counts (R-215).
+pub(crate) fn stopped(
+    held: &Held,
+    chat: u32,
+    stop: &purlis_core::eventlog::stops::Stop,
+    call: Option<&str>,
+) {
+    if let Some(why) = held.pauses().stopped(chat, stop, call) {
         pause(held, chat, Why::Looping(why), now());
     }
+}
+
+/// **The person allowed a sandbox ask of chat `chat`'s** (R-211, Q253), on any of its paths: a
+/// held connection's Notice, the question for several tasks, the chooser, an ask answered late.
+/// Its block count starts again, as an Allow of a hook's ask starts it ([`answered`]).
+pub(crate) fn allowed(held: &Held, chat: u32) {
+    held.pauses().allowed(chat);
 }
 
 /// **Chat `call.chat`'s hook line said it made or ended `call`**: a guard's deny is a block

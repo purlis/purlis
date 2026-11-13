@@ -9072,8 +9072,13 @@ pub type AsksMoved = Arc<dyn Fn() + Send + Sync + 'static>;
 
 /// **What writes a stop of chat `number`'s into the event log** (R-290), made durable before
 /// it answers: told only as a held connection's ask is withdrawn, so what that ask set goes too.
+/// With it, the harness's id for the call the connection was held under, where one was heard:
+/// the block loop counts a call once (Q253).
 pub type StopWriter = Arc<
-    dyn Fn(u32, purlis_core::eventlog::stops::Stop) -> std::io::Result<()> + Send + Sync + 'static,
+    dyn Fn(u32, purlis_core::eventlog::stops::Stop, Option<String>) -> std::io::Result<()>
+        + Send
+        + Sync
+        + 'static,
 >;
 
 /// Who a chat's board of live asks tells (#1666), and as whom.
@@ -9212,9 +9217,9 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::pl
 /// (R-290, Q154), once its ask is withdrawn: the host, or the runner's service by its port, as
 /// a grant names it, and the call it was held under (`withdrawn`): the harness's name for its
 /// tool (empty where no call was heard) and its arguments' hash, the target the block loop
-/// matches on (R-206). The target is the proxy's own word; the tool comes from the chat's hook
-/// line, which a sandboxed chat holds the token to send (Q235's known limit). A write that fails
-/// is said in the app's log.
+/// matches on (R-206), and its id, so the loop counts that call once (Q253). The target is the
+/// proxy's own word; the tool comes from the chat's hook line, which a sandboxed chat holds the
+/// token to send (Q235's known limit). A write that fails is said in the app's log.
 fn became_a_block(
     stops: &Mutex<Option<StopWriter>>,
     chat: u32,
@@ -9237,7 +9242,7 @@ fn became_a_block(
         target,
         args: withdrawn.args,
     });
-    if let Err(why) = write(chat, stop) {
+    if let Err(why) = write(chat, stop, withdrawn.call) {
         tracing::warn!("purlis: chat {chat}'s sandbox block was not written ({why})");
     }
 }

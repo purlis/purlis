@@ -2179,6 +2179,9 @@ pub async fn allow_sandbox_block(
     let tell = planes.block_teller();
     crate::off_the_window(ANSWERING_SANDBOX, move || {
         let block = crate::taskblocks::shown_one(held.chats().blocks(), session, &shown)?;
+        // The person's Allow on the held connection starts its block count again, kept or
+        // told again as it stands (R-211, Q253).
+        crate::pausing::allowed(&held, session);
         let root = held.root().to_path_buf();
         let allowed = match allow_held(
             &root,

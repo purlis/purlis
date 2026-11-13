@@ -342,7 +342,7 @@ fn a_sandbox_refusal_leaves_asks_and_becomes_one_block_when_the_chat_stops_waiti
     let written: Arc<Mutex<Vec<(u32, Stop)>>> = Arc::default();
     chats.write_stops_with({
         let written = Arc::clone(&written);
-        Arc::new(move |chat, stop| {
+        Arc::new(move |chat, stop, _| {
             lock(&written).push((chat, stop));
             Ok(())
         })
@@ -11719,7 +11719,7 @@ mod moved_on {
         let written: Arc<Mutex<Vec<(u32, Stop)>>> = Arc::default();
         chats.write_stops_with({
             let written = Arc::clone(&written);
-            Arc::new(move |chat, stop| {
+            Arc::new(move |chat, stop, _| {
                 lock(&written).push((chat, stop));
                 Ok(())
             })
@@ -12185,7 +12185,7 @@ fn a_timed_out_hold_is_written_to_the_event_log_as_one_sandbox_block() {
     let chats = Chats::new();
     chats.write_stops_with({
         let hooks = Arc::clone(&hooks);
-        Arc::new(move |chat, stop| hooks.write_stop(chat, stop))
+        Arc::new(move |chat, stop, _| hooks.write_stop(chat, stop))
     });
     let tell = super::asked_by_the_proxy(
         super::Asking {

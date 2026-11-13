@@ -400,9 +400,9 @@ impl Recorder {
 }
 
 /// **The one block a hook's line is, if any** (R-316, R-094, R-325): the harness's own check's
-/// ([`harness_check_block`]), else a guard's deny ([`guard_block`]), so a line gives at most
+/// (`harness_check_block`), else a guard's deny (`guard_block`), so a line gives at most
 /// one block. The arguments' hash as the hook sent it, unkeyed: the recorder keys it as it
-/// writes it ([`Recorder::block_of`]), and the block loop matches on it in memory
+/// writes it (`Recorder::block_of`), and the block loop matches on it in memory
 /// ([`crate::looping::Loops::called`]). `verified` where the chat's hooks report from outside
 /// its reach ([`reported_from_outside_its_reach`]); otherwise the block is `unverified`.
 pub fn block_of_line(call: &crate::hookwire::ToolCall, verified: bool) -> Option<Block> {
