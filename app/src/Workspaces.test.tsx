@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { widenAsks } from "./test-inbox";
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -430,6 +431,7 @@ describe("the workspace strip", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: "1 thing waits on you" }));
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
+    await widenAsks(inbox);
     await userEvent.click(
       await within(inbox).findByRole("button", { name: "Go to chat steward 5" }),
     );
@@ -483,6 +485,7 @@ describe("the workspace strip", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: "1 thing waits on you" }));
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
+    await widenAsks(inbox);
     await userEvent.click(await within(inbox).findByRole("button", { name: /^Ignore / }));
     act(() => vi.advanceTimersByTime(UNDO_MS + 1));
     await vi.waitFor(() => expect(asked.some((one) => one.cmd === "ignore_needs_you")).toBe(true));

@@ -141,13 +141,18 @@ export function onItsPane(asks: readonly Shown[], session: number): Shown[] {
 export type Answered = {
   /** When, in ms since the epoch. */
   at: number;
+  /** The chat that asked: what the chips list its Notice under (ADR 0121, amended 2026-11-12,
+   *  decision 9). Left out, it is listed only under Project. */
+  session?: number;
   chain: readonly string[];
   says: string;
   /** The answer as its button read, or a reply's words. */
   answer: string;
   /** What the source said of the answer, where it said something the person should read: Keep
    *  blocked on a vault the chat's persona already holds (#5890). A Notice says it in the Inbox,
-   *  whatever else waits, until the person dismisses it ([`dismissSaid`]). */
+   *  whatever else waits, until the person dismisses it ([`dismissSaid`]), in every scope that
+   *  holds its chat, or only under Project with no chat (ADR 0121, amended 2026-11-12,
+   *  decision 9). */
   said?: string;
   /** Whether `said` sends the person to Settings › Sandbox › Network › Allowed: its Notice links there
    *  (#5939). */

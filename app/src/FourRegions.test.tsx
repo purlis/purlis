@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { widenAsks } from "./test-inbox";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -1498,6 +1499,7 @@ describe("the right side's activity bar", () => {
     core();
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Asks" });
+    await widenAsks();
     await waitFor(() =>
       expect(tab("Asks")).toHaveAccessibleName("Asks 2 things wait on you, 1 new"),
     );
@@ -1613,6 +1615,10 @@ describe("the right side's activity bar", () => {
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Memory" });
     await waitFor(() => expect(tab("Asks")).toHaveAccessibleName("Asks 1 thing waits on you"));
+    // Its chat is filed in no workspace here, so the person widens Asks to the project first: a
+    // pick holds while Asks stays open (ADR 0121, amended 2026-11-12).
+    await userEvent.click(await screen.findByRole("button", { name: "1 thing waits on you" }));
+    await widenAsks();
     const before = tab("Asks");
     act(() => before.focus());
 
@@ -1642,6 +1648,8 @@ describe("the right side's activity bar", () => {
     await userEvent.click(hand);
 
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
+
+    await widenAsks(inbox);
     expect(within(inbox).getByRole("rowgroup", { name: "steward 3" })).toBeInTheDocument();
     expect(screen.queryByRole("menu")).toBeNull();
   });
@@ -1718,6 +1726,8 @@ describe("the right side's activity bar", () => {
     render(<App />);
 
     const asks = await screen.findByRole("tabpanel", { name: "Asks" });
+
+    await widenAsks(asks);
     expect(await within(asks).findByRole("rowgroup", { name: "steward 3" })).toBeInTheDocument();
     expect(within(asks).queryByText("The sandbox now allows api.example.com")).toBeNull();
 

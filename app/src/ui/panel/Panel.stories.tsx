@@ -141,3 +141,27 @@ export const SectionWithItsAction: Story = {
     await expect(add).not.toHaveFocus();
   },
 };
+
+/**
+ * **A title one level down** (Q182): a group's head inside a section, as the Notices view's
+ * kinds stand under its "Notices", is a fourth-level heading drawn as every section title is.
+ */
+export const AGroupsTitle: Story = {
+  render: () => (
+    <Panel variant="side" aria-label="Side" role="region">
+      <PanelSection>
+        <PanelSectionHead>
+          <PanelSectionTitle level={3}>Notices</PanelSectionTitle>
+        </PanelSectionHead>
+        <PanelSectionTitle level={4}>Clones made outside purlis · 2</PanelSectionTitle>
+        <p>repos/web and repos/api were cloned outside purlis.</p>
+      </PanelSection>
+    </Panel>
+  ),
+  play: async ({ canvas }) => {
+    const group = canvas.getByRole("heading", { name: "Clones made outside purlis · 2" });
+    await expect(group.tagName).toBe("H4");
+    await expect(group).toHaveAttribute("data-part", "title");
+    await expect(canvas.getByRole("heading", { name: "Notices", level: 3 })).toBeVisible();
+  },
+};

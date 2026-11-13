@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { type ReactNode, useCallback, useEffect, useState } from "react";
-import { commands, type FirstRunFound, type TemplateChoice, type TemplateRow } from "./bindings";
+import {
+  commands,
+  type FirstRunFound,
+  type ProtectionWord,
+  type TemplateChoice,
+  type TemplateRow,
+} from "./bindings";
 
 /** The radio values that are not a template's id. Ids are lower-case words, so neither clashes. */
 const FITS = ":fits";
@@ -17,6 +23,7 @@ import { type ForgeAsk, ForgeQuestion } from "./ForgeQuestion";
 import { rememberedParent, rememberParent } from "./CreateOnForge";
 import { DoorPage } from "./DoorPage";
 import { useNewerTrouble } from "./pickTrouble";
+import { PROTECTION_PRESET, ProtectionRow } from "./ProtectionRow";
 import { Choice, Field, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
 import { Form } from "./ui/field/Field";
@@ -57,12 +64,14 @@ export function FirstRun({
   where,
   elsewhere,
 }: {
-  /** Asks the core to open this repo into the local project, laid out from `template`. */
-  onOpenRepo: (path: string, template: TemplateChoice) => void;
+  /** Asks the core to open this repo into the local project, laid out from `template`, at the
+   *  Protection row's level (T1-24). */
+  onOpenRepo: (path: string, template: TemplateChoice, protection?: ProtectionWord) => void;
   /** Comes back to the welcome. */
   onBack: () => void;
-  /** Makes a project with no repo in this folder, laid out from `template`, and opens it. */
-  onMake: (folder: string, template: string | null) => void;
+  /** Makes a project with no repo in this folder, laid out from `template`, at the Protection
+   *  row's level, and opens it. */
+  onMake: (folder: string, template: string | null, protection?: ProtectionWord) => void;
   /** Whether the core is cloning it right now, so it is not asked twice. */
   opening: boolean;
   /** Why the last attempt opened nothing — the core's words, all of them. */
@@ -81,6 +90,8 @@ export function FirstRun({
   const [unread, setUnread] = useState<string>();
   const [typed, setTyped] = useState("");
   const [template, setTemplate] = useState(FITS);
+  // **The Protection row** (T1-24): one for the page, which both of its acts send.
+  const [protection, setProtection] = useState<ProtectionWord>(PROTECTION_PRESET);
   // The template that fits a typed path, by id, with the path it was asked about: `null` when
   // none fits. A folder picked in the dialog opens at once, so this is the typed path's alone,
   // and an answer about a path no longer typed is not shown.
@@ -131,9 +142,9 @@ export function FirstRun({
       .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
       .then((answer) => {
         if (answer.status === "error") pickFailed(answer.error);
-        else if (answer.data) onOpenRepo(answer.data, choiceOf(template));
+        else if (answer.data) onOpenRepo(answer.data, choiceOf(template), protection);
       });
-  }, [onOpenRepo, template, pickFailed, started]);
+  }, [onOpenRepo, template, protection, pickFailed, started]);
 
   return (
     <DoorPage title="Create a project" className="first-run" onBack={onBack}>
@@ -142,8 +153,15 @@ export function FirstRun({
         elsewhere(found?.templates)
       ) : (
         <>
+          {/* **One Protection row** for both acts below (T1-24; Q115). */}
+          <ProtectionRow value={protection} onChange={setProtection} disabled={opening} />
+
           {/* Nothing but a name is needed: a project with no repo yet, on this Mac (#1810 story 8). */}
-          <OnThisMac onMake={onMake} making={opening} templates={found?.templates} />
+          <OnThisMac
+            onMake={(folder, chosen) => onMake(folder, chosen, protection)}
+            making={opening}
+            templates={found?.templates}
+          />
 
           <h2>Or start from a repo you already have</h2>
 
@@ -203,7 +221,8 @@ export function FirstRun({
             onSubmit={(event) => {
               event.preventDefault();
               started();
-              if (typed.trim() && !opening) onOpenRepo(typed.trim(), choiceOf(template));
+              if (typed.trim() && !opening)
+                onOpenRepo(typed.trim(), choiceOf(template), protection);
             }}
           >
             <SettingRow

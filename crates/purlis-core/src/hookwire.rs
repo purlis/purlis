@@ -2819,6 +2819,11 @@ pub struct ToolCall {
     /// The guard rule that refused, for a `deny`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rule: Option<String>,
+    /// The id of the gate's arm that refused, for a `deny` the gate gave
+    /// ([`crate::toolgate::Arm`]): what the host writes as the target of the deny's block. It
+    /// comes from the chat's side of the channel, so the host writes only an id the gate has.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arm: Option<String>,
     /// How long charter's hook took, in milliseconds.
     #[serde(default)]
     pub hook_ms: u64,
@@ -3732,11 +3737,15 @@ impl Asking {
     ///
     /// `token` is the asking chat's own, carried on every line this writes.
     pub fn on(path: &std::path::Path, token: Option<ChatToken>) -> io::Result<Self> {
-        let stream = std::os::unix::net::UnixStream::connect(path)?;
-        Ok(Self {
+        std::os::unix::net::UnixStream::connect(path).map(|stream| Self::over(stream, token))
+    }
+
+    /// [`Asking::on`], over a connection to the app already made.
+    pub fn over(stream: std::os::unix::net::UnixStream, token: Option<ChatToken>) -> Self {
+        Self {
             stream: std::io::BufReader::new(stream),
             token,
-        })
+        }
     }
 
     /// Writes `ask` and reads the app's answer, waiting at most `within` for each half, and

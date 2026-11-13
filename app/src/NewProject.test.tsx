@@ -186,7 +186,7 @@ describe("making a project", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Open repo" }));
 
     expect(calls("open_repo").map((one) => one.args)).toEqual([
-      { path: REPO, template: { kind: "no-template" }, forge: null },
+      { path: REPO, template: { kind: "no-template" }, forge: null, protection: "floor" },
     ]);
     expect(calls("create_project")).toEqual([]);
   });
@@ -243,7 +243,14 @@ describe("making a project", () => {
     await userEvent.click(await createProject(dialog));
 
     expect(calls("create_project").map((one) => one.args)).toEqual([
-      { path: MADE, planeIsThisRepo: false, adopt: null, forge: null, template: null },
+      {
+        path: MADE,
+        planeIsThisRepo: false,
+        adopt: null,
+        forge: null,
+        template: null,
+        protection: "floor",
+      },
     ]);
   });
 
@@ -259,7 +266,14 @@ describe("making a project", () => {
     await userEvent.click(await createProject(dialog));
 
     expect(calls("create_project").map((one) => one.args)).toEqual([
-      { path: MADE, planeIsThisRepo: false, adopt: REPO, forge: null, template: null },
+      {
+        path: MADE,
+        planeIsThisRepo: false,
+        adopt: REPO,
+        forge: null,
+        template: null,
+        protection: "floor",
+      },
     ]);
   });
 
@@ -285,6 +299,7 @@ describe("making a project", () => {
       adopt: null,
       forge: null,
       template: null,
+      protection: "floor",
     });
   });
 
@@ -315,8 +330,22 @@ describe("making a project", () => {
 
     await vi.waitFor(() =>
       expect(calls("create_project").map((one) => one.args)).toEqual([
-        { path: MADE, planeIsThisRepo: false, adopt: null, forge: null, template: null },
-        { path: MADE, planeIsThisRepo: false, adopt: null, forge: "github", template: null },
+        {
+          path: MADE,
+          planeIsThisRepo: false,
+          adopt: null,
+          forge: null,
+          template: null,
+          protection: "floor",
+        },
+        {
+          path: MADE,
+          planeIsThisRepo: false,
+          adopt: null,
+          forge: "github",
+          template: null,
+          protection: "floor",
+        },
       ]),
     );
     expect(await screen.findByRole("dialog", { name: "Open this project?" })).toBeInTheDocument();

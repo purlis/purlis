@@ -470,6 +470,7 @@ pub async fn open_repo(
     path: String,
     template: TemplateChoice,
     forge: Option<ForgeWord>,
+    protection: Option<ProtectionWord>,
 ) -> Result<RepoAnswer, String> {
     let data = data_home()?;
     let forge = forge.map(Kind::from);
@@ -478,6 +479,7 @@ pub async fn open_repo(
             Taken::In(root, taken) => (root, taken),
             Taken::AsksForge(why) => return Ok(Err(why)),
         };
+        protect(&root, protection)?;
         let here = firstrun::harnesses_here();
         let harness = firstrun::only_ready(&here);
         let none_installed = noharness::none_installed(&here);
@@ -546,6 +548,38 @@ impl From<ForgeWord> for Kind {
             ForgeWord::Github => Kind::GitHub,
             ForgeWord::Gitlab => Kind::GitLab,
         }
+    }
+}
+
+/// **The Protection row's answer** on the wire (T1-24, Q236): the level the person chose at setup, in
+/// the words Settings writes it with. It is written as their own level for the project
+/// ([`purlis_core::sandbox::personal::chosen_at_setup`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "lowercase")]
+pub enum ProtectionWord {
+    /// Full sandbox.
+    On,
+    /// Basic sandbox.
+    Floor,
+    /// No sandbox.
+    Off,
+}
+
+impl From<ProtectionWord> for purlis_core::sandbox::personal::Choice {
+    fn from(word: ProtectionWord) -> Self {
+        match word {
+            ProtectionWord::On => Self::On,
+            ProtectionWord::Floor => Self::Floor,
+            ProtectionWord::Off => Self::Off,
+        }
+    }
+}
+
+/// Writes the Protection row's answer, where one was given, for the project at `root`.
+pub(crate) fn protect(root: &Path, protection: Option<ProtectionWord>) -> Result<(), String> {
+    match protection {
+        None => Ok(()),
+        Some(word) => purlis_core::sandbox::personal::chosen_at_setup(root, word.into()),
     }
 }
 

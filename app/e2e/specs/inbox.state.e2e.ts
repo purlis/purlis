@@ -67,9 +67,9 @@ describe("the Inbox", () => {
     await expect(await ask.$("button=Go to chat")).toBeDisplayed();
 
     // **Its scope and its ranks, as drawn** (qw359), in ranges and never exact pixels: the
-    // switch opens on All projects (#5999, ADR 0121 decision 4) and fits the view; what needs
-    // you is the largest and heaviest text of the row, and its kind the smallest; its kind's
-    // mark is drawn.
+    // switch opens on Chat, the chat in front that asked (#6340, ADR 0121 amended 2026-11-12),
+    // offers no All projects, and fits the view; what needs you is the largest and heaviest text
+    // of the row, and its kind the smallest; its kind's mark is drawn.
     const seen = await browser.execute(
       (inbox: string, row: string) => {
         const view = document.querySelector<HTMLElement>(inbox);
@@ -87,6 +87,9 @@ describe("the Inbox", () => {
           picked:
             group?.querySelector('input[type="radio"]:checked')?.getAttribute("aria-label") ?? "",
           scopes: group?.querySelectorAll('input[type="radio"]').length ?? 0,
+          labels: [...(group?.querySelectorAll('input[type="radio"]') ?? [])].map(
+            (one) => one.getAttribute("aria-label") ?? "",
+          ),
           // How far the switch runs past the view's right edge (≤ 0 when inside).
           past:
             group && view
@@ -105,9 +108,11 @@ describe("the Inbox", () => {
       INBOX,
       ASK,
     );
-    expect(seen.picked).toMatch(/^All projects, \d+ waiting on you$/);
-    // This project and This workspace at least; All projects too, which the window lists.
+    expect(seen.picked).toMatch(/^Chat, \d+ waiting on you$/);
+    // Chat and Project at least, Workspace where the project has more than one; never another
+    // project's asks.
     expect(seen.scopes).toBeGreaterThanOrEqual(2);
+    expect(seen.labels.some((one) => one.startsWith("All projects"))).toBe(false);
     expect(seen.past).toBeLessThanOrEqual(1);
     expect(seen.primary).toBeGreaterThan(seen.meta);
     expect(seen.heavy).toBeGreaterThan(seen.light);

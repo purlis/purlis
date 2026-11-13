@@ -261,3 +261,63 @@ fn in_a_project_at_the_full_sandbox_a_floor_the_file_alone_says_waits_for_confir
     set_by_you(root.path(), None, Some(Floor)).unwrap();
     assert_eq!(in_force(root.path()).level, Some(Floor));
 }
+
+/// R-010 (T1-24, Q236): **the Protection row at setup writes the person's own level**, the value
+/// Settings › Project › Sandbox › Your level reads and changes. For each choice the local file
+/// says it, a chat's start honours it (it is recorded as yours, so nothing waits for a Confirm),
+/// and the committed file is left with no `mode`.
+#[test]
+fn the_setup_choice_is_the_value_settings_reads() {
+    use crate::settings::{self, Which};
+    for choice in Choice::ALL {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("charter.toml"), "schema = 1\n").unwrap();
+
+        chosen_at_setup(root.path(), choice).unwrap();
+
+        // What Settings reads: this machine's file, whose `[sandbox] level` is the row.
+        let local = settings::read(root.path(), Which::Local).unwrap();
+        assert_eq!(of_text(&local.text).level, Some(choice), "{}", local.text);
+        // What a chat's start takes, for a chat the person starts in the window.
+        assert_eq!(in_force(root.path()).level, Some(choice));
+        assert!(
+            waiting(root.path()).is_empty(),
+            "{choice:?} waits for a Confirm"
+        );
+        assert_eq!(
+            super::super::your_level(
+                root.path(),
+                None,
+                &super::super::policy::Locks::none(),
+                &super::super::Made::Window,
+            ),
+            Some(choice),
+        );
+        // Never the team's: the committed file keeps no mode.
+        let shared = std::fs::read_to_string(root.path().join("charter.toml")).unwrap();
+        assert!(!shared.contains("mode"), "{shared}");
+
+        // Changed later in Settings, the same value reads back changed.
+        let other = if choice == Choice::On {
+            Choice::Off
+        } else {
+            Choice::On
+        };
+        let edited = settings::edited(
+            &local.text,
+            &[settings::Edit {
+                path: vec![
+                    settings::Step::Key("sandbox".to_owned()),
+                    settings::Step::Key(LEVEL.to_owned()),
+                ],
+                value: Some(settings::Value::Text(other.word().to_owned())),
+            }],
+        )
+        .unwrap();
+        settings::save(root.path(), Which::Local, Some(&local.text), &edited).unwrap();
+        set_by_you(root.path(), None, Some(other)).unwrap();
+        let local = settings::read(root.path(), Which::Local).unwrap();
+        assert_eq!(of_text(&local.text).level, Some(other));
+        assert_eq!(in_force(root.path()).level, Some(other));
+    }
+}

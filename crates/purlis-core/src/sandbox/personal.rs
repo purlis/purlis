@@ -79,7 +79,7 @@ impl Choice {
     pub fn said(self) -> &'static str {
         match self {
             Self::On => "full sandbox",
-            Self::Floor => "floor",
+            Self::Floor => "basic sandbox",
             Self::Off => "no sandbox",
         }
     }
@@ -384,6 +384,37 @@ pub fn set_by_you(
     }
     super::local::change_levels(root, |mine| mine.set(persona, choice))
         .map_err(|why| format!("purlis could not keep your level on this machine: {why}"))
+}
+
+/// **The Protection row's answer at setup** (T1-24, R-010; Q236): `choice` written as this
+/// project's `[sandbox] level` in this machine's file and recorded as yours, so it is the very
+/// value Settings › Project › Sandbox › Your level reads and changes, a chat's start honours it,
+/// and nothing asks again. Basic sandbox is written too, as `floor`, so the answer is kept. The
+/// committed file is never touched: what the team recommends or requires is its own (Q158).
+pub fn chosen_at_setup(root: &Path, choice: Choice) -> Result<(), String> {
+    use crate::settings::{self, Edit, Step, Value, Which};
+    let kept =
+        |why: String| format!("purlis could not keep your protection on this machine: {why}");
+    let base = settings::read(root, Which::Local).map_err(kept)?;
+    let text = settings::edited(
+        &base.text,
+        &[Edit {
+            path: vec![
+                Step::Key(super::TABLE.to_owned()),
+                Step::Key(LEVEL.to_owned()),
+            ],
+            value: Some(Value::Text(choice.word().to_owned())),
+        }],
+    )
+    .map_err(kept)?;
+    settings::save(
+        root,
+        Which::Local,
+        base.exists.then_some(base.text.as_str()),
+        &text,
+    )
+    .map_err(|reasons| kept(reasons.join(" ")))?;
+    set_by_you(root, None, Some(choice))
 }
 
 /// Takes off the record each slot `local`, this machine's file as Settings read or wrote it
