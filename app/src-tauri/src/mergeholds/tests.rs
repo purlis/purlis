@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use purlis_core::eventlog::stops::Stop;
+use purlis_core::forge::checks::{Checks, Ci};
 use purlis_core::forge::pr::{HeadAt, Repo as OnForge};
 use purlis_core::hookwire::{Answer, MergeAsk};
 use purlis_core::mergehold::{self, Request};
@@ -26,15 +27,36 @@ struct Fake {
     open: bool,
     rate: Result<(), String>,
     holds: MergeHolds,
-    read: Mutex<Result<HeadAt, String>>,
+    read: Mutex<Result<mergehold::Read, String>>,
     recorded: Mutex<Vec<(u32, Stop)>>,
 }
 
-fn at(sha: &str) -> HeadAt {
-    HeadAt {
-        sha: sha.to_owned(),
-        base: "main".to_owned(),
-        squash: false,
+/// What the forge says of request 12 at `sha`: a title, an author, passed checks and a ruleset
+/// on `main`, none of which the chat said.
+fn at(sha: &str) -> mergehold::Read {
+    mergehold::Read {
+        at: HeadAt {
+            sha: sha.to_owned(),
+            base: "main".to_owned(),
+            title: "Add the parser".to_owned(),
+            author: "octo".to_owned(),
+            squash: false,
+        },
+        facts: facts(),
+    }
+}
+
+fn facts() -> mergehold::Facts {
+    mergehold::Facts {
+        title: "Add the parser".to_owned(),
+        author: "octo".to_owned(),
+        checks: Checks {
+            total: Some(1),
+            ci: Ci::Passed,
+            why: None,
+            failed: Vec::new(),
+        },
+        ruleset: mergehold::Ruleset::Protects,
     }
 }
 
@@ -106,7 +128,7 @@ impl Project for Fake {
     fn holds(&self) -> &MergeHolds {
         &self.holds
     }
-    fn read(&self, on: &OnForge, number: u64) -> Result<HeadAt, String> {
+    fn read(&self, on: &OnForge, number: u64) -> Result<mergehold::Read, String> {
         assert_eq!(
             (on.path.as_str(), on.forge.host.as_str()),
             ("o/r", "github.com")
@@ -291,7 +313,8 @@ fn a_github_merge_at_head() -> Vec<serde_json::Value> {
         None,
         "repos/o/r/pulls/12",
         json!([]),
-        json!({"number": 12, "head": {"sha": HEAD},
+        json!({"number": 12, "title": "Add the parser", "user": {"login": "octo"},
+               "head": {"sha": HEAD},
                "base": {"ref": "main", "repo": {"allow_merge_commit": true}}}),
     )];
     exchanges.extend(probe);
@@ -379,9 +402,9 @@ fn a_press_reaches_the_forge_its_ask_was_raised_on_by_host_and_path() {
         base: "main".try_into().expect("a base"),
     };
     // Chat 4's ask is of github.com's o/r; chat 5's, raised after it, of a GitHub Enterprise's.
-    holds.holds.raise(4, key(HEAD), 1_000);
+    holds.holds.raise(4, key(HEAD), facts(), 1_000);
     holds.on_forge(4, &key(HEAD), on("github.com"));
-    holds.holds.raise(5, key(MOVED), 1_000);
+    holds.holds.raise(5, key(MOVED), facts(), 1_000);
     holds.on_forge(5, &key(MOVED), on("ghe.example.com"));
 
     let reached = Mutex::new(Vec::new());
@@ -392,4 +415,106 @@ fn a_press_reaches_the_forge_its_ask_was_raised_on_by_host_and_path() {
     let _ = super::press(&holds, 4, "o/r", 12, HEAD, &backend_of);
     let _ = super::press(&holds, 5, "o/r", 12, MOVED, &backend_of);
     assert_eq!(*reached.lock().unwrap(), ["github.com", "ghe.example.com"]);
+}
+
+/// R-118: a merge of a repo the project's inventory does not list is refused, and no ask is
+/// raised or recorded for it, though its clone is in the project and the forge would answer.
+#[test]
+fn a_merge_ask_for_a_repo_outside_the_inventory_is_refused() {
+    let project = Fake::new();
+    project.lists("o/listed", "https://github.com/o/listed");
+    let why = refused(answer(&project, &project.ask(12)));
+    assert!(
+        why.contains("o/r on github.com is not one of this project's repos"),
+        "{why}"
+    );
+    assert!(project.holds.every().is_empty(), "no ask");
+    assert_eq!(project.holds_recorded(), 0, "no hold recorded");
+}
+
+/// R-119: what a merge ask shows of its request, its title, author, base and checks, is what
+/// the forge said, whatever the chat's command said of them.
+#[test]
+fn a_merge_asks_title_author_base_and_checks_come_from_the_forge() {
+    let project = Fake::new();
+    let command = "gh pr merge 12 --subject 'Fix a typo' --body 'checks are green' \
+                   --author-email trusted@example.com --match-head-commit \
+                   89abcdef0123456789abcdef0123456789abcdef";
+    let Some(mergehold::Held::Request(request)) = mergehold::held(command) else {
+        panic!("the command is a held merge of one request");
+    };
+    let mut ask = project.ask(12);
+    ask.request = request;
+    assert!(matches!(answer(&project, &ask), Answer::MergeHeld { .. }));
+
+    let waiting = project.holds.every();
+    let [one] = waiting.as_slice() else {
+        panic!("one ask: {waiting:?}");
+    };
+    assert_eq!(one.facts.title, "Add the parser");
+    assert_eq!(one.facts.author, "octo");
+    assert_eq!(one.key.base.as_str(), "main");
+    assert_eq!(one.facts.checks.ci, Ci::Passed);
+    assert_eq!(
+        one.key.head.as_str(),
+        HEAD,
+        "the forge's head, not the chat's"
+    );
+}
+
+/// The forge contract's GitHub recording `case`, of acme/api at its head, as of this project's
+/// `o/r` at [`HEAD`].
+fn github_contract(case: &str) -> Vec<serde_json::Value> {
+    let contract = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../crates/purlis-core/tests/forge_contract/github")
+        .join(format!("{case}.json"));
+    let text = std::fs::read_to_string(contract).expect("the contract's recording");
+    let text = text
+        .replace("6dcb09b5b57875f334f61aebed695e2e4193db5e", HEAD)
+        .replace(
+            r#""owner",
+              "acme""#,
+            r#""owner",
+              "o""#,
+        )
+        .replace(
+            r#""name",
+              "api""#,
+            r#""name",
+              "r""#,
+        );
+    serde_json::from_str::<serde_json::Value>(&text).expect("json")["exchanges"]
+        .as_array()
+        .expect("its exchanges")
+        .clone()
+}
+
+/// Q239 (S1), carried from T1-11: the app's press, through `backend_of` and purlis's own GitHub
+/// client, puts the request of a repo that lands through a merge queue in the queue at the ask's
+/// head, and never merges it past the queue.
+#[test]
+fn a_press_on_a_repo_with_a_merge_queue_queues_it_at_the_asks_head_through_the_forge() {
+    purlis_core::unsteered!();
+    let project = Fake::new();
+    assert!(matches!(
+        answer(&project, &project.ask(12)),
+        Answer::MergeHeld { .. }
+    ));
+    let mut exchanges = vec![a_github_merge_at_head().remove(0)];
+    exchanges.extend(github_contract("lands_through_queue"));
+    exchanges.extend(github_contract("enqueue_at"));
+    let transport = recorded(exchanges);
+    let backend_of = |on: &OnForge| on.forge.backend_over(transport.clone());
+
+    assert_eq!(
+        super::press(&project.holds, 4, "o/r", 12, HEAD, &backend_of),
+        Ok(())
+    );
+    assert!(project.holds.every().is_empty());
+    assert_eq!(
+        transport.unspent().len(),
+        0,
+        "every recorded call was made, and no merge past the queue was asked: {:?}",
+        transport.unspent()
+    );
 }

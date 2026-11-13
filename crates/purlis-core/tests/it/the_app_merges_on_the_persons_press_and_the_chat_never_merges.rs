@@ -101,7 +101,7 @@ fn the_app_merges_on_the_persons_press_and_the_chat_never_merges() {
         repo: None,
         number: 12,
     };
-    let (asked, raised) = mergehold::asked(&holds, 4, &request, &|_| Ok(key(12)), 1_000)
+    let (asked, raised) = mergehold::asked(&holds, 4, &request, &|_| Ok((key(12), facts())), 1_000)
         .expect("the request is found");
     assert_eq!(raised, mergehold::Raised::New);
     // Holding it merged nothing.
@@ -122,7 +122,7 @@ fn the_app_merges_on_the_persons_press_and_the_chat_never_merges() {
 #[test]
 fn a_merge_the_forge_refuses_waits_again_and_dont_merge_merges_nothing() {
     let holds = Holds::default();
-    holds.raise(4, key(12), 1_000);
+    holds.raise(4, key(12), facts(), 1_000);
     let refusing = Forge {
         refuses: Some("Head branch was modified"),
         ..Forge::default()
@@ -148,14 +148,14 @@ fn a_merge_the_forge_refuses_waits_again_and_dont_merge_merges_nothing() {
 #[test]
 fn a_retried_merge_at_a_new_head_is_a_new_ask_and_the_old_one_is_gone() {
     let holds = Holds::default();
-    assert_eq!(holds.raise(4, key(12), 1_000), Raised::New);
+    assert_eq!(holds.raise(4, key(12), facts(), 1_000), Raised::New);
     let moved = MergeKey {
         head: "89abcdef0123456789abcdef0123456789abcdef"
             .try_into()
             .unwrap(),
         ..key(12)
     };
-    assert_eq!(holds.raise(4, moved.clone(), 2_000), Raised::New);
+    assert_eq!(holds.raise(4, moved.clone(), facts(), 2_000), Raised::New);
     let waiting = holds.every();
     assert_eq!(waiting.len(), 1, "the ask at the old head waits no more");
     assert_eq!(waiting[0].key, moved);
@@ -176,8 +176,8 @@ fn a_retried_merge_at_a_new_head_is_a_new_ask_and_the_old_one_is_gone() {
 #[test]
 fn a_retried_merge_at_the_same_head_is_still_one_ask() {
     let holds = Holds::default();
-    assert_eq!(holds.raise(4, key(12), 1_000), Raised::New);
-    assert_eq!(holds.raise(4, key(12), 2_000), Raised::Already);
+    assert_eq!(holds.raise(4, key(12), facts(), 1_000), Raised::New);
+    assert_eq!(holds.raise(4, key(12), facts(), 2_000), Raised::Already);
     let waiting = holds.every();
     assert_eq!(waiting.len(), 1);
     assert_eq!(waiting[0].since, 1_000);
@@ -189,7 +189,7 @@ fn a_retried_merge_at_the_same_head_is_still_one_ask() {
 fn a_retried_merge_at_a_new_head_takes_the_old_asks_place_under_the_limit() {
     let holds = Holds::default();
     for number in 1..=mergehold::AT_MOST_PER_CHAT as u64 {
-        assert_eq!(holds.raise(4, key(number), 1_000), Raised::New);
+        assert_eq!(holds.raise(4, key(number), facts(), 1_000), Raised::New);
     }
     let moved = MergeKey {
         head: "89abcdef0123456789abcdef0123456789abcdef"
@@ -197,7 +197,7 @@ fn a_retried_merge_at_a_new_head_takes_the_old_asks_place_under_the_limit() {
             .unwrap(),
         ..key(1)
     };
-    assert_eq!(holds.raise(4, moved, 2_000), Raised::New);
+    assert_eq!(holds.raise(4, moved, facts(), 2_000), Raised::New);
     assert_eq!(holds.every().len(), mergehold::AT_MOST_PER_CHAT);
 }
 
@@ -206,7 +206,7 @@ fn a_retried_merge_at_a_new_head_takes_the_old_asks_place_under_the_limit() {
 #[test]
 fn a_press_on_a_request_whose_base_moved_merges_nothing() {
     let holds = Holds::default();
-    holds.raise(4, key(12), 1_000);
+    holds.raise(4, key(12), facts(), 1_000);
     let retargeted = Forge {
         base: Some("release"),
         ..Forge::default()
@@ -226,11 +226,26 @@ fn a_press_on_a_request_whose_base_moved_merges_nothing() {
 #[test]
 fn a_press_merges_by_the_repos_own_method() {
     let holds = Holds::default();
-    holds.raise(4, key(12), 1_000);
+    holds.raise(4, key(12), facts(), 1_000);
     let squashes = Forge {
         squash: true,
         ..Forge::default()
     };
     assert!(holds.press(4, &key(12), the_window(), &squashes).is_ok());
     assert_eq!(*squashes.merged.lock().unwrap(), [(key(12), true)]);
+}
+
+/// What the forge said of the request, as a merge ask shows it.
+fn facts() -> purlis_core::mergehold::Facts {
+    purlis_core::mergehold::Facts {
+        title: "Add the parser".to_owned(),
+        author: "octo".to_owned(),
+        checks: purlis_core::forge::checks::Checks {
+            total: Some(1),
+            ci: purlis_core::forge::checks::Ci::Passed,
+            why: None,
+            failed: Vec::new(),
+        },
+        ruleset: purlis_core::mergehold::Ruleset::None,
+    }
 }

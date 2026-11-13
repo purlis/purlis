@@ -1,0 +1,21 @@
+{
+  "source": "GitLab 19.4 REST API docs (gitlab-org/gitlab 19-4-stable-ee, doc/api), protected_branches.md: Get a single protected branch or wildcard protected branch",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "projects/acme%2Fapi/protected_branches/main"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"id\": 1, \"name\": \"main\", \"push_access_levels\": [{\"access_level\": 40}], \"merge_access_levels\": [{\"access_level\": 40}], \"allow_force_push\": false}",
+        "err": ""
+      }
+    }
+  ]
+}

@@ -53,7 +53,7 @@ fn pressed(kind: Kind, exchanges: Vec<Value>) -> (Result<Merged, NotMerged>, Hol
     let transport = Arc::new(Recorded::parse(&text.to_string()).unwrap());
     let backend = Forge::default_of(kind).backend_over(transport.clone());
     let holds = Holds::default();
-    holds.raise(4, key(), 1_000);
+    holds.raise(4, key(), facts(), 1_000);
     let forge = ByForge {
         backend: backend.as_ref(),
         caller: Caller::window(),
@@ -76,7 +76,8 @@ fn github_pull() -> Value {
         None,
         "repos/acme/api/pulls/12",
         json!([]),
-        json!({"number": 12, "head": {"sha": HEAD},
+        json!({"number": 12, "title": "Add the parser", "user": {"login": "octo"},
+               "head": {"sha": HEAD},
                "base": {"ref": "main", "repo": {"allow_merge_commit": true}}}),
     )
 }
@@ -128,7 +129,8 @@ fn a_forge_that_sets_the_request_to_merge_later_is_an_error_and_the_ask_waits() 
         None,
         "projects/acme%2Fapi/merge_requests/12",
         json!([]),
-        json!({"iid": 12, "sha": HEAD, "target_branch": "main", "squash_on_merge": false}),
+        json!({"iid": 12, "sha": HEAD, "target_branch": "main", "squash_on_merge": false,
+               "title": "Add the parser", "author": {"username": "octo"}}),
     )];
     exchanges.extend(probe);
     exchanges.push(rest(
@@ -154,4 +156,19 @@ fn a_forge_that_sets_the_request_to_merge_later_is_an_error_and_the_ask_waits() 
     }
     assert_eq!(holds.every().len(), 1, "the ask waits again");
     assert_eq!(unspent, Vec::<String>::new());
+}
+
+/// What the forge said of the request, as a merge ask shows it.
+fn facts() -> purlis_core::mergehold::Facts {
+    purlis_core::mergehold::Facts {
+        title: "Add the parser".to_owned(),
+        author: "octo".to_owned(),
+        checks: purlis_core::forge::checks::Checks {
+            total: Some(1),
+            ci: purlis_core::forge::checks::Ci::Passed,
+            why: None,
+            failed: Vec::new(),
+        },
+        ruleset: purlis_core::mergehold::Ruleset::None,
+    }
 }

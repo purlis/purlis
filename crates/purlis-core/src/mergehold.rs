@@ -21,10 +21,15 @@
 //!   admitted as the window or `charter inbox`, never from a chat's own socket or token (V16a).
 //!   No setting or key changes that.
 //!
+//! - **A merge's facts are the forge's** ([`read`]): only a repo the project's inventory lists
+//!   is merged ([`listed_in`], R-118); the ask's title, author, base and checks are read from
+//!   the forge, never from the chat, whose line carries none of them (R-119); and whether a
+//!   ruleset protects the base is read with the app's own forge login (R-146).
+//!
 //! **Not here yet** (each its ticket's): A4's refusal of an unattended merge still answers first
-//! (its precedence is read with attendance, R-145); the ask's title, author, base and checks
-//! (R-119), and the ruleset (R-146); the merge row in the window (R-120). A line whose request
-//! cannot be read (a raw API call, a merge with no number) is refused with no ask.
+//! (its precedence is read with attendance, R-145); the merge row in the window (R-120), and the
+//! ruleset state on it (R-147). A line whose request cannot be read (a raw API call, a merge
+//! with no number) is refused with no ask.
 //!
 //! In memory only, in the app: a relaunch holds none, and the chat's next try asks again.
 
@@ -364,19 +369,96 @@ pub fn handed_said(request: &Request) -> String {
     )
 }
 
-/// **The app's half of a held merge**: `resolve` finds the request in the project and reads its
-/// head from the forge, as the app's adapter does ([`MergeKey`]), and chat `session`'s ask for it
-/// is held at `now`. Answers what became of it, or why nobody was asked.
+/// How the app finds a held request and reads it from the forge: its key and what its ask shows,
+/// or why nobody is asked.
+pub type Resolve<'a> = dyn Fn(&Request) -> Result<(MergeKey, Facts), String> + 'a;
+
+/// **The app's half of a held merge**: `resolve` finds the request in the project and reads it
+/// from the forge, as the app's adapter does ([`MergeKey`], [`read`]), and chat `session`'s ask
+/// for it is held at `now`, with the facts the forge gave. Answers what became of it, or why
+/// nobody was asked.
 pub fn asked(
     holds: &Holds,
     session: u32,
     request: &Request,
-    resolve: &dyn Fn(&Request) -> Result<MergeKey, String>,
+    resolve: &Resolve<'_>,
     now: u64,
 ) -> Result<(MergeKey, Raised), String> {
-    let key = resolve(request)?;
-    let raised = holds.raise(session, key.clone(), now);
+    let (key, facts) = resolve(request)?;
+    let raised = holds.raise(session, key.clone(), facts, now);
     Ok((key, raised))
+}
+
+/// **Whether a ruleset protects a request's base**, as the app's own login read it (R-146).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Ruleset {
+    /// A ruleset protects it: GitHub's rules for the branch, GitLab's protected branch.
+    Protects,
+    /// None does.
+    None,
+    /// The forge did not say, in these words. Never read as none.
+    Unknown(String),
+}
+
+/// **What a merge ask shows of its request** (R-119, R-146), every one of them read from the
+/// forge when the ask was raised, never from the chat. Its base is the key's ([`MergeKey`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Facts {
+    pub title: String,
+    pub author: String,
+    /// The checks at the ask's head.
+    pub checks: crate::forge::checks::Checks,
+    pub ruleset: Ruleset,
+}
+
+/// **A request, as the forge says it stands**: where it is ([`HeadAt`](crate::forge::pr::HeadAt)),
+/// which the ask is keyed on, and what the ask shows ([`Facts`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Read {
+    pub at: crate::forge::pr::HeadAt,
+    pub facts: Facts,
+}
+
+/// **Reads request `number` of the repo at `path` from the forge** for a merge ask, every call
+/// as the window, so with the app's own forge login and never a chat's token (R-146): where it
+/// stands, then the checks at its head and whether a ruleset protects its base, those two at
+/// once, so the read fits in [`THE_FORGE_IS_READ_WITHIN`]. A request that cannot be read is
+/// why nobody is asked; checks or a ruleset the forge does not say are unknown, never passed or
+/// none.
+pub fn read(
+    backend: &dyn crate::forge::backend::ForgeBackend,
+    path: &str,
+    number: u64,
+) -> Result<Read, String> {
+    let app = crate::forge::backend::Caller::window();
+    let pr = crate::forge::pr::Pr {
+        number,
+        url: String::new(),
+    };
+    let at = backend
+        .head(&app, path, &pr)
+        .map_err(|why| why.to_string())?;
+    let (checks, ruleset) = std::thread::scope(|both| {
+        let checks = both.spawn(|| backend.checks_at(&app, path, &at.sha, number));
+        let ruleset = match backend.ruleset_protects(&app, path, &at.base) {
+            Ok(true) => Ruleset::Protects,
+            Ok(false) => Ruleset::None,
+            Err(why) => Ruleset::Unknown(why.to_string()),
+        };
+        let checks = checks
+            .join()
+            .unwrap_or_else(|panicked| std::panic::resume_unwind(panicked));
+        (checks, ruleset)
+    });
+    Ok(Read {
+        facts: Facts {
+            title: at.title.clone(),
+            author: at.author.clone(),
+            checks,
+            ruleset,
+        },
+        at,
+    })
 }
 
 /// **Where the request stands now**, as the forge says at a press.
@@ -495,11 +577,13 @@ impl MergeForge for ByForge<'_> {
     }
 }
 
-/// One merge ask that waits: the chat it holds, its key, and since when, in seconds since 1970.
+/// One merge ask that waits: the chat it holds, its key, what the forge said of the request
+/// when it was raised, and since when, in seconds since 1970.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Waits {
     pub session: u32,
     pub key: MergeKey,
+    pub facts: Facts,
     pub since: u64,
 }
 
@@ -544,12 +628,13 @@ impl Holds {
         self.held.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Holds chat `session`'s merge of `key` at `now`: one ask per chat and request however
-    /// often it tries, waiting since the first, and [`AT_MOST_PER_CHAT`] of one chat's at most.
+    /// Holds chat `session`'s merge of `key` at `now`, showing `facts`: one ask per chat and
+    /// request however often it tries, waiting since the first, and [`AT_MOST_PER_CHAT`] of one
+    /// chat's at most.
     /// **A moved head is a new ask** (Q242): a try again at another head or base than the
     /// waiting ask's retires it and raises a new one in its place, waiting since `now`, so a key
     /// is never rewritten under an ask the person may be looking at.
-    pub fn raise(&self, session: u32, key: MergeKey, now: u64) -> Raised {
+    pub fn raise(&self, session: u32, key: MergeKey, facts: Facts, now: u64) -> Raised {
         let mut held = self.lock();
         if let Some(at) = held
             .iter()
@@ -566,6 +651,7 @@ impl Holds {
         held.push(Waits {
             session,
             key,
+            facts,
             since: now,
         });
         Raised::New
