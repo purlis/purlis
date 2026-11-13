@@ -1533,6 +1533,18 @@ fn a_held_merge(session: u32) -> purlis_core::mergehold::Waits {
                 .expect("a head"),
             base: "main".try_into().expect("a base"),
         },
+        facts: purlis_core::mergehold::Facts {
+            title: "Add the parser".to_owned(),
+            author: "octo".to_owned(),
+            checks: purlis_core::forge::checks::Checks {
+                total: Some(1),
+                ci: purlis_core::forge::checks::Ci::Passed,
+                why: None,
+                failed: Vec::new(),
+            },
+            ruleset: purlis_core::mergehold::Ruleset::Protects,
+            read_at: 40,
+        },
         since: 40,
     }
 }

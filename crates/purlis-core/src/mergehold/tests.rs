@@ -140,3 +140,250 @@ fn a_change_land_is_held_and_told_it_is_the_persons_now() {
         assert_eq!(reason(&Held::Land, &AppSaid::Unheard), REASON_UNREADABLE);
     }
 }
+
+/// The head a merge ask's forge read is of, in [`the_ruleset_check_uses_the_apps_forge_login_not_the_chats_token`].
+const HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
+
+/// A transport that answers `exchanges`, as the forge contract's recordings do.
+fn recorded(exchanges: serde_json::Value) -> std::sync::Arc<crate::forge::recorded::Recorded> {
+    let text = serde_json::json!({"source": "GitHub REST API version 2022-11-28: pulls, checks, \
+                                             commits' status, and rules for a branch",
+                                  "exchanges": exchanges});
+    std::sync::Arc::new(crate::forge::recorded::Recorded::parse(&text.to_string()).unwrap())
+}
+
+/// A chat's token: it answers nothing, and keeps every request it was sent.
+#[derive(Debug, Default)]
+struct ChatsToken {
+    asked: Mutex<Vec<crate::forge::transport::Call>>,
+}
+
+impl crate::forge::transport::Transport for ChatsToken {
+    fn send(
+        &self,
+        _forge: &crate::forge::Forge,
+        call: &crate::forge::transport::Call,
+    ) -> Result<crate::forge::transport::Reply, crate::forge::transport::NoAnswer> {
+        self.asked.lock().unwrap().push(call.clone());
+        Err(crate::forge::transport::NoAnswer::Refused(
+            "a chat's token".to_owned(),
+        ))
+    }
+
+    fn check_auth(&self, _forge: &crate::forge::Forge) -> Result<(), crate::forge::ForgeError> {
+        Ok(())
+    }
+}
+
+/// One transport for a person's call, the app's own login, and another for a chat's, its token.
+struct Logins {
+    app: std::sync::Arc<crate::forge::recorded::Recorded>,
+    chat: std::sync::Arc<ChatsToken>,
+}
+
+impl crate::forge::backend::Transports for Logins {
+    fn for_caller(
+        &self,
+        caller: &crate::forge::backend::Caller,
+    ) -> Result<std::sync::Arc<dyn crate::forge::transport::Transport>, crate::forge::ForgeError>
+    {
+        Ok(if caller.is_a_chat() {
+            self.chat.clone()
+        } else {
+            self.app.clone()
+        })
+    }
+}
+
+/// R-146: a merge ask's forge read asks whether a ruleset protects the request's base with the
+/// app's own login, and nothing of it goes through a chat's.
+#[test]
+fn the_ruleset_check_uses_the_apps_forge_login_not_the_chats_token() {
+    use serde_json::json;
+    let get = |path: &str, out: serde_json::Value| {
+        json!({"call": {"endpoint": {"rest": {"method": null, "path": path}}, "fields": []},
+               "reply": {"code": 0, "out": out.to_string(), "err": ""}})
+    };
+    let pulls = json!({"number": 12, "title": "Add the parser", "user": {"login": "octo"},
+                       "head": {"sha": HEAD},
+                       "base": {"ref": "main", "repo": {"allow_merge_commit": true}}});
+    let runs = json!({"total_count": 1, "check_runs": [{"id": 4, "status": "completed",
+                                                        "conclusion": "success"}]});
+    let status = json!({"state": "success", "total_count": 0, "statuses": []});
+    let rules = json!([{"type": "pull_request", "ruleset_source_type": "Repository",
+                        "ruleset_source": "o/r", "ruleset_id": 42}]);
+    let logins = std::sync::Arc::new(Logins {
+        app: recorded(json!([
+            get("repos/o/r/pulls/12", pulls),
+            get(
+                &format!("repos/o/r/commits/{HEAD}/check-runs?per_page=100"),
+                runs
+            ),
+            get(
+                &format!("repos/o/r/commits/{HEAD}/status?per_page=100"),
+                status
+            ),
+            get("repos/o/r/rules/branches/main", rules),
+        ])),
+        chat: std::sync::Arc::default(),
+    });
+    let backend =
+        crate::forge::Forge::default_of(crate::forge::Kind::GitHub).backend_for(logins.clone());
+
+    let read = read(
+        std::sync::Arc::from(backend),
+        "o/r",
+        12,
+        THE_FORGE_IS_READ_WITHIN,
+        40,
+    )
+    .expect("the forge was read");
+
+    assert_eq!(read.facts.ruleset, Ruleset::Protects);
+    assert!(
+        logins.app.unspent().is_empty(),
+        "the app's login was asked everything, the ruleset too: {:?}",
+        logins.app.unspent()
+    );
+    let asked = logins.chat.asked.lock().unwrap();
+    assert!(asked.is_empty(), "a chat's token was used: {asked:?}");
+}
+
+/// The GitHub exchanges of request 12 of `o/r` at [`HEAD`], into `main`: the request, its
+/// checks (one passed run, no statuses), and the `rules` reply for `main`.
+fn request_12(rules: serde_json::Value) -> serde_json::Value {
+    use serde_json::json;
+    let get = |path: &str, out: serde_json::Value| {
+        json!({"call": {"endpoint": {"rest": {"method": null, "path": path}}, "fields": []},
+               "reply": {"code": 0, "out": out.to_string(), "err": ""}})
+    };
+    let pulls = json!({"number": 12, "title": "Add the parser", "user": {"login": "octo"},
+                       "head": {"sha": HEAD},
+                       "base": {"ref": "main", "repo": {"allow_merge_commit": true}}});
+    let runs = json!({"total_count": 1, "check_runs": [{"id": 4, "status": "completed",
+                                                        "conclusion": "success"}]});
+    let status = json!({"state": "success", "total_count": 0, "statuses": []});
+    let mut rules_exchange = get("repos/o/r/rules/branches/main", json!([]));
+    rules_exchange["reply"] = rules;
+    json!([
+        get("repos/o/r/pulls/12", pulls),
+        get(
+            &format!("repos/o/r/commits/{HEAD}/check-runs?per_page=100"),
+            runs
+        ),
+        get(
+            &format!("repos/o/r/commits/{HEAD}/status?per_page=100"),
+            status
+        ),
+        rules_exchange,
+    ])
+}
+
+/// The app's login over `recorded`, where a call whose path holds `slow` is answered only
+/// after `late`.
+struct Slow {
+    recorded: std::sync::Arc<crate::forge::recorded::Recorded>,
+    slow: &'static str,
+    late: std::time::Duration,
+}
+
+impl crate::forge::transport::Transport for Slow {
+    fn send(
+        &self,
+        forge: &crate::forge::Forge,
+        call: &crate::forge::transport::Call,
+    ) -> Result<crate::forge::transport::Reply, crate::forge::transport::NoAnswer> {
+        if format!("{call:?}").contains(self.slow) {
+            std::thread::sleep(self.late);
+        }
+        self.recorded.send(forge, call)
+    }
+
+    fn check_auth(&self, _forge: &crate::forge::Forge) -> Result<(), crate::forge::ForgeError> {
+        Ok(())
+    }
+}
+
+/// A GitHub backend over `transport`, as the app's login.
+fn github_over(
+    transport: std::sync::Arc<dyn crate::forge::transport::Transport>,
+) -> Box<dyn crate::forge::backend::ForgeBackend> {
+    crate::forge::Forge::default_of(crate::forge::Kind::GitHub).backend_over(transport)
+}
+
+/// Q248: the head alone gates a merge ask. Checks the forge is slow to give are unknown, and
+/// the ask is still raised, at the head and with the ruleset the forge did give, in time.
+#[test]
+fn a_slow_checks_read_is_unknown_and_the_ask_is_still_raised() {
+    let rules = serde_json::json!({"code": 0, "err": "", "out": serde_json::json!(
+        [{"type": "pull_request", "ruleset_source_type": "Repository", "ruleset_source": "o/r",
+          "ruleset_id": 42}]).to_string()});
+    let backend = github_over(std::sync::Arc::new(Slow {
+        recorded: recorded(request_12(rules)),
+        slow: "check-runs",
+        late: THE_FORGE_IS_READ_WITHIN * 3,
+    }));
+    let started = std::time::Instant::now();
+
+    let read = read(
+        std::sync::Arc::from(backend),
+        "o/r",
+        12,
+        THE_FORGE_IS_READ_WITHIN,
+        40,
+    )
+    .expect("the head was read in time");
+
+    assert!(
+        started.elapsed() < THE_FORGE_IS_READ_WITHIN * 2,
+        "the read waited for the late checks: {:?}",
+        started.elapsed()
+    );
+    assert_eq!(read.facts.checks.ci, crate::forge::checks::Ci::Unknown);
+    assert_eq!(read.facts.ruleset, Ruleset::Protects);
+    let holds = Holds::default();
+    let key = MergeKey {
+        repo: Repo::try_from("o/r").unwrap(),
+        number: 12,
+        head: HeadSha::try_from(read.at.sha.as_str()).unwrap(),
+        base: Base::try_from(read.at.base.as_str()).unwrap(),
+    };
+    let resolve = |_: &Request| Ok((key.clone(), read.facts.clone()));
+    let request = Request {
+        repo: None,
+        number: 12,
+    };
+    let (_, raised) = asked(&holds, 4, &request, &resolve, 40).expect("asked");
+    assert_eq!(raised, Raised::New);
+    assert_eq!(
+        holds.every()[0].facts.checks.ci,
+        crate::forge::checks::Ci::Unknown
+    );
+}
+
+/// A ruleset read the forge fails is unknown, in its words, never none.
+///
+/// A pin (Q208, Q252): it was never seen red, since the read already kept the forge's error.
+/// The mutation it catches is mapping the rules call's `Err` to none, `Ok(Err(_)) =>
+/// Ruleset::None` in `read`, or a `ruleset_protects` that reads a failed rules call as
+/// `Ok(false)`.
+#[test]
+fn a_failed_ruleset_read_is_unknown_never_none() {
+    let refused = serde_json::json!({"code": 1, "status": 500,
+        "out": "{\"message\": \"Server Error\"}", "err": "gh: Server Error (HTTP 500)"});
+    let backend = github_over(recorded(request_12(refused)));
+
+    let read = read(
+        std::sync::Arc::from(backend),
+        "o/r",
+        12,
+        THE_FORGE_IS_READ_WITHIN,
+        40,
+    )
+    .expect("the head was read");
+
+    let Ruleset::Unknown(why) = &read.facts.ruleset else {
+        panic!("{:?}", read.facts.ruleset);
+    };
+    assert!(why.contains("Server Error"), "{why}");
+}

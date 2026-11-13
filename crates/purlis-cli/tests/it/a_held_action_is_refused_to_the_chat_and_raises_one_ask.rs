@@ -23,10 +23,11 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
+use purlis_core::forge::checks::{Checks, Ci};
 use purlis_core::hookwire::{
     self, Answer, Ask, CHAT_ENV, Hearing, Listener, SOCKET_ENV, TOKEN_ENV, ToolCall,
 };
-use purlis_core::mergehold::{self, Holds, MergeKey, Raised};
+use purlis_core::mergehold::{self, Facts, Holds, MergeKey, Raised};
 
 const CHAT: u32 = 4;
 const HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -90,7 +91,7 @@ impl Chat {
                     };
                 };
                 let found = |request: &mergehold::Request| {
-                    Ok(MergeKey {
+                    let key = MergeKey {
                         repo: request
                             .repo
                             .clone()
@@ -98,7 +99,20 @@ impl Chat {
                         number: request.number,
                         head: HEAD.try_into().unwrap(),
                         base: "main".try_into().unwrap(),
-                    })
+                    };
+                    let facts = Facts {
+                        title: "Add the parser".to_owned(),
+                        author: "octo".to_owned(),
+                        checks: Checks {
+                            total: Some(1),
+                            ci: Ci::Passed,
+                            why: None,
+                            failed: Vec::new(),
+                        },
+                        ruleset: mergehold::Ruleset::Protects,
+                        read_at: 1_000,
+                    };
+                    Ok((key, facts))
                 };
                 match mergehold::asked(&held, merge.chat, &merge.request, &found, 1_000) {
                     Ok((_, Raised::New | Raised::Already)) => Answer::MergeHeld {

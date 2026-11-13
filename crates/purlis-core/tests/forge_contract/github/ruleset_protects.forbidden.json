@@ -1,0 +1,38 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest, repos/rules: Get rules for a branch (none), and branches: Get branch protection (403 Resource not accessible by integration)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/acme/api/rules/branches/main"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "[]",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/acme/api/branches/main/protection"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 1,
+        "out": "{\"message\":\"Resource not accessible by integration\",\"documentation_url\":\"https://docs.github.com/rest/branches/branch-protection#get-branch-protection\",\"status\":\"403\"}",
+        "err": "gh: Resource not accessible by integration (HTTP 403)",
+        "status": 403
+      }
+    }
+  ]
+}
