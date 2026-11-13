@@ -56,6 +56,29 @@ pub struct Installed {
     /// How many Claims there are, and how many people made them, where they could be counted:
     /// what an uninstall would end.
     pub claims: Option<(usize, usize)>,
+    /// How many seconds from the read until purlis's policy on Claims is in force
+    /// ([`in_force_in`]), where it and its binding are there; `Some(0)` once it is.
+    pub claims_in_force_in: Option<u64>,
+}
+
+/// purlis's policy on Claims, and its binding, as `operator/deploy/policy.yaml` names them.
+pub const CLAIMS_POLICY: &str = "purlis-claims-use-their-pool";
+
+/// **How long after the later of the policy on Claims and its binding a Claim may be made**: the
+/// operator refuses for good a Claim made within its settle time of them, 30 seconds
+/// (`operator/src/admission.rs`, #3854), by the cluster's clock. Five more, for this machine's
+/// clock running behind it.
+pub const CLAIMS_SETTLE: u64 = 35;
+
+/// **How many seconds from `now` until a Claim may be made** under the policy on Claims made at
+/// `policy` and bound at `binding` (each RFC 3339, as the cluster stamps them): [`CLAIMS_SETTLE`]
+/// after the later of the two. `None` where either can't be read as a time.
+#[must_use]
+pub fn in_force_in(policy: &str, binding: &str, now: chrono::DateTime<chrono::Utc>) -> Option<u64> {
+    let at = |text: &str| chrono::DateTime::parse_from_rfc3339(text.trim()).ok();
+    let later = at(policy)?.max(at(binding)?);
+    let from = later + chrono::Duration::seconds(i64::try_from(CLAIMS_SETTLE).ok()?);
+    Some(u64::try_from((from.to_utc() - now).num_seconds()).unwrap_or(0))
 }
 
 /// A cluster as Pool setup reads it.
@@ -445,11 +468,33 @@ pub fn installed(kubectl: &Kubectl) -> Result<Installed, String> {
     } else {
         Some((0, 0))
     };
+    // When purlis's policy on Claims and its binding were made, as the cluster stamped them.
+    let made = |kind: &str| {
+        asked(&[
+            "get",
+            kind,
+            CLAIMS_POLICY,
+            "--ignore-not-found",
+            "--output",
+            "jsonpath={.metadata.creationTimestamp}",
+        ])
+        .ok()
+    };
+    let claims_in_force_in = if definitions {
+        made("validatingadmissionpolicies.admissionregistration.k8s.io")
+            .zip(made(
+                "validatingadmissionpolicybindings.admissionregistration.k8s.io",
+            ))
+            .and_then(|(policy, binding)| in_force_in(&policy, &binding, chrono::Utc::now()))
+    } else {
+        None
+    };
     Ok(Installed {
         definitions,
         key,
         operator,
         claims,
+        claims_in_force_in,
     })
 }
 
@@ -1125,6 +1170,15 @@ pub(super) fn pool_reading(facts: &Facts) -> Reading {
                  use it can claim a runner of it.",
             ),
         ),
+        Some(_) if settling(facts) > 0 => Reading::attention(
+            format!(
+                "purlis's policy on claims, which the install just applied, comes into force in \
+                 about {} seconds, and a runner claimed before then is refused for good. Add the \
+                 pool here is offered then. This checks again by itself.",
+                settling(facts)
+            ),
+            None,
+        ),
         Some(pools) => Reading::to_do(
             format!(
                 "Your team has {} on this cluster. Adding one here claims a runner of it for you \
@@ -1142,6 +1196,14 @@ pub(super) fn pool_reading(facts: &Facts) -> Reading {
                  Nothing else on the cluster changes.",
             ),
         ),
+    }
+}
+
+/// How many seconds until a Claim may be made on the chosen cluster: none where it can't be told.
+fn settling(facts: &Facts) -> u64 {
+    match &facts.cluster.installed {
+        Some(Ok(installed)) => installed.claims_in_force_in.unwrap_or(0),
+        _ => 0,
     }
 }
 

@@ -61,6 +61,7 @@ fn empty_cluster() -> Installed {
         key: false,
         operator: Operator::Absent,
         claims: Some((0, 0)),
+        claims_in_force_in: None,
     }
 }
 
@@ -243,6 +244,7 @@ fn an_installed_operator_shows_check_and_install_done_with_what_was_found() {
                 image: "ghcr.io/purlis/purlis-cluster-operator@sha256:abc".into(),
             },
             claims: Some((3, 2)),
+            claims_in_force_in: None,
         })),
         ..contexts(&["kind-team"], Some("kind-team"))
     });
@@ -374,6 +376,7 @@ fn operator_runs(pools: &[&str]) -> ClusterFacts {
                 image: "ghcr.io/purlis/purlis-cluster-operator@sha256:abc".into(),
             },
             claims: Some((0, 0)),
+            claims_in_force_in: None,
         })),
         pools: Some(pools.iter().map(|pool| (*pool).to_owned()).collect()),
         ..contexts(&["kind-team"], Some("kind-team"))
@@ -426,6 +429,63 @@ fn a_teammate_on_a_cluster_with_pools_is_offered_to_add_one_and_passes_install()
         "{pool:?}"
     );
     assert_eq!(pool.next.as_ref().unwrap().id, ActionId::AddClusterPool);
+}
+
+/// The operator refuses for good a Claim made within its settle time of the policy on claims
+/// (`operator/src/admission.rs`, #3854), so a pool is added only once the policy is in force.
+fn policy_in_force_in(seconds: u64, pools: &[&str]) -> ClusterFacts {
+    let mut facts = operator_runs(pools);
+    if let Some(Ok(installed)) = facts.installed.as_mut() {
+        installed.claims_in_force_in = Some(seconds);
+    }
+    facts
+}
+
+#[test]
+fn a_pool_is_added_only_once_the_policy_on_claims_is_in_force() {
+    let facts = on_a_cluster(policy_in_force_in(12, &["team"]));
+    let setup = of(Kind::Cluster, &facts, &chose("kind-team"));
+    let pool = setup.step(StepId::Pool).unwrap();
+    assert_eq!(pool.state, Attention, "{pool:?}");
+    assert!(
+        pool.next
+            .as_ref()
+            .is_none_or(|next| next.id != ActionId::AddClusterPool),
+        "{pool:?}"
+    );
+    assert!(pool.findings[0].contains("12 seconds"), "{pool:?}");
+
+    // A Pool is made meanwhile: the policy holds Claims, not Pools.
+    let empty = on_a_cluster(policy_in_force_in(12, &[]));
+    let setup = of(Kind::Cluster, &empty, &chose("kind-team"));
+    let pool = setup.step(StepId::Pool).unwrap();
+    assert_eq!(pool.next.as_ref().unwrap().id, ActionId::CreateClusterPool);
+
+    // In force: Add the pool here.
+    let ready = on_a_cluster(policy_in_force_in(0, &["team"]));
+    let setup = of(Kind::Cluster, &ready, &chose("kind-team"));
+    let pool = setup.step(StepId::Pool).unwrap();
+    assert_eq!(pool.next.as_ref().unwrap().id, ActionId::AddClusterPool);
+}
+
+#[test]
+fn the_policy_on_claims_is_in_force_its_settle_time_after_the_later_of_it_and_its_binding() {
+    let at = |text: &str| chrono::DateTime::parse_from_rfc3339(text).unwrap().to_utc();
+    let policy = "2026-11-13T08:03:40Z";
+    let binding = "2026-11-13T08:03:41Z";
+    assert_eq!(
+        in_force_in(policy, binding, at("2026-11-13T08:04:02Z")),
+        Some(14)
+    );
+    assert_eq!(
+        in_force_in(binding, policy, at("2026-11-13T08:04:02Z")),
+        Some(14)
+    );
+    assert_eq!(
+        in_force_in(policy, binding, at("2026-11-13T08:05:00Z")),
+        Some(0)
+    );
+    assert_eq!(in_force_in("", binding, at("2026-11-13T08:05:00Z")), None);
 }
 
 #[test]

@@ -27,7 +27,7 @@
 //!   [`MOST_SCREEN_BYTES`], written whole through a temp file and opened following no link, so a
 //!   file put there by anything else is never shown.
 //!
-//! **Tier:** Clone state, device-bound, transient, never committed.
+//! **Tier:** Clone state (ADR 0069), never committed; not rebuildable.
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -187,7 +187,7 @@ pub fn sweep(root: &Path, named: impl Fn(&str) -> bool, now: SystemTime) -> usiz
             !named(&one.id)
                 || now
                     .duration_since(one.written)
-                    .is_ok_and(|age| age > crate::retention::KEEP_FOR)
+                    .is_ok_and(|age| age >= crate::retention::KEEP_FOR)
         })
         .filter(|one| forget(root, &one.id))
         .count();

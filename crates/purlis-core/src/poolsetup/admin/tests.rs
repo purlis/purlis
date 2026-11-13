@@ -48,6 +48,7 @@ fn on_the_cluster(report: doctor::Report) -> Facts {
                 key: false,
                 operator: cluster::Operator::Absent,
                 claims: Some((0, 0)),
+                claims_in_force_in: None,
             })),
             ..cluster::ClusterFacts::default()
         },

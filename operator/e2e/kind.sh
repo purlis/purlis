@@ -29,8 +29,9 @@ repo=$(cd "$here/.." && pwd)
 cluster=${CLUSTER:-purlis-operator-e2e}
 registry=$cluster-registry
 port=${REGISTRY_PORT:-5001}
-# The oldest Kubernetes purlis supports (spec #2041), as kind v0.33.0 publishes it.
-node=kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
+# The oldest Kubernetes purlis supports (spec #2041), as kind v0.33.0 publishes it: one copy,
+# which Pool setup's walk on a cluster makes its cluster of too (tests/kind-cluster/up.sh).
+node=$(cat "$here/e2e/kind-node.txt")
 registry_image=registry:3@sha256:ddf754342cfc8acc51a56d5d0ab6af06826461864460636d8bd5c546dab2a7b8
 # The pinned upstream release, applied as its kustomization there applies it: the vendored
 # manifest with the controller named by the release's digest (#2261).
