@@ -1220,22 +1220,39 @@ fn a_drain_racing_hooks_and_the_one_after_hand_on_every_line_once() {
     let spooled = AtomicUsize::new(0);
 
     let racing = std::thread::scope(|scope| {
-        for writer in 0..WRITERS {
-            let (spool, token, spooled) = (&spool, &token, &spooled);
-            scope.spawn(move || {
-                for n in 0..EACH {
-                    let id = format!("{writer:02}-{n:03}");
-                    append(spool, 9, token, &call(9, &id)).expect("the line is spooled");
-                    spooled.fetch_add(1, Ordering::SeqCst);
-                }
-            });
-        }
+        let writers: Vec<_> = (0..WRITERS)
+            .map(|writer| {
+                let (spool, token, spooled) = (&spool, &token, &spooled);
+                scope.spawn(move || {
+                    for n in 0..EACH {
+                        let id = format!("{writer:02}-{n:03}");
+                        append(spool, 9, token, &call(9, &id)).expect("the line is spooled");
+                        spooled.fetch_add(1, Ordering::SeqCst);
+                    }
+                })
+            })
+            .collect();
+        // Every writer has ended, and fewer lines than `at_least` were spooled: one failed, and
+        // waiting on would be for ever.
+        let short = |at_least: usize| {
+            writers
+                .iter()
+                .all(std::thread::ScopedJoinHandle::is_finished)
+                .then(|| spooled.load(Ordering::SeqCst))
+                .filter(|&got| got < at_least)
+        };
         // The drains start once the hooks are well under way, and go on while they spool.
         while spooled.load(Ordering::SeqCst) < WRITERS * EACH / 4 {
+            if let Some(got) = short(WRITERS * EACH / 4) {
+                panic!("the writers ended having spooled {got} lines");
+            }
             std::thread::yield_now();
         }
         let mut racing = Vec::new();
         while spooled.load(Ordering::SeqCst) < WRITERS * EACH * 3 / 4 {
+            if let Some(got) = short(WRITERS * EACH * 3 / 4) {
+                panic!("the writers ended having spooled {got} lines");
+            }
             racing.extend(drained(&spool));
         }
         racing

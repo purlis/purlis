@@ -175,9 +175,12 @@ fn a_proxy_or_certificate_setting_for_every_url_is_named() {
 fn a_proxy_switched_off_is_no_route_and_a_client_certificate_is_one() {
     let set = entries(&[
         ("http.proxy", ""),
-        ("http.sslcert", "/home/op/client.pem"),
-        ("http.https://github.com/.sslkey", "/home/op/client.key"),
-        ("http.cookiefile", "/home/op/cookies"),
+        ("http.sslcert", "/nonexistent-home/op/client.pem"),
+        (
+            "http.https://github.com/.sslkey",
+            "/nonexistent-home/op/client.key",
+        ),
+        ("http.cookiefile", "/nonexistent-home/op/cookies"),
     ]);
     assert_eq!(
         route_keys(&set, URL),

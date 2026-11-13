@@ -287,6 +287,15 @@ const PIPES_AFTER_EXIT: Duration = Duration::from_secs(2);
 /// How much of a pipe is read at a time.
 const A_CHUNK: usize = 16 * 1024;
 
+/// How long `secret exec` waits on the app: it says what the app waits on after a few seconds
+/// without a frame, and stops past the longest wait the app itself holds (an ask in the window
+/// and a GitHub App's token mint are each held for 2 minutes), counted again from each frame.
+#[cfg(unix)]
+const OF_THE_APP: Patience = Patience {
+    slow_after: Duration::from_secs(3),
+    deadline: Duration::from_secs(180),
+};
+
 // ----------------------------------------------------------------------------------------
 // the asker: `purlis secret exec` inside a chat
 
@@ -450,6 +459,14 @@ pub(crate) fn forwarded_where(
     converse(ctx, req, command, chat, token, connect()?, io)
 }
 
+/// How long the asker waits on the app before it says what the app waits on, and before it stops.
+#[cfg(unix)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Patience {
+    pub slow_after: Duration,
+    pub deadline: Duration,
+}
+
 /// [`forwarded`]'s exchange with the app, on a connection already made.
 #[cfg(unix)]
 fn converse(
@@ -460,6 +477,22 @@ fn converse(
     token: Option<crate::hookwire::ChatToken>,
     stream: std::os::unix::net::UnixStream,
     io: &mut dyn Io,
+) -> Option<i32> {
+    converse_within(ctx, req, command, chat, token, stream, io, OF_THE_APP)
+}
+
+/// [`converse`], waiting on the app with `patience`.
+#[cfg(unix)]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn converse_within(
+    ctx: &Ctx,
+    req: &Request,
+    command: &[String],
+    chat: u32,
+    token: Option<crate::hookwire::ChatToken>,
+    stream: std::os::unix::net::UnixStream,
+    io: &mut dyn Io,
+    patience: Patience,
 ) -> Option<i32> {
     let feed = super::mcpstart::Feed::new(stdin_of(io), false);
     match exchange(
@@ -472,6 +505,7 @@ fn converse(
         io,
         &feed,
         None,
+        patience,
     ) {
         Outcome::NotTaken => None,
         Outcome::Ended { code, .. } => Some(code),
@@ -518,6 +552,7 @@ fn started_server(
                 io,
                 &feed,
                 Some(start),
+                OF_THE_APP,
             ),
             None => Outcome::NotTaken,
         };
@@ -588,6 +623,7 @@ fn exchange(
     io: &mut dyn Io,
     feed: &Arc<super::mcpstart::Feed>,
     mcp: Option<super::mcpstart::McpStart>,
+    patience: Patience,
 ) -> Outcome {
     let ask = Ask {
         chat,
@@ -621,9 +657,35 @@ fn exchange(
     let mut reader = std::io::BufReader::new(&stream);
     let mut started = false;
     let mut spoke = false;
+    let mut waiting = Waiting::new(patience);
     loop {
         let mut said = String::new();
-        let read = (&mut reader).take(A_FRAME_IS_AT_MOST).read_line(&mut said);
+        let read = loop {
+            // Until the child has started, the app is waited on with a deadline; after, the
+            // command runs as long as it runs.
+            let _ = stream.set_read_timeout((!started).then(|| waiting.next_timeout()));
+            match (&mut reader).take(A_FRAME_IS_AT_MOST).read_line(&mut said) {
+                Err(e) if !started && waited_out(&e) => match waiting.timed_out() {
+                    Waited::Slow => io.say(Say::Info(
+                        waiting_on(&waits_on(ctx, &req.vault), command, patience).into(),
+                    )),
+                    Waited::Again => {}
+                    Waited::Out(last) => {
+                        io.say(Say::Err(stopped_waiting(
+                            last.as_deref(),
+                            &waits_on(ctx, &req.vault),
+                            patience,
+                        )));
+                        return Outcome::Ended {
+                            code: 1,
+                            spoke,
+                            refused: true,
+                        };
+                    }
+                },
+                read => break read,
+            }
+        };
         let frame = match read {
             Ok(n) if n > 0 => serde_json::from_str::<Frame>(&said).ok(),
             _ => None,
@@ -643,6 +705,9 @@ fn exchange(
                 refused: false,
             };
         };
+        if !started {
+            waiting.framed(&frame);
+        }
         match frame {
             Frame::Started => {
                 started = true;
@@ -679,6 +744,199 @@ fn exchange(
             }
         }
     }
+}
+
+/// **The asker's wait on the app, before the child starts** (R-356, Q232): never silent, never
+/// for ever. With no frame for [`Patience::slow_after`] it says once what the app waits on; with
+/// none for [`Patience::deadline`], counted again from each frame, it stops.
+#[cfg(unix)]
+struct Waiting {
+    patience: Patience,
+    since: std::time::Instant,
+    framed: bool,
+    slow_said: bool,
+    /// The last note the app sent, which says what it waits on from then.
+    last: Option<String>,
+}
+
+/// What a read that timed out comes to.
+#[cfg(unix)]
+#[derive(Debug, PartialEq, Eq)]
+enum Waited {
+    /// The app is slow: say what it waits on, and wait on.
+    Slow,
+    /// Wait on.
+    Again,
+    /// Past the deadline, with the last note the app sent.
+    Out(Option<String>),
+}
+
+#[cfg(unix)]
+impl Waiting {
+    fn new(patience: Patience) -> Self {
+        Self {
+            patience,
+            since: std::time::Instant::now(),
+            framed: false,
+            slow_said: false,
+            last: None,
+        }
+    }
+
+    /// How long the next read may wait. Never zero, which a socket refuses.
+    fn next_timeout(&self) -> Duration {
+        let until = if self.framed || self.slow_said {
+            self.patience.deadline
+        } else {
+            self.patience.slow_after
+        };
+        until
+            .saturating_sub(self.since.elapsed())
+            .max(Duration::from_millis(1))
+    }
+
+    fn timed_out(&mut self) -> Waited {
+        let waited = self.since.elapsed();
+        if waited >= self.patience.deadline {
+            Waited::Out(self.last.clone())
+        } else if !self.framed && !self.slow_said && waited >= self.patience.slow_after {
+            self.slow_said = true;
+            Waited::Slow
+        } else {
+            Waited::Again
+        }
+    }
+
+    fn framed(&mut self, frame: &Frame) {
+        self.since = std::time::Instant::now();
+        self.framed = true;
+        if let Frame::Note(note) = frame {
+            self.last = Some(note.clone());
+        }
+    }
+}
+
+/// Whether `e` is a read that ran out of time rather than a connection that failed.
+#[cfg(unix)]
+fn waited_out(e: &std::io::Error) -> bool {
+    matches!(
+        e.kind(),
+        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+    )
+}
+
+/// What the app does for a `secret exec` on a vault before the child starts, as far as the
+/// asker can tell from the project: the slow part of it.
+#[cfg(unix)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Step {
+    /// A GitHub App's token is minted for a tool the persona declares on the vault.
+    TokenMint(String),
+    /// The vault is read from the system keyring.
+    Keyring(String),
+    /// The vault is read from 1Password, over the network.
+    Network(String),
+    /// The vault is read through its provider.
+    Provider { vault: String, provider: String },
+    /// The project does not say.
+    Unknown(String),
+}
+
+/// [`Step`] for `vault`, read from the project's registry and the persona's declared tools.
+#[cfg(unix)]
+fn waits_on(ctx: &Ctx, vault: &str) -> Step {
+    let named = vault.to_owned();
+    let mints = ctx
+        .env
+        .get(crate::active::PERSONA_ENV)
+        .is_some_and(|persona| {
+            declared_now(&ctx.root, &persona)
+                .iter()
+                .any(|tool| tool.vault == vault && tool.mint.is_some())
+        });
+    if mints {
+        return Step::TokenMint(named);
+    }
+    match registry::vault(ctx, vault) {
+        Ok(v) if super::keyring::holds_values_of(ctx, &v) => Step::Keyring(named),
+        Ok(v) if v.provider == "1password" => Step::Network(named),
+        Ok(v) => Step::Provider {
+            vault: named,
+            provider: v.provider,
+        },
+        Err(_) => Step::Unknown(named),
+    }
+}
+
+/// `step` as what the app does: "reads vault 'x' from the system keyring".
+#[cfg(unix)]
+fn doing(step: &Step) -> String {
+    match step {
+        Step::TokenMint(vault) => {
+            format!("mints a GitHub App's token for vault '{vault}', over the network")
+        }
+        Step::Keyring(vault) => {
+            format!("reads vault '{vault}' from {}", super::keyring::STORE_NAME)
+        }
+        Step::Network(vault) => format!("reads vault '{vault}' from 1Password, over the network"),
+        Step::Provider { vault, provider } => {
+            format!("reads vault '{vault}' through its provider '{provider}'")
+        }
+        Step::Unknown(vault) => format!(
+            "reads vault '{vault}' (from {}, a GitHub App's token mint or the network)",
+            super::keyring::STORE_NAME
+        ),
+    }
+}
+
+/// A wait in words: "3 minutes", "90 seconds".
+#[cfg(unix)]
+fn spoken(wait: Duration) -> String {
+    let secs = wait.as_secs();
+    match secs {
+        0 => format!("{} ms", wait.as_millis()),
+        60 => "1 minute".to_owned(),
+        s if s > 60 && s % 60 == 0 => format!("{} minutes", s / 60),
+        1 => "1 second".to_owned(),
+        s => format!("{s} seconds"),
+    }
+}
+
+/// The line said once the app is slow: what it waits on, and when this stops waiting.
+#[cfg(unix)]
+fn waiting_on(step: &Step, command: &[String], patience: Patience) -> String {
+    format!(
+        "Waiting on the app that started this chat, which {} before it runs `{}`. This stops \
+         waiting after {}.",
+        doing(step),
+        command_shown(command),
+        spoken(patience.deadline),
+    )
+}
+
+/// The error said at the deadline: what the app was waiting on, by its last note or by `step`.
+#[cfg(unix)]
+fn stopped_waiting(last: Option<&str>, step: &Step, patience: Patience) -> Markup {
+    let waited = spoken(patience.deadline);
+    let what = match last {
+        Some(note) => format!(
+            "the app that started this chat said nothing more for {waited} after: {}",
+            crate::personas::one_line(note)
+        ),
+        None => format!(
+            "the app that started this chat did not answer for {waited} while it {}",
+            doing(step)
+        ),
+    };
+    Markup::lines([
+        Markup::from(format!(
+            "{what}. purlis stopped waiting before the command started, so nothing ran."
+        )),
+        Markup::from(
+            "  Look in the purlis window for what holds it, such as a keychain prompt or an ask, \
+             then run this again.",
+        ),
+    ])
 }
 
 /// Where there is no unix socket there is no app to ask, and the command runs here.
