@@ -185,6 +185,84 @@ fn sandbox_block() -> purlis_core::eventlog::stops::Stop {
     })
 }
 
+/// Chat `TASK` blocked on the same target until the block loop pauses it (R-206): answers why.
+fn paused_at_the_block_loop(pauses: &Pauses) -> looping::Why {
+    let block = sandbox_block();
+    assert_eq!(pauses.stopped(TASK, &block, None), None);
+    assert_eq!(pauses.stopped(TASK, &block, None), None);
+    let why = pauses
+        .stopped(TASK, &block, None)
+        .expect("3 blocks: a loop");
+    assert_eq!(why, looping::Why::Blocked { times: 3 });
+    pauses.pause(TASK, Why::Looping(why), AT, vec![BELOW]);
+    why
+}
+
+/// Two more blocks on the same target pause nothing: the count started again.
+fn counted_afresh(pauses: &Pauses) {
+    let block = sandbox_block();
+    assert_eq!(pauses.stopped(TASK, &block, None), None, "counted afresh");
+    assert_eq!(pauses.stopped(TASK, &block, None), None, "counted afresh");
+    assert_eq!(
+        pauses.stopped(TASK, &block, None),
+        Some(looping::Why::Blocked { times: 3 }),
+        "and a third pauses it again"
+    );
+}
+
+/// **T1-36 (R-217, R-218): Let it keep trying lets it go on and starts its block count again.**
+#[test]
+fn let_it_keep_trying_lets_it_go_on_and_starts_the_block_count_again() {
+    let pauses = Pauses::default();
+    paused_at_the_block_loop(&pauses);
+    let answered = pauses.answer(TASK, KEEP_TRYING).expect("answered");
+    assert_eq!(answered.held, vec![TASK, BELOW], "what goes on");
+    assert_eq!(answered.then, Then::GoOn);
+    assert!(!pauses.holds(TASK));
+    counted_afresh(&pauses);
+}
+
+/// **T1-36 (R-217): Tell it to stop trying lets it go on, told to stop trying, and starts its
+/// block count again**, so a chat that tries once more is counted from nothing.
+#[test]
+fn tell_it_to_stop_trying_lets_it_go_on_told_and_starts_the_block_count_again() {
+    let pauses = Pauses::default();
+    paused_at_the_block_loop(&pauses);
+    let answered = pauses.answer(TASK, STOP_TRYING).expect("answered");
+    assert_eq!(answered.held, vec![TASK, BELOW]);
+    assert_eq!(answered.then, Then::TellToStopTrying);
+    assert!(!pauses.holds(TASK));
+    counted_afresh(&pauses);
+}
+
+/// **T1-36 (R-217): Stop chat is the window's Stop**, its counts started again.
+#[test]
+fn stop_chat_on_a_block_loop_is_the_windows_stop() {
+    let pauses = Pauses::default();
+    paused_at_the_block_loop(&pauses);
+    assert_eq!(
+        pauses.answer(TASK, STOP).expect("answered").then,
+        Then::Stop
+    );
+    counted_afresh(&pauses);
+}
+
+/// **T1-36: each loop pause takes only the answers its ask offers**: It's fine, continue is
+/// no answer to a block loop, nor Let it keep trying or Tell it to stop trying to another loop.
+#[test]
+fn a_block_loop_and_another_loop_each_take_only_their_own_answers() {
+    let pauses = Pauses::default();
+    paused_at_the_block_loop(&pauses);
+    assert!(pauses.answer(TASK, FINE).is_err());
+    assert!(pauses.holds(TASK), "still paused");
+
+    let other = Pauses::default();
+    other.pause(TASK, looping_failing(), AT, vec![]);
+    assert!(other.answer(TASK, KEEP_TRYING).is_err());
+    assert!(other.answer(TASK, STOP_TRYING).is_err());
+    assert!(other.holds(TASK), "still paused");
+}
+
 /// R-211 (Q253): the person's Allow on a sandbox ask starts the chat's block count again.
 #[test]
 fn an_allow_between_blocks_starts_the_block_count_again() {

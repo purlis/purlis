@@ -150,6 +150,53 @@ mod tests {
         );
     }
 
+    fn blocked_loop() -> Paused {
+        Paused {
+            why: Why::Looping(purlis_core::looping::Why::Blocked { times: 3 }),
+            since: 1_000,
+            held: vec![3],
+        }
+    }
+
+    /// **R-216 (T1-36): the block loop's pause names the chat and the count**, the chat being
+    /// the last of its chain, the one paused.
+    #[test]
+    fn the_loop_pause_ask_names_the_chat_and_the_count() {
+        let shown = paused(
+            3,
+            &blocked_loop(),
+            vec!["steward 2".into(), "steward 3".into()],
+            None,
+        );
+        assert_eq!(shown.source, AskSource::Looping);
+        assert_eq!(shown.answer, AnswerPath::Paused);
+        assert_eq!(
+            shown.says,
+            "steward 3 was blocked 3 times on the same thing. Let it keep trying?"
+        );
+    }
+
+    /// **R-217 (T1-36): its answers are Tell it to stop trying, the lead, then Let it keep
+    /// trying and Stop chat.** Only Let it keep trying lets the chat go on as it was.
+    #[test]
+    fn the_loop_pause_ask_offers_tell_it_to_stop_trying_first_then_let_it_keep_trying_and_stop_chat()
+     {
+        let shown = paused(3, &blocked_loop(), vec!["steward 3".into()], None);
+        assert_eq!(ids(&shown), [STOP_TRYING, KEEP_TRYING, STOP]);
+        assert_eq!(
+            labels(&shown),
+            ["Tell it to stop trying", "Let it keep trying", "Stop chat"]
+        );
+        assert_eq!(shown.options[0].preselected, Some(true), "the lead");
+        assert!(
+            shown.options[1..]
+                .iter()
+                .all(|one| one.preselected.is_none())
+        );
+        let allows: Vec<bool> = shown.options.iter().map(|one| one.allows).collect();
+        assert_eq!(allows, [false, true, false]);
+    }
+
     /// **#6006: a paused task never expires, and blocks the chats that wait on its report**: it
     /// stands in Asks by how many do, before the asks that only wait.
     #[test]
