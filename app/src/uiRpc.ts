@@ -15421,9 +15421,14 @@ export type SlowMoment =
 { kind: "answer"; command: string; ms: number; at: number | null; hot: number } | 
 /**
  *  A gap of `ms` between two of the window's frames, seen at `at`, while `hot` chats were
- *  working, with the tab in front (`front`) and whether a view of a chat was opening.
+ *  working, with the tab in front (`front`) and whether a view of a chat was opening, and
+ *  what the window's thread did in that frame, the top five of each (felt speed round 4,
+ *  H9): the regions whose React commits took longest (`react`), the core's events handled
+ *  (`events`) and answers handled (`answers`) by name and count, and the scripts the webview
+ *  said made the frame long (`scripts`). `dark`: the thread answered all through the gap,
+ *  so the webview withheld its frames (a locked screen, a display asleep, a window covered).
  */
-{ kind: "stall"; ms: number; at: number | null; hot: number; front: string | null; opening: boolean } | 
+{ kind: "stall"; ms: number; at: number | null; hot: number; front: string | null; opening: boolean; dark: boolean; react: StallTook[]; events: StallCounted[]; answers: StallCounted[]; scripts: StallTook[] } | 
 /**
  *  The core's main thread ran a ping `ms` after it was asked to at `at`, busy with the
  *  command `running` when the wait was noticed (`crate::mainwatch`). The core writes it; the
@@ -15598,6 +15603,18 @@ export type StaleRemote = {
 	 *  it (#2117).
 	 */
 	pushes_kept: string[],
+};
+
+/**  Something the window handled `n` times in a stalled frame, by name. */
+export type StallCounted = {
+	name: string,
+	n: number,
+};
+
+/**  Something the window's thread did in a stalled frame, by name, and how long it took there. */
+export type StallTook = {
+	name: string,
+	ms: number,
 };
 
 /**  Everything the picker draws, read from the plane when it is opened. */

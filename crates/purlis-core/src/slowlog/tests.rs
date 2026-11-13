@@ -27,7 +27,7 @@ fn a_slow_answer_is_one_json_line_with_its_command_duration_time_and_hot_chats()
 
 #[test]
 fn a_stall_is_written_with_the_hot_chats_the_tab_in_front_whether_a_view_was_opening_and_its_culprits()
-{
+ {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join(FILE);
     let took = |name: &str, ms| Took {
