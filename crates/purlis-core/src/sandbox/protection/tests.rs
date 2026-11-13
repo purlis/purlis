@@ -124,7 +124,9 @@ fn recorded(case: &Case) -> (serde_json::Value, String) {
     levels_in(root, &case.levels);
     let machine = crate::sandbox::Machine {
         env: crate::secrets::Env::of(&[]),
-        home: Some(std::path::PathBuf::from("/home/op")),
+        // Not under `/home`: on macOS that is an autofs mount, where every name that is not there
+        // costs a trip to the automounter, and a start resolves hundreds of them (T1-46).
+        home: Some(std::path::PathBuf::from("/nonexistent-home/op")),
         os: case.os,
     };
     policy::set_for_this_test(match case.locks {

@@ -507,13 +507,19 @@ impl KeptAsk {
 /// ([`holds_for`]): three quarters of the harness's own command timeout, so the command ends
 /// saying why before the harness kills it.
 fn command_timeout(harness: Option<Harness>) -> Duration {
+    // A chat whose harness is not known is held to the shortest.
+    harness.map_or(Duration::from_secs(10), default_command_timeout)
+}
+
+/// **A harness's own default command timeout**: what it gives a command the model set no
+/// timeout for.
+pub(crate) fn default_command_timeout(harness: Harness) -> Duration {
     match harness {
         // Claude Code's Bash tool and opencode's bash tool give a command two minutes unless the
         // model asks for more.
-        Some(Harness::ClaudeCode | Harness::Opencode) => Duration::from_secs(120),
-        // Codex's shell tool gives one ten seconds unless the model asks for more. A chat whose
-        // harness is not known is held to the shortest.
-        Some(Harness::Codex) | None => Duration::from_secs(10),
+        Harness::ClaudeCode | Harness::Opencode => Duration::from_secs(120),
+        // Codex's shell tool gives one ten seconds unless the model asks for more.
+        Harness::Codex => Duration::from_secs(10),
     }
 }
 
@@ -1997,7 +2003,7 @@ fn asker_waits(env: &dyn Fn(&str) -> Option<String>) -> Duration {
 }
 
 /// The harness of the chat a command runs in, by its start's environment `env`.
-fn asker_harness(env: &dyn Fn(&str) -> Option<String>) -> Option<Harness> {
+pub(crate) fn asker_harness(env: &dyn Fn(&str) -> Option<String>) -> Option<Harness> {
     // A start names the harness by the registry's name (`claude-code`), read as the app reads
     // it: by the kind's word alone it was no harness, and held to the shortest wait (#5192).
     crate::hookwire::chat_harness(env).and_then(|name| Harness::of_registry_or_kind(&name))
