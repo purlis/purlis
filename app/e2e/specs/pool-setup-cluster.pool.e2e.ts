@@ -53,12 +53,23 @@ const INSTALLING = 360_000;
  */
 async function goOnFrom(done: string, next: string, timeout = MAKING): Promise<void> {
   await browser
-    .waitUntil(async () => [done, next].includes(await showing()), { timeout, interval: 500 })
+    .waitUntil(
+      async () => {
+        const at = await showing();
+        if (at === next) return true;
+        if (at === done) {
+          const go = await $("aria/Continue");
+          if (await go.isClickable().catch(() => false)) await go.click();
+        }
+        return false;
+      },
+      { timeout, interval: 1_000 },
+    )
     .catch(async () => {
-      throw new Error(`Pool setup never got past ${done}; it shows ${await showing()}`);
+      throw new Error(
+        `Pool setup never got past ${done}; it shows ${await showing()}: ${await theStepSays()}`,
+      );
     });
-  if ((await showing()) === done) await press("Continue", timeout);
-  await on(next, timeout);
 }
 
 /** Opens the Options under the step on show, unless they are open already. */
