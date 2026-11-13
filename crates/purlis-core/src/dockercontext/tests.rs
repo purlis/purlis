@@ -308,3 +308,34 @@ fn a_context_name_is_held_to_dockers_own_rule() {
         assert!(!a_name(name), "{name}");
     }
 }
+
+/// **A route over SSH spelled out more fully is the same route** (#6268): no port is port 22,
+/// and a user is compared only where both name one, as ssh takes its default where none is.
+#[test]
+fn an_ssh_route_with_its_default_port_or_user_spelled_out_has_not_moved() {
+    assert!(same_route(
+        "ssh://me@build-box",
+        "ssh://me@build-box:22/var/run/docker.sock"
+    ));
+    assert!(same_route(
+        "ssh://me@build-box:22",
+        "ssh://me@build-box/var/run/docker.sock"
+    ));
+    assert!(same_route(
+        "ssh://build-box",
+        "ssh://me@build-box/var/run/docker.sock"
+    ));
+    assert!(same_route(
+        "ssh://me@build-box",
+        "ssh://build-box/var/run/docker.sock"
+    ));
+    // Another port, or another user both name, is another route.
+    assert!(!same_route(
+        "ssh://me@build-box:2222",
+        "ssh://me@build-box/var/run/docker.sock"
+    ));
+    assert!(!same_route(
+        "ssh://you@build-box",
+        "ssh://me@build-box/var/run/docker.sock"
+    ));
+}

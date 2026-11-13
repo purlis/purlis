@@ -210,7 +210,8 @@ pub fn moved(contexts: &[DockerContext], name: &str, kept: &str) -> Option<Strin
     (!same_route(&now, kept)).then_some(now)
 }
 
-/// **Whether the route a context names is the one kept**: the same machine, user and port, and,
+/// **Whether the route a context names is the one kept**: the same machine, user and port (a
+/// port left out being 22, and a user left out on either side being ssh's default), and,
 /// over SSH, the same socket where the context names one (the pool's route has the socket found
 /// at Connect written into it).
 pub fn same_route(now: &str, kept: &str) -> bool {
@@ -223,9 +224,12 @@ pub fn same_route(now: &str, kept: &str) -> bool {
     ) else {
         return false;
     };
+    // No port is ssh's own, 22; a user is compared where both name one, as ssh takes its own
+    // default where one names none.
+    const SSH_PORT: u16 = 22;
     now.host() == kept.host()
-        && now.user() == kept.user()
-        && now.port() == kept.port()
+        && (now.user().is_none() || kept.user().is_none() || now.user() == kept.user())
+        && now.port().unwrap_or(SSH_PORT) == kept.port().unwrap_or(SSH_PORT)
         && now
             .socket()
             .is_none_or(|socket| kept.socket() == Some(socket))
