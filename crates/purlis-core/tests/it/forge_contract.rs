@@ -2536,9 +2536,10 @@ mod network_log {
             // and six on a first proof, and reads three or two of one it refuses, GitLab in two uploads, and a comment is one call on each.
             // A fork (#4342): who the account is, the source and the fork's place, the fork, the
             // draft and the request from it; GitLab reads the fork once more while it copies.
-            // Adding to an issue (#5694) opens one and comments on it: two calls on each.
+            // Adding to an issue (#5694) opens one and comments on it: two calls on each. A
+            // repo's milestones (#6233) are one call on GitHub and none on GitLab (#6476).
             let expected = match kind {
-                "github" => 88,
+                "github" => 89,
                 _ => 105,
             };
             assert_eq!(paths.len(), expected, "{kind}: the recorded REST calls");
