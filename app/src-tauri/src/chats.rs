@@ -9270,6 +9270,9 @@ pub enum BlockWritten {
     /// The person's Keep blocked, or its chat's end: its ask is gone, and it is written and
     /// never counted, since it is the person's answer or the chat's close, not a chat looping.
     Answered,
+    /// Not a block at all: an ask raised as it is held (T1-28, Q262). It is written to the
+    /// log, never counted toward the block loop, and takes back nothing an ask set.
+    Raised,
 }
 
 impl BlockWritten {
@@ -9277,13 +9280,13 @@ impl BlockWritten {
     pub fn counted_under(&self) -> Option<Option<&str>> {
         match self {
             Self::Withdrawn(call) | Self::AtOnce(call) => Some(call.as_deref()),
-            Self::Answered => None,
+            Self::Answered | Self::Raised => None,
         }
     }
 
     /// Whether an ask left as it was written, so what that ask set goes too.
     pub fn leaves_an_ask(&self) -> bool {
-        !matches!(self, Self::AtOnce(_))
+        !matches!(self, Self::AtOnce(_) | Self::Raised)
     }
 }
 
@@ -9508,7 +9511,7 @@ fn register_live(
         let ask = Stop::AskRaised(AskRaised {
             ask: AskGroup::Sandbox,
         });
-        if let Err(why) = write(chat, ask, None) {
+        if let Err(why) = write(chat, ask, BlockWritten::Raised) {
             tracing::warn!("purlis: chat {chat}'s sandbox ask was not written ({why})");
         }
     }
