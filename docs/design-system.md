@@ -2131,7 +2131,7 @@ under the pointer, chosen, a tone), the family's rule still outranks the role's 
 | every `.came-back` line, a door page's sentences among them | `ui-text-secondary` | 12px (14px on a door page), the colour around it | 12px, secondary |
 | what an extension that runs as you warns, on the danger wash | `ui-text-body` | 12px, primary | 13px, primary |
 | a door page's other lines: the folder a project goes into, the steps, the forges, a harness row's state and how | `ui-text-secondary` | 12px or the page's, muted or secondary | 12px, secondary |
-| who Start a chat starts as | `ui-text-title` | 16px, strong | the same |
+| who Start a chat starts as | `ui-text-body ui-text-strong` | 13px, bold | 13px, strong |
 | Health's group headings (Blockers, Warnings, Passed) | `ui-text-secondary ui-text-strong` | 12px, bold, secondary | 12px, strong, secondary |
 | Git missing's heading; a dialog's `h3`; Settings' "Signing keys of your other devices" and a pool limit group's heading | `ui-text-heading` | 13px or 14px, strong | 14px, strong |
 | a dialog's `h4` over a list (what a project contributes) | `ui-text-meta` | 11px, muted | 11px, quiet |

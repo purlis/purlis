@@ -1097,7 +1097,8 @@ body {
   font-size: var(--font-size-xl);
 }
 
-/* Who a chat starts as is the title (`ui-text-title`, #6389). */
+/* Who a chat starts as is the body's strong line (`ui-text-body ui-text-strong`, #6389), as the
+   dialog's own `h3` rule drew it: this rule's size never won. */
 .start-chat-who h3 {
   margin: 0;
   overflow-wrap: anywhere;
