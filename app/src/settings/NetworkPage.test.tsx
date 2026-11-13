@@ -315,7 +315,7 @@ describe("a chat's Network view", () => {
     chatCore({ open: true, sandboxed: false, reach: [], browser_sites: [], refused: [] });
     render(<ChatNetworkTab plane={PLANE} session={3} />);
     expect(await screen.findByText("Not sandboxed: can reach anything.")).toBeVisible();
-    expect(screen.queryByText("Refused")).toBeNull();
+    expect(screen.queryByText("Blocked")).toBeNull();
   });
 
   it("lists what it reaches by Open, Persona and Allowed hosts, and what it was refused", async () => {
@@ -340,7 +340,7 @@ describe("a chat's Network view", () => {
     expect(screen.getByRole("list", { name: "Allowed hosts" })).toHaveTextContent(
       "extra.example:443",
     );
-    const refused = screen.getByRole("list", { name: "Refused" });
+    const refused = screen.getByRole("list", { name: "Blocked" });
     expect(refused).toHaveTextContent("db.example.com:5432");
     expect(
       within(refused).getByRole("button", {
@@ -398,9 +398,9 @@ describe("a chat's Network view", () => {
     expect(within(reach).getByText("It can reach no host on the internet")).toBeVisible();
     expect(reach).toHaveTextContent(/A host you allow from a refusal below is listed here/);
     const refused = screen.getByTestId("chat-network-refused-none");
-    expect(within(refused).getByText("Nothing was refused in the last 30 days")).toBeVisible();
+    expect(within(refused).getByText("Nothing was blocked in the last 30 days")).toBeVisible();
     expect(refused).toHaveTextContent(/with Allow where it may be kept/);
-    expect(screen.getByRole("region", { name: "Refused" })).toContainElement(refused);
+    expect(screen.getByRole("region", { name: "Blocked" })).toContainElement(refused);
   });
 
   it("says where an administrator's settings let a Claude Code chat reach every local port (#1699)", async () => {

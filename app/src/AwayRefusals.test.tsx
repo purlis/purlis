@@ -108,9 +108,9 @@ const updateOf = (said: RegExp) =>
 describe("what the item says", () => {
   it("says who wanted whom, and how often, for which workspace", () => {
     expect(awaySaid(refusal())).toBe("steward wanted devops while you were away");
-    expect(oftenSaid(refusal())).toBe("Refused 3 times, for work in ide");
-    expect(oftenSaid(refusal({ times: 1, workspace: null }))).toBe("Refused once");
-    expect(oftenSaid(refusal({ times: 2 }))).toBe("Refused twice, for work in ide");
+    expect(oftenSaid(refusal())).toBe("Blocked 3 times, for work in ide");
+    expect(oftenSaid(refusal({ times: 1, workspace: null }))).toBe("Blocked once");
+    expect(oftenSaid(refusal({ times: 2 }))).toBe("Blocked twice, for work in ide");
   });
 
   it("clips a long name and says it is cut", () => {
@@ -164,7 +164,7 @@ describe("a dispatch refused while nobody was there, in the Inbox's updates", ()
     const CAME_BY = "steward wanted to hand its work over to devops there.";
     render(<Updated refused={[refusal({ came_by: CAME_BY })]} />);
     expect(updateOf(/steward wanted devops/)).toHaveTextContent(
-      `Refused 3 times, for work in ide. ${CAME_BY} ${ALLOWS}`,
+      `Blocked 3 times, for work in ide. ${CAME_BY} ${ALLOWS}`,
     );
   });
 

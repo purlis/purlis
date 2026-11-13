@@ -3,9 +3,11 @@
 
 //! **`purlis hook permissiondenied`, fed Claude Code's payload** (R-094, Q185): the hook tells
 //! the host one tool line for the harness's own refusal, says nothing to the harness (its
-//! refusal stands), and never carries the check's `reason` or the command: not on the line the
-//! host hears, and not in the spool when no host is listening. The recorder's half, the block
-//! that line becomes, is `purlis-core`'s `eventlog::stops::harness_check_tests`.
+//! refusal stands), and never carries the check's `reason` or the command on that line, the one
+//! the event log is written from, nor in the spool when no host is listening. The reason goes to
+//! the app on a line of its own, never spooled (R-340, T1-29:
+//! `a_harness_denial_hook_tells_the_app_its_reason_on_a_line_of_its_own`). The recorder's half,
+//! the block that line becomes, is `purlis-core`'s `eventlog::stops::harness_check_tests`.
 
 use crate::support;
 
@@ -69,6 +71,7 @@ fn a_harness_denial_tells_a_stand_in_host_one_tool_line_and_the_harness_nothing(
         output: Box::new(|_| {}),
         touching: Box::new(|_| {}),
         permission: Box::new(|_| None),
+        reason: Box::new(|_| {}),
     });
 
     let out = run(dir.path(), &path, token.expose());

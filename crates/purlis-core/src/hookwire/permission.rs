@@ -372,6 +372,7 @@ mod tests {
                     ..waiting
                 })
             }),
+            reason: Box::new(|_| {}),
         }
     }
 

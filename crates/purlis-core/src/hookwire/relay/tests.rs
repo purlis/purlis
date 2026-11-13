@@ -195,6 +195,7 @@ pub(super) fn the_windows(window: &Arc<Window>, holding: &Arc<Holding>) -> Heari
                 writeln!(writer, "ran {line}").unwrap();
             }
         }),
+        reason: Box::new(|_| {}),
     }
 }
 

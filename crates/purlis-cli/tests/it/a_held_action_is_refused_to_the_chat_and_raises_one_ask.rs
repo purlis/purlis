@@ -124,6 +124,7 @@ impl Chat {
                     Err(why) => Answer::No { why },
                 }
             }),
+            reason: Box::new(|_| {}),
         });
         Self {
             _tmp: tmp,

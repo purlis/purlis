@@ -189,6 +189,20 @@ export function levelNameFaults(text: string, seen: Seen = "source"): string[] {
   return OLD_LEVEL_NAMES.filter(({ name }) => name.test(words)).map(({ fault }) => fault);
 }
 
+/**
+ * **Whether `text` says Refused where it means a stop** (R-170): the word is Blocked. Read in what
+ * the window shows and in copy built in TypeScript that reads as a sentence; a lone `Refused` in
+ * the source is a type or a key, and lowercase "refused" is English a sentence may use. A label
+ * that ends on the word ("Commit refused") is caught in any case (Q259): it names a stop.
+ */
+export function refusedWord(text: string, seen: Seen = "source"): string[] {
+  const said = text.trim();
+  if (seen !== "shown" && !/\s/.test(said)) return [];
+  const words = said.replace(CODE_SPAN, " ").trim();
+  const label = /^\p{Lu}/u.test(words) && /\brefused$/i.test(words);
+  return label || /\bRefused\b/.test(words) ? ["the word is Blocked, not `Refused`"] : [];
+}
+
 /** What is wrong with `text` by the guide's mechanical rules; empty when nothing is. */
 export function copyFaults(text: string, seen: Seen = "source"): string[] {
   const faults: string[] = [];
