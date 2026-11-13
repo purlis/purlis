@@ -29,6 +29,7 @@ const DRAWING_ASKS = [
   // A held merge, on its row and on its chat's pane (T1-39, T1-40).
   "MergeHoldNotice.tsx",
   "MergeFacts.tsx",
+  "PausedNotice.tsx",
 ];
 
 /** The registry's labels, as `asking.rs` writes them. */
@@ -41,7 +42,16 @@ const LABELS = [
   "Never for this pair",
   // A held merge's word for no (R-303).
   "Don't merge",
+  // A block loop's pause (T1-36, R-217), as `asking/pauses.rs` writes them.
+  "Tell it to stop trying",
+  "Let it keep trying",
+  "Stop chat",
 ];
+
+/** The loop pause's labels (R-217), in the order its ask offers them. */
+const LOOP_PAUSE = ["Tell it to stop trying", "Let it keep trying", "Stop chat"];
+
+const PAUSES = readFileSync(join(HERE, "../src-tauri/src/asking/pauses.rs"), "utf8");
 
 /** Every string literal of `source`, comments left out. */
 function literals(source: string): string[] {
@@ -56,6 +66,14 @@ describe("an ask's answers are labelled once, in the registry", () => {
     const said = literals(readFileSync(join(HERE, file), "utf8"));
     const spelled = said.filter((one) => LABELS.some((label) => one.includes(label)));
     expect(spelled).toEqual([]);
+  });
+
+  it("knows the loop pause's answers as pauses.rs writes them, the lead first (R-217)", () => {
+    const said = ["STOP_TRYING_SAID", "KEEP_TRYING_SAID", "STOP_CHAT_SAID"].map(
+      (name) => new RegExp(`const ${name}: &str = "([^"]*)";`).exec(PAUSES)?.[1],
+    );
+    expect(said).toEqual(LOOP_PAUSE);
+    expect(LOOP_PAUSE.every((label) => LABELS.includes(label))).toBe(true);
   });
 
   it("would see a label spelled in a string or in markup", () => {

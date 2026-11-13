@@ -23,15 +23,8 @@ export const YOUR_LEVEL = "project.sandbox.yours";
 /** Where the project's level is kept, in this machine's file. */
 export const LEVEL_KEY = key("sandbox", "level");
 
-/** The three levels, strictest first, as the file writes them. */
-export const LEVELS = ["on", "floor", "off"] as const;
-
-/** What each level is called here, as on a chat's tab. */
-export const LEVEL_SAID: Readonly<Record<(typeof LEVELS)[number], string>> = {
-  on: "Full sandbox",
-  floor: "Basic sandbox",
-  off: "No sandbox",
-};
+import { LEVELS, LEVEL_SAID } from "./levels";
+export { LEVELS, LEVEL_SAID };
 
 /** What the group says above its rows. */
 export function yourLevelHelp(file: string): string {

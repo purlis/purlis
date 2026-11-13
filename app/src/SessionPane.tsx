@@ -77,7 +77,7 @@ import { watchForNoEcho } from "./noEcho";
 import { watchWrites } from "./stuckWrites";
 import { keepAltScreenToRows } from "./altScreenRows";
 import { useProjectShown } from "./projectShown";
-import { viewOpening } from "./slowLog";
+import { eventHandled, viewOpening } from "./slowLog";
 import { FIRST_PAGE, keepInView, pageHistory } from "./historyPages";
 
 /** A full reset (RIS): what a pane is written before the screen of a view opened again. */
@@ -763,6 +763,8 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
     const output = new Channel<ArrayBuffer>();
     output.onmessage = (buffer) => {
       if (gone || (mine !== drawing && mine !== asked)) return;
+      // Counted for the frame it lands in, so a stall can say a terminal's output was in it.
+      eventHandled("terminal-output");
       const bytes = new Uint8Array(buffer);
       if (mine === drawing) {
         echo.output();

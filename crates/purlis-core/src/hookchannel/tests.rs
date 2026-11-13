@@ -128,11 +128,12 @@ fn place_of(moved: &crate::state::Move) -> usize {
         Move::Replied => 21,
         Move::Said { .. } => 22,
         Move::BlockWithdrawn => 23,
+        Move::HookGaveUp { .. } => 24,
     }
 }
 
 /// How many places [`place_of`] names.
-const EVERY_MOVE: usize = 24;
+const EVERY_MOVE: usize = 25;
 
 /// One of every move, in an order in which each moves something a reader can see: chat 1 takes
 /// them all, and chat 2 is opened only to be closed.
@@ -207,6 +208,20 @@ fn one_of_every_move() -> Vec<(u32, crate::state::Move)> {
             Move::Reported {
                 report: a_report(1, Event::Notification),
                 waits: Waits::default(),
+            },
+        ),
+        (1, Move::Answered),
+        // Its permission hook gave up, and the prompt it left in the pane is answered (R-204).
+        (
+            1,
+            Move::HookGaveUp {
+                speaker: Speaker {
+                    pid: None,
+                    conversation: Conversation::Named(
+                        "0199a2f4-1c2b-7f00-8000-000000000001".into(),
+                    ),
+                },
+                asker: Asker::Chat,
             },
         ),
         (1, Move::Answered),

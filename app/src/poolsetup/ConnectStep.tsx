@@ -18,7 +18,7 @@ import { CheckLine, CheckList, type CheckVerdict } from "../ui/checks/Checks";
 import { Radio, RadioGroup } from "../ui/choice/Radio";
 import { CodeBlock } from "../ui/code/CodeBlock";
 import { TextField } from "../ui/field/Field";
-import { Action, Busy, Say, SeeWhat, StepHead } from "./parts";
+import { Action, Busy, Options, Recommended, Say, SeeWhat, StepHead } from "./parts";
 
 /**
  * **Connect, the step of a pool on another machine** (#6266, ADR 0123 §3 and §6), as the accepted
@@ -30,14 +30,31 @@ import { Action, Busy, Say, SeeWhat, StepHead } from "./parts";
  *
  * The machines offered are the person's SSH hosts and their Podman connections (#6269), each
  * read into an SSH route: a Podman connection's carries its key file, which the core keeps beside
- * the route. TLS and contexts are later tickets of #6257, so they aren't offered.
+ * the route. **Two routes** (#6267): SSH, recommended, and Docker's API over TLS, whose CA, client
+ * certificate and key are named under Options, the key a file or a vault entry. Contexts are a
+ * later ticket of #6257, so they aren't offered.
  */
 
 /** What the person may be doing on the page, beside what the core read. */
 type Pressing = "connecting" | "trusting" | "checking" | undefined;
 
-/** What Connect checks, in order, and the causes that fail each line. */
-const CHECKS: readonly { title: (host: string) => string; causes: readonly string[] }[] = [
+/** How purlis reaches the machine (ADR 0123 §2). */
+export type Over = "ssh" | "tls";
+
+/** The causes of a TLS check's failure (#6267), each the core's. */
+const TLS_CAUSES = [
+  "tls-not-signed",
+  "tls-expired",
+  "tls-wrong-name",
+  "tls-client-refused",
+  "tls-client-expired",
+  "tls-file",
+] as const;
+
+type Check = { title: (host: string) => string; causes: readonly string[] };
+
+/** What Connect checks over SSH, in order, and the causes that fail each line. */
+const SSH_CHECKS: readonly Check[] = [
   { title: (host) => `${host} is found`, causes: ["no-such-name"] },
   { title: (host) => `${host} answers`, causes: ["no-answer", "not-met"] },
   {
@@ -53,6 +70,18 @@ const CHECKS: readonly { title: (host: string) => string; causes: readonly strin
   { title: () => "Its Docker is the one you trusted", causes: ["pool-engine-changed"] },
 ];
 
+/** What Connect checks over TLS, in order: there is no sign-in, and the certificate is checked. */
+const TLS_CHECKS: readonly Check[] = [
+  { title: (host) => `${host} is found`, causes: ["no-such-name"] },
+  { title: (host) => `${host} answers`, causes: ["no-answer"] },
+  { title: () => "Its authority is the one you trusted", causes: ["pool-pin-changed"] },
+  { title: () => "Its certificate checks out", causes: TLS_CAUSES },
+  { title: () => "Docker answers there", causes: ["engine-silent"] },
+  { title: () => "Its Docker is the one you trusted", causes: ["pool-engine-changed"] },
+];
+
+const checksOf = (over: Over) => (over === "tls" ? TLS_CHECKS : SSH_CHECKS);
+
 /** The trouble card's title for each cause. */
 const TITLES: Record<string, string> = {
   "no-such-name": "purlis couldn't find that machine",
@@ -66,14 +95,25 @@ const TITLES: Record<string, string> = {
   "not-allowed": "Your account can't use Docker there",
   "pool-engine-changed": "Docker there isn't the one you trusted",
   "needs-podman": "purlis needs Podman on this machine too",
+  "tls-not-signed": "Its certificate is from another authority",
+  "tls-expired": "Its certificate has expired",
+  "tls-wrong-name": "Its certificate is for another name",
+  "tls-client-refused": "Docker there didn't accept your certificate",
+  "tls-client-expired": "Your certificate has expired",
+  "tls-file": "purlis can't use one of the files you named",
   "not-a-route": "That isn't an address purlis can read",
   here: "That didn't work",
 };
 
 /** **Each check's verdict**: those before the failing line passed, the rest were not reached. */
-export function verdictsOf(cause: string | null, done: boolean): CheckVerdict[] {
-  const failing = cause === null ? -1 : CHECKS.findIndex((one) => one.causes.includes(cause));
-  return CHECKS.map((_, at) =>
+export function verdictsOf(
+  cause: string | null,
+  done: boolean,
+  over: Over = "ssh",
+): CheckVerdict[] {
+  const checks = checksOf(over);
+  const failing = cause === null ? -1 : checks.findIndex((one) => one.causes.includes(cause));
+  return checks.map((_, at) =>
     failing === -1
       ? done
         ? "ok"
@@ -90,6 +130,45 @@ export function verdictsOf(cause: string | null, done: boolean): CheckVerdict[] 
 export function routeOf(typed: string): string {
   const text = typed.trim();
   return text === "" || text.includes("://") ? text : `ssh://${text}`;
+}
+
+/** The route a machine typed for Docker's API over TLS is kept as: `tcp://` and the address. */
+export function tcpRouteOf(typed: string): string {
+  const text = typed.trim();
+  return text === "" || text.includes("://") ? text : `tcp://${text}`;
+}
+
+/**
+ * **How a kept machine is reached**: over TLS where it is a `tcp://` address with its files named.
+ * A `tcp://` address with none is plain TCP, refused on its card until the person chooses TLS.
+ */
+export const overOf = (machine: PoolSetupStep["machine"] | undefined): Over =>
+  machine?.route?.startsWith("tcp://") === true && machine.tls !== null ? "tls" : "ssh";
+
+/** **How should purlis reach it?**, SSH first and recommended (#6265's route choice). */
+function RouteChoice({ over, onChange }: { over: Over; onChange: (to: Over) => void }) {
+  return (
+    <Asked
+      label="How should purlis reach it?"
+      value={over}
+      onChange={(to) => onChange(to === "tls" ? "tls" : "ssh")}
+    >
+      <Radio
+        value="ssh"
+        description="Signs in with your SSH keys and settings. Nothing changes on the other machine but what SSH needs."
+      >
+        <span className="pool-setup-choice">
+          SSH <Recommended />
+        </span>
+      </Radio>
+      <Radio
+        value="tls"
+        description="For a machine whose Docker is already set up to take connections, with certificates."
+      >
+        Docker&apos;s API over TLS
+      </Radio>
+    </Asked>
+  );
 }
 
 function Asked({
@@ -119,12 +198,22 @@ function Asked({
 /** The machine picked, folded into its facts once purlis contacts it, with Change. */
 function Chosen({ step, onChange }: { step: PoolSetupStep; onChange?: () => void }) {
   const machine = step.machine;
+  const tls = machine?.over === "tls";
   return (
     <Card>
       <Facts aria-label="What this pool connects to">
         <Fact label="Machine">{machine?.host ?? "The machine"}</Fact>
-        <Fact label="Reached by">SSH</Fact>
-        {machine?.trusted && (
+        <Fact label="Reached by">{tls ? "Docker's API over TLS" : "SSH"}</Fact>
+        {tls && machine?.trusted_ca && (
+          <Fact label="Its authority">
+            <span className="pool-setup-choice">
+              <Badge variant="ok">Trusted</Badge>
+              {/* Its first eight pairs, as the prototype shows it: the whole is in the line. */}
+              {`${machine.trusted_ca.slice(0, 23)}…`}
+            </span>
+          </Fact>
+        )}
+        {!tls && machine?.trusted && (
           <Fact label="Its key">
             <span className="pool-setup-choice">
               <Badge variant="ok">Trusted</Badge>
@@ -238,6 +327,212 @@ function Pick({
   );
 }
 
+/** The files a `tcp://` machine is reached with, as the person types them. */
+type TlsTyped = {
+  ca: string;
+  cert: string;
+  keyIn: "file" | "vault";
+  key: string;
+  vault: string;
+  name: string;
+};
+
+/** **The machine reached over Docker's API over TLS** (#6267): its address, and under Options the
+ * CA, the client certificate and the key, a file or a vault entry. Each is kept as it is typed,
+ * as the SSH machine is, and nothing is contacted until Connect to. */
+function TlsPick({
+  step,
+  busy,
+  onPick,
+  onFiles,
+  onConnect,
+}: {
+  step: PoolSetupStep;
+  busy: boolean;
+  onPick: (route: string | null) => void;
+  onFiles: (files: TlsTyped | null) => void;
+  onConnect: () => void;
+}) {
+  const kept = step.machine?.route ?? "";
+  const keptFiles = step.machine?.tls ?? null;
+  const [typed, setTyped] = useState(
+    kept.startsWith("tcp://") ? kept.replace(/^tcp:\/\//, "") : "",
+  );
+  const [files, setFiles] = useState<TlsTyped>({
+    ca: keptFiles?.ca ?? "",
+    cert: keptFiles?.cert ?? "",
+    keyIn: keptFiles?.key_vault ? "vault" : "file",
+    key: keptFiles?.key ?? "",
+    vault: keptFiles?.key_vault ?? "",
+    name: keptFiles?.key_name ?? "",
+  });
+  // Once kept, the fields show the files as purlis keeps them: a path typed from the home
+  // (`~/.docker/ca.pem`) is kept absolute.
+  const keptOnce = keptFiles === null ? null : JSON.stringify(keptFiles);
+  const [shownKept, setShownKept] = useState(keptOnce);
+  if (keptOnce !== shownKept) {
+    setShownKept(keptOnce);
+    if (keptFiles !== null)
+      setFiles({
+        ca: keptFiles.ca,
+        cert: keptFiles.cert,
+        keyIn: keptFiles.key_vault ? "vault" : "file",
+        key: keptFiles.key ?? "",
+        vault: keptFiles.key_vault ?? "",
+        name: keptFiles.key_name ?? "",
+      });
+  }
+  const route = tcpRouteOf(typed);
+  // The route is kept as it is typed, so coming back finds it. Nothing is contacted.
+  useEffect(() => {
+    if (route === kept) return;
+    const later = setTimeout(() => onPick(route === "" ? null : route), 400);
+    return () => clearTimeout(later);
+  }, [route, kept, onPick]);
+  const named =
+    files.ca.trim() !== "" &&
+    files.cert.trim() !== "" &&
+    (files.keyIn === "file"
+      ? files.key.trim() !== ""
+      : files.vault.trim() !== "" && files.name.trim() !== "");
+  const same =
+    keptFiles !== null &&
+    keptFiles.ca === files.ca.trim() &&
+    keptFiles.cert === files.cert.trim() &&
+    (files.keyIn === "file"
+      ? keptFiles.key === files.key.trim()
+      : keptFiles.key_vault === files.vault.trim() && keptFiles.key_name === files.name.trim());
+  // The files are kept once the route is, and once all of them are named.
+  useEffect(() => {
+    if (route === "" || route !== kept || !named || same) return;
+    const later = setTimeout(() => onFiles(files), 400);
+    return () => clearTimeout(later);
+  }, [route, kept, named, same, files, onFiles]);
+  const set = (to: Partial<TlsTyped>) => setFiles((was) => ({ ...was, ...to }));
+  const host = step.machine?.host;
+  return (
+    <>
+      <TextField
+        label="The machine's address"
+        value={typed}
+        onChange={setTyped}
+        placeholder="lab.example.internal:2376"
+        help="Its name, and the port Docker takes TLS connections on: 2376 unless it was set otherwise."
+      />
+      <Options open={!same}>
+        <p className="pool-setup-does">
+          purlis reads these where they are, and checks the authority before every run.
+        </p>
+        <div className="pool-setup-grid">
+          <TextField
+            label="Authority (CA) file"
+            value={files.ca}
+            onChange={(ca) => set({ ca })}
+            placeholder="~/.docker/ca.pem"
+          />
+          <TextField
+            label="Certificate"
+            value={files.cert}
+            onChange={(cert) => set({ cert })}
+            placeholder="~/.docker/cert.pem"
+          />
+        </div>
+        <Asked
+          label="Where is the key?"
+          value={files.keyIn}
+          onChange={(to) => set({ keyIn: to === "vault" ? "vault" : "file" })}
+        >
+          <Radio value="file" description="A file on this machine, beside the certificate.">
+            In a file
+          </Radio>
+          <Radio
+            value="vault"
+            description="purlis writes it only for each run, in a folder of the run's own, and removes it after."
+          >
+            In a vault entry
+          </Radio>
+        </Asked>
+        {files.keyIn === "file" ? (
+          <TextField
+            label="Key"
+            value={files.key}
+            onChange={(key) => set({ key })}
+            placeholder="~/.docker/key.pem"
+          />
+        ) : (
+          <div className="pool-setup-grid">
+            <TextField label="Vault" value={files.vault} onChange={(vault) => set({ vault })} />
+            <TextField
+              label="Key in the vault"
+              value={files.name}
+              onChange={(name) => set({ name })}
+            />
+          </div>
+        )}
+      </Options>
+      {step.see && <SeeWhat text={step.see.text} note={step.see.note} />}
+      <Action
+        does={step.next?.id === "connect-machine" ? step.next.does : undefined}
+        // Named for the machine only once everything typed is kept, as the SSH pick is: what a
+        // press of it reads is what Connect keeps.
+        main={route !== "" && route === kept && same && host ? `Connect to ${host}` : "Connect"}
+        onMain={onConnect}
+        busy={busy || route === "" || route !== kept || !same}
+      />
+    </>
+  );
+}
+
+/** **The authority a TLS machine's certificate is signed by**, to check before it is trusted. */
+function ConfirmCa({
+  step,
+  busy,
+  onTrust,
+  onNotIt,
+}: {
+  step: PoolSetupStep;
+  busy: boolean;
+  onTrust: (fingerprint: string) => void;
+  onNotIt: () => void;
+}) {
+  const machine = step.machine;
+  const ca = machine?.ca;
+  if (!machine || !ca) return null;
+  const host = machine.host ?? "the machine";
+  return (
+    <>
+      <h2 className="pool-setup-h2">Check it&apos;s the right machine&apos;s authority</h2>
+      {step.findings.map((finding) => (
+        <p key={finding} className="pool-setup-does">
+          {finding}
+        </p>
+      ))}
+      <Facts aria-label="The authority">
+        <Fact label="Issued to">{ca.subject ?? "No name it gives"}</Fact>
+        <Fact label="Its file">{ca.file}</Fact>
+      </Facts>
+      <CodeBlock
+        label={`${host}'s authority, SHA-256`}
+        text={ca.fingerprint}
+        copy="Copy fingerprint"
+      />
+      {step.see && <SeeWhat open note={step.see.note} text={step.see.text} />}
+      <Action
+        does={step.next?.does}
+        main="Trust this machine"
+        reserve={["Trust this machine", "Continue"]}
+        icon={<KeyRound aria-hidden size={16} />}
+        busy={busy}
+        onMain={() => onTrust(ca.fingerprint)}
+      >
+        <Button variant="ghost" onPress={onNotIt} isDisabled={busy}>
+          This isn&apos;t it
+        </Button>
+      </Action>
+    </>
+  );
+}
+
 /** **The key the machine showed**, to check before it is trusted (#6265 choices 6 and 7). */
 function Confirm({
   step,
@@ -289,12 +584,13 @@ function Confirm({
 /** **What was checked on the machine**, the failing line marked. */
 function Checked({ step, done }: { step: PoolSetupStep; done: boolean }) {
   const host = step.machine?.host ?? "the machine";
-  const verdicts = verdictsOf(step.cause, done);
+  const over = overOf(step.machine);
+  const verdicts = verdictsOf(step.cause, done, over);
   return (
     <>
       <h2 className="pool-setup-h2">{`Docker on ${host}`}</h2>
       <CheckList aria-label={`What purlis checked on ${host}`}>
-        {CHECKS.map((check, at) => (
+        {checksOf(over).map((check, at) => (
           <CheckLine
             key={check.title(host)}
             verdict={verdicts[at] ?? "todo"}
@@ -340,6 +636,9 @@ export function ConnectStep({
     };
   }, []);
   const host = step.machine?.host ?? "the machine";
+  // The route chosen: a kept tcp:// machine is reached over TLS, until the person picks another.
+  const [chosenOver, setOver] = useState<Over>();
+  const over = chosenOver ?? overOf(step.machine);
   const pick = (route: string | null, identity: string | null = null) => {
     void commands.poolSetupMachine(route, identity).then((answer) => {
       if (answer.status === "error") setTrouble(answer.error);
@@ -374,12 +673,33 @@ export function ConnectStep({
       else onShown(answer.data);
     });
   };
+  const keepFiles = (files: TlsTyped | null) => {
+    void commands
+      .poolSetupTlsFiles(
+        plane,
+        files?.ca.trim() ?? "",
+        files?.cert.trim() ?? "",
+        files?.keyIn === "file" ? files.key.trim() : null,
+        files?.keyIn === "vault" ? files.vault.trim() : null,
+        files?.keyIn === "vault" ? files.name.trim() : null,
+      )
+      .then((answer) => {
+        if (answer.status === "error") setTrouble(answer.error);
+        else onShown(answer.data);
+      });
+  };
   const notIt = () => pick(null);
   const madePool = shown.pool !== null;
   const done = step.state === "done";
   const meeting = step.next?.id === "trust-machine";
-  const refused = step.cause === "plain-tcp" || step.cause === "not-a-route";
-  const finding = step.state === "attention" && !refused;
+  // A tcp:// machine is refused on its card until the person chooses a route (#6267): chosen
+  // TLS, the pick with Options open says how to name its files; chosen SSH, it is read again.
+  const refused =
+    (step.cause === "plain-tcp" && chosenOver === undefined) || step.cause === "not-a-route";
+  // Plain TCP and an address that isn't one are refusals of what was typed, never findings of
+  // the machine: once the person chose a route they are only stale until the next read.
+  const declined = step.cause === "plain-tcp" || step.cause === "not-a-route";
+  const finding = step.state === "attention" && !declined;
 
   return (
     <>
@@ -389,7 +709,9 @@ export function ConnectStep({
         lead={
           done
             ? `${host} is ready to run your chats.`
-            : "Choose the machine, and check it's the one you mean. purlis keeps no password or key of yours: SSH signs in with your own agent."
+            : over === "tls"
+              ? "Choose the machine, and check it's the one you mean. purlis keeps no copy of your certificates: it reads them where they are."
+              : "Choose the machine, and check it's the one you mean. purlis keeps no password or key of yours: SSH signs in with your own agent."
         }
       />
       {trouble && (
@@ -400,7 +722,19 @@ export function ConnectStep({
       {done || finding || meeting ? (
         <Chosen step={step} onChange={madePool ? undefined : notIt} />
       ) : null}
-      {!done && !finding && !meeting && !refused && (
+      {!done && !finding && !meeting && !refused && !madePool && (
+        <RouteChoice
+          over={over}
+          onChange={(to) => {
+            setOver(to);
+            // A machine kept for the other route is forgotten; one that fits this one stays.
+            const route = step.machine?.route;
+            const tcp = route?.startsWith("tcp://") === true;
+            if (route && tcp !== (to === "tls")) pick(null);
+          }}
+        />
+      )}
+      {!done && !finding && !meeting && !refused && over === "ssh" && (
         <Pick
           step={step}
           hosts={hosts}
@@ -410,9 +744,27 @@ export function ConnectStep({
           onConnect={connect}
         />
       )}
-      {pressing === "connecting" && <Busy>{`Asking ${host} for its key. This only reads.`}</Busy>}
-      {meeting && (
+      {!done && !finding && !meeting && !refused && over === "tls" && (
+        <TlsPick
+          step={step}
+          busy={pressing !== undefined}
+          onPick={pick}
+          onFiles={keepFiles}
+          onConnect={connect}
+        />
+      )}
+      {pressing === "connecting" && (
+        <Busy>
+          {over === "tls"
+            ? `Checking ${host}'s certificate. This only reads.`
+            : `Asking ${host} for its key. This only reads.`}
+        </Busy>
+      )}
+      {meeting && over === "ssh" && (
         <Confirm step={step} busy={pressing !== undefined} onTrust={trust} onNotIt={notIt} />
+      )}
+      {meeting && over === "tls" && (
+        <ConfirmCa step={step} busy={pressing !== undefined} onTrust={trust} onNotIt={notIt} />
       )}
       {pressing === "trusting" && <Busy>{`Checking Docker on ${host}. This only reads.`}</Busy>}
       {pressing === "checking" && <Busy>{`Checking ${host} again. This only reads.`}</Busy>}
@@ -425,9 +777,16 @@ export function ConnectStep({
               : (TITLES[step.cause ?? "here"] ?? TITLES.here ?? "")
           }
           actions={
-            <Button variant="primary" onPress={notIt}>
-              {step.next?.label ?? "Change the machine"}
-            </Button>
+            <>
+              <Button variant="primary" onPress={notIt}>
+                {step.next?.label ?? "Change the machine"}
+              </Button>
+              {step.cause === "plain-tcp" && (
+                <Button variant="secondary" onPress={() => setOver("tls")}>
+                  Use TLS instead
+                </Button>
+              )}
+            </>
           }
         >
           {step.findings.map((one) => (
@@ -441,7 +800,11 @@ export function ConnectStep({
       {finding && (
         <Say
           tone="trouble"
-          title={TITLES[step.cause ?? "here"] ?? TITLES.here ?? ""}
+          title={
+            step.cause === "pool-pin-changed" && overOf(step.machine) === "tls"
+              ? "The authority isn't the one you trusted"
+              : (TITLES[step.cause ?? "here"] ?? TITLES.here ?? "")
+          }
           actions={
             <>
               <Button

@@ -87,6 +87,8 @@ struct World {
     at_prompt: Vec<u32>,
     /// Chats stopped on a prompt whose kind their nudge named (#1691).
     prompts: Vec<(u32, Prompt)>,
+    /// Chats whose permission hook gave up, waiting in their terminal (R-204).
+    in_its_terminal: Vec<u32>,
     dispatches: Vec<DispatchPending>,
     blocks: Vec<(u32, HeldBlock)>,
     /// The workspaces a chat asked the person to remove, with what each holds (qw356).
@@ -151,6 +153,7 @@ impl World {
             queue: Vec::new(),
             at_prompt: Vec::new(),
             prompts: Vec::new(),
+            in_its_terminal: Vec::new(),
             dispatches: Vec::new(),
             blocks: Vec::new(),
             removals: Vec::new(),
@@ -234,6 +237,7 @@ impl World {
             permissions: self.permissions.clone(),
             queue: self.queue.clone(),
             at_its_prompt: &at_prompt,
+            in_its_terminal: &|session| self.in_its_terminal.contains(&session),
             dispatches: self.dispatches.clone(),
             blocks: self.blocks.clone(),
             removals: self.removals.clone(),
@@ -692,6 +696,7 @@ fn an_edit_raised_on_the_hook_channel_is_drawn_in_its_row_and_its_allow_goes_bac
         permission_request: Source::ClaudeCode,
         payload: payload.clone(),
         ran_for_ms: None,
+        speaker: Default::default(),
     })
     .expect("the ask is held");
 
@@ -1223,6 +1228,67 @@ fn a_chat_waiting_on_a_structured_ask_is_one_ask_not_two() {
             (3, AskSource::Dispatch),
             (4, AskSource::Question)
         ]
+    );
+}
+
+#[test]
+fn a_chat_whose_hook_gave_up_is_in_its_terminal_beside_the_asks_its_hook_holds() {
+    // R-204 (T1-35): at the 32-open cap the chat's hook gave up on one more ask, whose prompt
+    // waits in its pane, where no ask held here answers it. It is listed as one Terminal ask
+    // beside the asks its hook still holds; a chat that only waits on what is held is not.
+    let asks_held = Asks::new();
+    let mut world = World::new();
+    world.permissions = vec![
+        asks_held
+            .raise("2", a_hook_ask("Run ls"), Instant::now())
+            .raised,
+        asks_held
+            .raise("3", a_hook_ask("Run pwd"), Instant::now())
+            .raised,
+    ];
+    world.queue = vec![2, 3];
+    world.prompts = vec![(2, Prompt::Permission), (3, Prompt::Permission)];
+    world.in_its_terminal = vec![2];
+
+    let asks = world.asks();
+
+    assert_eq!(
+        asks.iter()
+            .map(|ask| (ask.session, ask.source))
+            .collect::<Vec<_>>(),
+        [
+            (2, AskSource::Permission),
+            (3, AskSource::Permission),
+            (2, AskSource::Terminal),
+        ]
+    );
+    let terminal = asks
+        .iter()
+        .find(|ask| ask.source == AskSource::Terminal)
+        .expect("its ask");
+    assert_eq!(
+        terminal.says,
+        "Waiting in its terminal: a permission prompt"
+    );
+    assert!(terminal.options.is_empty());
+    assert_eq!(terminal.answer, AnswerPath::InItsPane);
+}
+
+#[test]
+fn a_chat_whose_hook_gave_up_is_one_terminal_ask_whatever_else_it_was_in_the_queue_for() {
+    // R-204: the queue lists a chat once, so a give-up is one ask, never one per hook.
+    let mut world = World::new();
+    world.queue = vec![2];
+    world.prompts = vec![(2, Prompt::Permission)];
+    world.in_its_terminal = vec![2];
+
+    let asks = world.asks();
+
+    assert_eq!(
+        asks.iter()
+            .map(|ask| (ask.session, ask.source))
+            .collect::<Vec<_>>(),
+        [(2, AskSource::Terminal)]
     );
 }
 

@@ -170,7 +170,7 @@ export default function SkillFilesView({
             />
           ) : (
             <>
-              <header className="piece-files-head" {...editorToolbar}>
+              <header {...editorToolbar("piece-files-head")}>
                 <ToolbarFile path={picked} />
                 <span className="piece-files-actions">
                   <SourceToggle

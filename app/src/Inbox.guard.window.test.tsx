@@ -61,6 +61,35 @@ const permission = (
     answer: { via: "hook" },
   }) satisfies Shown;
 
+/** A chat paused at 3 blocks on the same target (T1-36): three answers, the lead first. */
+const blockLoop = {
+  session: 5,
+  ask: "paused:5",
+  says: "steward 5 was blocked 3 times on the same thing. Let it keep trying?",
+  options: [
+    { id: "stop-trying", label: "Tell it to stop trying", allows: false, preselected: true },
+    { id: "keep-trying", label: "Let it keep trying", allows: true },
+    { id: "stop", label: "Stop chat", allows: false },
+  ],
+  source: "looping",
+  chain: ["steward 5"],
+  answer: { via: "paused" },
+} satisfies Shown;
+
+/** A chat paused for failing the same command again and again: the old loop pause (#6015). */
+const failingLoop = {
+  session: 6,
+  ask: "paused:6",
+  says: "It may be looping: the same command failed 6 times.",
+  options: [
+    { id: "fine", label: "It's fine, continue", allows: true },
+    { id: "stop", label: "Stop", allows: false },
+  ],
+  source: "looping",
+  chain: ["steward 6"],
+  answer: { via: "paused" },
+} satisfies Shown;
+
 /** A core that records what the window sends. */
 function core() {
   const calls: { cmd: string; args: Record<string, unknown> }[] = [];
@@ -178,6 +207,34 @@ describe.each(BOTH)("the press-settle guard, pressed by the %s (#3123)", (by) =>
     read();
     await press(screen.getByRole("button", { name: "Allow" }), by);
     expect(answered(calls)).toBe(true);
+  });
+
+  // T1-36: a block loop's pause moves a chat held still, so each of its three answers waits for
+  // its row to settle, Stop chat as much as Let it keep trying.
+  it.each(["Tell it to stop trying", "Let it keep trying", "Stop chat"])(
+    "holds %s on a loop pause until its row has settled, and acts once it has",
+    async (name) => {
+      const calls = core();
+      render(<Inbox plane={PLANE} asks={[blockLoop]} onGo={vi.fn()} onLeave={vi.fn()} />);
+      openEveryAnswer();
+      await press(screen.getByRole("button", { name }), by);
+      expect(screen.getByRole("status")).toHaveTextContent(MOVED_JUST_NOW);
+      expect(calls.some(({ cmd }) => cmd === "answer_pause")).toBe(false);
+
+      read();
+      await press(screen.getByRole("button", { name }), by);
+      expect(calls.filter(({ cmd }) => cmd === "answer_pause")).toHaveLength(1);
+    },
+  );
+
+  // Q267 amended: only the block loop's answers wait. Another loop's Stop is a refusal, and a
+  // refusal is never held (#1695).
+  it("never holds Stop on a loop pause that is not the block loop's", async () => {
+    const calls = core();
+    render(<Inbox plane={PLANE} asks={[failingLoop]} onGo={vi.fn()} onLeave={vi.fn()} />);
+    openEveryAnswer();
+    await press(screen.getByRole("button", { name: "Stop" }), by);
+    expect(calls.filter(({ cmd }) => cmd === "answer_pause")).toHaveLength(1);
   });
 
   it("never holds a Deny", async () => {

@@ -199,7 +199,7 @@ export function GetProject({
         <div className="get-project-end">
           {/* The place, not a box to type in: Choose… picks the folder that holds it, and the
               project's own folder is named after it. */}
-          <p className="get-project-folder">
+          <p className="get-project-folder ui-text-secondary">
             {/* Before a URL names the project, the folder that will hold it, once one was
                 picked. */}
             Goes into <code className="where">{folder?.folder ?? parent ?? "—"}</code>
@@ -236,7 +236,7 @@ export function GetProject({
 
       <YourRepos onPick={pick} busy={getting} />
 
-      <p className="get-project-local">
+      <p className="get-project-local ui-text-secondary">
         Already on this machine?{" "}
         <Button variant="link" onPress={onOpenFolder} className="welcome-link">
           Open a folder…

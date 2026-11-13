@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { ChatLogRow, StartProtection } from "./bindings";
-import { HARNESSES } from "./settings/profiles";
-import { LEVEL_SAID } from "./settings/yourLevel";
+import { HARNESSES } from "./settings/harnesses";
+import { LEVEL_SAID } from "./settings/levels";
 import type { ViewRef } from "./tabs";
 
 /**

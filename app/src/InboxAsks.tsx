@@ -294,6 +294,20 @@ export const DECISIONS: ReadonlySet<Shown["source"]> = new Set<Shown["source"]>(
   "looping",
 ]);
 
+/** The option id only a block loop's pause offers: its lead, Tell it to stop trying (`pauses.rs`). */
+const STOP_TRYING = "stop-trying";
+
+/**
+ * **Whether every answer of `ask` waits for its row to settle** (T1-36, ADR 0097), not only its
+ * Allows: a block loop's pause, whose answers each move a chat held still, Stop chat as much as
+ * Let it keep trying, so none may land under a pointer an ask joining above just moved. Only the
+ * block loop's (Q267 amended): the failing and refused loops keep their own, and their Stop, a
+ * refusal, is never held (#1695).
+ */
+export function holdsEveryAnswer(ask: Shown): boolean {
+  return ask.source === "looping" && ask.options.some((one) => one.id === STOP_TRYING);
+}
+
 /** What a decision of each kind asks, as its row's title: a question. */
 const QUESTION: Partial<Record<Shown["source"], string>> = {
   permission: "Allow this action?",
@@ -719,8 +733,9 @@ export function Ask({
     // list retired, the Inbox is where a permission or a host is allowed from outside its
     // pane, and an ask joining above must not put another's Allow under the pointer.
     // On a held merge, Don't merge waits as Merge does (T1-40, ADR 0097): both act on the head
-    // the row names, and neither may land on a row just drawn.
-    if ((option.allows || ask.source === "merge-hold") && tooSoon()) {
+    // the row names, and neither may land on a row just drawn. A block loop's every answer waits
+    // too (T1-36).
+    if ((option.allows || ask.source === "merge-hold" || holdsEveryAnswer(ask)) && tooSoon()) {
       setSaid(MOVED_JUST_NOW);
       return;
     }
@@ -1079,6 +1094,7 @@ export function Ask({
             who={who}
             offers={shape.offers}
             grants={ALLOW_OR_KEEP.has(ask.source)}
+            holdsEvery={holdsEveryAnswer(ask)}
             ready={ask.writes == null || ask.writes.kind === "not-shown" || changeDrawn}
             busy={busy}
             reason={shape.reason}

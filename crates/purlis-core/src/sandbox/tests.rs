@@ -9016,3 +9016,76 @@ fn own_check_kept(harness: Harness, level: &str, armed: &[String], env: &[(Strin
         }
     }
 }
+
+/// **A chat neither reads nor writes the files a pool over Docker's TLS API names** (#6267): its
+/// CA, its client certificate and a client key kept where it is, each by its name and by its
+/// real path, as the cluster pools' copies of their kubeconfigs are held.
+#[cfg(unix)]
+#[test]
+fn a_chat_neither_reads_nor_writes_a_tls_pools_ca_cert_or_key_file() {
+    let config = tempfile::tempdir().expect("a config home");
+    let docker = config.path().join("docker-files");
+    std::fs::create_dir_all(&docker).expect("a folder for the files");
+    let linked = config.path().join("dot-docker");
+    std::os::unix::fs::symlink(&docker, &linked).expect("a link to it");
+    let (ca, cert, key) = (
+        linked.join("ca.pem"),
+        linked.join("cert.pem"),
+        linked.join("key.pem"),
+    );
+    let folder =
+        purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config.path())).unwrap();
+    let file = serde_json::json!({ "version": 1, "runners": [], "pools": [{
+        "name": "box", "kind": "remote-docker",
+        "image": format!("ghcr.io/purlis/purlis-runner@sha256:{}", "0".repeat(64)),
+        "route": "tcp://box:2376",
+        "tls": { "ca": ca, "cert": cert, "key": key },
+        "pin": { "ca": format!("sha256:{}", "ab".repeat(32)), "engine": "ABCD:EFGH:IJKL" },
+    }]});
+    folder
+        .replace_file(crate::machine::RUNNERS_FILE, file.to_string().as_bytes())
+        .unwrap();
+    assert_eq!(
+        crate::runners::pools(config.path()).map(|pools| pools.len()),
+        Ok(1),
+        "the pool row is read"
+    );
+    let machine = Machine {
+        env: crate::secrets::Env::of(&[("XDG_CONFIG_HOME", &config.path().display().to_string())]),
+        home: Some(std::path::PathBuf::from("/home/op")),
+        os: Os::Linux,
+    };
+    let plane = tempfile::tempdir().expect("a plane");
+    let denied = Denied::of(plane.path(), &machine);
+    let held = |path: &std::path::Path| {
+        denied.paths.iter().any(|it| {
+            it.class == Class::HumanPowers && it.access == Access::ReadWrite && it.path == path
+        })
+    };
+    for named in [&ca, &cert, &key] {
+        assert!(held(named), "{named:?}: {:?}", denied.paths);
+        assert!(held(&super::real(named)), "{named:?} by its real path");
+    }
+    let unread = super::kept_from_reading(plane.path(), &machine).unwrap();
+    assert!(
+        unread.contains(&key),
+        "the window's own reads keep the key too"
+    );
+    // The profile a chat starts under denies each file's reads and writes.
+    let profile = seatbelt::profile(
+        &denied.paths,
+        &seatbelt::Own::default(),
+        plane.path(),
+        std::path::Path::new("/private/tmp/chat"),
+        &[4040],
+        None,
+    )
+    .expect("a profile");
+    for named in [&ca, &cert, &key] {
+        for path in [named.clone(), super::real(named)] {
+            for rule in held_rules(&path, Access::ReadWrite, false) {
+                assert!(profile.contains(&rule), "{rule} missing:\n{profile}");
+            }
+        }
+    }
+}

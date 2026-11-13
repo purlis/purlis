@@ -243,7 +243,7 @@ export function TabMarks({
               <span className="tab-task-sep" aria-hidden="true">
                 {" · "}
               </span>
-              <span className="tab-task tab-asker">{taskOf.asker}</span>
+              <span className="tab-task tab-asker ui-text-meta">{taskOf.asker}</span>
             </>
           )}
         </>
@@ -257,7 +257,7 @@ export function TabMarks({
             {" › "}
           </span>
           <span className="hidden-words">, showing task </span>
-          <span className="tab-task">{task}</span>
+          <span className="tab-task ui-text-meta">{task}</span>
         </>
       )}
       {/* **A chat of this tab is waiting for you and is not on screen** (#1486, V100-37): the

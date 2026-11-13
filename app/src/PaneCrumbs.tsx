@@ -61,7 +61,7 @@ export function PaneCrumbs({
   const said = shown.byYou === true ? `${path}, ${ASKED_BY_YOU}` : path;
   return (
     <Tooltip tip={crumbs.elsewhere === null ? said : `${said} in ${crumbs.elsewhere}`}>
-      <nav {...rest} className="pane-crumbs" aria-label="Chat path">
+      <nav {...rest} className="pane-crumbs ui-text-meta" aria-label="Chat path">
         <span className="crumb-path">
           {crumbs.path.map((chat, at) => (
             <Fragment key={chat.session}>

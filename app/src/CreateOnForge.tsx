@@ -413,7 +413,7 @@ export function CreateOnForge({
           />
         )}
         <div className="get-project-end">
-          <p className="get-project-folder">
+          <p className="get-project-folder ui-text-secondary">
             Goes into <code className="where">{folder?.folder ?? "—"}</code>
           </p>
           <Button variant="ghost" isDisabled={creating} onPress={choose}>

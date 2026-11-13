@@ -82,6 +82,7 @@ fn app_on(root: &Path) -> (tauri::App<MockRuntime>, PlaneId) {
             crate::stopping::all_tasks_ending,
             crate::vaultroute::vault_refusals,
             crate::activity::activity_chat,
+            crate::finishedturns::finished_turns,
             crate::smartclose::smart_closing,
             crate::smartclose::smart_close_offer,
             crate::stopping::stopping_chats,
@@ -157,6 +158,8 @@ fn the_reads(plane: &PlaneId) -> Vec<(&'static str, Value)> {
             "chat_blocks",
             json!({ "plane": plane, "asked": [{ "session": 1, "after": null }] }),
         ),
+        // The finish rows' finishes (R-178, T1-31): read off the window's thread.
+        ("finished_turns", json!({ "plane": plane, "sessions": [1] })),
         ("smart_closing", p.clone()),
         ("smart_close_offer", chat.clone()),
         ("stopping_chats", p.clone()),
