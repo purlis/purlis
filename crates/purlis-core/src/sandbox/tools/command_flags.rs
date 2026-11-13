@@ -52,7 +52,9 @@ struct Flags {
     /// them (#6329): [`Self::long`] is then matched by its whole name, whatever its case, a
     /// value after `=` cut off, and there are no clusters of short flags.
     whole_words: bool,
-    /// Commands refused where they are the first operand: openssl's `engine` (#6329).
+    /// Commands refused where they are the first operand: openssl's `engine` (#6329). One of
+    /// eight characters or more is refused by its first eight, as openssl finds its commands by
+    /// those and a hash (`function_cmp`, `apps/openssl.c`).
     commands: &'static [&'static str],
 }
 
@@ -452,10 +454,10 @@ const PROGRAMS: &[Flags] = &[
     // and its kin load one through the dynamic engine's `SO_PATH` (`apps/lib/engine.c`),
     // `-provider` and `-provider-path` a provider (`apps/lib/app_provider.c`), `-config` a file
     // whose modules `ca`, `req`, `ts`, `srp`, `cms`, `smime`, `genpkey` and `pkeyutl` load
-    // (`app_load_modules`, `apps/lib/apps.c`); the `engine` command loads the engines it is
-    // named and runs the control commands its `-pre` and `-post` name, and `fipsinstall` loads
-    // the provider its `-module` folder holds (openssl 3.0.15). `my_openssl` is the bundled
-    // openssl MySQL's test package ships.
+    // (`app_load_modules`, `apps/lib/apps.c`), and `speed`'s too; the `engine` command loads the
+    // engines it is named and runs the control commands its `-pre` and `-post` name, and
+    // `fipsinstall` loads the provider its `-module` folder holds (openssl 3.0.15). `my_openssl`
+    // is the bundled openssl MySQL's test package ships.
     Flags {
         attached: "",
         names: &["openssl", "my_openssl"],
@@ -670,10 +672,13 @@ fn refused_form(program: &Flags, args: &[String]) -> Option<String> {
                 continue;
             }
             if operands.is_empty()
-                && let Some(one) = program
-                    .commands
-                    .iter()
-                    .find(|one| one.eq_ignore_ascii_case(word))
+                && let Some(one) = program.commands.iter().find(|one| {
+                    one.eq_ignore_ascii_case(word)
+                        || (one.len() >= 8
+                            && word
+                                .get(..8)
+                                .is_some_and(|head| head.eq_ignore_ascii_case(&one[..8])))
+                })
             {
                 return Some((*one).to_owned());
             }

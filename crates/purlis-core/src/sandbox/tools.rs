@@ -663,49 +663,26 @@ fn runs_what_it_is_told(name: &str) -> bool {
 const GENERAL_PURPOSE: &[&str] = &[
     // fetch and send over the network, the forge command lines (gh, glab) among them, which
     // make whatever request their arguments name
-    "curl",
-    "wget",
-    "wget2",
-    "http",
-    "https",
-    "httpie",
-    "xh",
-    "xhs",
-    "aria2c",
-    "nc",
-    "ncat",
-    "netcat",
-    "socat",
-    "ssh",
-    "scp",
-    "sftp",
-    "rsync",
-    "gh",
-    "glab",
+    "curl", "wget", "wget2", "http", "https", "httpie", "xh", "xhs", "aria2c", "nc", "ncat",
+    "netcat", "socat", "ssh", "scp", "sftp", "rsync", "gh", "glab",
     // copy, encode or rewrite what they are given
-    "cat",
-    "cp",
-    "tee",
-    "dd",
-    "sed",
-    "base64",
-    "xxd",
-    "od",
-    "hexdump",
-    "openssl",
-    "gzip",
-    "tar",
+    "cat", "cp", "tee", "dd", "sed", "base64", "xxd", "od", "hexdump", "openssl", "gzip", "tar",
     "zip",
-    // the bundled openssl MySQL's test package ships under its own name (#6329)
-    "my_openssl",
 ];
+
+/// [`GENERAL_PURPOSE`]'s programs under other names: `my_openssl`, the bundled openssl MySQL's
+/// test package ships (#6329).
+const GENERAL_PURPOSE_RENAMED: &[&str] = &["my_openssl"];
 
 /// **Whether the program at `program` is a general-purpose one**, by its file name, whatever
 /// its folder and case (a `.exe` aside): one of [`GENERAL_PURPOSE`], or of the names no tool may
 /// take ([`refused_name`]).
 pub fn general_purpose(program: &Path) -> bool {
     let name = file_name_of(program);
-    !name.is_empty() && (GENERAL_PURPOSE.contains(&name.as_str()) || runs_what_it_is_told(&name))
+    !name.is_empty()
+        && (GENERAL_PURPOSE.contains(&name.as_str())
+            || GENERAL_PURPOSE_RENAMED.contains(&name.as_str())
+            || runs_what_it_is_told(&name))
 }
 
 /// **The sentence a person reads beside `tool`'s Allow** where its program is a general-purpose
@@ -2186,9 +2163,29 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "openrc-run",
     "chkconfig",
     "deb-systemd-helper",
+    // and their kin the review of #6556 found: systemd's `systemd-cat`, `systemd-inhibit`,
+    // `systemd-socket-activate`, `systemd-notify --exec` and `systemd-dissect --with` run the
+    // command after them, and `busctl call` reaches the manager's `StartTransientUnit`, as
+    // `systemd-run` does; s6's `s6-supervise` runs a folder's `run`, and `s6-svscan` and runit's
+    // `runsvdir` start a supervisor on each folder in the one they are named.
+    "systemd-cat",
+    "systemd-inhibit",
+    "systemd-socket-activate",
+    "systemd-notify",
+    "systemd-dissect",
+    "busctl",
+    "s6-supervise",
+    "s6-svscan",
+    "runsvdir",
     // Homebrew (#6325): `brew ruby -e` runs the Ruby it is handed, `brew sh --cmd` a shell
     // command, and `brew <name>` the `brew-<name>` its search path finds.
     "brew",
+    // and its kin (the review of #6556): `apt-get` and `apt` take any setting with `-o`, and
+    // `Dir::Bin::Methods::<scheme>` names the program a download runs; `composer exec` runs the
+    // command it is handed.
+    "apt-get",
+    "apt",
+    "composer",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

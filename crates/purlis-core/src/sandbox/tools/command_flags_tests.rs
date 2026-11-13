@@ -897,3 +897,22 @@ fn openssl_is_offered_with_its_usual_commands() {
         );
     }
 }
+
+/// openssl finds its command by the first eight characters and a hash of the whole name
+/// (`function_cmp`, `strncmp(…, 8)`, `apps/openssl.c:439-447`, openssl 3.0.15), so a word that
+/// starts `fipsinst` and has `fipsinstall`'s hash runs it: any such word is refused (the review of
+/// #6556). `engine` is shorter than eight, so it is matched whole.
+#[test]
+fn openssl_refuses_a_command_by_the_eight_characters_it_is_found_by() {
+    for program in ["openssl", "my_openssl"] {
+        refused(
+            program,
+            "fipsinstall",
+            &[
+                &["fipsinstzctsbii", "-module", "/x/fips.so"],
+                &["FIPSINSTxx"],
+            ],
+        );
+        offered(program, &["enginex", "fipsins -x"]);
+    }
+}

@@ -43,7 +43,7 @@ The issue's comment raised six more, each checked too:
   (`script/deb-systemd-helper`, salsa.debian.org/debian/init-system-helpers). `systemctl` is
   refused, so both are.
 - **`initctl`**, Upstart's, could not be checked: its source (git.launchpad.net/upstart) was
-  out of reach from here. It is filed as an issue of its own rather than left unsaid.
+  out of reach from here. It is filed as #6557 rather than left unsaid.
 
 All are refused whole, on `NOT_FOR_A_RUN_GRANT`. A persona can still declare any of them as a
 tool.
@@ -150,3 +150,38 @@ Checked in github.com/openssl/openssl at `openssl-3.0.15`:
 copied, as `cmake/ssl.cmake:185-186` says, mysql-server 8.4.3), is read by the same row, and is
 on the general-purpose list, which matches a program's exact name only, so its notice carries
 openssl's caution too.
+
+## The review of this amendment's pull request
+
+The adversarial review of #6556 found more, each checked against its source:
+
+- **openssl finds a command by its first eight characters and a hash of the whole name**
+  (`function_cmp` is `strncmp(a->name, b->name, 8)`, `function_hash` hashes the whole name,
+  `apps/openssl.c:439-447`, openssl 3.0.15). A word that starts `fipsinst` and has
+  `fipsinstall`'s hash runs `fipsinstall`, and the review found such words, so a refused command
+  of eight characters or more is refused by its first eight. `engine` is shorter, and is matched
+  whole. `speed` loads a `-config` file's modules too, which the row already refuses.
+- **systemd's programs that run the command after them**, v257: `systemd-cat`,
+  `systemd-inhibit` and `systemd-socket-activate` `execvp` it (`src/journal/cat.c:177`,
+  `src/login/inhibit.c:318`, `src/socket-activate/socket-activate.c:211`), `systemd-notify
+  --exec` runs it (`src/notify/notify.c:151, 476`), and `systemd-dissect --with` runs a command
+  in the image it mounts (`src/dissect/dissect.c`). `busctl call` reaches any method on the
+  bus, the manager's `StartTransientUnit` among them, which is how the refused `systemd-run`
+  runs a command. All refused.
+- **The supervision suites**: s6's `s6-supervise <folder>` runs the folder's `./run`
+  (`src/supervision/s6-supervise.c`, github.com/skarnet/s6), and `s6-svscan` supervises each
+  folder in the one it is named, as runit's `runsvdir` starts `runsv` on each
+  (`runsv()`, `src/runsvdir.c`). All refused. daemontools' `svscan` and `supervise` are surely
+  the same, but their source is not on GitHub, so they are filed (#6559) rather than refused
+  unread.
+- **Beside `brew`**: `apt-get` and `apt` take any setting with `-o` or `-c`
+  (`apt-private/private-cmndline.cc:418-419`, github.com/Debian/apt, 2.9.8), and
+  `Dir::Bin::Methods::<scheme>` names the program a download `execv`s as its method
+  (`apt-pkg/acquire-worker.cc:96-155`), as an ordinary user for `download`. `composer exec`
+  runs the command it is handed (`src/Composer/Command/ExecCommand.php`,
+  github.com/composer/composer). All refused.
+
+The review also said a bare `openssl` 1.1.1 reads its commands from its input, which a granted
+run is handed. It is not: a run under a grant has no stdin (`Stdio::null()` where
+`under_a_grant`, `crates/purlis-core/src/secrets/brokered.rs`), so nothing is read, and openssl
+alone stays offered.

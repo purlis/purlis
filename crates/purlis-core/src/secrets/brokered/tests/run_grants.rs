@@ -3227,6 +3227,49 @@ fn my_openssl_with_an_engine_is_offered_no_run_grant_and_the_chat_hears_to_leave
     );
 }
 
+/// systemd's programs that run the command after them (#6320, the review of #6556):
+/// `systemd-cat`, `systemd-inhibit` and `systemd-socket-activate` `execvp` it
+/// (`src/journal/cat.c:177`, `src/login/inhibit.c:318`, `src/socket-activate/socket-activate.c:211`),
+/// `systemd-notify --exec` runs what follows `;` (`src/notify/notify.c:476`), and
+/// `systemd-dissect --with` runs a command in the image it mounts (`src/dissect/dissect.c`),
+/// systemd v257. `busctl call` reaches any method, the manager's `StartTransientUnit` among them,
+/// which is how the refused `systemd-run` runs a command.
+#[test]
+fn systemds_programs_that_run_a_command_they_are_handed_are_offered_no_run_grant() {
+    for name in [
+        "systemd-cat",
+        "systemd-inhibit",
+        "systemd-socket-activate",
+        "systemd-notify",
+        "systemd-dissect",
+        "busctl",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// s6's `s6-supervise <folder>` runs the folder's `./run` (`src/supervision/s6-supervise.c`, s6),
+/// and `s6-svscan` and runit's `runsvdir` start a supervisor on each folder in the one they are
+/// named (`src/runsvdir.c`, runit), as the refused `runsv` is (#6320, the review of #6556).
+#[test]
+fn the_supervision_suites_scanners_and_supervisors_are_offered_no_run_grant() {
+    for name in ["s6-supervise", "s6-svscan", "runsvdir"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// `apt-get` and `apt` take any setting with `-o` or `-c` (`apt-private/private-cmndline.cc:418-419`),
+/// and `Dir::Bin::Methods::<scheme>` names the program a download runs as its method, which it
+/// `execv`s (`apt-pkg/acquire-worker.cc:96-155`, apt 2.9.8); Composer's `composer exec` runs the
+/// command it is handed (`src/Composer/Command/ExecCommand.php`), as `brew` does (#6325, the
+/// review of #6556).
+#[test]
+fn apt_and_composer_run_a_program_they_are_handed_so_they_are_offered_no_run_grant() {
+    for name in ["apt-get", "apt", "composer"] {
+        refused_as_running_others(name);
+    }
+}
+
 /// The client built with the server inside it: what `--server-arg` hands the embedded server
 /// (`--plugin-load`, `--plugin-dir`) loads code from a file it names.
 #[test]
