@@ -32,11 +32,12 @@ const fresh = process.env.PURLIS_POOL_PLANE === undefined;
 const plane = (process.env.PURLIS_POOL_PLANE ??= copyFixturePlane());
 
 /**
- * **Pool setup's Docker path, in the real window** (#4985, #4484's first acceptance criterion): a
- * spec opens Pool setup and presses each step's main button to Try it's last screen, on this
- * machine's Docker, with a pool of the runner image this build makes. Its own run, on Linux alone,
- * because it needs a Docker daemon, that image in a registry of the job's own, and a profile whose
- * harness reports its start on the runner, none of which another run has.
+ * **Pool setup's Docker path, in the real window** (#4985, #4484's first acceptance criterion),
+ * and its cluster path on the job's kind cluster (#4494): a spec opens Pool setup and presses each
+ * step's main button to Try it's last screen, on this machine's Docker or that cluster, with a
+ * pool of the runner image this build makes. Its own run, on Linux alone, because it needs a
+ * Docker daemon, that image in a registry of the job's own, and a profile whose harness reports
+ * its start on the runner, none of which another run has.
  *
  * **What stands in for an account.** The profile is a Claude Code one, kept in this run's own
  * machine store, pinned to the version the runner image keeps installed. There, that `claude`
@@ -52,6 +53,9 @@ const environment = theRunsEnvironment(plane, {
   // The agent the job's ssh signs in to the other machine with (#6266, tests/remote-docker/up.sh),
   // as a person's window has their own.
   ...(process.env.SSH_AUTH_SOCK ? { SSH_AUTH_SOCK: process.env.SSH_AUTH_SOCK } : {}),
+  // The kubeconfig the job's kind cluster was made in (#4494), as a person's window has their
+  // own: the app's kubectl reads it on every call, and Pool setup keeps none of it.
+  ...(process.env.KUBECONFIG ? { KUBECONFIG: process.env.KUBECONFIG } : {}),
 });
 const programs = declarePoolsClaudeProfile(
   plane,
