@@ -12,26 +12,32 @@
 //! and the event log stays metadata-only.
 //!
 //! **A new kind of story event needs a line in [`is_story`].** Only `trust.*` is taken as a
-//! family; `run.started`, `run.ended` and the four kinds of stop ([`stops`]: `stop.block`,
-//! `stop.hold`, `stop.loop_pause` and `ask.answered`) are taken by name. Any other kind, a new
-//! `stop.*` or `run.*` one included, and one outside those families such as an ask being raised,
-//! is left out of the timeline until [`is_story`] names it, and a new kind of stop is counted
-//! only once [`Tally`] has a bucket for it.
+//! family; `run.started`, `run.ended`, the four kinds of stop ([`stops`]: `stop.block`,
+//! `stop.hold`, `stop.loop_pause` and `ask.answered`) and an ask being raised (`ask.raised`,
+//! T1-28) are taken by name. Any other kind, a new `stop.*` or `run.*` one included, is left
+//! out of the timeline until [`is_story`] names it, and a new kind of stop is counted only once
+//! [`Tally`] has a bucket for it. A raised ask is no stop and is never counted.
+//!
+//! **What heads a Chat log is a query of its own** ([`summary`]): the tool events its allowed
+//! counts are read from, and the start its honesty lines are, are the trace, never the story,
+//! so [`timeline`] leaves the tool events out.
 
 use std::collections::BTreeMap;
 use std::io;
 use std::path::Path;
 
 use super::Event;
-use super::stops::{self, AskAnswered, AskGroup, Block, Hold, LoopPause, Qualifier};
-use crate::sandbox::protection::InForce;
+use super::stops::{self, AskAnswered, AskGroup, AskRaised, Block, Hold, LoopPause, Qualifier};
+use crate::sandbox::protection::{InForce, SANDBOX};
 
 /// **Whether an event of `kind` is part of a chat's story**: its runs starting and ending, its
 /// stops ([`stops`]: blocks, holds, loop pauses and answers to asks), and the grants and
 /// protection changes the log writes under it (`trust.*`). A tool hook's line and the log's own
 /// housekeeping are not: the Chat log is the story, never the trace.
 pub fn is_story(kind: &str) -> bool {
-    matches!(kind, "run.started" | "run.ended") || is_stop(kind) || kind.starts_with("trust.")
+    matches!(kind, "run.started" | "run.ended" | stops::ASK_RAISED)
+        || is_stop(kind)
+        || kind.starts_with("trust.")
 }
 
 /// **Chat `chat`'s timeline among `events`**: the events of its story ([`is_story`]), in the
@@ -49,9 +55,10 @@ pub fn timeline_in(dir: &Path, chat: &str) -> io::Result<Vec<Event>> {
     Ok(timeline(&super::read(dir)?, chat))
 }
 
-/// **A row the Chat log draws** of a chat's timeline (R-227, R-233). Phase 1 draws a start and
-/// an end; the other rows are T1-28's, and a kind of story event with no row here is drawn by
-/// none yet.
+/// **A row the Chat log draws** of a chat's timeline (R-227, R-228, R-229, R-231, R-232,
+/// R-233). Phase 1 draws a start and an end, the protection changes, the asks and their
+/// answers, the holds and the loop pauses; a block's row is T1-29's, and a kind of story event
+/// with no row here (a grant, phase 3's) is drawn by none yet.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Row {
     /// A start of the chat's own run that resolved the protection it runs under.
@@ -112,7 +119,6 @@ pub enum Row {
 pub fn rows(events: &[Event], chat: &str) -> Vec<Row> {
     timeline(events, chat)
         .into_iter()
-        .filter(|event| event.parent_run.is_none())
         .filter_map(|event| {
             let word = |field: &str| {
                 event
@@ -123,8 +129,9 @@ pub fn rows(events: &[Event], chat: &str) -> Vec<Row> {
                     .to_owned()
             };
             let at_ms = super::written_at_ms(&event.ulid);
+            let own = event.parent_run.is_none();
             match event.kind.as_str() {
-                "run.started" => {
+                "run.started" if own => {
                     let cause = word("cause");
                     (!matches!(cause.as_str(), "clear" | "child")).then(|| Row::Started {
                         at_ms,
@@ -135,17 +142,43 @@ pub fn rows(events: &[Event], chat: &str) -> Vec<Row> {
                             .and_then(|said| serde_json::from_value(said.clone()).ok()),
                     })
                 }
-                "run.ended" => Some(Row::Ended {
+                "run.ended" if own => Some(Row::Ended {
                     at_ms,
                     state: word("state"),
                     cause: word("cause"),
                     code: event.body.get("code").and_then(serde_json::Value::as_i64),
                 }),
+                // The protection changes the shipped paths write (R-228): the sandbox lifted
+                // for a run, or put back on. A grant is no change of protection.
+                kind @ (SANDBOX_OFF | SANDBOX_ON) => Some(Row::ProtectionChanged {
+                    at_ms,
+                    change: (if kind == SANDBOX_OFF { "off" } else { "on" }).to_owned(),
+                    actor_kind: word("actor_kind"),
+                    actor: word("actor"),
+                }),
+                stops::ASK_RAISED => {
+                    read::<AskRaised>(&event).map(|AskRaised { ask }| Row::AskRaised { at_ms, ask })
+                }
+                stops::ASK_ANSWERED => {
+                    read(&event).map(|answered| Row::AskAnswered { at_ms, answered })
+                }
+                stops::HOLD => read(&event).map(|hold| Row::Held { at_ms, hold }),
+                stops::LOOP_PAUSE => read(&event).map(|pause| Row::LoopPaused { at_ms, pause }),
                 _ => None,
             }
         })
         .collect()
 }
+
+/// A stop's body as its kind writes it; one that does not read back is no row.
+fn read<T: serde::de::DeserializeOwned>(event: &Event) -> Option<T> {
+    serde_json::from_value(event.body.clone()).ok()
+}
+
+/// The kinds a chat's sandbox being lifted for a run, and put back on, are written under
+/// ([`crate::sandbox::Change::kind`]).
+const SANDBOX_OFF: &str = "trust.sandbox.off";
+const SANDBOX_ON: &str = "trust.sandbox.on";
 
 /// **What heads a chat's Chat log** (R-234, R-235): its allowed calls, collapsed into one
 /// count with those allowed by the person's rules, and the honesty lines its start event says.
@@ -161,9 +194,68 @@ pub struct Summary {
     pub ran_as_you: bool,
 }
 
-/// **What heads chat `chat`'s Chat log** among `events` ([`Summary`]).
-pub fn summary(_events: &[Event], _chat: &str) -> Summary {
-    Summary::default()
+/// **What heads chat `chat`'s Chat log** among `events` ([`Summary`]), from its tool events and
+/// its latest start.
+///
+/// - **Allowed** (R-234): each call whose tool event before it ran (a `PreToolUse` hook's,
+///   [`super::phase`]) says purlis's hook let it through, `allow` or `none`, once per call by
+///   its id under its run, so its post hook, or a second pre hook, is never a second call. A
+///   call refused (`deny`) or asked about (`ask`) is not counted.
+/// - **By your rules**: of those, each allowed by an entry of the person's Allowed list, which
+///   its `allow` names as its `rule`.
+/// - **Unverified** (R-235): the chat's hooks report from within its reach, as its start's
+///   harness and sandbox say ([`stops::reported_from_outside_its_reach`]), the rule a block's
+///   report takes.
+/// - **Ran as you**: its start's sandbox layer was at `off`, No sandbox; where the start did
+///   not record its protection, a start with no sandbox backend (`none`).
+///
+/// A chat with no start in the log says neither line: nothing says how it ran.
+pub fn summary(events: &[Event], chat: &str) -> Summary {
+    let mut summary = Summary::default();
+    let mut calls = std::collections::HashSet::new();
+    let mut start = None;
+    for event in events
+        .iter()
+        .filter(|event| event.chat.as_deref() == Some(chat))
+    {
+        if event.kind == "run.started" && event.parent_run.is_none() {
+            start = Some(event);
+            continue;
+        }
+        let Some(hook) = event.kind.strip_prefix("hook.") else {
+            continue;
+        };
+        if super::phase(hook) != Some(super::Phase::Pre) {
+            continue;
+        }
+        let said = |field: &str| event.body.get(field).and_then(serde_json::Value::as_str);
+        let decision = said("decision");
+        if !matches!(decision, Some("allow" | "none")) {
+            continue;
+        }
+        if let Some(call) = said("call")
+            && !calls.insert((event.run.as_deref(), call))
+        {
+            continue;
+        }
+        summary.allowed = summary.allowed.saturating_add(1);
+        if decision == Some("allow") && said("rule").is_some() {
+            summary.by_your_rules = summary.by_your_rules.saturating_add(1);
+        }
+    }
+    if let Some(start) = start {
+        let attributes: super::Attributes =
+            serde_json::from_value(start.body.clone()).unwrap_or_default();
+        summary.unverified = !stops::reported_from_outside_its_reach(&attributes);
+        summary.ran_as_you = match &attributes.protection {
+            Some(in_force) => in_force
+                .layers
+                .iter()
+                .any(|layer| layer.layer == SANDBOX && layer.level == "off"),
+            None => attributes.sandbox.as_deref() == Some("none"),
+        };
+    }
+    summary
 }
 
 /// **How many of each kind of stop.** A block whose report is qualified, `unverified` or

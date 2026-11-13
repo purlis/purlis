@@ -2053,6 +2053,21 @@ impl Held {
             return Ok(());
         }
         if let Some(refused) = refused {
+            // R-229: the person's answer, from this window, in the chat's Chat log.
+            use purlis_core::eventlog::stops::{Answer, AnsweredBy, AskAnswered, AskGroup, Stop};
+            crate::chatlog::record(
+                &self.hooks,
+                session,
+                Stop::AskAnswered(AskAnswered {
+                    ask: AskGroup::HarnessPrompt,
+                    answer: if refused {
+                        Answer::Refused
+                    } else {
+                        Answer::Allowed
+                    },
+                    by: AnsweredBy::Window,
+                }),
+            );
             crate::pausing::answered(self, session, refused);
         }
         if let Some(moved) = self.board().answered_by(session, &asker) {

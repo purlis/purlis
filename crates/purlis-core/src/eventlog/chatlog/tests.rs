@@ -650,14 +650,15 @@ fn raising_and_answering_an_ask_writes_its_event_with_the_answer_and_who() {
         })
         .collect();
     assert_eq!(asked, expected);
-    let kinds: Vec<&str> = timeline(&events, ONE)
+    let story = timeline(&events, ONE);
+    let kinds: Vec<&str> = story
         .iter()
         .map(|event| event.kind.as_str())
         .filter(|kind| kind.starts_with("ask."))
-        .collect::<Vec<_>>();
+        .collect();
     assert_eq!(kinds.len(), 2 * GROUPS.len(), "{kinds:?}");
-    let answered = timeline(&events, ONE)
-        .into_iter()
+    let answered = story
+        .iter()
         .find(|event| event.kind == stops::ASK_ANSWERED)
         .unwrap();
     assert_eq!(

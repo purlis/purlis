@@ -30,6 +30,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use purlis_core::dispatchlimits::Reached;
+use purlis_core::eventlog::stops::{
+    Answer, AnsweredBy, AskAnswered, AskGroup, AskRaised, LoopPause, LoopRule, Stop,
+};
 use purlis_core::looping::{self, Loops};
 
 use crate::asking::pauses::{CONTINUE, FINE, STOP};
@@ -274,13 +277,40 @@ fn hold(held: &Held, chats: &[u32], still: bool) {
     held.chats().asks_may_have_moved();
 }
 
+/// The group of ask a pause for `why` is (R-229).
+fn group_of(why: Why) -> AskGroup {
+    match why {
+        Why::Budget(_) => AskGroup::Budget,
+        Why::Looping(_) => AskGroup::LoopPause,
+    }
+}
+
+/// **A loop pause as the event log writes it** (R-232): the rule, and at how many times.
+fn loop_pause_of(why: looping::Why) -> LoopPause {
+    let (rule, times) = match why {
+        looping::Why::Failing { times } => (LoopRule::Failing, times),
+        looping::Why::Refused { times } => (LoopRule::Refused, times),
+        looping::Why::Blocked { times } => (LoopRule::Blocked, times),
+    };
+    LoopPause { rule, times }
+}
+
 /// **Pauses chat `chat` for `why`, at `now`**, and asks the person: it and its tasks at work
-/// below it are held still. Answers whether it was paused ([`Pauses::pause`]).
+/// below it are held still. Answers whether it was paused ([`Pauses::pause`]). A pause for a
+/// loop is written as one (R-232), and its ask as raised (R-229), for the chat's Chat log.
 pub(crate) fn pause(held: &Held, chat: u32, why: Why, now: i64) -> bool {
     let below = crate::handoff::at_work_below(held, chat);
     let Some(chats) = held.pauses().pause(chat, why, now, below) else {
         return false;
     };
+    if let Why::Looping(found) = why {
+        crate::chatlog::record(held.hooks(), chat, Stop::LoopPause(loop_pause_of(found)));
+    }
+    crate::chatlog::record(
+        held.hooks(),
+        chat,
+        Stop::AskRaised(AskRaised { ask: group_of(why) }),
+    );
     hold(held, &chats, true);
     true
 }
@@ -353,7 +383,28 @@ pub(crate) fn called(held: &Held, call: &purlis_core::hookwire::ToolCall) {
 /// fine, continue let it go on; Stop lets it go on only to stop it, as the budget's limit or
 /// the window's Stop stops it. Raise the budget is the window's own and never comes here.
 pub(crate) fn answer(held: &Arc<Held>, chat: u32, option: &str) -> Result<(), String> {
+    let group = held
+        .pauses()
+        .now()
+        .into_iter()
+        .find(|(paused, _)| *paused == chat)
+        .map(|(_, paused)| group_of(paused.why));
     let answered = held.pauses().answer(chat, option)?;
+    // R-229: the person's answer, from the window (`answer_pause` is the window's alone).
+    if let Some(ask) = group {
+        crate::chatlog::record(
+            held.hooks(),
+            chat,
+            Stop::AskAnswered(AskAnswered {
+                ask,
+                answer: match answered.then {
+                    Then::GoOn => Answer::Allowed,
+                    Then::StopAt(_) | Then::Stop => Answer::Refused,
+                },
+                by: AnsweredBy::Window,
+            }),
+        );
+    }
     hold(held, &answered.held, false);
     match answered.then {
         Then::GoOn => Ok(()),

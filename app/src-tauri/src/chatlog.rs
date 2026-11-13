@@ -3,13 +3,16 @@
 
 //! **A chat's Chat log, for its tab** (R-224, R-227, R-233, R-310; ADR 0124 decision 11): the
 //! rows of its story, read from this machine's event log through `purlis_core::eventlog::
-//! chatlog::rows`, oldest first. Phase 1 draws its start and its end.
+//! chatlog::rows`, oldest first, and what heads it (`chatlog::summary`): its start and its end,
+//! and between them its protection changes, its asks and their answers, its holds and its loop
+//! pauses (T1-28); its blocks are T1-29's.
 //!
 //! **Pull-only** (R-225): read when the tab opens, told to no window, and nothing here counts
 //! or marks a row as new. It holds nothing of its own: the Chat log is a query of the event
 //! log, and the event log holds no chat's words.
 
-use purlis_core::eventlog::chatlog::{self, Row};
+use purlis_core::eventlog::chatlog::{self, Row, Summary};
+use purlis_core::eventlog::stops::{Stop, Target};
 use purlis_core::sandbox::protection::InForce;
 
 use crate::planes::PlaneId;
@@ -136,9 +139,17 @@ fn protection_of(in_force: InForce) -> StartProtection {
     }
 }
 
+/// A closed word's own spelling, as the log writes it.
+fn word_of(value: impl serde::Serialize) -> String {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|word| word.as_str().map(str::to_owned))
+        .unwrap_or_else(|| purlis_core::eventlog::UNKNOWN.to_owned())
+}
+
 /// The window's row for the core's `row`.
-fn row_of(row: Row) -> Option<ChatLogRow> {
-    Some(match row {
+fn row_of(row: Row) -> ChatLogRow {
+    match row {
         Row::Started {
             at_ms,
             cause,
@@ -159,8 +170,58 @@ fn row_of(row: Row) -> Option<ChatLogRow> {
             cause,
             code: code.and_then(|code| i32::try_from(code).ok()),
         },
-        _ => return None,
-    })
+        Row::ProtectionChanged {
+            at_ms,
+            change,
+            actor_kind,
+            actor,
+        } => ChatLogRow::ProtectionChanged {
+            at: at(at_ms),
+            change,
+            actor_kind,
+            actor,
+        },
+        Row::AskRaised { at_ms, ask } => ChatLogRow::AskRaised {
+            at: at(at_ms),
+            ask: word_of(ask),
+        },
+        Row::AskAnswered { at_ms, answered } => ChatLogRow::AskAnswered {
+            at: at(at_ms),
+            ask: word_of(answered.ask),
+            answer: word_of(answered.answer),
+            by: word_of(answered.by),
+        },
+        Row::Held { at_ms, hold } => ChatLogRow::Held {
+            at: at(at_ms),
+            arm: match hold.target {
+                Some(Target::GuardArm(arm)) => Some(arm.as_str().to_owned()),
+                _ => None,
+            },
+            tool: hold.tool,
+        },
+        Row::LoopPaused { at_ms, pause } => ChatLogRow::LoopPaused {
+            at: at(at_ms),
+            rule: word_of(pause.rule),
+            times: pause.times,
+        },
+    }
+}
+
+/// The window's summary for the core's.
+fn summary_of(
+    Summary {
+        allowed,
+        by_your_rules,
+        unverified,
+        ran_as_you,
+    }: Summary,
+) -> ChatLogSummary {
+    ChatLogSummary {
+        allowed,
+        by_your_rules,
+        unverified,
+        ran_as_you,
+    }
 }
 
 /// The Chat log of the chat with id `chat` (`None`: purlis does not know it) in `events`.
@@ -175,9 +236,9 @@ fn chat_log_of(events: &[purlis_core::eventlog::Event], chat: Option<&str>) -> C
             known: true,
             rows: chatlog::rows(events, chat)
                 .into_iter()
-                .filter_map(row_of)
+                .map(row_of)
                 .collect(),
-            summary: ChatLogSummary::default(),
+            summary: summary_of(chatlog::summary(events, chat)),
         },
     }
 }
@@ -208,6 +269,17 @@ pub(crate) async fn chat_log(
         Ok(chat_log_of(&events, chat.as_deref()))
     })
     .await
+}
+
+/// **Writes chat `chat`'s ask raised or answered, a hold or a loop pause** (R-229, R-232) into
+/// the event log through `hooks`, where this machine keeps one: what its Chat log lists. A
+/// write that fails is said in the app's log and changes nothing the person sees: the ask is
+/// raised, answered or paused all the same.
+pub(crate) fn record(hooks: &crate::hooks::Hooks, chat: u32, stop: Stop) {
+    let kind = stop.kind();
+    if let Err(why) = hooks.write_stop(chat, stop) {
+        tracing::warn!("purlis: chat {chat}'s {kind} was not written to its log: {why}");
+    }
 }
 
 #[cfg(test)]
