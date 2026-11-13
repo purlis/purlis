@@ -25,17 +25,31 @@ export type DismissHold = {
   /** How many lines the standing Undo brings back; `undefined` while none stands. */
   undoable: number | undefined;
   /**
-   * Takes the lines `keys` away now, and carries `out` their Dismiss once the Undo goes. Where
-   * what was done is already done (Snooze all writes at once), `back` is what its Undo does.
+   * Takes the lines `keys` away now, and carries `out` their Dismiss once the Undo goes, handed
+   * the keys still held then (a line {@link DismissHold.release}d is not). Where what was done
+   * is already done (Snooze all writes at once), `back` is what its Undo does.
    */
-  hold: (keys: readonly string[], out: () => void, back?: () => void) => void;
+  hold: (
+    keys: readonly string[],
+    out: (still: ReadonlySet<string>) => void,
+    back?: () => void,
+  ) => void;
   /** Brings the held lines back, carries out nothing, and does the hold's `back` if it has one. */
   undo: () => void;
+  /**
+   * **Brings back the one line `key`** (R-334): the rest stay held for the same Undo, and only
+   * theirs is carried out. A hold with a `back` was done at once, so it is undone whole.
+   */
+  release: (key: string) => void;
 };
 
 const NONE: ReadonlySet<string> = new Set();
 
-type Held = { keys: ReadonlySet<string>; out: () => void; back?: () => void };
+type Held = {
+  keys: ReadonlySet<string>;
+  out: (still: ReadonlySet<string>) => void;
+  back?: () => void;
+};
 
 /** One list's held Dismiss and its Undo. */
 export function useDismissHold(): DismissHold {
@@ -50,11 +64,11 @@ export function useDismissHold(): DismissHold {
     const was = now.current;
     now.current = undefined;
     setHolding(undefined);
-    was?.out();
+    was?.out(was.keys);
   }, []);
 
   const hold = useCallback(
-    (keys: readonly string[], out: () => void, back?: () => void) => {
+    (keys: readonly string[], out: (still: ReadonlySet<string>) => void, back?: () => void) => {
       if (keys.length === 0) return;
       carryOut();
       const held = { keys: new Set(keys), out, back };
@@ -73,6 +87,22 @@ export function useDismissHold(): DismissHold {
     was?.back?.();
   }, []);
 
+  const release = useCallback(
+    (key: string) => {
+      const was = now.current;
+      if (was === undefined || !was.keys.has(key)) return;
+      const keys = new Set([...was.keys].filter((one) => one !== key));
+      if (was.back !== undefined || keys.size === 0) {
+        undo();
+        return;
+      }
+      const held = { ...was, keys };
+      now.current = held;
+      setHolding(held);
+    },
+    [undo],
+  );
+
   useEffect(() => {
     window.addEventListener("pagehide", carryOut);
     return () => {
@@ -82,8 +112,8 @@ export function useDismissHold(): DismissHold {
   }, [carryOut]);
 
   return useMemo(
-    () => ({ held: holding?.keys ?? NONE, undoable: holding?.keys.size, hold, undo }),
-    [holding, hold, undo],
+    () => ({ held: holding?.keys ?? NONE, undoable: holding?.keys.size, hold, undo, release }),
+    [holding, hold, undo, release],
   );
 }
 
@@ -98,9 +128,9 @@ export const DISMISS_ALL_TIP = "Put every line here away. Nothing is answered.";
 export function holdOrCarryOut(
   hold: DismissHold | undefined,
   keys: readonly string[],
-  out: () => void,
+  out: (still: ReadonlySet<string>) => void,
 ): void {
-  if (hold === undefined) out();
+  if (hold === undefined) out(new Set(keys));
   else hold.hold(keys, out);
 }
 

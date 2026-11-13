@@ -235,6 +235,7 @@ import { usePlaneUpdated } from "./PlaneUpdated";
 import { useHarnessCards } from "./harnessCards";
 import { useEditorTabs, type EditorTabOpened } from "./editorTab";
 import { Notice, NoticeInCentre, NoticeOf, type NoticesDot } from "./Notice";
+import { useAskedControl } from "./windowControls";
 import { ReadOnlyLine, ReadOnlyMendable, ReadOnlySaid, useReadOnly } from "./ReadOnlyLine";
 import { LivesHere } from "./LivesHere";
 import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
@@ -11561,6 +11562,25 @@ export const PlaneView = memo(function PlaneView({
   const showUpdates = useCallback(() => showSideView("updates"), [showSideView]);
   /** Notices, shown (#5645): the project's Notices, in the Panel's right half, under Asks. */
   const showNotices = useCallback(() => showSideView("notices"), [showSideView]);
+  /** **A control a message named, asked for** (R-333): the project in front shows its Notices,
+   *  whose list puts the keyboard on it. */
+  const askedControl = useAskedControl(plane);
+  useEffect(() => {
+    if (askedControl === undefined || !inFront) return;
+    // Shown without its first stop taking the keyboard: its list puts it on the control.
+    showSide("notices");
+    // Not cancelled when the ask is reached: a frame on, the keyboard is on the control, or, where
+    // none stands to put it on, on the view's first stop, as its key leaves it.
+    requestAnimationFrame(() => {
+      const panel = document.querySelector('[role="tabpanel"][data-view="notices"]');
+      if (panel === null || !panel.contains(document.activeElement)) giveViewTheKeyboard("notices");
+    });
+  }, [askedControl, inFront, showSide]);
+  /** **The Notices view, findable** (Q182, Q183): over this project's dismissals. */
+  const noticesFindable = useMemo(
+    () => ({ project: plane, dismissed, showAgain }),
+    [plane, dismissed, showAgain],
+  );
   /** A runner's branch ready to push, from the away summary (#2051): its workspace in front,
    *  and Changes, where it is taken here and pushed. */
   const showChangesOf = useCallback(
@@ -12414,6 +12434,7 @@ export const PlaneView = memo(function PlaneView({
                       asks={waiting}
                       onGo={goToAsking}
                       notices={standing}
+                      findable={noticesFindable}
                       reading={inboxReading}
                       onNotices={setNoticesListed}
                       onDot={setNoticesDot}

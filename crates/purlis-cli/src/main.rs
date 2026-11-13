@@ -2282,6 +2282,7 @@ fn tell_the_host_about_the_tool_call(
         args: data.get("tool_input").map(purlis_core::eventlog::args_hash),
         decision: answered.decision,
         rule: answered.rule.clone(),
+        arm: answered.arm.map(|arm| arm.id().to_owned()),
         hook_ms: u64::try_from(took.as_millis()).unwrap_or(u64::MAX),
         agent: hookwire::sub_agent(data["agent_id"].as_str(), &purlis_core::envvar::var),
         at_ms: std::time::SystemTime::now()

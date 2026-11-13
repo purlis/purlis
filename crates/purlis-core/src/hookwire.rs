@@ -2840,6 +2840,11 @@ pub struct ToolCall {
     /// The guard rule that refused, for a `deny`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rule: Option<String>,
+    /// The id of the gate's arm that refused, for a `deny` the gate gave
+    /// ([`crate::toolgate::Arm`]): what the host writes as the target of the deny's block. It
+    /// comes from the chat's side of the channel, so the host writes only an id the gate has.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arm: Option<String>,
     /// How long charter's hook took, in milliseconds.
     #[serde(default)]
     pub hook_ms: u64,

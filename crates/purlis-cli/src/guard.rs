@@ -237,6 +237,7 @@ fn held_branch_folder(root: &Path, command: &str, cwd: &str) -> Option<toolgate:
         && purlis_core::branchgit::any_branch_folder(root)
     {
         return Some(toolgate::Verdict {
+            arm: None,
             reason: purlis_core::piececlaim::REASON.to_owned(),
             denial: purlis_core::branchgit::unplaced_said(&sub),
             shape: Some(sub),
@@ -280,6 +281,7 @@ fn held_branch_folder(root: &Path, command: &str, cwd: &str) -> Option<toolgate:
                 })
                 .collect();
             return Some(toolgate::Verdict {
+                arm: None,
                 reason: purlis_core::piececlaim::REASON.to_owned(),
                 shape: Some(write.sub),
                 denial: why.join(" "),

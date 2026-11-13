@@ -3479,6 +3479,7 @@ fn a_tool_call_is_its_own_line_and_is_handed_to_the_app_with_its_chats_token() {
         args: Some("ab".repeat(32)),
         decision: Decision::Deny,
         rule: Some("no-force-push".to_owned()),
+        arm: None,
         hook_ms: 2,
         agent: None,
         at_ms: 0,
