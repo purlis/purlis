@@ -103,6 +103,9 @@ const UNLINKED: Readonly<Record<string, string>> = {
   "crates/purlis-cli/src/signing.rs: Add key": ELSEWHERE,
   "crates/purlis-cli/src/skill.rs: Extensions": CLI,
   "crates/purlis-core/src/browserproof.rs: Show what goes": CHAT,
+  // The `chats` tool's description (#6235) names the window's Chats tree, a view, as what its
+  // list matches; its reader is the chat that calls the tool.
+  "crates/purlis-core/src/chattools.rs: Chats tree has them": CHAT,
   "crates/purlis-core/src/chattools.rs: Update": CHAT,
   "crates/purlis-core/src/dispatchplace.rs: Discard": CHAT,
   "crates/purlis-core/src/dispatchplace.rs: Merge": CHAT,
