@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { $, browser, expect } from "@wdio/globals";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import process from "node:process";
 import { openThroughTheTrustQuestion } from "../opening.js";
 import {
@@ -22,6 +24,8 @@ import {
   runFromThePalette,
   tabNames,
 } from "../reach.js";
+import { LOGS } from "../processes.js";
+import { ask } from "../switching.js";
 
 /**
  * **Pool setup's cluster path, walked in the real window** (#4494): from Add a cluster pool… to
@@ -113,6 +117,8 @@ async function markAsMyOwn(): Promise<void> {
       throw new Error(`no This is my own in Settings: ${await settingsSay()}`);
     });
   let pressed = false;
+  let pressedAt = 0;
+  let clicked = false;
   await browser
     .waitUntil(
       async () => {
@@ -133,25 +139,58 @@ async function markAsMyOwn(): Promise<void> {
           if (focused) {
             await browser.keys(" ");
             pressed = true;
+            pressedAt = Date.now();
           }
+        } else if (!clicked && Date.now() - pressedAt > 15_000 && !(await coreKeepsItMarked())) {
+          // Space reached nothing the core heard of: one press of the switch, by its role.
+          clicked = await $(MY_OWN)
+            .click()
+            .then(
+              () => true,
+              () => false,
+            );
         }
         return false;
       },
       { timeout: 60_000, interval: 1_000 },
     )
     .catch(async () => {
-      throw new Error(`This is my own never turned on: ${await settingsSay()}`);
+      throw new Error(
+        `This is my own never turned on (${clicked ? "Space, then a press" : pressed ? "Space" : "never pressed"}): ${await settingsSay()}`,
+      );
     });
 }
 
-/** What the cluster pool's row in Settings › Pools says, or what is in front, for a failure. */
+/** Whether the core keeps a cluster pool here marked as the person's own. */
+async function coreKeepsItMarked(): Promise<boolean> {
+  return ask<{ clusters?: { owned: boolean }[] }>("docker_pools").then(
+    (pools) => (pools.clusters ?? []).some((one) => one.owned),
+    () => false,
+  );
+}
+
+/**
+ * What the cluster pool's row in Settings › Pools says, what is in front and has the keys, and
+ * what the core keeps of the pool's mark, for a failure; a picture of the window beside the
+ * run's logs.
+ */
 async function settingsSay(): Promise<string> {
-  return browser.execute((strip: string) => {
-    const row = document.querySelector(".pools-about")?.textContent;
-    if (row) return row.replace(/\s+/g, " ");
+  mkdirSync(LOGS, { recursive: true });
+  await browser.saveScreenshot(join(LOGS, "pool-setup-cluster-my-own.png")).catch(() => undefined);
+  const kept = await ask<{ clusters?: { name: string; owned: boolean }[] }>("docker_pools").then(
+    (pools) => JSON.stringify(pools.clusters ?? []),
+    (why: unknown) => `the core couldn't say: ${String(why)}`,
+  );
+  const shown = await browser.execute((strip: string) => {
     const front = document.querySelector(`${strip} [role="tab"][aria-selected="true"] .tab-name`);
-    return `no cluster pool's row on screen; the tab in front is ${front?.textContent ?? "none"}`;
+    const active = document.activeElement;
+    const keys = active
+      ? `${active.tagName.toLowerCase()}[role=${active.getAttribute("role") ?? ""}] ${(active.textContent ?? "").slice(0, 40)}`
+      : "nothing";
+    const row = document.querySelector(".pools-about")?.textContent?.replace(/\s+/g, " ");
+    return `the tab in front is ${front?.textContent ?? "none"}, the keys go to ${keys}; ${row ? `its row says ${row.slice(0, 300)}` : "no cluster pool's row is on screen"}`;
   }, TABS);
+  return `${shown}; the core keeps ${kept}`;
 }
 
 describe("Pool setup on a kind cluster", () => {
