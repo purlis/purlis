@@ -2296,9 +2296,11 @@ fn tell_the_host_about_the_tool_call(
         let _ = writeln!(std::io::stderr(), "{} {word} ({why})", hookwire::NOT_TAKEN);
     }
     // The file a file tool touched, for the tree's live marker (FM-6): on a line of its own,
-    // sent once and never spooled, so no record holds it (D-86a). Not for a call the guard
-    // refused, which touched nothing. A marker the app missed is not worth a word on stderr.
+    // sent once and never spooled, so no record holds it (D-86a). Not for a call the guard or
+    // the harness's own check refused, which touched nothing. A marker the app missed is not
+    // worth a word on stderr.
     if call.decision != hookwire::Decision::Deny
+        && word != purlis_core::hookreg::HARNESS_DENIED
         && let Some(touching) = purlis_core::touching::of_tool(&data)
     {
         let _ = hookwire::touch(
