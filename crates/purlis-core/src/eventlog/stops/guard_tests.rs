@@ -396,12 +396,16 @@ fn a_guard_report_is_verified_only_from_claude_code_under_a_backend_that_leaves_
     }
 }
 
-/// T1-10, Q235: a sandbox refusal the chat's own hook line reported comes over the channel a
-/// guard's report does, so the app writes it `unverified` and the recorder keeps that on the
-/// rule a guard's report takes: plain only from Claude Code under a backend that leaves its
-/// hooks outside. purlis's proxy's own word is written plain on every harness.
+/// T1-10, Q254 (extending Q235): a sandbox refusal the chat's own hook line reported is
+/// `unverified` on every harness and under every backend. On Claude Code under Seatbelt or
+/// bubblewrap the hook runs outside the sandbox, but it reads the command's own output, which the
+/// chat can write, so the recorder never clears it as it clears a guard's deny. purlis's proxy's
+/// own word is written plain on every harness.
+///
+/// A pin of `Recorder::stop`; its mutation: the qualifier cleared for a run whose hooks report
+/// from outside its reach (`reported_from_outside_its_reach`), as a guard's deny is.
 #[test]
-fn a_sandbox_block_its_hook_reported_is_verified_only_where_a_guard_report_is() {
+fn a_sandbox_block_its_hook_reported_is_unverified_on_every_harness() {
     use crate::sandboxblock::stop::{Reported, sandbox_block};
     let dir = tempfile::tempdir().unwrap();
     let mut host = recorder(dir.path());
@@ -409,12 +413,17 @@ fn a_sandbox_block_its_hook_reported_is_verified_only_where_a_guard_report_is() 
     let plain = serde_json::Value::Null;
     let mut number = 0;
     for (harness, sandbox, reported, said) in [
-        (Harness::ClaudeCode, "seatbelt", Reported::ByItsHook, &plain),
+        (
+            Harness::ClaudeCode,
+            "seatbelt",
+            Reported::ByItsHook,
+            &unverified,
+        ),
         (
             Harness::ClaudeCode,
             "bubblewrap",
             Reported::ByItsHook,
-            &plain,
+            &unverified,
         ),
         (
             Harness::ClaudeCode,
@@ -428,6 +437,12 @@ fn a_sandbox_block_its_hook_reported_is_verified_only_where_a_guard_report_is() 
             "landlock",
             Reported::ByItsHook,
             &unverified,
+        ),
+        (
+            Harness::ClaudeCode,
+            "seatbelt",
+            Reported::ByTheProxy,
+            &plain,
         ),
         (Harness::Codex, "seatbelt", Reported::ByTheProxy, &plain),
         (Harness::Opencode, "landlock", Reported::ByTheProxy, &plain),

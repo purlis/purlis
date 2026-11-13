@@ -3,9 +3,13 @@
 
 //! **Files and egress are enforced on each harness** (R-353, Q225; the harness matrix's sandbox
 //! row, ADR 0124): a write outside the chat's folders and a connection to a host nothing lists
-//! are refused, on Claude Code by its own sandbox for Bash, by deny rules for its file tools and
-//! by denying its web tools, and on Codex and opencode by purlis's wrap round the whole process.
-//! What each compiles is read whole, as the chat would be started with it, at the full sandbox.
+//! are refused, on Claude Code by its own sandbox for Bash, by deny rules for its file tools
+//! where a denial class holds the path, and by denying its web tools, and on Codex and opencode
+//! by purlis's wrap round the whole process. What each compiles is read whole, as the chat would
+//! be started with it, at the full sandbox; and at Basic sandbox, the floor, Claude Code's
+//! denial classes are held and its web tools allowed, its proxy carrying every host (Q254).
+//!
+//! Each test is a pin, and its doc comment names the mutations it turns red (Q208, Q253).
 
 use std::path::{Path, PathBuf};
 
@@ -105,6 +109,16 @@ fn write_allows(profile: &str) -> Vec<&str> {
     entries
 }
 
+/// R-353 on Claude Code at the full sandbox: Bash runs in its sandbox, which lets it write no
+/// folder outside the chat's and connects only to listed hosts, strictly; its file tools are
+/// denied what a denial class holds (the vaults here); and its web tools are denied, since no
+/// setting holds them to the sandbox's hosts. A file tool's write elsewhere outside the chat's
+/// folders is Claude Code's own permission check's, not a deny rule purlis writes, so this test
+/// claims no deny for it.
+///
+/// A pin of `claude::rules`; its mutations, each red here: `strictAllowlist` set to false;
+/// `allowUnsandboxedCommands` set to true; `WEB_TOOLS` dropped from the deny chain; the vaults'
+/// `deny_write` (and their `Edit` rules) dropped.
 #[test]
 fn files_and_egress_are_enforced_on_claude_code() {
     let project = Project::new();
@@ -149,8 +163,8 @@ fn files_and_egress_are_enforced_on_claude_code() {
     assert!(!listed.iter().any(|host| host == UNLISTED), "{listed:?}");
     assert!(!carries_the_unlisted_host(&applied));
 
-    // A file tool's write there is refused by a deny rule: its Edit tool runs in Claude Code's
-    // own process, outside the sandbox.
+    // A file tool's write where a denial class holds the path is refused by a deny rule: its
+    // Edit tool runs in Claude Code's own process, outside the sandbox.
     for rule in [format!("Edit(/{vaults})"), format!("Edit(/{vaults}/**)")] {
         assert!(
             settings.deny.contains(&rule),
@@ -174,6 +188,10 @@ fn files_and_egress_are_enforced_on_claude_code() {
 /// its own, and lets it connect to nothing but its own proxy's two ports, whose proxy refuses an
 /// unlisted host. So the same write and connection from the harness's own process, its hooks
 /// and its tools among them, are refused.
+///
+/// A pin of the Seatbelt profile (`seatbelt`); its mutations, each red on Codex and on opencode:
+/// `BASE` set to `(allow default)`; a bare `(allow network-outbound)`; the home written as a
+/// `file-write*` subpath.
 fn files_and_egress_are_enforced_by_the_wrap(harness: Harness) {
     let project = Project::new();
     let applied = compiled_anyway(harness, &project.root, &project.machine()).expect("compiles");
@@ -267,4 +285,86 @@ fn files_and_egress_are_enforced_on_codex() {
 #[test]
 fn files_and_egress_are_enforced_on_opencode() {
     files_and_egress_are_enforced_by_the_wrap(Harness::Opencode);
+}
+
+/// Q254, the floor's matrix cell (ADR 0124): at Basic sandbox, a project that has not turned
+/// the sandbox on, Claude Code's denial classes are held as at the full sandbox, for Bash by its
+/// sandbox and for its file tools by deny rules, and its web tools are allowed: no host is
+/// listed, and the chat's proxy carries every host, an unlisted one too. "Web tools denied" is
+/// the full sandbox's claim ([`files_and_egress_are_enforced_on_claude_code`]), never the
+/// floor's.
+///
+/// A pin of `claude::floor`; its mutations, each red here: `WEB_TOOLS` added to the floor's
+/// deny; the vaults' `deny_write` (or their `Edit` rules) dropped at the floor; an
+/// `allowedDomains` list or `strictAllowlist` set at the floor; the floor's proxy narrowed from
+/// carrying every host.
+#[test]
+fn at_basic_sandbox_claude_codes_denial_classes_are_held_and_its_web_tools_allowed() {
+    let project = Project::new();
+    std::fs::write(project.root.join("charter.toml"), "schema = 1\n").expect("charter.toml");
+    let machine = project.machine();
+    let applied = match decide(
+        Harness::ClaudeCode,
+        &project.root,
+        &machine,
+        &|_| true,
+        None,
+        None,
+    )
+    .expect("decided")
+    {
+        Some(Decided::Sandboxed(applied)) => applied,
+        other => panic!("not the floor: {other:?}"),
+    };
+    assert_eq!(applied.level(), Level::Floor);
+    let Form::ClaudeCode(settings) = applied.form() else {
+        panic!(
+            "compiled for Claude Code's own sandbox: {:?}",
+            applied.form()
+        );
+    };
+    let sandbox = &settings.sandbox;
+    assert_eq!(sandbox["enabled"], true, "{sandbox}");
+    assert_eq!(sandbox["allowUnsandboxedCommands"], false, "{sandbox}");
+
+    // The denial classes are held: every path one holds is denied to a command, and to a file
+    // tool by a deny rule, as at the full sandbox.
+    let deny_write = strings(&sandbox["filesystem"]["denyWrite"]);
+    let vaults = project.vaults();
+    assert!(deny_write.contains(&vaults), "{vaults} in {deny_write:?}");
+    for rule in [format!("Edit(/{vaults})"), format!("Edit(/{vaults}/**)")] {
+        assert!(
+            settings.deny.contains(&rule),
+            "{rule} in {:?}",
+            settings.deny
+        );
+    }
+    let deny_read = strings(&sandbox["filesystem"]["denyRead"]);
+    for denial in Denied::of(&project.root, &machine)
+        .paths
+        .iter()
+        .filter(|denial| denial.access == Access::ReadWrite)
+    {
+        let path = denial.path.display().to_string();
+        assert!(deny_read.contains(&path), "{path} in {deny_read:?}");
+    }
+
+    // Its web tools are allowed, and nothing limits the hosts a command reaches: its proxy
+    // carries every one.
+    for tool in claude::WEB_TOOLS {
+        assert!(
+            !settings.deny.iter().any(|rule| rule == tool),
+            "{tool} in {:?}",
+            settings.deny
+        );
+    }
+    assert!(
+        sandbox["network"].get("allowedDomains").is_none(),
+        "{sandbox}"
+    );
+    assert!(
+        sandbox["network"].get("strictAllowlist").is_none(),
+        "{sandbox}"
+    );
+    assert!(carries_the_unlisted_host(&applied));
 }
