@@ -7,7 +7,8 @@
  * and its result. Pull-only: no count, no New marker. Drawn in every cell of the theme matrix.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect } from "storybook/test";
+import { expect, userEvent } from "storybook/test";
+import { expectFocusInSight } from "./stories.testkit";
 import type { ChatLogRow } from "./bindings";
 import { ChatLogRows } from "./ChatLogTab";
 
@@ -124,4 +125,126 @@ export const RestartedForProjectSettings: Story = {
     );
     await expect(said(again)?.textContent).toMatch(/^Started again in its conversation · /);
   },
+};
+
+/** A block, as the core reads it: purlis's own guard refused a reset that would destroy commits. */
+const BLOCK: Extract<ChatLogRow, { kind: "blocked" }> = {
+  kind: "blocked",
+  at: "2026-11-13T09:10:00Z",
+  tool: "Bash",
+  source: "guard",
+  qualifier: null,
+  target_kind: "guard_arm",
+  target: "A3b",
+  harness: "claude",
+  reason: null,
+};
+
+/** The tags a row carries, by their words. */
+const tagsOf = (row: HTMLElement) =>
+  Array.from(row.querySelectorAll<HTMLElement>('[data-scope="badge"]')).map((tag) =>
+    tag.textContent?.trim(),
+  );
+
+/**
+ * **What every block row holds** (R-183, R-187, R-188): its line is an action sentence, never a
+ * guard's id; its tags are `tags`, each a word beside a neutral icon; and its detail, opened from
+ * the keyboard, names the source.
+ */
+async function aBlockRow(canvas: Canvas, line: string, tags: string[], source: string) {
+  const [, row] = rowsOf(canvas);
+  await expect(said(row)?.textContent).toBe(line);
+  await expect(said(row)?.textContent).not.toMatch(/\bA\d|guard_arm|Refused/);
+  await expect(tagsOf(row)).toEqual(tags);
+  for (const tag of row.querySelectorAll('[data-scope="badge"]'))
+    await expect(tag.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+  const open = canvas.getByRole("button", { expanded: false });
+  open.focus();
+  await userEvent.keyboard("{Enter}");
+  await expect(open).toHaveAttribute("aria-expanded", "true");
+  await expectFocusInSight();
+  await expect(canvas.getByRole("group").textContent).toContain(source);
+}
+
+/** **purlis's own consent** (R-186): its guard blocked the call, and the row carries no tag. */
+export const BlockedByPurlis: Story = {
+  args: { rows: [START, BLOCK] },
+  play: async ({ canvas }) =>
+    aBlockRow(
+      canvas,
+      "purlis blocked a reset that would destroy commits",
+      [],
+      "Blocked by purlis's guards",
+    ),
+};
+
+/** **A block by the sandbox** (R-185): the Sandbox tag. */
+export const BlockedBySandbox: Story = {
+  args: {
+    rows: [
+      START,
+      { ...BLOCK, source: "sandbox", target_kind: "host", target: "registry.example.com" },
+    ],
+  },
+  play: async ({ canvas }) =>
+    aBlockRow(
+      canvas,
+      "The sandbox blocked a connection to registry.example.com",
+      ["Sandbox"],
+      "Blocked by the sandbox",
+    ),
+};
+
+/** **A block by the harness's own check** (R-185, R-340): its tag, and its reason as written. */
+export const BlockedByTheHarnessCheck: Story = {
+  args: {
+    rows: [
+      START,
+      {
+        ...BLOCK,
+        source: "harness_check",
+        target_kind: null,
+        target: null,
+        reason: "Downloads and runs a remote script",
+      },
+    ],
+  },
+  play: async ({ canvas }) => {
+    await aBlockRow(
+      canvas,
+      "Claude Code's own check blocked a Bash call",
+      ["Claude Code's own check"],
+      "Blocked by Claude Code's own check",
+    );
+    await expect(canvas.getByText("Downloads and runs a remote script")).toBeVisible();
+  },
+};
+
+/** **An unverified report** (R-185): a block a chat reported from inside its own reach. */
+export const BlockedUnverified: Story = {
+  args: { rows: [START, { ...BLOCK, qualifier: "unverified" }] },
+  play: async ({ canvas }) =>
+    aBlockRow(
+      canvas,
+      "purlis blocked a reset that would destroy commits",
+      ["Unverified"],
+      "Blocked by purlis's guards",
+    ),
+};
+
+/** **A block purlis can't tell more of** (R-185): the Can't tell tag. */
+export const BlockedCantTell: Story = {
+  args: {
+    rows: [
+      START,
+      { ...BLOCK, source: "sandbox", qualifier: "cant_tell", target_kind: null, target: null },
+    ],
+  },
+  play: async ({ canvas }) =>
+    aBlockRow(
+      canvas,
+      "The sandbox blocked a Bash call",
+      ["Sandbox", "Can't tell"],
+      "Blocked by the sandbox",
+    ),
 };

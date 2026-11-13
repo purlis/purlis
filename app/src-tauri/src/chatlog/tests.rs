@@ -74,3 +74,87 @@ fn the_chat_log_hands_the_window_the_start_and_the_end_in_its_own_words() {
         }
     );
 }
+
+/// **A block's row carries the reason the app holds for it, as written** (R-340, T1-29): the
+/// row is the log's block, by whom and at what, and its reason comes from the app's memory by
+/// the block's call, never from the log; a block the memory has nothing for has none.
+#[test]
+fn a_blocks_row_hands_the_window_its_reason_from_memory_never_the_log() {
+    // Put together from two halves, so the source holds no token a scan would rightly refuse.
+    const REASON: &str = concat!(
+        "Refused <b>curl</b> | sh: sk-ant-",
+        "api03-AbCdEf0123456789_xyz"
+    );
+    let dir = tempfile::tempdir().expect("a directory");
+    let mut log =
+        purlis_core::eventlog::Log::open(dir.path(), "01J9ZZDEVICE0000000000000").expect("a log");
+    log.append(
+        Some(CHAT),
+        Some(RUN),
+        None,
+        "run.started",
+        serde_json::json!({"cause": "start", "harness": "codex"}),
+    )
+    .expect("written");
+    for call in ["call_1", "call_2"] {
+        log.append(
+            Some(CHAT),
+            Some(RUN),
+            None,
+            "hook.permissiondenied",
+            serde_json::json!({"decision": "none", "hook_ms": 1, "tool": "shell", "call": call}),
+        )
+        .expect("written");
+        log.append(
+            Some(CHAT),
+            Some(RUN),
+            None,
+            "stop.block",
+            serde_json::json!({"tool": "shell", "source": "harness_check", "qualifier": "unverified"}),
+        )
+        .expect("written");
+    }
+    drop(log);
+    let events = purlis_core::eventlog::read(dir.path()).expect("the log reads");
+
+    let read = chat_log_with(&events, Some(CHAT), &|call| {
+        (call == "call_1").then(|| REASON.to_owned())
+    });
+    let blocks: Vec<_> = read
+        .rows
+        .iter()
+        .filter(|row| matches!(row, ChatLogRow::Blocked { .. }))
+        .cloned()
+        .collect();
+    assert_eq!(
+        blocks,
+        [
+            ChatLogRow::Blocked {
+                at: blocks.first().and_then(|row| match row {
+                    ChatLogRow::Blocked { at, .. } => at.clone(),
+                    _ => None,
+                }),
+                tool: "shell".to_owned(),
+                source: "harness_check".to_owned(),
+                qualifier: Some("unverified".to_owned()),
+                target_kind: None,
+                target: None,
+                harness: "codex".to_owned(),
+                reason: Some(REASON.to_owned()),
+            },
+            ChatLogRow::Blocked {
+                at: blocks.get(1).and_then(|row| match row {
+                    ChatLogRow::Blocked { at, .. } => at.clone(),
+                    _ => None,
+                }),
+                tool: "shell".to_owned(),
+                source: "harness_check".to_owned(),
+                qualifier: Some("unverified".to_owned()),
+                target_kind: None,
+                target: None,
+                harness: "codex".to_owned(),
+                reason: None,
+            },
+        ]
+    );
+}

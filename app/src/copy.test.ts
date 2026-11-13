@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { copyFaults, retiredTerms } from "./copy";
+import { copyFaults, refusedWord, retiredTerms } from "./copy";
 import { OUTSIDE_THE_FIRST_HOUR } from "./firstHour";
 import { uiStrings } from "./uiStrings";
 
@@ -214,6 +214,25 @@ describe("no retired term on what the window shows (FR-3, ADR 0072, #602)", () =
   });
 });
 
+describe("a stop is Blocked, never Refused (R-170)", () => {
+  const REFUSED = "the word is Blocked, not Refused";
+
+  it("refuses Refused as a label or a sentence's first word", () => {
+    expect(refusedWord("Refused", "shown")).toEqual([REFUSED]);
+    expect(refusedWord("Refused · Bash", "shown")).toEqual([REFUSED]);
+    expect(refusedWord("Refused by the sandbox")).toEqual([REFUSED]);
+  });
+
+  it("passes Blocked, and refused as an English verb in a sentence", () => {
+    expect(refusedWord("Blocked", "shown")).toEqual([]);
+    expect(refusedWord("purlis blocked a force push", "shown")).toEqual([]);
+    expect(refusedWord("The pool refused the move: it is full.", "shown")).toEqual([]);
+    // An id or a type name is the code's, not the window's.
+    expect(refusedWord("Refused")).toEqual([]);
+    expect(refusedWord("`Refused`", "shown")).toEqual([]);
+  });
+});
+
 describe("the strings the guard reads", () => {
   it("finds what the window shows: text, and the attributes a person reads or hears", () => {
     const found = uiStrings(
@@ -363,6 +382,11 @@ describe("every string in app/src", () => {
       ({ path, line, text, fault }) => `${path}:${line} ${JSON.stringify(text)}: ${fault}`,
     );
     expect(faults).toEqual([]);
+  });
+
+  it("no UI string says Refused (R-170)", () => {
+    const refused = FAULTS(refusedWord).map(({ path, line, text }) => `${path}:${line} ${text}`);
+    expect(refused).toEqual([]);
   });
 
   it("says no retired term but the ones listed as debt (#602)", () => {

@@ -42,6 +42,7 @@ mod shipped_literals;
 #[path = "../support/mod.rs"]
 mod support;
 
+mod a_blocks_reason_is_held_in_memory_and_sent_to_the_window_never_logged;
 mod a_branch_expands_into_its_files;
 mod a_branch_folder_is_kept_current;
 mod a_branch_folder_keeps_its_branch_across_a_workspace_rename;
