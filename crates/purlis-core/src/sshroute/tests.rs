@@ -437,8 +437,12 @@ fn the_forward_check_asks_sshd_for_one_channel_to_the_engines_socket_pinned_and_
     // The destination is the last word: `-W` runs no command there.
     assert_eq!(&args[args.len() - 2..], ["--", "me@box"]);
     assert!(
-        forward_check_args(&Route::parse("ssh://me@box").unwrap(), "build", Path::new("/k"))
-            .is_err(),
+        forward_check_args(
+            &Route::parse("ssh://me@box").unwrap(),
+            "build",
+            Path::new("/k")
+        )
+        .is_err(),
         "no socket, nothing to ask for"
     );
 }

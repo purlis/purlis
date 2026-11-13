@@ -398,7 +398,10 @@ pub fn forwarding_refused(opening: &super::forward::Opening<'_>) -> bool {
     };
     if !matches!(
         super::run(opening.ssh, &args),
-        Ok(super::Ran { code: Some(255), .. })
+        Ok(super::Ran {
+            code: Some(255),
+            ..
+        })
     ) {
         return false;
     }
