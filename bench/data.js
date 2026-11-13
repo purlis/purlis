@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794573848462,
+  "lastUpdate": 1794576017922,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -48342,6 +48342,48 @@ window.BENCHMARK_DATA = {
             "value": 101.504659,
             "unit": "ms",
             "extra": "median of 5 runs: 100.788, 101.232, 101.505, 101.902, 102.353 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "9d75c9f59e44b6aba203e3ddfe855584fea23b44",
+          "message": "Kept task screens: kept at a quit, a Settings switch, and the number's size (#6305, #6306, #6297) (#6451)\n\n* Keep the screen of a task that had finished when the app quit (#6305)\n\nThe next launch leaves such a task out of its put back\n(put_back_without_the_finished), so it never closes through close_as,\nwhere a screen is kept. Sessions end at a quit (end_all), so the screen is\nread then: Planes::let_go asks Chats::keep_finished_screens before ending\nevery program, for the open chats the put back will leave out, by the same\ncheck (finished::left_out, now shared). Each is read on its own scoped\nthread, so a quit waits for one read at most.\n\nTests: a reported task's screen is kept at a quit, the chats put back keep\nnone, a blocked or taken-over task keeps none, and none is kept where the\nlocal file turns keeping off. The pretend host can now show a screen.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M78SJ3WW361SZ59JY4JAJKXK\nPurlis-Persona: steward\n\n* A Settings switch for keeping task screens (#6306)\n\nSettings > Project > Dispatch > Keep task screens, in an \"On this machine\"\nsection, since the page's header names the team's file. It says what is\nkept, where and for how long. On writes at once; off asks first (\"Stop\nkeeping task screens?\", Delete kept screens in the danger look), then the\ncore deletes every kept screen (chatscreens::set_keep). The setting stays\nin purlis.local.toml alone, as [skill_grades] does.\n\nTwo window-only commands (ADR 0052, WINDOW_ONLY): task_screens and\nset_task_screens. The core gains chatscreens::held, the store's count,\nwhich deletes everything where a hand edit turned keeping off.\n\nTests: the row's words, on by default, on without asking, off only on the\nyes, Esc keeps everything, a refusal said beside it; the core's count.\nStories: on (keyboard path, Esc), the ask, turned off, off.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M78SJ3WW361SZ59JY4JAJKXK\nPurlis-Persona: steward\n\n* Draw a task's number at its path's size (#6297)\n\nBeside a task's path in the pane head, \"#7\" took the line's own size, a\nstep larger than the path's small text. It now takes the path's size\n(--font-size-xs) wherever the line holds a path. ATasksLine's play checks\nthe two sizes match; baselines come from this PR's stories run.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M78SJ3WW361SZ59JY4JAJKXK\nPurlis-Persona: steward\n\n* Keep task screens: the palette's count, and the ask's story waits for it (#6306)\n\nThe new row is one more palette row (1383). AsksBeforeDeleting waits for\nthe ask to finish coming in before it checks its answer is visible.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M78SJ3WW361SZ59JY4JAJKXK\nPurlis-Persona: steward\n\n* Keep task screens: the ask is a component chrome.test opens (#6306)\n\nStopKeepingTaskScreens is exported, as the other settings dialogs are, so\nchrome.test's every-dialog list draws it in every built-in theme.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M78SJ3WW361SZ59JY4JAJKXK\nPurlis-Persona: steward\n\n* Baselines for #6297's number and #6306's Keep task screens stories\n\nDrawn by PR #6451's stories run and reviewed: \"#7\" at the path's size in\nATasksLine; the switch on and off and the ask before deleting.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M78SJ3WW361SZ59JY4JAJKXK\nPurlis-Persona: steward\n\n* Redraw TaskScreens story pictures on main's text roles (#6436), from stories run 43410148457\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M79VM1T8NXG0JRDKX03RA9NF\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-13T12:25:59Z",
+          "tree_id": "6638b7cd957e2ed128bbdea03ee1c7367690eb26",
+          "url": "https://github.com/purlis/purlis/commit/9d75c9f59e44b6aba203e3ddfe855584fea23b44"
+        },
+        "date": 1794576011194,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3291625,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.328, 0.328, 0.329, 0.334, 0.361 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.540351,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.049, 16.143, 16.540, 16.593, 16.598 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9007545,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.586, 101.690, 101.901, 102.112, 102.268 ms"
           }
         ]
       }
