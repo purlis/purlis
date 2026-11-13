@@ -388,6 +388,32 @@ pub fn apply(
     }
 }
 
+/// The clone record a move keeps, and the trust it offers. Not yet written (T1-15, #6406).
+pub struct Records<'a> {
+    pub config_root: &'a Path,
+    pub trust: Option<&'a crate::forge::route::HostScope>,
+}
+
+/// The clones the move offers to trust. Not yet written (T1-15, #6406).
+pub fn offered(
+    root: &Path,
+    config_root: &Path,
+) -> Vec<crate::forge::gitcredential::vouch::Unvouched> {
+    let _ = (root, config_root);
+    Vec::new()
+}
+
+/// [`apply`], keeping records. Not yet written (T1-15, #6406).
+pub fn apply_with(
+    root: &Path,
+    open: &dyn Fn(&Path, &str) -> Vec<String>,
+    shown: Option<&[Shown]>,
+    records: Option<&Records<'_>>,
+) -> Fixed {
+    let _ = records;
+    apply(root, open, shown)
+}
+
 /// The line that names the chats a move leaves unresumable, or none when there are none.
 pub fn unresumable_said(chats: &[Unresumable]) -> Option<String> {
     let (one, they) = match chats.len() {

@@ -224,3 +224,31 @@ pub fn trust_this_clone(
     );
     Ok(trusted)
 }
+
+/// The label of the one ask for the project's clones purlis has no record of (R-336).
+pub const TRUST_THESE_CLONES: &str = "Trust these clones";
+
+/// **The one ask for the clones purlis has no record of** in the project at `root` (R-336).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrustTheseClones {
+    pub root: PathBuf,
+    /// Each clone, by workspace and then name.
+    pub clones: Vec<crate::forge::gitcredential::vouch::Unvouched>,
+    /// Since when it was raised, in seconds since the epoch.
+    pub since: u64,
+}
+
+/// Reads the project's clones purlis has no record of. Not yet written (T1-15, #6406).
+pub fn look_at_clones(
+    root: &Path,
+    config_root: &Path,
+) -> Vec<crate::forge::gitcredential::vouch::Unvouched> {
+    let _ = (root, config_root);
+    Vec::new()
+}
+
+/// The project's one ask for its clones purlis has no record of. Not yet written (T1-15, #6406).
+pub fn clones_ask(root: &Path) -> Option<TrustTheseClones> {
+    let _ = root;
+    None
+}

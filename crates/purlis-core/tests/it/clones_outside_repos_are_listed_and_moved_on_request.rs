@@ -15,6 +15,8 @@ use std::path::{Path, PathBuf};
 use purlis_core::doctor::fix::{self, FixId, Fixed, move_into_repos};
 use purlis_core::doctor::{Doctor, Row, Status};
 use purlis_core::files::{self, Branch, Mark};
+use purlis_core::forge::gitcredential::vouch;
+use purlis_core::forge::route::HostScope;
 use purlis_core::worktree;
 
 const OUTSIDE: &str = "repos outside repos/";
@@ -908,4 +910,105 @@ fn a_rollback_killed_before_its_pointers_were_written_back_is_mended_by_the_next
     fix::apply(&root, FixId::MoveIntoRepos);
 
     works(&piece);
+}
+
+/// A clone at workspace `alpha`'s root, as [`clone_at`] makes it, its `origin` on github.com.
+fn on_github_at(root: &Path, name: &str) -> PathBuf {
+    let clone = clone_at(root, name);
+    support::git(
+        &clone,
+        &[
+            "remote",
+            "add",
+            "origin",
+            &format!("https://github.com/acme/{name}.git"),
+        ],
+    );
+    clone
+}
+
+/// **Move into repos/ offers the trust in the same step** (R-339, Q184): the clones it moves
+/// that purlis has no record of are offered before the move, and the person's yes records each
+/// as trusted where it now is.
+#[test]
+fn doctor_move_into_repos_offers_the_trust_in_the_same_step() {
+    purlis_core::unsteered!();
+    let (_d, root) = plane();
+    let home = tempfile::tempdir().unwrap();
+    let api = on_github_at(&root, "api");
+
+    let offered = move_into_repos::offered(&root, home.path());
+    assert_eq!(
+        offered
+            .iter()
+            .map(|clone| (clone.folder.as_str(), clone.place.as_deref()))
+            .collect::<Vec<_>>(),
+        [("workspaces/alpha/api", Some("github.com/acme/api"))],
+        "the move offers to trust the clone purlis has no record of"
+    );
+
+    let scope = HostScope::for_a_test();
+    let applied = move_into_repos::apply_with(
+        &root,
+        &move_into_repos::open_in_record,
+        None,
+        Some(&move_into_repos::Records {
+            config_root: home.path(),
+            trust: Some(&scope),
+        }),
+    );
+
+    let moved = ws(&root).join("repos/api");
+    let said = said(&applied);
+    assert!(!api.exists(), "api is still at the root: {said:?}");
+    assert!(moved.join(".git").is_dir(), "{said:?}");
+    assert!(
+        vouch::trusted(home.path(), &moved),
+        "the yes records the moved clone as trusted: {said:?}"
+    );
+    assert!(
+        said.iter()
+            .any(|line| line.contains("workspaces/alpha/repos/api")
+                && line.contains("github.com/acme/api")),
+        "it says what it trusted, where: {said:?}"
+    );
+}
+
+/// Without the person's yes the move trusts nothing, and a clone purlis has a record of keeps
+/// it where it moved to (R-336: nothing is adopted automatically, and nothing trusted is lost).
+#[test]
+fn answered_no_the_move_trusts_nothing_new_and_a_recorded_clone_keeps_its_record() {
+    purlis_core::unsteered!();
+    let (_d, root) = plane();
+    let home = tempfile::tempdir().unwrap();
+    let api = on_github_at(&root, "api");
+    on_github_at(&root, "web");
+    vouch::vouch_clone(
+        &HostScope::for_a_test(),
+        home.path(),
+        &root,
+        &api,
+        "github.com/acme/api",
+    )
+    .expect("api is trusted before the move");
+
+    let applied = move_into_repos::apply_with(
+        &root,
+        &move_into_repos::open_in_record,
+        None,
+        Some(&move_into_repos::Records {
+            config_root: home.path(),
+            trust: None,
+        }),
+    );
+
+    let said = said(&applied);
+    assert!(
+        vouch::trusted(home.path(), &ws(&root).join("repos/api")),
+        "api keeps its record through the move: {said:?}"
+    );
+    assert!(
+        !vouch::trusted(home.path(), &ws(&root).join("repos/web")),
+        "web is not trusted without the person's yes: {said:?}"
+    );
 }

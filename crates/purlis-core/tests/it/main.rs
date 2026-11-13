@@ -249,6 +249,7 @@ mod the_repo_list_puts_projects_first;
 mod the_shell_is_read_the_way_python_reads_it;
 mod the_window_asks_its_forge_with_the_purlis_sign_in;
 mod this_machine_forgets_and_revokes;
+mod unrecorded_clones_raise_one_ask;
 mod upgrading_leaves_every_chat_start_as_it_was_and_records_its_folder;
 mod what_codex_keeps_of_a_briefing_and_takes_in_mid_chat_is_measured;
 mod when_the_forge_cache_is_refreshed;

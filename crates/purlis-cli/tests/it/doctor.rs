@@ -988,3 +988,31 @@ fn fix_move_into_repos_by_name_moves_the_root_clones_and_bare_fix_does_not() {
         &[&who[..], &["commit", "-qm", "after the move"][..]].concat(),
     );
 }
+
+/// **`purlis doctor` lists the clones purlis has no record of** (R-338, Q184): the same clones
+/// the window's Trust these clones lists, each by its folder and the address its remote names.
+#[test]
+fn purlis_doctor_lists_the_unrecorded_clones() {
+    let (_d, root) = plane();
+    let clone = root.join("workspaces/alpha/repos/api");
+    std::fs::create_dir_all(&clone).unwrap();
+    git(&clone, &["init", "-q", "."]);
+    git(
+        &clone,
+        &["remote", "add", "origin", "https://github.com/acme/api.git"],
+    );
+    let config = root.join("home/.config/purlis");
+    std::fs::create_dir_all(&config).unwrap();
+    let vars = [("PURLIS_CONFIG_HOME", config.to_str().unwrap())];
+
+    let out = doctor_with(&root, &root.join("home"), &["--json"], &vars);
+
+    let rows = rows(&out);
+    let unrecorded = row(&rows, "unrecorded clones");
+    assert_eq!(unrecorded["status"], "warn", "{unrecorded}");
+    let detail = unrecorded["detail"].as_str().unwrap_or_default();
+    assert!(
+        detail.contains("workspaces/alpha/repos/api") && detail.contains("github.com/acme/api"),
+        "the row names the clone and its remote: {unrecorded}"
+    );
+}
