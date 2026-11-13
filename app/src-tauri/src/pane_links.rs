@@ -31,9 +31,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use purlis_core::files::{Answer, Ask, Branch, Reader};
 use purlis_core::panelinks::{
-    Asks, Candidate, ChatAt, ChatNumber, FileAt, Goes, Home, HomeIs, Hover, Kind, NOT_A_LINK,
-    Opening, Pane, ReadFrom, Resolver, Runs, Target, UNASKABLE,
+    Asks, Candidate, ChatAt, ChatNumber, FileAt, Goes, Home, HomeIs, Hover, Kind, LocalFile,
+    NOT_A_LINK, Opening, Pane, ReadFrom, Resolver, Runs, Target, UNASKABLE, WebAddress,
 };
 use serde::{Deserialize, Serialize};
 
@@ -580,6 +581,54 @@ pub(crate) fn looked<T: Send + 'static>(
     heard.recv_timeout(wait).ok()
 }
 
+/// **The window's resolver** (#6357): web addresses, and file paths whose branch's files are
+/// asked of the bounded reader, so a file a branch doesn't offer is no link, as the light editor
+/// would refuse it, and the app's process starts no git in a folder an agent can write.
+///
+/// Made for one command: each branch's offered list is read once for all its candidates, so
+/// *Links in this pane…*, which asks a whole screen at once, reads it once too.
+pub(crate) fn resolver() -> Resolver {
+    let reader = crate::reader();
+    let lists = std::sync::Mutex::new(Lists::new());
+    Resolver::with(vec![
+        Box::new(WebAddress),
+        Box::new(LocalFile::here().offered_by(move |project, branch, path| {
+            let key = (
+                branch.ws.to_owned(),
+                branch.repo.to_owned(),
+                branch.piece.map(str::to_owned),
+            );
+            let mut lists = lists.lock().ok()?;
+            let list = lists
+                .entry(key)
+                .or_insert_with(|| offered_list(&reader, project, branch));
+            Some(
+                list.as_ref()?
+                    .binary_search_by(|one| one.as_str().cmp(path))
+                    .is_ok(),
+            )
+        })),
+    ])
+}
+
+/// Each branch's offered list a resolver read, by workspace, repo and piece.
+type Lists = std::collections::HashMap<(String, String, Option<String>), Option<Vec<String>>>;
+
+/// **What `branch` offers**: the list the light editor's open checks a path against (what git
+/// tracks there, or doesn't ignore), sorted. `None` where the reader could not say (an index
+/// gitoxide can't read, a read that ran into its bounds, a list cut short): the link stays, and
+/// the editor decides.
+fn offered_list(
+    reader: &Reader,
+    project: &std::path::Path,
+    branch: Branch<'_>,
+) -> Option<Vec<String>> {
+    match reader.ask(project, branch, Ask::Offered { most: None }) {
+        Ok(Answer::Offered(offered)) if offered.files.len() == offered.total => Some(offered.files),
+        _ => None,
+    }
+}
+
 /// What opening a link answers when the look at its file did not end in time.
 pub const NOT_LOOKED: &str = "purlis could not look at that file in time, so it is not opened";
 
@@ -590,7 +639,7 @@ fn for_project(held: Option<&Held>) -> (Resolver, ChatsHere<'_>) {
     // With no project, the chat kind still reads a chat's number, and finds none: it says
     // nothing on a hover.
     let open = held.map(crate::chatcard::open_chats).unwrap_or_default();
-    let resolver = Resolver::default().with_kind(Box::new(ChatNumber::with_open(open.clone())));
+    let resolver = resolver().with_kind(Box::new(ChatNumber::with_open(open.clone())));
     let Some(held) = held else {
         return (resolver, ChatsHere::none());
     };
@@ -658,7 +707,7 @@ pub async fn pane_link_open(
     if candidate.kind == Kind::Url {
         let asks = app.state::<PaneLinkAsks>();
         return answer(
-            &Resolver::default(),
+            &resolver(),
             &pane,
             &asks.0,
             &candidate,
@@ -1339,5 +1388,81 @@ mod tests {
             .expect("serialises"),
             serde_json::json!({"is": "open", "number": 660, "workspace": null})
         );
+    }
+
+    /// #6357: **the link and the light editor agree on a file git ignores in a branch.** A
+    /// clone's ignored file is no link, its hover says why, and ⌘-click is refused with the same
+    /// sentence; the editor's own open refuses it too. A file the clone tracks links and opens.
+    /// Asked of the bounded reader, as the window's resolver asks it.
+    #[cfg(unix)]
+    #[test]
+    fn a_file_git_ignores_in_a_branch_is_no_link_as_the_editor_refuses_it() {
+        let here = here();
+        let project = here.pane.project.clone().expect("a project");
+        let clone = project.join("workspaces/smart-ide/repos/app");
+        std::fs::create_dir_all(clone.join("src")).expect("folders");
+        std::fs::write(clone.join(".gitignore"), "*.log\n").expect("written");
+        std::fs::write(clone.join("src/main.rs"), "fn main() {}\n").expect("written");
+        std::fs::write(clone.join("debug.log"), "secret-ish\n").expect("written");
+        let git = |args: &[&str]| {
+            let ran = purlis_core::forklock::output(
+                std::process::Command::new("git")
+                    .arg("-C")
+                    .arg(&clone)
+                    .args(["-c", "user.email=t@e.invalid", "-c", "user.name=t"])
+                    .args(["-c", "commit.gpgsign=false"])
+                    .args(args),
+            )
+            .expect("git ran");
+            assert!(ran.status.success(), "git {args:?}: {ran:?}");
+        };
+        git(&["init", "-q", "-b", "main"]);
+        git(&["add", ".gitignore", "src/main.rs"]);
+        git(&["commit", "-q", "-m", "one"]);
+        let pane = Pane {
+            folder: Some(clone.clone()),
+            ..here.pane.clone()
+        };
+
+        assert_eq!(
+            seen(&resolver(), &pane, &file("debug.log")),
+            Some(LinkSeen {
+                kind: KindHint::File,
+                target: "debug.log".into(),
+                shown: "debug.log".into(),
+                does: LinkDoes::Refused {
+                    reason: purlis_core::panelinks::NOT_OFFERED.into()
+                },
+                chat: None,
+            })
+        );
+        assert_eq!(
+            answer(
+                &resolver(),
+                &pane,
+                &Asks::default(),
+                &file("debug.log"),
+                None,
+                |handed| panic!("a file reached the system's opener: {handed}"),
+            ),
+            LinkOpened::Refused {
+                reason: purlis_core::panelinks::NOT_OFFERED.into()
+            }
+        );
+        // The editor refuses it as well: the two agree.
+        let branch = purlis_core::files::Branch::repo("smart-ide", "app");
+        assert!(matches!(
+            purlis_core::files::open(&project, branch, "debug.log"),
+            Err(purlis_core::files::Refused::NotOffered(_))
+        ));
+
+        let tracked = seen(&resolver(), &pane, &file("src/main.rs:1")).expect("a link");
+        assert_eq!(
+            tracked.does,
+            LinkDoes::Opens {
+                into: OpensIn::EditorTab
+            }
+        );
+        assert!(purlis_core::files::open(&project, branch, "src/main.rs").is_ok());
     }
 }
