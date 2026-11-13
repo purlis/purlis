@@ -26,15 +26,29 @@ fn a_slow_answer_is_one_json_line_with_its_command_duration_time_and_hot_chats()
 }
 
 #[test]
-fn a_stall_is_written_with_the_hot_chats_the_tab_in_front_and_whether_a_view_was_opening() {
+fn a_stall_is_written_with_the_hot_chats_the_tab_in_front_whether_a_view_was_opening_and_its_culprits()
+{
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join(FILE);
+    let took = |name: &str, ms| Took {
+        name: name.into(),
+        ms,
+    };
+    let counted = |name: &str, n| Counted {
+        name: name.into(),
+        n,
+    };
     let stall = Slow::Stall {
         ms: 340,
         at: 1_793_000_000_000,
         hot: 12,
         front: Some("steward 3".into()),
         opening: true,
+        dark: false,
+        react: vec![took("PlaneView", 210)],
+        events: vec![counted("chat-events", 4)],
+        answers: vec![counted("alertsEverywhere", 1)],
+        scripts: vec![took("TimerHandler", 290)],
     };
 
     record_in(&file, &stall).unwrap();
@@ -42,9 +56,40 @@ fn a_stall_is_written_with_the_hot_chats_the_tab_in_front_and_whether_a_view_was
     assert_eq!(
         std::fs::read_to_string(&file).unwrap(),
         "{\"kind\":\"stall\",\"ms\":340,\"at\":1793000000000,\"hot\":12,\
-         \"front\":\"steward 3\",\"opening\":true}\n"
+         \"front\":\"steward 3\",\"opening\":true,\"dark\":false,\
+         \"react\":[{\"name\":\"PlaneView\",\"ms\":210}],\
+         \"events\":[{\"name\":\"chat-events\",\"n\":4}],\
+         \"answers\":[{\"name\":\"alertsEverywhere\",\"n\":1}],\
+         \"scripts\":[{\"name\":\"TimerHandler\",\"ms\":290}]}\n"
     );
     assert_eq!(recent_in(&file), vec![stall]);
+}
+
+#[test]
+fn a_stall_written_before_its_culprits_were_kept_reads_back_naming_none() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join(FILE);
+    std::fs::write(
+        &file,
+        "{\"kind\":\"stall\",\"ms\":340,\"at\":1,\"hot\":12,\"front\":null,\"opening\":false}\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        recent_in(&file),
+        vec![Slow::Stall {
+            ms: 340,
+            at: 1,
+            hot: 12,
+            front: None,
+            opening: false,
+            dark: false,
+            react: vec![],
+            events: vec![],
+            answers: vec![],
+            scripts: vec![],
+        }]
+    );
 }
 
 #[test]

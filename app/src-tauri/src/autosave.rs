@@ -37,7 +37,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant};
@@ -190,17 +190,80 @@ pub fn here(root: PathBuf, told: Told) -> Box<dyn Saver> {
     Box::new(Worker::start(root, told))
 }
 
-/// What a look that did something tells the window moved (#933).
+/// **What a look that did something tells the window moved** (#933), for the plane at one
+/// root: it remembers where the plane's `HEAD` was at the last tell.
 ///
 /// **The git standing alone, when the tree did not move:** a commit takes what is already on
 /// disk, a push and a fetch that brought nothing in move only refs, and only the git readers
 /// read again.
 ///
-/// **Everything, when it moved the tree** (`moved`): a fetch that fast-forwarded, a save that
-/// rebased onto the remote. The watch would tell the files it moved only where it watches —
-/// it is not recursive, and a project it could not watch has none — so not knowing is said.
-pub(crate) fn what_it_did(moved: bool) -> crate::planewatch::What {
-    (!moved).then(|| vec![purlis_core::planechange::saved()])
+/// **The files it brought in, when it moved the tree** (`moved`): a fetch that fast-forwarded,
+/// a save that rebased. The watch would tell the files it moved only where it watches (it is
+/// not recursive, and a project it could not watch has none), so they are named here from the
+/// plane's history, `HEAD` at the last tell to `HEAD` now, each placed as the watch places a
+/// write (`planechange::of_batch`). Told as everything until felt speed round 4 (H9): auto-save
+/// fetches every five minutes, and "everything" drew every view of every chat again.
+///
+/// **Everything, when that cannot be named**: the plane's `HEAD` did not move (a workspace
+/// repo's merge moved the tree), cannot be read, or the history does not say.
+pub(crate) struct Tells {
+    root: PathBuf,
+    told_at: Mutex<Option<String>>,
+}
+
+impl Tells {
+    /// What will be told of the plane at `root`, from its `HEAD` now.
+    pub(crate) fn of(root: &Path) -> Self {
+        Self {
+            root: root.to_path_buf(),
+            told_at: Mutex::new(head_of(root)),
+        }
+    }
+
+    /// What one look that did something tells the window moved, `moved` whether it moved the
+    /// tree.
+    pub(crate) fn what_it_did(&self, moved: bool) -> crate::planewatch::What {
+        let now = head_of(&self.root);
+        let was = std::mem::replace(
+            &mut *self
+                .told_at
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+            now.clone(),
+        );
+        let saved = purlis_core::planechange::saved();
+        if !moved {
+            return Some(vec![saved]);
+        }
+        let (Some(was), Some(now)) = (was, now) else {
+            return None;
+        };
+        if was == now {
+            return None;
+        }
+        let mut changes = self.moved_between(&was, &now)?;
+        changes.push(saved);
+        Some(changes)
+    }
+
+    /// The changes the plane's history holds from commit `was` to `now`, or `None` when it
+    /// does not say.
+    fn moved_between(&self, was: &str, now: &str) -> Option<Vec<purlis_core::planechange::Change>> {
+        let read = purlis_core::worktree::git::run(
+            &self.root,
+            &["diff", "--name-only", "--no-renames", "-z", was, now, "--"],
+            purlis_core::worktree::git::READ,
+        )
+        .ok()
+        .filter(|read| read.ok())?;
+        let paths: Vec<PathBuf> = read
+            .out
+            .split('\0')
+            .filter(|path| !path.is_empty())
+            .map(|path| self.root.join(path))
+            .collect();
+        purlis_core::planechange::of_batch(&self.root, paths.iter().map(PathBuf::as_path))
+    }
 }
 
 /// `HEAD` of the repository at `dir`, or `None` where it cannot be read.
