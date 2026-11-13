@@ -1626,6 +1626,32 @@ fn a_held_merge_is_a_high_risk_ask() {
 }
 
 #[test]
+fn a_held_merge_shows_the_forges_facts_with_their_read_time_and_the_title_inert() {
+    // T1-40 (R-120, R-147, Q248): the row shows the base, the checks as of the read, the
+    // ruleset state purlis saw, and the title and author the forge gave, which a chat may have
+    // written, so they reach the window inert.
+    let mut merge = a_held_merge(3);
+    merge.facts.title = "Add the parser\u{202E}gnisaeler".to_owned();
+    let mut world = World::new();
+    world.merges = vec![merge];
+    let asks = world.asks();
+    let ask = asks
+        .iter()
+        .find(|ask| ask.source == AskSource::MergeHold)
+        .expect("the merge ask");
+    let AnswerPath::MergeHold { facts, .. } = &ask.answer else {
+        panic!("a merge hold's path: {:?}", ask.answer);
+    };
+    assert_eq!(facts.base, "main");
+    assert_eq!(facts.author, "octo");
+    assert_eq!(facts.checks, "PASSED");
+    assert_eq!(facts.read_at, 40);
+    assert_eq!(facts.ruleset, RulesetShown::Protects);
+    assert!(!facts.title.contains('\u{202E}'), "{}", facts.title);
+    assert!(facts.title.contains("⟦U+202E⟧"), "{}", facts.title);
+}
+
+#[test]
 fn a_held_merge_at_a_moved_head_is_another_ask() {
     // Q242: the row at the new head is another ask, so the window carries nothing over from
     // the one at the old head, and its sentence names the head it merges.
