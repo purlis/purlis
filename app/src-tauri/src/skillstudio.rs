@@ -435,7 +435,7 @@ fn personas_of(root: &std::path::Path, workspaces: &[String]) -> Vec<StudioPerso
                 })
                 .collect();
             // By name already: the most chats first keeps that order among equals.
-            dispatched_into.sort_by(|one, other| other.chats.cmp(&one.chats));
+            dispatched_into.sort_by_key(|one| std::cmp::Reverse(one.chats));
             StudioPersona {
                 name,
                 role,
