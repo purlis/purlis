@@ -323,6 +323,7 @@ pub mod wakeline;
 pub mod windowline;
 #[cfg(unix)]
 pub mod windownames;
+pub mod windowonly;
 pub mod windowprefs;
 pub mod wiring;
 pub mod work;

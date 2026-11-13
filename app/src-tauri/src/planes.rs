@@ -1539,6 +1539,8 @@ impl Held {
         self.secret_fills.forget(session);
         self.removal_asks.forget(session);
         self.merge_holds.forget(session);
+        // And its refusals whose only way out was a press in the window (R-328).
+        purlis_core::windowonly::forget(self.root(), session);
         // What its runner's commands wait on goes with it (#2047).
         self.pool_tools.forget(session);
         // And what it waits on or declined of a vault (#5068).
@@ -4010,6 +4012,16 @@ impl Planes {
             Arc::new(move || {
                 if let Some(strong) = weak.upgrade() {
                     asks(strong.asks());
+                }
+            })
+        });
+        // A refusal whose only way out is a press in the window is raised as an ask where it is
+        // refused (R-328): the window is told, as for a live ask. Weak for the handoff's reason.
+        purlis_core::windowonly::telling(held.root(), {
+            let weak = Arc::downgrade(&held);
+            Arc::new(move || {
+                if let Some(strong) = weak.upgrade() {
+                    strong.chats().asks_may_have_moved();
                 }
             })
         });

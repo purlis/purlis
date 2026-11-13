@@ -6314,6 +6314,12 @@ export type AnswerPath =
  *  request `number` of `repo` at `head`, the key the ask was raised at (R-115).
  */
 { via: "merge-hold"; repo: string; number: number; head: string } | 
+/**
+ *  `vouch_clone` for Trust this clone, on the clone at `folder` (relative to the project)
+ *  at `place`, the address its remote named when the refusal was raised (R-330): the clone
+ *  Notice's own command, which clears the ask.
+ */
+{ via: "trust-clone"; folder: string; place: string } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -6802,7 +6808,13 @@ export type AskSource =
  *  **A merge a chat's hook held** (R-114, R-115): the chat never merges. Merge is the
  *  app's own forge call, on the person's press, and Don't merge merges nothing.
  */
-"merge-hold";
+"merge-hold" | 
+/**
+ *  **A refusal whose only way out is Trust this clone** (R-328, R-330): a GitHub App token
+ *  that couldn't be minted for a clone purlis has no record of. Trust this clone records it,
+ *  as the clone's own Notice does, and the chat's next mint goes through.
+ */
+"trust-clone";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the

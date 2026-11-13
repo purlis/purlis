@@ -8810,6 +8810,8 @@ impl Chats {
             &self.project,
             std::time::Duration::from_secs(2),
         );
+        // And the asks its chats' refusals raised go with them.
+        purlis_core::windowonly::project_ended(&self.project);
         lock(&self.open).clear();
         lock(&self.would_not_start).clear();
         lock(&self.coming).clear();
