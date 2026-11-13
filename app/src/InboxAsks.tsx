@@ -874,8 +874,9 @@ export function Ask({
       isNew={isNew}
       className="inbox-ask"
       data-source={ask.source}
-      // **Keyboard triage never lands here** (ADR 0121 decision 8, #6011, `asksTriage`).
-      data-risk={highRisk(ask) ? "" : undefined}
+      // **Keyboard triage never lands here** (ADR 0121 decision 8, #6011, `asksTriage`), and the
+      // row is drawn as its class: a hold's is `merge` (T1-39, R-139).
+      data-risk={highRisk(ask) ? ask.risk?.class : undefined}
       aria-labelledby={shape.message ? `${id}-whose` : `${id}-says`}
       aria-describedby={`${
         shape.message ? `${id}-says` : `${id}-whose${shape.said === undefined ? "" : ` ${id}-said`}`

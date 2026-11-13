@@ -6914,6 +6914,27 @@ impl Chats {
             .and_then(|was| was.identity.id.clone())
     }
 
+    /// **Every chat here the event log knows**, by its id, with the name it is shown under
+    /// (T1-32, Q264): each open here, then each closed since launch. The Blocked log lists the
+    /// blocks of these, and of those the reopen record holds.
+    pub fn logged_names(&self) -> Vec<(String, String)> {
+        let mut named: Vec<(String, String)> = lock(&self.open)
+            .values()
+            .filter_map(|one| {
+                let id = one.chat.identity.id.clone()?;
+                Some((
+                    id,
+                    purlis_core::reopen::shown_name(&one.chat, one.harness.map(Harness::name)),
+                ))
+            })
+            .collect();
+        named.extend(lock(&self.let_go).values().filter_map(|was| {
+            let id = was.identity.id.clone()?;
+            Some((id, purlis_core::reopen::shown_name(was, None)))
+        }));
+        named
+    }
+
     /// **What a dispatch is decided over**: every chat this app has open and every one it is
     /// about to start, by its number for each, handed to `decide` with whether a number is a
     /// chat still starting (which counts as working: it is about to be).

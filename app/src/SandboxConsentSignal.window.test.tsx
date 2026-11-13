@@ -158,16 +158,18 @@ describe("a sandbox consent that waits (#6000)", () => {
 /**
  * **A consent that comes to wait after launch** (the operator's report of 2026-11-09, "Notices: 1"
  * and no ✋): the project's committed file comes to declare what this machine has not allowed,
- * by a pull or a hand, while the window is open. Its Notice reads again on the project's settings
- * changed on disk and on the window's focus; Asks has to read its list again on the same, since
- * both are derived from the one state, or the Notice shows and the ✋ counts nothing.
+ * by a pull or a hand, while the window is open. Asks reads its list again on the project's
+ * settings changed on disk and on the window's focus, or the consent waits and the ✋ counts
+ * nothing. It is in Asks alone (R-205, T1-26): no Notice carries it beside its row.
  */
 describe("a sandbox consent that comes to wait while the window is open", () => {
   /** A core with nothing waiting until `arrive` is called, then the consent. */
   function arriving() {
     let waits = false;
+    const asked: string[] = [];
     mockIPC(
       (cmd) => {
+        asked.push(cmd);
         if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
         if (cmd === "plane_sidebar")
           return {
@@ -198,13 +200,16 @@ describe("a sandbox consent that comes to wait while the window is open", () => 
       },
       { shouldMockEvents: true },
     );
-    return () => {
-      waits = true;
+    return {
+      arrive: () => {
+        waits = true;
+      },
+      asked: (cmd: string) => asked.filter((one) => one === cmd),
     };
   }
 
-  it("is counted on the ✋ once the project's settings change on disk, as its Notice shows", async () => {
-    const arrive = arriving();
+  it("is counted on the ✋ and listed in Asks once the project's settings change on disk", async () => {
+    const { arrive, asked } = arriving();
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Asks" });
     await waitFor(() => expect(handCount()).toBeNull());
@@ -218,15 +223,16 @@ describe("a sandbox consent that comes to wait while the window is open", () => 
       });
     });
 
-    await screen.findByRole("status", {
-      name: "This project expects more than this machine allows",
-    });
     await waitFor(() => expect(handCount()).toHaveAttribute("data-count", "1"));
     await waitFor(() => expect(consentRow()).toBeDefined());
+    // In Asks alone (R-205), once the Notices have read what the project expects again.
+    await screen.findByRole("tabpanel", { name: "Notices" });
+    await waitFor(() => expect(asked("sandbox_state").length).toBeGreaterThan(1));
+    expect(consentNotice()).toBeNull();
   });
 
-  it("is counted on the ✋ once the window comes back into focus, as its Notice shows", async () => {
-    const arrive = arriving();
+  it("is counted on the ✋ and listed in Asks once the window comes back into focus", async () => {
+    const { arrive, asked } = arriving();
     render(<App />);
     await screen.findByRole("tabpanel", { name: "Asks" });
     await waitFor(() => expect(handCount()).toBeNull());
@@ -236,9 +242,11 @@ describe("a sandbox consent that comes to wait while the window is open", () => 
       window.dispatchEvent(new Event("focus"));
     });
 
-    await screen.findByRole("status", {
-      name: "This project expects more than this machine allows",
-    });
     await waitFor(() => expect(handCount()).toHaveAttribute("data-count", "1"));
+    await waitFor(() => expect(consentRow()).toBeDefined());
+    // In Asks alone (R-205), once the Notices have read what the project expects again.
+    await screen.findByRole("tabpanel", { name: "Notices" });
+    await waitFor(() => expect(asked("sandbox_state").length).toBeGreaterThan(1));
+    expect(consentNotice()).toBeNull();
   });
 });

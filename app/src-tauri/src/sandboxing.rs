@@ -1910,7 +1910,7 @@ pub(crate) fn kept(
     kept_for(root, chats, Some(session), grant, audit, at)
 }
 
-/// [`kept`] for chat `session`, or for no chat (#1662, Allow on Settings' Blocked lately): then
+/// [`kept`] for chat `session`, or for no chat (#1662, Allow on Settings' Blocked log): then
 /// nothing is kept for one chat alone, and no chat is owed a restart, so each takes it from its
 /// next start.
 ///

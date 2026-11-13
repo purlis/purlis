@@ -474,6 +474,18 @@ describe("a held merge in Asks (R-115)", () => {
     expect(row).toHaveAttribute("data-risk");
   });
 
+  it("the merge ask carries the Merge risk class", async () => {
+    // R-139 (T1-39): Merge is a risk class of its own, and the hold's row is drawn as it, not as
+    // a high-risk ask of no class.
+    const { view } = await opened([MERGE]);
+    const row = rowOf(view, "steward 3");
+
+    expect(row).toHaveAttribute("data-risk", "merge");
+    expect(row.querySelector(".inbox-risk")).toHaveTextContent(
+      "Merges request 12 of o/r at 0123456 into main, with no undo",
+    );
+  });
+
   it("asks once more before Merge acts, and Cancel takes the question back", async () => {
     const { view, asked } = await opened([MERGE]);
     const row = rowOf(view, "steward 3");

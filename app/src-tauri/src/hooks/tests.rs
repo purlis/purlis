@@ -427,6 +427,7 @@ fn a_permission_prompt_is_told_to_the_window_and_the_window_s_answer_goes_back_o
                     payload: serde_json::json!({"tool_name": "Bash",
                             "tool_input": {"command": "npm test"}}),
                     ran_for_ms: None,
+                    speaker: Default::default(),
                 },
                 std::time::Duration::from_secs(30),
             )

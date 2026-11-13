@@ -1903,7 +1903,7 @@ with its source and its ways out. It is kept as a kind of event in the host's ev
 tool, the source, a short target summary and the argument digest, never a command or the
 harness's reason. Three on the same target pause the chat with an ask (ADR 0124, proposed).
 Today a sandbox block is recorded in this machine's network record, kept 30 days and never
-committed, raises an ask in the Inbox, and is listed under Blocked lately.
+committed, raises an ask in the Inbox, and is listed in the Blocked log.
 _Avoid_: refused, refusal (in UI text), denial, violation (that is the sandbox's own report),
 **Blocked** (that is a save's)
 

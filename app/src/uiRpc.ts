@@ -461,10 +461,10 @@ export const commands = {
 	 */
 	grantableFolders: (plane: PlaneId) => typedError<GrantableFolders, string>(__TAURI_INVOKE("grantable_folders", { plane })),
 	/**
-	 *  **Open hosts and Blocked lately** for Settings' Network page (#1662).
+	 *  **Open hosts and the Blocked log** for Settings' Network page (#1662, T1-32).
 	 * 
 	 *  Off the window's thread (#1949): it reads the project's manifest, the administrator's policy
-	 *  and this machine's network record.
+	 *  and this machine's event log.
 	 */
 	sandboxNetwork: (plane: PlaneId) => typedError<SandboxNetwork, string>(__TAURI_INVOKE("sandbox_network", { plane })),
 	/**  **A chat's Network view** (#1662): what chat `session` reaches now, and what it was refused. */
@@ -1608,6 +1608,12 @@ export const commands = {
 	 *  closed has none.
 	 */
 	activityChat: (plane: PlaneId, key: string) => typedError<number | null, string>(__TAURI_INVOKE("activity_chat", { plane, key })),
+	/**
+	 *  **Each asked chat's finishes in the last day** (R-241, R-178): its turns that ended and its
+	 *  own runs that ended failed, each with its turn's blocks still unresolved at its end, from
+	 *  this machine's event log. Read as a chat's turn ends, off the window's thread.
+	 */
+	finishedTurns: (plane: PlaneId, sessions: number[]) => typedError<FinishedTurn[], string>(__TAURI_INVOKE("finished_turns", { plane, sessions })),
 	questionTrail: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **Chat `session`'s Chat log** (R-224): its rows, from this machine's event log, oldest
@@ -4012,7 +4018,7 @@ export type BlockShown = {
 };
 
 /**
- *  One row of **Blocked lately**, or of a chat's refusals: what was refused, the newest time,
+ *  One row of the **Blocked log**, or of a chat's refusals: what was refused, the newest time,
  *  and how often.
  */
 export type BlockedLately = {
@@ -6770,6 +6776,19 @@ export type FinishedTask = {
 	 *  name it by; it has no Reopen and no Clear. Null for every ended task.
 	 */
 	waits: WaitsToStart | null,
+};
+
+/**  **One finish of a chat's** (R-241, R-178): a turn that ended, or its own run ended failed. */
+export type FinishedTurn = {
+	session: number,
+	/**  The id of the event that ended it: what its row is noted by. */
+	key: string,
+	/**  When, in seconds since 1970. */
+	at: number,
+	/**  Its own run ended failed, rather than its turn ending. */
+	failed: boolean,
+	/**  Its turn's blocks still unresolved at its end, one a target: none for a failed run. */
+	blocked: number,
 };
 
 /**  One ended task's tokens, by its dispatch record's id. */
@@ -13300,7 +13319,7 @@ export type SandboxGrant = {
 };
 
 /**
- *  **Settings' Network page** (#1662): Open hosts and Blocked lately. Allowed is the list
+ *  **Settings' Network page** (#1662): Open hosts and the Blocked log. Allowed is the list
  *  `sandbox_grants` answers.
  */
 export type SandboxNetwork = {
@@ -17088,7 +17107,11 @@ export type UpdateKind =
 /**  The person filed a report a chat drafted (#5694). */
 "report-sent" | 
 /**  A working chat may not be getting anywhere (#6014). */
-"stuck";
+"stuck" | 
+/**  A chat's turn ended (T1-31): its finish row, with its blocks still unresolved. */
+"turn-finished" | 
+/**  A chat's own run ended failed (T1-31). */
+"chat-failed";
 
 /**  An update the window derived from its source, to be noted. */
 export type UpdateNoted = {
