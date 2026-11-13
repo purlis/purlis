@@ -12,6 +12,10 @@ export type ScopeOffer<S extends string> = {
   count?: number;
   /** Its accessible name and tooltip, where the words and the number alone do not say it. */
   name?: string;
+  /** Its tooltip, where it says more than its name: whose it is, or why it is out of reach. */
+  tip?: string;
+  /** Out of reach: greyed, never picked, its `tip` saying why. */
+  disabled?: boolean;
 };
 
 /**
@@ -52,8 +56,9 @@ export function ScopeSwitch<S extends string>({
           key={one.scope}
           value={one.scope}
           aria-label={one.name}
-          tooltip={one.name}
+          tooltip={one.tip ?? one.name}
           count={one.count}
+          isDisabled={one.disabled}
         >
           {one.says}
         </Segment>
