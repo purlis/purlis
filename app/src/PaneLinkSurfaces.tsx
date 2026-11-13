@@ -255,7 +255,8 @@ export function usePaneLinks({
           onClose={closeLinksList}
           onPick={(link) => {
             closeLinksList();
-            if (hands !== undefined) void openLink(link.candidate, hands);
+            // A chat's card stands at the link: the list it was picked in has gone (#6442).
+            if (hands !== undefined) void openLink(link.candidate, hands, null, link.place);
           }}
           onCopy={(link) => {
             void navigator.clipboard?.writeText(link.seen.target).catch((why: unknown) => {

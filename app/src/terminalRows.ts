@@ -6,6 +6,7 @@ import type { Offer } from "./actions";
 import type { GroupDrawn } from "./menuModel";
 import type { ScreenLink } from "./paneLinks";
 import { modifierSaid } from "./PaneLinkSurfaces";
+import { SAID } from "./menuWords";
 
 /**
  * **What a right-click on a chat's or a shell's terminal offers of the terminal's own**: Copy,
@@ -137,7 +138,7 @@ export type LinkRows = {
 };
 
 /** The words of the row that opens the pane's Links list (#6220). */
-export const LINKS_IN_THIS_PANE = "Links in this pane…";
+export const LINKS_IN_THIS_PANE = SAID.linksInThisPane;
 
 /**
  * **The link rows as they stand when the menu opens**: `link` is the link under the pointer, none
