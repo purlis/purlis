@@ -504,8 +504,9 @@ fn summary_of(target: &Target) -> &str {
 /// **The Blocked log's rows** of `listed` (newest first), as Settings draws them (T1-32, Q264):
 /// one per target and who blocked it, with how often, the newest's chat by the name `name_of`
 /// finds, judged against `reached` and `locks`. Only a host purlis's own proxy saw refused is
-/// offered to allow: a host a chat's own hook reported is unverified (Q254) and may be a
-/// program's own printed words, a refused lookup's among them (#1663).
+/// offered to allow, and in a group the newest such block decides it (Q265): a host a chat's
+/// own hook reported is unverified (Q254) and may be a program's own printed words, a refused
+/// lookup's among them (#1663).
 fn blocked_log_rows(
     listed: &[Listed],
     name_of: &dyn Fn(&str) -> Option<String>,
@@ -520,19 +521,28 @@ fn blocked_log_rows(
             .as_ref()
             .map(|target| summary_of(target).to_owned());
         let said = blocked_by(block.source).to_owned();
-        if let Some(row) = rows
-            .iter_mut()
-            .find(|row| row.target == target && row.said == said)
-        {
-            row.times = row.times.saturating_add(1);
-            continue;
-        }
         let host = match &block.target {
             Some(Target::Host(host)) => Host::parse(host.as_str()).ok(),
             _ => None,
         };
         let is_reached = host.as_ref().is_some_and(|host| covered(reached, host));
-        let offered = block.source == Source::Sandbox && block.qualifier.is_none();
+        let offered = seen_by_the_sandbox(block);
+        let levels = || match &host {
+            Some(host) if offered && !is_reached => levels_for(host, locks),
+            _ => Vec::new(),
+        };
+        if let Some(row) = rows
+            .iter_mut()
+            .find(|row| row.target == target && row.said == said)
+        {
+            row.times = row.times.saturating_add(1);
+            // The newest verified block decides the Allow (Q265): a later line a hook reported
+            // never hides it.
+            if offered && row.levels.is_empty() {
+                row.levels = levels();
+            }
+            continue;
+        }
         rows.push(BlockedLately {
             target,
             looked_up: None,
@@ -541,14 +551,17 @@ fn blocked_log_rows(
             at: u32::try_from(one.at_ms / 1000).unwrap_or(u32::MAX),
             times: 1,
             reached: is_reached,
-            levels: match &host {
-                Some(host) if offered && !is_reached => levels_for(host, locks),
-                _ => Vec::new(),
-            },
+            levels: levels(),
         });
     }
     rows.truncate(AT_MOST_LISTED);
     rows
+}
+
+/// Whether `block` is one purlis's own sandbox saw (Q254, Q265): the sandbox's, with no
+/// qualifier. Only such a block of a host is offered an Allow, and only it lets one through.
+fn seen_by_the_sandbox(block: &purlis_core::eventlog::stops::Block) -> bool {
+    block.source == Source::Sandbox && block.qualifier.is_none()
 }
 
 /// [`SandboxNetwork`] for the project at `root`, whose committed file reads as `plane`, with
@@ -609,33 +622,43 @@ pub async fn sandbox_network(
     let held = planes.held(&plane)?;
     let root = held.root().to_path_buf();
     let chats = held.chats().logged_names();
-    // No log on this machine: nothing is listed as blocked.
-    let log = match crate::EVENT_LOG.get() {
-        Some(Ok(dir)) => Some(dir.clone()),
-        _ => None,
-    };
     crate::off_the_window(READING_NETWORK, move || {
-        let known = known_chats_of(&root, &chats);
-        let now_ms = u64::try_from(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis(),
-        )
-        .unwrap_or(u64::MAX);
-        let listed = match &log {
-            Some(dir) => blockedlog::listed_in(dir, now_ms, &|chat| known.contains_key(chat))
-                .map_err(|why| format!("purlis could not read this machine's event log: {why}"))?,
-            None => Vec::new(),
-        };
-        Ok(network_of(
-            &root,
-            &sandbox::Plane::read(&root),
-            &listed,
-            &|chat| known.get(chat).cloned(),
-        ))
+        let plane = sandbox::Plane::read(&root);
+        let (listed, known) = blocked_log_of(&root, &plane, &chats)?;
+        Ok(network_of(&root, &plane, &listed, &|chat| {
+            known.get(chat).cloned()
+        }))
     })
     .await
+}
+
+/// **The Blocked log of the project at `root`**, whose committed file reads as `plane`, from
+/// this machine's event log, with the chats `chats` names known as the project's (Q264), and
+/// those chats each by the name it is shown under. Nothing is read, and nothing listed, while
+/// the project's sandbox is off (Q265) or with no log on this machine.
+fn blocked_log_of(
+    root: &Path,
+    plane: &sandbox::Plane,
+    chats: &[(String, String)],
+) -> Result<(Vec<Listed>, std::collections::BTreeMap<String, String>), String> {
+    let none = || Ok((Vec::new(), std::collections::BTreeMap::new()));
+    if plane.in_force(&sandbox::policy::Locks::of(root)).is_none() {
+        return none();
+    }
+    let Some(Ok(log)) = crate::EVENT_LOG.get() else {
+        return none();
+    };
+    let known = known_chats_of(root, chats);
+    let now_ms = u64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+    )
+    .unwrap_or(u64::MAX);
+    let listed = blockedlog::listed_in(log, now_ms, &|chat| known.contains_key(chat))
+        .map_err(|why| format!("purlis could not read this machine's event log: {why}"))?;
+    Ok((listed, known))
 }
 
 /// What the commands that read this machine's network record name their work, off the
@@ -958,13 +981,17 @@ pub async fn sandbox_kept_blocked(
 /// this machine or for everyone in it. No chat is named, so none is owed a restart: each takes
 /// it from its next start.
 ///
-/// **Only a host `lately` has a refused connection to** (#1681): what the row offered, never
-/// any host the window names. A host the record never refused, one a program only said it
-/// looked up, or the same host on another port is refused, and nothing is audited.
+/// **Only a host the row offered to allow**, never any host the window names: one the network
+/// record `lately` has a refused connection to (#1681), and that `blocked_log` has a verified
+/// sandbox block of (Q265: the sandbox's, with no qualifier). A host the record never refused,
+/// one a program only said it looked up, the same host on another port, and one only a chat's
+/// own hook or a guard reported are refused, and nothing is audited.
+#[allow(clippy::too_many_arguments)]
 fn allow_blocked(
     root: &Path,
     chats: &crate::chats::Chats,
     lately: &[Entry],
+    blocked_log: &[Listed],
     host: &str,
     level: GrantLevel,
     audit: Audit<'_>,
@@ -988,6 +1015,20 @@ fn allow_blocked(
     if !refused_here {
         return Err(format!(
             "purlis allowed nothing: {named} is not a connection refused here lately, so it \
+             cannot be allowed from the Blocked log."
+        ));
+    }
+    let verified_here = blocked_log.iter().any(|one| {
+        let blocked = match &one.block.target {
+            Some(Target::Host(blocked)) => Host::parse(blocked.as_str()).ok(),
+            _ => None,
+        };
+        seen_by_the_sandbox(&one.block)
+            && blocked.is_some_and(|blocked| blocked.to_string() == named)
+    });
+    if !verified_here {
+        return Err(format!(
+            "purlis allowed nothing: {named} is not a connection the sandbox refused here, so it \
              cannot be allowed from the Blocked log."
         ));
     }
@@ -1023,7 +1064,8 @@ pub async fn allow_blocked_host(
 ) -> Result<Allowed, String> {
     let held = planes.held(&plane)?;
     let network = planes.network().cloned();
-    // Off the window's thread (#1949): the record is read, the grant judged, audited and kept.
+    // Off the window's thread (#1949): the record and the Blocked log are read, the grant
+    // judged, audited and kept.
     crate::off_the_window("keeping your Allow", move || {
         let root = held.root();
         let at = now_secs();
@@ -1031,8 +1073,22 @@ pub async fn allow_blocked_host(
             .as_ref()
             .map(|record| record.read(root, at))
             .unwrap_or_default();
+        let (blocked_log, _) = blocked_log_of(
+            root,
+            &sandbox::Plane::read(root),
+            &held.chats().logged_names(),
+        )?;
         let audit = held.audit_then_record(network.as_ref());
-        allow_blocked(root, held.chats(), &lately, &host, level, &audit, at)
+        allow_blocked(
+            root,
+            held.chats(),
+            &lately,
+            &blocked_log,
+            &host,
+            level,
+            &audit,
+            at,
+        )
     })
     .await
 }

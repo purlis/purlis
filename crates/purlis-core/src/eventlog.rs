@@ -857,6 +857,14 @@ fn first_seq(file: &mut File) -> io::Result<Option<u64>> {
 /// written. A line that is not an event (a write the machine died in the middle of) is
 /// skipped.
 pub fn read(dir: &Path) -> io::Result<Vec<Event>> {
+    read_where(dir, |_| true)
+}
+
+/// [`read`], parsing only the lines `keep` keeps: a reader that wants a few kinds of event
+/// reads past the rest without parsing them. `keep` sees each line as it is written, so it may
+/// pass a line that is not what it wants (the reader checks each event it gets), never refuse
+/// one that is.
+pub fn read_where(dir: &Path, keep: impl Fn(&[u8]) -> bool) -> io::Result<Vec<Event>> {
     let mut paths: Vec<PathBuf> = segments(dir)?.into_iter().map(|(_, path)| path).collect();
     paths.push(dir.join(FILE));
     let mut events = Vec::new();
@@ -868,6 +876,7 @@ pub fn read(dir: &Path) -> io::Result<Vec<Event>> {
         };
         events.extend(
             text.split(|byte| *byte == b'\n')
+                .filter(|line| keep(line))
                 .filter_map(|line| serde_json::from_slice::<Event>(line).ok()),
         );
     }

@@ -21,8 +21,8 @@
 //! **Which project is the caller's to say** (Q264): the log is this machine's, and a block names
 //! its chat and not its project, so the caller passes the chats it knows as the project's. The
 //! app knows a project's open chats, those closed since it launched, and those its reopen record
-//! holds; a chat that ended before a restart and is in none of those drops off the list until
-//! a block names its project.
+//! holds; a chat that ended before a restart and is in none of those drops off the list. That is
+//! an accepted limit until a block names its project (#6560).
 
 use std::io;
 use std::path::Path;
@@ -71,13 +71,21 @@ pub fn listed(events: &[Event], now_ms: u64, is_ours: &dyn Fn(&str) -> bool) -> 
     listed
 }
 
-/// [`listed`] of the log in `dir`, read through [`super::read`].
+/// [`listed`] of the log in `dir`, parsing only its lines that name [`stops::BLOCK`] (Q265): the
+/// rest of the log, every other kind of event, is read past. A line that names it and is not a
+/// block (an event whose body quotes it) is parsed, and [`listed`] leaves it out by its kind, so
+/// passing every line answers the same: the filter saves work and changes no answer.
 pub fn listed_in(
     dir: &Path,
     now_ms: u64,
     is_ours: &dyn Fn(&str) -> bool,
 ) -> io::Result<Vec<Listed>> {
-    Ok(listed(&super::read(dir)?, now_ms, is_ours))
+    let named = format!("\"{}\"", stops::BLOCK);
+    let events = super::read_where(dir, |line| {
+        line.windows(named.len())
+            .any(|part| part == named.as_bytes())
+    })?;
+    Ok(listed(&events, now_ms, is_ours))
 }
 
 #[cfg(test)]
