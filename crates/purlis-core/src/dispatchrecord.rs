@@ -981,7 +981,7 @@ pub const TALK_KEPT_FOR: chrono::Duration = chrono::Duration::days(30);
 
 /// How far past `now` a recorded end may stand before it is taken as not a real end: a clock
 /// a little ahead of this one.
-pub(crate) const END_SKEW: chrono::Duration = chrono::Duration::minutes(5);
+const END_SKEW: chrono::Duration = chrono::Duration::minutes(5);
 
 /// Whether `record` ended [`TALK_KEPT_FOR`] or longer before `now`. A record that has not
 /// ended has not. **One whose end does not read as a time, or stands in the future, is due**

@@ -7585,8 +7585,8 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   card (`chat_by_number`, a pane's chat links). Denied a sandboxed chat's reading and writing
   under every harness, as the dispatch records are. **Collected at the project's open**
   (`chatrecords::sweep`, from `retention::on_open`): an entry whose chat ended 30 days or more
-  before goes, an end more than five minutes ahead of the clock being aged from the file's last
-  write, as a dispatch record's is. A write killed before its rename leaves its temp file
+  before goes, and so does one whose end stands in the future: the app keeps an end no later
+  than its own clock's now, so such an end was written by a clock ahead of this one. A write killed before its rename leaves its temp file
   (`.purlis-generated.closed.json.<pid>.<tag>.tmp`) beside the file, and the sweep removes it.
 - **Tier:** Clone state — the card of a closed chat no dispatch started; lost, those chats
   answer "no chat" when looked up, and nothing starts, ends or allows anything by it.

@@ -225,6 +225,16 @@ fn locked(root: &Path) -> std::io::Result<crate::rewrite::Lock> {
     crate::rewrite::Lock::bounded(&dir)
 }
 
+/// `ended`, or now where it stands in the future: a clock ahead wrote it, and an entry kept with
+/// it would never age ([`sweep`]).
+fn no_later_than_now(ended: &str) -> String {
+    let now = chrono::Utc::now();
+    match chrono::DateTime::parse_from_rfc3339(ended) {
+        Ok(at) if at > now => now.to_rfc3339(),
+        _ => ended.to_owned(),
+    }
+}
+
 /// **Keeps `chat`, which has just closed for good**, in the project at `root`: the newest entry,
 /// replacing one of the same ULID (a chat closed again) or the same number, then held to
 /// [`MOST_KEPT`]. Refused for an id that is not a ULID or a time that is not one.
@@ -236,6 +246,7 @@ pub fn keep(root: &Path, chat: &ChatRecord) -> std::io::Result<()> {
     }
     let chat = ChatRecord {
         title: chat.title.chars().take(MOST_TITLE_CHARS).collect(),
+        ended: no_later_than_now(&chat.ended),
         ..chat.clone()
     };
     let entry = serde_json::to_value(OnDisk::of(&chat)).map_err(std::io::Error::other)?;
@@ -251,9 +262,9 @@ pub fn keep(root: &Path, chat: &ChatRecord) -> std::io::Result<()> {
 
 /// **Takes away every chat that ended [`crate::retention::KEEP_FOR`] or more before `now`**,
 /// and every entry that does not hold together, in the project at `root`: what a dispatch
-/// record is swept at (`dispatchrecord::aged_from`). An end that stands more than
-/// `dispatchrecord::END_SKEW` past `now` was written by a clock far ahead, and is aged
-/// from the file's last write instead, so it is not kept on for ever. Answers how many went.
+/// record is swept at. An end that stands in the future is due at once: [`keep`] writes none,
+/// so it was written by a clock ahead of this one, and when it ended cannot be told. Answers
+/// how many went.
 pub fn sweep(root: &Path, now: SystemTime) -> usize {
     if !std::fs::symlink_metadata(dir(root)).is_ok_and(|meta| meta.is_dir()) {
         return 0;
@@ -264,18 +275,14 @@ pub fn sweep(root: &Path, now: SystemTime) -> usize {
     // Under the lock no write is under way, so a temp file here is a killed write's.
     remove_left_behind(root);
     let file = path(root);
-    let Ok(meta) = std::fs::symlink_metadata(&file) else {
-        return 0;
-    };
-    if !meta.is_file() {
+    if !std::fs::symlink_metadata(&file).is_ok_and(|meta| meta.is_file()) {
         return 0;
     }
-    let written = meta.modified().unwrap_or(now);
     let values = read_values(&file);
     let before = values.len();
     let kept: Vec<serde_json::Value> = values
         .into_iter()
-        .filter(|value| sound(value.clone()).is_some_and(|chat| !due(&chat, written, now)))
+        .filter(|value| sound(value.clone()).is_some_and(|chat| !due(&chat, now)))
         .collect();
     let gone = before - kept.len();
     if gone == 0 {
@@ -323,17 +330,12 @@ fn left_behind(name: &str) -> bool {
         })
 }
 
-/// Whether `chat`, in a file last written at `written`, is [`crate::retention::KEEP_FOR`] or
-/// more old at `now`: aged from its end, or from `written` where its end stands in the future.
-fn due(chat: &ChatRecord, written: SystemTime, now: SystemTime) -> bool {
-    let latest = chrono::DateTime::<chrono::Utc>::from(now) + crate::dispatchrecord::END_SKEW;
-    let from = chrono::DateTime::parse_from_rfc3339(&chat.ended)
-        .ok()
-        .map(|ended| ended.with_timezone(&chrono::Utc))
-        .filter(|ended| *ended <= latest)
-        .map_or(written, SystemTime::from);
-    now.duration_since(from)
-        .is_ok_and(|age| age >= crate::retention::KEEP_FOR)
+/// Whether `chat` is [`crate::retention::KEEP_FOR`] or more old at `now`, or ended after `now`.
+fn due(chat: &ChatRecord, now: SystemTime) -> bool {
+    chrono::DateTime::parse_from_rfc3339(&chat.ended).map_or(true, |ended| {
+        now.duration_since(SystemTime::from(ended))
+            .map_or(true, |age| age >= crate::retention::KEEP_FOR)
+    })
 }
 
 #[cfg(test)]
