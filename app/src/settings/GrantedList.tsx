@@ -12,7 +12,7 @@ import { DISPATCH } from "./dispatch";
 import { linkToGroup, openVault, settingsPlace, showPersona } from "./links";
 import { OutLink } from "./OutLink";
 import type { SettingsGroup } from "./groups";
-import { AddPort, BlockedLatelyList, OpenHostsList, useAllowedHere } from "./NetworkLists";
+import { AddPort, BlockedLogList, OpenHostsList, useAllowedHere } from "./NetworkLists";
 import { Button } from "../ui/button/Button";
 
 /** The address of the Network page (#1662): a sub-page of Sandbox, where the Granted list of
@@ -140,7 +140,7 @@ export function AllowedRows({ plane, file, ids }: { plane: PlaneId; file: string
           newest() && setSaid(`purlis could not list what is allowed: ${String(err)}`),
       );
   }, [plane]);
-  // Read again when an Allow on Blocked lately returns, and when a press that gives or takes back
+  // Read again when an Allow on the Blocked log returns, and when a press that gives or takes back
   // a Run grant does: a run's notice gives one, and Keep blocked takes a chat's back (#5617).
   const allowed = useAllowedHere();
   const runGrants = useRunGrantsMoved();
@@ -346,7 +346,7 @@ function GrantableFolders({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
 
 /**
  * **The Network page** (#1662), for the project at `plane`, whose committed file is `file`:
- * Open hosts, Allowed, Blocked lately, then the folders a block's Allow may name and a service
+ * Open hosts, Allowed, the Blocked log, then the folders a block's Allow may name and a service
  * on this Mac added by its port (#1970). Where an
  * administrator's policy forbids letting a chat write a folder (#1343), `writesLocked` is what it
  * says — "Locked by policy" and who set it — and the folders list offers no control.
@@ -359,7 +359,7 @@ export function networkGroup(
   return {
     id: NETWORK,
     label: "Network",
-    help: "What chats here can reach: the Open hosts every sandboxed chat reaches, the hosts and folders you allowed, and what was blocked lately. Nothing here changes until you press Allow or Remove.",
+    help: "What chats here can reach: the Open hosts every sandboxed chat reaches, the hosts and folders you allowed, and what was blocked in the last 30 days. Nothing here changes until you press Allow or Remove.",
     sub: true,
     settings: [
       {
@@ -383,12 +383,12 @@ export function networkGroup(
       },
       {
         id: `${NETWORK}.blocked`,
-        label: "Blocked lately",
+        label: "Blocked log",
         // An Allow for everyone edits the committed file, and is off by itself (#1759).
         writes: "per control",
-        help: "What chats here were refused in the last 30 days, kept on this machine only and never committed. Allow keeps a host for this project on this machine; a chat that is running reaches it from its next start.",
-        useControl: function useBlockedLately() {
-          return { control: (ids) => <BlockedLatelyList plane={plane} ids={ids} /> };
+        help: "What was blocked for chats here in the last 30 days, newest first: who blocked it and what it was aimed at, kept on this machine only and never committed. Allow keeps a host for this project on this machine; a chat that is running reaches it from its next start.",
+        useControl: function useBlockedLog() {
+          return { control: (ids) => <BlockedLogList plane={plane} ids={ids} /> };
         },
       },
       {

@@ -314,7 +314,7 @@ fn blocked_lately_is_folded_into_the_blocked_log() {
     let heard: [(&Path, u32, Block, &str, Option<Reported>); 6] = [
         // Kept blocked: purlis's proxy held it, and the person said no.
         (
-            &root,
+            root.as_path(),
             2,
             HOST,
             "api.example.com:443",
@@ -322,26 +322,26 @@ fn blocked_lately_is_folded_into_the_blocked_log() {
         ),
         // The chat's own hook reported it, and the chat moved on.
         (
-            &root,
+            root.as_path(),
             2,
             HOST,
             "cdn.example.net:8443",
             Some(Reported::ByItsHook),
         ),
         (
-            &root,
+            root.as_path(),
             2,
             socket,
             "/var/run/docker.sock",
             Some(Reported::ByItsHook),
         ),
         // Still an open ask: no block yet.
-        (&root, 2, HOST, "open.example:443", None),
+        (root.as_path(), 2, HOST, "open.example:443", None),
         // Allowed: an answer, never a block.
-        (&root, 2, HOST, "allowed.example:443", None),
+        (root.as_path(), 2, HOST, "allowed.example:443", None),
         // Another project's chat.
         (
-            &elsewhere,
+            elsewhere.as_path(),
             3,
             HOST,
             "theirs.example:443",

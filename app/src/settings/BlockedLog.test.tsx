@@ -79,7 +79,9 @@ describe("the Blocked log", () => {
     expect(within(row).getByText("api.example.com:443")).toBeVisible();
     expect(row).toHaveTextContent("Blocked by the sandbox · fix the build");
     expect(
-      within(row).getByRole("button", { name: "Allow for me on this machine: api.example.com:443" }),
+      within(row).getByRole("button", {
+        name: "Allow for me on this machine: api.example.com:443",
+      }),
     ).toBeVisible();
   });
 });
