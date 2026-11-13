@@ -1427,6 +1427,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "chat_attended",
     "chat_doings",
     // A chat whose program ended with its session host (#2007): what its pane says.
+    // A chat's Chat log (T1-27, R-224): its start and end rows, a query of the event log, read only.
+    "chat_log",
     "chat_lost_with_the_host",
     "chat_moves",
     "chat_network",
