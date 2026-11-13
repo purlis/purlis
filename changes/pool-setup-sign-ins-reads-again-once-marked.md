@@ -1,6 +1,6 @@
 ### Fixed
 
-- **Pool setup's Sign-ins on a cluster pool moves on once you mark the pool as your own.** Its
-  Open Settings › Pools button opens another tab, and turning on This is my own there left
-  Sign-ins still asking for it until the window lost and regained focus. It now reads again as
-  soon as the mark is kept.
+- **Pool setup's Sign-ins on a cluster pool takes you to This is my own, and moves on once you
+  turn it on.** Its Open Settings › Pools button opened Your settings on whatever group it last
+  showed, not Pools. It now opens Pools, and Sign-ins reads again as soon as the mark is kept,
+  where before it kept asking until the window lost and regained focus.

@@ -1,13 +1,15 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PoolSetupShown, PoolSetupStep } from "./bindings";
 import { PoolSetupTab } from "./PoolSetupTab";
 import { markPoolOwned } from "./pools";
+import { settingsPlace, useShownGroup } from "./settings/links";
+import { POOLS } from "./settings/pools";
 
 const step = (id: string, name: string, state: string, more: Partial<PoolSetupStep> = {}) =>
   ({
@@ -657,6 +659,8 @@ describe("Sign-ins on a cluster pool not marked as the person's own (#4071, #449
     render(<PoolSetupTab plane="p" onOpenPools={onOpenPools} />);
     await userEvent.click(await screen.findByRole("button", { name: "Open Settings › Pools" }));
     expect(onOpenPools).toHaveBeenCalled();
+    // Your settings opens on Pools, where This is my own is, not on its first group.
+    expect(renderHook(() => useShownGroup(settingsPlace("you"))).result.current?.group).toBe(POOLS);
     const before = calls.filter((call) => call.cmd === "pool_setup").length;
 
     // Settings › Pools' switch, as its row sends it: no focus or visibility change of the window.

@@ -13,6 +13,8 @@ import {
   type PoolSetupStep,
 } from "./bindings";
 import { Notice } from "./Notice";
+import { linkToGroup, settingsPlace } from "./settings/links";
+import { POOLS } from "./settings/pools";
 import { CheckStep, ClusterPoolStep, ContextOptions, InstallStep } from "./poolsetup/ClusterSteps";
 import { ConnectStep } from "./poolsetup/ConnectStep";
 import { Action, Recommended, Say, SeeWhat, StepHead } from "./poolsetup/parts";
@@ -306,7 +308,17 @@ function MarkAsOwn({
     <>
       <StepHead title={step.name} />
       <Findings step={step} />
-      {step.next && <Action does={step.next.does} main={step.next.label} onMain={onOpenPools} />}
+      {step.next && (
+        <Action
+          does={step.next.does}
+          main={step.next.label}
+          onMain={() => {
+            // Your settings on Pools, where This is my own is, not on the group it last showed.
+            linkToGroup(settingsPlace("you"), POOLS);
+            onOpenPools?.();
+          }}
+        />
+      )}
     </>
   );
 }
