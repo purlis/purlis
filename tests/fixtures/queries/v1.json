@@ -23,6 +23,13 @@
         "kind": "refused"
       },
       "at": "2026-11-09T13:32:00Z"
+    },
+    "error_with_message": {
+      "error": {
+        "kind": "failed",
+        "message": "It says why."
+      },
+      "at": "2026-11-09T13:32:00Z"
     }
   },
   "queries": [
@@ -30,7 +37,8 @@
     "purlis.memory_search",
     "purlis.session_record_list",
     "purlis.session_record_read",
-    "purlis.change_status"
+    "purlis.change_status",
+    "purlis.forge_milestones"
   ],
   "results": {
     "purlis.todo_list": {
@@ -275,6 +283,89 @@
       "required": [
         "changes",
         "unreadable"
+      ],
+      "additionalProperties": false
+    },
+    "purlis.forge_milestones": {
+      "type": "object",
+      "properties": {
+        "repo": {
+          "type": "string",
+          "description": "The repo of this workspace, by its folder's name."
+        },
+        "path": {
+          "type": "string",
+          "description": "Its owner/name on GitHub."
+        },
+        "state": {
+          "type": "string",
+          "description": "open or all, as asked."
+        },
+        "milestones": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "number": {
+                "type": "integer",
+                "description": "Its number on GitHub."
+              },
+              "title": {
+                "type": "string",
+                "description": "Its title."
+              },
+              "description": {
+                "type": "string",
+                "description": "Its description, or empty."
+              },
+              "due_on": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "When it is due (RFC 3339), or null."
+              },
+              "state": {
+                "type": "string",
+                "description": "open or closed."
+              },
+              "open_issues": {
+                "type": "integer",
+                "description": "How many of its issues are open."
+              },
+              "closed_issues": {
+                "type": "integer",
+                "description": "How many of its issues are closed."
+              },
+              "url": {
+                "type": "string",
+                "description": "Its page on GitHub."
+              },
+              "updated_at": {
+                "type": "string",
+                "description": "When it last changed (RFC 3339)."
+              }
+            },
+            "required": [
+              "number",
+              "title",
+              "description",
+              "due_on",
+              "state",
+              "open_issues",
+              "closed_issues",
+              "url",
+              "updated_at"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "repo",
+        "path",
+        "state",
+        "milestones"
       ],
       "additionalProperties": false
     }

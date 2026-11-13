@@ -75,6 +75,10 @@ pub struct Query {
     pub widens: &'static [(&'static str, &'static str)],
     /// The JSON Schema of the answer's `data`.
     pub result: fn() -> Value,
+    /// How long an answer stays good, for a query that reads what no plane change moves: a
+    /// subscribed page is asked again after it (`purlis.forge_milestones`, #6233). `None` for
+    /// a query only a change of the plane moves.
+    pub fresh_seconds: Option<u64>,
 }
 
 impl Query {
@@ -122,6 +126,9 @@ impl Query {
             out.insert("widens".into(), Value::Object(widens));
         }
         out.insert("result".into(), (self.result)());
+        if let Some(fresh) = self.fresh_seconds {
+            out.insert("fresh_seconds".into(), json!(fresh));
+        }
         Value::Object(out)
     }
 }
@@ -129,8 +136,11 @@ impl Query {
 /// The release the first queries answer in.
 const FIRST: &str = "0.5.1";
 
+/// The release `purlis.forge_milestones` first answers in.
+const FORGE_MILESTONES_SINCE: &str = "0.5.2";
+
 /// A JSON Schema object whose every property is required and no other is allowed.
-fn object(properties: Value) -> Value {
+pub(crate) fn object(properties: Value) -> Value {
     let required: Vec<String> = properties
         .as_object()
         .map(|p| p.keys().cloned().collect())
@@ -143,7 +153,7 @@ fn object(properties: Value) -> Value {
     })
 }
 
-fn list_of(item: Value) -> Value {
+pub(crate) fn list_of(item: Value) -> Value {
     json!({ "type": "array", "items": item })
 }
 
@@ -225,7 +235,7 @@ fn changes() -> Value {
 
 /// Every query, in the order the MCP server lists its tools. A new one is added at the end of
 /// its own line, and to the fixture.
-pub static CATALOGUE: [Query; 5] = [
+pub static CATALOGUE: [Query; 6] = [
     Query {
         name: "todo_list",
         since: FIRST,
@@ -234,6 +244,7 @@ pub static CATALOGUE: [Query; 5] = [
         scope: Scope::Workspace,
         widens: &[("done", "the done todos, not only the open ones")],
         result: todos,
+        fresh_seconds: None,
     },
     Query {
         name: "memory_search",
@@ -243,6 +254,7 @@ pub static CATALOGUE: [Query; 5] = [
         scope: Scope::Workspace,
         widens: &[],
         result: memories,
+        fresh_seconds: None,
     },
     Query {
         name: "session_record_list",
@@ -252,6 +264,7 @@ pub static CATALOGUE: [Query; 5] = [
         scope: Scope::Workspace,
         widens: &[],
         result: session_records,
+        fresh_seconds: None,
     },
     Query {
         name: "session_record_read",
@@ -261,6 +274,7 @@ pub static CATALOGUE: [Query; 5] = [
         scope: Scope::Workspace,
         widens: &[],
         result: session_record,
+        fresh_seconds: None,
     },
     Query {
         name: "change_status",
@@ -270,6 +284,17 @@ pub static CATALOGUE: [Query; 5] = [
         scope: Scope::Workspace,
         widens: &[],
         result: changes,
+        fresh_seconds: None,
+    },
+    Query {
+        name: milestones::NAME,
+        since: FORGE_MILESTONES_SINCE,
+        replaces: None,
+        deprecated: None,
+        scope: Scope::Workspace,
+        widens: &[("repo", "another repo of the workspace than its only one")],
+        result: milestones::result,
+        fresh_seconds: Some(milestones::FRESH_SECONDS),
     },
 ];
 
@@ -413,6 +438,9 @@ pub struct Answer {
     pub outcome: Result<Value, ErrorKind>,
     pub at: chrono::DateTime<chrono::Utc>,
     pub cursor: Option<String>,
+    /// With an error, a sentence for the reader saying what happened and what to do, where the
+    /// query has one (ADR 0122 as amended 2026-11-11): `error: { kind, message }`.
+    pub message: Option<String>,
 }
 
 impl Answer {
@@ -421,6 +449,7 @@ impl Answer {
             outcome: Ok(data),
             at,
             cursor: None,
+            message: None,
         }
     }
 
@@ -429,6 +458,19 @@ impl Answer {
             outcome: Err(kind),
             at,
             cursor: None,
+            message: None,
+        }
+    }
+
+    /// An error with a sentence for the reader.
+    pub fn error_saying(
+        kind: ErrorKind,
+        message: impl Into<String>,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> Self {
+        Answer {
+            message: Some(message.into()),
+            ..Answer::error(kind, at)
         }
     }
 
@@ -438,12 +480,19 @@ impl Answer {
         self
     }
 
-    /// `{ data | error: { kind }, at, cursor? }`.
+    /// `{ data | error: { kind, message? }, at, cursor? }`.
     pub fn to_json(&self) -> Value {
         let mut out = Map::new();
         match &self.outcome {
             Ok(data) => out.insert("data".into(), data.clone()),
-            Err(kind) => out.insert("error".into(), json!({ "kind": kind.as_str() })),
+            Err(kind) => {
+                let mut error = Map::new();
+                error.insert("kind".into(), json!(kind.as_str()));
+                if let Some(message) = &self.message {
+                    error.insert("message".into(), json!(message));
+                }
+                out.insert("error".into(), Value::Object(error))
+            }
         };
         out.insert(
             "at".into(),
@@ -466,6 +515,7 @@ pub fn listing() -> Value {
 }
 
 pub mod answer;
+pub mod milestones;
 
 #[cfg(test)]
 mod tests;

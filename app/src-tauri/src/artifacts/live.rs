@@ -164,7 +164,8 @@ pub(super) fn asked<R: Runtime>(app: tauri::AppHandle<R>, ask: Ask) {
         };
         let params = ask.params.clone().unwrap_or(Value::Null);
         let config = purlis_core::machine::config_root();
-        // An extension's query is asked again each `fresh_seconds` while subscribed (#5971).
+        // An extension's query is asked again each `fresh_seconds` while subscribed (#5971),
+        // and so is a core query that declares one.
         let admitted = if super::queried::is_extension(&ask.name) {
             super::queried::admitted(
                 &app,
@@ -185,7 +186,9 @@ pub(super) fn asked<R: Runtime>(app: tauri::AppHandle<R>, ask: Ask) {
                 &ask.name,
                 &params,
             )
-            .map(|_| None)
+            // A core query that reads what no plane change moves is asked again on its
+            // freshness (`purlis.forge_milestones`, #6233).
+            .map(|query| query.fresh_seconds.map(std::time::Duration::from_secs))
         };
         let every = match admitted {
             Ok(every) => every,
@@ -269,6 +272,7 @@ fn answer_of<R: Runtime>(app: &tauri::AppHandle<R>, key: &Key) -> Answer {
         &key.workspace,
         query,
         &params,
+        &calls::as_the_person(),
         at,
         chrono::Local::now().naive_local(),
     )

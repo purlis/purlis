@@ -93,6 +93,22 @@ pub struct Milestone {
     pub due_on: Option<String>,
 }
 
+/// A milestone as GitHub lists it, with its progress.
+#[derive(Debug, Clone, Deserialize)]
+struct Progress {
+    number: u64,
+    title: String,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    due_on: Option<String>,
+    state: String,
+    open_issues: u64,
+    closed_issues: u64,
+    html_url: String,
+    updated_at: String,
+}
+
 /// An organisation's issue type.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct IssueType {
@@ -578,6 +594,37 @@ impl GitHub {
             &format!("{repo_path}/milestones?state=all"),
             &format!("listing the milestones of {repo}"),
         )
+    }
+
+    /// The milestones of `repo` with their progress: the open ones, or with `all` every one.
+    pub(crate) fn milestone_progress(
+        &self,
+        caller: &Caller,
+        repo: &str,
+        all: bool,
+    ) -> Result<Vec<crate::forge::backend::MilestoneProgress>, ForgeError> {
+        let issues = Self::issues_of(repo)?;
+        let repo_path = issues.trim_end_matches("/issues");
+        let state = if all { "all" } else { "open" };
+        let listed: Vec<Progress> = self.pages(
+            caller,
+            &format!("{repo_path}/milestones?state={state}"),
+            &format!("listing the milestones of {repo}"),
+        )?;
+        Ok(listed
+            .into_iter()
+            .map(|m| crate::forge::backend::MilestoneProgress {
+                number: m.number,
+                title: m.title,
+                description: m.description.unwrap_or_default(),
+                due_on: m.due_on,
+                state: m.state,
+                open_issues: m.open_issues,
+                closed_issues: m.closed_issues,
+                url: m.html_url,
+                updated_at: m.updated_at,
+            })
+            .collect())
     }
 
     pub(crate) fn create_milestone(
