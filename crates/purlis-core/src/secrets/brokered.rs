@@ -296,9 +296,11 @@ const SLOW_AFTER: Duration = Duration::from_secs(3);
 #[cfg(unix)]
 const UNKNOWN_HARNESS_DEADLINE: Duration = Duration::from_secs(180);
 
-/// **How long a `secret exec` on `harness` waits on the app before the child starts** (Q244):
-/// three quarters of the harness's default command timeout, so the command ends saying why
-/// before the harness kills it, or [`UNKNOWN_HARNESS_DEADLINE`] where that is not known. The
+/// **How long a `secret exec` on `harness` waits on the app before the child starts** (Q244, as
+/// amended): a second past three quarters of the harness's default command timeout, so the
+/// command ends saying why before the harness kills it and after the app's own still-open answer
+/// (91 seconds on Claude Code and opencode, 8.5 on Codex), or [`UNKNOWN_HARNESS_DEADLINE`] where
+/// that is not known. The
 /// clock counts again from each frame, and the app sends a note as it raises an ask (which it
 /// holds for [`super::ask::holds_for`] that harness), so an open ask is never cut off; the
 /// deadline is for an app that has gone quiet.
@@ -307,9 +309,16 @@ pub(crate) fn of_the_app(harness: Option<crate::harness::Harness>) -> Patience {
     Patience {
         slow_after: SLOW_AFTER,
         deadline: harness.map_or(UNKNOWN_HARNESS_DEADLINE, |known| {
-            super::ask::default_command_timeout(known) * 3 / 4
+            deadline_past(super::ask::default_command_timeout(known) * 3 / 4)
         }),
     }
+}
+
+/// How long `secret exec` waits on the app with no frame, where the app holds an ask `hold`:
+/// [`super::ask::EXEC_WAITS_PAST_THE_HOLD`] past it, so the app's still-open answer comes first.
+#[cfg(unix)]
+pub(crate) fn deadline_past(hold: Duration) -> Duration {
+    hold + super::ask::EXEC_WAITS_PAST_THE_HOLD
 }
 
 // ----------------------------------------------------------------------------------------

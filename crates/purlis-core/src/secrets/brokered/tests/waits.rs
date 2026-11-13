@@ -36,6 +36,15 @@ fn asked_of(
     vault: &str,
     app: impl FnOnce(std::os::unix::net::UnixStream) + Send + 'static,
 ) -> (Option<i32>, Vec<Say>, Duration) {
+    asked_with(vault, PATIENCE, app)
+}
+
+/// [`asked_of`], with the asker waiting on the app with `patience`.
+fn asked_with(
+    vault: &str,
+    patience: Patience,
+    app: impl FnOnce(std::os::unix::net::UnixStream) + Send + 'static,
+) -> (Option<i32>, Vec<Say>, Duration) {
     let project = keyring_project();
     let ctx = Ctx::new(project.path(), Env::of(&[]));
     let req = Request {
@@ -59,7 +68,7 @@ fn asked_of(
         None,
         ours,
         &mut rec,
-        PATIENCE,
+        patience,
     );
     let took = began.elapsed();
     drop(app);
@@ -154,19 +163,21 @@ fn patience_on(harness: Option<&str>) -> Patience {
 }
 
 #[test]
-fn secret_exec_waits_on_the_app_three_quarters_of_its_harness_command_timeout_or_three_minutes() {
-    // Q244: the command ends saying why before the harness kills it, where its timeout is known.
+fn secret_exec_waits_on_the_app_a_second_past_its_harness_hold_or_three_minutes() {
+    // Q244, as amended: the hold is three quarters of the harness's command timeout, so the
+    // command ends saying why before the harness kills it, and the asker waits a second past it,
+    // so the app's still-open answer comes first.
     assert_eq!(
         patience_on(Some("claude-code")).deadline,
-        Duration::from_secs(90)
+        Duration::from_secs(91)
     );
     assert_eq!(
         patience_on(Some("opencode")).deadline,
-        Duration::from_secs(90)
+        Duration::from_secs(91)
     );
     assert_eq!(
         patience_on(Some("codex")).deadline,
-        Duration::from_millis(7_500)
+        Duration::from_millis(8_500)
     );
     // Where the harness is not known, three minutes.
     assert_eq!(patience_on(None).deadline, Duration::from_secs(180));
@@ -194,11 +205,11 @@ fn the_wait_and_its_deadline_are_said_as_a_waiting_command_says_them() {
     assert_eq!(
         waiting_on(&kc, &gh, claude_code),
         "waiting on the app that started this chat while it reads vault 'kc' from the system \
-         keyring, before it runs `gh pr list`, for up to 90 seconds"
+         keyring, before it runs `gh pr list`, for up to 91 seconds"
     );
     assert_eq!(
         stopped_waiting(None, &kc, claude_code).to_string(),
-        "stopped waiting on the app that started this chat: no answer for 90 seconds while it \
+        "stopped waiting on the app that started this chat: no answer for 91 seconds while it \
          reads vault 'kc' from the system keyring, so nothing ran; the person may be answering \
          the system keyring's prompt or an ask for vault 'kc'; retry once answered"
     );
@@ -215,7 +226,7 @@ fn the_wait_and_its_deadline_are_said_as_a_waiting_command_says_them() {
     );
     assert_eq!(
         stopped_waiting(None, &Step::TokenMint("gh".into()), claude_code).to_string(),
-        "stopped waiting on the app that started this chat: no answer for 90 seconds while it \
+        "stopped waiting on the app that started this chat: no answer for 91 seconds while it \
          mints a GitHub App's token for vault 'gh', over the network, so nothing ran; the person \
          may be answering an ask for vault 'gh'; retry once answered"
     );
@@ -236,4 +247,41 @@ fn once_the_command_has_started_it_runs_past_the_deadline_and_ends_with_its_own_
         took >= PATIENCE.deadline * 2,
         "it waited for the exit: {took:?}"
     );
+}
+
+#[test]
+fn an_ask_the_app_holds_ends_with_its_still_open_answer_not_the_askers_deadline() {
+    // Q244, as amended: the app sends its note as it raises the ask and holds the ask from a
+    // moment later, so its still-open answer (75) comes a hold after the note and a little more.
+    // The asker, waiting as it would past that hold, hears it rather than stopping with 1.
+    let hold = PATIENCE.deadline;
+    let raising = Duration::from_millis(50);
+    let patience = Patience {
+        deadline: deadline_past(hold),
+        ..PATIENCE
+    };
+    let (code, said, _) = asked_with("kc", patience, move |mut app| {
+        let _ = send(&mut app, &Frame::Note("waiting on you in Asks".into()));
+        std::thread::sleep(raising + hold);
+        let _ = send(
+            &mut app,
+            &Frame::Refused {
+                why: "the ask is still open".into(),
+                code: 75,
+            },
+        );
+    });
+    assert_eq!(code, Some(75), "{said:?}");
+    assert!(
+        said.last()
+            .is_some_and(|s| line(s) == "the ask is still open"),
+        "{said:?}"
+    );
+}
+
+#[test]
+fn a_wait_of_a_fraction_of_a_second_names_it_to_the_tenth() {
+    let codex = of_the_app(Some(crate::harness::Harness::Codex));
+    let wait = waiting_on(&Step::Keyring("kc".into()), &["ls".to_owned()], codex);
+    assert!(wait.ends_with("for up to 8.5 seconds"), "{wait}");
 }

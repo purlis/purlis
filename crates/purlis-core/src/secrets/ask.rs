@@ -1995,6 +1995,14 @@ fn holds_already(ctx: &Ctx, persona: &str, vault: &str, key: &str) -> bool {
 /// pending at its margin, and the line comes back after it.
 const ASKER_WAITS_PAST_THE_HOLD: Duration = Duration::from_secs(15);
 
+/// **How much longer than the app holds an ask a `secret exec` waits on the app** (Q244, as
+/// amended): one second, not [`ASKER_WAITS_PAST_THE_HOLD`]'s fifteen, because the exec's wait is
+/// three quarters of its harness's command timeout and must still end before the harness kills
+/// it. The app sends its note as it raises the ask and holds the ask from then, so the asker,
+/// counting from the note, would otherwise stop with 1 a moment before the app's still-open
+/// answer (75); the second lets that answer, or one given at the last instant, arrive.
+pub(crate) const EXEC_WAITS_PAST_THE_HOLD: Duration = Duration::from_secs(1);
+
 /// **How long the chat whose environment is `env` waits for the app's answer to its Secret
 /// ask**: its harness's command timeout, and [`ASKER_WAITS_PAST_THE_HOLD`] more, so the app's
 /// pending, sent at [`holds_for`] that harness, always arrives first.
