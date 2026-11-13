@@ -480,7 +480,9 @@ const PROJECT: &str = "[sandbox]\nmode = \"on\"\negress = []\n\n[sandbox.persona
 fn machine() -> Machine {
     Machine {
         env: crate::secrets::Env::of(&[]),
-        home: Some(std::path::PathBuf::from("/home/op")),
+        // Not under `/home`: on macOS that is an autofs mount, where every name that is not there
+        // costs a trip to the automounter, and a start resolves hundreds of them (T1-46).
+        home: Some(std::path::PathBuf::from("/nonexistent-home/op")),
         os: Os::MacOs,
     }
 }

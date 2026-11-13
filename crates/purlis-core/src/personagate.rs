@@ -1396,13 +1396,16 @@ mod tests {
 
     #[test]
     fn a_home_relative_vault_file_is_expanded_under_home_and_only_there() {
-        let home = Some("/home/op");
-        assert_eq!(expand_home("~/v/db.enc", home), "/home/op/v/db.enc");
+        let home = Some("/nonexistent-home/op");
         assert_eq!(
-            expand_home("~/v/db.enc", Some("/home/op/")),
-            "/home/op/v/db.enc"
+            expand_home("~/v/db.enc", home),
+            "/nonexistent-home/op/v/db.enc"
         );
-        assert_eq!(expand_home("~", home), "/home/op");
+        assert_eq!(
+            expand_home("~/v/db.enc", Some("/nonexistent-home/op/")),
+            "/nonexistent-home/op/v/db.enc"
+        );
+        assert_eq!(expand_home("~", home), "/nonexistent-home/op");
         // No home, or an empty one: the path stays as written.
         assert_eq!(expand_home("~/v/db.enc", None), "~/v/db.enc");
         assert_eq!(expand_home("~/v/db.enc", Some("")), "~/v/db.enc");
