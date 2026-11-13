@@ -1,0 +1,22 @@
+{
+  "source": "GitLab 19.4 REST API docs (gitlab-org/gitlab 19-4-stable-ee, doc/api), protected_branches.md: Get a single protected branch, for a branch named fix-404, failing (503)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "projects/acme%2Fapi/protected_branches/fix-404"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 1,
+        "out": "{\"message\":\"503 Service Unavailable\"}",
+        "err": "glab: GET https://gitlab.com/api/v4/projects/acme%2Fapi/protected_branches/fix-404: 503 Service Unavailable (HTTP 503)",
+        "status": 503
+      }
+    }
+  ]
+}

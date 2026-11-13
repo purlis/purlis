@@ -518,3 +518,33 @@ fn a_press_on_a_repo_with_a_merge_queue_queues_it_at_the_asks_head_through_the_f
         transport.unspent()
     );
 }
+
+/// Q248: a try again at the same head is the one ask still, and the forge's new read replaces
+/// what it shows: checks that were running when it was raised and have passed since show as
+/// passed. It waits since it was first raised.
+#[test]
+fn a_try_again_at_the_same_head_replaces_the_asks_facts_with_the_new_read() {
+    let project = Fake::new();
+    let mut running = at(HEAD);
+    running.facts.checks.ci = Ci::Running;
+    *project.read.lock().unwrap() = Ok(running);
+    assert!(matches!(
+        answer(&project, &project.ask(12)),
+        Answer::MergeHeld { .. }
+    ));
+    let since = project.holds.every()[0].since;
+
+    *project.read.lock().unwrap() = Ok(at(HEAD));
+    assert!(matches!(
+        answer(&project, &project.ask(12)),
+        Answer::MergeHeld { .. }
+    ));
+
+    let waiting = project.holds.every();
+    let [one] = waiting.as_slice() else {
+        panic!("one ask: {waiting:?}");
+    };
+    assert_eq!(one.facts.checks.ci, Ci::Passed, "the new read's checks");
+    assert_eq!(one.since, since, "still the ask first raised");
+    assert_eq!(project.holds_recorded(), 1, "no second hold");
+}

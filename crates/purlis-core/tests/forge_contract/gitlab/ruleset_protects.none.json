@@ -1,0 +1,22 @@
+{
+  "source": "GitLab 19.4 REST API docs (gitlab-org/gitlab 19-4-stable-ee, doc/api), protected_branches.md: Get a single protected branch (404 where none is)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "projects/acme%2Fapi/protected_branches/main"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 1,
+        "out": "{\"message\":\"404 Not found\"}",
+        "err": "glab: 404 Not found (HTTP 404)",
+        "status": 404
+      }
+    }
+  ]
+}

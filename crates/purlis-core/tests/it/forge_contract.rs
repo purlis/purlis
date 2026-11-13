@@ -1830,7 +1830,12 @@ fn every_method_of_the_seam_has_a_case_on_both_forges() {
 
 /// The recordings of one forge's own scene beside a case's, each read by a test of its own:
 /// `<case>.<scene>.json`.
-const SCENES: [(&str, &str, &str); 24] = [
+const SCENES: [(&str, &str, &str); 29] = [
+    ("github", "ruleset_protects", "housekeeping"),
+    ("github", "ruleset_protects", "classic"),
+    ("github", "ruleset_protects", "slash"),
+    ("gitlab", "ruleset_protects", "none"),
+    ("gitlab", "ruleset_protects", "fix_404"),
     ("github", "keep_images", "first"),
     ("github", "keep_images", "planted"),
     ("github", "keep_images", "merge"),
@@ -3699,6 +3704,95 @@ mod merge_when_ready_scenes {
                 "{kind}"
             );
             spent(&recorded);
+        }
+    }
+}
+
+/// Whether a ruleset protects a branch, by the rules that gate a merge only (Q248): a
+/// `pull_request`, `required_status_checks`, `required_deployments`, `merge_queue` or `update`
+/// rule, or GitHub's classic branch protection where it requires reviews or checks or restricts
+/// pushes. A forge that does not say is an error, never none. Each scene runs on the recorded
+/// and the native transport.
+mod ruleset_protects_scenes {
+    use super::*;
+
+    /// `kind`'s backend over the scene `ruleset_protects.<name>.json`, the caller to ask as,
+    /// and the check that every recorded exchange was asked for.
+    fn scene(kind: &str, name: &str, how: How) -> (Box<dyn ForgeBackend>, Caller, Box<dyn Fn()>) {
+        let text = recording(kind, &format!("ruleset_protects.{name}"));
+        match how {
+            How::Recorded => {
+                let recorded = Arc::new(Recorded::parse(&text).unwrap());
+                let check = recorded.clone();
+                (
+                    Forge::default_of(Kind::parse(kind).unwrap()).backend_over(recorded),
+                    caller(),
+                    Box::new(move || check.spent()),
+                )
+            }
+            _ => {
+                let over = native::over(kind, default_host(kind), &text);
+                (over.backend, over.caller, over.check)
+            }
+        }
+    }
+
+    const HOWS: [How; 2] = [How::Recorded, How::Native];
+
+    #[test]
+    fn a_ruleset_with_only_deletion_and_force_push_rules_does_not_protect_a_merge() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("github", "housekeeping", how);
+            assert_eq!(backend.ruleset_protects(&me, "acme/api", "main"), Ok(false));
+            check();
+        }
+    }
+
+    #[test]
+    fn githubs_classic_branch_protection_that_requires_reviews_protects_a_merge() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("github", "classic", how);
+            assert_eq!(backend.ruleset_protects(&me, "acme/api", "main"), Ok(true));
+            check();
+        }
+    }
+
+    /// A branch name's slash is percent-encoded in `rules/branches/{branch}`, which GitHub reads
+    /// as the one branch `release/2.0`. The live run does not ask it (#712).
+    #[test]
+    fn a_branch_whose_name_has_a_slash_is_asked_about_by_its_whole_name() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("github", "slash", how);
+            assert_eq!(
+                backend.ruleset_protects(&me, "acme/api", "release/2.0"),
+                Ok(true)
+            );
+            check();
+        }
+    }
+
+    #[test]
+    fn gitlab_answering_404_for_the_branch_is_no_protected_branch() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("gitlab", "none", how);
+            assert_eq!(backend.ruleset_protects(&me, "acme/api", "main"), Ok(false));
+            check();
+        }
+    }
+
+    /// The branch's name is in the failure's words; a `404` in them is not GitLab saying none.
+    #[test]
+    fn a_failed_read_of_a_branch_named_fix_404_is_not_read_as_no_protection() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("gitlab", "fix_404", how);
+            let got = backend.ruleset_protects(&me, "acme/api", "fix-404");
+            assert!(got.is_err(), "{got:?}");
+            check();
         }
     }
 }
