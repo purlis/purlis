@@ -322,8 +322,8 @@ fn the_stop_trying_line_is_typed_as_one_bracketed_paste_then_enter() {
 }
 
 /// **Q267 amended: a chat that takes no keys is told nothing**: a shell (no measured
-/// harness), a harness not yet heard from, a chat that ended, one showing a prompt, and one in
-/// a stop's last turn. Nothing is kept for its turn's end either.
+/// harness), a harness not yet heard from, a chat that ended, and one in a stop's last turn.
+/// Nothing is kept for its turn's end either. One showing a prompt keeps the line for later.
 #[test]
 fn a_chat_that_takes_no_keys_is_never_told_to_stop_trying() {
     let shell = seen(|one| {
@@ -339,14 +339,14 @@ fn a_chat_that_takes_no_keys_is_never_told_to_stop_trying() {
         one.waiting = true;
         one.asking = true;
     });
-    for (said, one) in [
-        ("a shell", shell),
-        ("unheard", unheard),
-        ("ended", ended),
-        ("a prompt", prompt),
-    ] {
+    for (said, one) in [("a shell", shell), ("unheard", unheard), ("ended", ended)] {
         assert_eq!(telling(one, false), Telling::Never, "{said}");
     }
+    assert_eq!(
+        telling(prompt, false),
+        Telling::AtTurnEnd,
+        "a prompt keeps the line until it is gone"
+    );
     assert_eq!(telling(waiting(), true), Telling::Never, "its last turn");
 
     let pauses = Pauses::default();
@@ -426,4 +426,57 @@ fn a_kept_stop_trying_line_is_dropped_when_its_chat_ends_or_is_being_stopped() {
     pauses.forget(TASK);
     turn_ended_sending(&pauses, TASK, || at_turn_end(waiting(), false), &send);
     assert!(typed.borrow().is_empty(), "forgotten");
+}
+
+/// **Q267 amended: a chat showing a prompt as the person answers keeps the line**, typed once
+/// the prompt is gone and it waits, never while the prompt shows.
+#[test]
+fn a_chat_showing_a_prompt_is_told_to_stop_trying_once_the_prompt_is_gone() {
+    let prompt = seen(|one| {
+        one.waiting = true;
+        one.asking = true;
+    });
+    let pauses = Pauses::default();
+    let (typed, send) = typing();
+    tell_sending(&pauses, TASK, || telling(prompt, false), &send);
+    assert!(typed.borrow().is_empty(), "nothing typed over a prompt");
+    turn_ended_sending(&pauses, TASK, || at_turn_end(prompt, false), &send);
+    assert!(typed.borrow().is_empty(), "still nothing while it shows");
+    turn_ended_sending(&pauses, TASK, || at_turn_end(waiting(), false), &send);
+    assert_eq!(*typed.borrow(), [(TASK, stop_trying_typed().into_bytes())]);
+}
+
+/// **Q267 amended: a chat paused again drops the line it was owed**, for itself and for every
+/// chat the new pause holds, so an old line never follows a later answer nor reaches a program
+/// held still.
+#[test]
+fn a_pause_drops_the_stop_trying_line_owed_to_every_chat_it_holds() {
+    let pauses = Pauses::default();
+    let (typed, send) = typing();
+    tell_sending(&pauses, TASK, || telling(running(), false), &send);
+    tell_sending(&pauses, BELOW, || telling(running(), false), &send);
+    assert!(
+        pauses
+            .pause(TASK, looping_failing(), AT, vec![BELOW])
+            .is_some()
+    );
+    turn_ended_sending(&pauses, TASK, || at_turn_end(waiting(), false), &send);
+    turn_ended_sending(&pauses, BELOW, || at_turn_end(waiting(), false), &send);
+    assert!(typed.borrow().is_empty(), "no old line typed");
+
+    pauses.answer(TASK, FINE).expect("answered");
+    turn_ended_sending(&pauses, TASK, || at_turn_end(waiting(), false), &send);
+    assert!(typed.borrow().is_empty(), "nor after a later answer");
+}
+
+/// A pause that holds a chat already changes nothing, and keeps the line it is owed.
+#[test]
+fn a_pause_that_is_refused_keeps_the_owed_line() {
+    let pauses = Pauses::default();
+    let (typed, send) = typing();
+    pauses.pause(TASK, looping_failing(), AT, vec![BELOW]);
+    tell_sending(&pauses, 9, || telling(running(), false), &send);
+    assert_eq!(pauses.pause(BELOW, looping_failing(), AT, vec![9]), None);
+    turn_ended_sending(&pauses, 9, || at_turn_end(waiting(), false), &send);
+    assert_eq!(typed.borrow().len(), 1, "the line still owed is typed");
 }
