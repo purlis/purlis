@@ -385,3 +385,32 @@ fn a_running_task_whose_chat_closed_is_found_closed_with_its_chat_record() {
         Found::Closed(Box::new(closed_641()))
     );
 }
+
+#[test]
+fn a_closed_handoff_never_shows_another_chats_record_of_its_number() {
+    // The count of numbers starts over where the record of open chats could not be read, so
+    // 641 may be an older chat's too: the handoff's ULID says which chat it was.
+    let (_dir, root) = project();
+    ended_unreported(&root, Mode::Handoff, false);
+    chatrecords::keep(
+        &root,
+        &ChatRecord {
+            number: 641,
+            ..closed_702()
+        },
+    )
+    .unwrap();
+    assert_eq!(by_number_in(&root, 641, &[]), Found::NoChat);
+}
+
+#[test]
+fn a_closed_handoff_is_found_by_its_ulid_closed_again_under_a_later_number() {
+    let (_dir, root) = project();
+    ended_unreported(&root, Mode::Handoff, false);
+    let later = ChatRecord {
+        number: 668,
+        ..closed_641()
+    };
+    chatrecords::keep(&root, &later).unwrap();
+    assert_eq!(by_number_in(&root, 641, &[]), Found::Closed(Box::new(later)));
+}
