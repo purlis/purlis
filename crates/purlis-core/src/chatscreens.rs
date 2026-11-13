@@ -27,7 +27,9 @@
 //!   [`MOST_SCREEN_BYTES`], written whole through a temp file and opened following no link, so a
 //!   file put there by anything else is never shown.
 //!
-//! **Tier:** Clone state, device-bound, transient, never committed.
+//! **Tier:** Clone state (ADR 0069), never committed. Device-bound and transient are marks of
+//! a Machine store and of a store living one session; this one is neither, and is swept at 30
+//! days.
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;

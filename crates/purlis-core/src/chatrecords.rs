@@ -33,7 +33,9 @@
 //!   file that is not one purlis wrote reads as empty. Losing it only costs those chats their
 //!   card: nothing starts, ends or allows anything by it.
 //!
-//! **Tier:** Clone state, device-bound, transient, never committed.
+//! **Tier:** Clone state (ADR 0069), never committed. Device-bound and transient are marks of
+//! a Machine store and of a store living one session; this one is neither, and is swept at 30
+//! days.
 
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
