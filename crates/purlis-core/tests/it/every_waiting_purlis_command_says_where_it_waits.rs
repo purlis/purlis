@@ -72,8 +72,10 @@ fn hook_socket_waits(ask: &Ask) -> HookWait {
         // `browser_login` and `browser_fill_secret` wait on the person's yes; no command asks.
         Ask::Browse(_) => HookWait::OnThePersonFromAToolAlone,
         Ask::Task(_) => HookWait::OnAChat,
-        // Held for the person, and answered at once with where they have it.
+        // Held for the person, and answered at once with where they have it. A held merge too:
+        // the hook refuses the chat at once and never waits on the person's press (R-114).
         Ask::Removal(_)
+        | Ask::Merge(_)
         | Ask::Propose(_)
         | Ask::ProposeLimit(_)
         | Ask::ProposeSkillSet(_)
