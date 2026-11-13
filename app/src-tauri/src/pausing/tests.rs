@@ -298,11 +298,11 @@ fn running() -> Seen {
     seen(|one| one.running = true)
 }
 
+/// What each chat was sent: the chat and its bytes, in order.
+type Typed = std::rc::Rc<std::cell::RefCell<Vec<(u32, Vec<u8>)>>>;
+
 /// What was typed into each chat, through a send that records it.
-fn typing() -> (
-    std::rc::Rc<std::cell::RefCell<Vec<(u32, Vec<u8>)>>>,
-    impl Fn(u32, &[u8]) -> Result<(), String>,
-) {
+fn typing() -> (Typed, impl Fn(u32, &[u8]) -> Result<(), String>) {
     let typed = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
     let into = std::rc::Rc::clone(&typed);
     (typed, move |chat: u32, bytes: &[u8]| {
