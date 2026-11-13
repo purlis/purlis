@@ -65,28 +65,32 @@ export function installedFrom(plane: string, source: StudioSource, workspace: st
   return commands.skillSourceInstalled(plane, originOf(source), workspace);
 }
 
-/** The review of installing `names` from `source` at `level`. */
+/** The review of installing `names` from `source` at `level`, each skill of `without` that only
+ *  a hint brings along left out (#5874). */
 export function reviewInstall(
   plane: string,
   source: StudioSource,
   names: string[],
   level: SkillLevel,
+  without: string[] = [],
 ) {
   return source.kind === "git"
-    ? commands.skillInstallReview(plane, source.source, names, level)
-    : commands.skillExtensionInstallReview(plane, source.extension.id, names, level);
+    ? commands.skillInstallReview(plane, source.source, names, level, without)
+    : commands.skillExtensionInstallReview(plane, source.extension.id, names, level, without);
 }
 
-/** The review of installing `names` from `source` together, at `level`. */
+/** The review of installing `names` from `source` together, at `level`, each skill of `without`
+ *  that only a hint brings along left out (#5874). */
 export function reviewInstallSet(
   plane: string,
   source: StudioSource,
   names: string[],
   level: SkillLevel,
+  without: string[] = [],
 ) {
   return source.kind === "git"
-    ? commands.skillInstallSetReview(plane, source.source, names, level)
-    : commands.skillExtensionInstallSetReview(plane, source.extension.id, names, level);
+    ? commands.skillInstallSetReview(plane, source.source, names, level, without)
+    : commands.skillExtensionInstallSetReview(plane, source.extension.id, names, level, without);
 }
 
 /** Installs what was reviewed from `source`: an extension's from what its review read. */

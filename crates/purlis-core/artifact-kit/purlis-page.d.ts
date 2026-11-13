@@ -16,10 +16,10 @@ declare namespace PurlisPage {
   /** Why an answer has no data. */
   type ErrorKind = "needs-extension" | "not-approved" | "timeout" | "too-large" | "refused" | "failed";
 
-  /** Every answer: its data or why there is none, when it was answered, and where its next page starts. */
+  /** Every answer: its data or why there is none (with a sentence for the reader, where purlis has one), when it was answered, and where its next page starts. */
   type Envelope<T> =
     | { data: T; at: string; cursor?: string; error?: never }
-    | { error: { kind: ErrorKind }; at: string; data?: never; cursor?: never };
+    | { error: { kind: ErrorKind; message?: string }; at: string; data?: never; cursor?: never };
 
   /** What the port answers an ask with: its envelope and the ask's `id`, or `null` for an ask that was no ask. */
   type Answer<T = unknown> = Envelope<T> & { id: number | null };
@@ -129,6 +129,87 @@ declare namespace PurlisPage {
         }>;
       };
     };
+    /** The milestones of a GitHub repo of this workspace, each with its open and closed issue counts, due date and page. Only a repo whose clone is in this workspace; the open milestones unless state is all. */
+    "purlis.forge_milestones@1": {
+      params: {
+        /** The repo of this workspace, by its folder's name. Leave it out when the workspace has one repo. */
+        repo?: string;
+        /** open (the default) for the open milestones, or all for the closed ones too. */
+        state?: "open" | "all";
+      };
+      data: {
+        /** The repo of this workspace, by its folder's name. */
+        repo: string;
+        /** Its owner/name on GitHub. */
+        path: string;
+        /** open or all, as asked. */
+        state: string;
+        milestones: Array<{
+          /** Its number on GitHub. */
+          number: number;
+          /** Its title. */
+          title: string;
+          /** Its description, or empty. */
+          description: string;
+          /** When it is due (RFC 3339), or null. */
+          due_on: string | null;
+          /** open or closed. */
+          state: string;
+          /** How many of its issues are open. */
+          open_issues: number;
+          /** How many of its issues are closed. */
+          closed_issues: number;
+          /** Its page on GitHub. */
+          url: string;
+          /** When it last changed (RFC 3339). */
+          updated_at: string;
+        }>;
+      };
+    };
+    /** List the chats of the workspace this chat works in, as the window's Chats tree has them: each with its id, name, persona, harness, its Chat state and the fact that decided it, when it started and last moved, the chat it came from and how (dispatched, or handed off from), and its session record. With history, also the workspace's ended dispatches. Names, states and times only: never what any chat wrote. */
+    "purlis.chats@1": {
+      params: {
+        /** Also list the workspace's ended dispatches (tasks and handoffs), the one that ended last first, each with the chat that asked for it, and each chat once. A closed chat that dispatched nothing is in no record, so it is not listed. */
+        history?: boolean;
+        /** With history: how many ended dispatches to list, from 1 to 200. 50 when left out. */
+        limit?: number;
+      };
+      data: {
+        /** Whether ended dispatches are listed too. */
+        history: boolean;
+        chats: Array<{
+          /** Its id; chat-<n> for an open chat given none yet, <record id>.chat-<n> for an ended one: what a parent names it by. */
+          id: string;
+          /** Its name, as its tab shows it. */
+          name: string;
+          /** The persona it runs as, or null. */
+          persona: string | null;
+          /** Its harness, by the project's word for it, or null for a shell. */
+          harness: string | null;
+          /** Its Chat state, as the window's mark keys it. */
+          state: "needs" | "stuck" | "failed" | "working" | "waiting" | "idle" | "ended" | "cant-tell";
+          /** Its Chat state, as the window names it: Waiting on you, Failed, … */
+          state_said: string;
+          /** The fact that decided its state, such as needs-you-queue or turn-ended. */
+          cause: string;
+          /** When it started, RFC 3339, or null where it is not known. */
+          started: string | null;
+          /** When it last moved, RFC 3339, or null where it is not known. */
+          last_activity: string | null;
+          /** The chat it came from, or null for one the person opened. */
+          parent: {
+            /** That chat's id, or null where it works in another workspace or at the project's root. */
+            id: string | null;
+            /** dispatched: a task that owes it a report; handed-off-from: the work moved here. */
+            relation: "dispatched" | "handed-off-from";
+          } | null;
+          /** Its newest session record, the file name session_record_read takes, or null. */
+          session_record: string | null;
+          /** Whether it is open now; false only with history. */
+          open: boolean;
+        }>;
+      };
+    };
   }
 
   type QueryId = keyof Queries;
@@ -162,7 +243,7 @@ declare namespace PurlisPage {
   }
 
   /** One query's fixture: its envelope without `at`, which the mock answers with the time it answers. */
-  type Fixture<T> = { data: T; cursor?: string } | { error: { kind: ErrorKind } };
+  type Fixture<T> = { data: T; cursor?: string } | { error: { kind: ErrorKind; message?: string } };
 
   /** What the mock answers from, in purlis-fixtures.json beside the page. A data file with no fixture is fetched from the page's folder. */
   interface Fixtures {

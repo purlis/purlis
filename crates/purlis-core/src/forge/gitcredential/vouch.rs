@@ -37,6 +37,16 @@ pub struct Unvouched {
     pub places: Vec<String>,
 }
 
+impl Unvouched {
+    /// **The address its remote names, as the person reads it**: the one address, or, where it
+    /// names several, each joined by "and".
+    pub fn remote_said(&self) -> String {
+        self.place
+            .clone()
+            .unwrap_or_else(|| self.places.join(" and "))
+    }
+}
+
 /// Every clone in the workspaces of the project at `root` that has a remote on a forge the
 /// project knows and no record in the config home at `config_root`, by workspace and then name.
 /// A workspace whose clones cannot be read, and a clone whose remote git cannot read, are left

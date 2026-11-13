@@ -6,8 +6,9 @@ import { dequal } from "dequal/lite";
 import { commands, type PlaneId, type StaleClone, type StaleFix } from "./bindings";
 import type { StandingNotice } from "./ChipNotices";
 import { Notice, type NoticeAction } from "./Notice";
+import { AFTER_GIT_MOVED_MS } from "./afterGitMoved";
 import { followPlaneChanged, GIT } from "./planeChanged";
-import { useWindowFocused } from "./windowFocused";
+import { useOnWindowFocus } from "./windowFocused";
 
 /** The family of a stale repo's cause, whose dismissal is kept until the repo is fixed. */
 export const STALE_CLONE = "stale-clone";
@@ -45,8 +46,9 @@ export const staleCloneCause = (stale: StaleClone) =>
  *   too; where any is another, every one is left, and the Notice names them (#2117).
  *
  * A Fix that would lose work does nothing and says what blocks it, on the Notice. The list is
- * read again when the window comes back into focus and when the project's git standing moves,
- * so a Notice goes when its repo is fixed, from here or by hand.
+ * read again when the window comes back into focus while the project is in front, as the project
+ * comes back to the front, and when the project's git standing moves, so a Notice goes when its
+ * repo is fixed, from here or by hand.
  *
  * **Read once, drawn twice** (#3650): each line also hangs from its workspace's chip in the title
  * bar (`ChipNotices.tsx`), with the same fixes, the same busy and refused state, and the one
@@ -54,11 +56,15 @@ export const staleCloneCause = (stale: StaleClone) =>
  */
 export function useStaleClones({
   plane,
+  shown,
   dismissed,
   dismiss,
   settle,
 }: {
   plane: PlaneId;
+  /** Whether the project is the one in front. Handed in, never read from `useProjectShown`:
+   *  the project's view calls this above its own provider, where that always says `true`. */
+  shown: boolean;
   /** The causes dismissed in this project, and the ways to change them (`useDismissals`). */
   dismissed: ReadonlySet<string>;
   dismiss: (cause: string) => void;
@@ -79,7 +85,8 @@ export function useStaleClones({
   // `true` from the first render, as `useDoctor`'s: the list is asked the moment the project opens.
   const [reading, setReading] = useState(true);
   const stillReading = useRef(reading);
-  const focused = useWindowFocused();
+  /** Reads the list again, outside a render: set by the effect that reads it. */
+  const readAgain = useRef<() => void>(() => {});
 
   // **Neither an ask nor an equal answer draws the project's view again** (felt speed, round 2):
   // a move of the project's git standing is followed where it is heard (`followPlaneChanged`),
@@ -110,13 +117,20 @@ export function useStaleClones({
           setReading(false);
         });
     };
+    readAgain.current = read;
     read();
-    const stop = followPlaneChanged([plane], () => GIT, read);
+    // At its own turn after a move (`afterGitMoved.ts`, H8), not in the second the others start.
+    const stop = followPlaneChanged([plane], () => GIT, read, AFTER_GIT_MOVED_MS.staleClones);
     return () => {
       live = false;
+      readAgain.current = () => {};
       stop();
     };
-  }, [plane, focused, asked, settle]);
+  }, [plane, asked, settle]);
+
+  // **A focus of the window draws nothing by itself** (felt speed, round 3, H7): it asks again
+  // for the project in front alone, and only a different answer sets anything.
+  useOnWindowFocus(shown, () => readAgain.current());
 
   const press = useCallback(
     (one: StaleClone, fix: StaleFix) => {

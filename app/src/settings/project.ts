@@ -59,7 +59,11 @@ import { EXTENSIONS_LINK, linkToGroup, settingsPlace } from "./links";
 import { profilePage } from "./profileAddress";
 import { askIconThemes, iconsControl, iconsHeld, iconsNotes } from "./iconsPick";
 import { discoverRow } from "./discover";
-import { projectSkillsGroup } from "./skillsSummary";
+import {
+  projectSkillActsGroup,
+  projectSkillSourcesGroup,
+  projectSkillsGroup,
+} from "./skillsSummary";
 import { harnessDeclarationRows } from "./harnessDeclarations";
 import { settled } from "../PlaneEdits";
 import { NETWORK, networkGroup } from "./GrantedList";
@@ -630,6 +634,10 @@ function declaredGroups(
     },
     // Its chats' skill budget (#4610), behind the Skill studio's flag.
     ...(skillStudio && read.plane !== undefined ? [projectSkillsGroup(read.plane)] : []),
+    // An org's skill controls, read only, and what was audited (#6031), behind the same flag.
+    ...(skillStudio && read.plane !== undefined
+      ? [projectSkillSourcesGroup(read.plane, read.shared.file), projectSkillActsGroup(read.plane)]
+      : []),
     ...profilePages(read),
     {
       id: "project.sandbox",

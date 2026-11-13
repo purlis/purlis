@@ -53,7 +53,7 @@ mod scene;
 use scene::{MERGE, SAVE, SHA, Scene};
 
 /// Every case, by the seam method it covers. The parity test compares this with the traits.
-const CASES: [&str; 34] = [
+const CASES: [&str; 36] = [
     "owned",
     "about",
     "reachable",
@@ -63,6 +63,7 @@ const CASES: [&str; 34] = [
     "state",
     "body",
     "head",
+    "ruleset_protects",
     "set_body",
     "by_head",
     "request_auto_merge",
@@ -79,6 +80,7 @@ const CASES: [&str; 34] = [
     "read",
     "search",
     "add_comment",
+    "milestone_progress",
     "owners_to_create_under",
     "create_repo",
     "delete_created_repo",
@@ -93,7 +95,7 @@ const CASES: [&str; 34] = [
 /// The cases the live run does not run, each with why and the ticket that will run it. Each one
 /// would merge or queue the fixture's one open request, which the read cases need open; running
 /// them needs a request opened afresh for each run.
-const NOT_LIVE: [(&str, &str); 15] = [
+const NOT_LIVE: [(&str, &str); 16] = [
     (
         "open_draft",
         "each run would leave one more draft on the fixture; it needs a request opened per run (#712)",
@@ -158,6 +160,11 @@ const NOT_LIVE: [(&str, &str); 15] = [
     (
         "open_draft_from_fork",
         "each run would leave one more draft on the fixture, from a fork it does not have (#712)",
+    ),
+    (
+        "ruleset_protects",
+        "it needs a ruleset (GitHub) or a protected branch (GitLab) on the fixture's default \
+         branch, which the operator provisions (#712)",
     ),
 ];
 
@@ -483,9 +490,24 @@ mod cases {
             Ok(purlis_core::forge::pr::HeadAt {
                 sha: "0123456789abcdef0123456789abcdef01234567".to_string(),
                 base: "main".to_string(),
+                title: "Add the parser".to_string(),
+                author: "octo".to_string(),
                 // Both recordings are of a repo that merges only by squashing.
                 squash: true,
             })
+        );
+        spent(&over);
+    }
+
+    pub fn ruleset_protects(kind: &str, how: How) {
+        let Some(over) = over(kind, "ruleset_protects", how) else {
+            return;
+        };
+        let scene = &over.scene;
+        assert_eq!(
+            over.backend
+                .ruleset_protects(&over.caller, &scene.path("api"), "main"),
+            Ok(true)
         );
         spent(&over);
     }
@@ -1172,6 +1194,51 @@ mod cases {
         spent(&over);
     }
 
+    pub fn milestone_progress(kind: &str, how: How) {
+        let Some(over) = over(kind, "milestone_progress", how) else {
+            return;
+        };
+        let path = over.scene.path("api");
+        let read = over.backend.milestone_progress(&over.caller, &path, false);
+        if kind == "gitlab" {
+            // GitLab's milestones are not read yet (#6476): it says so and asks nothing.
+            let why = read.expect_err("GitLab answers that it cannot").to_string();
+            assert!(
+                why.contains("does not read the milestones") && why.contains(&path),
+                "{why}"
+            );
+            spent(&over);
+            return;
+        }
+        // The open milestones, each with its issue counts, in the forge's order.
+        let read = read.unwrap();
+        let shown: Vec<_> = read
+            .iter()
+            .map(|m| {
+                (
+                    m.number,
+                    m.title.as_str(),
+                    m.state.as_str(),
+                    m.due_on.as_deref(),
+                    m.open_issues,
+                    m.closed_issues,
+                )
+            })
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                (4, "M4", "open", Some("2026-12-01T08:00:00Z"), 3, 9),
+                (5, "M5", "open", None, 1, 0),
+            ]
+        );
+        assert_eq!(read[0].description, "");
+        assert_eq!(read[1].description, "The next one.");
+        assert_eq!(read[0].url, "https://github.com/acme/api/milestone/4");
+        assert_eq!(read[0].updated_at, "2026-11-10T09:00:00Z");
+        spent(&over);
+    }
+
     pub fn read(kind: &str, how: How) {
         let Some(over) = over(kind, "read", how) else {
             return;
@@ -1312,6 +1379,12 @@ macro_rules! contract {
             }
             #[test]
             $(#[$attr])?
+            fn ruleset_protects_says_a_ruleset_protects_the_branch() {
+                purlis_core::unsteered!();
+                super::cases::ruleset_protects(stringify!($forge), super::How::$how);
+            }
+            #[test]
+            $(#[$attr])?
             fn set_body_replaces_the_requests_description_and_nothing_else() {
                 purlis_core::unsteered!();
                 super::cases::set_body(stringify!($forge), super::How::$how);
@@ -1411,6 +1484,12 @@ macro_rules! contract {
             fn add_comment_posts_on_the_issue_and_answers_where_the_comment_is() {
                 purlis_core::unsteered!();
                 super::cases::add_comment(stringify!($forge), super::How::$how);
+            }
+            #[test]
+            $(#[$attr])?
+            fn milestone_progress_lists_the_open_milestones_with_their_issue_counts() {
+                purlis_core::unsteered!();
+                super::cases::milestone_progress(stringify!($forge), super::How::$how);
             }
             #[test]
             $(#[$attr])?
@@ -1803,7 +1882,16 @@ fn every_method_of_the_seam_has_a_case_on_both_forges() {
 
 /// The recordings of one forge's own scene beside a case's, each read by a test of its own:
 /// `<case>.<scene>.json`.
-const SCENES: [(&str, &str, &str); 24] = [
+const SCENES: [(&str, &str, &str); 33] = [
+    ("github", "ruleset_protects", "housekeeping"),
+    ("github", "ruleset_protects", "classic"),
+    ("github", "ruleset_protects", "slash"),
+    ("github", "ruleset_protects", "not_found"),
+    ("github", "ruleset_protects", "forbidden"),
+    ("gitlab", "ruleset_protects", "none"),
+    ("gitlab", "ruleset_protects", "fix_404"),
+    ("gitlab", "ruleset_protects", "wildcard"),
+    ("gitlab", "ruleset_protects", "unprotected"),
     ("github", "keep_images", "first"),
     ("github", "keep_images", "planted"),
     ("github", "keep_images", "merge"),
@@ -2509,11 +2597,18 @@ mod network_log {
             // and six on a first proof, and reads three or two of one it refuses, GitLab in two uploads, and a comment is one call on each.
             // A fork (#4342): who the account is, the source and the fork's place, the fork, the
             // draft and the request from it; GitLab reads the fork once more while it copies.
-            // Adding to an issue (#5694) opens one and comments on it: two calls on each.
-            // The merge hold reads a request's head, base and merge method (T1-11): one call each.
+            // Adding to an issue (#5694) opens one and comments on it: two calls on each. A
+            // repo's milestones (#6233) are one call on GitHub and none on GitLab (#6476).
+            // The merge hold reads a request's head, base and merge method (T1-11, R-115): one
+            // call each. Whether a ruleset protects a merge's base (R-146) is one more on each,
+            // and its scenes: on GitHub, the rules and `branches/{b}/protection` (two calls) for
+            // housekeeping-only rules, a classic protection, a plain 404 Not Found and a 403
+            // (Q252), and one rules call for a branch with a slash; on GitLab, one
+            // `repository/branches/{b}` call for each of no branch, a branch named fix-404, a
+            // wildcard rule and an unprotected branch (Q252).
             let expected = match kind {
-                "github" => 89,
-                _ => 106,
+                "github" => 100,
+                _ => 111,
             };
             assert_eq!(paths.len(), expected, "{kind}: the recorded REST calls");
             for path in paths {
@@ -3671,6 +3766,150 @@ mod merge_when_ready_scenes {
                 "{kind}"
             );
             spent(&recorded);
+        }
+    }
+}
+
+/// Whether a ruleset protects a branch, by the rules that gate a merge only (Q248): a
+/// `pull_request`, `required_status_checks`, `required_deployments`, `merge_queue` or `update`
+/// rule, or GitHub's classic branch protection where it requires reviews or checks or restricts
+/// pushes. A forge that does not say is an error, never none. Each scene runs on the recorded
+/// and the native transport.
+mod ruleset_protects_scenes {
+    use super::*;
+
+    /// `kind`'s backend over the scene `ruleset_protects.<name>.json`, the caller to ask as,
+    /// and the check that every recorded exchange was asked for.
+    fn scene(kind: &str, name: &str, how: How) -> (Box<dyn ForgeBackend>, Caller, Box<dyn Fn()>) {
+        let text = recording(kind, &format!("ruleset_protects.{name}"));
+        match how {
+            How::Recorded => {
+                let recorded = Arc::new(Recorded::parse(&text).unwrap());
+                let check = recorded.clone();
+                (
+                    Forge::default_of(Kind::parse(kind).unwrap()).backend_over(recorded),
+                    caller(),
+                    Box::new(move || check.spent()),
+                )
+            }
+            _ => {
+                let over = native::over(kind, default_host(kind), &text);
+                (over.backend, over.caller, over.check)
+            }
+        }
+    }
+
+    const HOWS: [How; 2] = [How::Recorded, How::Native];
+
+    #[test]
+    fn a_ruleset_with_only_deletion_and_force_push_rules_does_not_protect_a_merge() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("github", "housekeeping", how);
+            assert_eq!(backend.ruleset_protects(&me, "acme/api", "main"), Ok(false));
+            check();
+        }
+    }
+
+    #[test]
+    fn githubs_classic_branch_protection_that_requires_reviews_protects_a_merge() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("github", "classic", how);
+            assert_eq!(backend.ruleset_protects(&me, "acme/api", "main"), Ok(true));
+            check();
+        }
+    }
+
+    /// A branch name's slash is percent-encoded in `rules/branches/{branch}`, which GitHub reads
+    /// as the one branch `release/2.0`. The live run does not ask it (#712).
+    #[test]
+    fn a_branch_whose_name_has_a_slash_is_asked_about_by_its_whole_name() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("github", "slash", how);
+            assert_eq!(
+                backend.ruleset_protects(&me, "acme/api", "release/2.0"),
+                Ok(true)
+            );
+            check();
+        }
+    }
+
+    /// Q252: GitHub answers a login without admin access `404 Not Found` for a protected
+    /// branch's protection too, so only its `Branch not protected` is none.
+    #[test]
+    fn githubs_plain_404_not_found_for_classic_protection_is_unknown_not_none() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("github", "not_found", how);
+            let got = backend.ruleset_protects(&me, "acme/api", "main");
+            assert!(got.is_err(), "{got:?}");
+            check();
+        }
+    }
+
+    /// Q252: no rules and a refused classic protection read is unknown, never none. A pin
+    /// (Q208): it was never seen red, as a 403 was already an error. The mutation it catches
+    /// is reading any refusal of `branches/{b}/protection` as none, such as a `not_protected`
+    /// that matches every 4xx status.
+    #[test]
+    fn no_rules_and_a_refused_classic_protection_read_is_unknown_not_none() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("github", "forbidden", how);
+            let got = backend.ruleset_protects(&me, "acme/api", "main");
+            assert!(got.is_err(), "{got:?}");
+            check();
+        }
+    }
+
+    /// Q252: GitLab's own `protected` on the branch counts its wildcard rules, so `release/2.0`
+    /// under a `release/*` rule is protected, which an exact-name lookup of
+    /// `protected_branches` missed.
+    #[test]
+    fn a_gitlab_branch_a_wildcard_rule_protects_protects_a_merge() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("gitlab", "wildcard", how);
+            assert_eq!(
+                backend.ruleset_protects(&me, "acme/api", "release/2.0"),
+                Ok(true)
+            );
+            check();
+        }
+    }
+
+    /// Q252: a branch GitLab answers with `protected: false` is protected by no rule.
+    #[test]
+    fn a_gitlab_branch_gitlab_calls_unprotected_does_not_protect_a_merge() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("gitlab", "unprotected", how);
+            assert_eq!(backend.ruleset_protects(&me, "acme/api", "main"), Ok(false));
+            check();
+        }
+    }
+
+    #[test]
+    fn gitlab_answering_404_for_the_branch_is_no_protected_branch() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("gitlab", "none", how);
+            assert_eq!(backend.ruleset_protects(&me, "acme/api", "main"), Ok(false));
+            check();
+        }
+    }
+
+    /// The branch's name is in the failure's words; a `404` in them is not GitLab saying none.
+    #[test]
+    fn a_failed_read_of_a_branch_named_fix_404_is_not_read_as_no_protection() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("gitlab", "fix_404", how);
+            let got = backend.ruleset_protects(&me, "acme/api", "fix-404");
+            assert!(got.is_err(), "{got:?}");
+            check();
         }
     }
 }

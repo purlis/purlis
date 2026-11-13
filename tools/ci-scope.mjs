@@ -47,8 +47,9 @@
 //    it run all the same (`RUST_READERS`), alone, and a story draws only the built-in themes
 //    (`READ_BY_WEB`, which runs everything). A Rust change that moves what the window calls
 //    changes `app/src/bindings.ts` too, which runs everything.
-// 6. `operator/`: the docs and tools alone. `ci` never builds it, a workspace of its own that
-//    `operator.yml` checks, but for `operator/Dockerfile`, which a Rust test reads.
+// 6. `operator/`: the docs and tools alone. A workspace of its own that `operator.yml` checks,
+//    but for `operator/Dockerfile`, which a Rust test reads. `ci` builds it only for Pool setup's
+//    walk on a kind cluster (#4494), which its gate (`GATES`) starts.
 // 7. Anything else: every scope. An unknown path runs everything, so a path this file has never
 //    heard of costs time, never a check.
 //
@@ -109,6 +110,8 @@ export const READ_BY_CODE = [
   "CHANGELOG.md",
   "docs/ui-primitives.md",
   "docs/design-system.md",
+  // `app/src/ui/buildingDoc.test.ts` holds it to the code (#5725).
+  "docs/building-ui.md",
   "docs/adr/0076-a-run-moves-only-by-a-named-cause-and-a-chats-state-is-read-from-its-runs.md",
   // The published theme schema: Rust writes and checks it, and the title bar's test reads every
   // part a theme can set from it (#3196).
@@ -200,11 +203,12 @@ export const RUST_READERS = [
   "src/theme/theme.test.ts",
   "src/theme/themeIds.test.ts",
   "src/theme/tint.test.ts",
-  "src/ui/buildingSkill.test.ts",
+  "src/ui/buildingDoc.test.ts",
   "src/ui/field/fieldHelp.guard.test.ts",
   "src/ui/field/refusingFields.guard.test.ts",
   "src/ui/menu/submenuRows.guard.test.ts",
   "src/ui/notice/noticeCardFill.test.ts",
+  "src/windowControls.test.ts",
   "src/windowprefs.test.ts",
 ];
 
@@ -221,15 +225,16 @@ export const GATES = {
   "confinement":
     "^(crates/studio-probe/|\\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|confined|egress|reach|wrapper|hosts|localport|door|tunnel|sshproxy)(\\.rs|/)|crates/purlis-core/src/hookwire/serve(\\.rs|/)|crates/purlis-core/src/secrets/(brokered|keyhold)(\\.rs|/)|crates/purlis-cli/src/listen/|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\\.rs|crates/purlis-cli/tests/it/a_chats_ssh_route_carries_from_inside_its_sandbox\\.rs|Cargo\\.lock$|rust-toolchain\\.toml$)",
   "parity":
-    "^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|pools|poolsetup|sshroute|codelink|session)[^/]*(\\.rs$|/)|crates/purlis-core/tests/it/a_remote_docker_pool_is_reached_over_ssh\\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\\.rs$|/)|runner-image/|tests/(parity|remote-docker)/|Cargo\\.lock$|rust-toolchain\\.toml$|\\.github/workflows/ci\\.yml$)",
+    "^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|pools|poolsetup|sshroute|codelink|session)[^/]*(\\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_is_reached_over_ssh\\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman)/|Cargo\\.lock$|rust-toolchain\\.toml$|\\.github/workflows/ci\\.yml$)",
   // No step of its own greps this one: the job's steps are the scenario legs'. What the Skill
   // studio's outcome bars measure, and the suite and its stand-ins (#4343).
   "outcome-bars":
     "^(app/src/(Skill|UseSkill|skill|chatSkill|personaSkills)|app/src/ui/list/|app/src-tauri/src/(skill|useskill|personaskills)|crates/skills/|crates/purlis-core/src/(skills|skillspan|skilltools|skilluse)(\\.rs|/)|crates/fake-harness/|app/e2e/(outcomeBars|harness\\.ts|wdio\\.outcome\\.conf|specs/skill-outcome-bars)|Cargo\\.toml$|\\.github/workflows/ci\\.yml$)",
-  // No step of its own greps this one either: Pool setup's walk in the window on Docker (#4985),
-  // what it presses and the pools and runner image it makes.
+  // No step of its own greps this one either: Pool setup's walks in the window on Docker (#4985)
+  // and on a kind cluster (#4494), what they press and the pools and runner image they make, and,
+  // for the cluster, the operator this build makes, what Install applies and the cluster's make.
   "pool-setup":
-    "^(app/src/(poolsetup/|PoolSetup|AddDockerPool|pools\\.ts)|app/src-tauri/src/(poolsetuptab|dockerpools|runnerlinks|routedsessions)[^/]*(\\.rs$|/)|crates/purlis-core/src/(poolsetup|dockerpool|runners|pools|sshroute)[^/]*(\\.rs$|/)|runner-image/|tests/remote-docker/|app/e2e/(pool-runner\\.Dockerfile$|wdio\\.pool\\.conf|poolsetup\\.ts$|specs/[^/]*\\.pool\\.e2e\\.ts$)|\\.github/workflows/ci\\.yml$)",
+    "^(app/src/(poolsetup/|PoolSetup|AddDockerPool|pools\\.ts|settings/pools\\.tsx$)|app/src-tauri/src/(poolsetuptab|dockerpools|clusterpools|runnerlinks|routedsessions)[^/]*(\\.rs$|/)|crates/purlis-core/src/(poolsetup|dockerpool|clusterpool|runners|pools|sshroute)[^/]*(\\.rs$|/)|crates/cluster-doctor/|operator/(src/|deploy/|vendor/|Dockerfile$|Cargo\\.(toml|lock)$|e2e/kind-node\\.txt$)|runner-image/|tests/(remote-docker|remote-podman|kind-cluster)/|app/e2e/(pool-runner\\.Dockerfile$|wdio\\.pool\\.conf|poolsetup\\.ts$|specs/[^/]*\\.pool\\.e2e\\.ts$)|\\.github/(workflows/ci\\.yml|actions/kind/))",
   "bench":
     "^(crates/session-protocol/|Cargo\\.toml$|Cargo\\.lock$|rust-toolchain\\.toml$|fixtures/corpora/|tools/bench\\.mjs$|tools/latency-gate\\.mjs$|\\.github/workflows/ci\\.yml$)",
 };

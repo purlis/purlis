@@ -101,6 +101,7 @@ fn run(word: &str, payload: &serde_json::Value, env: &[(&str, &str)], host: Host
             Ok(())
         }),
         permission: Box::new(|_| None),
+        reason: Box::new(|_| {}),
     });
     let mut child = support::purlis()
         .args(["hook", word])
@@ -462,6 +463,7 @@ fn a_tool_hook_answers_only_once_the_host_has_recorded_its_call() {
             }
         }),
         permission: Box::new(|_| None),
+        reason: Box::new(|_| {}),
     });
     let mut child = support::purlis()
         .args(["hook", "pretooluse"])

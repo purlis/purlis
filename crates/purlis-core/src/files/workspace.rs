@@ -39,7 +39,7 @@ use crate::repofolder::{self, Layout};
 use crate::worktree::confine::{self, Outside};
 pub use crate::wscmd::saved::Kept;
 use crate::wscmd::saved::{self, Marks, NotSaved};
-use crate::youreditor::{self, Editor, Launch};
+use crate::youreditor::{Checked, Editor, NotLaunched};
 
 /// The folder of the branches' folders, never one of the workspace files.
 const WORKTREES: &str = ".worktrees";
@@ -557,14 +557,15 @@ impl Files {
     }
 
     /// **One file handed to your editor** at `line` (RC-20): placed as [`Self::place`] places
-    /// it, a regular file, and no second name of a file purlis keeps to itself.
+    /// it, a regular file, and no second name of a file purlis keeps to itself. Held as it was
+    /// checked ([`Checked`], #3185): the app launches only through [`Checked::launch`].
     pub fn in_your_editor(
         &self,
         path: &str,
         line: u32,
         editor: Editor,
         var: &dyn Fn(&str) -> Option<String>,
-    ) -> Result<Launch, NotHere> {
+    ) -> Result<Checked, NotHere> {
         if self.judged(path)?.is_empty() {
             return Err(Refused::NotAFile(path.to_string()).into());
         }
@@ -572,12 +573,16 @@ impl Files {
         if !placed.absolute.is_file() {
             return Err(Refused::NotAFile(path.to_string()).into());
         }
-        let opened = crate::contain::open_no_link(&self.dir, &placed.absolute)
-            .map_err(|_| NotHere::ThroughALink(path.to_string()))?;
-        if self.kept.holds_a_name_of(&opened) {
+        // Held by what it is on disk, so what is launched is still this file (#3185).
+        let checked = match Checked::new(&self.dir, &placed.absolute, editor, line, var) {
+            Ok(checked) => checked,
+            Err(NotLaunched::NotHeld(_)) => return Err(NotHere::ThroughALink(path.to_string())),
+            Err(other) => return Err(Refused::from(other).into()),
+        };
+        if self.kept.holds_a_name_of(checked.held()) {
             return Err(Refused::KeptPrivate(path.to_string()).into());
         }
-        Ok(youreditor::launch(editor, &placed.absolute, line, var).map_err(Refused::from)?)
+        Ok(checked)
     }
 
     /// **The files found by name** (the Explorer's filter): every regular file the tree shows

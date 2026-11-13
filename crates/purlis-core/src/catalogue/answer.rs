@@ -22,12 +22,14 @@ use crate::active::Place;
 pub const MOST_BYTES: usize = 4 << 20;
 
 /// **The answer to `query` asked with `args`** in workspace `workspace` of the plane at `root`.
-/// `at` stamps the answer, and `now` is the local time a todo's age is counted from.
+/// `at` stamps the answer, and `now` is the local time a todo's age is counted from. A query
+/// that reads the forge asks it through `forge` ([`super::milestones`]).
 pub fn ask(
     root: &Path,
     workspace: &str,
     query: &Query,
     args: &Value,
+    forge: &super::milestones::Reach,
     at: chrono::DateTime<chrono::Utc>,
     now: chrono::NaiveDateTime,
 ) -> Answer {
@@ -35,23 +37,32 @@ pub fn ask(
         Ok(args) => args,
         Err(kind) => return Answer::error(kind, at),
     };
+    if query.name == super::milestones::NAME {
+        return match super::milestones::read(root, workspace, &args, forge) {
+            Ok(data) => sized(data, None, at),
+            Err(why) => Answer::error_saying(why.kind, why.message, at),
+        };
+    }
     let place = match query.scope {
         Scope::Workspace => Place::Workspace(workspace.to_owned()),
         Scope::Plane => Place::PlaneRoot,
     };
     match data(root, &place, query.name, &args, now) {
-        Ok((data, cursor)) => {
-            let size = serde_json::to_vec(&data).map_or(usize::MAX, |b| b.len());
-            if size > MOST_BYTES {
-                return Answer::error(ErrorKind::TooLarge, at);
-            }
-            let answer = Answer::data(data, at);
-            match cursor {
-                Some(cursor) => answer.with_cursor(cursor),
-                None => answer,
-            }
-        }
+        Ok((data, cursor)) => sized(data, cursor, at),
         Err(kind) => Answer::error(kind, at),
+    }
+}
+
+/// `data` as an answer with its cursor, or `too-large` over [`MOST_BYTES`].
+fn sized(data: Value, cursor: Option<String>, at: chrono::DateTime<chrono::Utc>) -> Answer {
+    let size = serde_json::to_vec(&data).map_or(usize::MAX, |b| b.len());
+    if size > MOST_BYTES {
+        return Answer::error(ErrorKind::TooLarge, at);
+    }
+    let answer = Answer::data(data, at);
+    match cursor {
+        Some(cursor) => answer.with_cursor(cursor),
+        None => answer,
     }
 }
 

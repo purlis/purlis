@@ -215,7 +215,8 @@ export const NOTICES = "Notices";
  * project's asks are answered in its own Asks, never listed here. A scope with nothing in it
  * offers the nearest wider one with something waiting, one press to widen. Notices and updates
  * under the chips follow them (decision 9): one about a chat in every scope that holds its chat,
- * one about no chat only under Project. The Panel's Notices view has no chips.
+ * one about no chat only under Project. The Panel's Notices view and Updates, which draw no
+ * chips, are not narrowed.
  *
  * **A row reads in three ranks** (qw359, `InboxRow.tsx`): what needs you, strongest; where it
  * is (project · workspace · persona), quieter; its kind and how long it has waited, smallest
@@ -441,16 +442,21 @@ export function Inbox({
   );
   const scope = asksScopeDrawn(asksPicked, counts, focused);
   /**
-   * **Notices and updates under the chips follow them** (decision 9): one about a chat is listed
-   * in every scope that holds its chat, one about no chat of this project only under Project.
-   * With no chips drawn nothing narrows, and the Panel's Notices view draws none.
+   * **Notices and updates under the chips follow them** (ADR 0121, amended 2026-11-12, decision
+   * 9): one about a chat of this project is listed in every scope that holds its chat, as its asks
+   * are; one about no chat (a persona's tools, the doctor, a stale clone, purlis's own) or about
+   * another project's chat, only under Project. With no chips drawn nothing narrows, and the
+   * Panel's Notices view draws none.
    */
   const chipsDrawn = drawsAsks && chips.length > 1 && counts.project > 0;
   const aboutListed = scopeHoldsAbout(chipsDrawn ? scope : "project", chatSets);
+  /** Whether a line about chat `session` of this project (0 or none: no chat) is listed. */
+  const listedUnderChips = (session: number | null | undefined): boolean =>
+    aboutListed(session === null || session === 0 ? undefined : session);
   /** The chats that cannot say they wait listed here: another project's is about no chat of
    *  this one. */
   const quietListed = quiet.filter((one) =>
-    aboutListed(one.plane === plane ? one.session : undefined),
+    listedUnderChips(one.plane === plane ? one.session : undefined),
   );
   // **Closed, it opens on Chat next time** (decision 4).
   useEffect(() => {
@@ -483,7 +489,8 @@ export function Inbox({
     updates?.rows === undefined
       ? undefined
       : part !== "updates"
-        ? updates.rows.filter((row) => aboutListed(row.update.session ?? undefined))
+        ? // Under the chips, the whole Inbox's follow them (decision 9).
+          updates.rows.filter((row) => listedUnderChips(row.update.session))
         : updateScope === "workspace"
           ? ofList.filter(updateInHere)
           : ofList;
@@ -526,8 +533,11 @@ export function Inbox({
   // longest wait, one chat's asks together (`asksOrder.ts`).
   const groups = inOrder(listed, (ask) => ageOf(plane, ask), now);
   const recent = useAnswered(plane);
-  /** What answers said that the person must read, each under the scopes that hold its chat. */
-  const saidListed = recent.filter((one) => one.said !== undefined && aboutListed(one.session));
+  /** What answers said that the person must read, each under the scopes that hold the chat that
+   *  asked. */
+  const saidListed = recent.filter(
+    (one) => one.said !== undefined && listedUnderChips(one.session),
+  );
   // Read only while nothing waits, where the empty Inbox lists them (D-1700-7).
   const allowedLately = useAllowedLately(
     plane,
@@ -879,7 +889,7 @@ export function Inbox({
             whatever waits, until dismissed, since the row it was pressed on has gone. Drawn with the
             asks and narrowed by the chips (ADR 0121, amended 2026-11-12, decision 9): one about a
             chat is listed in every scope that holds its chat, one about no chat only under
-            Project. */}
+            Project, which lists every one, so none is lost. */}
         {drawsAsks && saidListed.length > 0 && (
           <NoticeList>
             {saidListed.map((one) =>

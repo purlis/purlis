@@ -21,6 +21,7 @@ import { forgetSkillEdit, keepSkillEdit, skillEditIn } from "./skillEdit";
 import { typeIn } from "./editor/typing.testkit";
 import { handedOver, takeHanded, unsavedIn, unsavedNow } from "./unsavedWork";
 import type { SkillLintFinding, StudioSkill } from "./bindings";
+import { NO_SKILL_POLICY } from "./skillPolicy.testkit";
 
 afterEach(() => {
   cleanup();
@@ -45,6 +46,8 @@ function core(
     asked.push({ cmd, args: given });
     if (cmd in more) return more[cmd](given);
     switch (cmd) {
+      case "skill_policy":
+        return NO_SKILL_POLICY;
       case "skill_studio":
         return studio([DEPLOY, REVIEW]);
       case "skill_text":
@@ -56,7 +59,7 @@ function core(
       case "skill_stats":
         return { by_harness: [], by_persona: [], by_workspace: [] };
       case "skill_details":
-        return { copies: [], uses: [], used_by: [], uses_cut: false, pinned_by: [] };
+        return { copies: [], uses: [], used_by: [], hinted_by: [], uses_cut: false, pinned_by: [] };
       case "skill_updates":
         return { offers: [], unconfirmed: [], unasked: [] };
       default:

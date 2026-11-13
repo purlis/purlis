@@ -542,6 +542,24 @@ pub(crate) fn taken_over(held: &Held, session: u32) {
     }
 }
 
+/// **Whether the next launch leaves task chat `chat` out of its put back**
+/// ([`put_back_without_the_finished`]): it had finished, by the app's own dispatch record of it,
+/// by the chat's id: ended with a report, not blocked, and not taken over by the person. What a
+/// quit keeps the screen of too (#6305), since the chat never closes through `Chats::close_as`.
+pub(crate) fn left_out(root: &std::path::Path, chat: &purlis_core::reopen::Chat) -> bool {
+    let Some(id) = chat.identity.id.clone() else {
+        return false;
+    };
+    let me = dispatchrecord::ChatRef {
+        chat: chat.number.unwrap_or_default(),
+        id: Some(id),
+        ..Default::default()
+    };
+    dispatchrecord::latest_for(root, &me).is_some_and(|record| {
+        !record.kept_open && Finished::of(&record).is_some_and(|how| how != Finished::Blocked)
+    })
+}
+
 /// **The record to put back at a launch**: `record` without the task chats that had finished
 /// when the app quit (`dispatched::left_out_at_launch`, #1485). Nothing is started for one:
 /// its dispatch record already holds its report and its conversation, so it is a finished row
@@ -554,20 +572,8 @@ pub(crate) fn put_back_without_the_finished(
     root: &std::path::Path,
     record: &purlis_core::reopen::Record,
 ) -> purlis_core::reopen::Record {
-    let finished = |chat: &purlis_core::reopen::Chat| {
-        let Some(id) = chat.identity.id.clone() else {
-            return false;
-        };
-        let me = dispatchrecord::ChatRef {
-            chat: chat.number.unwrap_or_default(),
-            id: Some(id),
-            ..Default::default()
-        };
-        dispatchrecord::latest_for(root, &me).is_some_and(|record| {
-            !record.kept_open && Finished::of(&record).is_some_and(|how| how != Finished::Blocked)
-        })
-    };
-    let (back, out) = purlis_core::dispatched::left_out_at_launch(record, finished);
+    let (back, out) =
+        purlis_core::dispatched::left_out_at_launch(record, |chat| left_out(root, chat));
     for chat in &out {
         tracing::info!(
             "purlis: task chat '{}' had reported when the app quit; it is a finished row, and \

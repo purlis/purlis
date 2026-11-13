@@ -392,6 +392,59 @@ pub struct StudioClone {
     pub preview: String,
 }
 
+/// **A persona the studio can be shown as** (#2935): its name, its role, and each workspace of
+/// the project it was dispatched into, where its chats can be looked at as a dispatched chat
+/// sees them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct StudioPersona {
+    pub name: String,
+    /// Its role, as its `persona.md` says it; `None` where it says none.
+    pub role: Option<String>,
+    /// Each workspace it was dispatched into, most chats first, then by name.
+    pub dispatched_into: Vec<StudioDispatchedInto>,
+}
+
+/// **A workspace a persona was dispatched into** (#2935), and how many of the dispatches this
+/// machine keeps went there (`purlis_core::dispatchrecord::dispatched_into`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct StudioDispatchedInto {
+    pub workspace: String,
+    pub chats: u32,
+}
+
+/// **The project's personas at `root`**, each with where it was dispatched, of `workspaces`
+/// alone: a dispatch into a workspace the project no longer has is no place to look in. A
+/// store of dispatches that cannot be read is nowhere dispatched.
+fn personas_of(root: &std::path::Path, workspaces: &[String]) -> Vec<StudioPersona> {
+    let plane = purlis_core::workspaces::Plane::open(root);
+    let mut into = purlis_core::dispatchrecord::dispatched_into(root).unwrap_or_default();
+    plane
+        .personas()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|name| {
+            let role = plane.persona(&name).ok().and_then(|one| one.role());
+            let mut dispatched_into: Vec<StudioDispatchedInto> = into
+                .remove(&name)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|(workspace, _)| workspaces.contains(workspace))
+                .map(|(workspace, chats)| StudioDispatchedInto {
+                    workspace,
+                    chats: u32::try_from(chats).unwrap_or(u32::MAX),
+                })
+                .collect();
+            // By name already: the most chats first keeps that order among equals.
+            dispatched_into.sort_by_key(|one| std::cmp::Reverse(one.chats));
+            StudioPersona {
+                name,
+                role,
+                dispatched_into,
+            }
+        })
+        .collect()
+}
+
 /// How well a skill fits a harness, as its badge draws it (SK-8): the core's `Fit`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "kebab-case")]
@@ -699,6 +752,9 @@ pub struct Studio {
     pub persona: Option<String>,
     /// Every workspace of the project, which it can be shown for.
     pub workspaces: Vec<String>,
+    /// **Every persona of the project** (#2935), which it can be shown as, each with the
+    /// workspaces it was dispatched into. Empty while the studio is off.
+    pub personas: Vec<StudioPersona>,
     /// Every level a skill can be made at or moved to, with its words (#2770).
     pub levels: Vec<crate::skillchange::StudioLevel>,
     pub skills: Vec<StudioSkill>,
@@ -1094,6 +1150,7 @@ fn studio_read(
             workspace,
             persona,
             workspaces: Vec::new(),
+            personas: Vec::new(),
             levels: Vec::new(),
             skills: Vec::new(),
             harnesses: Vec::new(),
@@ -1149,6 +1206,11 @@ fn studio_read(
     } else {
         Vec::new()
     };
+    let personas = if whole {
+        personas_of(root, &workspaces)
+    } else {
+        Vec::new()
+    };
     let router =
         whole.then(|| router_of(root, workspace.as_deref(), persona.as_deref(), in_a_clone));
     let places = match &router {
@@ -1173,6 +1235,7 @@ fn studio_read(
         workspace,
         persona,
         workspaces,
+        personas,
         levels: if whole {
             crate::skillchange::levels(root)
         } else {

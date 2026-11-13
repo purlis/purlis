@@ -403,7 +403,8 @@ pub struct Found {
 /// Every stale repo of the plane at `plane`, workspace by workspace, and what could not be read.
 ///
 /// Each clone is read from its shared standing ([`read_shared`]), [`AT_ONCE`] clones at a time
-/// (H6c): a project of many clones once ran a fresh `status` in each, one after another.
+/// (H6c): a project of many clones once ran a fresh `status` in each, one after another. And a
+/// clone whose git files say what they said at its last read is not read again ([`kept`], H8).
 pub fn found(plane: &Path) -> Findings {
     let mut out = Findings::default();
     let mut every: Vec<(String, repos::Repo)> = Vec::new();
@@ -429,7 +430,21 @@ pub fn found(plane: &Path) -> Findings {
         }
         every.extend(clones.repos.into_iter().map(|repo| (ws.clone(), repo)));
     }
-    let seen = each_at_most(&every, AT_ONCE, |(ws, repo)| read_shared(plane, ws, repo));
+    // What a clone's git files said when it was last read stands for it while they still say it
+    // (H8): a look at a project nothing moved in runs one git, not several per clone.
+    let outside = kept::outside(plane);
+    let seen = each_at_most(&every, AT_ONCE, |(ws, repo)| {
+        kept::look(outside.as_ref(), &repo.path, || {
+            read_shared(plane, ws, repo)
+        })
+    });
+    kept::only(
+        plane,
+        &every
+            .iter()
+            .map(|(_, repo)| repo.path.as_path())
+            .collect::<Vec<_>>(),
+    );
     for ((ws, repo), seen) in every.into_iter().zip(seen) {
         let stale = judged(&seen);
         if !stale.is_empty() {
@@ -692,6 +707,8 @@ pub fn heard(at: &Path, said: &str) {
         }
     }
 }
+
+mod kept;
 
 #[cfg(test)]
 mod tests;

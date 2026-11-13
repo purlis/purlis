@@ -188,13 +188,18 @@ pub struct MergeAs {
 }
 
 /// **Where an open request stands, as a merge ask needs it** ([`super::backend::Requests::head`]):
-/// the commit it is at, the branch it merges into, and whether the repo merges it by squashing.
+/// the commit it is at, the branch it merges into, whether the repo merges it by squashing, and
+/// its title and author, as the forge holds them (R-119).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HeadAt {
     /// The head commit, as the forge names it.
     pub sha: String,
     /// The branch it merges into.
     pub base: String,
+    /// Its title: GitHub's and GitLab's `title`.
+    pub title: String,
+    /// Who opened it: GitHub's `user.login`, GitLab's `author.username`.
+    pub author: String,
     /// Whether the repo's own method squashes: GitHub's where it allows squash merges and no
     /// merge commits, GitLab's `squash_on_merge`.
     pub squash: bool,

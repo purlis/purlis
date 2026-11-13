@@ -612,6 +612,10 @@ pub enum AskSource {
     /// **What the project expects and this machine has not allowed** (#6000, qw354): its
     /// sandboxed chats are refused it until the person allows it on this machine.
     SandboxExpects,
+    /// **A persona whose hosts or tools wait for an Allow on this machine** (ADR 0121, amended
+    /// 2026-11-12): its chats reach none of its hosts and run none of its tools until the
+    /// person allows them as shown. One per persona.
+    PersonaAllow,
     /// **A `purlis` command's confirmation in the window** (#6000): a pool sign-in, a profile
     /// taken off a pool, a signing check, each waiting on the person's yes.
     Confirmation,
@@ -628,6 +632,9 @@ pub enum AskSource {
     /// that couldn't be minted for a clone purlis has no record of. Trust this clone records it,
     /// as the clone's own Notice does, and the chat's next mint goes through.
     TrustClone,
+    /// **The clones purlis has no record of** (R-336, Q184): one ask for all of them, no chat's,
+    /// never one per clone. Trust all records each, as its Notice's Trust this clone does.
+    TrustClones,
 }
 
 /// **The existing, checked path an ask is answered by** (#1690): the command the window
@@ -729,6 +736,10 @@ pub enum AnswerPath {
     SandboxExpects {
         items: Vec<crate::sandboxing::ExpectedItem>,
     },
+    /// `allow_persona_hosts` for Allow, sent `digest`, the list the row showed, as its Notice
+    /// sends it; and `persona_allow_not_now` for Not now, which puts it away while the project
+    /// is open and the list stands (ADR 0121, amended 2026-11-12).
+    PersonaAllow { persona: String, digest: String },
     /// `answer_pool_sign_in` for confirmation `id`, yes or no, as its dialog answers (#6000).
     Confirmation { id: u32 },
     /// `answer_pause` for the chat it names, with the option chosen (#6015); Raise the budget is
@@ -745,6 +756,11 @@ pub enum AnswerPath {
     /// at `place`, the address its remote named when the refusal was raised (R-330): the clone
     /// Notice's own command, which clears the ask.
     TrustClone { folder: String, place: String },
+    /// `vouch_clone` for Trust all, on each of `clones` at the one address its remote names: the
+    /// clone Notice's own command, and each clone it trusts leaves the ask (R-336).
+    TrustClones {
+        clones: Vec<crate::clonevouch::CloneToVouch>,
+    },
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
 }
@@ -2093,6 +2109,86 @@ pub fn window_only(refused: &purlis_core::windowonly::Refusal) -> Shown {
         secret: None,
         run: None,
     }
+}
+
+/// The option id of Trust these clones' one answer: Trust all.
+pub const TRUST_ALL: &str = "trust-all";
+
+/// The key of the project's Trust these clones: one per project, however many clones it lists.
+const TRUST_CLONES_KEY: &str = "trust-clones";
+
+/// **The adapter for the clones purlis has no record of** (R-336, Q184): the project's one ask
+/// for all of them, no chat's, with Trust all. Every word is purlis's; each folder and address is
+/// one the core read from the clone, said inertly.
+pub fn trust_these_clones(ask: &purlis_core::windowonly::TrustTheseClones) -> Shown {
+    let named: Vec<String> = ask
+        .clones
+        .iter()
+        .map(|clone| format!("{} ({})", clone.folder, clone.remote_said()))
+        .collect();
+    let them = if ask.clones.len() == 1 { "it" } else { "them" };
+    Shown {
+        session: 0,
+        ask: TRUST_CLONES_KEY.to_owned(),
+        says: said_inertly(&format!(
+            "{}: purlis did not clone {}. Trust {them} only if you made {them} yourself.",
+            purlis_core::windowonly::TRUST_THESE_CLONES,
+            named.join(", ")
+        )),
+        options: vec![Offered {
+            id: TRUST_ALL.to_owned(),
+            label: "Trust all".to_owned(),
+            allows: true,
+            preselected: None,
+            scope: None,
+        }],
+        source: AskSource::TrustClones,
+        chain: vec![said_inertly("purlis")],
+        answer: AnswerPath::TrustClones {
+            clones: ask
+                .clones
+                .iter()
+                .map(|clone| crate::clonevouch::CloneToVouch {
+                    workspace: clone.workspace.clone(),
+                    folder: clone.folder.clone(),
+                    place: clone.place.clone(),
+                    places: clone.places.clone(),
+                })
+                .collect(),
+        },
+        // Since when is the registry's to say, as for every ask (`Waiting::since`).
+        since: None,
+        held_until: None,
+        expires: None,
+        blocks: None,
+        timed_out: None,
+        risk: None,
+        writes: None,
+        lines: None,
+        last_message: None,
+        login: None,
+        fill: None,
+        earlier_messages: None,
+        rule: None,
+        secret: None,
+        run: None,
+    }
+}
+
+/// **The project's Trust these clones, less every clone a chat's own Trust this clone asks for**
+/// (Q257): one ask per clone. `None` where no clone is left to ask for.
+fn not_asked_by_a_chat(
+    unrecorded: Option<&purlis_core::windowonly::TrustTheseClones>,
+    window_only: &[purlis_core::windowonly::Refusal],
+) -> Option<purlis_core::windowonly::TrustTheseClones> {
+    let mut ask = unrecorded?.clone();
+    ask.clones.retain(|clone| {
+        !window_only.iter().any(|one| {
+            let purlis_core::windowonly::Control::TrustClone { folder, .. } = &one.control;
+            *folder == clone.folder
+        })
+    });
+    (!ask.clones.is_empty()).then_some(ask)
 }
 
 /// The key of chat `session`'s browser Ask (#2013): one per chat.
@@ -4030,6 +4126,8 @@ pub struct Waiting<'a> {
     pub merges: Vec<purlis_core::mergehold::Waits>,
     /// The refusals whose only way out is a press in the window, each an ask (R-328).
     pub window_only: Vec<purlis_core::windowonly::Refusal>,
+    /// The project's one ask for its clones purlis has no record of, where it has one (R-336).
+    pub unrecorded: Option<purlis_core::windowonly::TrustTheseClones>,
     /// The changes a chat proposed to purlis's own configuration, each as it is now (#1975).
     pub proposals: Vec<(crate::proposals::Proposal, crate::proposals::Now)>,
     /// The changes to the project chats on a pool's runner asked for (#2046).
@@ -4144,6 +4242,13 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     asks.extend(waiting.merges.iter().map(merge_hold));
     // A refusal whose only way out is the window's press is an ask with that control (R-328).
     asks.extend(waiting.window_only.iter().map(window_only));
+    // The clones purlis has no record of are one ask, no chat's (R-336), and a clone a chat's
+    // own Trust this clone asks for is not asked for twice (Q257).
+    asks.extend(
+        not_asked_by_a_chat(waiting.unrecorded.as_ref(), &waiting.window_only)
+            .iter()
+            .map(trust_these_clones),
+    );
     // A chat that proposed a change waits on the person's answer, as one that asked them to
     // remove a workspace does (#1975).
     asks.extend(
@@ -4459,6 +4564,14 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     for one in &window_only {
         since.insert(window_only_key(one.session, &one.control), one.since);
     }
+    // A clone a chat's own Trust this clone asks for is not asked for again (Q257).
+    let unrecorded = not_asked_by_a_chat(
+        purlis_core::windowonly::clones_ask(root).as_ref(),
+        &window_only,
+    );
+    if let Some(ask) = &unrecorded {
+        since.insert(TRUST_CLONES_KEY.to_owned(), ask.since);
+    }
     let proposals: Vec<_> = crate::proposals::waiting(held)
         .into_iter()
         .inspect(|(one, _)| {
@@ -4594,6 +4707,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         removals,
         merges,
         window_only,
+        unrecorded,
         proposals,
         runner_writes,
         runner_dispatches,
@@ -4718,6 +4832,12 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
                 .map(Into::into)
                 .as_ref(),
             ))
+            // A persona whose hosts or tools wait for an Allow here: one ask each (ADR 0121,
+            // amended 2026-11-12), read as Settings and its Notice read them.
+            .chain({
+                let (personas, hosts_locked) = crate::sandboxing::persona_hosts_here(root);
+                consents::persona_allows(&personas, hosts_locked, held.persona_later(), &risk)
+            })
             // A command's confirmation in the window, filed under this project (#6000).
             .chain(
                 crate::poolsignin_confirm::waiting_in(plane)
@@ -4775,6 +4895,24 @@ pub fn forget_sandbox_block(
 }
 
 mod consents;
+pub use consents::Later as PersonaLater;
+
+/// **Not now on a persona's Allow** (ADR 0121, amended 2026-11-12), on its row in Asks or on its
+/// Notice: put away while project `plane` is open and `persona`'s list is the one shown,
+/// `digest`. Nothing is kept, and nothing is granted; a changed list asks again. The window's
+/// alone, as the Allow is.
+#[tauri::command]
+#[specta::specta]
+pub async fn persona_allow_not_now(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    persona: String,
+    digest: String,
+) -> Result<(), String> {
+    let held = planes.held(&plane)?;
+    held.persona_later().say(&persona, &digest);
+    Ok(())
+}
 pub mod pauses;
 
 #[cfg(test)]

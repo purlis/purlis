@@ -3690,9 +3690,34 @@ impl Chats {
         &self.blocks
     }
 
-    /// Who writes a chat's stops into the event log from now on (R-290).
+    /// Who writes a chat's stops into the event log from now on (R-290): a held connection's
+    /// refusal the chat stopped waiting on, every other refusal held as an ask once its ask
+    /// leaves by anything but an Allow (T1-10), and one never asked ([`Self::write_block`]).
     pub fn write_stops_with(&self, write: StopWriter) {
         *lock(&self.stops) = Some(write);
+        let (stops, root) = (Arc::clone(&self.stops), self.project.clone());
+        self.blocks.when_left(Arc::new(
+            move |chat, left: &crate::taskblocks::LeftBlock| {
+                left_as_a_block(&stops, &root, chat, left);
+            },
+        ));
+    }
+
+    /// **Writes `stop`, a sandbox block of chat `chat`'s, by the one road every sandbox block
+    /// takes** (Q254): the stop writer, which feeds the block loop as `written` says. A write
+    /// that fails is said in the app's log; nothing is written before the writer is set.
+    pub fn write_block(
+        &self,
+        chat: u32,
+        stop: purlis_core::eventlog::stops::Stop,
+        written: BlockWritten,
+    ) {
+        let Some(write) = lock(&self.stops).clone() else {
+            return;
+        };
+        if let Err(why) = write(chat, stop, written) {
+            tracing::warn!("purlis: chat {chat}'s sandbox block was not written ({why})");
+        }
     }
 
     /// **Chat `call.chat`'s hook line said it made, or ended, a tool call** (R-290, Q154,
@@ -5557,14 +5582,19 @@ impl Chats {
         // harness's adapter adds for the level its record holds, among purlis's own. None at
         // the default, none where the profile's command names a mode of its own, none for a
         // grade's chat, and none on the runner, which arms its chats itself.
+        // A task whose harness says it may not run in auto starts asking, and its pane says why
+        // (#6315).
         let mut hooks = hooks;
         if let Some(harness) = harness.filter(|_| !on_the_runner) {
-            hooks.extend(purlis_core::dispatchmode::task_words(
+            let start = purlis_core::dispatchmode::task_start(
                 harness,
                 chat.task_level,
                 &command,
                 chat.graded,
-            ));
+                &purlis_core::harness_plugin::Env::of(&env),
+            );
+            hooks.extend(start.words);
+            late.extend(start.said);
         }
         // A chat reattached starts nothing: no line is built for it, so none refuses it (#2006).
         let (program, all, wrapped) = match sandbox.filter(|_| !reattaching) {
@@ -6149,6 +6179,7 @@ impl Chats {
         // The GitHub App tokens minted for it are revoked, in the background (#3808).
         purlis_core::forge::apptoken::chat_ended(&self.project, session);
         let mut last_of = None;
+        let mut closed_chat = None;
         if let Some(gone) = gone {
             // A chat's grants end with it (D-1348-1): kept only while a session of that chat is
             // open, which a restart for a grant is, since it starts before the old one ends.
@@ -6167,6 +6198,14 @@ impl Chats {
                     self.took_back(id);
                     drop(grants);
                     last_of = Some(id.to_owned());
+                    closed_chat = crate::chatcard::closed_record(
+                        session,
+                        id,
+                        &gone.chat,
+                        gone.harness,
+                        gone.workspace.as_deref(),
+                        chrono::Utc::now(),
+                    );
                 }
             }
             // A chat the studio started stays on its skill's Runs (#5248). Not as the project is
@@ -6211,6 +6250,13 @@ impl Chats {
             .filter(|_| a_chat && !self.ending.load(Ordering::SeqCst))
         {
             crate::chatcard::keep_screen_on_close(&self.project, self.sessions(), session, id);
+            // **And every chat's record, dispatched or not** (#6304): what its card shows once
+            // it is looked up by number. A task's dispatch record answers before it.
+            if let Some(record) = closed_chat.as_ref()
+                && let Err(why) = purlis_core::chatrecords::keep(&self.project, record)
+            {
+                tracing::info!("purlis: chat {session}'s record was not kept as it closed ({why})");
+            }
         }
         let closed = self.sessions.close(session);
         self.write_it_down();
@@ -6714,6 +6760,83 @@ impl Chats {
         known.iter().find(|one| one.chat == session)?;
         let mut told = lock(&self.told);
         purlis_core::awareness::answer(&known, session, tell, told.entry(session).or_default())
+    }
+
+    /// **Every chat this app has open, as `purlis.chats` lists them** (#6235): from the record
+    /// the window's Chats tree is drawn from (its lineage is `from`), with each one's facts as
+    /// `facts_of` reads them off the board, and when it last moved as `last_of` has it. Names,
+    /// states and times only: never its arguments, where a brief travels.
+    pub fn listed(
+        &self,
+        facts_of: &dyn Fn(
+            u32,
+            Option<&purlis_core::reopen::HandedFrom>,
+            bool,
+        ) -> purlis_core::catalogue::chats::Facts,
+        last_of: &dyn Fn(u32) -> Option<i64>,
+    ) -> Vec<(u32, purlis_core::catalogue::chats::Chat)> {
+        use purlis_core::catalogue::chats::{Chat, Facts, Parent, Relation, number_id};
+        let id_of = |number: u32, id: Option<&String>| {
+            id.filter(|id| !id.is_empty())
+                .cloned()
+                .unwrap_or_else(|| number_id(number))
+        };
+        // The board is asked once `open` is let go: nothing waits on both.
+        let mut listed: Vec<(u32, Chat, Option<purlis_core::reopen::HandedFrom>, bool)> =
+            lock(&self.open)
+                .iter()
+                .map(|(number, one)| {
+                    let chat = Chat {
+                        id: id_of(*number, one.chat.identity.id.as_ref()),
+                        name: purlis_core::reopen::shown_name(
+                            &one.chat,
+                            one.harness.map(Harness::name),
+                        ),
+                        persona: one.chat.persona.clone(),
+                        harness: one.harness.map(|h| h.name().to_owned()),
+                        workspace: one.workspace.clone(),
+                        parent: one.chat.from.as_ref().map(|from| Parent {
+                            id: id_of(from.chat, from.id.as_ref()),
+                            relation: match from.mode {
+                                purlis_core::reopen::Mode::Task => Relation::Dispatched,
+                                purlis_core::reopen::Mode::Handoff => Relation::HandedOffFrom,
+                            },
+                            workspace: match &from.workspace {
+                                purlis_core::active::Place::Workspace(name) => Some(name.clone()),
+                                purlis_core::active::Place::PlaneRoot => None,
+                            },
+                        }),
+                        facts: Facts::default(),
+                        started: one
+                            .chat
+                            .identity
+                            .id
+                            .as_deref()
+                            .and_then(purlis_core::awareness::started_of)
+                            .or_else(|| purlis_core::awareness::run_started(&one.chat.identity)),
+                        last_activity: None,
+                        session_record: None,
+                    };
+                    (*number, chat, one.chat.from.clone(), one.harness.is_none())
+                })
+                .collect();
+        listed.sort_by_key(|(number, ..)| *number);
+        listed
+            .into_iter()
+            .map(|(number, mut chat, from, shell)| {
+                chat.facts = facts_of(number, from.as_ref(), shell);
+                chat.last_activity = last_of(number);
+                (number, chat)
+            })
+            .collect()
+    }
+
+    /// The workspace chat `session` works in (`Some(None)`: the project's root), where it is
+    /// open.
+    pub fn workspace_of(&self, session: u32) -> Option<Option<String>> {
+        lock(&self.open)
+            .get(&session)
+            .map(|one| one.workspace.clone())
     }
 
     /// The report chat `session` still owes as a task, where it owes one (#1443): its lineage
@@ -8848,6 +8971,26 @@ impl Chats {
         lock(&self.open).len()
     }
 
+    /// **Keeps the screens of the task chats that had finished, as the app quits** (#6305): the
+    /// next launch leaves each out of its put back (`finished::left_out`), so none closes
+    /// through [`Self::close_as`], where a screen is kept. Before [`Self::end_all`], while their
+    /// sessions still show them.
+    pub fn keep_finished_screens(&self) {
+        let finished: Vec<(u32, String)> = self
+            .record()
+            .chats
+            .iter()
+            .filter(|chat| crate::finished::left_out(&self.project, chat))
+            .filter_map(|chat| {
+                let number = chat
+                    .number
+                    .filter(|number| lock(&self.open).contains_key(number))?;
+                Some((number, chat.identity.id.clone()?))
+            })
+            .collect();
+        crate::chatcard::keep_screens_at_quit(&self.project, self.sessions(), &finished);
+    }
+
     /// Ends every chat, and does not return until their programs are gone.
     pub fn end_all(&self) {
         self.ending.store(true, Ordering::SeqCst);
@@ -9102,16 +9245,47 @@ pub type Narrowed = Arc<dyn Fn(u32) + Send + Sync + 'static>;
 /// What is told a project's asks may have moved (#1709).
 pub type AsksMoved = Arc<dyn Fn() + Send + Sync + 'static>;
 
-/// **What writes a stop of chat `number`'s into the event log** (R-290), made durable before
-/// it answers: told only as a held connection's ask is withdrawn, so what that ask set goes too.
-/// With it, the harness's id for the call the connection was held under, where one was heard:
-/// the block loop counts a call once (Q253).
+/// **What writes a sandbox block of chat `number`'s into the event log** (R-290), made durable
+/// before it answers: the one road every sandbox block takes (Q254), and why it is written
+/// ([`BlockWritten`]), which says whether an ask was withdrawn and whether the block loop counts
+/// it.
 pub type StopWriter = Arc<
-    dyn Fn(u32, purlis_core::eventlog::stops::Stop, Option<String>) -> std::io::Result<()>
+    dyn Fn(u32, purlis_core::eventlog::stops::Stop, BlockWritten) -> std::io::Result<()>
         + Send
         + Sync
         + 'static,
 >;
+
+/// **Why a sandbox block is written** (Q254): what its writing does beside.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BlockWritten {
+    /// Its ask was withdrawn as the chat went on without it: a held connection timed out or
+    /// its chat moved on (Q240), a newer ask took its place, or the chat began its next turn.
+    /// What that ask set is taken back, and the block counts toward the block loop under the
+    /// harness's id for the call it refused, where one was heard, a call counted once (Q253).
+    Withdrawn(Option<String>),
+    /// It was never an ask (a denial class, a policy's no, a grant purlis never makes, purlis's
+    /// own operation, its chat's own to retry): it counts, under the chat's latest call.
+    AtOnce(Option<String>),
+    /// The person's Keep blocked, or its chat's end: its ask is gone, and it is written and
+    /// never counted, since it is the person's answer or the chat's close, not a chat looping.
+    Answered,
+}
+
+impl BlockWritten {
+    /// The call it counts under toward the block loop, where it counts at all.
+    pub fn counted_under(&self) -> Option<Option<&str>> {
+        match self {
+            Self::Withdrawn(call) | Self::AtOnce(call) => Some(call.as_deref()),
+            Self::Answered => None,
+        }
+    }
+
+    /// Whether an ask left as it was written, so what that ask set goes too.
+    pub fn leaves_an_ask(&self) -> bool {
+        !matches!(self, Self::AtOnce(_))
+    }
+}
 
 /// Who a chat's board of live asks tells (#1666), and as whom.
 struct Asking {
@@ -9274,7 +9448,40 @@ fn became_a_block(
         target,
         args: withdrawn.args,
     });
-    if let Err(why) = write(chat, stop, withdrawn.call) {
+    if let Err(why) = write(chat, stop, BlockWritten::Withdrawn(withdrawn.call)) {
+        tracing::warn!("purlis: chat {chat}'s sandbox block was not written ({why})");
+    }
+}
+
+/// **Writes `left`, a refusal chat `chat` held as an ask until it left, as one Sandbox block**
+/// (T1-10, Q154): aimed at the host, folder or service its ask named, as the project at `root`
+/// names a folder (`sandboxblock::stop`), `tool` the call it refused by the harness's name, as
+/// the refusal was heard (Q254), and `unverified` where the chat's own hook line reported it
+/// (Q254). Counted toward the block loop only where its ask left as the chat went on without it,
+/// never by the person's Keep blocked or the chat's end (Q254). A write that fails is said in
+/// the app's log.
+fn left_as_a_block(
+    stops: &Mutex<Option<StopWriter>>,
+    root: &Path,
+    chat: u32,
+    left: &crate::taskblocks::LeftBlock,
+) {
+    let Some(write) = lock(stops).clone() else {
+        return;
+    };
+    let stop = purlis_core::sandboxblock::stop::sandbox_block_of(
+        &left.block.kind,
+        Some(left.block.target.as_str()),
+        root,
+        left.refused.tool.as_deref(),
+        left.reported,
+    );
+    let written = if left.how.counts() {
+        BlockWritten::Withdrawn(left.refused.call.clone())
+    } else {
+        BlockWritten::Answered
+    };
+    if let Err(why) = write(chat, stop, written) {
         tracing::warn!("purlis: chat {chat}'s sandbox block was not written ({why})");
     }
 }

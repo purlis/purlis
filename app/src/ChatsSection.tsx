@@ -1890,8 +1890,10 @@ function ChatRowDrawn({
           {/* The popover family's card, held up by the row and standing beside it, never
               opened by a press: a press on a row opens its chat. Beside the row, over the
               centre, in the default arrangement; it turns to the other side where there is no
-              room, as a region moves (ADR 0038). The pointer on the card holds it up (WCAG
-              1.4.13): it came across from the row. */}
+              room, as a region moves (ADR 0038). With an artifact's page open beside it, it
+              stands under the row in the sidebar instead, since the page is drawn above the
+              window (#6226). The pointer on the card holds it up (WCAG 1.4.13): it came across
+              from the row. */}
           <AnchoredPopover
             triggerRef={self}
             isOpen={carded}

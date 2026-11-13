@@ -425,8 +425,19 @@ fn a_branch_move_fed_to_a_shell_or_run_by_find_is_read() {
         "echo 'echo git checkout feature' | sh",
         "find . -exec git status \\;",
         "find . -name 'git checkout feature'",
+        // A heredoc body nothing runs is data (#6293).
+        "cat > notes.md <<'EOF'\ngit checkout feature\nEOF",
+        "cat > p.sh <<-'EOF'\n\tgit switch -c x\n\tEOF",
+        "cat > notes.md <<EOF\ngit checkout feature for $USER\nEOF",
     ] {
         assert!(!moves(cmd, &root), "{cmd:?}");
+    }
+    // What a shell does run around one is still read.
+    for cmd in [
+        "cat > f <<'EOF'\nnotes\nEOF\ngit checkout feature",
+        "cat > f <<EOF\n$(git checkout feature)\nEOF",
+    ] {
+        assert!(moves(cmd, &root), "{cmd:?}");
     }
     assert!(!moves("echo 'git checkout feature' | sh", &elsewhere));
 }
@@ -2719,4 +2730,83 @@ fn a_ref_named_in_another_case_is_the_roots_own() {
         assert!(reset(&f, cmd).is_some(), "{cmd:?}");
     }
     assert!(branch(&f, "git symbolic-ref head refs/heads/feature").is_some());
+}
+
+/// An unquoted command substitution in an assignment before the program is one word to the
+/// shell, whatever it prints: the program is the first word after the assignments, and a plain
+/// git there is read as the quoted form is, in any number of assignments and after `env`
+/// (#6327).
+#[test]
+fn an_unquoted_substitution_in_an_assignment_prefix_leaves_the_program_git() {
+    let f = fixture();
+    for cmd in [
+        "FOO=$(date) git commit -m x",
+        "FOO=`date` git commit -m x",
+        "A=1 B=$(date) C=`echo x y` git commit -m x",
+        "A=$(date) B=$(echo a b) git commit -m x",
+        "FOO=$(date)x git commit -m x",
+        "FOO=a$(echo b c)d git commit -m x",
+        "env FOO=$(echo x) git commit -m x",
+        "env A=1 B=$(date) git commit -m x",
+        "FOO=$(date) git status",
+    ] {
+        assert_eq!(branch(&f, cmd), None, "{cmd:?}");
+    }
+    // A branch move after such a prefix is still refused, as it is after the quoted one.
+    for cmd in [
+        "FOO=$(date) git checkout feature",
+        "A=1 B=$(echo a b) git switch feature",
+        "env FOO=$(date) git checkout feature",
+    ] {
+        let said = branch(&f, cmd).expect(cmd);
+        assert!(
+            said.starts_with("would switch to 'feature'"),
+            "{cmd:?}: {said}"
+        );
+    }
+    // An alias after it is refused too: the substitution's own command runs first, and may
+    // change where the alias leads.
+    for cmd in [
+        "FOO=$(date) git zzco feature",
+        "HOME=$(pwd) git zzco feature",
+    ] {
+        assert!(branch(&f, cmd).is_some(), "{cmd:?}");
+    }
+    // And each answers as its quoted form does.
+    for (bare, quoted) in [
+        (
+            "FOO=$(date) git commit -m x",
+            "FOO=\"$(date)\" git commit -m x",
+        ),
+        (
+            "GIT_DIR=$(pwd)/.git git commit -m x",
+            "GIT_DIR=\"$(pwd)/.git\" git commit -m x",
+        ),
+        (
+            "GIT_DIR=$(pwd)/.git git checkout feature",
+            "GIT_DIR=\"$(pwd)/.git\" git checkout feature",
+        ),
+    ] {
+        assert_eq!(branch(&f, bare), branch(&f, quoted), "{bare:?}");
+    }
+}
+
+/// A substitution that stands where the program stands, or a git the substitution's own words
+/// may hold beside another, still leaves the program unnamed: a branch move after it is
+/// refused (#1354, kept by #6327).
+#[test]
+fn a_substitution_that_may_be_the_program_is_still_refused() {
+    let f = fixture();
+    for cmd in [
+        "$(echo git) checkout feature",
+        "`echo git` checkout feature",
+        "$GIT checkout feature",
+        "FOO=$(echo git) git checkout feature",
+        "FOO=$(git status) git checkout feature",
+        "FOO=$(date) env -C /tmp git checkout feature",
+        "FOO=$(date) $W git checkout feature",
+        "GIT_DIR=$(pwd)/.git git checkout feature",
+    ] {
+        assert!(branch(&f, cmd).is_some(), "{cmd:?}");
+    }
 }

@@ -2870,6 +2870,7 @@ fn an_app_at(path: &std::path::Path, within: &std::path::Path) -> (Reading, Chat
                 | Ask::Keys { .. }
                 | Ask::Secret(_)
                 | Ask::WhereWorking(_)
+                | Ask::Chats(_)
                 | Ask::Dispatch(_)
                 | Ask::Task(_)
                 | Ask::Removal(_)
@@ -3523,6 +3524,7 @@ fn a_tool_call_is_its_own_line_and_is_handed_to_the_app_with_its_chats_token() {
             Ok(())
         }),
         permission: Box::new(|_| None),
+        reason: Box::new(|_| {}),
     });
     one_line_with_a_deadline(&path, None, &call).expect("the line is written");
     one_line_with_a_deadline(&path, Some(&token), &call).expect("the line is written");
@@ -3577,6 +3579,7 @@ fn a_touched_path_is_its_own_line_handed_to_the_app_with_its_chats_token() {
         output: Box::new(|_| {}),
         touching: Box::new(move |touching| tx.lock().unwrap().send(touching).unwrap()),
         permission: Box::new(|_| None),
+        reason: Box::new(|_| {}),
     });
     touch(&path, None, &touching).expect("the line is written");
     touch(&path, Some(&token), &touching).expect("the line is written");
@@ -3809,6 +3812,7 @@ fn what_a_chat_is_doing_is_its_own_line_handed_to_the_app_with_its_chats_token()
         doing: Box::new(move |doing| tx.lock().unwrap().send(doing).unwrap()),
         output: Box::new(|_| panic!("no turn's output was sent")),
         permission: Box::new(|_| None),
+        reason: Box::new(|_| {}),
     });
     // Forged, with every field set: no token, a token nobody was issued, another chat's
     // token, and this chat's own token on a line that names another chat.
@@ -3911,6 +3915,7 @@ fn a_sandbox_block_is_its_own_line_handed_to_the_app_with_its_chats_token() {
         touching: Box::new(|_| panic!("no file was touched")),
         blocked: Box::new(move |blocked| tx.lock().unwrap().send(blocked).unwrap()),
         permission: Box::new(|_| None),
+        reason: Box::new(|_| {}),
     });
     tell_blocked(&path, None, &blocked).expect("the line is written");
     tell_blocked(&path, Some(&token), &blocked).expect("the line is written");
@@ -4001,6 +4006,7 @@ fn a_refused_commit_is_its_own_line_and_is_handed_to_the_app_with_its_chats_toke
         }),
         tool: Box::new(|_| panic!("no tool hook ran")),
         permission: Box::new(|_| None),
+        reason: Box::new(|_| {}),
     });
     // Without the token it is dropped, as every line is.
     one_line_with_a_deadline(&path, None, &refused).expect("the line is written");

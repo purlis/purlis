@@ -177,6 +177,17 @@ fn no_such_group(answer: &Reply) -> bool {
         || both.contains("404 Group Not Found")
 }
 
+/// Whether GitLab answered that no branch has the name asked: a `404`, by its status where the
+/// transport saw one, else by `glab`'s `(HTTP 404)` or GitLab's own `404 Not found`. Never any
+/// reply that only has `404` in it: a branch named `fix-404` whose read failed is a failure,
+/// not none.
+fn no_branch(answer: &Reply) -> bool {
+    let both = answer.both();
+    answer.status == Some(404)
+        || both.contains("(HTTP 404)")
+        || both.to_lowercase().contains("404 not found")
+}
+
 /// One GitLab repo as a neutral record (Python's `_normalize`). Its name is its `path`, the
 /// name in its URL, else its display `name`.
 fn normalize(raw: &Value) -> RepoRecord {
@@ -680,13 +691,51 @@ impl Requests for GitLab {
             .as_str()
             .filter(|base| !base.is_empty())
             .ok_or_else(|| ForgeError::new(format!("{doing}: GitLab named no target branch")))?;
+        let title = record["title"]
+            .as_str()
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitLab named no title")))?;
+        let author = record["author"]["username"]
+            .as_str()
+            .filter(|login| !login.is_empty())
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitLab named no author")))?;
         Ok(HeadAt {
             sha: sha.to_owned(),
             base: base.to_owned(),
+            title: title.to_owned(),
+            author: author.to_owned(),
             squash: record["squash_on_merge"]
                 .as_bool()
                 .or_else(|| record["squash"].as_bool())
                 .unwrap_or(false),
+        })
+    }
+
+    /// GitLab's own judgement of the branch (Q252): `protected` on
+    /// `repository/branches/{branch}`, which GitLab computes from every protected branch rule,
+    /// wildcards (`release/*`) included. A 404 is no such branch, so none ([`no_branch`]); a
+    /// reply with no `protected` is an error, so unknown.
+    ///
+    /// What this cannot see: a protected branch that lets developers merge still reads as
+    /// protecting it.
+    fn ruleset_protects(
+        &self,
+        caller: &Caller,
+        path: &str,
+        branch: &str,
+    ) -> Result<bool, ForgeError> {
+        let api = format!(
+            "projects/{}/repository/branches/{}",
+            quote(path),
+            quote(branch)
+        );
+        let doing = format!("reading whether {branch} is protected in {path}");
+        let Some(record) = self.0.found(caller, &api, &doing, no_branch)? else {
+            return Ok(false);
+        };
+        record["protected"].as_bool().ok_or_else(|| {
+            ForgeError::new(format!(
+                "{doing}: GitLab did not say whether it is protected"
+            ))
         })
     }
 

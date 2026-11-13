@@ -1119,11 +1119,6 @@ body {
 
 .start-chat-label {
   margin: 0;
-  color: var(--text-muted);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-strong);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 /* What stops a start, under the persona: drawn only when there is something to say. */
@@ -2567,7 +2562,6 @@ body {
   margin: 0 0 var(--space-3);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-strong);
-  letter-spacing: 0.05em;
   color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
@@ -4397,8 +4391,6 @@ body {
 .welcome-brand {
   margin: 0;
   padding-inline: var(--space-4);
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-strong);
 }
 
 .welcome-pane {
@@ -4414,15 +4406,10 @@ body {
 
 .welcome-pane h1 {
   margin: 0 0 var(--space-3);
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-strong);
 }
 
 .welcome-pane h2 {
   margin: var(--space-7) 0 var(--space-3);
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-strong);
-  color: var(--text-secondary);
 }
 
 /* A heading the keyboard is put on as its page appears is not a stop Tab reaches, so it draws
@@ -4435,7 +4422,6 @@ body {
   margin: 0 0 var(--space-7);
   max-inline-size: 38rem;
   line-height: var(--line-height-body);
-  color: var(--text-secondary);
 }
 
 /* **A first run's next steps**, in the place recent projects will be: three lines, numbered because
@@ -4444,7 +4430,6 @@ body {
   margin: 0 0 var(--space-7);
   padding-inline-start: var(--space-6);
   line-height: var(--line-height-body);
-  color: var(--text-secondary);
 }
 
 .welcome-next li + li {
@@ -4516,8 +4501,6 @@ body {
 
 .welcome-elsewhere {
   margin: var(--space-7) 0 0;
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
 }
 
 /* Back sits above the heading, at the start of the line, where a page's way back is read. */
@@ -4615,7 +4598,9 @@ body {
   margin-block-start: var(--space-8);
 }
 
-/* A sentence on these pages is the page's own words, not a strip across a pane. */
+/* A sentence on these pages is the page's own words, not a strip across a pane. Not on a role
+   yet (#6389): every door page's lines share the window-wide `.came-back`, so it is moved with
+   that class, not page by page. */
 .welcome-pane .came-back {
   padding: 0;
   margin-block-end: var(--space-3);
@@ -4690,17 +4675,6 @@ body {
 /* In the launcher the harness rows sit in the page's own margins. */
 .welcome-pane .harness-setup {
   padding: 0;
-}
-
-/* The recent projects are rows of the list family (`ui/list`, #2911); a project's path is its
-   description, cut to one line. */
-.recents .where {
-  font-size: var(--font-size-xs);
-}
-
-.recents .value {
-  font-size: var(--font-size-sm);
-  color: var(--text-muted);
 }
 
 /* The first run's list of what this machine has (FR-4): statuses, not controls. */
@@ -5934,11 +5908,6 @@ nav.piece-files-head {
 
 .dispatch-read h2 {
   margin: 0 0 var(--space-2);
-  color: var(--text-muted);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-strong);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 
 .dispatch-read pre {
@@ -6140,11 +6109,6 @@ nav.piece-files-head {
 
 .session-dispatches h2 {
   margin: 0 0 var(--space-2);
-  color: var(--text-muted);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-strong);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 
 .session-dispatches ul {
@@ -6720,18 +6684,19 @@ nav.piece-files-head {
   animation: charter-knock var(--motion-duration-settle) var(--motion-easing-standard) 2;
 }
 
-/* **The ✋'s first pulse** (ADR 0121 decision 24): one breath of its mark, the first time on this
-   machine a Blocking ask arrives while Asks is closed (`asksArrival.ts`); the window takes the
-   mark off when it ends (`ActivityBar`'s `FIRST_PULSE`). In place of a tour; reduced motion
-   plays it at once, and the count beside it says the same thing still. */
-@keyframes purlis-first-pulse {
-  50% {
-    transform: scale(1.3);
+/* **The ✋'s bounce** (#6343, ADR 0121 amended 2026-11-12): the one movement in the window that
+   calls the person. Its mark hops 3 times as an ask arrives and as a reminder comes due
+   (`handBounce.ts`); the window takes the mark off when it ends (`ActivityBar`'s `HAND_BOUNCE`).
+   A transform, so nothing around it moves. Reduced motion plays none: the window holds it, and
+   the theme's one switch would end it at once. */
+@keyframes purlis-hand-bounce {
+  40% {
+    transform: translateY(calc(-1 * var(--space-1)));
   }
 }
 
-.activity-bar [data-scope="activity"][data-part="item"][data-pulse] > [data-part="icon"] {
-  animation: purlis-first-pulse var(--motion-duration-breathe) var(--motion-easing-breathe);
+.activity-bar [data-scope="activity"][data-part="item"][data-bounce] > [data-part="icon"] {
+  animation: purlis-hand-bounce var(--motion-duration-settle) var(--motion-easing-standard) 3;
 }
 
 /* The title bar's save indicator (charter-app#294): two small ghost buttons of the set
@@ -7190,8 +7155,6 @@ nav.piece-files-head {
 
 .ui-settings-about {
   margin: 0 var(--space-2);
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
 }
 
 /* The search (#2920, N27): its box across the column, so its words are whole, and the "Set
@@ -7231,8 +7194,6 @@ nav.piece-files-head {
 .ui-settings-raw-label {
   margin: 0 0 var(--space-1);
   padding: 0 var(--space-4);
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
 }
 
 /* The file's whole text (DS-10): the light editor's CodeMirror, as tall as the file and at
@@ -7317,15 +7278,12 @@ nav.piece-files-head {
    TOML. */
 .ui-setting-head h2 {
   margin: 0;
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-strong);
   text-wrap: balance;
 }
 
 .ui-setting-blurb {
   margin: var(--space-2) 0 0;
   max-inline-size: 64ch;
-  color: var(--text-muted);
 }
 
 .ui-setting-where {
@@ -7334,13 +7292,6 @@ nav.piece-files-head {
   align-items: center;
   gap: var(--space-3);
   margin: var(--space-4) 0 0;
-  font-size: var(--font-size-sm);
-  color: var(--text-quiet);
-}
-
-.ui-setting-where code {
-  font-family: var(--font-mono);
-  color: var(--text-secondary);
 }
 
 .ui-setting-head {
@@ -7354,13 +7305,10 @@ nav.piece-files-head {
 
 .ui-setting-group :is(h2, h3) {
   margin: 0;
-  font-size: var(--font-size-md);
 }
 
 .ui-setting-help {
   margin: var(--space-1) 0 0;
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
 }
 
 /* Setup's read-only line of the level a local project there already keeps (`ProtectionRow.tsx`,
@@ -7456,13 +7404,16 @@ nav.piece-files-head {
 }
 
 /* Settings › Project › Dispatch (#1504): the one table of who may dispatch to whom, the shared
-   table family's fixed `ControlTable` (#2911). A row group per persona; under it each target, with a row for
-   every grant that covers the pair. The columns are fixed shares of the width, so nothing a cell
-   says moves another column; a question is a row of its own across the whole table, under the
-   row it is about; and words break between words, a name only where it is longer than its
-   column. */
+   table family's `ControlTable` (#2911). A row group per persona; under it each target, with a row
+   for every grant that covers the pair. The columns take these shares of the width, and none is
+   narrower than its name: the table lays itself out as the limits table does, so a column's name
+   in the label role, its capitals and its tracking, is the least its column is, whatever font
+   draws it (#6443). A fixed layout held the shares exactly, and cut "Where it comes from" in
+   macOS's WebView once the label role spaced it. Words a cell says break anywhere, so no name
+   widens its column; only a name or a control does. A question is a row of its own across the
+   whole table, under the row it is about. */
 .dispatch-table tbody :is(th, td) {
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
 }
 
 .dispatch-table thead th:nth-child(1) {
@@ -7473,7 +7424,6 @@ nav.piece-files-head {
   width: 32%;
 }
 
-/* "Workspace" in the label role's capitals and tracking fits whole on macOS's fonts too. */
 .dispatch-table thead th:nth-child(3) {
   width: 23%;
 }
@@ -7588,7 +7538,6 @@ nav.piece-files-head {
 }
 
 .ui-hosts-host {
-  font-family: var(--font-mono);
   font-size: var(--font-size-sm);
 }
 
@@ -7612,8 +7561,6 @@ nav.piece-files-head {
 
 .ui-record-where {
   overflow-wrap: anywhere;
-  font-size: var(--font-size-xs);
-  color: var(--text-quiet);
 }
 
 /* **Where Settings is narrow** (R75): under 728 px of its pane (the prototype's 760 px window
@@ -7672,14 +7619,10 @@ nav.piece-files-head {
 
 .ui-collection-head h3 {
   margin: 0;
-  font-size: var(--font-size-sm);
-  color: var(--text-primary);
 }
 
 .ui-collection-done {
   margin-top: var(--space-4);
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
 }
 
 .ui-collection-add {
@@ -7751,7 +7694,6 @@ nav.piece-files-head {
 }
 
 .ui-setting-key {
-  font-family: var(--font-mono);
   color: var(--text-quiet);
 }
 
@@ -7798,15 +7740,11 @@ nav.piece-files-head {
 
 .ui-settings-page .ui-setting-section > h3 {
   margin: 0 0 var(--space-2);
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-strong);
 }
 
 .ui-settings-page .ui-setting-section > .ui-setting-help,
 .ui-settings-page .ui-setting-fold [data-part="panel"] > .ui-setting-help {
   margin: 0 0 var(--space-4);
-  font-size: var(--font-size-sm);
-  color: var(--text-quiet);
 }
 
 /* **A row of the aligned form** (#2919, prototype A, R50–R52, R54): on a settings page the label
@@ -7854,8 +7792,6 @@ nav.piece-files-head {
 
 .ui-settings-page .ui-setting-name > .ui-setting-help {
   margin: 0;
-  font-size: var(--font-size-sm);
-  color: var(--text-quiet);
 }
 
 .ui-settings-page .ui-setting-control {
@@ -7930,8 +7866,6 @@ nav.piece-files-head {
   flex: 1 1 auto;
   min-width: 0;
   overflow-wrap: anywhere;
-  font-size: var(--font-size-xs);
-  color: var(--text-quiet);
 }
 
 /* **The other devices' signing keys** (#5918, `settings/signing.tsx`): a heading and the line on
@@ -8828,6 +8762,41 @@ nav.piece-files-head {
   overflow: auto;
 }
 
+/* What an org's skill controls refuse of a row (#6031, `prototype/skill-policy` A): the core's
+   sentence on a line of its own under the row's name. */
+.skill-policy-why {
+  display: block;
+}
+
+/* A skill's Uses and used by (#5874, `prototype/skill-hints` A): one row each, a hint's mark
+   and its fix at the row's end, why on a line of its own under the name. */
+.skill-uses-rows {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.skill-uses-rows > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  border-block-end: 1px solid var(--border-subtle);
+}
+
+.skill-uses-row-said {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.skill-uses-row-why {
+  display: block;
+  font-size: var(--font-size-xs);
+}
+
 /* The Sources pages (#3687, `prototype/skill-sources` A): each part of a page a heading over
    what it holds; the offered sources as cards, as many to a line as fit. */
 .skill-sources-part {
@@ -8958,8 +8927,6 @@ nav.piece-files-head {
 }
 .pool-setup-title {
   margin: 0;
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-strong);
   line-height: var(--line-height-tight);
   outline: none;
 }
@@ -9133,8 +9100,6 @@ nav.piece-files-head {
 }
 .agent-identity-title {
   margin: 0;
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-strong);
   line-height: var(--line-height-tight);
   outline: none;
 }
@@ -9517,4 +9482,29 @@ nav.piece-files-head {
   padding-block: var(--space-2);
   padding-inline-end: var(--space-3);
   border-bottom: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
+}
+
+/* A block row (T1-29): its tags beside its sentence, and its detail under it. The reason is the
+   harness's text as written: its spaces and lines kept, a long word broken, never parsed. */
+.chat-log-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-inline-start: var(--space-2);
+}
+
+.chat-log-row [data-scope="badge"] svg {
+  margin-inline-end: var(--space-1);
+  vertical-align: middle;
+}
+
+.chat-log-source,
+.chat-log-reason-of {
+  margin: var(--space-1) 0 0;
+}
+
+.chat-log-reason {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

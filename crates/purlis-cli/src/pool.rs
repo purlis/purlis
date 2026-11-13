@@ -69,6 +69,10 @@ pub enum PoolCommand {
         /// (SHA256:…, from `ssh-keygen -lf`).
         #[arg(long, value_name = "FINGERPRINT", requires = "on")]
         trust: Option<String>,
+        /// The key file ssh signs in to that machine with, as a Podman connection names it
+        /// (`podman system connection list`). Without it, your SSH agent and settings.
+        #[arg(long, value_name = "FILE", requires = "on")]
+        identity: Option<String>,
     },
     /// Record profiles of this machine's on a pool, for its chats to use. Its runner keeps them
     /// the next time their sign-ins are asked, and `purlis profile sign-in <profile> --pool
@@ -196,6 +200,7 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
             width,
             on,
             trust,
+            identity,
         } => {
             let asked = Asked {
                 name: name.clone(),
@@ -209,6 +214,7 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
                 width: *width,
                 on: on.clone(),
                 trust: trust.clone(),
+                identity: identity.clone(),
             };
             added(&config()?, &asked)
         }

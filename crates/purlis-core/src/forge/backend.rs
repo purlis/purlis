@@ -613,6 +613,42 @@ pub trait WorkItems {
         number: u64,
         body: &str,
     ) -> Result<String, ForgeError>;
+
+    /// The milestones of the repo at `path`, as `caller`, each with how many of its issues are
+    /// open and closed: the open ones, or with `all` the closed ones too, in the forge's own
+    /// order. A page's `purlis.forge_milestones` (#6233). Strict. A forge purlis does not read
+    /// them from yet answers that it cannot.
+    fn milestone_progress(
+        &self,
+        _caller: &Caller,
+        path: &str,
+        _all: bool,
+    ) -> Result<Vec<MilestoneProgress>, ForgeError> {
+        // GitLab's milestones are read by #6476; until then it answers this.
+        Err(ForgeError::new(format!(
+            "purlis does not read the milestones of {path} on this forge yet"
+        )))
+    }
+}
+
+/// One milestone and its progress, in the forge's own words: what `purlis.forge_milestones`
+/// answers a page (#6233).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MilestoneProgress {
+    pub number: u64,
+    pub title: String,
+    /// Its description, empty when it has none.
+    pub description: String,
+    /// When it is due, as the forge wrote it (RFC 3339), or none.
+    pub due_on: Option<String>,
+    /// `open` or `closed`.
+    pub state: String,
+    pub open_issues: u64,
+    pub closed_issues: u64,
+    /// Its page.
+    pub url: String,
+    /// When it last changed, as the forge wrote it (RFC 3339).
+    pub updated_at: String,
 }
 
 /// A new issue, in the neutral model.
@@ -684,6 +720,17 @@ pub trait Requests {
     /// merges into, and the repo's own merge method for it ([`HeadAt`]). What a merge ask is
     /// keyed on ([`crate::mergehold::MergeKey`]). Strict.
     fn head(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<HeadAt, ForgeError>;
+
+    /// **Whether a ruleset protects `branch`** of the repo at `path` (R-146, Q127): GitHub's
+    /// rules for the branch, which its rulesets give it, and GitLab's protected branch of that
+    /// name, its way of protecting one. A merge ask reads it as the window, with the app's own
+    /// login ([`crate::mergehold::read`]). Strict.
+    fn ruleset_protects(
+        &self,
+        caller: &Caller,
+        path: &str,
+        branch: &str,
+    ) -> Result<bool, ForgeError>;
 
     /// The description `pr` holds, whole: GitHub's `body`, GitLab's `description`. A request
     /// with none is the empty string (ADR 0060: `charter change push` splices its block in).

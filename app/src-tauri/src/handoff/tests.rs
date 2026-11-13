@@ -3240,6 +3240,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::ReportDraft(_) => 21,
             Ask::ProposePin(_) => 22,
             Ask::Merge(_) => 23,
+            Ask::Chats(_) => 24,
         }
     }
     let asks = vec![
@@ -3399,10 +3400,16 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             },
             cwd: "/nowhere".to_owned(),
         }),
+        // The chats of the asking chat's workspace (#6235): names and states, never a write.
+        Ask::Chats(purlis_core::hookwire::ChatsAsk {
+            chat,
+            history: true,
+            limit: None,
+        }),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=23).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=24).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 
@@ -12414,6 +12421,9 @@ mod cant_report_asks;
 /// A persona chat coming to wait on the person counts once on its record, heard at the
 /// hook seam (#1457).
 mod needed_you_at_the_hook;
+
+/// No block is ever the source of an ask: Asks holds asks only (R-171, R-240, #6417).
+mod blocks_are_never_asks;
 
 /// **A task another chat dispatches starts where its asking chat runs** (#2003, D-2003-7): the
 /// window's answer to the dispatch (`task_dispatched`) starts it through the seam every chat

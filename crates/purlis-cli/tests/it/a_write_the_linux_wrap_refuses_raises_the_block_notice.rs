@@ -86,6 +86,7 @@ fn telling<T>(
             touching: Box::new(|_| {}),
             blocked: Box::new(move |blocked| blocks.lock().unwrap().send(blocked).unwrap()),
             permission: Box::new(|_| None),
+            reason: Box::new(|_| {}),
         })
     });
     let words = purlis_linux_sandbox::line(

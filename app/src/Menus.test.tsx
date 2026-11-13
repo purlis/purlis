@@ -139,6 +139,8 @@ describe("what a menu lists", () => {
     expect(chat.above).toEqual([
       "Rename chat 3 steward…",
       "Move chat 3 steward…",
+      // The links on its pane's screen (#6332), under Open ▸ with what else it opens.
+      "Links in 3 steward…",
       "Activity of 3 steward",
       "Network of 3 steward",
       "Chat log of 3 steward",

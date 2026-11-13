@@ -214,7 +214,7 @@ export function SkillTotals({
               {missed && <TableColumn>Misses</TableColumn>}
               <TableColumn align="end">Tool calls</TableColumn>
               <TableColumn align="end">Errors</TableColumn>
-              <TableColumn align="end">Refused</TableColumn>
+              <TableColumn align="end">Blocked</TableColumn>
               <TableColumn align="end">Asks</TableColumn>
               <TableColumn align="end">Tokens</TableColumn>
               <TableColumn align="end">Time</TableColumn>

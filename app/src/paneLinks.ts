@@ -32,6 +32,14 @@ export type Found = LinkCandidate & { start: number; end: number };
  */
 const WEB = /(?<![\p{L}\p{N}+.-])\p{L}[\p{L}\p{N}+.-]*:\/\/[^\s<>"'`\p{Cc}]+/giu;
 
+/**
+ * **A chat's number** (#6217): the word `chat` and a number, as a word of its own. A bare `#641`
+ * is an issue's number and never a chat, and a title never links: the core looks the number up
+ * in the pane's project, and one no chat there had is no link. At most nine digits and no leading
+ * zero, as the core reads one (`panelinks/chat.rs`, `MOST_DIGITS`).
+ */
+const CHAT = /(?<![\p{L}\p{N}_#/.-])[Cc]hat [1-9]\d{0,8}(?![\p{L}\p{N}_])/gu;
+
 /** What a sentence, or Markdown's emphasis, puts after an address, which is not the address's. */
 const TRAILING = /[.,;:!?*_]+$/u;
 
@@ -78,8 +86,8 @@ function readsAsAPath(text: string): boolean {
 
 /**
  * **The candidates in `line`**, left to right: addresses (`scheme://…`, a `file://` one a file),
- * then file paths outside them, with the punctuation a sentence puts after one left out. Later
- * kinds (chats) add their patterns here.
+ * then file paths outside them, with the punctuation a sentence puts after one left out, then
+ * chats' numbers (`chat 641`, #6217) outside both.
  */
 export function candidatesIn(line: string): Found[] {
   const found: Found[] = [];
@@ -102,6 +110,14 @@ export function candidatesIn(line: string): Found[] {
     if (addresses.some((one) => start < one.end && end > one.start)) continue;
     found.push({ kind: "file", text, start, end });
     paths += 1;
+  }
+  const before = [...found];
+  for (const match of line.matchAll(CHAT)) {
+    const start = match.index;
+    const end = start + match[0].length;
+    // Words inside an address or a path are theirs.
+    if (before.some((one) => start < one.end && end > one.start)) continue;
+    found.push({ kind: "chat", text: match[0], start, end });
   }
   return found.sort((a, b) => a.start - b.start);
 }
@@ -232,8 +248,9 @@ export type LinkHands = {
   from: () => LinkFrom;
   /** The pointer is on a link, or has left it (`null`). */
   hovered: (link: HoveredLink | null) => void;
-  /** What the open command answered for the link ⌘-clicked. */
-  answered: (answer: LinkOpened, candidate: LinkCandidate) => void;
+  /** What the open command answered for the link ⌘-clicked, drawn at `place` where it is on
+   *  screen: a chat's card stands beside it. */
+  answered: (answer: LinkOpened, candidate: LinkCandidate, place?: LinkPlace) => void;
   /** The colour a link is drawn in under the pointer, as `#rrggbb`. */
   colour: () => string;
   /** Whether this is a Mac, where ⌘ opens a link, and not Ctrl. */
@@ -263,26 +280,27 @@ export function relayed(to: () => LinkHands | undefined): LinkHands {
     },
     from: () => to()?.from() ?? { plane: null, session: null },
     hovered: (link) => to()?.hovered(link),
-    answered: (answer, candidate) => to()?.answered(answer, candidate),
+    answered: (answer, candidate, place) => to()?.answered(answer, candidate, place),
     // Drawn only over a link a pane resolved, so a pane shows it and says its colour.
     colour: () => to()?.colour() ?? "",
     mac: () => to()?.mac() ?? false,
   };
 }
 
-/** **Opens `candidate`**, resolved again by the core, and hands on its answer. `token` is the
- *  token of the ask the person accepted. */
+/** **Opens `candidate`**, drawn at `place`, resolved again by the core, and hands on its answer.
+ *  `token` is the token of the ask the person accepted. */
 export function openLink(
   candidate: LinkCandidate,
   hands: Pick<LinkHands, "core" | "from" | "answered">,
   token: string | null = null,
+  place?: LinkPlace,
 ): Promise<void> {
   return hands.core.open(hands.from(), { kind: candidate.kind, text: candidate.text }, token).then(
-    (answer) => hands.answered(answer, candidate),
+    (answer) => hands.answered(answer, candidate, place),
     (why: unknown) => {
       // The detail is the log's: the window says it in a sentence.
       console.warn("purlis could not ask the core to open a link", why);
-      hands.answered({ answer: "refused", reason: UNASKED }, candidate);
+      hands.answered({ answer: "refused", reason: UNASKED }, candidate, place);
     },
   );
 }
@@ -302,8 +320,10 @@ function placeOf(pane: Terminal, x: number, y: number, width: number): LinkPlace
 }
 
 /** **A link on screen**, as *Links in this pane…* lists it (#6220) and the terminal's menu
- *  offers the one under the pointer (#6219): its candidate and the core's answer for it. */
-export type ScreenLink = { candidate: LinkCandidate; seen: LinkSeen };
+ *  offers the one under the pointer (#6219): its candidate and the core's answer for it, and
+ *  where it was drawn as it was read, which a chat's card opened from either stands beside
+ *  (#6442): both close on the press, so the row it was picked on is gone. */
+export type ScreenLink = { candidate: LinkCandidate; seen: LinkSeen; place?: LinkPlace };
 
 /** **A pane with its link hook registered**: let go of by `dispose`. */
 export type LinkedPane = IDisposable & {
@@ -428,7 +448,8 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
               // A plain click is the selection's, as in any terminal.
               if (!opens || !opensALink(event, hands.mac())) return;
               event.preventDefault();
-              void openLink(candidate, hands);
+              const top = [...rows.values()][0];
+              void openLink(candidate, hands, null, placeOf(pane, top.x, top.y, top.width));
             },
             hover() {
               const here = `${first.x},${first.y}\u0000${found.text}`;
@@ -439,15 +460,12 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
                 leave();
               }
               on = here;
-              current = { candidate, seen };
               const lines = [...rows.values()];
-              if (opens) draw(lines);
               const top = lines[0];
-              hands.hovered({
-                seen,
-                text: found.text,
-                place: placeOf(pane, top.x, top.y, top.width),
-              });
+              const place = placeOf(pane, top.x, top.y, top.width);
+              current = { candidate, seen, place };
+              if (opens) draw(lines);
+              hands.hovered({ seen, text: found.text, place });
             },
             leave() {
               clearTimeout(leaving);
@@ -472,11 +490,11 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
 }
 
 /** The candidates on `pane`'s screen, newest first, each once: {@link LinkedPane.onScreen}. */
-function onScreenNewestFirst(pane: Terminal): Found[] {
+function onScreenNewestFirst(pane: Terminal): (Found & { place: LinkPlace })[] {
   const buffer = pane.buffer.active;
   const top = buffer.viewportY;
   const bottom = top + pane.rows - 1;
-  const found: Found[] = [];
+  const found: (Found & { place: LinkPlace })[] = [];
   for (let y = top; y <= bottom;) {
     const wrapped = wrappedAt(pane, y);
     if (wrapped === undefined) break;
@@ -484,10 +502,15 @@ function onScreenNewestFirst(pane: Terminal): Found[] {
     const last = rows.length === 0 ? y : Math.max(y, ...rows);
     for (const one of candidatesIn(wrapped.text)) {
       if (cutShort(one, wrapped)) continue;
-      const shown = wrapped.cells
+      // Where it is drawn: its first row on screen, from its first cell there.
+      const cells = wrapped.cells
         .slice(one.start, one.end)
-        .some((cell) => cell.y >= top && cell.y <= bottom);
-      if (shown) found.push(one);
+        .filter((cell) => cell.y >= top && cell.y <= bottom);
+      const first = cells[0];
+      if (first === undefined) continue;
+      const onItsRow = cells.filter((cell) => cell.y === first.y);
+      const width = onItsRow[onItsRow.length - 1].x - first.x + 1;
+      found.push({ ...one, place: placeOf(pane, first.x, first.y, width) });
     }
     y = last + 1;
   }
@@ -535,6 +558,8 @@ async function screenLinks(
   const answers = await Promise.all(found.map((one) => answerOf.get(linkKey(one)) ?? null));
   return found.flatMap((one, at) => {
     const seen = answers[at];
-    return seen === null ? [] : [{ candidate: { kind: one.kind, text: one.text }, seen }];
+    return seen === null
+      ? []
+      : [{ candidate: { kind: one.kind, text: one.text }, seen, place: one.place }];
   });
 }

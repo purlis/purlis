@@ -30,6 +30,7 @@
 import { useState, type ComponentPropsWithRef, type PointerEvent, type ReactNode } from "react";
 import { Button as AriaButton, type ButtonProps as AriaButtonProps } from "react-aria-components";
 import { Minus, X } from "lucide-react";
+import clsx from "clsx";
 import type { Picture } from "../../layoutPicture";
 import { pressable, renderPressed, usePressTip } from "../pressable";
 import { Tipped } from "../tooltip/Tooltip";
@@ -145,6 +146,7 @@ export function TabCell({
   selected,
   first = false,
   children,
+  className,
   onPointerEnter,
   onPointerLeave,
   ...rest
@@ -163,6 +165,8 @@ export function TabCell({
   return (
     <span
       {...rest}
+      // Its words are the body's (#1920), in the tier its state gives them (`tabs.css`).
+      className={clsx("ui-text-body", className)}
       data-scope="tabs"
       data-part="tab"
       data-variant={variant}

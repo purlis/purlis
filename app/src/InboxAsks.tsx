@@ -142,6 +142,7 @@ export const ALLOW_OR_KEEP: ReadonlySet<Shown["source"]> = new Set<Shown["source
   "secret-fill",
   "vault",
   "sandbox-expects",
+  "persona-allow",
 ]);
 
 /** What one ask's row offers, decided once for its stops and its drawing. */
@@ -284,6 +285,8 @@ export const DECISIONS: ReadonlySet<Shown["source"]> = new Set<Shown["source"]>(
   // What the project expects of this machine, and a command's confirmation (#6000).
   "sandbox-expects",
   "confirmation",
+  // A persona's hosts and tools, waiting for an Allow here (ADR 0121, amended 2026-11-12).
+  "persona-allow",
   // A chat paused at its budget or as looping (#6015).
   "budget",
   "looping",
@@ -299,6 +302,7 @@ const QUESTION: Partial<Record<Shown["source"], string>> = {
   browser: "Let its browser reach this?",
   "browser-site": "Let its browser reach this site?",
   "sandbox-expects": "Allow what this project expects?",
+  "persona-allow": "Allow this persona's hosts and tools?",
   confirmation: "Confirm what this command asks?",
   budget: "Let it go on past its budget?",
   looping: "Let it go on?",
@@ -500,7 +504,7 @@ export const SOURCE_SAID: Record<Shown["source"], string> = {
   "pool-login": "Asks to log its browser in on a pool's runner",
   "pool-tool": "Asks to send a tool its vault values for a run on a pool's runner",
   secret: "Asks you for a secret its vault doesn't hold",
-  vault: "Refused a vault its persona isn't tagged for",
+  vault: "Blocked from a vault its persona isn't tagged for",
   "browser-login": "Asks to log its browser in to a site with vault credentials",
   "secret-fill": "Asks to put a vault secret into a field of its browser",
   "run-grant": "Asks you to allow a program to use a vault secret",
@@ -508,11 +512,13 @@ export const SOURCE_SAID: Record<Shown["source"], string> = {
   question: "Waiting on your reply",
   "task-question": "Asks you, through its asking chat",
   "sandbox-expects": "Asks you to allow what this project expects",
+  "persona-allow": "Its hosts or tools wait for your Allow",
   confirmation: "A command waits on your confirmation",
   budget: "Paused at its budget",
   looping: "Paused, as it may be looping",
   "merge-hold": "Asks you to merge a request",
   "trust-clone": "Asks you to trust a clone",
+  "trust-clones": "Asks you to trust clones purlis did not clone",
 };
 
 /** Why a task's question reached the person, as its row says it. */
@@ -1145,6 +1151,7 @@ function Reply({ plane, ask }: { plane: PlaneId; ask: Shown }) {
         }
         noteAnswered(plane, {
           at: Date.now(),
+          session: ask.session,
           chain: ask.chain,
           says: ask.says,
           answer: text.trim(),
@@ -1210,7 +1217,13 @@ function Reply({ plane, ask }: { plane: PlaneId; ask: Shown }) {
 
 /** Notes `answer` given to `ask` just now, for the list's recently answered. */
 function answeredNow(plane: PlaneId, ask: Shown, answer: string) {
-  noteAnswered(plane, { at: Date.now(), chain: ask.chain, says: ask.says, answer });
+  noteAnswered(plane, {
+    at: Date.now(),
+    session: ask.session,
+    chain: ask.chain,
+    says: ask.says,
+    answer,
+  });
 }
 
 /**

@@ -184,6 +184,7 @@ fn a_harness_lists_charter_s_tools() {
             "workspace_vision",
             "workspace_section",
             "change_status",
+            "forge_milestones",
             "dispatch",
             "dispatch_list",
             "dispatch_read",
@@ -200,6 +201,8 @@ fn a_harness_lists_charter_s_tools() {
             "ask_operator",
             // The MCP twin of `purlis queries`, added on purpose (#5969).
             "queries",
+            // The workspace's chats, answered by the app and asked of the person first (#6235).
+            "chats",
             // A real browser the session host runs (#2013).
             "browser_open",
             "browser_navigate",
@@ -958,6 +961,7 @@ mod the_server_says_it {
             touching: Box::new(|_| {}),
             blocked: Box::new(|_| {}),
             permission: Box::new(|_| None),
+            reason: Box::new(|_| {}),
         });
         Host {
             _dir: dir,

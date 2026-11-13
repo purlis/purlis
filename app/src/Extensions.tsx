@@ -86,7 +86,15 @@ import { ListFilter, noMatchSaid, useListFilter } from "./ui/list/ListFilter";
  * declaration and never a limit. A prompt that implied a cage would be worse than no prompt: it
  * would manufacture confidence charter cannot back.
  */
-export function Extensions({ onClose }: { onClose: () => void }) {
+export function Extensions({
+  onClose,
+  plane,
+}: {
+  onClose: () => void;
+  /** The project in front, which holds the shell tab a terminal editor opens the record in
+   *  (#1894); none when the dialog is opened over no project. */
+  plane?: PlaneId;
+}) {
   const [listed, setListed] = useState<InstalledExtensions | null>(null);
   const [asking, setAsking] = useState<ExtensionAsk | null>(null);
   const [went, setWent] = useState<string | null>(null);
@@ -172,12 +180,13 @@ export function Extensions({ onClose }: { onClose: () => void }) {
   };
 
   /** The record, in your editor (#1296): the core opens this machine's own record and no
-   *  other file, so the window names the editor and nothing else. */
+   *  other file, so the window names the project in front and the editor and nothing else. A
+   *  terminal editor opens in a shell tab of that project (#1894); with none, the core says why. */
   const openRecord = async () => {
     const editor = yourEditor();
     if (editor === undefined)
       return setWent("Choose your editor in Settings › You › Editor first, then open it here.");
-    const said = await commands.openExtensionRecord(editor);
+    const said = await commands.openExtensionRecord(plane ?? null, editor);
     setWent(said.status === "error" ? said.error : null);
   };
 

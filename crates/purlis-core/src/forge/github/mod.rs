@@ -456,6 +456,15 @@ impl Repos for GitHub {
 }
 
 impl WorkItems for GitHub {
+    fn milestone_progress(
+        &self,
+        caller: &Caller,
+        path: &str,
+        all: bool,
+    ) -> Result<Vec<super::backend::MilestoneProgress>, ForgeError> {
+        GitHub::milestone_progress(self, caller, path, all)
+    }
+
     fn create(
         &self,
         caller: &Caller,
@@ -527,6 +536,20 @@ impl WorkItems for GitHub {
             .ok_or_else(|| ForgeError::new(format!("{doing}: the answer named no html_url")))
     }
 }
+
+/// The rule types a GitHub ruleset gates a merge with (Q248): a request's reviews, its checks,
+/// its deployments, a merge queue, or who may update the branch. Others gate no merge.
+const MERGE_GATES: [&str; 5] = [
+    "pull_request",
+    "required_status_checks",
+    "required_deployments",
+    "merge_queue",
+    "update",
+];
+
+/// GitHub's message for a branch with no classic protection, its only 404 that means none
+/// (Q252).
+const BRANCH_NOT_PROTECTED: &str = "Branch not protected";
 
 impl Requests for GitHub {
     fn open_or_update(
@@ -667,12 +690,81 @@ impl Requests for GitHub {
             .filter(|base| !base.is_empty())
             .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub named no base branch")))?;
         let repo = &record["base"]["repo"];
+        let title = record["title"]
+            .as_str()
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub named no title")))?;
+        let author = record["user"]["login"]
+            .as_str()
+            .filter(|login| !login.is_empty())
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub named no author")))?;
         Ok(HeadAt {
             sha: sha.to_owned(),
             base: base.to_owned(),
+            title: title.to_owned(),
+            author: author.to_owned(),
             squash: repo["allow_merge_commit"] == Value::Bool(false)
                 && repo["allow_squash_merge"] == Value::Bool(true),
         })
+    }
+
+    /// **Whether a merge into `branch` is gated** (Q248): by a rule GitHub's rulesets give the
+    /// branch that gates one ([`MERGE_GATES`]), else by its classic branch protection where it
+    /// requires reviews or checks, or restricts who pushes. Rules that gate no merge (deletion,
+    /// force pushes, linear history, signatures, message patterns) do not count.
+    ///
+    /// Only GitHub's own `404 Branch not protected` is no classic protection (Q252). Any other
+    /// 404 (GitHub answers `Not Found` to a login without admin access, protected or not) and a
+    /// 403 are errors, so unknown, never none.
+    ///
+    /// What this cannot see: who may bypass a ruleset (its bypass actors), and classic
+    /// protection the app's login may not read (GitHub answers it only to a repo's admins). A
+    /// slash in the branch's name is percent-encoded, as [`quote`] does every path part.
+    fn ruleset_protects(
+        &self,
+        caller: &Caller,
+        path: &str,
+        branch: &str,
+    ) -> Result<bool, ForgeError> {
+        let (owner, name) = owner_name(path);
+        let repo = format!("repos/{}/{}", quote(owner), quote(name));
+        let api = format!("{repo}/rules/branches/{}", quote(branch));
+        let doing = format!("reading the rules for {branch} in {path}");
+        let rules = self.0.ask(caller, &Call::get(&api, LIST_TIMEOUT), &doing)?;
+        let rules = rules
+            .as_array()
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub answered no list")))?;
+        if rules
+            .iter()
+            .any(|rule| MERGE_GATES.contains(&rule["type"].as_str().unwrap_or_default()))
+        {
+            return Ok(true);
+        }
+        let api = format!("{repo}/branches/{}/protection", quote(branch));
+        let doing = format!("reading the branch protection of {branch} in {path}");
+        let not_protected = |reply: &super::transport::Reply| {
+            let a_404 = reply.status == Some(404) || reply.err.contains("(HTTP 404)");
+            let message = serde_json::from_str::<Value>(&reply.out)
+                .ok()
+                .and_then(|body| body["message"].as_str().map(str::to_owned));
+            a_404
+                && (message.as_deref() == Some(BRANCH_NOT_PROTECTED)
+                    || reply
+                        .err
+                        .trim()
+                        .strip_prefix("gh: ")
+                        .and_then(|said| said.strip_suffix(" (HTTP 404)"))
+                        == Some(BRANCH_NOT_PROTECTED))
+        };
+        let Some(protection) = self.0.found(caller, &api, &doing, not_protected)? else {
+            return Ok(false);
+        };
+        Ok([
+            "required_pull_request_reviews",
+            "required_status_checks",
+            "restrictions",
+        ]
+        .iter()
+        .any(|gate| !protection[*gate].is_null()))
     }
 
     fn body(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<String, ForgeError> {

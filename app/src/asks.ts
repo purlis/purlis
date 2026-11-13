@@ -25,6 +25,7 @@ import {
   type Asking,
   type EntriesOf,
   type GrantLevel,
+  type PlaneChanged,
   type Press,
   type RunGrantPress,
   type RunLink,
@@ -53,6 +54,7 @@ import {
 } from "./signingAsked";
 import { refusalsAnswered } from "./vaultRefusals";
 import { asDrawn, asNamed } from "./projectExpects";
+import { concerns, followPlaneChanged, SETTINGS } from "./planeChanged";
 
 /** The event the core sends each time a command's confirmation comes or goes (`poolsignin_confirm`). */
 export const POOL_SIGN_IN_CONFIRM = "pool-sign-in-confirm";
@@ -144,6 +146,21 @@ export function useAsks(planes: readonly string[]): {
     for (const plane of wanted) reader.read(plane);
   }, [key, reader]);
   useEffect(() => {
+    // **A project's settings changed on disk** (a pull, a branch switched, a hand's edit): what
+    // its personas wait for, and what it expects of this machine, may read differently, and no
+    // event of the asks says so (ADR 0121, amended 2026-11-12).
+    const stops = (key === "" ? [] : key.split("\n")).map((plane) =>
+      followPlaneChanged(
+        [plane],
+        () => SETTINGS,
+        () => reader.soon(plane),
+      ),
+    );
+    return () => {
+      for (const stop of stops) stop();
+    };
+  }, [key, reader]);
+  useEffect(() => {
     // Listening again after a cleanup (React's StrictMode runs every effect twice) reads what it
     // watches again, since a read made while it was stopped was dropped.
     reader.start();
@@ -160,7 +177,19 @@ export function useAsks(planes: readonly string[]): {
     // read again.
     stops.push(listen(POOL_SIGN_IN_CONFIRM, () => reader.soonAll()).catch(() => undefined));
     const offSandbox = onSandboxCommand(() => reader.soonAll());
+    // **What a project expects is read again where its Notice reads it** (#6000): as its
+    // settings change on disk (a pull or a hand comes to declare it) and as the window comes
+    // back (an Allow in another window). The consent is an ask too, derived from the same state,
+    // so a list not read then left its Notice up and the ✋ counting nothing.
+    stops.push(
+      listen<PlaneChanged>("plane-changed", (said) => {
+        if (concerns(said.payload.answers, SETTINGS)) reader.soon(said.payload.plane);
+      }).catch(() => undefined),
+    );
+    const cameBack = () => reader.soonAll();
+    window.addEventListener("focus", cameBack);
     return () => {
+      window.removeEventListener("focus", cameBack);
       offSandbox();
       moved.delete(reader.soon);
       reader.stop();
@@ -776,9 +805,9 @@ export async function answerTaken(
           );
         break;
       case "sandbox-expects": {
-        // What the project expects of this machine (#6000): its Notice's own two commands, sent
-        // the items as the row drew them. Either way its Notice reads again: one answer settles
-        // both.
+        // What the project expects of this machine (#6000), answered here alone while it can be
+        // (R-205): the window's two commands, sent the items as the row drew them. Either way
+        // Settings › Sandbox reads again.
         const answered =
           option === "allow"
             ? commands.allowProjectExpects(plane, asDrawn(path.items))
@@ -788,6 +817,22 @@ export async function answerTaken(
         if (answered === undefined) break;
         const done = await answered;
         if (done.status === "ok") sandboxCommandReturned();
+        return done.status === "ok" ? { status: "ok" } : done;
+      }
+      case "persona-allow": {
+        // A persona's hosts and tools waiting for an Allow here (ADR 0121, amended 2026-11-12):
+        // its Notice's own Allow, sent the digest the row showed, so a list changed since is
+        // refused and asks anew; Not now puts it away while the project is open. Either way its
+        // Notice, drawn from this same ask, goes with it.
+        const answered =
+          option === "allow"
+            ? commands.allowPersonaHosts(plane, path.persona, path.digest)
+            : option === "not-now"
+              ? commands.personaAllowNotNow(plane, path.persona, path.digest)
+              : undefined;
+        if (answered === undefined) break;
+        const done = await answered;
+        if (done.status === "ok" && option === "allow") sandboxCommandReturned();
         return done.status === "ok" ? { status: "ok" } : done;
       }
       case "paused":
@@ -827,6 +872,26 @@ export async function answerTaken(
         if (option !== "press") break;
         const trusted = await commands.vouchClone(plane, path.folder, path.place);
         return trusted.status === "error" ? trusted : { status: "ok" };
+      }
+      case "trust-clones": {
+        // The clones purlis has no record of, one ask for all of them (R-336): Trust all is the
+        // clone Notice's own press on each, at the one address its remote names. Each clone it
+        // trusts leaves the ask; one it can't is said, and the rest are still trusted.
+        if (option !== "trust-all") break;
+        const refused: string[] = [];
+        for (const clone of path.clones) {
+          if (clone.place === null) {
+            refused.push(
+              `${clone.folder}'s remote names more than one address, so purlis didn't trust it. Give origin one address, then trust it.`,
+            );
+            continue;
+          }
+          const trusted = await commands.vouchClone(plane, clone.folder, clone.place);
+          if (trusted.status === "error") refused.push(trusted.error);
+        }
+        return refused.length === 0
+          ? { status: "ok" }
+          : { status: "error", error: refused.join(" ") };
       }
       case "workspace-removal":
         // Keep puts the question away. Remove… removes nothing (qw356): it opens the window's

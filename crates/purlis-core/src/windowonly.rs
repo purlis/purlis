@@ -15,8 +15,13 @@
 //! The first refusal is a GitHub App token that can't be minted for a clone purlis has no record
 //! of ([`crate::forge::apptoken::token_for`], R-330), whose control is **Trust this clone**.
 //!
-//! The refusals are kept in memory alone, by project, as the tokens they stand in for are
-//! ([`crate::forge::apptoken`]): they are this run's, a chat's go when it ends
+//! **Clones purlis has no record of are adopted only through one ask** (R-336, Q184): the project
+//! has one **Trust these clones** for all of them, raised as the window reads its clones
+//! ([`look_at_clones`]) and no chat's, never one per clone and never trusted automatically. Each
+//! clone the person trusts ([`trust_this_clone`]) leaves it, and it goes with the last.
+//!
+//! The refusals and the clones' ask are kept in memory alone, by project, as the tokens they
+//! stand in for are ([`crate::forge::apptoken`]): they are this run's, a chat's go when it ends
 //! ([`forget`]), and a project's when it ends ([`project_ended`]).
 
 use std::path::{Path, PathBuf};
@@ -177,10 +182,14 @@ pub fn forget(root: &Path, session: u32) {
     }
 }
 
-/// **The project at `root` ended**: every refusal raised in it goes, and so does its listener,
-/// as [`crate::forge::apptoken::project_ended`] forgets its tokens.
+/// **The project at `root` ended**: every refusal raised in it goes, its Trust these clones, and
+/// its listener, as [`crate::forge::apptoken::project_ended`] forgets its tokens.
 pub fn project_ended(root: &Path) {
     RAISED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .retain(|one| one.root != root);
+    UNRECORDED
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .retain(|one| one.root != root);
@@ -200,7 +209,8 @@ pub fn telling(root: &Path, told: Told) {
 /// **The person's Trust this clone**, from its ask or its Notice: records the clone at `folder`
 /// (relative to the project at `root`) at `place`, as
 /// [`crate::forge::gitcredential::vouch::vouch_clone`] does, and clears every chat's refusal
-/// that waited on it. Answers the address trusted, or why nothing was (and nothing is cleared).
+/// that waited on it, and the clone leaves the project's Trust these clones ([`clones_ask`]).
+/// Answers the address trusted, or why nothing was (and nothing is cleared).
 pub fn trust_this_clone(
     host: &HostScope,
     config_root: &Path,
@@ -222,5 +232,125 @@ pub fn trust_this_clone(
             place: place.to_owned(),
         },
     );
+    clone_trusted(root, folder);
     Ok(trusted)
+}
+
+/// The label of the one ask for the project's clones purlis has no record of (R-336).
+pub const TRUST_THESE_CLONES: &str = "Trust these clones";
+
+/// **The one ask for the clones purlis has no record of** in the project at `root` (R-336,
+/// Q184): every clone of its workspaces that purlis did not clone and the person has not
+/// trusted ([`crate::forge::gitcredential::vouch::unvouched_clones`]), however many there are.
+/// Raised by [`look_at_clones`], and listed with no chat's: it waits on the person alone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrustTheseClones {
+    pub root: PathBuf,
+    /// Each clone, by workspace and then name, with the address its remote names now.
+    pub clones: Vec<crate::forge::gitcredential::vouch::Unvouched>,
+    /// Since when it was raised, in seconds since the epoch: a clone added to it later keeps
+    /// the ask's age.
+    pub since: u64,
+}
+
+/// The one Trust these clones of each project that has one.
+static UNRECORDED: Mutex<Vec<TrustTheseClones>> = Mutex::new(Vec::new());
+
+/// **Reads the clones of the project at `root` that purlis has no record of in the config home
+/// at `config_root`, and raises or settles its one ask for them** (R-336): one ask however many
+/// there are and however often they are read, changed only where they changed, and gone once
+/// there is none. Nothing is recorded: a clone is trusted only on the person's answer
+/// ([`trust_this_clone`]). Answers the clones, for the Notice that lists each.
+///
+/// **The ask lists only the clones a press can trust and a mint would count** (Q257, Q249): not
+/// one whose git directory is inside `writes`, the folders the project's live chats may write,
+/// or a folder any chat may be granted (the clones
+/// [`crate::forge::apptoken::held_from_chats`] drops), so a clone a chat made or can write never
+/// asks the person; and not one whose origin names several addresses, which no press can trust
+/// (the doctor names it, with the fix).
+pub fn look_at_clones(
+    root: &Path,
+    config_root: &Path,
+    writes: &[PathBuf],
+) -> Vec<crate::forge::gitcredential::vouch::Unvouched> {
+    let clones = crate::forge::gitcredential::vouch::unvouched_clones(root, config_root);
+    if settle_clones(root, to_ask(root, &clones, writes)) {
+        tell(root);
+    }
+    clones
+}
+
+/// The clones of `clones` that Trust these clones lists ([`look_at_clones`]).
+fn to_ask(
+    root: &Path,
+    clones: &[crate::forge::gitcredential::vouch::Unvouched],
+    writes: &[PathBuf],
+) -> Vec<crate::forge::gitcredential::vouch::Unvouched> {
+    let out_of_reach = crate::forge::apptoken::grantable_beside(root, writes);
+    let plane = crate::workspaces::Plane::open(root.to_path_buf());
+    let held: Vec<String> = plane
+        .workspaces()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|workspace| crate::repos::clones(root, workspace).ok())
+        .flat_map(|clones| crate::forge::apptoken::held_from_chats(clones.repos, &out_of_reach))
+        .map(|repo| crate::sandbox::local::clone_key(&repo.path))
+        .collect();
+    clones
+        .iter()
+        .filter(|clone| clone.place.is_some())
+        .filter(|clone| held.contains(&crate::sandbox::local::clone_key(&clone.path)))
+        .cloned()
+        .collect()
+}
+
+/// Sets the project's one ask to `clones`, none taking it away. Answers whether it moved.
+fn settle_clones(root: &Path, clones: Vec<crate::forge::gitcredential::vouch::Unvouched>) -> bool {
+    let mut asks = UNRECORDED.lock().unwrap_or_else(|e| e.into_inner());
+    match asks.iter().position(|one| one.root == root) {
+        None if clones.is_empty() => false,
+        None => {
+            asks.push(TrustTheseClones {
+                root: root.to_path_buf(),
+                clones,
+                since: now(),
+            });
+            true
+        }
+        Some(at) if clones.is_empty() => {
+            asks.remove(at);
+            true
+        }
+        Some(at) if asks[at].clones == clones => false,
+        Some(at) => {
+            asks[at].clones = clones;
+            true
+        }
+    }
+}
+
+/// **The project's one ask for its clones purlis has no record of**, as the last read of them
+/// left it ([`look_at_clones`]), or `None` where there is none.
+pub fn clones_ask(root: &Path) -> Option<TrustTheseClones> {
+    UNRECORDED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .find(|one| one.root == root)
+        .cloned()
+}
+
+/// The clone at `folder` was trusted: it leaves the project's Trust these clones.
+fn clone_trusted(root: &Path, folder: &str) {
+    let Some(ask) = clones_ask(root) else {
+        return;
+    };
+    let left = ask
+        .clones
+        .into_iter()
+        .filter(|clone| clone.folder != folder)
+        .collect();
+    if settle_clones(root, left) {
+        tell(root);
+    }
 }

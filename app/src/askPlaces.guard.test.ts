@@ -59,6 +59,7 @@ const PLACES = {
   secret: { at: "pane" },
   "run-grant": { at: "pane" },
   "sandbox-expects": { at: "no-chat" },
+  "persona-allow": { at: "no-chat" },
   confirmation: { at: "no-chat" },
   budget: { at: "pane" },
   looping: { at: "pane" },
@@ -69,6 +70,10 @@ const PLACES = {
   "trust-clone": {
     at: "asks-only",
     debt: "a GitHub App token refused for a clone purlis has no record of is listed in Asks alone until it is drawn Blocking or on its chat's finish row (T1-42, R-329); its Trust this clone is the clone Notice's own vouch_clone, window-only",
+  },
+  "trust-clones": {
+    at: "asks-only",
+    debt: "the clones purlis has no record of are one ask in Asks alone, no chat's, until its row draws each clone with its remote and when it was made, with Trust all and Choose… (T1-42, R-337); its Trust is the clone Notice's own vouch_clone, window-only",
   },
 } as const satisfies Record<AskSource, Place>;
 
@@ -136,6 +141,6 @@ describe("every kind of ask has a drawn place", () => {
       Object.entries(PLACE)
         .filter(([, place]) => place.at === "asks-only")
         .map(([source]) => source),
-    ).toEqual(["merge-hold", "trust-clone"]);
+    ).toEqual(["merge-hold", "trust-clone", "trust-clones"]);
   });
 });

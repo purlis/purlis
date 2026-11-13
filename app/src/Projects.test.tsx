@@ -448,7 +448,7 @@ describe("a window holding more than one project", () => {
     expect(screen.getByRole("button", { name: "1 chat needs you" })).toBeInTheDocument();
   });
 
-  it("reaches a chat that asks in a project behind the one in front from its tab, never from the Asks in front (charter-app#249, #1695)", async () => {
+  it("reaches a chat that asks in a project behind the one in front from its tab, which counts its ask, never from the Asks in front (charter-app#249, #1695, #6341)", async () => {
     const { move } = core({
       launch: ONE,
       asks: { [ONE]: [1] },
@@ -482,10 +482,12 @@ describe("a window holding more than one project", () => {
     // ONE's own tab counts it; the hand counts the project in front alone, where nothing waits,
     // so the title bar draws none (#6341, ADR 0121 amended 2026-11-12, decision 1).
     await waitFor(() => expect(railTab(ONE)).toHaveAccessibleDescription(/\b1 waiting\b/));
-    expect(screen.queryByTestId("needs-you-button")).toBeNull();
+    expect(
+      within(screen.getByTestId("title-bar")).queryByRole("button", { name: /waits? on you/ }),
+    ).toBeNull();
 
-    // The Asks in front lists no other project's (ADR 0121, amended 2026-11-12): TWO stays in
-    // front. ONE's ask is reached from ONE's tab, in ONE's own Asks. The side opens on Asks (#5644).
+    // The Asks in front, where the side opens (#5644), lists no other project's (ADR 0121,
+    // amended 2026-11-12): TWO stays in front. ONE's ask is reached from ONE's tab, in ONE's own Asks.
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
     expect(inbox.querySelector("[data-elsewhere]")).toBeNull();
     expect(projectTabs()).toEqual(["one", "two*"]);

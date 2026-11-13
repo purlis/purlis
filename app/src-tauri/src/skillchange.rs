@@ -529,6 +529,39 @@ pub(crate) async fn skill_save(
     .await
 }
 
+/// **Write skills:<name>** (#5874), on a hint's row of a skill's tab: every quote of the
+/// skill's `SKILL.md` that names `hint` bare beside the word skill is written as a reference
+/// (`purlis_skills::uses::written_as_reference`), saved as one edit of the text it holds now.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_hint_write(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    level: SkillLevel,
+    name: String,
+    hint: String,
+) -> Result<SkillChanged, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("writing the reference", move || {
+        flag_on()?;
+        let level: Level = (&level).into();
+        let (_, was) = verbs::text_of(held.root(), &level, &name)?;
+        let now = purlis_core::skills::graph::written_as_reference(
+            &was,
+            &name,
+            &hint,
+            purlis_core::skills::LINKED_PLUGIN,
+        );
+        if now == was {
+            return Err(format!(
+                "{name} no longer names {hint} bare, so nothing was written"
+            ));
+        }
+        heard(held.root(), |cx| verbs::edit(cx, &level, &name, &was, &now))
+    })
+    .await
+}
+
 /// **Write trigger tests** (#3925): starts the skill's trigger tests file from a template where
 /// it has none, committed as one change ([`verbs::start_trigger_tests`]). The window then opens
 /// the file to write in.

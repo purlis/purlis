@@ -495,7 +495,7 @@ function Cards({
   });
   if (gallery === undefined)
     return (
-      <p id={ids.id} className="ui-setting-help" role="status">
+      <p id={ids.id} className="ui-setting-help ui-text-secondary" role="status">
         {read !== undefined && "trouble" in read
           ? `purlis could not read the themes here: ${read.trouble}`
           : "Reading the themes…"}
@@ -512,7 +512,7 @@ function Cards({
   const badge = levelBadge(gallery, chosen);
   return (
     <div className="flex flex-col gap-2">
-      <p className="ui-setting-help">
+      <p className="ui-setting-help ui-text-secondary">
         {gallery.yours !== null ? "Chosen here" : "Drawn here"}:{" "}
         {chosen?.name ??
           (gallery.theirs !== null ? theirsSaid(gallery.theirs) : "your own theme.json")}{" "}
@@ -543,7 +543,7 @@ function Cards({
             card.preview ? "Preview" : undefined,
             isChosen ? (gallery.yours !== null ? "Chosen here" : "Drawn here") : undefined,
             card.refused
-              ? "Refused"
+              ? "Not applied"
               : card.warnings.length > 0
                 ? `${card.warnings.length} ${card.warnings.length === 1 ? "warning" : "warnings"}`
                 : undefined,
@@ -705,7 +705,7 @@ function appearanceRow(group: string, at: ThemeAt | null): LiveSetting {
         error,
         control: (ids) =>
           card === undefined || card.refused ? (
-            <p id={ids.id} className="ui-setting-help">
+            <p id={ids.id} className="ui-setting-help ui-text-secondary">
               {card !== undefined
                 ? "The chosen theme is refused, so purlis draws its own in its place."
                 : gallery?.theirs != null
@@ -715,7 +715,7 @@ function appearanceRow(group: string, at: ThemeAt | null): LiveSetting {
           ) : (
             <div className="flex flex-col gap-1">
               {!chosenHere && (
-                <p className="ui-setting-help" id={`${ids.id}-why`}>
+                <p className="ui-setting-help ui-text-secondary" id={`${ids.id}-why`}>
                   {yours !== null && gallery !== undefined && yoursCard(gallery) === undefined
                     ? `Your choice here, ${yours.theme}, is no theme this level has, so the levels underneath decide: choose a theme above to pick its appearance.`
                     : "Nothing is chosen here: choose a theme above to pick its appearance."}
@@ -807,7 +807,7 @@ function optionsRow(group: string, at: ThemeAt | null): LiveSetting {
               disabled={keeping}
             />
             {said?.map((line) => (
-              <p key={line} className="ui-setting-help" role="status">
+              <p key={line} className="ui-setting-help ui-text-secondary" role="status">
                 {line}
               </p>
             ))}
@@ -837,7 +837,7 @@ function partsRow(group: string, at: ThemeAt | null): LiveSetting {
         grouped: true,
         control: (ids) =>
           card === undefined || card.refused ? (
-            <p id={ids.id} className="ui-setting-help">
+            <p id={ids.id} className="ui-setting-help ui-text-secondary">
               {gallery?.theirs != null
                 ? THEIRS_NO_CARD
                 : card?.refused
@@ -867,7 +867,9 @@ function checkRow(group: string, at: ThemeAt | null): LiveSetting {
         card === undefined
           ? undefined
           : [
-              ...card.said.map((one) => (card.refused ? `Refused: ${one}` : `Left out: ${one}`)),
+              ...card.said.map((one) =>
+                card.refused ? `Not applied: ${one}` : `Left out: ${one}`,
+              ),
               ...card.floors,
               ...card.warnings,
             ];
@@ -882,15 +884,15 @@ function checkRow(group: string, at: ThemeAt | null): LiveSetting {
             aria-describedby={ids.describedBy}
           >
             {lines === undefined ? (
-              <p className="ui-setting-help">
+              <p className="ui-setting-help ui-text-secondary">
                 {gallery?.theirs != null ? THEIRS_NO_CARD : "Reading the themes…"}
               </p>
             ) : lines.length === 0 ? (
-              <p className="ui-setting-help">
+              <p className="ui-setting-help ui-text-secondary">
                 No findings: {card?.name} can be read in every appearance.
               </p>
             ) : (
-              <ul className="ui-setting-help">
+              <ul className="ui-setting-help ui-text-secondary">
                 {lines.map((line, at) => (
                   <li key={at}>{line}</li>
                 ))}
@@ -1065,7 +1067,7 @@ function folderRow(group: string, at: ThemeAt | null): LiveSetting {
               </Button>
             </SettingActions>
             {said !== undefined && (
-              <p className="ui-setting-help" role="status">
+              <p className="ui-setting-help ui-text-secondary" role="status">
                 {said}
               </p>
             )}

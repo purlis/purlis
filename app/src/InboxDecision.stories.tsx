@@ -67,6 +67,23 @@ const CONSENT: Shown = {
   },
 };
 
+/** steward's tools, changed since this machine allowed them (ADR 0121, amended 2026-11-12). */
+const PERSONA_ALLOW: Shown = {
+  session: 0,
+  ask: "persona-allow:steward",
+  says:
+    "You allowed steward's tools on this machine and they have changed since, so no chat gets " +
+    "them until you allow them again. Allowed, chats as steward run gh with token from vault " +
+    "devops as GH_TOKEN.",
+  options: [
+    { id: "allow", label: "Allow for steward chats", allows: true },
+    { id: "not-now", label: "Not now", allows: false },
+  ],
+  source: "persona-allow",
+  chain: ["steward"],
+  answer: { via: "persona-allow", persona: "steward", digest: "steward-digest-2" },
+};
+
 /** `purlis profile sign-in --pool` waiting on the person's yes in the window (#6000). */
 const CONFIRMATION: Shown = {
   session: 0,
@@ -185,6 +202,7 @@ const ASKS = {
   RUN_NEEDS_A_VALUE,
   HOST,
   CONSENT,
+  PERSONA_ALLOW,
   CONFIRMATION,
   PUSH,
   BUDGET,
@@ -303,8 +321,8 @@ export const ARunThatNeedsAValue: Story = {
   },
 };
 
-/** **What a project expects, on its row** (#6000): a consent of no chat's, its Notice's two answers
- *  on the row, with no Go to chat; → walks them. */
+/** **What a project expects, on its row** (#6000): a consent of no chat's, asked here alone
+ *  (R-205), its two answers on the row, with no Go to chat; → walks them. */
 export const AConsentOnItsRow: Story = {
   args: { ask: "CONSENT" },
   play: async ({ canvasElement }) => {
@@ -316,6 +334,26 @@ export const AConsentOnItsRow: Story = {
     await userEvent.tab();
     await untilFocused(rowIn(canvasElement), "Tab lands on the row");
     for (const name of ["Allow on this machine", "Not now"]) {
+      await userEvent.keyboard("{ArrowRight}");
+      await untilFocused(() => canvas.getByRole("button", { name }), `→ reaches ${name}`);
+      expectFocusInSight();
+    }
+  },
+};
+
+/** **A persona's Allow, on its row** (ADR 0121, amended 2026-11-12): one ask for the persona, of
+ *  no chat's, its Notice's Allow and Not now on the row, with no Go to chat; → walks them. */
+export const APersonasAllowOnItsRow: Story = {
+  args: { ask: "PERSONA_ALLOW" },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvasElement.querySelector(".inbox-question")).toHaveTextContent(
+      "Allow this persona's hosts and tools?",
+    );
+    await expect(canvas.queryByRole("button", { name: /^Go to chat/ })).toBeNull();
+    await userEvent.tab();
+    await untilFocused(rowIn(canvasElement), "Tab lands on the row");
+    for (const name of ["Allow for steward chats", "Not now"]) {
       await userEvent.keyboard("{ArrowRight}");
       await untilFocused(() => canvas.getByRole("button", { name }), `→ reaches ${name}`);
       expectFocusInSight();

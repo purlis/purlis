@@ -35,7 +35,8 @@ import { FindBar } from "./FindBar";
 import { opensFindInAFile } from "./keys/findKeys";
 import { onAMac } from "./mac";
 import { opensTheLinksList } from "./paneLinksKey";
-import { linkPane, type LinkCore, type LinkedPane } from "./paneLinks";
+import { linkPane, type LinkCore, type LinkPlace, type LinkedPane } from "./paneLinks";
+import type { ChatGo } from "./bindings";
 import { usePaneLinks } from "./PaneLinkSurfaces";
 import {
   drawnFont,
@@ -95,6 +96,9 @@ export interface ReadOnlyTerminalProps {
    * specimen's pictures, which reach no core: no links.
    */
   links?: LinkCore;
+  /** What a `chat 641` link ⌘-clicked shows (#6217, `PaneLinkChats.tsx`). A saved screen is in
+   *  no project, so the core links no chat in it; a story stands a core in that does. */
+  onChat?: (go: ChatGo, place: LinkPlace | undefined) => void;
 }
 
 /**
@@ -137,6 +141,7 @@ export function ReadOnlyTerminal({
   clipboard,
   still = false,
   links,
+  onChat,
 }: ReadOnlyTerminalProps) {
   const noteId = useId();
   const holder = useRef<HTMLDivElement>(null);
@@ -158,6 +163,7 @@ export function ReadOnlyTerminal({
     core: links,
     colour: () => linkColour(theme ?? inForce()),
     onScreen: () => linkedNow.current?.onScreen() ?? Promise.resolve([]),
+    onChat,
   });
   // Read once, as it is drawn: a later write of the same screen is the same picture.
   const told = useRef(onWriting);

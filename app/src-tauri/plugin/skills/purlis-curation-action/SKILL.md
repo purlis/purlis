@@ -1,6 +1,6 @@
 ---
 name: purlis-curation-action
-description: When a person wants a purlis persona to offer a chat in the Curate menu, with a prompt typed, write or change its curation action. Use when asked to add, change or remove a curation action or Curate menu entry. Not for writing a skill (purlis-skill-studio) or a persona (purlis-persona).
+description: When a person wants a purlis persona to offer a chat in the Curate menu, with a prompt typed, write its curation action. Use when asked to add, change or remove a curation action or Curate menu entry. Not for writing a skill (purlis-skill-studio) or a persona (purlis-persona).
 ---
 
 # Adding a curation action

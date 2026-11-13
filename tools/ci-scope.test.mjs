@@ -1041,7 +1041,7 @@ test("the outcome bars run on a pull request that touches what they measure, and
   );
 });
 
-test("Pool setup's walk on Docker runs on a pull request that touches it, and in every other run; its required check is carried", () => {
+test("Pool setup's walks on Docker and on a kind cluster run on a pull request that touches them, and in every other run; their required check is carried", () => {
   const on = (path) => gatesOf({ event: "pull_request", paths: [path] })["pool-setup"];
   for (const path of [
     "app/src/poolsetup/TryStep.tsx",
@@ -1059,9 +1059,29 @@ test("Pool setup's walk on Docker runs on a pull request that touches it, and in
     "app/e2e/wdio.pool.conf.ts",
     "app/e2e/specs/pool-setup-docker.pool.e2e.ts",
     ".github/workflows/ci.yml",
+    // The walk on a kind cluster (#4494): its spec, the cluster's make, the operator it builds
+    // and what Install applies, and the cluster pool's own code.
+    "app/e2e/specs/pool-setup-cluster.pool.e2e.ts",
+    "tests/kind-cluster/up.sh",
+    ".github/actions/kind/action.yml",
+    "operator/e2e/kind-node.txt",
+    "operator/src/lib.rs",
+    "operator/deploy/crds.yaml",
+    "operator/vendor/agent-sandbox/v1.0.6/kustomization.yaml",
+    "operator/Cargo.lock",
+    "crates/cluster-doctor/src/lib.rs",
+    "crates/purlis-core/src/clusterpool.rs",
+    "app/src-tauri/src/clusterpools.rs",
+    "app/src/settings/pools.tsx",
   ])
     assert.equal(on(path), true, path);
-  for (const path of ["app/src/App.tsx", "crates/host/src/lib.rs", "app/e2e/specs/tabs.e2e.ts"])
+  for (const path of [
+    "app/src/App.tsx",
+    "crates/host/src/lib.rs",
+    "app/e2e/specs/tabs.e2e.ts",
+    "operator/e2e/kind.sh",
+    "operator/charts/purlis-cluster-operator/values.yaml",
+  ])
     assert.equal(on(path), false, path);
 
   const ci = read(".github/workflows/ci.yml");

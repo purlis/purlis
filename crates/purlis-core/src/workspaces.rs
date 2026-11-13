@@ -1233,6 +1233,14 @@ pub(crate) fn parse_entry(slug: &str, text: &str) -> Entry {
     }
 }
 
+/// **Whether `path`, a folder of `workspaces/`, is a workspace**, by the rule
+/// [`Plane::read_workspaces`] lists them by: a folder whose name has no leading `.` (purlis's
+/// own, such as `.worktrees/`) and that is not a real clone (a `.git` folder; a linked
+/// worktree's `.git` is a file, and is still a workspace).
+pub fn is_workspace_folder(path: &Path) -> bool {
+    !file_name(path).starts_with('.') && path.is_dir() && !path.join(".git").is_dir()
+}
+
 /// A directory's entries, sorted by name. A directory that is not there has none — charter
 /// creates a store lazily, so "no todos yet" and "no `todos/`" are the same answer.
 fn read_dir_sorted(dir: &Path) -> io::Result<Vec<PathBuf>> {

@@ -514,6 +514,47 @@ pub fn fetch(plane: &Path, source: &Source, at: Option<&Commit>) -> Result<Fetch
     })
 }
 
+/// **When `commit`, the newest of `source`, was made** (#6031): its committer time, read from the
+/// commit alone, fetched without its tree or files; `None` where it could not be read. What the
+/// Updates list says of an update too young to take, before its review fetches it.
+pub fn newest_made(plane: &Path, source: &Source, commit: &Commit) -> Option<u64> {
+    let scratch = Scratch::new().ok()?;
+    let handing = handing(plane, source).ok()?;
+    let refspec = format!("+{}:{FETCHED}", source.remote.tip_ref());
+    let run = scratch
+        .network(
+            &source.remote,
+            &handing,
+            &[
+                "fetch",
+                "--quiet",
+                "--no-tags",
+                "--no-recurse-submodules",
+                "--no-write-fetch-head",
+                "--depth=1",
+                "--filter=tree:0",
+                "--",
+                REMOTE,
+                &refspec,
+            ],
+        )
+        .ok()?;
+    if !run.ok() {
+        return None;
+    }
+    scratch
+        .git(&[
+            "show",
+            "-s",
+            "--format=%ct",
+            "--end-of-options",
+            commit.as_str(),
+        ])
+        .ok()
+        .filter(git::Run::ok)
+        .and_then(|run| run.line().trim().parse().ok())
+}
+
 /// **The newest commit `source` offers**, read from its refs alone: nothing is fetched.
 pub fn newest(plane: &Path, source: &Source) -> Result<Commit, String> {
     let remote = &source.remote;

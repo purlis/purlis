@@ -110,7 +110,7 @@
     },
     {
       "query": "Delete the old reporting workspace but keep what it learned.",
-      "source": "Near miss (purlis-safe-remove): purlis-safe-remove's description, \"without losing what it learned\".",
+      "source": "Near miss (purlis-safe-remove): purlis-safe-remove's description, \"keep what it learned\".",
       "belongs_to": "purlis-safe-remove"
     },
     {

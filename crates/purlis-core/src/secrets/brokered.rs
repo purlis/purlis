@@ -2907,8 +2907,8 @@ fn login_ready(
             Some(tool) if tool.login.is_some() => format!(
                 "{name} is {persona}'s browser login, and it is not allowed on this machine for \
                  this chat: it logs in only once {persona}'s hosts and tools are allowed here \
-                 (the project's Notice, or Settings › Sandbox) and policy allows persona tools. \
-                 {then} ({})",
+                 ({}) and policy allows persona tools. {then} ({})",
+                crate::sandbox::tools::ALLOW_IS_ASKED,
                 tool.whole()
             ),
             Some(_) => not_a_login(),

@@ -6,21 +6,31 @@
 //! the ✋ and notified, whatever drew it before.
 //!
 //! - **What a project expects and this machine has not allowed** ([`sandbox_expects`]): the
-//!   consent its Notice asks for ("Allow on this machine"), without which a sandboxed chat of the
-//!   project is refused what it expects. It stays a Notice too, and both are derived from the one
-//!   state (`sandbox::services::awaiting`), so one answer settles both. Where policy locks it, or
-//!   nothing listed can be allowed here, there is nothing to decide: its Notice alone says so.
+//!   sandbox consent ("Allow on this machine"), without which a sandboxed chat of the project is
+//!   refused what it expects. While it can be answered it is in Asks alone (R-205): its Notice
+//!   draws nothing beside it, and both read the one state (`sandbox::services::awaiting`), so
+//!   its answer settles it everywhere. Where policy locks it, or nothing listed can be allowed
+//!   here, there is nothing to decide: it is no ask, and its Notice alone says so.
 //! - **A `purlis` command's confirmation in the window** ([`confirmation`]): a pool sign-in, a
 //!   profile taken off a pool, a signing check. It is answered on its row alone, with the code
 //!   its command's terminal shows, and no dialog over the window (#6136); its two minutes still
 //!   run in the core (`poolsignin_confirm`). It is listed under the one project it was filed
 //!   under, so one confirmation is counted once.
+//! - **A persona whose hosts or tools wait for an Allow on this machine** ([`persona_allows`]):
+//!   its chats reach none of its hosts and run none of its tools until the person allows them,
+//!   as they were shown, and a list that changed since an Allow waits again. One ask per persona,
+//!   however many of its chats are refused. Its Notice (`PersonaHostsNotice.tsx`) stays and is
+//!   drawn from this same ask in the window, so one answer settles both. Not now puts it away
+//!   until the project is opened again or the list changes ([`Later`]); nothing is kept.
 
 use super::{AnswerPath, AskSource, Offered, Shown, said_inertly};
 use crate::poolsignin_confirm::{Asks, PoolSignInAsk};
-use crate::sandboxing::{ExpectedItem, GrantWhat, ProjectExpects};
+use crate::sandboxing::{ExpectedItem, GrantWhat, PersonaHosts, ProjectExpects};
+use std::collections::HashMap;
+use std::sync::Mutex;
 
-/// What the expects consent's Allow says, here and on its Notice (`ProjectExpectsNotice.tsx`).
+/// What the expects consent's Allow says, here and on Settings › Sandbox
+/// (`ProjectExpectsNotice.tsx`).
 pub const ALLOW_EXPECTS: &str = "Allow on this machine";
 /// The option id of the expects consent's Allow on this machine.
 pub const ALLOW: &str = "allow";
@@ -88,7 +98,7 @@ fn named(one: &ExpectedItem) -> String {
 
 /// **The expects consent, as a Blocking ask** (#6000): what the project at hand expects and this
 /// machine has not allowed, while the person is still to be asked and something listed can be
-/// allowed here. Its answers are its Notice's: Allow on this machine, Not now. None otherwise.
+/// allowed here: Allow on this machine, Not now, answered on its row alone (R-205). None otherwise.
 pub fn sandbox_expects(expects: Option<&ProjectExpects>) -> Option<Shown> {
     let expects = expects?;
     let allowable = expects.items.iter().any(|one| one.refused.is_none());
@@ -160,6 +170,136 @@ pub fn confirmation(asked: &PoolSignInAsk, until: u32) -> Shown {
     shown.held_until = Some(until);
     // It is taken back as a no at `until`: an Expiring ask (ADR 0121 decision 5, #6006).
     shown.expires = Some(until);
+    shown
+}
+
+/// **The personas the person said Not now to, in a project while it is open** (#1362's Not now,
+/// as an ask): each by the digest of the list it was said to, so a list that changes asks again.
+/// Held in memory with the project, as the Notice's Not now always was: nothing is kept, and
+/// opening the project again asks again.
+#[derive(Debug, Default)]
+pub struct Later {
+    said: Mutex<HashMap<String, String>>,
+}
+
+impl Later {
+    /// Not now, to `persona`'s list as it was shown, `digest`.
+    pub fn say(&self, persona: &str, digest: &str) {
+        self.said
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(persona.to_owned(), digest.to_owned());
+    }
+
+    /// Whether Not now was said to `persona`'s list as it stands, `digest`.
+    pub fn holds(&self, persona: &str, digest: &str) -> bool {
+        self.said
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(persona)
+            .is_some_and(|said| said == digest)
+    }
+}
+
+/// The option id of a persona's Allow.
+pub const ALLOW_PERSONA: &str = "allow";
+
+/// "a", "a and b", "a, b and c".
+fn listed(items: &[String], and: &str) -> String {
+    match items {
+        [] => String::new(),
+        [one] => one.clone(),
+        [rest @ .., last] => format!("{}{and}{last}", rest.join(", ")),
+    }
+}
+
+/// **A persona whose hosts or tools wait for an Allow, as a Blocking ask** (ADR 0121 decision 2,
+/// amended 2026-11-12): what `waitingPersonas` in `PersonaHostsNotice.tsx` draws a Notice for,
+/// the same rule. Not allowed as it stands, and with hosts a chat would reach (none where policy
+/// forbids persona hosts) or tools. Its Allow is the Notice's (`allow_persona_hosts`, sent the
+/// digest of what the row showed); Not now is [`Later`]. Its risk is that of the first of its
+/// hosts that looks like production (decision 8), so its Allow asks once more.
+pub fn persona_allows(
+    personas: &[PersonaHosts],
+    hosts_locked: bool,
+    later: &Later,
+    risk: &purlis_core::askrisk::Facts,
+) -> Vec<Shown> {
+    personas
+        .iter()
+        .filter(|one| {
+            !one.allowed
+                && ((!hosts_locked && !one.reached.is_empty()) || !one.tools.is_empty())
+                && !later.holds(&one.persona, &one.digest)
+        })
+        .map(|one| persona_allow(one, hosts_locked, risk))
+        .collect()
+}
+
+/// One persona's ask ([`persona_allows`]).
+fn persona_allow(
+    one: &PersonaHosts,
+    hosts_locked: bool,
+    risk: &purlis_core::askrisk::Facts,
+) -> Shown {
+    let hosts: &[String] = if hosts_locked { &[] } else { &one.reached };
+    let what = match (hosts.is_empty(), one.tools.is_empty()) {
+        (false, false) => "hosts and tools",
+        (true, false) => "tools",
+        _ => "hosts",
+    };
+    let who = if one.default {
+        format!("chats as {}, and chats that name no persona,", one.persona)
+    } else {
+        format!("chats as {}", one.persona)
+    };
+    let lets = [
+        (!hosts.is_empty()).then(|| format!("reach {}", listed(hosts, " and "))),
+        (!one.tools.is_empty()).then(|| format!("run {}", listed(&one.tools, "; and "))),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(", and ");
+    let said = if one.waiting {
+        format!(
+            "You allowed {}'s {what} on this machine and they have changed since, so no chat gets \
+             them until you allow them again. Allowed, {who} {lets}.",
+            one.persona
+        )
+    } else {
+        format!(
+            "{}'s {what} wait for your Allow on this machine: until then {who} get none of them. \
+             Allowed, they {lets}.",
+            one.persona
+        )
+    };
+    let allow = if one.default {
+        format!(
+            "Allow for {} chats and chats that name no persona",
+            one.persona
+        )
+    } else {
+        format!("Allow for {} chats", one.persona)
+    };
+    let mut shown = of_no_chat(
+        format!("persona-allow:{}", one.persona),
+        &one.persona,
+        &said,
+        vec![
+            offered(ALLOW_PERSONA, &allow, true),
+            offered(NOT_NOW, "Not now", false),
+        ],
+        AskSource::PersonaAllow,
+        AnswerPath::PersonaAllow {
+            persona: one.persona.clone(),
+            digest: one.digest.clone(),
+        },
+    );
+    shown.risk = hosts
+        .iter()
+        .find_map(|host| risk.of_host(host))
+        .map(Into::into);
     shown
 }
 
@@ -279,5 +419,106 @@ mod tests {
             .expect("a consent to give");
         assert_eq!(consent.expires, None);
         assert_eq!(consent.blocks, None);
+    }
+
+    fn persona(name: &str, hosts: &[&str], tools: &[&str]) -> PersonaHosts {
+        PersonaHosts {
+            persona: name.to_owned(),
+            hosts: hosts.iter().map(|one| (*one).to_owned()).collect(),
+            reached: hosts.iter().map(|one| (*one).to_owned()).collect(),
+            tools: tools.iter().map(|one| (*one).to_owned()).collect(),
+            digest: format!("{name}-digest"),
+            allowed: false,
+            default: false,
+            waiting: false,
+            cautions: None,
+            refused: None,
+        }
+    }
+
+    /// **A persona whose list changed since its Allow is a Blocking ask** (ADR 0121, amended
+    /// 2026-11-12): the person's report of 2026-11-12, steward's tools `changed`, waited as a
+    /// Notice no one found while steward's chats were refused their tool. One ask for the
+    /// persona, of no chat's, answered with its Notice's Allow and the digest it showed.
+    #[test]
+    fn a_persona_whose_tools_changed_since_its_allow_is_one_ask_with_its_notices_allow() {
+        let mut steward = persona(
+            "steward",
+            &[],
+            &["gh with token from vault devops as GH_TOKEN"],
+        );
+        steward.waiting = true;
+        let asks = persona_allows(
+            &[steward],
+            false,
+            &Later::default(),
+            &purlis_core::askrisk::Facts::default(),
+        );
+        let [shown] = asks.as_slice() else {
+            panic!("one ask for the persona: {asks:?}");
+        };
+        assert_eq!(shown.session, 0);
+        assert_eq!(shown.ask, "persona-allow:steward");
+        assert_eq!(shown.source, AskSource::PersonaAllow);
+        assert_eq!(shown.chain, ["steward"]);
+        assert_eq!(ids(shown), [ALLOW_PERSONA, NOT_NOW]);
+        assert_eq!(shown.options[0].label, "Allow for steward chats");
+        assert!(shown.options[0].allows);
+        assert!(shown.says.contains("changed since"), "{}", shown.says);
+        assert!(shown.says.contains("run gh with token"), "{}", shown.says);
+        assert_eq!(
+            shown.answer,
+            AnswerPath::PersonaAllow {
+                persona: "steward".to_owned(),
+                digest: "steward-digest".to_owned(),
+            }
+        );
+        assert_eq!(shown.risk, None);
+    }
+
+    /// **Allowed, nothing to allow, or put away with Not now, it is no ask**; a list that
+    /// changed after its Not now asks again, and hosts a policy forbids are not asked about.
+    #[test]
+    fn a_persona_allowed_with_nothing_waiting_or_said_not_now_to_is_no_ask() {
+        let facts = purlis_core::askrisk::Facts::default();
+        let later = Later::default();
+        let mut allowed = persona("scribe", &["api.example.com"], &[]);
+        allowed.allowed = true;
+        let empty = persona("quiet", &[], &[]);
+        let hosts_only = persona("ops", &["api.example.com"], &[]);
+        assert!(persona_allows(&[allowed, empty], false, &later, &facts).is_empty());
+        assert!(
+            persona_allows(std::slice::from_ref(&hosts_only), true, &later, &facts).is_empty(),
+            "hosts a policy forbids are not asked about"
+        );
+
+        later.say("ops", "ops-digest");
+        assert!(
+            persona_allows(std::slice::from_ref(&hosts_only), false, &later, &facts).is_empty()
+        );
+        let mut changed = hosts_only.clone();
+        changed.digest = "ops-digest-2".to_owned();
+        assert_eq!(persona_allows(&[changed], false, &later, &facts).len(), 1);
+    }
+
+    /// **One ask per persona, however many chats wait on it**, and a production host is its
+    /// risk (decision 8), so its Allow asks once more.
+    #[test]
+    fn each_persona_is_one_ask_and_a_production_host_is_its_risk() {
+        let asks = persona_allows(
+            &[
+                persona("ops", &["api.example.com", "db.prod.example.com"], &[]),
+                persona("steward", &[], &["kubectl"]),
+            ],
+            false,
+            &Later::default(),
+            &purlis_core::askrisk::Facts::default(),
+        );
+        let keys: Vec<&str> = asks.iter().map(|one| one.ask.as_str()).collect();
+        assert_eq!(keys, ["persona-allow:ops", "persona-allow:steward"]);
+        let risk = asks[0].risk.as_ref().expect("a production host");
+        assert_eq!(risk.class, crate::asking::RiskClass::ProductionHost);
+        assert!(risk.why.contains("db.prod.example.com"), "{}", risk.why);
+        assert_eq!(asks[1].risk, None);
     }
 }
