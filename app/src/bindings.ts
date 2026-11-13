@@ -730,6 +730,13 @@ export const commands = {
 	 */
 	declineProjectExpects: (plane: PlaneId, shown: ExpectedShown[]) => typedError<SandboxState, string>(__TAURI_INVOKE("decline_project_expects", { plane, shown })),
 	/**
+	 *  **Not now on a persona's Allow** (ADR 0121, amended 2026-11-12), on its row in Asks or on its
+	 *  Notice: put away while project `plane` is open and `persona`'s list is the one shown,
+	 *  `digest`. Nothing is kept, and nothing is granted; a changed list asks again. The window's
+	 *  alone, as the Allow is.
+	 */
+	personaAllowNotNow: (plane: PlaneId, persona: string, digest: string) => typedError<null, string>(__TAURI_INVOKE("persona_allow_not_now", { plane, persona, digest })),
+	/**
 	 *  **The person's answer to the project's sandbox off** (#2071, SO-8; #2156): Accept
 	 *  (`accept`) or Keep it on for me, for the off as it stands; refused where no committed off
 	 *  stands. Kept in this machine's config home, where no chat writes, until purlis sees the off
@@ -6279,6 +6286,12 @@ export type AnswerPath =
  *  now, each sent `items` as its Notice sends them (#6000).
  */
 { via: "sandbox-expects"; items: ExpectedItem[] } | 
+/**
+ *  `allow_persona_hosts` for Allow, sent `digest`, the list the row showed, as its Notice
+ *  sends it; and `persona_allow_not_now` for Not now, which puts it away while the project
+ *  is open and the list stands (ADR 0121, amended 2026-11-12).
+ */
+{ via: "persona-allow"; persona: string; digest: string } | 
 /**  `answer_pool_sign_in` for confirmation `id`, yes or no, as its dialog answers (#6000). */
 { via: "confirmation"; id: number } | 
 /**
@@ -6755,6 +6768,12 @@ export type AskSource =
  *  sandboxed chats are refused it until the person allows it on this machine.
  */
 "sandbox-expects" | 
+/**
+ *  **A persona whose hosts or tools wait for an Allow on this machine** (ADR 0121, amended
+ *  2026-11-12): its chats reach none of its hosts and run none of its tools until the
+ *  person allows them as shown. One per persona.
+ */
+"persona-allow" | 
 /**
  *  **A `purlis` command's confirmation in the window** (#6000): a pool sign-in, a profile
  *  taken off a pool, a signing check, each waiting on the person's yes.

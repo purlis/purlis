@@ -28,7 +28,7 @@ import type {
 import type { State } from "./chatState";
 import { setChatsListPrefs } from "./chatsListPrefs";
 import { forgetThisLaunch } from "./regions";
-import { stripNamed } from "./test-strips";
+import { showNotices, stripNamed } from "./test-strips";
 import { heard } from "./frame.testkit";
 import { onTheWire } from "./chatEvents.testkit";
 import { findTree, rowNamed, rowsOf } from "./ui/tree/tree.testkit";
@@ -319,12 +319,20 @@ const said = (notice: HTMLElement) =>
     .querySelector("[data-scope=notice][data-part=message]")
     ?.textContent?.replace(/\s+/g, " ")
     .trim();
-const theSummary = () =>
+/** The summary, once it is listed in Notices, wherever the Panel is. */
+const listedSummary = () =>
   waitFor(() => {
     const found = summary();
     if (found === null) throw new Error("no summary stands");
     return found;
   });
+/** **The summary, read as a person reads it**: listed, then Notices opened by its own press.
+ *  Coming back opens nothing by itself (ADR 0121: nothing but a Blocking ask interrupts). */
+const theSummary = async () => {
+  await listedSummary();
+  await showNotices();
+  return listedSummary();
+};
 
 const settle = () => act(() => new Promise((done) => setTimeout(done, 50)));
 const onScreen = () =>
@@ -401,8 +409,16 @@ describe("while you were away (#1514)", () => {
     await whileAway(held);
     expect(summary()).toBeNull();
 
+    // The Panel's right half opens on Memory (P-14): Notices is behind it (#5645).
+    await screen.findByRole("tabpanel", { name: "Memory" });
+
     await comeBack(LEFT + 30 * MINUTE);
 
+    // Listed in Notices, which coming back does not open: it arrives on every return, and
+    // brought Notices over Memory each time (ADR 0121: nothing but a Blocking ask interrupts).
+    await listedSummary();
+    expect(screen.getByRole("tabpanel", { name: "Memory" })).toBeInTheDocument();
+    expect(screen.queryByRole("tabpanel", { name: "Notices" })).toBeNull();
     const notice = await theSummary();
     expect(said(notice)).toBe("While you were away: 7 tasks done, 1 failed, 2 waiting on you");
     // In the Inbox, one for the project; never focused, so nothing typed goes astray.
@@ -566,9 +582,13 @@ describe("while you were away (#1514)", () => {
     await leave();
     await whileAway(held);
     await comeBack(LEFT + 30 * MINUTE);
+    // Opened first: opening Notices reads the alerts again and keeps the layout, which is not
+    // Dismiss's doing.
+    const shown = await theSummary();
+    await settle();
     const before = held.commands().length;
 
-    await userEvent.click(within(await theSummary()).getByRole("button", { name: "Dismiss" }));
+    await userEvent.click(within(shown).getByRole("button", { name: "Dismiss" }));
 
     expect(summary()).toBeNull();
     // The chats still need the person, on the title bar's list, as they did before.

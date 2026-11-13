@@ -539,6 +539,16 @@ fn persona_hosts_of(
         .collect()
 }
 
+/// **Each persona's hosts and tools in the project at `root`, as Settings and its Notice read
+/// them**, and whether policy forbids persona hosts: what the asks registry lists a persona's
+/// Allow from (ADR 0121, amended 2026-11-12).
+pub(crate) fn persona_hosts_here(root: &std::path::Path) -> (Vec<PersonaHosts>, bool) {
+    let plane = sandbox::Plane::read(root);
+    let locks = sandbox::policy::Locks::of(root);
+    let locked = locks.forbids_persona_hosts();
+    (persona_hosts_of(root, &plane, &locks), locked)
+}
+
 /// [`sandbox::tools::cautions`] of `tools`, `None` where there is none.
 fn cautions_of(tools: &[sandbox::tools::Tool]) -> Option<Vec<String>> {
     Some(sandbox::tools::cautions(tools)).filter(|said| !said.is_empty())
