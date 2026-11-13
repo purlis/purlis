@@ -251,6 +251,8 @@ pub fn choose_sandbox_block_target(
 ) -> Result<ChatBlocked, String> {
     let held = planes.held(&plane)?;
     let told = chosen(&plane, held.chats(), session, &shown, &target)?;
+    // The chooser is a road to Allow: it starts the block count again (R-211, Q253).
+    crate::pausing::allowed(&held, session);
     planes.tell_block(told.clone());
     Ok(told)
 }

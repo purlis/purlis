@@ -159,3 +159,24 @@ describe("setup's Protection row under a policy (Q241)", () => {
     }
   });
 });
+
+describe("No sandbox at setup (T1-25)", () => {
+  it("choosing No sandbox shows the vault-move and warning lines inline", async () => {
+    await walk(composed.NoSandboxMovesTwoVaults);
+  });
+
+  it("with No sandbox the main button names the vault move and its count", async () => {
+    // The story's acts are one spy for every walk of it: this walk's press is counted alone.
+    (composed.NoSandboxMovesTwoVaults.args.onOpenRepo as ReturnType<typeof vi.fn>).mockClear();
+    await walk(composed.NoSandboxMovesTwoVaults);
+    // One press, and only the page's own act: the move is the core's, in the same command.
+    const dialog = screen.getByRole("dialog", { name: "New project" });
+    expect(
+      within(dialog).getByRole("button", { name: "Open repo, and move 2 vaults to the keychain" }),
+    ).toBeEnabled();
+  });
+
+  it("No sandbox is refused with a team-registered vault and offers Basic sandbox", async () => {
+    await walk(composed.NoSandboxRefusedByATeamVault);
+  });
+});

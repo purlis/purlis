@@ -3,12 +3,21 @@
 
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render as renderBare, screen, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render as renderBare,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { menuNames } from "./menus.testkit";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { stripNamed } from "./test-strips";
+import type { NoSandboxAtSetup, SetupProtection } from "./bindings";
 
 /**
  * Making a new project, from the window.
@@ -59,6 +68,10 @@ function core(
     pickFails?: string;
     /** Why the Protection row's answer was not kept (Q241). */
     protectionSaid?: string;
+    /** This machine's bound for the row, and the local project's level (T1-24). */
+    setup?: SetupProtection;
+    /** What No sandbox would do, as the core reports it (T1-25). */
+    noSandbox?: NoSandboxAtSetup;
   } = {},
 ) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
@@ -66,6 +79,8 @@ function core(
     const got = (args ?? {}) as Record<string, unknown>;
     asked.push({ cmd, args: got });
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
+    if (cmd === "setup_protection") return over.setup ?? null;
+    if (cmd === "no_sandbox_at_setup") return over.noSandbox ?? null;
     if (cmd === "opened_chats") return [];
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "running_sessions") return [];
@@ -401,6 +416,62 @@ describe("making a project", () => {
     );
     expect(calls("create_project").map((one) => one.args.protection)).toEqual(["off"]);
     expect((await screen.findAllByText(said)).length).toBeGreaterThan(0);
+  });
+
+  it("Open repo into the local project already there neither names a vault move nor waits on a team's vault (T1-25)", async () => {
+    // The local project keeps its level (Q241), so Open repo sends none: what No sandbox would
+    // do there is not its to say or to be refused by. No sandbox is chosen for Create, under
+    // Advanced, and Advanced is closed again.
+    const reports: NoSandboxAtSetup[] = [
+      { moves: ["personal"], warning: "setup.no-sandbox.runs-as-you", refused: null },
+      {
+        moves: ["personal"],
+        warning: "setup.no-sandbox.runs-as-you",
+        refused: { vault: "ci", owner: "Dana Okafor", said: "No sandbox is refused here." },
+      },
+    ];
+    for (const noSandbox of reports) {
+      const { calls } = core({
+        setup: { lowest: "off", default: "floor", why: null, yours: "on" },
+        noSandbox,
+      });
+      render(<App />);
+      const dialog = await askForOne();
+      // The local project's report has come.
+      await waitFor(() => expect(calls("no_sandbox_at_setup").length).toBeGreaterThan(0));
+      await act(async () => undefined);
+      await userEvent.type(within(dialog).getByLabelText("Repo"), REPO);
+      await userEvent.click(within(dialog).getByText("Advanced"));
+      const row = within(dialog).getByRole("radiogroup", { name: "Protection" });
+      await userEvent.click(within(row).getByRole("radio", { name: /^No sandbox/ }));
+      await userEvent.click(within(dialog).getByText("Advanced"));
+
+      const main = within(dialog).getByRole("button", { name: "Open repo" });
+      expect(main).toBeEnabled();
+      await userEvent.click(main);
+
+      expect(calls("open_repo").map((one) => one.args.protection)).toEqual([null]);
+      cleanup();
+      clearMocks();
+    }
+  });
+
+  it("asks what No sandbox would do once a typed folder settles, not at each keystroke (T1-25)", async () => {
+    const { calls } = core({
+      noSandbox: { moves: [], warning: "setup.no-sandbox.runs-as-you", refused: null },
+    });
+    render(<App />);
+    const dialog = await askForOne();
+    await userEvent.click(within(dialog).getByText("Advanced"));
+
+    await userEvent.type(within(dialog).getByLabelText("Folder"), "/x/abc");
+
+    const folders = () =>
+      calls("no_sandbox_at_setup")
+        .map((one) => one.args.folder)
+        .filter((folder) => typeof folder === "string");
+    await waitFor(() => expect(folders()).toContain("/x/abc"));
+    expect(folders()).toEqual(["/x/abc"]);
   });
 
   it("takes the project straight into the window when the gate already said yes", async () => {
