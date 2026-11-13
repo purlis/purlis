@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794597802491,
+  "lastUpdate": 1794601110340,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -48636,6 +48636,48 @@ window.BENCHMARK_DATA = {
             "value": 101.6887135,
             "unit": "ms",
             "extra": "median of 5 runs: 100.979, 101.628, 101.689, 103.461, 103.489 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2764b321e3d9c0d62bf6b4c83b130f262e66c5f9",
+          "message": "Text roles leftovers: the parts carry the label, and the words left on their own tokens wear roles (#6482, #6389) (#6528)\n\n* refactor(app): a group header and a column name carry the section label as one part each (#6482)\n\nThe leftovers of #1920's label spelling (#6473, #6505), points 1 to 3:\n\n1. A group named by data is written as its name by one rule,\n   list.css's :is(list, tree) header [data-named] outside a frame, and\n   tree.css no longer repeats it.\n2. A list's, a list of rows', a fold's and a tree's group header spread\n   one groupHeader (List.tsx): the fold no longer gives itself the label\n   by its own class.\n3. Every Table and ControlTable column name spreads one headPart\n   (Table.tsx), so no head site sets ui-text-label by hand.\n\nui/groupAndHeadParts.test.tsx holds each to one, and was seen to fail on\neach before. Nothing is drawn differently. Point 4, the weight of a\ngroup name's count, is the operator's call and is left as it is.\n\nRefs #1920\nRefs #6482\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7ATNXJF1BJX97T5VGP0AJPC\nPurlis-Persona: steward\n\n* feat(app): the words #1920's surfaces left on their own tokens wear the text roles (#6389)\n\nEach word was drawn from tokens and ranked by its own rule; each wears\nits role now, and its family's state tier still outranks the role's\ncolour:\n\n- the title bar: the project's name and its crumb the body's strong\n  line, a chip and a switcher's row the body, their counts the strong\n  meta, the filter's key the meta in code, the empty line the\n  secondary; the family's own font: inherit, which outranked a role, is\n  gone (base.css gives every control the window's font);\n- the editor's toolbar wears the secondary on the toolbar itself, so a\n  theme's editor.toolbar size and colour still reach its words;\n  editorToolbar(className) merges the caller's class with the role;\n- a pane: its breadcrumb the meta, its names, where and who taking it\n  from there, and the focused pane's tint moved onto the names; its\n  chat name the heading, its number the meta, its head's harness and\n  workspace the secondary; the foot the meta on the foot itself; the\n  rail's note count the strong meta; a task question's first line the\n  body and a note's words the secondary;\n- a chat tab's task the meta, never brighter than the chat's name;\n- the Inbox's chat chains the secondary at the strong weight;\n- every .came-back (93 lines, the door pages' sentences among them)\n  the secondary, and an extension's runs-as-you warning the body;\n- the door pages' other lines the secondary, Git missing's heading,\n  a dialog's h3 and Settings' signing and pool limit headings the\n  heading, a dialog's h4 the meta, a host the body in code and when it\n  was added the secondary, and a card button's line the secondary.\n\nA Notice's message, the status pills' and a page tab's muted words, a\ndialog's .where, .value and .pending, and the marks wear none, and\ndesign-system.md says why. leftWords.roles.test.tsx holds each move,\nand was seen to fail on every one against the base. The geometry\nspec's hand-drawn breadcrumb wears the meta as the window's does.\n\nRefs #1920\nCloses #6389\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7ATNXJF1BJX97T5VGP0AJPC\nPurlis-Persona: steward\n\n* fix(app): review of #6482: ListSection keeps its doc, and headPart merges with clsx\n\nThe standards review found groupHeader's doc comment placed after\nListSection's, so ListSection lost its doc; and three ways of merging a\nrole with a caller's class. headPart now uses clsx, as editorToolbar\nand PaneFoot do.\n\nRefs #6482\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7ATNXJF1BJX97T5VGP0AJPC\nPurlis-Persona: steward\n\n* fix(app): review of #6389: two headings keep their look, and every moved word is held at its site\n\nTwo-axis review:\n\n- Start a chat's \"who\" heading and Health's group headings had rules of\n  their own (.start-chat-who h3 at 16px, .doctor h3 at 12px secondary)\n  that the heading role overruled. Each wears the role its look was:\n  the title, and the secondary at the strong weight.\n- leftWords.roles.test.tsx now also fails when a moved word's role is\n  taken off at its site (the pane line, the tab task, the Inbox chain,\n  the door pages, Your hosts, every .came-back, a dialog's h3 and h4),\n  and when the focused pane's tint leaves the breadcrumb's names; each\n  new test was seen to fail against the base.\n- PaneLine's story drew the breadcrumb by hand without its role, so its\n  number-at-the-path's-size check read 14px.\n- design-system.md: the status pills' and page tab's words keep their\n  family's colour (they wear a role), a dialog's .where, .value and\n  .pending say why they wear none, and the Inbox chain is named an open\n  call for the operator. The foot's where is one rule, with why it\n  keeps the foot's colour; editorToolbar and PaneFoot merge with clsx.\n\nRefs #6389\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7ATNXJF1BJX97T5VGP0AJPC\nPurlis-Persona: steward\n\n* fix(app): review of #6389's pictures: Start a chat's who is the body's strong line, and the stories' hand-drawn names wear their roles\n\nThe stories run showed Start a chat's \"who\" heading at 16px: its own\nrule (.start-chat-who h3, 16px) never won over the dialog's h3 rule, so\nit drew at 13px, and the review's fix to the title grew it. It is the\nbody's strong line, as it was drawn. Dialog's, PaneBand's and\nPanePreview's stories drew an h3 and a pane's name by hand without the\nroles the window's now wear, so they lost their size and weight.\n\nRefs #6389\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7ATNXJF1BJX97T5VGP0AJPC\nPurlis-Persona: steward\n\n* test(app): the story baselines of the words left over on the roles, from the pull request's stories run\n\n1,962 pictures (60 MB, one take), taken with tools/story-baselines-pull.mjs\nfrom run 43475250216 and reviewed by sampled pairs, each move traced:\nthe title bar's project name at the strong weight, which shifts its\nchips about 2px (TitleBar, ChipNotices); a pane's breadcrumb, number,\nwhere and foot, and the rail's count (PaneBand, PanePreview, ChatFoot,\nPaneHeadNarrow, PaneLine, PaneRail, TabChip); the Inbox's chat chain\nat 12px (InboxDecision, InboxReplyCard, SameAskRow, AsksScopes,\nAskRules, AsksTriage, AsksOrder, SigningWaitingAsk); Your hosts' host\nat 13px and when it was added (HostsTable); a dialog's h3 as the\nheading (About, SkillChangeDialogs); Dialog's hand-drawn who at the\nstrong weight in place of the browser's bold (four classic WebKit\npictures). SkillControls moves only its column names: #6512's\nbaselines were drawn before #6505's label spelling reached main.\n\nRefs #6389\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7ATNXJF1BJX97T5VGP0AJPC\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-13T18:49:39Z",
+          "tree_id": "9bc7ff035ad3d9a1efe6594c9a88ac9f5d76ef2b",
+          "url": "https://github.com/purlis/purlis/commit/2764b321e3d9c0d62bf6b4c83b130f262e66c5f9"
+        },
+        "date": 1794601105809,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.34253049999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.328, 0.340, 0.343, 0.346, 0.362 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.401574500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.140, 16.375, 16.402, 16.811, 16.982 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.404649,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.903, 101.228, 101.405, 102.159, 102.783 ms"
           }
         ]
       }
