@@ -23,13 +23,16 @@ describe("a refusal's mark", () => {
       "Too young, 1 day to go",
     );
     expect(refusedMark({ kind: "too-young", why: "x", until: null }, NOW)).toBe("Too young");
+    // An extension's revision cannot say when it was made: its age is not known, not young.
+    expect(refusedMark({ kind: "undated", why: "x", until: null }, NOW)).toBe("Age not known");
   });
 
   it("says the core's sentence, and the day a young one can be taken", () => {
     const until = Date.parse("2026-11-19T12:00:00Z") / 1000;
     expect(daySaid(until)).toBe("Thursday 19 November");
+    // One clause of when: the core's count of days, then the day.
     expect(refusedSaid({ kind: "too-young", why: "it can be installed in 6 days", until })).toBe(
-      "it can be installed in 6 days: it can be taken on Thursday 19 November.",
+      "it can be installed in 6 days, on Thursday 19 November.",
     );
     expect(lineOf("this project's [skill_policy] could not be read")).toBe(
       "This project's [skill_policy] could not be read",

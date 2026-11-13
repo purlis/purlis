@@ -63,6 +63,7 @@ import {
   policyOf,
   refusedMark,
   refusedSaid,
+  sentenceOf,
   sourceMark,
   useSkillPolicy,
 } from "./skillPolicy";
@@ -785,11 +786,7 @@ function SourcesList({
                           {aboutSource(source, checkedSaid(checkedOf(read.checked, source), now))}
                           {why !== null && (
                             <span className="skill-policy-why" data-testid="skill-source-refused">
-                              {refusedSaid({
-                                kind: controls?.kind ?? "not-allowed",
-                                why,
-                                until: null,
-                              })}
+                              {sentenceOf(why)}
                             </span>
                           )}
                         </RowBelow>
@@ -1044,10 +1041,14 @@ function SourcePage({
     if (update !== undefined) return update.refused ?? null;
     return skill.installed.length > 0 ? null : (skill.refused ?? null);
   };
-  /** Where a skill's row goes: its update, its page in the Library, or its install; nowhere
-   *  while the controls refuse it, as its button says. */
+  /** Where a skill's row goes: its update, its page in the Library, or its install. While the
+   *  controls refuse its update, an installed skill's row still opens it in the Library; one
+   *  whose install they refuse goes nowhere, as its button says. */
   const onward = (skill: OfferedSkill) => {
-    if (refusedOf(skill) !== null) return;
+    if (refusedOf(skill) !== null) {
+      if (skill.installed.length > 0) onOpenSkill(skill.name);
+      return;
+    }
     if (offered(skill) !== undefined) onGo({ at: "update", ...at(skill.name) });
     else if (skill.installed.length > 0) onOpenSkill(skill.name);
     else onGo({ at: "install", ...at(skill.name) });
@@ -1631,10 +1632,20 @@ function SkillReviewed({
   );
 }
 
+/** A skill only a hint brings that the person left out of an install, and the skill that names
+ *  it bare (#5874). */
+type HintLeftOut = { name: string; by: string };
+
+/** Why a skill that comes along only by a hint may be left out: `by`, which names it, runs
+ *  without it. */
+function runsWithout(by: string): string {
+  return `${by} only names it bare, so it runs without it.`;
+}
+
 /** What a skill that comes along only by a hint says under its box (#5874, `prototype/skill-hints`
  *  A): the skill that names it runs without it. */
 export function hintKeptSaid(by: string): string {
-  return `${by} only names it bare, so it runs without it. Untick it to leave it out.`;
+  return `${runsWithout(by)} Untick it to leave it out.`;
 }
 
 /**
@@ -1643,7 +1654,7 @@ export function hintKeptSaid(by: string): string {
  * again with it.
  */
 export function useHintsLeftOut() {
-  const [without, setWithout] = useState<readonly { name: string; by: string }[]>([]);
+  const [without, setWithout] = useState<readonly HintLeftOut[]>([]);
   return {
     names: without.map((one) => one.name),
     leftOut: without,
@@ -1691,10 +1702,7 @@ function ComesAlongPick({
 
 /** Of the skills only a hint brought that the person left out, those not in `review` after all:
  *  one a reference brings is in it, and is not left out. */
-function hintsShown(
-  leftOut: readonly { name: string; by: string }[],
-  review: readonly ReviewSkill[] | undefined,
-) {
+function hintsShown(leftOut: readonly HintLeftOut[], review: readonly ReviewSkill[] | undefined) {
   return leftOut.filter((one) => !review?.some((skill) => skill.name === one.name));
 }
 
@@ -1704,7 +1712,7 @@ function HintsLeftOut({
   busy,
   onKeep,
 }: {
-  shown: readonly { name: string; by: string }[];
+  shown: readonly HintLeftOut[];
   busy: boolean;
   onKeep: (name: string) => void;
 }) {
@@ -1716,7 +1724,7 @@ function HintsLeftOut({
           isSelected={false}
           isDisabled={busy}
           tooltip={busy ? BUSY : undefined}
-          description={`${one.by} only names it bare, so it runs without it.`}
+          description={runsWithout(one.by)}
           onChange={() => onKeep(one.name)}
           data-testid={`hint-left-out-${one.name}`}
         >

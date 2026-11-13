@@ -11,6 +11,7 @@
 import { useEffect, useState } from "react";
 import {
   commands,
+  type PolicyKind,
   type PolicyRefused,
   type SkillPolicy,
   type SourceOrigin,
@@ -37,21 +38,21 @@ export function daySaid(until: number): string {
   });
 }
 
-/** **A refusal's mark, in a word or two** (`prototype/skill-policy` A): what the row's badge says
- *  beside the core's sentence; a too-young one counts the days left from `now` (seconds). */
+/** **What each of the controls' refusals is marked, in a word or two** (`prototype/skill-policy`
+ *  A): the badge beside the core's sentence, on a source's row and on a skill's or an update's. */
+const MARKS: Record<PolicyKind, string> = {
+  blocked: "Blocked",
+  "not-allowed": "Not on the allow list",
+  "too-young": "Too young",
+  undated: "Age not known",
+  unread: "Controls not read",
+};
+
+/** A refusal's mark: a too-young one counts the days left from `now` (seconds). */
 export function refusedMark(refused: PolicyRefused, now: number): string {
-  switch (refused.kind) {
-    case "blocked":
-      return "Blocked";
-    case "not-allowed":
-      return "Not on the allow list";
-    case "unread":
-      return "Controls not read";
-    case "too-young":
-      return refused.until === null
-        ? "Too young"
-        : `Too young, ${counted(Math.max(1, Math.ceil((refused.until - now) / DAY)), "day", "days")} to go`;
-  }
+  if (refused.kind !== "too-young" || refused.until === null) return MARKS[refused.kind];
+  const days = Math.max(1, Math.ceil((refused.until - now) / DAY));
+  return `${MARKS["too-young"]}, ${counted(days, "day", "days")} to go`;
 }
 
 /** The core's sentence as a line of its own: one about the table itself starts "this project's",
@@ -60,22 +61,26 @@ export function lineOf(why: string): string {
   return why.startsWith("this ") ? `T${why.slice(1)}` : why;
 }
 
+/** The core's sentence `why` as a line of its own, ended. */
+export function sentenceOf(why: string): string {
+  return `${lineOf(why)}.`;
+}
+
 /** What a refused row says under its name: the core's sentence, and the day a too-young one can
- *  be taken. */
+ *  be taken after the days the core counts ("…: it can be installed in 3 days, on Monday 16
+ *  November."). */
 export function refusedSaid(refused: PolicyRefused): string {
   return refused.until === null
-    ? `${lineOf(refused.why)}.`
-    : `${lineOf(refused.why)}: it can be taken on ${daySaid(refused.until)}.`;
+    ? sentenceOf(refused.why)
+    : `${lineOf(refused.why)}, on ${daySaid(refused.until)}.`;
 }
 
 /** **A source's mark** (#6031): Blocked, Only <skills> allowed, Not on the allow list; none
  *  where the controls allow every skill of it. */
 export function sourceMark(policy: SourcePolicy): string | undefined {
   if (policy.refused === null) return undefined;
-  if (policy.kind === "blocked") return "Blocked";
-  if (policy.kind === "unread") return "Controls not read";
   if (policy.only.length > 0) return `Only ${policy.only.join(", ")} allowed`;
-  return "Not on the allow list";
+  return MARKS[policy.kind ?? "not-allowed"];
 }
 
 /** Two origins are one source: the same repository and branch, or the same extension. */
@@ -93,28 +98,60 @@ export function policyOf(
   return policy?.sources.find((one) => sameOrigin(one.origin, origin));
 }
 
-/** **The project's controls**, and what they do to each of `origins`, read again as `changed`
- *  moves; `undefined` until they answer, or where they could not be asked. */
-export function useSkillPolicy(
+/** Each ask of the controls still on its way, by plane, change and origins: the rows drawn at once
+ *  (Settings draws one per key) share one ask. Let go as it answers, so a later draw asks again. */
+const asking = new Map<string, Promise<SkillPolicy | string>>();
+
+/** The controls, or why they could not be read, in the core's words. */
+function askPolicy(
   plane: string,
   origins: readonly SourceOrigin[],
   changed: number,
-): SkillPolicy | undefined {
-  const [policy, setPolicy] = useState<SkillPolicy>();
+): Promise<SkillPolicy | string> {
+  const key = `${plane}\u0000${changed}\u0000${JSON.stringify(origins)}`;
+  const waiting = asking.get(key);
+  if (waiting !== undefined) return waiting;
+  const ask = commands
+    .skillPolicy(plane, [...origins])
+    .then(
+      (answer) => (answer.status === "ok" ? answer.data : answer.error),
+      (why: unknown) => `purlis could not read this project's skill controls: ${String(why)}`,
+    )
+    .finally(() => asking.delete(key));
+  asking.set(key, ask);
+  return ask;
+}
+
+/** **The project's controls**, and what they do to each of `origins`, read again as `changed`
+ *  moves: `undefined` until they answer, and why where they could not be read. */
+export function useSkillPolicyRead(
+  plane: string,
+  origins: readonly SourceOrigin[],
+  changed: number,
+): SkillPolicy | string | undefined {
+  const [policy, setPolicy] = useState<SkillPolicy | string>();
   const asked = JSON.stringify(origins);
   useEffect(() => {
     let live = true;
-    void commands
-      .skillPolicy(plane, JSON.parse(asked) as SourceOrigin[])
-      .then((answer) => {
-        if (live && answer.status === "ok") setPolicy(answer.data);
-      })
-      .catch(() => {});
+    void askPolicy(plane, JSON.parse(asked) as SourceOrigin[], changed).then((answer) => {
+      if (live) setPolicy(answer);
+    });
     return () => {
       live = false;
     };
   }, [plane, asked, changed]);
   return policy;
+}
+
+/** [`useSkillPolicyRead`], where nothing is said of controls that could not be read: Sources draws
+ *  its rows as it would without them, and each review still says why. */
+export function useSkillPolicy(
+  plane: string,
+  origins: readonly SourceOrigin[],
+  changed: number,
+): SkillPolicy | undefined {
+  const read = useSkillPolicyRead(plane, origins, changed);
+  return typeof read === "object" ? read : undefined;
 }
 
 /** **The one Notice above Sources** (#6031): this project's controls apply, in the core's line,

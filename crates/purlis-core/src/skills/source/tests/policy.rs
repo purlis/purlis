@@ -666,6 +666,36 @@ fn browsing_a_source_marks_each_skill_the_controls_refuse() {
     );
 }
 
+/// #6031: what cannot say when it was made, while a minimum age is in force, is refused as of no
+/// known age, never as too young, and says no day it can be taken.
+#[test]
+fn what_cannot_say_when_it_was_made_is_refused_as_of_no_known_age() {
+    let (remote, _) = remote_made_days_ago(30);
+    let tmp = org_plane(&allowing(&remote.url(), ""));
+    let policy = crate::skills::source::policy::of(tmp.path())
+        .unwrap()
+        .unwrap();
+    let origin = Origin::Git(remote.source().remote);
+    let pin = Pin::Commit(Commit::parse(&"a".repeat(40)).unwrap());
+    let now = std::time::SystemTime::now();
+    let undated = policy
+        .refuses(&origin, "notify", &pin, None, now)
+        .expect("refused");
+    assert_eq!(undated.kind, crate::skills::source::policy::Kind::Undated);
+    assert_eq!(undated.until, None);
+    assert!(
+        undated.why.contains("cannot say when it was made"),
+        "{}",
+        undated.why
+    );
+    let made = now.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() - 24 * 60 * 60;
+    let young = policy
+        .refuses(&origin, "notify", &pin, Some(made), now)
+        .expect("refused");
+    assert_eq!(young.kind, crate::skills::source::policy::Kind::TooYoung);
+    assert_eq!(young.until, Some(made + 7 * 24 * 60 * 60));
+}
+
 /// #6031: Settings shows the table as the team set it, and Sources one line of what it does.
 #[test]
 fn the_controls_are_shown_as_set_and_said_in_one_line() {
@@ -699,6 +729,21 @@ fn the_controls_are_shown_as_set_and_said_in_one_line() {
             .unwrap()
             .unwrap();
     assert_eq!(open.shown().allow, None);
+    // A source the list names two skills of is one source allowed.
+    let two_of_one = crate::skills::source::policy::of(
+        org_plane(
+            "[skill_policy]\nallow = [\n  { source = \"https://github.com/anthropics/skills\", skill = \"pdf\" },\n  \
+             { source = \"https://github.com/anthropics/skills\", skill = \"docx\" },\n]\n",
+        )
+        .path(),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(
+        two_of_one.said().contains(": 1 source allowed,"),
+        "{}",
+        two_of_one.said()
+    );
     assert_eq!(
         open.said(),
         "This project's controls apply: every source not blocked is allowed, nothing blocked, no minimum age."

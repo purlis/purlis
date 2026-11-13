@@ -2033,7 +2033,7 @@ describe("an org's skill controls (#6031)", () => {
     const notify = await within(page).findByTestId("offered-notify");
     expect(notify).toHaveTextContent("Too young, 4 days to go");
     expect(within(notify).getByTestId("refused-notify")).toHaveTextContent(
-      "it can be installed in 4 days: it can be taken on Monday 16 November.",
+      "it can be installed in 4 days, on Monday 16 November.",
     );
     expect(within(notify).getByRole("button", { name: "Review update: notify" })).toHaveAttribute(
       "aria-disabled",

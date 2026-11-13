@@ -1104,13 +1104,13 @@ pub fn browse(plane: &Path, source: &Source) -> Result<Browse, String> {
                 Offered {
                     installed: installed_at(&locked, &origin, &skill.name),
                     marks,
-                    refused: super::policy::refused_before(
-                        &policy,
-                        &origin,
-                        &skill.name,
-                        &pin,
-                        made,
-                    ),
+                    // A commit whose time could not be read here is held to the lists alone,
+                    // as the Updates list holds it: its review reads the time, and says.
+                    refused: if made.is_none() && super::policy::asks_age(&policy) {
+                        super::policy::listed_before(&policy, &origin, &skill.name)
+                    } else {
+                        super::policy::refused_before(&policy, &origin, &skill.name, &pin, made)
+                    },
                     skill,
                 }
             })

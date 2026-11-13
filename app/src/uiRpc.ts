@@ -10348,7 +10348,7 @@ export type PluginOffShown = {
 };
 
 /**  **Which of the controls refuses**, what a row's mark says (#6031). */
-export type PolicyKind = "blocked" | "not-allowed" | "too-young" | "unread";
+export type PolicyKind = "blocked" | "not-allowed" | "too-young" | "undated" | "unread";
 
 /**
  *  **What the controls would refuse, said before a review** (#6031): the core's sentence, and

@@ -26,6 +26,7 @@ pub enum PolicyKind {
     Blocked,
     NotAllowed,
     TooYoung,
+    Undated,
     Unread,
 }
 
@@ -35,6 +36,7 @@ impl From<policy::Kind> for PolicyKind {
             policy::Kind::Blocked => PolicyKind::Blocked,
             policy::Kind::NotAllowed => PolicyKind::NotAllowed,
             policy::Kind::TooYoung => PolicyKind::TooYoung,
+            policy::Kind::Undated => PolicyKind::Undated,
             policy::Kind::Unread => PolicyKind::Unread,
         }
     }

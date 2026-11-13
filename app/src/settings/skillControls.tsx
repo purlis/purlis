@@ -14,30 +14,21 @@ import {
   type SkillAct,
   type SkillActs,
   type SkillPolicy,
+  type SourceOrigin,
 } from "../bindings";
 import { SETTINGS, usePlaneChanged } from "../planeChanged";
-import { lineOf } from "../skillPolicy";
+import { lineOf, useSkillPolicyRead } from "../skillPolicy";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "../ui/table/Table";
 import type { RowIds } from "./components";
 import type { LiveSetting } from "./groups";
 
-/** The project's controls as Settings reads them, again as its settings change. */
+/** No source asked about: Settings shows the table, not what it does to each source. */
+const NO_SOURCES: readonly SourceOrigin[] = [];
+
+/** The project's controls as Settings reads them, again as its settings change: one ask for every
+ *  row drawn at once. */
 function usePolicy(plane: PlaneId): SkillPolicy | string | undefined {
-  const [policy, setPolicy] = useState<SkillPolicy | string>();
-  const changed = usePlaneChanged([plane], SETTINGS);
-  useEffect(() => {
-    let live = true;
-    void commands
-      .skillPolicy(plane, [])
-      .then((answer) => {
-        if (live) setPolicy(answer.status === "ok" ? answer.data : answer.error);
-      })
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [plane, changed]);
-  return policy;
+  return useSkillPolicyRead(plane, NO_SOURCES, usePlaneChanged([plane], SETTINGS));
 }
 
 /** What the controls row says while the table is not set: none, or why it cannot be read. */
@@ -242,16 +233,20 @@ export function skillActsRow(plane: PlaneId): LiveSetting {
       const changed = usePlaneChanged([plane], SETTINGS);
       useEffect(() => {
         let live = true;
-        void commands
-          .skillActs(plane)
-          .then((answer) => {
+        void commands.skillActs(plane).then(
+          (answer) => {
             if (live) setActs(answer.status === "ok" ? answer.data : answer.error);
-          })
-          .catch(() => {});
+          },
+          (why: unknown) => {
+            if (live) setActs(`purlis could not read the recorded skill acts: ${String(why)}`);
+          },
+        );
         return () => {
           live = false;
         };
-      }, [changed]);
+        // The row is drawn under the same key for every project: read again on another.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [plane, changed]);
       return {
         grouped: true,
         control: (ids: RowIds) =>

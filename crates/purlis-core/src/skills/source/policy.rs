@@ -231,8 +231,11 @@ pub enum Kind {
     Blocked,
     /// Not on the allow list, or only some of its source is.
     NotAllowed,
-    /// Younger than the minimum age, or unable to say when it was made.
+    /// Younger than the minimum age.
     TooYoung,
+    /// Unable to say when it was made while a minimum age is in force, and not exempt: an
+    /// extension's revision.
+    Undated,
     /// The table cannot be read, so everything is refused until it is fixed.
     Unread,
 }
@@ -381,7 +384,11 @@ impl Policy {
         }
         let why = self.old_enough(pin, made, now).err()?;
         Some(Refused {
-            kind: Kind::TooYoung,
+            kind: if made.is_some() {
+                Kind::TooYoung
+            } else {
+                Kind::Undated
+            },
             why,
             until: self.old_enough_at(pin, made, now),
         })
@@ -445,10 +452,19 @@ impl Policy {
     pub fn said(&self) -> String {
         let allowed = match &self.allow {
             None => "every source not blocked is allowed".to_owned(),
-            Some(allow) => format!(
-                "{} allowed",
-                crate::counts::counted(allow.len(), "source", "sources")
-            ),
+            Some(allow) => {
+                // Each source once, however many of its skills the list names.
+                let mut sources: Vec<&Named> = Vec::new();
+                for rule in allow {
+                    if !sources.contains(&&rule.source) {
+                        sources.push(&rule.source);
+                    }
+                }
+                format!(
+                    "{} allowed",
+                    crate::counts::counted(sources.len(), "source", "sources")
+                )
+            }
         };
         let blocked = match self.block.len() {
             0 => "nothing blocked".to_owned(),

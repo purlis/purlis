@@ -647,7 +647,7 @@ export const SourcePageWithControls: Story = {
       ),
     );
     await expect(canvas.getByTestId("refused-brainstorming")).toHaveTextContent(
-      /it can be taken on \w+day \d+ \w+\./,
+      /it can be installed in 3 days, on \w+day \d+ \w+\./,
     );
   },
 };
