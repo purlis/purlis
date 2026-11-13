@@ -163,11 +163,6 @@
   content: attr(data-drawn) / "";
 }
 
-/* 9+ is two glyphs in the same circle: drawn a touch tighter, never wider. */
-[data-scope="count"][data-part="round"][data-drawn="9+"] {
-  letter-spacing: -0.06em;
-}
-
 /* **A changed drawn value slides in once**, from below as it rises and from above as it falls.
    Two keyframes of the same motion alternate (`data-slide`), so each change starts it again
    without the element being drawn again. Reduced motion stops it (`theme/reduced-motion.css`). */
