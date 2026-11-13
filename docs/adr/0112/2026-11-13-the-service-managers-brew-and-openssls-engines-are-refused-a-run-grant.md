@@ -194,7 +194,8 @@ The review's second round found more, each checked in source:
   loads the engine by its id (`ENGINE_by_id`, `apps/lib/engine_loader.c`). An id no engine has
   goes to the dynamic engine with `DIR_LOAD` (`crypto/engine/eng_list.c:418-423`), which takes
   a path, so no refused flag is needed (openssl 3.0.15). The row refuses that text anywhere in any
-  word, whatever its case.
+  word, whatever its case, and, as the review's third round found, after a `--` too, where
+  `storeutl` takes its URI (`apps/storeutl.c:258-263`) and `verify` its certificates.
 - **rpm**: `-E <expr>` expands a macro (`lib/poptALL.c:128-131`,
   github.com/rpm-software-management/rpm, 4.20.0), and `%(…)` has a shell run what it holds
   (`rpmio/macro.c`). Every rpm tool that shares those options is refused: `rpm`, `rpmbuild`,

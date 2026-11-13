@@ -929,6 +929,9 @@ fn openssl_refuses_an_engine_uri_wherever_it_is_written() {
                 &["pkey", "-in", "org.openssl.engine:/x/evil.so:k"],
                 &["x509", "-key=ORG.OPENSSL.ENGINE:/x/e.so:k"],
                 &["storeutl", "org.openssl.engine:pkcs11:k"],
+                // after `--` too, where `storeutl` takes its URI (round 3 of the review)
+                &["storeutl", "--", "org.openssl.engine:/x/evil.so:k"],
+                &["verify", "--", "ORG.openssl.engine:/x/e.so:k"],
             ],
         );
         offered(program, &["pkey -in org.openssl.example.pem"]);

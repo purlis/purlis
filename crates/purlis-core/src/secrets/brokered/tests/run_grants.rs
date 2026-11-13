@@ -3313,6 +3313,12 @@ fn openssl_handed_an_engine_uri_is_offered_no_run_grant_and_the_chat_hears_to_le
         &["pkey", "-in", "org.openssl.engine:/x/evil.so:k"],
         "org.openssl.engine:",
     );
+    // after `--`, where `storeutl` takes its URI (round 3 of the review of #6556)
+    refused_for_its_flag(
+        "openssl",
+        &["storeutl", "--", "org.openssl.engine:/x/evil.so:k"],
+        "org.openssl.engine:",
+    );
 }
 
 /// The client built with the server inside it: what `--server-arg` hands the embedded server

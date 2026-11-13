@@ -673,11 +673,15 @@ fn refused_form(program: &Flags, args: &[String]) -> Option<String> {
         (jumped && pasted.into_iter().any(shell_would_read))
             .then(|| "a destination a shell would read".to_owned())
     };
+    // Every word, those after a `--` too, where `storeutl` takes its URI (round 3 of the review
+    // of #6556).
+    if let Some(one) = program.anywhere.iter().find(|one| {
+        args.iter()
+            .any(|word| word.to_ascii_lowercase().contains(**one))
+    }) {
+        return Some((*one).to_owned());
+    }
     while let Some(word) = words.next() {
-        let lower = word.to_ascii_lowercase();
-        if let Some(one) = program.anywhere.iter().find(|one| lower.contains(**one)) {
-            return Some((*one).to_owned());
-        }
         if program.whole_words && word != "--" {
             if let Some(named) = word
                 .strip_prefix("--")
