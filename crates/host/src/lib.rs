@@ -257,8 +257,11 @@ fn run(
             return 1;
         }
     };
-    // Said in this host's log whenever its one thread was held (#6437).
-    runtime.spawn(lateness::watch_the_thread());
+    // Said in this host's log whenever its one thread was held, and, where asked, sampled while
+    // it is (#6437).
+    let beat = lateness::Beat::new();
+    runtime.spawn(lateness::watch_the_thread(beat.clone()));
+    lateness::sample_when_held(beat);
     let ready = || {
         use std::io::Write;
         let mut out = std::io::stdout().lock();
