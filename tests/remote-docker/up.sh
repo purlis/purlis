@@ -9,15 +9,20 @@
 # it by digest. Run from the repository's root once the image is built and pushed to this
 # machine's own registry: `up.sh <image> <variable>` copies <image> (a tag in this machine's
 # Docker) into dind and names its digest there in `$GITHUB_ENV` as <variable>, beside what the
-# tests read. Nothing is published but the sshd's port, on loopback.
+# tests read. Docker's TLS API is served beside it (#6267): dind's own port 2376, with the CA it
+# generates, its client files copied to this machine and a second CA made beside them for the
+# mismatch. Nothing is published but the sshd's port and that TLS port, on loopback.
 set -euo pipefail
 source_image=${1:?the image to copy into the other machine}
 image_variable=${2:?the variable to name its digest there in}
 here=$(cd "$(dirname "$0")" && pwd)
 docker volume create dind-run >/dev/null
-# No TLS port: the engine is reached only through its socket, as a machine's own Docker is.
-docker run --detach --privileged --name dind --env DOCKER_TLS_CERTDIR= \
-  --volume dind-run:/var/run docker:28-dind@sha256:2a232a42256f70d78e3cc5d2b5d6b3276710a0de0596c145f627ecfae90282ac --host unix:///var/run/docker.sock
+# Its socket for the SSH route, and Docker's TLS API on 2376 for the TLS route: with no --host
+# named, dind's entrypoint serves both, the second verified against the CA it generates in
+# /certs, which no route but TLS reaches.
+docker run --detach --privileged --name dind --env DOCKER_TLS_CERTDIR=/certs \
+  --publish 127.0.0.1:2376:2376 \
+  --volume dind-run:/var/run docker:28-dind@sha256:2a232a42256f70d78e3cc5d2b5d6b3276710a0de0596c145f627ecfae90282ac
 docker build --file "$here/sshd.Dockerfile" --tag remote-docker-sshd "$here"
 mkdir -p "$RUNNER_TEMP/remote-ssh/authorized"
 ssh-keygen -q -t ed25519 -N '' -C remote-parity -f "$RUNNER_TEMP/remote-ssh/id"
@@ -33,6 +38,20 @@ for _ in $(seq 60); do
   sleep 1
 done
 docker exec dind docker info --format '{{.ID}} {{.ServerVersion}}'
+# The TLS route's files: dind's client CA, certificate and key, and a second CA that signed
+# nothing of dind's.
+tls_dir="$RUNNER_TEMP/remote-tls"
+rm -rf "$tls_dir"
+docker cp dind:/certs/client "$tls_dir"
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -sha256 -days 2 \
+  -subj /CN=another-ca -keyout "$tls_dir/other-ca-key.pem" -out "$tls_dir/other-ca.pem" 2>/dev/null
+for _ in $(seq 30); do
+  if docker --host tcp://localhost:2376 --tlsverify --tlscacert "$tls_dir/ca.pem" \
+    --tlscert "$tls_dir/cert.pem" --tlskey "$tls_dir/key.pem" info --format '{{.ID}}' 2>/dev/null; then
+    break
+  fi
+  sleep 1
+done
 # Latency and loss on the other machine's side of every connection to it (QA-15, #598).
 docker exec sshd tc qdisc add dev eth0 root netem delay 40ms 10ms loss 1%
 # The parity image, by digest, in a registry inside dind.
@@ -53,4 +72,6 @@ ssh-add "$RUNNER_TEMP/remote-ssh/id"
   echo "REMOTE_DOCKER_TEST_SSHD=sshd"
   echo "REMOTE_DOCKER_TEST_DIND=dind"
   echo "REMOTE_DOCKER_TEST_MAY_WRITE_KNOWN_HOSTS=1"
+  echo "REMOTE_DOCKER_TEST_TLS_ROUTE=tcp://localhost:2376"
+  echo "REMOTE_DOCKER_TEST_TLS_DIR=$tls_dir"
 } >> "$GITHUB_ENV"

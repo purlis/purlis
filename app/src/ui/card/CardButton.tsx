@@ -131,7 +131,7 @@ export function CardButton({
         )}
       </AriaButton>
       {line !== undefined && (
-        <span data-scope="card-button" data-part="line" id={lineId}>
+        <span className="ui-text-secondary" data-scope="card-button" data-part="line" id={lineId}>
           {line}
         </span>
       )}

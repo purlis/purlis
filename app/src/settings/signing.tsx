@@ -367,7 +367,9 @@ function OtherKeys({ children }: { children: ReactNode }) {
   const heading = useId();
   return (
     <section className="signing-others" aria-labelledby={heading}>
-      <h3 id={heading}>Signing keys of your other devices</h3>
+      <h3 id={heading} className="ui-text-heading">
+        Signing keys of your other devices
+      </h3>
       <p className="ui-setting-help ui-text-secondary">
         Each signs that device&apos;s chat commits. Removing one here stops that device&apos;s
         commits showing as Verified until it sets up signing again.

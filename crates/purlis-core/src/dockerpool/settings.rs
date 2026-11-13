@@ -315,6 +315,10 @@ pub struct Source<'a> {
     /// [`crate::sshroute`]), where the run is for one: it is the run's engine, and nothing of
     /// the window's is.
     pub forwarded: Option<&'a Path>,
+    /// **The engine of a pool reached over Docker's TLS API** (#6267, [`crate::tlsroute`]), where
+    /// the run is for one: its route is the run's engine, and its files, checked against the
+    /// pinned CA, are written into the run's folder for that run alone.
+    pub tls: Option<&'a crate::tlsroute::Through>,
 }
 
 /// **A run's own folder under `settings_in`** (#2752): made fresh, `0700`, in a `0700`
@@ -404,6 +408,15 @@ pub fn prepare(from: &Source<'_>) -> Result<Prepared, Refused> {
     let read = source.as_deref().map(read_settings).unwrap_or_default();
     let folders = docker_folders();
     let settings = checked(&read, &|name| held_in(&folders, name));
+    // A TLS pool's files are checked before anything is made: a CA that isn't the pinned one
+    // refuses the run, and nothing is written (ADR 0123 §3).
+    let material = from
+        .tls
+        .map(|tls| {
+            tls.material()
+                .map_err(|finding| refused(crate::poolsetup::connect_said(&finding)))
+        })
+        .transpose()?;
 
     let RunFolder { folder, lock } = run_folder(from.settings_in)?;
     let held = purlis_same_user::PrivateDirectory::open(folder.path()).map_err(|why| {
@@ -424,6 +437,26 @@ pub fn prepare(from: &Source<'_>) -> Result<Prepared, Refused> {
         ("PATH", from.path.clone()),
         ("DOCKER_CONFIG", folder.path().as_os_str().to_owned()),
     ];
+    // The key is on disk for this run alone: its folder is removed when the run ends, however it
+    // ends, and one a run left behind outright is swept at the next run's start ([`sweep`]).
+    if let (Some(tls), Some(material)) = (from.tls, &material) {
+        for (name, contents) in [
+            (crate::tlsroute::CA_PEM, material.ca.as_slice()),
+            (crate::tlsroute::CERT_PEM, material.cert.as_slice()),
+            (crate::tlsroute::KEY_PEM, material.key.as_slice()),
+        ] {
+            held.replace_file(name, contents).map_err(|why| {
+                refused(format!(
+                    "purlis could not write docker's TLS files in {}: {why}",
+                    folder.path().display()
+                ))
+            })?;
+        }
+        env.push(("DOCKER_HOST", tls.route.spelled().into()));
+        env.push(("DOCKER_TLS_VERIFY", "1".into()));
+        env.push(("DOCKER_CERT_PATH", folder.path().as_os_str().to_owned()));
+        return Ok(Prepared { folder, lock, env });
+    }
     let places = Places {
         home: from.home,
         tmp: from.tmp,
@@ -539,7 +572,11 @@ pub fn sweep(settings_in: &Path, now: std::time::SystemTime) -> usize {
             .ok()
             .and_then(|changed| now.duration_since(changed).ok())
             .is_some_and(|age| age >= STALE_AFTER);
-        if !a_run || !meta.is_dir() || !stale || still_going(&entry.path()) {
+        // A run's TLS key is never left for a day: a folder holding one whose run is gone goes
+        // now (#6267).
+        let holds_a_key =
+            || std::fs::symlink_metadata(entry.path().join(crate::tlsroute::KEY_PEM)).is_ok();
+        if !a_run || !meta.is_dir() || !(stale || holds_a_key()) || still_going(&entry.path()) {
             continue;
         }
         if std::fs::remove_dir_all(entry.path()).is_ok() {
