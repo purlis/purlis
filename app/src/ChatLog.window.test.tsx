@@ -301,8 +301,8 @@ describe("the rows of a chat's Chat log (T1-28)", () => {
       "Asked you about something the sandbox blocked · Allowed, by you from purlis inbox",
       "Asked you whether to keep going after a loop · Let it go on, by you in the window",
       "Asked you about a step that needs your consent · Not answered",
-      // Q262: a budget's Allow is Raise the budget.
-      "Asked you whether to go past a budget · Raised its budget, by you in the window",
+      // Q262 amended: Raise and Continue are both `allowed`, and this line is true of both.
+      "Asked you whether to go past a budget · Let it go on past its budget, by you in the window",
     ]);
     expect(linesOf(log, "ask_raised")).toEqual([]);
     expect(linesOf(log, "ask_answered")).toEqual([]);
