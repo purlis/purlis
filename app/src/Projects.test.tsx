@@ -283,6 +283,14 @@ function last(listeners: Map<string, number[]>, event: string): number {
   return handlers[handlers.length - 1];
 }
 
+/** `plane`'s tab on the project rail, by the directory it carries: the rail's tablist owns its
+ *  tabs by `aria-owns`. */
+const railTab = (plane: string) => {
+  const tab = document.querySelector<HTMLElement>(`[role="tab"][data-directory="${plane}"]`);
+  if (tab === null) throw new Error(`no project tab for ${plane}`);
+  return tab;
+};
+
 /** The projects on the strip, and which one is in front. */
 const projectTabs = () =>
   within(stripNamed("Projects"))
@@ -439,7 +447,7 @@ describe("a window holding more than one project", () => {
     expect(screen.getByRole("button", { name: "1 chat needs you" })).toBeInTheDocument();
   });
 
-  it("goes from the title bar to a chat in a project behind the one in front (charter-app#249, #1695)", async () => {
+  it("goes from the Asks in front to a chat in a project behind it, whose tab counts its ask (charter-app#249, #1695, #6341)", async () => {
     const { move } = core({
       launch: ONE,
       asks: { [ONE]: [1] },
@@ -470,14 +478,13 @@ describe("a window holding more than one project", () => {
       refusals: [],
       children: [],
     });
-    const hand = await screen.findByRole("button", { name: "1 thing waits on you" });
-    expect(
-      within(screen.getByTestId("title-bar")).getByRole("button", { name: "1 thing waits on you" }),
-    ).toBe(hand);
+    // ONE's own tab counts it; the hand counts the project in front alone, where nothing waits,
+    // so the title bar draws none (#6341, ADR 0121 amended 2026-11-12, decision 1).
+    await waitFor(() => expect(railTab(ONE)).toHaveAccessibleDescription(/\b1 waiting\b/));
+    expect(screen.queryByRole("button", { name: /waits? on you/ })).toBeNull();
 
-    // The hand opens the Asks in front, which lists every project's (#1921): TWO stays in front,
-    // and ONE's ask is a row there, under ONE's chat.
-    await userEvent.click(hand);
+    // The Asks in front lists every project's (#1921): TWO stays in front, and ONE's ask is a
+    // row there, under ONE's chat. The side opens on Asks (#5644).
     const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
     const theirs = await waitFor(() => {
       const group = inbox.querySelector<HTMLElement>(`[data-elsewhere="${ONE}#1"]`);
@@ -520,7 +527,8 @@ describe("a window holding more than one project", () => {
       refusals: [],
       children: [],
     });
-    await screen.findByRole("button", { name: "1 thing waits on you" });
+    // Counted on ONE's own tab, never on the hand in front (#6341).
+    await waitFor(() => expect(railTab(ONE)).toHaveAccessibleDescription(/\b1 waiting\b/));
 
     // TWO's own Asks, with nothing of its own waiting: ONE's ask is a row of its own, answered
     // in place in ONE (#1921), with Go to chat. The side opens on Asks (#5644).
