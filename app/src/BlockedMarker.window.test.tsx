@@ -75,6 +75,9 @@ const CHATS: OpenChat[] = [
 /** One block the stand-in core holds: its id, and whether its report is unverified. */
 type Held = { id: string; unverified?: boolean };
 
+/** Chat `session`'s logged id, which the core keys its look by (Q258). */
+const logged = (session: number) => `01K6CHAT00000000000000000${session}`;
+
 /**
  * The stand-in core. `blocks` are each chat's blocks, oldest first, and may be added to; the
  * count it answers is the verified ones after the look the window asks from, as the core's
@@ -130,7 +133,7 @@ function core(blocks: Record<number, Held[]>) {
               session,
               blocks: later.filter((one) => one.unverified !== true).length,
               unverified: later.filter((one) => one.unverified === true).length,
-              latest: all.at(-1)?.id ?? null,
+              key: all.length === 0 ? null : `blocks:${logged(session)}:${all.at(-1)?.id}`,
             };
           },
         );
@@ -203,7 +206,7 @@ describe("the blocked marker", () => {
 
     // A look: its Chat log opened from the marker. The look is the latest block it counted.
     await userEvent.click(marker);
-    await waitFor(() => expect(seen.has("blocks:7:01B")).toBe(true));
+    await waitFor(() => expect(seen.has(`blocks:${logged(7)}:01B`)).toBe(true));
     await waitFor(() => expect(within(row).queryByRole("button", { name: /blocked/ })).toBeNull());
 
     // Only a later block counts, asked from the last look.
@@ -229,18 +232,18 @@ describe("the blocked marker", () => {
     // On screen in the focused window: chat 3, in front, is looked at as the window has focus.
     focused.mockReturnValue(true);
     await refocused();
-    await waitFor(() => expect(seen.has("blocks:3:01P")).toBe(true));
+    await waitFor(() => expect(seen.has(`blocks:${logged(3)}:01P`)).toBe(true));
     await waitFor(() =>
       expect(within(three).queryByRole("button", { name: /blocked/ })).toBeNull(),
     );
     // Chat 7, behind it, is not.
-    expect(seen.has("blocks:7:01A")).toBe(false);
+    expect(seen.has(`blocks:${logged(7)}:01A`)).toBe(false);
     expect(within(talk).getByRole("button", { name: "1 new blocked" })).toBeInTheDocument();
 
     // Its Chat log opened, from its list, is a look too.
     await chatList("talk");
     await pressMenuPath("Open", "Chat log");
-    await waitFor(() => expect(seen.has("blocks:7:01A")).toBe(true));
+    await waitFor(() => expect(seen.has(`blocks:${logged(7)}:01A`)).toBe(true));
   });
 
   it("a block sends no notification and no announcement", async () => {
