@@ -53,7 +53,7 @@ mod scene;
 use scene::{MERGE, SAVE, SHA, Scene};
 
 /// Every case, by the seam method it covers. The parity test compares this with the traits.
-const CASES: [&str; 34] = [
+const CASES: [&str; 35] = [
     "owned",
     "about",
     "reachable",
@@ -63,6 +63,7 @@ const CASES: [&str; 34] = [
     "state",
     "body",
     "head",
+    "ruleset_protects",
     "set_body",
     "by_head",
     "request_auto_merge",
@@ -93,7 +94,7 @@ const CASES: [&str; 34] = [
 /// The cases the live run does not run, each with why and the ticket that will run it. Each one
 /// would merge or queue the fixture's one open request, which the read cases need open; running
 /// them needs a request opened afresh for each run.
-const NOT_LIVE: [(&str, &str); 15] = [
+const NOT_LIVE: [(&str, &str); 16] = [
     (
         "open_draft",
         "each run would leave one more draft on the fixture; it needs a request opened per run (#712)",
@@ -158,6 +159,11 @@ const NOT_LIVE: [(&str, &str); 15] = [
     (
         "open_draft_from_fork",
         "each run would leave one more draft on the fixture, from a fork it does not have (#712)",
+    ),
+    (
+        "ruleset_protects",
+        "it needs a ruleset (GitHub) or a protected branch (GitLab) on the fixture's default \
+         branch, which the operator provisions (#712)",
     ),
 ];
 
@@ -483,9 +489,24 @@ mod cases {
             Ok(purlis_core::forge::pr::HeadAt {
                 sha: "0123456789abcdef0123456789abcdef01234567".to_string(),
                 base: "main".to_string(),
+                title: "Add the parser".to_string(),
+                author: "octo".to_string(),
                 // Both recordings are of a repo that merges only by squashing.
                 squash: true,
             })
+        );
+        spent(&over);
+    }
+
+    pub fn ruleset_protects(kind: &str, how: How) {
+        let Some(over) = over(kind, "ruleset_protects", how) else {
+            return;
+        };
+        let scene = &over.scene;
+        assert_eq!(
+            over.backend
+                .ruleset_protects(&over.caller, &scene.path("api"), "main"),
+            Ok(true)
         );
         spent(&over);
     }
@@ -1309,6 +1330,12 @@ macro_rules! contract {
             fn head_reads_the_commit_the_base_and_the_method_the_request_merges_by() {
                 purlis_core::unsteered!();
                 super::cases::head(stringify!($forge), super::How::$how);
+            }
+            #[test]
+            $(#[$attr])?
+            fn ruleset_protects_says_a_ruleset_protects_the_branch() {
+                purlis_core::unsteered!();
+                super::cases::ruleset_protects(stringify!($forge), super::How::$how);
             }
             #[test]
             $(#[$attr])?
@@ -2509,10 +2536,12 @@ mod network_log {
             // and six on a first proof, and reads three or two of one it refuses, GitLab in two uploads, and a comment is one call on each.
             // A fork (#4342): who the account is, the source and the fork's place, the fork, the
             // draft and the request from it; GitLab reads the fork once more while it copies.
-            // Adding to an issue (#5694) opens one and comments on it: two calls on each.
+            // Adding to an issue (#5694) opens one and comments on it: two calls on each. Where
+            // a merge ask's request stands is one call on each (R-115), and whether a ruleset
+            // protects its base one more (R-146).
             let expected = match kind {
-                "github" => 88,
-                _ => 105,
+                "github" => 90,
+                _ => 107,
             };
             assert_eq!(paths.len(), expected, "{kind}: the recorded REST calls");
             for path in paths {

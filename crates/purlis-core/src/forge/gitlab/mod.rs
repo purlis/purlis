@@ -680,14 +680,40 @@ impl Requests for GitLab {
             .as_str()
             .filter(|base| !base.is_empty())
             .ok_or_else(|| ForgeError::new(format!("{doing}: GitLab named no target branch")))?;
+        let title = record["title"]
+            .as_str()
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitLab named no title")))?;
+        let author = record["author"]["username"]
+            .as_str()
+            .filter(|login| !login.is_empty())
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitLab named no author")))?;
         Ok(HeadAt {
             sha: sha.to_owned(),
             base: base.to_owned(),
+            title: title.to_owned(),
+            author: author.to_owned(),
             squash: record["squash_on_merge"]
                 .as_bool()
                 .or_else(|| record["squash"].as_bool())
                 .unwrap_or(false),
         })
+    }
+
+    /// The project's protected branch of that name: GitLab answers 404 where there is none.
+    fn ruleset_protects(
+        &self,
+        caller: &Caller,
+        path: &str,
+        branch: &str,
+    ) -> Result<bool, ForgeError> {
+        let api = format!(
+            "projects/{}/protected_branches/{}",
+            quote(path),
+            quote(branch)
+        );
+        let doing = format!("reading whether {branch} is protected in {path}");
+        let none = |reply: &Reply| reply.status == Some(404) || reply.both().contains("404");
+        Ok(self.0.found(caller, &api, &doing, none)?.is_some())
     }
 
     fn state(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<State, ForgeError> {

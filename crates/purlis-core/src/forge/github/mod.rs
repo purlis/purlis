@@ -667,12 +667,43 @@ impl Requests for GitHub {
             .filter(|base| !base.is_empty())
             .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub named no base branch")))?;
         let repo = &record["base"]["repo"];
+        let title = record["title"]
+            .as_str()
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub named no title")))?;
+        let author = record["user"]["login"]
+            .as_str()
+            .filter(|login| !login.is_empty())
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub named no author")))?;
         Ok(HeadAt {
             sha: sha.to_owned(),
             base: base.to_owned(),
+            title: title.to_owned(),
+            author: author.to_owned(),
             squash: repo["allow_merge_commit"] == Value::Bool(false)
                 && repo["allow_squash_merge"] == Value::Bool(true),
         })
+    }
+
+    /// The rules GitHub's rulesets give the branch: any is a ruleset protecting it.
+    fn ruleset_protects(
+        &self,
+        caller: &Caller,
+        path: &str,
+        branch: &str,
+    ) -> Result<bool, ForgeError> {
+        let (owner, name) = owner_name(path);
+        let api = format!(
+            "repos/{}/{}/rules/branches/{}",
+            quote(owner),
+            quote(name),
+            quote(branch)
+        );
+        let doing = format!("reading the rules for {branch} in {path}");
+        let rules = self.0.ask(caller, &Call::get(&api, LIST_TIMEOUT), &doing)?;
+        rules
+            .as_array()
+            .map(|rules| !rules.is_empty())
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub answered no list")))
     }
 
     fn body(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<String, ForgeError> {
