@@ -250,3 +250,49 @@ fn a_call_comes_back_under_the_recorders_own_post_tool_words() {
         assert_eq!(counted(dir.path(), CHAT), vec![left], "{kind}");
     }
 }
+
+/// **R-300 (T1-33): a finish names its turn's unresolved blocks**, each by who blocked it and
+/// what at, so its finish row offers that block's ways out. One a target, as it is counted; a
+/// block that came back, or a qualified one, is none of them.
+#[test]
+fn a_finish_names_its_unresolved_blocks_by_source_and_target() {
+    let dir = tempfile::tempdir().unwrap();
+    let guarded = |args: &str| {
+        serde_json::to_value(Stop::Block(Block {
+            tool: "Bash".to_owned(),
+            source: Source::Guard,
+            qualifier: None,
+            target: Some(crate::eventlog::stops::Target::guard_arm("A3b").unwrap()),
+            args: Some(args.to_owned()),
+        }))
+        .unwrap()
+    };
+    let mut turns = Turns::in_dir(dir.path(), CHAT);
+    turns
+        .prompt()
+        .write(None, crate::eventlog::stops::BLOCK, guarded(PUSH))
+        // The same call blocked again: one a target.
+        .write(None, crate::eventlog::stops::BLOCK, guarded(PUSH))
+        // Another call blocked, then come back: resolved.
+        .block(LIST, None)
+        .came_back(LIST, false)
+        // A report that can't be told counts toward nothing.
+        .block("digest-of-cat", Some(Qualifier::CantTell))
+        .stop();
+    let finishes = finishes_in(dir.path(), CHAT).unwrap();
+    assert_eq!(finishes.len(), 1);
+    let finish = &finishes[0];
+    assert_eq!(finish.blocked, 1);
+    assert_eq!(
+        finish.unresolved,
+        vec![Unresolved {
+            source: Source::Guard,
+            target: Some(crate::eventlog::stops::Target::guard_arm("A3b").unwrap()),
+        }],
+    );
+    assert_eq!(
+        u32::try_from(finish.unresolved.len()).unwrap(),
+        finish.blocked,
+        "the count is the blocks it names"
+    );
+}

@@ -133,4 +133,38 @@ mod tests {
         // Past what is kept: none.
         assert!(finished_of(&events, 4, CHAT, u64::from(u32::MAX)).is_empty());
     }
+
+    /// **R-300 (T1-33): a finish row's turn names its unresolved blocks**, in the words the
+    /// window's Chat log row reads a block's source and target in, so both offer its ways out.
+    #[test]
+    fn a_finished_turn_names_its_unresolved_blocks_as_the_chat_log_words_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut log = purlis_core::eventlog::Log::open(dir.path(), DEVICE).unwrap();
+        let mut write = |kind: &str, body: serde_json::Value| {
+            log.append(Some(CHAT), Some(RUN), None, kind, body).unwrap();
+        };
+        write("hook.userpromptsubmit", serde_json::json!({}));
+        write(
+            purlis_core::eventlog::stops::BLOCK,
+            serde_json::json!({
+                "tool": "Bash",
+                "source": "guard",
+                "target": { "guard_arm": "A3b" },
+                "args": "digest",
+            }),
+        );
+        write("hook.stop", serde_json::json!({}));
+        let events = purlis_core::eventlog::read(dir.path()).unwrap();
+        let finished = finished_of(&events, 4, CHAT, 0);
+        assert_eq!(finished.len(), 1);
+        assert_eq!(finished[0].blocked, 1);
+        assert_eq!(
+            finished[0].blocks,
+            vec![FinishedBlock {
+                source: "guard".to_owned(),
+                target_kind: Some("guard_arm".to_owned()),
+                target: Some("A3b".to_owned()),
+            }],
+        );
+    }
 }

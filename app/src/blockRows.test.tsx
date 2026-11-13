@@ -75,10 +75,11 @@ const tagsOf = (row: HTMLElement) =>
     tag.textContent?.trim(),
   );
 
-/** Opens a row's detail and answers it. */
+/** Opens a row's detail and answers it: its disclosure, the first of its closed buttons, before
+ *  its ways out (T1-33). */
 async function detailOf(row: HTMLElement): Promise<HTMLElement> {
-  await userEvent.click(within(row).getByRole("button", { expanded: false }));
-  return within(row).getByRole("group");
+  await userEvent.click(within(row).getAllByRole("button", { expanded: false })[0]);
+  return within(row).getAllByRole("group")[0];
 }
 
 describe("a block row", () => {
