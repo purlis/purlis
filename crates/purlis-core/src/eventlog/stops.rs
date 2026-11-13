@@ -426,10 +426,13 @@ impl Recorder {
     /// arguments' hash keyed as the tool event's is; none for any other line, so a harness
     /// whose hooks report no refusal gets no block guessed for it. No target: the line names
     /// nothing the writer resolved itself. The check's `reason` is not on the line at all.
+    /// `unverified` on the rule a guard's report takes (Q237, Q235;
+    /// [`reported_from_outside_its_reach`]): the line comes over the same channel with the same
+    /// token, so a chat that can reach its hooks can send it itself.
     pub(super) fn harness_check_block(
         &self,
         call: &crate::hookwire::ToolCall,
-        _attributes: Option<&super::Attributes>,
+        attributes: Option<&super::Attributes>,
     ) -> Option<serde_json::Value> {
         if call.tool_hook != crate::hookreg::HARNESS_DENIED {
             return None;
@@ -440,7 +443,8 @@ impl Recorder {
                 TARGET_CHARS,
             ),
             source: Source::HarnessCheck,
-            qualifier: None,
+            qualifier: (!attributes.is_some_and(reported_from_outside_its_reach))
+                .then_some(Qualifier::Unverified),
             target: None,
             args: call.args.as_deref().map(|hash| self.key.digest(hash)),
         };

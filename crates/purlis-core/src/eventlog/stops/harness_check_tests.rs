@@ -29,11 +29,12 @@ fn recorder(dir: &Path) -> Recorder {
     )
 }
 
-/// A chat begun on `harness`, as the host begins one.
-fn begun(host: &mut Recorder, number: u32, harness: Harness) {
+/// A chat begun on `harness` under the sandbox backend the host records as `sandbox`, as the
+/// host begins one.
+fn begun(host: &mut Recorder, number: u32, harness: Harness, sandbox: &str) {
     let attributes = Attributes {
         harness: Some(harness.name().to_owned()),
-        sandbox: Some(NONE.to_owned()),
+        sandbox: Some(sandbox.to_owned()),
         ..Attributes::default()
     };
     let chat = crate::reopen::mint();
@@ -86,7 +87,7 @@ fn heard(host: &mut Recorder, call: ToolCall) -> Vec<crate::eventlog::Event> {
 fn a_permission_denied_hook_line_writes_one_block_from_the_harness_own_check() {
     let dir = tempfile::tempdir().unwrap();
     let mut host = recorder(dir.path());
-    begun(&mut host, 7, Harness::ClaudeCode);
+    begun(&mut host, 7, Harness::ClaudeCode, "seatbelt");
     let from = read(dir.path()).unwrap().len();
 
     let call = line(7, crate::hookreg::HARNESS_DENIED, CLAUDE_CODE_DENIED);
@@ -155,7 +156,7 @@ const CODEX_REJECTED: &str = r#"{"session_id":"019a","hook_event_name":"Permissi
 fn a_codex_hook_rejection_becomes_a_block_and_without_one_nothing_is_guessed() {
     let dir = tempfile::tempdir().unwrap();
     let mut host = recorder(dir.path());
-    begun(&mut host, 8, Harness::Codex);
+    begun(&mut host, 8, Harness::Codex, "seatbelt");
     let blocks = |dir: &Path| {
         read(dir)
             .unwrap()
@@ -185,4 +186,52 @@ fn a_codex_hook_rejection_becomes_a_block_and_without_one_nothing_is_guessed() {
     assert_eq!(written.len(), 1, "{written:#?}");
     assert_eq!(written[0].body["source"], "harness_check");
     assert_eq!(written[0].body["tool"], "Bash");
+    assert_eq!(
+        written[0].body["qualifier"], "unverified",
+        "Codex's hooks run within the chat's reach (Q237)"
+    );
+}
+
+/// The qualifier of the block a harness-check line from chat `number` writes.
+fn qualifier_of_a_harness_denial(
+    dir: &Path,
+    host: &mut Recorder,
+    number: u32,
+) -> serde_json::Value {
+    let from = read(dir).unwrap().len();
+    heard(
+        host,
+        line(number, crate::hookreg::HARNESS_DENIED, CLAUDE_CODE_DENIED),
+    );
+    let blocks: Vec<_> = read(dir)
+        .unwrap()
+        .into_iter()
+        .skip(from)
+        .filter(|event| event.kind == BLOCK)
+        .collect();
+    assert_eq!(blocks.len(), 1, "{blocks:#?}");
+    blocks[0].body["qualifier"].clone()
+}
+
+/// Q237, as Q235 for a guard's report: the line comes over the same channel with the same
+/// token, so a harness-check block is verified only from Claude Code under a backend that
+/// leaves its hooks outside the sandbox; at No sandbox, or wrapped whole (`landlock`), the chat
+/// can send the line itself, and the block says `unverified`.
+#[test]
+fn a_harness_check_block_is_unverified_unless_claude_code_reports_from_outside_the_sandbox() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut host = recorder(dir.path());
+    for (number, sandbox, said) in [
+        (11, "seatbelt", serde_json::Value::Null),
+        (12, "bubblewrap", serde_json::Value::Null),
+        (13, NONE, serde_json::json!("unverified")),
+        (14, "landlock", serde_json::json!("unverified")),
+    ] {
+        begun(&mut host, number, Harness::ClaudeCode, sandbox);
+        assert_eq!(
+            qualifier_of_a_harness_denial(dir.path(), &mut host, number),
+            said,
+            "Claude Code under {sandbox}"
+        );
+    }
 }
