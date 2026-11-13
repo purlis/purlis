@@ -7362,13 +7362,16 @@ nav.piece-files-head {
 }
 
 /* Settings › Project › Dispatch (#1504): the one table of who may dispatch to whom, the shared
-   table family's fixed `ControlTable` (#2911). A row group per persona; under it each target, with a row for
-   every grant that covers the pair. The columns are fixed shares of the width, so nothing a cell
-   says moves another column; a question is a row of its own across the whole table, under the
-   row it is about; and words break between words, a name only where it is longer than its
-   column. */
+   table family's `ControlTable` (#2911). A row group per persona; under it each target, with a row
+   for every grant that covers the pair. The columns take these shares of the width, and none is
+   narrower than its name: the table lays itself out as the limits table does, so a column's name
+   in the label role, its capitals and its tracking, is the least its column is, whatever font
+   draws it (#6443). A fixed layout held the shares exactly, and cut "Where it comes from" in
+   macOS's WebView once the label role spaced it. Words a cell says break anywhere, so no name
+   widens its column; only a name or a control does. A question is a row of its own across the
+   whole table, under the row it is about. */
 .dispatch-table tbody :is(th, td) {
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
 }
 
 .dispatch-table thead th:nth-child(1) {
@@ -7379,7 +7382,6 @@ nav.piece-files-head {
   width: 32%;
 }
 
-/* "Workspace" in the label role's capitals and tracking fits whole on macOS's fonts too. */
 .dispatch-table thead th:nth-child(3) {
   width: 23%;
 }
