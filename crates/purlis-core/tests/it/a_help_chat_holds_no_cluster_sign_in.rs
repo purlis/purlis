@@ -156,13 +156,6 @@ fn a_help_chat_started_again_from_its_record_is_held_as_at_its_first_start() {
         return;
     };
     let root = project.root();
-    let first = help::ready_to_help(&project.start(), root).expect("a help chat starts");
-    let first = first
-        .sandbox
-        .as_ref()
-        .expect("sandboxed")
-        .confines()
-        .clone();
 
     // Recorded as the app records it, and read back as a relaunch reads it.
     let record = purlis_core::reopen::Record {
@@ -193,6 +186,16 @@ fn a_help_chat_started_again_from_its_record_is_held_as_at_its_first_start() {
         .chats;
     assert!(back[0].held_from_clusters, "the help chat's record says so");
     assert!(!back[1].held_from_clusters, "no other chat's does");
+
+    // Its first start, with the record on disk as at every later one: the record's own folder
+    // is part of what a start compiles.
+    let first = help::ready_to_help(&project.start(), root).expect("a help chat starts");
+    let first = first
+        .sandbox
+        .as_ref()
+        .expect("sandboxed")
+        .confines()
+        .clone();
 
     let again = help::ready_again(&back[0], &project.start(), root).expect("it starts again");
     let applied = again.sandbox.as_ref().expect("sandboxed");
