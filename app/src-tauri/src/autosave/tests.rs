@@ -17,7 +17,7 @@ fn a_look_that_left_the_tree_alone_tells_the_git_standings_alone() {
     // #933: a commit, a push or a fetch that brought nothing in moved the git standing
     // and no file, and used to be told as "anything may have moved".
     assert_eq!(
-        answers_of(Tells::of(&plane("").path()).what_it_did(false)),
+        answers_of(Tells::of(plane("").path()).what_it_did(false)),
         Some(vec![crate::planewatch::PlaneAnswer::Git])
     );
 }
