@@ -5492,14 +5492,19 @@ impl Chats {
         // harness's adapter adds for the level its record holds, among purlis's own. None at
         // the default, none where the profile's command names a mode of its own, none for a
         // grade's chat, and none on the runner, which arms its chats itself.
+        // A task whose harness says it may not run in auto starts asking, and its pane says why
+        // (#6315).
         let mut hooks = hooks;
         if let Some(harness) = harness.filter(|_| !on_the_runner) {
-            hooks.extend(purlis_core::dispatchmode::task_words(
+            let start = purlis_core::dispatchmode::task_start(
                 harness,
                 chat.task_level,
                 &command,
                 chat.graded,
-            ));
+                &purlis_core::harness_plugin::Env::of(&env),
+            );
+            hooks.extend(start.words);
+            late.extend(start.said);
         }
         // A chat reattached starts nothing: no line is built for it, so none refuses it (#2006).
         let (program, all, wrapped) = match sandbox.filter(|_| !reattaching) {

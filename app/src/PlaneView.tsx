@@ -238,7 +238,7 @@ import { Notice, NoticeInCentre, NoticeOf, type NoticesDot } from "./Notice";
 import { ReadOnlyLine, ReadOnlyMendable, ReadOnlySaid, useReadOnly } from "./ReadOnlyLine";
 import { LivesHere } from "./LivesHere";
 import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
-import { handCount, handSaid, theirAsks, type Elsewhere } from "./InboxElsewhere";
+import { elsewhereCount, handSaid, theirAsks, type Elsewhere } from "./InboxElsewhere";
 import type { AllChatsFilter } from "./InboxAsks";
 import { useAsksArrival } from "./asksArrival";
 import { sayAboutThisMachine, useAboutThisMachine } from "./windowprefs";
@@ -518,7 +518,7 @@ import {
   type TaskEndHand,
   type TaskEndInline,
 } from "./TaskEnd";
-import { giveKeyboardTo } from "./paneKeyboard";
+import { giveKeyboardTo, giveKeyboardToTheFocusedPane } from "./paneKeyboard";
 import { endedState } from "./EndedBand";
 import { useHeldAmong } from "./dispatchesHeld";
 import { useRefusedAmong } from "./vaultRefusals";
@@ -764,6 +764,7 @@ import {
   type SeenRows,
 } from "./seen";
 import { SeenRowsOf } from "./seenRows";
+import { listLinksOf } from "./paneLinksOpen";
 
 /** Whether two lists of the right side's extension panels draw the same tabs. */
 const samePanels = (a: readonly PanelTab[], b: readonly PanelTab[]) =>
@@ -4731,6 +4732,7 @@ export const PlaneView = memo(function PlaneView({
   /**
    * **The keyboard goes into the focused pane of `next`** (#4767): its chat's terminal, or, in a
    * pane with nothing or a view, its first control once it is drawn: New chat, or the view.
+   * Either is owed only until the person puts the keyboard somewhere else (#6232).
    */
   const keyboardInto = useCallback(
     (next: Tabs) => {
@@ -4739,13 +4741,7 @@ export const PlaneView = memo(function PlaneView({
         giveKeyboardTo(plane, session);
         return;
       }
-      setTimeout(() => {
-        const pane = document.querySelector<HTMLElement>(".pane.focused");
-        const into =
-          pane?.querySelector<HTMLElement>('[data-scope="view-frame"][data-part="root"]') ??
-          pane?.querySelector<HTMLElement>("button");
-        into?.focus();
-      });
+      giveKeyboardToTheFocusedPane();
     },
     [plane],
   );
@@ -8916,6 +8912,8 @@ export const PlaneView = memo(function PlaneView({
       // A chat's Ask {persona}… and Use skill… open their dialogs: the one way in to each.
       askPersona: openAskPersona,
       useSkill: openUseSkill,
+      // The pane's own list (#6332): the pane drawing the chat says how to open it.
+      listLinks: (session) => void listLinksOf(plane, session),
       showChatSkills: (session) => askChatSkills(plane, session),
       openStudioChat: (session) => {
         const link = studioLinks[session];
@@ -11586,11 +11584,13 @@ export const PlaneView = memo(function PlaneView({
    * its chat in a new session, and the pane moves on to it before the ask is read as gone.
    */
   const touchOnPane = useAnsweredWhenGone(plane, waiting);
-  /** The ✋'s count: every open project's asks, and how many are outside this one (#5999). */
-  const hand = handCount(plane, waiting?.length ?? 0, elsewhere);
+  /** **The ✋'s count: this project's asks alone** (#6341, ADR 0121 amended 2026-11-12,
+   *  decision 1). Another project's are on its own tab, and on the Dock badge's total. */
+  const hand = waiting?.length ?? 0;
   /** **A Blocking ask arriving** (ADR 0121 decisions 24 and 25, #6020): said once, politely,
-   *  and the first one on this machine that arrives while Asks is closed pulses the ✋. */
-  const arrival = useAsksArrival(waiting, hand.elsewhere, inFront && asksShown);
+   *  and the first one on this machine that arrives while Asks is closed pulses the ✋. One in
+   *  another project is still said, as its notification still comes. */
+  const arrival = useAsksArrival(waiting, elsewhereCount(plane, elsewhere), inFront && asksShown);
   /**
    * **Snooze all on Asks** (#5647): the core keeps what each chat held, and lists a snoozed
    * chat's asks apart until it asks something new, or until the time it was snoozed for runs out
@@ -12502,10 +12502,9 @@ export const PlaneView = memo(function PlaneView({
                       )}
                     </QueueRead>
                   ),
-                  // The ✋'s count (#1692, I-2; ADR 0121 decision 4): every open project's asks, in
-                  // its tone, on the bar, so it is there while the side is put away. Those outside
-                  // this project are said as "+N elsewhere"; Asks' scope never narrows it.
-                  asks: <ActivityCount count={hand.total} said={handSaid(hand)} tone="needs-you" />,
+                  // The ✋'s count (#1692, I-2; #6341): this project's asks, in its tone, on the
+                  // bar, so it is there while the side is put away. Asks' scope never narrows it.
+                  asks: <ActivityCount count={hand} said={handSaid(hand)} tone="needs-you" />,
                   // The unread lines From your chats (#5646, ADR 0119): the bell's count, in the plain
                   // colours, since a result is news of the person's own work and asks nothing.
                   // Project is never counted.

@@ -4381,8 +4381,6 @@ body {
 .welcome-brand {
   margin: 0;
   padding-inline: var(--space-4);
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-strong);
 }
 
 .welcome-pane {
@@ -4398,15 +4396,10 @@ body {
 
 .welcome-pane h1 {
   margin: 0 0 var(--space-3);
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-strong);
 }
 
 .welcome-pane h2 {
   margin: var(--space-7) 0 var(--space-3);
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-strong);
-  color: var(--text-secondary);
 }
 
 /* A heading the keyboard is put on as its page appears is not a stop Tab reaches, so it draws
@@ -4419,7 +4412,6 @@ body {
   margin: 0 0 var(--space-7);
   max-inline-size: 38rem;
   line-height: var(--line-height-body);
-  color: var(--text-secondary);
 }
 
 /* **A first run's next steps**, in the place recent projects will be: three lines, numbered because
@@ -4428,7 +4420,6 @@ body {
   margin: 0 0 var(--space-7);
   padding-inline-start: var(--space-6);
   line-height: var(--line-height-body);
-  color: var(--text-secondary);
 }
 
 .welcome-next li + li {
@@ -4500,8 +4491,6 @@ body {
 
 .welcome-elsewhere {
   margin: var(--space-7) 0 0;
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
 }
 
 /* Back sits above the heading, at the start of the line, where a page's way back is read. */
@@ -4599,7 +4588,9 @@ body {
   margin-block-start: var(--space-8);
 }
 
-/* A sentence on these pages is the page's own words, not a strip across a pane. */
+/* A sentence on these pages is the page's own words, not a strip across a pane. Not on a role
+   yet (#6389): every door page's lines share the window-wide `.came-back`, so it is moved with
+   that class, not page by page. */
 .welcome-pane .came-back {
   padding: 0;
   margin-block-end: var(--space-3);
@@ -4674,17 +4665,6 @@ body {
 /* In the launcher the harness rows sit in the page's own margins. */
 .welcome-pane .harness-setup {
   padding: 0;
-}
-
-/* The recent projects are rows of the list family (`ui/list`, #2911); a project's path is its
-   description, cut to one line. */
-.recents .where {
-  font-size: var(--font-size-xs);
-}
-
-.recents .value {
-  font-size: var(--font-size-sm);
-  color: var(--text-muted);
 }
 
 /* The first run's list of what this machine has (FR-4): statuses, not controls. */
@@ -7174,8 +7154,6 @@ nav.piece-files-head {
 
 .ui-settings-about {
   margin: 0 var(--space-2);
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
 }
 
 /* The search (#2920, N27): its box across the column, so its words are whole, and the "Set
@@ -7215,8 +7193,6 @@ nav.piece-files-head {
 .ui-settings-raw-label {
   margin: 0 0 var(--space-1);
   padding: 0 var(--space-4);
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
 }
 
 /* The file's whole text (DS-10): the light editor's CodeMirror, as tall as the file and at
@@ -7301,15 +7277,12 @@ nav.piece-files-head {
    TOML. */
 .ui-setting-head h2 {
   margin: 0;
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-strong);
   text-wrap: balance;
 }
 
 .ui-setting-blurb {
   margin: var(--space-2) 0 0;
   max-inline-size: 64ch;
-  color: var(--text-muted);
 }
 
 .ui-setting-where {
@@ -7318,13 +7291,6 @@ nav.piece-files-head {
   align-items: center;
   gap: var(--space-3);
   margin: var(--space-4) 0 0;
-  font-size: var(--font-size-sm);
-  color: var(--text-quiet);
-}
-
-.ui-setting-where code {
-  font-family: var(--font-mono);
-  color: var(--text-secondary);
 }
 
 .ui-setting-head {
@@ -7338,13 +7304,10 @@ nav.piece-files-head {
 
 .ui-setting-group :is(h2, h3) {
   margin: 0;
-  font-size: var(--font-size-md);
 }
 
 .ui-setting-help {
   margin: var(--space-1) 0 0;
-  font-size: var(--font-size-xs);
-  color: var(--text-muted);
 }
 
 /* A row's refusal line in a form, there from the start so its words are heard as they land
@@ -7547,7 +7510,6 @@ nav.piece-files-head {
 }
 
 .ui-hosts-host {
-  font-family: var(--font-mono);
   font-size: var(--font-size-sm);
 }
 
@@ -7571,8 +7533,6 @@ nav.piece-files-head {
 
 .ui-record-where {
   overflow-wrap: anywhere;
-  font-size: var(--font-size-xs);
-  color: var(--text-quiet);
 }
 
 /* **Where Settings is narrow** (R75): under 728 px of its pane (the prototype's 760 px window
@@ -7631,14 +7591,10 @@ nav.piece-files-head {
 
 .ui-collection-head h3 {
   margin: 0;
-  font-size: var(--font-size-sm);
-  color: var(--text-primary);
 }
 
 .ui-collection-done {
   margin-top: var(--space-4);
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
 }
 
 .ui-collection-add {
@@ -7710,7 +7666,6 @@ nav.piece-files-head {
 }
 
 .ui-setting-key {
-  font-family: var(--font-mono);
   color: var(--text-quiet);
 }
 
@@ -7757,15 +7712,11 @@ nav.piece-files-head {
 
 .ui-settings-page .ui-setting-section > h3 {
   margin: 0 0 var(--space-2);
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-strong);
 }
 
 .ui-settings-page .ui-setting-section > .ui-setting-help,
 .ui-settings-page .ui-setting-fold [data-part="panel"] > .ui-setting-help {
   margin: 0 0 var(--space-4);
-  font-size: var(--font-size-sm);
-  color: var(--text-quiet);
 }
 
 /* **A row of the aligned form** (#2919, prototype A, R50–R52, R54): on a settings page the label
@@ -7813,8 +7764,6 @@ nav.piece-files-head {
 
 .ui-settings-page .ui-setting-name > .ui-setting-help {
   margin: 0;
-  font-size: var(--font-size-sm);
-  color: var(--text-quiet);
 }
 
 .ui-settings-page .ui-setting-control {
@@ -7889,8 +7838,6 @@ nav.piece-files-head {
   flex: 1 1 auto;
   min-width: 0;
   overflow-wrap: anywhere;
-  font-size: var(--font-size-xs);
-  color: var(--text-quiet);
 }
 
 /* **The other devices' signing keys** (#5918, `settings/signing.tsx`): a heading and the line on

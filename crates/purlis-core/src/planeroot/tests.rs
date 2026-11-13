@@ -425,8 +425,19 @@ fn a_branch_move_fed_to_a_shell_or_run_by_find_is_read() {
         "echo 'echo git checkout feature' | sh",
         "find . -exec git status \\;",
         "find . -name 'git checkout feature'",
+        // A heredoc body nothing runs is data (#6293).
+        "cat > notes.md <<'EOF'\ngit checkout feature\nEOF",
+        "cat > p.sh <<-'EOF'\n\tgit switch -c x\n\tEOF",
+        "cat > notes.md <<EOF\ngit checkout feature for $USER\nEOF",
     ] {
         assert!(!moves(cmd, &root), "{cmd:?}");
+    }
+    // What a shell does run around one is still read.
+    for cmd in [
+        "cat > f <<'EOF'\nnotes\nEOF\ngit checkout feature",
+        "cat > f <<EOF\n$(git checkout feature)\nEOF",
+    ] {
+        assert!(moves(cmd, &root), "{cmd:?}");
     }
     assert!(!moves("echo 'git checkout feature' | sh", &elsewhere));
 }

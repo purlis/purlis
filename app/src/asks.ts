@@ -25,6 +25,7 @@ import {
   type Asking,
   type EntriesOf,
   type GrantLevel,
+  type PlaneChanged,
   type Press,
   type RunGrantPress,
   type RunLink,
@@ -34,6 +35,7 @@ import {
 } from "./bindings";
 import type { QuestionsHeld } from "./taskQuestions";
 import { listen } from "./here";
+import { concerns, SETTINGS } from "./planeChanged";
 import { ASKS_CHANGED, answerAsk } from "./permissionAsks";
 import { listenForChats } from "./chatEvents";
 import { askRemoveWorkspace } from "./removeWorkspaceAsk";
@@ -160,7 +162,19 @@ export function useAsks(planes: readonly string[]): {
     // read again.
     stops.push(listen(POOL_SIGN_IN_CONFIRM, () => reader.soonAll()).catch(() => undefined));
     const offSandbox = onSandboxCommand(() => reader.soonAll());
+    // **What a project expects is read again where its Notice reads it** (#6000): as its
+    // settings change on disk (a pull or a hand comes to declare it) and as the window comes
+    // back (an Allow in another window). The consent is an ask too, derived from the same state,
+    // so a list not read then left its Notice up and the ✋ counting nothing.
+    stops.push(
+      listen<PlaneChanged>("plane-changed", (said) => {
+        if (concerns(said.payload.answers, SETTINGS)) reader.soon(said.payload.plane);
+      }).catch(() => undefined),
+    );
+    const cameBack = () => reader.soonAll();
+    window.addEventListener("focus", cameBack);
     return () => {
+      window.removeEventListener("focus", cameBack);
       offSandbox();
       moved.delete(reader.soon);
       reader.stop();

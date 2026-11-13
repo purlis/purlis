@@ -251,7 +251,7 @@ export function CollectionView({
           addRef={addButton}
         />
         {(said !== undefined || undoSaid !== undefined || refused !== undefined) && (
-          <div className="ui-collection-done" role="status">
+          <div className="ui-collection-done ui-text-meta" role="status">
             {(said?.words ?? undoSaid) !== undefined && <span>{said?.words ?? undoSaid}</span>}
             {driver.undoable === key && (said === undefined || said.undo) && (
               <Button
@@ -292,7 +292,7 @@ export function CollectionView({
     <div className="ui-collection" ref={whole} tabIndex={-1}>
       {settings.filter((one) => !mine.has(one.id)).map(row)}
       {(undoSaid !== undefined || atHead) && (
-        <div className="ui-collection-done" role="status">
+        <div className="ui-collection-done ui-text-meta" role="status">
           {undoSaid !== undefined && (
             <>
               <span>{undoSaid}</span>
@@ -330,7 +330,7 @@ export function CollectionView({
           aria-describedby={entry.says === undefined ? undefined : `${described}-${at}`}
         >
           <div className="ui-collection-head">
-            <h3>{entry.label}</h3>
+            <h3 className="ui-text-heading">{entry.label}</h3>
             {entry.status !== undefined && <HostStatus waiting={entry.status === "waiting"} />}
             {entry.page !== undefined && reachable(entry.page) && (
               <Button
@@ -371,7 +371,7 @@ export function CollectionView({
             </Button>
           </div>
           {entry.says !== undefined && (
-            <p className="ui-setting-help" id={`${described}-${at}`}>
+            <p className="ui-setting-help ui-text-secondary" id={`${described}-${at}`}>
               {entry.says}
             </p>
           )}
@@ -387,7 +387,7 @@ export function CollectionView({
                 unsure(entry);
               }}
             >
-              <p className="ui-setting-help">
+              <p className="ui-setting-help ui-text-secondary">
                 {`${runningSaid(sure.running, entry.label, noun)} Remove ${entry.label}?`}
               </p>
               <SettingActions>
@@ -488,7 +488,7 @@ function Refused({
   const preview = refused.verb === "renamed" && followsEverywhere(refusal);
   return (
     <div
-      className={preview ? "ui-setting-help" : "ui-setting-error"}
+      className={preview ? "ui-setting-help ui-text-secondary" : "ui-setting-error"}
       role={preview ? "status" : "alert"}
     >
       {preview ? (
@@ -848,7 +848,9 @@ function RenameForm({
         control={(ids) => <Field kind="text" ids={ids} value={to} onChange={setTo} />}
       />
       {running > 0 && (
-        <p className="ui-setting-help">{runningSaid(running, entry.label, collection.noun)}</p>
+        <p className="ui-setting-help ui-text-secondary">
+          {runningSaid(running, entry.label, collection.noun)}
+        </p>
       )}
       <SettingActions>
         <Button type="submit" isDisabled={sending}>

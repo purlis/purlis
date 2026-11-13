@@ -8,7 +8,7 @@
   "prompts": [
     {
       "query": "Remove the qa-legacy workspace, but don't lose what it learned.",
-      "source": "Skill text: description, \"Remove a purlis workspace ... without losing what it learned\"."
+      "source": "Skill text: description, \"a purlis workspace or persona gone, keep what it learned\"."
     },
     {
       "query": "Delete the volaticloud persona.",

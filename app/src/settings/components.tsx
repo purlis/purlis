@@ -260,7 +260,7 @@ export function SettingsLayout({
             </Segment>
           ))}
         </SegmentedControl>
-        {about !== undefined && <p className="ui-settings-about">{about}</p>}
+        {about !== undefined && <p className="ui-settings-about ui-text-secondary">{about}</p>}
         <div className="ui-settings-search">
           <TextField
             className="ui-settings-filter"
@@ -370,10 +370,12 @@ export function SettingGroup({
     return (
       <section className="ui-setting-group ui-setting-page" aria-labelledby={heading}>
         <div className="ui-setting-head">
-          <h2 id={heading}>{label}</h2>
-          {help && <p className="ui-setting-blurb">{help}</p>}
+          <h2 id={heading} className="ui-text-title">
+            {label}
+          </h2>
+          {help && <p className="ui-setting-blurb ui-text-secondary">{help}</p>}
           {kept && (
-            <p className="ui-setting-where">
+            <p className="ui-setting-where ui-text-secondary">
               <span>{withFile(kept, file)}</span>
               {onEdit && (
                 <>
@@ -405,7 +407,7 @@ export function SettingGroup({
         defaultExpanded={open}
         panelRole="region"
       >
-        {said && <p className="ui-setting-help">{said}</p>}
+        {said && <p className="ui-setting-help ui-text-secondary">{said}</p>}
         {children}
       </Disclosure>
     );
@@ -414,8 +416,10 @@ export function SettingGroup({
       className={onPage ? "ui-setting-group ui-setting-section" : "ui-setting-group"}
       aria-labelledby={heading}
     >
-      <Heading id={heading}>{label}</Heading>
-      {said && <p className="ui-setting-help">{said}</p>}
+      <Heading id={heading} className="ui-text-heading">
+        {label}
+      </Heading>
+      {said && <p className="ui-setting-help ui-text-secondary">{said}</p>}
       {children}
     </section>
   );
@@ -431,7 +435,7 @@ function withFile(kept: string, file: string | undefined): ReactNode {
   return (
     <>
       {kept.slice(0, at)}
-      <code>{shown}</code>
+      <code className="ui-text-code">{shown}</code>
       {kept.slice(at + shown.length)}
     </>
   );
@@ -630,7 +634,7 @@ export function SettingRow({
     </div>
   );
   const helpLine = help && (
-    <p className="ui-setting-help" id={described}>
+    <p className="ui-setting-help ui-text-secondary" id={described}>
       {help}
     </p>
   );
@@ -754,7 +758,7 @@ function RowMenu({
           navigator.clipboard?.writeText(copyKey).catch(() => undefined);
         }}
       >
-        Copy key <code className="ui-setting-key">{copyKey}</code>
+        Copy key <code className="ui-setting-key ui-text-code">{copyKey}</code>
       </MenuItem>
     ),
   ].filter(Boolean);

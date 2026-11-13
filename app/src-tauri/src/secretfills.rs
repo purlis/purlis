@@ -27,7 +27,9 @@
 //!   in the page's address, which the site's logs and the browser's history keep. Under Allow for
 //!   this chat or Always, such a fill is refused; asked about, Allow once fills it.
 //! - **A key the vault doesn't hold goes to the Secret ask** (#5054, ADR 0109) once the person
-//!   allowed the fill: the call waits on that too, and fills what they add.
+//!   allowed the fill: the call waits on that too, and fills what they add. Where the call ends,
+//!   or stops waiting, before they add it, their Allow stands for the chat's retry of exactly
+//!   that notice, for one call (#5242, ADR 0067 as amended 2026-11-12).
 //! - **What's filled is what the person pressed on.** A press names the notice and carries its
 //!   digest ([`FillWait::digest`]); one waits for each chat, and another call is refused.
 //! - **Keep blocked fills nothing and tells the chat**, and the persona's chats aren't asked about
@@ -214,7 +216,16 @@ struct Inner {
     /// The 2FA codes the person allowed for the chat (#5118): a grant of its own, so neither a
     /// value's grant nor a code's ever stands for the other.
     codes_granted: Vec<ForChat>,
+    /// **The person's Allow on a notice whose fill never went in** (#5242): its call ended, or
+    /// stopped waiting, while the key it fills was asked for. Kept for that chat's retry of
+    /// exactly that notice (its digest), on the same runner or none, and taken by the one call
+    /// that uses it.
+    allowed_unfilled: Vec<AllowedUnfilled>,
 }
+
+/// An Allow whose fill never went in: by chat's number and id, the pool its browser runs on, and
+/// the digest of the notice the person pressed on.
+type AllowedUnfilled = (u32, Option<String>, Option<String>, String);
 
 /// How many Keep blocked one persona is given before its chats are asked about no more fills until
 /// purlis restarts (a chat with no persona, that chat), so a chat can't change a key's name or a
@@ -353,6 +364,38 @@ impl Fills {
             .collect()
     }
 
+    /// **Keeps the person's Allow on `digest`'s notice** for chat `chat`'s retry of that very fill
+    /// (#5242): the value was not there yet, so nothing went in.
+    fn keep_unfilled(&self, chat: Chat<'_>, pool: Option<&str>, digest: String) {
+        let mut inner = self.lock();
+        let one = (
+            chat.session,
+            chat.id.map(str::to_owned),
+            pool.map(str::to_owned),
+            digest,
+        );
+        if !inner.allowed_unfilled.contains(&one) {
+            inner.allowed_unfilled.push(one);
+        }
+    }
+
+    /// **Takes the Allow kept for chat `chat`'s fill of exactly `digest`'s notice** (#5242), if one
+    /// is: whether it was. Taken here, so only one call ever uses it.
+    fn take_unfilled(&self, chat: Chat<'_>, pool: Option<&str>, digest: &str) -> bool {
+        let mut inner = self.lock();
+        let Some(at) = inner
+            .allowed_unfilled
+            .iter()
+            .position(|(n, id, on, shown)| {
+                chat.is((n, id)) && on.as_deref() == pool && shown == digest
+            })
+        else {
+            return false;
+        };
+        inner.allowed_unfilled.remove(at);
+        true
+    }
+
     /// Chat `session` closed: what it waited on and was allowed go with it, so nothing reaches a
     /// later chat dealt the same number, and its call stops waiting.
     pub fn forget(&self, session: u32) {
@@ -367,6 +410,7 @@ impl Fills {
             .retain(|(whose, ..)| *whose != Whose::Chat(session));
         inner.granted.retain(|(chat, ..)| *chat != session);
         inner.codes_granted.retain(|(chat, ..)| *chat != session);
+        inner.allowed_unfilled.retain(|(chat, ..)| *chat != session);
         inner.waits.retain(|(one, tell)| {
             if one.session != session {
                 return true;
@@ -567,6 +611,9 @@ pub fn asked(
     if !asks_the_person && asked.field.by_get == Some(true) {
         return Err(by_get_said(&asked.target, &origin));
     }
+    // The digest of the notice the person allowed, where they were asked: what a fill that is not
+    // filled keeps their Allow for (#5242).
+    let mut allowed_on = None;
     if asks_the_person {
         let wait = offered(
             held.root(),
@@ -593,17 +640,41 @@ pub fn asked(
                 reads_as,
             },
         );
-        match heard(held, fills, wait, gone)? {
-            Heard::Allowed => {
-                // Judged again as the project reads now: policy may have changed while it
-                // waited.
-                judged(held, session, asked)?;
+        let digest = wait.digest();
+        let pool = asked.pool.as_deref();
+        // **An Allow the person gave this very notice, whose fill never went in** (#5242): the
+        // retry takes it, as policy still lets Allow once be, rather than asking again. It was
+        // judged as the project reads now, above.
+        let carried = fills.take_unfilled(chat, pool, &digest)
+            && Locks::of(held.root())
+                .scope_removed(purlis_core::sandbox::grant::Level::Once)
+                .is_none();
+        if !carried {
+            match heard(held, fills, wait, gone)? {
+                Heard::Allowed => {
+                    // Judged again as the project reads now: policy may have changed while it
+                    // waited.
+                    judged(held, session, asked)?;
+                }
+                Heard::Kept(reason) => {
+                    return Err(kept_said(&asked.key, &origin, reason.as_deref()));
+                }
+                Heard::Gone => return Err(NOT_ANSWERED.to_owned()),
             }
-            Heard::Kept(reason) => return Err(kept_said(&asked.key, &origin, reason.as_deref())),
-            Heard::Gone => return Err(NOT_ANSWERED.to_owned()),
         }
+        allowed_on = Some(digest);
     }
-    let value = read(held, session, asked, &origin, started, gone)?;
+    let value = match read(held, session, asked, &origin, started, gone) {
+        Ok(value) => value,
+        Err(Unread { why, waited_out }) => {
+            // The person said yes to this fill, and its key was not there in time: their yes
+            // stands for the retry of exactly this fill, and nothing more.
+            if waited_out && let Some(digest) = allowed_on {
+                fills.keep_unfilled(chat, asked.pool.as_deref(), digest);
+            }
+            return Err(why);
+        }
+    };
     // Again once it is read: the pool or its runner may have changed meanwhile.
     if let Some((read, bound)) = &runner
         && read().as_ref() != Ok(bound)
@@ -831,7 +902,7 @@ fn read(
     origin: &str,
     started: std::time::Instant,
     gone: &dyn Fn() -> bool,
-) -> Result<Secret, String> {
+) -> Result<Secret, Unread> {
     not_taken_over(held.browsers(), asked)?;
     let (asker, _) = held
         .chats()
@@ -885,28 +956,57 @@ fn read(
                 "the person added {vault}/{key} rather than {}/{}, so nothing was filled: call \
                  browser_fill_secret again naming {key} of vault {vault}",
                 asked.vault, asked.key
-            ))
+            )
+            .into())
         }
         purlis_core::secrets::ask::Held::Filled { .. } => {
             // Judged again as the project reads now: it may have changed while the key was added.
             judged(held, session, asked)?;
             not_taken_over(held.browsers(), asked)?;
-            read()?.ok_or_else(|| {
+            Ok(read()?.ok_or_else(|| {
                 format!(
                     "vault '{}' still holds no {}, so nothing was filled",
                     asked.vault, asked.key
                 )
-            })
+            })?)
         }
         purlis_core::secrets::ask::Held::CallerGone { .. } => {
             tracing::info!("purlis: chat {session}'s secret fill call ended as its key was asked");
             moved();
-            Err(crate::loginasks::ASKER_GONE.to_owned())
+            Err(Unread::waited_out(crate::loginasks::ASKER_GONE.to_owned()))
+        }
+        purlis_core::secrets::ask::Held::StillOpen { line } => {
+            Err(Unread::waited_out(format!("{line}: nothing was filled")))
         }
         purlis_core::secrets::ask::Held::Declined { line }
-        | purlis_core::secrets::ask::Held::StillOpen { line }
         | purlis_core::secrets::ask::Held::Refused { line } => {
-            Err(format!("{line}: nothing was filled"))
+            Err(format!("{line}: nothing was filled").into())
+        }
+    }
+}
+
+/// **Why [`read`] has no value**, in words the chat reads, and whether only its wait for the key
+/// ran out (#5242): its call ended, or stopped waiting, before the person added it. Only then
+/// does the person's Allow on the fill's notice stand for its retry.
+struct Unread {
+    why: String,
+    waited_out: bool,
+}
+
+impl Unread {
+    fn waited_out(why: String) -> Self {
+        Self {
+            why,
+            waited_out: true,
+        }
+    }
+}
+
+impl From<String> for Unread {
+    fn from(why: String) -> Self {
+        Self {
+            why,
+            waited_out: false,
         }
     }
 }

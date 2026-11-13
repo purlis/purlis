@@ -100,8 +100,9 @@ pub struct Env<'a> {
     /// The chat's own variables, as the profile and charter set them.
     pub chat: &'a [(String, String)],
     pub home: Option<PathBuf>,
-    /// Whether a variable the chat does not set is looked up in this process. Off in a test,
-    /// so the machine running it cannot reach the answer.
+    /// Whether a variable the chat does not set is looked up in this process, and this
+    /// machine's own files beyond the home directory are read (its managed Claude Code policy,
+    /// #6315). Off in a test, so the machine running it cannot reach the answer.
     pub process: bool,
 }
 

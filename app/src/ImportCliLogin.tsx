@@ -87,7 +87,9 @@ export function ImportCliLogin({
         const busy = importing === key;
         return (
           <section key={key} className="import-cli-login" aria-labelledby={id}>
-            <h2 id={id}>Use your existing {offer.cli} login</h2>
+            <h2 id={id} className="ui-text-label">
+              Use your existing {offer.cli} login
+            </h2>
             <p>
               <code>{offer.cli}</code> is signed in to {offer.host} on this machine. purlis can use
               that login, so you need not sign in to {offer.title} again.

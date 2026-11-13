@@ -424,6 +424,9 @@ export type Does =
   /** Opens **Use skill…** for a chat (#2775): its skills, to type one into it unsent. It types
    *  nothing by itself: the pick does, through `use_skill`. */
   | { verb: "useSkill"; session: number }
+  /** Opens **Links in this pane…** on chat or shell `session`'s pane (#6332): the links on its
+   *  screen, to pick from. Opens nothing where no pane draws it. */
+  | { verb: "listLinks"; session: number }
   /** Shows the chat's skills in the sidebar's Skills view (S8, #5204). */
   | { verb: "showChatSkills"; session: number }
   /** Opens the skill the Skill studio started the chat for (#5185, #5204). */
@@ -1196,6 +1199,8 @@ export type Doing = {
   askPersona: (session: number, persona: string) => void;
   /** Opens Use skill… for the chat (#2775). */
   useSkill: (session: number) => void;
+  /** Opens Links in this pane… on the pane that draws `session` (#6332). */
+  listLinks: (session: number) => void;
   /** Shows the chat's skills in the sidebar's Skills view (S8, #5204). */
   showChatSkills: (session: number) => void;
   /** Opens what the Skill studio started the chat for (#5185, #5204). */
@@ -1743,6 +1748,8 @@ export const askerId = (session: number) => `chat.asker:${session}`;
 export const chatSkillsId = (session: number) => `chat.skills:${session}`;
 /** The id of the row that opens what the Skill studio started chat `session` for (#5204). */
 export const chatStudioId = (session: number) => `chat.studio:${session}`;
+/** The id of the row that opens Links in this pane… on chat or shell `session`'s pane (#6332). */
+export const chatLinksId = (session: number) => `chat.links:${session}`;
 /** The id of the row that opens Use skill… for chat `session` (#2775). */
 export const usingSkillId = (session: number) => `chat.useskill:${session}`;
 /** The id of Rename chat… for chat `session`. */
@@ -3791,6 +3798,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
     case "useSkill":
       doing.useSkill(does.session);
       return DID;
+    case "listLinks":
+      doing.listLinks(does.session);
+      return DID;
     case "showChatSkills":
       doing.showChatSkills(does.session);
       return DID;
@@ -4737,6 +4747,10 @@ function chatRows(now: Now): Offer[] {
   const askLocked = now.ask?.locked ?? null;
   if (askLocked !== null) offers.push(cannot(ASK_LOCKED_ID, "Ask a persona…", askLocked));
   const endedHere = new Set(now.endedHere ?? []);
+  // The chats a pane draws, whose screens have links to list (#6332).
+  const drawn = new Set(
+    now.tabs.order.flatMap((tab) => panesOf(now.tabs, tab).map((one) => one.session)),
+  );
   for (const { session, name } of chatsHere(now)) {
     // **A chat ended on purpose that its pane still shows** (#5019): the core has closed it, so
     // only what reads it is left, its Activity and its Network. The ended band's Resume and
@@ -4767,6 +4781,14 @@ function chatRows(now: Now): Offer[] {
     offers.push(
       can(renameId(session), `Rename chat ${name}…`, { verb: "renameChat", session }, name),
     );
+
+    // **Links in this pane…** (#6332, spec #6208 D10): the links on its pane's screen, to pick
+    // from by the keyboard, on its list's Open ▸ and in the palette, as Use skill… is (#4753). A
+    // chat no pane draws has no screen to list.
+    if (drawn.has(session))
+      offers.push(
+        can(chatLinksId(session), `Links in ${name}…`, { verb: "listLinks", session }, name),
+      );
 
     // **Move…** (#4764): the keyboard's drag of the chat, as its row's drag is the pointer's.
     // Every chat's, as Rename is; ⌘⇧M on its row or its pane does the same.
@@ -6004,6 +6026,8 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
           askerId(at),
           chatSkillsId(at),
           chatStudioId(at),
+          // The links on its pane's screen (#6332), before what it reached.
+          chatLinksId(at),
           activityId(at),
           networkId(at),
           ignoreId(at),

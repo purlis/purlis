@@ -108,7 +108,7 @@ export function ForgeGitLabSignIn({
           {trouble}
         </p>
       )}
-      <p className="ui-setting-help">
+      <p className="ui-setting-help ui-text-secondary">
         purlis asks {HOST} for the <code>api</code> scope, the only one that lets it open merge
         requests and push for you. It never hands the sign-in to a chat.
       </p>

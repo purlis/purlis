@@ -112,6 +112,38 @@ async function pickUp(session: number): Promise<void> {
   }, session);
 }
 
+/**
+ * Where every pane's frame is, to a tenth of a pixel, once two looks 100 ms apart agree. A fixed
+ * pause read the frames mid-motion on a loaded runner, so a drop seemed to land off its preview
+ * (#6229).
+ */
+async function framesOnceStill(): Promise<Record<number, Pane>> {
+  const shape = (panes: Record<number, Pane>) =>
+    JSON.stringify(
+      Object.entries(panes).map(([session, { frame }]) => [
+        session,
+        ...[frame.left, frame.top, frame.width, frame.height].map((n) => Math.round(n * 10)),
+      ]),
+    );
+  let last = "";
+  let panes: Record<number, Pane> = {};
+  try {
+    await browser.waitUntil(
+      async () => {
+        panes = await panesNow();
+        const now = shape(panes);
+        const still = now === last;
+        last = now;
+        return still;
+      },
+      { timeout: 5_000, interval: 100 },
+    );
+  } catch {
+    throw new Error(`the panes' frames never held still; the last look: ${last}`);
+  }
+  return panes;
+}
+
 /** Moves the pointer, and waits for the target's wait and the panes' motion to be over. */
 async function moveTo(x: number, y: number): Promise<void> {
   await browser.execute(
@@ -245,7 +277,7 @@ describe("a pane dragged in the window", () => {
     const target = natural[left].frame;
     await pickUp(right);
     await moveTo(target.left + target.width / 2, target.top + 4);
-    const promised = await panesNow();
+    const promised = await framesOnceStill();
     const said = await labels();
     expect(await gridChanges()).toEqual([]);
     await browser.execute(
@@ -264,7 +296,7 @@ describe("a pane dragged in the window", () => {
     console.log(
       `moving-panes: changed ${JSON.stringify(told)}; the labels said ${JSON.stringify(said)}`,
     );
-    const dropped = await panesNow();
+    const dropped = await framesOnceStill();
     // Once each: the layout's one change is the one the observer heard.
     expect(told.filter(({ session }) => session === left)).toHaveLength(1);
     expect(told.filter(({ session }) => session === right)).toHaveLength(1);

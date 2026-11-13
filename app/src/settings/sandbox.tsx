@@ -37,6 +37,7 @@ import type { Collection, LiveSetting } from "./groups";
 import { showPersona } from "./links";
 import { OutLink } from "./OutLink";
 import { Button } from "../ui/button/Button";
+import { capitalised } from "../chatEnded";
 
 /**
  * **Settings › Project › Sandbox explains what a chat here can do** (#1340, spec #1330): one
@@ -147,11 +148,6 @@ export function whatAChatCanDo(reach: Reach): string {
   return `A chat here can change files in ${listed(places)}, and reach ${
     reached.length > 0 ? listed(reached) : "no host on the internet"
   }.`;
-}
-
-/** A sentence that starts with a capital: the core's opt-out count starts lowercase. */
-function capitalised(said: string): string {
-  return said.length > 0 ? said[0].toUpperCase() + said.slice(1) : said;
 }
 
 /**

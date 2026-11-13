@@ -11,7 +11,7 @@ import {
   type UpdateReview,
 } from "./bindings";
 import { counted } from "./dispatches";
-import { capitalised } from "./saving";
+import { capitalised } from "./chatEnded";
 import { Changes, LOOK_CLOSELY, Summary } from "./SkillChangesShown";
 import type { Change } from "./SkillPage";
 import { BUSY, Held, useRead } from "./SkillRead";

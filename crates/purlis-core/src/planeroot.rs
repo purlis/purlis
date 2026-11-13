@@ -1492,7 +1492,9 @@ fn walk_line(
         };
         walk.budget = left;
     }
-    let Some(segments) = shellseg::joined_argv(cmd) else {
+    // A heredoc body nothing runs is data, and only the substitutions of one the shell
+    // expands run (#6293).
+    let Some(segments) = shellseg::joined_argv(&crate::heredoc::commands_a_shell_runs(cmd)) else {
         return Left::at(start);
     };
     let argvs: Vec<Vec<String>> = segments.iter().map(|s| s.argv.clone()).collect();

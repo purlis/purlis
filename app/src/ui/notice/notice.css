@@ -60,10 +60,6 @@
   padding-inline: var(--space-5);
 }
 
-[data-scope="notice"][data-part="whose"] {
-  font-weight: var(--font-weight-strong);
-}
-
 [data-scope="notice"][data-part="message"] p {
   margin: 0 0 var(--space-2);
 }
@@ -207,11 +203,6 @@
 [data-scope="notice"][data-part="heading"] {
   display: grid;
   min-inline-size: 0;
-}
-
-[data-scope="notice"][data-part="sub"] {
-  color: var(--text-muted);
-  font-size: var(--font-size-sm);
 }
 
 /* A quiet link among its ways starts where the words above it do (#5217). */
@@ -491,12 +482,6 @@
   min-inline-size: 0;
   color: var(--text-muted);
   font-size: var(--font-size-sm);
-}
-
-[data-scope="notice"][data-part="title"] {
-  color: var(--text-primary);
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-medium);
 }
 
 /* **A secondary way on the card is visibly a button** (#3478): the card stands on its own ground

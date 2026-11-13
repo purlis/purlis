@@ -1956,3 +1956,90 @@ fn past_claude_codes_ceiling_the_biggest_contributors_are_named() {
          (12,000). Turn some of these skills or plugins off for this workspace's chats."
     );
 }
+
+#[test]
+fn auto_mode_deny_rules_in_your_claude_code_settings_keep_a_task_out_of_auto() {
+    let config = tempfile::tempdir().unwrap();
+    let chat = [(
+        "CLAUDE_CONFIG_DIR".to_owned(),
+        config.path().display().to_string(),
+    )];
+    let env = settings_in(&chat);
+    assert_eq!(
+        settings_keep_auto_from_a_task(&env, &[]),
+        None,
+        "no settings file"
+    );
+    let file = config.path().join("settings.json");
+    for (text, kept) in [
+        (
+            r#"{"autoMode": {"soft_deny": ["Never push to main"]}}"#,
+            true,
+        ),
+        (
+            r#"{"autoMode": {"hard_deny": ["Never delete a branch"]}}"#,
+            true,
+        ),
+        (
+            r#"{"autoMode": {"soft_deny": ["$defaults", "Never push to main"]}}"#,
+            true,
+        ),
+        // Claude Code's own defaults alone are no rule of the person's.
+        (r#"{"autoMode": {"soft_deny": ["$defaults"]}}"#, false),
+        (r#"{"autoMode": {"soft_deny": []}}"#, false),
+        // Rules that only allow, or describe the environment, leave the check's fallback alone.
+        (r#"{"autoMode": {"allow": ["Run the tests"]}}"#, false),
+        (r#"{"autoMode": {"environment": ["A dev laptop"]}}"#, false),
+        (r#"{"model": "opus"}"#, false),
+        ("{ not json", false),
+    ] {
+        std::fs::write(&file, text).unwrap();
+        assert_eq!(
+            settings_keep_auto_from_a_task(&env, &[]).is_some(),
+            kept,
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn auto_mode_deny_rules_in_managed_settings_keep_a_task_out_of_auto_too() {
+    let config = tempfile::tempdir().unwrap();
+    let chat = [(
+        "CLAUDE_CONFIG_DIR".to_owned(),
+        config.path().display().to_string(),
+    )];
+    let env = settings_in(&chat);
+    let managed = tempfile::tempdir().unwrap();
+    let base = managed.path().join("managed-settings.json");
+    let drop_in = managed.path().join("10-rules.json");
+    std::fs::write(&base, r#"{"permissions": {}}"#).unwrap();
+    std::fs::write(&drop_in, r#"{"autoMode": {"hard_deny": ["No prod"]}}"#).unwrap();
+    assert!(settings_keep_auto_from_a_task(&env, std::slice::from_ref(&base)).is_none());
+    assert!(settings_keep_auto_from_a_task(&env, &[base, drop_in]).is_some());
+    // Remote managed settings sit in the config directory.
+    std::fs::write(
+        config.path().join("remote-settings.json"),
+        r#"{"autoMode": {"soft_deny": ["No prod"]}}"#,
+    )
+    .unwrap();
+    assert!(settings_keep_auto_from_a_task(&env, &[]).is_some());
+}
+
+#[test]
+fn project_settings_auto_mode_rules_leave_a_task_in_auto() {
+    // Claude Code reads autoMode from user, flag and managed settings only.
+    let config = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(project.path().join(".claude")).unwrap();
+    std::fs::write(
+        project.path().join(".claude/settings.json"),
+        r#"{"autoMode": {"soft_deny": ["No prod"]}}"#,
+    )
+    .unwrap();
+    let chat = [(
+        "CLAUDE_CONFIG_DIR".to_owned(),
+        config.path().display().to_string(),
+    )];
+    assert!(settings_keep_auto_from_a_task(&settings_in(&chat), &[]).is_none());
+}

@@ -3,8 +3,9 @@
 
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
+import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { OpenChat, Shown } from "./bindings";
@@ -13,10 +14,11 @@ import { SETTLE_MS } from "./TaskBlocksNotice";
 import { forgetProjectViews } from "./projectViews";
 
 /**
- * **The ✋ counts every open project's Blocking asks** (#5999, ADR 0121 decision 4), against the
- * whole window with the core mocked: two projects open, the first in front. An ask from the
- * second is counted on the ✋ as "+1 elsewhere", the Dock badge shows the same total, Asks opens
- * on all projects, a narrower scope narrows the list and never the ✋, and a snoozed chat's ask
+ * **The ✋ counts the project in front; the Dock badge counts every open project** (#6341, ADR
+ * 0121 amended 2026-11-12, decision 1, which reverses #5999's ✋), against the whole window with
+ * the core mocked: two projects open, the first in front. An ask from the second is not on the
+ * ✋ but on its own project tab and on the Dock badge's total, bringing the second forward moves
+ * the ✋ to its count, pressing the ✋ brings no other project forward, and a snoozed chat's ask
  * is never counted.
  */
 
@@ -73,62 +75,65 @@ const permission = (session: number, ask: string, says: string): Shown => ({
 type Project = { chats: OpenChat[]; asks: Shown[]; snoozed: Shown[] };
 
 /** The core: both projects open in this window, ONE in front, each with what it holds. */
-function core(projects: Record<string, Project>) {
+function core(projects: Record<string, Project>, events = false) {
   const badge: unknown[] = [];
   const answered: Record<string, unknown>[] = [];
-  mockIPC((cmd, args) => {
-    const a = (args ?? {}) as Record<string, unknown>;
-    if (cmd === "answer_ask") {
-      answered.push(a);
+  mockIPC(
+    (cmd, args) => {
+      const a = (args ?? {}) as Record<string, unknown>;
+      if (cmd === "answer_ask") {
+        answered.push(a);
+        return null;
+      }
+      const here = projects[(a.plane as string | undefined) ?? ONE] ?? projects[ONE];
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:window|set_badge_count") {
+        badge.push(a.value ?? null);
+        return null;
+      }
+      if (cmd === "plane_at_launch") return { plane: null, from: null, why: null };
+      if (cmd === "planes_to_restore")
+        return { windows: [{ planes: [ONE, TWO], active: 0 }], dropped: [], gone: [] };
+      if (cmd === "open_plane") return { plane: a.path, ask: null };
+      if (cmd === "opened_chats") return [...here.chats];
+      if (cmd === "plane_sidebar")
+        return structuredClone({
+          root: (a.plane as string | undefined) ?? ONE,
+          personas: ["steward"],
+          persona: "steward",
+          unfiled: [],
+          workspaces: [
+            {
+              name: "alpha",
+              path: `${(a.plane as string | undefined) ?? ONE}/workspaces/alpha`,
+              vision: "",
+              todos: [],
+              colour: null,
+              live: false,
+              chats: [...here.chats],
+            },
+          ],
+        });
+      if (cmd === "asks_waiting")
+        return {
+          plane: a.plane,
+          asks: here.asks,
+          with_asking_chat: [],
+          snoozed: here.snoozed,
+        };
+      if (cmd === "chat_states") return [];
+      if (cmd === "stopping_chats") return [];
+      if (cmd === "finished_tasks") return [];
+      if (cmd === "chats_that_would_not_start") return [];
+      if (cmd === "running_sessions") return [];
+      if (cmd === "dispatch_grants_needed") return [];
+      if (cmd === "vault_refusals") return [];
+      if (cmd === "owed_restarts") return [];
+      if (cmd === "runners_away") return [];
       return null;
-    }
-    const here = projects[(a.plane as string | undefined) ?? ONE] ?? projects[ONE];
-    if (cmd === "plugin:event|listen") return 1;
-    if (cmd === "plugin:window|set_badge_count") {
-      badge.push(a.value ?? null);
-      return null;
-    }
-    if (cmd === "plane_at_launch") return { plane: null, from: null, why: null };
-    if (cmd === "planes_to_restore")
-      return { windows: [{ planes: [ONE, TWO], active: 0 }], dropped: [], gone: [] };
-    if (cmd === "open_plane") return { plane: a.path, ask: null };
-    if (cmd === "opened_chats") return [...here.chats];
-    if (cmd === "plane_sidebar")
-      return structuredClone({
-        root: (a.plane as string | undefined) ?? ONE,
-        personas: ["steward"],
-        persona: "steward",
-        unfiled: [],
-        workspaces: [
-          {
-            name: "alpha",
-            path: `${(a.plane as string | undefined) ?? ONE}/workspaces/alpha`,
-            vision: "",
-            todos: [],
-            colour: null,
-            live: false,
-            chats: [...here.chats],
-          },
-        ],
-      });
-    if (cmd === "asks_waiting")
-      return {
-        plane: a.plane,
-        asks: here.asks,
-        with_asking_chat: [],
-        snoozed: here.snoozed,
-      };
-    if (cmd === "chat_states") return [];
-    if (cmd === "stopping_chats") return [];
-    if (cmd === "finished_tasks") return [];
-    if (cmd === "chats_that_would_not_start") return [];
-    if (cmd === "running_sessions") return [];
-    if (cmd === "dispatch_grants_needed") return [];
-    if (cmd === "vault_refusals") return [];
-    if (cmd === "owed_restarts") return [];
-    if (cmd === "runners_away") return [];
-    return null;
-  });
+    },
+    { shouldMockEvents: events },
+  );
   return { badge, answered };
 }
 
@@ -137,8 +142,8 @@ const hand = () => within(bar()).getByRole("tab", { name: /^Asks/ });
 const scopes = () => within(screen.getByRole("radiogroup", { name: "Show what needs you in" }));
 const picked = () => scopes().getByRole("radio", { checked: true }).getAttribute("aria-label");
 
-function open(projects: Record<string, Project>) {
-  const held = core(projects);
+function open(projects: Record<string, Project>, events = false) {
+  const held = core(projects, events);
   // The main window, as Tauri names it, so the badge has a window to be set on.
   mockWindows("main");
   render(
@@ -149,28 +154,73 @@ function open(projects: Record<string, Project>) {
   return held;
 }
 
-describe("the ✋ across every open project (#5999)", () => {
-  it("counts an ask from a second open project as +1 elsewhere", async () => {
+/** The project tab on the rail for `name`'s project: the rail's tablist owns its tabs by
+ *  `aria-owns`, so each is found by the directory it carries. */
+const tab = (name: "one" | "two") => {
+  const found = document.querySelector<HTMLElement>(
+    `[role="tab"][data-directory="${name === "one" ? ONE : TWO}"]`,
+  );
+  if (found === null) throw new Error(`no project tab for ${name}`);
+  return found;
+};
+
+/** The project tab in front, by its name. */
+const front = () =>
+  [...document.querySelectorAll<HTMLElement>('[role="tab"][data-directory]')]
+    .find((one) => one.ariaSelected === "true")
+    ?.getAttribute("aria-label");
+
+describe("the ✋ counts the project in front (#6341)", () => {
+  it("counts only the project in front's ask, never another's", async () => {
     open({
       [ONE]: { chats: [chat(ONE, 1)], asks: [permission(1, "a-1", "Run cargo test")], snoozed: [] },
       [TWO]: { chats: [chat(TWO, 1)], asks: [permission(1, "b-1", "Run npm test")], snoozed: [] },
     });
 
-    await waitFor(() =>
-      expect(hand()).toHaveAccessibleName("Asks 2 things wait on you, +1 elsewhere"),
-    );
-    expect(hand().querySelector('[data-part="count"]')).toHaveAttribute("data-count", "2");
+    await waitFor(() => expect(hand()).toHaveAccessibleName("Asks 1 thing waits on you"));
+    expect(hand().querySelector('[data-part="count"]')).toHaveAttribute("data-count", "1");
   });
 
-  it("counts only the other project's ask where none waits in the project in front", async () => {
+  it("counts nothing where only another project waits", async () => {
     open({
       [ONE]: { chats: [chat(ONE, 1)], asks: [], snoozed: [] },
       [TWO]: { chats: [chat(TWO, 1)], asks: [permission(1, "b-1", "Run npm test")], snoozed: [] },
     });
+    // TWO's tab says its ask, so the ✋'s having none is read, not a moment before the asks.
+    await waitFor(() => expect(tab("two")).toHaveAccessibleDescription(/1 waiting/));
 
-    await waitFor(() =>
-      expect(hand()).toHaveAccessibleName("Asks 1 thing waits on you, +1 elsewhere"),
-    );
+    expect(hand().querySelector('[data-part="count"]')).toBeNull();
+    expect(hand()).toHaveAccessibleName("Asks");
+  });
+
+  it("puts each project's count on its own tab", async () => {
+    open({
+      [ONE]: { chats: [chat(ONE, 1)], asks: [permission(1, "a-1", "Run cargo test")], snoozed: [] },
+      [TWO]: {
+        chats: [chat(TWO, 1)],
+        asks: [permission(1, "b-1", "Run npm test"), permission(1, "b-2", "Run npm build")],
+        snoozed: [],
+      },
+    });
+
+    await waitFor(() => expect(tab("two")).toHaveAccessibleDescription(/2 waiting/));
+    expect(tab("one")).toHaveAccessibleDescription(/1 waiting/);
+  });
+
+  it("moves to the other project's count once that project is in front", async () => {
+    open({
+      [ONE]: { chats: [chat(ONE, 1)], asks: [permission(1, "a-1", "Run cargo test")], snoozed: [] },
+      [TWO]: {
+        chats: [chat(TWO, 1)],
+        asks: [permission(1, "b-1", "Run npm test"), permission(1, "b-2", "Run npm build")],
+        snoozed: [],
+      },
+    });
+    await waitFor(() => expect(hand()).toHaveAccessibleName("Asks 1 thing waits on you"));
+
+    await userEvent.click(tab("two"));
+
+    await waitFor(() => expect(hand()).toHaveAccessibleName("Asks 2 things wait on you"));
   });
 
   it("opens Asks on all projects, and a narrower scope never changes the ✋", async () => {
@@ -184,7 +234,7 @@ describe("the ✋ across every open project (#5999)", () => {
     await userEvent.click(scopes().getByRole("radio", { name: /^This project/ }));
 
     await waitFor(() => expect(picked()).toBe("This project, 1 waiting on you"));
-    expect(hand()).toHaveAccessibleName("Asks 2 things wait on you, +1 elsewhere");
+    expect(hand()).toHaveAccessibleName("Asks 1 thing waits on you");
   });
 
   it("never counts a snoozed chat's ask", async () => {
@@ -194,9 +244,10 @@ describe("the ✋ across every open project (#5999)", () => {
     });
 
     await waitFor(() => expect(hand()).toHaveAccessibleName("Asks 1 thing waits on you"));
+    expect(tab("two")).not.toHaveAccessibleDescription(/waiting/);
   });
 
-  it("shows the same total on the Dock badge", async () => {
+  it("keeps every open project's total on the Dock badge (#5999)", async () => {
     const { badge } = open({
       [ONE]: { chats: [chat(ONE, 1)], asks: [permission(1, "a-1", "Run cargo test")], snoozed: [] },
       [TWO]: { chats: [chat(TWO, 1)], asks: [permission(1, "b-1", "Run npm test")], snoozed: [] },
@@ -238,32 +289,47 @@ describe("the ✋ across every open project (#5999)", () => {
     expect(answered[0]).toMatchObject({ plane: TWO, session: 1, ask: "b-1", option: "allow" });
   });
 
-  it("keeps the project in front when the ✋ is pressed and only another project waits (#1921)", async () => {
+  it("opens the Asks in front when the ✋ is pressed, and brings no other project forward", async () => {
     open({
       [ONE]: { chats: [chat(ONE, 1)], asks: [], snoozed: [] },
       [TWO]: { chats: [chat(TWO, 1)], asks: [permission(1, "b-1", "Run npm test")], snoozed: [] },
     });
-    await waitFor(() =>
-      expect(hand()).toHaveAccessibleName("Asks 1 thing waits on you, +1 elsewhere"),
-    );
-    /** The project tab in front, by its name. */
-    const front = () =>
-      screen
-        .getAllByRole("tab")
-        .find((tab) => tab.closest('[aria-label="Projects"]') && tab.ariaSelected === "true")
-        ?.getAttribute("aria-label");
+    await waitFor(() => expect(tab("two")).toHaveAccessibleDescription(/1 waiting/));
     const was = front();
-    expect(was).toBeTruthy();
+    expect(was).toBe("one");
+    // Asks put away, so the press is what opens it.
+    if (screen.queryByRole("tabpanel", { name: "Asks" }) !== null) await userEvent.click(hand());
+    await waitFor(() => expect(screen.queryByRole("tabpanel", { name: "Asks" })).toBeNull());
 
-    // The title bar's ✋, which opens Asks (`openInbox`).
-    await userEvent.click(
-      within(screen.getByTestId("title-bar")).getByRole("button", { name: /waits? on you/ }),
-    );
+    await userEvent.click(hand());
 
-    // Its Asks lists TWO's ask, answerable there, and ONE stays in front.
-    await waitFor(() =>
-      expect(document.querySelector(`[data-elsewhere="${TWO}#1"]`)).not.toBeNull(),
-    );
+    await screen.findByRole("tabpanel", { name: "Asks" });
     expect(front()).toBe(was);
+  });
+
+  it("brings another project forward with its ask open when its notification is clicked", async () => {
+    open(
+      {
+        [ONE]: { chats: [chat(ONE, 1)], asks: [], snoozed: [] },
+        [TWO]: { chats: [chat(TWO, 1)], asks: [permission(1, "b-1", "Run npm test")], snoozed: [] },
+      },
+      true,
+    );
+    await waitFor(() => expect(tab("two")).toHaveAccessibleDescription(/1 waiting/));
+    expect(front()).toBe("one");
+
+    // The window is behind another app when TWO's notification is clicked.
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    await act(async () => {
+      await emit("asks-notified", { plane: TWO, session: 1, sessions: [1] });
+    });
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    await waitFor(() => expect(front()).toBe("two"));
+    await waitFor(() => expect(hand()).toHaveAccessibleName("Asks 1 thing waits on you"));
+    const asks = await screen.findByRole("tabpanel", { name: "Asks" });
+    await waitFor(() => expect(within(asks).getByText("Run npm test")).toBeTruthy());
   });
 });
