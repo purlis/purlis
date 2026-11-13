@@ -601,11 +601,15 @@ pub struct SetupProtection {
     pub yours: Option<ProtectionWord>,
 }
 
-/// What setup's Protection row shows, read from the core ([`SetupProtection`]).
+/// What setup's Protection row shows, read from the core ([`SetupProtection`]). It reads the
+/// local project's level from the disk, so off the window's thread (#1949).
 #[tauri::command]
 #[specta::specta]
-pub fn setup_protection() -> Result<SetupProtection, String> {
-    Ok(setup_protection_in(&data_home()?))
+pub async fn setup_protection() -> Result<SetupProtection, String> {
+    let data = data_home()?;
+    tauri::async_runtime::spawn_blocking(move || setup_protection_in(&data))
+        .await
+        .map_err(|err| format!("purlis could not read the protection level: {err}"))
 }
 
 fn setup_protection_in(data: &Path) -> SetupProtection {

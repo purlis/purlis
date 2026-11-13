@@ -1583,6 +1583,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "session_host_failing",
     "session_record",
     "set_dismissed",
+    // What setup's Protection row shows: the host's bound and the local project's level, a read.
+    "setup_protection",
     "show_window_holding",
     // A deleted skill's last text, for its page on Deleted (S9, #3691): read only.
     "skill_deleted_text",

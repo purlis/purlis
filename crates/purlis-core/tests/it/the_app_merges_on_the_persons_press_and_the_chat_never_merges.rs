@@ -121,6 +121,7 @@ fn the_app_merges_on_the_persons_press_and_the_chat_never_merges() {
 
 #[test]
 fn a_merge_the_forge_refuses_waits_again_and_dont_merge_merges_nothing() {
+    purlis_core::unsteered!();
     let holds = Holds::default();
     holds.raise(4, key(12), 1_000);
     let refusing = Forge {
@@ -147,6 +148,7 @@ fn a_merge_the_forge_refuses_waits_again_and_dont_merge_merges_nothing() {
 /// carries over, and a press naming the old head merges nothing.
 #[test]
 fn a_retried_merge_at_a_new_head_is_a_new_ask_and_the_old_one_is_gone() {
+    purlis_core::unsteered!();
     let holds = Holds::default();
     assert_eq!(holds.raise(4, key(12), 1_000), Raised::New);
     let moved = MergeKey {
@@ -175,6 +177,7 @@ fn a_retried_merge_at_a_new_head_is_a_new_ask_and_the_old_one_is_gone() {
 /// A try again at the same head and base is still the one ask, waiting since the first try.
 #[test]
 fn a_retried_merge_at_the_same_head_is_still_one_ask() {
+    purlis_core::unsteered!();
     let holds = Holds::default();
     assert_eq!(holds.raise(4, key(12), 1_000), Raised::New);
     assert_eq!(holds.raise(4, key(12), 2_000), Raised::Already);
@@ -187,6 +190,7 @@ fn a_retried_merge_at_the_same_head_is_still_one_ask() {
 /// most merge asks can still refresh one.
 #[test]
 fn a_retried_merge_at_a_new_head_takes_the_old_asks_place_under_the_limit() {
+    purlis_core::unsteered!();
     let holds = Holds::default();
     for number in 1..=mergehold::AT_MOST_PER_CHAT as u64 {
         assert_eq!(holds.raise(4, key(number), 1_000), Raised::New);
@@ -205,6 +209,7 @@ fn a_retried_merge_at_a_new_head_takes_the_old_asks_place_under_the_limit() {
 /// merges nothing and says so; the ask waits again.
 #[test]
 fn a_press_on_a_request_whose_base_moved_merges_nothing() {
+    purlis_core::unsteered!();
     let holds = Holds::default();
     holds.raise(4, key(12), 1_000);
     let retargeted = Forge {
@@ -225,6 +230,7 @@ fn a_press_on_a_request_whose_base_moved_merges_nothing() {
 /// Q239 (S5): the press merges by the repo's own method, as the forge says it at the press.
 #[test]
 fn a_press_merges_by_the_repos_own_method() {
+    purlis_core::unsteered!();
     let holds = Holds::default();
     holds.raise(4, key(12), 1_000);
     let squashes = Forge {

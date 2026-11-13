@@ -22,8 +22,9 @@
 //!   No setting or key changes that.
 //!
 //! **Not here yet** (each its ticket's): A4's refusal of an unattended merge still answers first
-//! (its precedence is read with attendance, R-145); the ask's title, author, base and checks
-//! (R-119), and the ruleset (R-146); the merge row in the window (R-120). A line whose request
+//! (its precedence is read with attendance, R-145, #6409); the ask's title, author, base and
+//! checks (R-119), and the ruleset (R-146, both #6404); the merge row in the window (R-120,
+//! #6431). A line whose request
 //! cannot be read (a raw API call, a merge with no number) is refused with no ask.
 //!
 //! In memory only, in the app: a relaunch holds none, and the chat's next try asks again.
