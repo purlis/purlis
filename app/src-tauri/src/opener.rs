@@ -886,6 +886,7 @@ pub async fn create_project(
     adopt: Option<String>,
     forge: Option<crate::firstrun::ForgeWord>,
     template: Option<String>,
+    protection: Option<crate::firstrun::ProtectionWord>,
 ) -> Result<ProjectAnswer, String> {
     let forge = forge.map(purlis_core::forge::Kind::from);
     crate::off_the_window("making the project", move || {
@@ -897,11 +898,13 @@ pub async fn create_project(
             template.as_deref(),
         ) {
             Ok(root) => Ok(ProjectAnswer {
-                opened: Some(
+                // The Protection row's answer, kept as the person's own level (T1-24).
+                opened: Some({
+                    crate::firstrun::protect(&root, protection)?;
                     app.state::<Planes>()
                         .open_if_approved(&root)
-                        .map(Opened::from)?,
-                ),
+                        .map(Opened::from)?
+                }),
                 asks_forge: None,
             }),
             Err(NotMade::AsksForForge(why)) => Ok(ProjectAnswer {

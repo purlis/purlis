@@ -11,7 +11,13 @@ import {
   useState,
 } from "react";
 import { CloudDownload, FolderOpen, FolderPlus, LogIn, Server } from "lucide-react";
-import { commands, type ForgeRow, type Recents, type TemplateChoice } from "./bindings";
+import {
+  commands,
+  type ForgeRow,
+  type ProtectionWord,
+  type Recents,
+  type TemplateChoice,
+} from "./bindings";
 import { CreateOnForge, type Where, WhereItLives } from "./CreateOnForge";
 import { Launcher } from "./DoorPage";
 import { ForgeSignIn } from "./ForgeSignIn";
@@ -125,9 +131,10 @@ export function Welcome({
   trouble?: string;
   /** Opens a repo into this machine's local project, laid out from `template`: Create a
    *  project's act. */
-  onOpenRepo: (path: string, template: TemplateChoice) => void;
-  /** Makes a project with no repo in this folder, and opens it: Create a project on this Mac. */
-  onMakeProject: (folder: string, template: string | null) => void;
+  onOpenRepo: (path: string, template: TemplateChoice, protection?: ProtectionWord) => void;
+  /** Makes a project with no repo in this folder, and opens it: Create a project on this Mac.
+   *  Both at the Protection row's level, where the page has one (T1-24). */
+  onMakeProject: (folder: string, template: string | null, protection?: ProtectionWord) => void;
   /** Opens the local project with `<cli> auth login` in a shell tab: today's forge sign-in. */
   onSignInToForge: (row: ForgeRow) => void;
   /** Whether a repo is being opened right now. */

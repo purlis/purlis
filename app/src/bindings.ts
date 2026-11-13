@@ -565,7 +565,13 @@ export const commands = {
 	 *  On a blocking thread (#1949), for [`open_plane`]'s reason and because making the project
 	 *  writes its files and runs git.
 	 */
-	createProject: (path: string, planeIsThisRepo: boolean, adopt: string | null, forge: "github" | "gitlab" | null, template: string | null) => typedError<ProjectAnswer, string>(__TAURI_INVOKE("create_project", { path, planeIsThisRepo, adopt, forge, template })),
+	createProject: (path: string, planeIsThisRepo: boolean, adopt: string | null, forge: "github" | "gitlab" | null, template: string | null, protection: 
+/**  Full sandbox. */
+"on" | 
+/**  Basic sandbox. */
+"floor" | 
+/**  No sandbox. */
+"off" | null) => typedError<ProjectAnswer, string>(__TAURI_INVOKE("create_project", { path, planeIsThisRepo, adopt, forge, template, protection })),
 	/**
 	 *  Which harnesses are installed and signed in, and whether `gh` and `glab` are logged in.
 	 * 
@@ -1445,7 +1451,13 @@ export const commands = {
 	 *  operator's answer (`github`, `gitlab`) on the call after. A local project that is already
 	 *  there asks nothing.
 	 */
-	openRepo: (path: string, template: TemplateChoice, forge: "github" | "gitlab" | null) => typedError<RepoAnswer, string>(__TAURI_INVOKE("open_repo", { path, template, forge })),
+	openRepo: (path: string, template: TemplateChoice, forge: "github" | "gitlab" | null, protection: 
+/**  Full sandbox. */
+"on" | 
+/**  Basic sandbox. */
+"floor" | 
+/**  No sandbox. */
+"off" | null) => typedError<RepoAnswer, string>(__TAURI_INVOKE("open_repo", { path, template, forge, protection })),
 	/**
 	 *  The project template that fits the repo at `path`, by id, or `null` when none does or `path`
 	 *  is not a full path to a directory: what the first run's "Fits the repo" says it will pick
@@ -14485,6 +14497,19 @@ export type ProposedWhole = {
 	/**  Why it is not shown, or not applied, in a sentence. */
 	why: string | null,
 };
+
+/**
+ *  **The Protection row's answer** on the wire (T1-24, Q236): the level the person chose at setup, in
+ *  the words Settings writes it with. It is written as their own level for the project
+ *  ([`purlis_core::sandbox::personal::chosen_at_setup`]).
+ */
+export type ProtectionWord = 
+/**  Full sandbox. */
+"on" | 
+/**  Basic sandbox. */
+"floor" | 
+/**  No sandbox. */
+"off";
 
 /**  What a yes hands back. */
 export type PublishAccepted = {
