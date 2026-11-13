@@ -175,6 +175,9 @@ export const FromTheSwitchersRow: Story = {
     await untilFocused(() => within(again).getByRole("button", { name: "Read it" }), "Read it");
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(canvas.getByTestId("said")).toHaveTextContent(/Read it/));
+    // Pictured once the card has gone: a picture taken while it leaves raced its way out
+    // (2026-11-13, #6202's webkit 11/12 caught it gone where the baseline had it leaving).
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   },
 };
 

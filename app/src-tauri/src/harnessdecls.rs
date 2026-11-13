@@ -11,7 +11,7 @@
 use std::path::{Path, PathBuf};
 
 use purlis_core::harness_declaration::{self, Declarations};
-use purlis_core::youreditor::{self, Launch};
+use purlis_core::youreditor::{Checked, Launch};
 
 use crate::piecefiles::YourEditor;
 use crate::planes::{PlaneId, Planes};
@@ -119,9 +119,12 @@ fn declaration_file(root: &Path, file: &str) -> Result<PathBuf, String> {
 }
 
 /// What starts your editor on the declaration `file` names in the project at `root`.
-fn launch_of(root: &Path, file: &str, editor: YourEditor) -> Result<Launch, String> {
+fn launch_of(root: &Path, file: &str, editor: YourEditor) -> Result<Checked, String> {
     let path = declaration_file(root, file)?;
-    youreditor::launch(editor.into(), &path, 1, &purlis_core::envvar::var)
+    // Held from the resolved `harnesses/` folder it sits directly in, so what is launched is
+    // still the declaration checked (#3185).
+    let within = path.parent().unwrap_or(root);
+    Checked::new(within, &path, editor.into(), 1, &purlis_core::envvar::var)
         .map_err(|refused| refused.to_string())
 }
 
@@ -143,8 +146,9 @@ pub async fn open_harness_declaration(
     use tauri_plugin_opener::OpenerExt as _;
     let held = planes.held(&plane)?;
     let root = held.root().to_path_buf();
-    let launch = launch_of(&root, &file, editor)?;
-    match launch {
+    let checked = launch_of(&root, &file, editor)?;
+    // Asked again right before the launch: still the file checked (#3185).
+    match checked.launch().map_err(|refused| refused.to_string())? {
         Launch::Url(url) => app
             .opener()
             .open_url(&url, None::<&str>)

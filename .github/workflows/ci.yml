@@ -1535,7 +1535,10 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && (github.event_name != 'pull_request' || needs.changes.outputs.confinement != 'false') && !github.event.pull_request.draft }}
     runs-on: macos-latest
-    timeout-minutes: 40
+    # A cold run builds four test targets (the probe, purlis-core's `it` and its lib tests,
+    # purlis-cli's `it`): on 2026-11-11 (#6202, job 130462236655) purlis-core's lib tests alone
+    # were still compiling 20 minutes in when 40 minutes ran out, with no test failed.
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1559,6 +1562,9 @@ jobs:
       - if: steps.scope.outputs.run == 'true'
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
+          # The macOS `app` job's cache, which `main` saves. With no shared key, this job's key
+          # is its own name, which nothing saves, so every run built every dependency cold.
+          shared-key: app
           save-if: false
       # The names the studio probe's network tests look up, from the hosts file, not outside DNS
       # (#3261): see the action for which names and why.

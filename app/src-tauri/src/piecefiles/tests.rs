@@ -316,12 +316,15 @@ fn the_editor_the_window_names_reaches_the_core_as_a_url_for_that_editor() {
     );
 
     assert_eq!(
-        vscode,
-        Ok(Launch::Url(format!("vscode://file{}:4:1", file.display())))
+        vscode.map(|checked| checked.launch()),
+        Ok(Ok(Launch::Url(format!(
+            "vscode://file{}:4:1",
+            file.display()
+        ))))
     );
     assert_eq!(
-        refused,
-        Err("'../x' is not a path inside the branch's folder".to_string())
+        refused.unwrap_err(),
+        "'../x' is not a path inside the branch's folder"
     );
 }
 
