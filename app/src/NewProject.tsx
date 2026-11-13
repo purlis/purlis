@@ -155,6 +155,10 @@ export function NewProject({
   const shown = advanced || making;
   const noSandbox = useNoSandbox(shown ? (path.trim() === "" ? undefined : path.trim()) : null);
   const refused = refusedHere(protection, noSandbox);
+  // Open repo into the local project already there writes no level (Q241), so what No sandbox
+  // would do there is not its to say or to wait on, as First run's `forTheRepo`.
+  const forTheRepo = setup?.yours ? undefined : protection;
+  const repoRefused = forTheRepo !== undefined && refusedHere(forTheRepo, noSandbox);
   // Both acts' words, and each with the move named, so choosing No sandbox moves nothing.
   const reserved = ["Open repo", "Create project"].flatMap((label) => [
     label,
@@ -162,8 +166,7 @@ export function NewProject({
   ]);
   const openRepo = () => {
     started();
-    if (repo.trim() !== "" && !opening && !refused)
-      onOpenRepo(repo.trim(), setup?.yours ? null : protection);
+    if (repo.trim() !== "" && !opening && !repoRefused) onOpenRepo(repo.trim(), forTheRepo ?? null);
   };
   const create = () => {
     started();
@@ -188,9 +191,12 @@ export function NewProject({
               onPress: create,
             }
           : {
-              children: withTheMove("Open repo", protection, noSandbox),
+              children:
+                forTheRepo === undefined
+                  ? "Open repo"
+                  : withTheMove("Open repo", forTheRepo, noSandbox),
               reserve: [...reserved, "Creating…"],
-              isDisabled: repo.trim() === "" || opening || refused,
+              isDisabled: repo.trim() === "" || opening || repoRefused,
               onPress: openRepo,
             }
       }

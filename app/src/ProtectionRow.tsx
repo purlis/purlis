@@ -61,25 +61,34 @@ export function useSetupProtection(): SetupProtection | undefined {
  * into the keychain in the page's one press, the warning's key, and a team's vault that refuses
  * it. `folder` is where the project is made; null is this machine's local project. Undefined
  * until it answers, or where it could not: the core still refuses and moves when it writes.
+ *
+ * Asked once `folder` has settled for {@link NO_SANDBOX_SETTLES} ms, never at each keystroke of
+ * a typed folder: each ask may run git for the team's vault's owner.
  */
 export function useNoSandbox(folder: string | null | undefined): NoSandboxAtSetup | undefined {
   const [said, setSaid] = useState<{ folder: string | null; report: NoSandboxAtSetup }>();
   useEffect(() => {
     if (folder === undefined) return;
     let gone = false;
-    void commands
-      .noSandboxAtSetup(folder)
-      .then((answer) => {
-        if (!gone && answer.status === "ok" && answer.data)
-          setSaid({ folder, report: answer.data });
-      })
-      .catch(() => undefined);
+    const asking = setTimeout(() => {
+      void commands
+        .noSandboxAtSetup(folder)
+        .then((answer) => {
+          if (!gone && answer.status === "ok" && answer.data)
+            setSaid({ folder, report: answer.data });
+        })
+        .catch(() => undefined);
+    }, NO_SANDBOX_SETTLES);
     return () => {
       gone = true;
+      clearTimeout(asking);
     };
   }, [folder]);
   return said !== undefined && said.folder === folder ? said.report : undefined;
 }
+
+/** How long a folder stays as it is before {@link useNoSandbox} asks the core about it. */
+const NO_SANDBOX_SETTLES = 300;
 
 /** The warnings the core names by key (Q62, Q141): what every No sandbox chat is. */
 const WARNINGS: Readonly<Record<string, string>> = {

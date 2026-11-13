@@ -262,7 +262,8 @@ export const NoSandboxMovesTwoVaults: Story = {
     const body = within(canvasElement.ownerDocument.body);
     await expect(await body.findByText(/A chat runs as you/)).toBeVisible();
     await expect(
-      body.getByText(
+      // Asked once the folder settles (useNoSandbox), so it comes a moment after the choice.
+      await body.findByText(
         /moves 2 plain-file vaults, personal and stripe-test, into the system keychain/,
       ),
     ).toBeVisible();
