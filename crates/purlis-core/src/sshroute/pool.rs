@@ -184,8 +184,16 @@ pub fn docker_for_link(config: &Path, docker: &Docker, name: &str) -> Result<Doc
 /// **The `docker` a link to a runner of pool `name` is made with**: `docker` itself for a pool on
 /// this machine, else [`docker_for_link`]'s. Where a pool on another machine can't be pointed at
 /// its engine the link is refused with why: it never falls back to this machine's engine.
+///
+/// The pools are read first: a record that can't be read refuses the link, since it may name a
+/// pool on another machine.
 pub fn docker_for_kept_link(config: &Path, docker: &Docker, name: &str) -> Result<Docker, String> {
-    if !is_remote(config, name) {
+    let pools = crate::runners::pools(config).map_err(|why| why.to_string())?;
+    let elsewhere = pools
+        .iter()
+        .find(|pool| pool.name() == name)
+        .is_some_and(Pool::on_another_machine);
+    if !elsewhere {
         return Ok(docker.clone());
     }
     docker_for_link(config, docker, name)
@@ -573,5 +581,20 @@ mod tests {
             docker_for_kept_link(config.path(), &local, "here"),
             Ok(local)
         );
+    }
+
+    /// **A record of pools that can't be read refuses the link**: it may name a pool on another
+    /// machine, so this machine's docker is never taken for it.
+    #[test]
+    fn a_link_is_refused_where_the_pools_cant_be_read() {
+        let config = tempfile::tempdir().unwrap();
+        let file = crate::machine::dir(config.path()).join(crate::machine::RUNNERS_FILE);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        // Readable by others, so purlis won't read it.
+        std::fs::write(&file, r#"{"version":1,"pools":[],"runners":[]}"#).unwrap();
+        assert!(crate::runners::pools(config.path()).is_err());
+        let local = Docker::at("/usr/local/bin/docker");
+        let linked = docker_for_kept_link(config.path(), &local, "build-box");
+        assert!(linked.is_err(), "linked with {linked:?}");
     }
 }
