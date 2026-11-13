@@ -630,7 +630,7 @@ pub async fn pool_setup_connect(
             let docker = poolsetup::docker_here()
                 .ok_or_else(|| "purlis found no docker command on this machine.".to_owned())?;
             // Over SSH the key the machine shows; over TLS the CA its files name (#6267).
-            let pressed: Pressed = poolsetup::connecting::meet_chosen(&docker, &chosen);
+            let pressed: Pressed = poolsetup::connecting::meet_chosen(&config, &docker, &chosen);
             read_shown(&config, &root, Some(pressed))
         })
         .await

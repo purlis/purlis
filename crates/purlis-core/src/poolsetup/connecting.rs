@@ -691,10 +691,14 @@ pub fn route_of(route: &str, identity: Option<&std::path::Path>) -> Result<Route
 /// **What a press of Connect to finds for the machine Connect keeps** (#6266, #6267), by its
 /// route: the key an SSH machine shows, or the CA a TLS machine's files hold, its certificate
 /// found signed by it. Nothing is kept.
-pub fn meet_chosen(docker: &crate::dockerpool::Docker, chosen: &super::Chosen) -> super::Pressed {
+pub fn meet_chosen(
+    config: &std::path::Path,
+    docker: &crate::dockerpool::Docker,
+    chosen: &super::Chosen,
+) -> super::Pressed {
     if crate::tlsroute::is_tcp(&chosen.route) {
         let met = match &chosen.tls {
-            Some(files) => meet_tls(&chosen.route, files),
+            Some(files) => meet_tls(config, &chosen.route, files),
             None => Err(Finding::Here(crate::sshroute::PLAIN_TCP.to_owned())),
         };
         return match met {
@@ -721,7 +725,7 @@ pub fn trust_chosen(
         let Some(files) = &chosen.tls else {
             return Ok(Err(Finding::Here(crate::sshroute::PLAIN_TCP.to_owned())));
         };
-        return match trust_tls(docker, &chosen.route, files, fingerprint) {
+        return match trust_tls(docker, &chosen.route, files, fingerprint, config) {
             Ok(remote) => super::trusted_tls(config, &remote).map(Ok),
             Err(finding) => Ok(Err(finding)),
         };
@@ -737,9 +741,23 @@ pub fn trust_chosen(
 
 /// **What Connect to finds over TLS** (#6267): the CA `files` name, read, and the machine at
 /// `route` met by purlis's own handshake against it with the client certificate. Nothing is kept.
-pub fn meet_tls(route: &str, files: &crate::tlsroute::Files) -> Result<CaMet, Finding> {
+pub fn meet_tls(
+    config: &std::path::Path,
+    route: &str,
+    files: &crate::tlsroute::Files,
+) -> Result<CaMet, Finding> {
+    meet_tls_with(route, files, &crate::tlsroute::folders_chats_write(config))
+}
+
+/// [`meet_tls`], with `chats_write` the folders chats write
+/// ([`crate::tlsroute::held_from_chats`]).
+pub(crate) fn meet_tls_with(
+    route: &str,
+    files: &crate::tlsroute::Files,
+    chats_write: &[std::path::PathBuf],
+) -> Result<CaMet, Finding> {
     let route = crate::tlsroute::Route::parse(route).map_err(Finding::Here)?;
-    crate::tlsroute::held_from_chats(files, &crate::tlsroute::folders_chats_write(), route.host())?;
+    crate::tlsroute::held_from_chats(files, chats_write, route.host())?;
     let ca = crate::tlsroute::read_ca(&files.ca, route.host())?;
     let through = crate::tlsroute::Through {
         route: route.clone(),
@@ -764,10 +782,29 @@ pub fn trust_tls(
     route: &str,
     files: &crate::tlsroute::Files,
     fingerprint: &str,
+    config: &std::path::Path,
+) -> Result<crate::tlsroute::Remote, Finding> {
+    trust_tls_with(
+        docker,
+        route,
+        files,
+        fingerprint,
+        &crate::tlsroute::folders_chats_write(config),
+    )
+}
+
+/// [`trust_tls`], with `chats_write` the folders chats write
+/// ([`crate::tlsroute::held_from_chats`]).
+pub(crate) fn trust_tls_with(
+    docker: &crate::dockerpool::Docker,
+    route: &str,
+    files: &crate::tlsroute::Files,
+    fingerprint: &str,
+    chats_write: &[std::path::PathBuf],
 ) -> Result<crate::tlsroute::Remote, Finding> {
     let route = crate::tlsroute::Route::parse(route).map_err(Finding::Here)?;
     let confirmed = crate::tlsroute::Fingerprint::parse(fingerprint).map_err(Finding::Here)?;
-    crate::tlsroute::held_from_chats(files, &crate::tlsroute::folders_chats_write(), route.host())?;
+    crate::tlsroute::held_from_chats(files, chats_write, route.host())?;
     let ca = crate::tlsroute::read_ca(&files.ca, route.host())?;
     if ca.fingerprint != confirmed {
         // What was confirmed isn't what the file holds now: confirmed again, never trusted unseen.

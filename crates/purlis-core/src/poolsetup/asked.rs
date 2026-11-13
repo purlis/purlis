@@ -328,7 +328,7 @@ fn tls_remote_of(
     let said =
         |finding: crate::sshroute::connect::Finding| Refused::Other(super::connect_said(&finding));
     let Some(trust) = trust else {
-        let met = super::connecting::meet_tls(on, files).map_err(said)?;
+        let met = super::connecting::meet_tls(config, on, files).map_err(said)?;
         return Err(Refused::Other(format!(
             "{}'s certificate is signed by the CA in {}{}, fingerprint {}. Check it on {}: \
              openssl x509 -noout -fingerprint -sha256 -in <the file Docker's --tlscacert names \
@@ -344,7 +344,7 @@ fn tls_remote_of(
             met.fingerprint.spelled()
         )));
     };
-    super::connecting::trust_tls(docker, on, files, trust).map_err(said)
+    super::connecting::trust_tls(docker, on, files, trust, config).map_err(said)
 }
 
 /// **Makes the pool `asked` asks for**: the one way to it, from the button and from `purlis pool

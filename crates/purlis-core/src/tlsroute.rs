@@ -560,23 +560,21 @@ pub fn held_from_chats(files: &Files, chats_write: &[PathBuf], host: &str) -> Re
 }
 
 /// **The folders chats write, for [`held_from_chats`]**: the temporary folders and every project
-/// this machine has opened.
+/// this machine, its store under `config_root`, has opened.
 #[must_use]
-pub fn folders_chats_write() -> Vec<PathBuf> {
+pub fn folders_chats_write(config_root: &Path) -> Vec<PathBuf> {
     let mut folders = vec![
         std::env::temp_dir(),
         PathBuf::from("/tmp"),
         PathBuf::from("/var/tmp"),
     ];
-    if let Some(config_root) = crate::machine::config_root() {
-        folders.extend(
-            crate::machine::read(&config_root)
-                .store
-                .recents
-                .into_iter()
-                .map(|recent| recent.plane),
-        );
-    }
+    folders.extend(
+        crate::machine::read(config_root)
+            .store
+            .recents
+            .into_iter()
+            .map(|recent| recent.plane),
+    );
     folders
 }
 

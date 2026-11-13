@@ -743,3 +743,52 @@ fn the_tls_files_are_kept_with_a_tcp_machine_and_its_ca_pin_only_once_trusted() 
         None
     );
 }
+
+/// **Connect and Trust this machine refuse TLS files purlis can't hold from chats** (#6267):
+/// a hard-linked key, and files in a folder chats write, before anything is read or met.
+#[cfg(unix)]
+#[test]
+fn connect_and_trust_over_tls_refuse_files_a_chat_could_reach_another_way() {
+    let at = tempfile::tempdir().unwrap();
+    for name in ["ca.pem", "cert.pem", "key.pem"] {
+        std::fs::write(at.path().join(name), "not read").unwrap();
+    }
+    let files = crate::tlsroute::Files::new(
+        at.path().join("ca.pem"),
+        at.path().join("cert.pem"),
+        crate::tlsroute::KeyFrom::File(at.path().join("key.pem")),
+    )
+    .unwrap();
+    let route = "tcp://box:2376";
+    let fingerprint = format!("sha256:{}", "ab".repeat(32));
+    let docker = crate::dockerpool::Docker::at("/nonexistent/docker");
+    let refused = |met: Result<(), Finding>, file: &str, why: &str| match met {
+        Err(Finding::TlsFile {
+            file: named,
+            why: said,
+            ..
+        }) => {
+            assert!(named.ends_with(file), "{named}");
+            assert!(said.contains(why), "{said}");
+        }
+        other => panic!("{file} was taken: {other:?}"),
+    };
+    let both = |chats_write: &[std::path::PathBuf]| {
+        (
+            meet_tls_with(route, &files, chats_write).map(drop),
+            trust_tls_with(&docker, route, &files, &fingerprint, chats_write).map(drop),
+        )
+    };
+
+    // In a folder chats write.
+    let (met, trusted) = both(&[at.path().to_path_buf()]);
+    refused(met, "ca.pem", "chats write");
+    refused(trusted, "ca.pem", "chats write");
+
+    // A key with another name on disk.
+    let other = tempfile::tempdir().unwrap();
+    std::fs::hard_link(at.path().join("key.pem"), other.path().join("k.pem")).unwrap();
+    let (met, trusted) = both(&[]);
+    refused(met, "key.pem", "another name");
+    refused(trusted, "key.pem", "another name");
+}

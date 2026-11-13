@@ -52,10 +52,21 @@ impl Fixture {
         .expect("the files")
     }
 
+    /// The config home this machine's store is read from: the test's own, empty.
+    fn config(&self) -> PathBuf {
+        self.settings.path().join("config")
+    }
+
     fn trusted(&self, files: &Files) -> Remote {
-        let met = connecting::meet_tls(&self.route, files).expect("met");
-        connecting::trust_tls(&self.docker, &self.route, files, &met.fingerprint.spelled())
-            .expect("trusted")
+        let met = connecting::meet_tls(&self.config(), &self.route, files).expect("met");
+        connecting::trust_tls(
+            &self.docker,
+            &self.route,
+            files,
+            &met.fingerprint.spelled(),
+            &self.config(),
+        )
+        .expect("trusted")
     }
 }
 
@@ -80,7 +91,7 @@ fn a_machine_is_met_by_dinds_own_ca_and_trusted_with_its_engine() {
     purlis_core::unsteered!();
     let Some(fixture) = fixture() else { return };
     let files = fixture.files("ca.pem");
-    let met = connecting::meet_tls(&fixture.route, &files).expect("met");
+    let met = connecting::meet_tls(&fixture.config(), &fixture.route, &files).expect("met");
     let ca = tlsroute::read_ca(&files.ca, "dind").expect("the CA");
     assert_eq!(met.fingerprint, ca.fingerprint);
     let remote = fixture.trusted(&files);
@@ -121,7 +132,11 @@ fn a_ca_file_that_no_longer_matches_the_pinned_fingerprint_refuses_the_run() {
 fn a_ca_that_didnt_sign_dinds_certificate_is_said_naming_the_file() {
     purlis_core::unsteered!();
     let Some(fixture) = fixture() else { return };
-    match connecting::meet_tls(&fixture.route, &fixture.files("other-ca.pem")) {
+    match connecting::meet_tls(
+        &fixture.config(),
+        &fixture.route,
+        &fixture.files("other-ca.pem"),
+    ) {
         Err(Finding::NotSignedByCa { ca, .. }) => {
             assert_eq!(ca, fixture.dir.join("other-ca.pem").display().to_string());
         }
