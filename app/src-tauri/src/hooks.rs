@@ -3837,6 +3837,12 @@ impl ChatBoard for Hooks {
         })
     }
 
+    fn block_withdrawn(&self, session: u32) -> Option<Moved> {
+        moving(&mut self.board(), &self.plane, session, |board| {
+            board.block_withdrawn(session)
+        })
+    }
+
     fn task_failed(&self, session: u32, failed: purlis_core::state::FailedTask) -> Option<Moved> {
         moving(&mut self.board(), &self.plane, session, |board| {
             board.task_failed(session, failed)

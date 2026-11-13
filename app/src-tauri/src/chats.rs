@@ -3369,7 +3369,8 @@ impl Chats {
     /// **Holds every open chat's live asks open, or no more** (ADR 0121 decision 13, #6007):
     /// while the person is Quiet, a connection held past its minute waits on, in the window's
     /// proxy and the session host's alike; as Quiet ends, one past its minute times out at once,
-    /// and its ask stays answerable, timed out. A chat started meanwhile takes it as it starts.
+    /// and is a block from then on, its ask withdrawn (R-290, Q154). A chat started meanwhile
+    /// takes it as it starts.
     pub fn hold_asks_open(&self, open: bool) {
         let boards: Vec<Arc<dyn purlis_core::sandbox::Board>> = lock(&self.open)
             .values()
@@ -3670,19 +3671,21 @@ impl Chats {
         *lock(&self.stops) = Some(write);
     }
 
-    /// **Chat `call.chat` made a tool call** (R-290, Q154), as its pre-tool hook line said: it
-    /// waits on its held connections no longer, so each one's ask is withdrawn and it is
-    /// written as one block, under the call it was held under.
+    /// **Chat `call.chat`'s hook line said it made, or ended, a tool call** (R-290, Q154,
+    /// Q240). Where that is the chat moving on from a connection its proxy holds (the call it
+    /// was held under ended, and the same agent made its next call), the chat's board gives the
+    /// connection up: it is refused then, and told as a timeout is, so the one timeout path
+    /// withdraws its ask and writes its block. Nothing is written before the refusal happens.
     pub fn called(&self, call: &purlis_core::hookwire::ToolCall) {
-        if !call.tool_hook.starts_with("pretooluse") {
+        let moved_on = self.blocks.called(call);
+        if moved_on.is_empty() {
             return;
         }
-        let (was, withdrawn) = self.blocks.called(call.chat, call.tool.as_deref());
-        for block in &withdrawn {
-            became_a_block(&self.stops, call.chat, was.clone(), block);
-        }
-        if !withdrawn.is_empty() {
-            self.asks_may_have_moved();
+        let Some(board) = self.board_of(call.chat) else {
+            return;
+        };
+        for target in moved_on {
+            board.give_up(&target);
         }
     }
 
@@ -9037,7 +9040,7 @@ pub type Narrowed = Arc<dyn Fn(u32) + Send + Sync + 'static>;
 pub type AsksMoved = Arc<dyn Fn() + Send + Sync + 'static>;
 
 /// **What writes a stop of chat `number`'s into the event log** (R-290), made durable before
-/// it answers.
+/// it answers: told only as a held connection's ask is withdrawn, so what that ask set goes too.
 pub type StopWriter = Arc<
     dyn Fn(u32, purlis_core::eventlog::stops::Stop) -> std::io::Result<()> + Send + Sync + 'static,
 >;
@@ -9070,7 +9073,8 @@ struct Asking {
 ///   `allow_sandbox_block` and `keep_sandbox_block`, checked against what is held (#1538), one
 ///   ask at a time.
 /// - **A timeout** is kept in the network record, and the chat waits on it no longer: its ask
-///   is withdrawn and it is written as one block (R-290, Q154).
+///   is withdrawn and it is written as one block (R-290, Q154). The chat moving on ends its hold
+///   the same way ([`Chats::called`], Q240).
 /// - **Nobody to ask** (the project's hooks are not listening yet, or the chat has no number
 ///   yet, the first instant of its start): no Notice could be raised, so the connection is
 ///   refused at once, as before purlis asked live, never held its minute for an ask nobody sees.
@@ -9148,13 +9152,13 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::pl
                 }
             }
             Heard::TimedOut(target) => {
-                // The chat waits on it no longer (R-290, Q154): its ask is withdrawn, then it
-                // is written as one block, never both at once. One the chat moved on from
-                // already is a block already.
+                // The chat waits on it no longer (R-290, Q154): it timed out, or the chat moved
+                // on and the board gave it up (Q240). Its ask is withdrawn, then it is written
+                // as one block, never both at once, and only once.
                 if let Some(block) = live_block(&target)
-                    && blocks.stopped_waiting(chat, &block)
+                    && let Some(withdrawn) = blocks.stopped_waiting(chat, &block)
                 {
-                    became_a_block(&stops, chat, blocks.calling(chat), &block);
+                    became_a_block(&stops, chat, withdrawn.tool, &block);
                     if let Some(moved) = lock(&moved).clone() {
                         told(Box::new(move || moved()));
                     }
@@ -9176,8 +9180,9 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::pl
 /// **Writes `block`, a held connection chat `chat` stopped waiting on, as one Sandbox block**
 /// (R-290, Q154), once its ask is withdrawn: the host, or the runner's service by its port, as
 /// a grant names it, and `tool`, the harness's name for the call it was held under (empty where
-/// no call was heard). Nothing a chat sent names either. A write that fails is said in the
-/// app's log.
+/// no call was heard). The target is the proxy's own word; the tool comes from the chat's hook
+/// line, which a sandboxed chat holds the token to send (Q235's known limit). A write that fails
+/// is said in the app's log.
 fn became_a_block(
     stops: &Mutex<Option<StopWriter>>,
     chat: u32,
@@ -9213,7 +9218,8 @@ fn register_live(blocks: &crate::taskblocks::Blocks, chat: u32, target: &str) ->
     let Some(block) = live_block(target) else {
         return false;
     };
-    blocks.heard_waiting(chat, block);
+    blocks.heard_waiting(chat, block.clone());
+    blocks.held_live(chat, &block, target);
     true
 }
 

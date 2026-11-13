@@ -324,21 +324,18 @@ fn a_held_connection_the_chat_stopped_waiting_on_is_withdrawn_once() {
     blocks.heard_waiting(4, waits.clone());
     blocks.heard_waiting(4, still.clone());
 
-    assert!(!blocks.stopped_waiting(5, &waits), "another chat's");
+    assert!(
+        blocks.stopped_waiting(5, &waits).is_none(),
+        "another chat's"
+    );
     assert!(blocks.holds(4, &waits));
-    assert!(blocks.stopped_waiting(4, &waits), "an ask until now");
+    assert!(
+        blocks.stopped_waiting(4, &waits).is_some(),
+        "an ask until now"
+    );
     assert!(!blocks.holds(4, &waits), "withdrawn");
     assert!(blocks.holds(4, &still), "the other still waits");
-    assert!(!blocks.stopped_waiting(4, &waits), "once");
-
-    blocks.heard_waiting(4, waits.clone());
-    let (_, withdrawn) = blocks.called(4, Some("Bash"));
-    assert_eq!(
-        withdrawn,
-        [still, waits.clone()],
-        "its next call withdraws each"
-    );
-    assert!(!blocks.stopped_waiting(4, &waits), "a block already");
+    assert!(blocks.stopped_waiting(4, &waits).is_none(), "once");
 }
 
 /// #1903's rule on the registry (T1-09): a named refusal that follows the same refusal

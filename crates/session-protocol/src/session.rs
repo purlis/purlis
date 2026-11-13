@@ -558,9 +558,22 @@ use crate::view::{Limits, Views};
 /// form's, opened as written in place of the login's page, the host judging it again before it
 /// opens. A host before 1.86 would drop it and open the login's page, so no login with one is
 /// sent to it, by a window or by a host that relays to a runner.
+///
+/// 1.87 has a host give up a confinement's held connection the chat moved on from (R-290, Q240):
+/// [`ReachChange::GiveUp`] on [`Command::ChangeReach`] names the host and port, and what is held
+/// there ends now as a timeout does, told as one, so the window writes its block on the one
+/// timeout path. A host before 1.87 is not sent it, and such a connection is a block only once
+/// its hold runs out.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 86,
+    minor: 87,
+};
+
+/// The version that first gives up a held connection the chat moved on from
+/// ([`ReachChange::GiveUp`], R-290): none is sent to a host before.
+pub const KNOWS_GIVE_UP: Version = Version {
+    major: 1,
+    minor: 87,
 };
 
 /// The version that first starts a login's sign-in where the chat named it
@@ -1633,6 +1646,10 @@ pub enum ReachChange {
     /// is Quiet, and `false` as Quiet ends, when one past its hold times out at once (ADR 0121
     /// decision 13). Taken by a confinement whose proxy asks nobody as a change of nothing.
     HoldAsksOpen { open: bool },
+    /// The chat moved on from what is held on `target`, a host and port (1.87, R-290): it ends
+    /// now as a timeout does. Taken by a confinement whose proxy asks nobody as a change of
+    /// nothing.
+    GiveUp { target: String },
 }
 
 /// Where a confinement is, as the host started it (1.4): its proxy's ports on the loopback

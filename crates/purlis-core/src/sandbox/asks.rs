@@ -14,9 +14,12 @@
 //! - **Held, then allowed.** A held connection waits up to [`HOLD`]. An Allow at any scope wakes
 //!   it, and it is carried as an Allowed host at that scope.
 //! - **Held, then timed out.** Nobody answered within [`HOLD`]: the connection is refused as it
-//!   was before purlis asked live, the timeout is told ([`Heard::TimedOut`]) so it is recorded,
-//!   and the ask stays with the person. A later Allow applies at once, and answers the hosts that
-//!   gave up, so the app tells the chat, in fixed words, to retry.
+//!   was before purlis asked live, and the timeout is told ([`Heard::TimedOut`]). The chat waits
+//!   on it no longer, so the app withdraws its ask and writes it as a block (R-290, Q154); a
+//!   later connection to it is asked about again. An Allow that comes anyway applies at once,
+//!   and answers the hosts that gave up, so the app tells the chat, in fixed words, to retry.
+//! - **Given up.** The chat moved on from a held connection ([`Asks::give_up`], R-290, Q240):
+//!   it ends now as a timeout does, told the same way, so one path writes its block.
 //! - **Grouped.** New hosts one chat reaches within [`GROUP`] of the first are one ask
 //!   ([`Heard::Asked`]): told together once the window has passed, each host and port named
 //!   whole as the proxy heard it, never a wildcard, so the person answers once.
@@ -25,8 +28,8 @@
 //!   once, as before, and not asked about ([`Answer::Busy`]).
 //! - **Held open while the person is Quiet** (ADR 0121 decision 13, #6007). While the window
 //!   says so ([`Asks::hold_open`]), a held connection past its [`HOLD`] waits on, up to
-//!   [`MOST_HELD_OPEN`] in all; once it says no more, one past its hold times out at once, and
-//!   its ask stays with the person as any timed-out one does. The program's own connect timeout
+//!   [`MOST_HELD_OPEN`] in all; once it says no more, one past its hold times out at once, as
+//!   any timed-out one does. The program's own connect timeout
 //!   and its harness's command timeout still bound it: purlis holds, it cannot make them wait.
 //! - **Nobody to ask.** Where no Notice can be raised ([`Asks::asking_while`]: the project's
 //!   hooks are not listening yet, or the chat has no number yet), a connection is refused at
@@ -62,7 +65,8 @@ pub enum Answer {
     Allowed(By),
     /// The person kept it blocked: refused.
     Refused,
-    /// Nobody answered in time: refused, and the ask stays.
+    /// Nobody answered in time, or the chat moved on ([`Asks::give_up`]): refused, and a block
+    /// from now on (R-290), not an ask.
     TimedOut,
     /// The board holds all it holds: refused at once, not asked about.
     Busy,
@@ -76,7 +80,8 @@ pub enum Heard {
     /// Ask the person about these hosts, each `host:port` whole, in the order they came: one
     /// Notice, one decision.
     Asked(Vec<String>),
-    /// A connection to `host:port` was held and nobody answered: it was refused.
+    /// A connection to `host:port` was held and nobody answered, or the chat moved on from it:
+    /// it was refused.
     TimedOut(String),
 }
 
@@ -103,8 +108,24 @@ struct State {
     /// The ask being gathered: its targets, and when it is told.
     gathering: Option<(Vec<String>, Instant)>,
     holding: usize,
+    /// Each connection held now (R-290).
+    held: Vec<HeldNow>,
+    /// The tickets of held connections the chat moved on from ([`Asks::give_up`]).
+    cut: Vec<u64>,
+    /// The next connection's ticket.
+    tickets: u64,
     /// Whether a connection past its hold waits on ([`Asks::hold_open`], #6007).
     held_open: bool,
+}
+
+/// A connection a board holds now, by its ticket (R-290).
+struct HeldNow {
+    ticket: u64,
+    /// Its host and port, as [`Heard`] names it.
+    target: String,
+    named: String,
+    port: u16,
+    defaults: Vec<u16>,
 }
 
 /// **One chat's live asks** (module docs).
@@ -257,6 +278,15 @@ impl Asks {
             return Answer::NobodyToAsk;
         }
         state.holding += 1;
+        let ticket = state.tickets;
+        state.tickets += 1;
+        state.held.push(HeldNow {
+            ticket,
+            target: target.clone(),
+            named: named.clone(),
+            port,
+            defaults: defaults.to_vec(),
+        });
         let began = Instant::now();
         let deadline = began + self.hold;
         let most = began + self.most_open.max(self.hold);
@@ -275,6 +305,10 @@ impl Asks {
             }
             if kept_blocked(&state, parsed.as_ref(), &named, port) {
                 break Answer::Refused;
+            }
+            // The chat moved on from it (R-290): refused now, as a timeout is.
+            if state.cut.contains(&ticket) {
+                break Answer::TimedOut;
             }
             let now = Instant::now();
             // The window has passed: whichever held connection sees it first tells the ask,
@@ -306,6 +340,8 @@ impl Asks {
                 .0;
         };
         state.holding -= 1;
+        state.held.retain(|one| one.ticket != ticket);
+        state.cut.retain(|one| *one != ticket);
         if state.holding == 0 {
             // Nothing is waiting on an ask not told yet: there is nobody to ask for.
             state.gathering = None;
@@ -323,6 +359,36 @@ impl Asks {
             (self.tell)(Heard::TimedOut(target));
         }
         answer
+    }
+
+    /// **The chat waits on what is held on `target`, a host and port as [`Heard`] names it, no
+    /// longer** (R-290, Q240): it moved on, so each connection held there now ends as a timeout
+    /// does ([`Answer::TimedOut`], told as [`Heard::TimedOut`]), and a later connection to it is
+    /// asked about again. An Allow or a Keep blocked that reached it first wins. Whether one was
+    /// held there.
+    pub fn give_up(&self, target: &str) -> bool {
+        let mut state = self.state();
+        let mut cut = Vec::new();
+        for held in &state.held {
+            // An answer that reached it first wins, whenever its connection wakes to read it.
+            let answered = allowed_in(&state, &held.named, held.port, &held.defaults).is_some()
+                || kept_blocked(
+                    &state,
+                    Host::parse(&held.target).ok().as_ref(),
+                    &held.named,
+                    held.port,
+                );
+            if held.target == target && !answered {
+                cut.push(held.ticket);
+            }
+        }
+        let any = !cut.is_empty();
+        state.cut.extend(cut);
+        drop(state);
+        if any {
+            self.changed.notify_all();
+        }
+        any
     }
 
     /// **The person allowed `host` at scope `by`**, from the window: every held connection it
