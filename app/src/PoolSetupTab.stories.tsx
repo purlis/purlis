@@ -25,6 +25,12 @@ const step = (id: string, name: string, state: string, more: Partial<PoolSetupSt
     skippable: id === "signins" || id === "identity",
     see: null,
     checks: [],
+    other: null,
+    machine: null,
+    cause: null,
+    also: null,
+    parts: [],
+    undo: null,
     ...more,
   }) as PoolSetupStep;
 
@@ -35,12 +41,14 @@ const LATER = [
 ];
 
 const WHERE = (where: Partial<PoolSetupStep>, state: string): PoolSetupShown => ({
+  kind: "docker",
   pool: null,
   name: null,
   at: "where",
   noticed: false,
   recommended: "docker",
   others: [],
+  contexts: { names: [], recommended: null, chosen: null, pools: [] },
   steps: [step("where", "Where chats run", state, where), step("pool", "Pool", "later"), ...LATER],
 });
 
@@ -55,12 +63,14 @@ const CREATE = {
 };
 
 const POOL_FORM: PoolSetupShown = {
+  kind: "docker",
   pool: null,
   name: null,
   at: "pool",
   noticed: false,
   recommended: "docker",
   others: [],
+  contexts: { names: [], recommended: null, chosen: null, pools: [] },
   steps: [
     DONE_WHERE,
     step("pool", "Pool", "current", {
@@ -344,12 +354,14 @@ export const ThatNameIsTaken: Story = {
 /** Made by hand from See what this does: purlis noticed, and setup follows it. */
 export const MadeByHand: Story = {
   beforeEach: faked({
+    kind: "docker",
     pool: "dev-box",
     name: "dev-box",
     at: "signins",
     noticed: true,
     recommended: "docker",
     others: [],
+    contexts: { names: [], recommended: null, chosen: null, pools: [] },
     steps: [
       DONE_WHERE,
       step("pool", "Pool", "done", { line: "dev-box" }),
@@ -371,12 +383,14 @@ export const NoRunnerImageNamed: Story = {
 
 export const ThePoolIsMade: Story = {
   beforeEach: faked({
+    kind: "docker",
     pool: "dev-box",
     name: "dev-box",
     at: "signins",
     noticed: false,
     recommended: "docker",
     others: [],
+    contexts: { names: [], recommended: null, chosen: null, pools: [] },
     steps: [
       DONE_WHERE,
       step("pool", "Pool", "done", { line: "dev-box" }),
@@ -398,12 +412,14 @@ export const ThePoolIsMade: Story = {
 
 export const TheRunnerWasRemoved: Story = {
   beforeEach: faked({
+    kind: "docker",
     pool: "dev-box",
     name: "dev-box",
     at: "pool",
     noticed: false,
     recommended: "docker",
     others: [],
+    contexts: { names: [], recommended: null, chosen: null, pools: [] },
     steps: [
       DONE_WHERE,
       step("pool", "Pool", "attention", {
@@ -472,12 +488,14 @@ export const ReadingFailed: Story = {
 
 export const ARunnerBeingMade: Story = {
   beforeEach: faked({
+    kind: "docker",
     pool: "dev-box",
     name: "dev-box",
     at: "pool",
     noticed: false,
     recommended: "docker",
     others: [],
+    contexts: { names: [], recommended: null, chosen: null, pools: [] },
     steps: [
       DONE_WHERE,
       step("pool", "Pool", "attention", {

@@ -17,6 +17,20 @@ import { HostsTable } from "./HostsTable";
 
 const WAITING = new Set(["zed.dev", "fork.dev"]);
 
+/** The moment the stories tell each Added age from, held still so the pictures are. */
+const NOW = new Date(Date.UTC(2026, 10, 12, 12, 0, 0));
+const SECONDS = NOW.getTime() / 1000;
+
+/** When and by what each was added (#6172, R65); a host with none was added before the record. */
+const ADDED: Record<string, CollectionEntry["added"]> = {
+  "productionresultssa9.blob.core.windows.net": { at: SECONDS - 90 * 86_400, by: "you" },
+  "docs.gitlab.com": { at: SECONDS - 3 * 86_400, by: "you" },
+  "zed.dev": { at: SECONDS - 20 * 60, by: "block" },
+  "docs.github.com": { at: SECONDS - 2 * 3600, by: "block" },
+  "netlog-git.invalid:8443": { at: SECONDS - 86_400, by: "you" },
+  "fork.dev": { at: SECONDS - 30, by: "block" },
+};
+
 const HOSTS: readonly CollectionEntry[] = [
   "productionresultssa9.blob.core.windows.net",
   "docs.gitlab.com",
@@ -34,6 +48,7 @@ const HOSTS: readonly CollectionEntry[] = [
   settings: [],
   confirm: WAITING.has(host),
   status: WAITING.has(host) ? "waiting" : "confirmed",
+  added: ADDED[host],
 }));
 
 /** The table on a page's width, as Settings draws it. */
@@ -47,7 +62,14 @@ function Hosts(props: {
   const add = useRef<HTMLButtonElement>(null);
   return (
     <div className="ui-settings-page">
-      <HostsTable label="Your hosts" entries={HOSTS} busy={false} addRef={add} {...props} />
+      <HostsTable
+        label="Your hosts"
+        entries={HOSTS}
+        busy={false}
+        addRef={add}
+        now={NOW}
+        {...props}
+      />
     </div>
   );
 }
@@ -68,7 +90,8 @@ type Story = StoryObj<typeof meta>;
 
 /**
  * **Waiting first** (R65, R67, R68, R70): the filter, then Confirm all and Add host; the table
- * one Tab stop on its first row, whose Confirm the arrows reach.
+ * one Tab stop on its first row, whose Confirm the arrows reach; each row says when and by what
+ * it was added, or that it was added earlier (#6172).
  */
 export const WaitingFirst: Story = {
   play: async ({ canvasElement, args }) => {
@@ -87,6 +110,7 @@ export const WaitingFirst: Story = {
     const first = canvas.getAllByRole("row")[1] as HTMLElement;
     await expect(within(first).getByRole("rowheader")).toHaveTextContent("zed.dev:443");
     await expect(within(first).getByText("Waiting for you")).toBeVisible();
+    await expect(within(first).getByText("20 minutes ago · a chat's block")).toBeVisible();
   },
 };
 

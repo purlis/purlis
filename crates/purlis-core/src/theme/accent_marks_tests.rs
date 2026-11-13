@@ -387,28 +387,30 @@ fn an_accent_the_colour_of_success_draws_its_marks_clear_of_success() {
     }
 }
 
-#[test]
-fn across_a_grid_of_accents_every_purlis_appearance_keeps_its_marks_in_the_family() {
-    // Every accent a theme could give, and every one a person's layer keeps, in all four
-    // appearances. Nothing falls back: a nudge can always meet the 0.1 and the floor.
+/// Every accent a theme could give, and every one a person's layer keeps, in one appearance of
+/// Purlis: nothing falls back, since a nudge can always meet the 0.1 and the floor.
+fn every_accent_keeps_its_marks_in_the_family(id: &str) {
+    let theme = purlis()
+        .appearances
+        .iter()
+        .find(|one| one.id == id)
+        .expect("Purlis has the appearance");
     let steps = [0x10, 0x40, 0x70, 0xa0, 0xd0, 0xf0];
     let mut wrong = Vec::new();
-    for theme in &purlis().appearances {
-        for r in steps {
-            for g in steps {
-                for b in steps {
-                    let accent = format!("#{r:02x}{g:02x}{b:02x}");
-                    let by_theme = given_accent(theme, &accent);
-                    let by_person = with_accent(theme, &accent);
-                    let mut drawings = vec![by_theme];
-                    if by_person.value("accent.base") == accent {
-                        drawings.push(by_person);
-                    }
-                    for drawn in &drawings {
-                        for mark in tint::SIGNAL_MARKS {
-                            if let Some(problem) = mark_problem(theme, drawn, mark, &accent) {
-                                wrong.push(format!("{} {accent} {mark}: {problem}", theme.id));
-                            }
+    for r in steps {
+        for g in steps {
+            for b in steps {
+                let accent = format!("#{r:02x}{g:02x}{b:02x}");
+                let by_theme = given_accent(theme, &accent);
+                let by_person = with_accent(theme, &accent);
+                let mut drawings = vec![by_theme];
+                if by_person.value("accent.base") == accent {
+                    drawings.push(by_person);
+                }
+                for drawn in &drawings {
+                    for mark in tint::SIGNAL_MARKS {
+                        if let Some(problem) = mark_problem(theme, drawn, mark, &accent) {
+                            wrong.push(format!("{} {accent} {mark}: {problem}", theme.id));
                         }
                     }
                 }
@@ -421,6 +423,45 @@ fn across_a_grid_of_accents_every_purlis_appearance_keeps_its_marks_in_the_famil
         wrong.len(),
         &wrong[..wrong.len().min(40)]
     );
+}
+
+/// The grid of accents in each of Purlis's appearances, one test an appearance so they run side
+/// by side (#3597); a test below holds that these are all of them.
+mod across_a_grid_of_accents_every_purlis_appearance_keeps_its_marks_in_the_family {
+    use super::every_accent_keeps_its_marks_in_the_family as keeps;
+
+    /// The appearances the tests below name.
+    const NAMED: [&str; 4] = ["dark", "light", "dark-high-contrast", "light-high-contrast"];
+
+    #[test]
+    fn dark() {
+        keeps("dark");
+    }
+
+    #[test]
+    fn light() {
+        keeps("light");
+    }
+
+    #[test]
+    fn dark_high_contrast() {
+        keeps("dark-high-contrast");
+    }
+
+    #[test]
+    fn light_high_contrast() {
+        keeps("light-high-contrast");
+    }
+
+    #[test]
+    fn every_appearance_of_purlis_is_one_of_them() {
+        let ids: Vec<&str> = super::purlis()
+            .appearances
+            .iter()
+            .map(|one| one.id.as_str())
+            .collect();
+        assert_eq!(ids, NAMED);
+    }
 }
 
 #[test]

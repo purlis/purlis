@@ -59,6 +59,8 @@ mod hostrecord;
 #[cfg(unix)]
 mod killswitch;
 #[cfg(unix)]
+mod lateness;
+#[cfg(unix)]
 mod lifetime;
 #[cfg(unix)]
 mod ownlog;
@@ -255,6 +257,8 @@ fn run(
             return 1;
         }
     };
+    // Said in this host's log whenever its one thread was held (#6437).
+    runtime.spawn(lateness::watch_the_thread());
     let ready = || {
         use std::io::Write;
         let mut out = std::io::stdout().lock();

@@ -10,6 +10,8 @@ import {
   aim,
   inPalette,
   narrow,
+  readItOffer,
+  reopenTaskOffer,
   PASS_THROUGH_ID,
   PASS_THROUGH_KEY,
   revealSaid,
@@ -25,6 +27,8 @@ import {
   type PlaneId,
 } from "./bindings";
 import { useArtifactFind } from "./artifactFind";
+import { ClosedChatCardPopover } from "./ClosedChatCard";
+import { numberRows, opensACard, useChatByNumber } from "./closedChat";
 import { hitSaid, scopeSaid, useFileFind, type Part } from "./fileFind";
 import { isKey, noteWithoutKey, pressed, rowAriaKeys, rowKey } from "./keys/registry";
 import {
@@ -126,6 +130,7 @@ export function Palette({
   projects,
   files,
   artifacts,
+  chats,
   said,
   onSettings,
   onRun,
@@ -155,6 +160,12 @@ export function Palette({
     plane: PlaneId | undefined;
     onOpen: (found: ArtifactFound) => void;
   };
+  /**
+   * **Chats by number** (#6214): the project in front, whose chats a typed `641` or `#641` is
+   * looked up in. A closed or finished one's row opens its card beside it, and one open again
+   * under another number is shown. Absent, or with no project, a number finds only open chats.
+   */
+  chats?: { plane: PlaneId | undefined };
   /** What the last row answered, when it refused or had something to say. */
   said?: Said;
   /** Follows a refusal's way to its setting (#1201): the palette closes, and the window opens
@@ -190,6 +201,15 @@ export function Palette({
    *  registered once and must not be rebuilt on every render, so it cannot close over
    *  either. */
   const latest = useRef({ offers, onRun, shown: [] as readonly Offer[], aimed: -1 });
+  /** The finished chat's row whose card is open beside it (#6214), by the row's id. */
+  const [carded, setCarded] = useState<string>();
+  /** The same, for the one keydown listener: Escape takes the card down first. */
+  const cardUp = useRef(false);
+  useEffect(() => {
+    cardUp.current = carded !== undefined;
+  }, [carded]);
+  /** The row the card stands beside. */
+  const cardAt = useRef<Element | null>(null);
 
   const close = useCallback(() => {
     setOpen(false);
@@ -199,6 +219,7 @@ export function Palette({
     setAt(undefined);
     setHeld(undefined);
     setFileSaid(undefined);
+    setCarded(undefined);
     onOpened?.(false);
     // The keyboard goes back in `giveTheKeyboardBack` and not here: this runs while the
     // surface is still up and still trapping focus, so a `focus()` from here is pulled
@@ -262,6 +283,13 @@ export function Palette({
       // somewhere in between.
       if (offer.does.verb === "switchProject") {
         toTheProjects();
+        return;
+      }
+      // **A finished chat's row opens its card beside it** (#6214, D7): a glance, and the
+      // palette stays under it until *Read it* or *Reopen* is pressed.
+      if (opensACard(offer)) {
+        cardAt.current = document.getElementById(`palette-row-${offer.id}`);
+        setCarded(offer.id);
         return;
       }
       setHeld(undefined);
@@ -389,6 +417,12 @@ export function Palette({
       if (up.current && pressed(e, ["palette.close"]) !== undefined) {
         e.preventDefault();
         e.stopPropagation();
+        // A card open over it goes first, and the keyboard comes back to the box.
+        if (cardUp.current) {
+          setCarded(undefined);
+          box.current?.focus();
+          return;
+        }
         close();
       }
     };
@@ -408,7 +442,13 @@ export function Palette({
   const projectRows =
     files === undefined || (projects?.rows.length ?? 0) > 1 ? (projects?.rows ?? []) : [];
   // A menu's own rows are left out (`menuOnly`, #1468): the palette asks from the chat in front.
-  const listing = scope === "projects" ? projectRows : inPalette(offers);
+  /** What a typed number names (#6214), looked up among the actions only. */
+  const byNumber = useChatByNumber(open && scope === "actions" ? chats?.plane : undefined, query);
+  const listing =
+    scope === "projects" ? projectRows : [...numberRows(byNumber), ...inPalette(offers)];
+  /** The closed chat whose card is open beside its row, where one is. */
+  const card =
+    byNumber?.lookup.is === "ended" && carded !== undefined ? byNumber.lookup.card : undefined;
   const rows = open ? narrow(query, listing) : [];
   const ladder = files?.ladder ?? [];
   const finding = open && scope === "projects" && ladder.length > 0;
@@ -854,6 +894,24 @@ export function Palette({
                 <RowTrail className="palette-why">{found.workspace}</RowTrail>
               </AimedOption>
             );
+          }}
+        />
+      )}
+      {/* A finished chat's card (#6214), beside its row. */}
+      {card !== undefined && (
+        <ClosedChatCardPopover
+          card={card}
+          triggerRef={cardAt}
+          isOpen
+          onOpenChange={(isOpen) => {
+            if (isOpen) return;
+            setCarded(undefined);
+            box.current?.focus();
+          }}
+          onRead={() => runOffer(readItOffer(card))}
+          onReopen={() => {
+            setCarded(undefined);
+            runOffer(reopenTaskOffer(card));
           }}
         />
       )}

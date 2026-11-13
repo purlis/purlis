@@ -86,6 +86,7 @@ import {
   useShownGroup,
   type SettingsLinkAsk,
 } from "./settings/links";
+import { everySetting } from "./settings/search";
 import {
   noTabs,
   openTab,
@@ -158,6 +159,11 @@ function doing(): Doing & { calls: string[] } {
     createWorkspace: note("createWorkspace"),
     removeWorkspace: note("removeWorkspace"),
     showChat: note("showChat"),
+    focusChat: note("focusChat"),
+    reopenTask: vi.fn(async (id: string) => {
+      calls.push(`reopenTask:${id}`);
+      return { ok: true } as Ran;
+    }),
     paneBack: note("paneBack"),
     showChatTasks: note("showChatTasks"),
     ownTab: note("ownTab"),
@@ -415,6 +421,14 @@ function shownAt(place: string): string | undefined {
   const group = result.current?.group;
   unmount();
   return group;
+}
+
+/** The setting a link last named at a Settings place, until a tab has focused it. */
+function settingAt(place: string): string | undefined {
+  const { result, unmount } = renderHook(() => useShownGroup(place));
+  const setting = result.current?.setting;
+  unmount();
+  return setting;
 }
 
 describe("the one list of actions", () => {
@@ -831,6 +845,79 @@ describe("the one list of actions", () => {
     expect(narrow("quiet hours", offers).map((one) => one.title)).not.toContain(
       "Your settings: Reports",
     );
+  });
+
+  it("offers one row per setting of every level, each landing on its field (#2920)", async () => {
+    forgetGroups();
+    const offers = catalogue(now({ plane: "/p/one", focused: "web", workspaces: ["web", "api"] }));
+    const rows = offers.filter((one) => one.id.startsWith("settings.setting:"));
+    // Every setting the levels' builders name is a row, at every level the window offers.
+    const every = everySetting({ plane: "/p/one", workspace: "web" }).flatMap((level) =>
+      level.groups.flatMap((group) => group.settings.map((setting) => setting.id)),
+    );
+    expect(
+      rows.map((one) => one.id.replace(/^settings\.setting:/, "").replace(/:web$/, "")),
+    ).toEqual(every);
+    expect(by(offers, "settings.setting:you.text.window")?.title).toBe(
+      "Your settings: Text › Window text size",
+    );
+    expect(by(offers, "settings.setting:project.saving.plane.mode")?.title).toBe(
+      "Project settings: Saving › Mode",
+    );
+    expect(by(offers, "settings.setting:workspace.live.live:web")?.title).toBe(
+      "Workspace settings: Live › Published with the project",
+    );
+    // A row says what its setting is for, in the setting's own help.
+    expect(by(offers, "settings.setting:you.text.window")?.note).toMatch(
+      /^Everything but the terminals\./,
+    );
+    expect(rows.every((one) => one.available)).toBe(true);
+    // Listed once words are typed, never with nothing typed, where they would bury what the
+    // window does.
+    expect(narrow("", offers).some((one) => one.id.startsWith("settings.setting:"))).toBe(false);
+    expect(narrow("", offers).some((one) => one.id.startsWith("settings.group:"))).toBe(true);
+    // Found by its key, as the row's Copy key gives it, and by its group's other words.
+    expect(narrow("plane.mode", offers).map((one) => one.title)).toContain(
+      "Project settings: Saving › Mode",
+    );
+    expect(narrow("telemetry", offers).map((one) => one.title)).toContain(
+      "Your settings: Reports › Crash reports",
+    );
+    // Found by the setting's own words.
+    expect(narrow("window text size", offers).map((one) => one.title)).toContain(
+      "Your settings: Text › Window text size",
+    );
+
+    const asked: SettingsLinkAsk[] = [];
+    const hear = (event: Event) => asked.push((event as CustomEvent<SettingsLinkAsk>).detail);
+    window.addEventListener(SETTINGS_LINK, hear);
+    try {
+      await run(offers, "settings.setting:project.saving.plane.mode", doing());
+      await run(offers, "settings.setting:workspace.live.live:web", doing());
+      expect(asked).toEqual([
+        {
+          plane: "/p/one",
+          link: { group: "project.saving", setting: "project.saving.plane.mode" },
+        },
+        {
+          plane: "/p/one",
+          link: { group: "workspace.live", workspace: "web", setting: "workspace.live.live" },
+        },
+      ]);
+    } finally {
+      window.removeEventListener(SETTINGS_LINK, hear);
+    }
+  });
+
+  it("offers You's settings with no project open, landing on the field at You's place (#2920)", async () => {
+    forgetGroups();
+    const alone = catalogue(now());
+    expect(alone.some((one) => one.id.startsWith("settings.setting:project."))).toBe(false);
+    const hands = doing();
+    await run(alone, "settings.setting:you.editor.yours", hands);
+    expect(hands.calls).toEqual(["openYourSettings"]);
+    expect(shownAt(settingsPlace("you"))).toBe("you.editor");
+    expect(settingAt(settingsPlace("you"))).toBe("you.editor.yours");
   });
 
   it("offers the project's groups and the focused workspace's, each a link into Settings (#1201)", async () => {
@@ -2809,8 +2896,9 @@ describe("the palette at fifty chats", () => {
     // pane. 1274 since #5343: a tab's Rename…, each of the fifty tabs' own row, whose forty-nine
     // behind are menu-only. 1275 since #5644: Show the Asks view and Show the Updates view, where
     // Show the Inbox view was. 1276 since #5645: Show the Notices view. 1277 since #5688: Your
-    // settings: Reports. 1278 since #6017: Quiet now.
-    expect(offers).toHaveLength(1278);
+    // settings: Reports. 1278 since #6017: Quiet now. 1382 since #2920: one row per setting of
+    // You's and the project's (104), whatever the number of chats.
+    expect(offers).toHaveLength(1382);
     // Fifty tabs of one chat each: the palette has their chats' Rename chat rows instead.
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.rename:"))).toHaveLength(0);
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.closeOthers:"))).toHaveLength(

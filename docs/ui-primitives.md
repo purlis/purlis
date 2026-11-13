@@ -82,9 +82,10 @@ operator amended it there on 2026-10-04 (V89f; the spec on #558):
 What keeps it from becoming the library this file forbids:
 
 - **Six pieces, named here, and no more.** `SettingsLayout` (since #2919 prototype A of
-  `prototype/settings-page`: a side column with the level switcher, the filter box and the nav of
-  groups, which folds a page's own pages, and no title of its own (#3147), and the chosen page
-  beside it, its rows scrolling under its header), `SettingGroup` (on a
+  `prototype/settings-page`: a side column with the level switcher, the search box with its Set
+  here toggle (one search across every level, #2920, whose matches are the nav's first page) and
+  the nav of groups, which folds a page's own pages, and no title of its own (#3147), and the
+  chosen page beside it, its rows scrolling under its header), `SettingGroup` (on a
   settings page the page's header — its title, its blurb and "Kept in ‹file› · Edit as TOML" —
   and its rows, and at `level` 3 one of the page's own groups, a heading and its one line, a
   rarely used one (`rarely`) folded as "‹title› · ‹count›"; in a dialog a heading and one help
@@ -2006,11 +2007,22 @@ details:
     the pane says so; so it says the core's sentence where the clipboard holds more than
     1 MiB of text, or the read failed. **A menu opened from the keyboard never rests on
     Paste**: the keyboard is on the menu itself until an arrow moves it, so Enter after the
-    menu key pastes nothing (with nothing selected Copy is off, and the first row that can
-    run is Paste).
-  - **No Clear, and no link rows.** xterm's `clear()` empties the screen as well as the
-    history, and the history is the core's, sent whole to a pane drawn again. A pane registers
-    no link provider, so there is no link the terminal knows it was clicked on.
+    menu key pastes nothing (with nothing selected Copy is off, and Paste is the first of
+    these rows that can run).
+  - **No Clear.** xterm's `clear()` empties the screen as well as the history, and the
+    history is the core's, sent whole to a pane drawn again.
+  - **Over a link, *Open link* and *Copy link* come first** (`terminalRows.linkRows`, #6219),
+    above Copy, each with the link's target under its words. The link is the one the pane's
+    link hook has under the pointer as the menu is asked for (`paneLinks.linkPane`'s
+    `under()`), not one worked out from the pointer's place, so it is the link the person sees
+    underlined. *Open link* goes the way ⌘-click does, through the core, asks included, and
+    draws ⌘-click (Ctrl-click) at its end as a **gesture**, not a key: `RowDrawn.gesture` is
+    drawn where a key would be and named to no `aria-keyshortcuts`. *Copy link* copies the
+    target the core resolved, not the printed words. Text the core refuses offers *Copy link*
+    alone. **A menu opened from the keyboard has no link rows** (D4), even with the pointer
+    resting on a link, since a keyboard user cannot see which link that would be; *Links in
+    this pane…* stands in their place, with its key at its end, and over a link it leads the
+    pane's rows instead.
   - **A click the program asked for is the program's.** While the program has mouse reporting
     on (`?1000h` and its kin) a plain right-click is reported to it, as before, and opens no
     menu, purlis's or the engine's. **Shift+right-click always opens the menu**: the press is

@@ -30,6 +30,10 @@ const ONE: &str = "01J9ZQ3V7K8M2N4P6R8T0V2X4Z";
 const OTHER: &str = "01J9ZQ3V7K8M2N4P6R8T0V2X5A";
 const BUILD: &str = "0.4.0+9055f7a";
 
+/// A call `serve` told its host it answered: its word, how long it waited behind its lane, and
+/// how long it ran.
+type Answered = (&'static str, Duration, Duration);
+
 /// A host whose `start`, and whose `write` of `wait`, wait until the test lets them go.
 #[derive(Clone)]
 struct Waiting {
@@ -43,6 +47,8 @@ struct Waiting {
     /// What was typed into each chat, in the order the host took it.
     typed: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     pushes: Arc<Mutex<Option<mpsc::Sender<Pushed>>>>,
+    /// Each call it answered, as `serve` told it ([`Host::answered`]), in order.
+    answered: Arc<Mutex<Vec<Answered>>>,
 }
 
 impl Waiting {
@@ -54,6 +60,7 @@ impl Waiting {
             done: Arc::default(),
             typed: Arc::default(),
             pushes: Arc::default(),
+            answered: Arc::default(),
         }
     }
 
@@ -126,6 +133,10 @@ impl Host for Waiting {
         let (pushes, events) = mpsc::channel(16);
         *self.pushes.lock().unwrap() = Some(pushes);
         Ok(events)
+    }
+
+    fn answered(&self, word: &'static str, waited: Duration, ran: Duration) {
+        self.answered.lock().unwrap().push((word, waited, ran));
     }
 }
 
@@ -254,6 +265,49 @@ async fn what_is_typed_into_one_chat_is_taken_in_the_order_it_was_sent() {
     soon(first).await.unwrap().unwrap();
     soon(second).await.unwrap().unwrap();
     assert_eq!(host.typed(ONE), b"wait, then this");
+}
+
+#[tokio::test]
+async fn the_host_is_told_how_long_a_call_waited_behind_its_chats_earlier_one_and_how_long_it_ran()
+{
+    // What lets a host's log say which held a slow answer (#6437): its lane, or itself.
+    let host = Waiting::new();
+    let (client, _events) = linked(host.clone(), None).await;
+    let first = tokio::spawn({
+        let client = Arc::clone(&client);
+        async move { client.write(ONE, b"wait").await }
+    });
+    host.waits_on(1).await;
+    let closing = tokio::spawn({
+        let client = Arc::clone(&client);
+        async move { client.close(ONE).await }
+    });
+    let held_for = Duration::from_millis(200);
+    tokio::time::sleep(held_for).await;
+
+    host.go.add_permits(1);
+    soon(first).await.unwrap().unwrap();
+    soon(closing).await.unwrap().unwrap();
+
+    let answered = host.answered.lock().unwrap().clone();
+    let (_, write_waited, write_ran) = answered.iter().find(|(word, ..)| *word == "write").unwrap();
+    let (_, close_waited, close_ran) = answered.iter().find(|(word, ..)| *word == "close").unwrap();
+    assert!(
+        *write_waited < held_for,
+        "the write waited behind nothing: {write_waited:?}"
+    );
+    assert!(
+        *write_ran >= held_for,
+        "the write ran until it was let go: {write_ran:?}"
+    );
+    assert!(
+        *close_waited >= held_for,
+        "the close waited behind the write: {close_waited:?}"
+    );
+    assert!(
+        *close_ran < held_for,
+        "the close itself took no time: {close_ran:?}"
+    );
 }
 
 #[tokio::test]

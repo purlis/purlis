@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { dequal } from "dequal/lite";
 import { commands, type PlaneAlerts, type PlaneId } from "./bindings";
+import { AFTER_GIT_MOVED_MS } from "./afterGitMoved";
 import { GIT, usePlaneChanged } from "./planeChanged";
 import { STILL_LOADING_AFTER } from "./projectLoads";
 import { RETURN_FOLD_MS } from "./saving";
@@ -66,7 +67,8 @@ export function useAlerts(
   }, [settling]);
   const held = settling && !waited;
   const holding = planes.join("\n");
-  const changesOnDisk = usePlaneChanged(planes, GIT);
+  // At its own turn after a move (`afterGitMoved.ts`, H8).
+  const changesOnDisk = usePlaneChanged(planes, GIT, AFTER_GIT_MOVED_MS.alerts);
 
   // Written as `Extensions`'s first read is: the command's own promise, a `gone` flag, and the
   // state set inside the callback — so an answer that lands after a newer ask began, or after
@@ -74,6 +76,8 @@ export function useAlerts(
   //
   // **A reading equal to the one held is not a new one**: it is kept, so nothing drawn from it
   // is drawn again for the same answer (each project's view is held, `memo`).
+  /** Asks again, outside a render: set by the effect that asks. */
+  const askAgain = useRef<() => void>(() => {});
   useEffect(() => {
     if (held) return;
     let gone = false;
@@ -82,32 +86,43 @@ export function useAlerts(
       drawn.current = now;
       setReading(now);
     };
-    void commands
-      .alertsEverywhere()
-      .then((answer) => {
-        if (gone) return;
-        if (answer.status === "error") read({ at: "failed", why: answer.error });
-        else if (!Array.isArray(answer.data))
-          read({ at: "failed", why: "purlis did not answer with a reading" });
-        else read({ at: "read", planes: answer.data });
-      })
-      .catch((err: unknown) => {
-        if (!gone) read({ at: "failed", why: String(err) });
-      });
+    // Only the newest ask's answer is read: one that lands after a newer ask began says less.
+    let newest = 0;
+    const ask = () => {
+      const mine = (newest += 1);
+      void commands
+        .alertsEverywhere()
+        .then((answer) => {
+          if (gone || mine !== newest) return;
+          if (answer.status === "error") read({ at: "failed", why: answer.error });
+          else if (!Array.isArray(answer.data))
+            read({ at: "failed", why: "purlis did not answer with a reading" });
+          else read({ at: "read", planes: answer.data });
+        })
+        .catch((err: unknown) => {
+          if (!gone && mine === newest) read({ at: "failed", why: String(err) });
+        });
+    };
+    askAgain.current = ask;
+    ask();
     return () => {
       gone = true;
+      askAgain.current = () => {};
     };
   }, [holding, asked, changesOnDisk, held]);
 
   // One read on return (#1392, D-1392-6), as `useRereads` in `saving.ts`: coming back to the
   // window both shows it and focuses it, and a focus or a beat within RETURN_FOLD_MS of the
   // last read asked here is the same return. The monotonic clock, as there.
+  // **Neither a focus nor the beat draws the window by itself** (felt speed, round 3, H7): each
+  // asks where it is heard, and only a different reading sets anything. Counted in state, each
+  // focus and each beat drew the whole window before the answer was even asked for.
   useEffect(() => {
     let last: number | undefined;
     const returned = () => {
       if (last !== undefined && performance.now() - last < RETURN_FOLD_MS) return;
       last = performance.now();
-      setAsked((n) => n + 1);
+      askAgain.current();
     };
     window.addEventListener("focus", returned);
     const stop = everyWhileShown(REREAD_EVERY_MS, returned);

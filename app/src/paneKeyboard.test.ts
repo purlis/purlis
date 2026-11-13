@@ -1,8 +1,13 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { beforeEach, describe, expect, it } from "vitest";
-import { forgetKeyboard, giveKeyboardTo, paneDrawn } from "./paneKeyboard";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  forgetKeyboard,
+  giveKeyboardTo,
+  giveKeyboardToTheFocusedPane,
+  paneDrawn,
+} from "./paneKeyboard";
 
 const PLANE = "/home/dev/plane";
 
@@ -110,5 +115,78 @@ describe("the keyboard after a tab is switched to another chat", () => {
     giveKeyboardTo(PLANE, 4);
 
     expect(took).toEqual([]);
+  });
+});
+
+describe("the keyboard into a focused pane with no chat, once it is drawn (#4767, #6232)", () => {
+  /** A focused pane with its New chat, and a menu item outside it, as the window draws them. */
+  function drawWindow() {
+    document.body.innerHTML = `<div class="pane focused"><button>New chat</button></div><div role="menu"><div role="menuitem" tabindex="-1">Unpin from workspace…</div></div>`;
+    const newChat = document.querySelector<HTMLElement>(".pane.focused button");
+    const item = document.querySelector<HTMLElement>('[role="menuitem"]');
+    if (newChat === null || item === null) throw new Error("the window was not drawn");
+    return { newChat, item };
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    document.body.innerHTML = "";
+  });
+
+  it("goes to the pane's first control when the keyboard was lost with what closed", () => {
+    const { newChat } = drawWindow();
+
+    giveKeyboardToTheFocusedPane();
+    vi.runAllTimers();
+
+    expect(document.activeElement).toBe(newChat);
+  });
+
+  it("goes to the pane's view frame, before any button in it", () => {
+    document.body.innerHTML = `<div class="pane focused"><button>Back</button><div data-scope="view-frame" data-part="root" tabindex="-1"></div></div>`;
+
+    giveKeyboardToTheFocusedPane();
+    vi.runAllTimers();
+
+    expect(document.activeElement?.getAttribute("data-scope")).toBe("view-frame");
+  });
+
+  it("stays where the person put it meanwhile: a menu opened before the pane was drawn keeps it", () => {
+    const { newChat, item } = drawWindow();
+
+    giveKeyboardToTheFocusedPane();
+    item.focus();
+    vi.runAllTimers();
+
+    expect(document.activeElement).toBe(item);
+    expect(document.activeElement).not.toBe(newChat);
+  });
+
+  it("is owed only once: the last ask is the one kept", () => {
+    const { newChat, item } = drawWindow();
+
+    giveKeyboardToTheFocusedPane();
+    giveKeyboardToTheFocusedPane();
+    vi.runAllTimers();
+    expect(document.activeElement).toBe(newChat);
+
+    item.focus();
+    vi.runAllTimers();
+    expect(document.activeElement).toBe(item);
+  });
+
+  it("is owed nothing after the window forgets the keyboard", () => {
+    const { item } = drawWindow();
+    item.focus();
+    (document.activeElement as HTMLElement).blur();
+
+    giveKeyboardToTheFocusedPane();
+    forgetKeyboard();
+    vi.runAllTimers();
+
+    expect(document.activeElement).toBe(document.body);
   });
 });

@@ -3,7 +3,8 @@
 
 import { useEffect, type RefObject } from "react";
 import { settingsLevelOf, type ViewRef } from "../tabs";
-import { settingsPlace } from "./links";
+import { focusedSetting, linkedSetting, settingsPlace } from "./links";
+import { reveal } from "../ui/reveal";
 
 /**
  * **The keyboard goes into Settings on every way in** (#1206; the spec on #558, user story 32).
@@ -145,19 +146,58 @@ function aDialogIsUp(): boolean {
 }
 
 /**
+ * **Lands the keyboard on the setting a link named at `place`** (NO-7, #2920), inside `holder`:
+ * its row brought out of any fold and into sight, the keyboard on its control. The setting is
+ * forgotten only once its control has the keyboard, so a surface still up as the link landed
+ * (the palette, which takes the keyboard back as it closes) leaves it named, and the next try
+ * lands it. `undefined` when no link names one, or its row is not drawn yet.
+ */
+export function landOnTheSetting(place: string, holder: HTMLElement | null): boolean | undefined {
+  const named = linkedSetting(place);
+  if (named === undefined || holder === null) return undefined;
+  const row = [...holder.querySelectorAll<HTMLElement>("[data-setting]")].find(
+    (one) => one.dataset.setting === named,
+  );
+  if (row === undefined) return undefined;
+  // The control, never the label's info mark or badge, which come before it (DS-8).
+  const control = (row.querySelector(".ui-setting-control") ?? row).querySelector<HTMLElement>(
+    "input, select, textarea, button, [tabindex]",
+  );
+  // A row with nothing to focus is as near as the link can land.
+  if (control === null) {
+    focusedSetting(place);
+    return undefined;
+  }
+  if (!control.contains(document.activeElement)) {
+    // A setting in a rarely used group of its page: the group opens first (R61).
+    reveal(row);
+    row.scrollIntoView?.({ block: "nearest" });
+    control.focus({ preventScroll: true });
+  }
+  const landed = control.contains(document.activeElement);
+  if (landed) focusedSetting(place);
+  return landed;
+}
+
+/**
  * **The tab's half**: while a way in is asked at `place`, puts the keyboard on the nav's current
- * group inside `holder` — unless it is already inside, on the setting a link named for one.
- * Tried on every draw, so a tab whose groups arrive later lands it as they do.
+ * group inside `holder`, or on the setting a link named ({@link landOnTheSetting}), wherever in
+ * the tab the keyboard was. Tried on every draw, so a tab whose groups arrive later lands it as
+ * they do.
  */
 export function useEnteringFocus(place: string, holder: RefObject<HTMLElement | null>): void {
   useEffect(() => {
     const take = () => {
       const root = holder.current;
       if (root === null || !root.isConnected) return false;
-      if (root.contains(document.activeElement)) return true;
       // A dialog still up holds the keyboard in itself and takes it straight back: the ask
       // stands, and is tried again once the dialog has gone.
       if (aDialogIsUp()) return false;
+      // A link that named a setting lands on it, even where the keyboard is already in the tab:
+      // a closing surface hands it back to where it was before.
+      const onTheSetting = landOnTheSetting(place, root);
+      if (onTheSetting !== undefined) return onTheSetting;
+      if (root.contains(document.activeElement)) return true;
       const nav = root.querySelector<HTMLElement>(".ui-settings-nav");
       const target =
         nav?.querySelector<HTMLElement>('[aria-current="page"]') ??

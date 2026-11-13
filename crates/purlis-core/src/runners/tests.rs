@@ -1833,3 +1833,70 @@ fn a_fresh_runners_row_names_its_checkout_and_only_that_checkouts_window_lets_it
         );
     }
 }
+
+const HOST_KEY: &str =
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiGzfjDDJsgYLYCmdkf8Fel9sE6Ma14Y2+c33Y/qZ2n";
+
+fn remote() -> Remote {
+    Remote {
+        route: crate::sshroute::Route::parse("ssh://me@build-box/var/run/docker.sock").unwrap(),
+        pin: crate::sshroute::Pin {
+            host_key: crate::sshroute::HostKey::parse(HOST_KEY).unwrap(),
+            engine: crate::sshroute::EnginePin::Docker("ABCD:EFGH:IJKL".to_owned()),
+        },
+    }
+}
+
+#[test]
+fn a_pool_on_another_machine_is_kept_with_its_route_and_pin_in_the_ruled_keys() {
+    let config = tempfile::tempdir().unwrap();
+    let kept = pool("build-box", Set::default()).on(Some(remote()));
+    record_pool(config.path(), &kept).unwrap();
+    assert_eq!(
+        the_file(config.path())["pools"],
+        serde_json::json!([{
+            "name": "build-box",
+            "kind": "remote-docker",
+            "route": "ssh://me@build-box/var/run/docker.sock",
+            "pin": { "hostKey": HOST_KEY, "engine": "ABCD:EFGH:IJKL" },
+            "image": IMAGE,
+        }])
+    );
+    let read = pools(config.path()).unwrap();
+    assert_eq!(read, vec![kept]);
+    assert_eq!(read[0].remote(), Some(&remote()));
+}
+
+#[test]
+fn a_pool_on_another_machine_without_a_whole_pin_or_a_socket_is_not_read() {
+    let config = tempfile::tempdir().unwrap();
+    let file = crate::machine::dir(config.path()).join(crate::machine::RUNNERS_FILE);
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    for row in [
+        serde_json::json!({ "name": "b", "kind": "remote-docker", "image": IMAGE,
+            "route": "ssh://me@box/var/run/docker.sock" }),
+        serde_json::json!({ "name": "b", "kind": "remote-docker", "image": IMAGE,
+            "route": "ssh://me@box/var/run/docker.sock", "pin": { "hostKey": HOST_KEY } }),
+        serde_json::json!({ "name": "b", "kind": "remote-docker", "image": IMAGE,
+            "route": "ssh://me@box", "pin": { "hostKey": HOST_KEY, "engine": "X" } }),
+        serde_json::json!({ "name": "b", "kind": "remote-docker", "image": IMAGE,
+            "route": "tcp://box:2375", "pin": { "hostKey": HOST_KEY, "engine": "X" } }),
+        serde_json::json!({ "name": "b", "kind": "docker", "image": IMAGE,
+            "route": "ssh://me@box/var/run/docker.sock",
+            "pin": { "hostKey": HOST_KEY, "engine": "X" } }),
+    ] {
+        std::fs::write(
+            &file,
+            serde_json::json!({ "version": 1, "pools": [row], "runners": [] }).to_string(),
+        )
+        .unwrap();
+        assert!(pools(config.path()).is_err(), "{row} was read");
+    }
+}
+
+#[test]
+fn where_a_pools_engine_is_is_part_of_what_defines_it() {
+    let here = pool("b", Set::default());
+    let there = pool("b", Set::default()).on(Some(remote()));
+    assert_ne!(here.definition_digest(), there.definition_digest());
+}

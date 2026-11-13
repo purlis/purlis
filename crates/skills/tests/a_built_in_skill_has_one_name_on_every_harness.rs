@@ -180,8 +180,13 @@ fn only_a_purlis_prefixed_name_is_reserved() {
     }
 }
 
-/// `purlis-building-ui` took a shorter name after the prefix (ADR 0099 as amended 2026-11-01).
-const BUILDING_OLD_NAMES: [&str; 5] = [
+/// Every name `purlis-building-ui` had while purlis shipped it: its own, bare or under either
+/// prefix, and the longer one before it (ADR 0099 as amended 2026-11-01).
+const BUILDING_NAMES: [&str; 9] = [
+    "purlis-building-ui",
+    "purlis:purlis-building-ui",
+    "purlis:building-ui",
+    "charter:purlis-building-ui",
     "purlis-building-purlis-ui",
     "purlis:purlis-building-purlis-ui",
     "purlis:building-purlis-ui",
@@ -189,38 +194,49 @@ const BUILDING_OLD_NAMES: [&str; 5] = [
     "charter:purlis-building-purlis-ui",
 ];
 
+/// #5725: the person retired `purlis-building-ui` on 2026-11-12, with no skill in its place.
+/// Each name it had still reads as it, so whoever names it is told it was removed, and a run
+/// recorded under one keeps the skill's name; no chat's set has it.
 #[test]
-fn every_old_name_of_the_building_skill_reads_as_its_name_now() {
+fn every_name_of_the_retired_building_skill_reads_as_retired_and_its_runs_keep_its_name_5725() {
     let tmp = tempfile::tempdir().unwrap();
-    let built_in = tmp.path().join("plugin/skills");
-    skill(&built_in, "purlis-building-ui");
-    for old in BUILDING_OLD_NAMES {
+    let built_in = bundle(tmp.path());
+    for name in BUILDING_NAMES {
+        let reference = Reference::parse(name).expect("a reference");
         assert_eq!(
-            Reference::parse(old),
-            Some(Reference::BuiltIn("purlis-building-ui".to_owned())),
-            "{old}"
+            reference.retired().map(|(skill, _)| skill),
+            Some("purlis-building-ui"),
+            "{name}"
         );
-        assert_eq!(purlis_skills::run_name(old), "purlis-building-ui", "{old}");
+        assert_eq!(
+            purlis_skills::run_name(name),
+            "purlis-building-ui",
+            "{name}"
+        );
         for route in ROUTES {
-            let reference = Reference::parse(old).unwrap();
             let set = set_for(
                 tmp.path(),
                 &built_in,
                 std::slice::from_ref(&reference),
                 route,
             );
-            assert_eq!(names_of(&set), ["purlis-building-ui"], "{old} {route:?}");
             assert!(
-                set.left_out.is_empty(),
-                "{old} {route:?}: {:?}",
-                set.left_out
+                !names_of(&set).contains(&"purlis-building-ui"),
+                "{name} {route:?}"
             );
-            assert_eq!(
-                purlis_skills::by_name(&set, old).map(|one| one.origin),
-                Some(purlis_skills::Origin::BuiltIn),
-                "{old} {route:?}"
+            assert!(
+                purlis_skills::by_name(&set, name).is_none(),
+                "{name} {route:?}"
             );
         }
+    }
+    for other in [
+        "purlis:purlis-handoff",
+        "building-ui",
+        "building-purlis-ui",
+        "acme:purlis-building-ui",
+    ] {
+        assert_eq!(Reference::parse(other).unwrap().retired(), None, "{other}");
     }
 }
 

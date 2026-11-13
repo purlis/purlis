@@ -1,6 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { ChatScreenTab } from "./ChatScreenTab";
+import { CHAT_SCREEN } from "./closedChat";
 import {
   Fragment,
   Suspense,
@@ -38,6 +40,7 @@ import {
   ListChecks,
   LoaderCircle,
   MonitorSmartphone,
+  ScrollText,
   Puzzle,
   RefreshCw,
   Save,
@@ -108,7 +111,7 @@ import { SessionRecordTab } from "./SessionRecordTab";
 import { useSessionOffers } from "./sessionOffers";
 import { TodoTab } from "./TodoTab";
 import { TODO_VIEW, todoRefOf } from "./todos";
-import { pieceDiffOf, pieceOf } from "./pieceViews";
+import { PLANE_ROOT, outsideFileOf, pieceDiffOf, pieceOf } from "./pieceViews";
 import type { PieceFilesTab as FilesTab } from "./editor/PieceFiles";
 import { SESSION_VIEW, sessionTitle, sessionView } from "./sessions";
 import { ActivityTab } from "./ActivityTab";
@@ -387,6 +390,8 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   "piece-file": FileCode,
   /** One file of the plane root (issue 1916, `pieceViews.PLANE_FILE`). */
   "plane-file": FileCode,
+  /** A file outside the project a pane's link opened (#6216, `pieceViews.OUTSIDE_FILE`). */
+  "outside-file": FileCode,
   /** One file against its branch's base (FM-11). */
   "piece-diff": GitCompare,
   /** What one task changed (#1511, `taskChanges.ts`). */
@@ -403,6 +408,8 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   [BROWSERS_GRID_VIEW.view]: LayoutGrid,
   /** This machine and its runners (#2052, `DevicesView.tsx`). */
   [DEVICES_VIEW.view]: MonitorSmartphone,
+  /** A closed task's kept screen, read-only (#6214, `ChatScreenTab.tsx`). */
+  [CHAT_SCREEN]: ScrollText,
   /** What a chat acts as on a forge (#4485, `AgentIdentityTab.tsx`). */
   [AGENT_IDENTITY_VIEW.view]: BadgeCheck,
   /** A browser's DevTools, drawn live (#2028, `inspector.ts`). */
@@ -618,6 +625,17 @@ export function ViewPane({
       </section>
     );
   }
+  // **A closed task's kept screen** (#6214): *Read it* on its card, keyed by the chat's ULID.
+  if (view.from === null && view.view === CHAT_SCREEN) {
+    return (
+      <ChatScreenTab
+        key={`${plane}\u0000${view.key}`}
+        plane={plane}
+        chat={view.key}
+        title={title}
+      />
+    );
+  }
   // **Agent identity** (#4485): keyed by the plane, whose tool lines and personas it reads.
   if (view.from === null && view.view === AGENT_IDENTITY_VIEW.view) {
     return (
@@ -643,12 +661,16 @@ export function ViewPane({
   const todoAt = view.from === null && view.view === TODO_VIEW ? todoRefOf(view.key) : undefined;
   const archiveAt = archiveOf(view);
   const piece = pieceOf(view);
+  const outside = outsideFileOf(view);
   const pieceDiff = pieceDiffOf(view);
   const taskChanges = taskChangesOf(view);
   /** Whether the view draws its own first row, with nothing above it (#3147). */
   const ownFirstRow =
     !holding &&
-    (settingsLevel !== undefined || piece?.path !== undefined || pieceDiff !== undefined);
+    (settingsLevel !== undefined ||
+      piece?.path !== undefined ||
+      outside !== undefined ||
+      pieceDiff !== undefined);
   return (
     <section
       className="view-pane"
@@ -779,6 +801,7 @@ export function ViewPane({
             onOpenChat={onNewChatOn}
             onOpenIdentity={() => onOpenView(AGENT_IDENTITY_VIEW, AGENT_IDENTITY_TITLE)}
             onOpenSettings={() => onOpenView(settingsView("project"), SETTINGS_TAB_TITLE)}
+            onOpenPools={() => onOpenView(settingsView("you"), SETTINGS_TAB_TITLE)}
           />
         ) : isSaving(view) ? (
           /* The plane's save standing and its save button (charter-app#294). Keyed by the
@@ -800,6 +823,17 @@ export function ViewPane({
               split={split}
               onSplit={onSplit}
               onPress={onPress}
+            />
+          </Suspense>
+        ) : outside !== undefined ? (
+          /* A file outside the project a pane's link opened (#6216), read only. */
+          <Suspense fallback={OPENING}>
+            <PieceTab
+              key={`${plane}\u0000${view.key}`}
+              plane={plane}
+              cut={PLANE_ROOT}
+              outside={outside}
+              onOpenView={onOpenView}
             />
           </Suspense>
         ) : pieceDiff !== undefined ? (
@@ -1025,9 +1059,17 @@ function OfferButton({ offer, onPress }: { offer?: Offer; onPress?: (offer: Offe
  * in the page, hidden, under the new tab's name. One component suspends once per window.
  */
 const PieceTab = lazy(() =>
-  import("./editor/PieceFiles").then(({ PieceFilesTab, PieceFileTab }) => ({
-    default: function PieceTab(props: ComponentProps<typeof FilesTab> & { path?: string }) {
-      const { path, ...files } = props;
+  import("./editor/PieceFiles").then(({ OutsideFileTab, PieceFilesTab, PieceFileTab }) => ({
+    default: function PieceTab(
+      props: ComponentProps<typeof FilesTab> & {
+        path?: string;
+        outside?: { session: number | null; path: string };
+      },
+    ) {
+      const { path, outside, ...files } = props;
+      // A file outside the project (#6216), in the same chunk, so the first one suspends once.
+      if (outside !== undefined)
+        return <OutsideFileTab plane={files.plane} session={outside.session} path={outside.path} />;
       return path === undefined ? (
         <PieceFilesTab {...files} />
       ) : (

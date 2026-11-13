@@ -12,7 +12,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { SigningAccount, SigningAccountKeys, SigningState } from "../bindings";
-import { expectFocusInSight } from "../stories.testkit";
+import { expectFocusInSight, untilFocused } from "../stories.testkit";
 import { SettingGroup, SettingRow } from "./components";
 import type { LiveSetting } from "./groups";
 import { signedCommits } from "./signing";
@@ -169,8 +169,12 @@ export const OnNotChecked: Story = {
     const check = await waitFor(() =>
       within(canvasElement).getByRole("button", { name: "Check signing on octocat on GitHub" }),
     );
+    // The accounts are a table (#6301): Tab lands on its row, and → walks its cells to Check.
     await userEvent.tab();
-    await expect(check).toHaveFocus();
+    const table = within(canvasElement).getByRole("grid", { name: "Signing on your accounts" });
+    await untilFocused(() => within(table).getAllByRole("row")[1] as HTMLElement, "the row");
+    await userEvent.keyboard("{ArrowRight}{ArrowRight}{ArrowRight}");
+    await untilFocused(() => check, "→ reaches the row's Check");
     expectFocusInSight();
   },
 };
@@ -220,10 +224,15 @@ export const OnManaged: Story = {
       within(canvasElement).getByRole("button", { name: "Add to this account: sam on GitLab" }),
     );
     await expect(
-      within(canvasElement).getByRole("list", { name: "Signing keys of your other devices" }),
+      within(canvasElement).getByRole("grid", { name: "Signing keys of your other devices" }),
     ).toHaveTextContent("Studio Mac mini");
-    add.focus();
-    await expect(add).toHaveFocus();
+    // The accounts are a table (#6301): its second row, then → along it to Add to this account.
+    const table = within(canvasElement).getByRole("grid", { name: "Signing on your accounts" });
+    const rows = () => within(table).getAllByRole("row").slice(1) as HTMLElement[];
+    rows()[0]?.focus();
+    await untilFocused(() => rows()[0] as HTMLElement, "the first account's row");
+    await userEvent.keyboard("{ArrowDown}{ArrowRight}{ArrowRight}{ArrowRight}");
+    await untilFocused(() => add, "↓ and → reach the second account's Add to this account");
     expectFocusInSight();
   },
 };
@@ -250,15 +259,19 @@ export const OtherDevicesKeys: Story = {
     ],
   },
   play: async ({ canvasElement }) => {
-    const list = await waitFor(() =>
-      within(canvasElement).getByRole("list", { name: "Signing keys of your other devices" }),
+    const table = await waitFor(() =>
+      within(canvasElement).getByRole("grid", { name: "Signing keys of your other devices" }),
     );
-    await expect(list).toHaveTextContent("Older setup");
-    const remove = within(list).getByRole("button", {
+    await expect(table).toHaveTextContent("Older setup");
+    const remove = within(table).getByRole("button", {
       name: "Remove old-mini's signing key from octocat on GitHub…",
     });
-    remove.focus();
-    await expect(remove).toHaveFocus();
+    // A key a row (#6301): its second row, then → along it to Remove….
+    const rows = () => within(table).getAllByRole("row").slice(1) as HTMLElement[];
+    rows()[0]?.focus();
+    await untilFocused(() => rows()[0] as HTMLElement, "the first key's row");
+    await userEvent.keyboard("{ArrowDown}{ArrowRight}{ArrowRight}{ArrowRight}{ArrowRight}");
+    await untilFocused(() => remove, "↓ and → reach the second key's Remove…");
     expectFocusInSight();
   },
 };
@@ -272,11 +285,11 @@ export const RemoveOtherDevicesKey: Story = {
     screenshot: "page",
   },
   play: async ({ canvasElement }) => {
-    const list = await waitFor(() =>
-      within(canvasElement).getByRole("list", { name: "Signing keys of your other devices" }),
+    const table = await waitFor(() =>
+      within(canvasElement).getByRole("grid", { name: "Signing keys of your other devices" }),
     );
     await userEvent.click(
-      within(list).getByRole("button", {
+      within(table).getByRole("button", {
         name: "Remove Studio Mac mini's signing key from octocat on GitHub…",
       }),
     );
@@ -298,7 +311,7 @@ export const RemoveSigning: Story = {
   },
   play: async ({ canvasElement }) => {
     await waitFor(() =>
-      within(canvasElement).getByRole("list", { name: "Signing keys of your other devices" }),
+      within(canvasElement).getByRole("grid", { name: "Signing keys of your other devices" }),
     );
     await userEvent.click(within(canvasElement).getByRole("button", { name: "Remove signing…" }));
     const confirm = await waitFor(() =>

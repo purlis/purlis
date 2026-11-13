@@ -270,6 +270,7 @@ fn each_run_gets_a_checked_copy_of_its_own_that_goes_with_it() {
         tmp: None,
         runtime: None,
         system: Path::new("/nonexistent/docker.sock"),
+        forwarded: None,
     };
     let prepared = prepare(&source(None)).unwrap();
     let named = |prepared: &Prepared, name: &str| {
@@ -329,6 +330,7 @@ fn settings_that_cannot_be_read_are_taken_as_none() {
             tmp: None,
             runtime: None,
             system: Path::new("/nonexistent/docker.sock"),
+            forwarded: None,
         })
         .unwrap();
         let folder = PathBuf::from(
@@ -374,6 +376,7 @@ fn copies_older_than_a_day_are_swept_and_a_running_runs_never_is() {
         tmp: None,
         runtime: None,
         system: Path::new("/nonexistent/docker.sock"),
+        forwarded: None,
     };
     let day = std::time::Duration::from_secs(24 * 60 * 60);
     // A run still going, whose copy is two days old.
@@ -435,4 +438,44 @@ fn a_settings_folder_that_is_not_one_is_never_swept() {
         0
     );
     assert!(old.exists());
+}
+
+/// A pool's forward is named to Docker's client and to Podman's (#6269): a Podman pool's runs use
+/// Podman's own, which reads `CONTAINER_HOST`, and a named connection of Podman's is never handed
+/// on. A local pool's runs are not pointed at Podman by purlis.
+#[test]
+fn a_forwarded_run_names_the_forward_to_docker_and_to_podman_and_no_connection_reaches_past_it() {
+    let (home, data) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let settings_in = data.path().join(DIR);
+    let forward = Path::new("/data/engine-links/p/docker.sock");
+    let source = |forwarded: Option<&'static Path>| Source {
+        settings_in: &settings_in,
+        path: OsString::new(),
+        home: Some(home.path()),
+        docker_config: None,
+        docker_host: None,
+        tmp: None,
+        runtime: None,
+        system: Path::new("/nonexistent/docker.sock"),
+        forwarded,
+    };
+    let named = |prepared: &Prepared, name: &str| {
+        prepared
+            .env
+            .iter()
+            .find(|(one, _)| *one == name)
+            .map(|(_, value)| value.to_string_lossy().into_owned())
+    };
+    let through = prepare(&source(Some(forward))).unwrap();
+    for name in ["DOCKER_HOST", "CONTAINER_HOST"] {
+        assert_eq!(
+            named(&through, name).as_deref(),
+            Some("unix:///data/engine-links/p/docker.sock"),
+            "{name}"
+        );
+    }
+    let here = prepare(&source(None)).unwrap();
+    assert_eq!(named(&here, "CONTAINER_HOST"), None);
+    assert!(CLEARED.contains(&"CONTAINER_CONNECTION"));
+    assert!(CLEARED.contains(&"DOCKER_CONTEXT"));
 }

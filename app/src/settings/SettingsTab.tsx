@@ -2,7 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useSkillStudioOn } from "../skillStudio";
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { LoaderCircle } from "lucide-react";
 import {
   commands,
@@ -20,6 +29,8 @@ import { atCreation } from "../windowprefs";
 import {
   Choice,
   Field,
+  FOUND_PAGE,
+  noneFound,
   SettingGroup,
   SettingRow,
   SettingsLayout,
@@ -39,12 +50,11 @@ import {
   type SettingsFileId,
   type SettingsGroup,
 } from "./groups";
-import { reveal } from "../ui/reveal";
+import { everySetting, found, isSetHere, narrowed } from "./search";
 import { useFolds } from "./navGroups";
 import {
   askSettingsAction,
   chooseGroup,
-  focusedSetting,
   levelOf,
   linkToGroup,
   PICK_VAULT,
@@ -57,7 +67,7 @@ import { named, RawEditor, RawLinks, type RawDraft, type RawFile } from "./RawTo
 import { useWorkspaceLevel, workspaceGroups } from "./workspace";
 import { youGroups } from "./you";
 import { CollectionView, type Asked } from "./Collection";
-import { useEnteringFocus } from "./entering";
+import { landOnTheSetting, useEnteringFocus } from "./entering";
 import { OutLink } from "./OutLink";
 import { standingIn, type Standing } from "./standing";
 import {
@@ -125,18 +135,26 @@ export function SettingsTab({
       />
     );
   return at === "project" && plane !== undefined ? (
-    <ProjectLevelTab key={plane} plane={plane} levels={offered} onLevelChange={change} />
+    <ProjectLevelTab
+      key={plane}
+      plane={plane}
+      workspace={workspace}
+      levels={offered}
+      onLevelChange={change}
+    />
   ) : (
-    <YouLevel plane={plane} levels={offered} onLevelChange={change} />
+    <YouLevel plane={plane} workspace={workspace} levels={offered} onLevelChange={change} />
   );
 }
 
 type Switcher = {
   levels: readonly { id: Level; label: string }[];
   onLevelChange: (level: string) => void;
+  /** The workspace the tab is about, whose level the search finds in too (#2920). */
+  workspace?: string;
 };
 
-function YouLevel({ plane, levels, onLevelChange }: Switcher & { plane?: PlaneId }) {
+function YouLevel({ plane, ...switcher }: Switcher & { plane?: PlaneId }) {
   // The Pools group is listed with or without a pool (the person's ruling of 2026-10-30): it
   // says what a pool is until one is added.
   const groups = useMemo(() => youGroups(plane), [plane]);
@@ -145,8 +163,8 @@ function YouLevel({ plane, levels, onLevelChange }: Switcher & { plane?: PlaneId
     <Shown
       level="you"
       place={settingsPlace("you")}
-      levels={levels}
-      onLevelChange={onLevelChange}
+      plane={plane}
+      {...switcher}
       about={`This machine only, in every project. Kept in ${where}.`}
       kept={{ says: `Kept in ${where}.`, file: where }}
       groups={groups}
@@ -351,6 +369,7 @@ function WorkspaceLevelTab({
       level="workspace"
       plane={plane}
       place={settingsPlace("workspace", plane, workspace)}
+      workspace={workspace}
       {...switcher}
       about={withVaults(
         `The workspace ${workspace}, read between its project's shared settings and this machine's own: it refines its project for the team, and this machine has the last word. Never put a secret in its settings: keep it in a vault and name it as vault:<vault>/<key>.`,
@@ -381,6 +400,7 @@ function WorkspaceLevelTab({
 function Shown({
   level,
   plane,
+  workspace,
   place,
   levels,
   onLevelChange,
@@ -422,6 +442,12 @@ function Shown({
 }) {
   // Per tab and not remembered (V89c): a level drawn afresh starts with the whole nav.
   const [filter, setFilter] = useState("");
+  /** "Set here" (#2920): the search narrowed to the values set at this level. */
+  const [setHere, setSetHere] = useState(false);
+  /** While it searches, the nav's page on screen: every match ({@link FOUND_PAGE}), or one of
+   *  this level's pages, narrowed. Every change to what it searches for goes back to every
+   *  match. */
+  const [searchPage, setSearchPage] = useState(FOUND_PAGE);
   /** The file whose text is on the right in place of a group, while one is. */
   const [editing, setEditing] = useState<string>();
   const shown = useShownGroup(place);
@@ -433,9 +459,11 @@ function Shown({
   if (landed !== linked) {
     setLanded(linked);
     setFilter("");
+    setSetHere(false);
     setEditing(undefined);
   }
   const choose = (group: string) => chooseGroup(place, group);
+  const searching = filter.trim() !== "" || setHere;
   const groups = narrowed(
     // A collection is offered while it has no entry: that is where one is added. A group with
     // a link out is offered too: the link is the way to a setting (#1387).
@@ -445,9 +473,43 @@ function Shown({
     ),
     filter,
   );
-  const group = landsOn(groups, shown?.group) ?? groups[0];
+  /** Every match on one page (#2920): while it searches and no page of the nav is picked. */
+  const onFound = searching && editing === undefined && searchPage === FOUND_PAGE;
+  const group = onFound
+    ? undefined
+    : searching
+      ? (groups.find((one) => one.id === searchPage) ?? groups[0])
+      : (landsOn(groups, shown?.group) ?? groups[0]);
   /** The group on screen, once the level is read and no file's text is in its place. */
   const drawn = waiting === undefined && editing === undefined ? group?.id : undefined;
+  const skillStudio = useSkillStudioOn();
+  /** The other levels' settings, found by the same words (#2920): none for Set here, which is
+   *  this level's. */
+  const elsewhere = useMemo(
+    () =>
+      everySetting({ plane, workspace, skillStudio }).filter(
+        (one) => one.level !== level && levels.some((offered) => offered.id === one.level),
+      ),
+    [plane, workspace, skillStudio, level, levels],
+  );
+  const foundElsewhere = setHere ? [] : found(elsewhere, filter);
+  /** This level's matches, the set ones alone for Set here: a row drawn by a hook of its own
+   *  says whether it is set as it is drawn ({@link LiveRow}'s `onlySet`). */
+  const foundHere = setHere
+    ? groups.flatMap((one) => {
+        const settings = one.settings.filter(
+          (setting) =>
+            !inAFile(setting) || (driver !== undefined && isSetHere(setting, driver.files)),
+        );
+        return settings.length > 0 || (one.after?.length ?? 0) > 0 ? [{ ...one, settings }] : [];
+      })
+    : groups;
+  /** How many settings the page of every match draws, as it last drew them. */
+  const [counted, setCounted] = useState<number>();
+  const estimate = [...foundHere, ...foundElsewhere.flatMap((one) => one.groups)].reduce(
+    (all, one) => all + one.settings.length + (one.after?.length ?? 0),
+    0,
+  );
   /**
    * **A link that names a setting focuses it** (NO-7, #1232): once its group is drawn, the
    * setting's control takes the focus, so the person lands on the field and not only near it.
@@ -460,18 +522,7 @@ function Shown({
   const target = shown?.setting;
   const own = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (target === undefined) return;
-    const rows = own.current?.querySelectorAll<HTMLElement>("[data-setting]") ?? [];
-    const row = [...rows].find((one) => one.dataset.setting === target);
-    if (row === undefined) return;
-    // A setting in a rarely used group of its page: the group opens first (R61).
-    reveal(row);
-    row.scrollIntoView?.({ block: "nearest" });
-    // The control, never the label's info mark or badge, which come before it (DS-8).
-    (row.querySelector(".ui-setting-control") ?? row)
-      .querySelector<HTMLElement>("input, select, textarea, button, [tabindex]")
-      ?.focus({ preventScroll: true });
-    focusedSetting(place);
+    if (target !== undefined) landOnTheSetting(place, own.current);
   }, [linked, place, target, drawn, declared]);
   /** Every way into Settings leaves the keyboard on the nav's current group (#1206). */
   useEnteringFocus(place, own);
@@ -488,8 +539,49 @@ function Shown({
     (stillWritten(level, rawFile.id === "local" ? "local" : undefined) ||
       (rawFile.id === "shared" && mendable));
   const readOnly = useReadOnlySaid();
-  const found =
-    waiting === undefined ? groups.reduce((all, one) => all + one.settings.length, 0) : undefined;
+  const howMany = waiting === undefined ? (onFound ? (counted ?? estimate) : counted) : undefined;
+  /** **What the search looks for changes** (`change`): the group on screen is the one shown
+   *  again once it is done, and every match is shown again. */
+  const searchFor = (change: () => void) => {
+    if (group && !searching) choose(group.id);
+    setEditing(undefined);
+    setSearchPage(FOUND_PAGE);
+    change();
+  };
+  /** A group's matches at this level, among every match: each with its control, but the fields
+   *  of a collection's entries, which are changed in its page's list and are a way there. */
+  const hereRows = (one: SettingsGroup): ReactNode[] => {
+    const row = drawRow({
+      level,
+      driver,
+      home: homeOf(one.settings)?.file,
+      onNew: create,
+      onlySet: setHere,
+      onAction: plane === undefined ? undefined : (action) => askSettingsAction(plane, action),
+    });
+    const ofAnEntry = new Set(one.collection?.entries.flatMap((entry) => entry.settings) ?? []);
+    return [
+      ...one.settings.map((setting) =>
+        ofAnEntry.has(setting.id) ? (
+          <ElsewhereRow
+            key={setting.id}
+            setting={setting}
+            page={one.label}
+            modified={inAFile(setting) && driver !== undefined && isSetHere(setting, driver.files)}
+            onGo={() => land(level, one.id, setting.id)}
+          />
+        ) : (
+          row(setting)
+        ),
+      ),
+      ...(one.after ?? []).map(row),
+    ];
+  };
+  /** Lands on a setting found elsewhere: at its level, its group shown and its field focused. */
+  const land = (to: Level, group: string, setting: string) => {
+    linkToGroup(settingsPlace(to, plane, workspace), group, setting);
+    if (to !== level) onLevelChange(to);
+  };
   /** The Add form New profile… opened, on the group it is on, until it adds or is left. */
   const [asking, setAsking] = useState<{ group: string; asked: Asked }>();
   /**
@@ -531,20 +623,18 @@ function Shown({
         // What waits for the person here (R46): Your hosts' hosts not confirmed yet.
         count: one.collection?.entries.filter((entry) => entry.status === "waiting").length,
       }))}
-      group={rawFile ? "" : (group?.id ?? "")}
+      group={rawFile ? "" : onFound ? FOUND_PAGE : (group?.id ?? "")}
       onGroupChange={(to) => {
         setEditing(undefined);
-        choose(to);
+        if (searching) setSearchPage(to);
+        // The page picked while searching is the one shown once the search is done.
+        if (to !== FOUND_PAGE) choose(to);
       }}
       filter={filter}
-      onFilterChange={(to) => {
-        // The group on screen stays the chosen one while it is still matched, and is the one
-        // shown again once the box is cleared.
-        if (group) choose(group.id);
-        setEditing(undefined);
-        setFilter(to);
-      }}
-      found={rawFile ? undefined : found}
+      onFilterChange={(to) => searchFor(() => setFilter(to))}
+      setHere={setHere}
+      onSetHereChange={(to) => searchFor(() => setSetHere(to))}
+      found={rawFile ? undefined : howMany}
       foot={
         raw.length > 0 && waiting === undefined ? (
           <RawLinks files={raw} editing={rawFile?.id} onEdit={setEditing} />
@@ -598,13 +688,50 @@ function Shown({
                 }
               />
             </OffUnless>
+          ) : onFound ? (
+            <FoundPage
+              title={
+                howMany === 0
+                  ? "No setting found"
+                  : `${howMany ?? estimate} ${(howMany ?? estimate) === 1 ? "setting" : "settings"} found`
+              }
+              blurb={
+                howMany === 0
+                  ? noneFound(filter, setHere)
+                  : setHere
+                    ? "Set at this level."
+                    : "Across every page and level."
+              }
+              onCount={setCounted}
+            >
+              {foundHere.map((one) => (
+                <FoundSection key={one.id} label={`${labelOf(level)} › ${one.label}`}>
+                  {hereRows(one)}
+                </FoundSection>
+              ))}
+              {foundElsewhere.flatMap(({ level: at, groups: found }) =>
+                found.map((one) => (
+                  <FoundSection key={one.id} label={`${labelOf(at)} › ${one.label}`}>
+                    {[...one.settings, ...(one.after ?? [])].map((setting) => (
+                      <ElsewhereRow
+                        key={setting.id}
+                        setting={setting}
+                        page={one.label}
+                        onGo={() => land(at, one.id, setting.id)}
+                      />
+                    ))}
+                  </FoundSection>
+                )),
+              )}
+            </FoundPage>
           ) : (
             group && (
               <ShownGroup
                 key={group.id}
                 level={level}
                 group={group}
-                filtering={filter.trim() !== ""}
+                onlySet={setHere}
+                filtering={searching}
                 kept={kept}
                 raw={raw}
                 onEdit={setEditing}
@@ -684,29 +811,6 @@ function landsOn(
   return under;
 }
 
-/**
- * **The groups and settings a filter leaves** (SE-21, V89c): a group whose own label or help
- * holds the words, or one of its other words (`also`, #5688), keeps every setting; any other group keeps the settings whose label or help
- * holds them, and is left out when none does. Case is ignored, and so is space around the
- * words; with none, every group is left as it is.
- */
-function narrowed(groups: readonly SettingsGroup[], filter: string): readonly SettingsGroup[] {
-  const words = filter.trim().toLocaleLowerCase();
-  if (words === "") return groups;
-  const holds = (...texts: string[]) =>
-    texts.some((text) => text.toLocaleLowerCase().includes(words));
-  return groups.flatMap((one) => {
-    if (holds(one.label, one.help, ...(one.also ?? []))) return [one];
-    // Where a value is kept is said once in its group's header (DS-8), and still finds it.
-    const settings = one.settings.filter((setting) =>
-      holds(setting.label, setting.help, (inAFile(setting) && setting.kept) || ""),
-    );
-    const after = one.after?.filter((setting) => holds(setting.label, setting.help));
-    // A group a filter finds only by what it explains is found too (#1340).
-    return settings.length > 0 || (after?.length ?? 0) > 0 ? [{ ...one, settings, after }] : [];
-  });
-}
-
 /** The chosen group, drawn from its data. Keyed by the group, so each setting's hook is always
  *  the same one in a given row. */
 function ShownGroup({
@@ -722,11 +826,14 @@ function ShownGroup({
   reachable,
   adding,
   onAction,
+  onlySet = false,
 }: {
   /** The level the group is of: what decides, with each row's file, whether the row stays on in
    *  a read-only project ({@link stillWritten}). */
   level: Level;
   group: SettingsGroup;
+  /** "Set here" (#2920): only the rows whose value is set at this level are drawn. */
+  onlySet?: boolean;
   /** A filter holds words: its rarely used groups are drawn open. */
   filtering?: boolean;
   /** Where the level keeps what no file of its own holds, and the file that is (R49): the You
@@ -752,41 +859,7 @@ function ShownGroup({
   /** The file the page is kept in, as its whole text, which its header's Edit as TOML opens. */
   const homeId = home?.file ?? (group.collection && collectionFile(group.collection.name));
   const homeFile = homeId === undefined ? undefined : raw.find((one) => one.id === homeId);
-  // Each row by the file it writes (#1759). A row that may move between the files writes where
-  // its value is held: one held in the local file stays on, and only its move, which writes the
-  // committed file too, is off (`FileRow`); one held nowhere writes the committed file when it
-  // is set. A row drawn by a hook of its own is on by what it says it writes.
-  const row = (setting: Setting) =>
-    inAFile(setting) ? (
-      driver && (
-        <OffUnless
-          key={setting.id}
-          on={stillWritten(
-            level,
-            !setting.movable
-              ? setting.file
-              : heldIn(setting, driver.files) === "local"
-                ? "local"
-                : undefined,
-          )}
-          steady={setting.movable === true}
-        >
-          <FileRow
-            setting={setting}
-            driver={driver}
-            home={home?.file}
-            onNew={onNew}
-            onAction={onAction}
-          />
-        </OffUnless>
-      )
-    ) : (
-      <ShownWhile key={setting.id} useShown={setting.useShown}>
-        <OffUnless on={liveStillWritten(level, setting.writes)}>
-          <LiveRow setting={setting} />
-        </OffUnless>
-      </ShownWhile>
-    );
+  const row = drawRow({ level, driver, home: home?.file, onNew, onAction, onlySet });
   return (
     <SettingGroup
       label={group.label}
@@ -853,6 +926,180 @@ function ShownGroup({
 }
 
 /**
+ * **How a setting's row is drawn**, wherever it is drawn: on its page ({@link ShownGroup}) or
+ * among a search's matches ({@link FoundPage}).
+ *
+ * Each row by the file it writes (#1759). A row that may move between the files writes where
+ * its value is held: one held in the local file stays on, and only its move, which writes the
+ * committed file too, is off (`FileRow`); one held nowhere writes the committed file when it is
+ * set. A row drawn by a hook of its own is on by what it says it writes. With `onlySet` (Set
+ * here, #2920), a row whose value is not set at this level is not drawn.
+ */
+function drawRow({
+  level,
+  driver,
+  home,
+  onNew,
+  onAction,
+  onlySet = false,
+}: {
+  level: Level;
+  driver?: Driven<unknown>;
+  home?: SettingsFileId;
+  onNew?: OnNew;
+  onAction?: (action: string) => void;
+  onlySet?: boolean;
+}): (setting: Setting) => ReactNode {
+  return (setting) =>
+    inAFile(setting) ? (
+      driver &&
+      (!onlySet || isSetHere(setting, driver.files)) && (
+        <OffUnless
+          key={setting.id}
+          on={stillWritten(
+            level,
+            !setting.movable
+              ? setting.file
+              : heldIn(setting, driver.files) === "local"
+                ? "local"
+                : undefined,
+          )}
+          steady={setting.movable === true}
+        >
+          <FileRow
+            setting={setting}
+            driver={driver}
+            home={home}
+            onNew={onNew}
+            onAction={onAction}
+          />
+        </OffUnless>
+      )
+    ) : (
+      <ShownWhile key={setting.id} useShown={setting.useShown}>
+        <OffUnless on={liveStillWritten(level, setting.writes)}>
+          <LiveRow setting={setting} onlySet={onlySet} />
+        </OffUnless>
+      </ShownWhile>
+    );
+}
+
+/** What the switcher calls `level`. */
+function labelOf(level: Level): string {
+  return LEVELS.find((one) => one.id === level)?.label ?? level;
+}
+
+/**
+ * **Every match of a search, on one page** (#2920, N27): its header says how many, and what it
+ * searched across; its sections, one per page at each level, hold the rows. What it draws is
+ * what it counts: a row its hook does not draw (a setting shown only while another has a value,
+ * one not set here under Set here) is not counted, and a section left with no row is not drawn
+ * ({@link FoundSection}).
+ */
+function FoundPage({
+  title,
+  blurb,
+  onCount,
+  children,
+}: {
+  title: string;
+  blurb: string;
+  /** Told how many rows it draws, as that changes. */
+  onCount: (rows: number) => void;
+  children: ReactNode;
+}) {
+  const own = useRef<HTMLDivElement>(null);
+  const rows = useRowsDrawn(own);
+  useLayoutEffect(() => {
+    if (rows !== undefined) onCount(rows);
+  }, [rows, onCount]);
+  return (
+    <div className="ui-settings-found" ref={own}>
+      <SettingGroup label={title} help={blurb}>
+        {children}
+      </SettingGroup>
+    </div>
+  );
+}
+
+/**
+ * **How many setting rows are drawn in `own`**, as it is first drawn and each time a row comes or
+ * goes: a row's own hook may stop drawing it (a Reset that took a value out, under Set here)
+ * without anything above it drawing again. Unset until it is first drawn.
+ */
+function useRowsDrawn(own: RefObject<HTMLElement | null>): number | undefined {
+  const [rows, setRows] = useState<number>();
+  useLayoutEffect(() => {
+    const at = own.current;
+    if (at === null) return;
+    const count = () => setRows(at.querySelectorAll("[data-setting]").length);
+    count();
+    const watch = new MutationObserver(count);
+    watch.observe(at, { childList: true, subtree: true });
+    return () => watch.disconnect();
+  }, [own]);
+  return rows;
+}
+
+/**
+ * **One page's matches, at one level** (#2920): headed by the level and the page. A section its
+ * rows' hooks left with no row (Set here's, where nothing on the page is set) is not drawn, so
+ * no heading stands over nothing.
+ */
+function FoundSection({ label, children }: { label: string; children: ReactNode }) {
+  const own = useRef<HTMLDivElement>(null);
+  const rows = useRowsDrawn(own);
+  return (
+    <div ref={own} hidden={rows === 0} className="ui-settings-found-section">
+      <SettingGroup level={3} label={label}>
+        {children}
+      </SettingGroup>
+    </div>
+  );
+}
+
+/**
+ * **A match whose control is drawn somewhere else** (#2920): a setting of another level, which is
+ * changed at its own level (Settings changes one level at a time), or an entry of a collection,
+ * which is changed in its page's list. Its label and help as its own row says them, and the way
+ * to it, which lands on its field there.
+ */
+function ElsewhereRow({
+  setting,
+  page,
+  modified = false,
+  onGo,
+}: {
+  setting: Setting;
+  page: string;
+  /** Set at this level (R53): marked, as its own row is. */
+  modified?: boolean;
+  onGo: () => void;
+}) {
+  return (
+    <SettingRow
+      setting={setting.id}
+      modified={modified}
+      label={setting.label}
+      help={setting.help}
+      grouped
+      deprecated={inAFile(setting) ? setting.deprecated : undefined}
+      control={(ids) => (
+        <Button
+          size="sm"
+          variant="ghost"
+          aria-label={`Go to ${page}: ${setting.label}`}
+          aria-describedby={ids.describedBy}
+          onPress={onGo}
+        >
+          {`Go to ${page}`}
+        </Button>
+      )}
+    />
+  );
+}
+
+/**
  * **A page's settings, by the group of the page each is drawn in** (R60, R61): those in none
  * first, then each group in the order its first setting comes, its settings in their order.
  */
@@ -887,11 +1134,16 @@ function ShownBy({ useShown, children }: { useShown: () => boolean; children: Re
 }
 
 /** A live setting's row, badged by the level that holds it, if one does (#5696). */
-export function LiveRow({ setting }: { setting: LiveSetting }) {
+export function LiveRow({ setting, onlySet = false }: { setting: LiveSetting; onlySet?: boolean }) {
   const { control, reset, grouped, error, undo, heldBy } = setting.useControl();
+  // Set at this level exactly while its Reset is in reach (R53, R58): the mark says so, and Set
+  // here draws it (#2920).
+  const set = reset !== undefined && !reset.disabled;
+  if (onlySet && !set) return null;
   return (
     <SettingRow
       setting={setting.id}
+      modified={set}
       label={setting.label}
       help={setting.help}
       reset={reset}

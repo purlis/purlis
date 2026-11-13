@@ -457,8 +457,9 @@ impl<'a> Linter<'a> {
         ))]
     }
 
-    /// **The entries of `name`'s own `skills:` list** (#2934): one that names nothing, one written
-    /// by a built-in skill's name from before a rename (#5724), one written with the old
+    /// **The entries of `name`'s own `skills:` list** (#2934): one that names nothing, one naming
+    /// a built-in skill purlis retired (#5725), one written by a built-in skill's name from
+    /// before a rename (#5724), one written with the old
     /// `charter:` prefix, and one its chats start without
     /// ([`crate::skills::persona::unresolved`]), each with its fix. Read through
     /// [`Reference`](crate::skills::Reference), as a chat's start reads the list. With the
@@ -477,6 +478,13 @@ impl<'a> Linter<'a> {
         let mut issues = Vec::new();
         for entry in &written {
             let shown = crate::personas::one_line(entry);
+            if let Some((skill, now)) = Reference::written_retired(entry) {
+                issues.push(Issue::warn(format!(
+                    "`skills:` entry '{shown}' names `{skill}`, which purlis removed: {now}. Take \
+                     the entry off the list"
+                )));
+                continue;
+            }
             match Reference::parse(entry) {
                 None => issues.push(Issue::warn(format!(
                     "`skills:` entry '{shown}' names no skill, so its chats load nothing for \
@@ -511,7 +519,8 @@ impl<'a> Linter<'a> {
             name,
             env.as_ref(),
         );
-        for (reference, reason) in missing {
+        // A retired built-in was said of above, once.
+        for (reference, reason) in missing.into_iter().filter(|(r, _)| r.retired().is_none()) {
             let (what, fix): (std::borrow::Cow<'_, str>, _) = match (&reference, reason) {
                 (_, Reason::NoSuchBuiltIn) => (
                     "purlis has no built-in skill of this name".into(),

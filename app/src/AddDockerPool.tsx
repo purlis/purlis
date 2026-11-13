@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  commands,
   type ClusterPoolKey,
   type PoolAdding,
   type PoolLimitOffer,
@@ -56,9 +57,9 @@ import { Dialog } from "./ui/dialog/Dialog";
  * Drawn wherever the window is, while the palette's row or the Pools group asked for it
  * ({@link AddDockerPoolHost}).
  *
- * **A Docker pool is added in Pool setup** (#4484, spec #4469): with a project in front, asking
- * for a Docker pool opens its Pool setup tab instead of this form, which then stays for a cluster
- * pool until Pool setup's cluster path (#4492) and for a window with no project to hold the tab.
+ * **A pool is added in Pool setup** (#4484, #4492, spec #4469): with a project in front, asking
+ * for a Docker pool or a cluster pool opens its Pool setup tab instead of this form, which stays
+ * only for a window with no project to hold the tab.
  */
 export function AddDockerPoolHost({
   plane,
@@ -69,17 +70,24 @@ export function AddDockerPoolHost({
   onPoolSetup?: (plane: string) => void;
 }) {
   const pools = usePools();
-  const toPoolSetup =
-    pools.adding && pools.kind === "docker" && plane !== undefined && onPoolSetup !== undefined;
+  const toPoolSetup = pools.adding && plane !== undefined && onPoolSetup !== undefined;
   // Add starts a new pool's setup, and a pool's Open setup its own (#6256), before the tab shows.
+  // A cluster's setup is Pool setup's too (#4492): its kind is kept once the new setup has
+  // started, so the tab opens on it.
   const setupOf = pools.setupOf;
+  const kind = pools.kind;
   useEffect(() => {
     if (!toPoolSetup) return;
     stopAddingAPool();
-    void (setupOf === undefined ? startANewPoolSetup() : goOnWithPoolSetupOf(setupOf)).then(() =>
-      onPoolSetup(plane),
-    );
-  }, [toPoolSetup, onPoolSetup, plane, setupOf]);
+    void (async () => {
+      if (setupOf !== undefined) await goOnWithPoolSetupOf(setupOf);
+      else {
+        await startANewPoolSetup();
+        if (kind === "cluster") await commands.poolSetupChooseCluster(null);
+      }
+      onPoolSetup(plane);
+    })();
+  }, [toPoolSetup, onPoolSetup, plane, setupOf, kind]);
   // What was typed is kept while the dialog is open, across a change of Kind, and no longer.
   useEffect(() => {
     if (!pools.adding) drafts.clear();
@@ -101,9 +109,8 @@ export function AddDockerPoolHost({
     return <SignInOnTheAddedPool pool={pools.added} plane={plane} />;
   }
   if (!pools.adding || toPoolSetup) return null;
-  // Docker is Pool setup's where a project is in front, so the cluster dialog offers no Kind.
-  if (pools.kind === "cluster")
-    return <AddClusterPool kinds={plane === undefined || onPoolSetup === undefined} />;
+  // Only a window with no project to hold Pool setup reaches here.
+  if (pools.kind === "cluster") return <AddClusterPool kinds />;
   const defaults = pools.read.state === "read" ? pools.read.shown.defaults : undefined;
   const suspendAfter = pools.read.state === "read" ? pools.read.shown.suspend_after : undefined;
   const linkFrames = pools.read.state === "read" ? pools.read.shown : undefined;

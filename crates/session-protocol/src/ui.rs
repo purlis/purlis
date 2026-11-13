@@ -964,7 +964,16 @@ pub const WINDOW_ONLY: &[&str] = &[
     // in their window does either.
     "docker_pools",
     "pool_setup",
+    "pool_setup_check_again",
     "pool_setup_choose_docker",
+    // A pool on another machine (#6266): contacting it, and trusting the key it shows, are the
+    // person's own press in their window, as adding a pool is.
+    "pool_setup_choose_remote_docker",
+    "pool_setup_machine",
+    "pool_setup_ssh_hosts",
+    "pool_setup_podman_connections",
+    "pool_setup_connect",
+    "pool_setup_trust",
     "pool_setup_name",
     "pool_setup_pool",
     "pool_setup_add",
@@ -983,6 +992,13 @@ pub const WINDOW_ONLY: &[&str] = &[
     // How each pool stands in the picker: read from this machine's own records.
     "pool_setup_in_the_picker",
     "pool_setup_open_docker",
+    // A cluster's setup (#4492, #4493, #4494): choosing it, and each part of its install and
+    // its Pool, applied to the person's cluster with their own kubectl, so only their own press
+    // in their window.
+    "pool_setup_choose_cluster",
+    "pool_setup_install",
+    "pool_setup_operator_image",
+    "pool_setup_cluster_pool",
     "add_docker_pool",
     "remove_docker_pool",
     "docker_pool_link",
@@ -1182,6 +1198,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // the machine the window is on, so never served on a link, where it would open the host's.
     "pane_link_resolve",
     "pane_link_open",
+    // A file outside the project a pane link opened (#6216): read only after the person answered
+    // the window's ask, which a link has no way to show.
+    "pane_link_file",
     // A scenario test's stand-ins for the page's click and the browser (#5956): the `e2e` build
     // only, and its window alone.
     "artifact_link_follow",
@@ -1189,6 +1208,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Artifacts in the palette's search (#5968, ADR 0122): a row found opens the artifact's own
     // tab, which only the window holds, so nothing a link serves could use one.
     "artifact_search",
+    // A chat looked up by its number, and a closed task's kept screen (#6214): the card and the
+    // read-only tab are the window's. A kept screen is what a task's work showed, and is not
+    // served to anything else.
+    "chat_by_number",
+    "chat_screen",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on

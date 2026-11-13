@@ -137,6 +137,19 @@ impl Ledger {
         &self.running
     }
 
+    /// **The ULIDs of every chat a dispatch here was worked by**, running or ended: what keeps a
+    /// task's kept screen ([`crate::chatscreens::sweep`]).
+    pub fn workers(&self) -> impl Iterator<Item = &str> {
+        self.running
+            .iter()
+            .filter_map(|record| record.worker.chat.id.as_deref())
+            .chain(
+                self.ended
+                    .iter()
+                    .filter_map(|entry| entry.chat_id.as_deref()),
+            )
+    }
+
     /// The ids of the dispatches that have ended, newest first.
     pub fn ended(&self) -> impl Iterator<Item = &str> {
         self.ended.iter().map(|entry| entry.id.as_str())
