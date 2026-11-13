@@ -1,0 +1,21 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest, issues: List milestones (GET /repos/{owner}/{repo}/milestones)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/acme/api/milestones?state=open&per_page=100&page=1"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "[{\"number\": 4, \"title\": \"M4\", \"description\": null, \"due_on\": \"2026-12-01T08:00:00Z\", \"state\": \"open\", \"open_issues\": 3, \"closed_issues\": 9, \"html_url\": \"https://github.com/acme/api/milestone/4\", \"updated_at\": \"2026-11-10T09:00:00Z\", \"node_id\": \"MI_kwDOAcme4\"}, {\"number\": 5, \"title\": \"M5\", \"description\": \"The next one.\", \"due_on\": null, \"state\": \"open\", \"open_issues\": 1, \"closed_issues\": 0, \"html_url\": \"https://github.com/acme/api/milestone/5\", \"updated_at\": \"2026-11-11T10:00:00Z\", \"node_id\": \"MI_kwDOAcme5\"}]",
+        "err": ""
+      }
+    }
+  ]
+}

@@ -4,6 +4,7 @@
 import { ALLOWED_LIST, askSettingsLink, OPEN_ALLOWED_LIST } from "./settings/links";
 import {
   useCallback,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -12,31 +13,28 @@ import {
 } from "react";
 import { LoaderCircle } from "lucide-react";
 import { type Offered, type PlaneId, type Shown } from "./bindings";
-import {
-  askingUntold,
-  ElsewhereGroup,
-  elsewhereKey,
-  elsewherePlaces,
-  herePlaces,
-  OtherProjects,
-  othersWaiting,
-  QuietNotices,
-  showOffer,
-  theirAsks,
-  type Elsewhere,
-  type TheirAsks,
-} from "./InboxElsewhere";
-import { opensItsWindow } from "./asks";
+import { QuietNotices, type Elsewhere } from "./InboxElsewhere";
 import { useNow } from "./InboxRow";
 import {
   INBOX_SCOPES,
   keepInboxScope,
   scopeDrawn,
-  scopeOf,
   useInboxScope,
-  widerWaiting,
   type ScopeCounts,
 } from "./inboxScope";
+import {
+  ASKS_SCOPES,
+  asksScopeDrawn,
+  asksScopeOf,
+  asksWiderWaiting,
+  forgetAsksScope,
+  inChatOf,
+  pickAsksScope,
+  scopeCounts,
+  scopeHolds,
+  useAsksScope,
+} from "./asksScope";
+import type { AskedBy } from "./tabs";
 import { quietSaid } from "./NeedsYou";
 import { Notice, NoticeList, type NoticesClear, type NoticesDot } from "./Notice";
 import {
@@ -50,7 +48,6 @@ import {
 import { PersonaMark } from "./PersonaMark";
 import {
   askKey,
-  heldKey,
   dismissSaid,
   MOST_ANSWERED,
   noteSeen,
@@ -95,11 +92,12 @@ import {
   Ask,
   Empty,
   EmptyScope,
+  NO_CHAT_FOCUSED,
   placeIds,
   SCOPE_LABEL,
   shapeOf,
+  tasksSaid,
   type AllChatsFilter,
-  type Shape,
 } from "./InboxAsks";
 import { heldBy, UpdateList, type UpdateRow, type Updates, updatePlaces } from "./InboxUpdatesList";
 import { SeenRowsOf, type SeenRows } from "./seenRows";
@@ -120,6 +118,7 @@ export {
   MOVED_JUST_NOW,
   MOVED_ON,
   NOT_CHECKED,
+  NO_CHAT_FOCUSED,
   REPLY_HINT,
   SCOPE_LABEL,
   NO_MESSAGE,
@@ -165,21 +164,6 @@ export const NEEDS_A_DECISION_DOT = "A Notice needs a decision";
 export const NOTICES = "Notices";
 
 /**
- * **What another open project's ask offers on its row here** (#1921): what it offers in its own
- * project's Asks, less an answer that opens something in that project's window
- * ({@link opensItsWindow}), which its own Asks gives. Nothing of the listing project's (its
- * reasons, its Ignore) is read for it. A dispatch's grant, drawn by that project's own Notice,
- * is answered here only where this window holds the project; else its row has Go to chat.
- */
-function theirShape(ask: Shown, here: boolean): Shape {
-  const shape = shapeOf(ask, undefined, undefined, undefined);
-  const offers = shape.offers.filter((one) => !opensItsWindow(ask, one.id));
-  if (ask.source === "dispatch" && !here)
-    return { ...shape, offers, decision: false, form: false, answers: false };
-  return { ...shape, offers };
-}
-
-/**
  * **The Inbox** (#1692, spec #1688): everything in this project that waits on the person, at the
  * top of the right side's activity bar, the "for you" side (ADR 0038 as amended 2026-10-10).
  *
@@ -216,12 +200,13 @@ function theirShape(ask: Shown, here: boolean): Shape {
  * **What an ask says is data** (I-1, #1690): a chain a chat named, a command line, a host are
  * drawn as text, and the only controls are the fixed words of the answers it offers.
  *
- * **A switch at the top picks whose asks are listed** (qw359, `inboxScope.ts`): every project's
- * this window knows of (the default, ADR 0121 decision 4), this project's or those of the
- * workspace in front on the strip, each with its count, the pick kept for the project as the
- * Chats view's is. Only the scopes the window can list are offered. A scope with nothing in it
- * says how many wait in the nearest wider one, with one press to widen. Notices and updates are
- * the project's and are listed whatever the scope.
+ * **Chips at the top pick whose asks are listed** (ADR 0121, amended 2026-11-12; `asksScope.ts`):
+ * Chat, the focused chat and every chat it dispatched; Workspace, the workspace in front on the
+ * strip, not drawn where the project has one; Project, all of this project's. Each says its
+ * count above 0, and Asks opens on Chat every time: a pick holds until Asks closes. Another
+ * project's asks are answered in its own Asks, never listed here. A scope with nothing in it
+ * offers the nearest wider one with something waiting, one press to widen. Notices and updates
+ * are the project's and are listed whatever the scope.
  *
  * **A row reads in three ranks** (qw359, `InboxRow.tsx`): what needs you, strongest; where it
  * is (project · workspace · persona), quieter; its kind and how long it has waited, smallest
@@ -266,7 +251,6 @@ export function Inbox({
   onDot,
   onNoticeCauses,
   seen,
-  seenOf,
   onNoticeAnswer,
   elsewhere,
   here,
@@ -278,6 +262,10 @@ export function Inbox({
   hold,
   quietTop,
   onAllChats,
+  chat,
+  askedBy,
+  oneWorkspace,
+  shown: asksOpen,
 }: {
   /**
    * **Which view of the right bar this draws** (ADR 0119, #5644, #5645): `asks`, the asks
@@ -335,9 +323,6 @@ export function Inbox({
   onNoticeCauses?: (causes: readonly string[]) => void;
   /** The project's seen record (`seen.ts`), which its rows read to draw what is New (#6002). */
   seen?: SeenRows;
-  /** **Another project's seen record** (#1921), for its asks listed here (`useSeenElsewhere`).
-   *  Without it, nothing of another project's is drawn New. */
-  seenOf?: (plane: string) => SeenRows;
   /** A Notice answering the person's own press arrived (`ANSWERS`, D-1695-3). */
   onNoticeAnswer?: () => void;
   /** What waits where this project's registry cannot see (#1695): chats in other windows'
@@ -379,6 +364,19 @@ export function Inbox({
    * `working`. Without it, the empty sentence is words alone.
    */
   onAllChats?: (filter: AllChatsFilter) => void;
+  /**
+   * **The focused chat** (ADR 0121, amended 2026-11-12, decision 2): the one Chat lists, with
+   * every chat it dispatched, and how many tasks it holds, which Chat's tooltip says. Without
+   * it, Chat is greyed and Asks lists the next scope offered.
+   */
+  chat?: { session: number; name: string; tasks: number };
+  /** Which chat a task is a task of (`tabs.ts`), by which Chat's set is walked. */
+  askedBy?: AskedBy;
+  /** Whether the project has one workspace: then Workspace, which would list what Project
+   *  lists, is not drawn. */
+  oneWorkspace?: boolean;
+  /** Whether Asks is open on screen. Once it closes, it opens on Chat again. */
+  shown?: boolean;
 }) {
   const drawsAsks = part === undefined || part === "asks";
   const drawsUpdates = part === undefined || part === "updates";
@@ -394,32 +392,8 @@ export function Inbox({
   // The results the window keeps (#3344), under the Notices, in the same place-giving way.
   const placeResults = shown ? windowLines?.resultsAt : undefined;
   const resultsCount = windowLines?.results ?? 0;
-  /** The chats waiting in other windows whose asks those windows have not told (#1921). */
-  const asking = askingUntold(elsewhere);
   const quiet = elsewhere?.quiet ?? [];
-  // Named only where the window can bring the project forward.
-  const others = elsewhere?.onOpen === undefined ? [] : othersWaiting(plane, elsewhere);
-  /**
-   * **Every other open project's asks, ask by ask** (#1921, ADR 0121 decision 4): this window's
-   * other projects and the other windows', listed among this project's own under All projects,
-   * in one order by facts, and answered in place, each in its own project.
-   */
-  const theirs = theirAsks(plane, elsewhere);
-  if (drawsAsks) for (const one of theirs) noteSeen(one.plane, one.asks);
-  /** The project each of their asks is in, and that project as told. */
-  const planeOf = new Map<Shown, string>();
-  const projectOf = new Map<string, TheirAsks>();
-  for (const one of theirs) {
-    projectOf.set(one.plane, one);
-    for (const ask of one.asks) planeOf.set(ask, one.plane);
-  }
-  /** The key an ask is known by here, among every project's. */
-  const keyOf = (ask: Shown) => heldKey(ask, planeOf.get(ask));
-  /**
-   * **Whose asks are listed** (qw359). Each scope the window can list is counted, and only
-   * those are offered: the project's always; the workspace's where the window says which is
-   * in front; every project's where it says what waits elsewhere.
-   */
+  /** **Updates' scope** (#5646): kept for the project, as it was; Asks' is its own. */
   const picked = useInboxScope(plane);
   /**
    * **An ask's Ignore waits for its Undo** (story 54), as a Dismiss does: the ask goes at once
@@ -428,22 +402,29 @@ export function Inbox({
   const ignoring = useDismissHold();
   const unheld = asks?.filter((ask) => !ignoring.held.has(askKey(ask)));
   const inHere = (ask: Shown) => workspaceOf?.(ask.session) === here;
-  const counts: ScopeCounts = {
-    project: unheld?.length ?? 0,
-    ...(here !== undefined && workspaceOf !== undefined
-      ? { workspace: (unheld ?? []).filter(inHere).length }
-      : {}),
-    ...(elsewhere !== undefined
-      ? {
-          all:
-            (unheld?.length ?? 0) +
-            theirs.reduce((sum, one) => sum + one.asks.length, 0) +
-            asking.length +
-            others.reduce((sum, one) => sum + one.count, 0),
-        }
-      : {}),
+  /**
+   * **Whose asks Asks lists** (ADR 0121, amended 2026-11-12): Chat, Workspace where the window
+   * says which is in front and the project has more than one, and Project, each counted. The
+   * pick holds until Asks closes (`asksScope.ts`).
+   */
+  const asksPicked = useAsksScope(plane);
+  const inChatSet = inChatOf(chat?.session, askedBy ?? (() => undefined));
+  const sets = {
+    inChat: (ask: Shown) => inChatSet(ask.session),
+    ...(here !== undefined && workspaceOf !== undefined && oneWorkspace !== true ? { inHere } : {}),
   };
-  const scope = scopeDrawn(picked, counts);
+  const counts = scopeCounts(unheld ?? [], sets);
+  /** Chat is offered where the window says who dispatched whom; listed where a chat has focus. */
+  const chatOffered = askedBy !== undefined;
+  const focused = chatOffered && chat !== undefined;
+  const chips = ASKS_SCOPES.filter(
+    (one) => counts[one.scope] !== undefined && (one.scope !== "chat" || chatOffered),
+  );
+  const scope = asksScopeDrawn(asksPicked, counts, focused);
+  // **Closed, it opens on Chat next time** (decision 4).
+  useEffect(() => {
+    if (drawsAsks && asksOpen === false) forgetAsksScope(plane);
+  }, [asksOpen, drawsAsks, plane]);
   /**
    * **Updates' two lists** (#5646, ADR 0119): Mine, what the person's own chats and tasks did,
    * which it opens on; or Project, what is the project's. Narrowed by the scope switch as the
@@ -479,11 +460,7 @@ export function Inbox({
     updates === undefined || part !== "updates"
       ? updates
       : heldBy(hold, updates, shownRows, from === "project" ? teammatesClear : undefined);
-  const listed = unheld === undefined ? [] : scope === "workspace" ? unheld.filter(inHere) : unheld;
-  /** What waits in other projects is listed among every project's alone. */
-  const askingShown = scope === "all" ? asking : [];
-  const othersShown = scope === "all" ? others : [];
-  const theirsShown = scope === "all" ? theirs.flatMap((one) => one.asks) : [];
+  const listed = (unheld ?? []).filter(scopeHolds(scope, sets));
   /** This project's name, as its tab says it: every row is tagged with it and its workspace (ADR
    *  0121 decision 5, #6006). */
   const project = elsewhere?.waitingHere?.find((one) => one.plane === plane)?.project;
@@ -500,29 +477,26 @@ export function Inbox({
   };
   const now = useNow();
   /** The nearest wider scope with something waiting: an empty scope's way out. */
-  const wider = widerWaiting(scope, counts);
+  const wider = asksWiderWaiting(scope, counts, focused);
+  /** The way out pressed from the keyboard, which goes to the first ask it lists. */
   const widen = () => {
-    if (wider !== undefined) keepInboxScope(plane, wider.scope);
+    if (wider === undefined) return;
+    const keyboard = listAt.current?.contains(document.activeElement) === true;
+    pickAsksScope(plane, wider.scope);
+    // The list family draws the rows a commit later, as a landing finds them (`landOnGroup`).
+    if (keyboard)
+      requestAnimationFrame(() =>
+        listAt.current?.querySelector<HTMLElement>('[role="row"][data-key]')?.focus(),
+      );
   };
   // **Ordered by facts** (ADR 0121 decision 5, #6006): Expiring, then blocks others, then the
   // longest wait, one chat's asks together (`asksOrder.ts`).
-  // Every project's in one order (#1921): another's stands by its facts, as this one's do.
-  const groups = inOrder(
-    [...listed, ...theirsShown],
-    (ask) => ageOf(planeOf.get(ask) ?? plane, ask),
-    now,
-    (ask) => planeOf.get(ask),
-  );
+  const groups = inOrder(listed, (ask) => ageOf(plane, ask), now);
   const recent = useAnswered(plane);
   // Read only while nothing waits, where the empty Inbox lists them (D-1700-7).
   const allowedLately = useAllowedLately(
     plane,
-    drawsAsks &&
-      asks !== undefined &&
-      asks.length === 0 &&
-      asking.length === 0 &&
-      others.length === 0 &&
-      theirs.length === 0,
+    drawsAsks && asks !== undefined && asks.length === 0,
   );
   /** A way out of a Notice drawn here was pressed on an ask: answered here once it goes. */
   const touch = useAnsweredWhenGone(plane, asks);
@@ -546,12 +520,7 @@ export function Inbox({
       .filter((ask) => ignoring.held.has(askKey(ask)))
       .map((ask) => chainSaid(ask.chain))
       .join(", ")}.`;
-  const shapeOfAsk = (ask: Shown) => {
-    const there = planeOf.get(ask);
-    return there === undefined
-      ? shapeOf(ask, whyOf, onIgnore, asked)
-      : theirShape(ask, projectOf.get(there)?.here === true);
-  };
+  const shapeOfAsk = (ask: Shown) => shapeOf(ask, whyOf, onIgnore, asked);
   /** **The asks whose Answer is open** (#5651), by key: their forms are drawn, and stops. */
   const [answering, setAnswering] = useState<ReadonlySet<string>>(() => new Set());
   const answerOpen = (key: string, open: boolean) =>
@@ -562,7 +531,7 @@ export function Inbox({
       return next;
     });
   const shapes = new Map(
-    rows.flatMap((group) => group.asks).map((ask) => [keyOf(ask), shapeOfAsk(ask)]),
+    rows.flatMap((group) => group.asks).map((ask) => [askKey(ask), shapeOfAsk(ask)]),
   );
   // **What is drawn above each row, in order** (#1693, #1695): an ask's links and answers, a
   // chat elsewhere's, an update's. A row stands under what is above it, and an Allow on it waits
@@ -574,13 +543,13 @@ export function Inbox({
    * (`asksSame.ts`).
    */
   const sameRows = withSame(rows, (ask) => {
-    const shape = shapes.get(keyOf(ask));
+    const shape = shapes.get(askKey(ask));
     return shape?.decision === true ? shape.offers : [];
   });
-  const askRows = drawsAsks && (asks !== undefined || theirsShown.length > 0) ? sameRows : [];
+  const askRows = drawsAsks && asks !== undefined ? sameRows : [];
   const askPlaces = (ask: Shown) => {
-    const shape = shapes.get(keyOf(ask)) ?? shapeOfAsk(ask);
-    const key = keyOf(ask);
+    const shape = shapes.get(askKey(ask)) ?? shapeOfAsk(ask);
+    const key = askKey(ask);
     return placeIds(key, shape, shape.answers ? shape.offers : [], answering.has(key));
   };
   const places = [
@@ -594,15 +563,10 @@ export function Inbox({
               : []),
           ],
     ),
-    ...(drawsAsks ? elsewherePlaces(askingShown) : []),
-    ...(drawsAsks ? herePlaces(othersShown) : []),
     ...(drawsUpdates ? updatePlaces(updatesShown) : []),
   ];
-  /** Whether Asks lists any row: an ask of this project's, a chat elsewhere, another project. */
-  const anyAsk =
-    askRows.length > 0 ||
-    (elsewhere !== undefined && askingShown.length > 0) ||
-    (elsewhere?.onOpen !== undefined && othersShown.length > 0);
+  /** Whether Asks lists any row. */
+  const anyAsk = askRows.length > 0;
 
   const leave = (event: KeyboardEvent<HTMLDivElement>) => {
     if (drawsAsks && triageKey(event)) return;
@@ -703,46 +667,8 @@ export function Inbox({
     [onNotices, onDot],
   );
 
-  /**
-   * **Another open project's ask, as a row of this one's** (#1921): the same row, answered in
-   * its own project (`theirs`), after a check that it still waits there. Its Go brings its chat
-   * forward, in whichever window holds it; Ignore, Snooze and Stop are its own project's Asks'.
-   */
-  const theirRow = (ask: Shown, why: Standing, there: string) => {
-    const project = projectOf.get(there);
-    const key = keyOf(ask);
-    const who = chainSaid(ask.chain);
-    return (
-      <Ask
-        theirs
-        standing={why}
-        key={key}
-        plane={there}
-        ask={ask}
-        seen={seenOf?.(there) ?? null}
-        dispatches={(project?.asks ?? []).filter(
-          (one) => one.session === ask.session && one.source === "dispatch",
-        )}
-        shape={shapes.get(key) ?? shapeOfAsk(ask)}
-        open={answering.has(key)}
-        onOpen={(open) => answerOpen(key, open)}
-        where={[project?.project, project?.where?.[String(ask.session)]]
-          .filter((part): part is string => typeof part === "string" && part !== "")
-          .join(" · ")}
-        now={now}
-        onGo={() => elsewhere?.onPress(there, showOffer(ask.session, who))}
-        onTouched={() => undefined}
-        above={places.slice(0, places.indexOf(key)).join("\n")}
-      />
-    );
-  };
-
   /** **One ask's row** (#5649), under its chat or under the identical requests it joins (#6009). */
-  const askRow = (ask: Shown, why: Standing) => {
-    const there = planeOf.get(ask);
-    return there === undefined ? ownRow(ask, why) : theirRow(ask, why, there);
-  };
-  const ownRow = (ask: Shown, why: Standing) => (
+  const askRow = (ask: Shown, why: Standing) => (
     <Ask
       standing={why}
       key={askKey(ask)}
@@ -783,25 +709,32 @@ export function Inbox({
     >
       {/* Quiet first (#6017): its switch, and the summary of the Quiet that ended. */}
       {drawsAsks && quietTop}
-      {/* Drawn while any scope lists something, as the Chats view's is: nothing to narrow
-          otherwise, and an empty Inbox is its one sentence. */}
-      {drawsAsks &&
-        Object.keys(counts).length > 1 &&
-        Object.values(counts).some((count) => count > 0) && (
-          <div className="inbox-scope">
-            <ScopeSwitch
-              label={SCOPE_LABEL}
-              scopes={INBOX_SCOPES.flatMap((one) => {
-                const count = counts[one.scope];
-                return count === undefined
-                  ? []
-                  : [{ ...one, count, name: `${one.says}, ${count} waiting on you` }];
-              })}
-              scope={scope}
-              onPick={(to) => keepInboxScope(plane, to)}
-            />
-          </div>
-        )}
+      {/* **The chips** (ADR 0121, amended 2026-11-12), drawn while any scope lists something,
+          as the Chats view's switch is: nothing to narrow otherwise, and an empty Asks is its one
+          sentence. Each says its count above 0 only; Chat is greyed, with why, with no chat
+          focused. */}
+      {drawsAsks && chips.length > 1 && counts.project > 0 && (
+        <div className="inbox-scope">
+          <ScopeSwitch
+            label={SCOPE_LABEL}
+            scopes={chips.map((one) => {
+              const count = counts[one.scope] ?? 0;
+              return {
+                ...one,
+                count: count > 0 ? count : undefined,
+                name: count > 0 ? `${one.says}, ${count} waiting on you` : one.says,
+                ...(one.scope !== "chat"
+                  ? {}
+                  : chat === undefined
+                    ? { disabled: true, tip: NO_CHAT_FOCUSED }
+                    : { tip: tasksSaid(chat.name, chat.tasks) }),
+              };
+            })}
+            scope={scope}
+            onPick={(to) => pickAsksScope(plane, to)}
+          />
+        </div>
+      )}
       {/* **Updates' scope, and its two lists** (#5646): the scope switch as Asks draws it, then
           Mine or Project, Mine first. */}
       {part === "updates" &&
@@ -926,7 +859,7 @@ export function Inbox({
         {!drawsAsks ? null : asks === undefined ? (
           // Not read yet is not empty; what the window already knows waits wider is offered.
           <EmptyScope said={NOT_READ_YET} wider={wider} onWiden={widen} />
-        ) : rows.length === 0 && askingShown.length === 0 && othersShown.length === 0 ? (
+        ) : rows.length === 0 ? (
           wider === undefined ? (
             <Empty
               recent={recent.slice(0, MOST_ANSWERED)}
@@ -936,7 +869,7 @@ export function Inbox({
             />
           ) : (
             <EmptyScope
-              said={`Nothing is waiting on you in ${scopeOf(scope)}.`}
+              said={`Nothing is waiting on you in ${asksScopeOf(scope)}.`}
               wider={wider}
               onWiden={widen}
             />
@@ -948,7 +881,6 @@ export function Inbox({
               if (row.kind === "same") {
                 const key = sameRowKey(row.same);
                 const open = answering.has(key);
-                const first = row.same.placed[0];
                 return (
                   <ListRowSection
                     key={key}
@@ -960,15 +892,11 @@ export function Inbox({
                       </span>
                     }
                     named
-                    // This project's chats by session, as a landing finds them; another's apart.
-                    data-sessions={row.same.placed
-                      .filter((one) => one.plane === undefined)
-                      .map(({ ask }) => ask.session)
-                      .join(" ")}
+                    // Its chats by session, as a landing finds them.
+                    data-sessions={row.same.placed.map(({ ask }) => ask.session).join(" ")}
                   >
                     <SameAsk
                       plane={plane}
-                      seen={first.plane === undefined ? undefined : (seenOf?.(first.plane) ?? null)}
                       same={row.same}
                       open={open}
                       onOpen={(to) => answerOpen(key, to)}
@@ -981,25 +909,6 @@ export function Inbox({
                 );
               }
               const group = row.group;
-              if (group.plane !== undefined) {
-                const project = projectOf.get(group.plane);
-                const chat = `${group.plane}#${group.session}`;
-                return (
-                  <ListRowSection
-                    key={chat}
-                    id={`chat:${chat}`}
-                    className="inbox-chat"
-                    title={<span className="inbox-chain">{chainSaid(group.chain)}</span>}
-                    named
-                    // Not `data-session`: a landing finds this project's own groups by it, and a
-                    // chat of another project can have the same number (#1921).
-                    data-elsewhere={chat}
-                    data-project={project?.project}
-                  >
-                    {group.placed.map(({ ask, why }) => askRow(ask, why))}
-                  </ListRowSection>
-                );
-              }
               return (
                 <ListRowSection
                   key={group.session}
@@ -1021,13 +930,6 @@ export function Inbox({
                 </ListRowSection>
               );
             })}
-            {elsewhere !== undefined &&
-              askingShown.map((item) => (
-                <ElsewhereGroup key={elsewhereKey(item)} item={item} onPress={elsewhere.onPress} />
-              ))}
-            {elsewhere?.onOpen !== undefined && othersShown.length > 0 && (
-              <OtherProjects others={othersShown} onOpen={elsewhere.onOpen} />
-            )}
           </List>
         )}
         {/* **A chat that cannot say it waits is the ✋'s** (#1695, FROM_THE_HAND): in Asks,

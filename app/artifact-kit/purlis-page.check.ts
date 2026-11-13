@@ -9,6 +9,11 @@ purlis.port.postMessage({ id: 1, read: "data.json" });
 purlis.port.postMessage({ id: 2, query: "purlis.todo_list@1", params: { done: true } });
 purlis.port.postMessage({ id: 3, query: "purlis.session_record_list@1" });
 purlis.port.postMessage({ id: 4, query: "purlis.session_record_read@1", params: { file: "x.md" } });
+purlis.port.postMessage({
+  id: 10,
+  query: "purlis.forge_milestones@1",
+  params: { repo: "purlis", state: "all" },
+});
 purlis.port.postMessage({ id: 5, offers: [{ does: "todo.done", subject: "fix-login" }] });
 
 // @ts-expect-error A query the catalogue does not have.
@@ -25,7 +30,8 @@ purlis.port.onmessage = (event) => {
   if (answer.error !== undefined) {
     // @ts-expect-error An error kind purlis never answers.
     const never: PurlisPage.ErrorKind = "gone";
-    void [answer.error.kind satisfies PurlisPage.ErrorKind, never];
+    const said: string | undefined = answer.error.message;
+    void [answer.error.kind satisfies PurlisPage.ErrorKind, never, said];
     return;
   }
   const at: string = answer.at;
@@ -44,6 +50,9 @@ const fixtures: PurlisPage.Fixtures = {
   queries: {
     "purlis.todo_list@1": { data: todos, cursor: "c1" },
     "purlis.change_status@1": { error: { kind: "needs-extension" } },
+    "purlis.forge_milestones@1": {
+      error: { kind: "failed", message: "purlis could not reach GitHub." },
+    },
     // @ts-expect-error A fixture in a shape the query never answers.
     "purlis.session_record_list@1": { data: { records: "none" } },
   },

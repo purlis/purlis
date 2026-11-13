@@ -131,6 +131,8 @@ function core(
     if (cmd === "opened_chats") return over.chats?.[plane] ?? [];
     // Each chat's tab, outside every workspace, as the stored layout keeps it (#4758).
     if (cmd === "reopened_layout") return aTabForEachChat(over.chats?.[plane] ?? []);
+    // Nothing asks in this window's projects, so its registry has read them (#6341).
+    if (cmd === "asks_waiting") return { plane, asks: [], with_asking_chat: [], snoozed: [] };
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };
@@ -361,13 +363,18 @@ describe("needs you, across windows", () => {
     reason: "",
     does: { verb: "showChat" as const, session },
   });
+  /** The Dock badge's number as this window last set it, null for none (#5999). */
+  const badge = (asked: { cmd: string; args: Record<string, unknown> }[]) =>
+    asked.filter((one) => one.cmd === "plugin:window|set_badge_count").at(-1)?.args.value ?? null;
 
-  it("lists a chat asking in another window in the Asks in front, never on its hand, and goes there to show it", async () => {
+  it("counts a chat asking in another window on the Dock badge alone, never on the hand or in this window's Asks (ADR 0121, amended 2026-11-12; #6341)", async () => {
     const { fire, asked } = core({
       launch: ONE,
       windows: ["main", "window-1"],
       holder: { [TWO]: "window-1" },
     });
+    // The main window, as Tauri names it, so the badge has a window to be set on.
+    mockWindows("main");
     render(<App />);
     await vi.waitFor(() => expect(projectTabs()).toEqual(["one*"]));
 
@@ -380,26 +387,15 @@ describe("needs you, across windows", () => {
       }),
     );
 
-    // The Asks in front, where the side opens (#5644), lists the chat in the other window as a
-    // group of its own (#1695: the hand's list retired, and nothing it named is lost), and its
-    // Go to chat goes there. It opens on All projects (#5999), so the chat is listed at once.
-    const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
-    const group = await within(inbox).findByRole("rowgroup", { name: "two.3" });
-    // The hand counts the project in front alone, where nothing waits (#6341): it draws none.
+    // The Dock badge counts every open project of every window (#5999); the hand counts the
+    // project in front alone, where nothing waits (#6341), so it draws none; and Asks lists the
+    // project in front's alone (ADR 0121, amended 2026-11-12). The chat is answered in its own
+    // window's Asks, which its notification brings forward.
+    await vi.waitFor(() => expect(badge(asked)).toBe(1));
     expect(screen.queryByRole("button", { name: /needs? you/ })).toBeNull();
-    expect(within(group).getByText("In another window")).toBeInTheDocument();
-    await userEvent.click(within(group).getByRole("button", { name: /^Go to chat two\.3/ }));
-
-    await vi.waitFor(() =>
-      expect(asked.find((one) => one.cmd === "plugin:event|emit_to")?.args).toMatchObject({
-        target: { kind: "AnyLabel", label: "window-1" },
-        event: "run-offer",
-        payload: { plane: TWO, offer: go(3) },
-      }),
-    );
-    expect(asked.some((one) => one.cmd === "show_window_holding" && one.args.plane === TWO)).toBe(
-      true,
-    );
+    const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
+    expect(within(inbox).queryByRole("rowgroup", { name: "two.3" })).toBeNull();
+    expect(within(inbox).queryByText("In another window")).toBeNull();
   });
 
   it("lists every chat that cannot say it waits, here and in another window, in the Inbox the faint hand opens", async () => {
@@ -443,7 +439,9 @@ describe("needs you, across windows", () => {
   });
 
   it("drops what a window said once that window has gone", async () => {
-    const { fire } = core({ launch: ONE, windows: ["main", "window-1"] });
+    const { fire, asked } = core({ launch: ONE, windows: ["main", "window-1"] });
+    // The main window, as Tauri names it, so the badge has a window to be set on.
+    mockWindows("main");
     render(<App />);
     await vi.waitFor(() => expect(projectTabs()).toEqual(["one*"]));
     fire(
@@ -454,14 +452,11 @@ describe("needs you, across windows", () => {
         ],
       }),
     );
-    const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
-    await within(inbox).findByRole("rowgroup", { name: "two.3" });
+    await vi.waitFor(() => expect(badge(asked)).toBe(1));
 
     fire("windows-changed", ["main"]);
 
-    await waitFor(() =>
-      expect(within(inbox).queryByRole("rowgroup", { name: "two.3" })).toBeNull(),
-    );
+    await vi.waitFor(() => expect(badge(asked)).toBeNull());
   });
 });
 
