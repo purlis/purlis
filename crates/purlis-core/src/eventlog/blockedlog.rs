@@ -67,7 +67,7 @@ pub fn listed(events: &[Event], now_ms: u64, is_ours: &dyn Fn(&str) -> bool) -> 
         })
         .collect();
     // Newest first; two written in one millisecond, in the order the log numbered them.
-    listed.sort_by(|one, other| (other.at_ms, other.seq).cmp(&(one.at_ms, one.seq)));
+    listed.sort_by_key(|one| std::cmp::Reverse((one.at_ms, one.seq)));
     listed
 }
 
