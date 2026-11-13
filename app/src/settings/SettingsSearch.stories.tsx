@@ -62,8 +62,9 @@ const meta = {
       // The Network page's lists say they could not be read: they are not what is held here.
       if (cmd === "sandbox_network") throw new Error("not in this story");
       // So does the Skills groups' budget, on every machine since the studio's flag went (#2786).
-      if (cmd === "skill_studio") throw new Error("not in this story");
-      if (cmd === "skill_policy" || cmd === "skill_acts") throw new Error("not in this story");
+      // The core refuses these as it does, with its words, not a thrown Error, which no read catches.
+      if (cmd === "skill_studio") throw "not in this story";
+      if (cmd === "skill_policy" || cmd === "skill_acts") throw "not in this story";
       return null;
     });
     return () => clearMocks();
