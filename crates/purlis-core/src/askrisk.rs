@@ -400,13 +400,15 @@ pub fn vault_use(what: &str, vault: Option<&str>, to: &str) -> Risk {
     }
 }
 
-/// **A held merge** (Q239): request `number` of `repo`, into `base`, which the app merges itself
-/// on the person's press. Every name is the key's, and is data.
-pub fn merge_of(repo: &str, number: u64, base: &str) -> Risk {
+/// **A held merge** (Q239): request `number` of `repo` at `head`, into `base`, which the app
+/// merges itself on the person's press. Both sentences name the short head (Q242), so the once
+/// more press says which commit it merges. Every name is the key's, and is data.
+pub fn merge_of(repo: &str, number: u64, head: &str, base: &str) -> Risk {
+    let short = head.get(..7).unwrap_or(head);
     Risk {
         class: Class::Merge,
-        why: format!("Merges request {number} of {repo} into {base}, with no undo"),
-        confirm: format!("Merge request {number} of {repo} into {base}?"),
+        why: format!("Merges request {number} of {repo} at {short} into {base}, with no undo"),
+        confirm: format!("Merge request {number} of {repo} at {short} into {base}?"),
     }
 }
 

@@ -506,10 +506,10 @@ pub struct Waits {
 /// What became of a raise ([`Holds::raise`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Raised {
-    /// One merge ask began to wait.
+    /// One merge ask began to wait: the first for that request, or one in the place of the
+    /// chat's ask at another head or base (Q242).
     New,
-    /// The chat's ask for that request waits already: still one, now keyed on the head and
-    /// base the forge said this time.
+    /// The chat's ask for that request, at that head and base, waits already: still one.
     Already,
     /// The chat has as many merge asks waiting as one chat may: nothing was asked.
     TooMany,
@@ -546,16 +546,19 @@ impl Holds {
 
     /// Holds chat `session`'s merge of `key` at `now`: one ask per chat and request however
     /// often it tries, waiting since the first, and [`AT_MOST_PER_CHAT`] of one chat's at most.
-    /// A try again keys the ask on the head and base it found (Q239), so a branch pushed since
-    /// is not a press the forge must refuse.
+    /// **A moved head is a new ask** (Q242): a try again at another head or base than the
+    /// waiting ask's retires it and raises a new one in its place, waiting since `now`, so a key
+    /// is never rewritten under an ask the person may be looking at.
     pub fn raise(&self, session: u32, key: MergeKey, now: u64) -> Raised {
         let mut held = self.lock();
-        if let Some(one) = held
-            .iter_mut()
-            .find(|one| one.session == session && one.key.same_request(&key))
+        if let Some(at) = held
+            .iter()
+            .position(|one| one.session == session && one.key.same_request(&key))
         {
-            one.key = key;
-            return Raised::Already;
+            if held[at].key == key {
+                return Raised::Already;
+            }
+            held.remove(at);
         }
         if held.iter().filter(|one| one.session == session).count() >= AT_MOST_PER_CHAT {
             return Raised::TooMany;

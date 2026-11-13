@@ -585,12 +585,17 @@ export function Ask({
   /** **The grant pressed on a high-risk ask answered in its form, asking once more** (#6178),
    *  as a decision's does (`AskDecision`, #6011): with what a secret's notice gave, read only
    *  once its Allow there is pressed, and the words its pressed button showed, which the
-   *  question's own Allow repeats. */
-  const [asking, setAsking] = useState<{
+   *  question's own Allow repeats. It holds only for the ask, the question and the answer it
+   *  was asked of (Q242): where the row moves under it (a held merge at a new head, say), the
+   *  question is taken back, and nothing the person pressed carries over. */
+  const [askedOf, setAsking] = useState<{
     option: Offered;
     given?: () => SecretAskGiven;
     said: string;
+    of: string;
   }>();
+  const question = [ask.ask, ask.risk?.confirm ?? "", JSON.stringify(ask.answer)].join("\n");
+  const asking = askedOf?.of === question ? askedOf : undefined;
   const who = chainSaid(ask.chain);
   /** A secret's one notice draws its own answers (#5080). */
   const secretNotice = ask.secret != null || ask.run != null;
@@ -663,7 +668,9 @@ export function Ask({
    *  answer acts. */
   const answerOrAsk = (option: Offered, given?: () => SecretAskGiven, said = option.label) => {
     if (ask.risk != null && option.allows) {
-      setAsking(asking?.option.id === option.id ? undefined : { option, given, said });
+      setAsking(
+        asking?.option.id === option.id ? undefined : { option, given, said, of: question },
+      );
       return;
     }
     answer(option, given);

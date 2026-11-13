@@ -132,7 +132,7 @@ fn refused(answer: Answer) -> String {
 }
 
 #[test]
-fn a_held_merge_is_asked_once_recorded_once_and_rekeyed_on_a_try_again() {
+fn a_held_merge_is_asked_once_and_a_try_again_at_a_moved_head_is_a_new_ask() {
     let project = Fake::new();
     let said = match answer(&project, &project.ask(12)) {
         Answer::MergeHeld { said } => said,
@@ -148,8 +148,8 @@ fn a_held_merge_is_asked_once_recorded_once_and_rekeyed_on_a_try_again() {
     assert_eq!(waiting[0].key.base.as_str(), "main");
     assert_eq!(project.holds_recorded(), 1);
 
-    // Q239 (S6): the branch moved and the chat tried again: still one ask and one hold, keyed
-    // on the head the forge says now.
+    // Q242: the branch moved and the chat tried again: a new ask at the head the forge says
+    // now, held and recorded as one, and the ask at the old head is gone.
     *project.read.lock().unwrap() = Ok(at(MOVED));
     assert!(matches!(
         answer(&project, &project.ask(12)),
@@ -158,7 +158,15 @@ fn a_held_merge_is_asked_once_recorded_once_and_rekeyed_on_a_try_again() {
     let waiting = project.holds.every();
     assert_eq!(waiting.len(), 1);
     assert_eq!(waiting[0].key.head.as_str(), MOVED);
-    assert_eq!(project.holds_recorded(), 1);
+    assert_eq!(project.holds_recorded(), 2);
+
+    // A try again at the same head is still that one ask, and records nothing more.
+    assert!(matches!(
+        answer(&project, &project.ask(12)),
+        Answer::MergeHeld { .. }
+    ));
+    assert_eq!(project.holds.every().len(), 1);
+    assert_eq!(project.holds_recorded(), 2);
 }
 
 /// Q239 (S3): every way the app raises no ask answers the hook No, in words that say why, and
@@ -241,4 +249,147 @@ fn a_project_closed_before_the_merge_is_asked_about_answers_no() {
         cwd: "/".to_owned(),
     };
     assert!(refused(super::asked(&gone, &ask)).contains("closed"));
+}
+
+/// The forge contract's recorded exchanges for a press of request 12 of `o/r` at [`HEAD`] on
+/// GitHub, a repo with no merge queue: where it stands, how it lands, and its merge at the head.
+fn a_github_merge_at_head() -> Vec<serde_json::Value> {
+    use serde_json::json;
+    let rest = |method: Option<&str>,
+                path: &str,
+                fields: serde_json::Value,
+                out: serde_json::Value| {
+        json!({"call": {"endpoint": {"rest": {"method": method, "path": path}}, "fields": fields},
+               "reply": {"code": 0, "out": out.to_string(), "err": ""}})
+    };
+    let contract = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../crates/purlis-core/tests/forge_contract/github/lands_through_queue.json");
+    let text = std::fs::read_to_string(contract).expect("the contract's recording");
+    let mut probe = serde_json::from_str::<serde_json::Value>(&text).expect("json")["exchanges"]
+        .as_array()
+        .expect("its exchanges")
+        .clone();
+    // The recording is of acme/api; this project's repo is o/r.
+    probe[0]["call"]["fields"] = json!(
+        probe[0]["call"]["fields"]
+            .as_array()
+            .expect("its fields")
+            .iter()
+            .map(|field| match field["text"][0].as_str() {
+                Some("owner") => json!({"text": ["owner", "o"]}),
+                Some("name") => json!({"text": ["name", "r"]}),
+                _ => field.clone(),
+            })
+            .collect::<Vec<_>>()
+    );
+    probe[0]["reply"]["out"] = json!(
+        json!({"data": {"repository": {"pullRequest": {"id": "PR_kwDOAbc",
+               "isMergeQueueEnabled": false}}}})
+        .to_string()
+    );
+    let mut exchanges = vec![rest(
+        None,
+        "repos/o/r/pulls/12",
+        json!([]),
+        json!({"number": 12, "head": {"sha": HEAD},
+               "base": {"ref": "main", "repo": {"allow_merge_commit": true}}}),
+    )];
+    exchanges.extend(probe);
+    exchanges.push(rest(
+        Some("PUT"),
+        "repos/o/r/pulls/12/merge",
+        json!([{"text": ["merge_method", "merge"]},
+               {"text": ["commit_title", "Merge request 12 of o/r"]},
+               {"text": ["commit_message", "Merged in purlis on the person's press."]},
+               {"text": ["sha", HEAD]}]),
+        json!({"merged": true, "message": "Pull Request successfully merged"}),
+    ));
+    exchanges
+}
+
+/// A transport that answers only `exchanges`, in order, and says what was left unasked.
+fn recorded(
+    exchanges: Vec<serde_json::Value>,
+) -> std::sync::Arc<purlis_core::forge::recorded::Recorded> {
+    let text = serde_json::json!({"source": "the forge contract's recordings",
+                                  "exchanges": exchanges});
+    std::sync::Arc::new(
+        purlis_core::forge::recorded::Recorded::parse(&text.to_string()).expect("a recording"),
+    )
+}
+
+/// Q242: the app's press, through purlis's own GitHub client over the forge contract's
+/// recordings, merges exactly the ask's request at its head; a press that names the head the
+/// ask was at before the branch moved merges nothing, and asks the forge nothing.
+#[test]
+fn a_press_merges_through_the_forge_only_at_the_head_its_ask_is_at() {
+    purlis_core::unsteered!();
+    let project = Fake::new();
+    assert!(matches!(
+        answer(&project, &project.ask(12)),
+        Answer::MergeHeld { .. }
+    ));
+    *project.read.lock().unwrap() = Ok(at(MOVED));
+    assert!(matches!(
+        answer(&project, &project.ask(12)),
+        Answer::MergeHeld { .. }
+    ));
+
+    let untouched = recorded(Vec::new());
+    let backend_of = |on: &OnForge| on.forge.backend_over(untouched.clone());
+    assert_eq!(
+        super::press(&project.holds, 4, "o/r", 12, HEAD, &backend_of),
+        Err(mergehold::NotMerged::NotHeld.to_string()),
+        "the ask at the old head is gone"
+    );
+    assert_eq!(project.holds.every().len(), 1);
+
+    *project.read.lock().unwrap() = Ok(at(HEAD));
+    assert!(matches!(
+        answer(&project, &project.ask(12)),
+        Answer::MergeHeld { .. }
+    ));
+    let transport = recorded(a_github_merge_at_head());
+    let backend_of = |on: &OnForge| on.forge.backend_over(transport.clone());
+    assert_eq!(
+        super::press(&project.holds, 4, "o/r", 12, HEAD, &backend_of),
+        Ok(())
+    );
+    assert!(project.holds.every().is_empty());
+    assert_eq!(transport.unspent().len(), 0, "every recorded call was made");
+}
+
+/// Q242: the forge a press reaches is the one its ask was raised on, by host and path: two
+/// forges' `o/r` in one project are two repos, and a press on one never reaches the other.
+#[test]
+fn a_press_reaches_the_forge_its_ask_was_raised_on_by_host_and_path() {
+    use purlis_core::forge::{Forge, Kind};
+    let holds = MergeHolds::default();
+    let on = |host: &str| OnForge {
+        forge: Forge {
+            kind: Kind::GitHub,
+            host: host.to_owned(),
+        },
+        path: "o/r".to_owned(),
+    };
+    let key = |head: &str| mergehold::MergeKey {
+        repo: "o/r".try_into().expect("a repo"),
+        number: 12,
+        head: head.try_into().expect("a head"),
+        base: "main".try_into().expect("a base"),
+    };
+    // Chat 4's ask is of github.com's o/r; chat 5's, raised after it, of a GitHub Enterprise's.
+    holds.holds.raise(4, key(HEAD), 1_000);
+    holds.on_forge(4, &key(HEAD), on("github.com"));
+    holds.holds.raise(5, key(MOVED), 1_000);
+    holds.on_forge(5, &key(MOVED), on("ghe.example.com"));
+
+    let reached = Mutex::new(Vec::new());
+    let backend_of = |on: &OnForge| {
+        reached.lock().unwrap().push(on.forge.host.clone());
+        on.forge.backend_over(recorded(Vec::new()))
+    };
+    let _ = super::press(&holds, 4, "o/r", 12, HEAD, &backend_of);
+    let _ = super::press(&holds, 5, "o/r", 12, MOVED, &backend_of);
+    assert_eq!(*reached.lock().unwrap(), ["github.com", "ghe.example.com"]);
 }

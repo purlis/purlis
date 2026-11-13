@@ -1958,9 +1958,15 @@ pub const MERGE: &str = "merge";
 /// The option id of a held merge's Don't merge.
 pub const DONT_MERGE: &str = "dont-merge";
 
-/// The key of chat `session`'s merge ask for `key`'s request.
+/// The key of chat `session`'s merge ask for `key`'s request at its head (Q242): a moved head
+/// is another ask, so nothing the window held for the row at the old head carries over.
 fn merge_key(session: u32, key: &purlis_core::mergehold::MergeKey) -> String {
-    format!("merge:{session}:{}#{}", key.repo.as_str(), key.number)
+    format!(
+        "merge:{session}:{}#{}@{}",
+        key.repo.as_str(),
+        key.number,
+        key.head.as_str()
+    )
 }
 
 /// **The merge hold adapter** (R-114): a merge chat `waits.session`'s hook held, as one ask.
@@ -2005,7 +2011,13 @@ pub fn merge_hold(waits: &purlis_core::mergehold::Waits) -> Shown {
         blocks: None,
         timed_out: None,
         risk: Some(
-            purlis_core::askrisk::merge_of(key.repo.as_str(), key.number, key.base.as_str()).into(),
+            purlis_core::askrisk::merge_of(
+                key.repo.as_str(),
+                key.number,
+                key.head.as_str(),
+                key.base.as_str(),
+            )
+            .into(),
         ),
         writes: None,
         lines: None,

@@ -30,7 +30,7 @@ use std::path::Path;
 use std::sync::{Mutex, PoisonError, Weak};
 
 use purlis_core::eventlog::stops::{Hold, Stop, Target};
-use purlis_core::forge::backend::Caller;
+use purlis_core::forge::backend::{Caller, ForgeBackend};
 use purlis_core::forge::pr::{HeadAt, Pr, Repo as OnForge};
 use purlis_core::harness::asks::{Admitted, Answerer};
 use purlis_core::hookwire::{Answer, MergeAsk};
@@ -40,12 +40,13 @@ use purlis_core::mergehold::{
 
 use crate::planes::{Held, PlaneId, Planes};
 
-/// **The merges a project's chats' hooks held**: the asks, and the forge each one's repo is on,
-/// for its press.
+/// **The merges a project's chats' hooks held**: the asks, and the forge each one was raised
+/// on, by its host and path (Q242), for its press. Two forges' `o/r` in one project are two
+/// repos, so a press reaches the forge its own ask was raised on, never another's.
 #[derive(Debug, Default)]
 pub struct MergeHolds {
     holds: Holds,
-    on: Mutex<Vec<(Repo, OnForge)>>,
+    on: Mutex<Vec<(u32, MergeKey, OnForge)>>,
 }
 
 impl MergeHolds {
@@ -57,26 +58,37 @@ impl MergeHolds {
     /// Chat `session` has closed: none of its merge asks waits.
     pub fn forget(&self, session: u32) {
         self.holds.forget(session);
-        let waiting = self.holds.every();
-        self.on
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .retain(|(repo, _)| waiting.iter().any(|one| one.key.repo == *repo));
+        self.prune();
     }
 
-    fn forge_of(&self, repo: &Repo) -> Option<OnForge> {
+    /// The forge chat `session`'s ask for `key` was raised on.
+    fn forge_of(&self, session: u32, key: &MergeKey) -> Option<OnForge> {
         self.on
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .iter()
-            .find(|(of, _)| of == repo)
-            .map(|(_, on)| on.clone())
+            .find(|(of, at, _)| *of == session && at == key)
+            .map(|(_, _, on)| on.clone())
     }
 
-    fn on_forge(&self, repo: Repo, on: OnForge) {
+    /// Chat `session`'s ask for `key` was raised on `on`.
+    fn on_forge(&self, session: u32, key: &MergeKey, on: OnForge) {
         let mut every = self.on.lock().unwrap_or_else(PoisonError::into_inner);
-        every.retain(|(of, _)| *of != repo);
-        every.push((repo, on));
+        every.retain(|(of, at, _)| !(*of == session && at == key));
+        every.push((session, key.clone(), on));
+    }
+
+    /// Only the forges of asks that still wait are kept.
+    fn prune(&self) {
+        let waiting = self.holds.every();
+        self.on
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .retain(|(session, key, _)| {
+                waiting
+                    .iter()
+                    .any(|one| one.session == *session && one.key == *key)
+            });
     }
 }
 
@@ -237,7 +249,7 @@ fn raise(project: &dyn Project, ask: &MergeAsk) -> Result<String, String> {
         })
     };
     let holds = project.holds();
-    let (_, raised) = mergehold::asked(
+    let (key, raised) = mergehold::asked(
         &holds.holds,
         chat,
         &request,
@@ -246,7 +258,8 @@ fn raise(project: &dyn Project, ask: &MergeAsk) -> Result<String, String> {
     )?;
     match raised {
         Raised::New => {
-            holds.on_forge(repo, on);
+            holds.on_forge(chat, &key, on);
+            holds.prune();
             project.record(
                 chat,
                 Stop::Hold(Hold {
@@ -260,8 +273,17 @@ fn raise(project: &dyn Project, ask: &MergeAsk) -> Result<String, String> {
                  Merge"
             );
         }
-        // Still one ask, now keyed on the head and base the forge said this time.
-        Raised::Already => holds.on_forge(repo, on),
+        // Still the one ask, at the head and base it was raised at. A moved head is `New`: the
+        // ask at the old head is gone (Q242).
+        Raised::Already => {
+            if holds.forge_of(chat, &key).as_ref() != Some(&on) {
+                return Err(format!(
+                    "chat {chat} has this merge waiting on the person already, on another forge \
+                     than {}, so purlis does not ask it again here.",
+                    on.forge.host
+                ));
+            }
+        }
         Raised::TooMany => {
             return Err(format!(
                 "chat {chat} has {} merges waiting on the person already, which is as many as \
@@ -314,30 +336,41 @@ pub fn pressed(
     number: u32,
     head: &str,
 ) -> Result<(), String> {
-    let merged = press(held.merge_holds(), session, repo, number, head);
+    let merged = press(
+        held.merge_holds(),
+        session,
+        repo,
+        number,
+        head,
+        &OnForge::backend,
+    );
     held.chats().asks_may_have_moved();
     merged
 }
 
-/// The press of chat `session`'s ask in `holds`, through the forge its repo is on.
+/// The press of chat `session`'s ask in `holds`, through the forge its repo is on, which
+/// `backend_of` makes the client of: the forge's own, in the app.
 fn press(
     holds: &MergeHolds,
     session: u32,
     repo: &str,
     number: u32,
     head: &str,
+    backend_of: &dyn Fn(&OnForge) -> Box<dyn ForgeBackend>,
 ) -> Result<(), String> {
     let (key, on) = waiting(holds, session, repo, number, head)?;
-    let backend = on.backend();
+    let backend = backend_of(&on);
     let forge = ByForge {
         backend: backend.as_ref(),
         caller: Caller::window(),
         path: on.path.clone(),
     };
-    let (_, merged) = holds
+    let pressed = holds
         .holds
         .press(session, &key, the_window()?, &forge)
-        .map_err(|why| why.to_string())?;
+        .map_err(|why| why.to_string());
+    holds.prune();
+    let (_, merged) = pressed?;
     tracing::info!("purlis: chat {session}'s held merge was pressed: {merged:?}");
     Ok(())
 }
@@ -356,7 +389,7 @@ fn waiting(
         .holds
         .key_of(session, &repo, u64::from(number), &head)
         .ok_or_else(not_held)?;
-    let on = holds.forge_of(&repo).ok_or_else(not_held)?;
+    let on = holds.forge_of(session, &key).ok_or_else(not_held)?;
     Ok((key, on))
 }
 
@@ -381,6 +414,7 @@ pub fn dont_merge_held_request(
     {
         return Err(mergehold::NotMerged::NotHeld.to_string());
     }
+    held.merge_holds().prune();
     held.chats().asks_may_have_moved();
     Ok(())
 }

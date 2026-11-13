@@ -1542,7 +1542,10 @@ fn a_held_merge_is_one_ask_in_asks_offering_merge_and_dont_merge() {
     // the repo, the request and the head it was raised at; never offered a rule (R-117).
     let mut world = World::new();
     world.merges = vec![a_held_merge(3)];
-    world.since = vec![("merge:3:o/r#12", 40)];
+    world.since = vec![(
+        "merge:3:o/r#12@0123456789abcdef0123456789abcdef01234567",
+        40,
+    )];
 
     let asks = world.asks();
 
@@ -1552,6 +1555,10 @@ fn a_held_merge_is_one_ask_in_asks_offering_merge_and_dont_merge() {
         .collect();
     assert_eq!(held.len(), 1, "{asks:?}");
     let ask = held[0];
+    assert_eq!(
+        ask.ask, "merge:3:o/r#12@0123456789abcdef0123456789abcdef01234567",
+        "Q242: the ask is keyed on its head"
+    );
     assert_eq!(ask.session, 3);
     assert_eq!(ids(ask), [MERGE, DONT_MERGE]);
     assert_eq!(
@@ -1588,8 +1595,42 @@ fn a_held_merge_is_a_high_risk_ask() {
     assert!(high_risk(ask));
     let risk = ask.risk.as_ref().expect("its risk");
     assert_eq!(risk.class, RiskClass::Merge);
-    assert_eq!(risk.why, "Merges request 12 of o/r into main, with no undo");
-    assert_eq!(risk.confirm, "Merge request 12 of o/r into main?");
+    assert_eq!(
+        risk.why,
+        "Merges request 12 of o/r at 0123456 into main, with no undo"
+    );
+    assert_eq!(
+        risk.confirm,
+        "Merge request 12 of o/r at 0123456 into main?"
+    );
+}
+
+#[test]
+fn a_held_merge_at_a_moved_head_is_another_ask() {
+    // Q242: the row at the new head is another ask, so the window carries nothing over from
+    // the one at the old head, and its sentence names the head it merges.
+    let moved = {
+        let mut one = a_held_merge(3);
+        one.key.head = "89abcdef0123456789abcdef0123456789abcdef"
+            .try_into()
+            .expect("a head");
+        one
+    };
+    let shown = |merge| {
+        let mut world = World::new();
+        world.merges = vec![merge];
+        world
+            .asks()
+            .into_iter()
+            .find(|ask| ask.source == AskSource::MergeHold)
+            .expect("the merge ask")
+    };
+    let (was, now) = (shown(a_held_merge(3)), shown(moved));
+    assert_ne!(was.ask, now.ask);
+    assert_eq!(
+        now.risk.expect("its risk").confirm,
+        "Merge request 12 of o/r at 89abcde into main?"
+    );
 }
 
 #[test]

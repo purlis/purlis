@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { emit } from "@tauri-apps/api/event";
 import App from "./App";
 import type { Shown } from "./bindings";
 import { aTabForEachChat } from "./laidOut.testkit";
@@ -103,48 +104,59 @@ function core(asks: readonly Shown[]) {
   const chats = [1, 2, 3, 4].map(chat);
   const asked: Asked[] = [];
   let held = [...asks];
-  mockIPC((cmd, args) => {
-    const a = (args ?? {}) as Record<string, unknown>;
-    asked.push({ cmd, args: a });
-    if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
-    if (cmd === "asks_waiting") return { plane: PLANE, asks: held, with_asking_chat: [] };
-    if (cmd === "answer_ask") {
-      held = held.filter((one) => one.ask !== a.ask);
+  mockIPC(
+    (cmd, args) => {
+      const a = (args ?? {}) as Record<string, unknown>;
+      asked.push({ cmd, args: a });
+      if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
+      if (cmd === "asks_waiting") return { plane: PLANE, asks: held, with_asking_chat: [] };
+      if (cmd === "answer_ask") {
+        held = held.filter((one) => one.ask !== a.ask);
+        return null;
+      }
+      if (cmd === "answer_run_grant") {
+        held = held.filter((one) => one.answer.via !== "run-grant" || one.answer.id !== a.id);
+        return null;
+      }
+      if (cmd === "keep_sandbox_block") {
+        held = held.filter((one) => one.source !== "sandbox-host");
+        return null;
+      }
+      if (cmd === "inbox_updates" || cmd === "note_inbox_updates") return [];
+      if (cmd === "finished_tasks") return [];
+      if (cmd === "opened_chats") return chats;
+      if (cmd === "reopened_layout") return aTabForEachChat(chats, () => "alpha");
+      if (cmd === "plane_pins")
+        return { project: false, workspaces: ["alpha"], missing: [], order: ["alpha"] };
+      if (cmd === "plane_sidebar")
+        return {
+          root: PLANE,
+          personas: ["steward"],
+          persona: "steward",
+          unfiled: [],
+          workspaces: [
+            { name: "alpha", path: `${PLANE}/workspaces/alpha`, vision: "", todos: [], chats },
+          ],
+        };
+      if (cmd === "chat_states") return [];
+      if (cmd === "chats_that_would_not_start") return [];
+      if (cmd === "running_sessions") return [];
+      if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };
+      if (cmd === "extensions_on") return [];
       return null;
-    }
-    if (cmd === "answer_run_grant") {
-      held = held.filter((one) => one.answer.via !== "run-grant" || one.answer.id !== a.id);
-      return null;
-    }
-    if (cmd === "keep_sandbox_block") {
-      held = held.filter((one) => one.source !== "sandbox-host");
-      return null;
-    }
-    if (cmd === "inbox_updates" || cmd === "note_inbox_updates") return [];
-    if (cmd === "finished_tasks") return [];
-    if (cmd === "opened_chats") return chats;
-    if (cmd === "reopened_layout") return aTabForEachChat(chats, () => "alpha");
-    if (cmd === "plane_pins")
-      return { project: false, workspaces: ["alpha"], missing: [], order: ["alpha"] };
-    if (cmd === "plane_sidebar")
-      return {
-        root: PLANE,
-        personas: ["steward"],
-        persona: "steward",
-        unfiled: [],
-        workspaces: [
-          { name: "alpha", path: `${PLANE}/workspaces/alpha`, vision: "", todos: [], chats },
-        ],
-      };
-    if (cmd === "chat_states") return [];
-    if (cmd === "chats_that_would_not_start") return [];
-    if (cmd === "running_sessions") return [];
-    if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };
-    if (cmd === "extensions_on") return [];
-    return null;
-  });
+    },
+    { shouldMockEvents: true },
+  );
   return {
     asked: (cmd: string) => asked.filter((one) => one.cmd === cmd).map((one) => one.args),
+    /** The asks the core holds are now `now`, and it says so. */
+    moves: async (now: readonly Shown[]) => {
+      held = [...now];
+      await act(async () => {
+        await emit("asks-changed", { plane: PLANE });
+        await new Promise((done) => setTimeout(done, 80));
+      });
+    },
   };
 }
 
@@ -418,7 +430,7 @@ describe("a high-risk ask on its row (ADR 0121 decision 8, #6011)", () => {
  *  high-risk (Q239): the core always sends its risk. */
 const MERGE: Shown = {
   session: 3,
-  ask: "merge:3:o/r#12",
+  ask: "merge:3:o/r#12@0123456789abcdef0123456789abcdef01234567",
   says: "Merge request 12 of o/r at 0123456789ab? There is no undo.",
   options: [
     { id: "merge", label: "Merge", allows: true },
@@ -434,8 +446,8 @@ const MERGE: Shown = {
   },
   risk: {
     class: "merge",
-    why: "Merges request 12 of o/r into main, with no undo",
-    confirm: "Merge request 12 of o/r into main?",
+    why: "Merges request 12 of o/r at 0123456 into main, with no undo",
+    confirm: "Merge request 12 of o/r at 0123456 into main?",
   },
 };
 
@@ -443,7 +455,9 @@ describe("a held merge in Asks (R-115)", () => {
   /** Presses Merge, then the Merge it asks once more with (Q239), each once read. */
   const mergeTwice = async () => {
     await press.click(await screen.findByRole("button", { name: "Merge" }));
-    const again = screen.getByRole("group", { name: "Merge request 12 of o/r into main?" });
+    const again = screen.getByRole("group", {
+      name: "Merge request 12 of o/r at 0123456 into main?",
+    });
     await read();
     await press.click(within(again).getByRole("button", { name: "Merge" }));
   };
@@ -453,7 +467,7 @@ describe("a held merge in Asks (R-115)", () => {
     const row = rowOf(view, "steward 3");
 
     expect(row.querySelector(".inbox-risk")).toHaveTextContent(
-      "High risk Merges request 12 of o/r into main, with no undo",
+      "High risk Merges request 12 of o/r at 0123456 into main, with no undo",
     );
     expect(row).toHaveAttribute("data-risk");
   });
@@ -468,9 +482,13 @@ describe("a held merge in Asks (R-115)", () => {
     await press.click(merge);
 
     expect(asked("merge_held_request")).toEqual([]);
-    const again = screen.getByRole("group", { name: "Merge request 12 of o/r into main?" });
+    const again = screen.getByRole("group", {
+      name: "Merge request 12 of o/r at 0123456 into main?",
+    });
     await press.click(within(again).getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("group", { name: "Merge request 12 of o/r into main?" })).toBeNull();
+    expect(
+      screen.queryByRole("group", { name: "Merge request 12 of o/r at 0123456 into main?" }),
+    ).toBeNull();
     expect(asked("merge_held_request")).toEqual([]);
   });
 
@@ -510,6 +528,67 @@ describe("a held merge in Asks (R-115)", () => {
         },
       ]),
     );
+  });
+
+  /** The chat tried again after a push: the forge says the request is at another head. */
+  const MOVED_HEAD = "89abcdef0123456789abcdef0123456789abcdef";
+  const movedTo = (ask: string): Shown => ({
+    ...MERGE,
+    ask,
+    answer: { via: "merge-hold", repo: "o/r", number: 12, head: MOVED_HEAD },
+    risk: {
+      class: "merge",
+      why: "Merges request 12 of o/r at 89abcde into main, with no undo",
+      confirm: "Merge request 12 of o/r at 89abcde into main?",
+    },
+  });
+
+  /** Opens the merge ask's answers and presses Merge, so it asks once more. */
+  const confirming = async (view: HTMLElement) => {
+    await answersOf(rowOf(view, "steward 3"));
+    const merge = await screen.findByRole("button", { name: "Merge" });
+    await read();
+    await press.click(merge);
+    screen.getByRole("group", { name: "Merge request 12 of o/r at 0123456 into main?" });
+  };
+
+  it("carries no confirmation over to the ask at a moved head, which names its own head (Q242)", async () => {
+    const { view, asked, moves } = await opened([MERGE]);
+    await confirming(view);
+
+    await moves([movedTo(`merge:3:o/r#12@${MOVED_HEAD}`)]);
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("group", { name: "Merge request 12 of o/r at 0123456 into main?" }),
+      ).toBeNull(),
+    );
+    expect(
+      screen.queryByRole("group", { name: "Merge request 12 of o/r at 89abcde into main?" }),
+    ).toBeNull();
+    expect(rowOf(view, "steward 3").querySelector(".inbox-risk")).toHaveTextContent(
+      "Merges request 12 of o/r at 89abcde into main, with no undo",
+    );
+    expect(asked("merge_held_request")).toEqual([]);
+  });
+
+  it("drops a confirmation whose question moved under it, even where its id did not", async () => {
+    // The window's own guard: a confirmation holds only for the ask and the question it was
+    // asked of, whatever the core keys the row on.
+    const { view, asked, moves } = await opened([MERGE]);
+    await confirming(view);
+
+    await moves([movedTo(MERGE.ask)]);
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("group", { name: "Merge request 12 of o/r at 0123456 into main?" }),
+      ).toBeNull(),
+    );
+    expect(
+      screen.queryByRole("group", { name: "Merge request 12 of o/r at 89abcde into main?" }),
+    ).toBeNull();
+    expect(asked("merge_held_request")).toEqual([]);
   });
 
   it("sends Don't merge, which merges nothing", async () => {

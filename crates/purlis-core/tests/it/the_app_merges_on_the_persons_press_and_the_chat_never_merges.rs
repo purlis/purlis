@@ -142,10 +142,11 @@ fn a_merge_the_forge_refuses_waits_again_and_dont_merge_merges_nothing() {
     assert!(forge.merged.lock().unwrap().is_empty());
 }
 
-/// Q239 (S6): a try again of a request whose branch moved keys its one ask on the head the
-/// forge says now, so the person's press is not one the forge must refuse.
+/// Q242: a try again of a request whose branch moved is a new ask at the head the forge says
+/// now. The ask at the old head is gone, so nothing the person pressed or confirmed on it
+/// carries over, and a press naming the old head merges nothing.
 #[test]
-fn a_retried_merge_keys_its_one_ask_on_the_head_the_forge_says_now() {
+fn a_retried_merge_at_a_new_head_is_a_new_ask_and_the_old_one_is_gone() {
     let holds = Holds::default();
     assert_eq!(holds.raise(4, key(12), 1_000), Raised::New);
     let moved = MergeKey {
@@ -154,17 +155,50 @@ fn a_retried_merge_keys_its_one_ask_on_the_head_the_forge_says_now() {
             .unwrap(),
         ..key(12)
     };
-    assert_eq!(holds.raise(4, moved.clone(), 2_000), Raised::Already);
+    assert_eq!(holds.raise(4, moved.clone(), 2_000), Raised::New);
     let waiting = holds.every();
-    assert_eq!(waiting.len(), 1);
+    assert_eq!(waiting.len(), 1, "the ask at the old head waits no more");
     assert_eq!(waiting[0].key, moved);
-    assert_eq!(waiting[0].since, 1_000, "it waits since the first try");
+    assert_eq!(
+        waiting[0].since, 2_000,
+        "it is a new ask, waiting since now"
+    );
     let forge = Forge::default();
     assert_eq!(
         holds.press(4, &key(12), the_window(), &forge),
         Err(NotMerged::NotHeld)
     );
+    assert!(forge.merged.lock().unwrap().is_empty());
     assert!(holds.press(4, &moved, the_window(), &forge).is_ok());
+}
+
+/// A try again at the same head and base is still the one ask, waiting since the first try.
+#[test]
+fn a_retried_merge_at_the_same_head_is_still_one_ask() {
+    let holds = Holds::default();
+    assert_eq!(holds.raise(4, key(12), 1_000), Raised::New);
+    assert_eq!(holds.raise(4, key(12), 2_000), Raised::Already);
+    let waiting = holds.every();
+    assert_eq!(waiting.len(), 1);
+    assert_eq!(waiting[0].since, 1_000);
+}
+
+/// A try again at a new head is a new ask in the old one's place, so a chat already at its
+/// most merge asks can still refresh one.
+#[test]
+fn a_retried_merge_at_a_new_head_takes_the_old_asks_place_under_the_limit() {
+    let holds = Holds::default();
+    for number in 1..=mergehold::AT_MOST_PER_CHAT as u64 {
+        assert_eq!(holds.raise(4, key(number), 1_000), Raised::New);
+    }
+    let moved = MergeKey {
+        head: "89abcdef0123456789abcdef0123456789abcdef"
+            .try_into()
+            .unwrap(),
+        ..key(1)
+    };
+    assert_eq!(holds.raise(4, moved, 2_000), Raised::New);
+    assert_eq!(holds.every().len(), mergehold::AT_MOST_PER_CHAT);
 }
 
 /// Q239 (S7): the base is pinned in the key, and a press on a request retargeted since the ask
