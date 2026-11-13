@@ -24,6 +24,7 @@ import {
   PopoverList,
   PopoverTrigger,
 } from "./Popover";
+import { NATIVE_PAGE } from "./offPage";
 
 /** A row's card: its facts, beside what opened it, with the point it takes from it. */
 function RowCard() {
@@ -269,5 +270,60 @@ export const AHeldCardsPoint: Story = {
     await waitFor(() =>
       expect(within(card).getByText("Running in alpha, on claude.")).toBeVisible(),
     );
+  },
+};
+
+/**
+ * A sidebar's row with its card held up beside it, and an artifact's page open in the centre:
+ * the page's frame wears `NATIVE_PAGE`, as `ArtifactFrame`'s does, and stands in for its webview.
+ */
+function RowCardBesideAPage() {
+  const row = useRef<HTMLButtonElement>(null);
+  return (
+    <div style={{ display: "flex", gap: "var(--space-2)", blockSize: "24rem" }}>
+      <nav aria-label="Chats" style={{ inlineSize: "15rem", flex: "none" }}>
+        <Button ref={row} variant="quiet" aria-describedby="card-beside-page">
+          steward 4
+        </Button>
+      </nav>
+      <section
+        aria-label="Burn-down"
+        {...{ [NATIVE_PAGE]: "" }}
+        style={{ flex: "1 1 auto", border: "1px solid var(--border-subtle)" }}
+      />
+      <AnchoredPopover
+        triggerRef={row}
+        isOpen
+        side="right"
+        align="start"
+        offset={6}
+        className="row-card chat-card"
+      >
+        <div role="tooltip" id="card-beside-page">
+          Running in alpha, on claude. Started 4 minutes ago, and still working on the tests.
+        </div>
+      </AnchoredPopover>
+    </div>
+  );
+}
+
+/**
+ * **A row's card while an artifact's page is open** (#6226): the page is a native webview drawn
+ * above the window, so a card beside the row would be drawn under it. The card stands under its
+ * row instead, inside the sidebar and at its width, clear of the page, which stays shown.
+ */
+export const ARowsCardBesideAnOpenPage: Story = {
+  render: () => <RowCardBesideAPage />,
+  play: async ({ canvas }) => {
+    const said = await screen.findByRole("tooltip");
+    const surface = said.closest<HTMLElement>('[data-scope="popover"][data-part="root"]');
+    await waitFor(() => expect(said).toBeVisible());
+    const card = (surface as HTMLElement).getBoundingClientRect();
+    const page = canvas.getByRole("region", { name: "Burn-down" }).getBoundingClientRect();
+    const sidebar = canvas.getByRole("navigation", { name: "Chats" }).getBoundingClientRect();
+    const row = canvas.getByRole("button", { name: "steward 4" }).getBoundingClientRect();
+    await expect(card.right).toBeLessThanOrEqual(page.left);
+    await expect(card.right).toBeLessThanOrEqual(sidebar.right);
+    await expect(card.top).toBeGreaterThanOrEqual(row.bottom);
   },
 };

@@ -280,8 +280,9 @@ In the Inbox, Notices are listed by `NoticeList` (V91i, NO-2 #1229; #1695): ever
 important first — trouble before news, then the family order `IMPORTANCE` exports. They stood
 under the tab strip two at a time, the rest behind "+N more", until the band folded into the
 Inbox. A Notice already in its place is never moved, so the focus stays on its buttons as others
-come and go. A Notice that answers something the person just did (`ANSWERS`: a refusal, an Undo,
-a save's record, the away summary) brings the Inbox on screen as it arrives. The alerts the
+come and go. A Notice that answers the person's press at once (`ANSWERS`: a refusal, an Undo of a
+few seconds) brings Notices on screen as it arrives; a save's record and the away summary are
+listed and move nothing (ADR 0121, amended 2026-11-12). The alerts the
 drawer listed are Notices here too (`InboxAlerts.tsx`), each with the way out the core gives it.
 Outside a list, as the window's own lines under the title bar are, a Notice is drawn where it is
 written. A Dismiss of a
@@ -1177,6 +1178,13 @@ families](#the-select-and-combobox-families)).
 - **Placed under its trigger, lined up with its start or its end** (`align`), and never nearer
   the window's edge than 8 px; it turns to the other side where there is no room. A row's ⋯
   menu, as a setting's row has it (R59), lines up with the end of its button.
+- **Never drawn under an artifact's page** (#6226). A pinned artifact's page is a native webview,
+  drawn above the window, so nothing can stand over it. Its frame wears `data-native-page`, and
+  the page is put away while a modal dialog is up or a menu or popover crosses its frame
+  (`coveredByAnOverlay`). An `AnchoredPopover` beside its element (`side` `left` or `right`),
+  with such a page across that side, stands under the element instead (over it where there is
+  no room), inside the widest region around it that is clear of the page and at that region's
+  width (`keptOffPages`): a chat row's card stays in the sidebar, and the page stays shown.
 - **Closed by a click outside, by Escape and by choosing a row**, and the keyboard goes back to
   where it was, or where the owner's `onClosed` puts it (a row that went into Settings sent it
   there). A press outside still reaches what it was on: **a menu is not modal**, so the rest of

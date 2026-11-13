@@ -47,7 +47,7 @@ const CHECKS: readonly { title: (host: string) => string; causes: readonly strin
   { title: () => "It accepts your sign-in", causes: ["sign-in-refused"] },
   {
     title: () => "Docker answers there",
-    causes: ["no-engine", "engine-silent", "needs-podman"],
+    causes: ["no-engine", "engine-silent", "forwarding-refused", "needs-podman"],
   },
   { title: () => "Your account may use Docker", causes: ["not-allowed"] },
   { title: () => "Its Docker is the one you trusted", causes: ["pool-engine-changed"] },
@@ -62,6 +62,7 @@ const TITLES: Record<string, string> = {
   "sign-in-refused": "The machine didn't accept your sign-in",
   "no-engine": "No Docker there that you can use",
   "engine-silent": "Docker didn't answer there",
+  "forwarding-refused": "SSH there doesn't allow forwarding",
   "not-allowed": "Your account can't use Docker there",
   "pool-engine-changed": "Docker there isn't the one you trusted",
   "needs-podman": "purlis needs Podman on this machine too",

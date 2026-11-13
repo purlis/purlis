@@ -31,6 +31,8 @@ export const SAID = {
   unlinkWorkItem: "Unlink work item",
   cancelSmartClose: "Cancel smart close",
   useSkill: "Use skill…",
+  // A pane's links (#6220, #6332): the list of what is on its screen, from every way in.
+  linksInThisPane: "Links in this pane…",
   ignore: "Ignore until it asks again",
   end: "End…",
   keepOpen: "Keep open",

@@ -70,7 +70,23 @@ pub(crate) async fn started(
     if !youreditor::in_a_terminal(&program, &args) {
         return crate::piecefiles::started(program, args).await;
     }
-    let chat = tab_chat(program, args, cwd()?)?;
+    shown(
+        app,
+        held,
+        plane,
+        workspace,
+        tab_chat(program, args, cwd()?)?,
+    )
+}
+
+/// `chat` started in a tab of its own, and the window told to draw it on `workspace`'s strip.
+pub(crate) fn shown(
+    app: &tauri::AppHandle,
+    held: &Held,
+    plane: &PlaneId,
+    workspace: &str,
+    chat: Chat,
+) -> Result<(), String> {
     let session = in_a_tab(held, &chat)?;
     crate::windows::emit_for_plane(
         app,

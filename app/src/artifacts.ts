@@ -16,6 +16,7 @@ import type { ArtifactFresh, ArtifactTheme } from "./bindings";
 import type { About } from "./planeChanged";
 import type { ViewRef } from "./tabs";
 import { property, TOKENS } from "./theme/theme";
+import { crosses } from "./ui/popover/offPage";
 
 /** The view's name, as `ViewRef.view`. */
 export const ARTIFACT_VIEW = "artifact";
@@ -40,31 +41,39 @@ export const ARTIFACT_KEY = "artifact-key";
 export type ArtifactKeyPressed = { label: string; key: "escape" | "f6" | "f6-back" };
 
 /**
- * **Whether something purlis draws floats over `frame`**: a dialog, a menu, a popover's list.
- * A native webview is drawn above the window's page, so it would cover them; it is put away
- * while one is over its frame. A tooltip is not counted: it comes and goes under the pointer.
+ * **Whether something purlis draws covers the page in `frame`** (#6226). A native webview is
+ * drawn above the window's own page, so it would cover whatever the window draws over it: it is
+ * put away while
+ *
+ * - **a modal dialog or an alert dialog is up**, wherever it stands: its scrim dims the whole
+ *   window and holds the keyboard, and a live page over it would do neither;
+ * - **a menu, popover or non-modal dialog crosses the frame**: one opened from the page's own
+ *   bar, which hangs over the page, or one from elsewhere the popover family could not keep
+ *   clear of it (`keptOffPages`), which would otherwise be drawn under the page.
+ *
+ * A surface kept clear of the frame, as a chat row's card beside the sidebar is, leaves the page
+ * shown, and a tooltip is never counted: it comes and goes under the pointer.
  */
 export function coveredByAnOverlay(frame: DOMRect, root: ParentNode = document): boolean {
-  for (const one of root.querySelectorAll(OVERLAYS)) {
+  for (const one of root.querySelectorAll(MODALS)) {
     const at = one.getBoundingClientRect();
-    if (at.width === 0 || at.height === 0) continue;
-    const apart =
-      at.right <= frame.left ||
-      at.left >= frame.right ||
-      at.bottom <= frame.top ||
-      at.top >= frame.bottom;
-    if (!apart) return true;
+    if (at.width > 0 && at.height > 0) return true;
+  }
+  for (const one of root.querySelectorAll(SURFACES)) {
+    const at = one.getBoundingClientRect();
+    if (at.width > 0 && at.height > 0 && crosses(at, frame)) return true;
   }
   return false;
 }
 
-const OVERLAYS = [
-  '[role="dialog"]',
-  '[role="alertdialog"]',
-  '[role="menu"]',
-  '[data-scope="popover"]',
+const MODALS = [
+  '[data-scope="dialog"][data-part="scrim"]',
   '[data-scope="dialog"][data-part="modal"]',
+  '[role="alertdialog"]',
+  '[role="dialog"][aria-modal="true"]',
 ].join(",");
+
+const SURFACES = ['[role="dialog"]', '[role="menu"]', '[data-scope="popover"]'].join(",");
 
 /** The most icons an artifact group draws (ADR 0122 §2); more go to its show-more (#5953). */
 export const MOST_DRAWN = 8;

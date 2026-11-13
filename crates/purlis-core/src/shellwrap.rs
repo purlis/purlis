@@ -82,6 +82,12 @@ const WRAPPERS: [&str; 25] = [
     "watch", "flock", "script", "parallel", "caffeinate", "gtimeout", "arch", "busybox",
 ];
 
+/// Whether a program's lowercased basename is one of [`WRAPPERS`]: a program that runs the
+/// command after it.
+pub(crate) fn is_wrapper(base: &str) -> bool {
+    WRAPPERS.contains(&base)
+}
+
 /// Shell KEYWORDS that can stand where a program stands once a command has been segmented.
 /// `if true; then cat <vault>; fi` segments into `then cat <vault>`, whose token 0 is `then`.
 /// `coproc` (bash's and zsh's) runs the command after it, behind a name when that command is a

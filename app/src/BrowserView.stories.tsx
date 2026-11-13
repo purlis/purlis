@@ -137,3 +137,105 @@ export const Letterboxed: Story = {
     (document.activeElement as HTMLElement | null)?.blur();
   },
 };
+
+/** What the story's Go sent: the address, as the person typed it. */
+const sent: string[] = [];
+
+/**
+ * **Handed over by its chat** (#6290): chat 3 asked the person, through `ask_operator`, to take
+ * its browser over, and they drive it. Its view has the address field, so they can open the
+ * address the chat gave them; the keyboard reaches it, Enter sends it, and the site new to the
+ * project it held back waits as the chat's sites ask, drawn under the field with its answers.
+ */
+export const HandedOverByItsChat: Story = {
+  beforeEach: () => {
+    sent.length = 0;
+    let asked = false;
+    mockIPC((cmd, args) => {
+      if (cmd === "chat_browsers")
+        return [
+          {
+            session: 3,
+            name: "b1",
+            program: "B1",
+            unended: false,
+            pinned: false,
+            was: null,
+            login: null,
+            driver: "person",
+            pool: null,
+            secrets: [],
+          },
+        ];
+      if (cmd === "asks_waiting")
+        return {
+          plane: PLANE,
+          asks: [
+            {
+              session: 3,
+              ask: "browser-needs-you:B1",
+              says: "Its browser waits for you on accounts.example.com",
+              options: [{ id: "open-view", label: "Open its view", allows: false }],
+              source: "browser-needs-you",
+              chain: ["claude 3"],
+              answer: { via: "take-over", program: "B1" },
+              since: 10,
+            },
+            ...(asked
+              ? [
+                  {
+                    session: 3,
+                    ask: "browser-site:3",
+                    says: "Its browser wants to reach example.com:443.",
+                    options: [
+                      { id: "chat", label: "Allow for this chat", allows: true },
+                      { id: "keep", label: "Keep blocked", allows: false },
+                    ],
+                    source: "browser-site",
+                    chain: ["claude 3"],
+                    answer: { via: "browser-sites", sites: ["example.com:443"] },
+                    since: 11,
+                  },
+                ]
+              : []),
+          ],
+        };
+      if (cmd === "watch_browser") {
+        frames = (args as { frames: Channel<BrowserFrame> }).frames;
+        return { view: 4, width: 1280, height: 800, person_drives: true, pool: null };
+      }
+      if (cmd === "go_browser") {
+        sent.push((args as { address: string }).address);
+        asked = true;
+        return { outcome: "asks", sites: ["example.com:443"], answers: [] };
+      }
+      return null;
+    });
+  },
+  play: async ({ canvas, userEvent }) => {
+    await waitFor(() => expect(frames).toBeDefined());
+    frames?.onmessage({
+      aim: "p1:1",
+      jpeg: framed(),
+      reconnection: null,
+      page: null,
+      closed: null,
+    });
+
+    await userEvent.tab();
+    const address = await waitFor(() => canvas.getByRole("textbox", { name: "Address" }));
+    await untilFocused(() => address, "Tab reaches Address");
+    expectFocusInSight();
+    await userEvent.keyboard("example.com{Enter}");
+    await waitFor(() => expect(sent).toEqual(["example.com"]));
+
+    const allow = await waitFor(() => canvas.getByRole("button", { name: "Allow for this chat" }), {
+      timeout: 5000,
+    });
+    await userEvent.tab();
+    await untilFocused(() => canvas.getByRole("button", { name: "Go" }), "Tab reaches Go");
+    expectFocusInSight();
+    await expect(allow).toBeVisible();
+    (document.activeElement as HTMLElement | null)?.blur();
+  },
+};

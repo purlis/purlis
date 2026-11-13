@@ -318,3 +318,32 @@ fn a_workspace_file_is_handed_to_a_chat_as_its_path_and_a_repos_never_is() {
     assert!(crate::reference::of(&plane, files, "svc/lib.rs", None, Some(&ws)).is_err());
     assert!(crate::reference::of(&plane, files, "", None, Some(&ws)).is_err());
 }
+
+/// #3185: a workspace file handed to your editor is held as it was checked, so a folder on its
+/// way swapped for a link before the launch hands the editor nothing.
+#[cfg(unix)]
+#[test]
+fn a_folder_swapped_for_a_link_after_the_check_is_not_handed_to_your_editor() {
+    let (_dir, plane) = project();
+    let ws = plane.join("workspaces/alpha");
+    std::fs::create_dir_all(plane.join("elsewhere")).unwrap();
+    std::fs::write(plane.join("elsewhere/plan.md"), "not yours\n").unwrap();
+    let files = files(&plane);
+
+    let checked = files
+        .in_your_editor(
+            "notes/plan.md",
+            1,
+            crate::youreditor::Editor::VsCode,
+            &|_| None,
+        )
+        .unwrap();
+    std::fs::rename(ws.join("notes"), ws.join("notes-moved")).unwrap();
+    std::os::unix::fs::symlink(plane.join("elsewhere"), ws.join("notes")).unwrap();
+
+    let refused = checked.launch().unwrap_err();
+    assert!(
+        matches!(refused, crate::youreditor::NotLaunched::NotHeld(_)),
+        "{refused:?}"
+    );
+}

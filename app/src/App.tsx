@@ -2090,6 +2090,7 @@ function App() {
       endChat: () => undefined,
       askPersona: () => undefined,
       useSkill: () => undefined,
+      listLinks: () => undefined,
       showChatSkills: () => undefined,
       openStudioChat: () => undefined,
       unlinkWorkItem: async () => nowhere(),
@@ -3434,7 +3435,7 @@ function App() {
         {/* What has contributed what to this window (ADR 0041 item 5). Mounted only
           while it is asked for: it reads every installed extension's files to re-take its
           fingerprint, and a launch does not pay for that unless somebody looked. */}
-        {extensions && <Extensions onClose={() => setExtensions(false)} />}
+        {extensions && <Extensions onClose={() => setExtensions(false)} plane={inFront} />}
 
         {asking && <QuitWarning chats={everyEnding} onQuit={quit} onCancel={dontQuit} />}
 

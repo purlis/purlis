@@ -962,10 +962,14 @@ fn every_charter_tool_a_claude_code_chat_runs_without_asking_is_ruled_in_by_name
         // The catalogue's listing, the binary's own (ADR 0122 §7, #5969).
         "queries",
     ];
+    // Ruled on and left to ask: the list of the workspace's other chats (#6235), which the
+    // harness asks the person about before a chat reads it (the operator's ruling of
+    // 2026-11-11).
+    let asked = [crate::chattools::CHATS];
     let others: Vec<&str> = crate::chattools::TOOLS
         .iter()
         .map(|tool| tool.name)
-        .filter(|name| !reads.contains(name))
+        .filter(|name| !reads.contains(name) && !asked.contains(name))
         .collect();
     assert!(others.is_empty(), "not ruled on: {others:?}");
     for name in reads {
@@ -976,6 +980,10 @@ fn every_charter_tool_a_claude_code_chat_runs_without_asking_is_ruled_in_by_name
                 .any(|allow| allow == &serde_json::json!(rule)),
             "{rule} asks"
         );
+    }
+    for name in asked {
+        let rule = serde_json::json!(format!("mcp__purlis__{name}"));
+        assert!(!allowed.contains(&rule), "{rule} is pre-allowed");
     }
     // Nor the server as a whole, which would allow every one of its tools.
     for allow in &allowed {

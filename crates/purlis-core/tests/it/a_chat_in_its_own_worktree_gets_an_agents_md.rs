@@ -694,7 +694,9 @@ fn the_operators_agents_md_opens_in_their_editor_though_charters_line_hides_it()
         purlis_core::youreditor::Editor::VsCode,
         &|_| None,
     )
-    .expect("it opens");
+    .expect("it opens")
+    .launch()
+    .expect("it is still the file checked");
 
     let purlis_core::youreditor::Launch::Url(url) = launch else {
         panic!("a URL: {launch:?}")

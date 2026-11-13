@@ -106,8 +106,29 @@ pub fn docker_through(
         if let Err(finding) = connect::engine_holds(&through, &remote.route, &remote.pin) {
             // Nothing more goes over a forward to an engine that isn't the pinned one.
             forget_checked(pool);
-            if matches!(finding, Finding::EngineChanged { .. }) {
+            // Asked of a forward just opened only, so at most once an opening: a server that
+            // refuses it is let go of below, and its next try opens it again.
+            let finding = match finding {
+                Finding::EngineSilent { said, .. } if opened => {
+                    connect::silent_or_refused(&opening, said)
+                }
+                finding => finding,
+            };
+            if matches!(
+                finding,
+                Finding::EngineChanged { .. } | Finding::ForwardingRefused { .. }
+            ) {
                 forward::let_go(pool);
+            }
+            if matches!(finding, Finding::ForwardingRefused { .. }) {
+                // A forward the server refuses opens here all the same and carries nothing: it
+                // waits, and is looked at again, as one that won't open does (#6349).
+                let now = Instant::now();
+                let failed = match kept {
+                    Some(kept) => kept.failed_again(now, Some(finding.clone())),
+                    None => Failing::first(finding.clone(), now),
+                };
+                note_failing(pool, &remote.pin, failed);
             }
             return Err(finding);
         }

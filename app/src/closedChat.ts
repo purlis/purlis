@@ -55,15 +55,30 @@ export function outcomeOf(task: Pick<FinishedTask, "how" | "outcome">): CardOutc
 
 /** The card's title: `#641 · Signed commits #5607`. */
 export function cardTitle(card: ChatCard): string {
-  return numberedName(card.number, card.task.name);
+  return numberedName(card.number, card.title);
+}
+
+/**
+ * The badge of a chat no dispatch started (#6304): it closed, and nothing more is known of how.
+ * Plain, as a task the person closed is.
+ */
+export const CHAT_CLOSED: CardOutcome = { badge: "Closed", variant: "neutral", said: "Closed" };
+
+/** **How a card says its chat ended**: its task's end, or Closed for a chat no dispatch started. */
+export function cardOutcome(card: ChatCard): CardOutcome {
+  return card.task === null ? CHAT_CLOSED : outcomeOf(card.task);
 }
 
 /** The card's line under its title: "Done at 11:08 · its chat has closed". */
 export function cardWhen(card: ChatCard): string {
-  const at = endedAt(card.task.ended);
-  const how = outcomeOf(card.task).said;
+  const at = endedAt(card.ended);
+  const how = cardOutcome(card).said;
   return `${at === undefined ? how : `${how} at ${at}`} · its chat has closed`;
 }
+
+/** Why *Reopen* does nothing on the card of a chat no dispatch started (#6304). */
+export const ORDINARY_NO_REOPEN =
+  "It cannot be reopened from here: purlis keeps the conversation of a dispatched task only.";
 
 /** What *Read it* says where nothing was kept: the person's ruling of 2026-11-11. */
 export const SCREEN_NOT_KEPT = "Its screen was not kept.";
@@ -159,7 +174,7 @@ export function numberRows(byNumber: ByNumber | undefined): Offer[] {
         available: true,
         reason: "",
         does: { verb: "nothing" },
-        name: lookup.card.task.name,
+        name: lookup.card.title,
         note: `${cardWhen(lookup.card)}. Shows its card, with Read it and Reopen.`,
         chat: number,
       },

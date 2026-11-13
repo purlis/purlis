@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { commands, type SkillBudgetPreview, type StudioBudget } from "./bindings";
 import { counted } from "./dispatches";
-import { capitalised } from "./saving";
+import { capitalised } from "./chatEnded";
 import { useReadOnlySaid } from "./ReadOnlyLine";
 import { Button } from "./ui/button/Button";
 import { Dialog } from "./ui/dialog/Dialog";

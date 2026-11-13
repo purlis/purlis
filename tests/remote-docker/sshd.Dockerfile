@@ -4,8 +4,10 @@
 # **The other machine of the remote parity job** (#6266, ADR 0123 Testing): OpenSSH's server,
 # sharing docker:dind's /var/run, so /var/run/docker.sock is that engine. `pool` may use Docker
 # there and `outsider` may not. Its one host key is ed25519, so the key a client meets is that
-# file's. Forwarding is sshd's default, as on a person's machine: `AllowTcpForwarding no` would
-# deny the socket's forward too. Every behaviour of the parity job meets it at once, so it takes
+# file's. Forwarding is on, as a person's sshd has it by default. A test puts each of
+# `DisableForwarding yes`, `AllowStreamLocalForwarding no` and `AllowTcpForwarding no` (which
+# turns off sshd's local forwards, the socket's too) ahead of these for a while, sshd taking a
+# keyword's first value (#6349). Every behaviour of the parity job meets it at once, so it takes
 # that many unauthenticated connections, each Connect's first contact signing in with nothing,
 # which OpenSSH 9.8's per-source penalties would hold against the one address they all come
 # from. tc gives the job its latency and loss (QA-15, #598).

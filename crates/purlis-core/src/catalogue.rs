@@ -223,9 +223,49 @@ fn changes() -> Value {
     }))
 }
 
+/// What `purlis.chats` answers: the workspace's chats, a tree by their parents (#6235).
+fn chats() -> Value {
+    let nullable =
+        |description: &str| json!({ "type": ["string", "null"], "description": description });
+    object(json!({
+        "history": { "type": "boolean", "description": "Whether ended dispatches are listed too." },
+        "chats": list_of(object(json!({
+            "id": string("Its id; chat-<n> for an open chat given none yet, <record id>.chat-<n> for an ended one: what a parent names it by."),
+            "name": string("Its name, as its tab shows it."),
+            "persona": nullable("The persona it runs as, or null."),
+            "harness": nullable("Its harness, by the project's word for it, or null for a shell."),
+            "state": json!({
+                "type": "string",
+                "enum": chats::Mark::ALL.iter().map(|m| m.key()).collect::<Vec<_>>(),
+                "description": "Its Chat state, as the window's mark keys it.",
+            }),
+            "state_said": string("Its Chat state, as the window names it: Waiting on you, Failed, …"),
+            "cause": string("The fact that decided its state, such as needs-you-queue or turn-ended."),
+            "started": nullable("When it started, RFC 3339, or null where it is not known."),
+            "last_activity": nullable("When it last moved, RFC 3339, or null where it is not known."),
+            "parent": json!({
+                "type": ["object", "null"],
+                "description": "The chat it came from, or null for one the person opened.",
+                "properties": {
+                    "id": nullable("That chat's id, or null where it works in another workspace or at the project's root."),
+                    "relation": json!({
+                        "type": "string",
+                        "enum": ["dispatched", "handed-off-from"],
+                        "description": "dispatched: a task that owes it a report; handed-off-from: the work moved here.",
+                    }),
+                },
+                "required": ["id", "relation"],
+                "additionalProperties": false,
+            }),
+            "session_record": nullable("Its newest session record, the file name session_record_read takes, or null."),
+            "open": { "type": "boolean", "description": "Whether it is open now; false only with history." },
+        }))),
+    }))
+}
+
 /// Every query, in the order the MCP server lists its tools. A new one is added at the end of
 /// its own line, and to the fixture.
-pub static CATALOGUE: [Query; 5] = [
+pub static CATALOGUE: [Query; 6] = [
     Query {
         name: "todo_list",
         since: FIRST,
@@ -270,6 +310,19 @@ pub static CATALOGUE: [Query; 5] = [
         scope: Scope::Workspace,
         widens: &[],
         result: changes,
+    },
+    // Answered by the app, which alone holds the live chats (#6235); `answer::ask` has none.
+    Query {
+        name: crate::chattools::CHATS,
+        since: "0.5.2",
+        replaces: None,
+        deprecated: None,
+        scope: Scope::Workspace,
+        widens: &[(
+            "history",
+            "the workspace's ended tasks and handoffs, not only its open chats",
+        )],
+        result: chats,
     },
 ];
 
@@ -466,6 +519,7 @@ pub fn listing() -> Value {
 }
 
 pub mod answer;
+pub mod chats;
 
 #[cfg(test)]
 mod tests;
