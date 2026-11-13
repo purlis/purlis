@@ -22,7 +22,15 @@
 //!
 //! **It moves one way** (R-318): nothing returns an unattended chat to attended. Each report is
 //! the harness's, relayed beside the chat's own commands, so a later one that says otherwise is
-//! no evidence that anything changed.
+//! no evidence that anything changed. A line that cannot prove it came from the armed hook is
+//! not read for its mode, but on Claude Code its bypass bit still lowers the fact, so the fact is
+//! never weaker than the old mark (Q271). A resume or a relaunch carries the fact forward
+//! ([`Fact::resumed`]), never rebuilding it as attended.
+//!
+//! **Who holds it** (Q271): nothing yet. The first reader to move, A4 (T1-18, #6409), holds the
+//! fact per chat in the app and persists it across the app's restarts, starting each chat with
+//! [`Fact::at_start`] and each resume or relaunch with [`Fact::resumed`] of the fact it kept.
+//! Dispatch (#6410), the briefing (#6411) and the commit gate (#6412) read the fact A4 holds.
 
 use crate::dispatchunattended::Attendance;
 use crate::harness::Harness;
@@ -30,7 +38,9 @@ use crate::harness::Harness;
 /// **How purlis started a chat**, as the start path names it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Begun {
-    /// A person started it, or will read it: the window, a resume, a relaunch, a handoff.
+    /// A person started it fresh, or will read it: the window, a handoff. A resume or a
+    /// relaunch is a start of this kind too, but its fact comes from [`Fact::resumed`], which
+    /// carries the prior fact forward, never from [`Fact::at_start`] alone.
     Person,
     /// Another chat dispatched it.
     Task,
@@ -53,10 +63,15 @@ impl Begun {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ClaudeCodeMode {
+    /// `default`: it asks before each tool its rules do not allow.
     Default,
+    /// `acceptEdits`: it edits files without asking, and asks for the rest.
     AcceptEdits,
+    /// `plan`: it plans and asks before it acts.
     Plan,
+    /// `auto`: its classifier judges each tool call in a person's place.
     Auto,
+    /// `bypassPermissions`: its prompts are off, so nobody is asked.
     BypassPermissions,
     /// A string nobody measured: never read as a mode purlis set, so never as attended.
     #[serde(other)]
@@ -130,9 +145,9 @@ pub struct Fact {
 }
 
 impl Fact {
-    /// **The fact at a chat's start**: `begun` as the start path names it, on `harness`, whose
-    /// `command` is the profile's own words and those purlis adds for a task's mode, never a
-    /// line the chat sends.
+    /// **The fact at a chat's fresh start**: `begun` as the start path names it, on `harness`,
+    /// whose `command` is the profile's own words and those purlis adds for a task's mode,
+    /// never a line the chat sends. A resume or a relaunch starts with [`Self::resumed`].
     pub fn at_start(begun: Begun, harness: Option<Harness>, command: &[String]) -> Self {
         let unattended =
             begun.unattended() || crate::dispatchunattended::bypass_in(command).is_some();
@@ -147,9 +162,33 @@ impl Fact {
         }
     }
 
-    /// Hears one of the chat's hook reports: its Claude Code mode, which the hook channel has
-    /// already cleared where the line could not prove it came from the armed hook.
+    /// **The fact at a resume or a relaunch** of a chat whose fact was `prior` (R-318, Q271):
+    /// the new start's, as [`Self::at_start`] reads it, but never more attended than `prior`.
+    /// It keeps the prior fact or lowers it, and never rebuilds an unattended chat as attended.
+    /// The new start's mode is the one set; the new hook has reported nothing yet.
+    pub fn resumed(
+        prior: Self,
+        begun: Begun,
+        harness: Option<Harness>,
+        command: &[String],
+    ) -> Self {
+        let mut fact = Self::at_start(begun, harness, command);
+        if prior.attendance == Attendance::Unattended {
+            fact.attendance = Attendance::Unattended;
+        }
+        fact
+    }
+
+    /// Hears one of the chat's hook reports. Its Claude Code mode the hook channel has already
+    /// cleared where the line could not prove it came from the armed hook, in the window's
+    /// listener and in the session host's alike, before the host relays it
+    /// ([`crate::hookwire::Report::mode_unproven`]). On Claude Code its bypass bit
+    /// (`detail.unattended`) lowers the fact whether or not the line is proven, as the old
+    /// mark's did (Q271); on any other harness neither is read (R-289).
     pub fn heard(&mut self, report: &crate::hookwire::Report) {
+        if self.set.is_some() && report.detail.unattended {
+            self.attendance = Attendance::Unattended;
+        }
         self.hear(report.detail.claude_code_mode);
     }
 
