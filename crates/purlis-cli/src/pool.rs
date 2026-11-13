@@ -33,7 +33,9 @@ pub enum PoolCommand {
     /// image is checked against the runner image contract first. With `--on ssh://…`, the pool's
     /// Docker is on that machine, reached over SSH with your own SSH settings and agent: purlis
     /// shows the key the machine presents, and makes the pool only once you give its fingerprint
-    /// with `--trust`.
+    /// with `--trust`. With `--on tcp://…`, it is reached over Docker's TLS API with the CA,
+    /// client certificate and key you name: purlis shows the CA's fingerprint, and makes the pool
+    /// only once you give it with `--trust`. Plain tcp:// without them is refused.
     Add {
         /// The pool's name: lower-case letters, digits and dashes.
         name: String,
@@ -61,18 +63,22 @@ pub enum PoolCommand {
         /// The widest frame its runner's browsers are watched at, in pixels.
         #[arg(long)]
         width: Option<u32>,
-        /// The machine its Docker is on: ssh://[user@]host[:port][/socket]. Plain tcp:// is
-        /// refused.
+        /// The machine its Docker is on: ssh://[user@]host[:port][/socket], or
+        /// tcp://host[:port] with --tls-ca, --tls-cert and a key. Plain tcp:// is refused.
         #[arg(long, value_name = "ROUTE")]
         on: Option<String>,
         /// The fingerprint of that machine's host key, as you checked it there
-        /// (SHA256:…, from `ssh-keygen -lf`).
+        /// (SHA256:…, from `ssh-keygen -lf`), or over TLS of its CA (sha256:…, or as
+        /// `openssl x509 -noout -fingerprint -sha256` prints it).
         #[arg(long, value_name = "FINGERPRINT", requires = "on")]
         trust: Option<String>,
         /// The key file ssh signs in to that machine with, as a Podman connection names it
         /// (`podman system connection list`). Without it, your SSH agent and settings.
         #[arg(long, value_name = "FILE", requires = "on")]
         identity: Option<String>,
+        /// The files Docker's TLS API is reached with (#6267).
+        #[command(flatten)]
+        tls: Box<TlsArgs>,
     },
     /// Record profiles of this machine's on a pool, for its chats to use. Its runner keeps them
     /// the next time their sign-ins are asked, and `purlis profile sign-in <profile> --pool
@@ -201,7 +207,9 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
             on,
             trust,
             identity,
+            tls,
         } => {
+            let tls = tls_files(&tls.tls_ca, &tls.tls_cert, &tls.tls_key, &tls.tls_key_in)?;
             let asked = Asked {
                 name: name.clone(),
                 image: image.clone(),
@@ -215,6 +223,7 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
                 on: on.clone(),
                 trust: trust.clone(),
                 identity: identity.clone(),
+                tls,
             };
             added(&config()?, &asked)
         }
@@ -578,4 +587,72 @@ mod tests {
             "waiting for the person: Asks (\u{270b}) in the purlis window, for up to 2 minutes"
         );
     }
+}
+
+/// **`purlis pool add`'s flags for a machine reached over Docker's TLS API** (#6267).
+#[derive(Debug, clap::Args)]
+pub struct TlsArgs {
+    /// Over TLS: the CA Docker's certificates there are signed with.
+    #[arg(long, value_name = "FILE", requires = "on")]
+    tls_ca: Option<std::path::PathBuf>,
+    /// Over TLS: your client certificate.
+    #[arg(long, value_name = "FILE", requires = "tls_ca")]
+    tls_cert: Option<std::path::PathBuf>,
+    /// Over TLS: your client certificate's key, where it is.
+    #[arg(
+        long,
+        value_name = "FILE",
+        requires = "tls_cert",
+        conflicts_with = "tls_key_in"
+    )]
+    tls_key: Option<std::path::PathBuf>,
+    /// Over TLS: your client certificate's key, kept in a vault entry of this project's
+    /// (VAULT/KEY). It is written to disk only for each run of docker, and removed after.
+    #[arg(long, value_name = "VAULT/KEY", requires = "tls_cert")]
+    tls_key_in: Option<String>,
+}
+
+/// **The TLS files `purlis pool add` was given** (#6267), each made absolute against the folder it
+/// runs in; a key in a vault is this project's (`VAULT/KEY`). `None` where none was given; refused
+/// where some but not all were.
+fn tls_files(
+    ca: &Option<std::path::PathBuf>,
+    cert: &Option<std::path::PathBuf>,
+    key: &Option<std::path::PathBuf>,
+    key_in: &Option<String>,
+) -> Result<Option<purlis_core::tlsroute::Files>, String> {
+    if ca.is_none() && cert.is_none() && key.is_none() && key_in.is_none() {
+        return Ok(None);
+    }
+    let here =
+        std::env::current_dir().map_err(|why| format!("this folder can't be read: {why}"))?;
+    let absolute = |path: &std::path::Path| here.join(path);
+    let (Some(ca), Some(cert)) = (ca, cert) else {
+        return Err(purlis_core::tlsroute::NO_VERIFY.to_owned());
+    };
+    let key = match (key, key_in) {
+        (Some(key), None) => purlis_core::tlsroute::KeyFrom::File(absolute(key)),
+        (None, Some(key_in)) => {
+            let (vault, key) = key_in.split_once('/').ok_or_else(|| {
+                format!("--tls-key-in is VAULT/KEY, as in docker-box/TLS_KEY, not {key_in}")
+            })?;
+            let plane = project_here().ok_or_else(|| {
+                "run this in the project whose vault holds the key, or name the key's file with \
+                 --tls-key"
+                    .to_owned()
+            })?;
+            purlis_core::tlsroute::KeyFrom::Vault {
+                plane,
+                vault: vault.to_owned(),
+                key: key.to_owned(),
+            }
+        }
+        _ => {
+            return Err(
+                "name your client certificate's key with --tls-key FILE or --tls-key-in VAULT/KEY"
+                    .to_owned(),
+            );
+        }
+    };
+    purlis_core::tlsroute::Files::new(absolute(ca), absolute(cert), key).map(Some)
 }

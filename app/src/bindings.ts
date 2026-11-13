@@ -4242,6 +4242,13 @@ export const commands = {
 	 */
 	poolSetupTrust: (plane: PlaneId, fingerprint: string) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup_trust", { plane, fingerprint })),
 	/**
+	 *  **Keeps the TLS files named under Connect's Options** for a `tcp://` machine (#6267, ADR
+	 *  0123 §4): the CA, the client certificate, and the key's file or a vault entry of this project's
+	 *  (`key_vault` and `key_name`), or forgets them where `ca` is empty. Their paths and names alone
+	 *  are kept, never what they hold. It contacts nothing.
+	 */
+	poolSetupTlsFiles: (plane: PlaneId, ca: string, cert: string, key: string | null, keyVault: string | null, keyName: string | null) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup_tls_files", { plane, ca, cert, key, keyVault, keyName })),
+	/**
 	 *  **Keeps that the person chose their team's cluster on Where**, through kubeconfig context
 	 *  `context` (#4492): its name alone. Nothing on the cluster changes. With no context, only the
 	 *  kind is kept, as Add a cluster pool… opens Pool setup: Where then recommends a context.
@@ -13851,6 +13858,13 @@ export type PoolSetupAction = {
 	url: string | null,
 };
 
+/**  A CA, as Connect shows it to confirm (#6267). */
+export type PoolSetupCa = {
+	fingerprint: string,
+	subject: string | null,
+	file: string,
+};
+
 /**  One line of what Try it checks (#4483): `ok`, `missing`, `todo` or `skip`. */
 export type PoolSetupCheck = {
 	/**  What it checks: `chat`, `signins` or `identity`. */
@@ -13907,6 +13921,16 @@ export type PoolSetupMachine = {
 	now: PoolSetupKey | null,
 	/**  The engine's id trusted for it. */
 	engine: string | null,
+	/**  **Over Docker's TLS API** (#6267): `tls` for a `tcp://` machine, `ssh` otherwise. */
+	over: string,
+	/**  The TLS files named under Options. */
+	tls: PoolSetupTlsFiles | null,
+	/**  The CA read at Connect to, to confirm. */
+	ca: PoolSetupCa | null,
+	/**  The CA's fingerprint trusted for it. */
+	trusted_ca: string | null,
+	/**  The fingerprint the CA file holds now, where that isn't the one trusted. */
+	ca_now: string | null,
 };
 
 /**  A limit a profile is over. */
@@ -14012,6 +14036,15 @@ export type PoolSetupStep = {
 	parts: PoolSetupPart[],
 	/**  How the step is undone by hand, never by a button: uninstalling from a cluster. */
 	undo: PoolSetupSee | null,
+};
+
+/**  The TLS files named for a `tcp://` machine, as Connect's Options show them (#6267). */
+export type PoolSetupTlsFiles = {
+	ca: string,
+	cert: string,
+	key: string | null,
+	key_vault: string | null,
+	key_name: string | null,
 };
 
 /**  What Try it found. */
