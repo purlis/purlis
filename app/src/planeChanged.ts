@@ -3,6 +3,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useOnShownAgain, useProjectShown } from "./projectShown";
+import { whenDrawing } from "./whenDrawing";
 import { listen } from "./here";
 
 import type { MemoryScope, PlaneAnswer, PlaneChange, PlaneChanged, PlaneId } from "./bindings";
@@ -340,7 +341,9 @@ export function followViewChanged(
 /**
  * **`after` milliseconds late, once for every change heard meanwhile** (felt speed round 3,
  * H8): a reader that waits its turn after a move (`afterGitMoved.ts`) still reads once for a
- * burst of them, and not at all once stopped.
+ * burst of them, and not at all once stopped. **Told only while the window is drawn** (H11,
+ * `whenDrawing.ts`): a window hidden, or dark with the display asleep or the screen locked, reads
+ * once as it is drawn again, after the paint, however long it was away and however much changed.
  */
 function followTold(
   planes: readonly PlaneId[],
@@ -352,13 +355,18 @@ function followTold(
   let gone = false;
   let stop: (() => void) | undefined;
   let waiting: ReturnType<typeof setTimeout> | undefined;
-  const tell = () => {
+  let owed = () => {};
+  const now = () => {
+    if (gone) return;
     if (after <= 0) return told();
     if (waiting !== undefined) return;
     waiting = setTimeout(() => {
       waiting = undefined;
       if (!gone) told();
     }, after);
+  };
+  const tell = () => {
+    owed = whenDrawing(now);
   };
   void (async () => {
     try {
@@ -375,6 +383,7 @@ function followTold(
   return () => {
     gone = true;
     clearTimeout(waiting);
+    owed();
     stop?.();
   };
 }
