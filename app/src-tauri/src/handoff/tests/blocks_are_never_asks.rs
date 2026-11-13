@@ -8,6 +8,15 @@
 //! Against the app's own records on a pretend session host, with a real event log: each block is
 //! written the way the window's stop writer writes one (`planes.rs`, R-290): into the log, then
 //! the needs-you mark of the ask it was is taken back.
+//!
+//! **A pin** (Q208): it holds what the code already does, so it was green when written. It turns
+//! red on either mutation it is here for:
+//!
+//! - `Chat::block_withdrawn` (`purlis-core`, `state.rs:1298`) clearing `needs_you` without its
+//!   guards (an ended chat, its own work back, no ask that ended its wait): a block would take
+//!   away the ask of a chat whose turn is the person's;
+//! - `Hooks::write_stop` (`hooks.rs:3647`) not recording the block: the log would not hold one
+//!   block of each source and qualifier.
 
 use purlis_core::eventlog::stops::{BLOCK, Block, Qualifier, Source, Stop, Target};
 
@@ -30,10 +39,10 @@ const QUALIFIERS: [Option<Qualifier>; 3] =
 fn a_target_of(source: Source) -> Target {
     match source {
         Source::Guard => Target::guard_arm("force-push"),
-        Source::HarnessCheck => Target::folder("/work/plane/secrets"),
+        Source::HarnessCheck => Target::folder("secrets"),
         Source::Sandbox => Target::host("api.example.com"),
         Source::Policy => Target::service("com.example.helper"),
-        Source::ProjectSetting => Target::folder("/work/plane/vendor"),
+        Source::ProjectSetting => Target::folder("vendor"),
     }
     .expect("a target")
 }
@@ -87,6 +96,5 @@ fn no_block_is_ever_the_source_of_an_ask() {
         "every block was written"
     );
     let after = crate::asking::every_ask(&held).asks;
-    assert_eq!(after, before, "a block added or took away an ask");
-    assert_eq!(after.len(), before.len(), "a block moved the ✋'s count");
+    assert_eq!(after, before, "a block added, took away or moved an ask");
 }

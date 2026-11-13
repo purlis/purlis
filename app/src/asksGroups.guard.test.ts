@@ -16,8 +16,8 @@ import type { AskSource } from "./bindings";
  *
  * Each group is named by the core's word for it (`purlis_core::eventlog::stops::AskGroup`), the
  * one an answered ask is written under. A kind the core adds fails this file (and `tsc`, through
- * `satisfies`) until it is grouped: Trust this clone and Trust these clones join, as consents,
- * when T1-14 (#6405) and T1-15 (#6406) add them.
+ * `satisfies`) until it is grouped: Trust this clone is a consent (T1-14, #6405), and Trust
+ * these clones joins it when T1-15 (#6406) adds it.
  */
 type Group =
   "sandbox" | "harness_prompt" | "consent" | "hold" | "loop_pause" | "budget" | "hook_give_up";
@@ -64,6 +64,8 @@ const GROUP_OF = {
   vault: "consent",
   // The sandbox consent (R-205): what the project expects and this machine has not allowed.
   "sandbox-expects": "consent",
+  // Trust this clone (T1-14): what the clone may run and change, before it is trusted.
+  "trust-clone": "consent",
   confirmation: "consent",
   // What purlis refused the chat and raised as an ask (R-114).
   "merge-hold": "hold",

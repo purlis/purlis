@@ -70,6 +70,9 @@ const EXPECTS_ROW = '[data-setting="project.sandbox.expects-here"]';
 /** The consent's row in the Asks view. */
 const CONSENT = `[role="tabpanel"][data-view="asks"] .inbox-ask[data-source="${CAUSE}"]`;
 const ALLOWED_ROW = '[data-setting="project.sandbox.network.allowed"]';
+/** Asks' scope chips (`SCOPE_LABEL`). */
+const SCOPES =
+  '[role="tabpanel"][data-view="asks"] [role="radiogroup"][aria-label="Show what needs you in"]';
 
 /** This spec's own project: the fixture, renamed, with nothing to put back on open. */
 const mine = (() => {
@@ -105,11 +108,23 @@ const expects = async () =>
   (await ask<{ expects: Expects }>("sandbox_state", { plane: mine })).expects;
 const grants = () => ask<Grant[]>("sandbox_grants", { plane: mine });
 
-/** What the consent's row in Asks says now, or null where none is drawn. */
+/**
+ * What the consent's row in Asks says now, or null where none is drawn. The consent asks about
+ * no chat, so it is listed under Project alone, and Asks opens on Chat (ADR 0121, amended
+ * 2026-11-12): the Project chip is picked first wherever the chips are drawn, so its absence is
+ * read where it would be listed. The chip is found by its role and its words, never its tag.
+ */
 const rowSaid = () =>
   browser.execute(
-    (row: string) => document.querySelector<HTMLElement>(row)?.innerText ?? null,
+    (row: string, chips: string) => {
+      const project = document
+        .querySelector(chips)
+        ?.querySelector<HTMLInputElement>('[aria-label^="Project"]');
+      if (project !== null && project !== undefined && project.checked !== true) project.click();
+      return document.querySelector<HTMLElement>(row)?.innerText ?? null;
+    },
     CONSENT,
+    SCOPES,
   );
 
 /** Waits for the consent's row in Asks to say `text`, each of it at once when it is a list, and
