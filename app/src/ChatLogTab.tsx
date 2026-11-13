@@ -2,9 +2,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState } from "react";
-import { commands, type ChatLog, type ChatLogRow, type PlaneId } from "./bindings";
+import { commands, type ChatBlocks, type ChatLog, type ChatLogRow, type PlaneId } from "./bindings";
 import { EmptyState } from "./ui/empty-state/EmptyState";
+import { ToggleButton } from "./ui/button/Button";
 import { atSaid, rowSaid } from "./chatLog";
+import { useBlocksLookedAt, useChatLogFilter } from "./blockedMarkers";
+
+/**
+ * **The chat's blocks, counted** (R-299): every block its log holds, the unverified ones apart,
+ * which the sidebar never counts. Nothing where it has none.
+ */
+export function blocksCounted(counted: ChatBlocks | undefined): string | undefined {
+  if (counted === undefined || counted.blocks + counted.unverified === 0) return undefined;
+  const blocked = `${counted.blocks} blocked`;
+  return counted.unverified === 0 ? blocked : `${blocked}, ${counted.unverified} unverified`;
+}
+
+/** The kinds of row a filter to blocks keeps: none drawn in phase 1 (#6419, #6420). */
+const BLOCK_ROWS: readonly string[] = ["blocked"];
 
 /**
  * **The Chat log as it is drawn** (R-310, R-227, R-233): the chat's own simple timeline, apart
@@ -40,6 +55,11 @@ export function ChatLogTab({
 }) {
   const [log, setLog] = useState<ChatLog>();
   const [said, setSaid] = useState<string>();
+  // **Filtered to blocks where its marker opened it** (R-301), and the count of its blocks.
+  const [filter, setFilter] = useChatLogFilter(session);
+  const [counted, setCounted] = useState<ChatBlocks>();
+  // **Opened, its blocks are looked at** (R-175): its marker clears.
+  useBlocksLookedAt(session);
   // The runner the chat runs on, as the open chats say it (`OpenChat.pool`): its log is kept
   // there, not here (Q247). `null` for a chat on this machine, or one not open.
   const [runner, setRunner] = useState<string | null>(null);
@@ -61,6 +81,13 @@ export function ChatLogTab({
         else setLog(done.data);
       })
       .catch((err: unknown) => !gone && setSaid(String(err)));
+    void commands
+      .chatBlocks(plane, [{ session, after: null }])
+      .then((done) => {
+        if (gone || done.status === "error") return;
+        setCounted(done.data.find((one) => one.session === session));
+      })
+      .catch(() => {});
     return () => {
       gone = true;
     };
@@ -73,6 +100,39 @@ export function ChatLogTab({
       <EmptyState headline="This chat is not open" body="Open it again to see its chat log." />
     );
   if (log === undefined) return <p className="chat-log-reading">Reading this chat&apos;s log…</p>;
+  const blocksOnly = filter === "blocks";
+  const rows = blocksOnly ? log.rows.filter((row) => BLOCK_ROWS.includes(row.kind)) : log.rows;
+  const blocks = blocksCounted(counted);
+  const head = (
+    <div className="chat-log-head">
+      <ToggleButton
+        size="sm"
+        isSelected={blocksOnly}
+        onChange={(on) => setFilter(on ? "blocks" : "all")}
+      >
+        Blocks only
+      </ToggleButton>
+      {blocks !== undefined && <span className="ui-text-secondary">{blocks}</span>}
+    </div>
+  );
+  if (blocksOnly)
+    return (
+      <>
+        {head}
+        {rows.length === 0 ? (
+          <EmptyState
+            headline="No block rows to show"
+            body={
+              blocks === undefined
+                ? "Nothing was blocked in this chat on this machine."
+                : "This version counts this chat's blocks and does not list them yet."
+            }
+          />
+        ) : (
+          <ChatLogRows name={name} rows={rows} />
+        )}
+      </>
+    );
   if (log.rows.length === 0)
     return (
       <EmptyState
@@ -84,5 +144,10 @@ export function ChatLogTab({
         }
       />
     );
-  return <ChatLogRows name={name} rows={log.rows} />;
+  return (
+    <>
+      {head}
+      <ChatLogRows name={name} rows={log.rows} />
+    </>
+  );
 }

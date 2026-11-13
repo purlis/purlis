@@ -3494,6 +3494,13 @@ export const commands = {
 	 */
 	chatLog: (plane: PlaneId, session: number) => typedError<ChatLog, string>(__TAURI_INVOKE("chat_log", { plane, session })),
 	/**
+	 *  **Each asked chat's blocked marker** (R-172, R-174, R-299; ADR 0124 decision 9.1): its
+	 *  verified and unverified blocks after the last look the window keeps for it, from this
+	 *  machine's event log. No notification and no announcement is made of them (R-176), and
+	 *  nothing of Quiet or snooze is touched (R-177): it only reads.
+	 */
+	chatBlocks: (plane: PlaneId, asked: BlocksAsked[]) => typedError<ChatBlocks[], string>(__TAURI_INVOKE("chat_blocks", { plane, asked })),
+	/**
 	 *  **The question a task is paused on, for the window to show before the person answers it**
 	 *  (#1496): chat `session`'s question to its asking chat. `null` where there is none to
 	 *  answer: the chat is no task, has reported or ended, or asks nothing now.
@@ -7144,6 +7151,16 @@ export type BlockedLately = {
 };
 
 /**
+ *  One chat the window asks the blocked marker of, and its last look: the `seq` of the latest
+ *  block the person looked at, as the window keeps it in the seen record (decimal, `None` for
+ *  never).
+ */
+export type BlocksAsked = {
+	session: number,
+	after: string | null,
+};
+
+/**
  *  The picker's two boxes, as the start reads them.
  * 
  *  A struct because tauri-specta types a command of at most ten arguments, and `start_chat` grew
@@ -7643,6 +7660,23 @@ export type ChatBlocked = {
 	 *  Judged as a port is before it is sent here, and again before anything is allowed.
 	 */
 	suggested?: string | null,
+};
+
+/**
+ *  **A chat's blocks since the person last looked** (R-172, R-174, R-299): what its marker
+ *  shows.
+ */
+export type ChatBlocks = {
+	session: number,
+	/**  The verified blocks after the look: the marker's count, "2 new blocked". */
+	blocks: number,
+	/**  The unverified ones after it, which never count on the sidebar: a muted dot. */
+	unverified: number,
+	/**
+	 *  The `seq` of the chat's latest block (decimal), which the window keeps as the look once
+	 *  the chat has been looked at; `None` for a chat with none.
+	 */
+	latest: string | null,
 };
 
 /**

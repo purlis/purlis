@@ -554,12 +554,12 @@ fn the_marker_count_is_the_verified_blocks_after_the_last_look() {
     fed(&mut tally);
     let before = tally.since(ONE, None);
     assert_eq!((before.blocks, before.unverified), (1, 1), "{before:?}");
-    let looked = before.latest.clone().expect("the latest block's id");
+    let looked = before.latest.expect("the latest block's seq");
 
     // A look at the latest block: nothing is new.
-    let now = tally.since(ONE, Some(&looked));
+    let now = tally.since(ONE, Some(looked));
     assert_eq!((now.blocks, now.unverified), (0, 0), "{now:?}");
-    assert_eq!(now.latest.as_deref(), Some(looked.as_str()));
+    assert_eq!(now.latest, Some(looked));
 
     // Later blocks count, verified apart from unverified; a can't-tell one and a hold do not.
     host.stop(plane, Some(4), &block(None)).unwrap();
@@ -579,7 +579,7 @@ fn the_marker_count_is_the_verified_blocks_after_the_last_look() {
     )
     .unwrap();
     fed(&mut tally);
-    let after = tally.since(ONE, Some(&looked));
+    let after = tally.since(ONE, Some(looked));
     assert_eq!((after.blocks, after.unverified), (2, 1), "{after:?}");
     // It is the fleet counts' own bucket (T1-03): the sidebar's count is `Tally.blocks` alone.
     assert_eq!(after.tally.blocks, after.blocks);
@@ -591,8 +591,8 @@ fn the_marker_count_is_the_verified_blocks_after_the_last_look() {
     assert_eq!((two.blocks, two.unverified), (1, 0), "{two:?}");
 
     // A new look sets it to 0.
-    let again = after.latest.expect("the latest block's id");
-    let cleared = tally.since(ONE, Some(&again));
+    let again = after.latest.expect("the latest block's seq");
+    let cleared = tally.since(ONE, Some(again));
     assert_eq!((cleared.blocks, cleared.unverified), (0, 0), "{cleared:?}");
 
     // A chat with no block has nothing to show, and no point to look at.

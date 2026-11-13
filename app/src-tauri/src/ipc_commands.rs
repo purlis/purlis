@@ -557,6 +557,7 @@ macro_rules! app_commands {
                 activity::activity_chat,
                 questiontrail::question_trail,
                 chatlog::chat_log,
+                chatlog::chat_blocks,
                 dispatched::task_question,
                 dispatched::task_question_answered,
                 dispatched::answer_task_question,

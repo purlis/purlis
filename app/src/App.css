@@ -739,6 +739,7 @@ body {
     .tab-sandbox,
     .pane-state-mark,
     .pane-wrapping,
+    .pane-blocked,
     .pane-task-ends,
     .pane-crumbs,
     .pane-brief,
@@ -9480,6 +9481,15 @@ nav.piece-files-head {
   padding: 0;
   list-style: none;
   font-size: var(--font-size-sm);
+}
+
+/* The Chat log's head: its blocks filter and their count (R-299, R-301; T1-30). */
+.chat-log-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  padding-block-end: var(--space-2);
 }
 
 .chat-log-row {

@@ -559,11 +559,16 @@
   align-items: center;
 }
 
-.pane-chips > :is(.pane-state-mark, .pane-wrapping) {
+.pane-chips > :is(.pane-state-mark, .pane-wrapping, .pane-blocked) {
   display: inline-flex;
   flex: none;
   align-items: center;
   white-space: nowrap;
+}
+
+/* No blocks since the last look: no chip, and no gap kept for one (T1-30). */
+.pane-chips > .pane-blocked:empty {
+  display: none;
 }
 
 /* The breathing mark keeps its own gap: the line's is enough. */

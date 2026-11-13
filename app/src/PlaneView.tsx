@@ -101,6 +101,7 @@ import {
   FOCUS_MODE_ID,
   SHORTCUTS_ID,
   saidOf,
+  chatLogId,
   type BranchPath,
   type FileRef,
   type Clone,
@@ -763,6 +764,14 @@ import {
   useSeen,
   type SeenRows,
 } from "./seen";
+import {
+  BlockedMarkers,
+  filterChatLog,
+  blocksSeenKey,
+  markerOf,
+  useBlockedMarkers,
+  type BlockedMarkersHeld,
+} from "./blockedMarkers";
 import { SeenRowsOf } from "./seenRows";
 
 /** Whether two lists of the right side's extension panels draw the same tabs. */
@@ -11346,7 +11355,40 @@ export const PlaneView = memo(function PlaneView({
   /** **What is New** (#6002, ADR 0121 decisions 10 and 11): seen, not received; the chat on
    *  screen in a focused window has nothing New. */
   const { seen, see, rows: seenRows } = useSeen(plane, waiting);
-  useChatOnScreenSeen(see, chatOnScreen, inFront, waiting, keptUpdates);
+  /** **The blocked markers** (R-172, R-174; T1-30): each chat's blocks since its last look,
+   *  kept in the same seen record. The chat on screen in a focused window is looked at by the
+   *  same rule (R-341). */
+  const blocksCounted = useBlockedMarkers(plane, [...chatNames.keys()], seen);
+  const blocksLatest = useMemo(
+    () =>
+      new Map(
+        [...blocksCounted.values()].flatMap((one) =>
+          one.latest === null ? [] : [[one.session, one.latest] as const],
+        ),
+      ),
+    [blocksCounted],
+  );
+  useChatOnScreenSeen(see, chatOnScreen, inFront, waiting, keptUpdates, blocksLatest);
+  const blockedMarkers = useMemo<BlockedMarkersHeld>(
+    () => ({
+      of: (session) =>
+        seen === undefined ? undefined : markerOf(blocksCounted.get(session), seen),
+      // **It opens the Chat log, filtered to blocks** (R-301), as its row in the chat's list does.
+      open: (session) => {
+        filterChatLog(session, "blocks");
+        const offer = offers.find((one) => one.id === chatLogId(session));
+        if (offer?.available === true) press(offer);
+      },
+      // **Its Chat log opened is a look** (R-175).
+      look: (session) => {
+        if (!blocksCounted.has(session)) return false;
+        const latest = blocksLatest.get(session);
+        if (latest !== undefined) see([blocksSeenKey(session, latest)]);
+        return true;
+      },
+    }),
+    [blocksCounted, blocksLatest, offers, press, see, seen],
+  );
   const [noticeCauses, setNoticeCauses] = useState<readonly string[]>([]);
   useEffect(() => {
     if (inFront) onSeen?.(plane, seenRows);
@@ -12126,6 +12168,7 @@ export const PlaneView = memo(function PlaneView({
             brief={openBrief}
             answer={openAnswer}
             studioChats={studioChats}
+            blockedMarkers={blockedMarkers}
           >
             <SessionOffersLent
               plane={plane}
@@ -13456,6 +13499,7 @@ function Lent({
   brief,
   answer,
   studioChats,
+  blockedMarkers,
   children,
 }: {
   chats: ComponentProps<typeof ChatsHere.Provider>["value"];
@@ -13487,6 +13531,8 @@ function Lent({
   answer: OpenAnswer;
   /** The chats the Skill studio started, still open (#5185). */
   studioChats: StudioChatsLent;
+  /** Each chat's blocked marker (T1-30). */
+  blockedMarkers: BlockedMarkersHeld;
   children: ReactNode;
 }) {
   return (
@@ -13506,7 +13552,9 @@ function Lent({
                               <BriefOpener value={brief}>
                                 <AnswerOpener value={answer}>
                                   <StudioChatsHere.Provider value={studioChats}>
-                                    {children}
+                                    <BlockedMarkers.Provider value={blockedMarkers}>
+                                      {children}
+                                    </BlockedMarkers.Provider>
                                   </StudioChatsHere.Provider>
                                 </AnswerOpener>
                               </BriefOpener>
