@@ -290,6 +290,7 @@ fn tool_call(
         args: Some(args_hash(&serde_json::json!({"command": "ls"}))),
         decision,
         rule: (decision == crate::hookwire::Decision::Deny).then(|| "no-force-push".to_owned()),
+        arm: None,
         hook_ms: 3,
         agent: None,
         at_ms: 0,
@@ -3131,6 +3132,7 @@ fn a_skill_started_opens_a_run_that_lasts_to_the_end_of_the_turn_and_every_entry
             "skill.started",
             "hook.posttooluse-skill",
             "hook.pretooluse",
+            "stop.block",
             "hook.pretooluse",
             "hook.posttooluse",
             "skill.ended",
@@ -3144,7 +3146,8 @@ fn a_skill_started_opens_a_run_that_lasts_to_the_end_of_the_turn_and_every_entry
         "before it, nothing is inside a skill"
     );
     assert_eq!(stop.body.get("skill"), None, "the turn's end is outside it");
-    for event in &events[3..9] {
+    // The refused call's block (R-316) is inside the skill run too.
+    for event in &events[3..10] {
         assert_eq!(event.body["skill"], "deploy", "{event:#?}");
         assert_eq!(event.body["skill_run"], id.as_str(), "{event:#?}");
         assert_eq!(
@@ -3155,7 +3158,7 @@ fn a_skill_started_opens_a_run_that_lasts_to_the_end_of_the_turn_and_every_entry
     let opened = &events[3];
     assert_eq!(opened.body["started_by"], "skill-tool");
     assert_eq!(opened.body.get("parent_skill_run"), None);
-    let ended = &events[8];
+    let ended = &events[9];
     assert_eq!(ended.body["ended"], "turn");
     assert_eq!(
         (

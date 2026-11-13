@@ -13,11 +13,12 @@
 //! There is no field for a command, its arguments or output, or the harness's `reason` text:
 //! the reason is held in memory for the row's detail while the app runs, and never written.
 //!
-//! **What writes them**: the harness's own check's refusal is written as a block by the
-//! recorder, beside the tool event of its hook's line (R-094, R-325,
-//! [`Recorder::harness_check_block`]). The guard denies, the sandbox refusals, the merge hold,
-//! the loop rule and the asks each write their kind in their own slice; the window's entry
-//! carries them ([`super::Entry::Stop`]).
+//! **What writes them**: the recorder writes a block beside the tool event of a hook's line, for
+//! a guard's deny ([`Recorder::guard_block`], R-316) or for the harness's own check's refusal
+//! ([`Recorder::harness_check_block`], R-094, R-325), at most one per line
+//! ([`Recorder::block_of`]). The sandbox refusals, the merge hold, the loop rule and the asks
+//! each write their kind in their own slice; the window's entry carries them
+//! ([`super::Entry::Stop`]).
 
 use std::io;
 use std::path::Path;
@@ -369,6 +370,56 @@ impl Recorder {
         self.audited(plane, number, stop.kind(), body)
     }
 
+    /// **The block a guard's deny is** (R-316, R-101, R-102): for a tool call purlis's hook
+    /// refused, its `stop.block` body, source guard, with the gate's arm as its target where the
+    /// line names one the gate has, and the arguments' hash keyed as the tool event's is; none
+    /// for a call that was not refused, and for one that handed its write to the person (a
+    /// proposed change or a draft skill, Q235: [`crate::toolhooks::hands_the_write_over`]).
+    /// `unverified` unless the chat ran on a harness whose hooks report from outside its reach,
+    /// under a backend that leaves them there (`attributes`, none for a chat of no run;
+    /// [`reported_from_outside_its_reach`]): at No sandbox the chat can reach whatever reports
+    /// for it.
+    ///
+    /// Written just after the line's own tool event, and answered last, so the writer that makes
+    /// the tool event durable makes the block durable with it (the hook lines' one `fsync`),
+    /// never under the recorder's lock as a person's act is: denies come at hook pace.
+    pub(super) fn guard_block(
+        &self,
+        call: &crate::hookwire::ToolCall,
+        attributes: Option<&super::Attributes>,
+    ) -> Option<serde_json::Value> {
+        if call.decision != crate::hookwire::Decision::Deny
+            || call
+                .rule
+                .as_deref()
+                .is_some_and(crate::toolhooks::hands_the_write_over)
+        {
+            return None;
+        }
+        let block = Block {
+            tool: crate::shown::readable(
+                call.tool.as_deref().unwrap_or(super::UNKNOWN),
+                TARGET_CHARS,
+            ),
+            source: Source::Guard,
+            qualifier: (!attributes.is_some_and(reported_from_outside_its_reach))
+                .then_some(Qualifier::Unverified),
+            target: call
+                .arm
+                .as_deref()
+                .and_then(crate::toolgate::Arm::of_id)
+                .and_then(|arm| Target::guard_arm(arm.id()).ok()),
+            args: call.args.as_deref().map(|hash| self.key.digest(hash)),
+        };
+        match serde_json::to_value(block) {
+            Ok(body) => Some(body),
+            Err(why) => {
+                tracing::warn!("purlis: a guard's block was not written ({why})");
+                None
+            }
+        }
+    }
+
     /// **The block the harness's own check is** (R-094, R-325): for the line of the hook that
     /// hears a harness's own refusal ([`crate::hookreg::HARNESS_DENIED`]), its `stop.block`
     /// body, source [`Source::HarnessCheck`], with the tool by the harness's name and the
@@ -378,6 +429,7 @@ impl Recorder {
     pub(super) fn harness_check_block(
         &self,
         call: &crate::hookwire::ToolCall,
+        _attributes: Option<&super::Attributes>,
     ) -> Option<serde_json::Value> {
         if call.tool_hook != crate::hookreg::HARNESS_DENIED {
             return None;
@@ -392,8 +444,49 @@ impl Recorder {
             target: None,
             args: call.args.as_deref().map(|hash| self.key.digest(hash)),
         };
-        serde_json::to_value(block).ok()
+        match serde_json::to_value(block) {
+            Ok(body) => Some(body),
+            Err(why) => {
+                tracing::warn!("purlis: a harness check's block was not written ({why})");
+                None
+            }
+        }
     }
+
+    /// **The one block a hook's line is, if any:** the harness's own check's
+    /// ([`Recorder::harness_check_block`]), else a guard's deny ([`Recorder::guard_block`]), so
+    /// a line gives at most one block.
+    pub(super) fn block_of(
+        &self,
+        call: &crate::hookwire::ToolCall,
+        attributes: Option<&super::Attributes>,
+    ) -> Option<serde_json::Value> {
+        self.harness_check_block(call, attributes)
+            .or_else(|| self.guard_block(call, attributes))
+    }
+}
+
+/// The sandbox backends, as a run's `sandbox` attribute names them, that leave a harness's
+/// hooks outside the sandbox they give its tools (Q235): Seatbelt on macOS and bubblewrap,
+/// Claude Code's own on Linux before purlis wrapped it. An allowlist: `landlock`, purlis's own
+/// wrap, holds a harness whole, a Claude Code chat's included (#4083, ADR 0067 as amended
+/// 2026-11-10), and a word not named here is not trusted to be either.
+const HOOKS_LEFT_OUTSIDE: [&str; 2] = ["seatbelt", "bubblewrap"];
+
+/// Whether a run with `attributes` reports from outside the chat's reach: a harness whose hooks
+/// run outside it ([`crate::harness::Harness::guard_reports_from_outside_the_chats_reach`]), under
+/// a backend the host recorded that leaves them there ([`HOOKS_LEFT_OUTSIDE`]).
+fn reported_from_outside_its_reach(attributes: &super::Attributes) -> bool {
+    let sandboxed = attributes
+        .sandbox
+        .as_deref()
+        .is_some_and(|word| HOOKS_LEFT_OUTSIDE.contains(&word));
+    let outside = attributes
+        .harness
+        .as_deref()
+        .and_then(crate::harness::Harness::of_kind)
+        .is_some_and(crate::harness::Harness::guard_reports_from_outside_the_chats_reach);
+    sandboxed && outside
 }
 
 #[cfg(test)]
@@ -403,3 +496,7 @@ mod tests;
 #[cfg(test)]
 #[path = "stops/harness_check_tests.rs"]
 mod harness_check_tests;
+
+#[cfg(test)]
+#[path = "stops/guard_tests.rs"]
+mod guard_tests;

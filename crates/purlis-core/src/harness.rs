@@ -179,6 +179,23 @@ impl Harness {
         &self.declared().name
     }
 
+    /// **Whether a guard's report from this harness comes from outside the chat's reach**
+    /// (R-101, Q96, Q235; ADR 0124's harness matrix): a harness whose sandbox does not hold what
+    /// it starts ([`adapter::HarnessAdapter::sandbox_holds_what_it_starts`]), Claude Code, runs
+    /// its hooks outside the sandbox its chat's commands run in, so under that sandbox the chat
+    /// cannot stop or change what its guard reports. Codex and opencode run theirs inside the
+    /// process purlis wraps whole, so what they report is the chat's side of the channel, and is
+    /// tagged unverified. Which backends leave the hooks outside is the event log's to say.
+    ///
+    /// **A known limit** (Q235): the chat's own commands hold its hook token and reach the
+    /// host's socket, so a sandboxed chat can still send a deny line of its own and have a block
+    /// recorded about itself as verified. That is noise or a pause it gives itself; it cannot
+    /// suppress a block its guard reports or write one for another chat. T1-12 (the block loop)
+    /// and T1-30 count blocks with that in mind.
+    pub fn guard_reports_from_outside_the_chats_reach(self) -> bool {
+        !self.adapter().sandbox_holds_what_it_starts()
+    }
+
     /// Whether this harness tells a hook which process it is running under.
     ///
     /// Claude Code sets `$CLAUDE_PID` in every hook's environment, and that is the whole of

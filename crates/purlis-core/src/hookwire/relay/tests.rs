@@ -1416,6 +1416,7 @@ fn tool_call(chat: u32, id: &str) -> ToolCall {
         args: None,
         decision: super::super::Decision::None,
         rule: None,
+        arm: None,
         hook_ms: 1,
         agent: None,
         at_ms: 0,
