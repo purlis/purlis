@@ -321,8 +321,8 @@ export const ARunThatNeedsAValue: Story = {
   },
 };
 
-/** **What a project expects, on its row** (#6000): a consent of no chat's, its Notice's two answers
- *  on the row, with no Go to chat; → walks them. */
+/** **What a project expects, on its row** (#6000): a consent of no chat's, asked here alone
+ *  (R-205), its two answers on the row, with no Go to chat; → walks them. */
 export const AConsentOnItsRow: Story = {
   args: { ask: "CONSENT" },
   play: async ({ canvasElement }) => {
