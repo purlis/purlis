@@ -172,3 +172,31 @@ fn a_time_limit_and_the_one_above_it_are_the_same_limit_and_tokens_are_another()
         }
     ));
 }
+
+/// A sandbox block of a `Bash` call whose arguments hash to `aa`, reported plainly.
+fn sandbox_block() -> purlis_core::eventlog::stops::Stop {
+    use purlis_core::eventlog::stops::{Block, Source, Stop};
+    Stop::Block(Block {
+        tool: "Bash".to_owned(),
+        source: Source::Sandbox,
+        qualifier: None,
+        target: None,
+        args: Some("aa".to_owned()),
+    })
+}
+
+/// R-211 (Q253): the person's Allow on a sandbox ask starts the chat's block count again.
+#[test]
+fn an_allow_between_blocks_starts_the_block_count_again() {
+    let pauses = Pauses::default();
+    let block = sandbox_block();
+    assert_eq!(pauses.stopped(TASK, &block, None), None);
+    assert_eq!(pauses.stopped(TASK, &block, None), None);
+    pauses.allowed(TASK);
+    assert_eq!(pauses.stopped(TASK, &block, None), None);
+    assert_eq!(
+        pauses.stopped(TASK, &block, None),
+        None,
+        "2 blocks, an Allow, 2 blocks: no pause"
+    );
+}

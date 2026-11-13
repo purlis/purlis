@@ -478,6 +478,27 @@ fn alternating_blocked_calls_still_pause() {
         "A, B, A, B, A pauses at A's third"
     );
 
+    // Sandbox blocks whose calls come back (exit 0, as `curl … || true` does): a call a block
+    // was counted under is no success, so it clears no other aim.
+    let mut loops = Loops::default();
+    for (at, args) in ["aa", "bb", "aa", "bb"].into_iter().enumerate() {
+        let id = format!("toolu_{at}");
+        assert_eq!(
+            loops.stopped_under(CHAT, &block(Source::Sandbox, args), Some(&id)),
+            None
+        );
+        let came_back = ToolCall {
+            call: Some(id),
+            ..succeeded(args)
+        };
+        assert_eq!(loops.called(CHAT, &came_back, true), None);
+    }
+    assert_eq!(
+        loops.stopped_under(CHAT, &block(Source::Sandbox, "aa"), Some("toolu_4")),
+        Some(Why::Blocked { times: 3 }),
+        "blocked calls that come back still pause at A's third"
+    );
+
     // The same resets clear every aim: a different success, an Allow, Let it keep trying.
     let resets: [fn(&mut Loops); 4] = [
         |loops| {
