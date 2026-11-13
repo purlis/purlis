@@ -3,7 +3,7 @@
 
 import type { SkillGrant, SkillLevel, SkillWhose, StudioLevel, StudioSkill } from "./bindings";
 import { projectName } from "./projectName";
-import type { StudioScope } from "./skillStudio";
+import { whoseChats, type StudioScope } from "./skillStudio";
 
 /**
  * **The levels and grants the Skill studio's changes pick from** (SK-7, #2770). Which levels a
@@ -15,7 +15,8 @@ import type { StudioScope } from "./skillStudio";
 export const PROJECT: SkillLevel = { at: "project", local: false };
 
 /** The level a row of the studio is at, or `null` for one the studio's changes do not move. A
- *  workspace's row is the workspace the studio shows, and a persona's row the persona it shows
+ *  workspace's row is the workspace the studio shows (or the one the persona it shows was
+ *  dispatched into, #2935), and a persona's row the persona it shows
  *  (SK-32, #3003). A copy a persona names by its workspace (`workspaces/<ws>:<name>`) is that
  *  workspace's, wherever the studio is (SK-5c, #6041). */
 export function levelOf(
@@ -26,7 +27,7 @@ export function levelOf(
     case "project":
       return { at: "project", local: skill.local };
     case "workspace": {
-      const name = skill.copy_workspace ?? (scope.at === "workspace" ? scope.name : null);
+      const name = skill.copy_workspace ?? whoseChats(scope).workspace;
       return name === null ? null : { at: "workspace", name, local: skill.local };
     }
     case "persona":

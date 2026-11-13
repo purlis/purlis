@@ -1,8 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { act, screen } from "@testing-library/react";
-import { vi } from "vitest";
+import { act, screen, waitFor } from "@testing-library/react";
+import { expect, vi } from "vitest";
 import { UNDO_MS } from "./undo";
 import { forgetThisLaunch } from "./regions";
 import { GLOBAL } from "./windowprefs";
@@ -138,3 +138,26 @@ export const groupNames = (): string[] =>
   [...document.querySelectorAll<HTMLElement>('[role="rowheader"], h3')].map(
     (one) => one.textContent ?? "",
   );
+
+/**
+ * **Asks widened to where the ask waits** (ADR 0121, amended 2026-11-12, decision 4): Asks opens
+ * on Chat, and an ask of a chat that is not the focused one's is offered by the empty scope's way
+ * out, "N waiting in this workspace", which nothing presses by itself. For a test whose ask is
+ * not of the focused chat: it presses the way out, as the person does, until a scope lists it.
+ */
+export async function widenAsks(panel?: ParentNode): Promise<void> {
+  const asks = panel ?? (await screen.findByRole("tabpanel", { name: "Asks" }));
+  const wayOut = () =>
+    [...asks.querySelectorAll<HTMLButtonElement>(".inbox-scope-empty button")].find((one) =>
+      / waiting in this (workspace|project)$/.test(one.textContent ?? ""),
+    );
+  for (let presses = 0; presses < 2; presses += 1) {
+    // Until the asks are read: a row listed, or the way out offered.
+    await waitFor(() =>
+      expect(asks.querySelector('[role="row"].inbox-ask') ?? wayOut() ?? null).not.toBeNull(),
+    );
+    const out = wayOut();
+    if (out === undefined) return;
+    act(() => out.click());
+  }
+}
