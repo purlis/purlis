@@ -9475,3 +9475,11 @@ nav.piece-files-head {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* A chat's unverified blocks, collapsed into one line (R-105, T1-38): its detail lists the
+   latest of them, one fixed-words line each. */
+.chat-log-qualified {
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+}
