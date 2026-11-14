@@ -530,8 +530,15 @@ const MOST_LINKS: usize = 40;
 ///
 /// A run is of this path, so no link a chat could change later is on the way to what runs.
 pub(crate) fn held_outside(program: &Path, written: &[PathBuf]) -> Option<PathBuf> {
+    walked(program, written).map(|(real, _)| real)
+}
+
+/// [`held_outside`], with the folder each link on the way sits in, as it is with every link
+/// before it resolved, in the order they are met (#6321).
+fn walked(program: &Path, written: &[PathBuf]) -> Option<(PathBuf, Vec<PathBuf>)> {
     use std::path::Component;
     let mut done = PathBuf::new();
+    let mut folders = Vec::new();
     let mut rest: std::collections::VecDeque<std::ffi::OsString> = Default::default();
     let start = |path: &Path, done: &mut PathBuf, rest: &mut std::collections::VecDeque<_>| {
         let mut parts = Vec::new();
@@ -572,10 +579,11 @@ pub(crate) fn held_outside(program: &Path, written: &[PathBuf]) -> Option<PathBu
         if links > MOST_LINKS || inside_any(&done, written) {
             return None;
         }
+        folders.push(done.clone());
         let target = std::fs::read_link(&next).ok()?;
         start(&target, &mut done, &mut rest);
     }
-    (!inside_any(&done, written)).then_some(done)
+    (!inside_any(&done, written)).then_some((done, folders))
 }
 
 /// **Every folder a chat in the project at `root` may write, whatever the chat**: every folder
@@ -662,12 +670,19 @@ const GENERAL_PURPOSE: &[&str] = &[
     "zip",
 ];
 
+/// [`GENERAL_PURPOSE`]'s programs under other names: `my_openssl`, the bundled openssl MySQL's
+/// test package ships (#6329).
+const GENERAL_PURPOSE_RENAMED: &[&str] = &["my_openssl"];
+
 /// **Whether the program at `program` is a general-purpose one**, by its file name, whatever
 /// its folder and case (a `.exe` aside): one of [`GENERAL_PURPOSE`], or of the names no tool may
 /// take ([`refused_name`]).
 pub fn general_purpose(program: &Path) -> bool {
     let name = file_name_of(program);
-    !name.is_empty() && (GENERAL_PURPOSE.contains(&name.as_str()) || runs_what_it_is_told(&name))
+    !name.is_empty()
+        && (GENERAL_PURPOSE.contains(&name.as_str())
+            || GENERAL_PURPOSE_RENAMED.contains(&name.as_str())
+            || runs_what_it_is_told(&name))
 }
 
 /// **The sentence a person reads beside `tool`'s Allow** where its program is a general-purpose
@@ -1447,6 +1462,16 @@ pub(crate) fn for_chat_on(
     resolved
 }
 
+/// Every folder [`resolve_beside`] leaves out of the search for a program: the project, what
+/// the chat may write, the temporary folders and what any chat in the project may write.
+fn all_written(root: &Path, writable: &[PathBuf], temps: &[PathBuf]) -> Vec<PathBuf> {
+    let mut written: Vec<PathBuf> = vec![root.to_path_buf()];
+    written.extend(writable.iter().cloned());
+    written.extend(temps.iter().cloned());
+    written.extend(any_chat_writes(root));
+    written
+}
+
 /// [`resolve`], with `temps` as the temporary folders.
 pub(crate) fn resolve_beside(
     root: &Path,
@@ -1460,10 +1485,7 @@ pub(crate) fn resolve_beside(
     if tools.is_empty() {
         return None;
     }
-    let mut written: Vec<PathBuf> = vec![root.to_path_buf()];
-    written.extend(writable.iter().cloned());
-    written.extend(temps.iter().cloned());
-    written.extend(any_chat_writes(root));
+    let written = all_written(root, writable, temps);
     let mut ready = Vec::new();
     let mut left = Vec::new();
     let mut absent = Vec::new();
@@ -2117,6 +2139,72 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "mariadb-embedded",
     "mysql_client_test_embedded",
     "mariadb-client-test-embedded",
+    // MySQL Cluster's reporters (#6324), which MySQL's packages ship built with the cluster:
+    // `ndb_error_reporter` joins its config file's name into the `ndb_config` commands a shell
+    // runs, and its scp user into the `scp` command one runs; `ndb_size.pl` joins its
+    // `--hostname` and `--socket` into a `DBI:mysql:` address, as `mytop` does. Neither name
+    // starts with `mysql` or `mariadb`, so no row read them.
+    "ndb_error_reporter",
+    "ndb_size.pl",
+    // The service managers beside `service` (#6320): `systemctl link <path>` makes a unit of the
+    // file it is named, which `start` runs, and `import-environment` copies a value the run was
+    // handed into the manager's environment, for every unit after it (`launchctl` is refused
+    // for the same); dpkg's `start-stop-daemon` runs what its `--startas` or `--exec` names;
+    // runit's `sv` runs the `check` script of a folder it is named, and `runsv` its `run`;
+    // `supervisorctl`'s settings file names a plugin it imports; `openrc --service` runs the path
+    // it is given and `openrc-run` sources the script it is named; and `chkconfig` and
+    // `deb-systemd-helper` hand `systemctl` the unit they are named.
+    "systemctl",
+    "start-stop-daemon",
+    "sv",
+    "runsv",
+    "supervisorctl",
+    "openrc",
+    "openrc-run",
+    "chkconfig",
+    "deb-systemd-helper",
+    // and their kin the review of #6556 found: systemd's `systemd-cat`, `systemd-inhibit`,
+    // `systemd-socket-activate`, `systemd-notify --exec` and `systemd-dissect --with` run the
+    // command after them, and `busctl call` reaches the manager's `StartTransientUnit`, as
+    // `systemd-run` does; s6's `s6-supervise` runs a folder's `run`, and `s6-svscan` and runit's
+    // `runsvdir` start a supervisor on each folder in the one they are named.
+    "systemd-cat",
+    "systemd-inhibit",
+    "systemd-socket-activate",
+    "systemd-notify",
+    "systemd-dissect",
+    "busctl",
+    "s6-supervise",
+    "s6-svscan",
+    "runsvdir",
+    // Homebrew (#6325): `brew ruby -e` runs the Ruby it is handed, `brew sh --cmd` a shell
+    // command, and `brew <name>` the `brew-<name>` its search path finds.
+    "brew",
+    // and its kin (the review of #6556): `apt-get` and `apt` take any setting with `-o`, and
+    // `Dir::Bin::Methods::<scheme>` names the program a download runs; `composer exec` runs the
+    // command it is handed.
+    "apt-get",
+    "apt",
+    "composer",
+    // and the rest round 2 of that review found: `rpm -E '%(cmd)'` has a shell run `cmd`, in
+    // every rpm tool that shares its options; `dpkg --force-not-root --pre-invoke=` and
+    // `dpkg-buildpackage --hook-init=` run their hooks; `setpriv` runs what follows it, as s6's
+    // chain loaders do; and `coredumpctl debug --debugger=` runs the debugger it is named.
+    "rpm",
+    "rpmbuild",
+    "rpmspec",
+    "rpmquery",
+    "rpmverify",
+    "rpmkeys",
+    "rpmsign",
+    "rpmdb",
+    "dpkg",
+    "dpkg-buildpackage",
+    "setpriv",
+    "s6-setuidgid",
+    "s6-softlimit",
+    "s6-applyuidgid",
+    "coredumpctl",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused
@@ -2285,8 +2373,17 @@ pub fn for_run_grant(
         }));
     };
     // A link may lead to one: `vimdiff` to `vim`, `editor` to `vim.basic`, `rcmysql` to the
-    // server's init script, whose file name is the client's.
-    if not_for_a_run_grant(&file_name_of(&ready.program)) || an_init_script(&ready.program) {
+    // server's init script, whose file name is the client's, or through one (#6321).
+    // As `resolve_beside` found it, so the links judged are the ones on the way to what runs.
+    let found = found_in(
+        &name,
+        &search_dirs(),
+        &all_written(root, written, &temp_folders()),
+    )
+    .map(|(found, _)| found);
+    if not_for_a_run_grant(&file_name_of(&ready.program))
+        || an_init_script(found.as_deref().unwrap_or(&ready.program), &ready.program)
+    {
         return Err(runs_others(&name));
     }
     if !names(&ready, asked.program) {
@@ -2304,15 +2401,26 @@ pub fn for_run_grant(
     Ok(ready)
 }
 
-/// **Whether `program` is a service's init script** (#6187): a file in an `init.d` folder
-/// (`/etc/init.d`, `/etc/rc.d/init.d`), whatever its own name. A script there starts and stops
-/// the service it is named for, and is named as the service is, so the server's is `mysql`, the
-/// client's name: judged by its name, `rcmysql start` would reach the client's row.
-fn an_init_script(program: &Path) -> bool {
-    program
-        .parent()
-        .and_then(Path::file_name)
-        .is_some_and(|folder| folder.eq_ignore_ascii_case("init.d"))
+/// **Whether `found`, which runs as `real`, is a service's init script** (#6187): a file in an
+/// `init.d` folder (`/etc/init.d`, `/etc/rc.d/init.d`), whatever its own name, as found, as it
+/// runs, or as any link on the way sits (#6321: Upstart's `/etc/init.d/<job>` linked on out to
+/// `/lib/init/upstart-job`). A script there starts and stops the service it is named for, and
+/// is named as the service is, so the server's is `mysql`, the client's name: judged by its
+/// name, `rcmysql start` would reach the client's row.
+fn an_init_script(found: &Path, real: &Path) -> bool {
+    let in_init_d = |file: &Path| {
+        file.parent()
+            .and_then(Path::file_name)
+            .is_some_and(|folder| folder.eq_ignore_ascii_case("init.d"))
+    };
+    let links_in_init_d = walked(found, &[]).is_some_and(|(_, folders)| {
+        folders.iter().any(|folder| {
+            folder
+                .file_name()
+                .is_some_and(|name| name.eq_ignore_ascii_case("init.d"))
+        })
+    });
+    in_init_d(found) || in_init_d(real) || links_in_init_d
 }
 
 /// The longest variable name a person is asked to allow: it is drawn among the app's own facts.

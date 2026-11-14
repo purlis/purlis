@@ -133,6 +133,7 @@ its own plane:
 - a dispatched task's kept screen, `.charter/app/chat-screens/<ULID>.screen`, whose chat no
   dispatch record names, or last written 30 days or more before (`chatscreens::on_open`, #6214).
   It runs whatever the reopen record says, so a screen never outlives its record.
+  A killed write's temp file beside it goes too, once older than `chatscreens::LOCK_WAIT`.
 - a commit gate record, `.charter/commit-gate/<sid>`, and a first-edit nudge marker,
   `.charter/ws-edit-nudge/<sid>-<ws>`, last written 30 days or more before, unless its session
   is one the reopen record will bring back (for a nudge marker, any returning session its name
@@ -352,6 +353,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`app/arrived/<chat>.json` — what can run later and has appeared in a chat's folders](#apparrivedchatjson--what-can-run-later-and-has-appeared-in-a-chats-folders)
   - [`app/chat-records/closed.json` — every chat that closed, by its number](#appchat-recordsclosedjson--every-chat-that-closed-by-its-number)
   - [`app/chat-screens/<ULID>.screen` — a dispatched task's last screen](#appchat-screensulidscreen--a-dispatched-tasks-last-screen)
+  - [`app/chat-screens/.lock`](#appchat-screenslock)
   - [`app/hooks.sock`](#apphookssock)
   - [`app/slots.sock`](#appslotssock)
   - [Top-level markers, gates and ledgers](#top-level-markers-gates-and-ledgers)
@@ -7615,11 +7617,26 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   sandboxed chat's reading and writing under every harness. **Collected at the project's open**
   (`chatscreens::on_open`, from `retention::on_open`): a screen whose chat no dispatch record
   names goes, and so does one last written 30 days or more before, so a screen never outlives
-  its record.
+  its record. A write killed before its rename leaves
+  `.purlis-generated.<ULID>.screen.<pid>.<tag>.tmp`, a whole screen nothing reads. Turning
+  keeping off deletes it at once, holding the lock every write holds; the open's sweep, and an
+  off where the filesystem cannot `flock`, once it is older than `chatscreens::LOCK_WAIT`, so a
+  write under way is never deleted. Every write and delete holds
+  [`.lock`](#appchat-screenslock). Turning keeping off says how many screens could not be
+  deleted, and the Settings row counts them (#6451's review).
 - **Tier:** Clone state — a task's last screen; lost, its card's *Read it* says the screen was
   not kept, and nothing else is lost.
 - **Git:** gitignored (under `/.charter/`).
 - **Written by:** `crates/purlis-core/src/chatscreens.rs`.
+
+### `app/chat-screens/.lock`
+- **Format:** empty file, mode 0600, used with `flock(LOCK_EX)`, waited on at most
+  `chatscreens::LOCK_WAIT` (5 s).
+- **What:** every write and every delete of the screens beside it holds it, so a screen a
+  keep was writing as keeping was turned off is deleted with the rest instead of landing after
+  them (#6451's review). Best effort, as `rewrite`'s lock is: on a filesystem that cannot
+  `flock`, the store is written and deleted unlocked (#6508's review).
+- **Tier:** Clone state, rebuildable — deleted, it is made again by the next write.
 
 ### `app/hooks.sock`
 - **Format:** a unix socket, not a file. Each chat's hooks write one JSON line to it with the

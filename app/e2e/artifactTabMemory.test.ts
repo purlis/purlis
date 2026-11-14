@@ -7,6 +7,7 @@ import {
   artifactTabBudgetKb,
   artifactTabVerdict,
   tabMemoryLook,
+  unsettledSaid,
 } from "./artifactTabMemory.js";
 import type { WebAndHarnessMemory } from "./processes.js";
 
@@ -16,6 +17,7 @@ function web(over: Partial<WebAndHarnessMemory>): WebAndHarnessMemory {
   return {
     webContentKb: 0,
     webContentProcesses: 1,
+    webContentPids: [1],
     webContentFootprintKb: null,
     webContentFootprintPeakKb: null,
     footprintError: null,
@@ -97,5 +99,39 @@ describe("artifactTabVerdict", () => {
     const verdict = artifactTabVerdict(BEFORE, after, MACOS_KB);
     expect(verdict.within).toBe(false);
     expect(verdict.said).toContain("no web content process of its own");
+  });
+});
+
+describe("what a look that never settled says it saw", () => {
+  const seen = (processes: number, pids: number[], webMb: number) => ({
+    look: { appKb: 100 * MB, webContentKb: webMb * MB, webContentProcesses: processes },
+    pids,
+  });
+
+  it("names the look before the tab and each of the last looks, by pid and memory", () => {
+    const said = unsettledSaid(seen(2, [11, 12], 200), [
+      seen(2, [11, 13], 220),
+      { missed: "no footprint of the web content: footprint gave no reading" },
+      seen(2, [11, 13], 221),
+    ]);
+    expect(said).toBe(
+      "before the tab opened: 2 web content processes (pid 11, 12), 300 MB; " +
+        "its last 3 looks, a second apart: 2 web content processes (pid 11, 13), 320 MB; " +
+        "failed: no footprint of the web content: footprint gave no reading; " +
+        "2 web content processes (pid 11, 13), 321 MB",
+    );
+  });
+
+  it("names only the last five looks", () => {
+    const looks = [1, 2, 3, 4, 5, 6, 7].map((n) => seen(1, [n], n));
+    const said = unsettledSaid(null, looks);
+    expect(
+      said.startsWith("its last 5 looks, a second apart: 1 web content processes (pid 3)"),
+    ).toBe(true);
+    expect(said).not.toContain("pid 2)");
+  });
+
+  it("says no look was taken when none was", () => {
+    expect(unsettledSaid(null, [])).toBe("no look was taken");
   });
 });

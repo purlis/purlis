@@ -10,8 +10,39 @@ use super::*;
 use crate::forge::transport::{Call, NoAnswer, Reply, Transport};
 use crate::forge::{Forge, ForgeError};
 
-/// A project with workspace `alpha` holding a clone for each `(name, origin)`.
+/// A project with workspace `alpha` holding a clone for each `(name, origin)`, each with an
+/// origin recorded in the project's inventory at that origin, as `purlis discover` records it.
 fn project(clones: &[(&str, &str)]) -> tempfile::TempDir {
+    let dir = unrecorded(clones);
+    let records: Vec<Value> = clones
+        .iter()
+        .filter(|(_, origin)| !origin.is_empty())
+        .map(|(name, origin)| {
+            let (host, path) = origin
+                .trim_start_matches("https://")
+                .trim_start_matches("git@")
+                .trim_end_matches(".git")
+                .split_once(['/', ':'])
+                .unwrap();
+            json!({
+                "name": name,
+                "path_with_namespace": path,
+                "ssh_url": format!("git@{host}:{path}.git"),
+                "forge": if host.contains("gitlab") { "gitlab" } else { "github" },
+            })
+        })
+        .collect();
+    std::fs::create_dir_all(dir.path().join("inventory")).unwrap();
+    std::fs::write(
+        dir.path().join("inventory/repos.json"),
+        json!({ "group": "acme", "count": records.len(), "repos": records }).to_string(),
+    )
+    .unwrap();
+    dir
+}
+
+/// [`project`] with no inventory: clones purlis has no record of.
+fn unrecorded(clones: &[(&str, &str)]) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("charter.toml"), "").unwrap();
     let ws = dir.path().join("workspaces/alpha");
@@ -94,6 +125,7 @@ fn the_only_repo_s_open_milestones_are_read_off_its_own_origin() {
             "repo": "api",
             "path": "acme/api",
             "state": "open",
+            "cut": false,
             "milestones": [{
                 "number": 7, "title": "M7", "description": "Ship it.", "due_on": null,
                 "state": "open", "open_issues": 1, "closed_issues": 3,
@@ -172,6 +204,89 @@ fn a_repo_the_workspace_does_not_hold_is_refused_and_the_forge_never_asked() {
             "{args}"
         );
     }
+    assert_eq!(asked(&transport), Vec::<String>::new());
+}
+
+#[test]
+fn a_repo_with_more_milestones_than_a_few_pages_says_its_list_was_cut() {
+    let dir = project(&[("api", "https://github.com/acme/api.git")]);
+    let full: Vec<Value> = (0..100)
+        .map(|n| {
+            json!({
+                "number": n, "title": "M", "description": null, "due_on": null,
+                "state": "open", "open_issues": 0, "closed_issues": 0,
+                "html_url": "https://github.com/acme/api/milestone/1",
+                "updated_at": "2026-11-10T09:00:00Z"
+            })
+        })
+        .collect();
+    // Every page is full, as if GitHub had a thousand more.
+    let transport = answering(Ok(Reply::of(
+        0,
+        Value::Array(full).to_string(),
+        String::new(),
+    )));
+    let data = ask(dir.path(), json!({}), &transport).unwrap();
+    assert_eq!(data["cut"], true);
+    assert_eq!(data["milestones"].as_array().map(Vec::len), Some(300));
+    assert_eq!(
+        asked(&transport).len(),
+        3,
+        "three pages at most, never a thousand"
+    );
+}
+
+#[test]
+fn a_clone_whose_origin_was_changed_is_refused_without_naming_either_repo() {
+    let dir = project(&[("api", "https://github.com/acme/api.git")]);
+    let clone = dir.path().join("workspaces/alpha/repos/api");
+    for moved in [
+        "https://github.com/someone/else.git",
+        "https://github.example.com/acme/api.git",
+    ] {
+        assert!(crate::testgit::run(&clone, &["remote", "set-url", "origin", moved]).ok());
+        let transport = answering(Ok(listed()));
+        let refused = ask(dir.path(), json!({}), &transport).unwrap_err();
+        assert_eq!(
+            refused,
+            Unanswered {
+                kind: ErrorKind::Refused,
+                message: "The origin of api is not the repo this project records for it, so \
+                          purlis does not read its milestones. Set its origin back, or record \
+                          the repo again with `purlis discover`."
+                    .into()
+            },
+            "{moved}"
+        );
+        assert_eq!(asked(&transport), Vec::<String>::new());
+    }
+    // The case GitHub ignores is the same repo.
+    assert!(
+        crate::testgit::run(
+            &clone,
+            &[
+                "remote",
+                "set-url",
+                "origin",
+                "https://github.com/Acme/API.git"
+            ]
+        )
+        .ok()
+    );
+    assert!(ask(dir.path(), json!({}), &answering(Ok(listed()))).is_ok());
+}
+
+#[test]
+fn a_clone_the_project_records_no_repo_for_is_refused() {
+    let dir = unrecorded(&[("api", "https://github.com/acme/api.git")]);
+    let transport = answering(Ok(listed()));
+    let refused = ask(dir.path(), json!({}), &transport).unwrap_err();
+    assert_eq!(refused.kind, ErrorKind::Refused);
+    assert_eq!(
+        refused.message,
+        "This project records no repo for api, so purlis does not read its milestones. Record \
+         it with `purlis discover`, or clone it from the window."
+    );
     assert_eq!(asked(&transport), Vec::<String>::new());
 }
 

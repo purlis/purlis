@@ -23,7 +23,7 @@
  *   drawn by no one: a zero is not a badge.
  * - **A place, never a look**: `className` gives it a margin, a position or an order.
  */
-import type { ComponentPropsWithRef, ReactNode } from "react";
+import { useState, type ComponentPropsWithRef, type ReactNode } from "react";
 import { drawsWords } from "../tooltip/Tooltip";
 
 /** The badge's variants, in the order the manifest names them. */
@@ -89,6 +89,84 @@ export function Count({
           <span className="sr-only">{said}</span>
         </>
       )}
+    </span>
+  );
+}
+
+/** The most a round count draws as a figure; above it, `9+`. */
+const MOST_DRAWN = 9;
+
+/** **What a round count draws for `count`** (ADR 0121, amended 2026-11-12, decision 7): one
+ *  character, 1 to 9, then `9+`, so the circle never changes size. What is said stays the real
+ *  number. */
+export const capped = (count: number): string =>
+  count > MOST_DRAWN ? `${MOST_DRAWN}+` : String(count);
+
+/** Which way the drawn value last changed, and whether that was an even or odd change: the two
+ *  keyframe names alternate, so each change starts the slide again without drawing the element
+ *  again (a rail tab must not remount). Nothing until it first changes. */
+type Slid = { drawn: string; count: number; slide?: "a" | "b"; dir?: "up" | "down" };
+
+function useSlid(count: number): Slid {
+  const drawn = capped(count);
+  const [slid, setSlid] = useState<Slid>({ drawn, count });
+  // Adjusted while rendering, as React has a state follow a prop: no effect, no second paint.
+  if (slid.count !== count) {
+    const moved = slid.drawn !== drawn;
+    const next: Slid = moved
+      ? {
+          drawn,
+          count,
+          slide: slid.slide === "a" ? "b" : "a",
+          dir: count > slid.count ? "up" : "down",
+        }
+      : { ...slid, count };
+    setSlid(next);
+    return next;
+  }
+  return slid;
+}
+
+/**
+ * **A round count** (ADR 0121, amended 2026-11-12, decisions 6 and 7; #6342): every count of what
+ * waits on the person (the ✋'s, a project tab's, an Asks chip's) as one small circle in the ✋'s
+ * colour, holding one character ({@link capped}). Nothing is drawn for a zero.
+ *
+ * - `at="mark"`: 16px on a mark's corner (the ✋, a rail tab), ringed 2px in the ground under it
+ *   (`--count-ground`, the window's frame unless its host says another). `at="inline"`: 14px,
+ *   after words (a chip).
+ * - **Its character is drawn by the stylesheet**, never a word of its own, so a host whose name
+ *   is its own (a button) keeps it. **What is said is the real number** (120, never "9+"): `said`
+ *   is read in its place where given; without it the count is hidden and its host says the
+ *   number (the ✋'s description, a tab's).
+ * - **A changed drawn value slides once** (`--motion-duration-leave`); the same drawn value (9+
+ *   to 9+) does not, and under reduced motion it just changes.
+ */
+export function RoundCount({
+  count,
+  at,
+  said,
+  ...rest
+}: Omit<Span, "aria-hidden"> & {
+  count: number;
+  at: "mark" | "inline";
+  /** What a screen reader hears for it: the real number, or a sentence that holds it. */
+  said?: string;
+}) {
+  const { drawn, slide, dir } = useSlid(count);
+  if (count <= 0) return null;
+  return (
+    <span
+      {...rest}
+      data-scope="count"
+      data-part="round"
+      data-at={at}
+      data-drawn={drawn}
+      data-slide={slide}
+      data-slide-dir={dir}
+      aria-hidden={said === undefined ? "true" : undefined}
+    >
+      {said !== undefined && <span className="sr-only">{said}</span>}
     </span>
   );
 }

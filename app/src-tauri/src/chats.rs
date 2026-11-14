@@ -836,7 +836,7 @@ pub struct Chats {
     project: PathBuf,
     /// Whatever runs the sessions (FD-3). A trait object, so nothing here can reach past
     /// [`SessionHost`] to a pty: a chat layer that did would not compile against another host.
-    sessions: Box<dyn SessionHost>,
+    sessions: Arc<dyn SessionHost>,
     /// Told as each chat starts, before its program does.
     starting: Mutex<Option<Starting>>,
     /// Told as each chat put back is reattached in the session host, before anything else is
@@ -1643,7 +1643,7 @@ impl Chats {
     pub fn on_host(record_it: Recorder, host: Box<dyn SessionHost>, project: PathBuf) -> Self {
         Self {
             project,
-            sessions: host,
+            sessions: Arc::from(host),
             starting: Mutex::new(None),
             reattached: Mutex::new(None),
             beginning: Mutex::new(None),
@@ -2379,12 +2379,6 @@ impl Chats {
     /// never reused — but it is one entry per failed start for the life of the app.
     pub fn when_one_does_not_start(&self, tell: Box<dyn Fn(u32) + Send + Sync>) {
         *lock(&self.never_started) = Some(tell);
-    }
-
-    /// Refuses every chat start while `switch` is thrown (OV-1), at the sessions every start
-    /// reaches.
-    pub fn stopped_by(&mut self, switch: std::sync::Arc<crate::killswitch::KillSwitch>) {
-        self.sessions.stopped_by(switch);
     }
 
     /// The sessions underneath, for everything that is about a terminal and not about a chat.
@@ -8885,11 +8879,15 @@ impl Chats {
         lock(&self.open).len()
     }
 
-    /// **Keeps the screens of the task chats that had finished, as the app quits** (#6305): the
-    /// next launch leaves each out of its put back (`finished::left_out`), so none closes
-    /// through [`Self::close_as`], where a screen is kept. Before [`Self::end_all`], while their
-    /// sessions still show them.
-    pub fn keep_finished_screens(&self) {
+    /// **Starts keeping the screens of the task chats that had finished, as the app quits**
+    /// (#6305): the next launch leaves each out of its put back (`finished::left_out`), so none
+    /// closes through [`Self::close_as`], where a screen is kept. Before [`Self::end_all`], while
+    /// their sessions still show them.
+    ///
+    /// **It returns at once**: the quit starts every project's before it waits for any, and
+    /// then waits once, until the one deadline it gives them all
+    /// ([`crate::chatcard::ScreensComing::wait_until`]).
+    pub fn start_keeping_finished_screens(&self) -> crate::chatcard::ScreensComing {
         let finished: Vec<(u32, String)> = self
             .record()
             .chats
@@ -8902,7 +8900,7 @@ impl Chats {
                 Some((number, chat.identity.id.clone()?))
             })
             .collect();
-        crate::chatcard::keep_screens_at_quit(&self.project, self.sessions(), &finished);
+        crate::chatcard::start_keeping_screens_at_quit(&self.project, &self.sessions, &finished)
     }
 
     /// Ends every chat, and does not return until their programs are gone.

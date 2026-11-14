@@ -3459,6 +3459,20 @@ fn commands() -> Builder<tauri::Wry> {
             "A_QUESTION_WAITS_SECS",
             purlis_core::dispatchtalk::A_QUESTION_WAITS_SECS,
         )
+        // What the Keep task screens row says of the store (#6306, #6451's review): its caps
+        // and how long a screen is kept, from the core's own numbers.
+        .constant(
+            "TASK_SCREENS_MOST_KEPT",
+            purlis_core::chatscreens::MOST_KEPT as u64,
+        )
+        .constant(
+            "TASK_SCREENS_MOST_KEPT_MIB",
+            purlis_core::chatscreens::MOST_KEPT_BYTES / (1024 * 1024),
+        )
+        .constant(
+            "TASK_SCREENS_KEPT_FOR_DAYS",
+            purlis_core::retention::KEEP_FOR.as_secs() / (24 * 60 * 60),
+        )
         // The one rule for a character a reader does not see (SK-51, #3202): the window marks
         // what it draws itself from the core's own tables, never from a list of its own.
         .constant(unicoderule::UNICODE_RULE, unicoderule::rule())
