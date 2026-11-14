@@ -9,7 +9,9 @@ import {
   type TabMemoryLook,
   artifactTabBudgetKb,
   artifactTabVerdict,
+  pageProcesses,
   tabMemoryLook,
+  tabSteady,
 } from "../artifactTabMemory.js";
 import { built } from "../harness.js";
 import { appProcesses, logLine, sample, webAndHarnessMemory } from "../processes.js";
@@ -39,7 +41,10 @@ pin = [
   { id = "e2e000000m08", folder = "${FOLDER}", name = "${NAME}", icon = "chart", order = 1 },
 ]
 `;
-/** Two looks this close together, a second apart, are a settled reading. */
+/**
+ * Two looks of the same processes, a second apart, whose app and page agree this closely are a
+ * settled reading (`tabSteady`).
+ */
 const SETTLED_KB = 2 * 1024;
 
 /** What the app answered a command with, insisting it answered at all. */
@@ -122,8 +127,9 @@ function samplesSaid(samples: Sample[]): string {
 }
 
 /**
- * A look once two in a row, a second apart, agree within `SETTLED_KB` and `ready` holds of it:
- * `ready` answers `null` when it does, or why not.
+ * A look once two in a row, a second apart, are steady by `tabSteady` and `ready` holds of the
+ * second: `ready` answers `null` when it does, or why not. `base` is the look before the tab
+ * opened, which `tabSteady` reads the page's processes against, or `null` for that look itself.
  *
  * A look that fails is one more second to wait, not the verdict: `footprint` can miss a web
  * content process that `ps` still lists, one starting or exiting (#6232). Two good looks in a
@@ -136,6 +142,7 @@ function samplesSaid(samples: Sample[]): string {
  */
 async function settledLook(
   pid: number,
+  base: TabMemoryLook | null,
   ready: (seen: TabMemoryLook) => string | null,
   what: string,
 ): Promise<TabMemoryLook> {
@@ -167,7 +174,7 @@ async function settledLook(
         }
         looking.samples.push({ ms: Date.now() - started, seen: now });
         const before = looking.last;
-        const steady = before !== null && Math.abs(total(now) - total(before)) <= SETTLED_KB;
+        const steady = before !== null && tabSteady(before, now, base, SETTLED_KB);
         looking.last = now;
         if (steady) {
           looking.steadied = true;
@@ -182,7 +189,7 @@ async function settledLook(
     const missed = looking.missed === null ? "" : `; a look failed: ${String(looking.missed)}`;
     const why = looking.steadied
       ? `its memory settled, but ${looking.unready ?? "it was never ready"}`
-      : `its memory never settled: no two looks a second apart agreed within ${SETTLED_KB / 1024} MB`;
+      : `its memory never settled: no two looks a second apart saw the same web content processes with the app${base === null ? "" : " and the page"} within ${SETTLED_KB / 1024} MB`;
     throw new Error(`${what}: ${why}${missed}; its looks:\n${samplesSaid(looking.samples)}`);
   }
   if (looking.gone || looking.settled === null) throw new Error(`the app (pid ${pid}) is gone`);
@@ -221,7 +228,7 @@ describe("an open artifact tab's memory (ADR 0086 M8)", function () {
     expect(await artifactWebviews()).toEqual([]);
     const pid = theApp();
 
-    const before = await settledLook(pid, () => null, "before the tab opened");
+    const before = await settledLook(pid, null, () => null, "before the tab opened");
     await icon.click();
     await browser.waitUntil(async () => (await artifactWebviews()).length === 1, {
       timeout: 20_000,
@@ -229,8 +236,9 @@ describe("an open artifact tab's memory (ADR 0086 M8)", function () {
     });
     const after = await settledLook(
       pid,
+      before,
       (seen) =>
-        seen.webContentProcesses > before.webContentProcesses
+        pageProcesses(before, seen).length > 0
           ? null
           : `its page started no web content process of its own: ${said(seen)} against ${said(before)} before the tab opened`,
       "with the tab open",
