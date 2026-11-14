@@ -461,7 +461,7 @@ impl WorkItems for GitHub {
         caller: &Caller,
         path: &str,
         all: bool,
-    ) -> Result<Vec<super::backend::MilestoneProgress>, ForgeError> {
+    ) -> Result<super::backend::Milestones, ForgeError> {
         GitHub::milestone_progress(self, caller, path, all)
     }
 

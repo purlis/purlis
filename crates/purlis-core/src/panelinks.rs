@@ -25,7 +25,7 @@ use std::path::PathBuf;
 mod asks;
 mod file;
 pub use asks::{Asks, Identity};
-pub use file::{FileAt, Home, HomeIs, LocalFile, ReadFrom, home_of};
+pub use file::{FileAt, Home, HomeIs, LocalFile, NOT_OFFERED, Offers, ReadFrom, home_of};
 mod chat;
 pub use chat::{ChatAt, ChatNumber, Goes};
 
