@@ -10,6 +10,7 @@ import type { OlderSandbox, PlaneId } from "./bindings";
 import { ChatsHere, fixedChats, nothingKnown } from "./chatState";
 import {
   CLUSTER_POOL_ADDED,
+  TLS_POOL_ADDED,
   POLICY_CHANGED,
   PolicyRequiresNotice,
   SandboxChangedNotice,
@@ -173,6 +174,48 @@ describe("the Notice after a cluster pool was added", () => {
     await waitFor(() => expect(asked.length).toBe(1));
 
     await act(() => emit(CLUSTER_POOL_ADDED, null));
+
+    await waitFor(() => expect(asked.length).toBe(2));
+  });
+});
+
+/**
+ * **A pool over Docker's TLS API added while chats ran** (#6472): a chat started before it reads
+ * the pool's certificate and key until it restarts. The Notice says so in the person's terms, and
+ * the window asks again as the pool is added.
+ */
+describe("the Notice after a pool over Docker's TLS API was added", () => {
+  const TLS =
+    "A pool over Docker's TLS API was added, so purlis now keeps chats from reading its certificate and key.";
+  const CLUSTER =
+    "A cluster pool was added, so purlis now keeps chats from changing the programs it runs.";
+
+  it("leads with the TLS pool, and says the chat keeps the old sandbox until it restarts", () => {
+    const notice = theNotice({ chats: [{ session: 4, change: "c1", pool: TLS }] });
+    expect(notice).toHaveTextContent(
+      `${TLS} 1 chat keeps the old sandbox until it restarts. A restart keeps the conversation`,
+    );
+    expect(within(notice).getByRole("button", { name: "Restart it" })).toBeInTheDocument();
+  });
+
+  it("says the project's change where the chats are behind different pools", () => {
+    const notice = theNotice({
+      chats: [
+        { session: 4, change: "c1", pool: CLUSTER },
+        { session: 5, change: "c2", pool: TLS },
+      ],
+    });
+    expect(notice).toHaveTextContent("This project's sandbox changed.");
+    expect(notice).not.toHaveTextContent(TLS);
+    expect(notice).not.toHaveTextContent(CLUSTER);
+  });
+
+  it("is asked again when a pool over Docker's TLS API is added", async () => {
+    const asked = answering([null]);
+    render(<Window onRestart={vi.fn()} />);
+    await waitFor(() => expect(asked.length).toBe(1));
+
+    await act(() => emit(TLS_POOL_ADDED, null));
 
     await waitFor(() => expect(asked.length).toBe(2));
   });

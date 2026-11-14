@@ -2042,6 +2042,40 @@ pub fn cluster_programs(machine: &Machine) -> Vec<PathBuf> {
     .unwrap_or_default()
 }
 
+/// **The files every pool over Docker's TLS API on `machine` names, as a chat's sandbox holds
+/// them** (#6472): each by its name and by its real path ([`crate::runners::tls_files`]), read
+/// from the pools' record in `machine`'s config home. Empty where it has none.
+///
+/// A chat's sandbox is compiled as it starts, so one started before such a pool was added still
+/// reads its certificate and key: the window compares this with what each running chat holds,
+/// and asks the person to restart the chats left behind, as for a cluster pool (#1750).
+///
+/// **purlis's own copies of a Docker context's files are left out** (#6268): every chat's
+/// sandbox holds their whole folder ([`crate::dockercontext::kept_tls_dir`]) whatever the pools
+/// name, so a pool that names them leaves no chat behind.
+pub fn tls_pool_files(machine: &Machine) -> Vec<PathBuf> {
+    let Some(config_root) = crate::machine::rooted(
+        machine.env.get(crate::machine::HOME_VAR).map(Into::into),
+        machine.env.get("XDG_CONFIG_HOME").map(Into::into),
+        machine.home.clone(),
+    ) else {
+        return Vec::new();
+    };
+    let copies = crate::dockercontext::kept_tls_dir(&config_root);
+    let copies = [real(&copies), copies];
+    let mut held: Vec<PathBuf> = Vec::new();
+    for file in crate::runners::tls_files(&config_root) {
+        let resolved = real(&file);
+        for path in [file, resolved] {
+            let copied = copies.iter().any(|folder| path.starts_with(folder));
+            if !copied && !held.contains(&path) {
+                held.push(path);
+            }
+        }
+    }
+    held
+}
+
 /// **The programs every cluster pool's kubectl runs, held for no chat to write** (#3292): each
 /// as named, every link on the way and its real file, each with the folder it is in, and the
 /// package its real file belongs to ([`package_root`]) with all that is in it, inside the

@@ -12805,9 +12805,11 @@ export type OnOlderSandbox = {
 	 */
 	policy?: string | null,
 	/**
-	 *  **Where a cluster pool added since the chat started is the only cause** (#1750): the chat's
-	 *  sandbox does not yet keep it from changing the programs that pool runs, which it holds
-	 *  once it restarts. The sentence the Notice says it in ([`POOL_ADDED`]). None otherwise.
+	 *  **Where a pool added since the chat started is the only cause** (#1750, #6472): the
+	 *  chat's sandbox does not yet keep it from changing the programs a cluster pool runs, or
+	 *  from reading the certificate and key of a pool over Docker's TLS API, which it holds once
+	 *  it restarts. The sentence the Notice says it in ([`POOL_ADDED`], [`TLS_POOL_ADDED`],
+	 *  [`POOLS_ADDED`]). None otherwise.
 	 */
 	pool?: string | null,
 };

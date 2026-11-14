@@ -10240,7 +10240,10 @@ fn a_chat_serving_on_its_port_is_not_behind_once_its_door_listens() {
         },
         ..Confines::default()
     };
-    assert_eq!(Settled::of(&started, &[]), Settled::of(&now, &[]));
+    assert_eq!(
+        Settled::of(&started, &PoolsHeld::none()),
+        Settled::of(&now, &PoolsHeld::none())
+    );
     // A grant taken back still is.
     let taken = Confines {
         widened: Widened {
@@ -10249,7 +10252,10 @@ fn a_chat_serving_on_its_port_is_not_behind_once_its_door_listens() {
         },
         ..Confines::default()
     };
-    assert_ne!(Settled::of(&started, &[]), Settled::of(&taken, &[]));
+    assert_ne!(
+        Settled::of(&started, &PoolsHeld::none()),
+        Settled::of(&taken, &PoolsHeld::none())
+    );
 }
 
 /// #2019: a chat serving on a port is owed a restart once the grant to serve there is taken
@@ -12871,4 +12877,128 @@ fn a_start_in_the_place_of_a_held_chat_carries_the_mode_that_differed() {
     assert!(held.unattended(), "never rebuilt as attended");
     assert_eq!(held.mode_differs(), Some(DEFAULT_THEN_ACCEPT_EDITS));
     chats.end_all();
+}
+
+/// The runners file of the config home at `config`, written with `pools` as its pools.
+#[cfg(unix)]
+fn the_pools_become(config: &std::path::Path, pools: serde_json::Value) {
+    let folder = purlis_same_user::PrivateDirectory::open(&purlis_core::machine::dir(config))
+        .expect("the config folder");
+    let file = serde_json::json!({ "version": 1, "runners": [], "pools": pools });
+    folder
+        .replace_file(
+            purlis_core::machine::RUNNERS_FILE,
+            file.to_string().as_bytes(),
+        )
+        .expect("the pools kept");
+}
+
+/// A pool over Docker's TLS API named `name`, whose CA, certificate and key are `files`.
+#[cfg(unix)]
+fn a_tls_pool(name: &str, files: [&std::path::Path; 3]) -> serde_json::Value {
+    let [ca, cert, key] = files.map(|file| file.display().to_string());
+    serde_json::json!({
+        "name": name, "kind": "remote-docker", "route": format!("tcp://{name}:2376"),
+        "tls": { "ca": ca, "cert": cert, "key": key },
+        "pin": {
+            "ca": format!("sha256:{}", "01".repeat(32)),
+            "engine": "ABCD:EFGH:IJKL",
+        },
+        "image": format!("ghcr.io/purlis/purlis-runner@sha256:{}", "01".repeat(32)),
+    })
+}
+
+/// #6472: **a chat started before a pool over Docker's TLS API was added is told to restart**,
+/// and the Notice says that pool is why. Its sandbox, compiled as it started, does not hold the
+/// pool's certificate and key from it, by their names or by the files they lead to; once it
+/// restarts it does, and nothing is behind.
+#[cfg(unix)]
+#[test]
+fn a_chat_started_before_a_tls_pool_was_added_is_told_to_restart_for_it() {
+    let config = tempfile::tempdir().expect("a config home");
+    // The key as named is a link: the file it leads to is held too.
+    let docker = tempfile::tempdir().expect("the person's Docker folder");
+    let [ca, cert, real_key] = ["ca.pem", "cert.pem", "real-key.pem"].map(|name| {
+        let file = docker.path().join(name);
+        std::fs::write(&file, "pem").expect("a TLS file");
+        file
+    });
+    let key = docker.path().join("key.pem");
+    std::os::unix::fs::symlink(&real_key, &key).expect("the key's link");
+    let machine = purlis_core::sandbox::Machine {
+        env: purlis_core::secrets::Env::of(&[(
+            "XDG_CONFIG_HOME",
+            &config.path().display().to_string(),
+        )]),
+        ..a_machine()
+    };
+    let plane = a_sandboxed_plane();
+    let chats = restartable_chats_on(plane.path(), Pretend::default(), machine.clone());
+    let session = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    let older_on = |chats: &Chats| chats.on_older_sandbox_on(&machine, &|_| true);
+    assert_eq!(older_on(&chats), None, "no pool yet");
+
+    // The pool is added while the chat runs.
+    the_pools_become(
+        config.path(),
+        serde_json::json!([a_tls_pool("build-box", [&ca, &cert, &key])]),
+    );
+    let behind = older_on(&chats).expect("told");
+    assert_eq!(
+        behind.sessions(),
+        [session],
+        "its sandbox reads the pool's files"
+    );
+    assert_eq!(
+        behind.chats[0].pool.as_deref(),
+        Some(TLS_POOL_ADDED),
+        "the TLS pool is why"
+    );
+
+    chats.ask_restart(session).expect("asked");
+    let started = chats.restart(session, SIZE).expect("restarts");
+    chats.close(session).expect("the old run ends");
+    assert_eq!(
+        older_on(&chats),
+        None,
+        "restarted, it holds the pool's files"
+    );
+    chats.close(started).expect("ends");
+}
+
+/// #6472: **which pool the Notice names is which pool moved what a chat holds**, and none where
+/// anything else moved too: a cluster pool's programs, a TLS pool's files, or both.
+#[test]
+fn the_pool_named_as_why_a_chat_is_behind_is_the_kind_of_pool_that_moved() {
+    let started = Settled::of(
+        &purlis_core::sandbox::Confines::default(),
+        &PoolsHeld::none(),
+    );
+    let with = |cluster: &[&str], tls: &[&str]| Settled {
+        cluster: cluster.iter().map(std::path::PathBuf::from).collect(),
+        tls: tls.iter().map(std::path::PathBuf::from).collect(),
+        ..started.clone()
+    };
+    assert_eq!(started.pool_added(&started), None, "nothing moved");
+    assert_eq!(
+        started.pool_added(&with(&["/usr/bin/kubectl"], &[])),
+        Some(POOL_ADDED)
+    );
+    assert_eq!(
+        started.pool_added(&with(&[], &["/home/op/.docker/key.pem"])),
+        Some(TLS_POOL_ADDED)
+    );
+    assert_eq!(
+        started.pool_added(&with(&["/usr/bin/kubectl"], &["/home/op/.docker/key.pem"])),
+        Some(POOLS_ADDED)
+    );
+    let mut wider = with(&[], &["/home/op/.docker/key.pem"]);
+    wider.hosts.push("example.com".to_owned());
+    assert_eq!(
+        started.pool_added(&wider),
+        None,
+        "the project's settings moved too"
+    );
 }

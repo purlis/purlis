@@ -1202,9 +1202,11 @@ pub struct OnOlderSandbox {
     /// None where the project's settings moved it.
     #[specta(optional)]
     pub policy: Option<String>,
-    /// **Where a cluster pool added since the chat started is the only cause** (#1750): the chat's
-    /// sandbox does not yet keep it from changing the programs that pool runs, which it holds
-    /// once it restarts. The sentence the Notice says it in ([`POOL_ADDED`]). None otherwise.
+    /// **Where a pool added since the chat started is the only cause** (#1750, #6472): the
+    /// chat's sandbox does not yet keep it from changing the programs a cluster pool runs, or
+    /// from reading the certificate and key of a pool over Docker's TLS API, which it holds once
+    /// it restarts. The sentence the Notice says it in ([`POOL_ADDED`], [`TLS_POOL_ADDED`],
+    /// [`POOLS_ADDED`]). None otherwise.
     #[specta(optional)]
     pub pool: Option<String>,
 }
@@ -1213,6 +1215,17 @@ pub struct OnOlderSandbox {
 /// its only cause (#1750): what changed, in the person's terms, and why it matters.
 pub const POOL_ADDED: &str = "A cluster pool was added, so purlis now keeps chats from changing \
                               the programs it runs.";
+
+/// What the Notice says where a pool over Docker's TLS API added while chats ran is its only
+/// cause (#6472): the files a chat could reach that engine with, in the person's terms.
+pub const TLS_POOL_ADDED: &str = "A pool over Docker's TLS API was added, so purlis now keeps \
+                                  chats from reading its certificate and key.";
+
+/// What the Notice says where both a cluster pool and a pool over Docker's TLS API were added
+/// while chats ran, and nothing else moved (#6472).
+pub const POOLS_ADDED: &str = "Pools were added, so purlis now keeps chats from changing the \
+                               programs a cluster pool runs and from reading the certificate and \
+                               key of a pool over Docker's TLS API.";
 
 /// **What a project's settings decide of a chat's sandbox** (#1428, D-1428-10): the hosts it
 /// may reach, what the presets widen, and the folders every chat may write. The Notice after a
@@ -1243,6 +1256,38 @@ struct Settled {
     /// (#3292, #1750), of those the pools have now: a chat started before a pool was added
     /// holds none of its programs until it restarts.
     cluster: Vec<std::path::PathBuf>,
+    /// The files a pool over Docker's TLS API names that the chat's sandbox holds from it
+    /// (#6267, #6472), by name and by real path, of those the pools name now: a chat started
+    /// before such a pool was added reads them until it restarts.
+    tls: Vec<std::path::PathBuf>,
+}
+
+/// **What every pool on a machine has a chat's sandbox hold** (#1750, #6472), read once for
+/// every chat an ask compares.
+struct PoolsHeld {
+    /// The programs each cluster pool runs ([`purlis_core::sandbox::cluster_programs`]).
+    cluster: Vec<std::path::PathBuf>,
+    /// The files each pool over Docker's TLS API names
+    /// ([`purlis_core::sandbox::tls_pool_files`]).
+    tls: Vec<std::path::PathBuf>,
+}
+
+impl PoolsHeld {
+    fn on(machine: &purlis_core::sandbox::Machine) -> Self {
+        Self {
+            cluster: purlis_core::sandbox::cluster_programs(machine),
+            tls: purlis_core::sandbox::tls_pool_files(machine),
+        }
+    }
+
+    /// No pool at all.
+    #[cfg(test)]
+    fn none() -> Self {
+        Self {
+            cluster: Vec::new(),
+            tls: Vec::new(),
+        }
+    }
 }
 
 /// **What of a running chat its sandbox is compiled from now** ([`Chats::on_older_sandbox`]):
@@ -1265,15 +1310,26 @@ struct StartKey {
 /// or no answer, where it could not be compiled.
 #[derive(Debug, Clone)]
 enum CompiledNow {
-    Sandboxed(Settled),
+    Sandboxed(Box<Settled>),
     Unconfined,
     Refused,
 }
 
 impl Settled {
-    /// What `confines` settles to, with `cluster` the programs every cluster pool runs now
-    /// ([`purlis_core::sandbox::cluster_programs`]).
-    fn of(confines: &purlis_core::sandbox::Confines, cluster: &[std::path::PathBuf]) -> Self {
+    /// What `confines` settles to, with `pools` what every pool has held now: the programs each
+    /// cluster pool runs and the files each pool over Docker's TLS API names.
+    fn of(confines: &purlis_core::sandbox::Confines, pools: &PoolsHeld) -> Self {
+        let held = |of: &[std::path::PathBuf]| -> Vec<std::path::PathBuf> {
+            let mut list: Vec<std::path::PathBuf> = confines
+                .denied
+                .iter()
+                .filter(|denial| of.contains(&denial.path))
+                .map(|denial| denial.path.clone())
+                .collect();
+            list.sort();
+            list.dedup();
+            list
+        };
         let sorted = |mut list: Vec<std::path::PathBuf>| {
             list.sort();
             list.dedup();
@@ -1324,27 +1380,29 @@ impl Settled {
                 listens.dedup();
                 listens
             },
-            cluster: sorted(
-                confines
-                    .denied
-                    .iter()
-                    .filter(|denial| cluster.contains(&denial.path))
-                    .map(|denial| denial.path.clone())
-                    .collect(),
-            ),
+            cluster: held(&pools.cluster),
+            tls: held(&pools.tls),
         }
     }
 
-    /// Whether `self` and `other` differ only in the cluster pools' programs they hold.
-    fn differs_only_in_cluster(&self, other: &Self) -> bool {
-        self.cluster != other.cluster
-            && Self {
-                cluster: Vec::new(),
-                ..self.clone()
-            } == Self {
-                cluster: Vec::new(),
-                ..other.clone()
-            }
+    /// **The sentence for a chat on `self` whose next start would be `now`, where pools added
+    /// are the only cause** (#1750, #6472): which kind of pool moved what it holds. None where
+    /// anything else moved too, or nothing did.
+    fn pool_added(&self, now: &Self) -> Option<&'static str> {
+        let without_pools = |settled: &Self| Self {
+            cluster: Vec::new(),
+            tls: Vec::new(),
+            ..settled.clone()
+        };
+        if without_pools(self) != without_pools(now) {
+            return None;
+        }
+        match (self.cluster != now.cluster, self.tls != now.tls) {
+            (true, false) => Some(POOL_ADDED),
+            (false, true) => Some(TLS_POOL_ADDED),
+            (true, true) => Some(POOLS_ADDED),
+            (false, false) => None,
+        }
     }
 
     /// What stands for `settled`, or for a start with no sandbox: a SHA-256 over one canonical
@@ -1393,6 +1451,10 @@ impl Settled {
                 // Likewise the cluster pools' programs held (#1750).
                 if !settled.cluster.is_empty() {
                     list("cluster programs", &mut paths(&settled.cluster).into_iter());
+                }
+                // Likewise the TLS pools' files held (#6472).
+                if !settled.tls.is_empty() {
+                    list("tls pool files", &mut paths(&settled.tls).into_iter());
                 }
             }
         }
@@ -4274,8 +4336,8 @@ impl Chats {
         let restarting = lock(&self.restarting).clone();
         let locks = purlis_core::sandbox::policy::Locks::of(&self.project);
         let required = locks.forbids_opt_out();
-        // The programs the cluster pools run now, read once for every chat (#1750).
-        let cluster = purlis_core::sandbox::cluster_programs(machine);
+        // What the pools hold now, read once for every chat (#1750, #6472).
+        let pools = PoolsHeld::on(machine);
         let running: Vec<_> = lock(&self.open)
             .iter()
             .filter(|(session, one)| {
@@ -4290,7 +4352,7 @@ impl Chats {
                     one.harness?,
                     one.confines
                         .as_ref()
-                        .map(|confines| Settled::of(confines, &cluster)),
+                        .map(|confines| Settled::of(confines, &pools)),
                     one.started_with.clone(),
                 ))
             })
@@ -4340,7 +4402,7 @@ impl Chats {
                     &key.grants,
                 ) {
                     Ok(Some(Decided::Sandboxed(applied))) => {
-                        CompiledNow::Sandboxed(Settled::of(applied.confines(), &cluster))
+                        CompiledNow::Sandboxed(Box::new(Settled::of(applied.confines(), &pools)))
                     }
                     Ok(Some(Decided::Unsandboxed(_) | Decided::Floorless(_)) | None) => {
                         CompiledNow::Unconfined
@@ -4356,7 +4418,7 @@ impl Chats {
                 now
             });
             let now = match now {
-                CompiledNow::Sandboxed(settled) => Some(settled),
+                CompiledNow::Sandboxed(settled) => Some(*settled),
                 CompiledNow::Unconfined => None,
                 // A chat whose sandbox could not be compiled now is not counted.
                 CompiledNow::Refused => continue,
@@ -4366,11 +4428,9 @@ impl Chats {
                 // sandbox: no setting of the project's could leave it without one now.
                 let policy = (required && started.is_none() && now.is_some())
                     .then(|| locks.led_by("The sandbox is now required by this machine's policy"));
-                // A cluster pool added since it started is the cause where nothing else moved.
+                // A pool added since it started is the cause where nothing else moved.
                 let pool = match (&started, &now) {
-                    (Some(started), Some(now)) if started.differs_only_in_cluster(now) => {
-                        Some(POOL_ADDED.to_owned())
-                    }
+                    (Some(started), Some(now)) => started.pool_added(now).map(str::to_owned),
                     _ => None,
                 };
                 chats.push(OnOlderSandbox {

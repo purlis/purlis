@@ -9124,3 +9124,70 @@ fn a_chat_neither_reads_nor_writes_a_tls_pools_ca_cert_or_key_file() {
         }
     }
 }
+
+/// #6472: **what the window compares of the TLS pools is every file a chat's sandbox holds
+/// for them**, by name and by real path, as [`a_chat_neither_reads_nor_writes_a_tls_pools_ca_cert_or_key_file`]
+/// holds them; but for purlis's own copies of a Docker context's files, whose whole folder
+/// every chat's sandbox holds whatever the pools name, so a pool naming them leaves no chat
+/// behind.
+#[cfg(unix)]
+#[test]
+fn the_tls_pool_files_a_restart_ask_compares_are_named_and_real_but_never_purlis_own_copies() {
+    let config = tempfile::tempdir().expect("a config home");
+    let docker = config.path().join("docker-files");
+    std::fs::create_dir_all(&docker).expect("a folder for the files");
+    let linked = config.path().join("dot-docker");
+    std::os::unix::fs::symlink(&docker, &linked).expect("a link to it");
+    let copies = crate::dockercontext::kept_tls_dir(config.path()).join("ab".repeat(32));
+    let tls = |ca: &std::path::Path, cert: &std::path::Path, key: &std::path::Path| serde_json::json!({ "ca": ca, "cert": cert, "key": key });
+    let pool = |name: &str, tls: serde_json::Value| {
+        serde_json::json!({
+            "name": name, "kind": "remote-docker",
+            "image": format!("ghcr.io/purlis/purlis-runner@sha256:{}", "0".repeat(64)),
+            "route": format!("tcp://{name}:2376"),
+            "tls": tls,
+            "pin": { "ca": format!("sha256:{}", "ab".repeat(32)), "engine": "ABCD:EFGH:IJKL" },
+        })
+    };
+    let (ca, cert, key) = (
+        linked.join("ca.pem"),
+        linked.join("cert.pem"),
+        linked.join("key.pem"),
+    );
+    let folder =
+        purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config.path())).unwrap();
+    let file = serde_json::json!({ "version": 1, "runners": [], "pools": [
+        pool("box", tls(&ca, &cert, &key)),
+        pool("context-box", tls(
+            &copies.join("ca.pem"),
+            &copies.join("cert.pem"),
+            &copies.join("key.pem"),
+        )),
+    ]});
+    folder
+        .replace_file(crate::machine::RUNNERS_FILE, file.to_string().as_bytes())
+        .unwrap();
+    let machine = Machine {
+        env: crate::secrets::Env::of(&[("XDG_CONFIG_HOME", &config.path().display().to_string())]),
+        home: Some(std::path::PathBuf::from("/nonexistent-home")),
+        os: Os::Linux,
+    };
+    let compared = super::tls_pool_files(&machine);
+    let mut wanted = Vec::new();
+    for named in [&ca, &cert, &key] {
+        wanted.push(named.clone());
+        wanted.push(super::real(named));
+    }
+    wanted.dedup();
+    assert_eq!(
+        compared, wanted,
+        "each file by name and real path, no copy of purlis's"
+    );
+    assert!(
+        Denied::of(tempfile::tempdir().unwrap().path(), &machine)
+            .paths
+            .iter()
+            .any(|it| it.path == crate::dockercontext::kept_tls_dir(config.path())),
+        "the copies' folder is held from every chat whatever the pools name"
+    );
+}
