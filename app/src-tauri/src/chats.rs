@@ -532,6 +532,11 @@ struct Running {
     /// attributes its run began with: what a block its hook line reports is worth toward the
     /// block loop (R-209).
     reports_verified: bool,
+    /// **Whether it is attended, as purlis sets it** (T1-17, T1-44): set at its start from how
+    /// it was made and the words that set its mode, moved by its hook reports
+    /// ([`Chats::heard_attendance`]). Read here only for the mode it reported that purlis
+    /// didn't set (R-243); its attendance's readers move to it later (#6409).
+    attendance: purlis_core::attendance::Fact,
 }
 
 /// **Whether the plane's skills reach a chat starting now** (#3445, #3466): a chat
@@ -5598,6 +5603,9 @@ impl Chats {
         // A task whose harness says it may not run in auto starts asking, and its pane says why
         // (#6315).
         let mut hooks = hooks;
+        // The words that set its mode, as its attendance fact reads them (T1-44): the
+        // profile's own, then those purlis adds for a task's level. Never a line the chat sends.
+        let mut sets_its_mode = command.clone();
         if let Some(harness) = harness.filter(|_| !on_the_runner) {
             let start = purlis_core::dispatchmode::task_start(
                 harness,
@@ -5606,6 +5614,7 @@ impl Chats {
                 chat.graded,
                 &purlis_core::harness_plugin::Env::of(&env),
             );
+            sets_its_mode.extend(start.words.iter().cloned());
             hooks.extend(start.words);
             late.extend(start.said);
         }
@@ -6043,6 +6052,27 @@ impl Chats {
                 under.identity.run = run;
             }
         }
+        // Its attendance fact (T1-17, T1-44): a start in the place of a chat still held here
+        // carries the fact it had forward, never rebuilding it as attended (R-318). Keeping it
+        // across the app's restarts is #6409's.
+        let begun = if on_the_runner {
+            purlis_core::attendance::Begun::Runner
+        } else if chat.from.as_ref().is_some_and(|from| {
+            !from.by_person && matches!(from.mode, purlis_core::reopen::Mode::Task)
+        }) {
+            purlis_core::attendance::Begun::Task
+        } else {
+            purlis_core::attendance::Begun::Person
+        };
+        let attendance = match open.get(&session) {
+            Some(was) => purlis_core::attendance::Fact::resumed(
+                was.attendance,
+                begun,
+                harness,
+                &sets_its_mode,
+            ),
+            None => purlis_core::attendance::Fact::at_start(begun, harness, &sets_its_mode),
+        };
         open.insert(
             session,
             Running {
@@ -6071,6 +6101,7 @@ impl Chats {
                 reports_verified: purlis_core::eventlog::stops::reported_from_outside_its_reach(
                     &attributes,
                 ),
+                attendance,
             },
         );
         drop(open);
@@ -6907,6 +6938,19 @@ impl Chats {
     /// being ended by the app, and every chat is kept for the next launch.
     pub fn ending(&self) -> bool {
         self.ending.load(Ordering::SeqCst)
+    }
+
+    /// **A hook report of chat `report.chat`, after the board took it, heard by the chat's
+    /// attendance fact** (T1-44): the mode purlis didn't set that it reported, once one flipped
+    /// the fact (R-243). `None` for a chat not open here, and on every harness but Claude Code.
+    pub fn heard_attendance(
+        &self,
+        report: &purlis_core::hookwire::Report,
+    ) -> Option<purlis_core::attendance::ModeDiffers> {
+        let mut open = lock(&self.open);
+        let running = open.get_mut(&report.chat)?;
+        running.attendance.heard(report);
+        running.attendance.mode_differs()
     }
 
     /// Chat `session`'s own record, as the app keeps it while it is open: what a handoff from it

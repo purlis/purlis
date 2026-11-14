@@ -3671,6 +3671,9 @@ impl Planes {
                     // from (#3787): the same report, its own harness's alone, and never a line
                     // the chat sends.
                     crate::handoff::heard_mode(&held, report);
+                    // And by its attendance fact: a mode purlis didn't set is a standing fault
+                    // its pane says (R-243, T1-44).
+                    crate::stuck::mode_heard(&held, report);
                     // The model its own harness says the chat runs on, for a commit's
                     // `Assisted-by` (#1021): judged against the conversation the board holds
                     // for the chat now, so a nested harness's report names none.

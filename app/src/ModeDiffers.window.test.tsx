@@ -94,8 +94,7 @@ function core(first: ChatNoticed[] = []) {
           workspaces: [{ name: "alpha", path: ALPHA, vision: "", todos: [], chats: [CHAT] }],
         };
       if (cmd === "plane_doctor") return { rows: [], app_rows: [], full: false, path: "" };
-      if (cmd === "asks_waiting")
-        return { plane: PLANE, asks: [PERMISSION], with_asking_chat: [] };
+      if (cmd === "asks_waiting") return { plane: PLANE, asks: [PERMISSION], with_asking_chat: [] };
       if (cmd === "alerts_everywhere") return [{ plane: PLANE, alerts: [], stopped: null }];
       if (cmd === "inbox_updates" || cmd === "note_inbox_updates") return [];
       if (cmd === "chat_states" || cmd === "running_sessions") return [];
@@ -121,8 +120,7 @@ async function opened() {
   await waitFor(() => expect(handCount()).toHaveAttribute("data-count", "1"));
 }
 
-const tell = (noticed: ChatNoticed) =>
-  act(() => emit(CHAT_EVENTS, aBatchOf("noticed", noticed)));
+const tell = (noticed: ChatNoticed) => act(() => emit(CHAT_EVENTS, aBatchOf("noticed", noticed)));
 
 /** Long enough for anything the window would read again on a telling to have come back. */
 const settle = () =>
@@ -209,7 +207,7 @@ describe("mode differs is a Notice and never an ask", () => {
   });
 
   // The other standing faults, each named for its phase (#6391).
-  it.todo("\"purlis decides\" forbidden is a Notice and never an ask (phase 3, R-324, #6391)");
+  it.todo('"purlis decides" forbidden is a Notice and never an ask (phase 3, R-324, #6391)');
   it.todo("a broken policy is a Notice and never an ask (phase 4, R-243, #6391)");
   it.todo("a ruleset a policy requires is a Notice and never an ask (phase 4, R-149, #6391)");
 });
