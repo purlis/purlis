@@ -10,6 +10,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, within } from "storybook/test";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type {
+  PoolSetupDockerContext,
   PoolSetupMachine,
   PoolSetupPodmanConnection,
   PoolSetupShown,
@@ -40,6 +41,7 @@ const machine = (more: Partial<PoolSetupMachine> = {}): PoolSetupMachine => ({
   ca: null,
   trusted_ca: null,
   ca_now: null,
+  context: null,
   ...more,
 });
 
@@ -60,6 +62,7 @@ const connect = (more: Partial<PoolSetupStep>): PoolSetupStep => ({
   parts: [],
   undo: null,
   admin: null,
+  prefill: null,
   ...more,
 });
 
@@ -134,18 +137,25 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** The core faked: the SSH hosts and Podman connections it reads, and a press held. */
+/** The core faked: the SSH hosts, Podman connections and Docker contexts it reads, and a press
+ * held. */
 const faked =
-  (hosts: readonly string[], podmans: readonly PoolSetupPodmanConnection[] = []) =>
+  (
+    hosts: readonly string[],
+    podmans: readonly PoolSetupPodmanConnection[] = [],
+    contexts: readonly PoolSetupDockerContext[] = [],
+  ) =>
   () => {
     mockIPC((cmd) =>
       cmd === "pool_setup_ssh_hosts"
         ? hosts
         : cmd === "pool_setup_podman_connections"
           ? podmans
-          : cmd === "pool_setup_connect" || cmd === "pool_setup_trust"
-            ? new Promise(() => undefined)
-            : null,
+          : cmd === "pool_setup_docker_contexts"
+            ? contexts
+            : cmd === "pool_setup_connect" || cmd === "pool_setup_trust"
+              ? new Promise(() => undefined)
+              : null,
     );
   };
 
@@ -193,6 +203,39 @@ export const PickFromYourPodmanConnections: Story = {
     await expect(podman).toBeChecked();
     await expect(canvas.getByText("From your Podman connections")).toBeVisible();
     podman.focus();
+    await userEvent.keyboard("{ArrowUp}");
+    await expect(canvas.getByRole("radio", { name: /gpu/ })).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
+/** The person's Docker contexts beside their SSH hosts (#6268): one reached over SSH, kept, and
+ * one on this machine's own socket, offered as this machine's Docker. */
+export const PickFromYourDockerContexts: Story = {
+  beforeEach: faked(
+    ["gpu"],
+    [],
+    [
+      {
+        name: "build-box",
+        current: true,
+        over: "ssh",
+        route: "ssh://sam@build-box",
+        refused: null,
+      },
+      { name: "desktop-linux", current: false, over: "here", route: null, refused: null },
+    ],
+  ),
+  args: {
+    step: connect({ ...PICK, machine: machine({ context: "build-box" }) }),
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    const context = await canvas.findByRole("radio", { name: /build-box/ });
+    await expect(context).toBeChecked();
+    await expect(canvas.getByText("From your Docker contexts")).toBeVisible();
+    await expect(canvas.getByText(/This machine's own Docker/)).toBeVisible();
+    context.focus();
     await userEvent.keyboard("{ArrowUp}");
     await expect(canvas.getByRole("radio", { name: /gpu/ })).toHaveFocus();
     await expectFocusInSight();
@@ -489,6 +532,48 @@ export const RouteTlsApi: Story = {
   },
 };
 
+/** A Docker context reached over TLS (#6268), kept: its files are the context's own, so no
+ * field asks for them. */
+export const TlsFromADockerContext: Story = {
+  beforeEach: faked(
+    [],
+    [],
+    [
+      {
+        name: "lab",
+        current: false,
+        over: "tls",
+        route: "tcp://lab.example.internal:2376",
+        refused: null,
+      },
+    ],
+  ),
+  args: {
+    step: connect({
+      ...TLS_NAMING,
+      state: "current",
+      cause: null,
+      findings: ["purlis hasn't contacted lab.example.internal yet."],
+      next: action(
+        "connect-machine",
+        "Connect to lab.example.internal",
+        "Reads the CA file, and checks that the machine's certificate is signed by it and accepts yours. It keeps nothing, and nothing on the machine changes.",
+      ),
+      machine: tlsMachine({ context: "lab" }),
+    }),
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    const lab = await canvas.findByRole("radio", { name: /^lab/ });
+    await expect(lab).toBeChecked();
+    await expect(canvas.queryByRole("textbox", { name: "Authority (CA) file" })).toBeNull();
+    lab.focus();
+    await userEvent.keyboard("{ArrowDown}");
+    await expect(canvas.getByRole("radio", { name: /Another machine/ })).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
 /** The key kept in a vault entry: its vault and its key's name, never its value. */
 export const TlsKeyInAVault: Story = {
   beforeEach: faked([]),
@@ -672,6 +757,50 @@ export const TrustedOverTls: Story = {
     const go = canvas.getByRole("button", { name: "Continue" });
     go.focus();
     await expect(go).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
+// --- From a Docker context (#6268) ----------------------------------------------------------------
+
+const MOVED = connect({
+  state: "attention",
+  cause: "context-moved",
+  findings: [
+    "Your context build-box now points somewhere else than this pool. Connect again to follow it, or keep the pool as it is.",
+  ],
+  next: action(
+    "connect-again",
+    "Connect again",
+    "Starts setting up a pool on the machine build-box names now. This pool keeps running where it does until you remove it.",
+  ),
+  other: action(
+    "keep-pool-as-it-is",
+    "Keep the pool as it is",
+    "The pool stays on the machine it runs on now, and purlis stops comparing it with the context.",
+  ),
+  prefill: { route: "ssh://sam@new-box", context: "build-box" },
+  machine: machine({
+    route: "ssh://sam@build-box/var/run/docker.sock",
+    context: "build-box",
+    trusted: { algorithm: "ssh-ed25519", fingerprint: FINGERPRINT },
+    engine: "ABCD:EFGH",
+  }),
+});
+
+/** The pool's Docker context now names another machine (ADR 0123 §7): the pool runs where it
+ * did, every check of it holds, and the person connects again or keeps it as it is. */
+export const ContextMoved: Story = {
+  beforeEach: faked([]),
+  args: { step: MOVED, shown: shown(MOVED, "build-box") },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText("Your context points somewhere else")).toBeVisible();
+    const again = canvas.getByRole("button", { name: "Connect again" });
+    again.focus();
+    await expect(again).toHaveFocus();
+    await userEvent.tab();
+    await expect(canvas.getByRole("button", { name: "Keep the pool as it is" })).toHaveFocus();
     await expectFocusInSight();
   },
 };

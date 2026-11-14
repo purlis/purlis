@@ -34,6 +34,7 @@ const READY: PoolSetupStep = {
   parts: [],
   admin: null,
   undo: null,
+  prefill: null,
   see: null,
   other: null,
   machine: null,

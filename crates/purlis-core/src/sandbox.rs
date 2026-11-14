@@ -2538,6 +2538,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
                 home.join(crate::machine::CLUSTER_KUBECONFIGS_DIR),
                 Access::ReadWrite,
             );
+            // purlis's own copies of the TLS files read from Docker contexts (#6268): a client
+            // key among them, denied as the kubeconfigs are, before any pool names them.
+            deny(
+                Class::HumanPowers,
+                home.join(crate::machine::DOCKER_CONTEXT_TLS_DIR),
+                Access::ReadWrite,
+            );
             // What the human's forge sign-in fetched: the native transport's ETag store
             // holds raw answers, private repos' among them, so a chat neither reads nor
             // writes it (ADR 0070 §3 and §4).
