@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794613639951,
+  "lastUpdate": 1794616904303,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -48804,6 +48804,48 @@ window.BENCHMARK_DATA = {
             "value": 102.3597445,
             "unit": "ms",
             "extra": "median of 5 runs: 101.126, 102.328, 102.360, 102.858, 103.003 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "0adf82528c7bd48b939e43174c91fc98084101ce",
+          "message": "Pane links: file-link follow-ups (#6355, #6356, #6357) (#6546)\n\n* Pane links: the outside-file ask names the chat it came from (#6355)\n\nUnder the ask's title, \"From chat #N · <title>\", as the prototype's S7\ndraws it. A shell's pane is no chat and names none: LayoutPanes passes\nthe chat's title to its SessionPane, none for a shell.\n\n(cherry picked from commit ae76a08f82)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B4XZMNRMMY7G0JHN1DQ369\nPurlis-Persona: steward\n\n* Pane links: a project-root file opens at its line (#6356)\n\nThe project's root has no branch's file tab, so a jump there opens the\nfile's own tab, which dropped the line. That tab now takes the pending\njump's line and column for a root file, as the Files tab does, and\nshows the source so the cursor lands in the text.\n\n(cherry picked from commit 38d42c77c0)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B4XZMNRMMY7G0JHN1DQ369\nPurlis-Persona: steward\n\n* Pane links: a file git ignores in a branch is no link, as the editor refuses it (#6357)\n\nThe light editor opens only a branch's offered files (what git tracks,\nor doesn't ignore), because an ignored .env or a secret materialised\ninto the branch is nothing a review shows. A link to such a file opened\nonly to be refused. Now the file kind asks whether the branch offers\nthe file: one it doesn't is no link, and its hover (and a Cmd-click)\nsays \"git ignores this file, and the editor opens only a branch's own\nfiles\".\n\nThe app asks its bounded reader for the branch's offered list, the\nlist the editor's open checks against, once per branch per command, so\nLinks in this pane..., which resolves a whole screen, reads it once.\nWhere the reader can't say, the link stays and the editor decides.\n\n(cherry picked from commit 139d3652ff)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B4XZMNRMMY7G0JHN1DQ369\nPurlis-Persona: steward\n\n* Pane links: the app's tests move to pane_links/tests.rs, as a move alone\n\n(cherry picked from commit e995d48552)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B4XZMNRMMY7G0JHN1DQ369\nPurlis-Persona: steward\n\n* Pane links: the hover of a file no branch offers names no cause, with purlis as its subject\n\n(cherry picked from commit 3990a78761)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B4XZMNRMMY7G0JHN1DQ369\nPurlis-Persona: steward\n\n* Pane links: a jump again to a root file's same line and column lands there again (#6356)\n\n(cherry picked from commit 1c4cb55b08)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B4XZMNRMMY7G0JHN1DQ369\nPurlis-Persona: steward\n\n* Pane links: the ignored-file test reads a piece as well as a clone (#6357)\n\n(cherry picked from commit dbca833993)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B4XZMNRMMY7G0JHN1DQ369\nPurlis-Persona: steward\n\n* Changelog: the outside-file ask names its chat, an unoffered file is no link, a root file opens at its line\n\n(cherry picked from commit 6854af33a1)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B4XZMNRMMY7G0JHN1DQ369\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-13T23:10:54Z",
+          "tree_id": "87e9de9f4bde693d89feebf5228caf89af10b623",
+          "url": "https://github.com/purlis/purlis/commit/0adf82528c7bd48b939e43174c91fc98084101ce"
+        },
+        "date": 1794616897143,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3458285,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.332, 0.343, 0.346, 0.349, 0.353 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.322388500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.092, 16.221, 16.322, 16.761, 16.792 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.9023245,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.536, 100.843, 100.902, 101.026, 101.311 ms"
           }
         ]
       }
