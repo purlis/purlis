@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794628102476,
+  "lastUpdate": 1794634905370,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -49056,6 +49056,48 @@ window.BENCHMARK_DATA = {
             "value": 102.0445195,
             "unit": "ms",
             "extra": "median of 5 runs: 101.280, 101.400, 102.045, 102.067, 103.317 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "745598ef4d0c86fd77c70469d45bcd5083762dcc",
+          "message": "Docker on another machine from an existing Docker context (#6268) (#6552)\n\n* plane format: a remote-docker pool keeps the Docker context its route was read from, for doctor alone (#6268)\n\nADR 0123 §2 and §7: runners.json's remote-docker row and pool-setup.json's\nconnect may hold dockerContext, the name of the context the route (and its\nTLS files) were read from. Never followed: every run keeps DOCKER_CONTEXT\ncleared. Only Connect reads it, to say when the context now names another\nroute. Before the code that writes it (ADR 0069).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B6AAJCG4SYE33YFWNNCAG0\nPurlis-Persona: steward\n\n* Docker on another machine from a Docker context: the core (#6268)\n\n- dockercontext: docker context ls and inspect, read into the SSH or TLS\n  route each endpoint names, with the paths of its own TLS material; a\n  unix:// or npipe:// endpoint is this machine (the local kind); plain\n  tcp://, TLS without a CA or with SkipTLSVerify, and TLS without a client\n  certificate are refused in ADR 0123 §2's words. Each run of docker for it\n  reads the person's own settings, with DOCKER_CONTEXT and DOCKER_HOST\n  cleared and plugin hooks off.\n- Connect: choose_docker_context keeps the route, its files and the\n  context's name (dockerContext); a trust of the same route keeps the name,\n  a machine typed or other TLS files forget it. A local-socket context\n  chooses the local kind.\n- A pool made from it keeps the name beside its route (runners.json), no\n  part of its definition and never followed. Keep the pool as it is forgets\n  it (runners::forget_docker_context).\n- Doctor (ADR 0123 §7): a pool whose context now names another usable route\n  reads attention on Connect, cause context-moved, in the record's words,\n  with Connect again (prefilled with the context as it is now) and Keep the\n  pool as it is.\n- The local kind's Engine::Elsewhere carries a prefill for Set up Docker on\n  another machine: DOCKER_HOST where it is ssh:// or tcp://, else the\n  current context's route.\n- purlis pool add's Asked reads a context (reading_docker_context), and its\n  command names --context.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B6AAJCG4SYE33YFWNNCAG0\nPurlis-Persona: steward\n\n* Docker on another machine from a Docker context: Connect, Where, purlis pool add and CI (#6268)\n\n- Connect offers the person's Docker contexts (pool_setup_docker_contexts):\n  one reached over SSH among the SSH picks, one over TLS on Docker's API\n  over TLS (its files the context's own, so no field asks for them), and one\n  on this machine's socket as this machine's Docker. A pick sends the name\n  alone; the core reads the contexts again and keeps it\n  (pool_setup_docker_context).\n- A pool whose context now names another route: the card Your context\n  points somewhere else, with Connect again (a new setup on that context as\n  it is now; the pool stays) and Keep the pool as it is\n  (pool_setup_keep_pool_as_it_is). The pool's checks show as holding.\n- Where, with Docker here pointing elsewhere, offers Set up Docker on\n  another machine beside its words, opening Connect with DOCKER_HOST or the\n  current context.\n- purlis pool add --context NAME (one of --on or --context).\n- Stories: Pick From Your Docker Contexts, Tls From A Docker Context,\n  Context Moved. Bindings regenerated.\n- ci: the remote parity job makes contexts with docker context create\n  pointing at the sshd and dind's TLS port, reads each into its route and\n  reaches the engine by it; a context changed afterwards changes nothing a\n  pool runs on, and doctor says it moved.\n- ADR 0123 amended (2026-11-14) with the choices; changelog fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B6AAJCG4SYE33YFWNNCAG0\nPurlis-Persona: steward\n\n* A Docker context listed with an error is not inspected, so it hides no other (#6268)\n\ndocker context inspect refuses every name it is given when one context's\nmetadata is broken; ls lists that one with its Error, and it is left out\nof the inspect.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B6AAJCG4SYE33YFWNNCAG0\nPurlis-Persona: steward\n\n* Connect's three Docker context stories, pictured by #6552's stories run (#6268)\n\nPulled with tools/story-baselines-pull.mjs 6552 from run 43508535486 and\nreviewed: Pick From Your Docker Contexts, Tls From A Docker Context and\nContext Moved, in every pictured cell, Chromium and WebKit. No existing\npicture changed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B6AAJCG4SYE33YFWNNCAG0\nPurlis-Persona: steward\n\n* ci: the parity gate names dockercontext and the context route's test, as its step greps (#6268)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B6AAJCG4SYE33YFWNNCAG0\nPurlis-Persona: steward\n\n* ci: the context test keeps the person's Docker settings beside the fixture's TLS files, not under /tmp (#6268)\n\npurlis refuses a CA kept in a folder chats write, /tmp among them, as it\nshould: the test's own settings folder made the context's TLS copies land\nthere. It now lives beside the TLS route's files, where #6267's test keeps\nits own.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B6AAJCG4SYE33YFWNNCAG0\nPurlis-Persona: steward\n\n* test: a TLS pool from a Docker context still runs after Docker rewrites or removes the context's files (#6268)\n\nRed on purpose: Connect still points the pool at Docker's own copies in its\ncontext store. The CI tests (remote parity) rewrite them as docker context\nupdate does, and remove the context; the unit tests cover keep_tls, the\ncopy into purlis's own store that the next commit wires in.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7BK4GW34ZM0F45RXXXVPW5A\nPurlis-Persona: steward\n\n* A TLS pool from a Docker context runs on purlis's own copies of its files (#6268)\n\nReview finding 1 (AC 2): the pool named the files in Docker's context store,\nwhich docker context update rewrites and rm or a switch to ssh deletes.\nConnect's trust step, in the window and in purlis pool add --context, now\ncopies the context's ca/cert/key once into docker-context-tls/ in the\nconfig home (a folder per set, named by what it holds, 0700, key 0600),\nthen checks and trusts the copies; the pool names them. Chats neither\nread nor write the folder. The 2026-11-14 amendment says so and why; §4\nstill holds for TLS files the person names.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7BK4GW34ZM0F45RXXXVPW5A\nPurlis-Persona: steward\n\n* A Docker context's name is held to Docker's own rule, + included (#6268)\n\nReview finding 2: a_name refused +, which Docker allows\n(^[a-zA-Z0-9][a-zA-Z0-9_.+-]+$), so such a context was left out of Connect.\nIt now matches Docker's rule, two characters at least, and its doc says so.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7BK4GW34ZM0F45RXXXVPW5A\nPurlis-Persona: steward\n\n* An SSH context route with its default port or user spelled out has not moved (#6268)\n\nReview finding 3: same_route reported a move when one side spelled out\nport 22 or a user the other left to ssh's default. No port is now 22, and\nusers are compared only where both routes name one.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7BK4GW34ZM0F45RXXXVPW5A\nPurlis-Persona: steward\n\n* fix(merge): main's Pool setup tests name Facts' elsewhere, which #6268 added (#6268)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7C283HSV898VMYB8QBS0RS3\nPurlis-Persona: steward\n\n* Docker Is Elsewhere's pictures with main's Get help, drawn by #6552's stories run (#6268)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7C283HSV898VMYB8QBS0RS3\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-14T04:55:21Z",
+          "tree_id": "e795bd0f0702b37d3185afe8c0d9ad316347e4a0",
+          "url": "https://github.com/purlis/purlis/commit/745598ef4d0c86fd77c70469d45bcd5083762dcc"
+        },
+        "date": 1794634898752,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6789475,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.660, 0.673, 0.679, 0.694, 0.702 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.586145000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.284, 16.474, 16.586, 16.680, 16.739 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.266385,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.240, 101.884, 102.266, 102.791, 102.822 ms"
           }
         ]
       }
