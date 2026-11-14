@@ -543,13 +543,20 @@ function wordsOf(pane: Terminal, marked: Marked): string {
 type Cell = { y: number; x: number };
 
 /**
- * **A link's words `text` with the characters drawn against them** ({@link besideOf}), the link
- * running from cell `start` to just before `end`: text drawn against the link reads as one word
- * with it; across a blank, it does not.
+ * **A link's words `text`, and again with the characters drawn against them** ({@link besideOf}),
+ * the link running from cell `start` to just before `end`. A reader may read text drawn against
+ * the link as one word with it, or the link's own words alone, so the core reads both: the
+ * joined word never stands in for the drawn one. Across a blank, nothing is joined.
  */
 function withBeside(pane: Terminal, text: string, start: Cell, end: Cell): string {
   const { before, after } = besideOf(pane, start, end);
-  return ((/^\s/u.test(text) ? "" : before) + text + (/\s$/u.test(text) ? "" : after)).trim();
+  const own = text.trim();
+  const joined = (
+    (/^\s/u.test(text) ? "" : before) +
+    text +
+    (/\s$/u.test(text) ? "" : after)
+  ).trim();
+  return joined === own ? own : `${own} ${joined}`;
 }
 
 /**
@@ -747,7 +754,10 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
     );
     const one = markedAt(range, cut);
     const words = one === undefined ? "" : wordsOf(pane, one);
-    const text = words.includes(linked) ? words : [words, linked].filter(Boolean).join(" ");
+    // A word of the cells' that the recorded words hold already (a wrapped row's part) adds
+    // nothing.
+    const more = linked.split(/\s+/u).filter((word) => word !== "" && !words.includes(word));
+    const text = [words, ...more].filter(Boolean).join(" ");
     return { kind: "osc8", text, target: cut };
   };
   /** Which hover of a marked link the core's answer is for: one that came after it wins. */

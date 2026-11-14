@@ -290,7 +290,7 @@ describe("a link a program marked (OSC 8)", () => {
     );
   });
 
-  it("is read with the text the program printed against it, as one word", async () => {
+  it("is read alone, and with the text the program printed against it as one word", async () => {
     const { term, drawn } = await opened();
     // Only "hub.com/login" is marked; "git" before it and "!x" after it touch its cells.
     await write(term, `see git${osc8(TARGET, "hub.com/login")}!x and ${osc8(TARGET, "here")} y`);
@@ -298,7 +298,7 @@ describe("a link a program marked (OSC 8)", () => {
     hover(drawn, 9, 0);
     await waitFor(() =>
       expect(asked("pane_link_resolve").map((one) => one.args.candidates)).toContainEqual([
-        { kind: "osc8", text: "github.com/login!x", target: TARGET },
+        { kind: "osc8", text: "hub.com/login github.com/login!x", target: TARGET },
       ]),
     );
 
@@ -307,6 +307,18 @@ describe("a link a program marked (OSC 8)", () => {
     await waitFor(() =>
       expect(asked("pane_link_resolve").map((one) => one.args.candidates)).toContainEqual([
         { kind: "osc8", text: "here", target: TARGET },
+      ]),
+    );
+  });
+
+  it("hands over its own words apart from a colon and text printed against them", async () => {
+    const { term, drawn } = await opened();
+    await write(term, `see ${osc8(TARGET, "evil.com")}:x y`);
+
+    hover(drawn, 6, 0);
+    await waitFor(() =>
+      expect(asked("pane_link_resolve").map((one) => one.args.candidates)).toContainEqual([
+        { kind: "osc8", text: "evil.com evil.com:x", target: TARGET },
       ]),
     );
   });
