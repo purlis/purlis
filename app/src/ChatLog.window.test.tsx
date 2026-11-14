@@ -265,6 +265,7 @@ describe("a block row's detail (R-340, T1-29)", () => {
       target: null,
       harness: "claude",
       reason: REASON,
+      resolved: false,
     };
     core((session) => [started(session), block]);
     render(<App />);

@@ -32,22 +32,37 @@ pub struct FinishedTurn {
     pub blocks: Vec<FinishedBlock>,
 }
 
-/// **An unresolved block of a finished turn** (T1-33, R-300): its source and target, in the
-/// words the Chat log row reads them in.
+/// **An unresolved block of a finished turn** (T1-33, R-300): its source, qualifier and
+/// target, and the chat's harness (Q272), in the words the Chat log row reads them in, so a
+/// finish row offers the ways out its Chat log row does.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct FinishedBlock {
     pub source: String,
+    /// `unverified` or `cant_tell`, or none for a plain report.
+    pub qualifier: Option<String>,
     pub target_kind: Option<String>,
     pub target: Option<String>,
+    /// The chat's harness (`claude`, `codex`, `opencode`), or `unknown`: whose own check a
+    /// `harness_check` block was.
+    pub harness: String,
 }
 
 impl From<Unresolved> for FinishedBlock {
-    fn from(Unresolved { source, target }: Unresolved) -> Self {
+    fn from(
+        Unresolved {
+            source,
+            qualifier,
+            target,
+            harness,
+        }: Unresolved,
+    ) -> Self {
         let (target_kind, target) = target.as_ref().map(crate::chatlog::target_of).unzip();
         Self {
             source: crate::chatlog::word_of(source),
+            qualifier: qualifier.map(crate::chatlog::word_of),
             target_kind,
             target,
+            harness,
         }
     }
 }
@@ -168,6 +183,10 @@ mod tests {
         let mut write = |kind: &str, body: serde_json::Value| {
             log.append(Some(CHAT), Some(RUN), None, kind, body).unwrap();
         };
+        write(
+            "run.started",
+            serde_json::json!({ "cause": "start", "harness": "codex" }),
+        );
         write("hook.userpromptsubmit", serde_json::json!({}));
         write(
             purlis_core::eventlog::stops::BLOCK,
@@ -187,8 +206,11 @@ mod tests {
             finished[0].blocks,
             vec![FinishedBlock {
                 source: "guard".to_owned(),
+                qualifier: None,
                 target_kind: Some("guard_arm".to_owned()),
                 target: Some("A3b".to_owned()),
+                // Whose check it was (Q272): the chat's harness, as its start said.
+                harness: "codex".to_owned(),
             }],
         );
     }

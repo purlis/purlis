@@ -7939,7 +7939,9 @@ at: string | null; cause: string; protection: StartProtection | null } |
 /**  The chat's run ended: `completed`, `failed` or `stopped`, why, and its exit code. */
 { kind: "ended"; at: string | null; state: string; cause: string; code: number | null } | 
 /**  A call was blocked: by whom, how much its report is worth, at what, and why it said. */
-{ kind: "blocked"; at: string | null; tool: string; source: string; qualifier: string | null; target_kind: string | null; target: string | null; harness: string; reason: string | null };
+{ kind: "blocked"; at: string | null; tool: string; source: string; qualifier: string | null; target_kind: string | null; target: string | null; harness: string; reason: string | null; 
+/**  It has since been resolved (Q272): its row offers no Tell the chat…. */
+resolved: boolean };
 
 /**  What a number names, as the window is sent it. */
 export type ChatLookup = 
@@ -9882,13 +9884,21 @@ export type FillShown = {
 };
 
 /**
- *  **An unresolved block of a finished turn** (T1-33, R-300): its source and target, in the
- *  words the Chat log row reads them in.
+ *  **An unresolved block of a finished turn** (T1-33, R-300): its source, qualifier and
+ *  target, and the chat's harness (Q272), in the words the Chat log row reads them in, so a
+ *  finish row offers the ways out its Chat log row does.
  */
 export type FinishedBlock = {
 	source: string,
+	/**  `unverified` or `cant_tell`, or none for a plain report. */
+	qualifier: string | null,
 	target_kind: string | null,
 	target: string | null,
+	/**
+	 *  The chat's harness (`claude`, `codex`, `opencode`), or `unknown`: whose own check a
+	 *  `harness_check` block was.
+	 */
+	harness: string,
 };
 
 /**  What finishing them came to. What each step said is in the app's log. */

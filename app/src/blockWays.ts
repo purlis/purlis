@@ -50,13 +50,17 @@ export type BlockOfWays = Pick<
 > & {
   qualifier?: string | null;
   harness?: string;
+  /** It has since been resolved (Q272): a Chat log row's, where a later call came back. */
+  resolved?: boolean;
 };
 
-/** **The ways out of one block** (R-189, R-192, R-199), in their order. */
+/** **The ways out of one block** (R-189, R-192, R-199), in their order. Tell the chat… is
+ *  offered only while the block stands (Q272): its line says what was just blocked. */
 function waysOfOne(block: BlockOfWays): Way[] {
   if (block.qualifier === "cant_tell") return ["go"];
-  if (block.source === "guard") return ["tell", "show-guard"];
-  if (block.source === "harness_check") return ["tell", "show-check"];
+  const tell: Way[] = block.resolved === true ? [] : ["tell"];
+  if (block.source === "guard") return [...tell, "show-guard"];
+  if (block.source === "harness_check") return [...tell, "show-check"];
   return [];
 }
 
@@ -110,8 +114,21 @@ export const checkSaid = (harness: string | undefined) =>
 export const TELL_ASKS =
   "purlis types one line of purlis's own into the chat: that the call stays blocked, and not to try it again. It types it only while the chat waits for you.";
 
+/** **What Tell the chat… asks first where it types into several chats** (Q272): each by name. */
+export const tellAsksOf = (names: readonly string[]) =>
+  names.length <= 1
+    ? TELL_ASKS
+    : `purlis types one line of purlis's own into each of ${names.join(", ")}: that the call stays blocked, and not to try it again. It types it into each only while that chat waits for you.`;
+
 /** The press that types it. */
 export const TYPE_IT = "Type it in the chat";
 
 /** What is said once it is typed. */
 export const TOLD = "Typed in the chat.";
+
+/** What is said once it is typed into the chats `names` (Q272): each by name. */
+export const toldIn = (names: readonly string[]) => `Typed in ${names.join(", ")}.`;
+
+/** **What a press of Type it in the chat came to**: what was typed, and why nothing was where
+ *  it wasn't. Either, both or neither may be said. */
+export type Told = { typed?: string; why?: string };

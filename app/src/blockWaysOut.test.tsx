@@ -243,7 +243,13 @@ describe("where the ways out are", () => {
     failed: false,
     blocked: 1,
     blocks: [
-      { source: "guard", qualifier: null, target_kind: "guard_arm", target: "A3b", harness: "claude" },
+      {
+        source: "guard",
+        qualifier: null,
+        target_kind: "guard_arm",
+        target: "A3b",
+        harness: "claude",
+      },
     ],
   };
 
@@ -406,8 +412,6 @@ describe("a finish row's ways out (Q272)", () => {
     expect(waysOf(row)).toEqual([TELL_THE_CHAT, SHOW_THIS_CHECK]);
     expect(row.textContent).toContain("only Codex's own check decides");
     await userEvent.click(within(row).getByRole("button", { name: SHOW_THIS_CHECK }));
-    expect(within(row).getByRole("region", { name: "This check" }).textContent).toContain(
-      "Codex",
-    );
+    expect(within(row).getByRole("region", { name: "This check" }).textContent).toContain("Codex");
   });
 });

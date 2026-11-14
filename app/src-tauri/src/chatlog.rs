@@ -77,6 +77,8 @@ pub enum ChatLogRow {
         target: Option<String>,
         harness: String,
         reason: Option<String>,
+        /// It has since been resolved (Q272): its row offers no Tell the chat….
+        resolved: bool,
     },
 }
 
@@ -165,6 +167,7 @@ fn row_of(row: Row, reason: &dyn Fn(&str) -> Option<String>) -> ChatLogRow {
             block,
             call,
             harness,
+            resolved,
         } => {
             let harness_check = matches!(
                 &block,
@@ -205,6 +208,7 @@ fn row_of(row: Row, reason: &dyn Fn(&str) -> Option<String>) -> ChatLogRow {
                 // The reason is the chat's or its harness's words (Q259): only a harness's own
                 // check's block carries one, never a guard's or the sandbox's.
                 reason: call.as_deref().filter(|_| harness_check).and_then(reason),
+                resolved,
             }
         }
     }

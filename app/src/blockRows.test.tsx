@@ -32,6 +32,7 @@ const blocked = (over: Partial<Blocked> = {}): Blocked => ({
   target: "A3b",
   harness: "claude",
   reason: null,
+  resolved: false,
   ...over,
 });
 

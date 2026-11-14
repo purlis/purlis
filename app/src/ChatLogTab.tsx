@@ -10,9 +10,10 @@ import { atSaid, blockSourceSaid, blockTags, rowSaid, type BlockRow } from "./ch
 import { ToggleButton } from "./ui/button/Button";
 import { useBlocksLookedAt, useChatLogFilter } from "./blockedMarkers";
 import { BlockWaysOut } from "./BlockWaysOut";
+import { TOLD, type Told } from "./blockWays";
 
 /** **A block row's ways out** (T1-33, R-300): Tell the chat…'s typing and Go to chat. */
-export type ChatLogWays = { tell: () => Promise<string | undefined>; go: () => void };
+export type ChatLogWays = { tell: () => Promise<Told>; go: () => void };
 
 /** What the reason is, above it: the words of the harness's own check, never purlis's. */
 const REASON_OF = "The check's reason, as written";
@@ -172,7 +173,9 @@ export function ChatLogTab({
           tell: () =>
             commands
               .tellChatBlocked(plane, session)
-              .then((done) => (done.status === "error" ? done.error : undefined)),
+              .then((done): Told =>
+                done.status === "error" ? { why: done.error } : { typed: TOLD },
+              ),
           go: () => onShowChat?.(session),
         };
   if (said !== undefined)

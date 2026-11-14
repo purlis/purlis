@@ -29,7 +29,9 @@
 use std::io;
 use std::path::Path;
 
-use super::stops::{self, Answer, AskAnswered, AskGroup, Block, Source, TARGET_CHARS, Target};
+use super::stops::{
+    self, Answer, AskAnswered, AskGroup, Block, Qualifier, Source, TARGET_CHARS, Target,
+};
 use super::{Event, Phase};
 
 /// The kind a turn's prompt is recorded under.
@@ -43,7 +45,7 @@ const FAILED: &str = "posttoolusefailure";
 /// kinds, `hook.` and a post-tool word it answers ([`super::phase`]), and neither a failed
 /// call's nor one of the post-tool words that say nothing of a call
 /// ([`crate::hookreg::NO_OPS`]), so it reads a call coming back as the block loop does (Q263).
-fn came_back(kind: &str) -> bool {
+pub(super) fn came_back(kind: &str) -> bool {
     kind.strip_prefix("hook.").is_some_and(|word| {
         super::phase(word) == Some(Phase::Post)
             && !word.starts_with(FAILED)
@@ -77,11 +79,20 @@ pub struct Finish {
     pub unresolved: Vec<Unresolved>,
 }
 
-/// **An unresolved block of a turn** (T1-33, R-300): who blocked it, and what at where it says.
+/// **An unresolved block of a turn** (T1-33, R-300): who blocked it, how much its report is
+/// worth, what at where it says, and the chat's harness (Q272): what its finish row's ways out
+/// are read from, as its Chat log row's are.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Unresolved {
     pub source: Source,
+    /// Its report's qualifier, as the block wrote it. A finish counts only a plain report
+    /// (`crate::looping::counts`), so this is `None` there today; carried so the row reads it
+    /// as the Chat log does, not as a guess.
+    pub qualifier: Option<Qualifier>,
     pub target: Option<Target>,
+    /// The chat's harness when it was blocked, by the word its latest `run.started` gave, or
+    /// `unknown`: whose own check a `harness_check` block was.
+    pub harness: String,
 }
 
 /// What a block was aimed at: its tool, its arguments' keyed digest, and its target where it
@@ -94,17 +105,30 @@ struct Aim {
     target: Option<Target>,
 }
 
+/// What a finish names of a block beside its aim: its first target, its qualifier and the
+/// chat's harness when it was blocked.
+#[derive(Debug, Clone)]
+struct Shown {
+    target: Option<Target>,
+    qualifier: Option<Qualifier>,
+    harness: String,
+}
+
 /// **The blocks of the turn so far**, each with its aim, as they stand: a later success on its
 /// aim, or, for a sandbox block, a sandbox ask's Allow, takes it out. Each keeps the first
 /// target its aim was blocked at, which its finish row names (T1-33).
 #[derive(Debug, Default)]
 struct Turn {
-    unresolved: Vec<(Aim, Option<Target>)>,
+    unresolved: Vec<(Aim, Shown)>,
 }
 
 impl Turn {
-    fn blocked(&mut self, block: Block) {
-        let shown = block.target.clone();
+    fn blocked(&mut self, block: Block, harness: &str) {
+        let shown = Shown {
+            target: block.target.clone(),
+            qualifier: block.qualifier,
+            harness: harness.to_owned(),
+        };
         let target = block.target.filter(|_| block.args.is_none());
         let aim = Aim {
             source: block.source,
@@ -136,9 +160,11 @@ impl Turn {
     fn named(&self) -> Vec<Unresolved> {
         self.unresolved
             .iter()
-            .map(|(aim, target)| Unresolved {
+            .map(|(aim, shown)| Unresolved {
                 source: aim.source,
-                target: target.clone(),
+                qualifier: shown.qualifier,
+                target: shown.target.clone(),
+                harness: shown.harness.clone(),
             })
             .collect()
     }
@@ -150,10 +176,20 @@ impl Turn {
 pub fn finishes(events: &[Event], chat: &str) -> Vec<Finish> {
     let mut out = Vec::new();
     let mut turn = Turn::default();
+    let mut harness = super::UNKNOWN.to_owned();
     for event in events
         .iter()
         .filter(|event| event.chat.as_deref() == Some(chat))
     {
+        if event.kind == "run.started" {
+            // As the Chat log reads it (`chatlog::rows`): the latest start's word.
+            harness = event
+                .body
+                .get("harness")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(super::UNKNOWN)
+                .to_owned();
+        }
         let own = event.parent_run.is_none();
         let ended = |how, blocked, unresolved| Finish {
             seq: event.seq,
@@ -181,7 +217,7 @@ pub fn finishes(events: &[Event], chat: &str) -> Vec<Finish> {
                     // count never stops a turn either.
                     && crate::looping::counts(&block)
                 {
-                    turn.blocked(block);
+                    turn.blocked(block, &harness);
                 }
             }
             stops::ASK_ANSWERED => {

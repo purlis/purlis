@@ -251,14 +251,8 @@ import { PersonaMarks, ReloadPersonaMarks } from "./PersonaMark";
 import { usePersonaMarks } from "./usePersonaMarks";
 import { taskChangesTitle, taskChangesView } from "./taskChanges";
 import { heldFor as blockHeldFor, type HeldBlock, useSandboxBlocks } from "./sandboxBlocks";
-import {
-  finishSessionsOf,
-  finishUpdates,
-  finishWaysOf,
-  groupedFinishes,
-  useFinishedTurns,
-} from "./finishRows";
-import { BlockWaysOut } from "./BlockWaysOut";
+import { finishUpdates, groupedFinishes, useFinishedTurns } from "./finishRows";
+import { finishRowWays } from "./BlockWaysOut";
 import { taskBlockGroups, whoseOf, withoutGrouped, type TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksAnswered, TaskBlocksNotice } from "./TaskBlocksNotice";
 import {
@@ -11567,30 +11561,19 @@ export const PlaneView = memo(function PlaneView({
       }
       // A finished task opens in place to show its report, or why it failed (#5651).
       const report = task?.report.trim() ? task.report : undefined;
-      // **A finish row's ways out** (T1-33, R-300): its turn's unresolved blocks', as their Chat
-      // log rows offer them. Tell the chat… tells each chat a grouped row stands for.
-      const blocks = update.kind === "turn-finished" ? finishWaysOf(finishedTurns, keys) : [];
-      const sessions = blocks.length === 0 ? [] : finishSessionsOf(finishedTurns, keys);
+      // **A finish row's ways out** (T1-33, R-300; Q272): its turn's unresolved blocks', as
+      // their Chat log rows offer them, each acting on the chat it is about.
       const ways =
-        sessions.length === 0 ? undefined : (
-          <BlockWaysOut
-            blocks={blocks}
-            who={update.chain.at(-1) ?? "this chat"}
-            tell={() =>
-              Promise.all(
-                sessions.map((one) =>
-                  commands
-                    .tellChatBlocked(plane, one)
-                    .then((done) => (done.status === "error" ? done.error : undefined)),
-                ),
-              ).then((said) => {
-                const why = said.filter((one): one is string => one !== undefined);
-                return why.length === 0 ? undefined : why.join(" ");
-              })
-            }
-            go={() => (showChat(sessions[0]), read())}
-          />
-        );
+        update.kind === "turn-finished"
+          ? finishRowWays({
+              plane,
+              turns: finishedTurns,
+              keys,
+              who: update.chain.at(-1) ?? "this chat",
+              nameOf,
+              go: (session) => (showChat(session), read()),
+            })
+          : undefined;
       return { update, go, report, read, dismiss: put, ways };
     });
     return {
@@ -11625,6 +11608,7 @@ export const PlaneView = memo(function PlaneView({
   }, [
     keptUpdates,
     finishedTurns,
+    nameOf,
     settleUpdates,
     sentDrafts,
     finishedTasks,

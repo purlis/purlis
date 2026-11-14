@@ -8,5 +8,8 @@
   command to copy. A block purlis can't tell more of offers Go to chat. Tell the chat… first
   says what it will do, then types one line of purlis's own into the chat (that the call stays
   blocked, and not to try it again), and only while the chat waits for you; otherwise it says
-  why nothing was typed. A finish row offers ways out only for the blocks it counts, and a
+  why nothing was typed. It is offered only while the block stands: a row whose call has since
+  gone through offers none. On a finish row that stands for several chats, it types only into
+  the chats whose block offers it, and names them; Go to chat goes to the chat whose block
+  purlis can't tell more of. A finish row offers ways out only for the blocks it counts, and a
   sandbox block's own ways out come with #6425 (T1-33, #6424).

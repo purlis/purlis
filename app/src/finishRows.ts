@@ -26,6 +26,7 @@ import {
   type UpdateNoted,
 } from "./bindings";
 import type { ChatStates, Chats } from "./chatState";
+import { waysOut } from "./blockWays";
 
 /** What a finish row adds where its turn ended with blocks still unresolved (Q164). */
 export const BLOCKED_THIS_TURN = (blocked: number) => `· ${blocked} blocked this turn`;
@@ -43,13 +44,26 @@ const BLOCKED_KEY = ":blocked";
 const keyOf = (turn: FinishedTurn) =>
   `finish:${turn.session}:${turn.key}${!turn.failed && turn.blocked > 0 ? BLOCKED_KEY : ""}`;
 
-/** **The chats the finish rows `keys` stand for** (T1-33): a grouped row's every chat. */
-export function finishSessionsOf(
+/**
+ * **Which chats a finish row's ways out act on** (Q272): Tell the chat… types only into the
+ * chats whose own turn holds a block that offers it, never into every chat of a grouped row,
+ * and Go to chat goes to the chat that holds the Can't-tell block. Each chat once, in the
+ * order the turns come.
+ */
+export function finishWaysTo(
   turns: readonly FinishedTurn[],
   keys: readonly string[],
-): number[] {
+): { tell: number[]; go: number | undefined } {
   const these = new Set(keys);
-  return [...new Set(turns.filter((turn) => these.has(keyOf(turn))).map((turn) => turn.session))];
+  const tell: number[] = [];
+  let go: number | undefined;
+  for (const turn of turns) {
+    if (turn.failed || !these.has(keyOf(turn))) continue;
+    const ways = waysOut(turn.blocks);
+    if (ways.includes("tell") && !tell.includes(turn.session)) tell.push(turn.session);
+    if (ways.includes("go") && go === undefined) go = turn.session;
+  }
+  return { tell, go };
 }
 
 /** **The finish rows of `turns`**, each named by its chat. */
@@ -201,7 +215,13 @@ export function finishWaysOf(
   for (const turn of turns) {
     if (turn.failed || !these.has(keyOf(turn))) continue;
     for (const block of turn.blocks) {
-      const said = JSON.stringify([block.source, block.target_kind, block.target]);
+      const said = JSON.stringify([
+        block.source,
+        block.qualifier,
+        block.target_kind,
+        block.target,
+        block.harness,
+      ]);
       if (seen.has(said)) continue;
       seen.add(said);
       out.push(block);

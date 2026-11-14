@@ -287,7 +287,10 @@ fn a_finish_names_its_unresolved_blocks_by_source_and_target() {
         finish.unresolved,
         vec![Unresolved {
             source: Source::Guard,
+            qualifier: None,
             target: Some(crate::eventlog::stops::Target::guard_arm("A3b").unwrap()),
+            // No `run.started` in this log: whose it was is unknown.
+            harness: crate::eventlog::UNKNOWN.to_owned(),
         }],
     );
     assert_eq!(

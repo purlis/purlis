@@ -303,6 +303,7 @@ describe("the blocked marker", () => {
       target: null,
       harness: "claude",
       reason: null,
+      resolved: false,
     };
     const ended: ChatLogRow = {
       kind: "ended",

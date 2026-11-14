@@ -620,9 +620,7 @@ fn a_block_row_is_resolved_once_a_later_call_on_its_target_comes_back() {
         }))
         .unwrap()
     };
-    let came_back = |args: &str| {
-        serde_json::json!({ "decision": "allow", "hook_ms": 1, "tool": "Bash", "args": args })
-    };
+    let came_back = |args: &str| serde_json::json!({ "decision": "allow", "hook_ms": 1, "tool": "Bash", "args": args });
     let mut write = |kind: &str, body: serde_json::Value| {
         log.append(Some(ONE), Some(RUN_ONE), None, kind, body)
             .unwrap();
@@ -632,20 +630,11 @@ fn a_block_row_is_resolved_once_a_later_call_on_its_target_comes_back() {
     write(stops::BLOCK, block_of(Source::Guard, "digest-of-cat"));
     write(stops::BLOCK, block_of(Source::Sandbox, "digest-of-curl"));
     // Its call came back: resolved.
-    write(
-        "hook.posttooluse-blocked",
-        came_back("digest-of-push"),
-    );
+    write("hook.posttooluse-blocked", came_back("digest-of-push"));
     // A failed retry is no call that came back.
-    write(
-        "hook.posttoolusefailure-blocked",
-        came_back("digest-of-ls"),
-    );
+    write("hook.posttoolusefailure-blocked", came_back("digest-of-ls"));
     // Another call's success resolves nothing of these.
-    write(
-        "hook.posttooluse-blocked",
-        came_back("digest-of-other"),
-    );
+    write("hook.posttooluse-blocked", came_back("digest-of-other"));
     // A sandbox ask allowed resolves the sandbox block, and no guard's.
     write(
         stops::ASK_ANSWERED,

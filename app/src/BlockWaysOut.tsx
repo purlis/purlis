@@ -1,21 +1,25 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useId, useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { NothingDone } from "./inboxRowParts";
 import { blockSaid, harnessSaid, type BlockRow } from "./chatLog";
+import { commands, type FinishedTurn, type PlaneId } from "./bindings";
+import { finishWaysOf, finishWaysTo } from "./finishRows";
 import {
   GUARD_SWITCH_LATER,
-  TELL_ASKS,
   TOLD,
   TYPE_IT,
   WAY_SAID,
   checkSaid,
   guardGroupSaid,
   onlyItsCheckDecides,
+  tellAsksOf,
+  toldIn,
   waysOut,
   type BlockOfWays,
+  type Told,
   type Way,
 } from "./blockWays";
 
@@ -25,10 +29,13 @@ export type BlockWaysOutProps = {
   /** The chat, by its name: what each way's name says it is about. */
   who: string;
   /** **Tell the chat…'s second press**: types purlis's own line into the chat where it waits
-   *  (`tell_chat_blocked`), and answers why not where nothing was typed. */
-  tell: () => Promise<string | undefined>;
+   *  (`tell_chat_blocked`), and answers what was typed, and why not where nothing was. */
+  tell: () => Promise<Told>;
   /** Go to chat: the chat in front. */
   go: () => void;
+  /** The chats Tell the chat… types into, by name, where it is more than one (Q272): what it
+   *  asks first names each. */
+  into?: readonly string[];
 };
 
 /** What a detail opened by a way is named, and so found by a screen reader's landmarks. */
@@ -56,12 +63,12 @@ const said = (block: BlockOfWays) =>
  *
  * A block by the harness's own check says, beside its ways, that purlis can't allow it (R-193).
  */
-export function BlockWaysOut({ blocks, who, tell, go }: BlockWaysOutProps) {
+export function BlockWaysOut({ blocks, who, tell, go, into = [] }: BlockWaysOutProps) {
   const id = useId();
   const ways = waysOut(blocks);
   const [open, setOpen] = useState<Way>();
   const [busy, setBusy] = useState(false);
-  const [told, setTold] = useState<string>();
+  const [told, setTold] = useState<Told>();
   if (ways.length === 0) return null;
   const checks = blocks.filter((one) => one.source === "harness_check");
   const guards = blocks.filter((one) => one.source === "guard");
@@ -78,8 +85,10 @@ export function BlockWaysOut({ blocks, who, tell, go }: BlockWaysOutProps) {
     setBusy(true);
     setTold(undefined);
     void tell()
-      .then((why) => setTold(why ?? TOLD))
-      .catch((err: unknown) => setTold(`purlis could not type in the chat: ${String(err)}`))
+      .then(setTold)
+      .catch((err: unknown) =>
+        setTold({ why: `purlis could not type in the chat: ${String(err)}` }),
+      )
       .finally(() => setBusy(false));
   };
   const detail = `${id}-detail`;
@@ -125,15 +134,87 @@ export function BlockWaysOut({ blocks, who, tell, go }: BlockWaysOutProps) {
       )}
       {open === "tell" && (
         <section id={detail} className="block-ways-detail" aria-label={OPENS[open]}>
-          <p className="ui-text-body">{TELL_ASKS}</p>
+          <p className="ui-text-body">{tellAsksOf(into)}</p>
           <ButtonRow size="sm">
             <Button variant="secondary" isDisabled={busy} onPress={typeIt}>
               {TYPE_IT}
             </Button>
           </ButtonRow>
-          <NothingDone said={told} />
+          {/* What was typed is a plain status line; NothingDone is for a press that did
+              nothing (#1693), and says only why. */}
+          {told?.typed !== undefined && (
+            <p className="ui-text-secondary" role="status">
+              {told.typed}
+            </p>
+          )}
+          <NothingDone said={told?.why} />
         </section>
       )}
     </div>
+  );
+}
+
+/**
+ * **Tells each of `sessions`** (Q272) through the core's one way in (`tell_chat_blocked`), and
+ * says what came of it: where it typed into more than one chat, each by name.
+ */
+async function tellEach(
+  plane: PlaneId,
+  sessions: readonly number[],
+  nameOf: (session: number) => string,
+): Promise<Told> {
+  const said = await Promise.all(
+    sessions.map((one) =>
+      commands
+        .tellChatBlocked(plane, one)
+        .then((done) => ({ one, why: done.status === "error" ? done.error : undefined })),
+    ),
+  );
+  const typed = said.filter((one) => one.why === undefined).map((one) => nameOf(one.one));
+  const why = said.flatMap((one) => (one.why === undefined ? [] : [one.why]));
+  return {
+    typed: typed.length === 0 ? undefined : sessions.length > 1 ? toldIn(typed) : TOLD,
+    why: why.length === 0 ? undefined : why.join(" "),
+  };
+}
+
+/**
+ * **A finish row's ways out** (T1-33, R-300; Q272): its turns' unresolved blocks', as their
+ * Chat log rows offer them, or none where it has none. **Each acts on the chat it is about**:
+ * Tell the chat… types only into the chats whose own turn holds a block that offers it, and
+ * names them where there is more than one; Go to chat goes to the chat that holds the
+ * Can't-tell block.
+ */
+export function finishRowWays({
+  plane,
+  turns,
+  keys,
+  who,
+  nameOf,
+  go,
+}: {
+  plane: PlaneId;
+  turns: readonly FinishedTurn[];
+  /** The finish rows the row stands for: a grouped row's every chat's. */
+  keys: readonly string[];
+  /** The row's chat, or chats, by name. */
+  who: string;
+  nameOf: (session: number) => string;
+  /** Go to chat: the chat `session` in front. */
+  go: (session: number) => void;
+}): ReactNode | undefined {
+  const blocks = finishWaysOf(turns, keys);
+  if (blocks.length === 0) return undefined;
+  const to = finishWaysTo(turns, keys);
+  return (
+    <BlockWaysOut
+      blocks={blocks}
+      who={who}
+      into={to.tell.map(nameOf)}
+      tell={() => tellEach(plane, to.tell, nameOf)}
+      go={() => {
+        if (to.go !== undefined) go(to.go);
+      }}
+    />
   );
 }

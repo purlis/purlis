@@ -10,6 +10,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent } from "storybook/test";
 import { expectFocusInSight } from "./stories.testkit";
 import type { ChatLogRow } from "./bindings";
+import { TOLD } from "./blockWays";
 import { ChatLogRows } from "./ChatLogTab";
 
 const START: ChatLogRow = {
@@ -138,6 +139,7 @@ const BLOCK: Extract<ChatLogRow, { kind: "blocked" }> = {
   target: "A3b",
   harness: "claude",
   reason: null,
+  resolved: false,
 };
 
 /** The tags a row carries, by their words. */
@@ -250,7 +252,7 @@ export const BlockedCantTell: Story = {
 };
 
 /** **A block row's ways out** (T1-33, R-300): what a story's presses reach, none of them a core's. */
-const WAYS = { tell: () => Promise.resolve(undefined), go: () => undefined };
+const WAYS = { tell: () => Promise.resolve({ typed: TOLD }), go: () => undefined };
 
 /** The ways out a row offers, by their words. */
 const waysOf = (canvas: Canvas) =>
