@@ -1990,8 +1990,13 @@ impl Common {
 /// Says `why` as purlis's refusal and fails — for a command answered outside [`run`], whose
 /// `Err` is printed the same way.
 fn refused(why: &str) -> ExitCode {
-    eprintln!("purlis: {why}");
+    say_refused(why);
     ExitCode::FAILURE
+}
+
+/// Says `why` as purlis's refusal, for a caller that fails with an exit code of its own.
+fn say_refused(why: &str) {
+    eprintln!("purlis: {why}");
 }
 
 /// Where this invocation is standing: the plane, the directory, and who is asking.
@@ -4579,7 +4584,7 @@ fn profile_sign_in(
     let pinned = match fetched {
         Ok(pinned) => pinned,
         Err(why) if check => {
-            refused(&format!(
+            say_refused(&format!(
                 "{why}. purlis cannot tell whether '{}' is signed in on {here}.",
                 record.name
             ));

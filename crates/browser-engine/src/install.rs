@@ -301,9 +301,8 @@ impl Https {
 
     fn https_only(&self) -> bool {
         #[cfg(test)]
-        if self.plain {
-            return false;
-        }
+        return !self.plain;
+        #[cfg(not(test))]
         true
     }
 
