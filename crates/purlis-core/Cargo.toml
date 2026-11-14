@@ -126,14 +126,14 @@ sha2 = "0.11"
 # unwinder walks it, with no symbols, to modules and offsets. Not `minidump-processor`, which
 # walks every thread and brings an x86 disassembler and a terminal library with it. No default
 # features: no debug-info symbolizer, no HTTP. MIT, by the rust-minidump project.
-minidump = "0.26"
-minidump-unwind = "0.26"
+minidump = "0.27"
+minidump-unwind = "0.27"
 # The project index (ADR 0079 §9, #5498): SQLite FTS5 with its bundled library, so FTS5,
 # `contentless_delete` (3.43 or later) and one known SQLite version hold on every platform. No
 # default features: their `cache` is a statement cache the index does not need, and the
 # `sqlite-wasm-rs` backend is for a target purlis never builds. rusqlite and libsqlite3-sys are
 # MIT; SQLite itself is in the public domain.
-rusqlite = { version = "0.41", default-features = false, features = ["bundled"] }
+rusqlite = { version = "0.42", default-features = false, features = ["bundled"] }
 # A branch's changes, read in-process (FM-4, D-88f): the explorer reads them by itself after
 # every write an agent makes, so no git process may start in a repository whose config the agent
 # can write. gitoxide reads the index, the working tree and the trees with no program run:
