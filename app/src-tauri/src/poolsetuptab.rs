@@ -62,6 +62,16 @@ pub struct PoolSetupStep {
     pub admin: Option<String>,
     /// How the step is undone by hand, never by a button: uninstalling from a cluster.
     pub undo: Option<PoolSetupSee>,
+    /// What Set up Docker on another machine, or Connect again, opens Connect with (#6268).
+    pub prefill: Option<PoolSetupPrefill>,
+}
+
+/// **A machine to open Connect with** (#6268): its route, and the Docker context it was read
+/// from, where it was read from one.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolSetupPrefill {
+    pub route: String,
+    pub context: Option<String>,
 }
 
 /// A host key, as Connect shows it (#6266).
@@ -98,6 +108,8 @@ pub struct PoolSetupMachine {
     pub trusted_ca: Option<String>,
     /// The fingerprint the CA file holds now, where that isn't the one trusted.
     pub ca_now: Option<String>,
+    /// The Docker context the route was read from (#6268).
+    pub context: Option<String>,
 }
 
 /// The TLS files named for a `tcp://` machine, as Connect's Options show them (#6267).
@@ -277,6 +289,11 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
                     }),
                     trusted_ca: machine.trusted_ca.clone(),
                     ca_now: machine.ca_now.clone(),
+                    context: machine.context.clone(),
+                }),
+                prefill: step.prefill.as_ref().map(|prefill| PoolSetupPrefill {
+                    route: prefill.route.clone(),
+                    context: prefill.context.clone(),
                 }),
                 cause: step.cause.map(str::to_owned),
                 skippable: step.skippable,
@@ -543,6 +560,112 @@ pub async fn pool_setup_podman_connections() -> Result<Vec<PoolSetupPodmanConnec
     }
     #[cfg(not(unix))]
     {
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **A context of the person's Docker, as Connect offers it** (#6268): its name, whether it is
+/// the one their `docker` uses now, and what its endpoint was read into: `over` `ssh` or `tls`
+/// with its `route`, `here` for a socket on this machine (the local kind), or `refused` with
+/// why purlis doesn't use it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolSetupDockerContext {
+    pub name: String,
+    pub current: bool,
+    pub over: String,
+    pub route: Option<String>,
+    pub refused: Option<String>,
+}
+
+/// **The person's Docker contexts** (`docker context ls`, then `docker context inspect`), for
+/// Connect to offer (#6268). It contacts no machine: this machine's `docker` lists what it keeps.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_docker_contexts() -> Result<Vec<PoolSetupDockerContext>, String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("reading your Docker contexts", || {
+            use purlis_core::dockercontext::Endpoint;
+            let Some(docker) = purlis_core::poolsetup::docker_here() else {
+                return Ok(Vec::new());
+            };
+            Ok(purlis_core::dockercontext::contexts_here(docker.program())
+                .into_iter()
+                .map(|one| {
+                    let route = one.endpoint.route();
+                    let (over, refused) = match &one.endpoint {
+                        Endpoint::Here => ("here", None),
+                        Endpoint::Ssh(_) => ("ssh", None),
+                        Endpoint::Tls { .. } => ("tls", None),
+                        Endpoint::Refused(why) => ("refused", Some(why.clone())),
+                    };
+                    PoolSetupDockerContext {
+                        name: one.name,
+                        current: one.current,
+                        over: over.to_owned(),
+                        route,
+                        refused,
+                    }
+                })
+                .collect())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Keeps the Docker context `name` picked on Connect** (#6268, ADR 0123 §2): read again now,
+/// once, into the route its endpoint names, its TLS files and its name; a context on this
+/// machine's own socket chooses the local kind. It contacts nothing.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_docker_context(name: String) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("keeping your choice", move || {
+            let docker = purlis_core::poolsetup::docker_here()
+                .ok_or_else(|| "purlis found no docker on this machine.".to_owned())?;
+            let contexts = purlis_core::dockercontext::contexts_here(docker.program());
+            let context = contexts
+                .iter()
+                .find(|one| one.name == name)
+                .ok_or_else(|| {
+                    format!(
+                        "Your Docker has no context named {} now. Pick it again from the list.",
+                        purlis_core::shown::short(&name)
+                    )
+                })?;
+            purlis_core::poolsetup::choose_docker_context(&config_root()?, context)
+                .map_err(|why| why.to_string())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = name;
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Keep the pool as it is** (#6268, ADR 0123 §7): pool `pool` stays on its route, and forgets
+/// the Docker context it was read from, so doctor stops comparing them.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_keep_pool_as_it_is(pool: String) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("keeping the pool as it is", move || {
+            purlis_core::runners::forget_docker_context(&config_root()?, &pool)
+                .map_err(|why| why.to_string())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pool;
         Err(crate::dockerpools::NOT_HERE.to_owned())
     }
 }

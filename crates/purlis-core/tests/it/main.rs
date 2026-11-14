@@ -141,6 +141,7 @@ mod a_question_shown_keeps_its_lines;
 mod a_reference_handed_to_a_chat_names_only_a_confined_path;
 mod a_remote_docker_pool_is_reached_over_ssh;
 mod a_remote_docker_pool_is_reached_over_tls;
+mod a_remote_docker_pool_is_reached_through_a_docker_context;
 mod a_remote_podman_pool_is_reached_over_ssh;
 mod a_repo_is_saved_by_its_mode;
 mod a_report_is_filed_only_with_the_purlis_sign_in;

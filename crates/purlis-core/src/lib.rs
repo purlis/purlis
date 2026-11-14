@@ -83,6 +83,7 @@ pub mod dispatchwaits;
 pub mod dispatchwants;
 pub mod dispatchwithin;
 #[cfg(unix)]
+pub mod dockercontext;
 pub mod dockerpool;
 pub mod docsrc;
 pub mod doctor;
