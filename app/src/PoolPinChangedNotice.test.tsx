@@ -8,6 +8,7 @@ import { emit } from "@tauri-apps/api/event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { POOL_PIN_CHANGED, type PoolPinChanged } from "./bindings";
 import { PoolPinChangedNotice } from "./PoolPinChangedNotice";
+import { removePool } from "./pools";
 
 const KEY_CHANGED: PoolPinChanged = {
   pool: "builds",
@@ -22,13 +23,14 @@ const KEY_CHANGED: PoolPinChanged = {
 function core(
   found: () => PoolPinChanged[],
   left = "Runner builds's container stays on build-box.",
+  removing: (name: string) => Promise<string> | string = () => left,
 ) {
   const calls: { cmd: string; args: unknown }[] = [];
   mockIPC(
     (cmd, args) => {
       calls.push({ cmd, args });
       if (cmd === "pools_pin_changed") return found();
-      if (cmd === "remove_docker_pool") return left;
+      if (cmd === "remove_docker_pool") return removing((args as { name: string }).name);
       if (cmd === "pool_named_by") return [];
       if (cmd === "pool_held_runners") return [];
       if (cmd === "docker_pools") return { pools: [], clusters: [] };
@@ -88,6 +90,52 @@ describe("the notice that a pool's pin no longer holds", () => {
       }),
     );
     expect(await screen.findByText(/Runner builds's container stays on build-box/)).toBeVisible();
+  });
+
+  it("keeps the card and says why where Remove pool is refused, never that the pool is forgotten", async () => {
+    // Another pool's removal is still going, so this one is refused with nothing removed.
+    let finish: (left: string) => void = () => {};
+    const calls = core(
+      () => [KEY_CHANGED],
+      "",
+      (name) => (name === "other" ? new Promise<string>((done) => (finish = done)) : "stays"),
+    );
+    const other = removePool("other");
+    render(<PoolPinChangedNotice onCheckAndTrust={() => {}} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Remove pool…" }));
+    const asked = await screen.findByRole("alertdialog", { name: "Remove pool builds?" });
+    await userEvent.click(within(asked).getByRole("button", { name: "Remove pool" }));
+    const card = await screen.findByText(
+      /purlis is removing pool other: remove builds once it is gone/,
+    );
+    expect(card.closest("[data-cause]")?.getAttribute("data-cause")).toBe(
+      "pool-pin-changed:builds",
+    );
+    expect(screen.queryByText(/forgotten/)).toBeNull();
+    expect(
+      calls.filter((call) => call.cmd === "remove_docker_pool").map((call) => call.args),
+    ).toEqual([{ name: "other", elsewhere: false, discarding: [] }]);
+    finish("");
+    await other;
+  });
+
+  it("keeps the card with the core's own words where the core refuses Remove pool", async () => {
+    core(
+      () => [KEY_CHANGED],
+      "",
+      () => Promise.reject("Pool builds isn't set up here any more, so nothing was removed."),
+    );
+    render(<PoolPinChangedNotice onCheckAndTrust={() => {}} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Remove pool…" }));
+    const asked = await screen.findByRole("alertdialog", { name: "Remove pool builds?" });
+    await userEvent.click(within(asked).getByRole("button", { name: "Remove pool" }));
+    const card = await screen.findByText(
+      /Pool builds isn't set up here any more, so nothing was removed/,
+    );
+    expect(card.closest("[data-cause]")?.getAttribute("data-cause")).toBe(
+      "pool-pin-changed:builds",
+    );
+    expect(screen.queryByText(/forgotten/)).toBeNull();
   });
 
   it("reads again when a pool's pin is found changed or holds again", async () => {

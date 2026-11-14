@@ -19,7 +19,8 @@ import { RemovePool } from "./settings/pools";
  * Its two ways out are ADR 0123's: **Check and trust again**, which opens Pool setup on the pool
  * at Connect, where the machine is met again and only what the person confirms is pinned; and
  * **Remove pool**, asked first, which forgets the pool here and sends nothing to the machine, so
- * its runner stays there, and then says what stays and how to remove it on that machine.
+ * its runner stays there, and then says what stays and how to remove it on that machine. A Remove
+ * that is refused removes nothing: the card stays and says why, in purlis's words.
  *
  * The core keeps what it found, contacting no machine for this Notice: each change is found where
  * a run for the pool was refused, and goes once its pin holds again or the pool is removed.
@@ -33,6 +34,8 @@ export function PoolPinChangedNotice({
   const [changes, setChanges] = useState<readonly PoolPinChanged[]>([]);
   const [asking, setAsking] = useState<PoolPinChanged>();
   const [forgotten, setForgotten] = useState<{ pool: string; left: string }>();
+  // Why a pool's Remove was refused: its card stays, saying so, and nothing is said forgotten.
+  const [refused, setRefused] = useState<Readonly<Record<string, string>>>({});
 
   useEffect(() => {
     let gone = false;
@@ -56,9 +59,18 @@ export function PoolPinChangedNotice({
 
   const remove = (change: PoolPinChanged) => {
     setAsking(undefined);
-    void removePool(change.pool, true).then((left) => {
+    setRefused((now) => {
+      const others = { ...now };
+      Reflect.deleteProperty(others, change.pool);
+      return others;
+    });
+    void removePool(change.pool, true).then((came) => {
+      if (!came.removed) {
+        setRefused((now) => ({ ...now, [change.pool]: came.why }));
+        return;
+      }
       setChanges((now) => now.filter((one) => one.pool !== change.pool));
-      if (left !== undefined) setForgotten({ pool: change.pool, left });
+      setForgotten({ pool: change.pool, left: came.left ?? "" });
     });
   };
 
@@ -80,6 +92,9 @@ export function PoolPinChangedNotice({
           ]}
         >
           {change.said}
+          {refused[change.pool] !== undefined && (
+            <p className="pool-remove-refused">{refused[change.pool]}</p>
+          )}
         </Notice>
       ))}
       {forgotten && (
@@ -88,7 +103,7 @@ export function PoolPinChangedNotice({
           tone="news"
           onDismiss={() => setForgotten(undefined)}
         >
-          {`Pool ${forgotten.pool} is forgotten here. ${forgotten.left}`}
+          {`Pool ${forgotten.pool} is forgotten here. ${forgotten.left}`.trimEnd()}
         </Notice>
       )}
       {asking && (
