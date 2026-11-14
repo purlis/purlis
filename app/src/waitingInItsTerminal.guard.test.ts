@@ -45,7 +45,7 @@ const DECIDES: { file: string; places: (source: string) => string[]; at_least: n
   // The hook channel's hearer: an ask not held is told as a give-up, by its `NotRaised`.
   {
     file: "crates/purlis-core/src/hookwire/permission.rs",
-    places: (source) => functionsNamed(source, "held_or_given_up"),
+    places: (source) => functionsNamed(source, "held_told_or_given_up"),
     at_least: 1,
   },
   // The board: a give-up is a wait on its harness's permission prompt, kept by its asker, and

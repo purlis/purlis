@@ -515,3 +515,102 @@ fn a_file_outside_the_project_is_not_read_through_a_link_on_its_way() {
     assert!(crate::files::folder::open_absolute(&through.join("hosts")).is_err());
     assert!(crate::files::folder::open_absolute(&here.outside).is_ok());
 }
+
+/// #6357: **a file a branch does not offer is no link, and its hover says why.** The light
+/// editor opens only a branch's files (what git tracks, or doesn't ignore), because an ignored
+/// `.env` or a secret materialised into the branch is nothing a review shows. A link to one
+/// would open only to be refused, so it says on its hover that it won't open.
+#[test]
+fn a_file_its_branch_does_not_offer_is_no_link_and_says_why() {
+    use std::sync::{Arc, Mutex};
+
+    let here = fixture();
+    write(
+        &here
+            .project
+            .join("workspaces/smart-ide/.worktrees/app/feature/target/out.log"),
+        "built\n",
+    );
+    write(
+        &here.project.join("workspaces/smart-ide/repos/app/.env"),
+        "A=1\n",
+    );
+    /// A branch asked about, by workspace, repo and piece, and the path asked.
+    type Asked = (String, String, Option<String>, String);
+    let asked: Arc<Mutex<Vec<Asked>>> = Arc::default();
+    let heard = Arc::clone(&asked);
+    let links = Resolver::with(vec![Box::new(
+        LocalFile::with(Some(here.home.clone()), Vec::new()).offered_by(
+            move |project, branch, path| {
+                assert!(project.join("workspaces").is_dir(), "asked of the project");
+                heard.lock().expect("held").push((
+                    branch.ws.to_owned(),
+                    branch.repo.to_owned(),
+                    branch.piece.map(str::to_owned),
+                    path.to_owned(),
+                ));
+                match path {
+                    "target/out.log" | ".env" => Some(false),
+                    "src/lib.rs" => Some(true),
+                    _ => None,
+                }
+            },
+        ),
+    )]);
+    let pane = here.chat();
+
+    for ignored in [
+        "target/out.log:3".to_owned(),
+        here.project
+            .join("workspaces/smart-ide/repos/app/.env")
+            .display()
+            .to_string(),
+    ] {
+        match links.resolve(&file(&ignored), &pane) {
+            Resolved::NotALink(why) => assert_eq!(
+                why,
+                "purlis will not open this file in its editor: it is not one of its branch's own files"
+            ),
+            other => panic!("{ignored}: expected no link with a reason, got {other:?}"),
+        }
+        assert!(matches!(
+            links.hover(&file(&ignored), &pane),
+            Hover::NotALink(_)
+        ));
+    }
+    // One the branch offers links; so does one it could not say about: the editor decides.
+    resolved(&links, "src/lib.rs:1", &pane);
+    resolved(&links, "../../../repos/app/src/main.rs", &pane);
+    // Only a branch's file is asked about: a workspace's or the project's own is not.
+    let before = asked.lock().expect("held").len();
+    resolved(
+        &links,
+        &here.project.join("README.md").display().to_string(),
+        &pane,
+    );
+    resolved(
+        &links,
+        &here
+            .project
+            .join("workspaces/smart-ide/workspace.md")
+            .display()
+            .to_string(),
+        &pane,
+    );
+    let mut asked = asked.lock().expect("held").clone();
+    assert_eq!(asked.len(), before);
+    // Each was asked by its resolve and again by its hover.
+    asked.dedup();
+    assert_eq!(
+        asked[..2],
+        [
+            (
+                "smart-ide".into(),
+                "app".into(),
+                Some("feature".into()),
+                "target/out.log".into()
+            ),
+            ("smart-ide".into(), "app".into(), None, ".env".into()),
+        ]
+    );
+}

@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import type { ChatLogRow, StartProtection } from "./bindings";
+import type { ChatLogRow, ChatLogSummary, StartProtection } from "./bindings";
 import { HARNESSES } from "./settings/harnesses";
 import { LEVEL_SAID } from "./settings/levels";
 import type { ViewRef } from "./tabs";
@@ -10,8 +10,9 @@ import type { ViewRef } from "./tabs";
  * **A chat's Chat log in the window** (R-224, R-225, R-310, T1-27; ADR 0124 decision 11): the
  * one home for the chat's story, beside its Activity, which is unchanged. Its own simple
  * timeline, apart from the transcript, read from the core's `chat_log`, a query of the event
- * log. Phase 1 draws its first row, the start, and its last, the end and its result; the rows
- * between are T1-28's.
+ * log. Phase 1 draws its first row, the start, and its last, the end and its result, and between
+ * them its protection changes, its asks with their answers, its holds and its loop pauses
+ * (T1-28); its blocks are T1-29's. Its honesty lines and its allowed calls head it.
  *
  * It is a view tab, `{ from: null, view: "chat-log", key: "<session>" }`: one per chat, opened
  * from the chat's list and from the palette (`chat.log:<session>`), and keyed by the chat's
@@ -131,6 +132,131 @@ export function endSaid(row: Extract<ChatLogRow, { kind: "ended" }>): string {
   return "Ended · failed";
 }
 
+/** Who made a protection change, by the kind of actor its trust event names. */
+const ACTOR_SAID: Readonly<Record<string, string>> = {
+  human: "set by you",
+  host: "set by purlis",
+  agent: "asked for by a chat",
+};
+
+/**
+ * **A protection change's line, and who made it** (R-228): in phase 1, the sandbox lifted for a
+ * run or put back on, through a shipped path.
+ */
+export function protectionChangeSaid(row: Extract<ChatLogRow, { kind: "protection_changed" }>) {
+  const what = row.change === "on" ? "The sandbox is back on" : "No sandbox for this run";
+  return `${what} · ${ACTOR_SAID[row.actor_kind] ?? "who made it is not known"}`;
+}
+
+/** What an ask of each group asked, as its row says it after "Asked you". */
+const ASK_SAID: Readonly<Record<string, string>> = {
+  sandbox: "about something the sandbox blocked",
+  harness_prompt: "about its harness's permission prompt",
+  consent: "about a step that needs your consent",
+  hold: "about an action purlis held",
+  loop_pause: "whether to keep going after a loop",
+  budget: "whether to go past a budget",
+  hook_give_up: "about a hook that gave up",
+};
+
+/** The groups whose Allow lets the chat go on, and whose refusal stops it. */
+const GOES_ON = new Set(["loop_pause", "budget"]);
+
+/**
+ * What an Allow of a group says where it is not the group's usual words (Q262). A budget's
+ * Raise and Continue are both `allowed`, so its line is true of both (Q262 amended).
+ */
+const ALLOWED_SAID: Readonly<Record<string, string>> = {
+  budget: "Let it go on past its budget",
+};
+
+/** Who answered, as an ask's row says it. */
+const BY_SAID: Readonly<Record<string, string>> = {
+  window: "by you in the window",
+  inbox: "by you from purlis inbox",
+};
+
+/** **An ask, as one row draws it** (R-229): its raise, and its answer once there is one. */
+export type AskRow = {
+  kind: "ask";
+  at: string | null;
+  ask: string;
+  answered: Extract<ChatLogRow, { kind: "ask_answered" }> | null;
+};
+
+/** A row as the timeline draws it: the core's, an ask's raise and answer joined as one. */
+export type DrawnRow = Exclude<ChatLogRow, { kind: "ask_raised" | "ask_answered" }> | AskRow;
+
+/**
+ * **One row per ask** (R-229): each answer joins the oldest raise of its group still without
+ * one, and the row stands where the ask was raised. An answer with no raise before it (a log
+ * older than raises) is a row of its own.
+ */
+export function drawnRows(rows: readonly ChatLogRow[]): DrawnRow[] {
+  const drawn: DrawnRow[] = [];
+  for (const row of rows) {
+    if (row.kind === "ask_raised") {
+      drawn.push({ kind: "ask", at: row.at, ask: row.ask, answered: null });
+    } else if (row.kind === "ask_answered") {
+      const open = drawn.find(
+        (one): one is AskRow => one.kind === "ask" && one.ask === row.ask && one.answered === null,
+      );
+      if (open === undefined) drawn.push({ kind: "ask", at: row.at, ask: row.ask, answered: row });
+      else open.answered = row;
+    } else {
+      drawn.push(row);
+    }
+  }
+  return drawn;
+}
+
+/** **An ask's line** (R-229): what it asked, its answer, and who answered. */
+export function askSaid(row: AskRow): string {
+  const asked = `Asked you ${ASK_SAID[row.ask] ?? "something"}`;
+  const answer = row.answered;
+  if (answer === null) return `${asked} · Not answered`;
+  const goesOn = GOES_ON.has(row.ask);
+  const said =
+    answer.answer === "allowed"
+      ? (ALLOWED_SAID[row.ask] ?? (goesOn ? "Let it go on" : "Allowed"))
+      : goesOn
+        ? "Stopped"
+        : "Kept blocked";
+  return `${asked} · ${said}, ${BY_SAID[answer.by] ?? "by you"}`;
+}
+
+/** The arm a held merge is held at (`purlis_core::mergehold::REASON`). */
+const MERGE_HOLD = "merge-hold";
+
+/** What a stop row under one of the chat's sub-agents ends with (Q261). */
+const OF_A_HELPER = " · from one of its helpers";
+
+/**
+ * **A hold's line** (R-231): what purlis held for the person, and, where it was held under one
+ * of the chat's sub-agents, that it was its helper's (Q261). Grants are phase 3's rows.
+ */
+export function holdSaid(row: Extract<ChatLogRow, { kind: "held" }>): string {
+  const helper = row.sub_agent ? OF_A_HELPER : "";
+  if (row.arm === MERGE_HOLD)
+    return `Held a merge · purlis merges it only when you press Merge${helper}`;
+  const call = row.tool === "" || row.tool === "unknown" ? "a call" : `a ${row.tool} call`;
+  return `Held ${call} · purlis asked you first${helper}`;
+}
+
+/** **A loop pause's line** (R-232): which rule paused the chat, and at how many times. */
+export function loopPauseSaid(row: Extract<ChatLogRow, { kind: "loop_paused" }>): string {
+  switch (row.rule) {
+    case "failing":
+      return `Paused · the same command failed ${row.times} times in a row`;
+    case "refused":
+      return `Paused · ${row.times} of its asks were kept blocked in a row`;
+    case "blocked":
+      return `Paused · it was blocked ${row.times} times on the same thing`;
+    default:
+      return "Paused · it went round and round";
+  }
+}
+
 /** A block row, as the core reads it (T1-29). */
 export type BlockRow = Extract<ChatLogRow, { kind: "blocked" }>;
 
@@ -247,10 +373,49 @@ export function blockTags(row: BlockRow): { kind: BlockTagKind; word: string }[]
 }
 
 /** A row's line. */
-export function rowSaid(row: ChatLogRow): string {
-  if (row.kind === "started") return startSaid(row);
-  if (row.kind === "blocked") return blockSaid(row);
-  return endSaid(row);
+export function rowSaid(row: DrawnRow): string {
+  switch (row.kind) {
+    case "started":
+      return startSaid(row);
+    case "ended":
+      return endSaid(row);
+    case "blocked":
+      return blockSaid(row);
+    case "protection_changed":
+      return protectionChangeSaid(row);
+    case "ask":
+      return askSaid(row);
+    case "held":
+      return holdSaid(row);
+    case "loop_paused":
+      return loopPauseSaid(row);
+  }
+}
+
+/**
+ * **The honesty lines** (R-235): what heads the log of a chat whose reports purlis cannot
+ * check, and of one that ran with No sandbox, in that order. None for a chat that is neither.
+ */
+export function honestyLines(summary: ChatLogSummary): string[] {
+  const lines: string[] = [];
+  if (summary.unverified)
+    lines.push(
+      "Unverified: this chat could reach what reports its calls to purlis, so purlis cannot check this log.",
+    );
+  if (summary.ran_as_you)
+    lines.push(
+      "Ran as you: this chat had No sandbox, so it could reach everything you can on this machine.",
+    );
+  return lines;
+}
+
+/**
+ * **The allowed calls, in one line** (R-234): `212 allowed · 9 by your rules`, both counts
+ * always, so none by the person's rules reads as 0 (Q261); none for a chat with no allowed call.
+ */
+export function allowedSaid(summary: ChatLogSummary): string | null {
+  if (summary.allowed === 0) return null;
+  return `${summary.allowed} allowed · ${summary.by_your_rules} by your rules`;
 }
 
 /** A row's time, as the timeline shows it: `2026-11-13 09:00 UTC`, or nothing. */

@@ -304,7 +304,7 @@ fn in_a_group_the_newest_verified_block_decides_the_allow() {
 /// target summary.
 #[test]
 fn blocked_lately_is_folded_into_the_blocked_log() {
-    use purlis_core::eventlog::stops::{Answer, AskAnswered, AskGroup, Stop};
+    use purlis_core::eventlog::stops::{Answer, AnsweredBy, AskAnswered, AskGroup, Stop};
     use purlis_core::eventlog::{ArgsKey, Log, Recorder, RunOf};
     use purlis_core::sandboxblock::stop::{Reported, sandbox_block};
 
@@ -397,6 +397,7 @@ fn blocked_lately_is_folded_into_the_blocked_log() {
             let answered = Stop::AskAnswered(AskAnswered {
                 ask: AskGroup::Sandbox,
                 answer: Answer::Allowed,
+                by: AnsweredBy::Window,
             });
             recorder
                 .stop(project, Some(number), &answered)

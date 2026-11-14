@@ -121,7 +121,11 @@ function core(blocks: Record<number, Held[]>, logs: Record<number, ChatLogRow[]>
         return [...seen];
       }
       if (cmd === "chat_log") {
-        const read: ChatLog = { known: true, rows: logs[given.session as number] ?? [] };
+        const read: ChatLog = {
+          known: true,
+          rows: logs[given.session as number] ?? [],
+          summary: { allowed: 0, by_your_rules: 0, unverified: false, ran_as_you: false },
+        };
         return read;
       }
       if (cmd === "chat_blocks")
