@@ -57,8 +57,21 @@ pub struct PoolSetupStep {
     pub also: Option<PoolSetupAction>,
     /// Install's parts, each with its own button (#4493).
     pub parts: Vec<PoolSetupPart>,
+    /// The words for the person's cluster's admin (#4496), where doctor shows they can't
+    /// install. Held free of secrets by the core.
+    pub admin: Option<String>,
     /// How the step is undone by hand, never by a button: uninstalling from a cluster.
     pub undo: Option<PoolSetupSee>,
+    /// What Set up Docker on another machine, or Connect again, opens Connect with (#6268).
+    pub prefill: Option<PoolSetupPrefill>,
+}
+
+/// **A machine to open Connect with** (#6268): its route, and the Docker context it was read
+/// from, where it was read from one.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolSetupPrefill {
+    pub route: String,
+    pub context: Option<String>,
 }
 
 /// A host key, as Connect shows it (#6266).
@@ -85,6 +98,36 @@ pub struct PoolSetupMachine {
     pub now: Option<PoolSetupKey>,
     /// The engine's id trusted for it.
     pub engine: Option<String>,
+    /// **Over Docker's TLS API** (#6267): `tls` for a `tcp://` machine, `ssh` otherwise.
+    pub over: String,
+    /// The TLS files named under Options.
+    pub tls: Option<PoolSetupTlsFiles>,
+    /// The CA read at Connect to, to confirm.
+    pub ca: Option<PoolSetupCa>,
+    /// The CA's fingerprint trusted for it.
+    pub trusted_ca: Option<String>,
+    /// The fingerprint the CA file holds now, where that isn't the one trusted.
+    pub ca_now: Option<String>,
+    /// The Docker context the route was read from (#6268).
+    pub context: Option<String>,
+}
+
+/// The TLS files named for a `tcp://` machine, as Connect's Options show them (#6267).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolSetupTlsFiles {
+    pub ca: String,
+    pub cert: String,
+    pub key: Option<String>,
+    pub key_vault: Option<String>,
+    pub key_name: Option<String>,
+}
+
+/// A CA, as Connect shows it to confirm (#6267).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolSetupCa {
+    pub fingerprint: String,
+    pub subject: Option<String>,
+    pub file: String,
 }
 
 /// One part of a cluster's install (#4493): `upstream`, `definitions`, `signing-key` or
@@ -106,6 +149,14 @@ pub struct PoolSetupContexts {
     pub chosen: Option<String>,
     /// The chosen cluster's Pools, by name, where its operator runs (#4494).
     pub pools: Vec<String>,
+    /// Whether the person joins their team's install (#4495): the key is then confirmed by
+    /// pasting the one their admin gave them.
+    pub joining: bool,
+    /// The cluster operator key a kept cluster pool pinned here (#4495).
+    pub pinned: Option<String>,
+    /// Whether its Pool names a key now that the pin never vouched for (#4495). The key itself
+    /// isn't sent: it is shown only once the key pasted from the admin matched it.
+    pub key_changed: bool,
 }
 
 /// What the tab draws.
@@ -181,6 +232,9 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
             recommended: setup.contexts.recommended.clone(),
             chosen: setup.contexts.chosen.clone(),
             pools: setup.contexts.pools.clone(),
+            joining: setup.contexts.joining,
+            pinned: setup.contexts.pinned.clone(),
+            key_changed: setup.contexts.named_now.is_some(),
         },
         at: setup.at.as_ref().map(word),
         steps: setup
@@ -205,6 +259,7 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
                         next: part.next.as_ref().map(action_shown),
                     })
                     .collect(),
+                admin: step.admin.clone(),
                 undo: step.undo.as_ref().map(|undo| PoolSetupSee {
                     note: undo.note.clone(),
                     text: undo.text.clone(),
@@ -219,6 +274,26 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
                     trusted: machine.trusted.as_ref().map(key),
                     now: machine.now.as_ref().map(key),
                     engine: machine.engine.clone(),
+                    over: machine.over.to_owned(),
+                    tls: machine.tls.as_ref().map(|tls| PoolSetupTlsFiles {
+                        ca: tls.ca.clone(),
+                        cert: tls.cert.clone(),
+                        key: tls.key.clone(),
+                        key_vault: tls.key_vault.clone(),
+                        key_name: tls.key_name.clone(),
+                    }),
+                    ca: machine.ca.as_ref().map(|ca| PoolSetupCa {
+                        fingerprint: ca.fingerprint.clone(),
+                        subject: ca.subject.clone(),
+                        file: ca.file.clone(),
+                    }),
+                    trusted_ca: machine.trusted_ca.clone(),
+                    ca_now: machine.ca_now.clone(),
+                    context: machine.context.clone(),
+                }),
+                prefill: step.prefill.as_ref().map(|prefill| PoolSetupPrefill {
+                    route: prefill.route.clone(),
+                    context: prefill.context.clone(),
                 }),
                 cause: step.cause.map(str::to_owned),
                 skippable: step.skippable,
@@ -489,6 +564,311 @@ pub async fn pool_setup_podman_connections() -> Result<Vec<PoolSetupPodmanConnec
     }
 }
 
+/// **A context of the person's Docker, as Connect offers it** (#6268): its name, whether it is
+/// the one their `docker` uses now, and what its endpoint was read into: `over` `ssh` or `tls`
+/// with its `route`, `here` for a socket on this machine (the local kind), or `refused` with
+/// why purlis doesn't use it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolSetupDockerContext {
+    pub name: String,
+    pub current: bool,
+    pub over: String,
+    pub route: Option<String>,
+    pub refused: Option<String>,
+}
+
+/// **The person's Docker contexts** (`docker context ls`, then `docker context inspect`), for
+/// Connect to offer (#6268). It contacts no machine: this machine's `docker` lists what it keeps.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_docker_contexts() -> Result<Vec<PoolSetupDockerContext>, String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("reading your Docker contexts", || {
+            use purlis_core::dockercontext::Endpoint;
+            let Some(docker) = purlis_core::poolsetup::docker_here() else {
+                return Ok(Vec::new());
+            };
+            Ok(purlis_core::dockercontext::contexts_here(docker.program())
+                .into_iter()
+                .map(|one| {
+                    let route = one.endpoint.route();
+                    let (over, refused) = match &one.endpoint {
+                        Endpoint::Here => ("here", None),
+                        Endpoint::Ssh(_) => ("ssh", None),
+                        Endpoint::Tls { .. } => ("tls", None),
+                        Endpoint::Refused(why) => ("refused", Some(why.clone())),
+                    };
+                    PoolSetupDockerContext {
+                        name: one.name,
+                        current: one.current,
+                        over: over.to_owned(),
+                        route,
+                        refused,
+                    }
+                })
+                .collect())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Keeps the Docker context `name` picked on Connect** (#6268, ADR 0123 §2): read again now,
+/// once, into the route its endpoint names, its TLS files and its name; a context on this
+/// machine's own socket chooses the local kind. It contacts nothing.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_docker_context(name: String) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("keeping your choice", move || {
+            let docker = purlis_core::poolsetup::docker_here()
+                .ok_or_else(|| "purlis found no docker on this machine.".to_owned())?;
+            let contexts = purlis_core::dockercontext::contexts_here(docker.program());
+            let context = contexts
+                .iter()
+                .find(|one| one.name == name)
+                .ok_or_else(|| {
+                    format!(
+                        "Your Docker has no context named {} now. Pick it again from the list.",
+                        purlis_core::shown::short(&name)
+                    )
+                })?;
+            purlis_core::poolsetup::choose_docker_context(&config_root()?, context)
+                .map_err(|why| why.to_string())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = name;
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Keep the pool as it is** (#6268, ADR 0123 §7): pool `pool` stays on its route, and forgets
+/// the Docker context it was read from, so doctor stops comparing them.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_keep_pool_as_it_is(pool: String) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("keeping the pool as it is", move || {
+            purlis_core::runners::forget_docker_context(&config_root()?, &pool)
+                .map_err(|why| why.to_string())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pool;
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Pins the cluster pool `pool`'s key again** (#4495), on the Pool step's own press: the key its
+/// Pool names now, only where it is `key`, the one the person pasted from their cluster's admin.
+/// Anything else pins nothing ([`purlis_core::pools::pin_again`]).
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_pin_again(pool: String, key: String) -> Result<(), String> {
+    crate::off_the_window("pinning the cluster operator's key", move || {
+        let config = config_root()?;
+        let kubectl = crate::clusterpools::kubectl(&config)?;
+        purlis_core::pools::pin_again(&config, &kubectl, &pool, &key)
+            .map_err(|why| crate::devices::shown_safely(&why.to_string()))
+    })
+    .await
+}
+
+/// **Get help** on Pool setup's step `step` (#4497): a chat on the project's default profile, at
+/// the project's root, started on the core's message about the step and `error`, the words the
+/// window showed where a press failed. Only under the project's sandbox, where no chat changes a
+/// pool; fixes stay the person's, in Pool setup. The window's alone (`WINDOW_ONLY`).
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_get_help(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    step: String,
+    error: Option<String>,
+    columns: u16,
+    rows: u16,
+) -> Result<crate::savefix::Fixing, String> {
+    let held = planes.held(&plane)?;
+    #[cfg(unix)]
+    {
+        crate::off_the_window("starting a chat to help with Pool setup", move || {
+            use purlis_core::dockerpool::Docker;
+            use purlis_core::poolsetup::{self, Here, StepId};
+            let step: StepId = serde_json::from_value(serde_json::Value::String(step.clone()))
+                .map_err(|_| {
+                    format!(
+                        "Pool setup has no step called {}",
+                        purlis_core::shown::short(&step)
+                    )
+                })?;
+            let root = held.root().to_path_buf();
+            let config = config_root()?;
+            let docker = poolsetup::docker_here();
+            let kubectl = poolsetup::cluster::kubectl_here();
+            let here = Here {
+                config: &config,
+                plane: Some(&root),
+                docker: docker.as_ref(),
+                engine: Docker::engine_on_this_machine(),
+                kubectl: kubectl.as_ref().map_err(String::as_str),
+            };
+            let setup = poolsetup::resumed(&here)
+                .map_err(|why| why.to_string())?
+                .setup;
+            let prompt = poolsetup::help::opening(&setup, step, error.as_deref())
+                .map_err(|why| why.to_string())?;
+            let label = poolsetup::help::label(step);
+            let (profile, _kind) =
+                crate::curation::default_profile(&root, "no chat was started to help")?;
+            let started = crate::curation::start_sent(
+                &held,
+                crate::curation::ChatTyped {
+                    profile,
+                    persona: None,
+                    cwd: root.clone(),
+                    label: label.clone(),
+                    prompt,
+                    then_a_space: false,
+                    starts_runs: None,
+                    studio: None,
+                    skill: None,
+                },
+                purlis_core::engine::Size { columns, rows },
+                crate::curation::SentFor::PoolSetupHelp,
+            )?;
+            Ok(crate::savefix::Fixing {
+                session: started.session,
+                name: started.name,
+                label,
+                persona: None,
+                harness: started.ready.declaration().map(|d| d.name.clone()),
+                workspace: None,
+                existing: false,
+            })
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (held, step, error, columns, rows);
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Keeps that the person sent Send to your admin's words** (#4496), about the cluster chosen
+/// on Where, from the project `plane` the tab is in: Check the cluster then waits for their
+/// admin, across a close, and is checked again by itself. Nothing is sent anywhere by purlis.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_ask_admin(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<(), String> {
+    // The project as the registry holds it, never a path the caller names (charter-app#127).
+    let project = planes.held(&plane)?.root().to_path_buf();
+    #[cfg(unix)]
+    {
+        crate::off_the_window("keeping that you asked your admin", move || {
+            purlis_core::poolsetup::admin::asked(&config_root()?, Some(&project), seconds_now())
+                .map_err(|why| why.to_string())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = project;
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Forgets that the person waits for their admin** (#4496): Stop waiting, or the ready Ask
+/// answered.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_stop_waiting(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        let forgot = crate::off_the_window("forgetting that you asked your admin", move || {
+            purlis_core::poolsetup::admin::forget(&config_root()?).map_err(|why| why.to_string())
+        })
+        .await;
+        let _ = tauri::Emitter::emit(&app, POOL_SETUP_READY, ());
+        forgot
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = app;
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// Now, in seconds since the epoch.
+#[cfg(unix)]
+fn seconds_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs())
+}
+
+/// The event every window hears when Pool setup's ready Ask comes or goes (#4496).
+pub const POOL_SETUP_READY: &str = "pool-setup-ready";
+
+/// How often the wait for an admin is checked again in the background: a low rate, since only
+/// a person changes it, and the open tab checks far oftener (spec #4469, Rechecks).
+const RECHECK_EVERY: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// **Checks the wait for an admin again now and then** (#4496), on a thread of its own: only where
+/// the person waits, through this machine's kubectl with their own sign-in. Once it is ready,
+/// every window hears it, and the ready Ask shows.
+pub fn recheck_now_and_then(app: &tauri::AppHandle) {
+    #[cfg(unix)]
+    {
+        let app = app.clone();
+        let _ = std::thread::Builder::new()
+            .name("pool-setup-recheck".into())
+            .spawn(move || {
+                loop {
+                    std::thread::sleep(RECHECK_EVERY);
+                    let Ok(config) = config_root() else { continue };
+                    let waits = purlis_core::poolsetup::read_choices(&config)
+                        .ok()
+                        .and_then(|choices| choices.admin)
+                        .is_some_and(|asked| asked.ready.is_none());
+                    if !waits {
+                        continue;
+                    }
+                    let kubectl = purlis_core::poolsetup::cluster::kubectl_here();
+                    let now = seconds_now();
+                    if matches!(
+                        purlis_core::poolsetup::admin::recheck(
+                            &config,
+                            kubectl.as_ref().map_err(Clone::clone),
+                            now
+                        ),
+                        Ok(true)
+                    ) {
+                        let _ = tauri::Emitter::emit(&app, POOL_SETUP_READY, ());
+                    }
+                }
+            });
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = app;
+    }
+}
+
 /// **Keeps the cluster operator's image named under Install's Options** (#4493), or none.
 #[tauri::command]
 #[specta::specta]
@@ -504,6 +884,64 @@ pub async fn pool_setup_operator_image(image: Option<String>) -> Result<(), Stri
     #[cfg(not(unix))]
     {
         let _ = image;
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Keeps the TLS files named under Connect's Options** for a `tcp://` machine (#6267, ADR
+/// 0123 §4): the CA, the client certificate, and the key's file or a vault entry of this project's
+/// (`key_vault` and `key_name`), or forgets them where `ca` is empty. Their paths and names alone
+/// are kept, never what they hold. It contacts nothing.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_tls_files(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    ca: String,
+    cert: String,
+    key: Option<String>,
+    key_vault: Option<String>,
+    key_name: Option<String>,
+) -> Result<PoolSetupShown, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    #[cfg(unix)]
+    {
+        crate::off_the_window("keeping the TLS files", move || {
+            use purlis_core::tlsroute::{Files, KeyFrom};
+            let config = config_root()?;
+            let filled = |text: Option<String>| text.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty());
+            // A path typed from the home, as the fields suggest (`~/.docker/ca.pem`), is kept
+            // absolute: the core takes nothing else.
+            let env = purlis_core::secrets::Env::from_process();
+            let path = |typed: &str| purlis_core::secrets::expanduser(typed.trim(), &env);
+            let files = if ca.trim().is_empty() {
+                None
+            } else {
+                let key = match (filled(key), filled(key_vault), filled(key_name)) {
+                    (Some(key), None, None) => KeyFrom::File(path(&key)),
+                    (None, Some(vault), Some(key)) => KeyFrom::Vault {
+                        plane: root.clone(),
+                        vault,
+                        key,
+                    },
+                    _ => {
+                        return Err(
+                            "Name your client certificate's key: its file, or the vault and key                              that hold it."
+                                .to_owned(),
+                        );
+                    }
+                };
+                Some(Files::new(path(&ca), path(&cert), key)?)
+            };
+            purlis_core::poolsetup::choose_tls_files(&config, files)
+                .map_err(|why| why.to_string())?;
+            read_shown(&config, &root, None)
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (root, ca, cert, key, key_vault, key_name);
         Err(crate::dockerpools::NOT_HERE.to_owned())
     }
 }
@@ -528,13 +966,8 @@ pub async fn pool_setup_connect(
                 .ok_or_else(|| "Pick the machine first.".to_owned())?;
             let docker = poolsetup::docker_here()
                 .ok_or_else(|| "purlis found no docker command on this machine.".to_owned())?;
-            let met = chosen
-                .route_read()
-                .and_then(|route| poolsetup::connecting::meet(&docker, &route));
-            let pressed = match met {
-                Ok(met) => Pressed::Met(met),
-                Err(finding) => Pressed::Found(finding),
-            };
+            // Over SSH the key the machine shows; over TLS the CA its files name (#6267).
+            let pressed: Pressed = poolsetup::connecting::meet_chosen(&config, &docker, &chosen);
             read_shown(&config, &root, Some(pressed))
         })
         .await
@@ -568,14 +1001,10 @@ pub async fn pool_setup_trust(
                 .ok_or_else(|| "Pick the machine first.".to_owned())?;
             let docker = poolsetup::docker_here()
                 .ok_or_else(|| "purlis found no docker command on this machine.".to_owned())?;
-            let trusted = chosen
-                .route_read()
-                .and_then(|route| poolsetup::connecting::trust(&docker, &route, &fingerprint));
-            match trusted {
-                Ok(remote) => {
-                    poolsetup::trusted(&config, &remote).map_err(|why| why.to_string())?;
-                    read_shown(&config, &root, None)
-                }
+            match poolsetup::connecting::trust_chosen(&config, &docker, &chosen, &fingerprint)
+                .map_err(|why| why.to_string())?
+            {
+                Ok(()) => read_shown(&config, &root, None),
                 Err(finding) => read_shown(&config, &root, Some(Pressed::Found(finding))),
             }
         })
@@ -584,6 +1013,73 @@ pub async fn pool_setup_trust(
     #[cfg(not(unix))]
     {
         let _ = (root, fingerprint);
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Check and trust again** (#6270, ADR 0123 §3): pool `pool`'s machine met again as Connect
+/// to meets a new one, without its pin, laid over Connect for the person to check: the key it
+/// shows now, or the CA its file holds now. Nothing is kept.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_check_and_trust_again(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    pool: String,
+) -> Result<PoolSetupShown, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    #[cfg(unix)]
+    {
+        crate::off_the_window("contacting the machine", move || {
+            use purlis_core::poolsetup;
+            let config = config_root()?;
+            let docker = poolsetup::docker_here()
+                .ok_or_else(|| "purlis found no docker command on this machine.".to_owned())?;
+            let pressed = poolsetup::connecting::meet_pool(&config, &docker, &pool)
+                .map_err(|why| why.to_string())?;
+            read_shown(&config, &root, Some(pressed))
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (root, pool);
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Trust this machine, for a pool met again** (#6270, ADR 0123 §3): pool `pool`'s machine met
+/// again and held to `fingerprint`, the one the person saw, its engine read anew, and that pin
+/// kept for the pool in place of the one that no longer held. What went wrong is laid over
+/// Connect, and nothing is kept then.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_trust_again(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    pool: String,
+    fingerprint: String,
+) -> Result<PoolSetupShown, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    #[cfg(unix)]
+    {
+        crate::off_the_window("checking the machine", move || {
+            use purlis_core::poolsetup::{self, Pressed};
+            let config = config_root()?;
+            let docker = poolsetup::docker_here()
+                .ok_or_else(|| "purlis found no docker command on this machine.".to_owned())?;
+            match poolsetup::connecting::trust_pool(&config, &docker, &pool, &fingerprint)
+                .map_err(|why| why.to_string())?
+            {
+                Ok(()) => read_shown(&config, &root, None),
+                Err(finding) => read_shown(&config, &root, Some(Pressed::Found(finding))),
+            }
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (root, pool, fingerprint);
         Err(crate::dockerpools::NOT_HERE.to_owned())
     }
 }

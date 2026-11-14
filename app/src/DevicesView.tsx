@@ -273,8 +273,9 @@ export function DevicesView({ now = new Date() }: { now?: Date }) {
     setAsking(undefined);
     setRemoving(pool);
     setLeft(undefined);
-    void removePool(pool, false, discarding).then((said) => {
+    void removePool(pool, false, discarding).then((came) => {
       setRemoving(undefined);
+      const said = came.removed ? came.left : came.why;
       if (said !== undefined) setLeft({ pool, said });
       return rereadDevices();
     });

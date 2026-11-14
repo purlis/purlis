@@ -20,6 +20,8 @@ import { AT_THE_ROOT, sourceKey } from "./skillStudio";
 import { openViewAt } from "./ui/panel/viewHistory";
 import { PROJECT } from "./skillChanges";
 import { pickIn } from "./ui/select/select.testkit";
+import { SETTINGS_ACTION } from "./settings/links";
+import { NO_SKILL_POLICY } from "./skillPolicy.testkit";
 
 afterEach(() => {
   cleanup();
@@ -232,6 +234,8 @@ function core({
         return REVIEW;
       case "skill_update_review":
         return UPDATE;
+      case "skill_policy":
+        return NO_SKILL_POLICY;
       default:
         return { notes: [] };
     }
@@ -1844,5 +1848,203 @@ describe("an extension's skill source (#3092)", () => {
       skills: [{ name: "notify", digest: "sha256:n1" }],
     });
     expect(did(asked, "skill_update_review") || did(asked, "skill_update")).toBe(false);
+  });
+});
+
+describe("a skill that comes along by a hint (#5874)", () => {
+  const GRILLING = {
+    ...NOTIFY,
+    name: "grilling",
+    description: "Asks hard questions.",
+    folder: "skills/grilling",
+    brought_by_hint: true,
+    hints: [],
+  };
+  const WITH_HINT = {
+    ...REVIEW,
+    skills: [{ ...REVIEW.skills[0], hints: ["grilling"] }, NOTIFY, GRILLING],
+    accepted: {
+      ...ACCEPTED,
+      skills: [...ACCEPTED.skills, { name: "grilling", digest: "sha256:g1" }],
+    },
+  };
+
+  it("says so, and is unticked out of the review and the install and ticked back in", async () => {
+    const asked = core({
+      answers: {
+        skill_install_review: (args) =>
+          (args.without as string[]).includes("grilling") ? REVIEW : WITH_HINT,
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const page = await openSource(user);
+    await user.click(await within(page).findByRole("button", { name: "Review install: deploy" }));
+    const review = await screen.findByTestId("install-review");
+    const grilling = await within(review).findByTestId("reviewed-grilling");
+    expect(grilling).toHaveTextContent("Comes along by a hint: deploy names it bare.");
+    expect(within(review).getByTestId("reviewed-notify")).toHaveTextContent(
+      "Comes along: deploy refers to it.",
+    );
+    // One a reference brings is out of reach; one a hint brings is not.
+    expect(within(review).getByRole("checkbox", { name: /^Install notify/ })).toBeDisabled();
+    const box = within(review).getByRole("checkbox", { name: /^Install grilling/ });
+    expect(box).toBeChecked();
+    expect(box).toHaveAccessibleDescription(
+      "deploy only names it bare, so it runs without it. Untick it to leave it out.",
+    );
+
+    await user.click(box);
+    await waitFor(() => expect(within(review).queryByTestId("reviewed-grilling")).toBeNull());
+    const reviews = () => asked.filter((one) => one.cmd === "skill_install_review");
+    expect(reviews().map((one) => one.args.without)).toEqual([[], ["grilling"]]);
+    const left = within(review).getByRole("checkbox", { name: "Install grilling" });
+    expect(left).not.toBeChecked();
+    expect(left).toHaveAccessibleDescription("deploy only names it bare, so it runs without it.");
+
+    await user.click(within(review).getByRole("button", { name: "Install" }));
+    await waitFor(() => expect(did(asked, "skill_install")).toBe(true));
+    expect(asked.find((one) => one.cmd === "skill_install")?.args.reviewed).toEqual(ACCEPTED);
+  });
+
+  it("is read again with it when its box is ticked back", async () => {
+    const asked = core({
+      answers: {
+        skill_install_review: (args) =>
+          (args.without as string[]).includes("grilling") ? REVIEW : WITH_HINT,
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const page = await openSource(user);
+    await user.click(await within(page).findByRole("button", { name: "Review install: deploy" }));
+    const review = await screen.findByTestId("install-review");
+    await user.click(await within(review).findByRole("checkbox", { name: /^Install grilling/ }));
+    const left = await within(review).findByRole("checkbox", { name: "Install grilling" });
+    await waitFor(() => expect(left).not.toBeChecked());
+    await user.click(left);
+    expect(await within(review).findByTestId("reviewed-grilling")).toBeInTheDocument();
+    const reviews = asked.filter((one) => one.cmd === "skill_install_review");
+    expect(reviews.map((one) => one.args.without)).toEqual([[], ["grilling"], []]);
+  });
+});
+
+describe("an org's skill controls (#6031)", () => {
+  const ORIGIN = { kind: "git", remote: SOURCE.remote, label: SOURCE.remote.label };
+  const SAID =
+    "This project's controls apply: 1 source allowed, 1 skill blocked, commits at least 7 days old.";
+  const POLICY = {
+    file: "purlis.toml",
+    state: {
+      kind: "set",
+      allow: ["https://github.com/acme/skills"],
+      block: ["deploy from https://example.com/skills"],
+      min_age_days: 7,
+      exempt: [],
+      said: SAID,
+    },
+    sources: [
+      {
+        origin: ORIGIN,
+        kind: "not-allowed",
+        refused: "https://example.com/skills is not on this project's allow list of skill sources",
+        only: [],
+      },
+    ],
+  };
+  // 2026-11-13T09:00:00Z: three days and an hour from the day the update can be taken.
+  const NOW = Date.parse("2026-11-13T09:00:00Z");
+  const UNTIL = Math.floor(Date.parse("2026-11-16T10:00:00Z") / 1000);
+  const YOUNG = {
+    ...OFFER,
+    refused: {
+      kind: "too-young",
+      why: "cccccc0 was committed 3 days ago, and this project installs only commits at least 7 days old: it can be installed in 4 days",
+      until: UNTIL,
+    },
+  };
+  beforeEach(() => {
+    vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("says once above Sources that they apply, and opens them in Settings", async () => {
+    const asked = core({ answers: { skill_policy: () => POLICY } });
+    const opened: unknown[] = [];
+    const hear = (event: Event) => opened.push((event as CustomEvent).detail);
+    window.addEventListener(SETTINGS_ACTION, hear);
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+
+    expect(await screen.findByTestId("skill-policy")).toHaveTextContent(SAID);
+    await user.click(screen.getByRole("button", { name: "See the controls" }));
+    window.removeEventListener(SETTINGS_ACTION, hear);
+    expect(opened).toEqual([{ plane: PLANE, action: "settings.group:project.skill-sources" }]);
+    // The controls are asked about the sources listed, no more.
+    await waitFor(() =>
+      expect(asked.filter((one) => one.cmd === "skill_policy").at(-1)?.args.origins).toEqual([
+        ORIGIN,
+      ]),
+    );
+  });
+
+  it("marks a source they refuse on its row, with the core's sentence, before any review", async () => {
+    core({ answers: { skill_policy: () => POLICY } });
+    renderStudio(AT_THE_ROOT, "sources");
+
+    const row = await screen.findByTestId("skill-source");
+    await waitFor(() => expect(row).toHaveTextContent("Not on the allow list"));
+    expect(within(row).getByTestId("skill-source-refused")).toHaveTextContent(
+      "https://example.com/skills is not on this project's allow list of skill sources.",
+    );
+  });
+
+  it("says an update is too young, and when it can be taken, and keeps its review out of reach", async () => {
+    const asked = core({
+      offers: [YOUNG],
+      answers: {
+        skill_policy: () => POLICY,
+        skill_source_browse: () => ({
+          ...BROWSE,
+          skills: BROWSE.skills.map((one) =>
+            one.name === "deploy"
+              ? {
+                  ...one,
+                  refused: {
+                    kind: "blocked",
+                    why: "deploy from https://example.com/skills is on this project's block list",
+                    until: null,
+                  },
+                }
+              : one,
+          ),
+        }),
+      },
+    });
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    expect(await screen.findByTestId("skill-updates")).toHaveTextContent(
+      "notify from https://example.com/skills (edited here since it was installed) (too young, 4 days to go)",
+    );
+    const page = await openSource(user);
+
+    const notify = await within(page).findByTestId("offered-notify");
+    expect(notify).toHaveTextContent("Too young, 4 days to go");
+    expect(within(notify).getByTestId("refused-notify")).toHaveTextContent(
+      "it can be installed in 4 days, on Monday 16 November.",
+    );
+    expect(within(notify).getByRole("button", { name: "Review update: notify" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    const deploy = within(page).getByTestId("offered-deploy");
+    expect(deploy).toHaveTextContent("Blocked");
+    expect(within(deploy).getByTestId("refused-deploy")).toHaveTextContent(
+      "deploy from https://example.com/skills is on this project's block list.",
+    );
+    await user.click(within(deploy).getByRole("button", { name: "Review install: deploy" }));
+    expect(did(asked, "skill_install_review")).toBe(false);
   });
 });

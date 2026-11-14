@@ -133,20 +133,11 @@ fn says_skill(text: &str) -> bool {
 pub fn hints_in(text: &str, own: &str, known: &dyn Fn(&str) -> bool) -> Vec<Use> {
     let mut out: Vec<Use> = Vec::new();
     for line in text.lines() {
-        for (open, close) in quoted(line) {
+        for (open, close, name) in hint_quotes(line, own, known) {
             if out.len() >= MOST_REFERENCES {
                 return out;
             }
-            let inner_start = open + line[open..].chars().next().map_or(1, char::len_utf8);
-            let inner_end = close - line[..close].chars().next_back().map_or(1, char::len_utf8);
-            let name = &line[inner_start..inner_end];
-            let rest = format!("{}{}", &line[..open], &line[close..]);
-            if name == own
-                || crate::change::name_problem(name).is_some()
-                || !says_skill(&rest)
-                || !known(name)
-                || out.iter().any(|one| one.name == name)
-            {
+            if out.iter().any(|one| one.name == name) {
                 continue;
             }
             out.push(Use {
@@ -159,6 +150,62 @@ pub fn hints_in(text: &str, own: &str, known: &dyn Fn(&str) -> bool) -> Vec<Use>
         }
     }
     out
+}
+
+/// **`text` with every quote that hints at `name` ([`hints_in`]) written as a reference**
+/// (#5874): `"grilling"` becomes `"skills:grilling"` (with `namespace` before the colon), inside
+/// its own marks, so the line reads the same and the reference is checked. Every other line,
+/// quote and name is left as it was, line endings too.
+pub fn written_as_reference(text: &str, own: &str, name: &str, namespace: &str) -> String {
+    let only = |one: &str| one == name;
+    let mut out = String::with_capacity(text.len() + namespace.len() + 1);
+    for line in text.split_inclusive('\n') {
+        let mut at = 0;
+        for (open, close, _) in hint_quotes(line, own, &only) {
+            let inner = open + line[open..].chars().next().map_or(1, char::len_utf8);
+            let end = close - line[..close].chars().next_back().map_or(1, char::len_utf8);
+            out.push_str(&line[at..inner]);
+            out.push_str(namespace);
+            out.push(':');
+            out.push_str(&line[inner..end]);
+            at = end;
+        }
+        out.push_str(&line[at..]);
+    }
+    out
+}
+
+/// **The first line of `text` that hints at `name`** ([`hints_in`]), counted from 1 as an
+/// editor numbers them, or `None` where none does.
+pub fn hint_line(text: &str, own: &str, name: &str) -> Option<usize> {
+    let only = |one: &str| one == name;
+    text.lines()
+        .position(|line| !hint_quotes(line, own, &only).is_empty())
+        .map(|at| at + 1)
+}
+
+/// Each quote of `line` that hints at a skill: its opening mark's and past its closing mark's
+/// byte offsets, and the name it holds, which `known` says is a skill there is, not `own`, on a
+/// line that says "skill" beside it.
+fn hint_quotes<'a>(
+    line: &'a str,
+    own: &str,
+    known: &dyn Fn(&str) -> bool,
+) -> Vec<(usize, usize, &'a str)> {
+    quoted(line)
+        .into_iter()
+        .filter_map(|(open, close)| {
+            let inner_start = open + line[open..].chars().next().map_or(1, char::len_utf8);
+            let inner_end = close - line[..close].chars().next_back().map_or(1, char::len_utf8);
+            let name = &line[inner_start..inner_end];
+            let rest = format!("{}{}", &line[..open], &line[close..]);
+            (name != own
+                && crate::change::name_problem(name).is_none()
+                && says_skill(&rest)
+                && known(name))
+            .then_some((open, close, name))
+        })
+        .collect()
 }
 
 /// Each quote of `line` ([`QUOTES`]) that closes on it, as byte offsets from its opening mark to

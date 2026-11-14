@@ -5,7 +5,7 @@
 //! `purlis_core::slowlog`): what `app/src/slowLog.ts` sends, and reads back for a person's
 //! diagnostics (#4774).
 
-use purlis_core::slowlog::Slow;
+use purlis_core::slowlog::{Counted, Slow, Took};
 use serde::{Deserialize, Serialize};
 
 /// One slow moment the window felt, as it sends it. `at` is milliseconds since 1970 by the
@@ -21,13 +21,23 @@ pub enum SlowMoment {
         hot: u32,
     },
     /// A gap of `ms` between two of the window's frames, seen at `at`, while `hot` chats were
-    /// working, with the tab in front (`front`) and whether a view of a chat was opening.
+    /// working, with the tab in front (`front`) and whether a view of a chat was opening, and
+    /// what the window's thread did in that frame, the top five of each (felt speed round 4,
+    /// H9): the regions whose React commits took longest (`react`), the core's events handled
+    /// (`events`) and answers handled (`answers`) by name and count, and the scripts the webview
+    /// said made the frame long (`scripts`). `dark`: the thread answered all through the gap,
+    /// so the webview withheld its frames (a locked screen, a display asleep, a window covered).
     Stall {
         ms: u32,
         at: f64,
         hot: u32,
         front: Option<String>,
         opening: bool,
+        dark: bool,
+        react: Vec<StallTook>,
+        events: Vec<StallCounted>,
+        answers: Vec<StallCounted>,
+        scripts: Vec<StallTook>,
     },
     /// The core's main thread ran a ping `ms` after it was asked to at `at`, busy with the
     /// command `running` when the wait was noticed (`crate::mainwatch`). The core writes it; the
@@ -40,6 +50,49 @@ pub enum SlowMoment {
     /// The command `command`, received on the core's main thread at `at`, held it for `ms`
     /// (`crate::mainwatch`). The core writes it; the window only reads it back.
     CoreCommand { command: String, ms: u32, at: f64 },
+}
+
+/// Something the window's thread did in a stalled frame, by name, and how long it took there.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+pub struct StallTook {
+    pub name: String,
+    pub ms: u32,
+}
+
+/// Something the window handled `n` times in a stalled frame, by name.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+pub struct StallCounted {
+    pub name: String,
+    pub n: u32,
+}
+
+impl From<StallTook> for Took {
+    fn from(StallTook { name, ms }: StallTook) -> Took {
+        Took { name, ms }
+    }
+}
+
+impl From<Took> for StallTook {
+    fn from(Took { name, ms }: Took) -> StallTook {
+        StallTook { name, ms }
+    }
+}
+
+impl From<StallCounted> for Counted {
+    fn from(StallCounted { name, n }: StallCounted) -> Counted {
+        Counted { name, n }
+    }
+}
+
+impl From<Counted> for StallCounted {
+    fn from(Counted { name, n }: Counted) -> StallCounted {
+        StallCounted { name, n }
+    }
+}
+
+/// Each of `all`, as the other side keeps it.
+fn each<A, B: From<A>>(all: Vec<A>) -> Vec<B> {
+    all.into_iter().map(B::from).collect()
 }
 
 /// Milliseconds since 1970, as the core keeps them: a time before then, or not a number, is 0.
@@ -72,12 +125,22 @@ impl From<SlowMoment> for Slow {
                 hot,
                 front,
                 opening,
+                dark,
+                react,
+                events,
+                answers,
+                scripts,
             } => Slow::Stall {
                 ms,
                 at: at(when),
                 hot,
                 front,
                 opening,
+                dark,
+                react: each(react),
+                events: each(events),
+                answers: each(answers),
+                scripts: each(scripts),
             },
             SlowMoment::CoreStall {
                 ms,
@@ -123,12 +186,22 @@ impl From<Slow> for SlowMoment {
                 hot,
                 front,
                 opening,
+                dark,
+                react,
+                events,
+                answers,
+                scripts,
             } => SlowMoment::Stall {
                 ms,
                 at: ms_of(at),
                 hot,
                 front,
                 opening,
+                dark,
+                react: each(react),
+                events: each(events),
+                answers: each(answers),
+                scripts: each(scripts),
             },
             Slow::CoreStall { ms, at, running } => SlowMoment::CoreStall {
                 ms,
@@ -188,6 +261,23 @@ mod tests {
                 hot: 12,
                 front: Some("steward 3".into()),
                 opening: true,
+                dark: false,
+                react: vec![StallTook {
+                    name: "PlaneView".into(),
+                    ms: 210,
+                }],
+                events: vec![StallCounted {
+                    name: "chat-events".into(),
+                    n: 4,
+                }],
+                answers: vec![StallCounted {
+                    name: "alertsEverywhere".into(),
+                    n: 1,
+                }],
+                scripts: vec![StallTook {
+                    name: "TimerHandler".into(),
+                    ms: 290,
+                }],
             },
             SlowMoment::CoreStall {
                 ms: 1_250,

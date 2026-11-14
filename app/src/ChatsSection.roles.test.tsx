@@ -283,12 +283,14 @@ describe("the Chats list's words wear text roles (#1920)", () => {
       "volaticloud",
     ]);
     for (const group of groups) {
-      // The frame's group head (`ui/panel/panel.css`): 11px spaced capitals, medium, quiet.
+      // The section label's one spelling (`ui-text-label`, #1920), in the frame's quiet tier
+      // (`ui/panel/panel.css`): 11px spaced capitals, strong.
+      expect(group).toHaveClass("ui-text-label");
       expect(named(drawnWith(group, "font-size"))).toBe("--font-size-xs");
-      expect(named(drawnWith(group, "font-weight"))).toBe("--font-weight-medium");
+      expect(named(drawnWith(group, "font-weight"))).toBe("--font-weight-strong");
       expect(named(drawnWith(group, "color"))).toBe("--text-quiet");
       expect(drawnWith(group, "text-transform")).toBe("uppercase");
-      expect(drawnWith(group, "letter-spacing")).toBe("0.06em");
+      expect(drawnWith(group, "letter-spacing")).toBe("0.05em");
       expect(group.querySelector("[data-count]")?.textContent).toMatch(/^\d+$/);
     }
   });

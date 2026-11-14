@@ -49,6 +49,7 @@ fn facts(place: Place, when: chrono::NaiveDateTime) -> Facts {
             conversation: Some("0f6c2a1e-aaaa-bbbb-cccc-123456789abc".to_owned()),
             cwd: Some("workspaces/alpha/charter/si-8b".to_owned()),
             unsandboxed: false,
+            held_from_clusters: false,
             identity: crate::reopen::Identity {
                 id: Some(CHAT_ID.to_owned()),
                 device: Some(DEVICE.to_owned()),
@@ -526,6 +527,7 @@ fn a_chat_the_app_has_no_record_of_is_known_only_by_its_number() {
             conversation: None,
             cwd: None,
             unsandboxed: false,
+            held_from_clusters: false,
             identity: crate::reopen::Identity::default(),
             handed_from: Handed::No,
         }

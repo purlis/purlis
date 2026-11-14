@@ -1,0 +1,23 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# kind, one exact release, checked against the SHA-256 it publishes: one place names the version,
+# and a workflow never names it again. The cluster operator's kind run (`.github/workflows/
+# operator.yml`) and Pool setup's walk on a cluster (`.github/workflows/ci.yml`, #4494) make their
+# clusters with it.
+name: kind
+description: Installs the kind release this action pins, checked against its published SHA-256.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        KIND_VERSION: v0.33.0
+        KIND_SHA256: aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
+      run: |
+        set -euo pipefail
+        curl --fail --silent --show-error --location -o "$RUNNER_TEMP/kind" \
+          "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+        echo "$KIND_SHA256  $RUNNER_TEMP/kind" | sha256sum --check --strict
+        sudo install -m 0755 "$RUNNER_TEMP/kind" /usr/local/bin/kind
+        kind version

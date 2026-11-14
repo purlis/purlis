@@ -175,7 +175,7 @@ export function OpenVault({
         <ListFilter noun={VAULTS} total={vaults.length} query={query} onQuery={setQuery} />
       )}
       {filtered && shown.length === 0 ? (
-        <p className="came-back" role="status">
+        <p className="came-back ui-text-secondary" role="status">
           {noMatchSaid(VAULTS, query)}
         </p>
       ) : (

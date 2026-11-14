@@ -145,7 +145,7 @@ export function MakeItAProject({
       </SettingActions>
 
       {making && (
-        <p className="came-back" role="status">
+        <p className="came-back ui-text-secondary" role="status">
           Making the project and opening the folder in it…
         </p>
       )}

@@ -112,15 +112,6 @@
   border-radius: var(--radius-lg);
 }
 
-/* Its label: the label role, in capitals. */
-[data-scope="card"][data-part="tile-label"] {
-  color: var(--text-secondary);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-strong);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
 [data-scope="card"][data-part="tile-value"] {
   color: var(--text-primary);
   font-size: var(--font-size-lg);
@@ -324,7 +315,6 @@
 
 /* Its line: what it does, in the secondary tier. */
 [data-scope="card-button"][data-part="line"] {
-  font-size: var(--font-size-sm);
   line-height: var(--line-height-body);
   color: var(--text-secondary);
 }

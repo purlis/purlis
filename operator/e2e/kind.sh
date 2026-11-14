@@ -29,8 +29,9 @@ repo=$(cd "$here/.." && pwd)
 cluster=${CLUSTER:-purlis-operator-e2e}
 registry=$cluster-registry
 port=${REGISTRY_PORT:-5001}
-# The oldest Kubernetes purlis supports (spec #2041), as kind v0.33.0 publishes it.
-node=kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
+# The oldest Kubernetes purlis supports (spec #2041), as kind v0.33.0 publishes it: one copy,
+# which Pool setup's walk on a cluster makes its cluster of too (tests/kind-cluster/up.sh).
+node=$(cat "$here/e2e/kind-node.txt")
 registry_image=registry:3@sha256:ddf754342cfc8acc51a56d5d0ab6af06826461864460636d8bd5c546dab2a7b8
 # The pinned upstream release, applied as its kustomization there applies it: the vendored
 # manifest with the controller named by the release's digest (#2261).
@@ -343,11 +344,22 @@ fi
 
 step "the guide's pool, its key and a teammate's rights"
 guide_run pool --value "ghcr.io/purlis/purlis-runner@<runner digest>=$runner"
+# The key the guide has the admin give their teammates is read from the signing key's Secret, not
+# from the Pool's status (#4495): it is a key of the form a desktop pins, and the key an honest
+# operator's Pool names.
+admins_key=$(guide_run pool-key)
+case $admins_key in
+  ed25519:????????????????????????????????????????????????????????????????) ;;
+  *)
+    echo "the guide's key is not ed25519: and 64 hex digits: $admins_key" >&2
+    exit 1
+    ;;
+esac
 tries=0
-until [ -n "$(guide_run pool-key)" ]; do
+until [ "$(kubectl --context "$context" get pools.runners.purlis.dev team --output jsonpath='{.status.signingKey}')" = "$admins_key" ]; do
   tries=$((tries + 1))
   if [ "$tries" -ge 60 ]; then
-    echo "the guide's pool named no key within a minute" >&2
+    echo "the guide's pool named no key, or another than the Secret's, within a minute" >&2
     exit 1
   fi
   sleep 1
