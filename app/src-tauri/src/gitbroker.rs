@@ -260,6 +260,12 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
         held.tree_moved();
     }
     let answer = told(held, ask.chat, answered);
+    // A push that went is the chat's own: a merge ask at its head is not flagged (T1-41, R-124).
+    if let GitWork::WorktreePush { repo, piece, .. } = &ask.work
+        && matches!(answer, Answer::Said { code: 0, .. })
+    {
+        crate::mergeholds::pushed(held, ask.chat, &ask.workspace, repo, piece);
+    }
     // A push refused for unsigned commits, or one that went, changes the one Ask for the lanes
     // waiting on signing (#5633).
     if matches!(ask.work, GitWork::WorktreePush { .. }) {

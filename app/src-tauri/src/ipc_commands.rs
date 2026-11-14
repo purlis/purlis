@@ -158,6 +158,7 @@ macro_rules! app_commands {
                 vaultroute::put_away_refused_vault,
                 removalasks::keep_asked_workspace,
                 mergeholds::reread_held_merge,
+                mergeholds::view_held_merge,
                 mergeholds::merge_held_request,
                 mergeholds::dont_merge_held_request,
                 chatbrowsers::allow_chat_browser,

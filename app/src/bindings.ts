@@ -965,13 +965,21 @@ export const commands = {
 	 */
 	rereadHeldMerge: (plane: PlaneId, session: number, repo: string, number: number, head: string) => typedError<MergeReread, string>(__TAURI_INVOKE("reread_held_merge", { plane, session, repo, number, head })),
 	/**
+	 *  **View changes**, pressed on chat `session`'s merge ask (R-302): the changes of request
+	 *  `number` of `repo` at `head`, read in the clone the merge ran in, and its head marked viewed
+	 *  (R-122), only while the forge, read now with the app's own login, says the request is at
+	 *  `head`. A head that moved is viewed by nobody, and its row is asked again at the new head.
+	 */
+	viewHeldMerge: (plane: PlaneId, session: number, repo: string, number: number, head: string) => typedError<string, string>(__TAURI_INVOKE("view_held_merge", { plane, session, repo, number, head })),
+	/**
 	 *  **Merge**, pressed on chat `session`'s merge ask: the app reads the request from the forge
 	 *  again, then asks it, with its own login, to merge request `number` of `repo` at exactly
-	 *  `head`, only while the ruleset state the row showed (`ruleset`) is the one it read (R-150).
-	 *  The ask is answered at the press, so a second press merges nothing; where the forge refuses,
-	 *  it waits again and the refusal is said.
+	 *  `head`, only while the ruleset state the row showed (`ruleset`) is the one it read (R-150),
+	 *  and the ask shows the facts `digest` is of (T1-41). The ask is answered at the press, so a
+	 *  second press merges nothing; where the forge refuses, it waits again and the refusal is
+	 *  said.
 	 */
-	mergeHeldRequest: (plane: PlaneId, session: number, repo: string, number: number, head: string, ruleset: RulesetShown) => typedError<null, string>(__TAURI_INVOKE("merge_held_request", { plane, session, repo, number, head, ruleset })),
+	mergeHeldRequest: (plane: PlaneId, session: number, repo: string, number: number, head: string, ruleset: RulesetShown, digest: string) => typedError<null, string>(__TAURI_INVOKE("merge_held_request", { plane, session, repo, number, head, ruleset, digest })),
 	/**
 	 *  **Don't merge**, pressed on chat `session`'s merge ask: it waits no more, and nothing is
 	 *  merged.
@@ -6410,8 +6418,9 @@ export type AnswerPath =
  *  `merge_held_request` for Merge and `dont_merge_held_request` for Don't merge, each for
  *  request `number` of `repo` at `head`, the key the ask was raised at (R-115). `facts` are
  *  what the row shows of it, as the forge last gave them (T1-40): Merge hands back the
- *  ruleset state among them, which it is bound to (R-150), and `reread_held_merge` reads
- *  them again before Merge asks once more (Q248).
+ *  ruleset state and the digest of them, which it is bound to (R-150, T1-41), and
+ *  `reread_held_merge` reads them again before Merge asks once more (Q248).
+ *  `view_held_merge` shows its changes and marks its head viewed (R-302).
  */
 { via: "merge-hold"; repo: string; number: number; head: string; facts: MergeShown } | 
 /**
@@ -11715,6 +11724,18 @@ export type LoginShown = {
 	replaces_form?: string | null,
 };
 
+/**  **What the person has seen of a merge's head** (T1-41, R-122), as its row says it. */
+export type LookShown = 
+/**  Viewed in purlis, at this head. */
+"viewed" | 
+/**
+ *  Approved at this head on the forge, by a person who is neither its author nor an app or
+ *  a bot.
+ */
+"approved" | 
+/**  Neither. */
+"not-viewed";
+
 /**  A chat whose program ended with its session host, as the Notice on its pane shows it. */
 export type LostChat = {
 	plane: PlaneId,
@@ -11984,6 +12005,26 @@ export type MergeShown = {
 	read_at: number,
 	/**  Whether a ruleset protects the base, as purlis read it. */
 	ruleset: RulesetShown,
+	/**
+	 *  What the person has seen of its head (T1-41, R-122): viewed in purlis, approved on the
+	 *  forge by someone else, or neither. A merge takes two presses whichever it is (Q268).
+	 */
+	look: LookShown,
+	/**
+	 *  Where it was not viewed: how many commits its head is ahead of the one the person
+	 *  viewed, where purlis knows it (R-123): "2 commits since you looked".
+	 */
+	since_viewed: number | null,
+	/**
+	 *  Whether purlis recorded the asking chat pushing its head (R-124). A head it did not is
+	 *  flagged.
+	 */
+	pushed_here: boolean,
+	/**
+	 *  The digest of what these facts show (`purlis_core::mergehold::Facts::digest`): Merge
+	 *  hands it back, and merges only while the ask shows the same.
+	 */
+	digest: string,
 };
 
 /**  What a merge did, for the window to report. */

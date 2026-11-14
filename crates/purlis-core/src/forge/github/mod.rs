@@ -15,9 +15,9 @@ use super::backend::{
 use super::checks::{self, Annotation, Checks, FailedCheck};
 use super::pr::{
     AutoMerge, GITHUB_AUTO_MERGE_NOT_ALLOWED, GITHUB_METHODS, GITHUB_NOTHING_TO_WAIT_FOR, Gate,
-    Gated, HeadAt, Image, MergeAs, MergedAt, Opened, Pinned, Pr, Ready, Request, State, check_gate,
-    commit_named, first, held_to_the_forges_clock, is_object_name, is_ours, none_will_run,
-    not_queued_when, not_this_saves, pr_of, unknown_state,
+    Gated, HeadAt, Image, MergeAs, MergedAt, Opened, Pinned, Pr, Ready, Request, Review,
+    ReviewState, Reviewer, State, check_gate, commit_named, first, held_to_the_forges_clock,
+    is_object_name, is_ours, none_will_run, not_queued_when, not_this_saves, pr_of, unknown_state,
 };
 use super::transport::{Call, Field, Method, NoAnswer};
 use super::{
@@ -551,6 +551,36 @@ const MERGE_GATES: [&str; 5] = [
 /// (Q252).
 const BRANCH_NOT_PROTECTED: &str = "Branch not protected";
 
+/// How many pages of a pull request's reviews are read (T1-41).
+const REVIEW_PAGES: u32 = 3;
+
+/// One review as GitHub lists it, or `None` where it names no login, state or commit.
+fn review_of(listed: &Value) -> Option<Review> {
+    let login = listed["user"]["login"]
+        .as_str()
+        .filter(|login| !login.is_empty())?;
+    let by = match listed["user"]["type"].as_str() {
+        Some("User") if !login.ends_with("[bot]") => Reviewer::Person,
+        _ if login.ends_with("[bot]") => Reviewer::App,
+        _ => Reviewer::Bot,
+    };
+    let state = match listed["state"].as_str()? {
+        "APPROVED" => ReviewState::Approved,
+        "CHANGES_REQUESTED" => ReviewState::ChangesRequested,
+        "DISMISSED" => ReviewState::Dismissed,
+        _ => ReviewState::Commented,
+    };
+    let commit = listed["commit_id"]
+        .as_str()
+        .filter(|sha| is_object_name(sha))?;
+    Some(Review {
+        login: login.to_owned(),
+        by,
+        state,
+        commit: commit.to_owned(),
+    })
+}
+
 impl Requests for GitHub {
     fn open_or_update(
         &self,
@@ -765,6 +795,58 @@ impl Requests for GitHub {
         ]
         .iter()
         .any(|gate| !protection[*gate].is_null()))
+    }
+
+    /// The pull request's reviews, oldest first, as GitHub lists them: each one's login, the
+    /// kind of account (`user.type`, an App's login ending in `[bot]`), its state and the
+    /// `commit_id` it reviewed. At most [`REVIEW_PAGES`] pages of 100 are read; a review past
+    /// them is not read, so a later change request there is missed, never an approval made up.
+    fn reviews(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<Vec<Review>, ForgeError> {
+        let (owner, name) = owner_name(path);
+        let api = format!(
+            "repos/{}/{}/pulls/{}/reviews",
+            quote(owner),
+            quote(name),
+            pr.number
+        );
+        let doing = format!("reading pull request #{}'s reviews in {path}", pr.number);
+        let mut reviews = Vec::new();
+        for page in 1..=REVIEW_PAGES {
+            let call = Call::get(&format!("{api}?per_page=100&page={page}"), LIST_TIMEOUT);
+            let listed = self.0.ask(caller, &call, &doing)?;
+            let listed = listed
+                .as_array()
+                .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub answered no list")))?;
+            reviews.extend(listed.iter().filter_map(review_of));
+            if listed.len() < 100 {
+                break;
+            }
+        }
+        Ok(reviews)
+    }
+
+    /// GitHub's `compare/{from}...{to}`: its `ahead_by`.
+    fn commits_between(
+        &self,
+        caller: &Caller,
+        path: &str,
+        from: &str,
+        to: &str,
+    ) -> Result<u32, ForgeError> {
+        let (owner, name) = owner_name(path);
+        let api = format!(
+            "repos/{}/{}/compare/{}...{}",
+            quote(owner),
+            quote(name),
+            quote(from),
+            quote(to)
+        );
+        let doing = format!("comparing {from} with {to} in {path}");
+        let record = self.0.ask(caller, &Call::get(&api, LIST_TIMEOUT), &doing)?;
+        record["ahead_by"]
+            .as_u64()
+            .and_then(|ahead| u32::try_from(ahead).ok())
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub named no count")))
     }
 
     fn body(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<String, ForgeError> {

@@ -402,6 +402,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     // person's press alone. No chat answers its own ask. Nor does one have the app read its
     // request again before Merge asks once more (Q248): that read is the person's press.
     "reread_held_merge",
+    "view_held_merge",
     "merge_held_request",
     "dont_merge_held_request",
     // What a chat's browser may reach, on its first browser call's Ask (#2013): the person's

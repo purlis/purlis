@@ -110,7 +110,7 @@ describe("a held merge on its chat's pane", () => {
     expect(notice().textContent).toContain(
       "Merges request 12 of o/r at 0123456 into main, with no undo",
     );
-    expect(buttons()).toEqual(["Merge", "Don't merge"]);
+    expect(buttons()).toEqual(["Merge", "Don't merge", "View changes"]);
     expect(sent("merge_held_request")).toEqual([]);
   });
 
@@ -151,7 +151,7 @@ describe("a held merge on its chat's pane", () => {
     render(<MergeHoldNotice plane={PLANE} session={SESSION} asks={[hold]} />);
     await confirming();
     await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(buttons()).toEqual(["Merge", "Don't merge"]);
+    expect(buttons()).toEqual(["Merge", "Don't merge", "View changes"]);
     expect(sent("merge_held_request")).toEqual([]);
   });
 
@@ -184,7 +184,7 @@ describe("a held merge on its chat's pane", () => {
 
     rerender(<MergeHoldNotice plane={PLANE} session={SESSION} asks={[moved]} />);
 
-    expect(buttons()).toEqual(["Merge", "Don't merge"]);
+    expect(buttons()).toEqual(["Merge", "Don't merge", "View changes"]);
     expect(sent("merge_held_request")).toEqual([]);
   });
 
@@ -233,7 +233,7 @@ describe("a held merge on its chat's pane", () => {
 
     rerender(<MergeHoldNotice plane={PLANE} session={SESSION} asks={[refreshed]} />);
 
-    expect(buttons()).toEqual(["Merge", "Don't merge"]);
+    expect(buttons()).toEqual(["Merge", "Don't merge", "View changes"]);
     expect(sent("merge_held_request")).toEqual([]);
   });
 
@@ -281,7 +281,7 @@ describe("a held merge on its chat's pane", () => {
     await userEvent.click(screen.getByRole("button", { name: "Merge" }));
     await vi.waitFor(() => expect(sent("reread_held_merge")).toHaveLength(1));
     // Still drawn as it was read before: no question is asked of it.
-    expect(buttons()).toEqual(["Merge", "Don't merge"]);
+    expect(buttons()).toEqual(["Merge", "Don't merge", "View changes"]);
 
     rerender(
       <MergeHoldNotice
@@ -353,7 +353,7 @@ describe("a held merge on its chat's pane", () => {
         ]}
       />,
     );
-    expect(buttons()).toEqual(["Merge", "Don't merge"]);
+    expect(buttons()).toEqual(["Merge", "Don't merge", "View changes"]);
     expect(screen.queryByRole("group", { name: /^Make a rule/ })).toBeNull();
   });
 });

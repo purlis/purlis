@@ -31,7 +31,8 @@ use serde_json::Value;
 use super::checks::{Annotation, Checks, FailedCheck};
 use super::cli::Cli;
 use super::pr::{
-    AutoMerge, Gate, HeadAt, Image, MergeAs, MergedAt, Opened, Pinned, Pr, Ready, Request, State,
+    AutoMerge, Gate, HeadAt, Image, MergeAs, MergedAt, Opened, Pinned, Pr, Ready, Request, Review,
+    State,
 };
 use super::transport::{Call, NoAnswer, Reply, Transport};
 use super::{Forge, ForgeError, Kind, Raised};
@@ -720,6 +721,30 @@ pub trait Requests {
     /// merges into, and the repo's own merge method for it ([`HeadAt`]). What a merge ask is
     /// keyed on ([`crate::mergehold::MergeKey`]). Strict.
     fn head(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<HeadAt, ForgeError>;
+
+    /// **The reviews of `pr`** of the repo at `path`, oldest first (T1-41, R-122): what a merge
+    /// ask's look is judged from ([`crate::mergehold::approves`]). A forge purlis does not read
+    /// them on says so, and nothing reads as approved. Strict.
+    fn reviews(&self, _caller: &Caller, path: &str, pr: &Pr) -> Result<Vec<Review>, ForgeError> {
+        Err(ForgeError::new(format!(
+            "purlis does not read the reviews of request {} of {path} on this forge",
+            pr.number
+        )))
+    }
+
+    /// **How many commits `to` is ahead of `from`** in the repo at `path` (T1-41, R-123): the
+    /// commits since the head the person viewed. A forge purlis does not ask says so. Strict.
+    fn commits_between(
+        &self,
+        _caller: &Caller,
+        path: &str,
+        _from: &str,
+        _to: &str,
+    ) -> Result<u32, ForgeError> {
+        Err(ForgeError::new(format!(
+            "purlis does not compare commits of {path} on this forge"
+        )))
+    }
 
     /// **Whether a ruleset protects `branch`** of the repo at `path` (R-146, Q127): GitHub's
     /// rules for the branch, which its rulesets give it, and GitLab's protected branch of that

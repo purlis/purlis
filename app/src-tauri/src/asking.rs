@@ -260,6 +260,31 @@ pub struct MergeShown {
     pub read_at: u32,
     /// Whether a ruleset protects the base, as purlis read it.
     pub ruleset: RulesetShown,
+    /// What the person has seen of its head (T1-41, R-122): viewed in purlis, approved on the
+    /// forge by someone else, or neither. A merge takes two presses whichever it is (Q268).
+    pub look: LookShown,
+    /// Where it was not viewed: how many commits its head is ahead of the one the person
+    /// viewed, where purlis knows it (R-123): "2 commits since you looked".
+    pub since_viewed: Option<u32>,
+    /// Whether purlis recorded the asking chat pushing its head (R-124). A head it did not is
+    /// flagged.
+    pub pushed_here: bool,
+    /// The digest of what these facts show (`purlis_core::mergehold::Facts::digest`): Merge
+    /// hands it back, and merges only while the ask shows the same.
+    pub digest: String,
+}
+
+/// **What the person has seen of a merge's head** (T1-41, R-122), as its row says it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum LookShown {
+    /// Viewed in purlis, at this head.
+    Viewed,
+    /// Approved at this head on the forge, by a person who is neither its author nor an app or
+    /// a bot.
+    Approved,
+    /// Neither.
+    NotViewed,
 }
 
 /// **Whether a ruleset protects a merge's base** (R-147), as its row shows it and its Merge hands
@@ -297,8 +322,20 @@ impl From<RulesetShown> for purlis_core::mergehold::Seen {
 }
 
 impl MergeShown {
-    /// What a merge row shows of `facts`, read for a request into `base`.
-    pub fn of(facts: &purlis_core::mergehold::Facts, base: &str) -> Self {
+    /// What a merge row shows of `facts`, read for a request into `base`, with what the person
+    /// has seen of its head (`look`) and whether its chat pushed it.
+    pub fn of(
+        facts: &purlis_core::mergehold::Facts,
+        base: &str,
+        look: purlis_core::mergehold::Look,
+        pushed_here: bool,
+    ) -> Self {
+        use purlis_core::mergehold::Look;
+        let (look, since_viewed) = match look {
+            Look::Viewed => (LookShown::Viewed, None),
+            Look::Approved => (LookShown::Approved, None),
+            Look::NotViewed { since } => (LookShown::NotViewed, since),
+        };
         Self {
             title: said_inertly(&facts.title),
             author: said_inertly(&facts.author),
@@ -306,6 +343,10 @@ impl MergeShown {
             checks: facts.checks.ci.word().to_owned(),
             read_at: u32::try_from(facts.read_at).unwrap_or(u32::MAX),
             ruleset: facts.ruleset.seen().into(),
+            look,
+            since_viewed,
+            pushed_here,
+            digest: facts.digest(),
         }
     }
 }
@@ -817,8 +858,9 @@ pub enum AnswerPath {
     /// `merge_held_request` for Merge and `dont_merge_held_request` for Don't merge, each for
     /// request `number` of `repo` at `head`, the key the ask was raised at (R-115). `facts` are
     /// what the row shows of it, as the forge last gave them (T1-40): Merge hands back the
-    /// ruleset state among them, which it is bound to (R-150), and `reread_held_merge` reads
-    /// them again before Merge asks once more (Q248).
+    /// ruleset state and the digest of them, which it is bound to (R-150, T1-41), and
+    /// `reread_held_merge` reads them again before Merge asks once more (Q248).
+    /// `view_held_merge` shows its changes and marks its head viewed (R-302).
     MergeHold {
         repo: String,
         number: u32,
@@ -2123,7 +2165,12 @@ pub fn merge_hold(waits: &purlis_core::mergehold::Waits) -> Shown {
             repo: key.repo.as_str().to_owned(),
             number: u32::try_from(key.number).unwrap_or(u32::MAX),
             head: key.head.as_str().to_owned(),
-            facts: MergeShown::of(&waits.facts, key.base.as_str()),
+            facts: MergeShown::of(
+                &waits.facts,
+                key.base.as_str(),
+                waits.look,
+                waits.pushed_here,
+            ),
         },
         // Since when is the registry's to say, as for every ask (`Waiting::since`).
         since: None,

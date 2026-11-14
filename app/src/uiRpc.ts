@@ -488,6 +488,7 @@ export const commands = {
 	putAwayRefusedVault: __WINDOW_ONLY_RESULT,
 	keepAskedWorkspace: __WINDOW_ONLY_RESULT,
 	rereadHeldMerge: __WINDOW_ONLY_RESULT,
+	viewHeldMerge: __WINDOW_ONLY_RESULT,
 	mergeHeldRequest: __WINDOW_ONLY_RESULT,
 	dontMergeHeldRequest: __WINDOW_ONLY_RESULT,
 	allowChatBrowser: __WINDOW_ONLY_RESULT,
@@ -3216,8 +3217,9 @@ export type AnswerPath =
  *  `merge_held_request` for Merge and `dont_merge_held_request` for Don't merge, each for
  *  request `number` of `repo` at `head`, the key the ask was raised at (R-115). `facts` are
  *  what the row shows of it, as the forge last gave them (T1-40): Merge hands back the
- *  ruleset state among them, which it is bound to (R-150), and `reread_held_merge` reads
- *  them again before Merge asks once more (Q248).
+ *  ruleset state and the digest of them, which it is bound to (R-150, T1-41), and
+ *  `reread_held_merge` reads them again before Merge asks once more (Q248).
+ *  `view_held_merge` shows its changes and marks its head viewed (R-302).
  */
 { via: "merge-hold"; repo: string; number: number; head: string; facts: MergeShown } | 
 /**
@@ -8521,6 +8523,18 @@ export type LoginShown = {
 	replaces_form?: string | null,
 };
 
+/**  **What the person has seen of a merge's head** (T1-41, R-122), as its row says it. */
+export type LookShown = 
+/**  Viewed in purlis, at this head. */
+"viewed" | 
+/**
+ *  Approved at this head on the forge, by a person who is neither its author nor an app or
+ *  a bot.
+ */
+"approved" | 
+/**  Neither. */
+"not-viewed";
+
 /**  A chat whose program ended with its session host, as the Notice on its pane shows it. */
 export type LostChat = {
 	plane: PlaneId,
@@ -8790,6 +8804,26 @@ export type MergeShown = {
 	read_at: number,
 	/**  Whether a ruleset protects the base, as purlis read it. */
 	ruleset: RulesetShown,
+	/**
+	 *  What the person has seen of its head (T1-41, R-122): viewed in purlis, approved on the
+	 *  forge by someone else, or neither. A merge takes two presses whichever it is (Q268).
+	 */
+	look: LookShown,
+	/**
+	 *  Where it was not viewed: how many commits its head is ahead of the one the person
+	 *  viewed, where purlis knows it (R-123): "2 commits since you looked".
+	 */
+	since_viewed: number | null,
+	/**
+	 *  Whether purlis recorded the asking chat pushing its head (R-124). A head it did not is
+	 *  flagged.
+	 */
+	pushed_here: boolean,
+	/**
+	 *  The digest of what these facts show (`purlis_core::mergehold::Facts::digest`): Merge
+	 *  hands it back, and merges only while the ask shows the same.
+	 */
+	digest: string,
 };
 
 /**  What a merge did, for the window to report. */

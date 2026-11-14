@@ -2208,6 +2208,11 @@ describe("where each family is drawn on a surface a theme fills (#3268)", () => 
    * not listed here, or listed and not found, fails as any other pair does.
    */
   const NOT_STANDING: ReadonlyMap<string, string> = new Map<string, string>([
+    [
+      "message code",
+      "a merge row's View changes (`MergeChanges.tsx`, T1-41) opens a dialog: its code block is " +
+        "drawn on the dialog's overlay, never on the Ask row's message",
+    ],
     // `list badge` is `STANDS_ON`'s `list.row badge` (#6149).
     [
       "panel code",

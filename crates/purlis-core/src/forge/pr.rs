@@ -205,6 +205,41 @@ pub struct HeadAt {
     pub squash: bool,
 }
 
+/// **One review of a request** ([`super::backend::Requests::reviews`]), as the forge gives it:
+/// who wrote it, what kind of account that is, what it said, and the head commit it reviewed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Review {
+    /// The reviewer's login.
+    pub login: String,
+    pub by: Reviewer,
+    pub state: ReviewState,
+    /// The head commit the review was of, as the forge names it.
+    pub commit: String,
+}
+
+/// **What kind of account wrote a review**: only a person's approval counts toward a merge's
+/// look ([`crate::mergehold::approves`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reviewer {
+    /// A person's own account: GitHub's `User`.
+    Person,
+    /// A bot account: GitHub's `Bot`, or any other kind it names.
+    Bot,
+    /// A GitHub App, whose login ends in `[bot]`.
+    App,
+}
+
+/// **What a review said.**
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReviewState {
+    Approved,
+    ChangesRequested,
+    /// Dismissed: it no longer approves or blocks.
+    Dismissed,
+    /// A comment, or a review not yet sent: it changes nothing a reviewer said before.
+    Commented,
+}
+
 /// What `merge_at` got the forge to do, when it did not refuse.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MergedAt {
