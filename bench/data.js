@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794688852816,
+  "lastUpdate": 1794691666862,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -49434,6 +49434,48 @@ window.BENCHMARK_DATA = {
             "value": 102.155184,
             "unit": "ms",
             "extra": "median of 5 runs: 101.117, 101.783, 102.155, 102.494, 102.820 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "0e128bff63985f029623dc994a617c14e5cd7b9e",
+          "message": "A filed case-6 Report records a miss (#5739) (#6661)\n\n* A filed case-6 Report records a miss (#5739)\n\nWhen the person files a Report draft whose words name a built-in skill on a\nSkill: line (purlis-report's case 6), purlis logs one skill.missed row with\nsignal report, naming that skill and the harness and version its Harness:\nline names, in the skill log of the project the draft came from. Dismissing\nit, or Always send sending it unread, logs none. Skill studio's built-in row\ncounts it by harness beside the runs and corrections.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7DR4HB0AJY0Q5PF1T83MSW1\nPurlis-Persona: steward\n\n* Test and changelog fragment for a filed case-6 Report's miss (#5739)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7DR4HB0AJY0Q5PF1T83MSW1\nPurlis-Persona: steward\n\n* A case-6 miss names a shipped built-in and needs the Words line (#5739)\n\nFrom the review: a Report is case 6 only with a Words: line too; its Skill:\ntoken is trimmed of punctuation and must be a built-in this purlis ships\n(the template's purlis-<name> or a typo logs nothing); a Report naming no\nharness purlis starts takes the drafting chat's. Parser unit tests, a queued\nfiling test, and the plane format says a report's version is as written and\nthat it has no skill.missed event.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7DR4HB0AJY0Q5PF1T83MSW1\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-14T20:52:42Z",
+          "tree_id": "90b7027d2e20fa4eec38f245255294ea5c7f5156",
+          "url": "https://github.com/purlis/purlis/commit/0e128bff63985f029623dc994a617c14e5cd7b9e"
+        },
+        "date": 1794691660003,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.69577,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.681, 0.690, 0.696, 0.699, 0.723 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.597468,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.565, 16.594, 16.597, 16.716, 16.864 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.65476899999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.084, 101.272, 101.655, 102.335, 102.452 ms"
           }
         ]
       }
