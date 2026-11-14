@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794620528501,
+  "lastUpdate": 1794622363370,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -48888,6 +48888,48 @@ window.BENCHMARK_DATA = {
             "value": 102.4136955,
             "unit": "ms",
             "extra": "median of 5 runs: 101.759, 102.093, 102.414, 102.910, 104.254 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f1f9839a50e2e1c2fbbb3322aefa4db5ba404078",
+          "message": "fix(main): stories after #6524: Hand Counts' own ids, and the round counts' baselines (#6602)\n\n* ActivityBar stories: each bar its own ids, so Hand Counts names each ✋ from its own count\n\n#6524's Hand Counts draws five bars that shared story-tab-asks and its badge id, so every ✋'s\naria-labelledby read the first bar's (a zero, drawn as nothing) and the play could not find\n\"Asks 120 things wait on you\". The bar is right; the story's ids were not.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7BQ7C5KTNMN4NYBVHN3PXCZ\nPurlis-Persona: steward\n\n* Stories: the round counts' baselines, drawn by #6602's own stories run\n\n#6524 merged with its stories check red and committed none: Badge, Choice and Rail Round Counts,\nRail (Fell Short, Focused Current, Loading, Peek, Shown), ActivityBar (Hand Counts, Questions),\nArtifactBadge States, ActivityItem's columns and AsksScopes, every cell, Chromium and WebKit.\nTaken with tools/story-baselines-pull.mjs from run 43535090367's story-redrawn.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7BQ7C5KTNMN4NYBVHN3PXCZ\nPurlis-Persona: steward\n\n* Stories: the round counts' new baselines (Hand Counts, Badge, Choice and Rail Round Counts)\n\nThe 96 pictures of #6524's new stories, which had none, from the same run 43535090367.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7BQ7C5KTNMN4NYBVHN3PXCZ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-14T01:23:54Z",
+          "tree_id": "f3b38ac29bd3f6f43b107fe5b3ca2c212edd5c94",
+          "url": "https://github.com/purlis/purlis/commit/f1f9839a50e2e1c2fbbb3322aefa4db5ba404078"
+        },
+        "date": 1794622357717,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7064205,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.670, 0.706, 0.706, 0.711, 0.725 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6850975,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.435, 16.641, 16.685, 16.743, 16.776 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.0780555,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.536, 101.943, 102.078, 102.167, 102.617 ms"
           }
         ]
       }
