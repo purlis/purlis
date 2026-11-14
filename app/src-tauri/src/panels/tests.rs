@@ -1069,6 +1069,7 @@ fn a_session_record_names_its_chat_s_number_only_where_that_chat_is_open_here() 
                     conversation: None,
                     cwd: None,
                     unsandboxed: false,
+                    held_from_clusters: false,
                     identity: purlis_core::reopen::Identity {
                         id: Some(CHAT.to_owned()),
                         ..Default::default()
