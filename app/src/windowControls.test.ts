@@ -117,6 +117,9 @@ const UNLINKED: Readonly<Record<string, string>> = {
   "crates/purlis-core/src/doctor/fix/move_into_repos.rs: Fix": BESIDE,
   "crates/purlis-core/src/doctor/fix/move_into_repos.rs: Trust these clones": TRUST_THESE,
   "crates/purlis-core/src/doctor/sandbox.rs: File report": BESIDE,
+  // A merge refused for want of a press asked once more, or for a ruleset that changed, is shown
+  // on the merge row and its pane, beside the Merge it names (Q269).
+  "crates/purlis-core/src/mergehold.rs: Merge": BESIDE,
   "crates/purlis-core/src/personaverbs/select.rs: Allow": CHAT,
   // Followed only by `purlis` in a terminal (`follow_while`); the window's own sign-in draws
   // the button beside its own words (Q246).
@@ -280,6 +283,13 @@ const FROM_THE_WINDOW: ReadonlyArray<readonly [path: string, starts: string, why
   ["crates/purlis-cli/src/brokered.rs", "a sandboxed chat does not remove a workspace", NO_ASK_YET],
   ["crates/purlis-cli/src/brokered.rs", "this chat {runs_as}", NO_ASK_YET],
   ["crates/purlis-cli/src/handoff.rs", "{HANDOFF_SAYS} no purlis app answered", NO_ASK_YET],
+  // The forge milestones tool's answer for a project with no repo recorded (main's #6476): read by
+  // the chat that called it, which records it with `purlis discover`; no ask for the clone yet.
+  [
+    "crates/purlis-core/src/catalogue/milestones.rs",
+    "This project records no repo for {}",
+    NO_ASK_YET,
+  ],
   ["crates/purlis-core/src/dispatchguard.rs", "this call runs `purlis worktree", NO_ASK_YET],
   ["crates/purlis-core/src/forge/gitcredential.rs", "this repository's remote pushes", NO_ASK_YET],
   ["crates/purlis-core/src/hoststart.rs", "this chat's profile hands its program", NO_ASK_YET],

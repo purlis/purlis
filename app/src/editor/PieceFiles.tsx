@@ -663,7 +663,7 @@ export function PieceFileTab({
   const ofABranch = !isPlaneRoot(cut);
   return (
     <div className="piece-file">
-      <header className="piece-files-head" {...editorToolbar}>
+      <header {...editorToolbar("piece-files-head")}>
         {/* The tab is the file's name: the path alone, quiet (#3147). */}
         <ToolbarFile path={path} named={false} />
         <span className="piece-files-actions">
@@ -723,7 +723,7 @@ export function OutsideFileTab({
     ) ?? READING;
   return (
     <div className="piece-file">
-      <header className="piece-files-head" {...editorToolbar}>
+      <header {...editorToolbar("piece-files-head")}>
         <ToolbarFile path={path} named={false} />
       </header>
       <Shown
@@ -894,7 +894,7 @@ export function PieceFilesTab({
             />
           ) : (
             <>
-              <header className="piece-files-head" {...editorToolbar}>
+              <header {...editorToolbar("piece-files-head")}>
                 <ToolbarFile path={picked} />
                 <span className="piece-files-actions">
                   <SourceToggle

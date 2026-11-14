@@ -60,6 +60,7 @@ import { forgetFrameScroll, useViewScroll } from "./viewScroll";
 import { IconButton } from "./ui/button/Button";
 import { PanelTitle, panelRoot, resizablePanelRoot } from "./ui/panel/Panel";
 import { ActivityBarFrame } from "./ui/activity/ActivityItem";
+import { Measured } from "./slowLog";
 
 /**
  * **The window, drawn from the arrangement** (ADR 0038, and `regions.ts` for why the
@@ -515,7 +516,7 @@ export function RegionFrame({
               // The content panel is drawn under the session tabs docked on it (`ui/tabs`,
               // #2914): the region holds the strip and the panel, and draws no ground itself.
             >
-              {centre}
+              <Measured id="centre">{centre}</Measured>
             </Panel>
             <Edge open={shownIn(slots.right).length > 0} named="Resize the right sidebar" />
             <Slot side="right" placed={slots.right} started={started.right} drawn={drawn} />
@@ -691,7 +692,10 @@ function ViewHost({
   const element = useRef<HTMLElement | null>(host);
   useViewScroll(frame, view, region, element);
   return createPortal(
-    <HeadActions.Provider value={actions}>{children}</HeadActions.Provider>,
+    <HeadActions.Provider value={actions}>
+      {/* What the view costs to draw, by its name, for a stall to name (`slowLog.ts`, H9). */}
+      <Measured id={view}>{children}</Measured>
+    </HeadActions.Provider>,
     host,
   );
 }

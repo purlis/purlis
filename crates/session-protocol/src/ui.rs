@@ -399,7 +399,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // workspace, which the question opens.
     "keep_asked_workspace",
     // Merge and Don't merge on a merge a chat's hook held (R-115, R-036): the app merges on the
-    // person's press alone. No chat answers its own ask.
+    // person's press alone. No chat answers its own ask. Nor does one have the app read its
+    // request again before Merge asks once more (Q248): that read is the person's press.
+    "reread_held_merge",
     "merge_held_request",
     "dont_merge_held_request",
     // What a chat's browser may reach, on its first browser call's Ask (#2013): the person's
@@ -990,6 +992,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_podman_connections",
     "pool_setup_connect",
     "pool_setup_trust",
+    // Naming a tcp:// machine's TLS files, a vault entry among them, is the person's too (#6267).
+    "pool_setup_tls_files",
     "pool_setup_name",
     "pool_setup_pool",
     "pool_setup_add",

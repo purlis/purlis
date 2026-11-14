@@ -45,7 +45,7 @@ export function ReplaceRunner({
       onClose={onCancel}
       title={`Replace pool ${pool}'s runner?`}
       description={
-        <p className="came-back">
+        <p className="came-back ui-text-secondary">
           {onCurrentImage
             ? REPLACE_SAID.replace("a new runner held", "a new runner on the current image, held")
             : REPLACE_SAID}
@@ -206,7 +206,9 @@ function Group({ pool, group }: { pool: string; group: PoolLimitGroup }) {
   return (
     <section className="pool-limits-group" aria-labelledby={heading}>
       <header className="pool-limits-head">
-        <h4 id={heading}>{group.label}</h4>
+        <h4 id={heading} className="ui-text-heading">
+          {group.label}
+        </h4>
         <p className="ui-setting-help ui-text-secondary">
           {group.help}
           {group.applies !== null && ` ${group.applies}`}

@@ -235,7 +235,9 @@ export function SpecimenDialog() {
       onClose={still}
       title="Delete the branch sample/header?"
       titleId="specimen-dialog-title"
-      description={<p className="came-back">Its two commits are not on any other branch.</p>}
+      description={
+        <p className="came-back ui-text-secondary">Its two commits are not on any other branch.</p>
+      }
       main={{ children: "Delete branch", variant: "danger", onPress: still }}
     >
       <SettingRow

@@ -109,7 +109,7 @@ export function ImportCliLogin({
               </Button>
             </SettingActions>
             {busy && (
-              <p className="came-back" role="status">
+              <p className="came-back ui-text-secondary" role="status">
                 Copying the {offer.cli} login into your keychain…
               </p>
             )}

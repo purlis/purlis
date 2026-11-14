@@ -1619,6 +1619,7 @@ fn a_held_merge(session: u32) -> purlis_core::mergehold::Waits {
             read_at: 40,
         },
         since: 40,
+        asked: false,
     }
 }
 
@@ -1662,6 +1663,14 @@ fn a_held_merge_is_one_ask_in_asks_offering_merge_and_dont_merge() {
             repo: "o/r".to_owned(),
             number: 12,
             head: "0123456789abcdef0123456789abcdef01234567".to_owned(),
+            facts: MergeShown {
+                title: "Add the parser".to_owned(),
+                author: "octo".to_owned(),
+                base: "main".to_owned(),
+                checks: "PASSED".to_owned(),
+                read_at: 40,
+                ruleset: RulesetShown::Protects,
+            },
         }
     );
     assert!(ask.says.contains("There is no undo"), "{}", ask.says);
@@ -1689,6 +1698,32 @@ fn a_held_merge_is_a_high_risk_ask() {
         risk.confirm,
         "Merge request 12 of o/r at 0123456 into main?"
     );
+}
+
+#[test]
+fn a_held_merge_shows_the_forges_facts_with_their_read_time_and_the_title_inert() {
+    // T1-40 (R-120, R-147, Q248): the row shows the base, the checks as of the read, the
+    // ruleset state purlis saw, and the title and author the forge gave, which a chat may have
+    // written, so they reach the window inert.
+    let mut merge = a_held_merge(3);
+    merge.facts.title = "Add the parser\u{202E}gnisaeler".to_owned();
+    let mut world = World::new();
+    world.merges = vec![merge];
+    let asks = world.asks();
+    let ask = asks
+        .iter()
+        .find(|ask| ask.source == AskSource::MergeHold)
+        .expect("the merge ask");
+    let AnswerPath::MergeHold { facts, .. } = &ask.answer else {
+        panic!("a merge hold's path: {:?}", ask.answer);
+    };
+    assert_eq!(facts.base, "main");
+    assert_eq!(facts.author, "octo");
+    assert_eq!(facts.checks, "PASSED");
+    assert_eq!(facts.read_at, 40);
+    assert_eq!(facts.ruleset, RulesetShown::Protects);
+    assert!(!facts.title.contains('\u{202E}'), "{}", facts.title);
+    assert!(facts.title.contains("⟦U+202E⟧"), "{}", facts.title);
 }
 
 #[test]

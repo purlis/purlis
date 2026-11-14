@@ -141,6 +141,14 @@ pub struct Detail {
     /// so the line is the one it always was and the record is left as it was.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<crate::dispatchmode::Reported>,
+    /// The Claude Code permission mode the payload's `permission_mode` names, as the measured
+    /// strings read it ([`crate::attendance::ClaudeCodeMode`], T1-17): what the chat's
+    /// [`crate::attendance::Fact`] hears. Only Claude Code's adapter reads it
+    /// ([`crate::harness::HarnessAdapter::attendance_mode`]); absent on every other harness,
+    /// where the payload names none, from an older hook, and on a line that cannot prove it
+    /// came from the chat's armed hook.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claude_code_mode: Option<crate::attendance::ClaudeCodeMode>,
     /// On a `Stop`: the harness said helpers of the chat's own are still at work in the
     /// background and will wake it ([`crate::hookwire::helpers_at_work`], #1626), so the turn
     /// has not handed the chat to the person. Absent from an older hook, and from a harness

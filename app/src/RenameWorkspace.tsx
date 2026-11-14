@@ -79,7 +79,7 @@ export function RenameWorkspace({
       )}
       {/* The core's sentence, unchanged, as `trouble` is. */}
       {startsFresh && (
-        <p className="came-back" aria-label="Chats that will start fresh">
+        <p className="came-back ui-text-secondary" aria-label="Chats that will start fresh">
           {startsFresh}
         </p>
       )}

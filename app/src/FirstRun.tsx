@@ -201,7 +201,7 @@ export function FirstRun({
             </p>
           )}
           {unread !== undefined && (
-            <p className="came-back" role="status">
+            <p className="came-back ui-text-secondary" role="status">
               purlis could not read what this machine has: {unread}
             </p>
           )}
@@ -274,7 +274,7 @@ export function FirstRun({
           </Form>
 
           {opening && (
-            <p className="came-back" role="status">
+            <p className="came-back ui-text-secondary" role="status">
               Copying your repo into its workspace…
             </p>
           )}
@@ -405,7 +405,7 @@ function OnThisMac({
         />
       )}
       <div className="get-project-end">
-        <p className="get-project-folder">
+        <p className="get-project-folder ui-text-secondary">
           Goes into <code className="where">{folder ?? parent ?? "—"}</code>
         </p>
         <Button variant="ghost" isDisabled={making} onPress={choose}>

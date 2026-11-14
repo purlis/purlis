@@ -875,7 +875,7 @@ export function Health({
         )}
         {ours.length > 0 && (
           <section aria-label="This app">
-            <h3>This app</h3>
+            <h3 className="ui-text-secondary ui-text-strong">This app</h3>
             {/* Said rather than left to be noticed: an operator comparing this with
               `purlis doctor` in a terminal has to know why one row is not there. */}
             <p className="honest">
@@ -889,19 +889,19 @@ export function Health({
           <>
             {groups.blockers.length > 0 && (
               <section aria-label="Blockers">
-                <h3>Blockers</h3>
+                <h3 className="ui-text-secondary ui-text-strong">Blockers</h3>
                 <Rows rows={groups.blockers} fixer={fixer} onOpenSettings={settings} />
               </section>
             )}
             {groups.warnings.length > 0 && (
               <section aria-label="Warnings">
-                <h3>Warnings</h3>
+                <h3 className="ui-text-secondary ui-text-strong">Warnings</h3>
                 <Rows rows={groups.warnings} fixer={fixer} onOpenSettings={settings} />
               </section>
             )}
             {groups.passed.length > 0 && (
               <section aria-label="Passed">
-                <h3>Passed</h3>
+                <h3 className="ui-text-secondary ui-text-strong">Passed</h3>
                 <Rows rows={groups.passed} fixer={fixer} onOpenSettings={settings} />
               </section>
             )}
