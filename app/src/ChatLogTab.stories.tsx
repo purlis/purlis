@@ -430,7 +430,8 @@ export const CodexModeCantTell: Story = {
       ),
     ).toBeVisible();
     await expect(canvasElement.textContent).not.toMatch(
-      /bypass|auto mode|plan mode|default mode|verified/i,
+      // A whole word: the chat's honesty line "Unverified: …" may stand above (R-235).
+      /bypass|auto mode|plan mode|default mode|\bverified\b/i,
     );
   },
 };
