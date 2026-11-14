@@ -14,8 +14,8 @@ use super::backend::{
 };
 use super::checks::{self, Annotation, Checks, FailedCheck};
 use super::pr::{
-    AutoMerge, GITHUB_AUTO_MERGE_NOT_ALLOWED, GITHUB_METHODS, GITHUB_NOTHING_TO_WAIT_FOR, Gate,
-    Gated, HeadAt, Image, MergeAs, MergedAt, Opened, Pinned, Pr, Ready, Request, Review,
+    AutoMerge, Changes, GITHUB_AUTO_MERGE_NOT_ALLOWED, GITHUB_METHODS, GITHUB_NOTHING_TO_WAIT_FOR,
+    Gate, Gated, HeadAt, Image, MergeAs, MergedAt, Opened, Pinned, Pr, Ready, Request, Review,
     ReviewState, Reviewer, State, check_gate, commit_named, first, held_to_the_forges_clock,
     is_object_name, is_ours, none_will_run, not_queued_when, not_this_saves, pr_of, unknown_state,
 };
@@ -554,6 +554,12 @@ const BRANCH_NOT_PROTECTED: &str = "Branch not protected";
 /// How many pages of a pull request's reviews are read (T1-41).
 const REVIEW_PAGES: u32 = 3;
 
+/// How many reviews purlis asks GitHub for on one page: a page this full may have one after it.
+const REVIEWS_PER_PAGE: usize = 100;
+
+/// The most files GitHub's compare lists: a list this long may be cut (Q277).
+const COMPARED_FILES: usize = 300;
+
 /// One review as GitHub lists it, or `None` where it names no login, state or commit.
 fn review_of(listed: &Value) -> Option<Review> {
     let login = listed["user"]["login"]
@@ -799,8 +805,10 @@ impl Requests for GitHub {
 
     /// The pull request's reviews, oldest first, as GitHub lists them: each one's login, the
     /// kind of account (`user.type`, an App's login ending in `[bot]`), its state and the
-    /// `commit_id` it reviewed. At most [`REVIEW_PAGES`] pages of 100 are read; a review past
-    /// them is not read, so a later change request there is missed, never an approval made up.
+    /// `commit_id` it reviewed. At most [`REVIEW_PAGES`] pages of [`REVIEWS_PER_PAGE`] are
+    /// read. **Only a list read whole is an answer** (Q277): where the last page read is full,
+    /// a later review may take an approval back, and a review that names no login, state or
+    /// commit may be one that does, so either is an error, which reads as no approval.
     fn reviews(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<Vec<Review>, ForgeError> {
         let (owner, name) = owner_name(path);
         let api = format!(
@@ -812,17 +820,78 @@ impl Requests for GitHub {
         let doing = format!("reading pull request #{}'s reviews in {path}", pr.number);
         let mut reviews = Vec::new();
         for page in 1..=REVIEW_PAGES {
-            let call = Call::get(&format!("{api}?per_page=100&page={page}"), LIST_TIMEOUT);
+            let call = Call::get(
+                &format!("{api}?per_page={REVIEWS_PER_PAGE}&page={page}"),
+                LIST_TIMEOUT,
+            );
             let listed = self.0.ask(caller, &call, &doing)?;
             let listed = listed
                 .as_array()
                 .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub answered no list")))?;
-            reviews.extend(listed.iter().filter_map(review_of));
-            if listed.len() < 100 {
-                break;
+            let read = listed
+                .iter()
+                .map(review_of)
+                .collect::<Option<Vec<Review>>>()
+                .ok_or_else(|| {
+                    ForgeError::new(format!(
+                        "{doing}: GitHub listed a review with no login, state or commit"
+                    ))
+                })?;
+            reviews.extend(read);
+            if listed.len() < REVIEWS_PER_PAGE {
+                return Ok(reviews);
             }
         }
-        Ok(reviews)
+        Err(ForgeError::new(format!(
+            "{doing}: it has more reviews than purlis reads, so purlis reads no approval from them"
+        )))
+    }
+
+    /// GitHub's `compare/{base}...{head}`, read whole or said to be cut: each file's `patch`
+    /// under a `diff --git` line. A list of [`COMPARED_FILES`] may be cut, and a file with
+    /// changed lines and no patch is one GitHub would not show, so either is not `whole`. A
+    /// file with no lines to show (a binary file, or a rename alone) says so.
+    fn changes(
+        &self,
+        caller: &Caller,
+        path: &str,
+        base: &str,
+        head: &str,
+    ) -> Result<Changes, ForgeError> {
+        let (owner, name) = owner_name(path);
+        let api = format!(
+            "repos/{}/{}/compare/{}...{}",
+            quote(owner),
+            quote(name),
+            quote(base),
+            quote(head)
+        );
+        let doing = format!("reading the changes of {head} into {base} in {path}");
+        let record = self.0.ask(caller, &Call::get(&api, LIST_TIMEOUT), &doing)?;
+        let files = record["files"]
+            .as_array()
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub listed no files")))?;
+        let mut text = String::new();
+        let mut whole = files.len() < COMPARED_FILES;
+        for file in files {
+            let Some(to) = file["filename"].as_str() else {
+                whole = false;
+                continue;
+            };
+            let from = file["previous_filename"].as_str().unwrap_or(to);
+            text.push_str(&format!("diff --git a/{from} b/{to}\n"));
+            match file["patch"].as_str() {
+                Some(patch) => {
+                    text.push_str(patch);
+                    text.push('\n');
+                }
+                None if file["changes"].as_u64() == Some(0) => {
+                    text.push_str("No lines to show: a binary file, or a rename alone.\n");
+                }
+                None => whole = false,
+            }
+        }
+        Ok(Changes { text, whole })
     }
 
     /// GitHub's `compare/{from}...{to}`: its `ahead_by`.

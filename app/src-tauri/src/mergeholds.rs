@@ -29,29 +29,35 @@
 //! (Q242), so nothing merges at a head the person was not shown.
 //!
 //! **Who looked, and who pushed** (T1-41; R-122 to R-125, R-302): **View changes**
-//! ([`view_held_merge`]) shows the request's changes, read in the clone the merge ran in, and
-//! marks its head viewed, only while the forge says the request is at it. A push the app makes
-//! for a chat (`purlis worktree push`) is recorded ([`pushed`]), so a head the chat didn't push
-//! is flagged. While any merge ask waits, the app watches the forge ([`watch`]): a head that
-//! moved retires its ask for one at the new head, and the window is told. A merge takes two
-//! presses whatever they say (Q268), and **a press is bound to every fact its row showed**, by
-//! their digest: one shown other facts than the fresh read gives merges nothing.
+//! ([`view_held_merge`]) shows the request's changes **as the forge gives them, read with the
+//! app's own login** (Q277), never from the clone the merge ran in, whose refs and grafts the
+//! chat can write. It marks the head viewed only where the whole diff was shown, while the forge
+//! says the request is at that head and base; a forge that can't give a diff refuses it in a
+//! sentence and marks nothing. A push the app makes for a chat (`purlis worktree push`) is
+//! recorded by the commit it sent ([`pushed`]), so a head the chat didn't push is flagged.
+//! Viewed heads and pushes are kept by the forge's host and the repo. Every path that finds a
+//! head moved asks the forge for the commits since the head the person viewed ([`counted`]).
+//! While any merge ask waits, the app watches the forge ([`watch`]): a head that moved retires
+//! its ask for one at the new head, and facts that changed at the same head redraw its row. A
+//! merge takes two presses whatever they say (Q268), and **a press is bound to every fact its
+//! row showed**, by their digest: one shown other facts than the fresh read gives merges
+//! nothing.
 //!
 //! In memory only: a relaunch holds none, and the chat's next try asks again. Nor does it know
 //! a viewed head or a push, so the person views again (Q210).
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, PoisonError, Weak};
 
 use purlis_core::eventlog::stops::{AskGroup, AskRaised, Hold, Stop, Target};
 use purlis_core::forge::backend::{Caller, ForgeBackend};
-use purlis_core::forge::pr::Repo as OnForge;
+use purlis_core::forge::pr::{Changes, Repo as OnForge};
 use purlis_core::harness::asks::{Admitted, Answerer};
 use purlis_core::hookwire::{Answer, MergeAsk};
 use purlis_core::mergehold::{
-    self, Base, ByForge, HeadSha, Holds, Invalid, MergeKey, Raised, Refreshed, Repo, Request,
-    Reread, Seen,
+    self, Base, ByForge, HeadSha, Holds, Invalid, MergeKey, OnHost, Raised, Refreshed, Repo,
+    Request, Reread, Seen, Watched,
 };
 
 use crate::asking::{MergeShown, RulesetShown};
@@ -65,8 +71,6 @@ use crate::planes::{Held, PlaneId, Planes};
 pub struct MergeHolds {
     holds: Holds,
     on: Mutex<Vec<(u32, MergeKey, OnForge)>>,
-    /// The clone each chat's merge of a repo ran in: where View changes reads its changes.
-    clones: Mutex<Vec<(u32, Repo, PathBuf)>>,
     /// Whether the watch of the forge runs ([`watch`]).
     watching: AtomicBool,
 }
@@ -80,10 +84,6 @@ impl MergeHolds {
     /// Chat `session` has closed: none of its merge asks waits.
     pub fn forget(&self, session: u32) {
         self.holds.forget(session);
-        self.clones
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .retain(|(of, _, _)| *of != session);
         self.prune();
     }
 
@@ -97,21 +97,16 @@ impl MergeHolds {
             .map(|(_, _, on)| on.clone())
     }
 
-    /// The clone chat `session`'s merge of `repo` ran in.
-    fn clone_of(&self, session: u32, repo: &Repo) -> Option<PathBuf> {
-        self.clones
+    /// The forge a waiting ask of `repo` was raised on, by its host and path (Q277).
+    fn forge_at(&self, repo: &OnHost) -> Option<OnForge> {
+        self.on
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .iter()
-            .find(|(of, at, _)| *of == session && at == repo)
-            .map(|(_, _, clone)| clone.clone())
-    }
-
-    /// Chat `session`'s merge of `repo` ran in `clone`.
-    fn ran_in(&self, session: u32, repo: &Repo, clone: PathBuf) {
-        let mut clones = self.clones.lock().unwrap_or_else(PoisonError::into_inner);
-        clones.retain(|(of, at, _)| !(*of == session && at == repo));
-        clones.push((session, repo.clone(), clone));
+            .find(|(_, key, on)| {
+                key.repo == *repo.repo() && on.forge.host.eq_ignore_ascii_case(repo.host())
+            })
+            .map(|(_, _, on)| on.clone())
     }
 
     /// The forge chat `session`'s ask for `key` was raised on.
@@ -124,8 +119,10 @@ impl MergeHolds {
             .map(|(_, _, on)| on.clone())
     }
 
-    /// Chat `session`'s ask for `key` was raised on `on`.
+    /// Chat `session`'s ask for `key` was raised on `on`: its viewed head and pushes are kept
+    /// by that forge's host (Q277).
     fn on_forge(&self, session: u32, key: &MergeKey, on: OnForge) {
+        self.holds.raised_on(session, key, &on.forge.host);
         let mut every = self.on.lock().unwrap_or_else(PoisonError::into_inner);
         every.retain(|(of, at, _)| !(*of == session && at == key));
         every.push((session, key.clone(), on));
@@ -163,9 +160,12 @@ pub(crate) trait Project {
     fn record(&self, chat: u32, stop: Stop);
     /// The asks may have moved.
     fn moved(&self);
-    /// The changes of a request into `base` at `head`, as git in `clone` reads them
-    /// ([`changes_in`]): what View changes shows.
-    fn changes(&self, clone: &Path, base: &str, head: &str) -> Result<String, String>;
+    /// The changes of a request into `base` at `head` of the repo `on` names, as the forge gives
+    /// them with the app's own login (Q277): what View changes shows.
+    fn changes(&self, on: &OnForge, base: &str, head: &str) -> Result<Changes, String>;
+    /// How many commits `to` is ahead of `from` in the repo `on` names, as the forge counts
+    /// them with the app's own login, where it says (R-123).
+    fn commits(&self, on: &OnForge, from: &HeadSha, to: &HeadSha) -> Option<u32>;
 }
 
 impl Project for Held {
@@ -212,58 +212,47 @@ impl Project for Held {
         self.chats().asks_may_have_moved();
     }
 
-    fn changes(&self, clone: &Path, base: &str, head: &str) -> Result<String, String> {
-        changes_in(clone, base, head)
+    fn changes(&self, on: &OnForge, base: &str, head: &str) -> Result<Changes, String> {
+        on.backend()
+            .changes(&Caller::window(), &on.path, base, head)
+            .map_err(|why| why.to_string())
+    }
+
+    fn commits(&self, on: &OnForge, from: &HeadSha, to: &HeadSha) -> Option<u32> {
+        on.backend()
+            .commits_between(&Caller::window(), &on.path, from.as_str(), to.as_str())
+            .ok()
     }
 }
 
-/// The most of a request's changes View changes shows.
+/// The most of a request's changes View changes shows: past it, the rest is cut, and the head
+/// is not marked viewed (Q277).
 const CHANGES_SHOWN: usize = 1024 * 1024;
 
-/// How long git may take to read a request's changes.
-const CHANGES_WITHIN: std::time::Duration = std::time::Duration::from_secs(20);
-
-/// **The changes of a request into `base` at `head`**, read by git in `clone`: what `head`
-/// changes since it left `origin/<base>`, at most [`CHANGES_SHOWN`] of them. The clone is one a
-/// chat works in, so its own config may name programs: git is told to run no external diff, no
-/// text conversion and no file-system monitor. Both names were checked as they were made
-/// ([`Base`], [`HeadSha`]): neither can be read as an option.
-fn changes_in(clone: &Path, base: &str, head: &str) -> Result<String, String> {
-    let range = format!("origin/{base}...{head}");
-    let ran = purlis_core::worktree::git::run(
-        clone,
-        &[
-            "-c",
-            "diff.external=",
-            "-c",
-            "core.fsmonitor=false",
-            "diff",
-            "--no-color",
-            "--no-ext-diff",
-            "--no-textconv",
-            &range,
-            "--",
-        ],
-        CHANGES_WITHIN,
-    )
-    .map_err(|why| format!("purlis could not run git in the clone this merge ran in ({why})."))?;
-    if !ran.ok() {
-        return Err(format!(
-            "git could not read its changes in the clone this merge ran in: {}",
-            ran.err.trim()
-        ));
-    }
-    let mut changes = ran.out;
-    if changes.len() > CHANGES_SHOWN {
+/// **The changes View changes shows of `changes`**, and whether they are all of them: at most
+/// [`CHANGES_SHOWN`], and a diff the forge or this cut short says so in its last line.
+fn shown(changes: Changes) -> (String, bool) {
+    let Changes {
+        mut text,
+        mut whole,
+    } = changes;
+    if text.len() > CHANGES_SHOWN {
         let mut cut = CHANGES_SHOWN;
-        while !changes.is_char_boundary(cut) {
+        while !text.is_char_boundary(cut) {
             cut -= 1;
         }
-        changes.truncate(cut);
-        changes.push_str("\n… purlis shows the first megabyte of these changes.\n");
+        text.truncate(cut);
+        whole = false;
     }
-    Ok(changes)
+    if !whole {
+        text.push_str(CHANGES_CUT);
+    }
+    (text, whole)
 }
+
+/// What View changes says below a diff it could not show whole.
+const CHANGES_CUT: &str = "\n… purlis shows only part of these changes, so it marked this head \
+                           viewed by nobody. Read the rest on the forge.\n";
 
 /// The repo `ask` is of, found in the project at `root`, or why nobody is asked: the folder it
 /// ran in is a clone in the project, of a repo the project's inventory lists on the same forge,
@@ -321,10 +310,11 @@ pub fn asked(held: &Weak<Held>, ask: &MergeAsk) -> Answer {
 const WATCH_EVERY: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// **The watch of every waiting merge ask's head** (R-125): while one waits, the app reads each
-/// one's request from the forge every [`WATCH_EVERY`], with its own login, and a head that
-/// moved retires the ask for one at the new head, with the commits between, and the window is
-/// told (`purlis_core::mergehold::Holds::watch`). One watch per project, which ends once no ask
-/// waits or the project closes.
+/// one's request from the forge every [`WATCH_EVERY`], with its own login: a head that moved
+/// retires the ask for one at the new head, facts that changed at the same head redraw its row,
+/// and the window is told (`purlis_core::mergehold::Holds::watch`). One watch per project, which
+/// ends once no ask waits or the project closes, **and never while one waits** (Q277): an ask
+/// raised as it ends finds it running, or it carries on.
 fn watch(held: &Weak<Held>) {
     let Some(project) = held.upgrade() else {
         return;
@@ -342,11 +332,7 @@ fn watch(held: &Weak<Held>) {
                 let Some(project) = held.upgrade() else {
                     return;
                 };
-                if !watched_once(project.as_ref()) {
-                    project
-                        .merge_holds()
-                        .watching
-                        .store(false, Ordering::SeqCst);
+                if !watched_once(project.as_ref()) && !carries_on(project.merge_holds()) {
                     return;
                 }
             }
@@ -362,68 +348,82 @@ fn watch(held: &Weak<Held>) {
     }
 }
 
+/// **Whether the watch that found no ask waiting carries on** (Q277): it stops, then looks once
+/// more, so an ask raised between its look and its stop, whose own [`watch`] found it still
+/// running, is never left unwatched. It carries on only where an ask waits and no other watch
+/// took over meanwhile.
+fn carries_on(holds: &MergeHolds) -> bool {
+    holds.watching.store(false, Ordering::SeqCst);
+    !holds.every().is_empty() && !holds.watching.swap(true, Ordering::SeqCst)
+}
+
 /// One reading of every waiting merge ask's request in `project`: whether any still waits.
 fn watched_once(project: &dyn Project) -> bool {
     let holds = project.holds();
     if holds.every().is_empty() {
         return false;
     }
-    // The forge of the ask just read, for the count of commits that follows its read.
-    let last = Mutex::new(None::<OnForge>);
     let read = |key: &MergeKey| {
         let on = holds.forge_for(key)?;
         let read = project.read(&on, key.number).ok()?;
         let now = key_at(key, &read.at).ok()?;
-        *last.lock().unwrap_or_else(PoisonError::into_inner) = Some(on);
         Some((now, read.facts))
     };
-    let commits = |from: &HeadSha, to: &HeadSha| {
-        let on = last
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()?;
-        on.backend()
-            .commits_between(&Caller::window(), &on.path, from.as_str(), to.as_str())
-            .ok()
-    };
-    let moved = holds.holds.watch(&read, &commits);
-    for one in &moved {
+    let watched = holds.holds.watch(&read);
+    for one in &watched {
+        let Watched::Moved(one) = one else {
+            continue;
+        };
         if let Some(on) = holds.forge_of(one.session, &one.was) {
             holds.on_forge(one.session, &one.now, on);
         }
         tracing::info!(
-            "purlis: chat {}'s held merge moved to {} ({:?} commits); asked again there",
+            "purlis: chat {}'s held merge moved to {}; asked again there",
             one.session,
-            one.now.head.as_str(),
-            one.commits
+            one.now.head.as_str()
         );
     }
     holds.prune();
-    if !moved.is_empty() {
+    // A moved head, and facts that changed at the same head, each redraw the row (Q277).
+    if !watched.is_empty() {
+        counted(project);
         project.moved();
     }
     true
 }
 
+/// **"N commits since you looked"** (R-123, Q277): every waiting ask whose head is not the one
+/// the person viewed of its request has the commits between counted by the forge, with the
+/// app's own login, wherever that is not known yet. Called on every path that finds a move.
+pub(crate) fn counted(project: &dyn Project) {
+    let holds = project.holds();
+    for (repo, from, to) in holds.holds.uncounted() {
+        let Some(on) = holds.forge_at(&repo) else {
+            continue;
+        };
+        if let Some(commits) = project.commits(&on, &from, &to) {
+            holds.holds.ahead(&repo, &from, &to, commits);
+        }
+    }
+}
+
 /// **purlis pushed a branch folder for chat `chat`** (R-124): `purlis worktree push` of
-/// `repo`'s `piece` in `workspace` went. Its head is recorded as the chat's push, on the forge
-/// its clone's origin names, so a merge ask at that head is not flagged.
-pub fn pushed(held: &Held, chat: u32, workspace: &str, repo: &str, piece: &str) {
+/// `repo`'s `piece` in `workspace` sent `head`, as the push itself says (Q277). It is recorded
+/// as the chat's push, on the forge's host and repo its clone's origin names, so a merge ask at
+/// that head is not flagged.
+pub fn pushed(held: &Held, chat: u32, workspace: &str, repo: &str, piece: &str, head: &str) {
+    let Ok(head) = HeadSha::try_from(head) else {
+        return;
+    };
     let Ok(folder) = purlis_core::worktree::path_for(held.root(), workspace, repo, piece) else {
         return;
     };
-    let head = purlis_core::worktree::git::run(
-        &folder,
-        &["rev-parse", "HEAD"],
-        purlis_core::worktree::git::READ,
-    )
-    .ok()
-    .filter(purlis_core::worktree::git::Run::ok)
-    .and_then(|ran| HeadSha::try_from(ran.out.trim()).ok());
-    let on = OnForge::of_clone(held.root(), &folder)
-        .ok()
-        .and_then(|on| Repo::try_from(on.path.as_str()).ok());
-    if let (Some(head), Some(on)) = (head, on) {
+    let on = OnForge::of_clone(held.root(), &folder).ok().and_then(|on| {
+        Repo::try_from(on.path.as_str())
+            .ok()
+            .map(|repo| OnHost::new(&on.forge.host, repo))
+    });
+    if let Some(on) = on {
         held.merge_holds().holds.pushed(chat, &on, &head);
     }
 }
@@ -483,9 +483,6 @@ fn raise(project: &dyn Project, ask: &MergeAsk) -> Result<String, String> {
         &resolve,
         crate::sandboxing::now_secs(),
     )?;
-    if raised != Raised::TooMany {
-        holds.ran_in(chat, &repo, PathBuf::from(&ask.cwd));
-    }
     match raised {
         Raised::New => {
             holds.on_forge(chat, &key, on);
@@ -521,6 +518,8 @@ fn raise(project: &dyn Project, ask: &MergeAsk) -> Result<String, String> {
             ));
         }
     }
+    // A try again at a moved head is one path that finds the move (Q277).
+    counted(project);
     project.moved();
     Ok(mergehold::handed_said(&request))
 }
@@ -594,9 +593,11 @@ fn looked(holds: &MergeHolds, session: u32, key: &MergeKey) -> (mergehold::Look,
 }
 
 /// **View changes**, pressed on chat `session`'s merge ask (R-302): the changes of request
-/// `number` of `repo` at `head`, read in the clone the merge ran in, and its head marked viewed
-/// (R-122), only while the forge, read now with the app's own login, says the request is at
-/// `head`. A head that moved is viewed by nobody, and its row is asked again at the new head.
+/// `number` of `repo` at `head` into its base, **read from the forge with the app's own login**
+/// (Q277), never from a clone a chat can write. Its head is marked viewed (R-122) only where
+/// the whole diff was shown, while the forge, read now, says the request is at `head` and its
+/// base. A head or base that moved is viewed by nobody, and its row is asked again where it is.
+/// A forge that can't give the diff refuses in a sentence, and marks nothing (#6432).
 #[tauri::command]
 #[specta::specta]
 pub async fn view_held_merge(
@@ -626,18 +627,23 @@ pub(crate) fn viewed(
     let read = project
         .read(&on, u64::from(number))
         .map_err(|why| format!("purlis could not read it from the forge ({why})."))?;
-    if read.at.sha != key.head.as_str() {
-        // Its row is redrawn at the new head (Q242), which nobody has viewed.
+    if read.at.sha != key.head.as_str() || read.at.base != key.base.as_str() {
+        // Its row is redrawn where the request is now (Q242), which nobody has viewed; that
+        // re-read counts the commits since the head the person viewed (Q277).
         let _ = reread(project, session, repo, number, head, Reread::Watches);
         return Err(VIEW_MOVED.to_owned());
     }
-    let clone = holds
-        .clone_of(session, &key.repo)
-        .ok_or_else(|| "purlis doesn't know which clone this merge ran in.".to_owned())?;
-    let changes = project.changes(&clone, key.base.as_str(), key.head.as_str())?;
-    holds.holds.view(&key);
-    project.moved();
-    Ok(changes)
+    let changes = project
+        .changes(&on, key.base.as_str(), key.head.as_str())
+        .map_err(|why| {
+            format!("purlis could not read these changes from the forge ({why}). {VIEW_NOTHING}")
+        })?;
+    let (text, whole) = shown(changes);
+    if whole {
+        holds.holds.view(session, &key);
+        project.moved();
+    }
+    Ok(text)
 }
 
 /// The re-read of chat `session`'s ask for request `number` of `repo` at `head`, in `project`:
@@ -666,6 +672,8 @@ pub(crate) fn reread(
         holds.on_forge(session, &now, on);
     }
     holds.prune();
+    // A press's re-read and View changes are paths that find a move (Q277).
+    counted(project);
     project.moved();
     let refreshed = refreshed?;
     Ok((now, read.facts, refreshed))
@@ -784,13 +792,17 @@ fn pressed_in(
     )
 }
 
-/// What View changes says where the forge has the request at another head than its row's.
-const VIEW_MOVED: &str = "the request moved to another head since its row was drawn, so purlis \
-                          marked nothing viewed. Its row is asked again at the new head";
+/// What View changes says where the forge has the request at another head or base than its
+/// row's.
+const VIEW_MOVED: &str = "the request moved to another head or base since its row was drawn, so \
+                          purlis marked nothing viewed. Its row is asked again where it is now.";
+
+/// What View changes says after why it showed no changes.
+const VIEW_NOTHING: &str = "Nothing was marked viewed. Read them on the forge.";
 
 /// What a press says where its row showed other facts than the ask holds now.
 const SHOWN_OTHER: &str = "what you were shown of this merge changed since, so nothing was \
-                           merged. Read it again, then merge";
+                           merged. Press Merge again to be asked of what it shows now.";
 
 /// What a press says where the re-read found the request at another head or base than its row's.
 const MOVED: &str = "the request moved to another head or base since you were asked, so nothing \

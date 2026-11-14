@@ -110,7 +110,7 @@ impl Chat {
                             failed: Vec::new(),
                         },
                         ruleset: mergehold::Ruleset::Protects,
-                        approved: false,
+                        approved_by: None,
                         read_at: 1_000,
                     };
                     Ok((key, facts))

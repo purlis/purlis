@@ -36,7 +36,7 @@ fn facts(ci: Ci, title: &str, read_at: u64) -> Facts {
             failed: Vec::new(),
         },
         ruleset: Ruleset::None,
-        approved: false,
+        approved_by: None,
         read_at,
     }
 }
@@ -149,7 +149,7 @@ fn the_digest_is_of_what_is_shown_and_the_ask_holds_the_window_to_it() {
     assert_ne!(
         shown.digest(),
         Facts {
-            approved: true,
+            approved_by: Some("ana".to_owned()),
             ..shown.clone()
         }
         .digest()

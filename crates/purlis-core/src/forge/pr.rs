@@ -229,6 +229,17 @@ pub enum Reviewer {
     App,
 }
 
+/// **A request's changes, as the forge gives them** ([`super::backend::Requests::changes`]):
+/// each changed file's patch, headed as `git diff` heads it, and whether that is all of them.
+/// The forge leaves out what it will not show (too many files, a file too large); a diff it cut
+/// is not `whole`, and nobody viewed a head from it (Q277).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Changes {
+    pub text: String,
+    /// Whether the forge gave every file's every line.
+    pub whole: bool,
+}
+
 /// **What a review said.**
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReviewState {

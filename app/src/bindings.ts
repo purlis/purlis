@@ -12011,6 +12011,11 @@ export type MergeShown = {
 	 */
 	look: LookShown,
 	/**
+	 *  Where it is approved: the login of the person who approved this head (Q277), said
+	 *  inertly, as text after purlis's own words and never as a control.
+	 */
+	approved_by: string | null,
+	/**
 	 *  Where it was not viewed: how many commits its head is ahead of the one the person
 	 *  viewed, where purlis knows it (R-123): "2 commits since you looked".
 	 */

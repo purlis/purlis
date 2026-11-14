@@ -11,7 +11,8 @@
 //!
 //! Both records are held in the app's memory alone, for the window's life (Q210): nothing here
 //! is written to disk, so a relaunch knows no viewed head and no push, and the person views
-//! again.
+//! again. Each is keyed by the forge's host and the repo's path ([`OnHost`], Q277): two forges'
+//! `o/r` are two repos.
 
 use std::sync::{Mutex, PoisonError};
 
@@ -25,11 +26,39 @@ pub const PRESSES: u8 = 2;
 /// The most viewed heads, and pushes per chat, held: past it the oldest goes.
 const AT_MOST: usize = 256;
 
-/// **Whether `reviews` approve `head`**: some person who is not `author` (by login, in any
-/// case) last said Approved, and of this very head. A comment changes nothing they said
-/// before; a later request for changes, or a dismissal, takes an approval back. An app's or a
-/// bot's approval never counts, nor one of an older head.
-pub fn approves(reviews: &[Review], head: &HeadSha, author: &str) -> bool {
+/// **A repo on one forge** (Q277): the forge's host, in lower case, and the repo's path. Two
+/// forges' `o/r` are two repos, so nothing viewed or pushed on one is said of the other.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct OnHost {
+    host: String,
+    repo: Repo,
+}
+
+impl OnHost {
+    /// `repo` on the forge at `host`, which is compared in any case.
+    pub fn new(host: &str, repo: Repo) -> OnHost {
+        OnHost {
+            host: host.to_ascii_lowercase(),
+            repo,
+        }
+    }
+
+    /// The forge's host, in lower case.
+    pub fn host(&self) -> &str {
+        &self.host
+    }
+
+    /// The repo's path on it.
+    pub fn repo(&self) -> &Repo {
+        &self.repo
+    }
+}
+
+/// **Who approves `head`, of `reviews`**: the first person who is not `author` (by login, in
+/// any case) and whose last say was Approved, of this very head. A comment changes nothing
+/// they said before; a later request for changes, or a dismissal, takes an approval back. An
+/// app's or a bot's approval never counts, nor one of an older head. `None` where nobody does.
+pub fn approves(reviews: &[Review], head: &HeadSha, author: &str) -> Option<String> {
     let mut last: Vec<(&str, &Review)> = Vec::new();
     for review in reviews {
         if review.by != Reviewer::Person
@@ -47,17 +76,18 @@ pub fn approves(reviews: &[Review], head: &HeadSha, author: &str) -> bool {
         }
     }
     last.iter()
-        .any(|(_, review)| review.state == ReviewState::Approved && review.commit == head.as_str())
+        .find(|(_, review)| review.state == ReviewState::Approved && review.commit == head.as_str())
+        .map(|(login, _)| (*login).to_owned())
 }
 
 /// **What the person has seen of a merge's head** (R-122, R-123).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Look {
     /// The person viewed this head's changes in purlis.
     Viewed,
-    /// Not viewed here, but the forge holds an approving review of this head by a person who is
-    /// neither its author nor an app or a bot.
-    Approved,
+    /// Not viewed here, but the forge holds an approving review of this head by `by`, a person
+    /// who is neither its author nor an app or a bot (Q277: the row names them).
+    Approved { by: String },
     /// Neither. `since` is how many commits this head is ahead of the one the person viewed,
     /// where purlis knows it.
     NotViewed { since: Option<u32> },
@@ -65,17 +95,18 @@ pub enum Look {
 
 impl Look {
     /// The look of `head`, where the person last viewed `viewed`, the forge's reviews approve
-    /// it or not, and `since` commits lie between the viewed head and it, where known.
+    /// it by `approved_by` or by nobody, and `since` commits lie between the viewed head and
+    /// it, where known.
     pub fn of(
         viewed: Option<&HeadSha>,
         head: &HeadSha,
-        approved: bool,
+        approved_by: Option<&str>,
         since: Option<u32>,
     ) -> Look {
         if viewed == Some(head) {
             Look::Viewed
-        } else if approved {
-            Look::Approved
+        } else if let Some(by) = approved_by {
+            Look::Approved { by: by.to_owned() }
         } else {
             Look::NotViewed {
                 since: viewed.and(since),
@@ -92,12 +123,12 @@ impl Look {
 /// **The head the person last viewed of each request** (R-122, R-302), in memory only.
 #[derive(Debug, Default)]
 pub struct Viewed {
-    heads: Mutex<Vec<((Repo, u64), HeadSha)>>,
+    heads: Mutex<Vec<((OnHost, u64), HeadSha)>>,
 }
 
 impl Viewed {
     /// The person viewed `head` of request `number` of `repo`.
-    pub fn mark(&self, repo: &Repo, number: u64, head: &HeadSha) {
+    pub fn mark(&self, repo: &OnHost, number: u64, head: &HeadSha) {
         let mut heads = self.heads.lock().unwrap_or_else(PoisonError::into_inner);
         heads.retain(|((of, n), _)| !(of == repo && *n == number));
         if heads.len() >= AT_MOST {
@@ -107,7 +138,7 @@ impl Viewed {
     }
 
     /// The head of request `number` of `repo` the person last viewed, if any.
-    pub fn of(&self, repo: &Repo, number: u64) -> Option<HeadSha> {
+    pub fn of(&self, repo: &OnHost, number: u64) -> Option<HeadSha> {
         self.heads
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -121,12 +152,13 @@ impl Viewed {
 /// A push purlis did not make for the chat is not recorded, so its head is flagged.
 #[derive(Debug, Default)]
 pub struct Pushes {
-    pushed: Mutex<Vec<(u32, Repo, HeadSha)>>,
+    pushed: Mutex<Vec<(u32, OnHost, HeadSha)>>,
 }
 
 impl Pushes {
-    /// Chat `session` pushed `head` to `repo`.
-    pub fn record(&self, session: u32, repo: &Repo, head: &HeadSha) {
+    /// Chat `session` pushed `head` to `repo`: the commit the push sent, never one read after
+    /// it (Q277).
+    pub fn record(&self, session: u32, repo: &OnHost, head: &HeadSha) {
         let mut pushed = self.pushed.lock().unwrap_or_else(PoisonError::into_inner);
         if pushed.iter().filter(|(of, _, _)| *of == session).count() >= AT_MOST
             && let Some(oldest) = pushed.iter().position(|(of, _, _)| *of == session)
@@ -137,7 +169,7 @@ impl Pushes {
     }
 
     /// Whether purlis recorded chat `session` pushing `head` to `repo`.
-    pub fn pushed(&self, session: u32, repo: &Repo, head: &HeadSha) -> bool {
+    pub fn pushed(&self, session: u32, repo: &OnHost, head: &HeadSha) -> bool {
         self.pushed
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -154,12 +186,51 @@ impl Pushes {
     }
 }
 
+/// **How many commits one head is ahead of another** (R-123), as the forge said, in memory
+/// only: what "N commits since you looked" counts, from the head the person viewed to the
+/// ask's head, whichever path found the move (Q277).
+#[derive(Debug, Default)]
+pub struct Ahead {
+    counted: Mutex<Vec<(OnHost, HeadSha, HeadSha, u32)>>,
+}
+
+impl Ahead {
+    /// The forge said `to` is `commits` ahead of `from` in `repo`.
+    pub fn count(&self, repo: &OnHost, from: &HeadSha, to: &HeadSha, commits: u32) {
+        let mut counted = self.counted.lock().unwrap_or_else(PoisonError::into_inner);
+        counted.retain(|(of, a, b, _)| !(of == repo && a == from && b == to));
+        if counted.len() >= AT_MOST {
+            counted.remove(0);
+        }
+        counted.push((repo.clone(), from.clone(), to.clone(), commits));
+    }
+
+    /// How many commits `to` is ahead of `from` in `repo`, where the forge said.
+    pub fn of(&self, repo: &OnHost, from: &HeadSha, to: &HeadSha) -> Option<u32> {
+        self.counted
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .find(|(of, a, b, _)| of == repo && a == from && b == to)
+            .map(|(_, _, _, commits)| *commits)
+    }
+}
+
 /// **A watched request whose head moved** (R-125): chat `session`'s ask at `was` is retired for
-/// one at `now`, `commits` ahead where the forge said.
+/// one at `now`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HeadMoved {
     pub session: u32,
     pub was: MergeKey,
     pub now: MergeKey,
-    pub commits: Option<u32>,
+}
+
+/// **What one reading of the watch found that the window must redraw** (R-125, Q277).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Watched {
+    /// The head moved: the ask was retired for one at the new head.
+    Moved(HeadMoved),
+    /// The head is where it was, and what the ask shows of it changed: chat `session`'s ask
+    /// for `key` shows the new read.
+    Changed { session: u32, key: MergeKey },
 }

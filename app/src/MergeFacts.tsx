@@ -14,11 +14,15 @@ const RULESET_SAID: Record<RulesetShown, (base: string) => string> = {
 };
 
 /** **What the person has seen of the head** (T1-41; R-122, R-123), as the core says it. A merge
- *  takes two presses whichever it is (Q268): this says what the second is asked over. */
-const LOOK_SAID: Record<LookShown, (since: number | null) => string> = {
+ *  takes two presses whichever it is (Q268): this says what the second is asked over. The
+ *  approving reviewer's login (Q277) comes after purlis's own words, as plain text. */
+const LOOK_SAID: Record<LookShown, (facts: MergeShown) => string> = {
   viewed: () => "You viewed these changes in purlis at this head.",
-  approved: () => "Approved at this head by a reviewer who isn't its author, an app or a bot.",
-  "not-viewed": (since) =>
+  approved: ({ approved_by }) =>
+    approved_by === null
+      ? "Approved at this head by a reviewer who isn't its author, an app or a bot."
+      : `Approved at this head by ${approved_by}.`,
+  "not-viewed": ({ since_viewed: since }) =>
     since === null
       ? "You haven't viewed these changes in purlis."
       : `${since} ${since === 1 ? "commit" : "commits"} since you looked.`,
@@ -49,7 +53,7 @@ export function MergeFacts({ facts }: { facts: MergeShown }) {
     <span className="merge-facts">
       {`Into ${facts.base}, opened by ${facts.author}. Checks ${facts.checks} as of ${clock(facts.read_at)}. `}
       <span className="merge-protection">{`${RULESET_SAID[facts.ruleset](facts.base)} ${MERGE_GAP}`}</span>
-      {` ${LOOK_SAID[facts.look](facts.since_viewed)}`}
+      {` ${LOOK_SAID[facts.look](facts)}`}
       {!facts.pushed_here && ` ${NOT_PUSHED_HERE}`}
       {" Title, as the chat may have written it: "}
       <span className="merge-title">{facts.title}</span>

@@ -40,6 +40,7 @@ const hold = (session: number, since: number, offered = false): Shown => ({
       read_at: 1_763_000_000,
       ruleset: "none",
       look: "not-viewed",
+      approved_by: null,
       since_viewed: null,
       pushed_here: true,
       digest: "d-passed",

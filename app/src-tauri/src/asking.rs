@@ -263,6 +263,9 @@ pub struct MergeShown {
     /// What the person has seen of its head (T1-41, R-122): viewed in purlis, approved on the
     /// forge by someone else, or neither. A merge takes two presses whichever it is (Q268).
     pub look: LookShown,
+    /// Where it is approved: the login of the person who approved this head (Q277), said
+    /// inertly, as text after purlis's own words and never as a control.
+    pub approved_by: Option<String>,
     /// Where it was not viewed: how many commits its head is ahead of the one the person
     /// viewed, where purlis knows it (R-123): "2 commits since you looked".
     pub since_viewed: Option<u32>,
@@ -331,10 +334,10 @@ impl MergeShown {
         pushed_here: bool,
     ) -> Self {
         use purlis_core::mergehold::Look;
-        let (look, since_viewed) = match look {
-            Look::Viewed => (LookShown::Viewed, None),
-            Look::Approved => (LookShown::Approved, None),
-            Look::NotViewed { since } => (LookShown::NotViewed, since),
+        let (look, approved_by, since_viewed) = match look {
+            Look::Viewed => (LookShown::Viewed, None, None),
+            Look::Approved { by } => (LookShown::Approved, Some(said_inertly(&by)), None),
+            Look::NotViewed { since } => (LookShown::NotViewed, None, since),
         };
         Self {
             title: said_inertly(&facts.title),
@@ -344,6 +347,7 @@ impl MergeShown {
             read_at: u32::try_from(facts.read_at).unwrap_or(u32::MAX),
             ruleset: facts.ruleset.seen().into(),
             look,
+            approved_by,
             since_viewed,
             pushed_here,
             digest: facts.digest(),
@@ -2168,7 +2172,7 @@ pub fn merge_hold(waits: &purlis_core::mergehold::Waits) -> Shown {
             facts: MergeShown::of(
                 &waits.facts,
                 key.base.as_str(),
-                waits.look,
+                waits.look.clone(),
                 waits.pushed_here,
             ),
         },

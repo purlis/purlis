@@ -11,11 +11,12 @@ import { Dialog } from "./ui/dialog/Dialog";
 export const VIEW_CHANGES = "View changes";
 
 /**
- * **View changes on a held merge** (T1-41; R-302, R-122): the request's changes, read by the
- * core in the clone the merge ran in, shown here, and its head marked viewed, so its row says so.
- * The core marks it only while the forge says the request is at the head the row names; where it
- * isn't, nothing is marked and its words say why. The changes are the chat's own writing, so
- * they are shown as text, never as markup.
+ * **View changes on a held merge** (T1-41; R-302, R-122, Q277): the request's changes, read by
+ * the core from the forge with the app's own login, never from a clone the chat can write, shown
+ * here, and its head marked viewed, so its row says so. The core marks it only where it showed
+ * the whole diff, while the forge says the request is at the head and base the row names; where
+ * it isn't, or the forge can't give a diff, nothing is marked and its words say why. The changes
+ * are the chat's own writing, so they are shown as text, never as markup.
  *
  * On the merge's pane and on its row in Asks alike: `view` is the press, `dialog` what it opens,
  * and `refused` why it showed nothing.

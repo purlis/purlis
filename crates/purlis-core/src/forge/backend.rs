@@ -31,8 +31,8 @@ use serde_json::Value;
 use super::checks::{Annotation, Checks, FailedCheck};
 use super::cli::Cli;
 use super::pr::{
-    AutoMerge, Gate, HeadAt, Image, MergeAs, MergedAt, Opened, Pinned, Pr, Ready, Request, Review,
-    State,
+    AutoMerge, Changes, Gate, HeadAt, Image, MergeAs, MergedAt, Opened, Pinned, Pr, Ready, Request,
+    Review, State,
 };
 use super::transport::{Call, NoAnswer, Reply, Transport};
 use super::{Forge, ForgeError, Kind, Raised};
@@ -741,6 +741,22 @@ pub trait Requests {
         Err(ForgeError::new(format!(
             "purlis does not read the reviews of request {} of {path} on this forge",
             pr.number
+        )))
+    }
+
+    /// **The changes of a request into `base` at `head`** in the repo at `path` (Q277, R-302):
+    /// what View changes shows, read from the forge with the caller's login, never from a
+    /// clone a chat can write. A forge purlis does not read them on says so in a sentence, and
+    /// nothing is shown or marked viewed (#6432). Strict.
+    fn changes(
+        &self,
+        _caller: &Caller,
+        path: &str,
+        _base: &str,
+        _head: &str,
+    ) -> Result<Changes, ForgeError> {
+        Err(ForgeError::new(format!(
+            "purlis can't read a request's changes of {path} from this forge yet"
         )))
     }
 

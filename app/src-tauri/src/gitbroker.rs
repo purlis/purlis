@@ -259,12 +259,12 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
     if (root_update || root_save) && matches!(answered.answer, Answer::Said { code: 0, .. }) {
         held.tree_moved();
     }
+    let sent = pushed_head(&ask.work, &answered);
     let answer = told(held, ask.chat, answered);
-    // A push that went is the chat's own: a merge ask at its head is not flagged (T1-41, R-124).
-    if let GitWork::WorktreePush { repo, piece, .. } = &ask.work
-        && matches!(answer, Answer::Said { code: 0, .. })
-    {
-        crate::mergeholds::pushed(held, ask.chat, &ask.workspace, repo, piece);
+    // A push that went is the chat's own: a merge ask at the commit it sent is not flagged
+    // (T1-41, R-124, Q277).
+    if let Some((repo, piece, head)) = sent {
+        crate::mergeholds::pushed(held, ask.chat, &ask.workspace, repo, piece, &head);
     }
     // A push refused for unsigned commits, or one that went, changes the one Ask for the lanes
     // waiting on signing (#5633).
@@ -285,6 +285,23 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
         _ => {}
     }
     answer
+}
+
+/// **The push `answered` says went, of a branch folder's `work`** (T1-41, R-124, Q277): its repo,
+/// its folder and the commit the push sent, as the core's push says it. Nothing for any other
+/// work, a push that did not go, or one that names no commit sent: no `HEAD` is read for it.
+pub(crate) fn pushed_head<'a>(
+    work: &'a GitWork,
+    answered: &purlis_core::gitbroker::Answered,
+) -> Option<(&'a str, &'a str, String)> {
+    let GitWork::WorktreePush { repo, piece, .. } = work else {
+        return None;
+    };
+    if !matches!(answered.answer, Answer::Said { code: 0, .. }) {
+        return None;
+    }
+    let head = answered.pushed.clone()?;
+    Some((repo.as_str(), piece.as_str(), head))
 }
 
 /// **What the person is told of a chat's git ask** (#3877), and the answer the chat reads: a

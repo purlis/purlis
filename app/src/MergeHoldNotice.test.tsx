@@ -50,6 +50,7 @@ const FACTS: MergeShown = {
   read_at: READ_AT,
   ruleset: "none",
   look: "not-viewed",
+  approved_by: null,
   since_viewed: null,
   pushed_here: true,
   digest: "d-passed",

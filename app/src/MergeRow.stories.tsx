@@ -30,6 +30,7 @@ const facts = (ruleset: RulesetShown, shown: Partial<MergeShown> = {}): MergeSho
   read_at: 1_763_000_000,
   ruleset,
   look: "not-viewed",
+  approved_by: null,
   since_viewed: null,
   pushed_here: true,
   digest: "d-passed",
