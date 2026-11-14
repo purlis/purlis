@@ -777,11 +777,13 @@ import {
 } from "./seen";
 import {
   BlockedMarkers,
+  askToOpenChatLog,
   filterChatLog,
   markerOf,
   useBlockedMarkers,
   type BlockedMarkersHeld,
   type ChatLogFilter,
+  whenAChatLogIsAsked,
 } from "./blockedMarkers";
 import { SeenRowsOf } from "./seenRows";
 import { listLinksOf } from "./paneLinksOpen";
@@ -10419,7 +10421,8 @@ export const PlaneView = memo(function PlaneView({
    * **Chat `session`'s Chat log, opened showing `filter`** (R-226): the press of its own row in
    * the chat's list (`chat.log:<session>`), so every entry point opens it as that row does. One
    * function for the life of the view, so a list that offers it is not drawn again with the
-   * catalogue. A chat the catalogue has no such row of opens nothing.
+   * catalogue. A chat the catalogue has no such row of opens nothing. It reads refs, so a
+   * control built while the view draws asks for it with askToOpenChatLog instead.
    */
   const openChatLog = useCallback(
     (session: number, filter: ChatLogFilter) => {
@@ -10428,6 +10431,14 @@ export const PlaneView = memo(function PlaneView({
       if (offer?.available === true) pressNow.current(offer);
     },
     [plane],
+  );
+  // A Chat log a control asked for while the view drew (askToOpenChatLog) opens here.
+  useEffect(
+    () =>
+      whenAChatLogIsAsked((asked, session, filter) => {
+        if (asked === plane) openChatLog(session, filter);
+      }),
+    [plane, openChatLog],
   );
   /** A link out of Settings (#1387, #1388): the catalogue's row it names, run as the palette
    *  runs it. One the catalogue does not hold now does nothing. */
@@ -11632,7 +11643,7 @@ export const PlaneView = memo(function PlaneView({
             ...CHAT_LOG_ANSWER,
             name: openTheChatLogOf(name),
             press: () => {
-              openChatLog(chat, "blocks");
+              askToOpenChatLog(plane, chat, "blocks");
               read();
               return undefined;
             },
@@ -11693,7 +11704,6 @@ export const PlaneView = memo(function PlaneView({
     asksOfChat,
     ignoreForUpdate,
     openedUpdate,
-    openChatLog,
   ]);
   /** Asks, shown (#5644): where a vault's request and a profile's sign-in wait. */
   const showInbox = useCallback(() => showSideView("asks"), [showSideView]);

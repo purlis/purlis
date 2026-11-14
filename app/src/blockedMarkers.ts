@@ -208,6 +208,30 @@ export function filterChatLog(plane: PlaneId, session: number, filter: ChatLogFi
   for (const tell of told) tell();
 }
 
+/** Who opens a Chat log when one is asked for: the project's view, while it is drawn. */
+const openers = new Set<(plane: PlaneId, session: number, filter: ChatLogFilter) => void>();
+
+/**
+ * **Asks project `plane`'s view to open chat `session`'s Chat log showing `filter`** (R-226): for
+ * a control built while the view draws, such as an Updates row's answer, which may hand nothing
+ * that reads a ref to a function then (react-hooks/refs). The view opens it as the chat's own row
+ * does ({@link whenAChatLogIsAsked}).
+ */
+export function askToOpenChatLog(plane: PlaneId, session: number, filter: ChatLogFilter): void {
+  for (const open of openers) open(plane, session, filter);
+}
+
+/** Calls `open` for each Chat log asked for with {@link askToOpenChatLog}, until the returned
+ *  function is called. */
+export function whenAChatLogIsAsked(
+  open: (plane: PlaneId, session: number, filter: ChatLogFilter) => void,
+): () => void {
+  openers.add(open);
+  return () => {
+    openers.delete(open);
+  };
+}
+
 /** The filter project `plane`'s chat `session`'s Chat log shows, and the way to change it. */
 export function useChatLogFilter(
   plane: PlaneId,
