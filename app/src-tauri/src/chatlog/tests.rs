@@ -286,6 +286,7 @@ fn a_blocks_row_hands_the_window_its_reason_from_memory_never_the_log() {
                 harness: "codex".to_owned(),
                 reason: Some(REASON.to_owned()),
                 resolved: false,
+                allow_levels: Vec::new(),
             },
             ChatLogRow::Blocked {
                 at: blocks.get(1).and_then(|row| match row {
@@ -300,6 +301,7 @@ fn a_blocks_row_hands_the_window_its_reason_from_memory_never_the_log() {
                 harness: "codex".to_owned(),
                 reason: None,
                 resolved: false,
+                allow_levels: Vec::new(),
             },
         ]
     );
