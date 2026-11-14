@@ -10870,6 +10870,11 @@ export type PoolSetupMachine = {
 	ca_now: string | null,
 	/**  The Docker context the route was read from (#6268). */
 	context: string | null,
+	/**
+	 *  **Who can sign in to it, as the person answered** (#6271, ADR 0123 §5): only they, and
+	 *  people they trust with their logins (`true`), or others might, or they're not sure.
+	 */
+	owned?: boolean | null,
 };
 
 /**  A limit a profile is over. */
