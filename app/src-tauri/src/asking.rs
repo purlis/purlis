@@ -4453,8 +4453,12 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     );
     // A permission ask that timed out says nothing of the chat's wait (#6007): its harness's own
     // prompt still waits in the pane, and only the pane answers it, so it is listed too.
+    // A window-only refusal is a refusal, not the chat's wait (R-328, R-329): like a block, it
+    // stands beside whatever the chat asks of its own, which stays an ask when it moves to the
+    // chat's finish row.
     let said: std::collections::HashSet<u32> = asks
         .iter()
+        .filter(|ask| ask.source != AskSource::TrustClone)
         .filter(|ask| {
             ask.source != AskSource::Permission || (waiting.timed_out)(&ask.ask).is_none()
         })
