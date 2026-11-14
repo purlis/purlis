@@ -84,6 +84,7 @@ const started = (session: number): ChatLogRow => ({
   protection: {
     layers: [{ layer: "sandbox", level: "floor", tier: "project" }],
     charter_commit: `c0ffee${session}`,
+    charter_file: "purlis.toml",
     charter_dirty: false,
     answers_in_force: 0,
   },

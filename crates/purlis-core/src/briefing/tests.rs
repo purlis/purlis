@@ -1981,6 +1981,28 @@ fn the_unattended_stop_names_both_workspace_variables() {
     assert!(unlocked.contains("silently claim `default`. Do no repo work."));
 }
 
+/// Q280: the unattended stop says unattended in words true of every harness and every reason a
+/// run is unattended, never one harness's own name for its mode. Mutation caught: quoting
+/// Claude Code's `permission_mode: bypassPermissions` again, which a Codex or opencode run, or
+/// one unattended as a task or a handoff, would be told as if it were its own.
+#[test]
+fn the_unattended_stop_quotes_no_harness_s_own_word_for_its_mode() {
+    for locks in [true, false] {
+        let said = unattended_stop(locks, "default", "none yet");
+        assert!(
+            said.contains("It runs unattended, with nobody there to answer"),
+            "{said}"
+        );
+        for harness_word in [
+            crate::attendance::PROMPTS_OFF,
+            "permission_mode",
+            "Claude Code",
+        ] {
+            assert!(!said.contains(harness_word), "{harness_word}: {said}");
+        }
+    }
+}
+
 #[test]
 fn every_harness_is_told_the_workspace_s_own_files_go_in_its_folder_and_never_in_repos() {
     // ADR 0114: a chat that cannot tell a clone from the workspace's own folder puts its notes

@@ -20,6 +20,7 @@ const START: ChatLogRow = {
   protection: {
     layers: [{ layer: "sandbox", level: "floor", tier: "project" }],
     charter_commit: "4f2a9c1e0b",
+    charter_file: "purlis.toml",
     charter_dirty: false,
     answers_in_force: 0,
   },

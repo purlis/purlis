@@ -896,7 +896,12 @@ export function modeDiffersOf(states: ChatStates, session: number): ModeDiffers 
 }
 
 const sameMode = (a: ModeDiffers | null, b: ModeDiffers | null) =>
-  a === b || (a !== null && b !== null && a.set === b.set && a.reported === b.reported);
+  a === b ||
+  (a !== null &&
+    b !== null &&
+    a.set === b.set &&
+    a.reported === b.reported &&
+    a.harness === b.harness);
 
 /** `told` taken: what the core noticed of its chat now. The same states where nothing changed. */
 export function noticed(states: ChatStates, told: ChatNoticed): ChatStates {

@@ -60,6 +60,7 @@ fn the_chat_log_hands_the_window_the_start_and_the_end_in_its_own_words() {
                 tier: "chat".to_owned(),
             }],
             charter_commit: "none".to_owned(),
+            charter_file: "charter.toml".to_owned(),
             charter_dirty: false,
             answers_in_force: 0,
         })

@@ -504,6 +504,8 @@ fn the_start_and_end_rows_are_built_from_the_start_and_end_events() {
                 tier: Tier::Project,
             }],
             charter_commit: "4f2a9c1".to_owned(),
+            // A line that names no file was `charter.toml`'s commit (Q280).
+            charter_file: "charter.toml".to_owned(),
             charter_dirty: true,
             answers_in_force: Vec::new(),
         })

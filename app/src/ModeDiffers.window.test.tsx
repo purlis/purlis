@@ -12,6 +12,7 @@ import { askRows, forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
 import { forgetInbox } from "./inboxRules";
 import { aBatchOf } from "./chatEvents.testkit";
 import { CHAT_EVENTS } from "./chatEvents";
+import { modeDiffersSaid } from "./ModeDiffersNotice";
 import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
@@ -75,7 +76,7 @@ const told = (mode: ModeDiffers | null): ChatNoticed => ({
   mode,
 });
 
-const PLAN: ModeDiffers = { set: "default", reported: "plan" };
+const PLAN: ModeDiffers = { set: "default", reported: "plan", harness: "claude" };
 
 /** The core, with chat 4 open on its tab, the registry listing chat 4's permission prompt, and
  *  `first` as what it first answers it noticed of the project's chats. */
@@ -164,7 +165,7 @@ describe("mode differs is a Notice and never an ask", () => {
   });
 
   it("is drawn from the core's first answer too, and names a mode nobody measured as unknown", async () => {
-    core([told({ set: "acceptEdits", reported: "unknown" })]);
+    core([told({ set: "acceptEdits", reported: "unknown", harness: "claude" })]);
     await opened();
 
     await waitFor(() => expect(modeNotices()).toHaveLength(1));
@@ -201,7 +202,7 @@ describe("mode differs is a Notice and never an ask", () => {
     await tell(told(PLAN));
     await settle();
     expect(modeNotices()).toHaveLength(0);
-    await tell(told({ set: "default", reported: "bypassPermissions" }));
+    await tell(told({ set: "default", reported: "bypassPermissions", harness: "claude" }));
     await waitFor(() => expect(modeNotices()).toHaveLength(1));
     expect(modeNotices()[0]).toHaveTextContent("runs in bypass permissions mode");
   });
@@ -210,4 +211,33 @@ describe("mode differs is a Notice and never an ask", () => {
   it.todo('"purlis decides" forbidden is a Notice and never an ask (phase 3, R-324, #6391)');
   it.todo("a broken policy is a Notice and never an ask (phase 4, R-243, #6391)");
   it.todo("a ruleset a policy requires is a Notice and never an ask (phase 4, R-149, #6391)");
+});
+
+// R-005, Q280. Mutation caught: "Claude Code" written into the sentence, or Claude Code's mode
+// words read for whichever harness reported, so a chat on another harness is told Claude
+// Code's name and its words for a mode.
+describe("the Notice names the harness that reported the mode, in its own words", () => {
+  it("names the harness given by its adapter's display name", () => {
+    expect(modeDiffersSaid(PLAN)).toBe(
+      "Claude Code reports this chat runs in plan mode, but purlis started it in default mode. purlis counts this chat as unattended from now on.",
+    );
+    const codex = modeDiffersSaid({ set: "default", reported: "plan", harness: "codex" });
+    expect(codex).toBe(
+      "Codex reports a permission mode for this chat that purlis doesn't know. purlis counts this chat as unattended from now on.",
+    );
+    expect(modeDiffersSaid({ ...PLAN, harness: "opencode" })).toMatch(/^opencode reports /);
+  });
+
+  it("never says one harness's words for another's mode, nor a harness it was not told", () => {
+    for (const harness of ["codex", "opencode", null]) {
+      const said = modeDiffersSaid({ set: "acceptEdits", reported: "bypassPermissions", harness });
+      expect(said).not.toContain("Claude Code");
+      expect(said).not.toMatch(/accept edits|bypass permissions|bypassPermissions/);
+    }
+    expect(
+      modeDiffersSaid({ set: "default", reported: "plan", harness: null }).startsWith(
+        "Its harness reports",
+      ),
+    ).toBe(true);
+  });
 });

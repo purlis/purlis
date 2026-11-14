@@ -41,26 +41,35 @@ pub struct ChatNoticed {
     pub left_work: Option<bool>,
     /// The mode purlis didn't set that it reported, once one made it unattended (R-243,
     /// T1-44): a standing fault its pane says in a Notice, never an ask. None on every harness
-    /// but Claude Code.
+    /// whose adapter reports no mode purlis can check.
     pub mode: Option<ModeDiffers>,
 }
 
-/// **A Claude Code chat reported a mode purlis didn't set** (R-243): each mode as Claude Code
-/// names it (`default`, `acceptEdits`, `plan`, `auto`, `bypassPermissions`), or `unknown` for a
-/// string nobody measured ([`purlis_core::attendance::ModeDiffers`]).
+/// **A chat reported a mode purlis didn't set** (R-243): each mode as its own harness names it,
+/// or `unknown` for a string nobody measured ([`purlis_core::attendance::ModeDiffers`]), and
+/// which harness reported it, so the Notice names that harness and its own mode, never one
+/// harness's words for another's (R-005, Q280).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct ModeDiffers {
     /// The mode purlis started it in.
     pub set: String,
     /// The mode its armed hook reported.
     pub reported: String,
+    /// The harness that reported it, as the core names it (`claude`), which the window says by
+    /// its adapter's display name; none where the app holds no harness for the chat.
+    pub harness: Option<String>,
 }
 
-impl From<purlis_core::attendance::ModeDiffers> for ModeDiffers {
-    fn from(differs: purlis_core::attendance::ModeDiffers) -> Self {
+impl ModeDiffers {
+    /// `differs`, as the chat's own `harness` reported it.
+    pub fn of(
+        differs: purlis_core::attendance::ModeDiffers,
+        harness: Option<purlis_core::harness::Harness>,
+    ) -> Self {
         Self {
             set: differs.set.as_str().to_owned(),
             reported: differs.reported.as_str().to_owned(),
+            harness: harness.map(|harness| harness.name().to_owned()),
         }
     }
 }
@@ -73,7 +82,7 @@ pub type Teller = Arc<dyn Fn(ChatNoticed) + Send + Sync + 'static>;
 struct Said {
     stuck: Option<String>,
     left_work: Option<bool>,
-    mode: Option<purlis_core::attendance::ModeDiffers>,
+    mode: Option<ModeDiffers>,
 }
 
 /// How long a turn's timer sleeps at most before it looks at the clock again: the machine's
@@ -226,7 +235,7 @@ impl Noticed {
 
     /// Chat `chat`'s attendance fact names `differs`, the mode purlis didn't set that it
     /// reported (R-243): the window is told where that changed.
-    pub fn mode_differs(&self, chat: u32, differs: purlis_core::attendance::ModeDiffers) {
+    pub fn mode_differs(&self, chat: u32, differs: ModeDiffers) {
         self.tell_if_changed(chat, |said| said.mode = Some(differs));
     }
 
@@ -266,7 +275,7 @@ impl Noticed {
             session,
             stuck: said.stuck.clone(),
             left_work: said.left_work,
-            mode: said.mode.map(ModeDiffers::from),
+            mode: said.mode.clone(),
         }
     }
 
@@ -322,8 +331,9 @@ pub fn heard(held: &Held, chat: u32) {
 /// **A hook report of chat `report.chat`, after the board took it, heard by its attendance
 /// fact** (T1-18, T1-44): the one fact `chats` holds for the chat, which A4 reads
 /// ([`crate::chats::Chats::heard_attendance`]), and `noticed` told the mode purlis didn't set
-/// that it reported, read from that same fact (R-243). Only Claude Code's armed hook is read
-/// for its mode, so every other harness's chat is told none.
+/// that it reported, read from that same fact (R-243), with the chat's harness. Only a harness
+/// whose adapter reports a mode purlis can check is read for one, so every other chat is told
+/// none.
 pub fn attendance_heard(
     chats: &crate::chats::Chats,
     noticed: &Noticed,
@@ -334,7 +344,10 @@ pub fn attendance_heard(
         .attendance_of(report.chat)
         .and_then(purlis_core::attendance::Fact::mode_differs)
     {
-        noticed.mode_differs(report.chat, differs);
+        noticed.mode_differs(
+            report.chat,
+            ModeDiffers::of(differs, chats.harness(report.chat)),
+        );
     }
 }
 

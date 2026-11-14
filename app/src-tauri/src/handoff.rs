@@ -2489,12 +2489,12 @@ impl HeldDispatches {
 }
 
 /// **What each chat's own harness said of how it runs**: the permission level it reported
-/// (#3787), per chat, as [`HeardOfAChat`]. Fed by the hook reports the board takes from the
-/// chat, never by a line the chat sends. Its name is that of what it held first, whether the
-/// chat's prompts were off, which is the chat's attendance fact's now
+/// (#3787), per chat, as [`HeardOfAChat`]: the mode a task it dispatches starts from, and
+/// nothing else. Fed by the hook reports the board takes from the chat, never by a line the
+/// chat sends. Whether a chat is attended is its attendance fact's, never this
 /// ([`crate::chats::Chats::attendance_of`], T1-22, #6413).
 #[derive(Default)]
-pub struct Unattended(std::sync::Mutex<std::collections::HashMap<u32, HeardOfAChat>>);
+pub struct TaskModes(std::sync::Mutex<std::collections::HashMap<u32, HeardOfAChat>>);
 
 /// What the app heard of one chat's harness.
 #[derive(Debug, Clone, Copy, Default)]
@@ -2504,7 +2504,7 @@ struct HeardOfAChat {
     mode: purlis_core::dispatchmode::Heard,
 }
 
-impl Unattended {
+impl TaskModes {
     fn lock(&self) -> std::sync::MutexGuard<'_, std::collections::HashMap<u32, HeardOfAChat>> {
         self.0
             .lock()
@@ -2542,7 +2542,7 @@ impl Unattended {
 /// refused, leaves the record as it was.
 pub fn heard_mode(held: &Held, report: &purlis_core::hookwire::Report) {
     let now = held.board().conversation(report.chat);
-    held.unattended().heard_mode(
+    held.task_modes().heard_mode(
         report.chat,
         purlis_core::dispatchmode::of_its_own_harness(report, now.as_deref()),
     );
@@ -3317,7 +3317,7 @@ fn dispatch_noting(
             // app heard it from that chat's own harness, never as the dispatch says. A
             // handoff's chat is the person's to read, and starts in its harness's default.
             task_level: match wanted.mode() {
-                Mode::Task => held.unattended().task_level(from),
+                Mode::Task => held.task_modes().task_level(from),
                 Mode::Handoff => purlis_core::dispatchmode::Level::Asks,
             },
             short_task: wanted.mode() == Mode::Task && !wanted.long_task(),

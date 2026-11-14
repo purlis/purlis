@@ -401,8 +401,9 @@ pub struct Held {
     held_dispatches: crate::handoff::HeldDispatches,
     /// The chats a dispatch was refused for a limit a slot frees, until one does (#1498).
     at_limits: crate::atlimit::AtLimits,
-    /// Which chats run with their harness's permission prompts off (#1446).
-    unattended: crate::handoff::Unattended,
+    /// The permission mode each chat's harness said it runs in, which its tasks start from
+    /// (#3787).
+    task_modes: crate::handoff::TaskModes,
     /// Each turn of a chat, as refs in its branch's clone (#5405).
     turns: purlis_core::files::turns::Recorder,
     /// Which chats were waiting on the person at their last report: what counts a dispatch's
@@ -785,9 +786,10 @@ impl Held {
         &self.turns
     }
 
-    /// Which chats run with their harness's permission prompts off (#1446).
-    pub fn unattended(&self) -> &crate::handoff::Unattended {
-        &self.unattended
+    /// The permission mode each chat's harness said it runs in, which its tasks start from
+    /// (#3787).
+    pub fn task_modes(&self) -> &crate::handoff::TaskModes {
+        &self.task_modes
     }
 
     /// The vaults each chat was refused for its persona, for the Notice on its tab (#1430).
@@ -1625,7 +1627,7 @@ impl Held {
         // What it asked for and waited on goes with it, and so does how it was taken to run:
         // a chat started again in its place is marked afresh.
         self.held_dispatches.forget(session);
-        self.unattended.forget(session);
+        self.task_modes.forget(session);
         // And when it last moved, which `purlis.chats` says (#6235).
         crate::chatlisting::closed(&self.id, session);
         // Nothing else is remembered of it, and a command waiting on it is told (#1441).
@@ -5557,7 +5559,7 @@ impl Planes {
             dispatch_grants: crate::dispatchgrants::Store::default(),
             held_dispatches: crate::handoff::HeldDispatches::default(),
             at_limits: crate::atlimit::AtLimits::default(),
-            unattended: crate::handoff::Unattended::default(),
+            task_modes: crate::handoff::TaskModes::default(),
             turns: purlis_core::files::turns::Recorder::default(),
             dispatches: crate::dispatches::Waiting::default(),
             touched_files: crate::taskchanges::Touched::default(),
