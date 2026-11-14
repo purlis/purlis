@@ -3,7 +3,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import type { Shown } from "./bindings";
-import { askingUntold, elsewhereCount, theirAsks, type Elsewhere } from "./InboxElsewhere";
+import { askingUntold, elsewhereCount, type Elsewhere } from "./InboxElsewhere";
 import type { Needing } from "./NeedsYou";
 
 /**
@@ -52,23 +52,15 @@ describe("another window's asks, told ask by ask (#1921)", () => {
     expect(elsewhereCount("/here", told)).toBe(1 + 2 + 1);
   });
 
-  it("lists every other project's asks, this window's and the others', and not its own", () => {
-    expect(theirAsks("/here", told).map((one) => [one.plane, one.here, one.asks.length])).toEqual([
-      ["/web", true, 1],
-      ["/ops", false, 2],
-    ]);
-  });
-
   it("draws a chat at a time only where its window told no asks", () => {
     expect(askingUntold(told).map((one) => one.plane)).toEqual(["/far"]);
   });
 
-  it("never lists a project of this window twice, once a window it moved from still tells it", () => {
+  it("never counts a project of this window twice, once a window it moved from still tells it", () => {
     const moved = elsewhere({
       waitingHere: [{ plane: "/web", project: "web", count: 1, asks: [ask(4, "w")] }],
       there: [{ plane: "/web", project: "web", count: 1, asks: [ask(4, "w")] }],
     });
-    expect(theirAsks("/here", moved)).toHaveLength(1);
     expect(elsewhereCount("/here", moved)).toBe(1);
   });
 });

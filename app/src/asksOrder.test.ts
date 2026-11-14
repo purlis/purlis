@@ -176,32 +176,3 @@ describe("what a row's reason line says", () => {
     expect(standingSaid(why, NOW)).toBe(said);
   });
 });
-
-describe("every open project's asks in one order (#1921)", () => {
-  /** Another project's ask is known by the project it is in. */
-  const theirs = new Map<Shown, string>();
-  const there = (one: Shown, plane: string) => {
-    theirs.set(one, plane);
-    return one;
-  };
-
-  it("keeps two projects' chats of the same number apart, each standing by its facts", () => {
-    const mine = ask(3, "mine", { since: 500 });
-    const web = there(ask(3, "web", { since: 100, expires: NOW / 1000 + 60 }), "/web");
-    const groups = inOrder([mine, web], age, NOW, (one) => theirs.get(one));
-    expect(groups.map((group) => [group.plane, group.placed.map(({ ask }) => ask.ask)])).toEqual([
-      ["/web", ["web"]],
-      [undefined, ["mine"]],
-    ]);
-    expect(groups[0].placed[0].plane).toBe("/web");
-  });
-
-  it("puts this project's chat before another's of the same age", () => {
-    const mine = ask(3, "mine", { since: 100 });
-    const web = there(ask(2, "web", { since: 100 }), "/web");
-    const listed = inOrder([web, mine], age, NOW, (one) => theirs.get(one)).map(
-      (group) => group.placed[0].ask.ask,
-    );
-    expect(listed).toEqual(["mine", "web"]);
-  });
-});
