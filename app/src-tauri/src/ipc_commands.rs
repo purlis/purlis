@@ -147,6 +147,7 @@ macro_rules! app_commands {
                 network::sandbox_network,
                 network::chat_network,
                 network::allow_blocked_host,
+                network::allow_next_time,
                 sandboxing::allow_sandbox_port,
                 network::sandbox_kept_blocked,
                 sandboxing::list_grantable_folder,

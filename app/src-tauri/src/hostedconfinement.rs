@@ -342,6 +342,39 @@ impl Board for HostBoard {
             .map(|listed| (listed.host, by_of(listed.layer)))
             .collect()
     }
+
+    /// Sent only to a host that knows it (1.88, T1-34): an older one is told nothing, and
+    /// nothing is said to be allowed.
+    fn allow_next(&self, host: &Host) -> Result<(), String> {
+        if self.link.version() < purlis_session_protocol::session::KNOWS_ALLOW_NEXT {
+            return Err(
+                "the session host this chat runs in is older than this window, so it can't let \
+                 one attempt through. Allow it for this chat or longer, or restart the session \
+                 host."
+                    .to_owned(),
+            );
+        }
+        change(
+            &self.link,
+            &self.id,
+            ReachChange::AllowNext {
+                host: host.to_string(),
+            },
+        )
+        .map(|_| ())
+    }
+
+    fn next_attempts(&self) -> Vec<String> {
+        self.now().next
+    }
+
+    fn forget_next(&self, host: &Host) {
+        if self.link.version() >= purlis_session_protocol::session::KNOWS_ALLOW_NEXT {
+            self.change(ReachChange::ForgetNext {
+                host: host.to_string(),
+            });
+        }
+    }
 }
 
 /// How a service on `port` the host left out of a chat's plan is named to it: its loopback

@@ -1580,6 +1580,30 @@ fn allow(
     })
 }
 
+/// **Allow next time on chat `session`'s sandbox block of `host`, at a label wider than once**
+/// (T1-34, R-291): the grant the block's Notice makes at `level` ([`allow`]), judged again by
+/// the core, with no ask open, so it stays until it is removed. Once is the chat's next attempt
+/// alone, kept on its board (`network::allow_next`).
+pub(crate) fn allow_host_from_a_block(
+    root: &std::path::Path,
+    machine: &sandbox::Machine,
+    chats: &crate::chats::Chats,
+    session: u32,
+    (host, level): (&str, GrantLevel),
+    audit: Audit<'_>,
+    at: u64,
+) -> Result<Allowed, String> {
+    Ok(allow(
+        root,
+        machine,
+        chats,
+        session,
+        (GrantWhat::Host, host, level),
+        audit,
+        at,
+    )?)
+}
+
 /// **The one path an Allow of what a sandbox refused is granted by** (#1342, #1970): `asked`
 /// is [`judged`] by the core (never on the window's word), then audited and kept by
 /// [`kept_for`], for chat `session` or for no chat. A block's Notice ([`allow`]) and Settings'
@@ -2530,6 +2554,39 @@ fn held_for_the_project(root: &std::path::Path, port: u16) -> bool {
 /// The separator of a grant's id: no host or folder purlis grants holds it.
 const SEP: char = '\u{1f}';
 
+/// What the id of an Allow next time not used yet starts with (T1-34): its chat's number and
+/// its target follow.
+const NEXT: &str = "next";
+
+/// **Removes an Allow next time not used yet** (T1-34, R-291): audited, then taken off chat
+/// `session`'s board, so its next attempt at `target` is held and asked about again.
+fn revoke_next(
+    chats: &crate::chats::Chats,
+    session: &str,
+    target: &str,
+    audit: Audit<'_>,
+) -> Result<(), String> {
+    let gone = || "purlis did not remove it: it is no longer there.".to_owned();
+    let session: u32 = session.parse().map_err(|_| gone())?;
+    let host = sandbox::hosts::Host::parse(target).map_err(|_| gone())?;
+    let written = host.to_string();
+    let board = chats.board_of(session).ok_or_else(gone)?;
+    if !board.next_attempts().contains(&written) {
+        return Err(gone());
+    }
+    audit(
+        Some(session),
+        &sandbox::grant::Audited {
+            granted: false,
+            what: "host",
+            target: &written,
+            level: sandbox::grant::Level::Once,
+        },
+    )?;
+    board.forget_next(&host);
+    Ok(())
+}
+
 /// What a Run grant lets its chat run, as the Granted list says it: never its arguments, which
 /// are the chat's words.
 fn run_grant_target(bound: &purlis_core::secrets::ask::run::Bound) -> String {
@@ -2650,6 +2707,14 @@ fn grants_of(
             })
         })
         .collect();
+    // What waits for a chat's next attempt (T1-34, R-291): listed until it is used or removed.
+    for (session, target) in chats.next_attempts() {
+        out.push(SandboxGrant {
+            id: format!("{NEXT}{SEP}{session}{SEP}{target}"),
+            chat: chats.shown_name(session),
+            ..row(GrantWhat::Host, target, Level::Once, None)
+        });
+    }
     for host in sandbox::hosts::personal(root) {
         let target = host.to_string();
         let at = when(GrantWhat::Host, &target, Level::You);
@@ -2941,6 +3006,9 @@ fn revoke(
     }
     if let ["you", sandbox::local::BROWSER, persona] = parts.as_slice() {
         return revoke_browser(root, persona, audit);
+    }
+    if let [NEXT, session, target] = parts.as_slice() {
+        return revoke_next(chats, session, target, audit);
     }
     let (level, chat, what, target) = match parts.as_slice() {
         ["chat", chat, what, target] => (Level::Chat, Some(*chat), *what, *target),

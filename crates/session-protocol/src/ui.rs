@@ -639,6 +639,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "open_extension_record",
     // Allow on a row of Settings' Blocked log (#1662): widens what every chat here reaches.
     "allow_blocked_host",
+    // Allow next time on a sandbox block (T1-34, R-291): a grant with no ask open, the person's
+    // alone, so a chat can never press it.
+    "allow_next_time",
     // A service on this Mac added by its port on Settings' Network page (#1970): widens what
     // every chat here, or one chat, reaches.
     "allow_sandbox_port",

@@ -34,7 +34,7 @@ import {
 import { answerThrough } from "./asks";
 import type { ChatStates, Chats } from "./chatState";
 import type { UpdateAnswer } from "./InboxUpdatesList";
-import { waysOut } from "./blockWays";
+import { allowsNextTime, waysOut } from "./blockWays";
 
 /** What a finish row adds where its turn ended with blocks still unresolved (Q164). */
 export const BLOCKED_THIS_TURN = (blocked: number) => `· ${blocked} blocked this turn`;
@@ -53,25 +53,34 @@ const keyOf = (turn: FinishedTurn) =>
   `finish:${turn.session}:${turn.key}${!turn.failed && turn.blocked > 0 ? BLOCKED_KEY : ""}`;
 
 /**
- * **Which chats a finish row's ways out act on** (Q272): Tell the chat… types only into the
- * chats whose own turn holds a block that offers it, never into every chat of a grouped row,
- * and Go to chat goes to the chat that holds the Can't-tell block. Each chat once, in the
- * order the turns come.
+ * **Which chats a finish row's ways out act on** (Q272, Q273): Tell the chat… types only into
+ * the chats whose own turn holds a block that offers it, never into every chat of a grouped
+ * row, and Go to chat goes to the chat that holds the Can't-tell block. Allow next time (T1-34)
+ * allows a target only for the chats whose own turn holds a sandbox block of it that offers it.
+ * Each chat once, in the order the turns come.
  */
 export function finishWaysTo(
   turns: readonly FinishedTurn[],
   keys: readonly string[],
-): { tell: number[]; go: number | undefined } {
+): { tell: number[]; go: number | undefined; allow: { session: number; target: string }[] } {
   const these = new Set(keys);
   const tell: number[] = [];
+  const allow: { session: number; target: string }[] = [];
   let go: number | undefined;
   for (const turn of turns) {
     if (turn.failed || !these.has(keyOf(turn))) continue;
     const ways = waysOut(turn.blocks);
     if (ways.includes("tell") && !tell.includes(turn.session)) tell.push(turn.session);
     if (ways.includes("go") && go === undefined) go = turn.session;
+    for (const block of turn.blocks)
+      if (
+        allowsNextTime(block) &&
+        block.target !== null &&
+        !allow.some((one) => one.session === turn.session && one.target === block.target)
+      )
+        allow.push({ session: turn.session, target: block.target });
   }
-  return { tell, go };
+  return { tell, go, allow };
 }
 
 /**

@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import type { ChatLogRow } from "./bindings";
+import type { ChatLogRow, GrantLevel } from "./bindings";
 import { harnessSaid } from "./chatLog";
 
 /**
@@ -16,11 +16,15 @@ import { harnessSaid } from "./chatLog";
  *   sentence that only that check decides (R-193). No Allow and no Copy command (R-194): a
  *   command handed out to run by hand would take it past that check.
  * - **A Can't-tell block:** Go to chat (R-199): purlis can't tell who blocked it.
- * - A sandbox block's ways out are T1-34's (R-196), a policy's or a project's phase 2's: none
- *   yet.
+ * - **A sandbox block** (T1-34; R-196, R-291): Allow next time and Show this rule. Allow next
+ *   time is offered only where an Allow would unblock it (#1906, Q265): a host purlis's own proxy
+ *   refused, not resolved since. It makes a grant with no ask open, at one of the shipped Allow
+ *   labels, and the core judges it again. Show this rule opens a detail that only reads.
+ * - A policy's or a project's block's ways out are phase 2's: none yet.
  *
- * **None widens what a chat may do** (Q3, Q139): Tell the chat… types one line of purlis's own
- * that says the call stays blocked, and the two Show… open a detail that only reads.
+ * **Only Allow next time widens what a chat may do** (Q3, Q139), and only by the person's press
+ * after its row settled: Tell the chat… types one line of purlis's own that says the call stays
+ * blocked, and the three Show… open a detail that only reads.
  */
 
 /** Asks first (docs/ui-copy.md): what it types, then the person's press types it. */
@@ -28,17 +32,22 @@ export const TELL_THE_CHAT = "Tell the chat…";
 export const SHOW_THIS_GUARD = "Show this guard";
 export const SHOW_THIS_CHECK = "Show this check";
 export const GO_TO_CHAT = "Go to chat";
+/** A sandbox block's (T1-34, R-196): its press offers the shipped Allow labels first. */
+export const ALLOW_NEXT_TIME = "Allow next time";
+export const SHOW_THIS_RULE = "Show this rule";
 
 /** A way out, in the order a row offers them. */
-export type Way = "tell" | "show-guard" | "show-check" | "go";
+export type Way = "allow-next" | "tell" | "show-guard" | "show-check" | "show-rule" | "go";
 
-const ORDER: readonly Way[] = ["tell", "show-guard", "show-check", "go"];
+const ORDER: readonly Way[] = ["allow-next", "tell", "show-guard", "show-check", "show-rule", "go"];
 
 /** What a way out is said as. */
 export const WAY_SAID: Readonly<Record<Way, string>> = {
+  "allow-next": ALLOW_NEXT_TIME,
   tell: TELL_THE_CHAT,
   "show-guard": SHOW_THIS_GUARD,
   "show-check": SHOW_THIS_CHECK,
+  "show-rule": SHOW_THIS_RULE,
   go: GO_TO_CHAT,
 };
 
@@ -58,6 +67,8 @@ export type BlockOfWays = Pick<
  *  offered only while the block stands (Q272): its line says what was just blocked. */
 function waysOfOne(block: BlockOfWays): Way[] {
   if (block.qualifier === "cant_tell") return ["go"];
+  if (block.source === "sandbox")
+    return allowsNextTime(block) ? ["allow-next", "show-rule"] : ["show-rule"];
   const tell: Way[] = block.resolved === true ? [] : ["tell"];
   if (block.source === "guard") return [...tell, "show-guard"];
   if (block.source === "harness_check") return [...tell, "show-check"];
@@ -69,6 +80,56 @@ export function waysOut(blocks: readonly BlockOfWays[]): Way[] {
   const ways = new Set(blocks.flatMap(waysOfOne));
   return ORDER.filter((way) => ways.has(way));
 }
+
+/**
+ * **Whether a sandbox block offers Allow next time** (T1-34; #1906, Q265): only where an Allow
+ * would unblock it. A host purlis's own proxy refused (no qualifier: not only the chat's hook's
+ * word), named, and not resolved since. The core checks the same before it grants anything.
+ */
+export function allowsNextTime(block: BlockOfWays): boolean {
+  return (
+    block.source === "sandbox" &&
+    (block.qualifier ?? null) === null &&
+    block.target_kind === "host" &&
+    block.target !== null &&
+    block.resolved !== true
+  );
+}
+
+/**
+ * **What Allow next time offers** (Q188, Q197): the shipped Allow labels, in a sandbox host ask's
+ * order (this project on this machine, this chat, everyone in the project), with Allow once,
+ * the chat's next attempt alone, first. No label of its own.
+ */
+export const NEXT_TIME_LEVELS: readonly GrantLevel[] = ["once", "you", "chat", "project"];
+
+/** What Allow next time says above its labels, of `target`. */
+export const nextTimeSaid = (target: string) =>
+  `${target}, from this chat's next attempt at it. Allow once lets that one attempt through; the others stay until you remove them under Allowed.`;
+
+/** What a press of one of its labels came to: the core's sentence, or why nothing was allowed. */
+export type NextTimeSaid = { said?: string; why?: string };
+
+/** What a label pressed on a row drawn or moved just now says (ADR 0097, `mayAct`). */
+export const ROW_MOVED_JUST_NOW =
+  "This row was drawn or moved just now, so nothing was allowed. Read it and press again.";
+
+/** **What Show this rule says of a sandbox block** (R-196): the rule that refused it, read-only
+ *  in phase 1. */
+export function ruleSaid(block: BlockOfWays): string {
+  const target = block.target ?? "";
+  if (block.target_kind === "host" && target !== "")
+    return `The sandbox lets a chat here reach only the Open hosts and the hosts you allow. ${target} is not one of them.`;
+  if (block.target_kind === "folder" && target !== "")
+    return `The sandbox lets a chat here write only in its project and the folders you allow. ${target} is not one of them.`;
+  if (block.target_kind === "service" && target !== "")
+    return `The sandbox lets a chat here reach only the services of this machine you allow. ${target} is not one of them.`;
+  return "The sandbox keeps a chat here to its project and to what you allow.";
+}
+
+/** Where the sandbox's rules are read in full. */
+export const RULE_WHERE =
+  "Settings › Sandbox › Network lists the Open hosts, what was blocked and what you allowed.";
 
 /** **What a harness-check block says** (R-193): purlis can't allow what that check blocked. */
 export const onlyItsCheckDecides = (harness: string | undefined) =>

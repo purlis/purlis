@@ -24,6 +24,12 @@
 //!   ([`Heard::Asked`]): told together once the window has passed, each host and port named
 //!   whole as the proxy heard it, never a wildcard, so the person answers once.
 //! - **Keep blocked** refuses what is held on that host now and what comes after, until an Allow.
+//! - **Allow next time** (T1-34, R-291, Q188): once the chat stopped waiting and the refusal is a
+//!   block, its Allow next time · once makes a grant with no ask open ([`Asks::allow_next`]). The
+//!   chat's next attempt at that target goes on at once, never held or asked about, and uses it
+//!   up; until then it is listed ([`Asks::next_attempts`]), and it can be removed
+//!   ([`Asks::forget_next`]). A wider label is an Allow at its scope ([`Asks::allow`]), which
+//!   stays until it is removed.
 //! - **Bounded.** At most [`MOST_HELD`] connections are held at once; one more is refused at
 //!   once, as before, and not asked about ([`Answer::Busy`]).
 //! - **Held open while the person is Quiet** (ADR 0121 decision 13, #6007). While the window
@@ -101,6 +107,9 @@ struct State {
     left_out_blocked: Vec<u16>,
     /// Hosts kept blocked, until an Allow.
     blocked: Vec<Host>,
+    /// Targets allowed for the chat's next attempt alone (T1-34, R-291): each goes as an attempt
+    /// it covers goes on.
+    next: Vec<Host>,
     /// Targets held and given up on, which an Allow tells the chat to retry.
     gave_up: Vec<String>,
     /// Targets asked about and not answered yet, so each is asked once.
@@ -262,6 +271,15 @@ impl Asks {
         // later answer wins.
         if kept_blocked(&state, parsed.as_ref(), &named, port) {
             return Answer::Refused;
+        }
+        // Allowed for its next attempt (T1-34, R-291): on at once, never asked about, and used
+        // up by this attempt, under the same hold, so two attempts never both take it.
+        let next = parsed
+            .as_ref()
+            .and_then(|host| state.next.iter().position(|one| one.covers(host)));
+        if let Some(at) = next {
+            state.next.remove(at);
+            return Answer::Allowed(By::Chat);
         }
         // Allowed already, since the chat started: on at once, and carried from now on. Kept
         // under the same hold, so a Keep blocked cannot come between.
@@ -436,6 +454,10 @@ impl Asks {
             Host::parse(entry).is_ok_and(|allowed| !host.covers(&allowed) && !allowed.covers(host))
         });
         let ended = state.live.len() != before;
+        // Allow next time ends with it too: the later answer wins.
+        state
+            .next
+            .retain(|allowed| !host.covers(allowed) && !allowed.covers(host));
         if !state.blocked.contains(host) {
             state.blocked.push(host.clone());
             if state.blocked.len() > MOST_KEPT {
@@ -473,6 +495,35 @@ impl Asks {
         self.state()
             .live
             .retain(|(one, kept)| *one != entry || *kept != by);
+    }
+
+    /// **Allow next time · once, from a block** (T1-34, R-291, Q188): `host` is let on for the
+    /// chat's next attempt at it alone, with no ask open. That attempt goes on at once and uses
+    /// it up ([`Self::hold`]). A Keep blocked it covers ends, as an Allow ends one: the later
+    /// answer wins. Made once: allowing it again while it waits changes nothing.
+    pub fn allow_next(&self, host: &Host) {
+        let mut state = self.state();
+        state.blocked.retain(|one| !host.covers(one));
+        if !state.next.contains(host) {
+            state.next.push(host.clone());
+            if state.next.len() > MOST_KEPT {
+                state.next.remove(0);
+            }
+        }
+        drop(state);
+        self.changed.notify_all();
+    }
+
+    /// The targets allowed for the chat's next attempt and not used yet, each as a grant
+    /// writes it: what the Allowed list shows of them until they are used or removed.
+    pub fn next_attempts(&self) -> Vec<String> {
+        self.state().next.iter().map(ToString::to_string).collect()
+    }
+
+    /// **An Allow next time of `host` was removed** before it was used: the next attempt at it
+    /// is held and asked about again.
+    pub fn forget_next(&self, host: &Host) {
+        self.state().next.retain(|one| one != host);
     }
 }
 

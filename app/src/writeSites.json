@@ -206,6 +206,11 @@
       "by": ["allowBlockedHost"]
     },
     {
+      "at": "network.rs allow_next_time",
+      "writes": "this machine's network record",
+      "by": ["allowNextTime"]
+    },
+    {
       "at": "planes.rs arranging",
       "writes": "this machine's store: the pins",
       "by": ["pinProject", "pinWorkspace", "arrangeWorkspacePins", "pinOnThisMachine"]
@@ -385,6 +390,7 @@
         "allowSandboxBlock",
         "allowSandboxBlockForTasks",
         "allowBlockedHost",
+        "allowNextTime",
         "allowSandboxPort",
         "allowProjectExpects"
       ]

@@ -3409,6 +3409,29 @@ impl Chats {
         }
     }
 
+    /// **What waits for each open chat's next attempt** (T1-34, R-291): each target a chat's
+    /// board lets through once, with the chat's number. Each board is read outside the hold of
+    /// the open chats: one in the session host is asked over its link.
+    pub fn next_attempts(&self) -> Vec<(u32, String)> {
+        let boards: Vec<(u32, Arc<dyn purlis_core::sandbox::Board>)> = {
+            let open = lock(&self.open);
+            open.iter()
+                .filter_map(|(number, running)| {
+                    Some((*number, running.confinement.as_ref()?.asks()?.clone()))
+                })
+                .collect()
+        };
+        boards
+            .into_iter()
+            .flat_map(|(number, board)| {
+                board
+                    .next_attempts()
+                    .into_iter()
+                    .map(move |target| (number, target))
+            })
+            .collect()
+    }
+
     /// Whether chat `session`'s proxy is asking the person about `target` (#1666): what the
     /// window's Notice says a connection waits on.
     pub fn asking(&self, session: u32, target: Option<&str>) -> bool {

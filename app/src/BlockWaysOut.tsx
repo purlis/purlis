@@ -3,22 +3,31 @@
 
 import { useId, useState, type ReactNode } from "react";
 import { Button, ButtonRow } from "./ui/button/Button";
-import { NothingDone } from "./inboxRowParts";
+import { NothingDone, useSettledPlace } from "./inboxRowParts";
 import { blockSaid, harnessSaid, type BlockRow } from "./chatLog";
-import { commands, type FinishedTurn, type PlaneId } from "./bindings";
+import { commands, type FinishedTurn, type GrantLevel, type PlaneId } from "./bindings";
 import { finishWaysOf, finishWaysTo } from "./finishRows";
+import { SANDBOX_ALLOW_SAID } from "./allowLabels";
+import { sandboxCommandReturned } from "./sandboxAsked";
 import {
   GUARD_SWITCH_LATER,
+  NEXT_TIME_LEVELS,
+  ROW_MOVED_JUST_NOW,
+  RULE_WHERE,
   TOLD,
   TYPE_IT,
   WAY_SAID,
+  allowsNextTime,
   checkSaid,
   guardGroupSaid,
+  nextTimeSaid,
   onlyItsCheckDecides,
+  ruleSaid,
   tellAsksOf,
   toldIn,
   waysOut,
   type BlockOfWays,
+  type NextTimeSaid,
   type Told,
   type Way,
 } from "./blockWays";
@@ -36,13 +45,19 @@ export type BlockWaysOutProps = {
   /** The chats Tell the chat… types into, by name, where it is more than one (Q272): what it
    *  asks first names each. */
   into?: readonly string[];
+  /** **Allow next time's label, pressed** (T1-34, R-291): a grant of the sandbox block's
+   *  `target` at `level`, with no ask open, which the core judges again (`allow_next_time`).
+   *  Where none is given, no Allow next time is offered. */
+  allowNext?: (target: string, level: GrantLevel) => Promise<NextTimeSaid>;
 };
 
 /** What a detail opened by a way is named, and so found by a screen reader's landmarks. */
 const OPENS: Partial<Record<Way, string>> = {
+  "allow-next": "Next time",
   tell: "Tell the chat",
   "show-guard": "This guard",
   "show-check": "This check",
+  "show-rule": "This rule",
 };
 
 /** A block as a sentence names it, for a finish row's blocks that carry no tool. */
@@ -61,24 +76,55 @@ const said = (block: BlockOfWays) =>
  *   second press, **Type it in the chat**, types it, through the core's one way in (Q267).
  * - **Go to chat**, for a block purlis can't tell who made (R-199).
  *
+ * - **Allow next time**, for a sandbox block an Allow would unblock (T1-34, R-291): it opens the
+ *   shipped Allow labels, and only a label's press grants, once the row has settled (ADR 0097,
+ *   `mayAct`): a press within the settle time of the labels being drawn or moved does nothing,
+ *   and says why. **Show this rule** opens the rule that refused it, read-only (R-196).
+ *
  * A block by the harness's own check says, beside its ways, that purlis can't allow it (R-193).
  */
-export function BlockWaysOut({ blocks, who, tell, go, into = [] }: BlockWaysOutProps) {
+export function BlockWaysOut({ blocks, who, tell, go, into = [], allowNext }: BlockWaysOutProps) {
   const id = useId();
-  const ways = waysOut(blocks);
+  const ways = waysOut(blocks).filter((way) => way !== "allow-next" || allowNext !== undefined);
   const [open, setOpen] = useState<Way>();
   const [busy, setBusy] = useState(false);
   const [told, setTold] = useState<Told>();
+  const [allowed, setAllowed] = useState<NextTimeSaid>();
+  // **The settle guard on Allow next time's labels** (ADR 0097): measured from when what the
+  // row offers, or which of its details is open, last changed, and from each label's move.
+  const { drawnAt, tooSoon } = useSettledPlace<HTMLDivElement>(`${ways.join(" ")}\n${open ?? ""}`);
   if (ways.length === 0) return null;
   const checks = blocks.filter((one) => one.source === "harness_check");
   const guards = blocks.filter((one) => one.source === "guard");
+  const sandboxes = blocks.filter((one) => one.source === "sandbox");
+  // Each target once: a finish row's turns may hold the same block more than once.
+  const allowable = [
+    ...new Set(sandboxes.filter(allowsNextTime).flatMap((one) => one.target ?? [])),
+  ];
   const press = (way: Way) => {
     if (way === "go") {
       go();
       return;
     }
     setTold(undefined);
+    setAllowed(undefined);
     setOpen((was) => (was === way ? undefined : way));
+  };
+  /** **A label of Allow next time, pressed**: nothing on a row drawn or moved just now. */
+  const allowIt = (target: string, level: GrantLevel) => {
+    if (busy || allowNext === undefined) return;
+    if (tooSoon()) {
+      setAllowed({ why: ROW_MOVED_JUST_NOW });
+      return;
+    }
+    setBusy(true);
+    setAllowed(undefined);
+    void allowNext(target, level)
+      .then(setAllowed)
+      .catch((err: unknown) =>
+        setAllowed({ why: `purlis could not allow ${target}: ${String(err)}` }),
+      )
+      .finally(() => setBusy(false));
   };
   const typeIt = () => {
     if (busy) return;
@@ -93,7 +139,7 @@ export function BlockWaysOut({ blocks, who, tell, go, into = [] }: BlockWaysOutP
   };
   const detail = `${id}-detail`;
   return (
-    <div className="block-ways">
+    <div className="block-ways" ref={drawnAt}>
       {checks.length > 0 && (
         <p className="block-ways-decides ui-text-secondary">
           {onlyItsCheckDecides(checks[0].harness)}
@@ -130,6 +176,45 @@ export function BlockWaysOut({ blocks, who, tell, go, into = [] }: BlockWaysOutP
             Blocked by {harnessSaid(checks[0]?.harness)}&apos;s own permission check.
           </p>
           <p className="ui-text-secondary">{checkSaid(checks[0]?.harness)}</p>
+        </section>
+      )}
+      {open === "allow-next" && (
+        <section id={detail} className="block-ways-detail" aria-label={OPENS[open]}>
+          {allowable.map((target) => (
+            <div key={target}>
+              <p className="ui-text-body">{nextTimeSaid(target)}</p>
+              <ButtonRow size="sm">
+                {NEXT_TIME_LEVELS.map((level) => (
+                  <Button
+                    key={level}
+                    variant="grants"
+                    isDisabled={busy}
+                    onPress={() => allowIt(target, level)}
+                  >
+                    {SANDBOX_ALLOW_SAID[level]}
+                  </Button>
+                ))}
+              </ButtonRow>
+            </div>
+          ))}
+          {allowed?.said !== undefined && (
+            <p className="ui-text-secondary" role="status">
+              {allowed.said}
+            </p>
+          )}
+          <NothingDone said={allowed?.why} />
+        </section>
+      )}
+      {open === "show-rule" && (
+        <section id={detail} className="block-ways-detail" aria-label={OPENS[open]}>
+          <ul>
+            {sandboxes.map((block, at) => (
+              <li key={`${block.target ?? ""}:${at}`} className="ui-text-body">
+                {ruleSaid(block)}
+              </li>
+            ))}
+          </ul>
+          <p className="ui-text-secondary">{RULE_WHERE}</p>
         </section>
       )}
       {open === "tell" && (
@@ -179,11 +264,41 @@ async function tellEach(
 }
 
 /**
+ * **Allows `target` at `level` for each of `sessions`** (T1-34, Q273) through the core's
+ * `allow_next_time`, and says what came of it: where it allowed for more than one chat, each by
+ * name.
+ */
+async function allowEach(
+  plane: PlaneId,
+  sessions: readonly number[],
+  [target, level]: [string, GrantLevel],
+  nameOf: (session: number) => string,
+): Promise<NextTimeSaid> {
+  const said = await Promise.all(
+    sessions.map((one) =>
+      commands.allowNextTime(plane, one, target, level).then((done) => ({
+        one,
+        said: done.status === "ok" ? done.data.said : undefined,
+        why: done.status === "error" ? done.error : undefined,
+      })),
+    ),
+  );
+  const named = (one: number, line: string) =>
+    sessions.length > 1 ? `${nameOf(one)}: ${line}` : line;
+  const allowed = said.flatMap((one) => (one.said === undefined ? [] : [named(one.one, one.said)]));
+  const why = said.flatMap((one) => (one.why === undefined ? [] : [named(one.one, one.why)]));
+  return {
+    said: allowed.length === 0 ? undefined : allowed.join(" "),
+    why: why.length === 0 ? undefined : why.join(" "),
+  };
+}
+
+/**
  * **A finish row's ways out** (T1-33, R-300; Q272): its turns' unresolved blocks', as their
  * Chat log rows offer them, or none where it has none. **Each acts on the chat it is about**:
  * Tell the chat… types only into the chats whose own turn holds a block that offers it, and
  * names them where there is more than one; Go to chat goes to the chat that holds the
- * Can't-tell block.
+ * Can't-tell block; Allow next time allows only for the chats whose own sandbox block it is.
  *
  * A component, not a helper the view calls while it draws: what `go` presses reads refs, and
  * a function handed one during render is what react-hooks/refs refuses. Draw it only where
@@ -219,6 +334,14 @@ export function FinishRowWays({
       go={() => {
         if (to.go !== undefined) go(to.go);
       }}
+      allowNext={(target, level) =>
+        allowEach(
+          plane,
+          to.allow.filter((one) => one.target === target).map((one) => one.session),
+          [target, level],
+          nameOf,
+        ).finally(sandboxCommandReturned)
+      }
     />
   );
 }

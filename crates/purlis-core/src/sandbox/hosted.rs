@@ -352,6 +352,20 @@ impl Hosted {
             }
             return Ok(Vec::new());
         }
+        // Allow next time · once (1.88, T1-34): a host, as the window judged it from the
+        // chat's block. The proxy still refuses what it never carries, whatever is allowed.
+        if let ReachChange::AllowNext { host } | ReachChange::ForgetNext { host } = change {
+            let Some(board) = &self.board else {
+                return Err("this chat's proxy asks nobody, so it holds no next attempt".into());
+            };
+            let host = Host::parse(host)?;
+            if matches!(change, ReachChange::AllowNext { .. }) {
+                board.allow_next(&host);
+            } else {
+                board.forget_next(&host);
+            }
+            return Ok(Vec::new());
+        }
         let Some(board) = &self.board else {
             return Err("this chat's proxy asks nobody, so it holds no ask to answer".into());
         };
@@ -381,7 +395,9 @@ impl Hosted {
             }
             ReachChange::WithdrawPort { .. }
             | ReachChange::HoldAsksOpen { .. }
-            | ReachChange::GiveUp { .. } => Vec::new(),
+            | ReachChange::GiveUp { .. }
+            | ReachChange::AllowNext { .. }
+            | ReachChange::ForgetNext { .. } => Vec::new(),
         })
     }
 
@@ -405,6 +421,8 @@ impl Hosted {
                         layer: layer_of(by),
                     })
                     .collect(),
+                // What waits for the chat's next attempt (1.88, T1-34): the Allowed list's.
+                next: board.next_attempts(),
             })
             .unwrap_or_default()
     }

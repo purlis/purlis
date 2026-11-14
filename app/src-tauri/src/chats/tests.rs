@@ -9566,6 +9566,16 @@ impl purlis_core::sandbox::Board for Told {
     fn give_up(&self, _: &str) -> bool {
         false
     }
+
+    fn allow_next(&self, _: &purlis_core::sandbox::hosts::Host) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn next_attempts(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn forget_next(&self, _: &purlis_core::sandbox::hosts::Host) {}
 }
 
 /// What holds a [`Told`] board, as the session host holds a chat's proxy.
