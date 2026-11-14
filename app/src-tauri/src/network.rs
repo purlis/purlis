@@ -1166,6 +1166,12 @@ pub async fn allow_next_time(
 ///   chat whose proxy asks live, where there is a next attempt to let through.
 /// - **A wider label** is the grant the block's Notice makes at that level
 ///   ([`crate::sandboxing::allow_host_from_a_block`]), which stays until it is removed.
+///
+/// **A waiting once lives in memory alone** (Q278): a chat, session host or app restart forgets
+/// it, as the merge hold is forgotten, and nothing on disk outlives it. It is audited when it is
+/// granted (here), when its attempt uses it up, as the person's grant and never the chat's, and
+/// when it is put out past the most a board keeps ([`once_ended`], told by the chat's board),
+/// and when it is removed (`sandboxing::revoke`).
 fn allow_next(
     root: &Path,
     chats: &crate::chats::Chats,
@@ -1191,7 +1197,7 @@ fn allow_next(
     if !blocked_here {
         return Err(format!(
             "Nothing was allowed: the sandbox did not block {named} for this chat, so Allow \
-             next time cannot allow it."
+             next time can't allow it."
         ));
     }
     if level != GrantLevel::Once {
@@ -1237,6 +1243,49 @@ fn allow_next(
         // Its board takes it: nothing restarts.
         live: true,
     })
+}
+
+/// **The audit of a waiting Allow next time · once of `target` that ended** (T1-34, Q278): its
+/// attempt used it up, or it was put out without one. The person's grant ending, as a removal
+/// is audited.
+pub(crate) fn once_ended(target: &str) -> grant::Audited<'_> {
+    grant::Audited {
+        granted: false,
+        what: "host",
+        target,
+        level: grant::Level::Once,
+    }
+}
+
+/// **The labels a sandbox block's row may offer for Allow next time** (T1-34, Q278; #1906: no
+/// Allow that wouldn't unblock it), in their order, under `locks`, as the Blocked log's
+/// [`levels_for`] says its row's: only for a host purlis's own proxy refused (no qualifier), and
+/// only those the policy keeps. None for any other block, which offers no Allow next time.
+pub(crate) fn next_time_levels(
+    locks: &sandbox::policy::Locks,
+    source: &str,
+    qualifier: Option<&str>,
+    target_kind: Option<&str>,
+    target: Option<&str>,
+) -> Vec<GrantLevel> {
+    let host = match (source, qualifier, target_kind, target) {
+        ("sandbox", None, Some("host"), Some(target)) => Host::parse(target).ok(),
+        _ => None,
+    };
+    let Some(host) = host else {
+        return Vec::new();
+    };
+    let what = grant::What::Host(host);
+    [
+        grant::Level::Once,
+        grant::Level::You,
+        grant::Level::Chat,
+        grant::Level::Project,
+    ]
+    .into_iter()
+    .filter(|level| locks.refuses_grant(&what, *level).is_none())
+    .map(GrantLevel::from)
+    .collect()
 }
 
 #[cfg(test)]

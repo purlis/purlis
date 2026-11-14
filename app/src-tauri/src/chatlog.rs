@@ -121,6 +121,8 @@ pub enum ChatLogRow {
         reason: Option<String>,
         /// It has since been resolved (Q272): its row offers no Tell the chat….
         resolved: bool,
+        /// The labels its Allow next time may offer (T1-34, Q278), as policy keeps them.
+        allow_levels: Vec<crate::sandboxing::GrantLevel>,
     },
 }
 
@@ -310,9 +312,37 @@ fn row_of(row: Row, reason: &dyn Fn(&str) -> Option<String>) -> ChatLogRow {
                 // check's block carries one, never a guard's or the sandbox's.
                 reason: call.as_deref().filter(|_| harness_check).and_then(reason),
                 resolved,
+                // The core says them where the project's policy is read ([`with_levels`]).
+                allow_levels: Vec::new(),
             }
         }
     }
+}
+
+/// **`log`, each sandbox block's row with the labels its Allow next time may offer under
+/// `locks`** (T1-34, Q278; #1906): the core's word, so the window offers only those.
+fn with_levels(mut log: ChatLog, locks: &purlis_core::sandbox::policy::Locks) -> ChatLog {
+    for row in &mut log.rows {
+        if let ChatLogRow::Blocked {
+            source,
+            qualifier,
+            target_kind,
+            target,
+            resolved: false,
+            allow_levels,
+            ..
+        } = row
+        {
+            *allow_levels = crate::network::next_time_levels(
+                locks,
+                source,
+                qualifier.as_deref(),
+                target_kind.as_deref(),
+                target.as_deref(),
+            );
+        }
+    }
+    log
 }
 
 /// The window's summary for the core's.
@@ -392,9 +422,13 @@ pub(crate) async fn chat_log(
     crate::off_the_window("reading a chat's log", move || {
         let events = purlis_core::eventlog::read(&dir).map_err(|why| why.to_string())?;
         let root = plane.root();
-        Ok(chat_log_with(&events, chat.as_deref(), &|call| {
+        let log = chat_log_with(&events, chat.as_deref(), &|call| {
             HARNESS_REASONS.of(root, session, call)
-        }))
+        });
+        Ok(with_levels(
+            log,
+            &purlis_core::sandbox::policy::Locks::of(root),
+        ))
     })
     .await
 }

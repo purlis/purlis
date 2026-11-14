@@ -148,6 +148,18 @@ impl Hears {
                     asked(Heard::TimedOut(target));
                 }
             }
+            // A waiting Allow next time · once that ended (1.88, T1-34, Q278): audited here, as
+            // one in a proxy of the window's own is.
+            SandboxTold::UsedNext { target } => {
+                if let Some(asked) = &self.asked {
+                    asked(Heard::UsedNext(target));
+                }
+            }
+            SandboxTold::DroppedNext { target } => {
+                if let Some(asked) = &self.asked {
+                    asked(Heard::DroppedNext(target));
+                }
+            }
         }
     }
 }
@@ -344,15 +356,10 @@ impl Board for HostBoard {
     }
 
     /// Sent only to a host that knows it (1.88, T1-34): an older one is told nothing, and
-    /// nothing is said to be allowed.
+    /// nothing is said to be allowed ([`refuses_allow_next`]).
     fn allow_next(&self, host: &Host) -> Result<(), String> {
-        if self.link.version() < purlis_session_protocol::session::KNOWS_ALLOW_NEXT {
-            return Err(
-                "the session host this chat runs in is older than this window, so it can't let \
-                 one attempt through. Allow it for this chat or longer, or restart the session \
-                 host."
-                    .to_owned(),
-            );
+        if let Some(why) = refuses_allow_next(self.link.version()) {
+            return Err(why);
         }
         change(
             &self.link,
@@ -375,6 +382,17 @@ impl Board for HostBoard {
             });
         }
     }
+}
+
+/// **Why a session host at `version` can't take a block's Allow next time · once**, where it
+/// can't (1.88, T1-34): one before [`purlis_session_protocol::session::KNOWS_ALLOW_NEXT`] has
+/// no next attempt to hold, so it is never sent one. What still works is said.
+fn refuses_allow_next(version: purlis_session_protocol::version::Version) -> Option<String> {
+    (version < purlis_session_protocol::session::KNOWS_ALLOW_NEXT).then(|| {
+        "the session host this chat runs in is older than this window, so it can't let one \
+         attempt through. Allow it for this chat or longer, or restart the session host."
+            .to_owned()
+    })
 }
 
 /// How a service on `port` the host left out of a chat's plan is named to it: its loopback

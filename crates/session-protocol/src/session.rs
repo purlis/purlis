@@ -568,8 +568,11 @@ use crate::view::{Limits, Views};
 /// 1.88 has a host take a block's Allow next time · once (T1-34, R-291):
 /// [`ReachChange::AllowNext`] on [`Command::ChangeReach`] lets the chat's next attempt at a host
 /// on with no ask, and that attempt uses it up; [`ReachChange::ForgetNext`] removes one not used
-/// yet; and [`ReachNow::next`] lists those waiting, which the window's Allowed list shows. A host
-/// before 1.88 is not sent them, and the window says it can't allow a next attempt there.
+/// yet; and [`ReachNow::next`] lists those waiting, which the window's Allowed list shows. Its
+/// proxy tells [`SandboxTold::UsedNext`] as an attempt uses one up and
+/// [`SandboxTold::DroppedNext`] as one ends without its attempt, so the window audits each end
+/// (Q278). A host before 1.88 is not sent them, and the window says it can't allow a next
+/// attempt there.
 pub const VERSION: Version = Version {
     major: 1,
     minor: 88,
@@ -1730,6 +1733,12 @@ pub enum SandboxTold {
     Asked { targets: Vec<String> },
     /// A connection to `target` was held and nobody answered.
     TimedOut { target: String },
+    /// The chat's next attempt at `target` used up its Allow next time · once (1.88, T1-34,
+    /// Q278), so the window audits its end.
+    UsedNext { target: String },
+    /// An Allow next time · once of `target` ended without its attempt (1.88, T1-34, Q278):
+    /// put out past the most a board keeps, or by a Keep blocked. The window audits its end.
+    DroppedNext { target: String },
 }
 
 /// What a [`Command::Start`] asks for.

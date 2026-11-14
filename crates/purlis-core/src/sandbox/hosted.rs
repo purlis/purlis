@@ -87,6 +87,9 @@ pub fn start(
                     tell(match heard {
                         Heard::Asked(targets) => SandboxTold::Asked { targets },
                         Heard::TimedOut(target) => SandboxTold::TimedOut { target },
+                        // So the window audits a waiting once's end (1.88, T1-34, Q278).
+                        Heard::UsedNext(target) => SandboxTold::UsedNext { target },
+                        Heard::DroppedNext(target) => SandboxTold::DroppedNext { target },
                     });
                 })
             },
@@ -313,6 +316,28 @@ fn answered_about(planned: Planned, left_out: &[u16], typed: &str) -> Result<Ans
     }
 }
 
+/// **Allow next time · once, and its removal, on the host's `board`** (1.88, T1-34): a host, as
+/// the window judged it from the chat's block. The proxy still refuses what it never carries,
+/// whatever is allowed. None for any other change.
+fn next_changed(board: Option<&Asks>, change: &ReachChange) -> Option<Result<Vec<String>, String>> {
+    let (ReachChange::AllowNext { host } | ReachChange::ForgetNext { host }) = change else {
+        return None;
+    };
+    let Some(board) = board else {
+        return Some(Err(
+            "this chat's proxy asks nobody, so it holds no next attempt".into(),
+        ));
+    };
+    Some(Host::parse(host).map(|host| {
+        if matches!(change, ReachChange::AllowNext { .. }) {
+            board.allow_next(&host);
+        } else {
+            board.forget_next(&host);
+        }
+        Vec::new()
+    }))
+}
+
 impl Hosted {
     /// Where it is: its proxy's ports and the folders beside it. The id is the host's to fill.
     pub fn confined(&self) -> Confined {
@@ -352,19 +377,8 @@ impl Hosted {
             }
             return Ok(Vec::new());
         }
-        // Allow next time · once (1.88, T1-34): a host, as the window judged it from the
-        // chat's block. The proxy still refuses what it never carries, whatever is allowed.
-        if let ReachChange::AllowNext { host } | ReachChange::ForgetNext { host } = change {
-            let Some(board) = &self.board else {
-                return Err("this chat's proxy asks nobody, so it holds no next attempt".into());
-            };
-            let host = Host::parse(host)?;
-            if matches!(change, ReachChange::AllowNext { .. }) {
-                board.allow_next(&host);
-            } else {
-                board.forget_next(&host);
-            }
-            return Ok(Vec::new());
+        if let Some(changed) = next_changed(self.board.as_deref(), change) {
+            return changed;
         }
         let Some(board) = &self.board else {
             return Err("this chat's proxy asks nobody, so it holds no ask to answer".into());

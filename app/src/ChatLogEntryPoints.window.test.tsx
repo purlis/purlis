@@ -116,6 +116,7 @@ const BLOCK: ChatLogRow = {
   harness: "claude",
   reason: null,
   resolved: false,
+  allow_levels: [],
 };
 
 /** The Blocked log: chat 7's block, with the number of the chat it was, open here. */

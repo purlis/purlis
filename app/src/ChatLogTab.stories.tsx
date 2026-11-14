@@ -273,6 +273,7 @@ const BLOCK: Extract<ChatLogRow, { kind: "blocked" }> = {
   harness: "claude",
   reason: null,
   resolved: false,
+  allow_levels: [],
 };
 
 /** The tags a row carries, by their words. */

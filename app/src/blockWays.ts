@@ -61,6 +61,9 @@ export type BlockOfWays = Pick<
   harness?: string;
   /** It has since been resolved (Q272): a Chat log row's, where a later call came back. */
   resolved?: boolean;
+  /** **The labels its Allow next time may offer** (T1-34, Q278), as the core says policy keeps
+   *  them: none, and it offers no Allow next time. */
+  allow_levels?: readonly GrantLevel[];
 };
 
 /** **The ways out of one block** (R-189, R-192, R-199), in their order. Tell the chat… is
@@ -82,9 +85,10 @@ export function waysOut(blocks: readonly BlockOfWays[]): Way[] {
 }
 
 /**
- * **Whether a sandbox block offers Allow next time** (T1-34; #1906, Q265): only where an Allow
- * would unblock it. A host purlis's own proxy refused (no qualifier: not only the chat's hook's
- * word), named, and not resolved since. The core checks the same before it grants anything.
+ * **Whether a sandbox block offers Allow next time** (T1-34; #1906, Q265, Q278): only where an
+ * Allow would unblock it. A host purlis's own proxy refused (no qualifier: not only the chat's
+ * hook's word), named, not resolved since, and with a label the core says policy keeps. The core
+ * checks the same before it grants anything.
  */
 export function allowsNextTime(block: BlockOfWays): boolean {
   return (
@@ -92,7 +96,8 @@ export function allowsNextTime(block: BlockOfWays): boolean {
     (block.qualifier ?? null) === null &&
     block.target_kind === "host" &&
     block.target !== null &&
-    block.resolved !== true
+    block.resolved !== true &&
+    (block.allow_levels ?? []).length > 0
   );
 }
 
@@ -103,9 +108,38 @@ export function allowsNextTime(block: BlockOfWays): boolean {
  */
 export const NEXT_TIME_LEVELS: readonly GrantLevel[] = ["once", "you", "chat", "project"];
 
-/** What Allow next time says above its labels, of `target`. */
+/** **The labels a grouped row offers each chat by name** (Q278, Q273): a grant to that one chat. */
+export const ONE_CHATS_LEVELS: readonly GrantLevel[] = ["once", "chat"];
+
+/** **The labels a grouped row offers once for all its chats** (Q278): one grant, for this
+ *  project on this machine or for everyone in it, sent once. */
+export const EVERY_CHATS_LEVELS: readonly GrantLevel[] = ["you", "project"];
+
+/** **The labels `blocks` offer for `target`**, in their order: the core's, as policy keeps them
+ *  (Q278), read from the first of its blocks that offers Allow next time. */
+export function nextTimeLevels(
+  blocks: readonly BlockOfWays[],
+  target: string,
+): readonly GrantLevel[] {
+  const kept = blocks.find((one) => one.target === target && allowsNextTime(one))?.allow_levels;
+  return NEXT_TIME_LEVELS.filter((level) => (kept ?? []).includes(level));
+}
+
+/** What Allow next time says above its labels, of `target`, on one chat's row. */
 export const nextTimeSaid = (target: string) =>
   `${target}, from this chat's next attempt at it. Allow once lets that one attempt through; the others stay until you remove them under Allowed.`;
+
+/** "a", "a and b", "a, b and c". */
+const listed = (names: readonly string[]) =>
+  names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+
+/** What Allow next time says above its labels, of `target`, on a row of several chats, each
+ *  named by `names` (Q278): it never says one chat's. */
+export const nextTimeGroupedSaid = (target: string, names: readonly string[]) =>
+  `${target}, blocked for ${listed(names)}. Allow once lets the named chat's next attempt through; the others stay until you remove them under Allowed.`;
+
+/** What a grouped row says above the labels it offers once for all its chats (Q278). */
+export const FOR_EVERY_CHAT = "For every chat here, one grant:";
 
 /** What a press of one of its labels came to: the core's sentence, or why nothing was allowed. */
 export type NextTimeSaid = { said?: string; why?: string };

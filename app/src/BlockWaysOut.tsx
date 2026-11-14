@@ -10,8 +10,10 @@ import { finishWaysOf, finishWaysTo } from "./finishRows";
 import { SANDBOX_ALLOW_SAID } from "./allowLabels";
 import { sandboxCommandReturned } from "./sandboxAsked";
 import {
+  EVERY_CHATS_LEVELS,
+  FOR_EVERY_CHAT,
   GUARD_SWITCH_LATER,
-  NEXT_TIME_LEVELS,
+  ONE_CHATS_LEVELS,
   ROW_MOVED_JUST_NOW,
   RULE_WHERE,
   TOLD,
@@ -20,6 +22,8 @@ import {
   allowsNextTime,
   checkSaid,
   guardGroupSaid,
+  nextTimeGroupedSaid,
+  nextTimeLevels,
   nextTimeSaid,
   onlyItsCheckDecides,
   ruleSaid,
@@ -46,9 +50,14 @@ export type BlockWaysOutProps = {
    *  asks first names each. */
   into?: readonly string[];
   /** **Allow next time's label, pressed** (T1-34, R-291): a grant of the sandbox block's
-   *  `target` at `level`, with no ask open, which the core judges again (`allow_next_time`).
-   *  Where none is given, no Allow next time is offered. */
-  allowNext?: (target: string, level: GrantLevel) => Promise<NextTimeSaid>;
+   *  `target` at `level`, with no ask open, which the core judges again (`allow_next_time`):
+   *  for chat `session` alone where a row of several chats names it (Q278), and once for them
+   *  all where it names none. Where none is given, no Allow next time is offered. */
+  allowNext?: (target: string, level: GrantLevel, session?: number) => Promise<NextTimeSaid>;
+  /** **The chats a finish row's Allow next time acts on, each by name** (Q278, Q273): each
+   *  target's chats whose own block it is. Given, each chat is named before any press, and its
+   *  own labels grant it alone. */
+  nextChats?: readonly { session: number; target: string; name: string }[];
 };
 
 /** What a detail opened by a way is named, and so found by a screen reader's landmarks. */
@@ -83,24 +92,40 @@ const said = (block: BlockOfWays) =>
  *
  * A block by the harness's own check says, beside its ways, that purlis can't allow it (R-193).
  */
-export function BlockWaysOut({ blocks, who, tell, go, into = [], allowNext }: BlockWaysOutProps) {
+export function BlockWaysOut({
+  blocks,
+  who,
+  tell,
+  go,
+  into = [],
+  allowNext,
+  nextChats,
+}: BlockWaysOutProps) {
   const id = useId();
   const ways = waysOut(blocks).filter((way) => way !== "allow-next" || allowNext !== undefined);
   const [open, setOpen] = useState<Way>();
   const [busy, setBusy] = useState(false);
   const [told, setTold] = useState<Told>();
   const [allowed, setAllowed] = useState<NextTimeSaid>();
-  // **The settle guard on Allow next time's labels** (ADR 0097): measured from when what the
-  // row offers, or which of its details is open, last changed, and from each label's move.
-  const { drawnAt, tooSoon } = useSettledPlace<HTMLDivElement>(`${ways.join(" ")}\n${open ?? ""}`);
-  if (ways.length === 0) return null;
-  const checks = blocks.filter((one) => one.source === "harness_check");
-  const guards = blocks.filter((one) => one.source === "guard");
   const sandboxes = blocks.filter((one) => one.source === "sandbox");
   // Each target once: a finish row's turns may hold the same block more than once.
   const allowable = [
     ...new Set(sandboxes.filter(allowsNextTime).flatMap((one) => one.target ?? [])),
   ];
+  // **The settle guard on Allow next time's labels** (ADR 0097): measured from when what the
+  // row offers, which of its details is open, or the targets and chats its labels stand for
+  // (Q278) last changed, and from each label's move.
+  const { drawnAt, tooSoon } = useSettledPlace<HTMLDivElement>(
+    [
+      ways.join(" "),
+      open ?? "",
+      allowable.join(" "),
+      (nextChats ?? []).map((one) => `${one.session}:${one.target}`).join(" "),
+    ].join("\n"),
+  );
+  if (ways.length === 0) return null;
+  const checks = blocks.filter((one) => one.source === "harness_check");
+  const guards = blocks.filter((one) => one.source === "guard");
   const press = (way: Way) => {
     if (way === "go") {
       go();
@@ -111,7 +136,7 @@ export function BlockWaysOut({ blocks, who, tell, go, into = [], allowNext }: Bl
     setOpen((was) => (was === way ? undefined : way));
   };
   /** **A label of Allow next time, pressed**: nothing on a row drawn or moved just now. */
-  const allowIt = (target: string, level: GrantLevel) => {
+  const allowIt = (target: string, level: GrantLevel, session?: number) => {
     if (busy || allowNext === undefined) return;
     if (tooSoon()) {
       setAllowed({ why: ROW_MOVED_JUST_NOW });
@@ -119,7 +144,8 @@ export function BlockWaysOut({ blocks, who, tell, go, into = [], allowNext }: Bl
     }
     setBusy(true);
     setAllowed(undefined);
-    void allowNext(target, level)
+    // One chat's row names no chat: its grant is that chat's.
+    void (session === undefined ? allowNext(target, level) : allowNext(target, level, session))
       .then(setAllowed)
       .catch((err: unknown) =>
         setAllowed({ why: `purlis could not allow ${target}: ${String(err)}` }),
@@ -180,23 +206,58 @@ export function BlockWaysOut({ blocks, who, tell, go, into = [], allowNext }: Bl
       )}
       {open === "allow-next" && (
         <section id={detail} className="block-ways-detail" aria-label={OPENS[open]}>
-          {allowable.map((target) => (
-            <div key={target}>
-              <p className="ui-text-body">{nextTimeSaid(target)}</p>
-              <ButtonRow size="sm">
-                {NEXT_TIME_LEVELS.map((level) => (
-                  <Button
-                    key={level}
-                    variant="grants"
-                    isDisabled={busy}
-                    onPress={() => allowIt(target, level)}
-                  >
-                    {SANDBOX_ALLOW_SAID[level]}
-                  </Button>
-                ))}
-              </ButtonRow>
-            </div>
-          ))}
+          {allowable.map((target) => {
+            const levels = nextTimeLevels(sandboxes, target);
+            const label = (level: GrantLevel, session?: number) => (
+              <Button
+                key={level}
+                variant="grants"
+                isDisabled={busy}
+                onPress={() => allowIt(target, level, session)}
+              >
+                {SANDBOX_ALLOW_SAID[level]}
+              </Button>
+            );
+            if (nextChats === undefined)
+              return (
+                <div key={target}>
+                  <p className="ui-text-body">{nextTimeSaid(target)}</p>
+                  <ButtonRow size="sm">{levels.map((level) => label(level))}</ButtonRow>
+                </div>
+              );
+            // A row of several chats (Q278, Q273): each named before any press, its own labels
+            // granting it alone; the labels for you and the project once, for them all.
+            const chats = nextChats.filter((one) => one.target === target);
+            const each = levels.filter((level) => ONE_CHATS_LEVELS.includes(level));
+            const every = levels.filter((level) => EVERY_CHATS_LEVELS.includes(level));
+            return (
+              <div key={target}>
+                <p className="ui-text-body">
+                  {nextTimeGroupedSaid(
+                    target,
+                    chats.map((one) => one.name),
+                  )}
+                </p>
+                {each.length > 0 &&
+                  chats.map((one) => (
+                    <div key={one.session}>
+                      <p className="ui-text-secondary">{one.name}</p>
+                      <ButtonRow size="sm" role="group" aria-label={one.name}>
+                        {each.map((level) => label(level, one.session))}
+                      </ButtonRow>
+                    </div>
+                  ))}
+                {every.length > 0 && (
+                  <>
+                    <p className="ui-text-secondary">{FOR_EVERY_CHAT}</p>
+                    <ButtonRow size="sm" role="group" aria-label={FOR_EVERY_CHAT}>
+                      {every.map((level) => label(level))}
+                    </ButtonRow>
+                  </>
+                )}
+              </div>
+            );
+          })}
           {allowed?.said !== undefined && (
             <p className="ui-text-secondary" role="status">
               {allowed.said}
@@ -264,33 +325,18 @@ async function tellEach(
 }
 
 /**
- * **Allows `target` at `level` for each of `sessions`** (T1-34, Q273) through the core's
- * `allow_next_time`, and says what came of it: where it allowed for more than one chat, each by
- * name.
+ * **Allows `target` at `level` for chat `session`** (T1-34, Q278) through the core's
+ * `allow_next_time`, and says what came of it, naming the chat where the row names several.
  */
-async function allowEach(
+async function allowFor(
   plane: PlaneId,
-  sessions: readonly number[],
+  session: number,
   [target, level]: [string, GrantLevel],
-  nameOf: (session: number) => string,
+  named: string | undefined,
 ): Promise<NextTimeSaid> {
-  const said = await Promise.all(
-    sessions.map((one) =>
-      commands.allowNextTime(plane, one, target, level).then((done) => ({
-        one,
-        said: done.status === "ok" ? done.data.said : undefined,
-        why: done.status === "error" ? done.error : undefined,
-      })),
-    ),
-  );
-  const named = (one: number, line: string) =>
-    sessions.length > 1 ? `${nameOf(one)}: ${line}` : line;
-  const allowed = said.flatMap((one) => (one.said === undefined ? [] : [named(one.one, one.said)]));
-  const why = said.flatMap((one) => (one.why === undefined ? [] : [named(one.one, one.why)]));
-  return {
-    said: allowed.length === 0 ? undefined : allowed.join(" "),
-    why: why.length === 0 ? undefined : why.join(" "),
-  };
+  const said = (line: string) => (named === undefined ? line : `${named}: ${line}`);
+  const done = await commands.allowNextTime(plane, session, target, level);
+  return done.status === "ok" ? { said: said(done.data.said) } : { why: said(done.error) };
 }
 
 /**
@@ -334,14 +380,23 @@ export function FinishRowWays({
       go={() => {
         if (to.go !== undefined) go(to.go);
       }}
-      allowNext={(target, level) =>
-        allowEach(
+      nextChats={to.allow.map((one) => ({ ...one, name: nameOf(one.session) }))}
+      allowNext={(target, level, session) => {
+        // Only a chat whose own block it is (Q273); the labels for you and the project are one
+        // grant, judged on the first of them (Q278).
+        const theirs = to.allow.filter((one) => one.target === target).map((one) => one.session);
+        const one = session ?? theirs[0];
+        if (one === undefined || !theirs.includes(one))
+          return Promise.resolve({
+            why: `Nothing was allowed: no chat here was blocked on ${target}.`,
+          });
+        return allowFor(
           plane,
-          to.allow.filter((one) => one.target === target).map((one) => one.session),
+          one,
           [target, level],
-          nameOf,
-        ).finally(sandboxCommandReturned)
-      }
+          session === undefined ? undefined : nameOf(one),
+        ).finally(sandboxCommandReturned);
+      }}
     />
   );
 }

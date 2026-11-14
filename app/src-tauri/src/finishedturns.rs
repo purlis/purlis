@@ -45,6 +45,8 @@ pub struct FinishedBlock {
     /// The chat's harness (`claude`, `codex`, `opencode`), or `unknown`: whose own check a
     /// `harness_check` block was.
     pub harness: String,
+    /// The labels its Allow next time may offer (T1-34, Q278), as policy keeps them.
+    pub allow_levels: Vec<crate::sandboxing::GrantLevel>,
 }
 
 impl From<Unresolved> for FinishedBlock {
@@ -63,8 +65,26 @@ impl From<Unresolved> for FinishedBlock {
             target_kind,
             target,
             harness,
+            // The core says them where the project's policy is read ([`with_levels`]).
+            allow_levels: Vec::new(),
         }
     }
+}
+
+/// **`block` with the labels its Allow next time may offer under `locks`** (T1-34, Q278;
+/// #1906): the core's word, so the window offers only those.
+fn with_levels(
+    mut block: FinishedBlock,
+    locks: &purlis_core::sandbox::policy::Locks,
+) -> FinishedBlock {
+    block.allow_levels = crate::network::next_time_levels(
+        locks,
+        &block.source,
+        block.qualifier.as_deref(),
+        block.target_kind.as_deref(),
+        block.target.as_deref(),
+    );
+    block
 }
 
 /// The finishes of chat `session` (logged as `chat`) among `events` that ended at or after
@@ -132,9 +152,18 @@ pub(crate) async fn finished_turns(
             return Ok(Vec::new());
         }
         let events = purlis_core::eventlog::read(&dir).map_err(|why| why.to_string())?;
+        let locks = purlis_core::sandbox::policy::Locks::of(plane.root());
         Ok(chats
             .iter()
             .flat_map(|(session, chat)| finished_of(&events, *session, chat, since))
+            .map(|turn| FinishedTurn {
+                blocks: turn
+                    .blocks
+                    .into_iter()
+                    .map(|block| with_levels(block, &locks))
+                    .collect(),
+                ..turn
+            })
             .collect())
     })
     .await

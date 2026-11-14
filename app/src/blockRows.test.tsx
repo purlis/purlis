@@ -33,6 +33,7 @@ const blocked = (over: Partial<Blocked> = {}): Blocked => ({
   harness: "claude",
   reason: null,
   resolved: false,
+  allow_levels: [],
   ...over,
 });
 

@@ -56,6 +56,7 @@ const blocked = (over: Partial<Blocked> = {}): Blocked => ({
   harness: "claude",
   reason: null,
   resolved: false,
+  allow_levels: [],
   ...over,
 });
 
@@ -266,6 +267,7 @@ describe("where the ways out are", () => {
         target_kind: "guard_arm",
         target: "A3b",
         harness: "claude",
+        allow_levels: [],
       },
     ],
   };
@@ -332,6 +334,7 @@ describe("a finish row's ways out (Q272)", () => {
     target_kind: null,
     target: null,
     harness: "claude",
+    allow_levels: [],
     ...over,
   });
   const turn = (session: number, one: FinishedBlock): FinishedTurn => ({
@@ -506,8 +509,6 @@ describe("a sandbox block's ways out (T1-34; R-196, R-291)", () => {
 
   it("a sandbox block whose policy leaves no label offers no Allow next time", () => {
     expect(waysOf(rowOf({ ...SANDBOX, allow_levels: [] }))).toEqual([SHOW_THIS_RULE]);
-    cleanup();
-    expect(waysOf(rowOf({ ...SANDBOX, allow_levels: undefined }))).toEqual([SHOW_THIS_RULE]);
   });
 });
 
@@ -549,6 +550,7 @@ describe("a finish row's Allow next time (T1-34, Q273)", () => {
           target_kind: "guard_arm",
           target: "A3b",
           harness: "claude",
+          allow_levels: [],
         }),
       ];
       const keys = finishUpdates(turns, nameOf).map((one) => one.key);

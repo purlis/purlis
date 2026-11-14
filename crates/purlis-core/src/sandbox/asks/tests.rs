@@ -248,7 +248,7 @@ fn past_the_most_it_holds_a_connection_is_refused_at_once_not_held() {
     assert!(
         told.iter().all(|one| match one {
             Heard::Asked(hosts) => !hosts.iter().any(|h| h.starts_with("one-more")),
-            Heard::TimedOut(_) => true,
+            Heard::TimedOut(_) | Heard::UsedNext(_) | Heard::DroppedNext(_) => true,
         }),
         "a connection refused for want of room is not asked about: {told:?}"
     );
