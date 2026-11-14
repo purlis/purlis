@@ -5166,3 +5166,77 @@ fn a_pool_on_this_machine_is_never_only_forgotten() {
     assert!(forget_untrusted(config.path(), "first").is_err());
     assert_eq!(runners::pools(config.path()).unwrap().len(), 1);
 }
+
+/// A key change of pool `pool` on build-box, as a refused run would have found it.
+fn key_changed_of(pool: &str) -> crate::poolsetup::pinchange::PinChange {
+    crate::poolsetup::pinchange::PinChange {
+        pool: pool.to_owned(),
+        host: "build-box".to_owned(),
+        what: crate::poolsetup::pinchange::Changed::Key,
+        pinned: "SHA256:pinned".to_owned(),
+        now: "SHA256:now".to_owned(),
+        title: format!("Pool {pool}: build-box shows a different key"),
+        said: format!("Pool {pool}: build-box shows a different key than the one you trusted."),
+    }
+}
+
+/// **Remove on a machine whose key changed and that is now unreachable still forgets the pool**
+/// (#6270, review of #6553): whether it is forgotten is decided from the change already found, so
+/// Remove contacts nothing, and works when the machine no longer answers at all.
+#[test]
+fn a_pool_whose_key_changed_is_forgotten_from_what_was_found_even_once_its_machine_is_unreachable()
+{
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    let kept = a_pool_added(config.path(), &fake, &desktop());
+    on_another_machine(config.path());
+    // build-box answers nothing now: no name of it resolves, and no Docker is handed in to reach.
+    std::fs::write(fake.file_path("log"), "").unwrap();
+
+    let left = forget_where_untrusted(config.path(), "first", true, &[key_changed_of("first")])
+        .expect("a change was found of it")
+        .unwrap();
+
+    assert_eq!(fake.file("log"), "", "nothing was run");
+    assert!(
+        left.contains(&format!(
+            "docker container rm --force {}",
+            kept.made.container.as_str()
+        )),
+        "{left}"
+    );
+    assert!(runners::pools(config.path()).unwrap().is_empty());
+}
+
+/// Where no change was found of the pool, Remove is the usual one, and nothing is forgotten here.
+#[test]
+fn a_pool_with_no_change_found_is_left_to_the_usual_remove() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_added(config.path(), &fake, &desktop());
+    on_another_machine(config.path());
+
+    assert!(
+        forget_where_untrusted(config.path(), "first", true, &[key_changed_of("other")]).is_none()
+    );
+    assert_eq!(runners::pools(config.path()).unwrap().len(), 1);
+}
+
+/// Where the person was not told the pool is only forgotten, nothing is: the row had not said so.
+#[test]
+fn a_pool_whose_key_changed_is_not_forgotten_where_the_person_was_not_told_so() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_added(config.path(), &fake, &desktop());
+    on_another_machine(config.path());
+
+    let refused = forget_where_untrusted(config.path(), "first", false, &[key_changed_of("first")])
+        .expect("a change was found of it")
+        .unwrap_err();
+
+    assert!(
+        refused.to_string().contains("nothing was removed"),
+        "{refused}"
+    );
+    assert_eq!(runners::pools(config.path()).unwrap().len(), 1);
+}

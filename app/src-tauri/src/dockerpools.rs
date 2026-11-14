@@ -502,18 +502,15 @@ pub async fn remove_docker_pool(
             let removed = if is_a_cluster_pool(&config, &name)? {
                 crate::clusterpools::remove_on(&config, &name)
             } else {
-                let machine = Machine::here(&config)?;
                 // On a machine no longer trusted, nothing is sent there: the pool is forgotten
-                // here, as the person was told, and its runner stays there (#6270).
-                if pin_change_of(&machine, &name).is_some() {
-                    if !elsewhere {
-                        return Err(format!(
-                            "Pool {name}'s machine isn't the one you trusted any more, so \
-                             nothing was removed. Look at its row, and remove it again."
-                        ));
-                    }
-                    let left = purlis_core::pools::forget_untrusted(&config, &name)
-                        .map_err(|why| refused_said(&why.to_string()))?;
+                // here, as the person was told, and its runner stays there (#6270). Whether it
+                // is, is decided from the change already found, so this contacts nothing and
+                // works once the machine is unreachable too.
+                let found = purlis_core::poolsetup::pinchange::found_now();
+                if let Some(forgot) =
+                    purlis_core::pools::forget_where_untrusted(&config, &name, elsewhere, &found)
+                {
+                    let left = forgot.map_err(|why| refused_said(&why.to_string()))?;
                     crate::notheld::recheck(&config);
                     crate::poolfollow::forget_waiting(&config, &name);
                     if let Some(host) =
@@ -523,6 +520,7 @@ pub async fn remove_docker_pool(
                     }
                     return Ok(Some(left));
                 }
+                let machine = Machine::here(&config)?;
                 as_the_person_was_told(&machine, &name, elsewhere)?;
                 elsewhere_only_from_your_own(&name, elsewhere, crate::poolprofiles::owned)?;
                 remove_on(&machine, &name, &discarding)

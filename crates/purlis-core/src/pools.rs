@@ -215,6 +215,30 @@ pub fn remove_discarding(
     Ok(removed)
 }
 
+/// **Pool `name`'s Remove, where a pin change was found of it** (#6270, ADR 0123 §3): decided from
+/// `found`, the changes already found ([`crate::poolsetup::pinchange::found_now`]), so Remove
+/// never contacts the machine to decide, and forgets the pool even once the machine is
+/// unreachable. `None` where no change was found of it: the usual Remove is for it. Where one
+/// was, and `elsewhere` says the person was not told the pool is only forgotten here, nothing is
+/// done; else it is forgotten here ([`forget_untrusted`]), saying what stays on the machine.
+pub fn forget_where_untrusted(
+    config_root: &Path,
+    name: &str,
+    elsewhere: bool,
+    found: &[crate::poolsetup::pinchange::PinChange],
+) -> Option<Result<String, Refused>> {
+    if !found.iter().any(|change| change.pool == name) {
+        return None;
+    }
+    if !elsewhere {
+        return Some(Err(Refused::Other(format!(
+            "Pool {name}'s machine isn't the one you trusted any more, so nothing was removed. \
+             Look at its row, and remove it again."
+        ))));
+    }
+    Some(forget_untrusted(config_root, name))
+}
+
 /// **Removes pool `name`, on a machine whose pin no longer holds, by forgetting it here** (#6270,
 /// ADR 0123 §3): nothing is sent to that machine, so its runners' containers and homes stay there.
 /// What stays, and the commands that remove it on that machine, are answered. Refused for a pool
