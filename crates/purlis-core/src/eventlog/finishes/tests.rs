@@ -5,7 +5,9 @@ use std::path::Path;
 
 use super::*;
 use crate::eventlog::Log;
-use crate::eventlog::stops::{Answer, AskAnswered, AskGroup, Block, Qualifier, Source, Stop};
+use crate::eventlog::stops::{
+    Answer, AnsweredBy, AskAnswered, AskGroup, Block, Qualifier, Source, Stop,
+};
 
 const DEVICE: &str = "01J9ZZDEVICE0000000000000";
 const CHAT: &str = "01K6CHAT000000000000000004";
@@ -85,7 +87,12 @@ impl<'a> Turns<'a> {
     }
 
     fn answered_ask(&mut self, ask: AskGroup, answer: Answer) -> &mut Self {
-        let body = serde_json::to_value(Stop::AskAnswered(AskAnswered { ask, answer })).unwrap();
+        let body = serde_json::to_value(Stop::AskAnswered(AskAnswered {
+            ask,
+            answer,
+            by: AnsweredBy::Window,
+        }))
+        .unwrap();
         self.write(None, crate::eventlog::stops::ASK_ANSWERED, body)
     }
 

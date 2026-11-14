@@ -213,6 +213,24 @@ fn the_app_holds_one_block_per_operation_and_kind_and_each_host_until_it_is_answ
 }
 
 #[test]
+fn only_the_answer_that_lets_a_block_go_says_it_did() {
+    // Q262 amended: a dismissal and an Allow racing for one block write one answer between
+    // them, the one whose `answered` removed it.
+    let blocks = Blocks::default();
+    let npm = held(&seen(4, NPM));
+    blocks.heard(4, npm.clone());
+    assert!(blocks.answered(4, &npm), "the first answer lets it go");
+    assert!(
+        !blocks.answered(4, &npm),
+        "the second finds nothing left to answer"
+    );
+    assert!(
+        !blocks.answered(5, &npm),
+        "a chat never held on it has nothing to answer"
+    );
+}
+
+#[test]
 fn each_block_held_says_when_it_was_first_heard_until_it_is_let_go() {
     // #1700: what the asks registry orders the longest waiting first by. Heard again while it
     // is held, a block keeps the time it began to wait; let go and heard anew, it starts again.

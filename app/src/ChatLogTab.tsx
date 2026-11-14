@@ -2,13 +2,37 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState } from "react";
-import { commands, type ChatBlocks, type ChatLog, type ChatLogRow, type PlaneId } from "./bindings";
+import {
+  commands,
+  type ChatBlocks,
+  type ChatLog,
+  type ChatLogRow,
+  type ChatLogSummary,
+  type PlaneId,
+} from "./bindings";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Disclosure } from "./ui/disclosure/Disclosure";
 import { BlockTag } from "./BlockTag";
-import { atSaid, blockSourceSaid, blockTags, rowSaid, type BlockRow } from "./chatLog";
+import {
+  allowedSaid,
+  atSaid,
+  blockSourceSaid,
+  blockTags,
+  drawnRows,
+  honestyLines,
+  rowSaid,
+  type BlockRow,
+} from "./chatLog";
 import { ToggleButton } from "./ui/button/Button";
 import { useBlocksLookedAt, useChatLogFilter } from "./blockedMarkers";
+
+/** What heads a log with nothing to say above its rows. */
+const QUIET: ChatLogSummary = {
+  allowed: 0,
+  by_your_rules: 0,
+  unverified: false,
+  ran_as_you: false,
+};
 
 /** What the reason is, above it: the words of the harness's own check, never purlis's. */
 const REASON_OF = "The check's reason, as written";
@@ -65,25 +89,48 @@ export function blocksCounted(counted: ChatBlocks | undefined): string | undefin
 const BLOCK_ROWS: readonly ChatLogRow["kind"][] = ["blocked"];
 
 /**
- * **The Chat log as it is drawn** (R-310, R-227, R-233): the chat's own simple timeline, apart
- * from its transcript, one line per row, oldest first. Its first row is the start, its last the
- * end and its result; a block between opens its detail, and nothing else in it is pressed in
- * phase 1.
+ * **The Chat log as it is drawn** (R-310, R-227, R-233; T1-28): the chat's own simple timeline,
+ * apart from its transcript, one line per row, oldest first. Its first row is the start, its last
+ * the end and its result; between them its protection changes, its blocks (T1-29), its asks with
+ * their answers (one row each), its holds and its loop pauses. Above them, its honesty lines first
+ * (R-235), then its allowed calls in one line (R-234). It only reads: a block opens its detail,
+ * and nothing else in it is pressed in phase 1.
  */
-export function ChatLogRows({ name, rows }: { name: string; rows: readonly ChatLogRow[] }) {
+export function ChatLogRows({
+  name,
+  rows,
+  summary = QUIET,
+}: {
+  name: string;
+  rows: readonly ChatLogRow[];
+  summary?: ChatLogSummary;
+}) {
+  const allowed = allowedSaid(summary);
   return (
-    <ol className="chat-log" aria-label={`Chat log of ${name}`}>
-      {rows.map((row, at) => (
-        <li key={`${row.kind}:${row.at ?? ""}:${at}`} className="chat-log-row" data-kind={row.kind}>
-          <span className="chat-log-at ui-text-secondary">{atSaid(row.at)}</span>
-          {row.kind === "blocked" ? (
-            <BlockedRow row={row} />
-          ) : (
-            <span className="chat-log-said ui-text-body">{rowSaid(row)}</span>
-          )}
-        </li>
+    <>
+      {honestyLines(summary).map((line) => (
+        <p key={line} className="chat-log-honesty ui-text-body">
+          {line}
+        </p>
       ))}
-    </ol>
+      {allowed !== null && <p className="chat-log-allowed ui-text-secondary">{allowed}</p>}
+      <ol className="chat-log" aria-label={`Chat log of ${name}`}>
+        {drawnRows(rows).map((row, at) => (
+          <li
+            key={`${row.kind}:${row.at ?? ""}:${at}`}
+            className="chat-log-row"
+            data-kind={row.kind}
+          >
+            <span className="chat-log-at ui-text-secondary">{atSaid(row.at)}</span>
+            {row.kind === "blocked" ? (
+              <BlockedRow row={row} />
+            ) : (
+              <span className="chat-log-said ui-text-body">{rowSaid(row)}</span>
+            )}
+          </li>
+        ))}
+      </ol>
+    </>
   );
 }
 
@@ -191,7 +238,7 @@ export function ChatLogTab({
   return (
     <>
       {head}
-      <ChatLogRows name={name} rows={log.rows} />
+      <ChatLogRows name={name} rows={log.rows} summary={log.summary} />
     </>
   );
 }
