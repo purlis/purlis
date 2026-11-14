@@ -145,3 +145,30 @@ fn only_a_mode_claude_codes_hook_reported_is_a_fault() {
         assert_eq!(fact.mode_differs(), None, "{harness} shows nothing");
     }
 }
+
+/// **R-243, R-318**: a resume or a relaunch of a chat whose mode differed carries the mode with
+/// the fact, so the fault stands as the fact does, whoever holds it.
+///
+/// Mutation that shows it red: have [`Fact::resumed`] start the mode that differed afresh.
+#[test]
+fn a_resume_carries_the_mode_that_differed() {
+    purlis_core::unsteered!();
+    let mut prior = claude_code_chat(Begun::Person, None);
+    prior.heard(&line("claude-code", Event::Stop, Some("plan")));
+
+    let resumed = Fact::resumed(
+        prior,
+        Begun::Person,
+        Some(Harness::ClaudeCode),
+        &words(&["claude"]),
+    );
+
+    assert!(resumed.unattended(), "never rebuilt as attended");
+    assert_eq!(
+        resumed.mode_differs(),
+        Some(ModeDiffers {
+            set: ClaudeCodeMode::Default,
+            reported: ClaudeCodeMode::Plan,
+        })
+    );
+}

@@ -12534,3 +12534,95 @@ fn a_report_that_arrives_as_the_chat_starts_lowers_its_fact() {
         let _ = chats.close(session);
     });
 }
+
+// ----- a mode purlis didn't set, read from the one fact the app holds (T1-44, #6435; R-243) -----
+
+/// A line of chat `chat`'s own Claude Code hook whose `permission_mode` is `acceptEdits`: a mode
+/// purlis didn't start a person's chat in.
+fn an_accept_edits_report(chat: u32) -> purlis_core::hookwire::Report {
+    purlis_core::hookwire::Report {
+        chat,
+        event: purlis_core::state::Event::UserPromptSubmit,
+        conversation: purlis_core::hookwire::Conversation::Named(ID.to_owned()),
+        pid: None,
+        agent: None,
+        detail: purlis_core::state::Detail {
+            claude_code_mode: Some(purlis_core::attendance::ClaudeCodeMode::AcceptEdits),
+            ..purlis_core::state::Detail::default()
+        },
+    }
+}
+
+/// The mode purlis set a person's Claude Code chat in, and the one its hook reported instead.
+const DEFAULT_THEN_ACCEPT_EDITS: purlis_core::attendance::ModeDiffers =
+    purlis_core::attendance::ModeDiffers {
+        set: purlis_core::attendance::ClaudeCodeMode::Default,
+        reported: purlis_core::attendance::ClaudeCodeMode::AcceptEdits,
+    };
+
+/// **R-243, through the one holder** (T1-18's, #6409): a mode report the board took lowers the
+/// attendance fact the app holds for the chat, the one A4 reads, and its pane is told the mode
+/// from that same fact. A second fact held beside it, heard by the same report, leaves this one
+/// attended and fails here.
+#[test]
+fn a_mode_purlis_did_not_set_lowers_the_one_held_fact_and_raises_its_notice() {
+    let dir = tempfile::tempdir().unwrap();
+    let (chats, _) = recorded();
+    let session = chats
+        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+        .unwrap();
+    let told = Arc::new(Mutex::new(Vec::new()));
+    let noticed = crate::stuck::Noticed::new(crate::planes::PlaneId::for_tests(dir.path()));
+    noticed.held_as(std::sync::Weak::new(), {
+        let told = Arc::clone(&told);
+        Arc::new(move |one| lock(&told).push(one))
+    });
+    assert!(!held_unattended(&chats, session), "a person's chat");
+
+    crate::stuck::attendance_heard(&chats, &noticed, &an_accept_edits_report(session));
+
+    assert!(held_unattended(&chats, session), "the mode lowers it");
+    assert!(
+        lock(&chats.open)[&session].chat.unattended,
+        "and its record carries it"
+    );
+    let held = chats.attendance_of(session).expect("held");
+    assert_eq!(held.mode_differs(), Some(DEFAULT_THEN_ACCEPT_EDITS));
+    let modes: Vec<_> = lock(&told)
+        .iter()
+        .map(|one: &crate::stuck::ChatNoticed| (one.session, one.mode.clone()))
+        .collect();
+    assert_eq!(
+        modes,
+        [(
+            session,
+            Some(crate::stuck::ModeDiffers::from(DEFAULT_THEN_ACCEPT_EDITS))
+        )],
+        "one Notice, from the held fact"
+    );
+    chats.end_all();
+}
+
+/// **R-243, R-318**: a start in the place of a chat this app still holds a fact for carries the
+/// mode that differed forward with the fact, so its Notice stands.
+#[test]
+fn a_start_in_the_place_of_a_held_chat_carries_the_mode_that_differed() {
+    let dir = tempfile::tempdir().unwrap();
+    let (chats, _) = recorded();
+    let record = chat(&a_claude(dir.path()), "ide.7", None);
+    let session = chats.start(&record, SIZE).unwrap();
+    chats.heard_attendance(&an_accept_edits_report(session));
+
+    chats.began_attended_or_not(
+        session,
+        &record,
+        Some(Harness::ClaudeCode),
+        false,
+        &["claude".to_owned()],
+    );
+
+    let held = chats.attendance_of(session).expect("held");
+    assert!(held.unattended(), "never rebuilt as attended");
+    assert_eq!(held.mode_differs(), Some(DEFAULT_THEN_ACCEPT_EDITS));
+    chats.end_all();
+}
