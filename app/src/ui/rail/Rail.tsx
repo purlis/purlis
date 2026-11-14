@@ -26,6 +26,7 @@
 import type { ComponentPropsWithoutRef, CSSProperties, ReactNode, Ref } from "react";
 import { mergeProps, useFocusRing, useHover, useId } from "react-aria";
 import { PanelLeft, RotateCw, X } from "lucide-react";
+import { RoundCount } from "../badge/Badge";
 import { IconButton } from "../button/Button";
 import { Tooltip, type Tip } from "../tooltip/Tooltip";
 import { useTabStripRow, type TabStrip } from "../tabs/TabStrip";
@@ -173,14 +174,7 @@ export function RailProject({
           {/* Its failed mark (#5324): a "!" at its bottom left, which a shape and not a colour
             alone says; its words are its description's and its tooltip's. */}
           {load?.failed && <span data-scope="rail" data-part="failed" aria-hidden="true" />}
-          {waiting > 0 && (
-            <span
-              data-scope="rail"
-              data-part="badge"
-              data-count={waiting > 99 ? "99+" : String(waiting)}
-              aria-hidden="true"
-            />
-          )}
+          <RailBadge waiting={waiting} />
           {unsaved !== undefined && (
             <span
               data-scope="rail"
@@ -365,6 +359,21 @@ export function RailList({ children, ref }: { children: ReactNode; ref?: Ref<HTM
  * you): a count at the list's foot while a project that waits is scrolled out of sight. A press
  * brings it into view.
  */
+/**
+ * **What waits on the person there** (R79): the rail's `badge` part around the badge family's
+ * round count (#6342), one character, 9+ above 9. The part is what a theme's `rail.badge` rule
+ * reaches; the count inside takes its colours. The real number is its `data-count` and its host's
+ * description. Never drawn again as it changes, so it slides; nothing at a zero.
+ */
+function RailBadge({ waiting }: { waiting: number }) {
+  if (waiting <= 0) return null;
+  return (
+    <span data-scope="rail" data-part="badge" data-count={String(waiting)} aria-hidden="true">
+      <RoundCount count={waiting} at="mark" />
+    </span>
+  );
+}
+
 export function RailBelow({ waiting, onPress }: { waiting: number; onPress: () => void }) {
   const label = `${waiting} waiting below`;
   return (
@@ -376,7 +385,7 @@ export function RailBelow({ waiting, onPress }: { waiting: number; onPress: () =
         data-scope="rail"
         data-part="below"
       >
-        <span data-scope="rail" data-part="badge" data-count={String(waiting)} aria-hidden="true" />
+        <RailBadge waiting={waiting} />
       </button>
     </Tooltip>
   );

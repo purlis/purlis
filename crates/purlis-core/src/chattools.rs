@@ -1617,12 +1617,23 @@ pub fn forge_milestones(
     backend_of: &dyn Fn(&crate::forge::pr::Repo) -> Box<dyn crate::forge::ForgeBackend>,
 ) -> Result<String, String> {
     let ws = workspace_name(place)?;
+    // Held to the query's parameters as a page's ask is (`answer::ask`), before anything else.
+    let args = crate::catalogue::answer::checked(
+        &crate::catalogue::milestones::parameters(),
+        &Value::Object(args.clone()),
+    )
+    .map_err(|_| {
+        format!(
+            "{FORGE_MILESTONES} takes repo, the folder name of a repo of this workspace, and \
+             state, open or all, each a string, and nothing else."
+        )
+    })?;
     let reach = crate::catalogue::milestones::Reach {
         caller: crate::forge::Caller::mcp(chat),
         backend_of,
     };
     let data =
-        crate::catalogue::milestones::read(root, ws, args, &reach).map_err(|why| why.message)?;
+        crate::catalogue::milestones::read(root, ws, &args, &reach).map_err(|why| why.message)?;
     let path = data["path"].as_str().unwrap_or_default();
     let listed = data["milestones"].as_array().cloned().unwrap_or_default();
     if listed.is_empty() {
@@ -1637,7 +1648,8 @@ pub fn forge_milestones(
         let closed = m["closed_issues"].as_u64().unwrap_or(0);
         let due = m["due_on"].as_str().map_or_else(
             || "no due date".to_owned(),
-            |d| format!("due {}", &d[..d.len().min(10)]),
+            // The date of an RFC 3339 time, cut on a character whatever the forge wrote.
+            |d| format!("due {}", d.chars().take(10).collect::<String>()),
         );
         lines.push(format!(
             "#{} {} · {closed}/{} closed · {due} · {} · {}",
@@ -1646,6 +1658,12 @@ pub fn forge_milestones(
             open + closed,
             m["state"].as_str().unwrap_or_default(),
             m["url"].as_str().unwrap_or_default(),
+        ));
+    }
+    if data["cut"] == true {
+        lines.push(format!(
+            "GitHub lists more milestones of {path} than these: purlis reads the first {} at most.",
+            listed.len()
         ));
     }
     Ok(lines.join("\n"))

@@ -125,6 +125,7 @@ export function SessionPane({
   focused,
   onFocus,
   menu,
+  title,
   readOnly = false,
 }: {
   /** The plane this session belongs to. A session number is only half of a chat's name —
@@ -136,6 +137,8 @@ export function SessionPane({
   /** The pane's own rows, listed in the terminal's menu under its own. None where the pane is
    *  drawn without a catalogue: the menu is then the terminal's rows alone. */
   menu?: PaneMenu;
+  /** The chat's title, which its asks name it by (#6355). None for a shell, which is no chat. */
+  title?: string;
   /** **The chat's program has ended** (#4756): its last screen stays, and takes no input. */
   readOnly?: boolean;
 }) {
@@ -172,6 +175,7 @@ export function SessionPane({
     list: openLinksList,
   } = usePaneLinks({
     from: { plane, session },
+    chat: title === undefined ? undefined : { number: session, title },
     core: LINK_CORE,
     colour: () => linkColour(inForce()),
     // *Links in this pane…* (#6220) reads the screen of the terminal this pane draws now.

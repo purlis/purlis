@@ -789,3 +789,151 @@ fn a_jump_users_brackets_and_a_zone_in_an_ssh_uri_with_a_user_are_offered_no_run
     refused("ssh", "-o ProxyJump", &[&["-o", "ProxyJump=[x]@b", "host"]]);
     offered("ssh", &["-J u@[::1] host", "-J ssh://u@[::1]:22 host"]);
 }
+
+/// RocksDB's `ldb` and `sst_dump`, as MariaDB's RocksDB plugin ships them (#6322): their
+/// `--env_uri` and `--fs_uri` name an object RocksDB's registry makes, which loads no library
+/// (`tools/ldb_cmd.cc`, `env/env.cc`, `utilities/object_registry.cc`, RocksDB 79f08d7, as
+/// MariaDB 11.4 pins it), so their usual commands stay offered, by the prefix that takes
+/// `mariadb-ldb` and `mysql_ldb` to the mysql tools' row too.
+#[test]
+fn rocksdbs_ldb_and_sst_dump_are_offered_with_their_usual_commands() {
+    for program in ["mariadb-ldb", "mysql_ldb", "ldb", "sst_dump"] {
+        offered(
+            program,
+            &[
+                "--db=/var/lib/mysql/#rocksdb scan",
+                "--db=/var/lib/mysql/#rocksdb --env_uri=x get key",
+                "--file=/var/lib/mysql/#rocksdb/000001.sst --command=raw",
+            ],
+        );
+    }
+}
+
+/// openssl's options that load a library or a module (#6329), read as its `opt_next` reads them
+/// (`apps/lib/opt.c`, openssl 3.0.15): one or two dashes, the whole name, a value after `=` or
+/// in the next word. `-engine` and its kin load the shared library they are named through the
+/// dynamic engine's `SO_PATH` (`apps/lib/engine.c`), `-provider` and `-provider-path` a provider
+/// module (`apps/lib/app_provider.c`), and `-config` a file whose modules `ca`, `req`, `ts`,
+/// `srp`, `cms`, `smime`, `genpkey` and `pkeyutl` load (`app_load_modules`, `apps/lib/apps.c`).
+/// `my_openssl` is the bundled openssl MySQL's test package ships.
+#[test]
+fn openssl_with_an_option_that_loads_a_library_is_offered_no_run_grant() {
+    for program in ["openssl", "my_openssl", "openssl3"] {
+        refused(
+            program,
+            "-engine",
+            &[
+                &["dgst", "-engine", "/x/evil.so", "-sha256", "f"],
+                &["req", "--engine=/x/evil.so", "-new"],
+                &["rsa", "-ENGINE", "/x/evil.so"],
+            ],
+        );
+        refused(
+            program,
+            "-keygen_engine",
+            &[&["req", "-keygen_engine", "x"]],
+        );
+        refused(
+            program,
+            "-ssl_client_engine",
+            &[&["s_client", "-ssl_client_engine", "x", "-connect", "h:443"]],
+        );
+        refused(
+            program,
+            "-provider",
+            &[
+                &["list", "-provider", "/x/evil.so"],
+                &["dgst", "-provider=evil", "f"],
+            ],
+        );
+        refused(
+            program,
+            "-provider-path",
+            &[&["list", "-provider-path", "/x", "-providers"]],
+        );
+        refused(
+            program,
+            "-config",
+            &[
+                &["req", "-config", "/x/openssl.cnf", "-new"],
+                &["ca", "--config=/x/c"],
+            ],
+        );
+    }
+}
+
+/// openssl's `engine` command loads the engines it is named, and runs the control commands its
+/// `-pre` and `-post` name (`SO_PATH:<library>`, `LOAD`), and `fipsinstall` loads the provider
+/// its `-module` folder holds (`apps/engine.c`, `apps/fipsinstall.c`, openssl 3.0.15).
+#[test]
+fn openssl_engine_and_fipsinstall_are_offered_no_run_grant() {
+    for program in ["openssl", "my_openssl"] {
+        refused(
+            program,
+            "engine",
+            &[&["engine", "dynamic", "-pre", "SO_PATH:/x.so"]],
+        );
+        refused(program, "fipsinstall", &[&["fipsinstall", "-out", "f.cnf"]]);
+    }
+}
+
+/// openssl's usual commands stay offered (#6329): the general-purpose caution says what it may
+/// do with what it is handed, and a short option is never read as the start of a long one.
+#[test]
+fn openssl_is_offered_with_its_usual_commands() {
+    for program in ["openssl", "my_openssl"] {
+        offered(
+            program,
+            &[
+                "dgst -sha256 f",
+                "s_client -connect host:443 -servername host",
+                "enc -e -aes-256-cbc -pbkdf2 -in a -out b -pass env:X",
+                "x509 -in c.pem -noout -text",
+                "req -new -key k.pem -subj /CN=x -out r.csr",
+                "pkcs12 -export -in c.pem -inkey k.pem -out p.p12",
+                "rand -hex 16",
+                "version",
+            ],
+        );
+    }
+}
+
+/// openssl finds its command by the first eight characters and a hash of the whole name
+/// (`function_cmp`, `strncmp(…, 8)`, `apps/openssl.c:439-447`, openssl 3.0.15), so a word that
+/// starts `fipsinst` and has `fipsinstall`'s hash runs it: any such word is refused (the review of
+/// #6556). `engine` is shorter than eight, so it is matched whole.
+#[test]
+fn openssl_refuses_a_command_by_the_eight_characters_it_is_found_by() {
+    for program in ["openssl", "my_openssl"] {
+        refused(
+            program,
+            "fipsinstall",
+            &[
+                &["fipsinstzctsbii", "-module", "/x/fips.so"],
+                &["FIPSINSTxx"],
+            ],
+        );
+        offered(program, &["enginex", "fipsins -x"]);
+    }
+}
+
+/// An engine URI loads the engine it names, by a path too (round 2 of the review of #6556), in a
+/// value of its own, after `=` or within a word, whatever its case.
+#[test]
+fn openssl_refuses_an_engine_uri_wherever_it_is_written() {
+    for program in ["openssl", "my_openssl"] {
+        refused(
+            program,
+            "org.openssl.engine:",
+            &[
+                &["pkey", "-in", "org.openssl.engine:/x/evil.so:k"],
+                &["x509", "-key=ORG.OPENSSL.ENGINE:/x/e.so:k"],
+                &["storeutl", "org.openssl.engine:pkcs11:k"],
+                // after `--` too, where `storeutl` takes its URI (round 3 of the review)
+                &["storeutl", "--", "org.openssl.engine:/x/evil.so:k"],
+                &["verify", "--", "ORG.openssl.engine:/x/e.so:k"],
+            ],
+        );
+        offered(program, &["pkey -in org.openssl.example.pem"]);
+    }
+}
