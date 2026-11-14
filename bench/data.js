@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794644150687,
+  "lastUpdate": 1794647486347,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -49140,6 +49140,48 @@ window.BENCHMARK_DATA = {
             "value": 101.701312,
             "unit": "ms",
             "extra": "median of 5 runs: 100.629, 101.551, 101.701, 102.086, 104.695 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "121fc077a44a4721c82c022bb4ad03bf8e179e4f",
+          "message": "Remind me: Off, Gently or Often (#6344) (#6513)\n\n* Remind me Off/Gently/Often (#6344), with the palette count at fifty chats counting its setting row\n\nBrings 7ba6ceed7's change (PR #6502) onto main and fixes web part 3's red: the\npalette-at-fifty-chats test expected 1433 rows and got 1434. The new row is\n'Your settings: Attention › Remind me', the row every setting gets since #2920\n(settingRows, listed only once typed), so it is intended: the test's ledger\ngains its line and the total moves to 1434, as #6306's Keep task screens did.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7AP8ADAWXQ3ZMTNF1NCVMZQ\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Attention › In A Project baselines redrawn by the pinned image: they now show Remind me (#6344)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7CEBNHGS1SEQPHZGWVHDKHE\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: purlis-purlis-agent[bot] <355234864+purlis-purlis-agent[bot]@users.noreply.github.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-14T08:33:58Z",
+          "tree_id": "d4d498fc1b0cd48127c85b81307e82ecb8b78735",
+          "url": "https://github.com/purlis/purlis/commit/121fc077a44a4721c82c022bb4ad03bf8e179e4f"
+        },
+        "date": 1794647478205,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.568619,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.558, 0.561, 0.569, 0.573, 0.581 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2983805,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.126, 16.294, 16.298, 16.309, 16.724 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.89590150000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.137, 100.605, 100.896, 101.509, 101.879 ms"
           }
         ]
       }
