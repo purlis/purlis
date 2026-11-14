@@ -942,6 +942,95 @@ pub fn by_hand(route: Option<&str>) -> super::See {
     }
 }
 
+/// **The machine, in lines another person can check** (#6272, ADR 0123 §4): its route, its host,
+/// how it is reached, and the fingerprints of its key or CA and its engine's id, each as trusted
+/// and as shown now. Never a key, a certificate's private half, a file's path or a vault's name.
+#[must_use]
+pub fn machine_lines(machine: &Machine) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some(route) = &machine.route {
+        lines.push(format!("Route: {route}"));
+    }
+    if let Some(host) = &machine.host {
+        lines.push(format!("Machine: {host}"));
+    }
+    lines.push(format!(
+        "Reached by: {}",
+        if machine.over == "tls" {
+            "Docker's API over TLS"
+        } else {
+            "SSH"
+        }
+    ));
+    let key = |label: &str, key: &Option<KeyShown>| {
+        key.as_ref()
+            .map(|key| format!("{label}: {} ({})", key.fingerprint, key.algorithm))
+    };
+    lines.extend(key("Its key, trusted", &machine.trusted));
+    lines.extend(key("Its key, shown", &machine.key));
+    lines.extend(key("Its key now", &machine.now));
+    if let Some(ca) = &machine.trusted_ca {
+        lines.push(format!("Its CA, trusted: {ca}"));
+    }
+    if let Some(ca) = &machine.ca {
+        lines.push(format!("Its CA, shown: {}", ca.fingerprint));
+    }
+    if let Some(ca) = &machine.ca_now {
+        lines.push(format!("Its CA now: {ca}"));
+    }
+    if let Some(engine) = &machine.engine {
+        lines.push(format!("Its engine, trusted: {engine}"));
+    }
+    lines
+}
+
+/// **Whether a finding of cause `cause` is for the machine's admin to mend**: not the person's own
+/// agent, the address they typed, the files they named or this machine.
+#[must_use]
+pub fn for_the_admin(cause: &str) -> bool {
+    !matches!(
+        cause,
+        "here"
+            | "not-a-route"
+            | "no-such-name"
+            | "sign-in-refused"
+            | "needs-podman"
+            | "tls-file"
+            | "tls-client-expired"
+            | CONTEXT_MOVED
+    )
+}
+
+/// **The words for the machine's admin** (#6272, ADR 0123 §4), where the person can't mend the
+/// finding themselves: what the check found, the machine in [`machine_lines`], and the commands.
+/// Held free of secrets.
+#[must_use]
+pub fn admin_words(machine: &Machine, found: &[String], see: &super::See) -> String {
+    let host = machine.host.as_deref().unwrap_or("the machine");
+    let version = env!("CARGO_PKG_VERSION");
+    let words = format!(
+        "Hello. I'm setting up purlis to run my chats in Docker on {host}, and its check found \
+         something there I can't change with my own account. Could you have a look?\n\
+         \n\
+         What the check found:\n\
+         {found}\n\
+         \n\
+         The machine, as purlis reaches it:\n\
+         {machine}\n\
+         \n\
+         {note}\n\
+         {commands}\n\
+         \n\
+         Once it's done, tell me, and I'll press Check again. Sent from purlis {version}. It \
+         holds no password, token, key or credential.",
+        found = found.join("\n"),
+        machine = machine_lines(machine).join("\n"),
+        note = see.note,
+        commands = see.text,
+    );
+    super::admin::held_free_of_secrets(&words)
+}
+
 /// **Connect's See what this does, as it stands** (#6272, ADR 0123 §7): where a finding stands,
 /// the commands of its one way on, else what prints the machine's key or CA to compare.
 /// `purlis pool doctor` prints the same.

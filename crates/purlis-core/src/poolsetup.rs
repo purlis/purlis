@@ -277,6 +277,8 @@ pub enum CheckOf {
     Chat,
     Signins,
     Identity,
+    /// The link's round trip to a pool on another machine (#6272, ADR 0123 §6).
+    Link,
 }
 
 /// One step as it stands.
@@ -1141,9 +1143,18 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
             }
         };
         let says = !matches!(state, StepState::Later | StepState::Skipped);
-        let words = (id == StepId::Check && says)
-            .then(|| admin::text(facts, choices))
-            .flatten();
+        let words = if id == StepId::Check && says {
+            admin::text(facts, choices)
+        } else if id == StepId::Connect
+            && state == StepState::Attention
+            && cause.is_some_and(connecting::for_the_admin)
+            && let Some(shown) = &machine
+        {
+            let see = connecting::see(&facts.connect.clone().unwrap_or_default());
+            Some(connecting::admin_words(shown, &reading.findings, &see))
+        } else {
+            None
+        };
         steps.push(Step {
             id,
             name: id.name(),
@@ -1196,6 +1207,14 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
                     ActionId::StopWaiting,
                     "Stop waiting",
                     "Forgets that you asked your admin. Nothing on the cluster changes.",
+                )
+            } else if words.is_some() && id == StepId::Connect {
+                action(
+                    ActionId::SendToAdmin,
+                    "Send to your admin",
+                    "Shows the words to send the machine's admin: what's wrong, the machine's \
+                     fingerprints and the commands. They hold no password, token, key or \
+                     credential.",
                 )
             } else if words.is_some() {
                 action(
@@ -2615,6 +2634,28 @@ pub fn resumed_pressed(here: &Here<'_>, pressed: Option<Pressed>) -> Result<Resu
         noticed,
         recommended,
     })
+}
+
+/// **[`resumed`], with doctor's every check run on its pool** (#6272, ADR 0123 §7): where the
+/// setup is on a pool on another machine, what [`doctoring::check`] found first is laid over
+/// Connect's facts, as `purlis pool doctor` says it. Any other setup is [`resumed`].
+pub fn doctored(here: &Here<'_>) -> Result<Resumed, Refused> {
+    let choices = read_choices(here.config)?;
+    let kept = kept_pools(here.config)?;
+    let pool = pool_of(&choices, &kept)
+        .map(str::to_owned)
+        .and_then(|name| {
+            runners::pools(here.config)
+                .ok()?
+                .into_iter()
+                .find(|one| one.name() == name)
+        })
+        .filter(runners::Pool::on_another_machine);
+    let pressed = match (pool, here.docker) {
+        (Some(pool), Some(docker)) => doctoring::check(docker, &pool).err().map(Pressed::Found),
+        _ => None,
+    };
+    resumed_pressed(here, pressed)
 }
 
 /// **What Add a pool found** ([`start_adding`], #6256).

@@ -527,3 +527,171 @@ fn the_middle_of_three_round_trips_is_the_one_kept() {
     let ms = Duration::from_millis;
     assert_eq!(middle(&mut [ms(90), ms(40), ms(50)]), ms(50));
 }
+
+fn trusted_over_ssh(finding: Finding) -> Facts {
+    let mut facts = facts("ssh://me@build-box", &finding);
+    if let Some(connect) = facts.connect.as_mut() {
+        connect.identity = Some("/home/me/.ssh/id_builds".into());
+        connect.trusted = Some(crate::sshroute::Pin {
+            host_key: key(KEY),
+            engine: crate::sshroute::EnginePin::Docker("ABCD:EFGH:IJKL".into()),
+        });
+    }
+    facts
+}
+
+fn trusted_over_tls(finding: Finding) -> Facts {
+    let mut facts = facts("tcp://build-box:2376", &finding);
+    if let Some(connect) = facts.connect.as_mut() {
+        connect.tls = Some(crate::tlsroute::Files {
+            ca: "/home/me/.docker/ca.pem".into(),
+            cert: "/home/me/.docker/cert.pem".into(),
+            key: crate::tlsroute::KeyFrom::Vault {
+                plane: "/home/me/projects/builds".into(),
+                vault: "builds-vault".into(),
+                key: "docker-client-key".into(),
+            },
+        });
+        connect.trusted_tls = Some(crate::tlsroute::Pin {
+            ca: crate::tlsroute::Fingerprint::parse(&["AB"; 32].join(":")).unwrap(),
+            engine: "ABCD:EFGH:IJKL".into(),
+        });
+    }
+    facts
+}
+
+fn step_of(facts: &Facts) -> Step {
+    let choices = Choices {
+        kind: Some(Kind::RemoteDocker),
+        ..Choices::default()
+    };
+    of(Kind::RemoteDocker, facts, &choices)
+        .step(StepId::Connect)
+        .unwrap()
+        .clone()
+}
+
+/// **Send to your admin carries the route, the host and the fingerprints** (#6272, ADR 0123 §4),
+/// with what the check found and the commands, and never a key or a value.
+#[test]
+fn send_to_your_admin_names_the_route_host_and_fingerprints_and_no_key_or_value() {
+    let step = step_of(&trusted_over_ssh(Finding::NotAllowed {
+        host: "build-box".into(),
+        user: "me".into(),
+        socket: "/var/run/docker.sock".into(),
+    }));
+    assert_eq!(step.also.as_ref().unwrap().id, ActionId::SendToAdmin);
+    let words = step.admin.as_deref().unwrap();
+    for part in [
+        "ssh://me@build-box",
+        "build-box",
+        &key(KEY).fingerprint(),
+        "ABCD:EFGH:IJKL",
+        "me on build-box isn't allowed to use Docker",
+        "sudo usermod -aG docker me",
+        "It holds no password, token, key or credential.",
+    ] {
+        assert!(words.contains(part), "{words}\nwithout {part:?}");
+    }
+    assert!(!words.contains("id_builds"), "{words}");
+
+    let step = step_of(&trusted_over_tls(Finding::NotSignedByCa {
+        host: "build-box".into(),
+        ca: "/home/me/.docker/ca.pem".into(),
+    }));
+    let words = step.admin.as_deref().unwrap();
+    assert!(words.contains("tcp://build-box:2376"), "{words}");
+    assert!(words.contains(&["AB"; 32].join(":")), "{words}");
+    for secret in ["builds-vault", "docker-client-key", "key.pem"] {
+        assert!(!words.contains(secret), "{words}\nholds {secret:?}");
+    }
+}
+
+/// What the person mends themselves (their own agent, the address they typed, the files they
+/// named) has no admin to send to.
+#[test]
+fn a_finding_the_person_mends_themselves_offers_no_admin() {
+    for finding in [
+        Finding::SignInRefused {
+            host: "build-box".into(),
+        },
+        Finding::NoSuchName {
+            host: "build-box".into(),
+        },
+        Finding::Here("purlis found no ssh on this machine.".into()),
+    ] {
+        let step = step_of(&trusted_over_ssh(finding.clone()));
+        assert_eq!(step.admin, None, "{finding:?}");
+        assert_eq!(step.also, None, "{finding:?}");
+    }
+}
+
+/// **Get help's chat is told the route, the host and the fingerprints** (#6272), and never a key
+/// or a value.
+#[test]
+fn get_help_names_the_route_host_and_fingerprints_and_no_key_or_value() {
+    let choices = Choices {
+        kind: Some(Kind::RemoteDocker),
+        ..Choices::default()
+    };
+    let setup = of(
+        Kind::RemoteDocker,
+        &trusted_over_tls(Finding::ServerExpired {
+            host: "build-box".into(),
+        }),
+        &choices,
+    );
+    let opening = super::super::help::opening(&setup, StepId::Connect, None).unwrap();
+    for part in [
+        "over Docker's API over TLS",
+        "Route: tcp://build-box:2376",
+        "Machine: build-box",
+        &format!("Its CA, trusted: {}", ["AB"; 32].join(":")),
+        "Its engine, trusted: ABCD:EFGH:IJKL",
+    ] {
+        assert!(opening.contains(part), "{opening}\nwithout {part:?}");
+    }
+    for secret in ["builds-vault", "docker-client-key"] {
+        assert!(!opening.contains(secret), "{opening}\nholds {secret:?}");
+    }
+    let setup = of(
+        Kind::RemoteDocker,
+        &trusted_over_ssh(Finding::NoEngine {
+            host: "build-box".into(),
+            user: "me".into(),
+        }),
+        &choices,
+    );
+    let opening = super::super::help::opening(&setup, StepId::Connect, None).unwrap();
+    assert!(opening.contains("over SSH"), "{opening}");
+    assert!(
+        opening.contains(&format!("Its key, trusted: {}", key(KEY).fingerprint())),
+        "{opening}"
+    );
+    assert!(!opening.contains("id_builds"), "{opening}");
+}
+
+/// **Try it's line for the link** (ADR 0123 §6): its round trip, measured, or why it couldn't be.
+#[test]
+fn try_it_says_the_links_round_trip_or_why_it_couldnt_be_measured() {
+    let measured = link_check("build-box", &Ok(std::time::Duration::from_micros(48_400)));
+    assert_eq!(measured.about, CheckOf::Link);
+    assert_eq!(measured.verdict, Verdict::Ok);
+    assert_eq!(measured.title, "A round trip to build-box takes 48 ms.");
+    assert_eq!(measured.more, None);
+    let finding = Finding::NoAnswer {
+        host: "build-box".into(),
+        port: 22,
+    };
+    let unmeasured = link_check("build-box", &Err(finding.clone()));
+    assert_eq!(unmeasured.verdict, Verdict::Missing);
+    assert_eq!(
+        unmeasured.title,
+        "purlis couldn't measure the round trip to build-box"
+    );
+    assert_eq!(
+        unmeasured.more.as_deref(),
+        Some(super::super::connecting::said(&finding).as_str())
+    );
+    assert_eq!(serde_json::to_value(CheckOf::Link).unwrap(), "link");
+}

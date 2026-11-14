@@ -149,6 +149,40 @@ pub fn round_trip_said(host: &str, took: Duration) -> String {
     format!("A round trip to {host} takes {ms} ms.")
 }
 
+/// **Try it's line for the link to `host`** (ADR 0123 §6): its round trip `measured`, or why it
+/// couldn't be, in Pool setup's words.
+#[must_use]
+pub fn link_check(host: &str, measured: &Result<Duration, Finding>) -> super::Check {
+    match measured {
+        Ok(took) => super::Check {
+            about: super::CheckOf::Link,
+            verdict: super::Verdict::Ok,
+            title: round_trip_said(host, *took),
+            more: None,
+        },
+        Err(finding) => super::Check {
+            about: super::CheckOf::Link,
+            verdict: super::Verdict::Missing,
+            title: format!("purlis couldn't measure the round trip to {host}"),
+            more: Some(super::connecting::said(finding)),
+        },
+    }
+}
+
+/// **Try it's line for pool `pool`'s link**, where it is on another machine: reached as a run
+/// for it is, and its round trip measured. `None` for a pool on this machine.
+#[must_use]
+pub fn link_of(docker: &Docker, pool: &crate::runners::Pool) -> Option<super::Check> {
+    let host = host_of(pool)?;
+    let measured = crate::sshroute::pool::docker_of(docker, pool).and_then(|through| {
+        round_trip(&through).map_err(|why| Finding::EngineSilent {
+            host: host.clone(),
+            said: why.0,
+        })
+    });
+    Some(link_check(&host, &measured))
+}
+
 /// **What `purlis pool doctor` says of pool `pool`, whose machine `machine` names, and its exit**: a pool
 /// that passed every check, with its round trip, exits 0. A finding is said as Pool setup says
 /// it, a changed pin in its Notice's words, then its way on and that way's commands, the same
