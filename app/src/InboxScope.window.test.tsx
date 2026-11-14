@@ -7,7 +7,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cascadeOf, drawnWith } from "./cascade.testkit";
 import { Inbox, NO_CHAT_FOCUSED, NOTHING_WAITS, landOnGroupIn } from "./Inbox";
-import { OTHER_PROJECTS, type Elsewhere } from "./InboxElsewhere";
+import type { Elsewhere } from "./InboxElsewhere";
 import type { Needing } from "./NeedsYou";
 import { forgetInbox } from "./inboxRules";
 import { forgetAsksScope, keptAsksScope, pickAsksScope } from "./asksScope";
@@ -91,7 +91,6 @@ const elsewhere = (over: Partial<Elsewhere> = {}): Elsewhere => ({
   asking: [],
   quiet: [],
   onPress: vi.fn(),
-  onOpen: vi.fn(),
   waitingHere: [{ plane: PLANE, project: "plane", count: 0 }],
   ...over,
 });
@@ -251,7 +250,7 @@ describe("the scope chips (ADR 0121, amended 2026-11-12)", () => {
       act(() => scopes().getByRole("radio", { name: scope }).click());
       expect(chatGroupOrNone("dev 2")).toBeNull();
       expect(chatGroupOrNone("steward 7")).toBeNull();
-      expect(chatGroupOrNone(OTHER_PROJECTS)).toBeNull();
+      expect(chatGroupOrNone("Other projects in this window")).toBeNull();
     }
   });
 });

@@ -22,15 +22,15 @@
  * Expiring ask, or the one that blocks most, or the longest wait), and each chat's other asks
  * keep their own row after it.
  *
- * **Within the scope in view** (ADR 0121, amended 2026-11-12, decision 8, #6346): only the asks
- * the scope picked lists are grouped, so Allow for all never answers an ask the person cannot
- * see. `Inbox.tsx` hands it the listed asks alone.
+ * **Within the scope in view** (decision 8 as amended 2026-11-12, #6346): only the asks Asks
+ * lists under the chip picked are grouped, so Allow for all answers only asks the person can
+ * see. One project's, always: another project's asks are listed in its own Asks.
  *
  * Pure: no commands and no markup. `Inbox.tsx` draws a group with `AskDecision`.
  */
 import type { Offered, Shown } from "./bindings";
 import { waysOf } from "./AskDecision";
-import { chatKey, type Placed, type PlacedGroup } from "./asksOrder";
+import type { Placed, PlacedGroup } from "./asksOrder";
 
 /** One request several chats make alike: their asks, most urgent first, and its one grant. */
 export type Same = {
@@ -94,7 +94,7 @@ function sameOf(
 
 /**
  * **The rows of Asks, identical requests from several chats made one** (#6009). `groups` are
- * in the order `inOrder` gives; `offersOf` is what each ask's row offers (an Allow its row
+ * the asks listed in the scope in view, in the order `inOrder` gives; `offersOf` is what each ask's row offers (an Allow its row
  * withholds is never answered for it here). A high-risk ask is never one of a group
  * ({@link highRisk}).
  */
@@ -102,7 +102,7 @@ export function withSame(
   groups: readonly PlacedGroup[],
   offersOf: (ask: Shown) => readonly Offered[] = (ask) => ask.options,
 ): AskRow[] {
-  const alike = new Map<string, { grant: Offered; placed: Placed[]; chats: Set<string> }>();
+  const alike = new Map<string, { grant: Offered; placed: Placed[]; chats: Set<number> }>();
   const keyOf = new Map<Placed, string>();
   for (const group of groups)
     for (const one of group.placed) {
@@ -110,7 +110,7 @@ export function withSame(
       if (same === undefined) continue;
       const held = alike.get(same.key) ?? { grant: same.grant, placed: [], chats: new Set() };
       held.placed.push(one);
-      held.chats.add(chatKey(one.ask, one.plane));
+      held.chats.add(one.ask.session);
       alike.set(same.key, held);
       keyOf.set(one, same.key);
     }
@@ -142,7 +142,7 @@ export function withSame(
 
 /** How many chats make the request. */
 export const chatsIn = (same: Same): number =>
-  new Set(same.placed.map(({ ask, plane }) => chatKey(ask, plane))).size;
+  new Set(same.placed.map(({ ask }) => ask.session)).size;
 
 /** **What a group's row says** (#6009): how many chats, and what they all want. */
 export function sameSaid(same: Same): string {

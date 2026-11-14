@@ -34,17 +34,11 @@ export type Standing =
   /** It has waited since `since`. */
   | { by: "wait"; since: number };
 
-/**
- * One ask, and why it stands where it does. `plane` is the project it is in, where that is not
- * the project whose Asks lists it (#1921): another open project's ask, answered in that project.
- */
-export type Placed = { ask: Shown; why: Standing; plane?: string };
+/** One ask, and why it stands where it does. */
+export type Placed = { ask: Shown; why: Standing };
 
-/** One chat's asks, in their order, each with its standing, and the project of another's. */
-export type PlacedGroup = ChatGroup & { placed: readonly Placed[]; plane?: string };
-
-/** The key of `ask`'s chat, in every project Asks lists: its project's, then its session. */
-export const chatKey = (ask: Shown, plane: string | undefined) => `${plane ?? ""}#${ask.session}`;
+/** One chat's asks, in their order, each with its standing. */
+export type PlacedGroup = ChatGroup & { placed: readonly Placed[] };
 
 /** When `ask` ends by itself, in ms, where that is still ahead of `now`. */
 const endsAt = (ask: Shown, now: number): number | undefined =>
@@ -65,40 +59,25 @@ const byAge = (one: Age, other: Age) => one[0] - other[0] || one[1] - other[1];
 /**
  * **The asks, grouped by chat and ordered by facts.** `age` is how long each has waited (the
  * Inbox's `ageOf`), and `now` the time an Expiring ask's end is read against, in ms.
- *
- * **Every open project's asks in one order** (ADR 0121 decisions 4 and 5, #1921): `planeOf`
- * names the project of an ask that is not the listing project's own, and a chat is its project
- * and its session, so two projects' chats with the same number are two groups.
+ * They are one project's: another project's asks are listed in its own Asks (ADR 0121, amended
+ * 2026-11-12).
  */
 export function inOrder(
   asks: readonly Shown[],
   age: (ask: Shown) => Age,
   now: number,
-  planeOf: (ask: Shown) => string | undefined = () => undefined,
 ): PlacedGroup[] {
-  const groups = new Map<
-    string,
-    { ask: Shown; age: Age; ends?: number; lapsed?: number; plane?: string }[]
-  >();
+  const groups = new Map<number, { ask: Shown; age: Age; ends?: number; lapsed?: number }[]>();
   for (const ask of asks) {
-    const plane = planeOf(ask);
-    const key = chatKey(ask, plane);
-    const group = groups.get(key) ?? [];
-    group.push({
-      ask,
-      age: age(ask),
-      ends: endsAt(ask, now),
-      lapsed: timedOutAt(ask, now),
-      plane,
-    });
-    groups.set(key, group);
+    const group = groups.get(ask.session) ?? [];
+    group.push({ ask, age: age(ask), ends: endsAt(ask, now), lapsed: timedOutAt(ask, now) });
+    groups.set(ask.session, group);
   }
   /** 0 for an Expiring ask, 1 for a timed-out one, 2 for the rest. */
   const tier = (one: { ends?: number; lapsed?: number }) =>
     one.ends !== undefined ? 0 : one.lapsed !== undefined ? 1 : 2;
   const ranked = [...groups.values()].map((mine) => {
     const { session } = mine[0].ask;
-    const { plane } = mine[0];
     // Inside a chat: its Expiring asks, soonest first, then its timed-out ones, then the rest,
     // each oldest first.
     mine.sort(
@@ -113,7 +92,6 @@ export function inOrder(
     const oldest = mine.map(({ age }) => age).sort(byAge)[0];
     const placed: Placed[] = mine.map(({ ask, ends: own, lapsed: ended }) => ({
       ask,
-      ...(plane === undefined ? {} : { plane }),
       why:
         own !== undefined
           ? { by: "expires", at: own }
@@ -125,7 +103,7 @@ export function inOrder(
                 ? { by: "blocks", chats: blocks }
                 : { by: "wait", since: age(ask)[0] },
     }));
-    return { session, plane, ends, lapsed, blocks, oldest, placed };
+    return { session, ends, lapsed, blocks, oldest, placed };
   });
   ranked.sort(
     (one, other) =>
@@ -133,16 +111,12 @@ export function inOrder(
       Number(other.lapsed) - Number(one.lapsed) ||
       (one.lapsed ? 0 : other.blocks - one.blocks) ||
       byAge(one.oldest, other.oldest) ||
-      // This project's chat before another's of the same age, then by project, then session.
-      Number(one.plane !== undefined) - Number(other.plane !== undefined) ||
-      (one.plane ?? "").localeCompare(other.plane ?? "") ||
       one.session - other.session,
   );
-  return ranked.map(({ session, plane, placed }) => {
+  return ranked.map(({ session, placed }) => {
     const mine = placed.map(({ ask }) => ask);
     return {
       session,
-      ...(plane === undefined ? {} : { plane }),
       chain: chainOfGroup(session, mine),
       asks: mine,
       placed,

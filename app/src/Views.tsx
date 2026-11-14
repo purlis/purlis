@@ -756,7 +756,7 @@ export function ViewPane({
             id={Number(view.key)}
           />
         ) : isBrowsersGrid(view) ? (
-          /* Every browser in scope, live (#2027): its This workspace is the strip's it is on. */
+          /* Every browser in scope, live (#2027): its Workspace is the strip's it is on. */
           <BrowsersGridTab key={plane} plane={plane} workspace={workspace} />
         ) : isBrowser(view) ? (
           /* A browser the session host runs, drawn live from its frames (#2012). Keyed by the

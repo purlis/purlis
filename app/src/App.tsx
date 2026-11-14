@@ -2805,12 +2805,6 @@ function App() {
     })),
     there: askedThere,
   });
-  /** Go to project (#1700 item 5): that project in front, with its Inbox open, as the ✋ does. */
-  const openInboxOf = useCallback((plane: string) => {
-    if (!planesNow.current.includes(plane)) return;
-    setShowing({ at: "plane", plane });
-    setInboxAsk((was) => ({ plane, at: (was?.at ?? 0) + 1 }));
-  }, []);
   const elsewhere = useMemo<Elsewhere>(
     () => ({
       ...(JSON.parse(elsewhereSaid) as Pick<
@@ -2818,9 +2812,8 @@ function App() {
         "asking" | "quiet" | "waitingHere" | "there"
       >),
       onPress: pressNeeding,
-      onOpen: openInboxOf,
     }),
-    [elsewhereSaid, pressNeeding, openInboxOf],
+    [elsewhereSaid, pressNeeding],
   );
 
   /**

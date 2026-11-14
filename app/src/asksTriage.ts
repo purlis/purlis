@@ -4,10 +4,14 @@
 import { OTHER_SCOPES } from "./AskDecision";
 
 /**
- * **Keyboard triage** (ADR 0121 decision 9, #6016; amended 2026-11-10): ⌘⇧I (Ctrl+Shift+I)
- * opens Asks with the first ask's lead focused, answering one moves the keyboard to the next
- * ask's, there are keys for later, go to chat, snooze and stop, and when Asks is empty or the
- * person leaves it, the keyboard goes back to where it was before ⌘⇧I.
+ * **Keyboard triage** (ADR 0121 decision 9, #6016; amended 2026-11-10 and 2026-11-12): ⌘⇧I
+ * (Ctrl+Shift+I) opens Asks with the first ask's lead focused, answering one moves the keyboard
+ * to the next ask's, there are keys for later, go to chat, snooze and stop, and when Asks is
+ * empty or the person leaves it, the keyboard goes back to where it was before ⌘⇧I.
+ *
+ * **It walks the scope in view** (decision 8, #6346): the rows Asks lists under the chip picked,
+ * Chat when it opens, wrapping past the last to the first. It never goes into another scope or
+ * another project: those asks are not rows of this list.
  *
  * **Within the scope in view** (ADR 0121, amended 2026-11-12, decision 8, #6346): Asks opens on
  * Chat, and triage walks only the asks the scope picked lists, round to the first past the last;
@@ -36,7 +40,7 @@ export const HIGH_RISK = "data-risk";
  *    the keyboard as it is drawn** (#2980, `grantFocus.guard.test.ts`), and a row the keyboard
  *    was moved onto is one drawn to it. Allow stays one → away, pressed on purpose. Nor is it
  *    **Other scopes…**, which answers nothing: it only opens more grants;
- * 4. its **Go to chat**: a row answered in its chat;
+ * 4. its **Go to chat**: a row answered elsewhere;
  * 5. the row itself.
  */
 export function leadOf(row: HTMLElement): HTMLElement {

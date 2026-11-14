@@ -675,8 +675,8 @@ export function Inbox({
     const at = lastRow.current >= 0 && lastRow.current < rows.length ? lastRow.current : 0;
     leadOf(rows[at]).focus();
   };
-  /** Where the element the keyboard was on has gone, the keyboard comes back to the list. */
-  const backInTheList = () => {
+  /** Where the keyboard goes once the element it was on has gone: nowhere while it stands. */
+  const afterGone = () => {
     const was = lastOn.current;
     if (was === null || was.isConnected) return;
     lastOn.current = null;
@@ -693,20 +693,22 @@ export function Inbox({
     }
     list.querySelector<HTMLElement>('[role="row"][data-key]')?.focus();
   };
-  /**
-   * **And where the list family takes a row away in a commit of its own** (#6346): a row that is
-   * not the first goes after this view's commit, so nothing here would run again. The list's
-   * own change is watched for, as the browser tells it.
-   */
-  const backInTheListNow = useRef(backInTheList);
+  /** The latest {@link afterGone}, for the watch below, which outlives a render. */
+  const goneLater = useRef(afterGone);
   useLayoutEffect(() => {
-    backInTheListNow.current = backInTheList;
-    backInTheList();
+    goneLater.current = afterGone;
+    afterGone();
   });
+  /**
+   * **The last row answered** (#6346): the list family takes a row out a commit after this
+   * one, and where none stands after it, it gives the keyboard to nothing, so neither the commit
+   * above nor `onFocus` sees it fall to the page. The list's own changes are watched for that,
+   * a frame later, once the list family has put the keyboard where it puts it.
+   */
   useEffect(() => {
     const list = listAt.current;
     if (list === null) return;
-    const watch = new MutationObserver(() => backInTheListNow.current());
+    const watch = new MutationObserver(() => requestAnimationFrame(() => goneLater.current()));
     watch.observe(list, { childList: true, subtree: true });
     return () => watch.disconnect();
   }, []);

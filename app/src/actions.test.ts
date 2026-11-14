@@ -2920,8 +2920,9 @@ describe("the palette at fifty chats", () => {
     // You's and the project's (104), whatever the number of chats. 1432 since #6332: Links in
     // this pane…, each of the fifty panes' own row. 1433 since #6306: Keep task screens. 1435
     // since #6031: Skill sources and Recorded skill acts, the project's two groups of an org's
-    // skill controls. 1485 since T1-27: each of the fifty chats' Chat log (R-224).
-    expect(offers).toHaveLength(1485);
+    // skill controls. 1485 since T1-27: each of the fifty chats' Chat log (R-224). 1486 since
+    // #6344: Your settings: Attention › Remind me, a setting's row, listed once typed.
+    expect(offers).toHaveLength(1486);
     // Fifty tabs of one chat each: the palette has their chats' Rename chat rows instead.
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.rename:"))).toHaveLength(0);
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.closeOthers:"))).toHaveLength(

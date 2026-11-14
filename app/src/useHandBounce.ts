@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import { type BounceEvent, type Holds, reduceBounce, STILL } from "./handBounce";
+import { type BounceEvent, type Holds, reduceBounce, type Remind, STILL } from "./handBounce";
+import { useNotificationPrefs } from "./notificationPrefs";
 import { quietNow } from "./quiet";
 import { motionReduced } from "./theme/motion";
 
@@ -15,6 +16,8 @@ import { motionReduced } from "./theme/motion";
  * - `answered`: the newest answer noted in this project (`useAnswered`); a new one is an answer.
  * - `opened`: whether Asks is open in this project, in front; its opening resets the backoff.
  * - `inFront`: whether this project is the one in front; behind it, nothing bounces.
+ *
+ * How often it reminds is the person's Remind me (`notificationPrefs.ts`), followed as it changes.
  *
  * The holds are read as a bounce would play, never drawn from: Quiet as the core said it last,
  * reduced motion, and whether this window has the focus. `bouncing` is true from a bounce until
@@ -33,7 +36,11 @@ export function useHandBounce({
   opened: boolean;
   inFront: boolean;
 }): { bouncing: boolean; bounced: () => void } {
-  const [schedule, dispatch] = useReducer(reduceBounce, STILL);
+  const { remind } = useNotificationPrefs();
+  const [schedule, dispatch] = useReducer(reduceBounce, remind, (pace: Remind) => ({
+    ...STILL,
+    remind: pace,
+  }));
   const front = useRef(inFront);
   useEffect(() => {
     front.current = inFront;
@@ -49,6 +56,7 @@ export function useHandBounce({
   const tell = useCallback((event: BounceEvent) => dispatch(event), []);
 
   useEffect(() => tell({ kind: "waiting", waiting, at: Date.now() }), [waiting, tell]);
+  useEffect(() => tell({ kind: "remind", remind, at: Date.now() }), [remind, tell]);
 
   // Each of these is told on a change, never as it is first read.
   const seen = useRef({ arrived, answered, opened });

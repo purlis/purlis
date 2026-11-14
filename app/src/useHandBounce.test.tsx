@@ -3,6 +3,9 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
+import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { setRemind } from "./notificationPrefs";
+import { forgetThisLaunch } from "./regions";
 import { useHandBounce } from "./useHandBounce";
 
 /**
@@ -44,11 +47,14 @@ function view(first: Partial<Props> = {}) {
 }
 
 beforeEach(() => {
+  forgetThisLaunch();
+  mockIPC(() => null);
   vi.useFakeTimers();
   vi.spyOn(document, "hasFocus").mockReturnValue(true);
   quiet.now = false;
 });
 afterEach(() => {
+  clearMocks();
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
@@ -112,6 +118,23 @@ describe("useHandBounce", () => {
     one.after(39);
     expect(one.result.current.bouncing).toBe(false);
     one.after(1);
+    expect(one.result.current.bouncing).toBe(true);
+  });
+
+  it("follows Remind me: Off bounces only as an ask arrives, Often every 5 minutes", () => {
+    setRemind("off");
+    const one = view();
+    one.tell({ waiting: true, arrived: 1 });
+    expect(one.result.current.bouncing).toBe(true);
+    one.ends();
+    one.after(200);
+    expect(one.result.current.bouncing).toBe(false);
+
+    act(() => setRemind("often"));
+    one.after(5);
+    expect(one.result.current.bouncing).toBe(true);
+    one.ends();
+    one.after(5);
     expect(one.result.current.bouncing).toBe(true);
   });
 });

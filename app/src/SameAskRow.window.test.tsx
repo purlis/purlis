@@ -28,6 +28,7 @@ afterEach(() => {
   clearMocks();
   forgetInbox();
   forgetProjectViews();
+  forgetAsksScope(PLANE);
   vi.useRealTimers();
 });
 
@@ -67,10 +68,17 @@ function core(answers: Record<string, (args: Record<string, unknown>) => unknown
   return calls;
 }
 
-function draw(asks: readonly Shown[]) {
+function draw(asks: readonly Shown[], more: Partial<Parameters<typeof Inbox>[0]> = {}) {
   const onAnswered = vi.fn();
   render(
-    <Inbox plane={PLANE} asks={asks} onGo={vi.fn()} onLeave={vi.fn()} onAnswered={onAnswered} />,
+    <Inbox
+      plane={PLANE}
+      asks={asks}
+      onGo={vi.fn()}
+      onLeave={vi.fn()}
+      onAnswered={onAnswered}
+      {...more}
+    />,
   );
   return { onAnswered };
 }
@@ -150,59 +158,60 @@ describe("identical requests from several chats (#6009)", () => {
   });
 });
 
-describe("within the scope in view (ADR 0121, amended 2026-11-12, decision 8)", () => {
-  /** Chat 3 has focus and dispatched 4; chat 6 is its sibling, in the same workspace. */
-  const PARENT: Record<number, number> = { 3: 1, 4: 3, 6: 1 };
-  const scoped = {
-    here: "alpha",
-    workspaceOf: () => "alpha",
-    chat: { session: 3, name: "steward 3", tasks: 1 },
-    askedBy: (session: number) => PARENT[session],
-  };
+/** Chat 4 has focus and dispatched 5; chat 6 is 4's sibling. All three work in alpha. */
+const PARENT: Record<number, number> = { 4: 1, 5: 4, 6: 1 };
+const IN_VIEW = {
+  chat: { session: 4, name: "steward 4", tasks: 1 },
+  askedBy: (session: number) => PARENT[session],
+  here: "alpha",
+  workspaceOf: () => "alpha",
+};
+const pick = (scope: RegExp) =>
+  userEvent.click(
+    within(screen.getByRole("radiogroup", { name: "Show what needs you in" })).getByRole("radio", {
+      name: scope,
+    }),
+  );
 
-  afterEach(() => forgetAsksScope(PLANE));
-
-  function drawScoped(asks: readonly Shown[]) {
-    render(<Inbox plane={PLANE} asks={asks} onGo={vi.fn()} onLeave={vi.fn()} {...scoped} />);
-  }
-
-  const pick = (name: string) =>
-    userEvent.click(
-      within(screen.getByRole("radiogroup", { name: "Show what needs you in" })).getByRole(
-        "radio",
-        { name: new RegExp(`^${name}`) },
-      ),
-    );
-
-  it("lists under Chat only the ask in its set, as its chat's own row, and groups both under Workspace", async () => {
-    const calls = core();
-    drawScoped([host(3), host(6)]);
+describe("identical requests within the scope in view (ADR 0121, amended 2026-11-12, decision 8)", () => {
+  it("are one chat's row under Chat where only that chat's is listed, and one group under Workspace", async () => {
+    core();
+    draw([host(4), host(6)], IN_VIEW);
     expect(screen.queryByRole("row", { name: /chats want to reach/ })).toBeNull();
-    expect(screen.getByRole("group", { name: "Answers to steward 3" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Allow for all" })).toBeNull();
+    expect(screen.getByRole("group", { name: "Answers to steward 4" })).toBeTruthy();
     expect(screen.queryByRole("group", { name: "Answers to steward 6" })).toBeNull();
-    await pick("Workspace");
-    const both = screen.getByRole("row", { name: "2 chats want to reach api.example.com" });
+    await pick(/^Workspace/);
+    expect(screen.getByRole("row", { name: "2 chats want to reach api.example.com" })).toBeTruthy();
+  });
+
+  it("allows each chat Workspace lists on Allow for all", async () => {
+    const calls = core();
+    draw([host(4), host(6)], IN_VIEW);
+    await pick(/^Workspace/);
     read();
-    await userEvent.click(within(both).getByRole("button", { name: "Allow for all" }));
+    const group = screen.getByRole("row", { name: "2 chats want to reach api.example.com" });
+    await userEvent.click(within(group).getByRole("button", { name: "Allow for all" }));
     await waitFor(() =>
       expect(allowed(calls)).toEqual([
-        [3, "chat"],
+        [4, "chat"],
         [6, "chat"],
       ]),
     );
   });
 
-  it("never answers on Allow for all an ask the scope does not list", async () => {
+  it("never allows a chat Chat does not list on Allow for all", async () => {
     const calls = core();
-    drawScoped([host(3), host(4), host(6)]);
+    draw([host(4), host(5), host(6)], IN_VIEW);
     read();
-    const listed = screen.getByRole("row", { name: "2 chats want to reach api.example.com" });
-    await userEvent.click(within(listed).getByRole("button", { name: "Allow for all" }));
+    const group = screen.getByRole("row", { name: "2 chats want to reach api.example.com" });
+    await userEvent.click(within(group).getByRole("button", { name: "Allow for all" }));
     await waitFor(() =>
       expect(allowed(calls)).toEqual([
-        [3, "chat"],
         [4, "chat"],
+        [5, "chat"],
       ]),
     );
+    expect(allowed(calls).some(([session]) => session === 6)).toBe(false);
   });
 });

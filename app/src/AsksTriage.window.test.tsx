@@ -34,6 +34,7 @@ afterEach(() => {
   clearMocks();
   forgetInbox();
   forgetProjectViews();
+  forgetAsksScope(PLANE);
   endTriage();
   forgetAsksScope(PLANE);
   vi.useRealTimers();
@@ -87,15 +88,12 @@ type Drawn = {
   onLeave: ReturnType<typeof vi.fn>;
   onStop: ReturnType<typeof vi.fn>;
   snooze: ReturnType<typeof vi.fn>;
-  again: (asks: readonly Shown[], elsewhere?: Elsewhere) => void;
+  again: (asks: readonly Shown[]) => void;
 };
 
-/** Draws Asks beside where the keyboard was, and begins triage as ⌘⇧I does. */
-function triage(
-  asks: readonly Shown[],
-  elsewhere?: Elsewhere,
-  more: Partial<Parameters<typeof Inbox>[0]> = {},
-): Drawn {
+/** Draws Asks beside where the keyboard was, and begins triage as ⌘⇧I does. `more` is what the
+ *  window hands Asks beside: the chat in focus, the workspace in front, what waits elsewhere. */
+function triage(asks: readonly Shown[], more: Partial<Parameters<typeof Inbox>[0]> = {}): Drawn {
   const onGo = vi.fn();
   const onLeave = vi.fn();
   const onStop = vi.fn();
@@ -105,7 +103,7 @@ function triage(
   const drawn = render(
     <>
       <textarea aria-label="Chat steward 1" />
-      <Inbox part="asks" {...props} asks={asks} elsewhere={elsewhere} />
+      <Inbox part="asks" {...props} asks={asks} />
     </>,
   );
   const before = screen.getByRole("textbox", { name: "Chat steward 1" });
@@ -121,11 +119,11 @@ function triage(
     onLeave,
     onStop,
     snooze,
-    again: (next, there = elsewhere) =>
+    again: (next) =>
       drawn.rerender(
         <>
           <textarea aria-label="Chat steward 1" />
-          <Inbox part="asks" {...props} asks={next} elsewhere={there} />
+          <Inbox part="asks" {...props} asks={next} />
         </>,
       ),
   };
@@ -170,6 +168,20 @@ describe("answering moves the keyboard to the next ask (#6016)", () => {
     expect(focused()).toHaveAccessibleName("Deny");
   });
 
+  it("comes round to the first ask once the last is answered", async () => {
+    const calls = core();
+    const first = permission(3, "01J0A", "Run cargo test");
+    const last = permission(4, "01J0B", "Run cargo build");
+    const { again } = triage([first, last]);
+    await key("L");
+    expect(chatGroup("steward 4").contains(focused())).toBe(true);
+    await userEvent.keyboard("{Enter}");
+    expect(answered(calls)).toHaveLength(1);
+    again([first]);
+    await waitFor(() => expect(chatGroup("steward 3").contains(focused())).toBe(true));
+    expect(focused()).toHaveAccessibleName("Deny");
+  });
+
   it("refuses an Allow pressed just after the keyboard moved onto its row, as a click is", async () => {
     const calls = core();
     const first = permission(3, "01J0A", "Run cargo test");
@@ -202,73 +214,78 @@ describe("answering moves the keyboard to the next ask (#6016)", () => {
       asking: [],
       quiet: [],
       onPress: vi.fn(),
-      onOpen: vi.fn(),
       waitingHere: [{ plane: "/home/dev/ops", project: "ops", count: 2 }],
     };
     const only = permission(3, "01J0A", "Run cargo test");
-    const { again, before } = triage([only], elsewhere);
+    const { again, before } = triage([only], { elsewhere });
     await userEvent.keyboard("{Enter}");
-    again([], elsewhere);
+    again([]);
     expect(focused()).toBe(before);
     expect(screen.queryByRole("button", { name: /^Go to project/ })).toBeNull();
   });
 });
 
-describe("triage walks the scope in view (ADR 0121, amended 2026-11-12, decision 8)", () => {
-  /** Chat 3 has focus and dispatched 4; 6 and 7 are other chats of its workspace, 5 another's. */
-  const PARENT: Record<number, number> = { 3: 1, 4: 3, 6: 1, 7: 1, 5: 1 };
-  const scoped = {
-    here: "alpha",
-    workspaceOf: (session: number) => (session === 5 ? "beta" : "alpha"),
-    chat: { session: 3, name: "steward 3", tasks: 1 },
-    askedBy: (session: number) => PARENT[session],
-  };
-  const ask = (session: number) => permission(session, `01J0${session}`, `Run step ${session}`);
-  const inChat = () =>
-    ["steward 3", "steward 4", "steward 6"].find((name) =>
-      chatGroupOrNone(name)?.contains(focused()),
-    );
+/** Chat 3 has focus and dispatched 4; chat 5 is 3's sibling. All three work in alpha. */
+const PARENT: Record<number, number> = { 3: 1, 4: 3, 5: 1 };
+const IN_VIEW = {
+  chat: { session: 3, name: "steward 3", tasks: 1 },
+  askedBy: (session: number) => PARENT[session],
+  here: "alpha",
+  workspaceOf: () => "alpha",
+};
 
-  it("lands on Chat's first ask, walks only Chat's, and comes round to the first past the last", async () => {
+describe("triage walks the scope in view (ADR 0121, amended 2026-11-12, decision 8)", () => {
+  const sibling = permission(5, "01J0E", "Run npm ci");
+  const mine = permission(3, "01J0A", "Run cargo test");
+  const task = permission(4, "01J0B", "Run cargo build");
+
+  it("lands on the first of Chat's asks, and puts off round Chat's alone", async () => {
     core();
-    triage([ask(6), ask(3), ask(4)], undefined, scoped);
-    expect(inChat()).toBe("steward 3");
+    triage([sibling, mine, task], IN_VIEW);
+    const first = focused();
+    expect(first).toHaveAccessibleName("Deny");
+    expect(chatGroupOrNone("steward 5")).toBeNull();
     await key("L");
-    expect(inChat()).toBe("steward 4");
+    expect(focused()).not.toBe(first);
+    expect(chatGroupOrNone("steward 5")?.contains(focused()) ?? false).toBe(false);
     await key("L");
-    expect(inChat()).toBe("steward 3");
+    expect(focused()).toBe(first);
   });
 
-  it("goes on from the last answered to the first of Chat's, never into the workspace's", async () => {
+  it("goes on past the last of Chat's asks to the first once it is answered", async () => {
     const calls = core();
-    const { again, before } = triage([ask(3), ask(4), ask(6)], undefined, scoped);
+    const { again } = triage([sibling, mine, task], IN_VIEW);
+    const firstChat = chatGroup("steward 3").contains(focused()) ? "steward 3" : "steward 4";
     await key("L");
-    expect(inChat()).toBe("steward 4");
+    const last = firstChat === "steward 3" ? task : mine;
     await userEvent.keyboard("{Enter}");
     expect(answered(calls)).toHaveLength(1);
-    again([ask(3), ask(6)]);
-    await waitFor(() => expect(inChat()).toBe("steward 3"));
-    // On the next ask's lead, as after the first row (#6346), never only its row.
+    again([sibling, ...[mine, task].filter((one) => one !== last)]);
+    await waitFor(() => expect(chatGroup(firstChat).contains(focused())).toBe(true));
     expect(focused()).toHaveAccessibleName("Deny");
+  });
+
+  it("goes back where the keyboard was once Chat is answered, never on into Workspace's", async () => {
+    core();
+    const { again, before } = triage([sibling, mine], IN_VIEW);
+    expect(chatGroup("steward 3").contains(focused())).toBe(true);
     await userEvent.keyboard("{Enter}");
-    again([ask(6)]);
-    // Chat is empty: the keyboard goes back, and the workspace's ask is never landed on.
-    await waitFor(() => expect(focused()).toBe(before));
+    again([sibling]);
+    expect(focused()).toBe(before);
+    expect(triaging()).toBe(false);
   });
 
   it("walks Workspace's asks where Chat has none and Workspace is picked", async () => {
     core();
     pickAsksScope(PLANE, "workspace");
-    triage([ask(5), ask(6), ask(7)], undefined, scoped);
-    const at = () =>
-      ["steward 5", "steward 6", "steward 7"].find((name) =>
-        chatGroupOrNone(name)?.contains(focused()),
-      );
-    expect(at()).toBe("steward 6");
+    triage([sibling, permission(6, "01J0F", "Run ls")], {
+      ...IN_VIEW,
+      workspaceOf: (session) => (session === 6 ? "beta" : "alpha"),
+    });
+    expect(chatGroup("steward 5").contains(focused())).toBe(true);
+    expect(chatGroupOrNone("steward 6")).toBeNull();
     await key("L");
-    expect(at()).toBe("steward 7");
-    await key("L");
-    expect(at()).toBe("steward 6");
+    expect(chatGroup("steward 5").contains(focused())).toBe(true);
   });
 });
 
