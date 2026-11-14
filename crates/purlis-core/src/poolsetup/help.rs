@@ -101,6 +101,14 @@ pub fn opening(setup: &Setup, step: StepId, error: Option<&str>) -> Result<Strin
     let kind = match setup.kind {
         super::Kind::Docker => "on this machine's Docker",
         super::Kind::Cluster => "on a team's Kubernetes cluster",
+        super::Kind::RemoteDocker
+            if shown
+                .machine
+                .as_ref()
+                .is_some_and(|machine| machine.over == "tls") =>
+        {
+            "on Docker on another machine, over Docker's API over TLS"
+        }
         super::Kind::RemoteDocker => "on Docker on another machine, over SSH",
     };
     let mut quoted: Vec<String> = Vec::new();
@@ -138,15 +146,37 @@ pub fn opening(setup: &Setup, step: StepId, error: Option<&str>) -> Result<Strin
             }
         }),
     );
+    // The machine of a pool on another machine (#6272): its route, host and fingerprints, never
+    // a key or a value.
+    if let Some(machine) = &shown.machine {
+        quote(
+            "The machine",
+            &mut super::connecting::machine_lines(machine).into_iter(),
+        );
+    }
     quote(
         "The error it showed",
         &mut error.map(str::to_owned).into_iter(),
     );
-    if let Some(see) = &shown.see {
-        quote(
+    match (&shown.see, step) {
+        // Connect's commands (#6272): those that only read apart from those that change
+        // something on the machine, which are the person's to run.
+        (Some(see), StepId::Connect) => {
+            let (reads, changes) = super::connecting::sorted(see);
+            quote(
+                "The commands that only read",
+                &mut reads.into_iter().map(str::to_owned),
+            );
+            quote(
+                "The commands that change something there, the person's to run",
+                &mut changes.into_iter().map(str::to_owned),
+            );
+        }
+        (Some(see), _) => quote(
             "The commands it would run, for reading only",
             &mut std::iter::once(see.text.clone()),
-        );
+        ),
+        (None, _) => {}
     }
     let head = format!(
         "purlis: I'm stuck on the {step} step of Pool setup, setting up a pool {kind} \
@@ -180,6 +210,11 @@ pub fn opening(setup: &Setup, step: StepId, error: Option<&str>) -> Result<Strin
         text.push('\n');
         text.push_str(&tail);
     }
+    // No path of this machine's (#6272): the TLS files' and the SSH key's are placeholders.
+    let text = match &shown.machine {
+        Some(machine) => super::connecting::without_local_paths(&text, machine),
+        None => text,
+    };
     Ok(super::admin::held_free_of_secrets(&text))
 }
 

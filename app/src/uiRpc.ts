@@ -11239,6 +11239,14 @@ export type PoolSetupMachine = {
 	 *  sign in, which is refused where the machine was trusted again since.
 	 */
 	pin?: string | null,
+	/**
+	 *  **Which of doctor's checks of the engine passed, last it ran there** (#6272): by the cause
+	 *  each would fail with (`unconfined`, `unsupported-architecture`, `image-unreachable`,
+	 *  `disk-full`). No other line of them reads as passed.
+	 */
+	checked?: string[] | null,
+	/**  That doctor couldn't measure Docker's disk there, which holds nothing up (#6272). */
+	disk_unmeasured?: boolean | null,
 };
 
 /**  A limit a profile is over. */
@@ -11386,6 +11394,11 @@ export type PoolSetupTried = {
 	 *  step's own line stands: no App of Agent identity's, no repo, or a step not done.
 	 */
 	identity: PoolSetupCheck | null,
+	/**
+	 *  **The link's round trip** (#6272, ADR 0123 §6), measured once a chat started on a pool on
+	 *  another machine: `about` is `link`. None for a pool on this machine.
+	 */
+	link: PoolSetupCheck | null,
 	/**  The workspace its chat started in, where it got that far: where Open a chat opens. */
 	workspace: string | null,
 };

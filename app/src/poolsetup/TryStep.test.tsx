@@ -190,6 +190,36 @@ describe("TryStep", () => {
     expect(lines.queryByText(/gh through steward/)).toBeNull();
   });
 
+  it("adds the link's measured round trip to what was checked, on a pool on another machine", async () => {
+    let step = READY;
+    core({
+      pool_setup_try: () => ({
+        failed: null,
+        cancelled: false,
+        workspace: "web",
+        identity: null,
+        link: {
+          about: "link",
+          verdict: "ok",
+          title: "A docker command on build-box answers in 48 ms, from start to answer.",
+          more: null,
+        },
+      }),
+    });
+    const props = { changed: vi.fn(), onGo: vi.fn(), onOpenChat: vi.fn() };
+    const { rerender } = render(<TryStep step={step} pool="dev-box" plane="p" {...props} />);
+    await userEvent.click(screen.getByRole("button", { name: "Start a test chat" }));
+    await waitFor(() => expect(props.changed).toHaveBeenCalled());
+    step = PASSED;
+    rerender(<TryStep step={step} pool="dev-box" plane="p" {...props} />);
+    const lines = within(screen.getByRole("list", { name: "What was checked" }));
+    expect(lines.getAllByRole("listitem")).toHaveLength(4);
+    expect(
+      lines.getByText("A docker command on build-box answers in 48 ms, from start to answer."),
+    ).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "dev-box is ready" })).toBeTruthy();
+  });
+
   it("reads works, except for this, where GitHub didn't confirm the identity", async () => {
     let step = READY;
     core({

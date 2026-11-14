@@ -118,6 +118,14 @@ pub struct PoolSetupMachine {
     /// sign in, which is refused where the machine was trusted again since.
     #[specta(optional)]
     pub pin: Option<String>,
+    /// **Which of doctor's checks of the engine passed, last it ran there** (#6272): by the cause
+    /// each would fail with (`unconfined`, `unsupported-architecture`, `image-unreachable`,
+    /// `disk-full`). No other line of them reads as passed.
+    #[specta(optional)]
+    pub checked: Option<Vec<String>>,
+    /// That doctor couldn't measure Docker's disk there, which holds nothing up (#6272).
+    #[specta(optional)]
+    pub disk_unmeasured: Option<bool>,
 }
 
 /// The TLS files named for a `tcp://` machine, as Connect's Options show them (#6267).
@@ -300,6 +308,14 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
                     context: machine.context.clone(),
                     owned: Some(machine.owned),
                     pin: machine.pin.clone(),
+                    checked: Some(
+                        machine
+                            .checked
+                            .iter()
+                            .map(|cause| (*cause).to_owned())
+                            .collect(),
+                    ),
+                    disk_unmeasured: Some(machine.disk_unmeasured),
                 }),
                 prefill: step.prefill.as_ref().map(|prefill| PoolSetupPrefill {
                     route: prefill.route.clone(),
@@ -368,8 +384,10 @@ pub async fn pool_setup(
     }
 }
 
-/// **Check again** (#6266): [`pool_setup`], with every pool on another machine whose forward
-/// has been failing tried again and looked at again now, not after its wait.
+/// **Check again** (#6266, #6272): [`pool_setup`], with every pool on another machine whose
+/// forward has been failing tried again and looked at again now, not after its wait, and, for a
+/// pool on another machine, every check of doctor's run on it (ADR 0123 §7), as `purlis pool
+/// doctor` runs them.
 #[tauri::command]
 #[specta::specta]
 pub async fn pool_setup_check_again(
@@ -377,7 +395,33 @@ pub async fn pool_setup_check_again(
     plane: PlaneId,
 ) -> Result<PoolSetupShown, String> {
     purlis_core::sshroute::pool::look_again();
-    pool_setup(planes, plane).await
+    let root = planes.held(&plane)?.root().to_path_buf();
+    #[cfg(unix)]
+    {
+        crate::off_the_window("checking the pool", move || {
+            use purlis_core::dockerpool::Docker;
+            use purlis_core::poolsetup::{self, Here};
+            let config = config_root()?;
+            let docker = poolsetup::docker_here();
+            let kubectl = poolsetup::cluster::kubectl_here();
+            let here = Here {
+                config: &config,
+                plane: Some(&root),
+                docker: docker.as_ref(),
+                engine: Docker::engine_on_this_machine(),
+                kubectl: kubectl.as_ref().map_err(String::as_str),
+            };
+            Ok(shown(
+                poolsetup::doctored(&here).map_err(|why| why.to_string())?,
+            ))
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = root;
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
 }
 
 /// **Keeps that the person chose Docker on Where.** Nothing else changes.
@@ -1548,6 +1592,9 @@ pub struct PoolSetupTried {
     /// read-only token GitHub made for the App, read with and revoked. None where the identity
     /// step's own line stands: no App of Agent identity's, no repo, or a step not done.
     pub identity: Option<PoolSetupCheck>,
+    /// **The link's round trip** (#6272, ADR 0123 §6), measured once a chat started on a pool on
+    /// another machine: `about` is `link`. None for a pool on this machine.
+    pub link: Option<PoolSetupCheck>,
     /// The workspace its chat started in, where it got that far: where Open a chat opens.
     pub workspace: Option<String>,
 }
@@ -1732,6 +1779,7 @@ fn failed(why: String, step: Option<purlis_core::poolsetup::StepId>) -> PoolSetu
         }),
         cancelled: false,
         identity: None,
+        link: None,
         workspace: None,
     }
 }
@@ -1796,6 +1844,7 @@ const CANCELLED: PoolSetupTried = PoolSetupTried {
     failed: None,
     cancelled: true,
     identity: None,
+    link: None,
     workspace: None,
 };
 
@@ -2057,7 +2106,29 @@ fn try_on(
         failed: None,
         cancelled: false,
         identity: proved_identity(&here, &root, pool),
+        link: link_measured(config, docker, pool),
         workspace: Some(workspace),
+    })
+}
+
+/// **Try it's line for the link** (#6272, ADR 0123 §6): the round trip to the machine of pool
+/// `pool`, where it is on another machine, measured over the connection its link rides.
+#[cfg(unix)]
+fn link_measured(
+    config: &std::path::Path,
+    docker: Option<&purlis_core::dockerpool::Docker>,
+    pool: &str,
+) -> Option<PoolSetupCheck> {
+    let kept = purlis_core::runners::pools(config)
+        .ok()?
+        .into_iter()
+        .find(|one| one.name() == pool)?;
+    let check = purlis_core::poolsetup::doctoring::link_of(docker?, &kept)?;
+    Some(PoolSetupCheck {
+        about: word(&check.about),
+        verdict: word(&check.verdict),
+        title: check.title,
+        more: check.more,
     })
 }
 
