@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794634905370,
+  "lastUpdate": 1794644150687,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -49098,6 +49098,48 @@ window.BENCHMARK_DATA = {
             "value": 102.266385,
             "unit": "ms",
             "extra": "median of 5 runs: 101.240, 101.884, 102.266, 102.791, 102.822 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "406cb63922217b844b0516ddbe17bbc64a6ff447",
+          "message": "The scope switch says Workspace and Project (#6347) (#6496)\n\n* The Browsers grid and Updates say Workspace and Project; the grid keeps its own All (#6347)\n\nThe shared scope switch (inboxScope.ts), read by the Browsers grid and Updates' scope\nswitch, said This workspace, This project and All projects. It now says Workspace, Project\nand All, the words Asks' chips and the Chats view use (ADR 0121, amended 2026-11-12,\ndecision 3). Keys, defaults and kept picks are unchanged: the grid opens on Project (#2027)\nand a pick kept before reads back. Asks already reads its own list (asksScope.ts, #6480).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7ACBX0QECY9DZ62C75VVKWS\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: purlis-purlis-agent[bot] <355234864+purlis-purlis-agent[bot]@users.noreply.github.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-14T07:42:29Z",
+          "tree_id": "679521cccf24feb847efe04b4e6f81c433082154",
+          "url": "https://github.com/purlis/purlis/commit/406cb63922217b844b0516ddbe17bbc64a6ff447"
+        },
+        "date": 1794644144675,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5111075,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.506, 0.510, 0.511, 0.520, 0.561 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.216327999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.106, 16.125, 16.216, 16.320, 16.453 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.701312,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.629, 101.551, 101.701, 102.086, 104.695 ms"
           }
         ]
       }
