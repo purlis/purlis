@@ -170,7 +170,6 @@ const WORN: [file: string, placed: string, roles: string[]][] = [
   ["TaskQuiz.tsx", "task-quiz-note-words", ["ui-text-secondary"]],
   ["ChatRows.tsx", "tab-task", ["ui-text-meta"]],
   ["Inbox.tsx", "inbox-chain", ["ui-text-secondary", "ui-text-strong"]],
-  ["InboxElsewhere.tsx", "inbox-chain", ["ui-text-secondary", "ui-text-strong"]],
   ["Onboarding.tsx", "onboarding-steps", ["ui-text-secondary"]],
   ["GetProject.tsx", "get-project-folder", ["ui-text-secondary"]],
   ["GetProject.tsx", "get-project-local", ["ui-text-secondary"]],
