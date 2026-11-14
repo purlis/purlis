@@ -6,14 +6,50 @@
 
 use super::{Docker, Failed, Image, MOST_INSPECTED, Refused, refused};
 
+/// **How the engine confines runners, as doctor reads it** (#6272).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Confinement {
+    /// It gives containers its default seccomp profile.
+    Confined,
+    /// It answered, with another profile, or none.
+    Unconfined,
+    /// It didn't answer in its time, or didn't say: why.
+    Unread(Refused),
+}
+
 /// How long a download of the runner image may take: it is hundreds of megabytes.
 const PULL_WITHIN: std::time::Duration = std::time::Duration::from_secs(15 * 60);
 
 impl Docker {
-    /// **Whether the engine confines runners as the local kind's daemon check holds it to**: the
-    /// daemon's built-in seccomp profile, or Podman's default one.
-    pub fn confines_runners(&self) -> Result<(), Refused> {
-        self.check_daemon().map(|_| ())
+    /// **Whether the engine confines runners as the local kind's daemon check holds it to**
+    /// ([`super::check_daemon`], [`super::check_podman`]): the daemon's built-in seccomp
+    /// profile, or Podman's default one. An engine that answered with another profile doesn't;
+    /// one that didn't answer, or didn't say, is unread, never taken for one that doesn't.
+    pub fn confinement(&self) -> Confinement {
+        match self.json_or_late(
+            &["info", "--format", "{{json .SecurityOptions}}"],
+            "docker info",
+        ) {
+            Ok(options) if options.is_array() => match super::check_daemon(&options) {
+                Ok(()) => Confinement::Confined,
+                Err(_) => Confinement::Unconfined,
+            },
+            Ok(_) => Confinement::Unread(refused(
+                "docker info did not say which security options its daemon has",
+            )),
+            // An engine that did not answer is not asked again as a Podman.
+            Err(Failed::Late(why)) => Confinement::Unread(why),
+            Err(Failed::Refused(why)) => match self.json(
+                &["info", "--format", "{{json .Host.Security}}"],
+                "podman info",
+            ) {
+                Ok(security) if security.is_object() => match super::check_podman(&security) {
+                    Ok(_) => Confinement::Confined,
+                    Err(_) => Confinement::Unconfined,
+                },
+                _ => Confinement::Unread(why),
+            },
+        }
     }
 
     /// Whether this `docker` is Podman's own client (#6269), by its program's name.

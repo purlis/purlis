@@ -335,8 +335,88 @@ describe("ConnectStep", () => {
       "todo",
       "todo",
     ]);
-    expect(verdictsOf(null, true).every((one) => one === "ok")).toBe(true);
     expect(verdictsOf("no-such-name", false)[0]).toBe("missing");
+  });
+
+  it("marks no line of the engine's as passed that doctor didn't run (#6272 review)", () => {
+    const reached = ["ok", "ok", "ok", "ok", "ok", "ok", "ok"];
+    expect(verdictsOf(null, true)).toEqual([...reached, "todo", "todo", "todo", "todo"]);
+    const onConnect = { checked: ["unconfined", "unsupported-architecture"], diskUnmeasured: false };
+    expect(verdictsOf(null, true, "ssh", onConnect)).toEqual([
+      ...reached,
+      "ok",
+      "ok",
+      "todo",
+      "todo",
+    ]);
+    const every = {
+      checked: ["unconfined", "unsupported-architecture", "image-unreachable", "disk-full"],
+      diskUnmeasured: false,
+    };
+    expect(verdictsOf(null, true, "ssh", every).every((one) => one === "ok")).toBe(true);
+    const unmeasured = {
+      checked: ["unconfined", "unsupported-architecture", "image-unreachable"],
+      diskUnmeasured: true,
+    };
+    expect(verdictsOf(null, true, "tls", unmeasured).at(-1)).toBe("warn");
+  });
+
+  it("says every check passed only where every line passed, and a disk it couldn't measure", () => {
+    core();
+    const done = (checked: string[], disk_unmeasured: boolean) =>
+      step({
+        state: "done",
+        next: null,
+        machine: {
+          ...step({}).machine!,
+          trusted: { algorithm: "ED25519", fingerprint: FINGERPRINT },
+          engine: "ABCD",
+          checked,
+          disk_unmeasured,
+        },
+      });
+    draw(done(["unconfined", "unsupported-architecture"], false));
+    expect(screen.queryByText("Every check passed")).toBeNull();
+    expect(screen.getByText("Connected")).toBeTruthy();
+    cleanup();
+    draw(done(["unconfined", "unsupported-architecture", "image-unreachable"], true));
+    expect(screen.getByText("purlis couldn't measure its disk")).toBeTruthy();
+    cleanup();
+    draw(
+      done(["unconfined", "unsupported-architecture", "image-unreachable", "disk-full"], false),
+    );
+    expect(screen.getByText("Every check passed")).toBeTruthy();
+  });
+
+  it("offers another image, on a new setup of the same machine, for an image of your own", async () => {
+    core();
+    const props = { onShown: vi.fn(), changed: vi.fn(), onNext: vi.fn(), onConnectAgain: vi.fn() };
+    render(
+      <ConnectStep
+        step={step({
+          state: "attention",
+          cause: "unsupported-architecture",
+          findings: ["build-box is linux/amd64, and your image is built for linux/arm64."],
+          next: {
+            id: "change-image",
+            label: "Use another image",
+            does: "Starts setting up a new pool on build-box.",
+            command: null,
+            url: null,
+          },
+          prefill: { route: "ssh://sam@build-box", context: null },
+        })}
+        shown={{ ...shown(step({})), pool: "builds" }}
+        plane="p"
+        {...props}
+      />,
+    );
+    expect(screen.getByText("Your image isn't built for that machine")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Use another image" }));
+    expect(props.onConnectAgain).toHaveBeenCalledWith({
+      route: "ssh://sam@build-box",
+      context: null,
+    });
   });
 
   it("fails Docker's line for an SSH server that refuses forwarding, after the sign-in passed", () => {
@@ -414,7 +494,10 @@ describe("ConnectStep", () => {
       }),
     );
     expect(screen.queryByText(/Route: ssh:\/\/sam@build-box/)).toBeNull();
-    await userEvent.click(screen.getByRole("button", { name: "Send to your admin" }));
+    const toggle = screen.getByRole("button", { name: "Send to your admin" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    await userEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByText(/Route: ssh:\/\/sam@build-box/)).toBeTruthy();
     expect(screen.getByRole("button", { name: /Copy/ })).toBeTruthy();
     expect(calls.some((call) => call.cmd === "pool_setup_ask_admin")).toBe(false);

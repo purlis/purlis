@@ -134,18 +134,45 @@ const TITLES: Record<string, string> = {
   here: "That didn't work",
 };
 
-/** **Each check's verdict**: those before the failing line passed, the rest were not reached. */
+/** The card's title for the person's own image, not built for the machine (#6272). */
+const ANOTHER_IMAGE = "Your image isn't built for that machine";
+
+/**
+ * **Which of doctor's checks of the engine passed, last it ran on the machine** (#6272): by the
+ * cause each would fail with, and whether it couldn't measure the disk.
+ */
+export type EngineChecked = { checked: readonly string[]; diskUnmeasured: boolean };
+
+const NOT_CHECKED: EngineChecked = { checked: [], diskUnmeasured: false };
+
+/** What the core says doctor checked of the machine's engine. */
+export const engineCheckedOf = (machine: PoolSetupStep["machine"] | undefined): EngineChecked => ({
+  checked: machine?.checked ?? [],
+  diskUnmeasured: machine?.disk_unmeasured === true,
+});
+
+/**
+ * **Each check's verdict**: those before the failing line passed, the rest were not reached. With
+ * nothing failing, a line of the engine's passed only where doctor ran it (#6272 review): Connect
+ * asks the engine two of them before the pool is made, and Check again asks all four of a pool.
+ */
 export function verdictsOf(
   cause: string | null,
   done: boolean,
   over: Over = "ssh",
+  engine: EngineChecked = NOT_CHECKED,
 ): CheckVerdict[] {
   const checks = checksOf(over);
   const failing = cause === null ? -1 : checks.findIndex((one) => one.causes.includes(cause));
-  return checks.map((_, at) =>
+  const passed = (check: Check): CheckVerdict => {
+    if (!ENGINE_CHECKS.includes(check)) return "ok";
+    if (check.causes.every((one) => engine.checked.includes(one))) return "ok";
+    return check.causes.includes("disk-full") && engine.diskUnmeasured ? "warn" : "todo";
+  };
+  return checks.map((check, at) =>
     failing === -1
       ? done
-        ? "ok"
+        ? passed(check)
         : "todo"
       : at < failing
         ? "ok"
@@ -712,7 +739,7 @@ function Confirm({
 function Checked({ step, done }: { step: PoolSetupStep; done: boolean }) {
   const host = step.machine?.host ?? "the machine";
   const over = overOf(step.machine);
-  const verdicts = verdictsOf(step.cause, done, over);
+  const verdicts = verdictsOf(step.cause, done, over, engineCheckedOf(step.machine));
   return (
     <>
       <h2 className="pool-setup-h2">{`Docker on ${host}`}</h2>
@@ -721,7 +748,7 @@ function Checked({ step, done }: { step: PoolSetupStep; done: boolean }) {
           <CheckLine
             key={check.title(host)}
             verdict={verdicts[at] ?? "todo"}
-            title={check.title(host)}
+            title={verdicts[at] === "warn" ? "purlis couldn't measure its disk" : check.title(host)}
           />
         ))}
       </CheckList>
@@ -886,6 +913,15 @@ export function ConnectStep({
   const finding = step.state === "attention" && !declined;
   // The pool's Docker context names another route (ADR 0123 §7): every check of the pool holds.
   const moved = step.cause === "context-moved";
+  // Every line passed, the engine's included, only where doctor ran them all (#6272 review).
+  const everyPassed = verdictsOf(
+    step.cause,
+    done,
+    overOf(step.machine),
+    engineCheckedOf(step.machine),
+  ).every((one) => one === "ok");
+  // The person's own image isn't built for the machine (#6272): a new setup on it, to pick one.
+  const anotherImage = step.next?.id === "change-image";
   // A made pool whose pin no longer holds is checked and trusted again (#6270).
   const againPool = madePool && step.next?.id === "check-and-trust-again" ? shown.pool : null;
 
@@ -895,7 +931,15 @@ export function ConnectStep({
         title={
           (finding || meeting) && madePool ? `Check ${host} again` : "Connect to the other machine"
         }
-        tag={done ? <Badge variant="ok">Every check passed</Badge> : undefined}
+        tag={
+          done ? (
+            everyPassed ? (
+              <Badge variant="ok">Every check passed</Badge>
+            ) : (
+              <Badge variant="ok">Connected</Badge>
+            )
+          ) : undefined
+        }
         lead={
           done
             ? `${host} is ready to run your chats.`
@@ -961,7 +1005,13 @@ export function ConnectStep({
         <ConfirmCa step={step} busy={pressing !== undefined} onTrust={trust} onNotIt={notIt} />
       )}
       {pressing === "trusting" && <Busy>{`Checking Docker on ${host}. This only reads.`}</Busy>}
-      {pressing === "checking" && <Busy>{`Checking ${host} again. This only reads.`}</Busy>}
+      {pressing === "checking" && (
+        <Busy>
+          {madePool
+            ? `Checking ${host} again. If it lacks the runner image, purlis downloads it there first, which can take a few minutes.`
+            : `Checking ${host} again. This only reads.`}
+        </Busy>
+      )}
       {refused && (
         <Say
           tone="attention"
@@ -997,7 +1047,9 @@ export function ConnectStep({
           title={
             step.cause === "pool-pin-changed" && overOf(step.machine) === "tls"
               ? "The authority isn't the one you trusted"
-              : (TITLES[step.cause ?? "here"] ?? TITLES.here ?? "")
+              : anotherImage
+                ? ANOTHER_IMAGE
+                : (TITLES[step.cause ?? "here"] ?? TITLES.here ?? "")
           }
           actions={
             moved ? (
@@ -1014,7 +1066,14 @@ export function ConnectStep({
               </>
             ) : (
               <>
-                {againPool !== null ? (
+                {anotherImage ? (
+                  <Button
+                    variant="primary"
+                    onPress={() => step.prefill && onConnectAgain?.(step.prefill)}
+                  >
+                    {step.next?.label ?? "Use another image"}
+                  </Button>
+                ) : againPool !== null ? (
                   <>
                     <Button variant="primary" onPress={() => checkAndTrustAgain(againPool)}>
                       {step.next?.label ?? "Check and trust again"}
@@ -1033,13 +1092,17 @@ export function ConnectStep({
                     {step.next?.id === "change-machine" ? "Change the machine" : "Check again"}
                   </Button>
                 )}
-                {!madePool && step.next?.id !== "change-machine" && (
+                {!madePool && !anotherImage && step.next?.id !== "change-machine" && (
                   <Button variant="secondary" onPress={notIt}>
                     Change the machine
                   </Button>
                 )}
                 {step.also?.id === "send-to-admin" && step.admin !== null && (
-                  <Button variant="secondary" onPress={() => setForAdmin((open) => !open)}>
+                  <Button
+                    variant="secondary"
+                    aria-expanded={forAdmin}
+                    onPress={() => setForAdmin((open) => !open)}
+                  >
                     {step.also.label}
                   </Button>
                 )}

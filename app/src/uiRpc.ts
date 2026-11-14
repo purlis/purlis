@@ -11239,6 +11239,14 @@ export type PoolSetupMachine = {
 	 *  sign in, which is refused where the machine was trusted again since.
 	 */
 	pin?: string | null,
+	/**
+	 *  **Which of doctor's checks of the engine passed, last it ran there** (#6272): by the cause
+	 *  each would fail with (`unconfined`, `unsupported-architecture`, `image-unreachable`,
+	 *  `disk-full`). No other line of them reads as passed.
+	 */
+	checked?: string[] | null,
+	/**  That doctor couldn't measure Docker's disk there, which holds nothing up (#6272). */
+	disk_unmeasured?: boolean | null,
 };
 
 /**  A limit a profile is over. */

@@ -42,6 +42,11 @@ pub struct Connecting {
     /// to the machine** (#6271, ADR 0123 §5): their answer kept beside the pin, or the pool's
     /// mark.
     pub owned: bool,
+    /// **Which of doctor's checks of the engine passed there, last it ran** (#6272), by the cause
+    /// each would fail with, and whether it couldn't measure the disk
+    /// ([`super::doctoring::lay_over`]).
+    pub checked: Vec<&'static str>,
+    pub disk_unmeasured: bool,
 }
 
 /// **The CA a press of Connect to read** for a machine over TLS (#6267), the machine's own
@@ -150,6 +155,11 @@ pub struct Machine {
     /// **The pin trusted, as it is kept, spelled as JSON** (#6271): what an answer of who can
     /// sign in is given for, handed back with it so a pin trusted again meanwhile refuses it.
     pub pin: Option<String>,
+    /// **Which of doctor's checks of the engine passed, last it ran there** (#6272), by the cause
+    /// each would fail with: the window marks no other line of them as passed.
+    pub checked: Vec<&'static str>,
+    /// That doctor couldn't measure Docker's disk there, which holds nothing up.
+    pub disk_unmeasured: bool,
 }
 
 /// The machine's name in a sentence: the host of the route, or "the machine".
@@ -178,6 +188,8 @@ pub(super) fn reading(connect: &Connecting) -> (Reading, Machine, Option<&'stati
         over: "ssh",
         context: connect.docker_context.clone(),
         owned: connect.owned,
+        checked: connect.checked.clone(),
+        disk_unmeasured: connect.disk_unmeasured,
         pin: connect
             .trusted
             .as_ref()
@@ -326,6 +338,8 @@ fn reading_tls(connect: &Connecting) -> (Reading, Machine, Option<&'static str>)
         engine: connect.trusted_tls.as_ref().map(|pin| pin.engine.clone()),
         context: connect.docker_context.clone(),
         owned: connect.owned,
+        checked: connect.checked.clone(),
+        disk_unmeasured: connect.disk_unmeasured,
         pin: connect
             .trusted_tls
             .as_ref()
@@ -573,6 +587,13 @@ fn met_again_tls(
     )
 }
 
+/// **What Check again does**, the same wherever it is offered (#6272): it reads the machine
+/// again, and, for a pool already made, runs every check of doctor's, which downloads the runner
+/// image there where it is missing.
+const CHECK_AGAIN_DOES: &str = "Contacts the machine again and runs its checks. For a pool \
+                                already made, that downloads the runner image there where it is \
+                                missing, which can take a few minutes. Nothing else changes.";
+
 /// What Connect to does over TLS.
 const CONNECT_TLS_DOES: &str = "Reads the CA file, and checks that the machine's certificate is \
                                 signed by it and accepts yours. It keeps nothing, and nothing on \
@@ -636,12 +657,7 @@ fn said_with_next(finding: &Finding) -> (String, Option<Action>) {
             url: None,
         })
     };
-    let check_again = || {
-        again(
-            "Check again",
-            "Contacts the machine again. It changes nothing.",
-        )
-    };
+    let check_again = || again("Check again", CHECK_AGAIN_DOES);
     let change = || {
         Some(Action {
             id: ActionId::ChangeMachine,
@@ -851,6 +867,29 @@ fn said_with_next(finding: &Finding) -> (String, Option<Action>) {
             host,
             platform,
             built_for,
+            own_image: true,
+        } => (
+            format!(
+                "{host} is {platform}, and your image is built for {}. Use an image built for \
+                 {platform}, on a new pool on {host}.",
+                super::doctoring::and_listed(built_for),
+            ),
+            Some(Action {
+                id: ActionId::ChangeImage,
+                label: "Use another image".to_owned(),
+                does: format!(
+                    "Starts setting up a new pool on {host}, where you pick an image built for \
+                     {platform}. This pool stays as it is until you remove it."
+                ),
+                command: None,
+                url: None,
+            }),
+        ),
+        Finding::Architecture {
+            host,
+            platform,
+            built_for,
+            own_image: false,
         } => (
             format!(
                 "{host} is {platform}, and the runner image is built for {}. Pick a machine that \
@@ -867,7 +906,7 @@ fn said_with_next(finding: &Finding) -> (String, Option<Action>) {
         Finding::DiskFull { host, free } => (
             format!(
                 "{}, so purlis makes no runner there. To make room, run docker system df on \
-                 {host} to see what takes it, then docker system prune there to remove what \
+                 {host} to see what takes it, then docker image prune there to remove images \
                  nothing uses, or give Docker there a bigger disk. Then check again.",
                 crate::dockerpool::disk_full_there(host, *free)
             ),
@@ -984,26 +1023,35 @@ pub fn machine_lines(machine: &Machine) -> Vec<String> {
     lines
 }
 
-/// **Whether a finding of cause `cause` is for the machine's admin to mend**: not the person's own
-/// agent, the address they typed, the files they named or this machine.
+/// **Whether a finding of cause `cause` is for the machine's admin to mend**: named here, each
+/// one something on the machine that the person's own account there can't change. Anything else
+/// (their own agent, the address they typed, the files they named, this machine, a platform no
+/// account changes) goes to no admin, a cause added later included, until it is named.
 #[must_use]
 pub fn for_the_admin(cause: &str) -> bool {
-    !matches!(
+    matches!(
         cause,
-        "here"
-            | "not-a-route"
-            | "no-such-name"
-            | "sign-in-refused"
-            | "needs-podman"
-            | "tls-file"
-            | "tls-client-expired"
-            | CONTEXT_MOVED
+        "no-answer"
+            | "not-met"
+            | "pool-pin-changed"
+            | "no-engine"
+            | "not-allowed"
+            | "engine-silent"
+            | "forwarding-refused"
+            | "pool-engine-changed"
+            | "tls-not-signed"
+            | "tls-expired"
+            | "tls-wrong-name"
+            | "tls-client-refused"
+            | "unconfined"
+            | "disk-full"
+            | "image-unreachable"
     )
 }
 
 /// **The words for the machine's admin** (#6272, ADR 0123 §4), where the person can't mend the
 /// finding themselves: what the check found, the machine in [`machine_lines`], and the commands.
-/// Held free of secrets.
+/// Held free of secrets, and of every path of this machine's ([`without_local_paths`]).
 #[must_use]
 pub fn admin_words(machine: &Machine, found: &[String], see: &super::See) -> String {
     let host = machine.host.as_deref().unwrap_or("the machine");
@@ -1016,7 +1064,7 @@ pub fn admin_words(machine: &Machine, found: &[String], see: &super::See) -> Str
          {found}\n\
          \n\
          The machine, as purlis reaches it:\n\
-         {machine}\n\
+         {machine_lines}\n\
          \n\
          {note}\n\
          {commands}\n\
@@ -1024,11 +1072,53 @@ pub fn admin_words(machine: &Machine, found: &[String], see: &super::See) -> Str
          Once it's done, tell me, and I'll have purlis check again. Sent from purlis {version}. It \
          holds no password, token, key or credential.",
         found = found.join("\n"),
-        machine = machine_lines(machine).join("\n"),
+        machine_lines = machine_lines(machine).join("\n"),
         note = see.note,
         commands = see.text,
     );
-    super::admin::held_free_of_secrets(&words)
+    super::admin::held_free_of_secrets(&without_local_paths(&words, machine))
+}
+
+/// **`text` with every path of this machine's that Connect names put as a placeholder** (#6272):
+/// the TLS files' and the SSH key's. What is sent to the machine's admin or told to Get help's
+/// chat names no file of the person's: the reader puts their own in its place. A path a command
+/// quotes stays quoted, and a bare one is quoted, so a command copied still reads as one.
+#[must_use]
+pub fn without_local_paths(text: &str, machine: &Machine) -> String {
+    let mut paths: Vec<(&str, &str)> = Vec::new();
+    if let Some(tls) = &machine.tls {
+        paths.push((tls.ca.as_str(), "<your CA file>"));
+        paths.push((tls.cert.as_str(), "<your client certificate>"));
+        if let Some(key) = &tls.key {
+            paths.push((key.as_str(), "<your client key>"));
+        }
+    }
+    if let Some(identity) = &machine.identity {
+        paths.push((identity.as_str(), "<your SSH key>"));
+    }
+    // The longest first, so one path that holds another is put whole.
+    paths.sort_by_key(|(path, _)| std::cmp::Reverse(path.len()));
+    let mut out = text.to_owned();
+    for (path, placeholder) in paths.into_iter().filter(|(path, _)| !path.is_empty()) {
+        let quoted = crate::shellseg::shell_quote(path);
+        out = out
+            .replace(&quoted, &format!("'{placeholder}'"))
+            .replace(path, &format!("'{placeholder}'"));
+    }
+    out
+}
+
+/// **The commands of `see`, sorted** (#6272): those that only read, and those that change
+/// something, each line once, in its order. A line changes something where it runs one of the
+/// commands purlis offers to mend a machine: adding to a group, starting a service, adding a key
+/// to the agent, removing images or downloading one.
+#[must_use]
+pub fn sorted(see: &super::See) -> (Vec<&str>, Vec<&str>) {
+    const CHANGING: [&str; 4] = ["sudo usermod ", "sudo systemctl ", " prune", " pull "];
+    see.text.lines().partition(|line| {
+        let line = line.trim();
+        !(line == "ssh-add" || CHANGING.iter().any(|one| line.contains(one)))
+    })
 }
 
 /// **Connect's See what this does, as it stands** (#6272, ADR 0123 §7): where a finding stands,
@@ -1234,11 +1324,12 @@ fn see_of(finding: &Finding, connect: &Connecting) -> Option<super::See> {
         ),
         Finding::DiskFull { host, .. } => see(
             format!(
-                "The first shows what takes Docker's disk on {host}. The second removes what \
-                 nothing uses there: stopped containers, unused networks and images, and the \
-                 build cache. It keeps volumes, so a runner's home and sign-ins stay."
+                "The first shows what takes Docker's disk on {host}, so you can look before you \
+                 remove anything. It only reads. The second removes only images that have no \
+                 name and that no container uses: volumes, named images and stopped containers \
+                 stay, other people's included."
             ),
-            format!("{docker} system df\n{docker} system prune"),
+            format!("{docker} system df\n{docker} image prune"),
         ),
         Finding::ImageUnreachable { host, registry } => {
             let asked = format!("curl -sSI https://{registry}/v2/");
@@ -1292,6 +1383,8 @@ pub fn meet_chosen(
     docker: &crate::dockerpool::Docker,
     chosen: &super::Chosen,
 ) -> super::Pressed {
+    // Met anew: what doctor found there before stands no more.
+    super::doctoring::forget(&chosen.route);
     if crate::tlsroute::is_tcp(&chosen.route) {
         let met = match &chosen.tls {
             Some(files) => meet_tls(config, &chosen.route, files),
@@ -1326,18 +1419,52 @@ pub fn trust_chosen(
         } else {
             trust_tls(docker, &chosen.route, files, fingerprint, config)
         };
-        return match trusted {
+        let checked = trusted.and_then(|remote| {
+            let engine = crate::runners::RemoteEngine::Tls(remote.clone());
+            engine_checked(docker, &[&chosen.route, &remote.route.spelled()], &engine)
+                .map(|()| remote)
+        });
+        return match checked {
             Ok(remote) => super::trusted_tls_read_from(config, &remote, files).map(Ok),
             Err(finding) => Ok(Err(finding)),
         };
     }
-    match chosen
+    let checked = chosen
         .route_read()
         .and_then(|route| trust(docker, &route, fingerprint))
-    {
+        .and_then(|remote| {
+            let engine = crate::runners::RemoteEngine::Ssh(remote.clone());
+            engine_checked(docker, &[&chosen.route, &remote.route.spelled()], &engine)
+                .map(|()| remote)
+        });
+    match checked {
         Ok(remote) => super::trusted(config, &remote).map(Ok),
         Err(finding) => Ok(Err(finding)),
     }
+}
+
+/// **Connect's checks of the engine, for a machine just trusted** (#6272, ADR 0123 §7): reached
+/// as a pool on it would be, with its pin, and asked [`super::doctoring::on_connect`]'s
+/// questions. What they found is kept for each of `routes`, the route as Connect keeps it and as
+/// the pool will be made on, so the next read shows it; a finding keeps nothing of the machine,
+/// as any other of Trust's does.
+fn engine_checked(
+    docker: &crate::dockerpool::Docker,
+    routes: &[&str],
+    engine: &crate::runners::RemoteEngine,
+) -> Result<(), Finding> {
+    let host = match engine {
+        crate::runners::RemoteEngine::Ssh(remote) => remote.route.host().to_owned(),
+        crate::runners::RemoteEngine::Tls(remote) => remote.route.host().to_owned(),
+    };
+    let found = crate::sshroute::pool::with_engine(docker, engine, |through| {
+        super::doctoring::on_connect(through, &host)
+    })
+    .and_then(|found| found);
+    for route in routes {
+        super::doctoring::note(route, &found);
+    }
+    found.map(|_| ())
 }
 
 /// **Check and trust again** (#6270, ADR 0123 §3): pool `name`'s machine met again as Connect to

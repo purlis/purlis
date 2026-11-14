@@ -118,6 +118,14 @@ pub struct PoolSetupMachine {
     /// sign in, which is refused where the machine was trusted again since.
     #[specta(optional)]
     pub pin: Option<String>,
+    /// **Which of doctor's checks of the engine passed, last it ran there** (#6272): by the cause
+    /// each would fail with (`unconfined`, `unsupported-architecture`, `image-unreachable`,
+    /// `disk-full`). No other line of them reads as passed.
+    #[specta(optional)]
+    pub checked: Option<Vec<String>>,
+    /// That doctor couldn't measure Docker's disk there, which holds nothing up (#6272).
+    #[specta(optional)]
+    pub disk_unmeasured: Option<bool>,
 }
 
 /// The TLS files named for a `tcp://` machine, as Connect's Options show them (#6267).
@@ -300,6 +308,14 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
                     context: machine.context.clone(),
                     owned: Some(machine.owned),
                     pin: machine.pin.clone(),
+                    checked: Some(
+                        machine
+                            .checked
+                            .iter()
+                            .map(|cause| (*cause).to_owned())
+                            .collect(),
+                    ),
+                    disk_unmeasured: Some(machine.disk_unmeasured),
                 }),
                 prefill: step.prefill.as_ref().map(|prefill| PoolSetupPrefill {
                     route: prefill.route.clone(),

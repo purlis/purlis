@@ -87,11 +87,13 @@ pub enum Finding {
     /// default seccomp profile, as the local kind's daemon check holds it to.
     Unconfined { host: String, podman: bool },
     /// Its platform (`docker info`'s OS and architecture) has no runner image: what it is, and
-    /// what the image is built for.
+    /// what the image is built for. `own_image` where the image is the person's own, not
+    /// purlis's: theirs to change, on a new pool on the same machine.
     Architecture {
         host: String,
         platform: String,
         built_for: Vec<String>,
+        own_image: bool,
     },
     /// Docker's disk there is too full to make a runner on (#6205): what is free, where `df`
     /// said.

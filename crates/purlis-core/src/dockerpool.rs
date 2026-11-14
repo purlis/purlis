@@ -2657,6 +2657,7 @@ pub struct Docker {
 pub const READS_WITHIN: std::time::Duration = std::time::Duration::from_secs(20);
 
 mod asked;
+pub use asked::Confinement;
 pub mod contract;
 pub mod settings;
 
@@ -3431,10 +3432,7 @@ impl Docker {
     /// reading, run as the image's own user, for doctor to ask of a pool on another machine.
     #[must_use]
     pub fn room_for(&self, image: &Image) -> Room {
-        match self.room_as(image, None) {
-            Room::FullSaid(_) => Room::Short(None),
-            room => room,
-        }
+        self.room_as(image, None)
     }
 
     /// [`Docker::room_for`], run as `user` where one is named.

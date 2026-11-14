@@ -227,6 +227,9 @@ pub enum ActionId {
     ConnectAgain,
     /// Connect: the same, and the pool stays on its route, forgetting the context's name.
     KeepPoolAsItIs,
+    /// Connect: the person's own image isn't built for the machine's platform (#6272): a new
+    /// setup on the same machine, to pick an image that is.
+    ChangeImage,
 }
 
 /// The one thing to do on a step: its button, what the button does, and, where one exists, the
@@ -1155,6 +1158,11 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
         } else {
             None
         };
+        // The person's own image isn't built for the machine (#6272): a new setup on it.
+        let another_image = reading
+            .next
+            .as_ref()
+            .is_some_and(|next| next.id == ActionId::ChangeImage);
         steps.push(Step {
             id,
             name: id.name(),
@@ -1180,6 +1188,13 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
                 None
             } else if cause == Some(connecting::CONTEXT_MOVED) {
                 facts.connect.as_ref().and_then(connecting::followed)
+            } else if another_image {
+                facts.connect.as_ref().and_then(|connect| {
+                    Some(Prefill {
+                        route: connect.route.clone()?,
+                        context: connect.docker_context.clone(),
+                    })
+                })
             } else if id == StepId::Where
                 && kind == Kind::Docker
                 && facts.engine == Engine::Elsewhere
@@ -1562,6 +1577,10 @@ pub fn read_pressed(
             .connect
             .as_ref()
             .and_then(|chosen| chosen.docker_context.clone());
+    }
+    // What doctor found last for the machine (#6272), where nothing was pressed now.
+    if pressed.is_none() {
+        doctoring::lay_over(&mut connect);
     }
     match pressed {
         // Met again by Check and trust again (#6270): what it shows now stands in place of the
