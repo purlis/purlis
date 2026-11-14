@@ -983,6 +983,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_podman_connections",
     "pool_setup_connect",
     "pool_setup_trust",
+    // Check and trust again (#6270): meeting a made pool's machine again and keeping the pin the
+    // person confirmed are theirs, as trusting a new one is; and what was found changed is read
+    // only by the window that shows its Notice.
+    "pool_setup_check_and_trust_again",
+    "pool_setup_trust_again",
+    "pools_pin_changed",
     // Naming a tcp:// machine's TLS files, a vault entry among them, is the person's too (#6267).
     "pool_setup_tls_files",
     "pool_setup_name",

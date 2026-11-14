@@ -122,6 +122,7 @@ function linkSaid(link: PoolLink | "asking" | undefined): string | undefined {
   if (link.state === "suspended") return "suspended";
   if (link.state === "removed") return "removed outside purlis";
   if (link.state === "on_another_engine") return "on another Docker engine";
+  if (link.state === "pin_changed") return "machine not trusted";
   return "not linked";
 }
 
@@ -254,7 +255,14 @@ function openedAgo(opened: number, now: number): string {
 
 /** Whether a pool's link says its runner is on a Docker engine that Docker no longer reaches. */
 function linkOnAnotherEngine(link: PoolLink | "asking" | undefined): boolean {
-  return typeof link === "object" && link.state === "on_another_engine";
+  return (
+    typeof link === "object" && (link.state === "on_another_engine" || link.state === "pin_changed")
+  );
+}
+
+/** **The machine of a pool whose pin no longer holds** (#6270): removing it forgets it here. */
+function untrustedOf(link: PoolLink | "asking" | undefined): string | undefined {
+  return typeof link === "object" && link.state === "pin_changed" ? link.change.host : undefined;
 }
 
 /**
@@ -276,6 +284,7 @@ export function RemovePool({
   name,
   cluster = false,
   elsewhere = false,
+  untrusted,
   onRemove,
   onCancel,
 }: {
@@ -284,11 +293,15 @@ export function RemovePool({
   cluster?: boolean;
   /** Its runner is on a Docker engine that Docker no longer reaches (#4325): nothing there goes. */
   elsewhere?: boolean;
+  /** **Its machine, which isn't the one trusted any more** (#6270): nothing is sent there, so the
+   *  pool is forgotten here and its runner stays there. Asked as `elsewhere`. */
+  untrusted?: string;
   onRemove: (discarding: readonly string[]) => void;
   onCancel: () => void;
 }) {
   const named = useNamedBy(name);
-  const held = useHeldRunners(name, cluster);
+  // Nothing is read of a machine no longer trusted: its runners stay there, discarded by none.
+  const held = useHeldRunners(name, cluster || untrusted !== undefined);
   const [again, setAgain] = useState(false);
   const discarding = held.state === "read" ? held.held : [];
   // Each ask is a dialog of its own, so the second opens with the keyboard on its Cancel and not
@@ -327,11 +340,13 @@ export function RemovePool({
       description={
         <>
           <p className="came-back ui-text-secondary">
-            {elsewhere
-              ? "Its runner is on another Docker engine, which Docker doesn't reach now, so its container and home stay there, with everything chats left in them. purlis forgets the pool, and says what to remove once Docker points back. There is no undo."
-              : cluster
-                ? "Its runner's claim is deleted from your team's cluster, and its runner with it, with everything chats left there, and this machine is taken out of the runner's peers. There is no undo."
-                : "Its runner's container and home are removed from your Docker, with everything chats left in them, and this machine is taken out of the runner's peers. There is no undo."}
+            {untrusted !== undefined
+              ? `${untrusted} isn't the machine you trusted any more, so purlis sends nothing to ${untrusted}: its runner's container and home stay there, with everything chats left in them. purlis forgets the pool here, and says how to remove them on ${untrusted}. There is no undo.`
+              : elsewhere
+                ? "Its runner is on another Docker engine, which Docker doesn't reach now, so its container and home stay there, with everything chats left in them. purlis forgets the pool, and says what to remove once Docker points back. There is no undo."
+                : cluster
+                  ? "Its runner's claim is deleted from your team's cluster, and its runner with it, with everything chats left there, and this machine is taken out of the runner's peers. There is no undo."
+                  : "Its runner's container and home are removed from your Docker, with everything chats left in them, and this machine is taken out of the runner's peers. There is no undo."}
           </p>
           <HeldLine held={held} elsewhere={elsewhere} />
           <NamedByLine named={named} />
@@ -568,6 +583,10 @@ function PoolEntry({
             {remade !== undefined && <p className="ui-setting-help ui-text-secondary">{remade}</p>}
             {typeof link === "object" && link.state === "down" && (
               <p className="ui-setting-help ui-text-secondary">{link.why}</p>
+            )}
+            {/* Its Notice, with Check and trust again, stands in the window's Notices (#6270). */}
+            {typeof link === "object" && link.state === "pin_changed" && (
+              <p className="ui-setting-help ui-text-secondary">{link.change.said}</p>
             )}
             {versionSaid(version) !== undefined && (
               <p className="ui-setting-help ui-text-secondary">{versionSaid(version)}</p>
@@ -890,6 +909,7 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
               name={asking}
               cluster={clusters.some((one) => one.name === asking)}
               elsewhere={linkOnAnotherEngine(now.links[asking])}
+              untrusted={untrustedOf(now.links[asking])}
               onCancel={() => setAsking(undefined)}
               onRemove={(discarding) => {
                 setAsking(undefined);

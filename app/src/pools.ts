@@ -596,8 +596,13 @@ export async function askVersion(name: string) {
   set((was) => ({ ...was, versions: { ...was.versions, [name]: version } }));
 }
 
-/** Removes pool `name`, its runner, its container and its home; answers what could not be
- *  removed, or why nothing was, in purlis's or Docker's words already shown safely. `elsewhere`
+/** What a pool's Remove came to (#6270): `removed`, with what could not be removed in `left`
+ *  where something stays; or `refused`, with nothing removed and why in `why`. Both in purlis's
+ *  or Docker's words already shown safely. */
+export type RemoveCame = { removed: true; left?: string } | { removed: false; why: string };
+
+/** Removes pool `name`, its runner, its container and its home; answers whether it was removed,
+ *  with what could not be, or why nothing was, in purlis's or Docker's words already shown safely. `elsewhere`
  *  is what the person was told: that its runner is on an engine Docker no longer reaches, so nothing
  *  there goes. Where that no longer holds, or the other way round, nothing is done (#4325).
  *  `discarding` names the held runners the person agreed to discard with it (#4860): a runner held
@@ -606,12 +611,21 @@ export async function removePool(
   name: string,
   elsewhere = false,
   discarding: readonly string[] = [],
-): Promise<string | undefined> {
+): Promise<RemoveCame> {
   if (held.removing !== undefined)
-    return `purlis is removing pool ${held.removing}: remove ${name} once it is gone.`;
+    return {
+      removed: false,
+      why: `purlis is removing pool ${held.removing}: remove ${name} once it is gone.`,
+    };
   set((was) => ({ ...was, removing: name, said: undefined }));
   const said = await caught(commands.removeDockerPool(name, elsewhere, [...discarding]));
-  const left = said.status === "error" ? said.error : (said.data ?? undefined);
+  const came: RemoveCame =
+    said.status === "error"
+      ? { removed: false, why: said.error }
+      : said.data === null || said.data === undefined
+        ? { removed: true }
+        : { removed: true, left: said.data };
+  const left = came.removed ? came.left : came.why;
   set((was) => {
     const links = { ...was.links };
     Reflect.deleteProperty(links, name);
@@ -632,7 +646,7 @@ export async function removePool(
     };
   });
   await rereadPools();
-  return left;
+  return came;
 }
 
 /** **What names a pool** (#4678): the projects and workspaces its removal sets back to this
@@ -738,6 +752,8 @@ export function madeAgainSaid(
       return `${made} purlis could not read the old runner's home, so it kept it in case it holds conversations. Bring back or discard what it holds in Devices.`;
     case "removed":
       return made;
+    case "elsewhere":
+      return `${made} The old runner stays on the engine you trusted before, with its home: purlis remembers it, and \`purlis pool left-behind\` lists it.`;
   }
 }
 

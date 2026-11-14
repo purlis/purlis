@@ -2024,3 +2024,62 @@ fn a_tcp_row_without_its_files_its_ca_or_a_whole_pin_is_not_read() {
         assert!(pools(config.path()).is_err(), "{row} was read");
     }
 }
+
+/// **Check and trust again keeps the new pin, and only it** (#6270, ADR 0123 §3): the route, the
+/// files and everything else of the pool stay as they were.
+#[test]
+fn a_pool_pinned_again_keeps_only_its_new_pin() {
+    let config = tempfile::tempdir().unwrap();
+    let kept = pool("build-box", Set::default()).on(Some(remote()));
+    record_pool(config.path(), &kept).unwrap();
+    let mut again = remote();
+    again.pin.engine = crate::sshroute::EnginePin::Docker("MNOP:QRST:UVWX".to_owned());
+    pin_again(config.path(), "build-box", &again.clone().into()).unwrap();
+    assert_eq!(
+        pools(config.path()).unwrap(),
+        vec![kept.clone().on(Some(again.clone()))]
+    );
+    // Over TLS, the same: only the CA and engine pinned.
+    let tls = pool("over-tls", Set::default()).on_engine(Some(
+        tls_remote(crate::tlsroute::KeyFrom::File("/k.pem".into())).into(),
+    ));
+    record_pool(config.path(), &tls).unwrap();
+    let mut tls_again = tls_remote(crate::tlsroute::KeyFrom::File("/k.pem".into()));
+    tls_again.pin.ca = crate::tlsroute::Fingerprint::of_der(b"another ca");
+    pin_again(config.path(), "over-tls", &tls_again.clone().into()).unwrap();
+    assert_eq!(
+        pools(config.path()).unwrap()[1],
+        tls.on_engine(Some(tls_again.into()))
+    );
+}
+
+#[test]
+fn a_pin_is_kept_again_only_for_the_same_route_of_a_pool_on_another_machine() {
+    let config = tempfile::tempdir().unwrap();
+    record_pool(
+        config.path(),
+        &pool("build-box", Set::default()).on(Some(remote())),
+    )
+    .unwrap();
+    record_pool(config.path(), &pool("here", Set::default())).unwrap();
+    let elsewhere = Remote {
+        route: crate::sshroute::Route::parse("ssh://me@other-box/var/run/docker.sock").unwrap(),
+        ..remote()
+    };
+    let before = the_file(config.path());
+    for (name, remote) in [
+        ("build-box", elsewhere.into()),
+        (
+            "build-box",
+            tls_remote(crate::tlsroute::KeyFrom::File("/k.pem".into())).into(),
+        ),
+        ("here", remote().into()),
+        ("gone", remote().into()),
+    ] {
+        assert!(
+            pin_again(config.path(), name, &remote).is_err(),
+            "{name} pinned again"
+        );
+    }
+    assert_eq!(the_file(config.path()), before, "nothing changed");
+}

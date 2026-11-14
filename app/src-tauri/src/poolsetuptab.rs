@@ -894,6 +894,73 @@ pub async fn pool_setup_trust(
     }
 }
 
+/// **Check and trust again** (#6270, ADR 0123 §3): pool `pool`'s machine met again as Connect
+/// to meets a new one, without its pin, laid over Connect for the person to check: the key it
+/// shows now, or the CA its file holds now. Nothing is kept.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_check_and_trust_again(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    pool: String,
+) -> Result<PoolSetupShown, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    #[cfg(unix)]
+    {
+        crate::off_the_window("contacting the machine", move || {
+            use purlis_core::poolsetup;
+            let config = config_root()?;
+            let docker = poolsetup::docker_here()
+                .ok_or_else(|| "purlis found no docker command on this machine.".to_owned())?;
+            let pressed = poolsetup::connecting::meet_pool(&config, &docker, &pool)
+                .map_err(|why| why.to_string())?;
+            read_shown(&config, &root, Some(pressed))
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (root, pool);
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Trust this machine, for a pool met again** (#6270, ADR 0123 §3): pool `pool`'s machine met
+/// again and held to `fingerprint`, the one the person saw, its engine read anew, and that pin
+/// kept for the pool in place of the one that no longer held. What went wrong is laid over
+/// Connect, and nothing is kept then.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_trust_again(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    pool: String,
+    fingerprint: String,
+) -> Result<PoolSetupShown, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    #[cfg(unix)]
+    {
+        crate::off_the_window("checking the machine", move || {
+            use purlis_core::poolsetup::{self, Pressed};
+            let config = config_root()?;
+            let docker = poolsetup::docker_here()
+                .ok_or_else(|| "purlis found no docker command on this machine.".to_owned())?;
+            match poolsetup::connecting::trust_pool(&config, &docker, &pool, &fingerprint)
+                .map_err(|why| why.to_string())?
+            {
+                Ok(()) => read_shown(&config, &root, None),
+                Err(finding) => read_shown(&config, &root, Some(Pressed::Found(finding))),
+            }
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (root, pool, fingerprint);
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
 /// What Pool setup shows now, with `pressed` laid over Connect.
 #[cfg(unix)]
 fn read_shown(

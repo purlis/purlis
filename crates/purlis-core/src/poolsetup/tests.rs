@@ -1035,3 +1035,33 @@ fn a_new_pool_is_recommended_a_name_no_pool_has() {
     assert_eq!(recommended, "docker-3");
     assert!(runners::usable_pool_name(&recommended).is_ok());
 }
+
+/// **A pool on another machine whose engine was trusted again** (#6270): its runner is on the
+/// engine trusted before, so the Pool step offers to make it again on this one, never to switch
+/// Docker back.
+#[test]
+fn a_runner_on_the_engine_trusted_before_is_made_again_on_the_one_trusted_now() {
+    let facts = Facts {
+        connect: Some(connecting::Connecting {
+            route: Some("ssh://me@build-box".into()),
+            trusted: Some(crate::sshroute::Pin {
+                host_key: crate::sshroute::HostKey::parse(
+                    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiGzfjDDJsgYLYCmdkf8Fel9sE6Ma14Y2+c33Y/qZ2n",
+                )
+                .unwrap(),
+                engine: crate::sshroute::EnginePin::Docker("NEW:ENGINE".into()),
+            }),
+            ..connecting::Connecting::default()
+        }),
+        ..on_a_pool(Runner::OnAnotherEngine, SignIns::NotAsked)
+    };
+    let setup = of(Kind::RemoteDocker, &facts, &Choices::default());
+    let pool = setup.step(StepId::Pool).unwrap();
+    assert_eq!(pool.state, Attention);
+    assert_eq!(pool.next.as_ref().unwrap().id, ActionId::MakeRunnerAgain);
+    assert!(
+        pool.findings[0].contains("on another engine"),
+        "{:?}",
+        pool.findings
+    );
+}

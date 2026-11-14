@@ -390,9 +390,42 @@ export const KeyChanged: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.getByRole("heading", { name: "Check build-box again" })).toBeVisible();
     await expect(canvas.getByText(/shows a different key than the one you trusted/)).toBeVisible();
-    const again = canvas.getByRole("button", { name: "Check again" });
+    await expect(canvas.getByRole("button", { name: "Check again" })).toBeVisible();
+    const again = canvas.getByRole("button", { name: "Check and trust again" });
     again.focus();
     await expect(again).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
+const MET_AGAIN = connect({
+  findings: [
+    `This is the key build-box shows now, and it's different than the one you trusted (${FINGERPRINT} trusted). Check it on build-box before you trust it: run the command under See what this does there, and compare the two.`,
+  ],
+  next: action(
+    "trust-machine",
+    "Trust this machine",
+    "Keeps this key for the pool in place of the one trusted, and the engine build-box runs now, then checks that Docker answers there.",
+  ),
+  machine: machine({
+    key: { algorithm: "ssh-ed25519", fingerprint: OTHER },
+    trusted: { algorithm: "ssh-ed25519", fingerprint: FINGERPRINT },
+  }),
+});
+
+/** **Check and trust again** (#6270): the made pool's machine met again, the key it shows now
+ *  to check beside the one trusted, and Trust this machine, which keeps only that one. */
+export const MetAgain: Story = {
+  beforeEach: faked([]),
+  args: { step: MET_AGAIN, shown: shown(MET_AGAIN, "build-box") },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole("heading", { name: "Check build-box again" })).toBeVisible();
+    await expect(canvas.getByText(OTHER)).toBeVisible();
+    await expect(canvas.getByText(/different than the one you trusted/)).toBeVisible();
+    const trust = canvas.getByRole("button", { name: "Trust this machine" });
+    trust.focus();
+    await expect(trust).toHaveFocus();
     await expectFocusInSight();
   },
 };
@@ -614,7 +647,7 @@ export const AuthorityChanged: Story = {
     ).toBeVisible();
     await expect(canvas.getByText(/no longer holds the CA you trusted/)).toBeVisible();
     await expect(canvas.getByText("The authority isn't the one you trusted")).toBeVisible();
-    const again = canvas.getByRole("button", { name: "Check again" });
+    const again = canvas.getByRole("button", { name: "Check and trust again" });
     again.focus();
     await expect(again).toHaveFocus();
     await expectFocusInSight();
