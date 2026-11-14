@@ -84,20 +84,23 @@ fn release_version() -> String {
 /// Cargo hands a build script `PROFILE`, but that is only ever `debug` or `release`: a custom
 /// profile reports the one it inherits from, so a `dev-release` build would call itself
 /// `release`, which is the one thing the version line exists to tell apart. The directory is
-/// the name. `OUT_DIR` is `<target>[/<triple>]/<profile>/build/<crate>-<hash>/out`, and when
-/// it is not that shape the answer falls back to `PROFILE` rather than to a guess.
+/// the name. `OUT_DIR` is `<target>[/<triple>]/<profile>/build/<crate>/<hash>/out` from Cargo
+/// 1.100's build directory layout, and was `…/<profile>/build/<crate>-<hash>/out` before it;
+/// when it is neither shape the answer falls back to `PROFILE` rather than to a guess.
 fn profile() -> String {
     let out = std::env::var("OUT_DIR").expect("cargo sets OUT_DIR");
-    let mut above = Path::new(&out).ancestors().skip(2);
-    let build = above.next().and_then(Path::file_name);
-    let named = above.next().and_then(Path::file_name);
-    match (
-        build.and_then(|b| b.to_str()),
-        named.and_then(|n| n.to_str()),
-    ) {
-        (Some("build"), Some(name)) if !name.is_empty() => name.to_owned(),
-        _ => std::env::var("PROFILE").expect("cargo sets PROFILE"),
-    }
+    profile_above(Path::new(&out))
+        .unwrap_or_else(|| std::env::var("PROFILE").expect("cargo sets PROFILE"))
+}
+
+/// The name of the directory above `build`, where `build` is two or three levels above `out`.
+fn profile_above(out: &Path) -> Option<String> {
+    [2, 3].into_iter().find_map(|depth| {
+        let mut above = out.ancestors().skip(depth);
+        let build = above.next()?.file_name()?.to_str()?;
+        let name = above.next()?.file_name()?.to_str()?;
+        (build == "build" && !name.is_empty()).then(|| name.to_owned())
+    })
 }
 
 /// Every file under `<crate>/<dir>`, at any depth, as a `&[(&str, &str)]` named `konst` keyed

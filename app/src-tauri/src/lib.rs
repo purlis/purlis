@@ -3505,6 +3505,19 @@ fn typescript() -> specta_typescript::Typescript {
     specta_typescript::Typescript::default()
 }
 
+/// **The profile directory a test binary was built under**, `target[/<triple>]/<profile>`: Cargo
+/// files a test binary in its `deps/`, or in `build/<crate>/<hash>/out/` from Cargo 1.100's build
+/// directory layout. What About names, and where the app program is built beside the tests.
+#[cfg(test)]
+pub(crate) fn profile_dir_of(exe: &std::path::Path) -> Option<&std::path::Path> {
+    exe.ancestors()
+        .find(|dir| {
+            dir.file_name()
+                .is_some_and(|name| name == "deps" || name == "build")
+        })
+        .and_then(std::path::Path::parent)
+}
+
 /// Where the UI RPC's typed client lives (FD-26): the same commands, over the link to `charterd`.
 #[cfg(test)]
 const UI_RPC: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/uiRpc.ts");
