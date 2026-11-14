@@ -101,6 +101,7 @@ import {
   FOCUS_MODE_ID,
   SHORTCUTS_ID,
   saidOf,
+  chatLogId,
   type BranchPath,
   type FileRef,
   type Clone,
@@ -235,6 +236,7 @@ import { usePlaneUpdated } from "./PlaneUpdated";
 import { useHarnessCards } from "./harnessCards";
 import { useEditorTabs, type EditorTabOpened } from "./editorTab";
 import { Notice, NoticeInCentre, NoticeOf, type NoticesDot } from "./Notice";
+import { useAskedControl } from "./windowControls";
 import { ReadOnlyLine, ReadOnlyMendable, ReadOnlySaid, useReadOnly } from "./ReadOnlyLine";
 import { LivesHere } from "./LivesHere";
 import { InboxAlerts, type WindowAlerts } from "./InboxAlerts";
@@ -249,6 +251,18 @@ import { PersonaMarks, ReloadPersonaMarks } from "./PersonaMark";
 import { usePersonaMarks } from "./usePersonaMarks";
 import { taskChangesTitle, taskChangesView } from "./taskChanges";
 import { heldFor as blockHeldFor, type HeldBlock, useSandboxBlocks } from "./sandboxBlocks";
+import {
+  CHAT_LOG_ANSWER,
+  finishAsksOf,
+  finishKey,
+  finishUpdates,
+  finishWaysOf,
+  groupedFinishes,
+  stoppedAfterBlock,
+  useFinishedTurns,
+} from "./finishRows";
+import { FinishRowWays } from "./BlockWaysOut";
+import { openTheChatLogOf } from "./chatLog";
 import { taskBlockGroups, whoseOf, withoutGrouped, type TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksAnswered, TaskBlocksNotice } from "./TaskBlocksNotice";
 import {
@@ -763,6 +777,16 @@ import {
   useSeen,
   type SeenRows,
 } from "./seen";
+import {
+  BlockedMarkers,
+  askToOpenChatLog,
+  filterChatLog,
+  markerOf,
+  useBlockedMarkers,
+  type BlockedMarkersHeld,
+  type ChatLogFilter,
+  whenAChatLogIsAsked,
+} from "./blockedMarkers";
 import { SeenRowsOf } from "./seenRows";
 import { listLinksOf } from "./paneLinksOpen";
 
@@ -5554,7 +5578,7 @@ export const PlaneView = memo(function PlaneView({
     (link: SettingsLink) => {
       const to = landing(link, plane);
       if (to === undefined) return;
-      linkToGroup(to.place, link.group, link.setting);
+      linkToGroup(to.place, link.group, link.setting, link.control);
       showView(to.view, to.title, to.workspace);
     },
     [plane, showView],
@@ -10395,6 +10419,29 @@ export const PlaneView = memo(function PlaneView({
     pressNow.current = press;
   }, [by, press]);
   const pressTaskEnd = useCallback((offer: Offer) => pressNow.current(offer), []);
+  /**
+   * **Chat `session`'s Chat log, opened showing `filter`** (R-226): the press of its own row in
+   * the chat's list (`chat.log:<session>`), so every entry point opens it as that row does. One
+   * function for the life of the view, so a list that offers it is not drawn again with the
+   * catalogue. A chat the catalogue has no such row of opens nothing. It reads refs, so a
+   * control built while the view draws asks for it with askToOpenChatLog instead.
+   */
+  const openChatLog = useCallback(
+    (session: number, filter: ChatLogFilter) => {
+      filterChatLog(plane, session, filter);
+      const offer = byNow.current(chatLogId(session));
+      if (offer?.available === true) pressNow.current(offer);
+    },
+    [plane],
+  );
+  // A Chat log a control asked for while the view drew (askToOpenChatLog) opens here.
+  useEffect(
+    () =>
+      whenAChatLogIsAsked((asked, session, filter) => {
+        if (asked === plane) openChatLog(session, filter);
+      }),
+    [plane, openChatLog],
+  );
   /** A link out of Settings (#1387, #1388): the catalogue's row it names, run as the palette
    *  runs it. One the catalogue does not hold now does nothing. */
   useEffect(() => {
@@ -11298,6 +11345,20 @@ export const PlaneView = memo(function PlaneView({
    * and kept a day on this machine whether or not the project is in front, and drawn after the
    * asks with what each source offers on it.
    */
+  /** Each chat's finishes as the core counts them, asked as a turn ends (T1-31, R-178). */
+  const finishedTurns = useFinishedTurns(plane, chats);
+  /** The window-only asks no chat waits on, each on its chat's finish row (T1-42, R-329). */
+  const onFinishRows = questions?.on_finish_rows ?? NO_ASKS;
+  const finishAsks = useMemo(
+    () =>
+      finishAsksOf({
+        plane,
+        turns: finishedTurns,
+        asks: onFinishRows,
+        reread: () => asksMoved(plane),
+      }),
+    [plane, finishedTurns, onFinishRows],
+  );
   const derivedUpdates = useMemo(() => {
     const at = seenAt();
     return [
@@ -11309,6 +11370,8 @@ export const PlaneView = memo(function PlaneView({
       ...reasonUpdates(foundFor, refusals, nameOf, at),
       ...browserAskUpdates(browserAsksEnded, nameOf),
       ...reportSentUpdates(sentDrafts),
+      // Each chat's turn that ended, or run that failed: its finish row (T1-31, R-241).
+      ...finishUpdates(finishedTurns, nameOf, onFinishRows),
       // A chat that reads Stuck? (#6014): a Should-know line while it does.
       ...stuckUpdates(noticedChats, nameOf, at),
       // A chat another chat started, announced and not looked at yet (#4759).
@@ -11323,6 +11386,8 @@ export const PlaneView = memo(function PlaneView({
   }, [
     sidebar,
     browserAsksEnded,
+    finishedTurns,
+    onFinishRows,
     sentDrafts,
     noticedChats,
     finishedTasks,
@@ -11349,7 +11414,36 @@ export const PlaneView = memo(function PlaneView({
   /** **What is New** (#6002, ADR 0121 decisions 10 and 11): seen, not received; the chat on
    *  screen in a focused window has nothing New. */
   const { seen, see, rows: seenRows } = useSeen(plane, waiting);
-  useChatOnScreenSeen(see, chatOnScreen, inFront, waiting, keptUpdates);
+  /** **The blocked markers** (R-172, R-174; T1-30): each chat's blocks since its last look,
+   *  kept in the same seen record. The chat on screen in a focused window is looked at by the
+   *  same rule (R-341). */
+  const blocksCounted = useBlockedMarkers(plane, [...chatNames.keys()], seen);
+  const blocksLooks = useMemo(
+    () =>
+      new Map(
+        [...blocksCounted.values()].flatMap((one) =>
+          one.key === null ? [] : [[one.session, one.key] as const],
+        ),
+      ),
+    [blocksCounted],
+  );
+  useChatOnScreenSeen(see, chatOnScreen, inFront, waiting, keptUpdates, blocksLooks);
+  const blockedMarkers = useMemo<BlockedMarkersHeld>(
+    () => ({
+      of: (session) =>
+        seen === undefined ? undefined : markerOf(blocksCounted.get(session), seen),
+      // **It opens the Chat log, filtered to blocks** (R-301), as its row in the chat's list does.
+      open: (session, filter = "blocks") => openChatLog(session, filter),
+      // **Its Chat log opened is a look** (R-175).
+      look: (session) => {
+        if (!blocksCounted.has(session)) return false;
+        const key = blocksLooks.get(session);
+        if (key !== undefined) see([key]);
+        return true;
+      },
+    }),
+    [blocksCounted, blocksLooks, openChatLog, see, seen],
+  );
   const [noticeCauses, setNoticeCauses] = useState<readonly string[]>([]);
   useEffect(() => {
     if (inFront) onSeen?.(plane, seenRows);
@@ -11419,9 +11513,21 @@ export const PlaneView = memo(function PlaneView({
     const away = new Map((awayRefused ?? []).map((one) => [awayUpdateKey(one), one]));
     const open = (session: number | null) =>
       session !== null && tabHolding(tabs, session) !== undefined ? session : undefined;
-    const rows = keptUpdates?.map((update): UpdateRow => {
-      const read = () => settleUpdates([update.key], "read");
-      const put = () => settleUpdates([update.key], "dismissed");
+    // Identical finish rows of several chats are one row (R-181): it reads and puts away each.
+    // A finish row a window-only ask sits on stands alone, its control for its chat (R-329).
+    const grouped =
+      keptUpdates === undefined
+        ? undefined
+        : groupedFinishes(keptUpdates, new Set(finishAsks.keys()));
+    const members = new Map(grouped?.map(({ update, keys }) => [update.key, keys]));
+    // Each finish row's chat, by the finish the core answers now (R-226): a row kept from
+    // before a restart names the number its chat had then, which another chat may have now.
+    const finishedBy = new Map(finishedTurns.map((turn) => [finishKey(turn), turn.session]));
+    const namedIn = new Map(keptUpdates?.map((one) => [one.key, one.chain.at(-1)]));
+    const each = (keys: readonly string[]) => keys.flatMap((key) => members.get(key) ?? [key]);
+    const rows = grouped?.map(({ update, keys }): UpdateRow => {
+      const read = () => settleUpdates(keys, "read");
+      const put = () => settleUpdates(keys, "dismissed");
       const task = tasks.get(update.key);
       // A chat that arrived is in no pane (#4759): Go to it shows it while it is listed.
       const session =
@@ -11434,6 +11540,25 @@ export const PlaneView = memo(function PlaneView({
           : session !== undefined
             ? () => (showChat(session), read())
             : undefined;
+      // A window-only ask no chat waits on, on its chat's finish row (T1-42, R-329). The row
+      // has no Dismiss while the ask is on it (Q274): the ask is on no other surface, so a
+      // dismissed row would take it from the window for good.
+      // **A finish row's ways out** (T1-33, R-300; Q272): its turn's unresolved blocks', as
+      // their Chat log rows offer them, each acting on the chat it is about. Drawn as an
+      // element, never by a helper called here: what Go presses reads refs (react-hooks/refs).
+      const ways =
+        update.kind === "turn-finished" && finishWaysOf(finishedTurns, keys).length > 0 ? (
+          <FinishRowWays
+            plane={plane}
+            turns={finishedTurns}
+            keys={keys}
+            who={update.chain.at(-1) ?? "this chat"}
+            nameOf={nameOf}
+            go={(session) => (showChat(session), read())}
+          />
+        ) : undefined;
+      const onIt = finishAsks.get(update.key);
+      if (onIt !== undefined) return { update, go, read, ways, ...onIt };
       const refused = away.get(update.key);
       if (update.kind === "refused-away" && refused !== undefined)
         return { update, ...awayRow(refused, (one, how) => onAway?.(plane, one, how), put) };
@@ -11507,16 +11632,51 @@ export const PlaneView = memo(function PlaneView({
             : "Put this update away, and the chat's needs-you item with it",
         };
       }
+      // **A block result opens its chat's Chat log** (R-226): the turn's finish row that ended
+      // with a block unresolved, at its blocks, as the marker does (R-301). A row that stands
+      // for several chats (R-181) offers each of them its own.
+      const blockedChats = stoppedAfterBlock(update)
+        ? [
+            ...new Map(
+              keys.flatMap((key) => {
+                const chat = finishedBy.get(key);
+                return chat !== undefined && open(chat) !== undefined
+                  ? [[chat, chatNames.get(chat) ?? namedIn.get(key) ?? "this chat"] as const]
+                  : [];
+              }),
+            ),
+          ]
+        : [];
+      if (blockedChats.length > 0)
+        return {
+          update,
+          go,
+          read,
+          dismiss: put,
+          // Built here, not by a helper: what it presses reads refs, so it is handed to no
+          // function while the view draws (react-hooks/refs).
+          answers: blockedChats.map(([chat, name]) => ({
+            ...CHAT_LOG_ANSWER,
+            name: openTheChatLogOf(name),
+            press: () => {
+              askToOpenChatLog(plane, chat, "blocks");
+              read();
+              return undefined;
+            },
+          })),
+        };
       // A finished task opens in place to show its report, or why it failed (#5651).
       const report = task?.report.trim() ? task.report : undefined;
-      return { update, go, report, read, dismiss: put };
+      return { update, go, report, read, dismiss: put, ways };
     });
     return {
       rows,
       opened: openedUpdate,
       // The lines of the list shown (#5646): Mine's or Project's, never the other's.
-      onMarkAllRead: (keys: readonly string[]) => settleUpdates(keys, "read"),
-      onDismissAll: (keys: readonly string[]) => {
+      onMarkAllRead: (keys: readonly string[]) => settleUpdates(each(keys), "read"),
+      onDismissAll: (shown: readonly string[]) => {
+        // A finish row that holds a window-only ask is never put away (Q274).
+        const keys = each(shown).filter((key) => !finishAsks.has(key));
         const these = new Set(keys);
         // Each update a source lists is put away there too, as its own Dismiss would.
         for (const one of keptUpdates ?? []) {
@@ -11541,6 +11701,10 @@ export const PlaneView = memo(function PlaneView({
     };
   }, [
     keptUpdates,
+    finishedTurns,
+    finishAsks,
+    finishedTurns,
+    nameOf,
     settleUpdates,
     sentDrafts,
     finishedTasks,
@@ -11565,6 +11729,25 @@ export const PlaneView = memo(function PlaneView({
   const showUpdates = useCallback(() => showSideView("updates"), [showSideView]);
   /** Notices, shown (#5645): the project's Notices, in the Panel's right half, under Asks. */
   const showNotices = useCallback(() => showSideView("notices"), [showSideView]);
+  /** **A control a message named, asked for** (R-333): the project in front shows its Notices,
+   *  whose list puts the keyboard on it. */
+  const askedControl = useAskedControl(plane);
+  useEffect(() => {
+    if (askedControl === undefined || !inFront) return;
+    // Shown without its first stop taking the keyboard: its list puts it on the control.
+    showSide("notices");
+    // Not cancelled when the ask is reached: a frame on, the keyboard is on the control, or, where
+    // none stands to put it on, on the view's first stop, as its key leaves it.
+    requestAnimationFrame(() => {
+      const panel = document.querySelector('[role="tabpanel"][data-view="notices"]');
+      if (panel === null || !panel.contains(document.activeElement)) giveViewTheKeyboard("notices");
+    });
+  }, [askedControl, inFront, showSide]);
+  /** **The Notices view, findable** (Q182, Q183): over this project's dismissals. */
+  const noticesFindable = useMemo(
+    () => ({ project: plane, dismissed, showAgain }),
+    [plane, dismissed, showAgain],
+  );
   /** A runner's branch ready to push, from the away summary (#2051): its workspace in front,
    *  and Changes, where it is taken here and pushed. */
   const showChangesOf = useCallback(
@@ -11703,7 +11886,7 @@ export const PlaneView = memo(function PlaneView({
   }, [alerts, plane, noticesListed, showNotices, windowLines?.count]);
 
   /** The element this project draws into, in the window only while it is in front. */
-  const host = useProjectHost();
+  const host = useProjectHost(plane);
   /**
    * **A workspace switch slides the workspace in** (#2916, R114): its side panel, its work and
    * docked tabs, its right panel and its bottom halves, which are the regions; the activity bars
@@ -12127,6 +12310,7 @@ export const PlaneView = memo(function PlaneView({
             brief={openBrief}
             answer={openAnswer}
             studioChats={studioChats}
+            blockedMarkers={blockedMarkers}
           >
             <SessionOffersLent
               plane={plane}
@@ -12435,6 +12619,7 @@ export const PlaneView = memo(function PlaneView({
                       asks={waiting}
                       onGo={goToAsking}
                       notices={standing}
+                      findable={noticesFindable}
                       reading={inboxReading}
                       onNotices={setNoticesListed}
                       onDot={setNoticesDot}
@@ -13456,6 +13641,7 @@ function Lent({
   brief,
   answer,
   studioChats,
+  blockedMarkers,
   children,
 }: {
   chats: ComponentProps<typeof ChatsHere.Provider>["value"];
@@ -13487,6 +13673,8 @@ function Lent({
   answer: OpenAnswer;
   /** The chats the Skill studio started, still open (#5185). */
   studioChats: StudioChatsLent;
+  /** Each chat's blocked marker (T1-30). */
+  blockedMarkers: BlockedMarkersHeld;
   children: ReactNode;
 }) {
   return (
@@ -13506,7 +13694,9 @@ function Lent({
                               <BriefOpener value={brief}>
                                 <AnswerOpener value={answer}>
                                   <StudioChatsHere.Provider value={studioChats}>
-                                    {children}
+                                    <BlockedMarkers.Provider value={blockedMarkers}>
+                                      {children}
+                                    </BlockedMarkers.Provider>
                                   </StudioChatsHere.Provider>
                                 </AnswerOpener>
                               </BriefOpener>

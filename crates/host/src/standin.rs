@@ -676,6 +676,14 @@ impl Confining for StandInConfining {
                     _ => None,
                 })
                 .collect(),
+            next: one
+                .changes
+                .iter()
+                .filter_map(|change| match change {
+                    ReachChange::AllowNext { host } => Some(host.clone()),
+                    _ => None,
+                })
+                .collect(),
         })
     }
 }

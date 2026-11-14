@@ -81,6 +81,8 @@ pub struct Answered {
     pub decision: Decision,
     /// The guard rule that refused, for a denial.
     pub rule: Option<String>,
+    /// The gate's arm that refused, for a denial the gate gave.
+    pub arm: Option<purlis_core::toolgate::Arm>,
     said: Said,
 }
 
@@ -101,6 +103,10 @@ impl Answered {
                 Answer::Deny(verdict) => Some(verdict.reason.clone()),
                 Answer::Nothing | Answer::Say(_) => None,
             },
+            arm: match &answer {
+                Answer::Deny(verdict) => verdict.arm,
+                Answer::Nothing | Answer::Say(_) => None,
+            },
             said: Said::Answer(answer),
         }
     }
@@ -110,6 +116,7 @@ impl Answered {
         Self {
             decision,
             rule: rule.map(str::to_owned),
+            arm: None,
             said: Said::Exit(code),
         }
     }
@@ -150,6 +157,9 @@ pub fn handler(name: &str) -> Option<Handler> {
         // A purlis tool that failed (#5697): what failed inside purlis goes to the app as a
         // draft ([`tell_the_app_what_failed`]); the chat is told on its next turn, not here.
         purlis_core::caught::TOOL_WORD => says_nothing,
+        // The harness's own check refused the call (R-094): the host writes the block from the
+        // line every tool hook sends; the harness is told nothing, so its refusal stands.
+        purlis_core::hookreg::HARNESS_DENIED => says_nothing,
         _ => return None,
     })
 }
@@ -423,6 +433,7 @@ fn briefing_ask<'a>(hook: &'a Hook) -> purlis_core::briefing::Ask<'a> {
         payload: hook.payload,
         env: &env,
         now: hook.now,
+        attendance: attendance(hook),
     }
 }
 
@@ -527,6 +538,28 @@ pub fn sessionstart_skills(payload: &str, now: Option<&str>) {
     });
 }
 
+/// **This chat's attendance, as the briefing and the commit gate read it** (R-111, R-112;
+/// T1-22, #6413): the fact the app holds, asked as A4 asks it
+/// ([`crate::guard::attendance_of_this_chat`]) and read as A4 reads it
+/// ([`purlis_core::attendance::of_a_line`]). In a chat the app started, attended only where the
+/// app says so, so no app, an app older than the ask and a refusal all read as unattended; on a
+/// harness whose mode purlis can check, the line's own bypass bit lowers it first (Q276). In a
+/// harness the app did not start, the line's own bit is all there is. Nothing in a payload
+/// raises it.
+fn attendance(hook: &Hook) -> purlis_core::dispatchunattended::Attendance {
+    use purlis_core::dispatchunattended::Attendance;
+    let permission_mode = hook
+        .payload
+        .get("permission_mode")
+        .and_then(serde_json::Value::as_str);
+    let asked = || crate::guard::attendance_of_this_chat(permission_mode);
+    let held = crate::session::chat_number().map(|_| &asked as &dyn Fn() -> Attendance);
+    let harness = purlis_core::harness::Harness::of_chat(
+        purlis_core::hookwire::chat_harness(hook.env).as_deref(),
+    );
+    purlis_core::attendance::of_a_line(held, harness, permission_mode)
+}
+
 /// `userpromptsubmit`'s own work, handed to the turn that is starting as one
 /// `additionalContext`: the heartbeat; the commitment gate
 /// ([`purlis_core::commitgate`], charter#369), which tells a prompt asking for work with a real
@@ -546,7 +579,9 @@ pub fn userpromptsubmit(payload: &str, now: Option<&str>) {
         if !hook.in_plane {
             return;
         }
-        let mut parts: Vec<String> = purlis_core::commitgate::nudge(hook).into_iter().collect();
+        let mut parts: Vec<String> = purlis_core::commitgate::nudge(hook, attendance(hook))
+            .into_iter()
+            .collect();
         // What this chat's router points the prompt at (SK-15c): only where the chat's start
         // armed it for a router that reads prompts, so no other chat's prompt leaves this hook.
         if env(purlis_core::skills::PROMPT_ROUTER_ENV).as_deref() == Some("1")

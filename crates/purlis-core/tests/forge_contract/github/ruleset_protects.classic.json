@@ -1,0 +1,37 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest, repos/rules: Get rules for a branch (none), and branches: Get branch protection (required_pull_request_reviews)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/acme/api/rules/branches/main"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "[]",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/acme/api/branches/main/protection"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"url\":\"https://api.github.com/repos/acme/api/branches/main/protection\",\"required_pull_request_reviews\":{\"dismiss_stale_reviews\":false,\"require_code_owner_reviews\":false,\"required_approving_review_count\":1},\"enforce_admins\":{\"enabled\":false},\"required_linear_history\":{\"enabled\":false},\"allow_force_pushes\":{\"enabled\":false},\"allow_deletions\":{\"enabled\":false}}",
+        "err": ""
+      }
+    }
+  ]
+}

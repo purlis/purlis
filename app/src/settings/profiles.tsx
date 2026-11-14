@@ -51,12 +51,8 @@ export function profilesGroup(plane?: string): SettingsGroup {
   };
 }
 
-/** The harnesses a profile can be made of, as the core names them. */
-export const HARNESSES = [
-  { value: "claude", label: "Claude Code" },
-  { value: "codex", label: "Codex" },
-  { value: "opencode", label: "opencode" },
-];
+import { HARNESSES } from "./harnesses";
+export { HARNESSES };
 
 type Read =
   | { state: "reading" }

@@ -25,6 +25,7 @@ const MINE: CloneToVouch = {
   folder: "workspaces/smart-ide/repos/widget",
   place: "github.com/acme/widget",
   places: ["github.com/acme/widget"],
+  made: null,
 };
 
 const SPLIT: CloneToVouch = {

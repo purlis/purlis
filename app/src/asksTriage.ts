@@ -13,6 +13,10 @@ import { OTHER_SCOPES } from "./AskDecision";
  * Chat when it opens, wrapping past the last to the first. It never goes into another scope or
  * another project: those asks are not rows of this list.
  *
+ * **Within the scope in view** (ADR 0121, amended 2026-11-12, decision 8, #6346): Asks opens on
+ * Chat, and triage walks only the asks the scope picked lists, round to the first past the last;
+ * it never goes on into another scope or another project, whose own Asks answers its asks.
+ *
  * What is decided here is where the keyboard goes, read off the rows the list family drew
  * (#3123, ruling B: grid rows, ↑ and ↓ between rows, ← and → through a row's buttons). Nothing
  * here presses an answer: a key presses the row's own button, so the settle guard (ADR 0097,

@@ -194,6 +194,8 @@ fn with_no_notice_to_raise_a_held_connection_is_refused_at_once() {
             harness: Some(Harness::ClaudeCode),
             blocks: Arc::default(),
             moved: Arc::new(Mutex::new(None)),
+            stops: Arc::new(Mutex::new(None)),
+            ended: Arc::new(Mutex::new(None)),
         },
         std::env::temp_dir().join("purlis-no-such-project-1709"),
     )
@@ -246,6 +248,8 @@ fn a_live_ask_is_held_for_its_chat_and_the_window_told_though_no_notice_went_up(
             harness: Some(Harness::ClaudeCode),
             blocks: Arc::clone(&blocks),
             moved,
+            stops: Arc::new(Mutex::new(None)),
+            ended: Arc::new(Mutex::new(None)),
         },
         std::env::temp_dir().join("purlis-no-such-project-1709-2"),
     )
@@ -292,6 +296,8 @@ fn a_burst_of_live_asks_keeps_each_held_while_its_connection_waits() {
             harness: Some(Harness::ClaudeCode),
             blocks: Arc::clone(&blocks),
             moved,
+            stops: Arc::new(Mutex::new(None)),
+            ended: Arc::new(Mutex::new(None)),
         },
         std::env::temp_dir().join("purlis-no-such-project-1709-3"),
     )
@@ -321,6 +327,150 @@ fn a_burst_of_live_asks_keeps_each_held_while_its_connection_waits() {
     for one in held {
         assert_eq!(one.join().expect("answered"), Answer::Refused);
     }
+}
+
+/// R-290 (Q154): a held connection's refusal has one home at every moment. While the chat
+/// waits on it, it is an ask in the registry and no block; once its hold times out, the ask is
+/// withdrawn and one Sandbox block is written, naming the host as a grant names it and the tool
+/// the chat's call in flight was, by the harness's name. A timeout told again writes no second
+/// block. The chat's next call is the other way it stops waiting ([`moved_on`], Q240), and that
+/// too reaches a block only through the timeout told here.
+#[test]
+fn a_sandbox_refusal_leaves_asks_and_becomes_one_block_when_the_chat_stops_waiting() {
+    use crate::sandboxing::GrantWhat;
+    use crate::taskblocks::HeldBlock;
+    use purlis_core::eventlog::stops::{Block, Source, Stop, Target};
+    use purlis_core::sandbox::asks::Heard;
+    let chats = Chats::new();
+    let written: Arc<Mutex<Vec<(u32, Stop)>>> = Arc::default();
+    chats.write_stops_with({
+        let written = Arc::clone(&written);
+        Arc::new(move |chat, stop, _| {
+            lock(&written).push((chat, stop));
+            Ok(())
+        })
+    });
+    let tell = super::asked_by_the_proxy(
+        super::Asking {
+            hear: Arc::new(Mutex::new(Some(Arc::new(|_| {})))),
+            reached: Arc::new(Mutex::new(None)),
+            whose: Arc::new(std::sync::atomic::AtomicU32::new(9)),
+            who: super::ReachedAs::default(),
+            harness: Some(Harness::ClaudeCode),
+            blocks: Arc::clone(&chats.blocks),
+            moved: Arc::new(Mutex::new(None)),
+            stops: Arc::clone(&chats.stops),
+            ended: Arc::new(Mutex::new(None)),
+        },
+        std::env::temp_dir().join("purlis-no-such-project-290"),
+    )
+    .tell;
+    let call = |tool: &str| purlis_core::hookwire::ToolCall {
+        chat: 9,
+        tool_hook: "pretooluse".to_owned(),
+        tool: Some(tool.to_owned()),
+        call: None,
+        args: None,
+        decision: purlis_core::hookwire::Decision::default(),
+        rule: None,
+        arm: None,
+        hook_ms: 0,
+        agent: None,
+        at_ms: 0,
+        skill: None,
+    };
+    let asked = |host: &str| {
+        chats.blocks().every_since().iter().any(|(chat, block, _)| {
+            *chat == 9
+                && *block
+                    == HeldBlock {
+                        operation: "connect".to_owned(),
+                        kind: "host".to_owned(),
+                        what: GrantWhat::Host,
+                        target: host.to_owned(),
+                    }
+        })
+    };
+    let blocks_of = |target: &str| -> Vec<Block> {
+        lock(&written)
+            .iter()
+            .filter_map(|(chat, stop)| match stop {
+                Stop::Block(block)
+                    if *chat == 9
+                        && block.target == Some(Target::host(target).expect("a host")) =>
+                {
+                    Some(block.clone())
+                }
+                _ => None,
+            })
+            .collect()
+    };
+
+    // The timeout: the chat's call in flight is a Bash command whose connection is held.
+    chats.called(&call("Bash"));
+    tell(Heard::Asked(vec!["slow.example.com:443".to_owned()]));
+    assert!(asked("slow.example.com"), "an ask while the chat waits");
+    assert!(blocks_of("slow.example.com").is_empty(), "and no block");
+    tell(Heard::TimedOut("slow.example.com:443".to_owned()));
+    assert!(!asked("slow.example.com"), "the ask is withdrawn");
+    let timed_out = blocks_of("slow.example.com");
+    assert_eq!(timed_out.len(), 1, "one block: {timed_out:?}");
+    assert_eq!(timed_out[0].source, Source::Sandbox);
+    assert_eq!(timed_out[0].tool, "Bash");
+
+    // Its connection is told timed out again: the refusal is a block already, never a second.
+    tell(Heard::TimedOut("slow.example.com:443".to_owned()));
+    assert_eq!(blocks_of("slow.example.com").len(), 1, "never a second");
+}
+
+/// **A waiting Allow next time · once that ended is audited** (T1-34, Q278): used up by the
+/// chat's next attempt, or put out past the most a board keeps, the chat's proxy tells it, and
+/// it reaches the audit of the person's grant ending, for the chat it waited for. It lives in
+/// memory alone, so nothing else keeps it.
+///
+/// Mutation it kills: the proxy's `UsedNext` or `DroppedNext` arm left without its audit.
+#[test]
+fn a_waiting_once_used_up_or_put_out_is_audited_for_its_chat() {
+    use purlis_core::sandbox::asks::Heard;
+    let chats = Chats::new();
+    let ended: Arc<Mutex<Vec<(u32, String)>>> = Arc::default();
+    chats.audit_nexts_ended_with({
+        let ended = Arc::clone(&ended);
+        Arc::new(move |chat, target: &str| lock(&ended).push((chat, target.to_owned())))
+    });
+    let tell = super::asked_by_the_proxy(
+        super::Asking {
+            hear: Arc::new(Mutex::new(Some(Arc::new(|_| {})))),
+            reached: Arc::new(Mutex::new(None)),
+            whose: Arc::new(std::sync::atomic::AtomicU32::new(9)),
+            who: super::ReachedAs::default(),
+            harness: Some(Harness::ClaudeCode),
+            blocks: Arc::clone(&chats.blocks),
+            moved: Arc::new(Mutex::new(None)),
+            stops: Arc::clone(&chats.stops),
+            ended: Arc::clone(&chats.nexts_ended),
+        },
+        std::env::temp_dir().join("purlis-no-such-project-t1-34"),
+    )
+    .tell;
+    tell(Heard::UsedNext("registry.example.com:443".to_owned()));
+    tell(Heard::DroppedNext("old.example.com:443".to_owned()));
+    // Each is told on a thread of its own, so a held connection never waits on the audit.
+    for _ in 0..400 {
+        if lock(&ended).len() == 2 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let mut audited = lock(&ended).clone();
+    audited.sort();
+    assert_eq!(
+        audited,
+        [
+            (9, "old.example.com:443".to_owned()),
+            (9, "registry.example.com:443".to_owned()),
+        ]
+    );
 }
 
 /// #1664: a local address the proxy refused is the chat's Block of a local socket, naming no
@@ -2591,6 +2741,35 @@ fn a_restart_for_project_settings_ends_the_old_run_before_the_new_one_starts() {
 }
 
 #[test]
+fn a_restart_for_project_settings_says_the_old_run_is_replaced_before_it_ends_it() {
+    // ADR 0076 §2, Q247: the event log is told the run is superseded while it still runs, so
+    // its end is written superseded wherever the log is written, the session host's included,
+    // and the close that follows ends nothing more.
+    let (plane, chats, host, _told) =
+        chats_on_kept_project_settings(crate::projectsettings::Watch::new());
+    let session = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    let replaced = Arc::new(Mutex::new(Vec::new()));
+    chats.when_a_run_is_replaced(Box::new({
+        let (replaced, host) = (Arc::clone(&replaced), host.clone());
+        move |number| lock(&replaced).push((number, host.openings().len()))
+    }));
+
+    let started = chats
+        .restart_for_project_settings(session)
+        .expect("started again");
+
+    assert_eq!(
+        *lock(&replaced),
+        [(session, 1)],
+        "once, before the new run started"
+    );
+    let _ = chats.close(session);
+    chats.close(started).expect("ends");
+}
+
+#[test]
 fn a_session_is_renamed_only_where_a_new_conversation_is_started() {
     let mut words: Vec<String> = ["--session-id", "a", "--name", "a"]
         .map(str::to_owned)
@@ -2854,6 +3033,7 @@ fn a_port_withdrawn_while_a_chat_runs_is_withdrawn_from_a_browser_it_opens_after
             last_prompt: None,
             runs_as: None,
             runners_word: None,
+            reports_verified: false,
             clones_at_start: None,
             prompt_key: None,
         },
@@ -2934,6 +3114,7 @@ fn chats_started_with_different_grants_are_compiled_apart_and_listed_apart() {
                 last_prompt: None,
                 runs_as: None,
                 runners_word: None,
+                reports_verified: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -3378,6 +3559,7 @@ fn a_chat_on_a_profile_is_compared_under_the_persona_grants_it_started_with() {
                 last_prompt: None,
                 runs_as: None,
                 runners_word: None,
+                reports_verified: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -8721,6 +8903,7 @@ fn each_path_reads_the_run_record_in_the_direction_that_fails_closed_for_it() {
                 last_prompt: None,
                 runs_as: None,
                 runners_word: None,
+                reports_verified: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -9214,6 +9397,7 @@ fn only_a_chat_with_no_sandbox_at_all_runs_unconfined() {
                 last_prompt: None,
                 runs_as: None,
                 runners_word: None,
+                reports_verified: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -9273,6 +9457,7 @@ fn a_login_is_asked_for_by_the_persona_its_chat_was_started_as() {
                 last_prompt: None,
                 runs_as: None,
                 runners_word: None,
+                reports_verified: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -9385,6 +9570,20 @@ fn one_function_names_a_chats_persona_for_every_path_after_a_handoff_too() {
 struct Told {
     allowed: Mutex<Vec<(String, purlis_core::sandbox::reach::By)>>,
     forgot: Mutex<Vec<(String, purlis_core::sandbox::reach::By)>>,
+    /// What waits for the chat's next attempt (T1-34).
+    next: Mutex<Vec<String>>,
+    /// Why it can't take an Allow next time, where it can't (T1-34): a session host's board
+    /// whose link is gone, say.
+    refuses_next: Option<String>,
+}
+
+/// **A board that can't take an Allow next time, saying `why`** (T1-34): as a session host's
+/// board does whose link is gone.
+pub(crate) fn a_board_refusing_next(why: &str) -> Arc<dyn purlis_core::sandbox::Board> {
+    Arc::new(Told {
+        refuses_next: Some(why.to_owned()),
+        ..Told::default()
+    })
 }
 
 impl purlis_core::sandbox::Board for Told {
@@ -9431,11 +9630,32 @@ impl purlis_core::sandbox::Board for Told {
     fn keep_left_out_blocked(&self, _: u16) {}
 
     fn hold_open(&self, _: bool) {}
+
+    fn give_up(&self, _: &str) -> bool {
+        false
+    }
+
+    fn allow_next(&self, host: &purlis_core::sandbox::hosts::Host) -> Result<(), String> {
+        if let Some(why) = &self.refuses_next {
+            return Err(why.clone());
+        }
+        lock(&self.next).push(host.to_string());
+        Ok(())
+    }
+
+    fn next_attempts(&self) -> Vec<String> {
+        lock(&self.next).clone()
+    }
+
+    fn forget_next(&self, host: &purlis_core::sandbox::hosts::Host) {
+        let gone = host.to_string();
+        lock(&self.next).retain(|one| *one != gone);
+    }
 }
 
-/// What holds a [`Told`] board, as the session host holds a chat's proxy.
+/// What holds a board, as the session host holds a chat's proxy.
 #[derive(Debug)]
-struct HeldWith(Arc<Told>);
+struct HeldWith(Arc<dyn purlis_core::sandbox::Board>);
 
 impl purlis_core::sandbox::HeldElsewhere for HeldWith {
     fn id(&self) -> &str {
@@ -9447,7 +9667,7 @@ impl purlis_core::sandbox::HeldElsewhere for HeldWith {
     }
 
     fn board(&self) -> Option<Arc<dyn purlis_core::sandbox::Board>> {
-        Some(Arc::clone(&self.0) as Arc<dyn purlis_core::sandbox::Board>)
+        Some(Arc::clone(&self.0))
     }
 }
 
@@ -9457,9 +9677,24 @@ fn two_chats_asking_live(plane: &std::path::Path) -> (Chats, [Arc<Told>; 2]) {
     let chats = restartable_chats_of(plane, Pretend::default());
     let boards = [Arc::new(Told::default()), Arc::new(Told::default())];
     for (number, board) in (1..).zip(&boards) {
-        let mut chat = a_resumable_chat_in(plane);
-        chat.identity.id = Some(format!("chat-{number}"));
-        let confinement = purlis_core::sandbox::Confinement::held_on_another_machine(
+        a_chat_asking_live_on(&chats, plane, number, Some(Arc::clone(board) as _));
+    }
+    (chats, boards)
+}
+
+/// **Chat `number` open in `chats`, in `plane`, by the id `chat-<number>`** (T1-34): its proxy
+/// asking live on `board`, held as the session host holds one, or asking nobody where there is
+/// none.
+pub(crate) fn a_chat_asking_live_on(
+    chats: &Chats,
+    plane: &std::path::Path,
+    number: u32,
+    board: Option<Arc<dyn purlis_core::sandbox::Board>>,
+) {
+    let mut chat = a_resumable_chat_in(plane);
+    chat.identity.id = Some(format!("chat-{number}"));
+    let confinement = board.map(|board| {
+        purlis_core::sandbox::Confinement::held_on_another_machine(
             purlis_core::sandbox::Placed {
                 http: 1,
                 socks: 2,
@@ -9469,36 +9704,36 @@ fn two_chats_asking_live(plane: &std::path::Path) -> (Chats, [Arc<Told>; 2]) {
                 left_out: Vec::new(),
                 host_name: None,
             },
-            Box::new(HeldWith(Arc::clone(board))),
-        );
-        lock(&chats.open).insert(
-            number,
-            Running {
-                chat,
-                how: Reopened::Resumed(SessionId::new(ID).expect("an id")),
-                harness: Some(Harness::ClaudeCode),
-                declared: None,
-                workspace: None,
-                confinement: Some(confinement),
-                confines: None,
-                started_with: StartedWith::default(),
-                composed_by_its_host: false,
-                ran: Some(purlis_session_protocol::session::RunSandbox::By(
-                    "seatbelt".to_owned(),
-                )),
-                grants_as: None,
-                skills: None,
-                plane_skills: true,
-                skills_read: Default::default(),
-                last_prompt: None,
-                runs_as: None,
-                runners_word: None,
-                clones_at_start: None,
-                prompt_key: None,
-            },
-        );
-    }
-    (chats, boards)
+            Box::new(HeldWith(board)),
+        )
+    });
+    lock(&chats.open).insert(
+        number,
+        Running {
+            chat,
+            how: Reopened::Resumed(SessionId::new(ID).expect("an id")),
+            harness: Some(Harness::ClaudeCode),
+            declared: None,
+            workspace: None,
+            confinement,
+            confines: None,
+            started_with: StartedWith::default(),
+            composed_by_its_host: false,
+            ran: Some(purlis_session_protocol::session::RunSandbox::By(
+                "seatbelt".to_owned(),
+            )),
+            grants_as: None,
+            skills: None,
+            plane_skills: true,
+            skills_read: Default::default(),
+            last_prompt: None,
+            runs_as: None,
+            runners_word: None,
+            reports_verified: false,
+            clones_at_start: None,
+            prompt_key: None,
+        },
+    );
 }
 
 /// Chat `number`, a harness chat named `name` working in `cwd`, open in `chats` with
@@ -9533,6 +9768,7 @@ fn open_a_harness_chat(
             last_prompt: None,
             runs_as: None,
             runners_word: None,
+            reports_verified: false,
             clones_at_start: None,
             prompt_key: None,
         },
@@ -9867,6 +10103,7 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
                 last_prompt: None,
                 runs_as: None,
                 runners_word: None,
+                reports_verified: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -9954,6 +10191,7 @@ fn a_chat_skill_stamp_is_read_again_only_once_the_instructions_change() {
                 last_prompt: None,
                 runs_as: None,
                 runners_word: None,
+                reports_verified: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -11525,4 +11763,1112 @@ fn a_runner_chats_notice_says_all_a_chat_here_would_and_again_once_reattached_60
     );
     assert_eq!(chats.skills_missing(3), None, "nothing kept");
     let _ = chats.close(3);
+}
+
+/// R-227, Q238: a chat the window starts records, in its run's start, the protection this start
+/// resolved: the project's sandbox where its file turns it on, and purlis's default floor where
+/// it does not, never the project's.
+#[test]
+fn a_chat_the_window_starts_records_the_tier_of_the_sandbox_it_resolved() {
+    for (manifest, level, tier) in [
+        ("[sandbox]\nmode = \"on\"\n", "on", "project"),
+        ("", "floor", "purlis"),
+    ] {
+        let plane = tempfile::tempdir().expect("a plane");
+        std::fs::write(plane.path().join(purlis_core::plane::MANIFEST), manifest)
+            .expect("charter.toml");
+        let chats = restartable_chats_of(plane.path(), Pretend::default());
+        let protection: std::sync::Arc<Mutex<Vec<serde_json::Value>>> = std::sync::Arc::default();
+        let told = std::sync::Arc::clone(&protection);
+        chats.when_a_run_begins(Box::new(move |_, _, _, attributes, _| {
+            lock(&told).push(serde_json::to_value(&attributes.protection).expect("json"));
+        }));
+
+        let session = chats
+            .start(&a_chat_in_with(plane.path(), None), SIZE)
+            .expect("starts");
+
+        let protection = lock(&protection).clone();
+        assert_eq!(protection.len(), 1, "{manifest:?}: one run began");
+        assert_eq!(
+            protection[0]["layers"],
+            serde_json::json!([{"layer": "sandbox", "level": level, "tier": tier}]),
+            "{manifest:?}"
+        );
+        chats.close(session).expect("ends");
+    }
+}
+
+/// R-290 under Q240: when chat 9 has "moved on" from a connection its proxy holds, through a
+/// real board of live asks beside an open chat, its hook lines told as [`Chats::called`] hears
+/// them, and its stops written where a test reads them.
+mod moved_on {
+    use std::sync::{Arc, Mutex, Weak};
+    use std::time::Duration;
+
+    use purlis_core::eventlog::stops::{Source, Stop, Target};
+    use purlis_core::hookwire::Decision;
+    use purlis_core::sandbox::asks::{Answer, Asks};
+
+    use super::*;
+
+    const CHAT: u32 = 9;
+
+    /// What holds a real board, as the session host holds a chat's proxy.
+    #[derive(Debug)]
+    struct HeldAsks(Arc<Asks>);
+
+    impl purlis_core::sandbox::HeldElsewhere for HeldAsks {
+        fn id(&self) -> &str {
+            "asks"
+        }
+
+        fn withdraw_port(&self, _: u16) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn board(&self) -> Option<Arc<dyn purlis_core::sandbox::Board>> {
+            Some(Arc::clone(&self.0) as Arc<dyn purlis_core::sandbox::Board>)
+        }
+    }
+
+    pub(super) struct Live {
+        pub chats: Arc<Chats>,
+        pub board: Arc<Asks>,
+        written: Arc<Mutex<Vec<(u32, Stop)>>>,
+        _plane: tempfile::TempDir,
+    }
+
+    /// Chat 9 open with a proxy that asks live, its hold `hold` long, each ask told as the
+    /// window's road tells it ([`crate::taskblocks::heard`]).
+    pub(super) fn live(hold: Duration) -> Live {
+        let plane = tempfile::tempdir().expect("a plane");
+        let chats = Arc::new(restartable_chats_of(plane.path(), Pretend::default()));
+        let written: Arc<Mutex<Vec<(u32, Stop)>>> = Arc::default();
+        chats.write_stops_with({
+            let written = Arc::clone(&written);
+            Arc::new(move |chat, stop, _| {
+                lock(&written).push((chat, stop));
+                Ok(())
+            })
+        });
+        let weak: Weak<Chats> = Arc::downgrade(&chats);
+        let plane_id: crate::planes::PlaneId =
+            serde_json::from_str("\"/plane\"").expect("a plane id");
+        let hear: crate::hooks::Blocks = Arc::new(move |line| {
+            let Some(chats) = weak.upgrade() else { return };
+            let told = crate::hooks::blocked_holding(&plane_id, &line.into(), false, None, None);
+            crate::taskblocks::heard(&chats, &told);
+        });
+        let asking = super::super::asked_by_the_proxy(
+            super::super::Asking {
+                hear: Arc::new(Mutex::new(Some(hear))),
+                reached: Arc::new(Mutex::new(None)),
+                whose: Arc::new(std::sync::atomic::AtomicU32::new(CHAT)),
+                who: super::super::ReachedAs::default(),
+                harness: Some(Harness::ClaudeCode),
+                blocks: Arc::clone(&chats.blocks),
+                moved: Arc::new(Mutex::new(None)),
+                stops: Arc::clone(&chats.stops),
+                ended: Arc::new(Mutex::new(None)),
+            },
+            plane.path().to_path_buf(),
+        );
+        let board = Arc::new(Asks::timed(asking.tell, hold, Duration::from_millis(10)));
+        let mut chat = a_resumable_chat_in(plane.path());
+        chat.identity.id = Some("chat-9".to_owned());
+        let confinement = purlis_core::sandbox::Confinement::held_on_another_machine(
+            purlis_core::sandbox::Placed {
+                http: 1,
+                socks: 2,
+                tmp: None,
+                routed: None,
+                ssh: None,
+                left_out: Vec::new(),
+                host_name: None,
+            },
+            Box::new(HeldAsks(Arc::clone(&board))),
+        );
+        lock(&chats.open).insert(
+            CHAT,
+            Running {
+                chat,
+                how: Reopened::Resumed(SessionId::new(ID).expect("an id")),
+                harness: Some(Harness::ClaudeCode),
+                declared: None,
+                workspace: None,
+                confinement: Some(confinement),
+                confines: None,
+                started_with: StartedWith::default(),
+                composed_by_its_host: false,
+                ran: Some(purlis_session_protocol::session::RunSandbox::By(
+                    "seatbelt".to_owned(),
+                )),
+                grants_as: None,
+                skills: None,
+                plane_skills: true,
+                skills_read: Default::default(),
+                last_prompt: None,
+                runs_as: None,
+                runners_word: None,
+                reports_verified: false,
+                clones_at_start: None,
+                prompt_key: None,
+            },
+        );
+        Live {
+            chats,
+            board,
+            written,
+            _plane: plane,
+        }
+    }
+
+    impl Live {
+        /// A hook line of chat 9's: `hook` of call `id` of `tool`, by `agent` (the main one
+        /// where none).
+        pub fn line(&self, hook: &str, id: Option<&str>, tool: &str, agent: Option<&str>) {
+            self.line_deciding(hook, id, tool, agent, Decision::default());
+        }
+
+        /// A hook line as [`Self::line`], whose hook answered `decision`.
+        pub fn line_deciding(
+            &self,
+            hook: &str,
+            id: Option<&str>,
+            tool: &str,
+            agent: Option<&str>,
+            decision: Decision,
+        ) {
+            self.chats.called(&purlis_core::hookwire::ToolCall {
+                chat: CHAT,
+                tool_hook: hook.to_owned(),
+                tool: Some(tool.to_owned()),
+                call: id.map(str::to_owned),
+                args: None,
+                decision,
+                rule: None,
+                arm: None,
+                hook_ms: 0,
+                agent: agent.map(str::to_owned),
+                at_ms: 0,
+                skill: None,
+            });
+        }
+
+        /// A connection to `host` on 443, held on a thread of its own until the ask is listed.
+        pub fn hold(&self, host: &'static str) -> std::thread::JoinHandle<Answer> {
+            let before = self.asks_of(host);
+            let board = Arc::clone(&self.board);
+            let held = std::thread::spawn(move || board.hold(host, 443, &[443]));
+            self.until(|live| live.asks_of(host) > before, "the ask is listed");
+            held
+        }
+
+        /// How many asks the registry lists for chat 9 of `host`.
+        pub fn asks_of(&self, host: &str) -> usize {
+            self.chats
+                .blocks()
+                .every_since()
+                .iter()
+                .filter(|(chat, block, _)| *chat == CHAT && block.target == host)
+                .count()
+        }
+
+        /// The Sandbox blocks written for chat 9 of `host`.
+        pub fn blocks_of(&self, host: &str) -> Vec<purlis_core::eventlog::stops::Block> {
+            lock(&self.written)
+                .iter()
+                .filter_map(|(chat, stop)| match stop {
+                    Stop::Block(block)
+                        if *chat == CHAT
+                            && block.source == Source::Sandbox
+                            && block.target == Some(Target::host(host).expect("a host")) =>
+                    {
+                        Some(block.clone())
+                    }
+                    _ => None,
+                })
+                .collect()
+        }
+
+        pub fn until(&self, done: impl Fn(&Self) -> bool, what: &str) {
+            for _ in 0..400 {
+                if done(self) {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            panic!("never: {what}");
+        }
+
+        /// Gives what is in flight time to go wrong.
+        pub fn settle(&self) {
+            std::thread::sleep(Duration::from_millis(150));
+        }
+    }
+
+    /// Q240: a call by a sub-agent, while the call the connection is held under is open, is not
+    /// the chat moving on: the ask stays and no block is written.
+    #[test]
+    fn a_sub_agents_call_does_not_withdraw_a_held_ask() {
+        let live = live(Duration::from_secs(30));
+        live.line("pretooluse", Some("call-1"), "Bash", None);
+        let held = live.hold("api.example.com");
+        live.line("pretooluse", Some("sub-1"), "Read", Some("agent-a"));
+        live.line("posttooluse", Some("sub-1"), "Read", Some("agent-a"));
+        live.line("pretooluse", Some("sub-2"), "Bash", Some("agent-a"));
+        live.settle();
+        assert_eq!(live.asks_of("api.example.com"), 1, "still an ask");
+        assert!(live.blocks_of("api.example.com").is_empty(), "and no block");
+        assert_eq!(live.board.holding(), 1, "its connection still held");
+        live.board
+            .keep_blocked(&purlis_core::sandbox::hosts::Host::parse("api.example.com").unwrap());
+        held.join().expect("answered");
+    }
+
+    /// Q240: a parallel call of the same agent, made while the held call is still open, is not
+    /// the chat moving on.
+    #[test]
+    fn a_parallel_call_does_not_withdraw_a_held_ask() {
+        let live = live(Duration::from_secs(30));
+        live.line("pretooluse", Some("call-1"), "Bash", None);
+        let held = live.hold("api.example.com");
+        live.line("pretooluse", Some("call-2"), "Bash", None);
+        live.line("posttooluse", Some("call-2"), "Bash", None);
+        live.line("pretooluse", Some("call-3"), "Read", None);
+        live.settle();
+        assert_eq!(live.asks_of("api.example.com"), 1, "still an ask");
+        assert!(live.blocks_of("api.example.com").is_empty(), "and no block");
+        live.board
+            .keep_blocked(&purlis_core::sandbox::hosts::Host::parse("api.example.com").unwrap());
+        held.join().expect("answered");
+    }
+
+    /// Q240: the held call's post-tool line alone is no next call: the chat may still be
+    /// waiting on what that call started.
+    #[test]
+    fn a_posttooluse_alone_does_not_withdraw_a_held_ask() {
+        let live = live(Duration::from_secs(30));
+        live.line("pretooluse", Some("call-1"), "Bash", None);
+        let held = live.hold("api.example.com");
+        live.line("posttooluse", Some("call-1"), "Bash", None);
+        live.settle();
+        assert_eq!(live.asks_of("api.example.com"), 1, "still an ask");
+        assert!(live.blocks_of("api.example.com").is_empty(), "and no block");
+        live.board
+            .keep_blocked(&purlis_core::sandbox::hosts::Host::parse("api.example.com").unwrap());
+        held.join().expect("answered");
+    }
+
+    /// Q240: where the hook lines carry no call id, nothing says which call a connection is
+    /// held under, so only its timeout makes it a block.
+    #[test]
+    fn with_no_call_id_only_the_timeout_withdraws_a_held_ask() {
+        let live = live(Duration::from_millis(600));
+        live.line("pretooluse", None, "Bash", None);
+        let held = live.hold("api.example.com");
+        live.line("posttooluse", None, "Bash", None);
+        live.line("pretooluse", None, "Read", None);
+        live.settle();
+        assert_eq!(live.asks_of("api.example.com"), 1, "still an ask");
+        assert!(live.blocks_of("api.example.com").is_empty(), "and no block");
+        assert_eq!(held.join().expect("answered"), Answer::TimedOut);
+        live.until(
+            |live| live.blocks_of("api.example.com").len() == 1,
+            "one block on timeout",
+        );
+        assert_eq!(live.asks_of("api.example.com"), 0, "withdrawn");
+    }
+
+    /// R-290 under Q240: the held call ended and the same agent made its next call. The board
+    /// gives the connection up, it is refused then, and the one timeout path withdraws the ask
+    /// and writes one block, under the tool of the call it was held under.
+    #[test]
+    fn the_same_agents_next_call_after_the_held_call_ended_makes_it_one_block() {
+        let live = live(Duration::from_secs(30));
+        live.line("pretooluse", Some("call-1"), "Bash", None);
+        let held = live.hold("api.example.com");
+        live.line("posttooluse", Some("call-1"), "Bash", None);
+        live.line("pretooluse", Some("call-2"), "Read", None);
+        assert_eq!(
+            held.join().expect("answered"),
+            Answer::TimedOut,
+            "refused now"
+        );
+        live.until(
+            |live| live.blocks_of("api.example.com").len() == 1,
+            "one block",
+        );
+        assert_eq!(live.asks_of("api.example.com"), 0, "the ask is withdrawn");
+        let block = &live.blocks_of("api.example.com")[0];
+        assert_eq!(block.tool, "Bash", "the call it was held under");
+        assert_eq!(block.qualifier, None);
+        live.line("posttooluse", Some("call-2"), "Read", None);
+        live.line("pretooluse", Some("call-3"), "Read", None);
+        live.settle();
+        assert_eq!(live.blocks_of("api.example.com").len(), 1, "never a second");
+    }
+
+    /// Q240: the held call ended and the same agent made its next call: one block, refused
+    /// now, whatever came before it.
+    fn moves_on_to_one_block(live: &Live) {
+        let held = live.hold("api.example.com");
+        live.line("posttooluse-blocked", Some("call-1"), "Bash", None);
+        live.line("pretooluse", Some("call-2"), "Bash", None);
+        live.until(
+            |live| live.board.holding() == 0,
+            "given up on the next call, long before its timeout",
+        );
+        assert_eq!(
+            held.join().expect("answered"),
+            Answer::TimedOut,
+            "refused now"
+        );
+        live.until(
+            |live| live.blocks_of("api.example.com").len() == 1,
+            "one block",
+        );
+        assert_eq!(live.asks_of("api.example.com"), 0, "the ask is withdrawn");
+    }
+
+    /// Q240: a Grep has no post-tool line (no `PostToolUse` hook names it), so it never stays
+    /// open: a Grep before the held call does not keep the chat from moving on.
+    #[test]
+    fn a_grep_before_the_held_call_does_not_stop_moving_on() {
+        let live = live(Duration::from_secs(30));
+        live.line("pretooluse-read", Some("grep-1"), "Grep", None);
+        live.line("pretooluse", Some("call-1"), "Bash", None);
+        moves_on_to_one_block(&live);
+    }
+
+    /// Q240: a call its guard refused never runs and has no post-tool line: it does not keep
+    /// the chat from moving on.
+    #[test]
+    fn a_denied_call_before_the_held_call_does_not_stop_moving_on() {
+        let live = live(Duration::from_secs(30));
+        live.line_deciding("pretooluse", Some("denied-1"), "Bash", None, Decision::Deny);
+        live.line("pretooluse", Some("call-1"), "Bash", None);
+        moves_on_to_one_block(&live);
+    }
+
+    /// Q240: a sub-agent's Grep, made before the held call, never comes back either; the main
+    /// agent's calls ending says nothing of it, so it must never have been open.
+    #[test]
+    fn a_sub_agents_grep_before_the_held_call_does_not_stop_moving_on() {
+        let live = live(Duration::from_secs(30));
+        live.line("pretooluse-read", Some("grep-1"), "Grep", Some("agent-a"));
+        live.line("pretooluse", Some("call-1"), "Bash", None);
+        moves_on_to_one_block(&live);
+    }
+
+    /// Q240: a sub-agent's call its guard refused, made before the held call, never runs; the
+    /// main agent's calls ending says nothing of it, so it must never have been open.
+    #[test]
+    fn a_sub_agents_denied_call_before_the_held_call_does_not_stop_moving_on() {
+        let live = live(Duration::from_secs(30));
+        live.line_deciding(
+            "pretooluse",
+            Some("denied-1"),
+            "Bash",
+            Some("agent-a"),
+            Decision::Deny,
+        );
+        live.line("pretooluse", Some("call-1"), "Bash", None);
+        moves_on_to_one_block(&live);
+    }
+
+    /// Q240: a call the harness's own check refused is over when that refusal is heard.
+    #[test]
+    fn a_sub_agents_call_the_harness_refused_does_not_stop_moving_on() {
+        let live = live(Duration::from_secs(30));
+        live.line("pretooluse", Some("refused-1"), "Bash", Some("agent-a"));
+        live.line(
+            purlis_core::hookreg::HARNESS_DENIED,
+            Some("refused-1"),
+            "Bash",
+            Some("agent-a"),
+        );
+        live.line("pretooluse", Some("call-1"), "Bash", None);
+        moves_on_to_one_block(&live);
+    }
+
+    /// Q240: a failed Edit has no post-tool line (its failure is no `PostToolUse`): the same
+    /// agent's later call ending is what closes it, so it does not keep the chat from moving on.
+    #[test]
+    fn a_failed_edit_before_the_held_call_does_not_stop_moving_on() {
+        let live = live(Duration::from_secs(30));
+        live.line("pretooluse-edit", Some("edit-1"), "Edit", None);
+        live.line("pretooluse", Some("call-1"), "Bash", None);
+        moves_on_to_one_block(&live);
+    }
+
+    /// Q240: after the chat moved on, a retry to the same host is a new ask the person sees,
+    /// never a hold nobody sees; its timeout is a block of its own.
+    #[test]
+    fn a_retry_after_the_chat_moved_on_is_asked_again_visibly() {
+        let live = live(Duration::from_millis(800));
+        live.line("pretooluse", Some("call-1"), "Bash", None);
+        let held = live.hold("api.example.com");
+        live.line("posttooluse", Some("call-1"), "Bash", None);
+        live.line("pretooluse", Some("call-2"), "Bash", None);
+        assert_eq!(held.join().expect("answered"), Answer::TimedOut);
+        live.until(
+            |live| live.blocks_of("api.example.com").len() == 1,
+            "one block",
+        );
+        let retry = live.hold("api.example.com");
+        assert_eq!(live.asks_of("api.example.com"), 1, "asked again");
+        assert_eq!(retry.join().expect("answered"), Answer::TimedOut);
+        live.until(
+            |live| live.blocks_of("api.example.com").len() == 2,
+            "its own block",
+        );
+    }
+
+    /// Q240: an Allow that reaches the connection before the chat's next call carries it: no
+    /// block is written for a connection that went on.
+    #[test]
+    fn an_allow_racing_the_next_call_leaves_no_false_block() {
+        let live = live(Duration::from_secs(30));
+        live.line("pretooluse", Some("call-1"), "Bash", None);
+        let held = live.hold("api.example.com");
+        live.line("posttooluse", Some("call-1"), "Bash", None);
+        live.chats.allow_live(
+            Some(CHAT),
+            &purlis_core::sandbox::hosts::Host::parse("api.example.com").unwrap(),
+            purlis_core::sandbox::grant::Level::Chat,
+        );
+        live.line("pretooluse", Some("call-2"), "Bash", None);
+        assert!(matches!(held.join().expect("answered"), Answer::Allowed(_)));
+        live.settle();
+        assert!(
+            live.blocks_of("api.example.com").is_empty(),
+            "no false block"
+        );
+    }
+
+    /// Q240: the post-tool detector's line for the same refusal, named or unnamed, after its
+    /// block was written, is dropped, never held again as an ask; so is the proxy's own raise
+    /// of the ask landing late. A new ask of the same host after that is an ask.
+    #[test]
+    fn the_echo_of_a_written_block_is_not_held_again_as_an_ask() {
+        use purlis_core::sandboxblock::{Block, Kind, Operation};
+        let live = live(Duration::from_secs(30));
+        live.line("pretooluse", Some("call-1"), "Bash", None);
+        let held = live.hold("api.example.com");
+        live.line("posttooluse", Some("call-1"), "Bash", None);
+        live.line("pretooluse", Some("call-2"), "Bash", None);
+        held.join().expect("answered");
+        live.until(
+            |live| live.blocks_of("api.example.com").len() == 1,
+            "one block",
+        );
+        let plane: crate::planes::PlaneId = serde_json::from_str("\"/plane\"").unwrap();
+        let echo = |target: Option<&str>| {
+            let line = purlis_core::hookwire::SandboxBlocked {
+                chat: CHAT,
+                sandbox_blocked: Block {
+                    operation: Operation::Connect,
+                    kind: Kind::Host,
+                    ours: false,
+                },
+                harness: Some("claude-code".to_owned()),
+                target: target.map(str::to_owned),
+                read_back: false,
+                suggested: None,
+            };
+            let told = crate::hooks::blocked_holding(&plane, &line.into(), false, None, None);
+            crate::taskblocks::heard(&live.chats, &told)
+        };
+        assert!(!echo(Some("api.example.com:443")), "named: dropped");
+        assert!(!echo(None), "unnamed: dropped");
+        assert!(
+            live.chats.blocks().every().is_empty(),
+            "nothing held as an ask"
+        );
+        let retry = live.hold("api.example.com");
+        assert_eq!(live.asks_of("api.example.com"), 1, "a new ask is an ask");
+        live.board
+            .keep_blocked(&purlis_core::sandbox::hosts::Host::parse("api.example.com").unwrap());
+        retry.join().expect("answered");
+    }
+}
+
+/// R-290 (review finding 5): a held connection's timeout reaches the event log itself, through
+/// [`crate::hooks::Hooks::write_stop`] and a real recorder, as one `stop.block` from the
+/// sandbox naming the host, the tool of the call it was held under and its arguments' digest
+/// (the block loop's target, R-206), and no qualifier (Q235: purlis's own proxy observed it).
+#[test]
+fn a_timed_out_hold_is_written_to_the_event_log_as_one_sandbox_block() {
+    use purlis_core::eventlog::stops::{BLOCK, Block, Source, Target};
+    use purlis_core::eventlog::{ArgsKey, Log, Recorder};
+    use purlis_core::sandbox::asks::Heard;
+    let logs = tempfile::tempdir().expect("a folder for the log");
+    let plane: crate::planes::PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
+    let hooks = Arc::new(crate::hooks::Hooks::deaf(plane));
+    hooks.record_into(crate::hooks::Events::here(Recorder::new(
+        Log::open(logs.path(), "DEVICE").expect("a log"),
+        ArgsKey::open(logs.path()).expect("a key"),
+    )));
+    let chats = Chats::new();
+    chats.write_stops_with({
+        let hooks = Arc::clone(&hooks);
+        Arc::new(move |chat, stop, _| hooks.write_stop(chat, stop))
+    });
+    let tell = super::asked_by_the_proxy(
+        super::Asking {
+            hear: Arc::new(Mutex::new(Some(Arc::new(|_| {})))),
+            reached: Arc::new(Mutex::new(None)),
+            whose: Arc::new(std::sync::atomic::AtomicU32::new(9)),
+            who: super::ReachedAs::default(),
+            harness: Some(Harness::ClaudeCode),
+            blocks: Arc::clone(&chats.blocks),
+            moved: Arc::new(Mutex::new(None)),
+            stops: Arc::clone(&chats.stops),
+            ended: Arc::new(Mutex::new(None)),
+        },
+        std::env::temp_dir().join("purlis-no-such-project-290-log"),
+    )
+    .tell;
+    chats.called(&purlis_core::hookwire::ToolCall {
+        chat: 9,
+        tool_hook: "pretooluse".to_owned(),
+        tool: Some("Bash".to_owned()),
+        call: Some("call-1".to_owned()),
+        args: Some(HELD_CALLS_ARGS.to_owned()),
+        decision: purlis_core::hookwire::Decision::default(),
+        rule: None,
+        arm: None,
+        hook_ms: 0,
+        agent: None,
+        at_ms: 0,
+        skill: None,
+    });
+    tell(Heard::Asked(vec!["slow.example.com:443".to_owned()]));
+    tell(Heard::TimedOut("slow.example.com:443".to_owned()));
+
+    let blocks: Vec<Block> = purlis_core::eventlog::read(logs.path())
+        .expect("the log")
+        .into_iter()
+        .filter(|event| event.kind == BLOCK)
+        .map(|event| serde_json::from_value(event.body).expect("a block's body"))
+        .collect();
+    assert_eq!(
+        blocks,
+        [Block {
+            tool: "Bash".to_owned(),
+            source: Source::Sandbox,
+            qualifier: None,
+            target: Some(Target::host("slow.example.com").expect("a host")),
+            args: Some(
+                ArgsKey::open(logs.path())
+                    .expect("the same key")
+                    .digest(HELD_CALLS_ARGS)
+            ),
+        }],
+        "one stop.block, from the sandbox"
+    );
+}
+
+/// The hash of the arguments of the call a connection was held under, as its hook sent it.
+const HELD_CALLS_ARGS: &str = "5e1f0c0e8a7d6b4c3a2918f7e6d5c4b3a29180f7e6d5c4b3a2918f7e6d5c4b3a";
+
+// ----- the attendance fact A4 reads (T1-18, #6409; Q271, Q275) -----
+
+/// A line of chat `chat`'s own Claude Code hook whose `permission_mode` is the bypass: what lowers
+/// its attendance fact (Q271).
+fn a_bypass_report(chat: u32) -> purlis_core::hookwire::Report {
+    purlis_core::hookwire::Report {
+        chat,
+        event: purlis_core::state::Event::UserPromptSubmit,
+        conversation: purlis_core::hookwire::Conversation::Named(ID.to_owned()),
+        pid: None,
+        agent: None,
+        detail: purlis_core::state::Detail {
+            unattended: true,
+            ..purlis_core::state::Detail::default()
+        },
+    }
+}
+
+/// Whether chat `session`'s attendance fact, as this app holds it, says nobody is at it.
+fn held_unattended(chats: &Chats, session: u32) -> bool {
+    chats
+        .attendance_of(session)
+        .unwrap_or_else(|| panic!("chat {session} holds no attendance fact"))
+        .unattended()
+}
+
+#[test]
+fn a_task_a_dispatch_started_is_unattended_and_its_record_says_so() {
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let task = chats
+        .start(
+            &started_by(dir.path(), "ide.7", purlis_core::reopen::Mode::Task),
+            SIZE,
+        )
+        .unwrap();
+    let person = chats
+        .start(&chat(&a_claude(dir.path()), "ide.8", None), SIZE)
+        .unwrap();
+
+    assert!(held_unattended(&chats, task), "a task has nobody at it");
+    assert!(
+        !held_unattended(&chats, person),
+        "a person's chat is attended"
+    );
+    // What a relaunch reads: the record keeps the task unattended, the person's chat not.
+    let kept: Vec<(String, bool)> = chats
+        .record()
+        .chats
+        .iter()
+        .map(|chat| (chat.name.clone(), chat.unattended))
+        .collect();
+    assert_eq!(
+        kept,
+        [("ide.7".to_owned(), true), ("ide.8".to_owned(), false)]
+    );
+    chats.end_all();
+}
+
+// ----- a handoff inherits the asking chat's attendance (T1-49, #6619; Q279, R-358) -----
+
+/// A handoff chat `asker` asked for, or that the person started from `asker`'s tab.
+fn handed_off_by(dir: &std::path::Path, name: &str, asker: u32, by_person: bool) -> Chat {
+    let mut chat = started_by(dir, name, purlis_core::reopen::Mode::Handoff);
+    if let Some(from) = chat.from.as_mut() {
+        from.chat = asker;
+        from.by_person = by_person;
+    }
+    chat
+}
+
+/// A person's chat whose own hook has reported the bypass: unattended, by a report.
+fn an_unattended_asker(chats: &Chats, dir: &std::path::Path, name: &str) -> u32 {
+    let asker = chats
+        .start(&chat(&a_claude(dir), name, None), SIZE)
+        .unwrap();
+    chats.heard_attendance(&a_bypass_report(asker));
+    assert!(held_unattended(chats, asker), "the asker is unattended");
+    asker
+}
+
+/// Catches the gap itself: a handoff begun as a person's chat whose asker is never read
+/// (`asker_unattended` mutated to `false`).
+#[test]
+fn a_handoff_an_unattended_chat_asks_for_starts_unattended_and_its_record_says_so() {
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let asker = an_unattended_asker(&chats, dir.path(), "ide.7");
+
+    let handoff = chats
+        .start(&handed_off_by(dir.path(), "ide.8", asker, false), SIZE)
+        .unwrap();
+
+    assert!(
+        held_unattended(&chats, handoff),
+        "an unattended chat's handoff is unattended"
+    );
+    let kept = chats
+        .record()
+        .chats
+        .into_iter()
+        .find(|chat| chat.name == "ide.8")
+        .expect("the handoff is recorded");
+    assert!(kept.unattended, "a relaunch carries it: {kept:?}");
+    chats.end_all();
+}
+
+/// Catches an asker read as unattended whatever its fact says (`is_none_or(..)` mutated to
+/// `true`), and a person's start from a chat's tab read as that chat's (the `!by_person` filter
+/// removed).
+#[test]
+fn a_handoff_from_an_attended_chat_or_from_the_window_starts_attended() {
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let attended = chats
+        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+        .unwrap();
+    assert!(!held_unattended(&chats, attended));
+    let unattended = an_unattended_asker(&chats, dir.path(), "ide.8");
+
+    let from_an_attended_chat = chats
+        .start(&handed_off_by(dir.path(), "ide.9", attended, false), SIZE)
+        .unwrap();
+    let from_the_window = chats
+        .start(&handed_off_by(dir.path(), "ide.10", unattended, true), SIZE)
+        .unwrap();
+
+    assert!(
+        !held_unattended(&chats, from_an_attended_chat),
+        "an attended chat's handoff is attended"
+    );
+    assert!(
+        !held_unattended(&chats, from_the_window),
+        "the person's handoff from a chat's tab is the window's, and attended"
+    );
+    chats.end_all();
+}
+
+/// Catches a missing fact read as attended (`is_none_or` mutated to `is_some_and`): fail
+/// closed, as A4 reads it.
+#[test]
+fn a_handoff_whose_asker_purlis_holds_no_fact_for_starts_unattended() {
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let nobody = 999;
+    assert!(chats.attendance_of(nobody).is_none());
+
+    let handoff = chats
+        .start(&handed_off_by(dir.path(), "ide.7", nobody, false), SIZE)
+        .unwrap();
+
+    assert!(held_unattended(&chats, handoff), "fail closed");
+    chats.end_all();
+}
+
+/// Catches the asker read at every start and not the first alone (`why == Why::New` removed):
+/// an attended handoff relaunched once its asker has gone is still attended, by its record.
+#[test]
+fn an_attended_handoff_relaunched_after_its_asker_has_gone_stays_attended() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = a_claude(dir.path());
+    let (chats, _) = recorded();
+    let record = Record {
+        chats: vec![Chat {
+            unattended: false,
+            resume: Some(SessionId::new(ID).expect("a valid id in a test")),
+            ..handed_off_by(dir.path(), "ide.7", 999, false)
+        }],
+        ..one_recorded(&claude)
+    };
+
+    let open = chats.put_back_here(&record, SIZE);
+
+    assert_eq!(open.len(), 1, "it starts again");
+    assert!(
+        !held_unattended(&chats, open[0].session),
+        "its record, not its gone asker, says it is attended"
+    );
+    chats.end_all();
+}
+
+/// **R-358's integration**: a task's handoff is refused a release-floor line by A4, which
+/// reads the fact this app holds for it as the hook's ask is answered
+/// ([`crate::handoff`]'s `Ask::Attendance`), on a line whose own mode says nothing amiss. An
+/// attended chat's handoff publishing the same line is not refused.
+#[test]
+fn an_unattended_tasks_handoff_is_refused_a_release_floor_line_by_a4() {
+    purlis_core::unsteered!();
+    use purlis_core::dispatchunattended::Attendance;
+    use purlis_core::toolgate::{Arm, Attending, Call, Launched, Plane, verdict};
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let task = chats
+        .start(
+            &started_by(dir.path(), "ide.7", purlis_core::reopen::Mode::Task),
+            SIZE,
+        )
+        .unwrap();
+    let person = chats
+        .start(&chat(&a_claude(dir.path()), "ide.8", None), SIZE)
+        .unwrap();
+    let tasks_handoff = chats
+        .start(&handed_off_by(dir.path(), "ide.9", task, false), SIZE)
+        .unwrap();
+    let persons_handoff = chats
+        .start(&handed_off_by(dir.path(), "ide.10", person, false), SIZE)
+        .unwrap();
+    // What A4 is told of chat `session`, as the app answers the hook's ask for a line whose
+    // bypass bit is clear and whose mode is unproven, so nothing it says moves the fact.
+    let answered = |session: u32| {
+        chats
+            .attendance_of(session)
+            .map_or(Attendance::Unattended, |fact| fact.hearing(false, None))
+    };
+    let refused = |session: u32| {
+        let asked = || answered(session);
+        let state = std::env::temp_dir();
+        let forges = Vec::new();
+        let plane = Plane {
+            root: "/nowhere/plane",
+            forges: &forges,
+            session_dir: "",
+            launched: Launched {
+                sandboxed: false,
+                chat_dir: None,
+                attendance: Some(Attending(&asked)),
+            },
+        };
+        let call = Call {
+            command: "gh release create v1.0.0",
+            cwd: "/nowhere/plane",
+            state_dir: &state,
+            caller: purlis_core::handoffguard::Caller {
+                agent_id: None,
+                harness: Some("claude"),
+                permission_mode: Some("default"),
+            },
+        };
+        verdict(&call, Some(&plane)).and_then(|said| said.arm)
+    };
+
+    assert_eq!(
+        refused(tasks_handoff),
+        Some(Arm::ReleaseFloor),
+        "an unattended task's handoff published"
+    );
+    assert_eq!(
+        refused(persons_handoff),
+        None,
+        "an attended chat's handoff was refused"
+    );
+    chats.end_all();
+}
+
+#[test]
+fn a_chat_its_record_kept_unattended_relaunches_unattended() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = a_claude(dir.path());
+    for kept in [true, false] {
+        let (chats, _) = recorded();
+        let record = Record {
+            chats: vec![Chat {
+                unattended: kept,
+                ..chat(&claude, "ide.7", Some(ID))
+            }],
+            ..one_recorded(&claude)
+        };
+        let open = chats.put_back_here(&record, SIZE);
+        assert_eq!(open.len(), 1, "it starts again");
+        // A person's start, which alone would be attended: the record's fact is never raised.
+        assert_eq!(
+            held_unattended(&chats, open[0].session),
+            kept,
+            "a chat recorded unattended: {kept}"
+        );
+        chats.end_all();
+    }
+}
+
+#[test]
+fn a_report_that_lowers_the_fact_is_written_down() {
+    let dir = tempfile::tempdir().unwrap();
+    let (chats, wrote) = recorded();
+    let session = chats
+        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+        .unwrap();
+    assert!(!held_unattended(&chats, session));
+    lock(&wrote).clear();
+
+    chats.heard_attendance(&a_bypass_report(session));
+
+    assert!(held_unattended(&chats, session), "the bypass bit lowers it");
+    let last = lock(&wrote)
+        .last()
+        .cloned()
+        .expect("the lowered fact is written");
+    assert!(last.chats[0].unattended, "{:?}", last.chats[0]);
+    // A report that moves nothing writes nothing more.
+    let written = lock(&wrote).len();
+    chats.heard_attendance(&a_bypass_report(session));
+    assert_eq!(lock(&wrote).len(), written);
+    chats.end_all();
+}
+
+/// Q275: Restart and Restart without sandbox each start the chat under a new number, and the
+/// fact a report lowered comes with it.
+#[test]
+fn a_chat_a_report_lowered_comes_back_unattended_from_a_restart() {
+    let plane = a_sandboxed_plane();
+    let chats = restartable_chats_of(plane.path(), Pretend::default());
+    // Restart without sandbox records its opt-out before it starts (ADR 0067 §7).
+    chats.when_the_sandbox_is_decided(Box::new(|_| Ok(())));
+    let first = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    assert!(!held_unattended(&chats, first), "a person's chat");
+    chats.heard_attendance(&a_bypass_report(first));
+    assert!(held_unattended(&chats, first));
+
+    chats.ask_restart(first).expect("asked");
+    let restarted = chats.restart(first, SIZE).expect("restarts");
+    chats.close(first).expect("the old run ends");
+    assert_ne!(restarted, first, "a new number");
+    assert!(held_unattended(&chats, restarted), "Restart");
+
+    let unsandboxed = chats
+        .restart_without_sandbox(restarted, SIZE)
+        .expect("restarts without the sandbox");
+    chats.close(restarted).expect("the old run ends");
+    assert_ne!(unsandboxed, restarted, "a new number");
+    assert!(
+        held_unattended(&chats, unsandboxed),
+        "Restart without sandbox"
+    );
+    assert!(chats.record().chats[0].unattended, "and its record says so");
+    let _ = chats.close(unsandboxed);
+}
+
+/// Q275: Resume on the band of a chat the person ended starts it under a new number, and the
+/// fact a report lowered comes with it.
+#[test]
+fn a_chat_a_report_lowered_comes_back_unattended_from_a_resume_after_end() {
+    let plane = a_sandboxed_plane();
+    let chats = restartable_chats_of(plane.path(), Pretend::default());
+    let session = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    chats.heard_attendance(&a_bypass_report(session));
+    chats.close(session).expect("End… ends it");
+    assert!(
+        chats.attendance_of(session).is_none(),
+        "its fact went with it"
+    );
+
+    let resumed = chats.resume_ended(session, SIZE).expect("resumes");
+
+    assert_ne!(resumed, session, "a new number");
+    assert!(held_unattended(&chats, resumed), "Resume after End");
+    let _ = chats.close(resumed);
+}
+
+/// Q275: the program's first hook can report before its start returns, so the fact is held
+/// before the program begins, and a report then lowers it.
+#[test]
+fn a_report_that_arrives_as_the_chat_starts_lowers_its_fact() {
+    let plane = a_sandboxed_plane();
+    let host = Pretend::default();
+    let chats = restartable_chats_of(plane.path(), host.clone());
+    host.holds_once_announced();
+    std::thread::scope(|scope| {
+        let starting = scope.spawn(|| chats.start(&a_resumable_chat_in(plane.path()), SIZE));
+        // Its number is announced and its program not yet begun: what is held for it now is
+        // what its first hook's report reaches.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let held = loop {
+            if let Some(&number) = lock(&chats.attendance).keys().next() {
+                break Some(number);
+            }
+            if std::time::Instant::now() > deadline {
+                break None;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        };
+        if let Some(number) = held {
+            chats.heard_attendance(&a_bypass_report(number));
+        }
+        host.lets_announced_go();
+        let session = starting.join().expect("the start").expect("starts");
+        assert_eq!(
+            held,
+            Some(session),
+            "no fact was held before its program began"
+        );
+        assert!(held_unattended(&chats, session), "the report at its start");
+        assert!(
+            lock(&chats.open)[&session].chat.unattended,
+            "and its record carries it"
+        );
+        let _ = chats.close(session);
+    });
+}
+
+// ----- a mode purlis didn't set, read from the one fact the app holds (T1-44, #6435; R-243) -----
+
+/// A line of chat `chat`'s own Claude Code hook whose `permission_mode` is `acceptEdits`: a mode
+/// purlis didn't start a person's chat in.
+fn an_accept_edits_report(chat: u32) -> purlis_core::hookwire::Report {
+    purlis_core::hookwire::Report {
+        chat,
+        event: purlis_core::state::Event::UserPromptSubmit,
+        conversation: purlis_core::hookwire::Conversation::Named(ID.to_owned()),
+        pid: None,
+        agent: None,
+        detail: purlis_core::state::Detail {
+            claude_code_mode: Some(purlis_core::attendance::ClaudeCodeMode::AcceptEdits),
+            ..purlis_core::state::Detail::default()
+        },
+    }
+}
+
+/// The mode purlis set a person's Claude Code chat in, and the one its hook reported instead.
+const DEFAULT_THEN_ACCEPT_EDITS: purlis_core::attendance::ModeDiffers =
+    purlis_core::attendance::ModeDiffers {
+        set: purlis_core::attendance::ClaudeCodeMode::Default,
+        reported: purlis_core::attendance::ClaudeCodeMode::AcceptEdits,
+    };
+
+/// **R-243, through the one holder** (T1-18's, #6409): a mode report the board took lowers the
+/// attendance fact the app holds for the chat, the one A4 reads, and its pane is told the mode
+/// from that same fact. A second fact held beside it, heard by the same report, leaves this one
+/// attended and fails here.
+#[test]
+fn a_mode_purlis_did_not_set_lowers_the_one_held_fact_and_raises_its_notice() {
+    let dir = tempfile::tempdir().unwrap();
+    let (chats, _) = recorded();
+    let session = chats
+        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+        .unwrap();
+    let told = Arc::new(Mutex::new(Vec::new()));
+    let noticed = crate::stuck::Noticed::new(crate::planes::PlaneId::for_tests(dir.path()));
+    noticed.held_as(std::sync::Weak::new(), {
+        let told = Arc::clone(&told);
+        Arc::new(move |one| lock(&told).push(one))
+    });
+    assert!(!held_unattended(&chats, session), "a person's chat");
+
+    crate::stuck::attendance_heard(&chats, &noticed, &an_accept_edits_report(session));
+
+    assert!(held_unattended(&chats, session), "the mode lowers it");
+    assert!(
+        lock(&chats.open)[&session].chat.unattended,
+        "and its record carries it"
+    );
+    let held = chats.attendance_of(session).expect("held");
+    assert_eq!(held.mode_differs(), Some(DEFAULT_THEN_ACCEPT_EDITS));
+    let modes: Vec<_> = lock(&told)
+        .iter()
+        .map(|one: &crate::stuck::ChatNoticed| (one.session, one.mode.clone()))
+        .collect();
+    assert_eq!(
+        modes,
+        [(
+            session,
+            Some(crate::stuck::ModeDiffers {
+                set: "default".to_owned(),
+                reported: "acceptEdits".to_owned(),
+                harness: Some("claude".to_owned()),
+            })
+        )],
+        "one Notice, from the held fact"
+    );
+    chats.end_all();
+}
+
+/// **R-243, R-318**: a start in the place of a chat this app still holds a fact for carries the
+/// mode that differed forward with the fact, so its Notice stands.
+#[test]
+fn a_start_in_the_place_of_a_held_chat_carries_the_mode_that_differed() {
+    let dir = tempfile::tempdir().unwrap();
+    let (chats, _) = recorded();
+    let record = chat(&a_claude(dir.path()), "ide.7", None);
+    let session = chats.start(&record, SIZE).unwrap();
+    chats.heard_attendance(&an_accept_edits_report(session));
+
+    chats.began_attended_or_not(
+        session,
+        &record,
+        Some(Harness::ClaudeCode),
+        false,
+        &["claude".to_owned()],
+        Why::Relaunch,
+    );
+
+    let held = chats.attendance_of(session).expect("held");
+    assert!(held.unattended(), "never rebuilt as attended");
+    assert_eq!(held.mode_differs(), Some(DEFAULT_THEN_ACCEPT_EDITS));
+    chats.end_all();
 }

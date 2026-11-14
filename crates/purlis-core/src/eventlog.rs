@@ -42,10 +42,15 @@ use std::time::Instant;
 
 use crate::state::run::{Cause, RunState};
 
+pub mod blockedlog;
 pub mod browsing;
+pub mod chatlog;
 mod entry;
+pub mod finishes;
 pub mod questions;
+pub mod reasons;
 pub mod secretasks;
+pub mod stops;
 pub use entry::Entry;
 
 /// One event, in ADR 0066's envelope.
@@ -193,6 +198,9 @@ pub struct Durable {
     appended: std::sync::atomic::AtomicU64,
     /// The last number known durable, and the segment being written.
     state: std::sync::Mutex<(u64, Option<File>)>,
+    /// How many of the next syncs fail, as a drive that refuses one would.
+    #[cfg(test)]
+    fail_syncs: std::sync::atomic::AtomicU32,
 }
 
 impl Durable {
@@ -211,6 +219,18 @@ impl Durable {
                 "the event log has no segment open to make durable",
             ));
         };
+        #[cfg(test)]
+        if self
+            .fail_syncs
+            .try_update(
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+                |left| left.checked_sub(1),
+            )
+            .is_ok()
+        {
+            return Err(io::Error::other("a sync the test made fail"));
+        }
         #[cfg(unix)]
         rustix::fs::fsync(file)?;
         #[cfg(not(unix))]
@@ -357,6 +377,8 @@ impl Log {
         let durable = std::sync::Arc::new(Durable {
             appended: std::sync::atomic::AtomicU64::new(next - 1),
             state: std::sync::Mutex::new((next - 1, Some(file.try_clone()?))),
+            #[cfg(test)]
+            fail_syncs: std::sync::atomic::AtomicU32::new(0),
         });
         let mut log = Log {
             dir: dir.to_owned(),
@@ -588,6 +610,13 @@ impl Log {
     /// Makes the next `times` opens of a new segment fail, as a full directory would.
     pub fn fail_the_next_opens(&mut self, times: u32) {
         self.fail_opens = times;
+    }
+
+    /// Makes the next `times` syncs fail, as a drive that refuses an `fsync` would.
+    pub fn fail_the_next_syncs(&self, times: u32) {
+        self.durable
+            .fail_syncs
+            .store(times, std::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -829,6 +858,14 @@ fn first_seq(file: &mut File) -> io::Result<Option<u64>> {
 /// written. A line that is not an event (a write the machine died in the middle of) is
 /// skipped.
 pub fn read(dir: &Path) -> io::Result<Vec<Event>> {
+    read_where(dir, |_| true)
+}
+
+/// [`read`], parsing only the lines `keep` keeps: a reader that wants a few kinds of event
+/// reads past the rest without parsing them. `keep` sees each line as it is written, so it may
+/// pass a line that is not what it wants (the reader checks each event it gets), never refuse
+/// one that is.
+pub fn read_where(dir: &Path, keep: impl Fn(&[u8]) -> bool) -> io::Result<Vec<Event>> {
     let mut paths: Vec<PathBuf> = segments(dir)?.into_iter().map(|(_, path)| path).collect();
     paths.push(dir.join(FILE));
     let mut events = Vec::new();
@@ -840,6 +877,7 @@ pub fn read(dir: &Path) -> io::Result<Vec<Event>> {
         };
         events.extend(
             text.split(|byte| *byte == b'\n')
+                .filter(|line| keep(line))
                 .filter_map(|line| serde_json::from_slice::<Event>(line).ok()),
         );
     }
@@ -1295,6 +1333,13 @@ pub struct Attributes {
     /// came on (`local-ui` for the window, `terminal`, `remote-link`), where it is known
     /// (#2171).
     pub started_by: Option<String>,
+    /// **The protection the chat started under** (R-227): each layer's level and the tier that
+    /// set it, the `charter.toml` commit and the answers in force, as the start resolved them
+    /// ([`crate::sandbox::protection::at_start`]), never from the chat. [`UNKNOWN`] where the
+    /// start did not resolve it. Read leniently: one in a shape this version does not know is
+    /// not known, never a refusal of the run it begins.
+    #[serde(deserialize_with = "crate::sandbox::protection::lenient")]
+    pub protection: Option<crate::sandbox::protection::InForce>,
 }
 
 impl Attributes {
@@ -1325,6 +1370,11 @@ impl Attributes {
             "sandbox": said(&self.sandbox),
             "conversation": said(&conversation),
             "started_by": said(&self.started_by),
+            "protection": self
+                .protection
+                .as_ref()
+                .and_then(|p| serde_json::to_value(p).ok())
+                .unwrap_or_else(|| UNKNOWN.into()),
         })
     }
 
@@ -1376,6 +1426,15 @@ pub const COMMIT_REFUSED: &str = "hook.commit_refused";
 /// `body` with `spooled`, the number a drained line had in its chat's spool, when it had one
 /// (FD-30): the one place an event is marked as having come through the spool. Added after
 /// what the body already says, so every event keeps its keys in the order it always had.
+/// The last of the events one line wrote, which [`and_its_block`](Recorder::and_its_block)
+/// answers never empty: what a drain makes durable through.
+#[cfg(unix)]
+fn last_of(mut written: Vec<Event>) -> Event {
+    written
+        .pop()
+        .expect("a line's events start with its tool event")
+}
+
 fn spooled_as(mut body: serde_json::Value, seq: Option<u64>) -> serde_json::Value {
     if let Some(seq) = seq {
         body["spooled"] = seq.into();
@@ -1388,6 +1447,9 @@ fn tool_kind(call: &crate::hookwire::ToolCall) -> String {
     match phase(&call.tool_hook) {
         Some(_) => format!("hook.{}", call.tool_hook),
         None if call.tool_hook == crate::hookwire::SKILL_LOAD => SKILL_LOADED.to_owned(),
+        None if call.tool_hook == crate::hookreg::HARNESS_DENIED => {
+            format!("hook.{}", crate::hookreg::HARNESS_DENIED)
+        }
         None => UNKNOWN_HOOK.to_owned(),
     }
 }
@@ -1628,6 +1690,11 @@ pub struct Recorder {
     /// stays small: only a start put aside adds a number, one each, and a number told again
     /// ([`Recorder::begin_held`], [`Recorder::knows`]) leaves it.
     taken_back: std::collections::HashSet<(PathBuf, u32)>,
+    /// The chats' own runs whose `run.ended` is written ([`Recorder::end_run_with`]), by id: a
+    /// run ends once, however often its end is told. Held to [`RUNS_HELD`], as [`Self::begun`]
+    /// is: when full, only the runs still some chat's own are kept, since only a chat's current
+    /// run is ever ended again.
+    ended_runs: std::collections::HashSet<String>,
     /// Each live sub-agent's child run, by chat id and the harness's agent id.
     children: HashMap<(String, String), (String, String)>,
     /// The sub-agents whose `SubagentStop` was heard, by chat id and agent id: a later line
@@ -1766,6 +1833,7 @@ impl Recorder {
             children: HashMap::new(),
             stopped: std::collections::HashSet::new(),
             taken_back: std::collections::HashSet::new(),
+            ended_runs: std::collections::HashSet::new(),
             calls: HashMap::new(),
             kill_switch: None,
             kill_switch_skipped: None,
@@ -1964,22 +2032,31 @@ impl Recorder {
         call: &crate::hookwire::ToolCall,
         now: Instant,
     ) -> io::Result<Event> {
-        self.tool_spooled(plane, call, now, None)
+        let mut written = self.tool_spooled(plane, call, now, None)?;
+        Ok(written.swap_remove(0))
     }
 
-    /// [`Recorder::tool`], saying the spool number a drained call had.
+    /// [`Recorder::tool`], saying the spool number a drained call had, and answering every event
+    /// written: the tool event, then the block its line is, a guard's deny or the harness's own
+    /// check's refusal ([`Recorder::block_of`]), last, so a writer that makes the last event
+    /// durable makes both so.
     fn tool_spooled(
         &mut self,
         plane: &Path,
         call: &crate::hookwire::ToolCall,
         now: Instant,
         spooled: Option<u64>,
-    ) -> io::Result<Event> {
+    ) -> io::Result<Vec<Event>> {
         let Some(top) = self.identity(plane, call.chat)? else {
             let body = spooled_as(self.tool_body(call), spooled);
-            return self.of_no_run(call.chat, &tool_kind(call), body);
+            let event = self.of_no_run(call.chat, &tool_kind(call), body)?;
+            let block = self.block_of(call, None);
+            return Ok(self.and_its_block(event, block, spooled, |log, block| {
+                log.of_no_run(call.chat, stops::BLOCK, block)
+            }));
         };
         let who = Who::of(&top.attributes);
+        let block = self.block_of(call, Some(&top.attributes));
         let under = self.under(top, call.agent.as_deref())?;
         self.skills_heard_of_a_call(plane, &under, &who, call)?;
         let phase = phase(&call.tool_hook);
@@ -1992,7 +2069,35 @@ impl Recorder {
                 body["tool_ms"] = ms.into();
             }
         }
-        self.append(&under, &tool_kind(call), body)
+        let event = self.append(&under, &tool_kind(call), body)?;
+        Ok(self.and_its_block(event, block, spooled, |log, block| {
+            log.append(&under, stops::BLOCK, block)
+        }))
+    }
+
+    /// `event`, a tool event written, and the `block` its call is written after it by
+    /// `write`, with the spool number a drained call had. **The line is taken once its tool event
+    /// is written:** a block that cannot be written is said in the host's log and not answered as
+    /// the line's failure, since a line answered as not taken is spooled and drained again, and
+    /// its tool event would be written twice.
+    fn and_its_block(
+        &mut self,
+        event: Event,
+        block: Option<serde_json::Value>,
+        spooled: Option<u64>,
+        write: impl FnOnce(&mut Self, serde_json::Value) -> io::Result<Event>,
+    ) -> Vec<Event> {
+        let mut written = vec![event];
+        if let Some(block) = block {
+            match write(self, spooled_as(block, spooled)) {
+                Ok(block) => written.push(block),
+                Err(why) => tracing::warn!(
+                    "purlis: a block after event {} was not written ({why})",
+                    written[0].seq
+                ),
+            }
+        }
+        written
     }
 
     /// What a tool event's body says of its call, before any duration.
@@ -2070,7 +2175,8 @@ impl Recorder {
                     return self.report_spooled(plane, &report, Followed::No, None, Some(seq));
                 }
                 (Spooled::Tool(call), Some(_)) => {
-                    return self.tool_spooled(plane, &call, Instant::now(), Some(seq));
+                    let written = self.tool_spooled(plane, &call, Instant::now(), Some(seq))?;
+                    return Ok(last_of(written));
                 }
                 (Spooled::Refused(refused), Some(_)) => {
                     return self.refused_spooled(plane, refused.chat, Some(seq));
@@ -2079,10 +2185,15 @@ impl Recorder {
                     format!("hook.{}", report.event.word()),
                     spooled_as(serde_json::json!({}), Some(seq)),
                 ),
-                (Spooled::Tool(call), None) => (
-                    tool_kind(&call),
-                    spooled_as(self.tool_body(&call), Some(seq)),
-                ),
+                (Spooled::Tool(call), None) => {
+                    let body = spooled_as(self.tool_body(&call), Some(seq));
+                    let event = self.of_no_run(number, &tool_kind(&call), body)?;
+                    let block = self.block_of(&call, None);
+                    let written = self.and_its_block(event, block, Some(seq), |log, block| {
+                        log.of_no_run(number, stops::BLOCK, block)
+                    });
+                    return Ok(last_of(written));
+                }
                 (Spooled::Refused(_), None) => (
                     COMMIT_REFUSED.to_owned(),
                     spooled_as(serde_json::json!({}), Some(seq)),
@@ -2271,12 +2382,15 @@ impl Recorder {
 
     /// Chat `number`'s current run has ended, in `state` for `cause`: each of its sub-agents
     /// still live ends with it, in the same state and for the same cause (ADR 0076 §6), with a
-    /// `run.ended` under its child run. What the host calls at the run's exit or its own stop;
-    /// a `/clear`, a `SessionEnd` and a new run begun for the chat end them here already. The
-    /// events written, none when no child was live.
+    /// `run.ended` under its child run, and then **the chat's own run ends** with a `run.ended`
+    /// under it (R-233): its result, and the exit code where the program left one. What the
+    /// host calls at the run's program's exit or its own stop; a `/clear`, a `SessionEnd` and
+    /// a new run begun for the chat end its sub-agents there already. The events written, none
+    /// for a chat the host was never told of, or one whose start is still held.
     ///
-    /// Refused, with nothing ended, for a `state` that is not an end state.
-    pub fn end_children_with(
+    /// Every line is tried: the first refusal is the answer. Refused, with nothing ended, for
+    /// a `state` that is not an end state.
+    pub fn end_run_with(
         &mut self,
         plane: &Path,
         number: u32,
@@ -2289,14 +2403,35 @@ impl Recorder {
                 format!("a run does not end {state:?}"),
             ));
         }
-        let Some(chat) = self
-            .chats
-            .get(&(plane.to_path_buf(), number))
-            .map(|who| who.chat.clone())
-        else {
+        let Some(who) = self.chats.get(&(plane.to_path_buf(), number)).cloned() else {
             return Ok(Vec::new());
         };
-        self.end_children(&chat, state, cause)
+        let children = self.end_children(&who.chat, state, cause);
+        if self.ended_runs.len() >= RUNS_HELD {
+            let current: std::collections::HashSet<&str> =
+                self.chats.values().map(|who| who.run.as_str()).collect();
+            self.ended_runs.retain(|run| current.contains(run.as_str()));
+        }
+        if who.held.is_some() || !self.ended_runs.insert(who.run.clone()) {
+            return children;
+        }
+        let mut body = serde_json::json!({ "state": end_word(state), "cause": cause.word() });
+        if let Cause::Exited(crate::state::run::Exit::Code(code)) = cause {
+            body["code"] = code.into();
+        }
+        let under = Under {
+            chat: who.chat,
+            run: who.run,
+            parent: None,
+        };
+        let own = self.append(&under, "run.ended", body);
+        match (children, own) {
+            (Ok(mut ended), Ok(event)) => {
+                ended.push(event);
+                Ok(ended)
+            }
+            (Err(why), _) | (Ok(_), Err(why)) => Err(why),
+        }
     }
 
     /// Records each line of the kill switch's journal under `config` that the log does not
@@ -2979,6 +3114,14 @@ impl Recorder {
         ended?;
         let body = who.attributes.body(cause, &self.log.device);
         let started = self.write(Some(&who.chat), Some(&who.run), None, "run.started", body)?;
+        // A start that records the protection it started under (R-227) is a start's act, made
+        // durable as an audited write is. The line is written whatever the sync makes of it:
+        // one the drive refuses costs its durability, never the run.
+        if who.attributes.protection.is_some()
+            && let Err(why) = self.log.durable().through(started.seq)
+        {
+            tracing::warn!(error = %why, "the event log did not make a start's protection durable");
+        }
         // Its start's routing record, held with it (SK-15b): one the log refuses costs the
         // record, never the run.
         if let Some(record) = routed

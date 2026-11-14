@@ -362,6 +362,8 @@ pub struct Held {
     secret_fills: crate::secretfills::Fills,
     /// The workspaces each chat asked the person to remove, until they answer (qw356).
     removal_asks: crate::removalasks::Asked,
+    /// The merges its chats' hooks held, each an ask until the person answers (R-114).
+    merge_holds: crate::mergeholds::MergeHolds,
     /// Each chat's browsers, and what the person said they may reach (#2013).
     browsers: crate::chatbrowsers::ChatBrowsers,
     /// The person's Allows of a persona's tools on a pool, and the runner chats' commands that
@@ -399,8 +401,9 @@ pub struct Held {
     held_dispatches: crate::handoff::HeldDispatches,
     /// The chats a dispatch was refused for a limit a slot frees, until one does (#1498).
     at_limits: crate::atlimit::AtLimits,
-    /// Which chats run with their harness's permission prompts off (#1446).
-    unattended: crate::handoff::Unattended,
+    /// The permission mode each chat's harness said it runs in, which its tasks start from
+    /// (#3787).
+    task_modes: crate::handoff::TaskModes,
     /// Each turn of a chat, as refs in its branch's clone (#5405).
     turns: purlis_core::files::turns::Recorder,
     /// Which chats were waiting on the person at their last report: what counts a dispatch's
@@ -783,9 +786,10 @@ impl Held {
         &self.turns
     }
 
-    /// Which chats run with their harness's permission prompts off (#1446).
-    pub fn unattended(&self) -> &crate::handoff::Unattended {
-        &self.unattended
+    /// The permission mode each chat's harness said it runs in, which its tasks start from
+    /// (#3787).
+    pub fn task_modes(&self) -> &crate::handoff::TaskModes {
+        &self.task_modes
     }
 
     /// The vaults each chat was refused for its persona, for the Notice on its tab (#1430).
@@ -812,6 +816,11 @@ impl Held {
     /// (qw356).
     pub fn removal_asks(&self) -> &crate::removalasks::Asked {
         &self.removal_asks
+    }
+
+    /// The merges its chats' hooks held, for the person's press (R-114, R-115).
+    pub fn merge_holds(&self) -> &crate::mergeholds::MergeHolds {
+        &self.merge_holds
     }
 
     /// Each chat's browsers, and what the person said they may reach (#2013).
@@ -1547,6 +1556,9 @@ impl Held {
         self.login_grants.forget(session);
         self.secret_fills.forget(session);
         self.removal_asks.forget(session);
+        self.merge_holds.forget(session);
+        // And its refusals whose only way out was a press in the window (R-328).
+        purlis_core::windowonly::forget(self.root(), session);
         // What its runner's commands wait on goes with it (#2047).
         self.pool_tools.forget(session);
         // And what it waits on or declined of a vault (#5068).
@@ -1615,7 +1627,7 @@ impl Held {
         // What it asked for and waited on goes with it, and so does how it was taken to run:
         // a chat started again in its place is marked afresh.
         self.held_dispatches.forget(session);
-        self.unattended.forget(session);
+        self.task_modes.forget(session);
         // And when it last moved, which `purlis.chats` says (#6235).
         crate::chatlisting::closed(&self.id, session);
         // Nothing else is remembered of it, and a command waiting on it is told (#1441).
@@ -1912,6 +1924,14 @@ impl Held {
         }
     }
 
+    /// A held connection's ask of chat `session`'s was withdrawn as a block (R-290, Q240): the
+    /// needs-you mark [`Self::blocked_while_waiting`] set for it is taken back.
+    pub(crate) fn block_withdrawn(&self, session: u32) {
+        if let Some(moved) = self.board().block_withdrawn(session) {
+            (self.tell)(moved);
+        }
+    }
+
     /// Chat `closed` has closed with `orphaned` still waiting for its next turn: each open chat
     /// it started that had sent its report, and whose report is one of those, needs the person.
     ///
@@ -2037,18 +2057,21 @@ impl Held {
         // chat's same request, and the chat is told on its next turn to make it again. The
         // board is not moved: the chat still waits on its harness's own prompt, if it does.
         if let Some(late) = self.hooks.answer(session, ask, option)? {
+            // An Allow of the harness's own ask resolves no block, late or not, so the block
+            // count stands (Q263, Q280: `looping::allow_resolves`).
+            let allowed = late.choice.kind == purlis_core::harness::model::ChoiceKind::Allow;
             self.chats.tell_outcome(
                 session,
                 purlis_core::askoutcome::Outcome {
                     about: purlis_core::askoutcome::About::Permission { asked: late.said },
-                    answer: purlis_core::askoutcome::Answer::AnsweredLate {
-                        allowed: late.choice.kind == purlis_core::harness::model::ChoiceKind::Allow,
-                    },
+                    answer: purlis_core::askoutcome::Answer::AnsweredLate { allowed },
                 },
             );
             self.chats.asks_may_have_moved();
             return Ok(());
         }
+        // The answer is in the chat's Chat log already, as the registry applied it, a late one
+        // included ([`crate::hooks::Hooks::answer`], R-229).
         if let Some(refused) = refused {
             crate::pausing::answered(self, session, refused);
         }
@@ -3642,11 +3665,11 @@ impl Planes {
                     crate::smartclose::reported(&held, report);
                     // The first report after a start timed at a launch: the chat is live (#4988).
                     crate::starttiming::heard(report.chat);
-                    // Whether its harness runs with its permission prompts off, which a
-                    // dispatch from it is held to (#1446). Only a report the board took: a
-                    // harness nested in the chat never marks the chat.
-                    held.unattended()
-                        .heard(report.chat, report.detail.unattended);
+                    // Its attendance fact, which A4 and every dispatch from it read (T1-18,
+                    // T1-22, #1446): from the live listener alone, never a line a spool drain
+                    // hands the event log. A mode purlis didn't set that it names is a standing
+                    // fault its pane says (R-243, T1-44).
+                    crate::stuck::attendance_heard(held.chats(), held.noticed(), report);
                     // And the mode its own harness runs in, which a task it dispatches starts
                     // from (#3787): the same report, its own harness's alone, and never a line
                     // the chat sends.
@@ -3676,6 +3699,13 @@ impl Planes {
                     // record each time it changes (#5747): a restart that ends the chat tells
                     // it, brought back, what ended. Judged against the same conversation.
                     held.chats().heard_own_work(report, now.as_deref());
+                    // A new turn of its own: each ask its hook raised in a turn before is
+                    // withdrawn as a block (Q254). A helper's prompt is no turn of it.
+                    if report.event == purlis_core::state::Event::UserPromptSubmit
+                        && report.agent.is_none()
+                    {
+                        crate::taskblocks::turn_began(&held, report.chat);
+                    }
                     // And whatever waited for this chat to move: the line that says its tasks
                     // reported (#1441).
                     crate::dispatched::heard(&held, report);
@@ -3683,6 +3713,9 @@ impl Planes {
                     // cancelling (#1459), is sent its last-turn prompt when the turn it was in
                     // ends, and is ended when that last turn does (#1448).
                     crate::stopping::reported(&held, report.chat);
+                    // A chat told to stop trying mid-turn is typed the line once it waits
+                    // (Q267 amended). After a stop's: a chat now in its last turn is told nothing.
+                    crate::pausing::reported(&held, report.chat);
                 }
             })
         });
@@ -3906,6 +3939,8 @@ impl Planes {
                         .chat_at(block.line.chat)
                         .and_then(|chat| chat.cwd);
                     if hooks::its_own_to_retry(&block, chat_dir.as_deref()) {
+                        // Never an ask: one block at once (T1-10).
+                        blocked_at_once(&strong, &told);
                         record();
                         return;
                     }
@@ -3918,12 +3953,30 @@ impl Planes {
                             block.line.sandbox_blocked,
                         );
                     }
-                    crate::taskblocks::heard(strong.chats(), &told);
+                    // The echo of a held connection's block written already, from the
+                    // post-tool detector or the proxy's own raise landing late (Q240): dropped,
+                    // never an ask beside its block, and never a second block (T1-10).
+                    if !crate::taskblocks::heard(strong.chats(), &told) {
+                        return;
+                    }
+                    // A refusal no answer names is never an ask (a denial class, a policy's no,
+                    // a grant purlis never makes, purlis's own operation): one block at once
+                    // (T1-10). One held as an ask is one once its ask leaves
+                    // (`Chats::write_stops_with`).
+                    if crate::taskblocks::held_of(&told).is_none() {
+                        blocked_at_once(&strong, &told);
+                    }
                     // The chat now waits on the person for this Notice, until its turn moves
                     // on: what the chat that asked for it is told (#1663). purlis's own block
                     // is a bug to report, which the chat is not told to wait on, and neither is
                     // a block it only read back (#1884), whose quiet line nobody has to answer.
                     if !told.ours && told.quiet.is_none() {
+                        // R-229: an ask raised, in the chat's Chat log.
+                        crate::chatlog::raised(
+                            strong.hooks(),
+                            told.session,
+                            purlis_core::eventlog::stops::AskGroup::Sandbox,
+                        );
                         let turn = strong.board().glance(told.session).turns;
                         strong.chats().blocks().raised(told.session, turn);
                         // A block heard while it waits on its own work is an ask (#3878).
@@ -4019,6 +4072,64 @@ impl Planes {
             Arc::new(move || {
                 if let Some(strong) = weak.upgrade() {
                     asks(strong.asks());
+                }
+            })
+        });
+        // A refusal whose only way out is a press in the window is raised as an ask where it is
+        // refused (R-328): the window is told, as for a live ask. Weak for the handoff's reason.
+        purlis_core::windowonly::telling(held.root(), {
+            let weak = Arc::downgrade(&held);
+            Arc::new(move || {
+                if let Some(strong) = weak.upgrade() {
+                    strong.chats().asks_may_have_moved();
+                }
+            })
+        });
+        // Every sandbox block is written here, one road (Q254): a held connection a chat
+        // stopped waiting on (R-290, Q154; a chat's next tool call is when it stops waiting),
+        // every other refusal once its ask leaves, and one never asked. Where an ask left, the
+        // needs-you mark it set goes with it (Q240); the pane's Notice, drawn from the asks
+        // registry, goes as the registry is told it moved. Weak for the handoff's reason.
+        held.chats().write_stops_with({
+            let weak = Arc::downgrade(&held);
+            Arc::new(move |chat, stop, why| match weak.upgrade() {
+                Some(strong) => {
+                    let written = strong.hooks.write_stop(chat, stop.clone());
+                    if why.leaves_an_ask() {
+                        strong.block_withdrawn(chat);
+                    }
+                    // And toward the block loop, which pauses it (R-206), each call counted
+                    // once (Q253); never a block the person's Keep blocked or the chat's end
+                    // wrote (Q254).
+                    if let Some(call) = why.counted_under() {
+                        crate::pausing::stopped(&strong, chat, &stop, call);
+                    }
+                    written
+                }
+                None => Ok(()),
+            })
+        });
+        // A chat's waiting Allow next time · once that ended, used up by its attempt or put out
+        // without one (T1-34, Q278), is audited as the person's grant ending, and recorded, as a
+        // removal is. Weak for the handoff's reason.
+        held.chats().audit_nexts_ended_with({
+            let weak = Arc::downgrade(&held);
+            let network = self.network.clone();
+            Arc::new(move |chat, target: &str| {
+                let Some(strong) = weak.upgrade() else { return };
+                let audit = strong.audit_then_record(network.as_ref());
+                if let Err(why) = audit(Some(chat), &crate::network::once_ended(target)) {
+                    tracing::warn!("purlis: the end of an Allow next time was not audited ({why})");
+                }
+            })
+        });
+        held.hooks.tell_calls_to({
+            let weak = Arc::downgrade(&held);
+            Arc::new(move |call| {
+                if let Some(strong) = weak.upgrade() {
+                    strong.chats().called(call);
+                    // And toward the block loop (R-206, R-210).
+                    crate::pausing::called(&strong, call);
                 }
             })
         });
@@ -4911,6 +5022,24 @@ impl Planes {
                     }
                 }
             }));
+            // A run replaced at once, a restart for project settings, has ended superseded
+            // (ADR 0076 §2, Q247): told before its close, so the host that writes the log ends
+            // it so, and its close then ends nothing more.
+            chats.when_a_run_is_replaced(Box::new({
+                let (events, root) = (events.clone(), root.clone());
+                move |session| {
+                    let superseded = events.record(purlis_core::eventlog::Entry::Superseded {
+                        plane: root.clone(),
+                        number: session,
+                    });
+                    if let Err(why) = superseded {
+                        tracing::warn!(
+                            "purlis: a replaced run's end was not written to the event log \
+                             ({why})"
+                        );
+                    }
+                }
+            }));
             // A start put aside is taken back: its program's later lines are of no run (#2252).
             chats.when_a_held_start_is_settled(Box::new(move |session, how| {
                 let plane = root.clone();
@@ -5162,21 +5291,24 @@ impl Planes {
                     }
                     // A run ended so that the same chat starts again at once (ADR 0067 as
                     // amended 2026-10-16) has not ended the chat: what follows its place says
-                    // so. Its sub-agents' runs still end with it, stopped as a close stops
-                    // them (ADR 0076 §6), and nothing else here is done for it. Where the
-                    // session host writes the event log, it ends them as the program ends
-                    // there (#2003).
+                    // so. It has ended superseded, its sub-agents' runs with it (ADR 0076 §2,
+                    // §6, Q247), and nothing else here is done for it. A restart said so before
+                    // it closed the run ([`crate::chats::Chats::when_a_run_is_replaced`]), so
+                    // this writes nothing more there; where the session host writes the event
+                    // log, it was told the same, and its end there writes nothing more (#2003).
                     if me
                         .get()
                         .and_then(std::sync::Weak::upgrade)
                         .is_some_and(|held| held.chats.replaced(session))
                     {
                         if let Some(events) = events.as_ref().and_then(hooks::Events::held) {
-                            let (state, cause) = how_its_run_ended(
-                                Some(purlis_core::state::run::StopBy::Closed),
-                                &exit,
+                            its_run_ends(
+                                events,
+                                &events_root,
+                                session,
+                                purlis_core::state::run::RunState::Completed,
+                                purlis_core::state::run::Cause::Superseded,
                             );
-                            its_children_end(events, &events_root, session, state, cause);
                         }
                         return;
                     }
@@ -5220,7 +5352,7 @@ impl Planes {
                                 .is_some_and(|held| held.chats.recorded_chat(session).is_none()),
                         );
                         let (state, cause) = how_its_run_ended(by, &exit);
-                        its_children_end(log, &events_root, session, state, cause);
+                        its_run_ends(log, &events_root, session, state, cause);
                     }
                     // A persona chat that still owed its asking chat a report has ended
                     // without one: that chat is told it failed, now (#1443). Before the
@@ -5408,6 +5540,7 @@ impl Planes {
             login_grants: crate::loginasks::Grants::default(),
             secret_fills: crate::secretfills::Fills::default(),
             removal_asks: crate::removalasks::Asked::default(),
+            merge_holds: crate::mergeholds::MergeHolds::default(),
             browsers: crate::chatbrowsers::ChatBrowsers::default()
                 .noting(self.browser_driver.clone(), &browsers_root)
                 .telling(Arc::clone(&browsers_listed))
@@ -5427,7 +5560,7 @@ impl Planes {
             dispatch_grants: crate::dispatchgrants::Store::default(),
             held_dispatches: crate::handoff::HeldDispatches::default(),
             at_limits: crate::atlimit::AtLimits::default(),
-            unattended: crate::handoff::Unattended::default(),
+            task_modes: crate::handoff::TaskModes::default(),
             turns: purlis_core::files::turns::Recorder::default(),
             dispatches: crate::dispatches::Waiting::default(),
             touched_files: crate::taskchanges::Touched::default(),
@@ -5696,6 +5829,35 @@ impl Planes {
     fn map(&self) -> MutexGuard<'_, HashMap<PlaneId, Arc<Held>>> {
         self.open.lock().unwrap_or_else(PoisonError::into_inner)
     }
+}
+
+/// **Writes `told`, a sandbox refusal of chat `told.session` that is never an ask, as one Sandbox
+/// block now** (T1-10, Q154), by the one road every sandbox block takes (Q254,
+/// [`crate::chats::Chats::write_block`]): aimed at what its line named, as the project names a
+/// folder (`sandboxblock::stop`), the tool of the call it refused, the chat's latest, by the
+/// harness's name, and `unverified`, since the chat's own hook line reported it (Q254); toward
+/// the block loop under that call's id. A quiet line read back is no refusal the chat met, and
+/// is none; nor is the echo of a held connection's block written already (Q240).
+fn blocked_at_once(held: &Held, told: &hooks::ChatBlocked) {
+    if told.quiet.is_some()
+        || crate::taskblocks::held_of(told)
+            .is_some_and(|block| held.chats().blocks().echoes(told.session, &block))
+    {
+        return;
+    }
+    let refused = held.chats().blocks().latest(told.session);
+    let stop = purlis_core::sandboxblock::stop::sandbox_block_of(
+        &told.kind,
+        told.target.as_deref(),
+        held.root(),
+        refused.tool.as_deref(),
+        purlis_core::sandboxblock::stop::Reported::ByItsHook,
+    );
+    held.chats().write_block(
+        told.session,
+        stop,
+        crate::chats::BlockWritten::AtOnce(refused.call),
+    );
 }
 
 /// The one sentence for a plane the process is not holding.
@@ -6423,7 +6585,7 @@ fn the_host_s_stop(
 
 /// What a chat's end leaves in the event log, read and written as both binaries' session hosts
 /// do (#2494).
-pub(crate) use purlis_core::hookchannel::{how_its_run_ended, its_children_end};
+pub(crate) use purlis_core::hookchannel::{how_its_run_ended, its_run_ends};
 
 #[path = "planes/tab_windows.rs"]
 mod tab_windows;

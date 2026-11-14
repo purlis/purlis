@@ -308,6 +308,9 @@ pub type Routed = Box<dyn Fn(u32, &purlis_core::skills::router::Record) + Send +
 /// Told a chat's number as its latest prompt changes whether it fell back (#4445).
 pub type PromptFallbackMoved = Box<dyn Fn(u32) + Send + Sync>;
 
+/// Told a chat's number as its run is replaced at once, before it is closed (ADR 0076 §2, Q247).
+pub type Replaced = Box<dyn Fn(u32) + Send + Sync>;
+
 /// When a run's `run.started` is written (#2250).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RunSaid {
@@ -388,6 +391,8 @@ pub(crate) fn run_attributes(
                 .word()
                 .to_owned(),
         ),
+        // Set by the start that resolves it ([`purlis_core::sandbox::protection::at_start`]).
+        protection: None,
     }
 }
 
@@ -523,6 +528,10 @@ struct Running {
     runs_as: Option<String>,
     /// **What its runner said it armed it with** (SK-15h, #4218): `None` for a chat armed here.
     runners_word: Option<RunnersWord>,
+    /// **Whether its hooks report from outside its reach** (Q235, Q237), read from the
+    /// attributes its run began with: what a block its hook line reports is worth toward the
+    /// block loop (R-209).
+    reports_verified: bool,
 }
 
 /// **Whether the plane's skills reach a chat starting now** (#3445, #3466): a chat
@@ -844,6 +853,8 @@ pub struct Chats {
     reattached: Mutex<Option<Starting>>,
     /// Told of the run each start begins, before its program runs (ADR 0066).
     beginning: Mutex<Option<Beginning>>,
+    /// Told the number of a run about to be replaced at once ([`Self::when_a_run_is_replaced`]).
+    replaced_told: Mutex<Option<Replaced>>,
     /// What asks a chat's router extension at its start (SK-15b): none until the app hands one,
     /// so a chat whose workspace or persona chose one is routed by the built-in router.
     router: Mutex<Option<Arc<dyn purlis_core::skills::router::AskRouter>>>,
@@ -1006,6 +1017,12 @@ pub struct Chats {
     /// a live ask held for its chat whose Notice the throttle held back. Empty until the
     /// project's hooks listen.
     asks_moved: Arc<Mutex<Option<AsksMoved>>>,
+    /// Who writes a stop of a chat's into the event log (R-290): a held connection's refusal
+    /// once the chat has stopped waiting on it. Empty until the project's hooks record.
+    stops: Arc<Mutex<Option<StopWriter>>>,
+    /// Who audits the end of a chat's waiting Allow next time · once (T1-34, Q278): used up by
+    /// its attempt, or put out without it. Empty until the project's hooks record.
+    nexts_ended: Arc<Mutex<Option<NextEnded>>>,
     /// The project's Secret asks, which a start whose profile's credential its vault holds none
     /// of waits on (#5074, ADR 0109). Empty until the project is held.
     secret_asks: Mutex<Option<Arc<purlis_core::secrets::ask::Asks>>>,
@@ -1067,6 +1084,13 @@ pub struct Chats {
     /// come before the chat is listed as open. Forgotten as each start is announced and as the
     /// chat closes, so a model never outlives the program it was reported for.
     models: Mutex<HashMap<u32, String>>,
+    /// **Each chat's attendance fact** (T1-18, #6409; [`purlis_core::attendance::Fact`]), by
+    /// the chat's number: set by how purlis started it, never more attended than the fact it
+    /// had ([`purlis_core::attendance::Fact::resumed`]), and lowered by the reports the board
+    /// takes from it ([`Self::heard_attendance`]). What A4 reads ([`Self::attendance_of`]), and
+    /// what the record's `unattended` keeps for a relaunch. Kept across a start of the chat's
+    /// program again, and forgotten as the chat closes.
+    attendance: Mutex<HashMap<u32, purlis_core::attendance::Fact>>,
     /// **What each chat had left running of its own as its turn last ended** (#5747), by the
     /// chat's number: what the record's `own_work` says while that program runs
     /// ([`Self::heard_own_work`]). Kept apart from the board, whose wait lapses after an hour and
@@ -1647,6 +1671,7 @@ impl Chats {
             starting: Mutex::new(None),
             reattached: Mutex::new(None),
             beginning: Mutex::new(None),
+            replaced_told: Mutex::new(None),
             router: Mutex::new(None),
             routed: Mutex::new(None),
             prompt_fallback_moved: Mutex::new(None),
@@ -1695,6 +1720,8 @@ impl Chats {
             kubeconfigs: Mutex::new(HashMap::new()),
             blocks: Arc::default(),
             asks_moved: Arc::new(Mutex::new(None)),
+            stops: Arc::new(Mutex::new(None)),
+            nexts_ended: Arc::new(Mutex::new(None)),
             secret_asks: Mutex::new(None),
             refused: Arc::new(Mutex::new(None)),
             refused_more: Arc::new(Mutex::new(None)),
@@ -1713,6 +1740,7 @@ impl Chats {
             restarting: Mutex::new(std::collections::HashSet::new()),
             told: Mutex::new(HashMap::new()),
             models: Mutex::new(HashMap::new()),
+            attendance: Mutex::new(HashMap::new()),
             own_work: Mutex::new(HashMap::new()),
             going: crate::goingaway::Going::default(),
             fresh_starting: Arc::default(),
@@ -1778,6 +1806,13 @@ impl Chats {
     /// begins: the chat's id, which a relaunch keeps, a new run's id, and why (ADR 0066).
     pub fn when_a_run_begins(&self, tell: Beginning) {
         *lock(&self.beginning) = Some(tell);
+    }
+
+    /// Calls `tell` with a run's number as it is about to be replaced at once (ADR 0076 §2, ADR
+    /// 0067 as amended 2026-10-16, Q247): a restart for project settings, while its program
+    /// still runs, so the event log ends it `superseded` before its close is heard.
+    pub fn when_a_run_is_replaced(&self, tell: Replaced) {
+        *lock(&self.replaced_told) = Some(tell);
     }
 
     /// Asks a chat's router extension at its start with `router` (SK-15b, ADR 0102 §5).
@@ -3127,6 +3162,11 @@ impl Chats {
             rows: 24,
         });
         lock(&self.replacing).insert(session);
+        // Said while its program still runs, so its end is written `superseded` (ADR 0076
+        // §2) wherever the event log is written, before its close is heard there.
+        if let Some(tell) = lock(&self.replaced_told).as_ref() {
+            tell(session);
+        }
         if let Err(why) = self.sessions.close(session) {
             tracing::warn!("purlis: chat {session}'s run did not end before its restart ({why})");
         }
@@ -3369,7 +3409,8 @@ impl Chats {
     /// **Holds every open chat's live asks open, or no more** (ADR 0121 decision 13, #6007):
     /// while the person is Quiet, a connection held past its minute waits on, in the window's
     /// proxy and the session host's alike; as Quiet ends, one past its minute times out at once,
-    /// and its ask stays answerable, timed out. A chat started meanwhile takes it as it starts.
+    /// and is a block from then on, its ask withdrawn (R-290, Q154). A chat started meanwhile
+    /// takes it as it starts.
     pub fn hold_asks_open(&self, open: bool) {
         let boards: Vec<Arc<dyn purlis_core::sandbox::Board>> = lock(&self.open)
             .values()
@@ -3378,6 +3419,29 @@ impl Chats {
         for board in boards {
             board.hold_open(open);
         }
+    }
+
+    /// **What waits for each open chat's next attempt** (T1-34, R-291): each target a chat's
+    /// board lets through once, with the chat's number. Each board is read outside the hold of
+    /// the open chats: one in the session host is asked over its link.
+    pub fn next_attempts(&self) -> Vec<(u32, String)> {
+        let boards: Vec<(u32, Arc<dyn purlis_core::sandbox::Board>)> = {
+            let open = lock(&self.open);
+            open.iter()
+                .filter_map(|(number, running)| {
+                    Some((*number, running.confinement.as_ref()?.asks()?.clone()))
+                })
+                .collect()
+        };
+        boards
+            .into_iter()
+            .flat_map(|(number, board)| {
+                board
+                    .next_attempts()
+                    .into_iter()
+                    .map(move |target| (number, target))
+            })
+            .collect()
     }
 
     /// Whether chat `session`'s proxy is asking the person about `target` (#1666): what the
@@ -3665,6 +3729,54 @@ impl Chats {
         &self.blocks
     }
 
+    /// Who writes a chat's stops into the event log from now on (R-290): a held connection's
+    /// refusal the chat stopped waiting on, every other refusal held as an ask once its ask
+    /// leaves by anything but an Allow (T1-10), and one never asked ([`Self::write_block`]).
+    pub fn write_stops_with(&self, write: StopWriter) {
+        *lock(&self.stops) = Some(write);
+        let (stops, root) = (Arc::clone(&self.stops), self.project.clone());
+        self.blocks.when_left(Arc::new(
+            move |chat, left: &crate::taskblocks::LeftBlock| {
+                left_as_a_block(&stops, &root, chat, left);
+            },
+        ));
+    }
+
+    /// **Writes `stop`, a sandbox block of chat `chat`'s, by the one road every sandbox block
+    /// takes** (Q254): the stop writer, which feeds the block loop as `written` says. A write
+    /// that fails is said in the app's log; nothing is written before the writer is set.
+    pub fn write_block(
+        &self,
+        chat: u32,
+        stop: purlis_core::eventlog::stops::Stop,
+        written: BlockWritten,
+    ) {
+        let Some(write) = lock(&self.stops).clone() else {
+            return;
+        };
+        if let Err(why) = write(chat, stop, written) {
+            tracing::warn!("purlis: chat {chat}'s sandbox block was not written ({why})");
+        }
+    }
+
+    /// **Chat `call.chat`'s hook line said it made, or ended, a tool call** (R-290, Q154,
+    /// Q240). Where that is the chat moving on from a connection its proxy holds (the call it
+    /// was held under ended, and the same agent made its next call), the chat's board gives the
+    /// connection up: it is refused then, and told as a timeout is, so the one timeout path
+    /// withdraws its ask and writes its block. Nothing is written before the refusal happens.
+    pub fn called(&self, call: &purlis_core::hookwire::ToolCall) {
+        let moved_on = self.blocks.called(call);
+        if moved_on.is_empty() {
+            return;
+        }
+        let Some(board) = self.board_of(call.chat) else {
+            return;
+        };
+        for target in moved_on {
+            board.give_up(&target);
+        }
+    }
+
     /// Who hears, from now on, each host purlis's own proxy refuses a chat it wraps (#1663).
     pub fn tell_refusals_to(&self, hear: crate::hooks::Blocks) {
         *lock(&self.refused) = Some(hear);
@@ -3680,6 +3792,13 @@ impl Chats {
     /// asked live (#1709).
     pub fn tell_asks_moved_to(&self, moved: AsksMoved) {
         *lock(&self.asks_moved) = Some(moved);
+    }
+
+    /// **Who audits, from now on, the end of a chat's waiting Allow next time · once** (T1-34,
+    /// Q278): its attempt used it up, or it was put out without one. Its grant and its removal
+    /// are audited where they are made (`network::allow_next`, `sandboxing::revoke`).
+    pub fn audit_nexts_ended_with(&self, audit: NextEnded) {
+        *lock(&self.nexts_ended) = Some(audit);
     }
 
     /// The project's Secret asks, which a start asks for a missing profile credential through
@@ -5317,6 +5436,18 @@ impl Chats {
             conversation.as_deref(),
         );
         attributes.model_source = sign_in.map(|s| s.kind.word().to_owned());
+        // The protection it starts under (R-227), read from what this start resolved, through
+        // the persona and the way of starting its decide read; a chat reattached or started on
+        // its runner is not started here, so this window resolved nothing for it.
+        if !reattaching && !on_the_runner {
+            attributes.protection = Some(purlis_core::sandbox::protection::at_start(
+                &self.project,
+                level_as_of(chat),
+                &made_of(chat, why),
+                sandbox,
+                unsandboxed,
+            ));
+        }
         // What a wrapped chat needs running beside it, started before it and kept for as long
         // as it is open: charter's egress proxy and its own temp directory (ADR 0067 §2).
         // Its proxy tells the app each host it refuses, by the proxy's word (#1663): the
@@ -5351,6 +5482,8 @@ impl Chats {
                     harness,
                     blocks: Arc::clone(&self.blocks),
                     moved: Arc::clone(&self.asks_moved),
+                    stops: Arc::clone(&self.stops),
+                    ended: Arc::clone(&self.nexts_ended),
                 },
                 self.project.clone(),
             )
@@ -5518,6 +5651,11 @@ impl Chats {
         // A task whose harness says it may not run in auto starts asking, and its pane says why
         // (#6315).
         let mut hooks = hooks;
+        // **How purlis starts it, for its attendance fact** (T1-18, R-106): the profile's own
+        // words and those purlis adds for a task's mode, never a line the chat sends.
+        let mut started_in: Vec<String> = std::iter::once(program.clone())
+            .chain(command.iter().cloned())
+            .collect();
         if let Some(harness) = harness.filter(|_| !on_the_runner) {
             let start = purlis_core::dispatchmode::task_start(
                 harness,
@@ -5526,6 +5664,7 @@ impl Chats {
                 chat.graded,
                 &purlis_core::harness_plugin::Env::of(&env),
             );
+            started_in.extend(start.words.iter().cloned());
             hooks.extend(start.words);
             late.extend(start.said);
         }
@@ -5653,6 +5792,13 @@ impl Chats {
             whose.store(session, std::sync::atomic::Ordering::SeqCst);
             lock(&self.starting_as).insert(session, chat.persona.clone());
             lock(&self.named_while_starting).insert(session, None);
+            // **Its attendance fact** (T1-18, #6409; R-106, R-318, Q271, Q275): held from here,
+            // before its program exists, so its very first hook's report lowers it. Set by how
+            // purlis started it, and never more attended than the fact it had, as this app held
+            // it or its record kept it, so a resume, a relaunch and a reattach carry an
+            // unattended chat forward. At its first start, a chat another chat asked for is never
+            // more attended than that chat (Q279).
+            self.began_attended_or_not(session, chat, harness, on_the_runner, &started_in, why);
             if !reattaching && !on_the_runner && chat.runs_on.is_none() {
                 lock(&self.starting_at).insert(
                     session,
@@ -5858,6 +6004,7 @@ impl Chats {
                 lock(&self.starting_as).remove(&announced);
                 lock(&self.named_while_starting).remove(&announced);
                 lock(&self.starting_at).remove(&announced);
+                lock(&self.attendance).remove(&announced);
             }
             if announced > 0
                 && let Some(gone) = lock(&self.never_started).as_ref()
@@ -5963,6 +6110,13 @@ impl Chats {
                 under.identity.run = run;
             }
         }
+        // **What its attendance fact says, on the record a restart and a resume start from**
+        // (Q275): read under `open`, so a report that lowers the fact after this read finds the
+        // record in place ([`Self::heard_attendance`]). `attendance` is taken inside `open` and
+        // never the other way round.
+        under.unattended |= lock(&self.attendance)
+            .get(&session)
+            .is_some_and(|fact| fact.unattended());
         open.insert(
             session,
             Running {
@@ -5988,6 +6142,9 @@ impl Chats {
                 prompt_key,
                 runs_as: runs_as.clone(),
                 runners_word: armed_by_its_runner.then(|| RunnersWord::of(armed_skills)),
+                reports_verified: purlis_core::eventlog::stops::reported_from_outside_its_reach(
+                    &attributes,
+                ),
             },
         );
         drop(open);
@@ -6102,6 +6259,7 @@ impl Chats {
         lock(&self.sizes).remove(&session);
         lock(&self.owed).remove(&session);
         lock(&self.models).remove(&session);
+        lock(&self.attendance).remove(&session);
         lock(&self.own_work).remove(&session);
         lock(&self.told).remove(&session);
         lock(&self.records).remove(&session);
@@ -6832,6 +6990,39 @@ impl Chats {
         lock(&self.open).get(&session).map(|one| one.chat.clone())
     }
 
+    /// **The id of chat `session`** (ADR 0066), open here or ended here on purpose and still
+    /// kept ([`Self::close`]): what the event log knows it by. `None` for a number that is
+    /// neither, or a chat not given an id.
+    pub fn logged_id_of(&self, session: u32) -> Option<String> {
+        if let Some(one) = lock(&self.open).get(&session) {
+            return one.chat.identity.id.clone();
+        }
+        lock(&self.let_go)
+            .get(&session)
+            .and_then(|was| was.identity.id.clone())
+    }
+
+    /// **Every chat here the event log knows**, by its id, with the name it is shown under
+    /// (T1-32, Q264): each open here, then each closed since launch. The Blocked log lists the
+    /// blocks of these, and of those the reopen record holds.
+    pub fn logged_names(&self) -> Vec<(String, String)> {
+        let mut named: Vec<(String, String)> = lock(&self.open)
+            .values()
+            .filter_map(|one| {
+                let id = one.chat.identity.id.clone()?;
+                Some((
+                    id,
+                    purlis_core::reopen::shown_name(&one.chat, one.harness.map(Harness::name)),
+                ))
+            })
+            .collect();
+        named.extend(lock(&self.let_go).values().filter_map(|was| {
+            let id = was.identity.id.clone()?;
+            Some((id, purlis_core::reopen::shown_name(was, None)))
+        }));
+        named
+    }
+
     /// **What a dispatch is decided over**: every chat this app has open and every one it is
     /// about to start, by its number for each, handed to `decide` with whether a number is a
     /// chat still starting (which counts as working: it is about to be).
@@ -7123,6 +7314,100 @@ impl Chats {
         if moved {
             self.write_it_down();
         }
+    }
+
+    /// **Chat `session`'s attendance fact, as it begins a start** (T1-18, #6409): how purlis
+    /// starts it ([`purlis_core::attendance::Begun`]: a task a dispatch started, a chat a runner
+    /// runs, or a person's), on `harness`, in the words `started_in`, and never more attended
+    /// than the fact this app held for it or its record kept ([`Chat::unattended`]).
+    ///
+    /// **A chat another chat asked for inherits that chat's attendance** at its first start
+    /// (`why` is [`Why::New`]; Q279, R-358, T1-49 #6619): a handoff an unattended chat asked
+    /// for starts unattended, whatever workspace it lands in, and so does one whose asker this
+    /// app holds no fact for (fail closed, as A4 reads a missing fact). One the person started
+    /// from a chat's tab ([`purlis_core::reopen::HandedFrom::by_person`]) is the window's, and
+    /// attended. A later start reads its own record, which kept the fact (Q275), and never the
+    /// asker again, which may be gone by then.
+    fn began_attended_or_not(
+        &self,
+        session: u32,
+        chat: &Chat,
+        harness: Option<Harness>,
+        on_the_runner: bool,
+        started_in: &[String],
+        why: Why,
+    ) {
+        use purlis_core::attendance::{Begun, Fact};
+        use purlis_core::dispatchunattended::Attendance;
+        let begun = if on_the_runner {
+            Begun::Runner
+        } else if chat
+            .from
+            .as_ref()
+            .is_some_and(|from| from.mode == purlis_core::reopen::Mode::Task)
+        {
+            Begun::Task
+        } else {
+            Begun::Person
+        };
+        let mut facts = lock(&self.attendance);
+        // The asking chat's fact, as this app holds it, where a chat asked for this one.
+        let asker_unattended = why == Why::New
+            && chat
+                .from
+                .as_ref()
+                .filter(|from| !from.by_person)
+                .is_some_and(|from| facts.get(&from.chat).is_none_or(|held| held.unattended()));
+        let kept_unattended = chat.unattended || asker_unattended;
+        // The fact held here, whole, so the mode that differed comes with it (R-243); the
+        // record's word (or the asker's) alone where it says less attended than what is held,
+        // or nothing is held.
+        let prior = match facts.get(&session) {
+            Some(held) if held.unattended() || !kept_unattended => *held,
+            _ => Fact::kept(if kept_unattended {
+                Attendance::Unattended
+            } else {
+                Attendance::Attended
+            }),
+        };
+        facts.insert(session, Fact::resumed(prior, begun, harness, started_in));
+    }
+
+    /// **A report the board took from chat `report.chat`, heard by its attendance fact**
+    /// (T1-18, R-107, Q271): only the live listener's, never a line a spool drain hands the
+    /// event log, whose mode is not proven. It can only lower the fact; written down when it
+    /// does, so a restart right after carries it.
+    pub fn heard_attendance(&self, report: &purlis_core::hookwire::Report) {
+        let lowered = {
+            let mut facts = lock(&self.attendance);
+            let Some(fact) = facts.get_mut(&report.chat) else {
+                return;
+            };
+            let was = fact.attendance();
+            fact.heard(report);
+            fact.attendance() != was
+        };
+        if lowered {
+            self.lowered_on_its_record(report.chat);
+            self.write_it_down();
+        }
+    }
+
+    /// **Chat `session`'s record says it is unattended** (Q275), once its fact is: Restart,
+    /// Restart without sandbox and Resume after End each start it under a new number from this
+    /// record, so the fact a report lowered comes with it. Taken after `attendance` is let go,
+    /// as the lock order says ([`Self::open_it_as`]'s insert reads `attendance` inside
+    /// `open`); a chat not on the board yet takes the fact as it is put there.
+    fn lowered_on_its_record(&self, session: u32) {
+        if let Some(running) = lock(&self.open).get_mut(&session) {
+            running.chat.unattended = true;
+        }
+    }
+
+    /// **Chat `session`'s attendance fact** (T1-18, #6409): what A4 reads, through the hook's
+    /// ask. `None` for a chat this app holds no fact for.
+    pub fn attendance_of(&self, session: u32) -> Option<purlis_core::attendance::Fact> {
+        lock(&self.attendance).get(&session).copied()
     }
 
     /// What a chat's harness said, in `report`, about the model its program runs on (ADR 0087
@@ -7603,6 +7888,16 @@ impl Chats {
         }
     }
 
+    /// **Whether chat `session` is open and its hooks report from outside its reach** (Q235,
+    /// Q237): a Claude Code chat under a backend that leaves its hooks outside the sandbox, as
+    /// its run began. Any other chat's reports are unverified, and never count toward the block
+    /// loop (R-209).
+    pub fn reports_from_outside_its_reach(&self, session: u32) -> bool {
+        lock(&self.open)
+            .get(&session)
+            .is_some_and(|running| running.reports_verified)
+    }
+
     /// **Whether chat `session` is open and runs in a sandbox its host composed for it** (#2692):
     /// a runner's chat whose run the runner's record does not say is off. Its sandbox, and the
     /// tools it armed, are the runner's, so this window holds no record of them, and a restart
@@ -7918,6 +8213,7 @@ impl Chats {
             .map(|&session| (session, self.sessions.process_id(session)))
             .collect();
         let models = lock(&self.models).clone();
+        let attendance = lock(&self.attendance).clone();
         let own_work = lock(&self.own_work).clone();
         let layout = lock(&self.layout).clone();
         // **A one-job program is never written** (#4761): read before `open`, as each lock here
@@ -8035,6 +8331,12 @@ impl Chats {
                 // What its harness said this program runs on (#1021), and nothing a record put
                 // back carried from an earlier run.
                 model: models.get(&session).cloned(),
+                // Whether its attendance fact says nobody is at it (T1-18), so a relaunch never
+                // starts it attended; never taken back while it is recorded.
+                unattended: chat.unattended
+                    || attendance
+                        .get(&session)
+                        .is_some_and(|fact| fact.unattended()),
                 // What it had left running of its own as its turn last ended (#5747), and
                 // nothing a record put back carried from an earlier program: that was told.
                 own_work: own_work.get(&session).and_then(|own| own.work),
@@ -8912,6 +9214,8 @@ impl Chats {
             &self.project,
             std::time::Duration::from_secs(2),
         );
+        // And the asks its chats' refusals raised go with them.
+        purlis_core::windowonly::project_ended(&self.project);
         lock(&self.open).clear();
         lock(&self.would_not_start).clear();
         lock(&self.coming).clear();
@@ -9155,6 +9459,56 @@ pub type Narrowed = Arc<dyn Fn(u32) + Send + Sync + 'static>;
 /// What is told a project's asks may have moved (#1709).
 pub type AsksMoved = Arc<dyn Fn() + Send + Sync + 'static>;
 
+/// **What audits the end of chat `number`'s waiting Allow next time · once of `target`**
+/// (T1-34, Q278): its attempt used it up, or it was put out without one. In memory alone, it
+/// is otherwise forgotten as the chat, its session host or the app restarts.
+pub type NextEnded = Arc<dyn Fn(u32, &str) + Send + Sync + 'static>;
+
+/// **What writes a sandbox block of chat `number`'s into the event log** (R-290), made durable
+/// before it answers: the one road every sandbox block takes (Q254), and why it is written
+/// ([`BlockWritten`]), which says whether an ask was withdrawn and whether the block loop counts
+/// it.
+pub type StopWriter = Arc<
+    dyn Fn(u32, purlis_core::eventlog::stops::Stop, BlockWritten) -> std::io::Result<()>
+        + Send
+        + Sync
+        + 'static,
+>;
+
+/// **Why a sandbox block is written** (Q254): what its writing does beside.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BlockWritten {
+    /// Its ask was withdrawn as the chat went on without it: a held connection timed out or
+    /// its chat moved on (Q240), a newer ask took its place, or the chat began its next turn.
+    /// What that ask set is taken back, and the block counts toward the block loop under the
+    /// harness's id for the call it refused, where one was heard, a call counted once (Q253).
+    Withdrawn(Option<String>),
+    /// It was never an ask (a denial class, a policy's no, a grant purlis never makes, purlis's
+    /// own operation, its chat's own to retry): it counts, under the chat's latest call.
+    AtOnce(Option<String>),
+    /// The person's Keep blocked, or its chat's end: its ask is gone, and it is written and
+    /// never counted, since it is the person's answer or the chat's close, not a chat looping.
+    Answered,
+    /// Not a block at all: an ask raised as it is held (T1-28, Q262). It is written to the
+    /// log, never counted toward the block loop, and takes back nothing an ask set.
+    Raised,
+}
+
+impl BlockWritten {
+    /// The call it counts under toward the block loop, where it counts at all.
+    pub fn counted_under(&self) -> Option<Option<&str>> {
+        match self {
+            Self::Withdrawn(call) | Self::AtOnce(call) => Some(call.as_deref()),
+            Self::Answered | Self::Raised => None,
+        }
+    }
+
+    /// Whether an ask left as it was written, so what that ask set goes too.
+    pub fn leaves_an_ask(&self) -> bool {
+        !matches!(self, Self::AtOnce(_) | Self::Raised)
+    }
+}
+
 /// Who a chat's board of live asks tells (#1666), and as whom.
 struct Asking {
     hear: Arc<Mutex<Option<crate::hooks::Blocks>>>,
@@ -9165,6 +9519,10 @@ struct Asking {
     /// The blocks each chat of the project is held on: what the asks registry lists (#1709).
     blocks: Arc<crate::taskblocks::Blocks>,
     moved: Arc<Mutex<Option<AsksMoved>>>,
+    /// Who writes a refusal that became a block (R-290).
+    stops: Arc<Mutex<Option<StopWriter>>>,
+    /// Who audits a waiting Allow next time · once that ended (T1-34, Q278).
+    ended: Arc<Mutex<Option<NextEnded>>>,
 }
 
 /// **A chat's board of live asks** (#1666): what purlis's own proxy holds a connection on
@@ -9180,7 +9538,9 @@ struct Asking {
 ///   Notice, so the registry lists it and the window is told; it is answered there by
 ///   `allow_sandbox_block` and `keep_sandbox_block`, checked against what is held (#1538), one
 ///   ask at a time.
-/// - **A timeout** is kept in the network record. The Notice stays.
+/// - **A timeout** is kept in the network record, and the chat waits on it no longer: its ask
+///   is withdrawn and it is written as one block (R-290, Q154). The chat moving on ends its hold
+///   the same way ([`Chats::called`], Q240).
 /// - **Nobody to ask** (the project's hooks are not listening yet, or the chat has no number
 ///   yet, the first instant of its start): no Notice could be raised, so the connection is
 ///   refused at once, as before purlis asked live, never held its minute for an ask nobody sees.
@@ -9198,6 +9558,8 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::pl
         harness,
         blocks,
         moved,
+        stops,
+        ended,
     } = asking;
     let askable = {
         let (hear, whose) = (Arc::clone(&hear), Arc::clone(&whose));
@@ -9228,7 +9590,7 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::pl
                 // every block held is (`taskblocks::Blocks`), in memory only.
                 let registered = targets
                     .iter()
-                    .filter(|target| register_live(&blocks, chat, target))
+                    .filter(|target| register_live(&blocks, &stops, chat, target))
                     .count();
                 if registered > 0
                     && let Some(moved) = lock(&moved).clone()
@@ -9257,12 +9619,26 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::pl
                 }
             }
             Heard::TimedOut(target) => {
-                // It waits on the person no longer: it is held, timed out and answerable
-                // still, and goes as any block does (#6007).
-                if let Some(block) = live_block(&target) {
-                    blocks.gave_up(chat, &block, crate::sandboxing::now_secs());
+                // The chat waits on it no longer (R-290, Q154): it timed out, or the chat moved
+                // on and the board gave it up (Q240). Its ask is withdrawn, then it is written
+                // as one block, never both at once, and only once.
+                if let Some(block) = live_block(&target)
+                    && let Some(withdrawn) = blocks.stopped_waiting(chat, &block)
+                {
+                    became_a_block(&stops, chat, withdrawn, &block);
+                    if let Some(moved) = lock(&moved).clone() {
+                        told(Box::new(move || moved()));
+                    }
                 }
                 record(&target, purlis_core::sandboxblock::record::TIMED_OUT);
+            }
+            // A waiting Allow next time · once ended (T1-34, Q278): used up by this attempt, as
+            // the person's grant, or put out without one. Audited as that grant ending, for
+            // the chat it waited for.
+            Heard::UsedNext(target) | Heard::DroppedNext(target) => {
+                if let Some(audit) = lock(&ended).clone() {
+                    told(Box::new(move || audit(chat, &target)));
+                }
             }
         }
     });
@@ -9276,15 +9652,99 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::pl
     }
 }
 
+/// **Writes `block`, a held connection chat `chat` stopped waiting on, as one Sandbox block**
+/// (R-290, Q154), once its ask is withdrawn: the host, or the runner's service by its port, as
+/// a grant names it, and the call it was held under (`withdrawn`): the harness's name for its
+/// tool (empty where no call was heard) and its arguments' hash, the target the block loop
+/// matches on (R-206), and its id, so the loop counts that call once (Q253). The target is the
+/// proxy's own word; the tool comes from the chat's hook line, which a sandboxed chat holds the
+/// token to send (Q235's known limit). A write that fails is said in the app's log.
+fn became_a_block(
+    stops: &Mutex<Option<StopWriter>>,
+    chat: u32,
+    withdrawn: crate::taskblocks::Withdrawn,
+    block: &crate::taskblocks::HeldBlock,
+) {
+    use purlis_core::eventlog::stops::{Block, Source, Stop, Target};
+    let Some(write) = lock(stops).clone() else {
+        return;
+    };
+    let target = match block.what {
+        crate::sandboxing::GrantWhat::Port => Target::service(&block.target),
+        _ => Target::host(&block.target),
+    }
+    .ok();
+    let stop = Stop::Block(Block {
+        tool: withdrawn.tool.unwrap_or_default(),
+        source: Source::Sandbox,
+        qualifier: None,
+        target,
+        args: withdrawn.args,
+    });
+    if let Err(why) = write(chat, stop, BlockWritten::Withdrawn(withdrawn.call)) {
+        tracing::warn!("purlis: chat {chat}'s sandbox block was not written ({why})");
+    }
+}
+
+/// **Writes `left`, a refusal chat `chat` held as an ask until it left, as one Sandbox block**
+/// (T1-10, Q154): aimed at the host, folder or service its ask named, as the project at `root`
+/// names a folder (`sandboxblock::stop`), `tool` the call it refused by the harness's name, as
+/// the refusal was heard (Q254), and `unverified` where the chat's own hook line reported it
+/// (Q254). Counted toward the block loop only where its ask left as the chat went on without it,
+/// never by the person's Keep blocked or the chat's end (Q254). A write that fails is said in
+/// the app's log.
+fn left_as_a_block(
+    stops: &Mutex<Option<StopWriter>>,
+    root: &Path,
+    chat: u32,
+    left: &crate::taskblocks::LeftBlock,
+) {
+    let Some(write) = lock(stops).clone() else {
+        return;
+    };
+    let stop = purlis_core::sandboxblock::stop::sandbox_block_of(
+        &left.block.kind,
+        Some(left.block.target.as_str()),
+        root,
+        left.refused.tool.as_deref(),
+        left.reported,
+    );
+    let written = if left.how.counts() {
+        BlockWritten::Withdrawn(left.refused.call.clone())
+    } else {
+        BlockWritten::Answered
+    };
+    if let Err(why) = write(chat, stop, written) {
+        tracing::warn!("purlis: chat {chat}'s sandbox block was not written ({why})");
+    }
+}
+
 /// Holds `target`, a host and port chat `chat`'s proxy asks about, as the block it is for the
 /// chat (#1709), as a grant names it: what the asks registry lists. Held as waiting on the
 /// person, so a burst of later asks does not push it out while its connection waits. Whether it
-/// is one a grant can name.
-fn register_live(blocks: &crate::taskblocks::Blocks, chat: u32, target: &str) -> bool {
+/// is one a grant can name. An ask it raises, one not held already, is written raised through
+/// `stops` (R-229, Q262), as every sandbox ask is.
+fn register_live(
+    blocks: &crate::taskblocks::Blocks,
+    stops: &Mutex<Option<StopWriter>>,
+    chat: u32,
+    target: &str,
+) -> bool {
+    use purlis_core::eventlog::stops::{AskGroup, AskRaised, Stop};
     let Some(block) = live_block(target) else {
         return false;
     };
-    blocks.heard_waiting(chat, block);
+    let raised = !blocks.holds(chat, &block);
+    blocks.heard_waiting(chat, block.clone());
+    blocks.held_live(chat, &block, target);
+    if raised && let Some(write) = lock(stops).clone() {
+        let ask = Stop::AskRaised(AskRaised {
+            ask: AskGroup::Sandbox,
+        });
+        if let Err(why) = write(chat, ask, BlockWritten::Raised) {
+            tracing::warn!("purlis: chat {chat}'s sandbox ask was not written ({why})");
+        }
+    }
     true
 }
 

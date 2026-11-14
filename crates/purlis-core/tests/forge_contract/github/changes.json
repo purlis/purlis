@@ -1,0 +1,21 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest, commits/commits: Compare two commits (files, each with its patch)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/acme/api/compare/main...6dcb09b5b57875f334f61aebed695e2e4193db5e"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"status\": \"ahead\", \"ahead_by\": 1, \"files\": [{\"filename\": \"src/parser.rs\", \"status\": \"modified\", \"additions\": 1, \"deletions\": 0, \"changes\": 1, \"patch\": \"@@ -1 +1,2 @@\\n fn a() {}\\n+fn parse() {}\"}]}",
+        "err": ""
+      }
+    }
+  ]
+}

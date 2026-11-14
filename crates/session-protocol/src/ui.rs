@@ -398,6 +398,13 @@ pub const WINDOW_ONLY: &[&str] = &[
     // chat answers its own ask. The removal has no command here: it is the window's own Delete
     // workspace, which the question opens.
     "keep_asked_workspace",
+    // Merge and Don't merge on a merge a chat's hook held (R-115, R-036): the app merges on the
+    // person's press alone. No chat answers its own ask. Nor does one have the app read its
+    // request again before Merge asks once more (Q248): that read is the person's press.
+    "reread_held_merge",
+    "view_held_merge",
+    "merge_held_request",
+    "dont_merge_held_request",
     // What a chat's browser may reach, on its first browser call's Ask (#2013): the person's
     // answer alone. No chat answers its own Ask.
     "allow_chat_browser",
@@ -619,6 +626,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Typed into a session as the person: one of the explorer's rows, as several are
     // (#1151), and the keys themselves.
     "reference_into_chat",
+    // A block's Tell the chat… (T1-33, Q267): one line of purlis's own, typed into the chat as
+    // the person's second press asks.
+    "tell_chat_blocked",
     "send_input",
     "send_input_bytes",
     // Quiet by hand, and a pane typed in (#6017): the person's own say over their notifications.
@@ -627,8 +637,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     "quiet_typed",
     // Starts the person's editor on this machine's extension record (#1296).
     "open_extension_record",
-    // Allow on Settings' Blocked lately (#1662): widens what every chat here reaches.
+    // Allow on a row of Settings' Blocked log (#1662): widens what every chat here reaches.
     "allow_blocked_host",
+    // Allow next time on a sandbox block (T1-34, R-291): a grant with no ask open, the person's
+    // alone, so a chat can never press it.
+    "allow_next_time",
     // A service on this Mac added by its port on Settings' Network page (#1970): widens what
     // every chat here, or one chat, reaches.
     "allow_sandbox_port",
@@ -775,6 +788,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The plain-file vaults offered to move into the keychain before a person turns their
     // sandbox down (#2071): read in their window alone.
     "plain_file_vaults",
+    // What No sandbox at setup would move into the keychain, and the team's vault that refuses
+    // it (T1-25): it names the project's vaults, as the list above does.
+    "no_sandbox_at_setup",
     // Your levels waiting for Confirm, and the Confirm that makes one count at a start
     // (#2071, ADR 0096 §7): the window's alone, as the record they read and write is.
     "sandbox_levels_waiting",
@@ -1369,6 +1385,19 @@ pub fn names_the_plane_root(method: &str, args: &Value) -> bool {
 pub const THE_PLANE_ROOT_IS_THE_WINDOWS: &str =
     "The project's own files are listed and watched in purlis's window only.";
 
+/// **Whether a call chooses No sandbox at setup** (T1-25, Q251): `open_repo` or
+/// `create_project` with `protection: off`. No sandbox is chosen only in the window on this
+/// Mac, as `no_sandbox_at_setup`, which says what it would move and who refuses it, is the
+/// window's alone ([`WINDOW_ONLY`]). So such a call is refused to a link before its handler is
+/// asked ([`NO_SANDBOX_IS_THE_WINDOWS`]): no vault is moved, no level is written, and no vault
+/// or person is named. Any other level, or none, is the command's to answer.
+pub fn chooses_no_sandbox(method: &str, args: &Value) -> bool {
+    matches!(method, "open_repo" | "create_project") && args["protection"] == "off"
+}
+
+/// What a link is told when its call chooses No sandbox at setup: the same for every project.
+pub const NO_SANDBOX_IS_THE_WINDOWS: &str = "No sandbox is chosen in purlis's window on this Mac.";
+
 /// **Whether a call names a workspace's own files** (#5375): a branch's path, find or watch
 /// with a workspace and no repo, which is how the window names the files in the workspace's
 /// folder that are no repo's. They are the person's window's alone, as `workspace_tree` and
@@ -1460,7 +1489,11 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "change_push_question",
     "charter_windows",
     "chat_attended",
+    // Each chat's blocks since the person last looked, for its marker (R-174, T1-30): a read.
+    "chat_blocks",
     "chat_doings",
+    // A chat's Chat log (T1-27, R-224): its start and end rows, a query of the event log, read only.
+    "chat_log",
     // A chat whose program ended with its session host (#2007): what its pane says.
     "chat_lost_with_the_host",
     "chat_moves",
@@ -1503,6 +1536,9 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "find_files",
     "find_files_end",
     "finished_tasks",
+    // Each chat's finishes and its turn's unresolved blocks, for its finish rows (R-178,
+    // T1-31): a read of the event log.
+    "finished_turns",
     "first_frame",
     "first_run_found",
     "forge_token_help",
@@ -1618,6 +1654,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "session_host_failing",
     "session_record",
     "set_dismissed",
+    // What setup's Protection row shows: the host's bound and the local project's level, a read.
+    "setup_protection",
     "show_window_holding",
     // A deleted skill's last text, for its page on Deleted (S9, #3691): read only.
     "skill_deleted_text",
@@ -1856,6 +1894,14 @@ impl Serving {
                     {
                         Answered::Now(Some(reply(Outcome::Err(Value::String(
                             A_WORKSPACES_OWN_FILES_ARE_THE_WINDOWS.into(),
+                        )))))
+                    }
+                    (Some(server), true)
+                        if server.methods.contains(&method)
+                            && chooses_no_sandbox(&method, &args) =>
+                    {
+                        Answered::Now(Some(reply(Outcome::Err(Value::String(
+                            NO_SANDBOX_IS_THE_WINDOWS.into(),
                         )))))
                     }
                     (Some(server), true) if server.methods.contains(&method) => {

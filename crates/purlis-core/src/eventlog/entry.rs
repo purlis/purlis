@@ -61,6 +61,11 @@ pub enum Entry {
     /// The start whose run was held goes on: its `run.started` is written now
     /// ([`Recorder::begun`]).
     Begun { plane: PathBuf, number: u32 },
+    /// **Chat `number`'s run is replaced at once** (ADR 0076 §2, ADR 0067 as amended
+    /// 2026-10-16, Q247): a restart for project settings, told just before the window closes
+    /// it. Its run ends `completed` for `superseded` here, sub-agents and all, so the close
+    /// that follows ends nothing more ([`Recorder::end_run_with`]).
+    Superseded { plane: PathBuf, number: u32 },
     /// The start whose run was held was put aside: its run is never said, and what its program
     /// still sends is of no run ([`Recorder::taken_back`], #2252).
     TakenBack { plane: PathBuf, number: u32 },
@@ -144,6 +149,14 @@ pub enum Entry {
         number: Option<u32>,
         step: super::secretasks::Step,
     },
+    /// A stop of chat `number`'s, or of no chat where none: a block, a hold, a loop pause or
+    /// an answer to an ask ([`Recorder::stop`]).
+    Stop {
+        plane: PathBuf,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        number: Option<u32>,
+        stop: super::stops::Stop,
+    },
 }
 
 impl Entry {
@@ -174,7 +187,7 @@ impl Recorder {
                 followed,
                 begun,
             } => one(self.report_with(&plane, &report, followed, begun.as_deref())),
-            Entry::Tool { plane, call } => one(self.tool(&plane, &call, Instant::now())),
+            Entry::Tool { plane, call } => self.tool_spooled(&plane, &call, Instant::now(), None),
             Entry::Refused { plane, chat } => one(self.refused(&plane, chat)),
             Entry::Begin {
                 plane,
@@ -206,6 +219,12 @@ impl Recorder {
                 }
             }
             Entry::Begun { plane, number } => Ok(self.begun(&plane, number)?.into_iter().collect()),
+            Entry::Superseded { plane, number } => self.end_run_with(
+                &plane,
+                number,
+                crate::state::run::RunState::Completed,
+                crate::state::run::Cause::Superseded,
+            ),
             Entry::TakenBack { plane, number } => {
                 self.taken_back(&plane, number);
                 Ok(Vec::new())
@@ -259,6 +278,11 @@ impl Recorder {
                 number,
                 step,
             } => one(self.secret_ask(&plane, number, step)),
+            Entry::Stop {
+                plane,
+                number,
+                stop,
+            } => one(self.stop(&plane, number, &stop)),
             Entry::SkillTyped {
                 plane,
                 number,

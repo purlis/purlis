@@ -1,0 +1,21 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest, commits/commits: Compare two commits (ahead_by)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/acme/api/compare/e5bd3914e2e596debea16f433f57875b5b90bcd6...6dcb09b5b57875f334f61aebed695e2e4193db5e"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"status\": \"ahead\", \"ahead_by\": 3, \"behind_by\": 0, \"files\": []}",
+        "err": ""
+      }
+    }
+  ]
+}

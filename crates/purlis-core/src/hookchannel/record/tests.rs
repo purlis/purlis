@@ -55,6 +55,7 @@ fn a_chat_with_a_sub_agent(log: &EventLog, root: &Path, number: u32) {
             args: None,
             decision: crate::hookwire::Decision::None,
             rule: None,
+            arm: None,
             hook_ms: 1,
             agent: Some("agent-1".into()),
             at_ms: 0,
@@ -346,5 +347,53 @@ fn a_terminals_skill_change_on_a_project_without_controls_is_refused_and_nothing
     assert!(
         !events.iter().any(|event| event.kind.starts_with("skill.")),
         "nothing audited: {events:?}"
+    );
+}
+
+/// The chats' own runs' ends in the log in `dir` (no parent run): each one's state and cause.
+fn own_runs_ended(dir: &Path) -> Vec<(String, String)> {
+    crate::eventlog::read(dir)
+        .expect("the log reads")
+        .iter()
+        .filter(|event| event.kind == "run.ended" && event.parent_run.is_none())
+        .map(|event| {
+            (
+                event.body["state"].as_str().unwrap_or_default().to_owned(),
+                event.body["cause"].as_str().unwrap_or_default().to_owned(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_run_the_window_replaced_ends_superseded_in_the_hosts_log_though_the_host_closed_it() {
+    // ADR 0076 §2, Q247: a run a restart for project settings replaces has ended superseded,
+    // never "stopped as you closed it", where the host writes the log as where the window does.
+    let (logs, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let log = a_log_in(logs.path());
+    a_chat_with_a_sub_agent(&log, project.path(), 4);
+    log.record(
+        serde_json::to_value(Entry::Superseded {
+            plane: project.path().to_path_buf(),
+            number: 4,
+        })
+        .unwrap(),
+    )
+    .expect("the host records it");
+
+    log.ended(&an_end(
+        project.path(),
+        4,
+        Exit::Code(0),
+        Some(purlis_host::Stopped::Closed),
+        true,
+    ));
+
+    let superseded = [("completed".to_owned(), "superseded".to_owned())];
+    assert_eq!(sub_agents_ended(logs.path()), superseded);
+    assert_eq!(
+        own_runs_ended(logs.path()),
+        superseded,
+        "ended once, superseded"
     );
 }

@@ -345,7 +345,13 @@ export const commands = {
 	 *  On a blocking thread (#1949), for [`open_plane`]'s reason and because making the project
 	 *  writes its files and runs git.
 	 */
-	createProject: (path: string, planeIsThisRepo: boolean, adopt: string | null, forge: "github" | "gitlab" | null, template: string | null) => typedError<ProjectAnswer, string>(__TAURI_INVOKE("create_project", { path, planeIsThisRepo, adopt, forge, template })),
+	createProject: (path: string, planeIsThisRepo: boolean, adopt: string | null, forge: "github" | "gitlab" | null, template: string | null, protection: 
+/**  Full sandbox. */
+"on" | 
+/**  Basic sandbox. */
+"floor" | 
+/**  No sandbox. */
+"off" | null) => typedError<ProjectAnswer, string>(__TAURI_INVOKE("create_project", { path, planeIsThisRepo, adopt, forge, template, protection })),
 	/**
 	 *  Which harnesses are installed and signed in, and whether `gh` and `glab` are logged in.
 	 * 
@@ -455,15 +461,16 @@ export const commands = {
 	 */
 	grantableFolders: (plane: PlaneId) => typedError<GrantableFolders, string>(__TAURI_INVOKE("grantable_folders", { plane })),
 	/**
-	 *  **Open hosts and Blocked lately** for Settings' Network page (#1662).
+	 *  **Open hosts and the Blocked log** for Settings' Network page (#1662, T1-32).
 	 * 
 	 *  Off the window's thread (#1949): it reads the project's manifest, the administrator's policy
-	 *  and this machine's network record.
+	 *  and this machine's event log.
 	 */
 	sandboxNetwork: (plane: PlaneId) => typedError<SandboxNetwork, string>(__TAURI_INVOKE("sandbox_network", { plane })),
 	/**  **A chat's Network view** (#1662): what chat `session` reaches now, and what it was refused. */
 	chatNetwork: (plane: PlaneId, session: number) => typedError<ChatNetwork, string>(__TAURI_INVOKE("chat_network", { plane, session })),
 	allowBlockedHost: __WINDOW_ONLY_RESULT,
+	allowNextTime: __WINDOW_ONLY_RESULT,
 	allowSandboxPort: __WINDOW_ONLY_RESULT,
 	sandboxKeptBlocked: __WINDOW_ONLY_RESULT,
 	listGrantableFolder: __WINDOW_ONLY_RESULT,
@@ -471,7 +478,8 @@ export const commands = {
 	/**  The vaults chat `session` was refused and the person has not answered, oldest first. */
 	vaultRefusals: (plane: PlaneId, session: number) => typedError<VaultRefused[], string>(__TAURI_INVOKE("vault_refusals", { plane, session })),
 	/**
-	 *  **Whether a person is at chat `session`** (#1501): not where its harness ever reported its
+	 *  **Whether a person is at chat `session`** (#1501): its attendance fact, as every dispatch
+	 *  reader takes it (R-110, #6410): not for a task, nor where its harness ever reported its
 	 *  prompts off or it was started with them off, and not for a chat this app does not have
 	 *  open. What the window asks before it explains anything on that chat's tab: a chat nobody is
 	 *  at is told nothing, as it is told of no dispatch. It only reads.
@@ -481,6 +489,10 @@ export const commands = {
 	keepVaultBlocked: __WINDOW_ONLY_RESULT,
 	putAwayRefusedVault: __WINDOW_ONLY_RESULT,
 	keepAskedWorkspace: __WINDOW_ONLY_RESULT,
+	rereadHeldMerge: __WINDOW_ONLY_RESULT,
+	viewHeldMerge: __WINDOW_ONLY_RESULT,
+	mergeHeldRequest: __WINDOW_ONLY_RESULT,
+	dontMergeHeldRequest: __WINDOW_ONLY_RESULT,
 	allowChatBrowser: __WINDOW_ONLY_RESULT,
 	keepChatBrowserOff: __WINDOW_ONLY_RESULT,
 	answerPoolLogin: __WINDOW_ONLY_RESULT,
@@ -626,7 +638,19 @@ export const commands = {
 	 *  operator's answer (`github`, `gitlab`) on the call after. A local project that is already
 	 *  there asks nothing.
 	 */
-	openRepo: (path: string, template: TemplateChoice, forge: "github" | "gitlab" | null) => typedError<RepoAnswer, string>(__TAURI_INVOKE("open_repo", { path, template, forge })),
+	openRepo: (path: string, template: TemplateChoice, forge: "github" | "gitlab" | null, protection: 
+/**  Full sandbox. */
+"on" | 
+/**  Basic sandbox. */
+"floor" | 
+/**  No sandbox. */
+"off" | null) => typedError<RepoAnswer, string>(__TAURI_INVOKE("open_repo", { path, template, forge, protection })),
+	/**
+	 *  What setup's Protection row shows, read from the core ([`SetupProtection`]). It reads the
+	 *  local project's level from the disk, so off the window's thread (#1949).
+	 */
+	setupProtection: () => typedError<SetupProtection, string>(__TAURI_INVOKE("setup_protection")),
+	noSandboxAtSetup: __WINDOW_ONLY_RESULT,
 	/**
 	 *  The project template that fits the repo at `path`, by id, or `null` when none does or `path`
 	 *  is not a full path to a directory: what the first run's "Fits the repo" says it will pick
@@ -1101,6 +1125,8 @@ export const commands = {
 	 *  and for a record another machine wrote.
 	 */
 	dispatches: DispatchMade[],
+	/**  The number of the chat that wrote it, where that chat is open here (R-226). */
+	session: number | null,
 } | null, string>(__TAURI_INVOKE("session_record", { plane, path })),
 	/**
 	 *  Every dispatch of the project purlis draws, newest first, for its Dispatches tab (#1452):
@@ -1588,7 +1614,26 @@ export const commands = {
 	 *  closed has none.
 	 */
 	activityChat: (plane: PlaneId, key: string) => typedError<number | null, string>(__TAURI_INVOKE("activity_chat", { plane, key })),
+	/**
+	 *  **Each asked chat's finishes in the last day** (R-241, R-178): its turns that ended and its
+	 *  own runs that ended failed, each with its turn's blocks still unresolved at its end, from
+	 *  this machine's event log. Read as a chat's turn ends, off the window's thread.
+	 */
+	finishedTurns: (plane: PlaneId, sessions: number[]) => typedError<FinishedTurn[], string>(__TAURI_INVOKE("finished_turns", { plane, sessions })),
 	questionTrail: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **Chat `session`'s Chat log** (R-224): its rows, from this machine's event log, oldest
+	 *  first. Read when its tab opens, off the window's thread, as it reads the log.
+	 */
+	chatLog: (plane: PlaneId, session: number) => typedError<ChatLog, string>(__TAURI_INVOKE("chat_log", { plane, session })),
+	/**
+	 *  **Each asked chat's blocked marker** (R-172, R-174, R-299; ADR 0124 decision 9.1): its
+	 *  verified and unverified blocks after the last look the window keeps for it, from this
+	 *  machine's event log. No notification and no announcement is made of them (R-176), and
+	 *  nothing of Quiet or snooze is touched (R-177): it only reads.
+	 */
+	chatBlocks: (plane: PlaneId, asked: BlocksAsked[]) => typedError<ChatBlocks[], string>(__TAURI_INVOKE("chat_blocks", { plane, asked })),
+	tellChatBlocked: __WINDOW_ONLY_RESULT,
 	taskQuestion: __WINDOW_ONLY_RESULT,
 	taskQuestionAnswered: __WINDOW_ONLY_RESULT,
 	answerTaskQuestion: __WINDOW_ONLY_RESULT,
@@ -3192,6 +3237,26 @@ export type AnswerPath =
  *  the window's own, opening Settings where the limit is.
  */
 { via: "paused" } | 
+/**
+ *  `merge_held_request` for Merge and `dont_merge_held_request` for Don't merge, each for
+ *  request `number` of `repo` at `head`, the key the ask was raised at (R-115). `facts` are
+ *  what the row shows of it, as the forge last gave them (T1-40): Merge hands back the
+ *  ruleset state and the digest of them, which it is bound to (R-150, T1-41), and
+ *  `reread_held_merge` reads them again before Merge asks once more (Q248).
+ *  `view_held_merge` shows its changes and marks its head viewed (R-302).
+ */
+{ via: "merge-hold"; repo: string; number: number; head: string; facts: MergeShown } | 
+/**
+ *  `vouch_clone` for Trust this clone, on the clone at `folder` (relative to the project)
+ *  at `place`, the address its remote named when the refusal was raised (R-330): the clone
+ *  Notice's own command, which clears the ask.
+ */
+{ via: "trust-clone"; folder: string; place: string } | 
+/**
+ *  `vouch_clone` for Trust all, on each of `clones` at the one address its remote names: the
+ *  clone Notice's own command, and each clone it trusts leaves the ask (R-336).
+ */
+{ via: "trust-clones"; clones: CloneToVouch[] } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -3683,6 +3748,22 @@ export type AskSource =
  */
 "looping" | 
 /**
+ *  **A merge a chat's hook held** (R-114, R-115): the chat never merges. Merge is the
+ *  app's own forge call, on the person's press, and Don't merge merges nothing.
+ */
+"merge-hold" | 
+/**
+ *  **A refusal whose only way out is Trust this clone** (R-328, R-330): a GitHub App token
+ *  that couldn't be minted for a clone purlis has no record of. Trust this clone records it,
+ *  as the clone's own Notice does, and the chat's next mint goes through.
+ */
+"trust-clone" | 
+/**
+ *  **The clones purlis has no record of** (R-336, Q184): one ask for all of them, no chat's,
+ *  never one per clone. Trust all records each, as its Notice's Trust this clone does.
+ */
+"trust-clones" | 
+/**
  *  **Pool setup's cluster is ready** (#4496): the admin the person asked has given what
  *  the install couldn't, and Pool setup goes on. Said once, about no chat.
  */
@@ -3727,6 +3808,13 @@ export type Asking = {
 	 *  again then.
 	 */
 	cooling_until?: number | null,
+	/**
+	 *  **The window-only asks no chat waits on** (T1-42, R-329, Q181): each a chat's whose turn
+	 *  has ended, drawn on that chat's finish row with its control. Listed apart from
+	 *  [`Asking::asks`], so neither the ✋, Asks nor a notification counts them: a Blocking ask
+	 *  is one a chat waits on. Only [`every_ask`] puts any here ([`finish_rows_apart`]).
+	 */
+	on_finish_rows?: Shown[],
 };
 
 /**  What a chat's row says while it is at its task limit. */
@@ -3979,7 +4067,7 @@ export type BlockShown = {
 };
 
 /**
- *  One row of **Blocked lately**, or of a chat's refusals: what was refused, the newest time,
+ *  One row of the **Blocked log**, or of a chat's refusals: what was refused, the newest time,
  *  and how often.
  */
 export type BlockedLately = {
@@ -3997,6 +4085,8 @@ export type BlockedLately = {
 	said: string,
 	/**  The chat it was, by the name it was shown under, where the record has it. */
 	chat: string | null,
+	/**  Its chat's number, where that chat is open here: what its Chat log opens by (R-226). */
+	session: number | null,
 	/**  When it was last refused, in seconds since 1970. */
 	at: number,
 	/**  How many times it was refused in the record. */
@@ -4008,6 +4098,16 @@ export type BlockedLately = {
 	 *  named, reached already, not a host a proxy refuses) or policy forbids it.
 	 */
 	levels: GrantLevel[],
+};
+
+/**
+ *  One chat the window asks the blocked marker of, and its last look: the `seq` of the latest
+ *  block the person looked at, read from its key in the seen record (decimal, `None` for
+ *  never).
+ */
+export type BlocksAsked = {
+	session: number,
+	after: string | null,
 };
 
 /**
@@ -4513,6 +4613,24 @@ export type ChatBlocked = {
 };
 
 /**
+ *  **A chat's blocks since the person last looked** (R-172, R-174, R-299): what its marker
+ *  shows.
+ */
+export type ChatBlocks = {
+	session: number,
+	/**  The verified blocks after the look: the marker's count, "2 new blocked". */
+	blocks: number,
+	/**  The unverified ones after it, which never count on the sidebar: a muted dot. */
+	unverified: number,
+	/**
+	 *  The seen record's key for a look at the chat's latest block, `blocks:<chat>:<seq>`, the
+	 *  chat by its logged id, stable across restarts (Q258): what the window keeps once the chat
+	 *  has been looked at. `None` for a chat with none, or one the log does not know.
+	 */
+	key: string | null,
+};
+
+/**
  *  **One browser of a chat's, as the window lists it** (#2024): under its chat in the Chats
  *  list, live on its chat's tab, and opened in a view tab by its program.
  */
@@ -4644,6 +4762,72 @@ export type ChatHeld = {
 	session: number,
 };
 
+/**  A chat's Chat log: whether purlis knows the chat, and its rows. */
+export type ChatLog = {
+	/**  purlis knows the chat by its number: open, or ended here and still kept. */
+	known: boolean,
+	rows: ChatLogRow[],
+	summary: ChatLogSummary,
+};
+
+/**  One row of a chat's Chat log. */
+export type ChatLogRow = 
+/**
+ *  The chat's run started (`cause`: `start`, `reopen`, `fresh`, ...), with the protection
+ *  it recorded, or none where its event has none this version can read.
+ */
+{ kind: "started"; 
+/**  When (UTC, RFC 3339), where the event's id says. */
+at: string | null; cause: string; protection: StartProtection | null } | 
+/**  The chat's run ended: `completed`, `failed` or `stopped`, why, and its exit code. */
+{ kind: "ended"; at: string | null; state: string; cause: string; code: number | null } | 
+/**
+ *  The chat's sandbox was lifted for a run (`off`) or put back on (`on`), and who did it:
+ *  `actor_kind` `human`, `host` or `agent`, and the actor's word.
+ */
+{ kind: "protection_changed"; at: string | null; change: string; actor_kind: string; actor: string } | 
+/**  The chat raised an ask, by its group's word. */
+{ kind: "ask_raised"; at: string | null; ask: string } | 
+/**  The chat's ask was answered: `allowed` or `refused`, and by whom: `window` or `inbox`. */
+{ kind: "ask_answered"; at: string | null; ask: string; answer: string; by: string } | 
+/**
+ *  purlis held an action and asked the person: the tool, and the guard's arm it was held
+ *  at, where it names one (`merge-hold`).
+ */
+{ kind: "held"; at: string | null; tool: string; arm: string | null; 
+/**  It was held under one of the chat's sub-agents. */
+sub_agent: boolean } | 
+/**  The chat was paused as looping: the rule's word and how many times. */
+{ kind: "loop_paused"; at: string | null; rule: string; times: number } | 
+/**  A call was blocked: by whom, how much its report is worth, at what, and why it said. */
+{ kind: "blocked"; at: string | null; tool: string; source: string; qualifier: string | null; target_kind: string | null; target: string | null; harness: string; reason: string | null; 
+/**  It has since been resolved (Q272): its row offers no Tell the chat…. */
+resolved: boolean; 
+/**  The labels its Allow next time may offer (T1-34, Q278), as policy keeps them. */
+allow_levels: GrantLevel[] };
+
+/**
+ *  What heads a chat's Chat log: its allowed calls in one count, with those its person's rules
+ *  allowed, its honesty lines, and what purlis can't tell of its harness.
+ */
+export type ChatLogSummary = {
+	allowed: number,
+	by_your_rules: number,
+	/**  What reports its calls is within its own reach. */
+	unverified: boolean,
+	/**  It ran with No sandbox. */
+	ran_as_you: boolean,
+	/**
+	 *  Its harness, by the word the plane calls it, where its latest start names one purlis
+	 *  ships: what the Can't tell lines name.
+	 */
+	harness: string | null,
+	/**  Its harness does not report what its own check blocks (R-097, R-100). */
+	cant_tell_its_checks_blocks: boolean,
+	/**  Its harness reports no mode purlis can check (R-099). */
+	cant_tell_its_mode: boolean,
+};
+
 /**  What a number names, as the window is sent it. */
 export type ChatLookup = 
 /**  An open chat answers to it: the window shows that chat. */
@@ -4724,6 +4908,12 @@ export type ChatNoticed = {
 	 *  is not known.
 	 */
 	left_work: boolean | null,
+	/**
+	 *  The mode purlis didn't set that it reported, once one made it unattended (R-243,
+	 *  T1-44): a standing fault its pane says in a Notice, never an ask. None on every harness
+	 *  whose adapter reports no mode purlis can check.
+	 */
+	mode: ModeDiffers | null,
 };
 
 /**  A chat on a device, as its row names it. */
@@ -5060,6 +5250,8 @@ export type CloneToVouch = {
 	place: string | null,
 	/**  Every address its remote names now, each once. */
 	places: string[],
+	/**  When it was made, in seconds since 1970, where its disk keeps a creation time (R-337). */
+	made: number | null,
 };
 
 /**  What [`CLOSE_HANDED`] carries: the project and the chats a link's close would end. */
@@ -5180,6 +5372,11 @@ export type CreateOnForge = {
 	template: string | null,
 	/**  Where it goes: absolute, from [`new_project_folder`]. */
 	folder: string,
+	/**
+	 *  The Protection row's answer (T1-24), kept as the person's own level for the project once
+	 *  it is made. Null keeps none.
+	 */
+	protection: ProtectionWord | null,
 };
 
 /**
@@ -6589,6 +6786,26 @@ export type FillShown = {
 	code: boolean,
 };
 
+/**
+ *  **An unresolved block of a finished turn** (T1-33, R-300): its source, qualifier and
+ *  target, and the chat's harness (Q272), in the words the Chat log row reads them in, so a
+ *  finish row offers the ways out its Chat log row does.
+ */
+export type FinishedBlock = {
+	source: string,
+	/**  `unverified` or `cant_tell`, or none for a plain report. */
+	qualifier: string | null,
+	target_kind: string | null,
+	target: string | null,
+	/**
+	 *  The chat's harness (`claude`, `codex`, `opencode`), or `unknown`: whose own check a
+	 *  `harness_check` block was.
+	 */
+	harness: string,
+	/**  The labels its Allow next time may offer (T1-34, Q278), as policy keeps them. */
+	allow_levels: GrantLevel[],
+};
+
 /**  What finishing them came to. What each step said is in the app's log. */
 export type FinishedMoving = {
 	/**  What still waits, if anything: an item the person did not allow keeps its vault here. */
@@ -6661,6 +6878,24 @@ export type FinishedTask = {
 	 *  name it by; it has no Reopen and no Clear. Null for every ended task.
 	 */
 	waits: WaitsToStart | null,
+};
+
+/**  **One finish of a chat's** (R-241, R-178): a turn that ended, or its own run ended failed. */
+export type FinishedTurn = {
+	session: number,
+	/**  The id of the event that ended it: what its row is noted by. */
+	key: string,
+	/**  When, in seconds since 1970. */
+	at: number,
+	/**  Its own run ended failed, rather than its turn ending. */
+	failed: boolean,
+	/**  Its turn's blocks still unresolved at its end, one a target: none for a failed run. */
+	blocked: number,
+	/**
+	 *  Those blocks, each by who blocked it and what at (T1-33, R-300), as the Chat log words a
+	 *  block's: what its finish row offers ways out of.
+	 */
+	blocks: FinishedBlock[],
 };
 
 /**  One ended task's tokens, by its dispatch record's id. */
@@ -8382,6 +8617,18 @@ export type LoginShown = {
 	replaces_form?: string | null,
 };
 
+/**  **What the person has seen of a merge's head** (T1-41, R-122), as its row says it. */
+export type LookShown = 
+/**  Viewed in purlis, at this head. */
+"viewed" | 
+/**
+ *  Approved at this head on the forge, by a person who is neither its author nor an app or
+ *  a bot.
+ */
+"approved" | 
+/**  Neither. */
+"not-viewed";
+
 /**  A chat whose program ended with its session host, as the Notice on its pane shows it. */
 export type LostChat = {
 	plane: PlaneId,
@@ -8614,11 +8861,93 @@ export type MemoryView = {
 	text: string,
 };
 
+/**
+ *  **What a re-read of a held merge found** (Q248): the head the request is at now, and what its
+ *  row shows of it, with the time the forge was read.
+ */
+export type MergeReread = {
+	/**
+	 *  The head the request is at now: another than the ask's, and that ask is retired for one
+	 *  at this head (Q242).
+	 */
+	head: string,
+	facts: MergeShown,
+};
+
+/**
+ *  **What a merge row shows of its request** (T1-40; R-120, R-147, Q248), every one of them read
+ *  from the forge with the app's own login, never from the chat
+ *  (`purlis_core::mergehold::Facts`).
+ */
+export type MergeShown = {
+	/**
+	 *  The request's title, written out inertly: its author may be the chat, so the row draws it
+	 *  as text the chat may have written (Q248).
+	 */
+	title: string,
+	/**  Who opened it, by the forge's login, written out inertly. */
+	author: string,
+	/**  The branch it merges into: the ask's key's. */
+	base: string,
+	/**
+	 *  The checks at its head, as one of the five words: `PASSED`, `FAILED`, `RUNNING`, `NOT
+	 *  RUN` or `UNKNOWN`.
+	 */
+	checks: string,
+	/**  When the forge was read for these, in seconds since 1970: "Checks PASSED as of 14:02". */
+	read_at: number,
+	/**  Whether a ruleset protects the base, as purlis read it. */
+	ruleset: RulesetShown,
+	/**
+	 *  What the person has seen of its head (T1-41, R-122): viewed in purlis, approved on the
+	 *  forge by someone else, or neither. A merge takes two presses whichever it is (Q268).
+	 */
+	look: LookShown,
+	/**
+	 *  Where it is approved: the login of the person who approved this head (Q277), said
+	 *  inertly, as text after purlis's own words and never as a control.
+	 */
+	approved_by: string | null,
+	/**
+	 *  Where it was not viewed: how many commits its head is ahead of the one the person
+	 *  viewed, where purlis knows it (R-123): "2 commits since you looked".
+	 */
+	since_viewed: number | null,
+	/**
+	 *  Whether purlis recorded the asking chat pushing its head (R-124). A head it did not is
+	 *  flagged.
+	 */
+	pushed_here: boolean,
+	/**
+	 *  The digest of what these facts show (`purlis_core::mergehold::Facts::digest`): Merge
+	 *  hands it back, and merges only while the ask shows the same.
+	 */
+	digest: string,
+};
+
 /**  What a merge did, for the window to report. */
 export type Merged = {
 	branch: string,
 	was: string,
 	now: string,
+};
+
+/**
+ *  **A chat reported a mode purlis didn't set** (R-243): each mode as its own harness names it,
+ *  or `unknown` for a string nobody measured ([`purlis_core::attendance::ModeDiffers`]), and
+ *  which harness reported it, so the Notice names that harness and its own mode, never one
+ *  harness's words for another's (R-005, Q280).
+ */
+export type ModeDiffers = {
+	/**  The mode purlis started it in. */
+	set: string,
+	/**  The mode its armed hook reported. */
+	reported: string,
+	/**
+	 *  The harness that reported it, as the core names it (`claude`), which the window says by
+	 *  its adapter's display name; none where the app holds no harness for the chat.
+	 */
+	harness: string | null,
 };
 
 /**  What the person's mouse did, in a browser they drive (#2014). */
@@ -8960,6 +9289,21 @@ export type NewBranch = {
 	 *  not land — in the window's words.
 	 */
 	warnings: string[],
+};
+
+/**
+ *  **What choosing No sandbox at setup would do** (T1-25; R-066, R-293, R-298), read from the
+ *  core ([`purlis_core::sandbox::personal::no_sandbox::report`]) before the press: the vaults
+ *  that move into the system keychain in the press that writes the level, the warning's key,
+ *  and the team's vault that refuses No sandbox, where there is one. Nothing is written.
+ */
+export type NoSandboxAtSetup = {
+	/**  This machine's plain-file vaults that move, by name. */
+	moves: string[],
+	/**  The key of the warning the row shows beside them. */
+	warning: string,
+	/**  The team's vault that refuses No sandbox here, where there is one. */
+	refused: TeamVaultRefusal | null,
 };
 
 /**  A folder of a source that is not a skill purlis offers. */
@@ -9471,6 +9815,11 @@ export type OpenedRepo = {
 	 *  already tracks it or the remote names none.
 	 */
 	forge_said?: string | null,
+	/**
+	 *  Why the Protection row's answer was not kept for the project it made (Q241), where it was
+	 *  not: the window says it on its line. Null when it was kept, or nothing was made.
+	 */
+	protection_said: string | null,
 };
 
 /**  **Where a link that opens without asking opens.** */
@@ -11309,6 +11658,11 @@ export type ProjectAnswer = {
 	 *  asks GitHub or GitLab and calls again with the answer. Nothing was made.
 	 */
 	asks_forge: string | null,
+	/**
+	 *  Why the Protection row's answer was not kept for the project this call made (Q241), where
+	 *  it was not: the window says it on its line. Null otherwise.
+	 */
+	protection_said: string | null,
 };
 
 /**
@@ -11617,6 +11971,32 @@ export type ProposedWhole = {
 	/**  Why it is not shown, or not applied, in a sentence. */
 	why: string | null,
 };
+
+/**  One layer's protection at a start, as the start row says it. */
+export type ProtectionLayer = {
+	/**  The layer: `sandbox`, the one a tier sets in phase 1. */
+	layer: string,
+	/**  Its level's word: `on`, `floor` or `off`. */
+	level: string,
+	/**
+	 *  Who set it: `policy`, `project`, `person`, `unconfirmed`, `chat`, `purlis` or
+	 *  `unknown`.
+	 */
+	tier: string,
+};
+
+/**
+ *  **The Protection row's answer** on the wire (T1-24, Q236): the level the person chose at setup, in
+ *  the words Settings writes it with. It is written as their own level for the project
+ *  ([`purlis_core::sandbox::personal::chosen_at_setup`]).
+ */
+export type ProtectionWord = 
+/**  Full sandbox. */
+"on" | 
+/**  Basic sandbox. */
+"floor" | 
+/**  No sandbox. */
+"off";
 
 /**  What a yes hands back. */
 export type PublishAccepted = {
@@ -12546,7 +12926,9 @@ export type RiskClass = "protected-push" | "production-host" | "outside-project"
 /**  A delete its command or tool plainly says (#6178). */
 "delete" | 
 /**  A credential handed from a purlis vault to a chat's program, a page or a runner (#6178). */
-"vault-use";
+"vault-use" | 
+/**  A merge a chat's hook held, which the app performs on the person's press (Q239). */
+"merge";
 
 /**  A risk, and the core's words for it. */
 export type RiskMark = {
@@ -12821,6 +13203,18 @@ export type RuleShown = {
 	/**  The rule offered, where the same Allow was given it twice in a week. */
 	offer?: RuleOffered | null,
 };
+
+/**
+ *  **Whether a ruleset protects a merge's base** (R-147), as its row shows it and its Merge hands
+ *  back (R-150).
+ */
+export type RulesetShown = 
+/**  A ruleset protects it. */
+"protects" | 
+/**  None does. */
+"none" | 
+/**  The forge did not say. */
+"unknown";
 
 /**  How a skill run ended, as the Runs panel draws it. */
 export type RunEnd = 
@@ -13270,7 +13664,7 @@ export type SandboxGrant = {
 };
 
 /**
- *  **Settings' Network page** (#1662): Open hosts and Blocked lately. Allowed is the list
+ *  **Settings' Network page** (#1662): Open hosts and the Blocked log. Allowed is the list
  *  `sandbox_grants` answers.
  */
 export type SandboxNetwork = {
@@ -13902,6 +14296,8 @@ export type SessionRecordView = {
 	 *  and for a record another machine wrote.
 	 */
 	dispatches: DispatchMade[],
+	/**  The number of the chat that wrote it, where that chat is open here (R-226). */
+	session: number | null,
 };
 
 /**  What a save is: Edit as TOML's whole text, or a form's changes to the text it was read as. */
@@ -14093,6 +14489,24 @@ export type SetupNew = {
 	vault: string,
 	op_vault: string,
 	op_item: string | null,
+};
+
+/**
+ *  **What setup's Protection row shows** (Q241): the levels a new project may take on this
+ *  machine, and, where the local project is there already, its level, which Open repo keeps.
+ */
+export type SetupProtection = {
+	/**  The lowest level the row offers: an option below it is out of reach, with `why`. */
+	lowest: ProtectionWord,
+	/**  The level the row starts at. */
+	default: ProtectionWord,
+	/**  Why nothing below `lowest` may be chosen, where a policy holds it. */
+	why: string | null,
+	/**
+	 *  The local project's level, where the project is there already: Open repo goes into it
+	 *  and writes none (shown read-only, "Your level: … · change it in Settings").
+	 */
+	yours: ProtectionWord | null,
 };
 
 /**  A ticked vault that was not given the token. */
@@ -15846,6 +16260,19 @@ export type StartOptions = {
 	next_number?: number | null,
 };
 
+/**  The protection a start recorded (R-227): the four fields of its `run.started`. */
+export type StartProtection = {
+	layers: ProtectionLayer[],
+	/**  The last commit of the plane's own file: a commit, `none` or `unknown`. */
+	charter_commit: string,
+	/**  The plane's own file that commit is of: `purlis.toml` or `charter.toml`. */
+	charter_file: string,
+	/**  The working file differed from that commit. */
+	charter_dirty: boolean,
+	/**  How many answers were in force: none until phase 2. */
+	answers_in_force: number,
+};
+
 /**
  *  **Why a start the window asked for did not start** (#3942, #3968): the core's sentence, and
  *  the approval the profile it started on needs, where its start was refused while that profile
@@ -16665,6 +17092,16 @@ export type TeamOffState = {
 	answer: boolean | null,
 };
 
+/**  A plain-file vault the team's committed file registers, which refuses No sandbox (R-298). */
+export type TeamVaultRefusal = {
+	/**  The vault's name. */
+	vault: string,
+	/**  Who added it, as plain text: a name from git, or "your team". */
+	owner: string,
+	/**  The refusal, in the core's words. */
+	said: string,
+};
+
 /**
  *  Which project template the repo's project is laid out from: `purlis_core::firstrun::Choice`
  *  on the wire, which the core keeps free of serde and specta.
@@ -17039,7 +17476,11 @@ export type UpdateKind =
 /**  The person filed a report a chat drafted (#5694). */
 "report-sent" | 
 /**  A working chat may not be getting anywhere (#6014). */
-"stuck";
+"stuck" | 
+/**  A chat's turn ended (T1-31): its finish row, with its blocks still unresolved. */
+"turn-finished" | 
+/**  A chat's own run ended failed (T1-31). */
+"chat-failed";
 
 /**  An update the window derived from its source, to be noted. */
 export type UpdateNoted = {

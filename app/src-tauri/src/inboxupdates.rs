@@ -63,6 +63,10 @@ pub enum UpdateKind {
     ReportSent,
     /// A working chat may not be getting anywhere (#6014).
     Stuck,
+    /// A chat's turn ended (T1-31): its finish row, with its blocks still unresolved.
+    TurnFinished,
+    /// A chat's own run ended failed (T1-31).
+    ChatFailed,
 }
 
 impl From<UpdateKind> for Kind {
@@ -84,6 +88,8 @@ impl From<UpdateKind> for Kind {
             UpdateKind::Arrived => Kind::Arrived,
             UpdateKind::ReportSent => Kind::ReportSent,
             UpdateKind::Stuck => Kind::Stuck,
+            UpdateKind::TurnFinished => Kind::TurnFinished,
+            UpdateKind::ChatFailed => Kind::ChatFailed,
         }
     }
 }
@@ -107,6 +113,8 @@ impl From<Kind> for UpdateKind {
             Kind::Arrived => UpdateKind::Arrived,
             Kind::ReportSent => UpdateKind::ReportSent,
             Kind::Stuck => UpdateKind::Stuck,
+            Kind::TurnFinished => UpdateKind::TurnFinished,
+            Kind::ChatFailed => UpdateKind::ChatFailed,
         }
     }
 }
@@ -632,6 +640,8 @@ mod tests {
             UpdateKind::Arrived,
             UpdateKind::ReportSent,
             UpdateKind::Stuck,
+            UpdateKind::TurnFinished,
+            UpdateKind::ChatFailed,
         ] {
             assert_eq!(UpdateKind::from(Kind::from(kind)), kind);
         }

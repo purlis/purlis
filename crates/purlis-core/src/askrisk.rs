@@ -27,6 +27,8 @@
 //! - **A vault use** ([`Class::VaultUse`], [`vault_use`]): an ask whose Allow hands a stored
 //!   credential from a purlis vault to a chat's program, a page or a pool's runner. The window's
 //!   registry knows which asks those are; this says them.
+//! - **A merge** ([`Class::Merge`], [`merge_of`]; Q239): a merge a chat's hook held, which the
+//!   app performs on the person's press and which has no undo.
 //!
 //! A push that names no branch (`git push`, `git push origin`, `git push origin HEAD`) is
 //! classed by the branch it would push, where the caller knows it ([`Pushes`]); a line that
@@ -60,6 +62,7 @@ pub enum Class {
     OutsideProject,
     Delete,
     VaultUse,
+    Merge,
 }
 
 /// **What a push that names no branch would push** (#6178), as the chat's folder says: its
@@ -394,6 +397,18 @@ pub fn vault_use(what: &str, vault: Option<&str>, to: &str) -> Risk {
         class: Class::VaultUse,
         why: format!("Hands {what} from {from} to {to}"),
         confirm: format!("Allow handing {what} to {to}?"),
+    }
+}
+
+/// **A held merge** (Q239): request `number` of `repo` at `head`, into `base`, which the app
+/// merges itself on the person's press. Both sentences name the short head (Q242), so the once
+/// more press says which commit it merges. Every name is the key's, and is data.
+pub fn merge_of(repo: &str, number: u64, head: &str, base: &str) -> Risk {
+    let short = head.get(..7).unwrap_or(head);
+    Risk {
+        class: Class::Merge,
+        why: format!("Merges request {number} of {repo} at {short} into {base}, with no undo"),
+        confirm: format!("Merge request {number} of {repo} at {short} into {base}?"),
     }
 }
 

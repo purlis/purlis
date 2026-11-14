@@ -27,9 +27,23 @@ fn an_existing_project_without_the_sandbox_is_offered_it() {
     assert!(offer_due(project.path()));
 }
 
+/// A project charter makes leaves the level to the person (Q114, Q201): its protection is chosen
+/// at setup or in Settings (Q115, Q231), so it is not offered the full sandbox as one made before
+/// the sandbox existed is.
 #[test]
-fn a_project_charter_made_is_never_offered_what_it_already_has() {
+fn a_project_charter_made_is_not_offered_the_full_sandbox() {
     let project = a_project(&crate::scaffold::planefile::render("github", "acme", None));
+    assert!(!offer_due(project.path()));
+}
+
+/// The scaffold's `[sandbox]` block alone, after anything else the project wrote, is what marks
+/// a project made since the scaffold stopped writing `mode = "on"` (Q231).
+#[test]
+fn a_project_whose_sandbox_table_names_no_mode_is_not_offered_the_full_sandbox() {
+    let project = a_project(&format!(
+        "schema = 1\n\n{}",
+        crate::sandbox::scaffold_block()
+    ));
     assert!(!offer_due(project.path()));
 }
 
@@ -113,12 +127,12 @@ fn a_sandbox_charter_cannot_edit_safely_is_refused_and_nothing_is_written() {
 
     assert!(refused.to_string().contains("mode = \"on\""), "{refused}");
     assert_eq!(charter_toml(project.path()), before);
-    assert!(offer_due(project.path()), "still unanswered");
+    assert!(read(project.path()).offer.is_empty(), "still unanswered");
 }
 
 /// A `[sandbox]` or `mode =` line inside a multi-line string is not the table. An edit that
 /// lands there leaves the sandbox off, so it is refused, nothing is written, and the offer is
-/// still due — never recorded as taken with the sandbox off.
+/// still unanswered — never recorded as taken with the sandbox off.
 #[test]
 fn an_edit_that_would_land_in_a_string_and_leave_the_sandbox_off_is_refused() {
     for before in [
@@ -132,7 +146,10 @@ fn an_edit_that_would_land_in_a_string_and_leave_the_sandbox_off_is_refused() {
         assert!(refused.to_string().contains("by hand"), "{refused}");
         assert_eq!(charter_toml(project.path()), before, "nothing written");
         assert_eq!(Plane::read(project.path()).said().policy, None);
-        assert!(offer_due(project.path()), "still unanswered: {before}");
+        assert!(
+            read(project.path()).offer.is_empty(),
+            "still unanswered: {before}"
+        );
     }
 }
 

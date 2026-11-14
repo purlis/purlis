@@ -14,10 +14,10 @@ use super::backend::{
 };
 use super::checks::{self, Annotation, Checks, FailedCheck};
 use super::pr::{
-    AutoMerge, GITHUB_AUTO_MERGE_NOT_ALLOWED, GITHUB_METHODS, GITHUB_NOTHING_TO_WAIT_FOR, Gate,
-    Gated, Image, MergeAs, MergedAt, Opened, Pinned, Pr, Ready, Request, State, check_gate,
-    commit_named, first, held_to_the_forges_clock, is_ours, none_will_run, not_queued_when,
-    not_this_saves, pr_of, unknown_state,
+    AutoMerge, Changes, GITHUB_AUTO_MERGE_NOT_ALLOWED, GITHUB_METHODS, GITHUB_NOTHING_TO_WAIT_FOR,
+    Gate, Gated, HeadAt, Image, MergeAs, MergedAt, Opened, Pinned, Pr, Ready, Request, Review,
+    ReviewState, Reviewer, State, check_gate, commit_named, first, held_to_the_forges_clock,
+    is_object_name, is_ours, none_will_run, not_queued_when, not_this_saves, pr_of, unknown_state,
 };
 use super::transport::{Call, Field, Method, NoAnswer};
 use super::{
@@ -537,6 +537,56 @@ impl WorkItems for GitHub {
     }
 }
 
+/// The rule types a GitHub ruleset gates a merge with (Q248): a request's reviews, its checks,
+/// its deployments, a merge queue, or who may update the branch. Others gate no merge.
+const MERGE_GATES: [&str; 5] = [
+    "pull_request",
+    "required_status_checks",
+    "required_deployments",
+    "merge_queue",
+    "update",
+];
+
+/// GitHub's message for a branch with no classic protection, its only 404 that means none
+/// (Q252).
+const BRANCH_NOT_PROTECTED: &str = "Branch not protected";
+
+/// How many pages of a pull request's reviews are read (T1-41).
+const REVIEW_PAGES: u32 = 3;
+
+/// How many reviews purlis asks GitHub for on one page: a page this full may have one after it.
+const REVIEWS_PER_PAGE: usize = 100;
+
+/// The most files GitHub's compare lists: a list this long may be cut (Q277).
+const COMPARED_FILES: usize = 300;
+
+/// One review as GitHub lists it, or `None` where it names no login, state or commit.
+fn review_of(listed: &Value) -> Option<Review> {
+    let login = listed["user"]["login"]
+        .as_str()
+        .filter(|login| !login.is_empty())?;
+    let by = match listed["user"]["type"].as_str() {
+        Some("User") if !login.ends_with("[bot]") => Reviewer::Person,
+        _ if login.ends_with("[bot]") => Reviewer::App,
+        _ => Reviewer::Bot,
+    };
+    let state = match listed["state"].as_str()? {
+        "APPROVED" => ReviewState::Approved,
+        "CHANGES_REQUESTED" => ReviewState::ChangesRequested,
+        "DISMISSED" => ReviewState::Dismissed,
+        _ => ReviewState::Commented,
+    };
+    let commit = listed["commit_id"]
+        .as_str()
+        .filter(|sha| is_object_name(sha))?;
+    Some(Review {
+        login: login.to_owned(),
+        by,
+        state,
+        commit: commit.to_owned(),
+    })
+}
+
 impl Requests for GitHub {
     fn open_or_update(
         &self,
@@ -658,6 +708,214 @@ impl Requests for GitHub {
         let doing = format!("reading pull request #{} of {path}", pr.number);
         let record = self.0.ask(caller, &Call::get(&api, LIST_TIMEOUT), &doing)?;
         state_of(&record, &doing)
+    }
+
+    /// The pull request's `head.sha` and `base.ref`; it squashes where its base repo allows
+    /// squash merges and no merge commits.
+    fn head(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<HeadAt, ForgeError> {
+        let (owner, name) = owner_name(path);
+        let api = format!("repos/{}/{}/pulls/{}", quote(owner), quote(name), pr.number);
+        let doing = format!("reading pull request #{}'s head in {path}", pr.number);
+        let record = self.0.ask(caller, &Call::get(&api, LIST_TIMEOUT), &doing)?;
+        let sha = record["head"]["sha"]
+            .as_str()
+            .filter(|sha| is_object_name(sha))
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub named no head commit")))?;
+        let base = record["base"]["ref"]
+            .as_str()
+            .filter(|base| !base.is_empty())
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub named no base branch")))?;
+        let repo = &record["base"]["repo"];
+        let title = record["title"]
+            .as_str()
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub named no title")))?;
+        let author = record["user"]["login"]
+            .as_str()
+            .filter(|login| !login.is_empty())
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub named no author")))?;
+        Ok(HeadAt {
+            sha: sha.to_owned(),
+            base: base.to_owned(),
+            title: title.to_owned(),
+            author: author.to_owned(),
+            squash: repo["allow_merge_commit"] == Value::Bool(false)
+                && repo["allow_squash_merge"] == Value::Bool(true),
+        })
+    }
+
+    /// **Whether a merge into `branch` is gated** (Q248): by a rule GitHub's rulesets give the
+    /// branch that gates one ([`MERGE_GATES`]), else by its classic branch protection where it
+    /// requires reviews or checks, or restricts who pushes. Rules that gate no merge (deletion,
+    /// force pushes, linear history, signatures, message patterns) do not count.
+    ///
+    /// Only GitHub's own `404 Branch not protected` is no classic protection (Q252). Any other
+    /// 404 (GitHub answers `Not Found` to a login without admin access, protected or not) and a
+    /// 403 are errors, so unknown, never none.
+    ///
+    /// What this cannot see: who may bypass a ruleset (its bypass actors), and classic
+    /// protection the app's login may not read (GitHub answers it only to a repo's admins). A
+    /// slash in the branch's name is percent-encoded, as [`quote`] does every path part.
+    fn ruleset_protects(
+        &self,
+        caller: &Caller,
+        path: &str,
+        branch: &str,
+    ) -> Result<bool, ForgeError> {
+        let (owner, name) = owner_name(path);
+        let repo = format!("repos/{}/{}", quote(owner), quote(name));
+        let api = format!("{repo}/rules/branches/{}", quote(branch));
+        let doing = format!("reading the rules for {branch} in {path}");
+        let rules = self.0.ask(caller, &Call::get(&api, LIST_TIMEOUT), &doing)?;
+        let rules = rules
+            .as_array()
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub answered no list")))?;
+        if rules
+            .iter()
+            .any(|rule| MERGE_GATES.contains(&rule["type"].as_str().unwrap_or_default()))
+        {
+            return Ok(true);
+        }
+        let api = format!("{repo}/branches/{}/protection", quote(branch));
+        let doing = format!("reading the branch protection of {branch} in {path}");
+        let not_protected = |reply: &super::transport::Reply| {
+            let a_404 = reply.status == Some(404) || reply.err.contains("(HTTP 404)");
+            let message = serde_json::from_str::<Value>(&reply.out)
+                .ok()
+                .and_then(|body| body["message"].as_str().map(str::to_owned));
+            a_404
+                && (message.as_deref() == Some(BRANCH_NOT_PROTECTED)
+                    || reply
+                        .err
+                        .trim()
+                        .strip_prefix("gh: ")
+                        .and_then(|said| said.strip_suffix(" (HTTP 404)"))
+                        == Some(BRANCH_NOT_PROTECTED))
+        };
+        let Some(protection) = self.0.found(caller, &api, &doing, not_protected)? else {
+            return Ok(false);
+        };
+        Ok([
+            "required_pull_request_reviews",
+            "required_status_checks",
+            "restrictions",
+        ]
+        .iter()
+        .any(|gate| !protection[*gate].is_null()))
+    }
+
+    /// The pull request's reviews, oldest first, as GitHub lists them: each one's login, the
+    /// kind of account (`user.type`, an App's login ending in `[bot]`), its state and the
+    /// `commit_id` it reviewed. At most [`REVIEW_PAGES`] pages of [`REVIEWS_PER_PAGE`] are
+    /// read. **Only a list read whole is an answer** (Q277): where the last page read is full,
+    /// a later review may take an approval back, and a review that names no login, state or
+    /// commit may be one that does, so either is an error, which reads as no approval.
+    fn reviews(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<Vec<Review>, ForgeError> {
+        let (owner, name) = owner_name(path);
+        let api = format!(
+            "repos/{}/{}/pulls/{}/reviews",
+            quote(owner),
+            quote(name),
+            pr.number
+        );
+        let doing = format!("reading pull request #{}'s reviews in {path}", pr.number);
+        let mut reviews = Vec::new();
+        for page in 1..=REVIEW_PAGES {
+            let call = Call::get(
+                format!("{api}?per_page={REVIEWS_PER_PAGE}&page={page}"),
+                LIST_TIMEOUT,
+            );
+            let listed = self.0.ask(caller, &call, &doing)?;
+            let listed = listed
+                .as_array()
+                .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub answered no list")))?;
+            let read = listed
+                .iter()
+                .map(review_of)
+                .collect::<Option<Vec<Review>>>()
+                .ok_or_else(|| {
+                    ForgeError::new(format!(
+                        "{doing}: GitHub listed a review with no login, state or commit"
+                    ))
+                })?;
+            reviews.extend(read);
+            if listed.len() < REVIEWS_PER_PAGE {
+                return Ok(reviews);
+            }
+        }
+        Err(ForgeError::new(format!(
+            "{doing}: it has more reviews than purlis reads, so purlis reads no approval from them"
+        )))
+    }
+
+    /// GitHub's `compare/{base}...{head}`, read whole or said to be cut: each file's `patch`
+    /// under a `diff --git` line. A list of [`COMPARED_FILES`] may be cut, and a file with
+    /// changed lines and no patch is one GitHub would not show, so either is not `whole`. A
+    /// file with no lines to show (a binary file, or a rename alone) says so.
+    fn changes(
+        &self,
+        caller: &Caller,
+        path: &str,
+        base: &str,
+        head: &str,
+    ) -> Result<Changes, ForgeError> {
+        let (owner, name) = owner_name(path);
+        let api = format!(
+            "repos/{}/{}/compare/{}...{}",
+            quote(owner),
+            quote(name),
+            quote(base),
+            quote(head)
+        );
+        let doing = format!("reading the changes of {head} into {base} in {path}");
+        let record = self.0.ask(caller, &Call::get(&api, LIST_TIMEOUT), &doing)?;
+        let files = record["files"]
+            .as_array()
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub listed no files")))?;
+        let mut text = String::new();
+        let mut whole = files.len() < COMPARED_FILES;
+        for file in files {
+            let Some(to) = file["filename"].as_str() else {
+                whole = false;
+                continue;
+            };
+            let from = file["previous_filename"].as_str().unwrap_or(to);
+            text.push_str(&format!("diff --git a/{from} b/{to}\n"));
+            match file["patch"].as_str() {
+                Some(patch) => {
+                    text.push_str(patch);
+                    text.push('\n');
+                }
+                None if file["changes"].as_u64() == Some(0) => {
+                    text.push_str("No lines to show: a binary file, or a rename alone.\n");
+                }
+                None => whole = false,
+            }
+        }
+        Ok(Changes { text, whole })
+    }
+
+    /// GitHub's `compare/{from}...{to}`: its `ahead_by`.
+    fn commits_between(
+        &self,
+        caller: &Caller,
+        path: &str,
+        from: &str,
+        to: &str,
+    ) -> Result<u32, ForgeError> {
+        let (owner, name) = owner_name(path);
+        let api = format!(
+            "repos/{}/{}/compare/{}...{}",
+            quote(owner),
+            quote(name),
+            quote(from),
+            quote(to)
+        );
+        let doing = format!("comparing {from} with {to} in {path}");
+        let record = self.0.ask(caller, &Call::get(&api, LIST_TIMEOUT), &doing)?;
+        record["ahead_by"]
+            .as_u64()
+            .and_then(|ahead| u32::try_from(ahead).ok())
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub named no count")))
     }
 
     fn body(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<String, ForgeError> {

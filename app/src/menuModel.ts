@@ -251,6 +251,7 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "chat.studio": { said: SAID.openInStudio, slot: "open", under: "open" },
   "chat.activity": { said: SAID.activity, slot: "open", under: "open" },
   "chat.network": { said: SAID.network, slot: "open", under: "open" },
+  "chat.log": { said: SAID.chatLog, slot: "open", under: "open" },
   "needs.ignore": { said: SAID.ignore, slot: "open" },
   "chat.restart": { said: SAID.restart, midTurn: SAID.restartMidTurn, slot: "run" },
   // It ends the program, so it is with what ends, as the menus' rule 4 keeps the danger colour.

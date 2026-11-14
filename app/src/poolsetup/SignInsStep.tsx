@@ -492,10 +492,11 @@ export function SignInsStep({
         <PoolLimits pool={pool} plane={plane} />
       </Options>
       {byHand ? (
-        <SeeWhat text={byHand.text} note={byHand.note} />
+        <SeeWhat text={byHand.text} note={byHand.note} plane={plane} />
       ) : (
         // Only until the core has spelled what is ticked: its own read doesn't know the ticks.
-        byHand === undefined && step.see && <SeeWhat text={step.see.text} note={step.see.note} />
+        byHand === undefined &&
+        step.see && <SeeWhat text={step.see.text} note={step.see.note} plane={plane} />
       )}
       <Action
         does={

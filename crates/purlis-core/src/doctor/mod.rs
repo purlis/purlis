@@ -552,6 +552,7 @@ impl Doctor {
         rows.extend(repos_folder::rows(self));
         rows.extend(clones::hidden_agents_md(self));
         rows.extend(clones::clone_git_config(self));
+        rows.extend(clones::unrecorded_clones(self));
         rows.extend(plane::behind_the_layout(self));
         rows.extend(plane::live_skills(self));
         rows.push(layer::workspace_layer(self));

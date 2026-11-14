@@ -32,7 +32,18 @@ import { LEVELS, type GroupLink, type Level } from "./groups";
  * It may also name one setting of the group (NO-7, #1232), by its id (`project.saving.plane.mode`):
  * the group is shown and that setting's control is focused.
  */
-export type SettingsLink = { group: string; workspace?: string; setting?: string };
+export type SettingsLink = {
+  group: string;
+  workspace?: string;
+  setting?: string;
+  /** **The control of that setting's row** the keyboard goes to (R-357), where the row holds
+   *  several: its label, and which one of them (a profile or pool its name holds). */
+  control?: LinkedControl;
+};
+
+/** A control of a setting's row, by its label (`words`), the one whose name holds `about`
+ *  first where several say it. */
+export type LinkedControl = { words: string; about?: string };
 
 /** The level a group's address is at — the word before its first dot — or `undefined`. */
 export function levelOf(group: string): Level | undefined {
@@ -55,7 +66,7 @@ export function settingsPlace(level: Level, plane?: string, workspace?: string):
  * so the group is on screen) from "the person picked a group". `setting` is the setting the last
  * link named, until the tab has focused it ({@link focusedSetting}).
  */
-export type Shown = { group: string; linked: number; setting?: string };
+export type Shown = { group: string; linked: number; setting?: string; control?: LinkedControl };
 
 let shown = new Map<string, Shown>();
 const listeners = new Set<() => void>();
@@ -72,15 +83,28 @@ export function chooseGroup(place: string, group: string): void {
   put(place, { group, linked: was?.linked ?? 0 });
 }
 
-/** A link landed on `group` at `place` — on its setting `setting`, when it names one. */
-export function linkToGroup(place: string, group: string, setting?: string): void {
-  put(place, { group, linked: (shown.get(place)?.linked ?? 0) + 1, setting });
+/** A link landed on `group` at `place` — on its setting `setting`, when it names one, and on
+ *  that row's `control`. */
+export function linkToGroup(
+  place: string,
+  group: string,
+  setting?: string,
+  control?: LinkedControl,
+): void {
+  put(place, { group, linked: (shown.get(place)?.linked ?? 0) + 1, setting, control });
 }
 
 /** The tab at `place` focused the setting the last link named: a redraw does not do it again. */
 export function focusedSetting(place: string): void {
   const was = shown.get(place);
   if (was?.setting !== undefined) put(place, { group: was.group, linked: was.linked });
+}
+
+/** The control of that setting's row the last link to `place` named, until a tab has focused
+ *  the setting. */
+export function linkedControl(place: string): LinkedControl | undefined {
+  const was = shown.get(place);
+  return was?.setting === undefined ? undefined : was.control;
 }
 
 /** The setting the last link to `place` named, until a tab has focused it. */

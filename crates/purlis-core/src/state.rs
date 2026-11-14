@@ -127,9 +127,9 @@ pub struct Detail {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub smart_close: bool,
     /// The harness said it runs with its permission prompts off
-    /// ([`crate::floorguard::unattended`] of the payload's `permission_mode`): one bit, which
-    /// the app keeps as the chat's [`crate::dispatchunattended::Mark`] (#1446). It can only
-    /// ever mark a chat unattended, never clear the mark, so a line that leaves it out, as an
+    /// ([`crate::attendance::says_prompts_off`] of the payload's `permission_mode`): one bit,
+    /// which the chat's attendance fact hears ([`crate::attendance::Fact::heard`], #1446, T1-22).
+    /// It can only ever lower the fact, never raise it, so a line that leaves it out, as an
     /// older hook's does, takes nothing away.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unattended: bool,
@@ -141,6 +141,14 @@ pub struct Detail {
     /// so the line is the one it always was and the record is left as it was.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<crate::dispatchmode::Reported>,
+    /// The Claude Code permission mode the payload's `permission_mode` names, as the measured
+    /// strings read it ([`crate::attendance::ClaudeCodeMode`], T1-17): what the chat's
+    /// [`crate::attendance::Fact`] hears. Only Claude Code's adapter reads it
+    /// ([`crate::harness::HarnessAdapter::attendance_mode`]); absent on every other harness,
+    /// where the payload names none, from an older hook, and on a line that cannot prove it
+    /// came from the chat's armed hook.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claude_code_mode: Option<crate::attendance::ClaudeCodeMode>,
     /// On a `Stop`: the harness said helpers of the chat's own are still at work in the
     /// background and will wake it ([`crate::hookwire::helpers_at_work`], #1626), so the turn
     /// has not handed the chat to the person. Absent from an older hook, and from a harness
@@ -665,6 +673,10 @@ pub struct Chat {
     /// into what it would have been once the wait's limit passes with no wake.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     own_work: Option<crate::ownwork::OwnWork>,
+    /// **The wait on its own work a sandbox block's ask ended** ([`Chat::blocked_while_waiting`],
+    /// R-290): given back if that ask is withdrawn ([`Chat::block_withdrawn`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    blocked_over: Option<crate::ownwork::OwnWork>,
     /// **The turn it is in is a background turn, begun over a wait on the person** (#4562): the
     /// needs-you item it stood in stays, with its reasons, until the person answers. Meaningful
     /// only while the turn runs ([`Chat::background_turn`]).
@@ -710,6 +722,12 @@ struct Askers {
     /// The helpers that asked, by agent id, each with whether a tool of its own began since it
     /// asked (the chat's own `began_past_its_prompt` rule, per helper).
     helpers: Vec<(String, bool)>,
+    /// **Those of them whose permission hook gave up** (R-204, Q266): the chat itself (`None`) or
+    /// a helper, by agent id. The host would not hold the ask (too big, not its harness's, too
+    /// late, or the 32-open cap), so that asker's prompt asks in the pane and nothing held
+    /// answers it. Each is one that asked, and stands until that asker moves past its prompt.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    gave_up: Vec<Option<String>>,
 }
 
 impl Askers {
@@ -719,14 +737,70 @@ impl Askers {
         match helper {
             None => self.own = true,
             Some(helper) => {
-                self.helper_gone(helper);
+                self.helpers.retain(|(asked, _)| asked != helper);
                 self.helpers.push((helper.to_owned(), false));
             }
         }
     }
 
-    /// `helper` asks no more. Answers whether it was one that asked.
+    /// `helper`'s permission hook gave up, or the chat's own where it is `None` (R-204): it
+    /// asked, and its prompt stands in the pane until it moves past it.
+    fn hook_gave_up(&mut self, helper: Option<&str>) {
+        self.add(helper);
+        if !self
+            .gave_up
+            .iter()
+            .any(|gave_up| gave_up.as_deref() == helper)
+        {
+            self.gave_up.push(helper.map(str::to_owned));
+        }
+    }
+
+    /// Whether an asker's prompt asks in the pane, which nothing held answers.
+    fn in_its_terminal(&self) -> bool {
+        !self.gave_up.is_empty()
+    }
+
+    /// The chat's own tools went on past its prompt: its own prompt goes, the one its hook gave
+    /// up on with it.
+    fn own_went_on(&mut self) {
+        self.own = false;
+        self.gave_up.retain(Option::is_some);
+    }
+
+    /// An ask of `helper`'s, or the chat's own where it is `None`, was answered in the window
+    /// (Q266): its prompt goes, unless its hook gave up on one, which stands in the pane.
+    fn answered_in_the_window(&mut self, helper: Option<&str>) {
+        if self
+            .gave_up
+            .iter()
+            .any(|gave_up| gave_up.as_deref() == helper)
+        {
+            return;
+        }
+        match helper {
+            None => self.own = false,
+            Some(helper) => self.helpers.retain(|(asked, _)| asked != helper),
+        }
+    }
+
+    /// An ask whose asker was not read was answered in the window: every prompt goes but those
+    /// that ask in the pane.
+    fn all_answered_in_the_window(&mut self) {
+        let gave_up = &self.gave_up;
+        self.own = gave_up.contains(&None);
+        self.helpers.retain(|(helper, _)| {
+            gave_up
+                .iter()
+                .any(|gave_up| gave_up.as_deref() == Some(helper.as_str()))
+        });
+    }
+
+    /// `helper` asks no more, its prompt in the pane with it. Answers whether it was one that
+    /// asked.
     fn helper_gone(&mut self, helper: &str) -> bool {
+        self.gave_up
+            .retain(|gave_up| gave_up.as_deref() != Some(helper));
         let was = self.helpers.len();
         self.helpers.retain(|(asked, _)| asked != helper);
         self.helpers.len() != was
@@ -771,6 +845,7 @@ impl Chat {
             children: children::Children::default(),
             held: false,
             own_work: None,
+            blocked_over: None,
             over_a_wait: false,
             own_work_out: false,
             failed: Vec::new(),
@@ -834,6 +909,49 @@ impl Chat {
     /// holds it there ([`Chat::waits_on_its_prompt`]).
     pub fn its_prompt(&self) -> Option<crate::harness::model::Prompt> {
         self.waits_on_its_prompt().then_some(self.prompt)
+    }
+
+    /// **Its permission hook gave up** (R-204, #6426): the host would not hold the ask, so the
+    /// harness's own permission prompt asks in the pane. The chat waits on that prompt, asked by
+    /// `asker`, as a nudge that named it would say, whatever its harness nudges: a permission
+    /// hook runs only in the middle of a turn, so it is taken as one even where the board heard
+    /// no turn begin. It is `asker`'s alone (Q266): only that asker's tools going on past it, that
+    /// helper's end or the turn's end move the chat past it ([`Chat::waits_in_its_terminal`]),
+    /// never an ask answered in the window. The cause is the hook's line alone, never what the
+    /// terminal shows (ADR 0076). Answers whether anything a reader can see changed.
+    pub fn hook_gave_up(&mut self, asker: &crate::harness::hooked::Asker) -> bool {
+        if self.ended {
+            return false;
+        }
+        let was = (self.seen(), self.waits_in_its_terminal());
+        if !self.waits_on_its_prompt() {
+            self.state = State::Running;
+        }
+        let helper = match asker {
+            crate::harness::hooked::Asker::Helper(helper) => Some(helper.as_str()),
+            crate::harness::hooked::Asker::Chat | crate::harness::hooked::Asker::Unread => None,
+        };
+        let another = self.asked(
+            &Ask {
+                prompt: crate::harness::model::Prompt::Permission,
+                ..Ask::default()
+            },
+            Waits::default(),
+            helper,
+        );
+        if self.waits_on_its_prompt() {
+            self.askers.hook_gave_up(helper);
+        }
+        another || was != (self.seen(), self.waits_in_its_terminal())
+    }
+
+    /// **Whether it waits in its terminal on a prompt its permission hook gave up on**, now
+    /// (R-204, Q266): an asker's [`Chat::hook_gave_up`] that nothing has moved past since. Only
+    /// that asker's tools going on ([`Chat::tool_said`], [`Chat::child_tool_said`]), that
+    /// helper's end or the turn's end does; an ask answered in the window does not
+    /// ([`Chat::answered_by`]).
+    pub fn waits_in_its_terminal(&self) -> bool {
+        self.waits_on_its_prompt() && self.askers.in_its_terminal()
     }
 
     /// How many prompts have started a turn of this chat, as the app has heard them.
@@ -1280,9 +1398,27 @@ impl Chat {
             return false;
         }
         let was = self.seen();
-        self.own_work = None;
+        self.blocked_over = self.own_work.take();
         self.own_work_out = true;
         self.needs_you = true;
+        was != self.seen()
+    }
+
+    /// **The held connection whose ask ended its wait on its own work is a block now, its ask
+    /// withdrawn** (R-290, Q240): the needs-you mark that ask set is taken back, and the chat
+    /// waits on its own work again, as it did. Nothing where no such ask ended a wait, or the
+    /// chat has moved since. Answers whether anything a reader can see changed.
+    pub fn block_withdrawn(&mut self) -> bool {
+        let Some(work) = self.blocked_over.take() else {
+            return false;
+        };
+        if self.ended || self.own_work.is_some() || !self.own_work_out || !self.needs_you {
+            return false;
+        }
+        let was = self.seen();
+        self.own_work = Some(work);
+        self.own_work_out = false;
+        self.needs_you = false;
         was != self.seen()
     }
 
@@ -1437,16 +1573,17 @@ impl Chat {
     /// [`Asker::Unread`], every prompt the chat waits on goes, as [`Chat::answered`] does.
     /// Answers whether anything a reader can see changed.
     ///
+    /// **A prompt its hook gave up on stands** (Q266): it asks in the pane, which no answer in
+    /// the window reaches, until that asker moves past it ([`Chat::waits_in_its_terminal`]).
+    ///
     /// [`Asker::Unread`]: crate::harness::hooked::Asker::Unread
     pub fn answered_by(&mut self, asker: &crate::harness::hooked::Asker) -> bool {
         use crate::harness::hooked::Asker;
         if self.waits_on_its_prompt() {
             match asker {
-                Asker::Chat => self.askers.own = false,
-                Asker::Helper(helper) => {
-                    self.askers.helper_gone(helper);
-                }
-                Asker::Unread => return self.answered(),
+                Asker::Chat => self.askers.answered_in_the_window(None),
+                Asker::Helper(helper) => self.askers.answered_in_the_window(Some(helper)),
+                Asker::Unread => self.askers.all_answered_in_the_window(),
             }
             if !self.askers.nobody() {
                 return false;
@@ -1478,7 +1615,7 @@ impl Chat {
         }
         // Only the chat's own prompt: its helpers' stand while it works beside them (#1644).
         if said.goes_on_past_a_prompt() && self.began_past_its_prompt && self.askers.own {
-            self.askers.own = false;
+            self.askers.own_went_on();
             return self.askers.nobody() && self.answered();
         }
         false
@@ -1952,6 +2089,17 @@ impl Board {
         self.stamp(number, changed)
     }
 
+    /// A held connection's ask that ended chat `number`'s wait on its own work was withdrawn
+    /// ([`Chat::block_withdrawn`], R-290). Answers whether anything a reader can see changed.
+    pub fn block_withdrawn(&mut self, number: u32) -> bool {
+        self.tell(number, || Move::BlockWithdrawn);
+        let changed = self
+            .chats
+            .get_mut(&number)
+            .is_some_and(|tracked| tracked.chat.block_withdrawn());
+        self.stamp(number, changed)
+    }
+
     /// Whether chat `number`'s turn ended waiting on its tasks or its asker ([`Chat::held`]).
     pub fn held(&self, number: u32) -> bool {
         self.chats
@@ -2301,6 +2449,37 @@ impl Board {
         self.chats
             .get(&number)
             .and_then(|tracked| tracked.chat.its_prompt())
+    }
+
+    /// Chat `number`'s permission hook gave up on an ask `asker` asked ([`Chat::hook_gave_up`],
+    /// R-204). Only where `speaker` is the harness run chat `number` adopted, as
+    /// [`Board::tool_said_by`] holds a tool line (Q266): a harness nested in the chat holds its
+    /// token and sits in its process tree, and its prompt is none of the chat's. Answers whether
+    /// anything a reader can see changed: nothing does for a chat the board does not have.
+    pub fn hook_gave_up(
+        &mut self,
+        number: u32,
+        speaker: &crate::hookwire::Speaker,
+        asker: &crate::harness::hooked::Asker,
+    ) -> bool {
+        self.tell(number, || Move::HookGaveUp {
+            speaker: speaker.clone(),
+            asker: asker.clone(),
+        });
+        let changed = self
+            .chats
+            .get_mut(&number)
+            .filter(|tracked| tracked.spoke(speaker))
+            .is_some_and(|tracked| tracked.chat.hook_gave_up(asker));
+        self.stamp(number, changed)
+    }
+
+    /// Whether chat `number` waits in its terminal on a prompt its permission hook gave up on
+    /// ([`Chat::waits_in_its_terminal`], R-204). A chat the board does not have waits on nothing.
+    pub fn waits_in_its_terminal(&self, number: u32) -> bool {
+        self.chats
+            .get(&number)
+            .is_some_and(|tracked| tracked.chat.waits_in_its_terminal())
     }
 
     /// How many prompts have started a turn of this chat ([`Chat::turns`]); none for a chat the

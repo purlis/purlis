@@ -3996,6 +3996,7 @@ fn a_chat_ending_with_the_window_gone_still_writes_its_record_and_its_dispatch_r
             args: None,
             decision: purlis_core::hookwire::Decision::None,
             rule: None,
+            arm: None,
             hook_ms: 1,
             agent: Some("agent-1".into()),
             at_ms: 0,

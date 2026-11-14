@@ -2095,3 +2095,5 @@ fn opencode_is_the_kind_and_the_command_of_the_same_harness() {
         "{said}"
     );
 }
+
+mod matrix;

@@ -187,6 +187,70 @@ pub struct MergeAs {
     pub message: String,
 }
 
+/// **Where an open request stands, as a merge ask needs it** ([`super::backend::Requests::head`]):
+/// the commit it is at, the branch it merges into, whether the repo merges it by squashing, and
+/// its title and author, as the forge holds them (R-119).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HeadAt {
+    /// The head commit, as the forge names it.
+    pub sha: String,
+    /// The branch it merges into.
+    pub base: String,
+    /// Its title: GitHub's and GitLab's `title`.
+    pub title: String,
+    /// Who opened it: GitHub's `user.login`, GitLab's `author.username`.
+    pub author: String,
+    /// Whether the repo's own method squashes: GitHub's where it allows squash merges and no
+    /// merge commits, GitLab's `squash_on_merge`.
+    pub squash: bool,
+}
+
+/// **One review of a request** ([`super::backend::Requests::reviews`]), as the forge gives it:
+/// who wrote it, what kind of account that is, what it said, and the head commit it reviewed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Review {
+    /// The reviewer's login.
+    pub login: String,
+    pub by: Reviewer,
+    pub state: ReviewState,
+    /// The head commit the review was of, as the forge names it.
+    pub commit: String,
+}
+
+/// **What kind of account wrote a review**: only a person's approval counts toward a merge's
+/// look ([`crate::mergehold::approves`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reviewer {
+    /// A person's own account: GitHub's `User`.
+    Person,
+    /// A bot account: GitHub's `Bot`, or any other kind it names.
+    Bot,
+    /// A GitHub App, whose login ends in `[bot]`.
+    App,
+}
+
+/// **A request's changes, as the forge gives them** ([`super::backend::Requests::changes`]):
+/// each changed file's patch, headed as `git diff` heads it, and whether that is all of them.
+/// The forge leaves out what it will not show (too many files, a file too large); a diff it cut
+/// is not `whole`, and nobody viewed a head from it (Q277).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Changes {
+    pub text: String,
+    /// Whether the forge gave every file's every line.
+    pub whole: bool,
+}
+
+/// **What a review said.**
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReviewState {
+    Approved,
+    ChangesRequested,
+    /// Dismissed: it no longer approves or blocks.
+    Dismissed,
+    /// A comment, or a review not yet sent: it changes nothing a reviewer said before.
+    Commented,
+}
+
 /// What `merge_at` got the forge to do, when it did not refuse.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MergedAt {

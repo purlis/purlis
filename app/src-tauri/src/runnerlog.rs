@@ -73,6 +73,10 @@ impl RunEndLine {
         if event.kind != "run.ended" || event.parent_run.is_some() {
             return None;
         }
+        // A run replaced at once is no chat finishing (ADR 0076 §2, Q247): the chat goes on.
+        if event.body.get("cause").and_then(serde_json::Value::as_str) == Some("superseded") {
+            return None;
+        }
         let short =
             |text: &str| (!text.is_empty() && text.len() <= MOST_ID).then(|| text.to_owned());
         Some(RunEndLine {

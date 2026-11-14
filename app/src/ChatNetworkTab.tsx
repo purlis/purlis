@@ -113,17 +113,17 @@ export function ChatNetworkTab({ plane, session }: { plane: PlaneId; session?: n
           </div>
         </section>
       )}
-      <section aria-label="Refused">
-        <h2>Refused</h2>
+      <section aria-label="Blocked">
+        <h2>Blocked</h2>
         {network.refused.length === 0 ? (
           <EmptyState
             variant="panel"
-            headline="Nothing was refused in the last 30 days"
-            body="A connection its sandbox refuses is listed here, with Allow where it may be kept."
+            headline="Nothing was blocked in the last 30 days"
+            body="A connection its sandbox blocks is listed here, with Allow where it may be kept."
             testid="chat-network-refused-none"
           />
         ) : (
-          <RefusedRows plane={plane} rows={network.refused} label="Refused" />
+          <RefusedRows plane={plane} rows={network.refused} label="Blocked" />
         )}
       </section>
     </div>
