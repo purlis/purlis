@@ -469,7 +469,7 @@ describe("the Chat log opens from each of its five entry points", () => {
   });
 
   it.each([
-    { name: "3", session: 3 },
+    { name: "steward 3", session: 3 },
     { name: "talk", session: 7 },
   ])("a grouped block result opens the chat log of each chat it names: $name", async (chosen) => {
     vi.spyOn(document, "hasFocus").mockReturnValue(false);
@@ -495,7 +495,7 @@ describe("the Chat log opens from each of its five entry points", () => {
     );
     const ways = within(row).getAllByRole("button", { name: /^Open the chat log/ });
     expect(ways.map((one) => one.getAttribute("aria-label")).sort()).toEqual([
-      "Open the chat log of 3",
+      "Open the chat log of steward 3",
       "Open the chat log of talk",
     ]);
 

@@ -40,8 +40,12 @@ export const FAILED = "Failed";
 /** The end of a finish row's key whose turn ended after a block. */
 const BLOCKED_KEY = ":blocked";
 
-/** The key of `turn`'s row: the event that ended it, and whether a block stopped it. */
-const keyOf = (turn: FinishedTurn) =>
+/**
+ * **The key of `turn`'s row**: its chat's number, the event that ended it, and whether a block
+ * stopped it. The event is the chat's own (the core finds it through the chat's logged id), so
+ * a kept row whose key no finish answered now has is of a chat not open here under that number.
+ */
+export const finishKey = (turn: FinishedTurn) =>
   `finish:${turn.session}:${turn.key}${!turn.failed && turn.blocked > 0 ? BLOCKED_KEY : ""}`;
 
 /** **The finish rows of `turns`**, each named by its chat. */
@@ -50,7 +54,7 @@ export function finishUpdates(
   nameOf: (session: number) => string,
 ): UpdateNoted[] {
   return turns.map((turn) => ({
-    key: keyOf(turn),
+    key: finishKey(turn),
     kind: turn.failed ? "chat-failed" : "turn-finished",
     at: turn.at,
     session: turn.session,

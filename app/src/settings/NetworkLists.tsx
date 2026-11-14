@@ -204,11 +204,11 @@ export function RefusedRows({
                   {ALLOW_SAID[level]}
                 </Button>
               ))}
-            {row.chat !== null && row.session !== null && (
+            {row.chat !== null && row.session != null && (
               <Button
                 variant="ghost"
                 aria-label={openTheChatLogOf(row.chat)}
-                onPress={() => row.session !== null && openChatLog(row.session, "blocks")}
+                onPress={() => row.session != null && openChatLog(row.session, "blocks")}
               >
                 {OPEN_THE_CHAT_LOG}
               </Button>

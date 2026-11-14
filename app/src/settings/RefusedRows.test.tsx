@@ -48,7 +48,8 @@ describe("a Blocked log row's way to its chat's Chat log (R-226)", () => {
 
   it("offers no chat log where an older core names no number for its chat", () => {
     // An older build's answer has no `session` at all: undefined, not null.
-    const { session: _, ...older } = ROW;
+    const older: Partial<BlockedLately> = { ...ROW };
+    delete older.session;
     drawn(older as BlockedLately);
     expect(screen.queryByRole("button", { name: /^Open the chat log/ })).toBeNull();
   });

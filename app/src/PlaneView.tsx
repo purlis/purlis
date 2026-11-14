@@ -253,6 +253,7 @@ import { taskChangesTitle, taskChangesView } from "./taskChanges";
 import { heldFor as blockHeldFor, type HeldBlock, useSandboxBlocks } from "./sandboxBlocks";
 import {
   chatLogAnswer,
+  finishKey,
   finishUpdates,
   groupedFinishes,
   stoppedAfterBlock,
@@ -11486,6 +11487,10 @@ export const PlaneView = memo(function PlaneView({
     // Identical finish rows of several chats are one row (R-181): it reads and puts away each.
     const grouped = keptUpdates === undefined ? undefined : groupedFinishes(keptUpdates);
     const members = new Map(grouped?.map(({ update, keys }) => [update.key, keys]));
+    // Each finish row's chat, by the finish the core answers now (R-226): a row kept from
+    // before a restart names the number its chat had then, which another chat may have now.
+    const finishedBy = new Map(finishedTurns.map((turn) => [finishKey(turn), turn.session]));
+    const namedIn = new Map(keptUpdates?.map((one) => [one.key, one.chain.at(-1)]));
     const each = (keys: readonly string[]) => keys.flatMap((key) => members.get(key) ?? [key]);
     const rows = grouped?.map(({ update, keys }): UpdateRow => {
       const read = () => settleUpdates(keys, "read");
@@ -11576,18 +11581,30 @@ export const PlaneView = memo(function PlaneView({
         };
       }
       // **A block result opens its chat's Chat log** (R-226): the turn's finish row that ended
-      // with a block unresolved, at its blocks, as the marker does (R-301).
-      if (stoppedAfterBlock(update) && session !== undefined) {
-        const blockedChat = session;
-        const name = chatNames.get(blockedChat) ?? update.chain[0] ?? "this chat";
+      // with a block unresolved, at its blocks, as the marker does (R-301). A row that stands
+      // for several chats (R-181) offers each of them its own.
+      const blockedChats = stoppedAfterBlock(update)
+        ? [
+            ...new Map(
+              keys.flatMap((key) => {
+                const chat = finishedBy.get(key);
+                return chat !== undefined && open(chat) !== undefined
+                  ? [[chat, chatNames.get(chat) ?? namedIn.get(key) ?? "this chat"] as const]
+                  : [];
+              }),
+            ),
+          ]
+        : [];
+      if (blockedChats.length > 0)
         return {
           update,
           go,
           read,
           dismiss: put,
-          answers: [chatLogAnswer(name, () => (openChatLog(blockedChat, "blocks"), read()))],
+          answers: blockedChats.map(([chat, name]) =>
+            chatLogAnswer(name, () => (openChatLog(chat, "blocks"), read())),
+          ),
         };
-      }
       // A finished task opens in place to show its report, or why it failed (#5651).
       const report = task?.report.trim() ? task.report : undefined;
       return { update, go, report, read, dismiss: put };
@@ -11623,6 +11640,7 @@ export const PlaneView = memo(function PlaneView({
     };
   }, [
     keptUpdates,
+    finishedTurns,
     settleUpdates,
     sentDrafts,
     finishedTasks,
