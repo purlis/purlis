@@ -1240,8 +1240,8 @@ _Avoid_: view alone (that is a hosted program's), panel (that is the bottom regi
 
 **Skills** (sidebar view):
 The **sidebar view** under Search on the left that lists the skills of the title bar's workspace
-by level, with what needs the person on top, and opens each skill's tab, while the **Skill
-studio**'s preview is on (#3266). The window says "the Skills view". The studio stays a view tab.
+by level, with what needs the person on top, and opens each skill's tab (#3266). The window says
+"the Skills view". The studio stays a view tab.
 _Avoid_: skills panel, skill list
 
 **Panel**:
@@ -2154,7 +2154,7 @@ observed and graded: one view tab per project, with a scope picker for whose cha
 its pages in a left navigation (**Library**, Needs you, Drafts, Sources, Deleted, Harness skills,
 Routing), and its own back, forward and path. Every way into it says "Open Skill studio" and
 lands on its page and scope (#3681). The **Skills** sidebar view lists the same skills and opens
-it. It is built behind the `skill-studio` flag until its **finish line** (spec #2762).
+it. It is on for everyone since its **finish line** (#2786, spec #2762).
 _Avoid_: skill manager, skills page
 
 **Library** (of the Skill studio):
@@ -2171,8 +2171,8 @@ made, copied or installed, is **Lands in**. It is not the **Level** of settings.
 _Avoid_: level (alone, where settings are near), scope (that is whose chats the studio covers)
 
 **Finish line** (of the Skill studio):
-The set of things that must all work before the Skill studio is shown to anyone. Until then it
-stays behind its flag.
+The set of things that had to work before the Skill studio was shown to everyone, reached in
+#2786 (spec #2762).
 
 **Harness skill**:
 A skill a harness brings on its own, from the person's harness folders or from a harness plugin.

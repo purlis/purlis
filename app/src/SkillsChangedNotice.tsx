@@ -6,7 +6,6 @@ import type { PlaneId } from "./bindings";
 import { Notice } from "./Notice";
 import { INSTRUCTIONS, usePlaneChanged } from "./planeChanged";
 import { planeUpdatedAt } from "./PlaneUpdated";
-import { useSkillStudioOn } from "./skillStudio";
 import { askChatSkills } from "./chatSkillsAsk";
 
 /** What the notice's second action is called (S8, #3694). */
@@ -24,9 +23,8 @@ export const SKILLS_CHANGED =
  * (S8, #3694) shows this chat's skills in the sidebar Skills view, which names what is new, gone
  * and changed in its Needs you.
  *
- * Asked while the `skill-studio` flag is on: at the mount, and whenever a change on disk concerns
- * what chats started with. Put away, it
- * stays away until the skills change again.
+ * Asked at the mount, and whenever a change on disk concerns what chats started with. Put away,
+ * it stays away until the skills change again.
  */
 export function SkillsChangedNotice({
   plane,
@@ -38,14 +36,11 @@ export function SkillsChangedNotice({
   onRestart: () => void;
 }) {
   const changes = usePlaneChanged([plane], INSTRUCTIONS);
-  // While the flag is off no chat gets the project's skills, so none is asked about.
-  const on = useSkillStudioOn();
   /** What changed in this chat's skills, as a key, or none: one bulk change is many events on
    *  disk and one key, so its offer is shown once however many arrive (#5331). */
   const [changed, setChanged] = useState<string>();
   const [putAway, setPutAway] = useState<string>();
   useEffect(() => {
-    if (!on) return;
     let gone = false;
     void planeUpdatedAt(plane, changes).then((all) => {
       if (gone) return;
@@ -61,8 +56,8 @@ export function SkillsChangedNotice({
     return () => {
       gone = true;
     };
-  }, [plane, session, changes, on]);
-  if (!on || changed === undefined || putAway === changed) return null;
+  }, [plane, session, changes]);
+  if (changed === undefined || putAway === changed) return null;
   return (
     <Notice
       cause={`skills-changed:${session}`}

@@ -6,6 +6,7 @@ import { useState } from "react";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { NO_SKILL_POLICY } from "../skillPolicy.testkit";
 import type { SettingsField, SettingsFile } from "../bindings";
 import { SettingsTab } from "./SettingsTab";
 import type { Level } from "./groups";
@@ -63,6 +64,12 @@ beforeEach(() => {
   };
   mockIPC((command) => {
     if (command === "project_settings") return { shared: SHARED, local: LOCAL };
+    // The Skills groups are on every machine since the studio's flag went (#2786); their
+    // budget reads the studio, which this core has none of.
+    if (command === "skill_studio") throw "no studio in this test";
+    // So are Skill sources and Recorded skill acts (#6031).
+    if (command === "skill_policy") return NO_SKILL_POLICY;
+    if (command === "skill_acts") return { acts: [], more: false };
     return null;
   });
 });

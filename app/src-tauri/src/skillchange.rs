@@ -5,7 +5,7 @@
 //! in the light editor with its live lint, rename it, move it between levels, delete it after
 //! saying who uses it, restore it, change a project skill's grant and turn one off or on in a
 //! workspace. Each is `purlis_core::skills::verbs`' own, which `purlis skill` calls too, and each
-//! is one commit. Behind the `skill-studio` flag until its finish line (#2786).
+//! is one commit.
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -277,15 +277,6 @@ fn heard_with<T>(
     Ok(SkillChanged { notes })
 }
 
-/// Refused while the flag is off.
-pub(crate) fn flag_on() -> Result<(), String> {
-    if purlis_core::skills::studio_on_here() {
-        Ok(())
-    } else {
-        Err("The Skill studio is not turned on on this machine.".to_owned())
-    }
-}
-
 /// The built-in skills' directory of the plugin this app carries.
 pub(crate) fn built_in() -> Option<std::path::PathBuf> {
     crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin))
@@ -437,7 +428,6 @@ pub(crate) async fn skill_new(
     let held = planes.held(&plane)?;
     let executor = views.executor();
     crate::off_the_window("making the skill", move || {
-        flag_on()?;
         purlis_core::skills::studio::with_studio(&executor, held.root(), |studio| {
             let mut drafted = None;
             let changed = heard(held.root(), |cx| {
@@ -478,7 +468,6 @@ pub(crate) async fn skill_copy(
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("copying the skill", move || {
-        flag_on()?;
         heard(held.root(), |cx| {
             verbs::copy_built_in(cx, &name, &(&level).into(), &to, &description)
         })
@@ -497,7 +486,6 @@ pub(crate) async fn skill_text(
 ) -> Result<String, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading the skill", move || {
-        flag_on()?;
         verbs::text_of(held.root(), &(&level).into(), &name).map(|(_, text)| text)
     })
     .await
@@ -518,7 +506,6 @@ pub(crate) async fn skill_save(
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("saving the skill", move || {
-        flag_on()?;
         let level: Level = (&level).into();
         let changed = heard(held.root(), |cx| verbs::edit(cx, &level, &name, &was, &now))?;
         // The person's own save in their editor is the one edit that may grade the skill, where
@@ -543,7 +530,6 @@ pub(crate) async fn skill_hint_write(
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("writing the reference", move || {
-        flag_on()?;
         let level: Level = (&level).into();
         let (_, was) = verbs::text_of(held.root(), &level, &name)?;
         let now = purlis_core::skills::graph::written_as_reference(
@@ -575,7 +561,6 @@ pub(crate) async fn skill_trigger_tests_start(
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("starting the trigger tests", move || {
-        flag_on()?;
         let level: Level = (&level).into();
         heard(held.root(), |cx| {
             verbs::start_trigger_tests(cx, &level, &name)
@@ -596,7 +581,6 @@ pub(crate) async fn skill_rename(
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("renaming the skill", move || {
-        flag_on()?;
         heard(held.root(), |cx| {
             verbs::rename(cx, &(&level).into(), &name, &to)
         })
@@ -624,7 +608,6 @@ pub(crate) async fn skill_move(
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("moving the skill", move || {
-        flag_on()?;
         let grant: Option<Grant> = grant.map(Into::into);
         heard(held.root(), |cx| {
             verbs::move_to(cx, &(&from).into(), &name, &(&to).into(), grant.as_ref())
@@ -644,7 +627,6 @@ pub(crate) async fn skill_users(
 ) -> Result<SkillUsers, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading who uses the skill", move || {
-        flag_on()?;
         let users = verbs::users(held.root(), &(&level).into(), &name)?;
         Ok(SkillUsers {
             root: users.root,
@@ -669,7 +651,6 @@ pub(crate) async fn skill_delete(
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("deleting the skill", move || {
-        flag_on()?;
         heard_audited(&held, |cx| verbs::delete(cx, &(&level).into(), &name))
     })
     .await
@@ -694,7 +675,6 @@ pub(crate) async fn skill_deletes_cut_short(
 ) -> Result<DeletesCutShort, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("finishing a skill delete", move || {
-        flag_on()?;
         Ok(cut_short(held.root()))
     })
     .await
@@ -732,7 +712,6 @@ pub(crate) async fn skills_deleted(
 ) -> Result<Vec<DeletedSkill>, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading the deleted skills", move || {
-        flag_on()?;
         let now = std::time::SystemTime::now();
         verbs::deleted(held.root())
             .into_iter()
@@ -773,7 +752,6 @@ pub(crate) async fn skill_deleted_text(
 ) -> Result<String, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading the deleted skill", move || {
-        flag_on()?;
         let deleted: verbs::Deleted = serde_json::from_str(&id)
             .map_err(|_| "That deleted skill is not one this project lists.".to_owned())?;
         verbs::deleted_text(held.root(), &deleted)
@@ -794,7 +772,6 @@ pub(crate) async fn skill_restore(
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("restoring the skill", move || {
-        flag_on()?;
         let deleted: verbs::Deleted = serde_json::from_str(&id)
             .map_err(|_| "That deleted skill is not one this project lists.".to_owned())?;
         heard_audited(&held, |cx| verbs::restore(cx, &deleted, under.as_deref()))
@@ -813,7 +790,6 @@ pub(crate) async fn skill_grant(
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("granting the skill", move || {
-        flag_on()?;
         let grant: Grant = grant.into();
         heard(held.root(), |cx| verbs::grant(cx, &name, &grant))
     })
@@ -833,7 +809,6 @@ pub(crate) async fn skill_turn(
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("turning the skill on or off", move || {
-        flag_on()?;
         heard(held.root(), |cx| verbs::switch(cx, &workspace, &name, on))
     })
     .await
@@ -954,7 +929,6 @@ pub(crate) async fn skill_pin(
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("pinning the skill", move || {
-        flag_on()?;
         pin(held.root(), &by, &name, on)
     })
     .await
@@ -1017,7 +991,6 @@ pub(crate) async fn skill_routers(
     let held = planes.held(&plane)?;
     let executor = views.executor();
     crate::off_the_window("reading the router extensions", move || {
-        flag_on()?;
         Ok(routers_in(&executor, held.root()))
     })
     .await
@@ -1068,7 +1041,6 @@ pub(crate) async fn skill_router_choose(
     let held = planes.held(&plane)?;
     let executor = views.executor();
     crate::off_the_window("choosing the router", move || {
-        flag_on()?;
         route(held.root(), &by, router.as_deref(), || {
             routers_in(&executor, held.root())
         })
@@ -1104,7 +1076,6 @@ pub(crate) async fn skill_budget_set(
     use purlis_core::skills::budget_setting::{Level, write};
     let held = planes.held(&plane)?;
     crate::off_the_window("changing the skill budget", move || {
-        flag_on()?;
         write(
             held.root(),
             Level::of(workspace.as_deref()),
@@ -1138,7 +1109,6 @@ pub(crate) async fn skill_budget_preview(
 ) -> Result<crate::skillstudio::SkillBudgetPreview, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("working out a skill budget", move || {
-        flag_on()?;
         let built_in =
             crate::bundled_plugin_here().and_then(|one| purlis_core::skills::in_bundle(&one));
         Ok(purlis_core::skills::budget_setting::preview(
@@ -1191,7 +1161,6 @@ pub(crate) async fn skill_router_reads_prompts(
     let held = planes.held(&plane)?;
     let executor = views.executor();
     crate::off_the_window("changing what the router reads", move || {
-        flag_on()?;
         let config = purlis_core::machine::config_root()
             .ok_or("This machine has no config home to keep the choice in.")?;
         reading_prompts(&config, &router, on, || routers_in(&executor, held.root()))?;

@@ -50,7 +50,7 @@ const meta = {
   component: OnAHead,
   args: { onOpen: fn() },
   beforeEach: () => {
-    mockIPC((cmd) => (cmd === "skill_studio_on" ? true : null));
+    mockIPC(() => null);
   },
 } satisfies Meta<typeof OnAHead>;
 export default meta;

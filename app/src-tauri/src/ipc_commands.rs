@@ -420,8 +420,6 @@ macro_rules! app_commands {
                 skillstudio::skill_stats,
                 skillstudio::skill_uses,
                 skillstudio::skill_panels,
-                skillstudio::skill_studio_on,
-                skillstudio::set_skill_studio_on,
                 skillstudio::skill_share,
                 skillstudio::persona_skill,
                 skillstudio::chat_branch_folder_skills,

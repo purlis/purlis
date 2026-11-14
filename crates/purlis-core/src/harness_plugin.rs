@@ -39,7 +39,7 @@ use crate::settings::Refusal;
 
 /// The table both files hold a harness's own skills turned on or off in (SK-6, #2769):
 /// `[harness_skills.<harness>]`, `"<name>" = true|false`, by the name the harness knows the skill
-/// by. Read only while the Skill studio's flag is on.
+/// by. Read only where the project's skills reach the chat ([`crate::skills::reach_chats`]).
 pub const SKILLS_TABLE: &str = "harness_skills";
 
 /// What one chat is handed: purlis's pins, each plugin on (`true`) or off (`false`) by the
@@ -783,21 +783,17 @@ pub fn persons_plugins_off(adapter: &dyn Adapter, plugins: &BTreeMap<String, boo
 /// ([`crate::skills::reach_chats`]), the harness's own skills the project turned off ([`Choices::skills_off`]). No other plugin is
 /// named: the harness decides (#3467).
 pub fn for_start(kind: &str, root: &Path, workspace: Option<&str>) -> Chosen {
-    for_start_as(crate::skills::studio_on_here(), kind, root, workspace)
+    let said = crate::skills::started_with(&|name| std::env::var(name).ok());
+    for_start_as(said, kind, root, workspace)
 }
 
-/// [`for_start`], with the Skill studio's flag `studio` as given.
-pub(crate) fn for_start_as(
-    studio: bool,
-    kind: &str,
-    root: &Path,
-    workspace: Option<&str>,
-) -> Chosen {
+/// [`for_start`], with its start's word on the plane's skills, `said`, as given.
+pub(crate) fn for_start_as(said: bool, kind: &str, root: &Path, workspace: Option<&str>) -> Chosen {
     let Some(adapter) = adapter(kind) else {
         return Chosen::new();
     };
     let mut chosen = pins(adapter);
-    if crate::skills::reach_chats(root, studio) {
+    if crate::skills::reach_chats(root, said) {
         chosen.skills_off = Choices::read_in(root, workspace).skills_off(adapter);
     }
     chosen

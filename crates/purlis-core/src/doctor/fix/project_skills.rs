@@ -5,11 +5,11 @@
 //! the project's skills, moved out of `.claude/skills` into the Skill studio's `skills/`, in ONE
 //! commit the person asked for and can review, and undo with `git revert`.
 //!
-//! Before it, the plane's `.claude/skills` reached a chat only where its program read that
-//! folder: at the project's root, and in a clone through the copy the guest layer made there.
-//! After it, every chat is handed the same skills by its own route ([ADR 0063] as amended), on
-//! every machine whose purlis has the `project-skills` feature, the Skill studio's flag on or
-//! off ([`crate::skills::reach_chats`]). What the commit holds, and nothing else:
+//! Before it, the plane's `.claude/skills` reached a chat only where its program read that folder:
+//! at the project's root, and in a clone through the copy the guest layer made there. After it,
+//! every chat is handed the same skills by its own route ([ADR 0063] as amended), on every machine
+//! whose purlis has the `project-skills` feature ([`crate::skills::reach_chats`]). What the commit
+//! holds, and nothing else:
 //!
 //! - Each folder of `.claude/skills/<name>/` moved to `skills/<name>/` with `git mv`, and
 //!   `skills/<name>.toml` made new with `grant = "all"`. Not the default `root`: those skills
@@ -99,8 +99,8 @@ pub const FROM_A_CHAT: &str = "project-skills moves this project's committed ski
      doctor --fix project-skills` from a terminal";
 
 /// Apply `project-skills` to the project at `root`, as this process's environment says, with the
-/// built-in skills shipped beside this binary. The Skill studio's flag has no say (#4344): the
-/// move's own checks are what keep every chat's skills, and it runs only when asked by name.
+/// built-in skills shipped beside this binary. Nothing has to be turned on first (#4344, #2786):
+/// the move's own checks are what keep every chat's skills, and it runs only when asked by name.
 pub fn apply(root: &Path) -> Fixed {
     let built_in = crate::skills::built_in_here();
     apply_in(root, built_in.as_deref(), &|name| crate::envvar::var(name))
@@ -902,7 +902,7 @@ fn after(root: &Path, project: &Project, plan: &Plan, sha: Option<&str>) -> Vec<
     );
     said.push(
         "  A teammate's purlis needs project skills to open this project; with it, every chat \
-         gets these skills, whether the Skill studio is on or off."
+         gets these skills."
             .to_owned(),
     );
     said.push(match sha {

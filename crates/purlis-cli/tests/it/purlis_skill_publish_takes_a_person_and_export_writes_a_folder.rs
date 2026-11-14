@@ -18,7 +18,6 @@ fn purlis(at: &Path, args: &[&str], chat: bool) -> Output {
         .env("CHARTER_ROOT", at)
         .env("HOME", at.join("home"))
         .env("PURLIS_CONFIG_HOME", at.join("home/config"))
-        .env("PURLIS_SKILL_STUDIO", "1")
         .env("NO_COLOR", "1")
         .stdin(Stdio::null());
     crate::support::at_a_terminal(&mut command);

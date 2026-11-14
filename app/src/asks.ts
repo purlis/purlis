@@ -43,7 +43,6 @@ import { askOpenBrowser, OPEN_VIEW, TAKE_OVER } from "./browserNeedsYou";
 import { onSandboxCommand, runGrantsMoved, sandboxCommandReturned } from "./sandboxAsked";
 import { askOpenProposal } from "./proposedChangeOpen";
 import { askReviewPin } from "./proposedPinOpen";
-import { proposeOldKeysRemoval } from "./oldHarnessPlugins";
 import { askOpenPoolSetup, POOL_SETUP_READY } from "./poolSetupAsked";
 import { askOpenRunnerWrite } from "./runnerWriteOpen";
 import { askOpenRunnerDispatch } from "./runnerDispatchOpen";
@@ -472,8 +471,6 @@ export function opensItsWindow(ask: Shown, option: string): boolean {
       return option === "sign-in" || option.startsWith("sign-in:");
     case "signing":
       return option === "set-up" || setUpForgeOf(option) !== undefined;
-    case "old-harness-plugins":
-      return option === "remove";
     case "pool-setup":
       return option === "open";
     case "sandbox-only":
@@ -656,19 +653,6 @@ export async function answerTaken(
           opened = true;
         }
         return { status: "ok" };
-      }
-      case "old-harness-plugins": {
-        // The old `[harness_plugins]` keys (#3467): Remove holds purlis's proposed change for
-        // each file and opens the first one's tab, where Apply is pressed; nothing is written
-        // before. Dismiss says it no more. Either is said once.
-        if (option === "dismiss") return commands.dismissOldHarnessPlugins(plane);
-        if (option === "remove") {
-          const held = await proposeOldKeysRemoval(plane);
-          if (held.status === "error") return held;
-          opened = true;
-          return held;
-        }
-        break;
       }
       case "sandbox-only": {
         // Make one makes a sandbox-only profile of the Ask's harness (#2037), then the

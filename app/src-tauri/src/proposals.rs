@@ -531,9 +531,6 @@ pub fn asked_skills(held: &Held, ask: &ProposeSkillSetAsk) -> Answer {
     if let Err(why) = held.brokered().allow(ask.chat, std::time::Instant::now()) {
         return no(why);
     }
-    if let Err(why) = crate::skillchange::flag_on() {
-        return no(why);
-    }
     match skills_asked_in(
         held.root(),
         held.proposals(),

@@ -60,7 +60,7 @@ const USAGE = {
   cold: null,
 };
 let usage: unknown = USAGE;
-/** What the core says of a chat's skills, with the Skill studio on, which the window asks once. */
+/** What the core says of a chat's skills, which the window asks once. */
 let skillsOf: unknown = null;
 /** How many times the core was asked for a gauge. */
 let reads = 0;
@@ -156,9 +156,9 @@ function core(
       if (cmd === "asks_waiting") return { plane: PLANE, asks: [] };
       if (cmd === "mcp_failures") return [];
       if (cmd === "smart_closing") return [];
-      if (cmd === "skill_studio_on") return true;
       if (cmd === "skill_drafts") return [];
-      if (cmd === "skill_studio") return { on: false };
+      // The studio chip opens its tab; what that tab reads is not what these tests look at.
+      if (cmd === "skill_studio") return new Promise(() => {});
       if (cmd === "chat_skills") return skillsOf;
       if (cmd === "open_view") return { kind: "gone", why: "Not read in this test." };
       return null;

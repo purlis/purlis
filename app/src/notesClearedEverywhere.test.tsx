@@ -41,7 +41,6 @@ beforeEach(() => {
     if (cmd === "plugin:event|emit" && given.event === "note-cleared") told.push(given.payload);
     if (cmd === "plugin:event|listen") return 1;
     if (cmd === "skill_drafts") return drafts;
-    if (cmd === "skill_studio_on") return true;
     return null;
   });
 });

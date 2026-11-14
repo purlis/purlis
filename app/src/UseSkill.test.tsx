@@ -76,7 +76,6 @@ const TOGETHER: SkillBudget = {
 
 function skills(listed: ChatSkill[], budget: SkillBudget | null = BUDGET): ChatSkills {
   return {
-    on: true,
     known: true,
     program: [],
     plugins_off: [],
@@ -280,7 +279,6 @@ describe("Use skill…", () => {
     expect(screen.getByText("Reading this chat's skills…")).toBeTruthy();
     cleanup();
     opened({
-      on: true,
       known: false,
       program: [],
       plugins_off: [],
@@ -298,7 +296,6 @@ describe("Use skill…", () => {
     const goose =
       "Skills are not supported on Goose: it has no skill format purlis can hand skills by, and its declaration does not say it takes MCP servers, so its chats get no skills.";
     opened({
-      on: true,
       known: false,
       program: [],
       plugins_off: [],
@@ -318,9 +315,9 @@ describe("Use skill…", () => {
 });
 
 describe("the Skills chip on a chat's pane", () => {
-  function studioOn() {
+  /** A core that answers nothing: the chip draws the set the window holds. */
+  function aCoreAskedNothing() {
     mockIPC((cmd) => {
-      if (cmd === "skill_studio_on") return true;
       throw new Error(`unexpected ${cmd}`);
     });
   }
@@ -336,7 +333,7 @@ describe("the Skills chip on a chat's pane", () => {
 
   /** The chip of chat 4, its set `set`. */
   async function chipOf(set: ReturnType<typeof held>) {
-    studioOn();
+    aCoreAskedNothing();
     render(
       <ChatSkillSetsHere.Provider value={{ 4: set }}>
         <SkillsChip session={4} />
@@ -359,7 +356,6 @@ describe("the Skills chip on a chat's pane", () => {
     const reads: number[] = [];
     mockIPC(
       (cmd, args) => {
-        if (cmd === "skill_studio_on") return true;
         if (cmd === "chat_skills") {
           reads.push((args as { session: number }).session);
           return prompt();
@@ -369,7 +365,7 @@ describe("the Skills chip on a chat's pane", () => {
       { shouldMockEvents: true },
     );
     function Window() {
-      const [sets] = useChatSkillSets("p", [4, 5], true);
+      const [sets] = useChatSkillSets("p", [4, 5]);
       return (
         <ChatSkillSetsHere.Provider value={sets}>
           <SkillsChip session={4} />
@@ -401,7 +397,7 @@ describe("the Skills chip on a chat's pane", () => {
     const asked: unknown[] = [];
     const listen = (event: Event) => asked.push((event as CustomEvent).detail);
     window.addEventListener(SKILL_STUDIO_ASKED, listen);
-    studioOn();
+    aCoreAskedNothing();
     render(
       <ChatSkillSetsHere.Provider
         value={{
@@ -425,7 +421,7 @@ describe("the Skills chip on a chat's pane", () => {
   });
 
   it("never says more skills than its budget for manual-only ones, which are free (#5353)", async () => {
-    studioOn();
+    aCoreAskedNothing();
     render(
       <ChatSkillSetsHere.Provider
         value={{
@@ -442,7 +438,7 @@ describe("the Skills chip on a chat's pane", () => {
   });
 
   it("leaves the budget's link out of a narrow pane's mark, and says nothing with nothing wrong (#5353)", async () => {
-    studioOn();
+    aCoreAskedNothing();
     const warned = { ...BUDGET, warns: "skills" as const };
     render(
       <ChatSkillSetsHere.Provider value={{ 4: held({ budget: warned }), 5: held() }}>
@@ -467,27 +463,8 @@ describe("the Skills chip on a chat's pane", () => {
     expect(reads).toHaveLength(2);
   });
 
-  it("reads nothing for a telling once the Skill studio is off (#4445)", async () => {
-    const reads: number[] = [];
-    mockIPC(
-      (cmd, args) => {
-        if (cmd !== "chat_skills") throw new Error(`unexpected ${cmd}`);
-        reads.push((args as { session: number }).session);
-        return routedChat(QUICK);
-      },
-      { shouldMockEvents: true },
-    );
-    const { rerender } = renderHook(({ on }) => useChatSkillSets("p", [4], on), {
-      initialProps: { on: true },
-    });
-    await waitFor(() => expect(reads).toEqual([4]));
-    rerender({ on: false });
-    await act(() => emit("chat-prompt-routing", { plane: "p", session: 4 }));
-    expect(reads).toEqual([4]);
-  });
-
   it("says nothing while the set needs nothing, and runs its row on a press, not Use skill… (S8, #5204)", async () => {
-    studioOn();
+    aCoreAskedNothing();
     const opener = vi.fn();
     const pressed = vi.fn();
     const warned = held({ budget: { ...BUDGET, warns: "chars" } });
@@ -515,7 +492,7 @@ describe("the Skills chip on a chat's pane", () => {
   });
 
   it("says its row's title where it presses one, and promises no press where it has none (#5366)", async () => {
-    studioOn();
+    aCoreAskedNothing();
     const row = { title: "Show skills of chat 4", press: vi.fn() };
     render(
       <ChatSkillSetsHere.Provider value={{ 4: held({ budget: { ...BUDGET, warns: "chars" } }) }}>
@@ -570,7 +547,7 @@ describe("the Skills chip on a chat's pane", () => {
       cleanup();
     }
     // A router that did not fall back needs nothing: the view's header says it.
-    studioOn();
+    aCoreAskedNothing();
     render(
       <ChatSkillSetsHere.Provider
         value={{ 4: held({ routing: { ...fellBack, fell_back: false } }) }}
@@ -634,7 +611,7 @@ describe("the Skills chip on a chat's pane", () => {
       skills_edited: [],
     };
     const { result, rerender } = renderHook(
-      ({ sessions, now }) => useChatSkillSets("p", sessions, true, now),
+      ({ sessions, now }) => useChatSkillSets("p", sessions, now),
       { initialProps: { sessions: [4, 5], now: {} as Record<number, PlaneUpdated> } },
     );
     await waitFor(() => expect(Object.keys(result.current[0])).toEqual(["4", "5"]));
@@ -663,7 +640,7 @@ describe("the Skills chip on a chat's pane", () => {
       return skills([], { ...BUDGET, skills: inTheSet });
     });
     const { result, rerender } = renderHook(
-      ({ moved }) => useChatSkillSets("p", [4, 5], true, {}, moved),
+      ({ moved }) => useChatSkillSets("p", [4, 5], {}, moved),
       { initialProps: { moved: 0 } },
     );
     await waitFor(() => expect(result.current[0][5]?.budget.skills).toBe(3));
@@ -693,10 +670,9 @@ describe("the Skills chip on a chat's pane", () => {
           session === 7 ? { router: "ext", ms: 900, fell_back: true, said: "Fell back." } : null,
       };
     });
-    const { result, rerender } = renderHook(
-      ({ sessions }) => useChatSkillSets("p", sessions, true),
-      { initialProps: { sessions: [4] } },
-    );
+    const { result, rerender } = renderHook(({ sessions }) => useChatSkillSets("p", sessions), {
+      initialProps: { sessions: [4] },
+    });
     await waitFor(() => expect(result.current[0][4]?.budget.skills).toBe(4));
     rerender({ sessions: [7] });
     await waitFor(() => expect(result.current[0][7]?.routing?.fell_back).toBe(true));
@@ -709,10 +685,9 @@ describe("the Skills chip on a chat's pane", () => {
       if (cmd !== "chat_skills") throw new Error(`unexpected ${cmd}`);
       return new Promise<ChatSkills>((resolve) => answers.push(resolve));
     });
-    const { result, rerender } = renderHook(
-      ({ moved }) => useChatSkillSets("p", [4], true, {}, moved),
-      { initialProps: { moved: 0 } },
-    );
+    const { result, rerender } = renderHook(({ moved }) => useChatSkillSets("p", [4], {}, moved), {
+      initialProps: { moved: 0 },
+    });
     await waitFor(() => expect(answers).toHaveLength(1));
     rerender({ moved: 1 });
     await waitFor(() => expect(answers).toHaveLength(2));
@@ -730,10 +705,9 @@ describe("the Skills chip on a chat's pane", () => {
       if (refuse) return Promise.reject("the plane is not held");
       return skills([], BUDGET);
     });
-    const { result, rerender } = renderHook(
-      ({ moved }) => useChatSkillSets("p", [4], true, {}, moved),
-      { initialProps: { moved: 0 } },
-    );
+    const { result, rerender } = renderHook(({ moved }) => useChatSkillSets("p", [4], {}, moved), {
+      initialProps: { moved: 0 },
+    });
     await waitFor(() => expect(result.current[0][4]?.budget.skills).toBe(3));
     refuse = true;
     rerender({ moved: 1 });
@@ -741,23 +715,6 @@ describe("the Skills chip on a chat's pane", () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
     });
     expect(result.current[0][4]?.budget.skills).toBe(3);
-  });
-
-  it("lets go of a chat restarted while the Skill studio was off (#4094)", async () => {
-    mockIPC((cmd, args) => {
-      if (cmd !== "chat_skills") throw new Error(`unexpected ${cmd}`);
-      return skills([], { ...BUDGET, skills: (args as { session: number }).session });
-    });
-    const { result, rerender } = renderHook(
-      ({ sessions, on }) => useChatSkillSets("p", sessions, on),
-      { initialProps: { sessions: [4], on: true } },
-    );
-    await waitFor(() => expect(result.current[0][4]?.budget.skills).toBe(4));
-    rerender({ sessions: [4], on: false });
-    rerender({ sessions: [7], on: false });
-    rerender({ sessions: [7], on: true });
-    await waitFor(() => expect(result.current[0][7]?.budget.skills).toBe(7));
-    expect(Object.keys(result.current[0])).toEqual(["7"]);
   });
 });
 

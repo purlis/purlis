@@ -6,7 +6,7 @@ import type { PlaneId } from "./bindings";
 import { Notice, NoticeOf } from "./Notice";
 import { putAwayEverywhere } from "./notesClearedEverywhere";
 import { draftReadySays, useDraftsReadyPutAway, useSkillDrafts } from "./skillDraftAsks";
-import { AT_THE_ROOT, askSkillStudio, useSkillStudioOn } from "./skillStudio";
+import { AT_THE_ROOT, askSkillStudio } from "./skillStudio";
 
 /** What the notice's one action is called (S8, #3694): one draft is opened, several are listed. */
 export function openDraftsSaid(drafts: number): string {
@@ -25,14 +25,13 @@ export function openDraftsSaid(drafts: number): string {
  *   (#5363): another may hold it for the chat coming back to it.
  */
 export function DraftReadyNotice({ plane, session }: { plane: PlaneId; session: number }) {
-  const on = useSkillStudioOn();
-  const drafts = useSkillDrafts(plane, 0, on);
+  const drafts = useSkillDrafts(plane, 0);
   const offScreen = useContext(NoticeOf) !== null;
   const putAway = useDraftsReadyPutAway(plane, session);
   const drafted = drafts.filter((draft) => draft.chat === session);
   const mine = drafted.map((draft) => draft.name);
   const key = mine.join("\n");
-  if (!on || mine.length === 0 || putAway === key) return null;
+  if (mine.length === 0 || putAway === key) return null;
   return (
     <Notice
       cause={`draft-ready:${session}`}

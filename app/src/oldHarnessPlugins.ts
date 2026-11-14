@@ -7,8 +7,8 @@ import { askOpenProposal } from "./proposedChangeOpen";
 /**
  * **Remove on the old `[harness_plugins]` keys** (#3467): the core holds purlis's proposed
  * change for each file that holds them, and the first one's tab opens, where Apply is pressed.
- * Nothing is written before. The Inbox's Ask (`asks.ts`) and the studio's Needs you (#3689) both
- * run it; the answer is the core's refusal, if any.
+ * Nothing is written before. The studio's Needs you (#3689) runs it; the answer is the core's
+ * refusal, if any.
  */
 export async function proposeOldKeysRemoval(
   plane: string,

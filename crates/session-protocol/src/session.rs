@@ -407,12 +407,13 @@ use crate::view::{Limits, Views};
 /// refused as `keep_profile` is. The desktop sends such a runner all of them on any refusal, and a
 /// host before 1.61 is sent all of them, as before.
 ///
-/// 1.62 added the Skill studio's flag to a chat's start on a runner (SK-20b, #3084): `start_program`
-/// may carry `plane_skills`, whether the plane's skills reach the chat as the desktop read the
-/// flag, which a runner arms the chat by in place of its own machine's flag, unless the project requires
-/// its skills, which reach the chat whatever this says (#4344). Taken only from the window or its
-/// host's relay. A host before 1.62 ignores the field and reads its own flag, as
-/// before.
+/// 1.62 added the plane skills' word to a chat's start on a runner (SK-20b, #3084):
+/// `start_program` may carry `plane_skills`, whether the plane's skills reach the chat as the
+/// desktop read it (the Skill studio's flag, until it went in #2786, and since then yes from
+/// every desktop), which a runner arms the chat by in place of its own reading, unless the
+/// project requires its skills, which reach the chat whatever this says (#4344). Taken only from
+/// the window or its host's relay. A host before 1.62 ignores the field and reads its own flag,
+/// as before.
 ///
 /// 1.63 added a grade asked for from a terminal (SK-61, #3241): `ask_grade`, `terminal`'s alone,
 /// is pushed as `grade_asked` to the one `local-ui` link that holds the project, since the window
@@ -2106,8 +2107,8 @@ pub struct StartProgram {
     /// of the persona as it reads it. None where nothing is allowed there.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tools_allowed: Option<String>,
-    /// Whether the plane's skills reach it, as the desktop that starts it on a runner read the
-    /// Skill studio's flag (1.62, SK-20b #3084): the runner arms it with the project's skills by
+    /// Whether the plane's skills reach it, as the desktop that starts it on a runner read it
+    /// (1.62, SK-20b #3084): the runner arms it with the project's skills by
     /// this word, not its own machine's. None where the starter does not say, and the host reads
     /// its own.
     #[serde(default, skip_serializing_if = "Option::is_none")]

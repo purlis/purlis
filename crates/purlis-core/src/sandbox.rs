@@ -1859,13 +1859,10 @@ impl Denied {
             reach: Reach::AndBelow,
             any_case: true,
         });
-        // …and the project's skills, wherever they reach chats (SK-9,
-        // #2772): a chat's write of one is a draft the person accepts, never the file itself.
-        // Always on a runner (#3084): its chats reach them by their desktop's word, which this
-        // machine's own flag does not say.
-        if crate::skills::reach_chats_here(root) || machine.is_a_runner() {
-            paths.extend(skills_held(root));
-        }
+        // …and the project's skills (SK-9, #2772): a chat's write of one is a draft the person
+        // accepts, never the file itself. On every machine since the Skill studio's flag went
+        // (#2786), a runner's among them (#3084).
+        paths.extend(skills_held(root));
         // …and where Docker Desktop, OrbStack and Rancher Desktop link `docker` and its
         // credential helpers in the home folder (#2752), which purlis runs outside any sandbox
         // for a Docker pool ([`crate::dockerpool::Docker::on_this_machine`]): each `bin` folder

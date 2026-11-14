@@ -318,7 +318,7 @@ import {
   type Toggled,
   type ViewId,
 } from "./regions";
-import { drawnOnlyPresent, previewsDrawn, type ViewPlace } from "./sideViews";
+import { type ViewPlace } from "./sideViews";
 import { SkillsView, type FrontChat, type SkillsViewProps } from "./SkillsView";
 import type { ExplorerPlace } from "./skillsListing";
 import { SIDE_KEYS_SAID, sideKeyOf } from "./sideKeys";
@@ -616,7 +616,6 @@ import {
   studioHistoryOf,
   studioOpening,
   studioTabsGone,
-  useSkillStudioSaid,
 } from "./skillStudio";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
 import { readStudioAhead } from "./studioReadAhead";
@@ -1528,10 +1527,6 @@ export const PlaneView = memo(function PlaneView({
    *  again after a write — a vault's own tab (charter-app#235). */
   const vaults = useVaults(plane);
   const vaultNames = useMemo(() => vaults.vaults?.map((one) => one.name), [vaults.vaults]);
-  // Whether the Skill studio's flag is on (#2765): its palette row is offered only then. What
-  // the core said of it, `undefined` until it has, holds a side left on Skills (#3308).
-  const studioSaid = useSkillStudioSaid();
-  const studioOn = studioSaid === true;
   /** Every chat open here, by session, in strip order: whose skill budgets the window holds. */
   const chatSessions = useMemo(
     () => [...new Set(tabs.order.flatMap((id) => panesOf(tabs, id).map((pane) => pane.session)))],
@@ -1543,7 +1538,6 @@ export const PlaneView = memo(function PlaneView({
   const [chatSkillSets, setChatSkills] = useChatSkillSets(
     plane,
     chatSessions,
-    studioOn,
     skillsChanged,
     skillSetsMoved,
   );
@@ -3361,34 +3355,16 @@ export const PlaneView = memo(function PlaneView({
   const sidePanelsNow = attentionPanels(workspaceState, contributed);
   const [sidePanels, setSidePanels] = useState(sidePanelsNow);
   if (!samePanels(sidePanels, sidePanelsNow)) setSidePanels(sidePanelsNow);
-  /** **The views behind a preview that is on** (#3266): Skills while the Skill studio's is. One
-   *  left out is drawn nowhere, and its side opens on its first view until it is back. Until the
-   *  core has said, a side left on Skills is held there, drawn empty (#3308). */
-  const pickedViews = arrangement.map((one) => one.view).join(" ");
-  const previews = useMemo(
-    () => previewsDrawn(studioSaid, pickedViews.split(" ")),
-    [studioSaid, pickedViews],
-  );
-  /** Every view drawn only while it is present: the extensions' panels contributed now, and the
-   *  views behind a preview that is on. */
-  const presentViews = useMemo(
-    () => [...sidePanels.map((one) => one.view), ...previews],
-    [sidePanels, previews],
-  );
+  /** Every view drawn only while it is present: the extensions' panels contributed now. */
+  const presentViews = useMemo(() => sidePanels.map((one) => one.view), [sidePanels]);
   /** **Whether the Skills view has been shown** (#3266): it reads nothing until it is first
    *  opened, as Search draws nothing until then, and is kept after. */
   const [skillsDrawn, setSkillsDrawn] = useState(false);
   if (
     !skillsDrawn &&
-    studioOn &&
     arrangement.some((one) => !one.collapsed && viewOpenIn(one, presentViews) === "skills")
   )
     setSkillsDrawn(true);
-  /** Whether `view` can be shown now: one drawn only while present is only then. */
-  const drawable = useCallback(
-    (view: ViewId) => !drawnOnlyPresent(view) || presentViews.includes(view),
-    [presentViews],
-  );
   /** The regions put away, and the Panel while no half of it is drawn now (#1737, #1752), for
    *  the palette's rows: a half holding only panels no extension contributes now is not drawn. */
   const awayNames = putAway(arrangement, presentViews).join(" ");
@@ -3431,7 +3407,7 @@ export const PlaneView = memo(function PlaneView({
   /** Where each side's view lives now (#1752): its move as a palette row, and the region rows'
    *  notes naming the views there. Held by what it says, so a resize or a view picked, which
    *  change the arrangement and not where a view lives, does not build the catalogue again. */
-  const placesSaid = JSON.stringify(placesOf(arrangement, sidePanels, previews));
+  const placesSaid = JSON.stringify(placesOf(arrangement, sidePanels));
   const places = useMemo(() => JSON.parse(placesSaid) as ViewPlaced[], [placesSaid]);
   /** The focused workspace's open todos, for the Todos tab's count (#1678, B-8). */
   const openTodos = todoCount(workspaceState);
@@ -3560,8 +3536,7 @@ export const PlaneView = memo(function PlaneView({
         searchHere();
         requestAnimationFrame(() => giveViewTheKeyboard(view));
       }
-      // The extension panels present now: a panel's view is picked only while it is there (#1678),
-      // and a view behind a preview only while the preview is on (#3266).
+      // The extension panels present now: a panel's view is picked only while it is there (#1678).
       pick(view, presentViews);
     },
     [leftOpen, pick, searchHere, presentViews],
@@ -10045,7 +10020,6 @@ export const PlaneView = memo(function PlaneView({
             paneRoom: focusedRoom,
             profiles: profileNames,
             screenReader,
-            skillStudio: studioOn,
             readOnly: readOnlySaid,
             places,
           }),
@@ -10115,7 +10089,6 @@ export const PlaneView = memo(function PlaneView({
       harnessCards,
       memoryStores,
       profileNames,
-      studioOn,
       screenReader,
     ],
   );
@@ -10711,11 +10684,11 @@ export const PlaneView = memo(function PlaneView({
    * front, as the Use skill… row of its tab opens it. In a split tab that is the pane that has
    * the keyboard (`focusedChat`), else the tab's chat in front (`chatInFrontOf`, a view's tab
    * included). Claimed on the window, capture-phase, by the project in front, as the shell's key
-   * is; never under a modal. With the Skill studio off, a shell or no chat in front, there is no
-   * Use skill… to open, and the key goes on.
+   * is; never under a modal. With a shell or no chat in front, there is no Use skill… to open, and
+   * the key goes on.
    */
   useEffect(() => {
-    if (!inFront || !studioOn) return;
+    if (!inFront) return;
     const key = (e: KeyboardEvent) => {
       if (pressed(e, ["chat.useSkill"]) === undefined) return;
       const tabs = now.current;
@@ -10730,7 +10703,7 @@ export const PlaneView = memo(function PlaneView({
     };
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
-  }, [inFront, studioOn, shells, openUseSkill]);
+  }, [inFront, shells, openUseSkill]);
 
   /**
    * **Focus mode's key and the keyboard shortcuts' key** (#2921, `keys/ownKeys.ts`): each presses
@@ -10841,8 +10814,6 @@ export const PlaneView = memo(function PlaneView({
       const which = sideKeyOf(e, mac);
       if (which === undefined) return;
       if (pressed(e, SIDE_KEY_IDS, { mac }) === undefined) return;
-      // A view behind a preview that is off is nowhere to show (#3266): its key is not claimed.
-      if ("show" in which && !drawable(which.show)) return;
       e.preventDefault();
       e.stopPropagation();
       if (e.repeat) return;
@@ -10866,7 +10837,7 @@ export const PlaneView = memo(function PlaneView({
     };
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
-  }, [drawable, inFront, showSideViewSeen, toggleRegionSeen]);
+  }, [inFront, showSideViewSeen, toggleRegionSeen]);
 
   /**
    * A pane's own button: that pane becomes the focused one, and then the row runs.
@@ -12375,8 +12346,6 @@ export const PlaneView = memo(function PlaneView({
                     }}
                   />
                 }
-                // Skills while the Skill studio's preview is on (#3266).
-                previews={previews}
                 /* **The navigation region's views** (ADR 0038 as amended 2026-10-10, #1673): Chats and
            Explorer, one at a time, switched by the activity bar at the side's edge. Both stay
            mounted when the other is open or the side is away, so neither loses its folds. */
@@ -12514,8 +12483,8 @@ export const PlaneView = memo(function PlaneView({
                     />
                   ),
                   // **Skills** (#3266): this workspace's skills by level, from the Skill studio's own
-                  // answer, drawn only while its preview is on; the side falls back to Chats meanwhile.
-                  skills: studioOn && skillsDrawn && (
+                  // answer.
+                  skills: skillsDrawn && (
                     <SkillsView
                       plane={plane}
                       workspace={ofWorkspace}

@@ -864,7 +864,6 @@ const DIALOGS: Opened[] = [
         <UseSkill
           chat="claude 4"
           skills={{
-            on: true,
             known: true,
             program: [],
             plugins_off: [],

@@ -45,23 +45,20 @@ function blank(which: SettingsWhich, file: string): SettingsFile {
 
 /**
  * **Every setting of every level offered**, at `plane` and `workspace`, built over blank files.
- * The Skills groups come only while the Skill studio is on, as Settings offers them; where a
- * workspace's chats run, only once this machine keeps a pool.
+ * Where a workspace's chats run comes only once this machine keeps a pool, as Settings offers it.
  */
 export function everySetting({
   plane,
   workspace,
-  skillStudio = false,
 }: {
   plane?: string;
   workspace?: string;
-  skillStudio?: boolean;
 }): readonly LevelGroups[] {
   // The palette asks each time it lists its rows: the last list is kept while nothing it is
   // built from has changed.
   const poolsKept = anyPoolKept();
-  const key = JSON.stringify([plane, workspace, skillStudio, poolsKept]);
-  if (last?.key !== key) last = { key, levels: built(plane, workspace, skillStudio, poolsKept) };
+  const key = JSON.stringify([plane, workspace, poolsKept]);
+  if (last?.key !== key) last = { key, levels: built(plane, workspace, poolsKept) };
   return last.levels;
 }
 
@@ -71,7 +68,6 @@ let last: { key: string; levels: readonly LevelGroups[] } | undefined;
 function built(
   plane: string | undefined,
   workspace: string | undefined,
-  skillStudio: boolean,
   poolsKept: boolean,
 ): LevelGroups[] {
   return offeredLevels(plane, workspace).map((level) => ({
@@ -92,7 +88,6 @@ function built(
                 plane: plane as PlaneId,
               },
               undefined,
-              skillStudio,
             )
           : workspaceGroups(
               {
@@ -108,7 +103,6 @@ function built(
                 poolsKept,
               },
               () => {},
-              skillStudio,
             ),
   }));
 }

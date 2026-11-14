@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri_plugin_dialog::DialogExt as _;
 
-use crate::skillchange::{SkillLevel, flag_on};
+use crate::skillchange::SkillLevel;
 use crate::skillsources::SkillSource;
 
 /// A file's or a skill's text as the window shows it: every invisible character escaped.
@@ -294,7 +294,6 @@ pub(crate) async fn skill_publish_review(
 ) -> Result<PublishReviewView, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reviewing the publish", move || {
-        flag_on()?;
         crate::forgeaccounts::window_git(|| {
             let core = source.core();
             let forge = OnTheForge::for_the_window(held.root(), &core)?;
@@ -326,7 +325,6 @@ pub(crate) async fn skill_publish(
 ) -> Result<PublishDone, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("publishing the skill", move || {
-        flag_on()?;
         let commit = source::Commit::parse(&accepted.commit)
             .ok_or("The review named no commit. Review it again")?;
         let accepted = Accepted {
@@ -368,7 +366,6 @@ pub(crate) async fn skill_export_review(
 ) -> Result<ExportReview, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading what an export would write", move || {
-        flag_on()?;
         let built_in = crate::skillchange::built_in();
         let out = source::gather(
             held.root(),
@@ -397,7 +394,6 @@ pub(crate) async fn skill_set_export_review(
 ) -> Result<ExportReview, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading what an export would write", move || {
-        flag_on()?;
         let out = set_gathered(held.root(), &members)?;
         Ok(ExportReview {
             skills: out.skills.iter().map(|skill| esc(&skill.name)).collect(),
@@ -435,7 +431,6 @@ pub(crate) async fn skill_set_export(
     zip: bool,
 ) -> Result<Option<String>, String> {
     let held = planes.held(&plane)?;
-    flag_on()?;
     let Some(to) = export_place(&app, zip).await? else {
         return Ok(None);
     };
@@ -524,7 +519,6 @@ pub(crate) async fn skill_export(
     zip: bool,
 ) -> Result<Option<String>, String> {
     let held = planes.held(&plane)?;
-    flag_on()?;
     let to = if zip {
         save_to(&app, format!("{name}.zip")).await?
     } else {

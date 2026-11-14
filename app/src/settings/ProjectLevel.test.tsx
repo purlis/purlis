@@ -23,6 +23,7 @@ import type {
 } from "../bindings";
 import { pickIn, querySelectNamed } from "../ui/select/select.testkit";
 import { tipOf } from "../ui/tooltip/tooltip.testkit";
+import { skill, studio } from "../skillsListing.testkit";
 import { chooseInRow, moreFor, offeredInRow, rowMenu, rowsOf, unfold } from "./rowMenu.testkit";
 
 /**
@@ -194,6 +195,9 @@ function core({
       switch (cmd) {
         case "project_chats_run_on":
           return { pool: null, pools: [] };
+        // The Skills group reads the studio, which is always on since #2786.
+        case "skill_studio":
+          return studio([skill("deploy")]);
         case "project_settings":
           reads += 1;
           return { shared: files.shared, local: files.local };
@@ -330,6 +334,10 @@ describe("the Project level", () => {
         "Saving",
         "Harness & profiles",
         "work",
+        "Skills",
+        // An org's skill controls and what was audited (#6031), always there since #2786.
+        "Skill sources",
+        "Recorded skill acts",
         "Sandbox",
         "Your hosts",
         "Your level",

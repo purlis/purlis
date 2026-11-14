@@ -147,7 +147,7 @@ pub struct Named {
     /// What the person allowed of its persona here, as its digest: what arms its tools on a
     /// runner (1.55, #4071).
     pub tools_allowed: Option<String>,
-    /// Whether the plane's skills reach it, as this window read the Skill studio's flag: what a
+    /// Whether the plane's skills reach it, as this window read it: what a
     /// runner arms it by (1.62, SK-20b #3084).
     pub plane_skills: bool,
     pub alone: Vec<u16>,

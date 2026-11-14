@@ -371,7 +371,7 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   [SESSION_VIEW]: History,
   /** The project's dispatches (#1452). */
   [DISPATCHES_VIEW.view]: Send,
-  /** Every skill a chat in the project gets, and why (#2765), behind its flag. */
+  /** Every skill a chat in the project gets, and why (#2765). */
   [SKILL_STUDIO_VIEW.view]: Sparkles,
   /** One skill's tab, with its runs (SK-3). */
   /** One chat's Activity (#1495). */

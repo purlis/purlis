@@ -21,7 +21,6 @@
 //!   draft alone, on the profile the person picked or the project's default; the piece goes when
 //!   the chat closes (`Chats::close`).
 //!
-//! Behind the `skill-studio` flag until its finish line (#2786).
 
 use std::sync::Arc;
 
@@ -36,13 +35,10 @@ use crate::curation::{ChatTyped, Curating, StartRefused};
 use crate::planes::{Held, PlaneId, Planes};
 use crate::skillchange::{SkillChanged, SkillLevel};
 
-/// **Keeps chat `ask.chat`'s change as a draft skill** where it is to a plane skill's file and
-/// the Skill studio's flag is on: the answer, or `None` for a proposal that is not one, which is
+/// **Keeps chat `ask.chat`'s change as a draft skill** where it is to a plane skill's file: the
+/// answer, or `None` for a proposal that is not one, which is
 /// then a proposed change as before. Nothing in the project is written.
 pub fn drafted(held: &Held, ask: &ProposeAsk) -> Option<Answer> {
-    if !purlis_core::skills::studio_on_here() {
-        return None;
-    }
     let root = held.root();
     let file = drafts::draftable(root, &root.join(&ask.path))?;
     // Policy's `sandbox.proposed-changes = "off"` holds no draft either (PC-14).
@@ -139,7 +135,7 @@ impl From<&purlis_core::reopen::studio_chats::ClosedStudioChat> for ClosedStudio
 }
 
 /// **The chats the studio started that have closed here** (#5248), newest first: what a skill's
-/// Runs keeps after a chat ends. None while the studio is off.
+/// Runs keeps after a chat ends.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn studio_chats_closed(
@@ -148,9 +144,6 @@ pub(crate) async fn studio_chats_closed(
 ) -> Result<Vec<ClosedStudioChat>, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading the studio's chats", move || {
-        if !purlis_core::skills::studio_on_here() {
-            return Ok(Vec::new());
-        }
         Ok(purlis_core::reopen::studio_chats::closed(held.root())
             .iter()
             .map(ClosedStudioChat::from)
@@ -229,7 +222,7 @@ impl From<drafts::Draft> for SkillDraft {
 }
 
 /// **Every draft skill of the project**, by name: what the studio lists, and what a chat's tab
-/// asks to say "draft ready in Skill studio". None while the flag is off.
+/// asks to say "draft ready in Skill studio".
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_drafts(
@@ -238,9 +231,6 @@ pub(crate) async fn skill_drafts(
 ) -> Result<Vec<SkillDraft>, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading the draft skills", move || {
-        if !purlis_core::skills::studio_on_here() {
-            return Ok(Vec::new());
-        }
         let listed = drafts::list(held.root());
         // Whether its chat is open says only what an out-of-date draft's redo does: the chats
         // are looked at only where one is.
@@ -287,7 +277,6 @@ pub(crate) async fn skill_draft_accept(
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("accepting the draft", move || {
-        crate::skillchange::flag_on()?;
         let changed = crate::skillchange::heard(held.root(), |cx| drafts::accept(cx, &id))?;
         crate::skillgrade::drafted::stop(&plane, &id);
         held.chats().asks_may_have_moved();
@@ -307,7 +296,6 @@ pub(crate) async fn skill_level_accept(
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("accepting the folder", move || {
-        crate::skillchange::flag_on()?;
         level_accepted(held.root(), &held.chats().skills_now(), &folder)?;
         Ok(SkillChanged::default())
     })
@@ -326,7 +314,6 @@ pub(crate) async fn skill_levels_confirm(
 ) -> Result<SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("accepting the project's folders", move || {
-        crate::skillchange::flag_on()?;
         levels_confirmed(held.root(), &held.chats().skills_now(), &folders)?;
         Ok(SkillChanged::default())
     })
@@ -385,7 +372,6 @@ pub(crate) async fn skill_draft_reject(
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("rejecting the draft", move || {
-        crate::skillchange::flag_on()?;
         drafts::reject(held.root(), &id)?;
         crate::skillgrade::drafted::stop(&plane, &id);
         held.chats().asks_may_have_moved();
@@ -410,7 +396,6 @@ pub(crate) async fn skill_draft_chat(
 ) -> Result<Curating, StartRefused> {
     let held = planes.held(&plane)?;
     crate::curation::off_the_window_refused("starting the chat", move || {
-        crate::skillchange::flag_on()?;
         let root = held.root().to_path_buf();
         let level: purlis_core::skills::verbs::Level = (&level).into();
         let (cwd, persona) = where_the_skill_lives(&root, &level)?;
@@ -456,7 +441,6 @@ pub(crate) async fn skill_trigger_tests_chat(
 ) -> Result<Curating, StartRefused> {
     let held = planes.held(&plane)?;
     crate::curation::off_the_window_refused("starting the chat", move || {
-        crate::skillchange::flag_on()?;
         let level: purlis_core::skills::verbs::Level = (&level).into();
         let prompt = drafts::asking_for_trigger_tests(held.root(), &level, &name)?;
         open_on_a_skill(
@@ -485,7 +469,6 @@ pub(crate) async fn skill_outcome_evals_chat(
 ) -> Result<Curating, StartRefused> {
     let held = planes.held(&plane)?;
     crate::curation::off_the_window_refused("starting the chat", move || {
-        crate::skillchange::flag_on()?;
         let level: purlis_core::skills::verbs::Level = (&level).into();
         let prompt = drafts::asking_for_outcome_evals(held.root(), &level, &name)?;
         open_on_a_skill(
@@ -515,7 +498,6 @@ pub(crate) async fn skill_checks_chat(
 ) -> Result<Curating, StartRefused> {
     let held = planes.held(&plane)?;
     crate::curation::off_the_window_refused("starting the chat", move || {
-        crate::skillchange::flag_on()?;
         let level: purlis_core::skills::verbs::Level = (&level).into();
         let prompt = drafts::asking_for_checks(held.root(), &level, &name)?;
         open_on_a_skill(
@@ -545,7 +527,6 @@ pub(crate) async fn skill_improve_chat(
 ) -> Result<Curating, StartRefused> {
     let held = planes.held(&plane)?;
     crate::curation::off_the_window_refused("starting the chat", move || {
-        crate::skillchange::flag_on()?;
         let level: purlis_core::skills::verbs::Level = (&level).into();
         let prompt = drafts::improving_from_runs(held.root(), &level, &name)?;
         open_on_a_skill(
@@ -618,7 +599,6 @@ pub(crate) async fn skill_draft_try(
 ) -> Result<Curating, StartRefused> {
     let held = planes.held(&plane)?;
     crate::curation::off_the_window_refused("starting Try it", move || {
-        crate::skillchange::flag_on()?;
         let root = held.root().to_path_buf();
         let standing: Vec<std::path::PathBuf> = held
             .chats()
@@ -701,7 +681,6 @@ pub(crate) fn skill_draft_redo_in(
     session: u32,
 ) -> Result<crate::references::Handed, String> {
     let held = planes.held(&plane)?;
-    crate::skillchange::flag_on()?;
     let draft = drafts::one(held.root(), &id)?;
     let open = held.chats().open_now();
     if drafting_chat(&open, &draft).map(|one| one.session) != Some(session) {
@@ -752,7 +731,6 @@ pub(crate) async fn skill_draft_redo(
 ) -> Result<Curating, StartRefused> {
     let held = planes.held(&plane)?;
     crate::curation::off_the_window_refused("starting the chat", move || {
-        crate::skillchange::flag_on()?;
         let root = held.root().to_path_buf();
         let draft = drafts::one(&root, &id)?;
         let (cwd, persona) = where_the_skill_lives(&root, &draft.level)?;

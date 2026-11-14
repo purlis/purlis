@@ -15,7 +15,6 @@
 //! it cannot be typed now (opencode, and a chat mid-turn). A skill that was typed has its run
 //! held for the chat's next prompt, started by Use skill… (`crate::hooks::Hooks::skill_typed`).
 //!
-//! Behind the `skill-studio` flag until its finish line (#2786).
 
 use serde::Serialize;
 use specta::Type;
@@ -159,8 +158,6 @@ pub struct SkillBudget {
 /// What Use skill… offers a chat, and its budget.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct ChatSkills {
-    /// Whether the Skill studio is on: nothing is offered while it is off.
-    pub on: bool,
     /// Whether the chat runs a tool purlis knows the skills of: one that does not is offered
     /// nothing.
     pub known: bool,
@@ -270,10 +267,9 @@ impl From<&purlis_core::skills::router::Routed> for SkillRouting {
 }
 
 impl ChatSkills {
-    /// Nothing offered: the studio is off (`on` false), or the chat runs no tool purlis knows.
-    fn none(on: bool) -> ChatSkills {
+    /// Nothing offered: the chat runs no tool purlis knows.
+    fn none() -> ChatSkills {
         ChatSkills {
-            on,
             known: false,
             skills: Vec::new(),
             program: Vec::new(),
@@ -402,7 +398,7 @@ fn from_its_runner(
         return ChatSkills {
             none_because: matches!(word, crate::chats::RunnersWord::NotSaid)
                 .then(|| NOT_SAID_BY_ITS_RUNNER.to_owned()),
-            ..ChatSkills::none(true)
+            ..ChatSkills::none()
         };
     };
     ChatSkills {
@@ -416,11 +412,10 @@ fn from_its_runner(
 /// `skills`, for the window: none for a chat that runs no tool purlis knows.
 pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSkills {
     let Some(skills) = skills else {
-        return ChatSkills::none(true);
+        return ChatSkills::none();
     };
     let spent = skills.spent;
     ChatSkills {
-        on: true,
         known: true,
         skills: skills.offered.iter().map(offered_shown).collect(),
         program: skills.program.iter().map(offered_shown).collect(),
@@ -460,8 +455,8 @@ pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSki
     }
 }
 
-/// **The skills chat `session` has, as Use skill… offers them, and its skill budget**: nothing
-/// while the Skill studio is off. On a blocking thread, as it reads the project's skill folders.
+/// **The skills chat `session` has, as Use skill… offers them, and its skill budget**. On a
+/// blocking thread, as it reads the project's skill folders.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn chat_skills(
@@ -471,15 +466,12 @@ pub(crate) async fn chat_skills(
 ) -> Result<ChatSkills, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading the chat's skills", move || {
-        if !purlis_core::skills::studio_on_here() {
-            return Ok(ChatSkills::none(false));
-        }
         Ok(skills_shown(&held, session))
     })
     .await
 }
 
-/// [`chat_skills`] of `held`'s chat `session`, with the Skill studio on.
+/// [`chat_skills`] of `held`'s chat `session`.
 fn skills_shown(held: &Held, session: u32) -> ChatSkills {
     let Some(chat) = held.chats().skills_of(session) else {
         return ChatSkills {
@@ -525,16 +517,12 @@ pub(crate) fn use_skill(
     values: Vec<String>,
 ) -> Result<Handed, String> {
     let held = planes.held(&plane)?;
-    if !purlis_core::skills::studio_on_here() {
-        return Err("The Skill studio is not turned on on this machine.".to_owned());
-    }
     skill_used(&held, session, &skill, &values, &|text| {
         clipboard.put_text(text)
     })
 }
 
-/// [`use_skill`] in `held`'s chat `session`, with the Skill studio on and `copy` as the
-/// clipboard.
+/// [`use_skill`] in `held`'s chat `session`, with `copy` as the clipboard.
 fn skill_used(
     held: &std::sync::Arc<Held>,
     session: u32,

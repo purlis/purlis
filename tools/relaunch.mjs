@@ -689,7 +689,6 @@ const fifth = await theAppRuns(
     selector: '[data-testid="pane-studio"]',
     wanted: "test-design · writing outcome evals",
   }),
-  { PURLIS_SKILL_STUDIO: "1" },
 );
 check(
   "a studio chat comes back on its conversation",

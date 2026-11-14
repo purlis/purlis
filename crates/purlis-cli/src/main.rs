@@ -353,7 +353,7 @@ enum Command {
     Persona(memory::PersonaCommand),
 
     /// Skills: the ones a chat in this project gets, why each other one is left out, and every run
-    /// of one with its signals (behind the `skill-studio` flag).
+    /// of one with its signals.
     #[command(subcommand)]
     Skill(skill::SkillCommand),
 

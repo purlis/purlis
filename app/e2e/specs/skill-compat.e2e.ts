@@ -14,7 +14,7 @@ import { wrapsClaudeCode } from "../harness.js";
 
 /**
  * **A skill's compatibility badges, and a skill that cannot be loaded** (SK-8, #2771), in the
- * built app against the real core, with the `skill-studio` flag on for the run (`wdio.conf.ts`).
+ * built app against the real core.
  *
  * The spec puts two project skills in the project's `skills/`, granted to every workspace, as a
  * person would: one that asks for what would widen a chat (`allowed-tools`) and for a model, and

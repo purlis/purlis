@@ -115,9 +115,6 @@ import { SETTINGS_GROUPS } from "./settings/catalogue";
 import { everySetting, keyOf } from "./settings/search";
 import { inAFile, type Level } from "./settings/groups";
 
-/** The Workspace level's Skills group (#2767), behind the Skill studio's flag. */
-const WORKSPACE_SKILLS = "workspace.skills";
-const PROJECT_SKILLS = "project.skills";
 import { profilePage } from "./settings/profileAddress";
 import { askSettingsLink, linkToGroup, settingsPlace, type SettingsLink } from "./settings/links";
 import {
@@ -960,8 +957,6 @@ export type Now = {
    * vault is the plane's, so these rows are the same whichever workspace is focused.
    */
   vaults?: readonly string[];
-  /** Whether the Skill studio's flag is on (#2765): its row is offered only then. */
-  skillStudio?: boolean;
   /**
    * The focused workspace's open todos, by slug and title (`Panels.todos`), one close and one
    * forget row each. Only the focused workspace's: the Todos panel is the one surface that
@@ -1782,7 +1777,7 @@ export const endId = (session: number) => `chat.end:${session}`;
 export const DISPATCHES_SHOW = "dispatches.show";
 /** The catalogue's id for the row that opens the project's Browsers grid (#2027). */
 export const BROWSERS_SHOW = "browsers.show";
-/** The Skill studio (#2765), offered only while its flag is on: `skillStudio.ts` spells it. */
+/** The Skill studio (#2765): `skillStudio.ts` spells it. */
 export { SKILL_STUDIO_SHOW };
 
 /** Why Close other tabs is not offered on a tab (#4762). */
@@ -2181,8 +2176,6 @@ export function catalogue(now: Now): Offer[] {
   // *Search in files*, above (#1676), so it is not said twice.
   for (const view of Object.keys(VIEWS) as OwnViewId[]) {
     if (view === "search") continue;
-    // Behind the Skill studio's preview (#3266): no row while the view is drawn nowhere.
-    if (view === "skills" && now.skillStudio !== true) continue;
     const key = SIDE_KEYS_SAID[view];
     offers.push({
       ...can(sideViewId(view), `Show the ${VIEWS[view].name} view`, { verb: "showSideView", view }),
@@ -2638,33 +2631,31 @@ export function catalogue(now: Now): Offer[] {
       }),
       note: `${workspace}: Settings at its level — live, repos, extensions and appearance.`,
     });
-    // Its chats' skills (#2767): the Skill studio on this workspace, behind the studio's flag.
-    // The Skills row of its Settings level runs it.
-    if (now.skillStudio)
-      offers.push({
-        ...can(
-          `${SKILL_STUDIO_IN}${workspace}`,
-          OPEN_SKILL_STUDIO,
-          {
-            verb: "openView",
-            view: skillStudioView(inWorkspace(workspace)),
-            title: SKILL_STUDIO_TITLE,
-          },
-          workspace,
-        ),
-        note: `${workspace}: every skill its chats get, and why any other is left out.`,
-      });
+    // Its chats' skills (#2767): the Skill studio on this workspace. The Skills row of its
+    // Settings level runs it.
+    offers.push({
+      ...can(
+        `${SKILL_STUDIO_IN}${workspace}`,
+        OPEN_SKILL_STUDIO,
+        {
+          verb: "openView",
+          view: skillStudioView(inWorkspace(workspace)),
+          title: SKILL_STUDIO_TITLE,
+        },
+        workspace,
+      ),
+      note: `${workspace}: every skill its chats get, and why any other is left out.`,
+    });
     // Its Needs you (#3695): what its Skills summary's "need you" runs. Not a row of the palette
     // or a menu, which offer the studio itself.
-    if (now.skillStudio)
-      offers.push({
-        ...can(`${SKILL_NEEDS_IN}${workspace}`, `Skills that need you in ${workspace}`, {
-          verb: "openView",
-          view: skillStudioAt(inWorkspace(workspace), "needs"),
-          title: SKILL_STUDIO_TITLE,
-        }),
-        menuOnly: true,
-      });
+    offers.push({
+      ...can(`${SKILL_NEEDS_IN}${workspace}`, `Skills that need you in ${workspace}`, {
+        verb: "openView",
+        view: skillStudioAt(inWorkspace(workspace), "needs"),
+        title: SKILL_STUDIO_TITLE,
+      }),
+      menuOnly: true,
+    });
     // Its cross-repo changes (charter#470), for the workspace in front of the operator: a view
     // tab keyed by the workspace and filed on its strip, which asks the forge when it opens and
     // when its Refresh is pressed, never on a switch.
@@ -2786,13 +2777,7 @@ export function catalogue(now: Now): Offer[] {
       note: "This machine and each runner, with the chats and browsers on it and each pool's use.",
       plus: PLUS_VIEWS,
     });
-  offers.push(
-    ...settingsGroupRows(
-      now.plane,
-      now.focused === OUTSIDE ? undefined : now.focused,
-      now.skillStudio ?? false,
-    ),
-  );
+  offers.push(...settingsGroupRows(now.plane, now.focused === OUTSIDE ? undefined : now.focused));
   offers.push(...profilePageRows(now.plane, now.profiles));
 
   // **A finished task's Merge… and Discard branch…, on its row's menu** (#1534): for a task
@@ -2877,32 +2862,30 @@ export function catalogue(now: Now): Offer[] {
         note: "The harness profile its chats start on: one of the project's profiles, or none.",
       },
     );
-    // Its skills (#2768): the Skill studio on a chat as this persona, behind the studio's flag.
-    // Every row of its page's Skills section runs it.
-    if (now.skillStudio)
-      offers.push({
-        ...can(
-          skillStudioAs(persona),
-          OPEN_SKILL_STUDIO,
-          {
-            verb: "openView",
-            view: skillStudioView(asPersona(persona)),
-            title: SKILL_STUDIO_TITLE,
-          },
-          persona,
-        ),
-        note: `${persona}: every skill its chats get in any workspace, and why any other is left out.`,
-      });
-    // Its Needs you (#3695): what its page's "need you" row runs.
-    if (now.skillStudio)
-      offers.push({
-        ...can(skillNeedsAs(persona), `Skills that need you as ${persona}`, {
+    // Its skills (#2768): the Skill studio on a chat as this persona. Every row of its page's
+    // Skills section runs it.
+    offers.push({
+      ...can(
+        skillStudioAs(persona),
+        OPEN_SKILL_STUDIO,
+        {
           verb: "openView",
-          view: skillStudioAt(asPersona(persona), "needs"),
+          view: skillStudioView(asPersona(persona)),
           title: SKILL_STUDIO_TITLE,
-        }),
-        menuOnly: true,
-      });
+        },
+        persona,
+      ),
+      note: `${persona}: every skill its chats get in any workspace, and why any other is left out.`,
+    });
+    // Its Needs you (#3695): what its page's "need you" row runs.
+    offers.push({
+      ...can(skillNeedsAs(persona), `Skills that need you as ${persona}`, {
+        verb: "openView",
+        view: skillStudioAt(asPersona(persona), "needs"),
+        title: SKILL_STUDIO_TITLE,
+      }),
+      menuOnly: true,
+    });
   }
 
   // **A new memory, in each store the window lists** (SI-9c, ADR 0065 Q9): the focused
@@ -2990,16 +2973,15 @@ export function catalogue(now: Now): Offer[] {
       note: "Every browser, live, in a tab of its own: this project's, a workspace's or every project's.",
       plus: { group: "view", said: "Browsers" },
     });
-    if (now.skillStudio)
-      offers.push({
-        ...can(SKILL_STUDIO_SHOW, OPEN_SKILL_STUDIO, {
-          verb: "openView",
-          view: SKILL_STUDIO_VIEW,
-          title: SKILL_STUDIO_TITLE,
-        }),
-        note: "Every skill this project's chats get, and why any other is left out.",
-        plus: { group: "view", said: "Skill studio" },
-      });
+    offers.push({
+      ...can(SKILL_STUDIO_SHOW, OPEN_SKILL_STUDIO, {
+        verb: "openView",
+        view: SKILL_STUDIO_VIEW,
+        title: SKILL_STUDIO_TITLE,
+      }),
+      note: "Every skill this project's chats get, and why any other is left out.",
+      plus: { group: "view", said: "Skill studio" },
+    });
   }
 
   // **Curation actions (ADR 0061)**: one row per action a workspace, a persona or the plane is
@@ -3637,13 +3619,7 @@ export function catalogue(now: Now): Offer[] {
 
   // **Every setting, last** (#2920): a hundred rows a person finds by typing what they want to
   // change, listed only then (`whenTyped`).
-  offers.push(
-    ...settingRows(
-      now.plane,
-      now.focused === OUTSIDE ? undefined : now.focused,
-      now.skillStudio ?? false,
-    ),
-  );
+  offers.push(...settingRows(now.plane, now.focused === OUTSIDE ? undefined : now.focused));
 
   return readOnlyOffers(offers, now.readOnly);
 }
@@ -4134,11 +4110,7 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
  * one; and the focused workspace's only, as the Workspace settings… row is about the workspace
  * the panels show. The labels are `settings/catalogue.ts`'s, held to the builders by its test.
  */
-function settingsGroupRows(
-  plane: string | undefined,
-  workspace: string | undefined,
-  skillStudio: boolean,
-): Offer[] {
+function settingsGroupRows(plane: string | undefined, workspace: string | undefined): Offer[] {
   const opens = (group: string, extra: { plane?: string; workspace?: string }): Does => ({
     verb: "openSettingsGroup",
     group,
@@ -4156,10 +4128,7 @@ function settingsGroupRows(
     also: one.also,
   }));
   if (plane === undefined) return rows;
-  // The Skills group only while the Skill studio's flag is on (#4610).
-  for (const one of SETTINGS_GROUPS.project.filter(
-    (group) => group.id !== PROJECT_SKILLS || skillStudio,
-  ))
+  for (const one of SETTINGS_GROUPS.project)
     rows.push({
       ...can(
         `settings.group:${one.id}`,
@@ -4169,10 +4138,7 @@ function settingsGroupRows(
       note: `The project's Settings, at ${one.label}.`,
     });
   if (workspace === undefined) return rows;
-  // The Skills group only while the Skill studio's flag is on (#2767).
-  for (const one of SETTINGS_GROUPS.workspace.filter(
-    (group) => group.id !== WORKSPACE_SKILLS || skillStudio,
-  ))
+  for (const one of SETTINGS_GROUPS.workspace)
     rows.push({
       ...can(
         `settings.group:${one.id}:${workspace}`,
@@ -4201,12 +4167,8 @@ const LEVEL_ROWS: Readonly<Record<Level, string>> = {
  * the same list the Settings search finds in, at the same levels as the group rows: You always,
  * the project in front's, and the focused workspace's.
  */
-function settingRows(
-  plane: string | undefined,
-  workspace: string | undefined,
-  skillStudio: boolean,
-): Offer[] {
-  return everySetting({ plane, workspace, skillStudio }).flatMap(({ level, groups }) =>
+function settingRows(plane: string | undefined, workspace: string | undefined): Offer[] {
+  return everySetting({ plane, workspace }).flatMap(({ level, groups }) =>
     groups.flatMap((group) =>
       group.settings.map((setting) => ({
         ...can(
@@ -4805,10 +4767,9 @@ function chatRows(now: Now): Offer[] {
       note: MOVE_WITH_KEYS_NOTE,
     });
 
-    // **Use skill…** (#2775), behind the Skill studio's flag. It opens a picker and types
-    // nothing until a skill is picked, so it sits above the line; the key registry's
-    // `chat.useSkill` presses the focused chat's.
-    if (now.skillStudio && harnessed)
+    // **Use skill…** (#2775). It opens a picker and types nothing until a skill is picked, so it
+    // sits above the line; the key registry's `chat.useSkill` presses the focused chat's.
+    if (harnessed)
       offers.push({
         ...can(usingSkillId(session), `Use skill in ${name}…`, { verb: "useSkill", session }, name),
         note: "One of its skills, typed into it for you to send.",
@@ -5006,15 +4967,9 @@ function footRows(now: Now, session: number, name: string): Offer[] {
   const parent = listed === undefined ? now.endedAskedBy?.get(session) : listed.parent;
   const asker = askerRow(now, session, name, parent);
   if (asker !== undefined) offers.push(asker);
-  if (now.skillStudio)
-    offers.push(
-      can(
-        chatSkillsId(session),
-        `Show skills of ${name}`,
-        { verb: "showChatSkills", session },
-        name,
-      ),
-    );
+  offers.push(
+    can(chatSkillsId(session), `Show skills of ${name}`, { verb: "showChatSkills", session }, name),
+  );
   if (now.studioOf?.(session) !== undefined)
     offers.push(
       can(

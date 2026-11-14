@@ -2833,9 +2833,10 @@ fn a_grades_chat_has_no_tab_and_only_its_record_says_so() {
 }
 
 #[test]
-fn the_studio_flag_a_chat_started_with_is_recorded_and_read_back_3466() {
-    // A chat reattached from the session host keeps the Skill studio flag its start read, so
-    // the record carries it; a chat recorded without one writes no key.
+fn whether_the_plane_skills_reached_a_chat_at_its_start_is_recorded_and_read_back_3466() {
+    // A chat reattached from the session host keeps the word its start took on whether the
+    // plane's skills reach it, so the record carries it; a chat recorded without one writes no
+    // key.
     let plane = tempfile::tempdir().unwrap();
     let on = Chat {
         plane_skills: Some(true),

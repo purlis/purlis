@@ -18,7 +18,7 @@ import type { LiveSetting, SettingsGroup } from "./groups";
  * studio on them. Every skill choice is the studio's, so this row only counts: how many skills
  * its chats get, how many are left out, and how many things need the person, which opens the
  * studio's Needs you. Its link runs the catalogue's `skills.studio:<ws>`, which lands on the
- * Library, the row the workspace's menu offers too. Behind the studio's flag.
+ * Library, the row the workspace's menu offers too.
  */
 export function workspaceSkillsGroup(plane: PlaneId, workspace: string): SettingsGroup {
   return {
@@ -35,8 +35,7 @@ export function workspaceSkillsGroup(plane: PlaneId, workspace: string): Setting
 
 /**
  * **Settings › Skills at the project** (#4610): the skill budget of every chat in the project,
- * which a workspace's own can override, and what it comes to on each program. Behind the studio's
- * flag.
+ * which a workspace's own can override, and what it comes to on each program.
  */
 export function projectSkillsGroup(plane: PlaneId): SettingsGroup {
   return {
@@ -51,7 +50,7 @@ export function projectSkillsGroup(plane: PlaneId): SettingsGroup {
 /**
  * **Settings › Skill sources at the project** (#6031, `prototype/skill-policy` A): this project's
  * `[skill_policy]` read only, each key saying it is set in `file`, the team's shared file, which
- * only a reviewed change to it changes. Behind the studio's flag.
+ * only a reviewed change to it changes.
  */
 export function projectSkillSourcesGroup(plane: PlaneId, file: string): SettingsGroup {
   return {
@@ -66,7 +65,7 @@ export function projectSkillSourcesGroup(plane: PlaneId, file: string): Settings
 
 /**
  * **Settings › Recorded skill acts** (#6031, SK-11): each install, update and removal of a skill
- * from a source this machine's audit recorded, newest first. Behind the studio's flag.
+ * from a source this machine's audit recorded, newest first.
  */
 export function projectSkillActsGroup(plane: PlaneId): SettingsGroup {
   return {

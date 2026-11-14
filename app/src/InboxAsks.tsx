@@ -528,7 +528,6 @@ export const SOURCE_SAID: Record<Shown["source"], string> = {
   "runner-dispatch": "Asks, from a pool's runner, to start a chat here",
   "sign-in": "Asks you to sign a profile in",
   "sandbox-only": "Asks you to make a sandbox-only profile",
-  "old-harness-plugins": "Old harness plugin settings, ignored now",
   signing: "Lanes wait on signed commits",
   "pool-setup": "Your cluster is ready for Pool setup",
   browser: "Asks what its browser may reach",

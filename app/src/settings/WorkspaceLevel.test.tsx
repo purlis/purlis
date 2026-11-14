@@ -332,12 +332,20 @@ describe("the Workspace level", () => {
     expect(screen.queryByRole("radio", { name: "Workspace" })).toBeNull();
   });
 
-  it("lists the five groups in order for that workspace", async () => {
+  it("lists its groups in order for that workspace, Skills last", async () => {
     const { asked } = core();
     await at();
 
     await waitFor(() =>
-      expect(groups()).toEqual(["Live", "Repos", "Dispatch", "Extensions", "Theme", "Appearance"]),
+      expect(groups()).toEqual([
+        "Live",
+        "Repos",
+        "Dispatch",
+        "Extensions",
+        "Theme",
+        "Appearance",
+        "Skills",
+      ]),
     );
     expect(asked("workspace_settings")).toContainEqual({ plane: PLANE, workspace: "alpha" });
     expect(asked("project_extensions")).toContainEqual({ plane: PLANE, workspace: "alpha" });
@@ -392,7 +400,15 @@ describe("the Workspace level", () => {
     // Extensions is offered for its link to the Extensions dialog (#1387), and says why it has
     // nothing (#1198).
     await waitFor(() =>
-      expect(groups()).toEqual(["Live", "Repos", "Dispatch", "Extensions", "Theme", "Appearance"]),
+      expect(groups()).toEqual([
+        "Live",
+        "Repos",
+        "Dispatch",
+        "Extensions",
+        "Theme",
+        "Appearance",
+        "Skills",
+      ]),
     );
     await userEvent.click(
       within(screen.getByRole("navigation", { name: "Groups" })).getByRole("button", {

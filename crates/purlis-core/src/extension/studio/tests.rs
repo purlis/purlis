@@ -28,9 +28,9 @@ fn manifest(
     doc.to_string()
 }
 
-/// `text` read as purlis reads a manifest where the `skill-studio` flag is `on`.
-fn read(text: &str, on: bool) -> Result<crate::extension::Manifest, String> {
-    crate::extension::parse_knowing(text, &Capability::known_where(on))
+/// `text` read as purlis reads a manifest.
+fn read(text: &str) -> Result<crate::extension::Manifest, String> {
+    crate::extension::parse_knowing(text, &Capability::known())
 }
 
 fn host(name: &str) -> Host {
@@ -48,34 +48,18 @@ fn a_grader_is_asked_in_protocol_four_and_refused_at_three() {
         serde_json::json!({ "version": 3 }),
         serde_json::json!({ "grader": { "title": "House grader" } }),
     );
-    let refused = read(&text, true).expect_err("a Grader at version 3");
+    let refused = read(&text).expect_err("a Grader at version 3");
     assert!(refused.contains("needs protocol 4"), "{refused}");
     let text = manifest(
         &["grader"],
         serde_json::json!({}),
         serde_json::json!({ "grader": { "title": "House grader" } }),
     );
-    let read = read(&text, true).expect("a Grader at version 4");
+    let read = read(&text).expect("a Grader at version 4");
     assert_eq!(
         read.studio.and_then(|studio| studio.grader).as_deref(),
         Some("House grader")
     );
-}
-
-#[test]
-fn the_six_words_refuse_the_whole_manifest_while_the_flag_is_off() {
-    for word in Capability::STUDIO {
-        let text = manifest(
-            &[word.as_str()],
-            serde_json::json!({}),
-            serde_json::json!({ word.as_str(): { "title": "T" } }),
-        );
-        let refused = read(&text, false).expect_err("unknown with the flag off");
-        assert!(
-            refused.contains("which this purlis does not know"),
-            "{refused}"
-        );
-    }
 }
 
 #[test]
@@ -85,30 +69,28 @@ fn a_studio_capability_needs_protocol_three() {
         serde_json::json!({ "version": 2 }),
         lint_only(),
     );
-    let refused = read(&text, true).expect_err("protocol 2 carries no studio question");
+    let refused = read(&text).expect_err("protocol 2 carries no studio question");
     assert!(refused.contains("needs protocol 3"), "{refused}");
 }
 
 #[test]
 fn an_extension_that_declares_one_is_confined_and_one_that_does_not_is_not() {
-    let confined = read(
-        &manifest(&["skill-lint"], serde_json::json!({}), lint_only()),
-        true,
-    )
+    let confined = read(&manifest(
+        &["skill-lint"],
+        serde_json::json!({}),
+        lint_only(),
+    ))
     .expect("it reads");
     assert!(confined.confined());
     assert_eq!(
         confined.studio.as_ref().and_then(|it| it.lint.as_deref()),
         Some("House style")
     );
-    let watched = read(
-        &manifest(
-            &["cli"],
-            serde_json::json!({}),
-            serde_json::json!({ "cli": [{ "name": "go", "title": "Go", "writes": false }] }),
-        ),
-        true,
-    )
+    let watched = read(&manifest(
+        &["cli"],
+        serde_json::json!({}),
+        serde_json::json!({ "cli": [{ "name": "go", "title": "Go", "writes": false }] }),
+    ))
     .expect("it reads");
     assert!(!watched.confined());
 }
@@ -168,7 +150,7 @@ fn hosts_without_a_studio_capability_are_a_claim_nothing_checks_and_are_refused(
         serde_json::json!({ "hosts": ["example.com"] }),
         serde_json::json!({ "cli": [{ "name": "go", "title": "Go", "writes": false }] }),
     );
-    let refused = read(&text, true).expect_err("refused");
+    let refused = read(&text).expect_err("refused");
     assert!(refused.contains("nothing checks"), "{refused}");
 }
 
@@ -186,14 +168,14 @@ fn a_declared_host_is_one_name_never_a_wildcard_an_address_or_a_port() {
             serde_json::json!({ "hosts": [host] }),
             lint_only(),
         );
-        assert!(read(&text, true).is_err(), "{host} was taken");
+        assert!(read(&text).is_err(), "{host} was taken");
     }
     let text = manifest(
         &["skill-lint"],
         serde_json::json!({ "hosts": ["Registry.Example.com.", "cdn.example.com"] }),
         lint_only(),
     );
-    let read = read(&text, true).expect("names");
+    let read = read(&text).expect("names");
     let hosts: Vec<String> = read
         .studio
         .expect("studio")
@@ -211,7 +193,7 @@ fn a_host_declared_twice_or_too_many_hosts_are_refused() {
         serde_json::json!({ "hosts": ["a.example.com", "A.example.com"] }),
         lint_only(),
     );
-    assert!(read(&twice, true).expect_err("twice").contains("twice"));
+    assert!(read(&twice).expect_err("twice").contains("twice"));
     let many: Vec<String> = (0..=MOST_HOSTS)
         .map(|n| format!("h{n}.example.com"))
         .collect();
@@ -220,7 +202,7 @@ fn a_host_declared_twice_or_too_many_hosts_are_refused() {
         serde_json::json!({ "hosts": many }),
         lint_only(),
     );
-    assert!(read(&many, true).is_err());
+    assert!(read(&many).is_err());
 }
 
 #[test]
@@ -242,7 +224,7 @@ fn every_host_that_serves_a_model_is_refused_with_its_name() {
             serde_json::json!({ "hosts": [host] }),
             lint_only(),
         );
-        let refused = read(&text, true).expect_err("a model host");
+        let refused = read(&text).expect_err("a model host");
         assert!(refused.contains("serves a model"), "{host}: {refused}");
     }
 }
@@ -302,7 +284,7 @@ fn a_confined_extension_writes_nothing_of_the_project() {
         serde_json::json!({}),
         serde_json::json!({ "skill-lint": { "title": "T" }, "writes": ["notes/"] }),
     );
-    let refused = read(&writes, true).expect_err("plane writes");
+    let refused = read(&writes).expect_err("plane writes");
     assert!(
         refused.contains("writes nothing of the project"),
         "{refused}"
@@ -315,7 +297,7 @@ fn a_confined_extension_writes_nothing_of_the_project() {
             "events": { "hears": ["plane-saved"], "workspace_folder": "probe" },
         }),
     );
-    let refused = read(&folder, true).expect_err("a folder in each workspace");
+    let refused = read(&folder).expect_err("a folder in each workspace");
     assert!(
         refused.contains("writes nothing of the project"),
         "{refused}"
@@ -332,7 +314,7 @@ fn templates_and_panels_are_read_against_an_allow_list() {
             "studio-panel": [{ "id": "checks", "title": "Checks" }],
         }),
     );
-    let read_ok = read(&good, true).expect("reads");
+    let read_ok = read(&good).expect("reads");
     let studio = read_ok.studio.expect("studio");
     assert_eq!(studio.templates[0].id, "house");
     assert_eq!(studio.panels[0].title, "Checks");
@@ -348,7 +330,7 @@ fn templates_and_panels_are_read_against_an_allow_list() {
             serde_json::json!({}),
             bad.clone(),
         );
-        assert!(read(&text, true).is_err(), "{bad} was taken");
+        assert!(read(&text).is_err(), "{bad} was taken");
     }
 }
 
@@ -1542,7 +1524,7 @@ fn a_router_declares_its_title_and_whether_it_reads_prompts() {
             serde_json::json!({}),
             serde_json::json!({ "skill-router": router }),
         );
-        read(&text, true).map(|manifest| manifest.studio.and_then(|studio| studio.router))
+        read(&text).map(|manifest| manifest.studio.and_then(|studio| studio.router))
     };
     assert_eq!(
         reads(serde_json::json!({ "title": "Relevance" })),
@@ -1674,7 +1656,7 @@ fn a_lint_says_whether_it_answers_many_skills_at_once() {
             serde_json::json!({}),
             serde_json::json!({ "skill-lint": lint }),
         );
-        read(&text, true).map(|manifest| {
+        read(&text).map(|manifest| {
             let studio = manifest.studio.expect("a studio extension");
             (studio.lint, studio.lint_many_at_once)
         })
@@ -1912,7 +1894,7 @@ fn the_manifest_of_each_version_reads_as_its_contract_records_it() {
 }
 
 fn manifest_read_as_recorded(contract: &serde_json::Value) {
-    let read = read(&contract["manifest"].to_string(), true).expect("read");
+    let read = read(&contract["manifest"].to_string()).expect("read");
     assert_eq!(
         read.capabilities,
         [

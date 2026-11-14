@@ -1285,9 +1285,7 @@ fn a_sandboxed_chat_rewrites_no_workspaces_manifest_and_says_who_does() {
     let manifest = root(&tmp).join("workspaces/alpha/workspace.json");
     let held = "{\"name\": \"alpha\", \"repos\": []}\n";
     std::fs::write(&manifest, held).unwrap();
-    let mut chat = sandboxed_chat(Some("alpha"));
-    // The Skill studio's grant is behind its flag (#2762).
-    chat.push((purlis_core::skills::STUDIO_ENV.to_owned(), "1".to_owned()));
+    let chat = sandboxed_chat(Some("alpha"));
     for args in [
         &["workspace", "rename", "alpha", "gamma"][..],
         &["workspace", "fork", "alpha", "delta"][..],

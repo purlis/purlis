@@ -43,7 +43,7 @@ fn the_test_capability_and_the_check_reporter_declare_no_shape_and_every_other_o
 
 #[test]
 fn a_release_build_knows_the_check_reporter_and_it_needs_protocol_6() {
-    let known = Capability::known_where(false);
+    let known = Capability::known();
     assert_eq!(
         Capability::parse_in("check-reporter", &known),
         Some(Capability::CheckReporter)
@@ -63,7 +63,7 @@ fn the_prompt_says_the_check_reporter_is_handed_a_check_s_output_and_answers_sar
 
 #[test]
 fn a_release_build_knows_badges_and_repo_columns() {
-    let known = Capability::known_where(false);
+    let known = Capability::known();
     assert_eq!(
         Capability::parse_in("badges", &known),
         Some(Capability::Badges)
@@ -75,20 +75,10 @@ fn a_release_build_knows_badges_and_repo_columns() {
 }
 
 #[test]
-fn the_studio_words_are_unknown_while_the_flag_is_off_and_known_where_it_is_on() {
-    let off = Capability::known_where(false);
-    let on = Capability::known_where(true);
+fn the_six_studio_words_are_known_on_every_machine() {
+    let known = Capability::known();
     for studio in Capability::STUDIO {
-        assert!(
-            !off.contains(&studio),
-            "{} known with the flag off",
-            studio.as_str()
-        );
-        assert!(
-            on.contains(&studio),
-            "{} unknown with the flag on",
-            studio.as_str()
-        );
+        assert!(known.contains(&studio), "{} unknown", studio.as_str());
     }
     let words: Vec<&str> = Capability::STUDIO.iter().map(|it| it.as_str()).collect();
     assert_eq!(
@@ -101,11 +91,6 @@ fn the_studio_words_are_unknown_while_the_flag_is_off_and_known_where_it_is_on()
             "studio-panel",
             "skill-router"
         ]
-    );
-    let refused = declared(&serde_json::json!(["skill-lint"]), &off).expect_err("unknown");
-    assert!(
-        refused.contains("\"skill-lint\", which this purlis does not know"),
-        "{refused}"
     );
 }
 
@@ -141,7 +126,7 @@ fn the_three_wired_words_are_version_one_and_the_others_are_still_said_to_be_exp
 
 #[test]
 fn a_release_build_knows_queries_and_it_needs_protocol_7() {
-    let known = Capability::known_where(false);
+    let known = Capability::known();
     assert_eq!(
         Capability::parse_in("queries", &known),
         Some(Capability::Queries)
@@ -162,7 +147,7 @@ fn the_prompt_says_a_page_may_ask_its_queries_and_its_program_answers_them() {
 
 #[test]
 fn a_release_build_knows_artifacts_and_it_needs_protocol_8() {
-    let known = Capability::known_where(false);
+    let known = Capability::known();
     assert_eq!(
         Capability::parse_in("artifacts", &known),
         Some(Capability::Artifacts)

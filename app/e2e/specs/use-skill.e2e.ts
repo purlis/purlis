@@ -13,8 +13,7 @@ import { startAChat } from "../started.js";
 import { wrapsClaudeCode } from "../harness.js";
 
 /**
- * **Use skill…** (SK-12, #2775), in the built app against the real core, with the `skill-studio`
- * flag on for the run (`wdio.conf.ts`).
+ * **Use skill…** (SK-12, #2775), in the built app against the real core.
  *
  * The spec puts a project skill that declares two arguments in the project's `skills/`, granted
  * to every workspace, and starts a chat as a person does, on each harness in turn: the scenario's

@@ -46,12 +46,13 @@
 //!   may go unused. The person ruled these keys and their home on 2026-10-18: the device's budget
 //!   follows this machine's memory, so it belongs to no project, and a team's committed file must
 //!   never set another person's machine. Each is absent until set, and absent is purlis's default.
-//! - **the flags turned on on this machine** ([`Store::flags`], #2764): a feature that lands in
-//!   slices stays behind one until it is whole, and is then removed with its flag. Today there
-//!   is one, `skill-studio` (spec #2762). A flag is how one person tries what is unfinished, so
-//!   it belongs to no project, and a committed file must never turn it on for a team. It is
-//!   neither the channel nor the build: both channels' binaries are the same (ADR 0092), and a
-//!   flag is off on either until it is turned on here. Each is absent until turned on.
+//! - **the flags turned on on this machine** (#2764): a feature that lands in slices stays
+//!   behind one until it is whole, and is then removed with its flag. There is none today: the
+//!   one there was, `skill-studio` (spec #2762), went at its finish line (#2786), and a `flags`
+//!   table an older build wrote is not read and is left out at the next write. A flag is how one
+//!   person tries what is unfinished, so it belongs to no project, and a committed file must
+//!   never turn it on for a team. It is neither the channel nor the build: both channels'
+//!   binaries are the same (ADR 0092). A new flag is argued for here again.
 //!
 //! **The fourth was three until ADR 0040, and the fifth and sixth are newer still; the count
 //! is load-bearing.** ADR 0040 and ADR 0066 are the amendments: ADR 0066 argues the sixth (a
@@ -368,8 +369,7 @@ pub fn config_root_in(env: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
 }
 
 /// [`config_root_in`] for a reader asked at every chat's start that only reads what is there: it
-/// never holds the fence, so a fenced test build reads a config home outside its fence as none,
-/// as [`crate::skills::studio_on_here`] does.
+/// never holds the fence, so a fenced test build reads a config home outside its fence as none.
 pub fn config_root_read_in(env: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
     rooted(
         env(HOME_VAR).map(Into::into),
@@ -1290,8 +1290,6 @@ pub struct Store {
     /// The browser limits set on this machine (#2023, ruled 2026-10-18): each absent one is
     /// purlis's default ([`crate::browserlimits`]).
     pub browsers: BrowserLimits,
-    /// The flags turned on on this machine (#2764): each off until turned on.
-    pub flags: Flags,
     /// Where each tab window was on screen (#4768, [`places`]).
     pub places: Vec<Place>,
 }
@@ -1309,14 +1307,6 @@ pub struct BrowserLimits {
     /// `browsers.engine` is `"machine"`: browsers start on this machine's own Chrome where one
     /// is installed, not the pinned engine (#2835, ADR 0042's choice). Absent, the pinned one.
     pub machine_chrome: bool,
-}
-
-/// **The flags turned on on this machine** (#2764): `flags.<name>` in the file, `true` when on.
-/// Anything else, or a name this build does not know, is off.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Flags {
-    /// `skill-studio`: the Skill studio's slices, until its finish line (spec #2762, SK-23).
-    pub skill_studio: bool,
 }
 
 /// A device's id (ADR 0066): random, minted at the first launch that finds none, and the only
@@ -1443,18 +1433,6 @@ pub fn set_machine_chrome(config_root: &Path, on: bool) -> Result<(), String> {
     update(config_root, |store| store.browsers.machine_chrome = on)
         .map(|_| ())
         .map_err(|why| format!("purlis could not keep it, so nothing was changed: {why}"))
-}
-
-/// The flags off the file's `flags` table: a flag is on only where it is `true`.
-fn flags_of(raw: Option<&serde_json::Value>) -> Flags {
-    let on = |name: &str| {
-        raw.and_then(|table| table.get(name))
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false)
-    };
-    Flags {
-        skill_studio: on(crate::skills::STUDIO_FLAG),
-    }
 }
 
 /// The device off the file: an id that is not a ULID is no id, and the next ask mints one.
@@ -2956,7 +2934,6 @@ fn load(doc: &serde_json::Value, dropped: &mut Vec<Dropped>) -> Store {
             .and_then(serde_json::Value::as_str)
             .and_then(crate::updates::IsoWeek::named),
         browsers: browsers_of(doc.get("browsers")),
-        flags: flags_of(doc.get("flags")),
         places: places::places_of(doc.get("tabWindows")),
     }
 }
@@ -3273,24 +3250,9 @@ struct OnDisk {
     /// Left out until a browser limit is set, for the same reason (#2023).
     #[serde(skip_serializing_if = "BrowsersOnDisk::is_unset")]
     browsers: BrowsersOnDisk,
-    /// Left out while no flag is on, for the same reason (#2764).
-    #[serde(skip_serializing_if = "FlagsOnDisk::is_unset")]
-    flags: FlagsOnDisk,
     /// Left out while no tab window has a place, for the same reason (#4768).
     #[serde(rename = "tabWindows", skip_serializing_if = "Vec::is_empty")]
     tab_windows: Vec<places::PlaceOnDisk>,
-}
-
-#[derive(serde::Serialize)]
-struct FlagsOnDisk {
-    #[serde(rename = "skill-studio", skip_serializing_if = "is_false")]
-    skill_studio: bool,
-}
-
-impl FlagsOnDisk {
-    fn is_unset(&self) -> bool {
-        !self.skill_studio
-    }
 }
 
 #[derive(serde::Serialize)]
@@ -3404,9 +3366,6 @@ impl From<&Store> for OnDisk {
                 on_this_device: store.browsers.on_this_device,
                 idle_minutes: store.browsers.idle_minutes,
                 engine: store.browsers.machine_chrome.then_some(MACHINE_CHROME),
-            },
-            flags: FlagsOnDisk {
-                skill_studio: store.flags.skill_studio,
             },
             tab_windows: store
                 .places
