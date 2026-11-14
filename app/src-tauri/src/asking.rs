@@ -1043,25 +1043,34 @@ pub fn tell(plane: &PlaneId, hooks: &HookAsks, telling: &Telling) {
 }
 
 /// What hears a permission hook's ask on `plane`'s channel: held in `hooks` until it is
-/// answered, its hook goes away, or its deadline passes, and the window told each change. The
-/// app hears give-ups too ([`permitting_or_given_up`]); this is the tests' way in.
+/// answered, its hook goes away, or its deadline passes, and the window told each change.
+/// `raised` is told of each ask held before the window is. The app hears give-ups too
+/// ([`permitting_told_or_given_up`]); this is the tests' way in.
 #[cfg(test)]
-pub fn permitting(plane: PlaneId, hooks: Arc<HookAsks>, telling: Telling) -> Permitting {
-    permitting_or_given_up(plane, hooks, telling, Arc::new(|_| {}))
-}
-
-/// What hears a permission hook's ask, with each ask `hooks` will not hold told to `gave_up`
-/// (R-204): its chat then waits in its terminal ([`Waiting::in_its_terminal`]).
-pub fn permitting_or_given_up(
+pub fn permitting(
     plane: PlaneId,
     hooks: Arc<HookAsks>,
     telling: Telling,
+    raised: purlis_core::hookwire::permission::Raising,
+) -> Permitting {
+    permitting_told_or_given_up(plane, hooks, telling, raised, Arc::new(|_| {}))
+}
+
+/// What hears a permission hook's ask: `raised` told of each ask held before the window is
+/// (R-229), and each ask `hooks` will not hold told to `gave_up` (R-204): its chat then waits
+/// in its terminal ([`Waiting::in_its_terminal`]).
+pub fn permitting_told_or_given_up(
+    plane: PlaneId,
+    hooks: Arc<HookAsks>,
+    telling: Telling,
+    raised: purlis_core::hookwire::permission::Raising,
     gave_up: purlis_core::hookwire::permission::GivingUp,
 ) -> Permitting {
     let told = Arc::clone(&hooks);
-    purlis_core::hookwire::permission::held_or_given_up(
+    purlis_core::hookwire::permission::held_told_or_given_up(
         hooks,
         Arc::new(move || tell(&plane, &told, &telling)),
+        raised,
         gave_up,
     )
 }
@@ -4969,25 +4978,32 @@ pub fn forget_sandbox_block(
 ) -> Result<bool, String> {
     let held = planes.held(&plane)?;
     let blocks = held.chats().blocks();
-    Ok(
-        match crate::taskblocks::shown_one(blocks, session, &shown) {
-            Ok(block) => {
-                blocks.answered(session, &block);
-                // The person's no, kept where the Inbox's look back reads it (#1700).
-                if block.what == crate::sandboxing::GrantWhat::Host {
-                    crate::network::record_kept_blocked(
-                        planes.network(),
-                        held.root(),
-                        held.chats(),
-                        session,
-                        &block.target,
-                    );
-                }
-                true
-            }
-            Err(_) => false,
-        },
-    )
+    let Ok(block) = crate::taskblocks::shown_one(blocks, session, &shown) else {
+        return Ok(false);
+    };
+    // An Allow racing this that let the block go first is the one answer (Q262 amended):
+    // this writes nothing.
+    if !blocks.answered(session, &block) {
+        return Ok(false);
+    }
+    // R-229: the person's Keep blocked, in the chat's Chat log.
+    crate::chatlog::answered_in_the_window(
+        held.hooks(),
+        session,
+        purlis_core::eventlog::stops::AskGroup::Sandbox,
+        false,
+    );
+    // The person's no, kept where the Inbox's look back reads it (#1700).
+    if block.what == crate::sandboxing::GrantWhat::Host {
+        crate::network::record_kept_blocked(
+            planes.network(),
+            held.root(),
+            held.chats(),
+            session,
+            &block.target,
+        );
+    }
+    Ok(true)
 }
 
 mod consents;

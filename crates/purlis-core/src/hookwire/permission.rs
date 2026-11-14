@@ -145,15 +145,41 @@ pub fn held_in(
     hooks: std::sync::Arc<crate::harness::hooked::HookAsks>,
     changed: std::sync::Arc<dyn Fn() + Send + Sync + 'static>,
 ) -> Permitting {
-    held_or_given_up(hooks, changed, std::sync::Arc::new(|_| {}))
+    held_told_or_given_up(
+        hooks,
+        changed,
+        std::sync::Arc::new(|_: &crate::harness::asks::Raised| {}),
+        std::sync::Arc::new(|_| {}),
+    )
 }
 
-/// [`held_in`], with each ask it will not hold told to `gave_up` (R-204): its harness's own
-/// prompt then waits in the pane, which is what the person is told. Only the hook's line says
-/// so, never what the terminal shows (ADR 0076).
+/// [`held_in`], with each ask it will not hold told to `gave_up` and nothing told of the asks
+/// it holds: the tests' way in to give-ups ([`held_told_or_given_up`]).
 pub fn held_or_given_up(
     hooks: std::sync::Arc<crate::harness::hooked::HookAsks>,
     changed: std::sync::Arc<dyn Fn() + Send + Sync + 'static>,
+    gave_up: GivingUp,
+) -> Permitting {
+    held_told_or_given_up(
+        hooks,
+        changed,
+        std::sync::Arc::new(|_: &crate::harness::asks::Raised| {}),
+        gave_up,
+    )
+}
+
+/// What [`held_told_or_given_up`] tells of each ask it holds.
+pub type Raising = std::sync::Arc<dyn Fn(&crate::harness::asks::Raised) + Send + Sync + 'static>;
+
+/// [`held_in`], telling `raised` of each ask it holds **before anything else is told of it**,
+/// so what a host writes of it as raised (R-229) comes before any answer to it can; and telling
+/// `gave_up` of each ask it will not hold (R-204): its harness's own prompt then waits in the
+/// pane, which is what the person is told. Only the hook's line says so, never what the
+/// terminal shows (ADR 0076).
+pub fn held_told_or_given_up(
+    hooks: std::sync::Arc<crate::harness::hooked::HookAsks>,
+    changed: std::sync::Arc<dyn Fn() + Send + Sync + 'static>,
+    raised: Raising,
     gave_up: GivingUp,
 ) -> Permitting {
     Box::new(move |asked: PermissionAsked| {
@@ -193,6 +219,7 @@ pub fn held_or_given_up(
             given_up(crate::harness::hooked::NotRaised::TooLate);
             return None;
         };
+        raised(&held.raised);
         changed();
         let (hooks, changed) = (
             std::sync::Arc::clone(&hooks),

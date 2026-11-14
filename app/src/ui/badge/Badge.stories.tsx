@@ -10,7 +10,15 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, waitFor } from "storybook/test";
 import { expectFocusInSight } from "../../stories.testkit";
 import { Tooltip } from "../tooltip/Tooltip";
-import { BADGE_VARIANTS, COUNT_VARIANTS, Badge, Count, CountGroup, HostStatus } from "./Badge";
+import {
+  BADGE_VARIANTS,
+  COUNT_VARIANTS,
+  Badge,
+  Count,
+  CountGroup,
+  HostStatus,
+  RoundCount,
+} from "./Badge";
 
 /** Every badge and every count, on the panel's ground and on the window's. */
 function Every() {
@@ -155,4 +163,46 @@ export const WithAHint: Story = {
     await expect(badge).not.toHaveFocus();
   },
   parameters: { screenshot: "page" },
+};
+
+/**
+ * **A round count** (#6342): what waits on the person, one character in the ✋'s colour: 0 draws
+ * none, 1 and 9 as they are, 10 and 120 as 9+. On a mark's corner, 16px ringed in the window's
+ * frame; inline after words, 14px. Each is heard as the real number.
+ */
+export const RoundCounts: Story = {
+  render: () => (
+    <div style={{ display: "grid", gap: "var(--space-4)" }}>
+      {(["mark", "inline"] as const).map((at) => (
+        <div
+          key={at}
+          style={{
+            display: "flex",
+            gap: "var(--space-4)",
+            alignItems: "center",
+            padding: "var(--space-4)",
+            background: `var(${at === "mark" ? "--surface-deep" : "--surface-base"})`,
+          }}
+        >
+          {[0, 1, 9, 10, 120].map((count) => (
+            <RoundCount key={count} count={count} at={at} said={`${count} ${at}`} />
+          ))}
+        </div>
+      ))}
+    </div>
+  ),
+  play: async ({ canvasElement, canvas }) => {
+    const rounds = [
+      ...canvasElement.querySelectorAll<HTMLElement>('[data-scope="count"][data-part="round"]'),
+    ];
+    await expect(rounds.map((one) => one.dataset.drawn)).toEqual([
+      ...["1", "9", "9+", "9+"],
+      ...["1", "9", "9+", "9+"],
+    ]);
+    await expect(rounds.map((one) => Math.round(one.getBoundingClientRect().width))).toEqual([
+      16, 16, 16, 16, 14, 14, 14, 14,
+    ]);
+    await expect(canvas.getByText("120 mark")).toBeInTheDocument();
+    await expect(canvas.queryByText("0 mark")).toBeNull();
+  },
 };
