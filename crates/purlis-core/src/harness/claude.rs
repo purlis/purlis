@@ -422,6 +422,16 @@ impl HarnessAdapter for ClaudeCode {
         crate::dispatchmode::Reported::of_claude_code(permission_mode)
     }
 
+    /// Claude Code's own `permission_mode`, by the strings T1-16 measured
+    /// ([`crate::attendance::ClaudeCodeMode::of`]): any other string is unknown. Believed from
+    /// its armed hook alone, as [`Self::reported_mode`] is.
+    fn attendance_mode(
+        &self,
+        permission_mode: Option<&str>,
+    ) -> Option<crate::attendance::ClaudeCodeMode> {
+        permission_mode.map(crate::attendance::ClaudeCodeMode::of)
+    }
+
     /// `--permission-mode auto` at the classifier's level (#3787): one of 2.1.312's choices for
     /// the flag. A flag rather than the session's `defaultMode`, which Claude Code does not let
     /// every settings source grant as `auto`. Nothing where the profile's command names a
