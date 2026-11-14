@@ -1074,6 +1074,60 @@ fn the_marker_count_is_the_verified_blocks_after_the_last_look() {
     );
 }
 
+/// **Q272 (T1-33): a block row says whether it has since been resolved**, so its row offers
+/// Tell the chat… only while it stands: a later call on the same target that came back
+/// resolves it, a failed retry or another call's success does not, and a sandbox block is also
+/// resolved by an Allow of a sandbox ask, as a turn's finish reads it (Q263).
+#[test]
+fn a_block_row_is_resolved_once_a_later_call_on_its_target_comes_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut log = Log::open(dir.path(), DEVICE).unwrap();
+    let block_of = |source: Source, args: &str| {
+        serde_json::to_value(Stop::Block(Block {
+            tool: "Bash".to_owned(),
+            source,
+            qualifier: None,
+            target: None,
+            args: Some(args.to_owned()),
+        }))
+        .unwrap()
+    };
+    let came_back = |args: &str| serde_json::json!({ "decision": "allow", "hook_ms": 1, "tool": "Bash", "args": args });
+    let mut write = |kind: &str, body: serde_json::Value| {
+        log.append(Some(ONE), Some(RUN_ONE), None, kind, body)
+            .unwrap();
+    };
+    write(stops::BLOCK, block_of(Source::Guard, "digest-of-push"));
+    write(stops::BLOCK, block_of(Source::Guard, "digest-of-ls"));
+    write(stops::BLOCK, block_of(Source::Guard, "digest-of-cat"));
+    write(stops::BLOCK, block_of(Source::Sandbox, "digest-of-curl"));
+    // Its call came back: resolved.
+    write("hook.posttooluse-blocked", came_back("digest-of-push"));
+    // A failed retry is no call that came back.
+    write("hook.posttoolusefailure-blocked", came_back("digest-of-ls"));
+    // Another call's success resolves nothing of these.
+    write("hook.posttooluse-blocked", came_back("digest-of-other"));
+    // A sandbox ask allowed resolves the sandbox block, and no guard's.
+    write(
+        stops::ASK_ANSWERED,
+        serde_json::to_value(Stop::AskAnswered(AskAnswered {
+            ask: AskGroup::Sandbox,
+            answer: Answer::Allowed,
+            by: crate::eventlog::stops::AnsweredBy::Window,
+        }))
+        .unwrap(),
+    );
+    let events = super::super::read(dir.path()).unwrap();
+    let resolved: Vec<bool> = rows(&events, ONE)
+        .into_iter()
+        .filter_map(|row| match row {
+            Row::Blocked { resolved, .. } => Some(resolved),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(resolved, vec![true, false, false, true]);
+}
+
 /// What chat `chat`'s summary says purlis can't tell: of its harness's own check's blocks, and
 /// of its mode, with the harness it names.
 fn cant_tell_of(events: &[Event], chat: &str) -> (bool, bool, Option<crate::harness::Harness>) {

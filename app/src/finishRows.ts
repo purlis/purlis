@@ -24,6 +24,7 @@
 import { useEffect, useState } from "react";
 import {
   commands,
+  type FinishedBlock,
   type FinishedTurn,
   type InboxUpdate,
   type PlaneId,
@@ -33,6 +34,7 @@ import {
 import { answerThrough } from "./asks";
 import type { ChatStates, Chats } from "./chatState";
 import type { UpdateAnswer } from "./InboxUpdatesList";
+import { waysOut } from "./blockWays";
 
 /** What a finish row adds where its turn ended with blocks still unresolved (Q164). */
 export const BLOCKED_THIS_TURN = (blocked: number) => `· ${blocked} blocked this turn`;
@@ -49,6 +51,28 @@ const BLOCKED_KEY = ":blocked";
 /** The key of `turn`'s row: the event that ended it, and whether a block stopped it. */
 const keyOf = (turn: FinishedTurn) =>
   `finish:${turn.session}:${turn.key}${!turn.failed && turn.blocked > 0 ? BLOCKED_KEY : ""}`;
+
+/**
+ * **Which chats a finish row's ways out act on** (Q272): Tell the chat… types only into the
+ * chats whose own turn holds a block that offers it, never into every chat of a grouped row,
+ * and Go to chat goes to the chat that holds the Can't-tell block. Each chat once, in the
+ * order the turns come.
+ */
+export function finishWaysTo(
+  turns: readonly FinishedTurn[],
+  keys: readonly string[],
+): { tell: number[]; go: number | undefined } {
+  const these = new Set(keys);
+  const tell: number[] = [];
+  let go: number | undefined;
+  for (const turn of turns) {
+    if (turn.failed || !these.has(keyOf(turn))) continue;
+    const ways = waysOut(turn.blocks);
+    if (ways.includes("tell") && !tell.includes(turn.session)) tell.push(turn.session);
+    if (ways.includes("go") && go === undefined) go = turn.session;
+  }
+  return { tell, go };
+}
 
 /**
  * **`turns`, with a finish for each chat of `asks` that has none counted** (R-329): its turn
@@ -68,6 +92,7 @@ function withAnEndFor(
         at: ask.since ?? Math.floor(Date.now() / 1000),
         failed: false,
         blocked: 0,
+        blocks: [],
       });
   return added.size === 0 ? turns : [...turns, ...added.values()];
 }
@@ -303,4 +328,34 @@ export function useFinishedTurns(plane: PlaneId, chats: Chats): readonly Finishe
     };
   }, [plane, store, chats.plane]);
   return held?.plane === plane ? held.turns : NONE;
+}
+
+/**
+ * **What the finish rows `keys` offer ways out of** (T1-33, R-300): the unresolved blocks of
+ * the turns they stand for, each once, a grouped row's every chat's. A failed run's row, or a
+ * turn with no block left, offers none.
+ */
+export function finishWaysOf(
+  turns: readonly FinishedTurn[],
+  keys: readonly string[],
+): FinishedBlock[] {
+  const these = new Set(keys);
+  const seen = new Set<string>();
+  const out: FinishedBlock[] = [];
+  for (const turn of turns) {
+    if (turn.failed || !these.has(keyOf(turn))) continue;
+    for (const block of turn.blocks) {
+      const said = JSON.stringify([
+        block.source,
+        block.qualifier,
+        block.target_kind,
+        block.target,
+        block.harness,
+      ]);
+      if (seen.has(said)) continue;
+      seen.add(said);
+      out.push(block);
+    }
+  }
+  return out;
 }

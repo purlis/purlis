@@ -11,7 +11,7 @@
 //! counted as new. Only the last day's finishes are answered, as an update is kept a day
 //! (`purlis_core::inboxupdates::KEPT_FOR_SECS`).
 
-use purlis_core::eventlog::finishes::{self, Finish, How};
+use purlis_core::eventlog::finishes::{self, Finish, How, Unresolved};
 
 use crate::planes::PlaneId;
 
@@ -27,6 +27,44 @@ pub struct FinishedTurn {
     pub failed: bool,
     /// Its turn's blocks still unresolved at its end, one a target: none for a failed run.
     pub blocked: u32,
+    /// Those blocks, each by who blocked it and what at (T1-33, R-300), as the Chat log words a
+    /// block's: what its finish row offers ways out of.
+    pub blocks: Vec<FinishedBlock>,
+}
+
+/// **An unresolved block of a finished turn** (T1-33, R-300): its source, qualifier and
+/// target, and the chat's harness (Q272), in the words the Chat log row reads them in, so a
+/// finish row offers the ways out its Chat log row does.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct FinishedBlock {
+    pub source: String,
+    /// `unverified` or `cant_tell`, or none for a plain report.
+    pub qualifier: Option<String>,
+    pub target_kind: Option<String>,
+    pub target: Option<String>,
+    /// The chat's harness (`claude`, `codex`, `opencode`), or `unknown`: whose own check a
+    /// `harness_check` block was.
+    pub harness: String,
+}
+
+impl From<Unresolved> for FinishedBlock {
+    fn from(
+        Unresolved {
+            source,
+            qualifier,
+            target,
+            harness,
+        }: Unresolved,
+    ) -> Self {
+        let (target_kind, target) = target.as_ref().map(crate::chatlog::target_of).unzip();
+        Self {
+            source: crate::chatlog::word_of(source),
+            qualifier: qualifier.map(crate::chatlog::word_of),
+            target_kind,
+            target,
+            harness,
+        }
+    }
 }
 
 /// The finishes of chat `session` (logged as `chat`) among `events` that ended at or after
@@ -45,6 +83,7 @@ fn finished_of(
                  at_ms,
                  how,
                  blocked,
+                 unresolved,
                  ..
              }| {
                 let at = at_ms? / 1000;
@@ -54,6 +93,7 @@ fn finished_of(
                     at: u32::try_from(at).unwrap_or(u32::MAX),
                     failed: how == How::Failed,
                     blocked,
+                    blocks: unresolved.into_iter().map(FinishedBlock::from).collect(),
                 })
             },
         )
@@ -132,5 +172,46 @@ mod tests {
         assert!(finished.iter().all(|one| one.session == 4 && one.at > 0));
         // Past what is kept: none.
         assert!(finished_of(&events, 4, CHAT, u64::from(u32::MAX)).is_empty());
+    }
+
+    /// **R-300 (T1-33): a finish row's turn names its unresolved blocks**, in the words the
+    /// window's Chat log row reads a block's source and target in, so both offer its ways out.
+    #[test]
+    fn a_finished_turn_names_its_unresolved_blocks_as_the_chat_log_words_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut log = purlis_core::eventlog::Log::open(dir.path(), DEVICE).unwrap();
+        let mut write = |kind: &str, body: serde_json::Value| {
+            log.append(Some(CHAT), Some(RUN), None, kind, body).unwrap();
+        };
+        write(
+            "run.started",
+            serde_json::json!({ "cause": "start", "harness": "codex" }),
+        );
+        write("hook.userpromptsubmit", serde_json::json!({}));
+        write(
+            purlis_core::eventlog::stops::BLOCK,
+            serde_json::json!({
+                "tool": "Bash",
+                "source": "guard",
+                "target": { "guard_arm": "A3b" },
+                "args": "digest",
+            }),
+        );
+        write("hook.stop", serde_json::json!({}));
+        let events = purlis_core::eventlog::read(dir.path()).unwrap();
+        let finished = finished_of(&events, 4, CHAT, 0);
+        assert_eq!(finished.len(), 1);
+        assert_eq!(finished[0].blocked, 1);
+        assert_eq!(
+            finished[0].blocks,
+            vec![FinishedBlock {
+                source: "guard".to_owned(),
+                qualifier: None,
+                target_kind: Some("guard_arm".to_owned()),
+                target: Some("A3b".to_owned()),
+                // Whose check it was (Q272): the chat's harness, as its start said.
+                harness: "codex".to_owned(),
+            }],
+        );
     }
 }

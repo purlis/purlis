@@ -1630,6 +1630,7 @@ export const commands = {
 	 *  nothing of Quiet or snooze is touched (R-177): it only reads.
 	 */
 	chatBlocks: (plane: PlaneId, asked: BlocksAsked[]) => typedError<ChatBlocks[], string>(__TAURI_INVOKE("chat_blocks", { plane, asked })),
+	tellChatBlocked: __WINDOW_ONLY_RESULT,
 	taskQuestion: __WINDOW_ONLY_RESULT,
 	taskQuestionAnswered: __WINDOW_ONLY_RESULT,
 	answerTaskQuestion: __WINDOW_ONLY_RESULT,
@@ -4789,7 +4790,9 @@ sub_agent: boolean } |
 /**  The chat was paused as looping: the rule's word and how many times. */
 { kind: "loop_paused"; at: string | null; rule: string; times: number } | 
 /**  A call was blocked: by whom, how much its report is worth, at what, and why it said. */
-{ kind: "blocked"; at: string | null; tool: string; source: string; qualifier: string | null; target_kind: string | null; target: string | null; harness: string; reason: string | null };
+{ kind: "blocked"; at: string | null; tool: string; source: string; qualifier: string | null; target_kind: string | null; target: string | null; harness: string; reason: string | null; 
+/**  It has since been resolved (Q272): its row offers no Tell the chat…. */
+resolved: boolean };
 
 /**
  *  What heads a chat's Chat log: its allowed calls in one count, with those its person's rules
@@ -6765,6 +6768,24 @@ export type FillShown = {
 	code: boolean,
 };
 
+/**
+ *  **An unresolved block of a finished turn** (T1-33, R-300): its source, qualifier and
+ *  target, and the chat's harness (Q272), in the words the Chat log row reads them in, so a
+ *  finish row offers the ways out its Chat log row does.
+ */
+export type FinishedBlock = {
+	source: string,
+	/**  `unverified` or `cant_tell`, or none for a plain report. */
+	qualifier: string | null,
+	target_kind: string | null,
+	target: string | null,
+	/**
+	 *  The chat's harness (`claude`, `codex`, `opencode`), or `unknown`: whose own check a
+	 *  `harness_check` block was.
+	 */
+	harness: string,
+};
+
 /**  What finishing them came to. What each step said is in the app's log. */
 export type FinishedMoving = {
 	/**  What still waits, if anything: an item the person did not allow keeps its vault here. */
@@ -6850,6 +6871,11 @@ export type FinishedTurn = {
 	failed: boolean,
 	/**  Its turn's blocks still unresolved at its end, one a target: none for a failed run. */
 	blocked: number,
+	/**
+	 *  Those blocks, each by who blocked it and what at (T1-33, R-300), as the Chat log words a
+	 *  block's: what its finish row offers ways out of.
+	 */
+	blocks: FinishedBlock[],
 };
 
 /**  One ended task's tokens, by its dispatch record's id. */

@@ -175,6 +175,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 1,
     why: ACTION,
   },
+  "BlockWaysOut.tsx": {
+    count: 1,
+    why:
+      "what Tell the chat…'s Type it in the chat typed, and into which chats (T1-33, Q272), " +
+      "said under the button just pressed and replaced by its next press: an answer to the " +
+      "press, not a standing line. Why nothing was typed is `NothingDone`'s",
+  },
   "inboxRowParts.tsx": {
     count: 1,
     why:

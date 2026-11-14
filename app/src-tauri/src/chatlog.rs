@@ -119,6 +119,8 @@ pub enum ChatLogRow {
         target: Option<String>,
         harness: String,
         reason: Option<String>,
+        /// It has since been resolved (Q272): its row offers no Tell the chat….
+        resolved: bool,
     },
 }
 
@@ -181,7 +183,7 @@ fn protection_of(in_force: InForce) -> StartProtection {
 }
 
 /// A closed word's own spelling, as the log writes it.
-fn word_of(value: impl serde::Serialize) -> String {
+pub(crate) fn word_of(value: impl serde::Serialize) -> String {
     serde_json::to_value(value)
         .ok()
         .and_then(|word| word.as_str().map(str::to_owned))
@@ -189,7 +191,7 @@ fn word_of(value: impl serde::Serialize) -> String {
 }
 
 /// A block's target, as its kind's word and its value.
-fn target_of(target: &Target) -> (String, String) {
+pub(crate) fn target_of(target: &Target) -> (String, String) {
     match target {
         Target::Host(host) => ("host".to_owned(), host.as_str().to_owned()),
         Target::Folder(folder) => ("folder".to_owned(), folder.as_str().to_owned()),
@@ -266,6 +268,7 @@ fn row_of(row: Row, reason: &dyn Fn(&str) -> Option<String>) -> ChatLogRow {
             block,
             call,
             harness,
+            resolved,
         } => {
             let harness_check = matches!(
                 &block,
@@ -306,6 +309,7 @@ fn row_of(row: Row, reason: &dyn Fn(&str) -> Option<String>) -> ChatLogRow {
                 // The reason is the chat's or its harness's words (Q259): only a harness's own
                 // check's block carries one, never a guard's or the sandbox's.
                 reason: call.as_deref().filter(|_| harness_check).and_then(reason),
+                resolved,
             }
         }
     }

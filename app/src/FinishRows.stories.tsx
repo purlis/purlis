@@ -27,6 +27,7 @@ const turn = (session: number, key: string, blocked: number, failed = false): Fi
   at: AT - session,
   failed,
   blocked,
+  blocks: [],
 });
 
 function Mine({ turns }: { turns: readonly FinishedTurn[] }) {

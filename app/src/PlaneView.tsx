@@ -251,7 +251,14 @@ import { PersonaMarks, ReloadPersonaMarks } from "./PersonaMark";
 import { usePersonaMarks } from "./usePersonaMarks";
 import { taskChangesTitle, taskChangesView } from "./taskChanges";
 import { heldFor as blockHeldFor, type HeldBlock, useSandboxBlocks } from "./sandboxBlocks";
-import { finishAsksOf, finishUpdates, groupedFinishes, useFinishedTurns } from "./finishRows";
+import {
+  finishAsksOf,
+  finishUpdates,
+  finishWaysOf,
+  groupedFinishes,
+  useFinishedTurns,
+} from "./finishRows";
+import { FinishRowWays } from "./BlockWaysOut";
 import { taskBlockGroups, whoseOf, withoutGrouped, type TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksAnswered, TaskBlocksNotice } from "./TaskBlocksNotice";
 import {
@@ -11506,8 +11513,22 @@ export const PlaneView = memo(function PlaneView({
       // A window-only ask no chat waits on, on its chat's finish row (T1-42, R-329). The row
       // has no Dismiss while the ask is on it (Q274): the ask is on no other surface, so a
       // dismissed row would take it from the window for good.
+      // **A finish row's ways out** (T1-33, R-300; Q272): its turn's unresolved blocks', as
+      // their Chat log rows offer them, each acting on the chat it is about. Drawn as an
+      // element, never by a helper called here: what Go presses reads refs (react-hooks/refs).
+      const ways =
+        update.kind === "turn-finished" && finishWaysOf(finishedTurns, keys).length > 0 ? (
+          <FinishRowWays
+            plane={plane}
+            turns={finishedTurns}
+            keys={keys}
+            who={update.chain.at(-1) ?? "this chat"}
+            nameOf={nameOf}
+            go={(session) => (showChat(session), read())}
+          />
+        ) : undefined;
       const onIt = finishAsks.get(update.key);
-      if (onIt !== undefined) return { update, go, read, ...onIt };
+      if (onIt !== undefined) return { update, go, read, ways, ...onIt };
       const refused = away.get(update.key);
       if (update.kind === "refused-away" && refused !== undefined)
         return { update, ...awayRow(refused, (one, how) => onAway?.(plane, one, how), put) };
@@ -11583,7 +11604,7 @@ export const PlaneView = memo(function PlaneView({
       }
       // A finished task opens in place to show its report, or why it failed (#5651).
       const report = task?.report.trim() ? task.report : undefined;
-      return { update, go, report, read, dismiss: put };
+      return { update, go, report, read, dismiss: put, ways };
     });
     return {
       rows,
@@ -11618,6 +11639,8 @@ export const PlaneView = memo(function PlaneView({
   }, [
     keptUpdates,
     finishAsks,
+    finishedTurns,
+    nameOf,
     settleUpdates,
     sentDrafts,
     finishedTasks,

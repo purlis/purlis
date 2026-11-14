@@ -446,6 +446,7 @@ describe("a block row's detail (R-340, T1-29)", () => {
       target: null,
       harness: "claude",
       reason: REASON,
+      resolved: false,
     };
     core((session) => [started(session), block]);
     render(<App />);
@@ -454,8 +455,9 @@ describe("a block row's detail (R-340, T1-29)", () => {
 
     // Nothing shows it until the detail is opened: not the row's line, its tags or its name.
     expect(document.body.textContent).not.toContain(KEY);
-    await userEvent.click(within(row).getByRole("button", { expanded: false }));
-    const detail = within(row).getByRole("group");
+    // Its disclosure, the first of its closed buttons, before its ways out (T1-33).
+    await userEvent.click(within(row).getAllByRole("button", { expanded: false })[0]);
+    const detail = within(row).getAllByRole("group")[0];
 
     // As written: one element holds exactly the text, never read as markup.
     const shown = within(detail).getByText((_, element) => element?.textContent === REASON, {

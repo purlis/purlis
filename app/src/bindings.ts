@@ -3573,6 +3573,11 @@ export const commands = {
 	 */
 	chatBlocks: (plane: PlaneId, asked: BlocksAsked[]) => typedError<ChatBlocks[], string>(__TAURI_INVOKE("chat_blocks", { plane, asked })),
 	/**
+	 *  **Tell the chat…, pressed twice** (T1-33, Q267): chat `session` is typed [`TELL_LINE`] where
+	 *  it waits, through T1-36's way in. Answers why where nothing was typed.
+	 */
+	tellChatBlocked: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("tell_chat_blocked", { plane, session })),
+	/**
 	 *  **The question a task is paused on, for the window to show before the person answers it**
 	 *  (#1496): chat `session`'s question to its asking chat. `null` where there is none to
 	 *  answer: the chat is no task, has reported or ended, or asks nothing now.
@@ -8029,7 +8034,9 @@ sub_agent: boolean } |
 /**  The chat was paused as looping: the rule's word and how many times. */
 { kind: "loop_paused"; at: string | null; rule: string; times: number } | 
 /**  A call was blocked: by whom, how much its report is worth, at what, and why it said. */
-{ kind: "blocked"; at: string | null; tool: string; source: string; qualifier: string | null; target_kind: string | null; target: string | null; harness: string; reason: string | null };
+{ kind: "blocked"; at: string | null; tool: string; source: string; qualifier: string | null; target_kind: string | null; target: string | null; harness: string; reason: string | null; 
+/**  It has since been resolved (Q272): its row offers no Tell the chat…. */
+resolved: boolean };
 
 /**
  *  What heads a chat's Chat log: its allowed calls in one count, with those its person's rules
@@ -10005,6 +10012,24 @@ export type FillShown = {
 	code: boolean,
 };
 
+/**
+ *  **An unresolved block of a finished turn** (T1-33, R-300): its source, qualifier and
+ *  target, and the chat's harness (Q272), in the words the Chat log row reads them in, so a
+ *  finish row offers the ways out its Chat log row does.
+ */
+export type FinishedBlock = {
+	source: string,
+	/**  `unverified` or `cant_tell`, or none for a plain report. */
+	qualifier: string | null,
+	target_kind: string | null,
+	target: string | null,
+	/**
+	 *  The chat's harness (`claude`, `codex`, `opencode`), or `unknown`: whose own check a
+	 *  `harness_check` block was.
+	 */
+	harness: string,
+};
+
 /**  What finishing them came to. What each step said is in the app's log. */
 export type FinishedMoving = {
 	/**  What still waits, if anything: an item the person did not allow keeps its vault here. */
@@ -10090,6 +10115,11 @@ export type FinishedTurn = {
 	failed: boolean,
 	/**  Its turn's blocks still unresolved at its end, one a target: none for a failed run. */
 	blocked: number,
+	/**
+	 *  Those blocks, each by who blocked it and what at (T1-33, R-300), as the Chat log words a
+	 *  block's: what its finish row offers ways out of.
+	 */
+	blocks: FinishedBlock[],
 };
 
 /**  One ended task's tokens, by its dispatch record's id. */

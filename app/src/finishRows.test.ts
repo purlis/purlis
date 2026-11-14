@@ -20,6 +20,7 @@ const turn = (session: number, key: string, blocked: number, failed = false): Fi
   at: AT,
   failed,
   blocked,
+  blocks: [],
 });
 
 const kept = (noted: ReturnType<typeof finishUpdates>): InboxUpdate[] =>

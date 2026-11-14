@@ -326,7 +326,7 @@ const ARM_SAID: Readonly<Record<string, string>> = {
 };
 
 /** The harness, by its name in the window; "Its harness" for one this version does not know. */
-function harnessSaid(harness: string): string {
+export function harnessSaid(harness: string | undefined): string {
   return HARNESSES.find((one) => one.value === harness)?.label ?? "Its harness";
 }
 

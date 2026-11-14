@@ -928,6 +928,15 @@ export function ViewPane({
             plane={plane}
             session={chatLogSession(view)}
             name={chatLogName(title)}
+            onShowChat={(session) =>
+              onPress?.({
+                id: `chat.log.chat:${session}`,
+                title: "Show its chat",
+                available: true,
+                reason: "",
+                does: { verb: "showChat", session },
+              })
+            }
           />
         ) : isSession(view) ? (
           /* A session record (SI-8d): read-only Markdown the window renders from the core's

@@ -10,6 +10,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent } from "storybook/test";
 import { expectFocusInSight } from "./stories.testkit";
 import type { ChatLogRow } from "./bindings";
+import { TOLD } from "./blockWays";
 import { ChatLogRows } from "./ChatLogTab";
 
 const START: ChatLogRow = {
@@ -271,6 +272,7 @@ const BLOCK: Extract<ChatLogRow, { kind: "blocked" }> = {
   target: "A3b",
   harness: "claude",
   reason: null,
+  resolved: false,
 };
 
 /** The tags a row carries, by their words. */
@@ -463,5 +465,76 @@ export const UnverifiedRowsCollapse: Story = {
     await expect(detail.textContent).toContain("40 unverified");
     await expect(detail.querySelectorAll("li")).toHaveLength(10);
     await expect(detail.textContent).toContain("30 earlier ones are not listed.");
+  },
+};
+
+/** **A block row's ways out** (T1-33, R-300): what a story's presses reach, none of them a core's. */
+const WAYS = { tell: () => Promise.resolve({ typed: TOLD }), go: () => undefined };
+
+/** The ways out a row offers, by their words. */
+const waysOf = (canvas: Canvas) =>
+  Array.from(
+    canvas.getByRole("group", { name: "Ways out for steward 3" }).querySelectorAll("button"),
+  ).map((one) => one.textContent?.trim());
+
+/**
+ * **A guard block's ways out** (R-184, R-189, R-191): Tell the chat… and Show this guard, and no
+ * Allow. Show this guard, from the keyboard, opens a read-only detail with the guard's group.
+ */
+export const GuardBlockWaysOut: Story = {
+  args: { rows: [START, BLOCK], ways: WAYS },
+  play: async ({ canvas }) => {
+    await expect(waysOf(canvas)).toEqual(["Tell the chat…", "Show this guard"]);
+    await expect(canvas.queryByRole("button", { name: /allow/i })).toBeNull();
+    await expect(canvas.queryByText(/Project folder/)).toBeNull();
+    const show = canvas.getByRole("button", { name: "Show this guard" });
+    show.focus();
+    await userEvent.keyboard("{Enter}");
+    await expect(show).toHaveAttribute("aria-expanded", "true");
+    await expectFocusInSight();
+    await expect(canvas.getByRole("region", { name: "This guard" }).textContent).toContain(
+      "Project folder",
+    );
+  },
+};
+
+/**
+ * **A harness-check block's ways out** (R-192 to R-194): Tell the chat… and Show this check, the
+ * sentence that only that check decides, and no Allow and no command to copy.
+ */
+export const HarnessCheckBlockWaysOut: Story = {
+  args: {
+    rows: [START, { ...BLOCK, source: "harness_check", target_kind: null, target: null }],
+    ways: WAYS,
+  },
+  play: async ({ canvas }) => {
+    await expect(waysOf(canvas)).toEqual(["Tell the chat…", "Show this check"]);
+    await expect(
+      canvas.getByText("purlis can't allow this; only Claude Code's own check decides"),
+    ).toBeVisible();
+    await expect(canvas.queryByRole("button", { name: /allow|copy/i })).toBeNull();
+    const tell = canvas.getByRole("button", { name: "Tell the chat…" });
+    tell.focus();
+    await userEvent.keyboard("{Enter}");
+    await expect(tell).toHaveAttribute("aria-expanded", "true");
+    await expectFocusInSight();
+    await expect(canvas.getByRole("button", { name: "Type it in the chat" })).toBeVisible();
+  },
+};
+
+/** **A Can't-tell block's way out** (R-199): Go to chat, and nothing else. */
+export const CantTellBlockWayOut: Story = {
+  args: {
+    rows: [
+      START,
+      { ...BLOCK, source: "sandbox", qualifier: "cant_tell", target_kind: null, target: null },
+    ],
+    ways: WAYS,
+  },
+  play: async ({ canvas }) => {
+    await expect(waysOf(canvas)).toEqual(["Go to chat"]);
+    const go = canvas.getByRole("button", { name: "Go to chat" });
+    go.focus();
+    await expectFocusInSight();
   },
 };
