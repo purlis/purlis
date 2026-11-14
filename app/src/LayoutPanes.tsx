@@ -1787,6 +1787,8 @@ export function LayoutPanes({
             <SessionPane
               plane={plane}
               session={content.session}
+              // Its asks say which chat they came from (#6355); a shell is no chat, and says none.
+              title={shells.has(content.session) ? undefined : chatName(content.session)}
               focused={layout.pane === focused}
               onFocus={() => onFocus(layout.pane)}
               menu={{
