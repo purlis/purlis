@@ -21,6 +21,7 @@ import { Radio, RadioGroup } from "../ui/choice/Radio";
 import { CodeBlock } from "../ui/code/CodeBlock";
 import { TextField } from "../ui/field/Field";
 import { Action, Busy, Options, Recommended, Say, SeeWhat, StepHead } from "./parts";
+import { WhoCanSignIn } from "./WhoCanSignIn";
 
 /**
  * **Connect, the step of a pool on another machine** (#6266, ADR 0123 §3 and §6), as the accepted
@@ -38,6 +39,10 @@ import { Action, Busy, Options, Recommended, Say, SeeWhat, StepHead } from "./pa
  * machine's own socket as this machine's Docker: a context is picked by its name, and the core
  * reads it again, once, into its route and files. A pool whose context now names another route
  * says so, with Connect again and Keep the pool as it is.
+ *
+ * **Its last question, once every check passed** (#6271, ADR 0123 §5): who can sign in to the
+ * machine ({@link WhoCanSignIn}), not sure until the person says otherwise. Before the pool is made
+ * the answer is kept beside the pin Connect trusted; for a made pool met again it marks the pool.
  */
 
 /** What the person may be doing on the page, beside what the core read. */
@@ -832,6 +837,21 @@ export function ConnectStep({
       });
   };
   const madePool = shown.pool !== null;
+  /** Who can sign in there (#6271): kept for the pool to be made, or a made pool's own mark. */
+  // Sent on Save alone, with the pin it was given for: one trusted again since refuses it.
+  const answer = (owned: boolean) => {
+    setTrouble(undefined);
+    const made = shown.pool;
+    const pin = step.machine?.pin ?? "";
+    return (
+      made === null
+        ? commands.poolSetupChooseOwned(owned, pin)
+        : commands.setRemotePoolOwned(made, owned, pin)
+    ).then((kept) => {
+      if (kept.status === "error") setTrouble(kept.error);
+      else changed();
+    });
+  };
   // A made pool's machine is never forgotten: This isn't it reads it again as it stands.
   const notIt = () => (madePool ? checkAgain() : pick(null));
   const done = step.state === "done";
@@ -1008,6 +1028,15 @@ export function ConnectStep({
             </p>
           ))}
         </Say>
+      )}
+      {done && (
+        <WhoCanSignIn
+          host={host}
+          owned={step.machine?.owned === true}
+          over={step.machine?.over === "tls" ? "tls" : "ssh"}
+          onSave={answer}
+          forgetsLoginsOf={shown.pool ?? undefined}
+        />
       )}
       {done && (
         <Action

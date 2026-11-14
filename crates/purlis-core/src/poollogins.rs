@@ -10,9 +10,12 @@
 //! - **A runner purlis can show is the person's own**: a Docker pool whose engine is a local
 //!   socket on this machine ([`owned`]), so its runner is this machine, with no mark; or a
 //!   cluster pool the person marked and whose claim is vouched for now
-//!   ([`Bound::of_a_cluster_pool`], #4071, the person's ruling of 2026-10-30). A pool on any
-//!   other engine (`tcp://`, `ssh://`) is refused in words, and so is an unmarked cluster pool.
-//!   A runner not shown to be owned never receives a value.
+//!   ([`Bound::of_a_cluster_pool`], #4071, the person's ruling of 2026-10-30); or a pool on
+//!   another machine (`remote-docker`, ADR 0123 §5, #6271) the person marked for the pin it has,
+//!   whose pin no run has found changed since. A Docker pool on any other engine of the window's
+//!   (`tcp://`, `ssh://`, a socket forwarded by anything but that kind) is refused in words, and
+//!   so is an unmarked cluster pool or pool on another machine. A runner not shown to be owned
+//!   never receives a value.
 //! - **The desktop connected**: the window is the one reading the values, so it is.
 //! - **The person's opt-in for that persona's login on that pool**, standing for the pool and its
 //!   runner as they are now. It is bound ([`Bound`]) to a digest of what defines the pool (its
@@ -21,7 +24,9 @@
 //!   engine it runs on, and the login's identity as declared and allowed. Any change asks again
 //!   ([`Standing::Changed`]). A cluster runner has no image digest bound: its opt-in is bound to
 //!   its pool's name, context, cluster, operator key, claim uid and pod, the pod's uid, its device
-//!   and link key, and the engine the Ask names ([`Bound::of_cluster`]).
+//!   and link key, and the engine the Ask names ([`Bound::of_cluster`]). A pool on another
+//!   machine's engine is the machine and engine as pinned (host key or CA, and engine id), in place
+//!   of a local socket, so an opt-in is bound to the runner that actually receives the values.
 //! - **It is kept in memory, for this run of the app**: a restart asks again. Nothing of it is
 //!   written, so no new store is made, and nothing of it reaches a runner. A lasting answer is
 //!   #3299.
@@ -292,7 +297,18 @@ impl Bound {
         reached: Option<&str>,
     ) -> Result<Bound, NotSent> {
         let unread = |why: crate::runners::Refused| NotSent::Unconfirmed(why.to_string());
-        let engine = owned(engine).map_err(NotSent::NotYours)?;
+        // A pool on another machine runs on its own engine, never this machine's (#6271): its
+        // mark and pin decide, below, and this machine's engine says nothing of it.
+        // Its records unread, nothing is known of where it runs: unconfirmed, never not yours.
+        let elsewhere = crate::runners::pools(config_root)
+            .map_err(unread)?
+            .iter()
+            .any(|one| one.name() == pool && one.on_another_machine());
+        let local = if elsewhere {
+            None
+        } else {
+            Some(owned(engine).map_err(NotSent::NotYours)?)
+        };
         // Tools and tokens as browser logins: nothing goes to a pool a chat ran on unconfined.
         if crate::runnertaint::pool_ran_unsandboxed(config_root, pool) {
             return Err(NotSent::NotYours(crate::runnertaint::sent_nothing_on(pool)));
@@ -302,11 +318,16 @@ impl Bound {
             .into_iter()
             .find(|one| one.name() == pool)
             .ok_or_else(|| NotSent::NotYours(format!("no pool named {pool} is on this machine")))?;
-        // No vault value reaches a pool on another machine without the person's mark (#6266,
-        // ADR 0123 §5; the mark is #6271): this machine's engine says nothing of that one.
-        if kept.on_another_machine() {
-            return Err(NotSent::NotYours(on_another_machine_said(pool)));
-        }
+        let engine = match (kept.remote_engine(), local) {
+            (Some(remote), _) => marked_as_pinned(&kept, remote)?,
+            (None, Some(local)) => local,
+            // It was on another machine a moment ago: judged again, it may be.
+            (None, None) => {
+                return Err(NotSent::Unconfirmed(format!(
+                    "pool {pool} changed while purlis read it, so it sent no vault value: try again"
+                )));
+            }
+        };
         let runner = match reached {
             Some(reached) => {
                 let Some((of, name)) = reached.split_once('/').filter(|(of, _)| *of == pool) else {
@@ -418,13 +439,46 @@ pub fn owned(engine: Result<std::path::PathBuf, String>) -> Result<String, Strin
     }
 }
 
-/// **What a pool on another machine is refused a vault value with** (#6266, ADR 0123 §5): its
-/// runner is not this machine, and this version has no mark to say it is the person's own
-/// (#6271). Its profiles, sign-ins and moves are a Docker pool's (§1).
-pub fn on_another_machine_said(pool: &str) -> String {
+/// **Whether pool `kept` on another machine, its engine `remote`, may be sent a value now, and the
+/// engine its opt-in is bound to** (#6271, ADR 0123 §5): only where the person marked it for the
+/// pin it has, and no run found that pin changed since (#6270). The engine is the machine as
+/// pinned, so an opt-in given before a pin change asks again.
+fn marked_as_pinned(
+    kept: &crate::runners::Pool,
+    remote: &crate::runners::RemoteEngine,
+) -> Result<String, NotSent> {
+    let pool = kept.name();
+    if !kept.owned() {
+        return Err(NotSent::NotYours(on_another_machine_said(
+            pool,
+            remote.host(),
+        )));
+    }
+    if crate::poolsetup::pinchange::found_now()
+        .iter()
+        .any(|change| change.pool == pool)
+    {
+        return Err(NotSent::NotYours(pin_changed_said(pool)));
+    }
+    Ok(remote.pinned_said())
+}
+
+/// **What an unmarked pool on another machine is refused a vault value with** (#6266, #6271, ADR
+/// 0123 §5): its runner is not this machine, and only the person's mark says it is their own. Its
+/// profiles, sign-ins and moves are a Docker pool's (§1).
+pub fn on_another_machine_said(pool: &str, host: &str) -> String {
     format!(
-        "pool {pool} is on another machine, which purlis can't show is yours alone, so purlis \
-         sends its runner no vault value, for a browser login or a tool"
+        "pool {pool} is on another machine, {host}, and you haven't said that only you sign in \
+         there, so purlis sends its runner no vault value, for a browser login or a tool. Only you \
+         can say so: in Settings › Pools, answer Who can sign in to {host}? on its row"
+    )
+}
+
+/// What a marked pool on another machine whose pin no longer holds is refused with (#6270).
+fn pin_changed_said(pool: &str) -> String {
+    format!(
+        "pool {pool}'s machine no longer matches the one you trusted, so purlis sends its runner \
+         no vault value. Check and trust it again from the notice in the window"
     )
 }
 

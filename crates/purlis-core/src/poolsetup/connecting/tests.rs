@@ -433,6 +433,7 @@ fn the_machine_connect_reads_is_kept_and_a_pin_only_once_trusted() {
             tls: None,
             trusted_tls: None,
             docker_context: None,
+            owned: false,
         })
     );
     let remote = crate::runners::Remote {
@@ -1169,4 +1170,90 @@ fn a_machine_over_tls_met_again_shows_the_ca_it_holds_now_beside_the_one_trusted
         "{:?}",
         step.findings
     );
+}
+
+/// **Connect's last answer, who can sign in to the machine, is kept only beside a trusted pin**
+/// (#6271, ADR 0123 §5): not marked until the person says so, and trusting the machine again
+/// forgets it, since it was the answer for the pin as it was.
+#[test]
+fn who_can_sign_in_is_kept_only_beside_a_trusted_pin_and_trusting_again_forgets_it() {
+    let config = tempfile::tempdir().unwrap();
+    choose_machine(config.path(), Some("ssh://me@build-box"), None).unwrap();
+    assert!(
+        choose_owned(config.path(), true, &serde_json::json!({})).is_err(),
+        "nothing is trusted yet"
+    );
+    let remote = crate::runners::Remote {
+        route: Route::parse("ssh://me@build-box/var/run/docker.sock").unwrap(),
+        pin: Pin {
+            host_key: key(KEY),
+            engine: crate::sshroute::EnginePin::Docker("ABCD".to_owned()),
+        },
+    };
+    trusted(config.path(), &remote).unwrap();
+    assert!(!read_choices(config.path()).unwrap().connect.unwrap().owned);
+    choose_owned(config.path(), true, &remote.pin.to_json()).unwrap();
+    assert!(read_choices(config.path()).unwrap().connect.unwrap().owned);
+    let file = || -> serde_json::Value {
+        serde_json::from_str(
+            &std::fs::read_to_string(
+                crate::machine::dir(config.path()).join(super::super::CHOICES_FILE),
+            )
+            .unwrap(),
+        )
+        .unwrap()
+    };
+    assert_eq!(file()["connect"]["owned"], serde_json::json!(true));
+    choose_owned(config.path(), false, &remote.pin.to_json()).unwrap();
+    assert!(file()["connect"].get("owned").is_none());
+    choose_owned(config.path(), true, &remote.pin.to_json()).unwrap();
+    trusted(config.path(), &remote).unwrap();
+    assert!(!read_choices(config.path()).unwrap().connect.unwrap().owned);
+}
+
+/// **Connect's answer is kept only for the pin the person was shown** (#6271): one given for
+/// another pin than the one trusted is refused, and nothing is kept.
+#[test]
+fn who_can_sign_in_is_refused_for_another_pin_than_the_one_trusted() {
+    let config = tempfile::tempdir().unwrap();
+    choose_machine(config.path(), Some("ssh://me@build-box"), None).unwrap();
+    let remote = crate::runners::Remote {
+        route: Route::parse("ssh://me@build-box/var/run/docker.sock").unwrap(),
+        pin: Pin {
+            host_key: key(KEY),
+            engine: crate::sshroute::EnginePin::Docker("ABCD".to_owned()),
+        },
+    };
+    trusted(config.path(), &remote).unwrap();
+    let mut other = remote.clone();
+    other.pin.engine = crate::sshroute::EnginePin::Docker("EFGH".to_owned());
+    let refused = choose_owned(config.path(), true, &other.pin.to_json()).expect_err("another pin");
+    assert!(refused.to_string().contains("trusted again"), "{refused}");
+    assert!(!read_choices(config.path()).unwrap().connect.unwrap().owned);
+}
+
+/// **Connect shows whether the person said only they sign in there**, for the question to hold.
+#[test]
+fn a_trusted_machine_shows_who_the_person_said_can_sign_in_to_it() {
+    let trusted = |owned: bool| {
+        connect_of(&remote_facts(Connecting {
+            trusted: Some(Pin {
+                host_key: key(KEY),
+                engine: crate::sshroute::EnginePin::Docker("ABCD".to_owned()),
+            }),
+            owned,
+            ..routed("ssh://me@build-box/var/run/docker.sock")
+        }))
+    };
+    assert!(trusted(true).machine.unwrap().owned);
+    assert!(!trusted(false).machine.unwrap().owned);
+    let tls = connect_of(&remote_facts(Connecting {
+        trusted_tls: Some(crate::tlsroute::Pin {
+            ca: ca(),
+            engine: "ABCD".to_owned(),
+        }),
+        owned: true,
+        ..over_tls()
+    }));
+    assert!(tls.machine.unwrap().owned);
 }

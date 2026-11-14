@@ -408,6 +408,38 @@ export const Trusted: Story = {
   },
 };
 
+const DONE_ONLY_YOU = connect({
+  state: "done",
+  line: `build-box, key ${FINGERPRINT}`,
+  machine: machine({
+    route: "ssh://sam@build-box/var/run/docker.sock",
+    trusted: { algorithm: "ssh-ed25519", fingerprint: FINGERPRINT },
+    engine: "ABCD:EFGH",
+    owned: true,
+  }),
+});
+
+/** Every check passed, and the person said only they sign in there (#6271): the question
+ *  answered, walked by the keyboard back to not sure. */
+export const TrustedOnlyYouSignIn: Story = {
+  beforeEach: faked([]),
+  args: { step: DONE_ONLY_YOU, shown: shown(DONE_ONLY_YOU) },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      canvas.getByRole("radiogroup", { name: "Who can sign in to build-box?" }),
+    ).toBeVisible();
+    const mine = canvas.getByRole("radio", { name: "Only me, and people I trust with my logins" });
+    await expect(mine).toBeChecked();
+    mine.focus();
+    await userEvent.keyboard("{ArrowUp}");
+    await expect(
+      canvas.getByRole("radio", { name: /Others might, or I.m not sure/ }),
+    ).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
 const CHANGED = connect({
   state: "attention",
   cause: "pool-pin-changed",
