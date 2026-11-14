@@ -51,7 +51,6 @@ const GROUP_OF = {
   "runner-write": "consent",
   "runner-dispatch": "consent",
   "sign-in": "consent",
-  "old-harness-plugins": "consent",
   signing: "consent",
   browser: "consent",
   "browser-site": "consent",
