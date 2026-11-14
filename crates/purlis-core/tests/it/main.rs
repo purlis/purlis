@@ -181,6 +181,7 @@ mod claude_codes_own_sandbox_holds_the_settings_purlis_writes;
 mod clones_outside_repos_are_listed_and_moved_on_request;
 mod code_crosses_to_a_docker_pools_runner_and_back;
 mod content_is_searched_across_branches;
+mod dispatch_reads_the_attendance_fact;
 mod every_deferral_names_its_ticket;
 mod every_first_party_source_file_carries_its_licence_header;
 mod every_git_call_goes_through_the_runner;
