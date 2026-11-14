@@ -9052,7 +9052,7 @@ fn a_chat_neither_reads_nor_writes_a_tls_pools_ca_cert_or_key_file() {
     );
     let machine = Machine {
         env: crate::secrets::Env::of(&[("XDG_CONFIG_HOME", &config.path().display().to_string())]),
-        home: Some(std::path::PathBuf::from("/home/op")),
+        home: Some(std::path::PathBuf::from("/nonexistent-home")),
         os: Os::Linux,
     };
     let plane = tempfile::tempdir().expect("a plane");
