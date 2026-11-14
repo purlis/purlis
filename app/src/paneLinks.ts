@@ -568,6 +568,8 @@ function withBeside(pane: Terminal, text: string, start: Cell, end: Cell): strin
 function besideOf(pane: Terminal, start: Cell, end: Cell): { before: string; after: string } {
   const buffer = pane.buffer.active;
   const blank = (chars: string): boolean => chars === "" || /\s/u.test(chars);
+  // A line or paragraph separator, or NEL, takes a cell but draws nothing: it joins.
+  const drawsNothing = (chars: string): boolean => /^[\u0085\u2028\u2029]+$/u.test(chars);
   let before = "";
   for (let { y, x } = { y: start.y, x: start.x - 1 }; before.length < MOST_TARGET;) {
     if (x < 0) {
@@ -579,8 +581,8 @@ function besideOf(pane: Terminal, start: Cell, end: Cell): { before: string; aft
     const cell = buffer.getLine(y)?.getCell(x);
     if (cell === undefined) break;
     x -= 1;
-    if (cell.getWidth() === 0) continue;
     const chars = cell.getChars();
+    if (cell.getWidth() === 0 || drawsNothing(chars)) continue;
     if (blank(chars)) break;
     before = chars + before;
   }
@@ -595,8 +597,8 @@ function besideOf(pane: Terminal, start: Cell, end: Cell): { before: string; aft
     const cell = buffer.getLine(y)?.getCell(x);
     if (cell === undefined) break;
     x += 1;
-    if (cell.getWidth() === 0) continue;
     const chars = cell.getChars();
+    if (cell.getWidth() === 0 || drawsNothing(chars)) continue;
     if (blank(chars)) break;
     after += chars;
   }

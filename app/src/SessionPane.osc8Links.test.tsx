@@ -323,6 +323,34 @@ describe("a link a program marked (OSC 8)", () => {
     );
   });
 
+  it.each(["\u2028", "\u2029"])(
+    "joins text printed against its words across a cell that draws nothing (%#)",
+    async (separator) => {
+      const { term, drawn } = await opened();
+      await write(term, `evil${separator}${osc8(TARGET, ".com")} y`);
+
+      hover(drawn, 6, 0);
+      await waitFor(() =>
+        expect(asked("pane_link_resolve").map((one) => one.args.candidates)).toContainEqual([
+          { kind: "osc8", text: ".com evil.com", target: TARGET },
+        ]),
+      );
+    },
+  );
+
+  it("reads a NEL before its words as the next line, joining nothing across it", async () => {
+    const { term, drawn } = await opened();
+    await write(term, `evil\u0085${osc8(TARGET, ".com")} y`);
+
+    expect(term.buffer.active.getLine(1)?.translateToString(true)).toBe(".com y");
+    hover(drawn, 1, 1);
+    await waitFor(() =>
+      expect(asked("pane_link_resolve").map((one) => one.args.candidates)).toContainEqual([
+        { kind: "osc8", text: ".com", target: TARGET },
+      ]),
+    );
+  });
+
   it("is listed in Links in this pane, with its text under its target", async () => {
     Object.defineProperty(navigator, "platform", { configurable: true, get: () => "MacIntel" });
     const { term } = await opened();
