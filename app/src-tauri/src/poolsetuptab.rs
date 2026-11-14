@@ -1241,14 +1241,22 @@ pub async fn pool_setup_command(adding: PoolAdding) -> Result<String, String> {
 /// runs, a team's image held to the contract first.
 #[tauri::command]
 #[specta::specta]
-pub async fn pool_setup_create(adding: PoolAdding) -> Result<PoolSetupCreated, String> {
+pub async fn pool_setup_create(
+    app: tauri::AppHandle,
+    adding: PoolAdding,
+) -> Result<PoolSetupCreated, String> {
     #[cfg(unix)]
     {
-        crate::off_the_window("adding a pool", move || {
+        let asked = adding.asked();
+        let over_tls = asked
+            .on
+            .as_deref()
+            .is_some_and(purlis_core::tlsroute::is_tcp);
+        let created = crate::off_the_window("adding a pool", move || {
             use purlis_core::poolsetup::asked::{self, Created};
             let machine = crate::runnerlinks::Machine::here(&config_root()?)?;
             let desktop = machine.desktop_made()?.pinned();
-            let made = asked::create(&machine.config, &machine.docker, &adding.asked(), &desktop)
+            let made = asked::create(&machine.config, &machine.docker, &asked, &desktop)
                 .map_err(|why| crate::dockerpools::refused_said(&why.to_string()))?;
             Ok(PoolSetupCreated {
                 breaks: match made {
@@ -1257,14 +1265,25 @@ pub async fn pool_setup_create(adding: PoolAdding) -> Result<PoolSetupCreated, S
                 },
             })
         })
-        .await
+        .await;
+        // Every window asks again which chats run on an older sandbox: one started before a pool
+        // over Docker's TLS API was added reads its certificate and key until it restarts (#6472).
+        if over_tls && created.as_ref().is_ok_and(|made| made.breaks.is_empty()) {
+            let _ = tauri::Emitter::emit(&app, TLS_POOL_ADDED, ());
+        }
+        created
     }
     #[cfg(not(unix))]
     {
-        let _ = adding;
+        let _ = (app, adding);
         Err(crate::dockerpools::NOT_HERE.to_owned())
     }
 }
+
+/// The event an added pool over Docker's TLS API raises, on which each window asks again which
+/// chats run on an older sandbox (#6472), as an added cluster pool's does
+/// ([`crate::clusterpools::CLUSTER_POOL_ADDED`]).
+pub const TLS_POOL_ADDED: &str = "tls-pool-added";
 
 /// One of this machine's profiles against a pool's limit (#4482).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
