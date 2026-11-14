@@ -4507,6 +4507,9 @@ pub fn run() {
             // What sends a system notification for an ask (#1694): managed before any plane is
             // opened, since the first chat to move may bring one.
             app.manage(asknotify::Notifier::start(app.handle()));
+            // Pool setup's wait for an admin (#4496): checked again now and then, raising its one
+            // ask once the cluster is ready.
+            poolsetuptab::recheck_now_and_then(app.handle());
             // What a project's chats tell its window, sent as one event about every 100 ms
             // rather than one each (#4746): managed before any plane is opened, as the
             // notifier is, since the first chat to move tells the window.

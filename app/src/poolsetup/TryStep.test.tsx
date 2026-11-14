@@ -32,6 +32,7 @@ const READY: PoolSetupStep = {
   skippable: false,
   also: null,
   parts: [],
+  admin: null,
   undo: null,
   see: null,
   other: null,

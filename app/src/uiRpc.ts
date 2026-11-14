@@ -1960,6 +1960,10 @@ export const commands = {
 	poolSetupInstall: __WINDOW_ONLY_RESULT,
 	poolSetupOperatorImage: __WINDOW_ONLY_RESULT,
 	poolSetupClusterPool: __WINDOW_ONLY_RESULT,
+	poolSetupPinAgain: __WINDOW_ONLY_RESULT,
+	poolSetupAskAdmin: __WINDOW_ONLY_RESULT,
+	poolSetupGetHelp: __WINDOW_ONLY_RESULT,
+	poolSetupStopWaiting: __WINDOW_ONLY_RESULT,
 	poolSetupName: __WINDOW_ONLY_RESULT,
 	poolSetupPool: __WINDOW_ONLY_RESULT,
 	poolSetupAdd: __WINDOW_ONLY_RESULT,
@@ -3101,6 +3105,11 @@ export type AnswerPath =
  */
 { via: "signing" } | 
 /**
+ *  Open Pool setup sends `pool_setup_stop_waiting` and opens the project's Pool setup tab;
+ *  Dismiss sends `pool_setup_stop_waiting` alone (#4496).
+ */
+{ via: "pool-setup" } | 
+/**
  *  `allow_chat_browser`, with the open web for `open-web`, and `keep_chat_browser_off` for
  *  Keep off, with the person's reason (#2013).
  */
@@ -3662,7 +3671,12 @@ export type AskSource =
  *  **A chat paused as looping** (#6015, ADR 0121 decision 20): the same command failing
  *  again and again, or its asks refused again and again. It's fine, continue, or Stop.
  */
-"looping";
+"looping" | 
+/**
+ *  **Pool setup's cluster is ready** (#4496): the admin the person asked has given what
+ *  the install couldn't, and Pool setup goes on. Said once, about no chat.
+ */
+"pool-setup";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -5089,8 +5103,11 @@ export type ClusterPoolAdding = {
 	context: string,
 	/**  The cluster's Pool. */
 	pool: string,
-	/**  The cluster operator key Check its key showed, spelled as it showed it. */
-	key: string,
+	/**
+	 *  The cluster operator key the person pasted, as their cluster's admin gave it (#4495).
+	 *  None only where this machine made the signing key in this Pool setup.
+	 */
+	pasted: string | null,
 	/**
 	 *  The longest wait for its runner to be vouched for, in minutes, where the person raised it
 	 *  after an add that ran out (spec #4275): saved to the pool. None is purlis's default.
@@ -5100,8 +5117,15 @@ export type ClusterPoolAdding = {
 
 /**  What Check its key read of a cluster's Pool. */
 export type ClusterPoolKey = {
-	/**  The cluster operator key the Pool's status names, spelled as it gives it. */
-	key: string,
+	/**
+	 *  The cluster operator key the Pool's status names, spelled as it gives it: only once it is
+	 *  confirmed (#4495), by the key pasted from the admin, or as the one this setup made.
+	 */
+	key: string | null,
+	/**  Whether this machine made that key in this Pool setup, so no paste is asked for (#4495). */
+	made_here: boolean,
+	/**  Whether the key pasted is the Pool's, where one was pasted (#4495). */
+	matches: boolean | null,
 	/**  The namespace the context names, where the pool's claim would be made. */
 	namespace: string,
 };
@@ -10716,6 +10740,18 @@ export type PoolSetupContexts = {
 	chosen: string | null,
 	/**  The chosen cluster's Pools, by name, where its operator runs (#4494). */
 	pools: string[],
+	/**
+	 *  Whether the person joins their team's install (#4495): the key is then confirmed by
+	 *  pasting the one their admin gave them.
+	 */
+	joining: boolean,
+	/**  The cluster operator key a kept cluster pool pinned here (#4495). */
+	pinned: string | null,
+	/**
+	 *  Whether its Pool names a key now that the pin never vouched for (#4495). The key itself
+	 *  isn't sent: it is shown only once the key pasted from the admin matched it.
+	 */
+	key_changed: boolean,
 };
 
 /**
@@ -10869,6 +10905,11 @@ export type PoolSetupStep = {
 	also: PoolSetupAction | null,
 	/**  Install's parts, each with its own button (#4493). */
 	parts: PoolSetupPart[],
+	/**
+	 *  The words for the person's cluster's admin (#4496), where doctor shows they can't
+	 *  install. Held free of secrets by the core.
+	 */
+	admin: string | null,
 	/**  How the step is undone by hand, never by a button: uninstalling from a cluster. */
 	undo: PoolSetupSee | null,
 };

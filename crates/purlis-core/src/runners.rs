@@ -2324,6 +2324,10 @@ pub struct ClusterPool {
     chosen: Box<crate::poollimits::Chosen>,
     /// Values in its row its limits can't be, kept as they were typed (#4381).
     refused_limits: Vec<crate::poollimits::RefusedValue>,
+    /// **How the person confirmed the key it pins** (`keyConfirmed`, #4495): pasted from their
+    /// admin, or made by this machine in the same setup. `None` for a pool pinned before purlis
+    /// kept it. A roll the pinned key vouched for keeps it.
+    confirmed: Option<clusterpool::Confirmed>,
 }
 
 impl ClusterPool {
@@ -2421,7 +2425,21 @@ impl ClusterPool {
             profiles: None,
             chosen: Box::default(),
             refused_limits: Vec::new(),
+            confirmed: None,
         })
+    }
+
+    /// This pool, its key confirmed as `confirmed` says (#4495).
+    #[must_use]
+    pub fn confirmed_by(mut self, confirmed: clusterpool::Confirmed) -> ClusterPool {
+        self.confirmed = Some(confirmed);
+        self
+    }
+
+    /// How the person confirmed the key it pins (#4495), where purlis kept it.
+    #[must_use]
+    pub fn confirmed(&self) -> Option<clusterpool::Confirmed> {
+        self.confirmed
     }
 
     /// This pool, under what its team set for its limits as it was added (#4287).
@@ -3014,6 +3032,23 @@ pub fn keep_cluster_pin(config_root: &Path, name: &str, pin: &PoolPin) -> Result
     write(config_root, &held)
 }
 
+/// **Pins the cluster pool `name`'s key again on the person's word** (#4495): `pin`, confirmed
+/// as `confirmed` says, kept with it.
+pub fn keep_cluster_pin_confirmed(
+    config_root: &Path,
+    name: &str,
+    pin: &PoolPin,
+    confirmed: clusterpool::Confirmed,
+) -> Result<(), Refused> {
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    let Some(at) = held.clusters.iter().position(|pool| pool.name() == name) else {
+        return Ok(());
+    };
+    held.clusters[at] = held.clusters[at].repinned(pin).confirmed_by(confirmed);
+    write(config_root, &held)
+}
+
 /// **Keeps what the team set for the cluster pool `name`'s limits** (#4287), as its Pool says now:
 /// the person's own values stay, and hold to it from the next attempt.
 pub fn keep_cluster_team_limits(
@@ -3078,7 +3113,8 @@ pub fn put_away_mint_notice(config_root: &Path, name: &str) -> Result<(), Refuse
 
 /// A cluster pool's row (#3292): `{"name", "kind": "cluster", "kubeconfig", "context", "pool",
 /// "namespace", "operatorKey", "cluster", "holds", "owned", "mintInCluster", "mintNoticeDue",
-/// "profiles"}`, `cluster` left out only of a pool kept before its cluster was pinned (#3305), `owned`,
+/// "profiles", "keyConfirmed"}`, `keyConfirmed` `pasted` or `made-here` and left out of a pool
+/// pinned before purlis kept it (#4495), `cluster` left out only of a pool kept before its cluster was pinned (#3305), `owned`,
 /// `mintInCluster` and `mintNoticeDue` `true` alone, left out otherwise (#4071, #4204, #4442), and `profiles` as a Docker
 /// pool's, left out where none were chosen (#3819).
 fn cluster_pool_to_row(pool: &ClusterPool) -> serde_json::Value {
@@ -3111,6 +3147,9 @@ fn cluster_pool_to_row(pool: &ClusterPool) -> serde_json::Value {
     if let Some(profiles) = pool.profiles() {
         row["profiles"] = profiles.into();
     }
+    if let Some(confirmed) = pool.confirmed {
+        row["keyConfirmed"] = confirmed.word().into();
+    }
     pool.chosen.to_row(&mut row);
     pool.chosen.team_to_row(&mut row);
     for refused in &pool.refused_limits {
@@ -3137,6 +3176,7 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
         "mintInCluster",
         "mintNoticeDue",
         "profiles",
+        "keyConfirmed",
     ];
     if fields
         .keys()
@@ -3173,6 +3213,11 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
         Some(serde_json::Value::Bool(true)) => true,
         Some(_) => return None,
     };
+    // One of its words alone: any other refuses the row.
+    let confirmed = match fields.get("keyConfirmed") {
+        None => None,
+        Some(word) => Some(clusterpool::Confirmed::of_word(word.as_str()?)?),
+    };
     let holds = fields
         .get("holds")?
         .as_array()?
@@ -3205,6 +3250,7 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
         profiles,
         chosen: Box::new(chosen),
         refused_limits,
+        confirmed,
         ..pool
     })
     .ok()

@@ -1600,6 +1600,7 @@ mod cluster {
             config,
             &cluster.kubectl(),
             &team(cluster),
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -1829,6 +1830,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             &team(&cluster),
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -1841,7 +1843,14 @@ mod cluster {
                 // Kept pointing at its own copy of the context.
                 let copy = runners::kubeconfig_kept_at(config.path(), "team");
                 let held = held_kubectl(&cluster);
-                assert_eq!(pool, team(&cluster).kept_at(&copy).holding(held).unwrap());
+                assert_eq!(
+                    pool,
+                    team(&cluster)
+                        .kept_at(&copy)
+                        .holding(held)
+                        .unwrap()
+                        .confirmed_by(crate::clusterpool::Confirmed::Pasted)
+                );
                 assert_eq!(runner, kept);
             }
             other => panic!("{other:?}"),
@@ -1863,6 +1872,7 @@ mod cluster {
                     .iter()
                     .map(|it| it.display().to_string())
                     .collect::<Vec<_>>(),
+                "keyConfirmed": "pasted",
             })
         );
         assert_eq!(file["runners"][0]["pool"], "cluster");
@@ -1904,6 +1914,7 @@ mod cluster {
                 config.path(),
                 &cluster.kubectl(),
                 &team(&cluster).minting_in_cluster(recorded.is_none()),
+                Some(&cluster.pin().key.spelled()),
                 &desktop(),
                 Duration::ZERO,
             )
@@ -1932,6 +1943,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             &team(&cluster),
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -1959,6 +1971,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             &team(&cluster),
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -2004,6 +2017,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             &team(&cluster),
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -2055,6 +2069,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             &checked,
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -2062,6 +2077,164 @@ mod cluster {
         assert!(why.to_string().contains("check the key again"), "{why}");
         assert!(runners::cluster_pools(config.path()).unwrap().is_empty());
         assert!(!cluster.calls().contains(" create "), "{}", cluster.calls());
+    }
+
+    /// **Every add is held to the key the person confirmed**, whoever calls it: with nothing pasted
+    /// and no key made here, or a paste that isn't the Pool's key, nothing is kept or claimed, and a
+    /// pool that says it was confirmed some other way is held to the same. The right paste is
+    /// kept as how the pin was confirmed.
+    #[test]
+    fn an_add_pins_only_a_key_the_person_confirmed_whatever_the_caller_says() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let other = crate::clusterpool::tests::Operator::new().key().spelled();
+        let claimed = team(&cluster).confirmed_by(crate::clusterpool::Confirmed::MadeHere);
+        for pasted in [None, Some(""), Some(other.as_str())] {
+            let why = add_cluster(
+                config.path(),
+                &cluster.kubectl(),
+                &claimed,
+                pasted,
+                &desktop(),
+                Duration::ZERO,
+            )
+            .unwrap_err();
+            assert!(why.to_string().contains("nothing was pinned"), "{why}");
+            assert!(runners::cluster_pools(config.path()).unwrap().is_empty());
+            assert!(!cluster.calls().contains(" create "), "{}", cluster.calls());
+        }
+        let claim = claim_name(OURS, "team");
+        cluster.vouch("ada", &claim, &claim, cluster.runner.key);
+        let right = cluster.pin().key.spelled().to_uppercase();
+        add_cluster(
+            config.path(),
+            &cluster.kubectl(),
+            &team(&cluster),
+            Some(&right),
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+        let kept = runners::cluster_pools(config.path()).unwrap();
+        assert_eq!(
+            kept[0].confirmed(),
+            Some(crate::clusterpool::Confirmed::Pasted)
+        );
+    }
+
+    /// **A changed key asks again** (#4495): a Pool that names another key than the one pinned
+    /// here, and that the pinned key didn't vouch for, reads as changed, with the key it names
+    /// now; one the pinned key rolled to holds; one in another cluster says so.
+    #[test]
+    fn a_pool_naming_a_key_the_pinned_one_never_vouched_for_reads_as_changed() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let kubectl = cluster.kubectl();
+        assert_eq!(
+            pin_now(config.path(), &kubectl, "team", runners::now()),
+            PinNow::Holds
+        );
+        let next = crate::clusterpool::tests::Operator::new();
+        cluster.rolls_to(&next, runners::now() + 3600);
+        assert_eq!(
+            pin_now(config.path(), &kubectl, "team", runners::now()),
+            PinNow::Holds
+        );
+        let other = crate::clusterpool::tests::Operator::new().key();
+        cluster.names_key(&other);
+        assert_eq!(
+            pin_now(config.path(), &kubectl, "team", runners::now()),
+            PinNow::Changed {
+                named: other.spelled()
+            }
+        );
+        cluster.write(
+            "pool.json",
+            &serde_json::json!({"status": {
+                "signingKey": cluster.operator.key().spelled(),
+                "cluster": "0f0f0f0f-0f0f-4f0f-8f0f-0f0f0f0f0f0f",
+            }})
+            .to_string(),
+        );
+        assert_eq!(
+            pin_now(config.path(), &kubectl, "team", runners::now()),
+            PinNow::OtherCluster
+        );
+        // Reading changes nothing kept.
+        assert_eq!(
+            runners::cluster_pools(config.path()).unwrap()[0]
+                .pin()
+                .unwrap(),
+            cluster.pin()
+        );
+    }
+
+    /// **Pinning again takes only the key the person confirmed** (#4495): the key the Pool names
+    /// now, and only where it is the one they pasted. Another key, or another cluster, leaves the
+    /// pin as it was; the key pinned again is what the next link checks.
+    #[test]
+    fn a_changed_key_is_pinned_again_only_as_the_person_confirmed_it_and_in_the_same_cluster() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let kubectl = cluster.kubectl();
+        let pinned = || {
+            runners::cluster_pools(config.path()).unwrap()[0]
+                .pin()
+                .unwrap()
+        };
+        let new = crate::clusterpool::tests::Operator::new();
+        cluster.names_key(&new.key());
+
+        let wrong = crate::clusterpool::tests::Operator::new().key().spelled();
+        let why = pin_again(config.path(), &kubectl, "team", &wrong).unwrap_err();
+        assert!(why.to_string().contains("isn't the one"), "{why}");
+        assert_eq!(pinned(), cluster.pin(), "a refusal leaves the pin");
+
+        cluster.write(
+            "pool.json",
+            &serde_json::json!({"status": {
+                "signingKey": new.key().spelled(),
+                "cluster": "0f0f0f0f-0f0f-4f0f-8f0f-0f0f0f0f0f0f",
+            }})
+            .to_string(),
+        );
+        let why = pin_again(config.path(), &kubectl, "team", &new.key().spelled()).unwrap_err();
+        assert!(why.to_string().contains("another cluster"), "{why}");
+        assert_eq!(pinned(), cluster.pin(), "another cluster leaves the pin");
+
+        cluster.names_key(&new.key());
+        let pasted = new
+            .key()
+            .spelled()
+            .trim_start_matches("ed25519:")
+            .to_uppercase();
+        pin_again(config.path(), &kubectl, "team", &pasted).unwrap();
+        assert_eq!(pinned().key, new.key());
+        // How it was confirmed is kept with the pin.
+        assert_eq!(
+            runners::cluster_pools(config.path()).unwrap()[0].confirmed(),
+            Some(crate::clusterpool::Confirmed::Pasted)
+        );
+        assert_eq!(
+            pin_now(config.path(), &kubectl, "team", runners::now()),
+            PinNow::Holds
+        );
+    }
+
+    /// Nothing is pinned again for a pool this machine doesn't keep.
+    #[test]
+    fn a_pool_is_not_pinned_again_where_none_is_kept_by_that_name() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let why = pin_again(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            &cluster.operator.key().spelled(),
+        )
+        .unwrap_err();
+        assert!(
+            why.to_string().contains("no cluster pool named team"),
+            "{why}"
+        );
     }
 
     #[test]
@@ -2073,6 +2246,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             &team(&cluster),
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -2098,6 +2272,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             &team(&cluster),
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -2142,6 +2317,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             &pool,
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -2191,6 +2367,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             &team(&cluster),
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -2224,6 +2401,7 @@ mod cluster {
             config,
             &cluster.kubectl(),
             &team(cluster),
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -3163,6 +3341,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             &team(&cluster),
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -3179,6 +3358,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             &team(&cluster),
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -3213,6 +3393,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             &team(&cluster),
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -3338,6 +3519,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             &team(&cluster),
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )

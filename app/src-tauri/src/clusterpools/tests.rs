@@ -277,3 +277,122 @@ fn a_release_that_failed_says_its_work_is_here_only_on_proof() {
     assert!(!discarded.contains("all here"), "{discarded}");
     assert!(discarded.contains("no route"), "{discarded}");
 }
+
+/// Keeps, in Pool setup's choices, that this machine made the signing key named `key` on context
+/// `context`, in the cluster [`CLUSTER`] (#4495), as Install's Signing key does.
+fn made_here_on(config: &Path, context: &str, key: &str) {
+    made_here_in(config, context, CLUSTER, key);
+}
+
+/// [`made_here_on`], in the cluster whose `kube-system` uid is `cluster`.
+fn made_here_in(config: &Path, context: &str, cluster: &str, key: &str) {
+    let folder =
+        purlis_same_user::PrivateDirectory::open(&purlis_core::machine::dir(config)).unwrap();
+    folder
+        .replace_file(
+            "pool-setup.json",
+            serde_json::json!({"version": 1, "made": {"context": context, "cluster": cluster, "key": key}})
+                .to_string()
+                .as_bytes(),
+        )
+        .unwrap();
+}
+
+/// **Check its key shows the Pool's key only once it is confirmed** (#4495): never before a
+/// paste, never on a paste that isn't it, and at once where this setup made it.
+#[test]
+fn check_its_key_shows_the_pools_key_only_once_confirmed() {
+    let config = tempfile::tempdir().unwrap();
+    let pin = purlis_core::clusterpool::PoolPin {
+        key: purlis_core::clusterpool::OperatorKey::from_spelled(OPERATOR).unwrap(),
+        cluster: CLUSTER.to_owned(),
+    };
+    let shown = |pasted: Option<&str>| key_shown(config.path(), "team", &pin, pasted, "ada".into());
+    let none = shown(None);
+    assert_eq!(
+        (none.key, none.made_here, none.matches),
+        (None, false, None)
+    );
+    let wrong = shown(Some(OTHER));
+    assert_eq!((wrong.key, wrong.matches), (None, Some(false)));
+    let right = shown(Some(&OPERATOR.to_uppercase()));
+    assert_eq!(
+        (right.key.as_deref(), right.matches),
+        (Some(OPERATOR), Some(true))
+    );
+
+    made_here_on(config.path(), "other", OPERATOR);
+    assert_eq!(shown(None).key, None, "made on another context");
+    made_here_in(config.path(), "team", "another-cluster-uid", OPERATOR);
+    assert_eq!(shown(None).key, None, "made in another cluster");
+    made_here_on(config.path(), "team", OPERATOR);
+    let made = shown(None);
+    assert_eq!(
+        (made.key.as_deref(), made.made_here),
+        (Some(OPERATOR), true)
+    );
+}
+
+/// **Adding a cluster pool pins only the key the person confirmed** (#4495): pasted from their
+/// cluster's admin, or made by this machine in this setup. A pasted key that isn't the Pool's,
+/// or none where this setup made no key, refuses the add before anything is kept or claimed.
+#[cfg(unix)]
+#[test]
+fn an_add_with_a_pasted_key_that_isnt_the_pools_is_refused_before_anything_is_kept() {
+    let (config, dir) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let kubectl = kubectl_answering(
+        dir.path(),
+        &serde_json::json!({"status": {"signingKey": OPERATOR, "cluster": CLUSTER}}).to_string(),
+    );
+    let adding = |key: Option<&str>| ClusterPoolAdding {
+        name: "team".into(),
+        kubeconfig: Some("/home/ada/.kube/config".into()),
+        context: "team".into(),
+        pool: "team".into(),
+        pasted: key.map(Into::into),
+        vouch_wait: None,
+    };
+    let within = std::time::Duration::ZERO;
+    let home = Some(Path::new("/home/ada"));
+    let why = add_on(config.path(), &kubectl, &adding(Some(OTHER)), home, within).unwrap_err();
+    assert!(why.contains("Stop here"), "{why}");
+    let why = add_on(
+        config.path(),
+        &kubectl,
+        &adding(Some("not a key")),
+        home,
+        within,
+    )
+    .unwrap_err();
+    assert!(why.contains("isn't a cluster operator's key"), "{why}");
+    // Nothing pasted, and no key made here: the cluster's own word pins nothing.
+    let why = add_on(config.path(), &kubectl, &adding(None), home, within).unwrap_err();
+    assert!(
+        why.contains("paste the key your cluster's admin gave you"),
+        "{why}"
+    );
+    assert!(
+        purlis_core::runners::cluster_pools(config.path())
+            .unwrap()
+            .is_empty()
+    );
+    // The Pool's own key, pasted as an admin's chat wraps it, passes the check: the add goes
+    // on, and stops later at what this stand-in can't answer, never at the key.
+    let pasted = OPERATOR.trim_start_matches("ed25519:").to_uppercase();
+    let wrapped = format!("{}\n{}", &pasted[..32], &pasted[32..]);
+    if let Err(why) = add_on(
+        config.path(),
+        &kubectl,
+        &adding(Some(&wrapped)),
+        home,
+        within,
+    ) {
+        assert!(!why.contains("Stop here"), "{why}");
+        assert!(!why.contains("isn't a cluster operator's key"), "{why}");
+    }
+    // Where this setup made the key, nothing need be pasted.
+    made_here_on(config.path(), "team", OPERATOR);
+    if let Err(why) = add_on(config.path(), &kubectl, &adding(None), home, within) {
+        assert!(!why.contains("paste the key"), "{why}");
+    }
+}

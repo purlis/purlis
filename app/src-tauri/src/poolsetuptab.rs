@@ -57,6 +57,9 @@ pub struct PoolSetupStep {
     pub also: Option<PoolSetupAction>,
     /// Install's parts, each with its own button (#4493).
     pub parts: Vec<PoolSetupPart>,
+    /// The words for the person's cluster's admin (#4496), where doctor shows they can't
+    /// install. Held free of secrets by the core.
+    pub admin: Option<String>,
     /// How the step is undone by hand, never by a button: uninstalling from a cluster.
     pub undo: Option<PoolSetupSee>,
 }
@@ -134,6 +137,14 @@ pub struct PoolSetupContexts {
     pub chosen: Option<String>,
     /// The chosen cluster's Pools, by name, where its operator runs (#4494).
     pub pools: Vec<String>,
+    /// Whether the person joins their team's install (#4495): the key is then confirmed by
+    /// pasting the one their admin gave them.
+    pub joining: bool,
+    /// The cluster operator key a kept cluster pool pinned here (#4495).
+    pub pinned: Option<String>,
+    /// Whether its Pool names a key now that the pin never vouched for (#4495). The key itself
+    /// isn't sent: it is shown only once the key pasted from the admin matched it.
+    pub key_changed: bool,
 }
 
 /// What the tab draws.
@@ -209,6 +220,9 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
             recommended: setup.contexts.recommended.clone(),
             chosen: setup.contexts.chosen.clone(),
             pools: setup.contexts.pools.clone(),
+            joining: setup.contexts.joining,
+            pinned: setup.contexts.pinned.clone(),
+            key_changed: setup.contexts.named_now.is_some(),
         },
         at: setup.at.as_ref().map(word),
         steps: setup
@@ -233,6 +247,7 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
                         next: part.next.as_ref().map(action_shown),
                     })
                     .collect(),
+                admin: step.admin.clone(),
                 undo: step.undo.as_ref().map(|undo| PoolSetupSee {
                     note: undo.note.clone(),
                     text: undo.text.clone(),
@@ -529,6 +544,205 @@ pub async fn pool_setup_podman_connections() -> Result<Vec<PoolSetupPodmanConnec
     #[cfg(not(unix))]
     {
         Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Pins the cluster pool `pool`'s key again** (#4495), on the Pool step's own press: the key its
+/// Pool names now, only where it is `key`, the one the person pasted from their cluster's admin.
+/// Anything else pins nothing ([`purlis_core::pools::pin_again`]).
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_pin_again(pool: String, key: String) -> Result<(), String> {
+    crate::off_the_window("pinning the cluster operator's key", move || {
+        let config = config_root()?;
+        let kubectl = crate::clusterpools::kubectl(&config)?;
+        purlis_core::pools::pin_again(&config, &kubectl, &pool, &key)
+            .map_err(|why| crate::devices::shown_safely(&why.to_string()))
+    })
+    .await
+}
+
+/// **Get help** on Pool setup's step `step` (#4497): a chat on the project's default profile, at
+/// the project's root, started on the core's message about the step and `error`, the words the
+/// window showed where a press failed. Only under the project's sandbox, where no chat changes a
+/// pool; fixes stay the person's, in Pool setup. The window's alone (`WINDOW_ONLY`).
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_get_help(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    step: String,
+    error: Option<String>,
+    columns: u16,
+    rows: u16,
+) -> Result<crate::savefix::Fixing, String> {
+    let held = planes.held(&plane)?;
+    #[cfg(unix)]
+    {
+        crate::off_the_window("starting a chat to help with Pool setup", move || {
+            use purlis_core::dockerpool::Docker;
+            use purlis_core::poolsetup::{self, Here, StepId};
+            let step: StepId = serde_json::from_value(serde_json::Value::String(step.clone()))
+                .map_err(|_| {
+                    format!(
+                        "Pool setup has no step called {}",
+                        purlis_core::shown::short(&step)
+                    )
+                })?;
+            let root = held.root().to_path_buf();
+            let config = config_root()?;
+            let docker = poolsetup::docker_here();
+            let kubectl = poolsetup::cluster::kubectl_here();
+            let here = Here {
+                config: &config,
+                plane: Some(&root),
+                docker: docker.as_ref(),
+                engine: Docker::engine_on_this_machine(),
+                kubectl: kubectl.as_ref().map_err(String::as_str),
+            };
+            let setup = poolsetup::resumed(&here)
+                .map_err(|why| why.to_string())?
+                .setup;
+            let prompt = poolsetup::help::opening(&setup, step, error.as_deref())
+                .map_err(|why| why.to_string())?;
+            let label = poolsetup::help::label(step);
+            let (profile, _kind) =
+                crate::curation::default_profile(&root, "no chat was started to help")?;
+            let started = crate::curation::start_sent(
+                &held,
+                crate::curation::ChatTyped {
+                    profile,
+                    persona: None,
+                    cwd: root.clone(),
+                    label: label.clone(),
+                    prompt,
+                    then_a_space: false,
+                    starts_runs: None,
+                    studio: None,
+                    skill: None,
+                },
+                purlis_core::engine::Size { columns, rows },
+                crate::curation::SentFor::PoolSetupHelp,
+            )?;
+            Ok(crate::savefix::Fixing {
+                session: started.session,
+                name: started.name,
+                label,
+                persona: None,
+                harness: started.ready.declaration().map(|d| d.name.clone()),
+                workspace: None,
+                existing: false,
+            })
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (held, step, error, columns, rows);
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Keeps that the person sent Send to your admin's words** (#4496), about the cluster chosen
+/// on Where, from the project `plane` the tab is in: Check the cluster then waits for their
+/// admin, across a close, and is checked again by itself. Nothing is sent anywhere by purlis.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_ask_admin(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<(), String> {
+    // The project as the registry holds it, never a path the caller names (charter-app#127).
+    let project = planes.held(&plane)?.root().to_path_buf();
+    #[cfg(unix)]
+    {
+        crate::off_the_window("keeping that you asked your admin", move || {
+            purlis_core::poolsetup::admin::asked(&config_root()?, Some(&project), seconds_now())
+                .map_err(|why| why.to_string())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = project;
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Forgets that the person waits for their admin** (#4496): Stop waiting, or the ready Ask
+/// answered.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_stop_waiting(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        let forgot = crate::off_the_window("forgetting that you asked your admin", move || {
+            purlis_core::poolsetup::admin::forget(&config_root()?).map_err(|why| why.to_string())
+        })
+        .await;
+        let _ = tauri::Emitter::emit(&app, POOL_SETUP_READY, ());
+        forgot
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = app;
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// Now, in seconds since the epoch.
+#[cfg(unix)]
+fn seconds_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs())
+}
+
+/// The event every window hears when Pool setup's ready Ask comes or goes (#4496).
+pub const POOL_SETUP_READY: &str = "pool-setup-ready";
+
+/// How often the wait for an admin is checked again in the background: a low rate, since only
+/// a person changes it, and the open tab checks far oftener (spec #4469, Rechecks).
+const RECHECK_EVERY: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// **Checks the wait for an admin again now and then** (#4496), on a thread of its own: only where
+/// the person waits, through this machine's kubectl with their own sign-in. Once it is ready,
+/// every window hears it, and the ready Ask shows.
+pub fn recheck_now_and_then(app: &tauri::AppHandle) {
+    #[cfg(unix)]
+    {
+        let app = app.clone();
+        let _ = std::thread::Builder::new()
+            .name("pool-setup-recheck".into())
+            .spawn(move || {
+                loop {
+                    std::thread::sleep(RECHECK_EVERY);
+                    let Ok(config) = config_root() else { continue };
+                    let waits = purlis_core::poolsetup::read_choices(&config)
+                        .ok()
+                        .and_then(|choices| choices.admin)
+                        .is_some_and(|asked| asked.ready.is_none());
+                    if !waits {
+                        continue;
+                    }
+                    let kubectl = purlis_core::poolsetup::cluster::kubectl_here();
+                    let now = seconds_now();
+                    if matches!(
+                        purlis_core::poolsetup::admin::recheck(
+                            &config,
+                            kubectl.as_ref().map_err(Clone::clone),
+                            now
+                        ),
+                        Ok(true)
+                    ) {
+                        let _ = tauri::Emitter::emit(&app, POOL_SETUP_READY, ());
+                    }
+                }
+            });
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = app;
     }
 }
 

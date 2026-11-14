@@ -272,9 +272,15 @@ fn call_sites(sources: &[(String, String)], name: &str) -> Vec<String> {
 fn one_call_site_starts_a_chat_on_a_sent_message_for_one_reason_from_the_windows_press() {
     let sources = sources();
     let sent = concat!("start_", "sent");
+    // Fix, and Pool setup's Get help (ADR 0061, amended 2026-11-12). The handoff tests start
+    // a Get help chat as the window does, to restart it: a test, not a press.
     assert_eq!(
         call_sites(&sources, sent),
-        ["app/src-tauri/src/savefix.rs"],
+        [
+            "app/src-tauri/src/handoff/tests.rs",
+            "app/src-tauri/src/poolsetuptab.rs",
+            "app/src-tauri/src/savefix.rs"
+        ],
         "every call that starts a chat on a sent message"
     );
     // This module's own entries are called from this module, and by nothing else.
@@ -330,10 +336,11 @@ fn one_call_site_starts_a_chat_on_a_sent_message_for_one_reason_from_the_windows
         .filter(|line| !line.is_empty() && !line.starts_with("//"))
         .map(|line| line.trim_end_matches(','))
         .collect();
-    // Fix, and a grade's chat (ADR 0061, amended 2026-10-25): a third is a new amendment first.
-    assert_eq!(variants, ["FixASave", "Grade"]);
+    // Fix, a grade's chat (ADR 0061, amended 2026-10-25) and Pool setup's Get help (amended
+    // 2026-11-12): a fourth is a new amendment first.
+    assert_eq!(variants, ["FixASave", "Grade", "PoolSetupHelp"]);
     match SentFor::FixASave {
-        SentFor::FixASave | SentFor::Grade => {}
+        SentFor::FixASave | SentFor::Grade | SentFor::PoolSetupHelp => {}
     }
     // A grade's chat is started from the grade's host alone, after the person's Grade.
     assert_eq!(
@@ -342,7 +349,11 @@ fn one_call_site_starts_a_chat_on_a_sent_message_for_one_reason_from_the_windows
         "every call that starts a grade's chat"
     );
     // And the commands are the window's alone.
-    for command in ["fix_save_request", "resolve_save_in_a_chat"] {
+    for command in [
+        "fix_save_request",
+        "resolve_save_in_a_chat",
+        "pool_setup_get_help",
+    ] {
         assert!(
             purlis_session_protocol::ui::window_only(command),
             "{command}"
