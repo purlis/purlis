@@ -635,7 +635,9 @@ pub struct Caller<'a> {
     pub harness: Option<&'a str>,
     /// The payload's `permission_mode` — [`crate::floorguard::unattended`]'s input. **A7 no
     /// longer reads it** (#1444): whether anybody answers a chat's prompts is the app's own
-    /// mark on that chat, read where a handoff is decided. The release floor still does.
+    /// mark on that chat, read where a handoff is decided. Nor does the release floor, A4, in a
+    /// chat the app started, which reads the chat's attendance fact (T1-18,
+    /// [`crate::toolgate::Launched::attendance`]); only for a harness the app did not start.
     pub permission_mode: Option<&'a str>,
 }
 

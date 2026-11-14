@@ -57,6 +57,7 @@
 
 use std::path::Path;
 
+use crate::dispatchunattended::Attendance;
 use crate::forge::Forge;
 use crate::handoffguard::{self, Caller};
 use crate::{
@@ -165,6 +166,25 @@ pub struct Launched<'a> {
     pub sandboxed: bool,
     /// [`crate::sandboxblock::CHAT_DIR_ENV`]: the folder the app started the chat in.
     pub chat_dir: Option<&'a str>,
+    /// **The chat's attendance fact, as the app holds it** (R-109, T1-18): what A4 refuses a
+    /// publish by. `Some` exactly for a chat the app started (it has a chat number), which is
+    /// also where the merge hold stands (R-114); `None` for a harness the app did not start,
+    /// which has no fact, and whose own `permission_mode` is all A4 has, as the recorded charter
+    /// answered.
+    pub attendance: Option<Attending<'a>>,
+}
+
+/// **How the hook asks the app for a chat's attendance fact** (R-109, T1-18): asked only of a
+/// line A4 would refuse an unattended chat, so a line it has no business with costs no ask. The
+/// hook answers [`Attendance::Unattended`] where no app answers: a reader never sees attended
+/// where the fact may say otherwise.
+#[derive(Clone, Copy)]
+pub struct Attending<'a>(pub &'a dyn Fn() -> Attendance);
+
+impl std::fmt::Debug for Attending<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Attending(asked of the app)")
+    }
 }
 
 impl Plane<'_> {
@@ -324,6 +344,33 @@ pub fn said(reason: &str) -> String {
     format!("purlis guard: {reason}{OVERRIDE_NOTE}")
 }
 
+/// **A4's refusal of `cmd`** (#299, R-109, R-145): the release floor's, where the chat is
+/// unattended.
+///
+/// - **A chat the app started** is unattended as its fact says ([`Launched::attendance`]),
+///   whatever mode its harness reports, and A4 keys on nothing else. The app is asked only of a
+///   line the floor would refuse unattended.
+/// - **The merge hold takes precedence** (R-145, Q202): in such a chat, a line the hold reads
+///   as a merge ([`crate::mergehold::held`]) is not A4's, attended or not. The hook refuses it
+///   all the same and asks the person to merge the request, or refuses it as a block where it
+///   cannot name the request; it never runs.
+/// - **A harness the app did not start** has no fact, and no hold: its own `permission_mode`
+///   is all there is ([`floorguard::unattended`]), as the recorded charter answered.
+fn release_floor(
+    cmd: &str,
+    permission_mode: Option<&str>,
+    launched: Launched<'_>,
+) -> Option<String> {
+    let Some(attending) = launched.attendance else {
+        return floorguard::release_floor_reason(cmd, floorguard::unattended(permission_mode));
+    };
+    let refused = floorguard::release_floor_reason(cmd, true)?;
+    if crate::mergehold::held(cmd).is_some() {
+        return None;
+    }
+    ((attending.0)() == Attendance::Unattended).then_some(refused)
+}
+
 /// The refusal this tool call earns, or `None` — `charter/hooks.py:pretooluse`'s eight arms in
 /// its order.
 ///
@@ -452,9 +499,9 @@ fn arms(call: &Call<'_>, plane: Option<&Plane<'_>>) -> Option<Verdict> {
                 ));
             }
         }
-        // A4: an unattended run may not publish (#299).
-        let unattended = floorguard::unattended(call.caller.permission_mode);
-        if let Some(pub_) = floorguard::release_floor_reason(cmd, unattended) {
+        // A4: an unattended chat may not publish (#299), by its attendance fact (R-109), and a
+        // merge the hold stands for is the hold's (R-145).
+        if let Some(pub_) = release_floor(cmd, call.caller.permission_mode, plane.launched) {
             return Some(Verdict::new(
                 Arm::ReleaseFloor,
                 REASON_RELEASE_FLOOR,
@@ -793,6 +840,7 @@ mod tests {
                     Launched {
                         sandboxed,
                         chat_dir: chat_dir.as_deref(),
+                        attendance: None,
                     },
                 )
             };
@@ -835,6 +883,7 @@ mod tests {
                 launched: Launched {
                     sandboxed,
                     chat_dir,
+                    attendance: None,
                 },
             };
             let call = Call {
@@ -896,6 +945,7 @@ mod tests {
                 launched: Launched {
                     sandboxed,
                     chat_dir: Some(workspace.as_str()),
+                    attendance: None,
                 },
             };
             let call = Call {
@@ -1407,6 +1457,7 @@ mod tests {
                 launched: Launched {
                     sandboxed,
                     chat_dir: Some(&folder),
+                    attendance: None,
                 },
             };
             let call = Call {
@@ -1529,6 +1580,7 @@ mod tests {
             launched: Launched {
                 sandboxed: true,
                 chat_dir: Some(&folder),
+                attendance: None,
             },
         };
         let mut seen = std::collections::BTreeSet::new();
@@ -1591,6 +1643,7 @@ mod tests {
                 launched: Launched {
                     sandboxed,
                     chat_dir: Some(&root),
+                    attendance: None,
                 },
             };
             let call = Call {

@@ -3667,6 +3667,9 @@ impl Planes {
                     // harness nested in the chat never marks the chat.
                     held.unattended()
                         .heard(report.chat, report.detail.unattended);
+                    // And its attendance fact, which A4 reads (T1-18): the same report, from the
+                    // live listener alone, never a line a spool drain hands the event log.
+                    held.chats().heard_attendance(report);
                     // And the mode its own harness runs in, which a task it dispatches starts
                     // from (#3787): the same report, its own harness's alone, and never a line
                     // the chat sends.

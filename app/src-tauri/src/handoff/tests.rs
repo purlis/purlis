@@ -3241,6 +3241,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::ProposePin(_) => 22,
             Ask::Merge(_) => 23,
             Ask::Chats(_) => 24,
+            Ask::Attendance(_) => 25,
         }
     }
     let asks = vec![
@@ -3406,10 +3407,16 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             history: true,
             limit: None,
         }),
+        // Whether the asking chat is attended (#6409): its fact, read, never moved.
+        Ask::Attendance(purlis_core::hookwire::AttendanceAsk {
+            chat,
+            unattended: false,
+            claude_code_mode: None,
+        }),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=24).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=25).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 

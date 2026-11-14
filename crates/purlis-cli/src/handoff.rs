@@ -696,6 +696,7 @@ fn in_the_app(
             | Answer::Finished { .. }
             | Answer::Browsed { .. }
             | Answer::Previewed { .. }
+            | Answer::Attended { .. }
             | Answer::MergeHeld { .. }
             | Answer::Recorded { .. }
             | Answer::Written { .. }
@@ -763,6 +764,7 @@ pub(crate) fn ticketed_within(within: std::time::Duration) -> Ticketed {
             | Answer::Finished { .. }
             | Answer::Browsed { .. }
             | Answer::Previewed { .. }
+            | Answer::Attended { .. }
             | Answer::MergeHeld { .. }
             | Answer::Recorded { .. }
             | Answer::Written { .. }

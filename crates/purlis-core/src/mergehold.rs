@@ -30,9 +30,10 @@
 //!   its row showed ([`Seen`]), and merges only while that is the state the ask holds, which a
 //!   re-read just before the press refreshes ([`Holds::refresh`]).
 //!
-//! **Not here yet** (each its ticket's): A4's refusal of an unattended merge still answers first
-//! (its precedence is read with attendance, R-145, #6409). A line whose request cannot be read (a
-//! raw API call, a merge with no number) is refused with no ask.
+//! **The hold takes precedence over A4** (R-145, #6409): in a chat the app started, A4, which
+//! reads the chat's attendance fact, leaves a line this reads as a merge to the hold, attended or
+//! not ([`crate::toolgate`]). **Not here yet**: a line whose request cannot be read (a raw API
+//! call, a merge with no number) is refused with no ask.
 //!
 //! In memory only, in the app: a relaunch holds none, and the chat's next try asks again.
 
