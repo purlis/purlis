@@ -136,3 +136,52 @@ describe("the holds, with nothing made up after", () => {
     expect(bouncesUntil(late, 200).filter((minute) => minute > 100)).toEqual([135, 195]);
   });
 });
+
+describe("Remind me (#6344): Off, Gently or Often", () => {
+  const at = (remind: "off" | "gently" | "often") =>
+    after([
+      { kind: "remind", remind, at: 0 },
+      { kind: "arrived", at: 0, holds: FREE },
+    ]);
+
+  it("Gently is the backoff, and the pace a schedule starts at", () => {
+    expect(STILL.remind).toBe("gently");
+    expect(bouncesUntil(at("gently"), 200)).toEqual([5, 15, 35, 75, 135, 195]);
+  });
+
+  it("Often reminds every 5 minutes", () => {
+    expect(bouncesUntil(at("often"), 30)).toEqual([5, 10, 15, 20, 25, 30]);
+  });
+
+  it("Off never reminds, though a new ask still bounces", () => {
+    const off = at("off");
+    expect(off.bounces).toBe(1);
+    expect(off.due).toBeNull();
+    expect(bouncesUntil(off, 200)).toEqual([]);
+    const another = after([{ kind: "arrived", at: 30 * MINUTE, holds: FREE }], off);
+    expect(another.bounces).toBe(2);
+    expect(bouncesUntil(another, 200)).toEqual([]);
+  });
+
+  it("Often restarts on an answer and on Asks opening, as Gently does", () => {
+    const played = bouncesUntil(at("often"), 30, undefined, (minute) =>
+      minute === 12 ? [{ kind: "answered", at: minute * MINUTE }] : [],
+    );
+    expect(played).toEqual([5, 10, 17, 22, 27]);
+  });
+
+  it("Often holds a reminder due while held, making none up", () => {
+    const holds = (minute: number) =>
+      minute >= 8 && minute < 18 ? { ...FREE, quiet: true } : FREE;
+    expect(bouncesUntil(at("often"), 30, holds)).toEqual([5, 20, 25, 30]);
+  });
+
+  it("a change of pace starts from the moment it is made", () => {
+    const played = bouncesUntil(oneWaits(), 40, undefined, (minute) =>
+      minute === 7 ? [{ kind: "remind", remind: "often", at: minute * MINUTE }] : [],
+    );
+    expect(played).toEqual([5, 12, 17, 22, 27, 32, 37]);
+    const stopped = after([{ kind: "remind", remind: "off", at: 7 * MINUTE }], oneWaits());
+    expect(stopped.due).toBeNull();
+  });
+});

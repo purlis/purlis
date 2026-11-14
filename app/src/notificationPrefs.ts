@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { type Remind, REMINDS } from "./handBounce";
 import { layoutPref } from "./layoutPref";
 
 /**
@@ -43,6 +44,13 @@ export type NotificationPrefs = {
    * turns it on. Kept for the sound, which purlis does not play yet (#6110).
    */
   expiringSound: boolean;
+  /**
+   * **How often the ✋ reminds of a Blocking ask that waits** (#6344, ADR 0121 amended
+   * 2026-11-12, "Remind me"): `"gently"`, the backoff, until the person changes it; `"often"`
+   * every 5 minutes; `"off"` never, though a new ask still bounces. The window alone reads it
+   * (`handBounce.ts`).
+   */
+  remind: Remind;
 };
 
 /** The kinds of update whose notification can be turned off: every Should-know one that notifies. */
@@ -56,6 +64,7 @@ export const DEFAULT_NOTIFICATIONS: NotificationPrefs = {
   finishedAfter: 5,
   off: [],
   expiringSound: false,
+  remind: "gently",
 };
 
 /** Whether `value` is a long finish as the core reads one: a whole number of minutes above none. */
@@ -121,8 +130,20 @@ export function loadNotifications(raw: unknown): { prefs: NotificationPrefs; sai
     said.push(
       `"notifications.expiringSound" ${JSON.stringify(held.expiringSound)} is not true or false, so it is false`,
     );
+  let remind = DEFAULT_NOTIFICATIONS.remind;
+  if (REMINDS.includes(held.remind as Remind)) remind = held.remind as Remind;
+  else if (held.remind !== undefined)
+    said.push(
+      `"notifications.remind" ${JSON.stringify(held.remind)} is not "off", "gently" or "often", so it is "gently"`,
+    );
   return {
-    prefs: { quiet: { on, from: time("from"), to: time("to") }, finishedAfter, off, expiringSound },
+    prefs: {
+      quiet: { on, from: time("from"), to: time("to") },
+      finishedAfter,
+      off,
+      expiringSound,
+      remind,
+    },
     said,
   };
 }
@@ -134,7 +155,8 @@ const same = (one: NotificationPrefs, other: NotificationPrefs) =>
   sameQuiet(one.quiet, other.quiet) &&
   one.finishedAfter === other.finishedAfter &&
   one.off.join() === other.off.join() &&
-  one.expiringSound === other.expiringSound;
+  one.expiringSound === other.expiringSound &&
+  one.remind === other.remind;
 
 /** The store (`layoutPref.ts`), under `notifications`. */
 export const NOTIFICATIONS = layoutPref<NotificationPrefs, "notifications">({
@@ -153,6 +175,7 @@ export const NOTIFICATIONS = layoutPref<NotificationPrefs, "notifications">({
       kept.finishedAfter = prefs.finishedAfter;
     if (prefs.off.length > 0) kept.off = prefs.off;
     if (prefs.expiringSound) kept.expiringSound = true;
+    if (prefs.remind !== DEFAULT_NOTIFICATIONS.remind) kept.remind = prefs.remind;
     return Object.keys(kept).length === 0 ? undefined : kept;
   },
   remedy: (where) => `fix ${where}, or change Attention in Settings, which rewrites it`,
@@ -189,4 +212,9 @@ export function setSourceOn(source: Source, on: boolean): void {
 /** Turns the Expiring sound on or off. */
 export function setExpiringSound(on: boolean): void {
   NOTIFICATIONS.set({ ...notificationPrefs(), expiringSound: on });
+}
+
+/** Changes how often the ✋ reminds of a Blocking ask that waits. */
+export function setRemind(remind: Remind): void {
+  NOTIFICATIONS.set({ ...notificationPrefs(), remind });
 }
