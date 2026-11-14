@@ -43,8 +43,8 @@ pub(crate) fn tell(
             send(typed().as_bytes()).map_err(|why| format!("purlis could not type in {who}: {why}"))
         }
         Telling::AtTurnEnd => Err(format!(
-            "{who} isn't waiting for you, so nothing was typed: purlis types into a chat only \
-             while it waits. Press again once it does."
+            "{who} isn't waiting for you, so nothing was typed: a chat is typed into only while \
+             it waits. Press again once it does."
         )),
         Telling::Never => Err(format!(
             "purlis can't type into {who} now, so nothing was typed: it has ended, is stopping, \
