@@ -252,7 +252,7 @@ import { usePersonaMarks } from "./usePersonaMarks";
 import { taskChangesTitle, taskChangesView } from "./taskChanges";
 import { heldFor as blockHeldFor, type HeldBlock, useSandboxBlocks } from "./sandboxBlocks";
 import {
-  chatLogAnswer,
+  CHAT_LOG_ANSWER,
   finishAsksOf,
   finishKey,
   finishUpdates,
@@ -260,6 +260,7 @@ import {
   stoppedAfterBlock,
   useFinishedTurns,
 } from "./finishRows";
+import { openTheChatLogOf } from "./chatLog";
 import { taskBlockGroups, whoseOf, withoutGrouped, type TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksAnswered, TaskBlocksNotice } from "./TaskBlocksNotice";
 import {
@@ -11625,9 +11626,17 @@ export const PlaneView = memo(function PlaneView({
           go,
           read,
           dismiss: put,
-          answers: blockedChats.map(([chat, name]) =>
-            chatLogAnswer(name, () => (openChatLog(chat, "blocks"), read())),
-          ),
+          // Built here, not by a helper: what it presses reads refs, so it is handed to no
+          // function while the view draws (react-hooks/refs).
+          answers: blockedChats.map(([chat, name]) => ({
+            ...CHAT_LOG_ANSWER,
+            name: openTheChatLogOf(name),
+            press: () => {
+              openChatLog(chat, "blocks");
+              read();
+              return undefined;
+            },
+          })),
         };
       // A finished task opens in place to show its report, or why it failed (#5651).
       const report = task?.report.trim() ? task.report : undefined;

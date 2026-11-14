@@ -195,6 +195,12 @@ export function finishRowsOf({
 export const stoppedAfterBlock = (update: Pick<InboxUpdate, "kind" | "key">): boolean =>
   update.kind === "turn-finished" && update.key.endsWith(BLOCKED_KEY);
 
+/** What every block result's way to its Chat log says, whatever chat it names (R-226). */
+export const CHAT_LOG_ANSWER = {
+  label: OPEN_THE_CHAT_LOG,
+  title: "See what was blocked, in its chat log.",
+} as const;
+
 /**
  * **A block result's way to its chat's Chat log** (R-226, T1-37): the answer of a finish row
  * whose turn ended after a block ({@link stoppedAfterBlock}), naming the chat called `name`.
@@ -202,9 +208,8 @@ export const stoppedAfterBlock = (update: Pick<InboxUpdate, "kind" | "key">): bo
  */
 export function chatLogAnswer(name: string, open: () => void): UpdateAnswer {
   return {
-    label: OPEN_THE_CHAT_LOG,
+    ...CHAT_LOG_ANSWER,
     name: openTheChatLogOf(name),
-    title: "See what was blocked, in its chat log.",
     press: () => {
       open();
       return undefined;
