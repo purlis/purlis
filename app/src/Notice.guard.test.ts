@@ -1047,6 +1047,16 @@ describe("the window's standing lines", () => {
     expect(debt).toEqual(COPY_ONLY);
   });
 
+  it("include the mode-differs Notice, with its way out", () => {
+    // R-243 (T1-44): a mode purlis didn't set is a standing fault, drawn as a Notice with its
+    // cause key and a way out, never as a line by hand.
+    const drawn = sources()
+      .flatMap(({ text }) => tags(text, (tag) => tag === "Notice"))
+      .filter(({ attrs }) => /cause=\{`mode-differs:/.test(attrs));
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0].attrs).toMatch(/\b(?:fixes|link|onDismiss)=/);
+  });
+
   it("would be caught if one came back", () => {
     // The readers above are what the guard rests on, so they are held to what a screen writes.
     const lines = (source: string) =>
