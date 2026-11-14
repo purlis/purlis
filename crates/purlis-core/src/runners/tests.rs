@@ -2256,3 +2256,20 @@ fn only_a_pool_on_another_machine_is_marked_owned() {
     assert!(set_remote_owned(config.path(), "nowhere", true).is_err());
     assert_eq!(the_file(config.path()), before);
 }
+
+/// A pool made as the person answered on Connect is written marked, for the pin it is made with;
+/// a pool on this machine's own engine takes no mark.
+#[test]
+fn a_pool_made_marked_is_written_with_the_pin_it_is_made_with() {
+    let config = tempfile::tempdir().unwrap();
+    record_pool(
+        config.path(),
+        &pool("build-box", Set::default())
+            .on(Some(remote()))
+            .marked(true),
+    )
+    .unwrap();
+    let row = &the_file(config.path())["pools"][0];
+    assert_eq!(row["owned"], row["pin"]);
+    assert!(!pool("here", Set::default()).marked(true).owned());
+}

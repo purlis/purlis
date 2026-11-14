@@ -38,6 +38,10 @@ pub struct Connecting {
     /// fresh, where that is another one (ADR 0123 §7).
     pub docker_context: Option<String>,
     pub context_now: Option<String>,
+    /// **That the person said only they, and people they trust with their logins, can sign in
+    /// to the machine** (#6271, ADR 0123 §5): their answer kept beside the pin, or the pool's
+    /// mark.
+    pub owned: bool,
 }
 
 /// **The CA a press of Connect to read** for a machine over TLS (#6267), the machine's own
@@ -140,6 +144,9 @@ pub struct Machine {
     pub ca_now: Option<String>,
     /// The Docker context the route was read from (#6268).
     pub context: Option<String>,
+    /// **Who can sign in to it, as the person answered** (#6271): only they, and people they
+    /// trust with their logins (`true`), or others might, or they're not sure.
+    pub owned: bool,
 }
 
 /// The machine's name in a sentence: the host of the route, or "the machine".
@@ -167,6 +174,7 @@ pub(super) fn reading(connect: &Connecting) -> (Reading, Machine, Option<&'stati
         engine: connect.trusted.as_ref().map(|pin| pin.engine.shown()),
         over: "ssh",
         context: connect.docker_context.clone(),
+        owned: connect.owned,
         ..Machine::default()
     };
     if let Some(finding) = &connect.finding {
@@ -310,6 +318,7 @@ fn reading_tls(connect: &Connecting) -> (Reading, Machine, Option<&'static str>)
         trusted_ca: connect.trusted_tls.as_ref().map(|pin| pin.ca.shown()),
         engine: connect.trusted_tls.as_ref().map(|pin| pin.engine.clone()),
         context: connect.docker_context.clone(),
+        owned: connect.owned,
         ..Machine::default()
     };
     if let Some(finding) = &connect.finding {

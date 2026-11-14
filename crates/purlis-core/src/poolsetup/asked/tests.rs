@@ -386,3 +386,28 @@ fn the_pool_keeps_the_context_connect_read_its_route_from() {
         Some("named".to_owned())
     );
 }
+
+/// **A pool made from what Connect kept is marked as the person answered there** (#6271), and only
+/// for the pin they answered for.
+#[test]
+fn a_pool_made_from_what_connect_kept_is_marked_only_for_the_pin_answered_for() {
+    let config = tempfile::tempdir().unwrap();
+    let remote = crate::runners::Remote {
+        route: crate::sshroute::Route::parse("ssh://me@build-box/var/run/docker.sock").unwrap(),
+        pin: crate::sshroute::Pin {
+            host_key: crate::sshroute::HostKey::parse(
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiGzfjDDJsgYLYCmdkf8Fel9sE6Ma14Y2+c33Y/qZ2n",
+            )
+            .unwrap(),
+            engine: crate::sshroute::EnginePin::Docker("ABCD".to_owned()),
+        },
+    };
+    super::super::trusted(config.path(), &remote).unwrap();
+    let engine: crate::runners::RemoteEngine = remote.clone().into();
+    assert!(!marked_on_connect(config.path(), &engine).unwrap(), "not asked");
+    super::super::choose_owned(config.path(), true).unwrap();
+    assert!(marked_on_connect(config.path(), &engine).unwrap());
+    let mut other = remote;
+    other.pin.engine = crate::sshroute::EnginePin::Docker("WXYZ".to_owned());
+    assert!(!marked_on_connect(config.path(), &other.into()).unwrap());
+}

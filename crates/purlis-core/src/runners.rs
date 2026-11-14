@@ -318,6 +318,16 @@ impl Pool {
         }
     }
 
+    /// **This pool, marked as the person's own as it is pinned now, or not** (#6271): what they
+    /// answered on Connect as it is made. A pool on this machine's own engine takes no mark.
+    #[must_use]
+    pub fn marked(self, owned: bool) -> Pool {
+        Pool {
+            owned: owned && self.remote.is_some(),
+            ..self
+        }
+    }
+
     /// **Whether the person marked its machine as their own, as it is pinned now** (#6271, ADR
     /// 0123 §5): never for a pool on this machine's own engine, which needs no mark.
     pub fn owned(&self) -> bool {
