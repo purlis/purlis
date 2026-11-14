@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794616904303,
+  "lastUpdate": 1794620528501,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -48846,6 +48846,48 @@ window.BENCHMARK_DATA = {
             "value": 100.9023245,
             "unit": "ms",
             "extra": "median of 5 runs: 100.536, 100.843, 100.902, 101.026, 101.311 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4a77a8b3bd4170310a30ec65fd91bd4c5f89f349",
+          "message": "macOS flakes: a held host samples its thread; the tab-memory spec says which wait failed (#6437, #6589) (#6598)\n\n* A held session host says what its thread is doing, sampled while it is held (#6437)\n\nThe line #6441 added turned up in queue run 43516561795 (job 132200450985, macOS part 2):\n\"this host's thread was held 24558 ms: nothing it serves was answered meanwhile\", from\n22:21:37.4Z, about 1.5 s after panes.e2e.ts's fifty-sessions spec finished its 11th open. No\nanswer was said late, so it was the host's one thread, not a chat's lane. The 12th open's\npicker waited on \"Starting the session host…\" until it gave up at 22:22:02.0Z, 15 ms after\nthe hold ended: that is the queue failure \"the picker never went\". The log says the thread\nwas held but not what held it, and nothing around it names that.\n\nSo a host asked to by PURLIS_HOST_SAMPLES_A_HELD_THREAD, on macOS, runs a thread of its own\nthat sees the runtime's looks stop and, once a hold reaches 2 s, has /usr/bin/sample take the\nhost's stacks for a second, and says the main thread's call graph (where the runtime runs) in\nits log: once a hold, at most three holds a host. The scenario runs set it\n(app/e2e/wdio.conf.ts); a host on a person's machine never samples itself.\n\nRed first: the Sampling and main_thread_of tests failed with the once-a-hold check, the cap,\nand the main-thread match each taken out. Sampling its own test process printed the main\nthread's graph.\n\nRefs #6437\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7BP7NS2R59M3TT3W0V47DZW\nPurlis-Persona: steward\n\n* The artifact tab's memory spec says which wait timed out, and what each look saw (#6589)\n\nMain at bcd9681b went red on macOS (run 43516240829 attempt 1, part 1 of 4):\n\"the app's memory never settled with the tab open, or its page started no web content process\nof its own\". The message joins two conditions, and says no look's numbers, so the log cannot\ntell whether the memory never held still or the count of web content processes never rose\npast the look before the tab.\n\nTwelve green part-1 runs since 2026-11-12 printed their looks: before the tab counted 2 or 3\nweb content processes (WebKit keeps a prewarmed one some of the time), and after it one more,\ntwice two more. Which happened in the red one is not known.\n\nsettledLook now says the two apart: \"never settled\" when no two good looks agreed, and\n\"settled …, but no settled look counted more than the N web content processes there were\nbefore\" when they did and the count never rose. Either way it says the look before the tab\nand the last five looks, each with its process count, the pids it counted and its memory\n(unsettledSaid), so a red run says whether the page took a process already counted or one\nwent as another came. webAndHarnessMemory now says which pids it counted (webContentPids).\n\nThis replaces the lighter version #6590 added to settledLook and its caller (the last look in\nthe error and \"(before it: N)\" in the message): unsettledSaid already says the look before the\ntab and the last looks with their pids.\n\nRed first: unsettledSaid's tests failed with five looks said as seven.\n\nRefs #6589\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7BP7NS2R59M3TT3W0V47DZW\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-14T00:50:33Z",
+          "tree_id": "3e9672147a9ee0bca0b92a8dc5965530e787e918",
+          "url": "https://github.com/purlis/purlis/commit/4a77a8b3bd4170310a30ec65fd91bd4c5f89f349"
+        },
+        "date": 1794620522864,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.692202,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.645, 0.672, 0.692, 0.693, 0.711 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.704648,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.285, 16.677, 16.705, 16.786, 16.883 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.4136955,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.759, 102.093, 102.414, 102.910, 104.254 ms"
           }
         ]
       }
