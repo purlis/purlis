@@ -119,16 +119,37 @@ fn said_by(original: &str, target: &Target, pane: &Pane) -> Option<String> {
     }
     let file = matches!(target, Target::File(_));
     let trimmed = trimmed(&word);
-    let read = [trimmed, word.as_str()]
-        .into_iter()
-        .find(|read| !read.is_empty() && names_a_target(&shape(read), file))?;
-    let differs = match target {
+    let names = |read: &str| !read.is_empty() && names_a_target(&shape(read), file);
+    let differs = |read: &str| match target {
         Target::Url(url) => names_web(read, url),
         Target::File(file) => names_file(read, &file.path, pane),
         // A marked link's target is read only as a web address or a file, never as a chat.
         Target::Chat(_) => Some(read.to_owned()),
     };
-    differs.or_else(|| (!reads_as_written(original)).then(|| read.to_owned()))
+    // A word naming no target as written is read as it looks, a look-alike letter as the
+    // letter it looks like (`lоcalhost`, `evil.cоm`); a host in its own script stays as written
+    // (`βόλος.gr`), and [`reads_as_written`] judges its letters.
+    let looks = (!word.is_ascii()).then(|| [seen(trimmed), seen(&word)]);
+    let read = [trimmed.to_owned(), word.clone()]
+        .into_iter()
+        .chain(looks.into_iter().flatten())
+        .find(|read| names(read))?;
+    differs(&read).or_else(|| (!reads_as_written(original)).then_some(read))
+}
+
+/// **`word` as it looks**: each character outside ASCII replaced by its UTS #39 skeleton (a
+/// Cyrillic `о` by `o`, `ᴄ` by `c`, `հ` by `h`), then composed again (NFC), so a mark over a
+/// letter stays over it (`münchen`). ASCII as written.
+fn seen(word: &str) -> String {
+    let mut seen = String::with_capacity(word.len());
+    for c in word.chars() {
+        if c.is_ascii() {
+            seen.push(c);
+        } else {
+            seen.extend(unicode_security::skeleton(c.encode_utf8(&mut [0; 4])));
+        }
+    }
+    seen.nfc().collect()
 }
 
 /// **`text` as it is drawn**: characters that draw nothing dropped, those that draw a blank read
@@ -158,7 +179,7 @@ fn colon_parts(word: &str) -> Option<Vec<&str>> {
     if !word.contains(colon) {
         return None;
     }
-    let shape = shape(word);
+    let shape = shape(&seen(word));
     let authority = shape
         .split(['/', '\\', '?', '#'])
         .next()
@@ -173,7 +194,23 @@ fn colon_parts(word: &str) -> Option<Vec<&str>> {
         }
     }
     let own = has_scheme(&shape) || ipv6(&shape) || !bare.contains(':');
-    (!own).then(|| word.split(colon).collect())
+    (!own).then(|| {
+        // A colon inside brackets is an IPv6 address's own (`x:[::1]`).
+        let (mut parts, mut depth, mut start) = (Vec::new(), 0_usize, 0);
+        for (at, c) in word.char_indices() {
+            match c {
+                '[' => depth += 1,
+                ']' => depth = depth.saturating_sub(1),
+                c if depth == 0 && colon(c) => {
+                    parts.push(&word[start..at]);
+                    start = at + c.len_utf8();
+                }
+                _ => {}
+            }
+        }
+        parts.push(&word[start..]);
+        parts
+    })
 }
 
 /// Whether `text` is an IPv6 address, in brackets or not, with a zone (`%25eth0`) or without.
@@ -199,7 +236,11 @@ fn trimmed(word: &str) -> &str {
         } else {
             word.trim_start_matches(|c| WRAPPERS.contains(c))
         };
-    let ip = bracketed_ip(start) || ipv6(start);
+    let ip = bracketed_ip(start)
+        || ipv6(start)
+        || start
+            .rfind('[')
+            .is_some_and(|at| bracketed_ip(&start[at..]));
     start.trim_end_matches(|c| WRAPPERS.contains(c) && !(ip && c == ']'))
 }
 

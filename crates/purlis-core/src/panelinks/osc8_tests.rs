@@ -875,7 +875,7 @@ const PR: &str = "https://github.com/purlis/purlis/pull/6384";
 /// The file target of the rows that name `{WS}`: the workspace's `src/main.rs`.
 const MAIN: &str = "{WS}/src/main.rs";
 
-/// **The regression table**: 214 rows, each a marked link's words, its target and what opening
+/// **The regression table**: 224 rows, each a marked link's words, its target and what opening
 /// it does (an `@` written `{AT}`). A row's text is what the pane hands the core (row 103:
 /// a hard line break inside one link, its row's blank tail not read as spaces).
 #[rustfmt::skip]
@@ -1101,6 +1101,16 @@ const TABLE: &[(u16, &str, &str, Does)] = {
         (1028, "smart-ide/src/main.rs", MAIN, A),
         (1036, "step:3", PR, O),
         (1037, "main:42", PR, O),
+        (2018, "x:[::1]", T, A),
+        (2034, "local\u{0570}ost", T, A),
+        (2035, "evil.c\u{043E}m", T, A),
+        (2036, "l\u{043E}calhost", T, A),
+        (2037, "evil.\u{1D04}om", T, A),
+        (2038, "good.c\u{043E}m", T, A),
+        (2039, "evil.\u{0441}\u{043E}m", T, A),
+        (2040, "l\u{043E}calhost:3000", T, A),
+        (2041, "evil.c\u{043E}m:good.com", T, A),
+        (2042, "\u{0570}ttps://good.com", T, A),
     ]
 };
 
@@ -1137,7 +1147,7 @@ fn every_row_of_the_table_opens_asks_or_is_refused_as_it_says() {
                 .then(|| format!("row {row} {text:?} → {target}: expected {does:?}, got {did:?}"))
         })
         .collect();
-    assert_eq!(TABLE.len(), 214);
+    assert_eq!(TABLE.len(), 224);
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
 
