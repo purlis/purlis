@@ -58,7 +58,7 @@ export const TwoNewBlocked: Story = {
     markers[1].focus();
     await expectFocusInSight();
     await userEvent.keyboard("{Enter}");
-    await expect(args.open).toHaveBeenCalledWith(7);
+    await expect(args.open).toHaveBeenCalledWith(7, "blocks");
   },
 };
 

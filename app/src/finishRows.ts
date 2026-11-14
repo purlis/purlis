@@ -25,6 +25,8 @@ import {
   type UpdateNoted,
 } from "./bindings";
 import type { ChatStates, Chats } from "./chatState";
+import { OPEN_THE_CHAT_LOG, openTheChatLogOf } from "./chatLog";
+import type { UpdateAnswer } from "./InboxUpdatesList";
 
 /** What a finish row adds where its turn ended with blocks still unresolved (Q164). */
 export const BLOCKED_THIS_TURN = (blocked: number) => `· ${blocked} blocked this turn`;
@@ -64,6 +66,20 @@ export function finishUpdates(
 /** **Whether `update` is a finish row whose turn ended after a block** (R-182). */
 export const stoppedAfterBlock = (update: Pick<InboxUpdate, "kind" | "key">): boolean =>
   update.kind === "turn-finished" && update.key.endsWith(BLOCKED_KEY);
+
+/**
+ * **A block result's way to its chat's Chat log** (R-226, T1-37): the answer of a finish row
+ * whose turn ended after a block ({@link stoppedAfterBlock}), naming the chat called `name`.
+ * `open` opens that chat's Chat log at its blocks.
+ */
+export function chatLogAnswer(name: string, open: () => void): UpdateAnswer {
+  return {
+    label: OPEN_THE_CHAT_LOG,
+    name: openTheChatLogOf(name),
+    title: "See what was blocked, in its chat log.",
+    press: open,
+  };
+}
 
 /** A row as Updates lists it, and every update it stands for. */
 export type Grouped = { update: InboxUpdate; keys: readonly string[] };

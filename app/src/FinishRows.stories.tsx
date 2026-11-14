@@ -8,10 +8,10 @@
  * matrix.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect } from "storybook/test";
+import { expect, fn } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { FinishedTurn } from "./bindings";
-import { finishUpdates, groupedFinishes } from "./finishRows";
+import { chatLogAnswer, finishUpdates, groupedFinishes, stoppedAfterBlock } from "./finishRows";
 import { Inbox } from "./Inbox";
 import { listed } from "./inboxUpdates";
 import { expectFocusInSight, tabInto } from "./stories.testkit";
@@ -29,7 +29,14 @@ const turn = (session: number, key: string, blocked: number, failed = false): Fi
   blocked,
 });
 
-function Mine({ turns }: { turns: readonly FinishedTurn[] }) {
+function Mine({
+  turns,
+  open,
+}: {
+  turns: readonly FinishedTurn[];
+  /** Opens chat `session`'s Chat log, as the window's block result does (R-226). */
+  open?: (session: number) => void;
+}) {
   const updates = listed(
     finishUpdates(turns, (session) => NAMES[session] ?? String(session)).map((one) => ({
       ...one,
@@ -40,6 +47,10 @@ function Mine({ turns }: { turns: readonly FinishedTurn[] }) {
   const rows = groupedFinishes(updates).map(({ update }) => ({
     update,
     dismiss: () => undefined,
+    answers:
+      open !== undefined && stoppedAfterBlock(update) && update.session !== null
+        ? [chatLogAnswer(NAMES[update.session] ?? "", () => open(update.session ?? 0))]
+        : undefined,
   }));
   return (
     <div style={{ inlineSize: 420 }}>
@@ -91,5 +102,25 @@ export const IdenticalFinishRowsGroupAcrossChats: Story = {
     await expect(canvas.getByRole("row", { name: "reviewer 5: Finished its turn" })).toBeVisible();
     await tabInto(() => grouped.closest('[role="grid"]'));
     expectFocusInSight();
+  },
+};
+
+/**
+ * **A block result opens its chat's Chat log** (R-226, T1-37): a turn that ended after a block
+ * offers "Open the chat log", pressed from the keyboard; a turn without one offers nothing.
+ */
+export const ABlockResultOpensItsChatLog: Story = {
+  args: { turns: [turn(3, "01A", 1), turn(5, "01B", 0)], open: fn() },
+  play: async ({ canvas, args, userEvent }) => {
+    const blocked = await canvas.findByRole("row", {
+      name: "steward 3: Finished its turn · 1 blocked this turn",
+    });
+    const way = canvas.getByRole("button", { name: "Open the chat log of steward 3" });
+    await expect(blocked).toContainElement(way);
+    await expect(canvas.getAllByRole("button", { name: /^Open the chat log/ })).toHaveLength(1);
+    way.focus();
+    await expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await expect(args.open).toHaveBeenCalledWith(3);
   },
 };

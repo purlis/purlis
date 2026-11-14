@@ -251,7 +251,13 @@ import { PersonaMarks, ReloadPersonaMarks } from "./PersonaMark";
 import { usePersonaMarks } from "./usePersonaMarks";
 import { taskChangesTitle, taskChangesView } from "./taskChanges";
 import { heldFor as blockHeldFor, type HeldBlock, useSandboxBlocks } from "./sandboxBlocks";
-import { finishUpdates, groupedFinishes, useFinishedTurns } from "./finishRows";
+import {
+  chatLogAnswer,
+  finishUpdates,
+  groupedFinishes,
+  stoppedAfterBlock,
+  useFinishedTurns,
+} from "./finishRows";
 import { taskBlockGroups, whoseOf, withoutGrouped, type TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksAnswered, TaskBlocksNotice } from "./TaskBlocksNotice";
 import {
@@ -772,6 +778,7 @@ import {
   markerOf,
   useBlockedMarkers,
   type BlockedMarkersHeld,
+  type ChatLogFilter,
 } from "./blockedMarkers";
 import { SeenRowsOf } from "./seenRows";
 import { listLinksOf } from "./paneLinksOpen";
@@ -10404,6 +10411,20 @@ export const PlaneView = memo(function PlaneView({
     pressNow.current = press;
   }, [by, press]);
   const pressTaskEnd = useCallback((offer: Offer) => pressNow.current(offer), []);
+  /**
+   * **Chat `session`'s Chat log, opened showing `filter`** (R-226): the press of its own row in
+   * the chat's list (`chat.log:<session>`), so every entry point opens it as that row does. One
+   * function for the life of the view, so a list that offers it is not drawn again with the
+   * catalogue. A chat the catalogue has no such row of opens nothing.
+   */
+  const openChatLog = useCallback(
+    (session: number, filter: ChatLogFilter) => {
+      filterChatLog(plane, session, filter);
+      const offer = byNow.current(chatLogId(session));
+      if (offer?.available === true) pressNow.current(offer);
+    },
+    [plane],
+  );
   /** A link out of Settings (#1387, #1388): the catalogue's row it names, run as the palette
    *  runs it. One the catalogue does not hold now does nothing. */
   useEffect(() => {
@@ -11382,11 +11403,7 @@ export const PlaneView = memo(function PlaneView({
       of: (session) =>
         seen === undefined ? undefined : markerOf(blocksCounted.get(session), seen),
       // **It opens the Chat log, filtered to blocks** (R-301), as its row in the chat's list does.
-      open: (session) => {
-        filterChatLog(plane, session, "blocks");
-        const offer = offers.find((one) => one.id === chatLogId(session));
-        if (offer?.available === true) press(offer);
-      },
+      open: (session, filter = "blocks") => openChatLog(session, filter),
       // **Its Chat log opened is a look** (R-175).
       look: (session) => {
         if (!blocksCounted.has(session)) return false;
@@ -11395,7 +11412,7 @@ export const PlaneView = memo(function PlaneView({
         return true;
       },
     }),
-    [blocksCounted, blocksLooks, offers, plane, press, see, seen],
+    [blocksCounted, blocksLooks, openChatLog, see, seen],
   );
   const [noticeCauses, setNoticeCauses] = useState<readonly string[]>([]);
   useEffect(() => {
@@ -11558,6 +11575,19 @@ export const PlaneView = memo(function PlaneView({
             : "Put this update away, and the chat's needs-you item with it",
         };
       }
+      // **A block result opens its chat's Chat log** (R-226): the turn's finish row that ended
+      // with a block unresolved, at its blocks, as the marker does (R-301).
+      if (stoppedAfterBlock(update) && session !== undefined) {
+        const blockedChat = session;
+        const name = chatNames.get(blockedChat) ?? update.chain[0] ?? "this chat";
+        return {
+          update,
+          go,
+          read,
+          dismiss: put,
+          answers: [chatLogAnswer(name, () => (openChatLog(blockedChat, "blocks"), read()))],
+        };
+      }
       // A finished task opens in place to show its report, or why it failed (#5651).
       const report = task?.report.trim() ? task.report : undefined;
       return { update, go, report, read, dismiss: put };
@@ -11610,6 +11640,7 @@ export const PlaneView = memo(function PlaneView({
     asksOfChat,
     ignoreForUpdate,
     openedUpdate,
+    openChatLog,
   ]);
   /** Asks, shown (#5644): where a vault's request and a profile's sign-in wait. */
   const showInbox = useCallback(() => showSideView("asks"), [showSideView]);

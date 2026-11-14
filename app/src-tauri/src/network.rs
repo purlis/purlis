@@ -287,6 +287,8 @@ pub struct BlockedLately {
     pub said: String,
     /// The chat it was, by the name it was shown under, where the record has it.
     pub chat: Option<String>,
+    /// Its chat's number, where that chat is open here: what its Chat log opens by (R-226).
+    pub session: Option<u32>,
     /// When it was last refused, in seconds since 1970.
     pub at: u32,
     /// How many times it was refused in the record.
@@ -466,6 +468,7 @@ fn rows_of(
             looked_up: entry.looked_up.clone(),
             said,
             chat: entry.chat.name.clone(),
+            session: None,
             at,
             times: u32::try_from(entry.blocks()).unwrap_or(u32::MAX),
             reached: is_reached,
@@ -503,13 +506,15 @@ fn summary_of(target: &Target) -> &str {
 
 /// **The Blocked log's rows** of `listed` (newest first), as Settings draws them (T1-32, Q264):
 /// one per target and who blocked it, with how often, the newest's chat by the name `name_of`
-/// finds, judged against `reached` and `locks`. Only a host purlis's own proxy saw refused is
+/// finds and by the number `session_of` finds it open under (R-226), judged against `reached`
+/// and `locks`. Only a host purlis's own proxy saw refused is
 /// offered to allow, and in a group the newest such block decides it (Q265): a host a chat's
 /// own hook reported is unverified (Q254) and may be a program's own printed words, a refused
 /// lookup's among them (#1663).
 fn blocked_log_rows(
     listed: &[Listed],
     name_of: &dyn Fn(&str) -> Option<String>,
+    session_of: &dyn Fn(&str) -> Option<u32>,
     reached: &[String],
     locks: &sandbox::policy::Locks,
 ) -> Vec<BlockedLately> {
@@ -548,6 +553,7 @@ fn blocked_log_rows(
             looked_up: None,
             said,
             chat: name_of(&one.chat),
+            session: session_of(&one.chat),
             at: u32::try_from(one.at_ms / 1000).unwrap_or(u32::MAX),
             times: 1,
             reached: is_reached,
@@ -565,12 +571,14 @@ fn seen_by_the_sandbox(block: &purlis_core::eventlog::stops::Block) -> bool {
 }
 
 /// [`SandboxNetwork`] for the project at `root`, whose committed file reads as `plane`, with
-/// the Blocked log `listed`, each chat by the name `name_of` finds.
+/// the Blocked log `listed`, each chat by the name `name_of` finds and the number `session_of`
+/// finds it open under.
 fn network_of(
     root: &Path,
     plane: &sandbox::Plane,
     listed: &[Listed],
     name_of: &dyn Fn(&str) -> Option<String>,
+    session_of: &dyn Fn(&str) -> Option<u32>,
 ) -> SandboxNetwork {
     let locks = sandbox::policy::Locks::of(root);
     let Some(open) = open_of(plane, &locks) else {
@@ -580,7 +588,13 @@ fn network_of(
             blocked: Vec::new(),
         };
     };
-    let blocked = blocked_log_rows(listed, name_of, &reached_here(root, &open), &locks);
+    let blocked = blocked_log_rows(
+        listed,
+        name_of,
+        session_of,
+        &reached_here(root, &open),
+        &locks,
+    );
     SandboxNetwork {
         on: true,
         open,
@@ -622,12 +636,21 @@ pub async fn sandbox_network(
     let held = planes.held(&plane)?;
     let root = held.root().to_path_buf();
     let chats = held.chats().logged_names();
+    // Each chat open here, by its id: a Blocked log row opens its Chat log by its number (R-226).
+    let open: std::collections::BTreeMap<String, u32> = chats
+        .iter()
+        .filter_map(|(id, _)| Some((id.clone(), held.chats().session_of_id(id)?)))
+        .collect();
     crate::off_the_window(READING_NETWORK, move || {
         let plane = sandbox::Plane::read(&root);
         let (listed, known) = blocked_log_of(&root, &plane, &chats)?;
-        Ok(network_of(&root, &plane, &listed, &|chat| {
-            known.get(chat).cloned()
-        }))
+        Ok(network_of(
+            &root,
+            &plane,
+            &listed,
+            &|chat| known.get(chat).cloned(),
+            &|chat| open.get(chat).copied(),
+        ))
     })
     .await
 }

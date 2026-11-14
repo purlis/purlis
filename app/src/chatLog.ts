@@ -15,7 +15,9 @@ import type { ViewRef } from "./tabs";
  *
  * It is a view tab, `{ from: null, view: "chat-log", key: "<session>" }`: one per chat, opened
  * from the chat's list and from the palette (`chat.log:<session>`), and keyed by the chat's
- * number as its Activity and its Network are.
+ * number as its Activity and its Network are. **It opens from five places** (R-226, T1-37): the
+ * chat row, a Blocked log row, a block result (the turn's finish row in Updates), the session
+ * record and the marker, each through `BlockedMarkers`' `open`, which presses that row.
  *
  * **Pull-only** (R-225): read once as the tab opens. Nothing the window hears reads it again or
  * marks it, and its tab carries no count and no New marker.
@@ -37,6 +39,14 @@ export function chatLogTitle(name: string): string {
 /** The chat's name in a Chat log tab's `title`. */
 export function chatLogName(title: string): string {
   return title.startsWith(TITLED) ? title.slice(TITLED.length) : title;
+}
+
+/** What a way to a chat's Chat log says (Q217). */
+export const OPEN_THE_CHAT_LOG = "Open the chat log";
+
+/** A way to the Chat log of the chat called `name`, as a screen reader hears it: which chat's. */
+export function openTheChatLogOf(name: string): string {
+  return `${OPEN_THE_CHAT_LOG} of ${name}`;
 }
 
 /** Whether `view` is a chat's Chat log tab. */

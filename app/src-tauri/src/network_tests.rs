@@ -53,7 +53,7 @@ fn open_hosts_name_every_host_of_each_preset_in_force_and_then_the_projects_own(
         "[sandbox]\nmode = \"on\"\negress = [\"model-providers\", \"forge\"]\n\
          hosts = [\"api.example.com\"]\n\n[[forge]]\nkind = \"gitlab\"\nhost = \"git.example.org\"\n",
     );
-    let shown = network_of(dir.path(), &plane, &[], &|_| None);
+    let shown = network_of(dir.path(), &plane, &[], &|_| None, &|_| None);
     assert!(shown.on);
     let none = sandbox::policy::Locks::none();
     assert_eq!(
@@ -86,7 +86,13 @@ fn a_project_whose_chats_are_not_sandboxed_lists_nothing() {
         "id-first",
         sandbox_host("a.example:443", None),
     )];
-    let shown = network_of(dir.path(), &plane("schema = 1\n"), &listed, &|_| None);
+    let shown = network_of(
+        dir.path(),
+        &plane("schema = 1\n"),
+        &listed,
+        &|_| None,
+        &|_| None,
+    );
     assert_eq!(
         shown,
         SandboxNetwork {
@@ -141,7 +147,7 @@ fn the_blocked_log_lists_each_target_once_newest_first_with_its_chat_and_allow()
         listed(2, 10, "id-first", sandbox_host("a.example:443", None)),
     ];
     let plane = plane("[sandbox]\nmode = \"on\"\negress = []\nhosts = [\"api.example.com\"]\n");
-    let shown = network_of(dir.path(), &plane, &listed, &named);
+    let shown = network_of(dir.path(), &plane, &listed, &named, &|_| None);
     /// A row as the test reads it: target, what it says, chat, when, how often, and whether it
     /// is reached.
     type Read<'a> = (Option<&'a str>, &'a str, Option<&'a str>, u32, u32, bool);
@@ -208,6 +214,27 @@ fn the_blocked_log_lists_each_target_once_newest_first_with_its_chat_and_allow()
 }
 
 #[test]
+fn a_blocked_log_row_names_its_chat_s_number_only_where_that_chat_is_open_here() {
+    let dir = tempfile::tempdir().expect("a project");
+    // Newest first: chat "second" is open here as chat 7; chat "first" is not open.
+    let listed = [
+        listed(3, 30, "id-second", sandbox_host("b.example:5432", None)),
+        listed(2, 20, "id-first", sandbox_host("a.example:443", None)),
+    ];
+    let plane = plane("[sandbox]\nmode = \"on\"\negress = []\n");
+    let shown = network_of(dir.path(), &plane, &listed, &named, &|chat| {
+        (chat == "id-second").then_some(7)
+    });
+    let rows: Vec<(Option<&str>, Option<u32>)> = shown
+        .blocked
+        .iter()
+        .map(|row| (row.chat.as_deref(), row.session))
+        .collect();
+    // What its Chat log opens by (R-226): the open chat's number, and none for the other.
+    assert_eq!(rows, vec![(Some("second"), Some(7)), (Some("first"), None)]);
+}
+
+#[test]
 fn the_blocked_log_offers_no_allow_policy_forbids() {
     let dir = tempfile::tempdir().expect("a project");
     let listed = [listed(1, 10, "id-one", sandbox_host("a.example:443", None))];
@@ -217,6 +244,7 @@ fn the_blocked_log_offers_no_allow_policy_forbids() {
         &plane("[sandbox]\nmode = \"on\"\negress = []\n"),
         &listed,
         &named,
+        &|_| None,
     );
     assert_eq!(shown.blocked.len(), 1);
     assert_eq!(shown.blocked[0].levels, Vec::new());
@@ -242,6 +270,7 @@ fn the_blocked_log_offers_allow_only_on_a_host_the_proxy_refused() {
         &plane("[sandbox]\nmode = \"on\"\negress = []\n"),
         &listed,
         &named,
+        &|_| None,
     );
     let rows: Vec<(Option<&str>, &[GrantLevel])> = shown
         .blocked
@@ -283,6 +312,7 @@ fn in_a_group_the_newest_verified_block_decides_the_allow() {
         &plane("[sandbox]\nmode = \"on\"\negress = []\n"),
         &listed,
         &named,
+        &|_| None,
     );
     assert_eq!(shown.blocked.len(), 1, "{:?}", shown.blocked);
     let row = &shown.blocked[0];
@@ -419,6 +449,7 @@ fn blocked_lately_is_folded_into_the_blocked_log() {
         &plane("[sandbox]\nmode = \"on\"\negress = []\n"),
         &listed,
         &|chat| (chat == OURS).then(|| "fix the build".to_owned()),
+        &|_| None,
     );
     let rows: Vec<(Option<&str>, Option<&str>, bool)> = shown
         .blocked

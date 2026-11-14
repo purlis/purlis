@@ -152,14 +152,20 @@ function sameCounts(
 /** What the window's markers are drawn from: each chat's, and the way to its Chat log. */
 export type BlockedMarkersHeld = {
   of: (session: number) => Marker | undefined;
-  /** Opens chat `session`'s Chat log, filtered to blocks. */
-  open: (session: number) => void;
+  /**
+   * **Opens chat `session`'s Chat log** (R-226), showing `filter`: blocks alone by default, as
+   * the marker opens it (R-301). The one way to it from anywhere in the window: the chat row, a
+   * Blocked log row, a block result, the session record and the marker all come here, and it
+   * presses the chat's own Chat log row, so it opens nothing for a chat the window has no row of.
+   */
+  open: (session: number, filter?: ChatLogFilter) => void;
   /** Says chat `session`'s blocks were looked at, its Chat log opened: `false` while its
    *  blocks are not counted yet, so there is nothing to look at. */
   look?: (session: number) => boolean;
 };
 
-/** The project's markers, for every row and band that draws one. None outside a project. */
+/** The project's markers, for every row and band that draws one, and the way to a chat's Chat
+ *  log for every view that names one. None outside a project. */
 export const BlockedMarkers = createContext<BlockedMarkersHeld>({
   of: () => undefined,
   open: () => undefined,
@@ -171,7 +177,7 @@ export function useBlockedMarker(session: number): {
   open: () => void;
 } {
   const held = useContext(BlockedMarkers);
-  return { marker: held.of(session), open: () => held.open(session) };
+  return { marker: held.of(session), open: () => held.open(session, "blocks") };
 }
 
 /** **Chat `session`'s Chat log opened: its blocks are looked at** (R-175), once, as it opens

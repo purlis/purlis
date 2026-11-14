@@ -26,7 +26,9 @@ import type {
   UpdateNoted,
 } from "./bindings";
 import { aTabForEachChat } from "./laidOut.testkit";
+import { forgetInbox } from "./inboxRules";
 import { chatList, pressMenuPath } from "./menus.testkit";
+import { forgetProjectViews } from "./projectViews";
 import { askSettingsLink } from "./settings/links";
 import { findTree } from "./ui/tree/tree.testkit";
 import { showThePanel, stripNamed } from "./test-strips";
@@ -55,6 +57,10 @@ afterEach(() => {
   cleanup();
   clearMocks();
   vi.restoreAllMocks();
+  // What one test's window kept of Updates and of the side it showed, which the next starts
+  // without.
+  forgetInbox();
+  forgetProjectViews();
 });
 
 const PLANE = "/home/dev/plane";
@@ -413,8 +419,16 @@ describe("the Chat log opens from each of its five entry points", () => {
 
     const panel = await showThePanel("Sessions");
     await userEvent.click(await within(panel).findByRole("row", { name: /Ship the widget/ }));
-    await screen.findByTestId("session-record");
-    await userEvent.click(await screen.findByRole("button", { name: "Open the chat log of talk" }));
+    // The record's own view: Updates, beside it, may name the chat too.
+    const record = (await screen.findByTestId("session-record")).closest<HTMLElement>(
+      '[role="tabpanel"]',
+    );
+    expect(record).not.toBeNull();
+    await userEvent.click(
+      await within(record as HTMLElement).findByRole("button", {
+        name: "Open the chat log of talk",
+      }),
+    );
 
     await landedOnTalksLog(asked, false);
   });
