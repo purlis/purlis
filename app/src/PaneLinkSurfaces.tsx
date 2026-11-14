@@ -464,7 +464,7 @@ export function MisleadingAsk({
   return (
     <Dialog
       title="This link goes somewhere its text doesn't say"
-      description={`A program in this chat marked these words as a link to a different ${file ? "file" : "address"}.`}
+      description={`A program marked these words as a link to a different ${file ? "file" : "address"}.`}
       cancel={{ children: "Don't open" }}
       alternative={{
         children: file ? "Copy path" : "Copy address",
