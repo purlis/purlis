@@ -12388,6 +12388,8 @@ fn a_report_that_lowers_the_fact_is_written_down() {
 fn a_chat_a_report_lowered_comes_back_unattended_from_a_restart() {
     let plane = a_sandboxed_plane();
     let chats = restartable_chats_of(plane.path(), Pretend::default());
+    // Restart without sandbox records its opt-out before it starts (ADR 0067 §7).
+    chats.when_the_sandbox_is_decided(Box::new(|_| Ok(())));
     let first = chats
         .start(&a_resumable_chat_in(plane.path()), SIZE)
         .expect("starts");
