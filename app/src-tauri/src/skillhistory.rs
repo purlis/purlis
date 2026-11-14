@@ -113,6 +113,12 @@ pub struct SkillUse {
     pub project: bool,
     /// Whether no skill has that name.
     pub broken: bool,
+    /// Whether the text names it only bare, beside the word skill: a hint (#4510), which the tab
+    /// marks and offers to write as `skills:<name>` (#5874).
+    pub hint: bool,
+    /// The first line of the copy the tab shows first that names it bare, from 1, where it is a
+    /// hint there.
+    pub line: Option<u32>,
 }
 
 /// What a skill's tab shows beside its runs: each copy's state, owners and history, and its uses.
@@ -123,6 +129,8 @@ pub struct SkillDetails {
     pub uses: Vec<SkillUse>,
     /// The project's skills that name it.
     pub used_by: Vec<String>,
+    /// The project's skills that name it only bare, as a hint (#4510, #5874).
+    pub hinted_by: Vec<String>,
     /// Whether the project holds more skills than the graph reads.
     pub uses_cut: bool,
     /// Every workspace and persona that pins it (SK-15d), so no router hides it from their
@@ -197,15 +205,28 @@ fn details_of(root: &std::path::Path, name: &str, now: u64) -> SkillDetails {
     let built_in = built_in();
     let node = purlis_core::skills::graph::uses_of(root, built_in.as_deref(), name);
     let pinners = purlis_core::skills::pinners_of(root, name);
+    // The line a hint is on, in the copy the tab shows first (#5874).
+    let first = Level::copies_of(root, name)
+        .next()
+        .and_then(|(level, _)| purlis_core::skills::verbs::text_of(root, &level, name).ok())
+        .map(|(_, text)| text);
     SkillDetails {
         copies,
-        // A hint (#4510) is told by `purlis skill uses` and the lint; the tab has no mark for one
-        // yet, so it draws the references alone.
         uses: node
             .uses
             .into_iter()
-            .filter(|one| !one.hint)
             .map(|one| SkillUse {
+                line: if one.hint {
+                    first
+                        .as_deref()
+                        .and_then(|text| {
+                            purlis_core::skills::graph::hint_line(text, name, &one.name)
+                        })
+                        .and_then(|line| u32::try_from(line).ok())
+                } else {
+                    None
+                },
+                hint: one.hint,
                 said: one.said,
                 name: one.name,
                 project: one.project,
@@ -213,6 +234,7 @@ fn details_of(root: &std::path::Path, name: &str, now: u64) -> SkillDetails {
             })
             .collect(),
         used_by: node.used_by,
+        hinted_by: node.hinted_by,
         uses_cut: node.cut,
         pins_refused: pinners
             .iter()

@@ -35,6 +35,7 @@ import {
   type RadioProps as AriaRadioProps,
 } from "react-aria-components";
 import { Check } from "lucide-react";
+import { RoundCount } from "../badge/Badge";
 import { Tooltip, type Tip } from "../tooltip/Tooltip";
 
 /** What every group of the three takes beside React Aria's own props. */
@@ -155,11 +156,15 @@ export interface SegmentProps extends Option {
   /** How many things it stands for, after its words: the `count` part. Never the only thing that
    *  tells two segments apart, and said in its name too. */
   count?: number;
+  /** `round`: its count is what waits on the person (an Asks chip, #6342), the badge family's
+   *  round count, 14px in the ✋'s colour, one character, and none at 0. */
+  countAs?: "round";
 }
 
 /** **One segment** of a segmented control. */
-export function Segment({ children, count, tooltip, ...rest }: SegmentProps) {
+export function Segment({ children, count, countAs, tooltip, ...rest }: SegmentProps) {
   const id = useId();
+  const counted = count !== undefined && (countAs !== "round" || count > 0);
   return tipped(
     tooltip,
     <AriaRadio
@@ -167,8 +172,7 @@ export function Segment({ children, count, tooltip, ...rest }: SegmentProps) {
       // Named by its words and its count, said apart.
       aria-labelledby={
         rest["aria-label"] === undefined
-          ? (rest["aria-labelledby"] ??
-            (count === undefined ? `${id}-label` : `${id}-label ${id}-count`))
+          ? (rest["aria-labelledby"] ?? (counted ? `${id}-label ${id}-count` : `${id}-label`))
           : undefined
       }
       data-scope="segment"
@@ -177,11 +181,14 @@ export function Segment({ children, count, tooltip, ...rest }: SegmentProps) {
       <span data-scope="segment" data-part="label" id={`${id}-label`}>
         {children}
       </span>
-      {count !== undefined && (
-        <span data-scope="segment" data-part="count" id={`${id}-count`}>
-          {count}
-        </span>
-      )}
+      {counted &&
+        (countAs === "round" ? (
+          <RoundCount id={`${id}-count`} count={count} at="inline" said={String(count)} />
+        ) : (
+          <span data-scope="segment" data-part="count" id={`${id}-count`}>
+            {count}
+          </span>
+        ))}
     </AriaRadio>,
   );
 }

@@ -560,3 +560,130 @@ fn an_sshd_that_refuses_forwarding_is_named_at_connect_and_for_a_pool_already_th
         pool::look_again();
     }
 }
+
+/// Pool `name`, kept under `config` as on the fixture's machine, pinned to `remote`.
+fn kept_pool(config: &std::path::Path, name: &str, remote: &Remote) -> purlis_core::runners::Pool {
+    let image = purlis_core::dockerpool::Image::pinned(&format!(
+        "ghcr.io/purlis/purlis-runner@sha256:{}",
+        "0".repeat(64)
+    ))
+    .expect("an image");
+    let pool = purlis_core::runners::Pool::new(name, image, purlis_core::runners::Set::default())
+        .expect("a pool")
+        .on(Some(remote.clone()));
+    purlis_core::runners::record_pool(config, &pool).expect("kept");
+    pool
+}
+
+/// The pool `name` under `config`, as it is kept now.
+fn pool_now(config: &std::path::Path, name: &str) -> purlis_core::runners::Pool {
+    purlis_core::runners::pools(config)
+        .expect("the pools")
+        .into_iter()
+        .find(|pool| pool.name() == name)
+        .expect("the pool")
+}
+
+/// **A machine whose host key changed is trusted again by the key the person confirmed, and the
+/// pool works again** (#6270, ADR 0123 §3): the rotated key refuses every run and is found for
+/// the window; Check and trust again shows the key the machine shows now; a key other than that
+/// is refused with nothing kept; the one shown is kept as the pool's pin, its route as it was.
+#[test]
+fn a_pool_whose_host_key_changed_is_trusted_again_by_the_key_confirmed_and_works() {
+    purlis_core::unsteered!();
+    use purlis_core::poolsetup::{Pressed, connecting, pinchange};
+    let Some(fixture) = fixture() else { return };
+    let remote = trusted(&fixture, "again");
+    forward::let_go("again");
+    let config = fixture.folders.path().join("c");
+    let pool = kept_pool(&config, "again", &remote);
+    let _back = KeyBack(&fixture);
+    exec_in(
+        &fixture.sshd,
+        "mkdir -p /root/kept && cp -n /etc/ssh/ssh_host_ed25519_key* /root/kept/ && \
+         rm /etc/ssh/ssh_host_ed25519_key* && ssh-keygen -q -t ed25519 -N '' \
+         -f /etc/ssh/ssh_host_ed25519_key && kill -HUP 1",
+    );
+    std::thread::sleep(Duration::from_secs(1));
+    let now = sshd_key(&fixture);
+    assert!(matches!(
+        pool::docker_of(&fixture.docker, &pool),
+        Err(Finding::KeyChanged { .. })
+    ));
+    let found = pinchange::found_now();
+    let change = found
+        .iter()
+        .find(|one| one.pool == "again")
+        .expect("found for the window");
+    assert_eq!(change.what, pinchange::Changed::Key);
+    assert_eq!(change.now, now.fingerprint());
+
+    let Pressed::Met(met) =
+        connecting::meet_pool(&config, &fixture.docker, "again").expect("met again")
+    else {
+        panic!("the key it shows now is met");
+    };
+    assert_eq!(met.key, now);
+    let unconfirmed = connecting::trust_pool(
+        &config,
+        &fixture.docker,
+        "again",
+        &remote.pin.host_key.fingerprint(),
+    )
+    .expect("asked");
+    assert!(unconfirmed.is_err(), "a key it doesn't show is not kept");
+    assert_eq!(pool_now(&config, "again"), pool, "nothing was kept");
+
+    connecting::trust_pool(&config, &fixture.docker, "again", &now.fingerprint())
+        .expect("asked")
+        .expect("trusted again");
+    let again = pool_now(&config, "again");
+    let kept = again.remote().expect("still on the machine");
+    assert_eq!(kept.pin.host_key, now);
+    assert_eq!(kept.route, remote.route, "its route is as it was");
+    assert!(
+        pinchange::found_now().iter().all(|one| one.pool != "again"),
+        "the change is gone once trusted again"
+    );
+    let docker = pool::docker_of(&fixture.docker, &again).expect("it works again");
+    assert!(docker.answers().is_ok());
+    forward::let_go("again");
+}
+
+/// **An engine that changed under the same key is trusted again with its new id** (#6270): the
+/// key confirmed is the one trusted, and the engine there now is kept.
+#[test]
+fn a_pool_whose_engine_changed_is_trusted_again_with_the_engine_there_now() {
+    purlis_core::unsteered!();
+    use purlis_core::poolsetup::{Pressed, connecting, pinchange};
+    let Some(fixture) = fixture() else { return };
+    let mut remote = trusted(&fixture, "reset");
+    forward::let_go("reset");
+    let engine = remote.pin.engine.clone();
+    // The engine as it was before Docker there was reset.
+    remote.pin.engine = EnginePin::Docker("NOT:THE:ENGINE".to_owned());
+    let config = fixture.folders.path().join("c");
+    let pool = kept_pool(&config, "reset", &remote);
+    assert!(matches!(
+        pool::docker_of(&fixture.docker, &pool),
+        Err(Finding::EngineChanged { .. })
+    ));
+    assert!(
+        pinchange::found_now()
+            .iter()
+            .any(|one| one.pool == "reset" && one.what == pinchange::Changed::Engine)
+    );
+    let Pressed::Met(met) =
+        connecting::meet_pool(&config, &fixture.docker, "reset").expect("met again")
+    else {
+        panic!("the key it shows is met");
+    };
+    assert_eq!(met.key, remote.pin.host_key, "the key is the one trusted");
+    connecting::trust_pool(&config, &fixture.docker, "reset", &met.key.fingerprint())
+        .expect("asked")
+        .expect("trusted again");
+    let again = pool_now(&config, "reset");
+    assert_eq!(again.remote().expect("there").pin.engine, engine);
+    pool::docker_of(&fixture.docker, &again).expect("it works again");
+    forward::let_go("reset");
+}

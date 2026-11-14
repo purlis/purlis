@@ -141,7 +141,7 @@ function Head({ chat, tasksOn }: { chat: ChatHead["chat"]; tasksOn?: TasksOn }) 
                 harness={chat.harness}
               />
             </span>
-            <span className="pane-name">{chat.name}</span>
+            <span className="pane-name ui-text-heading">{chat.name}</span>
             {LINE.has("number") && <PaneNumber session={chat.session} />}
             <PaneTasksWord
               tasksOn={tasksOn}
@@ -281,7 +281,7 @@ function UsingHead({ width }: { width: number }) {
                 harness={USING.harness}
               />
             </span>
-            <span className="pane-name">{USING.name}</span>
+            <span className="pane-name ui-text-heading">{USING.name}</span>
             {line.has("number") && <PaneNumber session={USING.session} />}
             <PaneTasksWord
               session={USING.session}

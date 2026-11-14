@@ -1372,7 +1372,6 @@ export function DispatchGrantsList({
             // row's target above its cells, each under its column's whole words.
             <ControlTable
               className="dispatch-table"
-              fixed
               stacks
               caption="Who may dispatch to whom, and where each grant comes from"
             >

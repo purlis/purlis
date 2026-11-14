@@ -435,6 +435,21 @@ export function ListOption<T extends object>({
   );
 }
 
+/**
+ * **A group's header, as a part** (#6482): its scope and part, the section label it wears, and
+ * whether it is named by data (a file's, a day's), which `list.css` writes as the name is. A
+ * list's and a list of rows' sections, a fold's group name (`Fold.tsx`) and a tree's section
+ * (`Tree.tsx`) all spread it, so no group header is dressed by hand and none can miss the label.
+ */
+export function groupHeader(scope: "list" | "tree", named: boolean) {
+  return {
+    className: "ui-text-label",
+    "data-scope": scope,
+    "data-part": "header",
+    "data-named": named || undefined,
+  } as const;
+}
+
 /** **A group of options under its name**: the name is the section's `header` part. */
 export function ListSection<T extends object>({
   title,
@@ -461,11 +476,7 @@ export function ListSection<T extends object>({
       data-scope="list"
       data-part="section"
     >
-      {title !== undefined && (
-        <AriaHeader data-scope="list" data-part="header" data-named={named || undefined}>
-          {title}
-        </AriaHeader>
-      )}
+      {title !== undefined && <AriaHeader {...groupHeader("list", named)}>{title}</AriaHeader>}
       {children}
     </AriaListBoxSection>
   );
@@ -869,9 +880,7 @@ export function ListRowSection<T extends object>({
     >
       {title !== undefined && (
         <AriaGridListHeader
-          data-scope="list"
-          data-part="header"
-          data-named={named || undefined}
+          {...groupHeader("list", named)}
           data-counted={count === undefined ? undefined : ""}
         >
           {count === undefined ? (

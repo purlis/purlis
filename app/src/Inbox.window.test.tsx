@@ -28,7 +28,7 @@ import { AnswerOpener } from "./AnswerPanel";
 import { DISMISS_ALL } from "./dismissHold";
 import { drawnWith } from "./cascade.testkit";
 import { Notice } from "./Notice";
-import { OTHER_PROJECTS, type Elsewhere } from "./InboxElsewhere";
+import type { Elsewhere } from "./InboxElsewhere";
 import type { Needing, Quiet } from "./NeedsYou";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 import { UNDO_MS } from "./undo";
@@ -2320,10 +2320,9 @@ describe("what the hand's list named, listed in the Inbox (#1695)", () => {
           { plane: PLANE, project: "plane", count: 1 },
           { plane: "/home/dev/ops", project: "ops", count: 2 },
         ],
-        onOpen: vi.fn(),
       }),
     });
-    expect(chatGroupOrNone(OTHER_PROJECTS)).toBeNull();
+    expect(chatGroupOrNone("Other projects in this window")).toBeNull();
     expect(chats()).toEqual(["steward 3"]);
   });
 

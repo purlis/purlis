@@ -85,7 +85,12 @@ export function SwitcherFilter({
           onChange={onChange}
           onKeyDown={onKeyDown}
         />
-        <kbd data-scope="titlebar" data-part="key" aria-hidden="true">
+        <kbd
+          className="ui-text-meta ui-text-code"
+          data-scope="titlebar"
+          data-part="key"
+          aria-hidden="true"
+        >
           {keys}
         </kbd>
       </div>
@@ -134,7 +139,7 @@ export function SwitcherList({
   return (
     <PopoverList ref={scroller}>
       {header !== undefined && (
-        <div data-scope="titlebar" data-part="header" aria-hidden="true">
+        <div data-scope="titlebar" data-part="header" className="ui-text-label" aria-hidden="true">
           {header}
         </div>
       )}
@@ -177,7 +182,7 @@ export function SwitcherList({
         )}
       </div>
       {none && empty !== undefined && (
-        <div data-scope="titlebar" data-part="empty">
+        <div className="ui-text-secondary" data-scope="titlebar" data-part="empty">
           {empty}
         </div>
       )}
@@ -243,6 +248,7 @@ export function SwitcherRow({
       aria-selected={active}
       aria-disabled={unavailable === undefined ? undefined : true}
       aria-describedby={description.length > 0 ? said : undefined}
+      className="ui-text-body"
       data-scope="titlebar"
       data-part="row"
       data-active={active ? "" : undefined}
@@ -257,7 +263,12 @@ export function SwitcherRow({
         {name}
       </span>
       {waiting > 0 && (
-        <span data-scope="titlebar" data-part="row-count" aria-hidden="true">
+        <span
+          className="ui-text-meta ui-text-strong"
+          data-scope="titlebar"
+          data-part="row-count"
+          aria-hidden="true"
+        >
           {waiting > 99 ? "99+" : String(waiting)}
         </span>
       )}

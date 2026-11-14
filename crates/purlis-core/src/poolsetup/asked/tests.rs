@@ -212,6 +212,177 @@ fn the_machine_connect_kept_is_taken_with_its_socket_and_key_file_wherever_the_a
             ..Asked::default()
         };
         let found = remote_of(config.path(), &docker, &asked).unwrap().unwrap();
-        assert_eq!(found, remote, "{on} {with:?}");
+        assert_eq!(found, remote.clone().into(), "{on} {with:?}");
     }
+}
+
+fn tls_files(key: crate::tlsroute::KeyFrom) -> crate::tlsroute::Files {
+    crate::tlsroute::Files::new(
+        "/home/me/.docker/ca.pem".into(),
+        "/home/me/.docker/cert.pem".into(),
+        key,
+    )
+    .unwrap()
+}
+
+#[test]
+fn the_command_names_a_tcp_machines_files_and_a_vault_entry_by_its_names_alone() {
+    let asked = Asked {
+        name: "dev-box".into(),
+        image: image(),
+        on: Some("tcp://build-box:2376".into()),
+        trust: Some(
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
+        ),
+        tls: Some(tls_files(crate::tlsroute::KeyFrom::Vault {
+            plane: "/home/me/plane".into(),
+            vault: "docker-box".into(),
+            key: "TLS_KEY".into(),
+        })),
+        ..Asked::default()
+    };
+    assert_eq!(
+        asked.command(),
+        format!(
+            "purlis pool add dev-box --image {} --on tcp://build-box:2376 --trust \
+             sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --tls-ca \
+             /home/me/.docker/ca.pem --tls-cert /home/me/.docker/cert.pem --tls-key-in \
+             docker-box/TLS_KEY",
+            image()
+        )
+    );
+}
+
+#[test]
+fn a_tcp_machine_without_its_tls_files_is_refused_as_plain_tcp_and_contacts_nothing() {
+    let config = tempfile::tempdir().unwrap();
+    let docker = FakeDocker::new(&inspected());
+    let asked = Asked {
+        name: "dev-box".into(),
+        image: image(),
+        on: Some("tcp://build-box:2375".into()),
+        ..Asked::default()
+    };
+    match remote_of(config.path(), &docker.docker(), &asked) {
+        Err(Refused::Other(why)) => assert_eq!(why, crate::sshroute::PLAIN_TCP),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(docker.file("log"), "", "docker was run");
+}
+
+fn docker_context(
+    name: &str,
+    endpoint: crate::dockercontext::Endpoint,
+) -> crate::dockercontext::DockerContext {
+    crate::dockercontext::DockerContext {
+        name: name.to_owned(),
+        current: false,
+        endpoint,
+    }
+}
+
+/// `purlis pool add --context` (#6268): the context named is read once into the route its
+/// endpoint names, with its TLS files, and its name kept for the pool; this machine's own
+/// socket, or an endpoint purlis doesn't use, is refused and makes nothing.
+#[test]
+fn a_docker_context_named_is_read_into_the_route_and_files_and_kept_by_name() {
+    let files = crate::tlsroute::Files::new(
+        "/home/me/.docker/contexts/tls/9a8b/docker/ca.pem".into(),
+        "/home/me/.docker/contexts/tls/9a8b/docker/cert.pem".into(),
+        crate::tlsroute::KeyFrom::File("/home/me/.docker/contexts/tls/9a8b/docker/key.pem".into()),
+    )
+    .unwrap();
+    let lab = docker_context(
+        "lab",
+        crate::dockercontext::Endpoint::Tls {
+            route: crate::tlsroute::Route::parse("tcp://lab.example").unwrap(),
+            files: files.clone(),
+        },
+    );
+    let asked = Asked {
+        name: "lab".into(),
+        image: image(),
+        ..Asked::default()
+    }
+    .reading_docker_context(&lab)
+    .unwrap();
+    assert_eq!(asked.on.as_deref(), Some("tcp://lab.example:2376"));
+    assert_eq!(asked.tls, Some(files));
+    assert_eq!(asked.docker_context.as_deref(), Some("lab"));
+    assert_eq!(
+        asked.command(),
+        format!("purlis pool add lab --image {} --context lab", image())
+    );
+    let ssh = Asked::default()
+        .reading_docker_context(&docker_context(
+            "build-box",
+            crate::dockercontext::Endpoint::Ssh(
+                crate::sshroute::Route::parse("ssh://me@build-box").unwrap(),
+            ),
+        ))
+        .unwrap();
+    assert_eq!(ssh.on.as_deref(), Some("ssh://me@build-box"));
+    assert_eq!(ssh.tls, None);
+    let here = Asked::default().reading_docker_context(&docker_context(
+        "desktop-linux",
+        crate::dockercontext::Endpoint::Here,
+    ));
+    assert!(
+        matches!(&here, Err(Refused::Other(why)) if why.contains("this machine")),
+        "{here:?}"
+    );
+    let open = Asked::default().reading_docker_context(&docker_context(
+        "open",
+        crate::dockercontext::Endpoint::Refused(crate::sshroute::PLAIN_TCP.to_owned()),
+    ));
+    assert!(matches!(&open, Err(Refused::Other(why)) if why == crate::sshroute::PLAIN_TCP));
+}
+
+/// The pool the Pool step makes keeps the context Connect read its route from, where it is made
+/// on that same machine; a context named on the command comes first.
+#[test]
+fn the_pool_keeps_the_context_connect_read_its_route_from() {
+    let config = tempfile::tempdir().unwrap();
+    super::super::choose_docker_context(
+        config.path(),
+        &docker_context(
+            "build-box",
+            crate::dockercontext::Endpoint::Ssh(
+                crate::sshroute::Route::parse("ssh://me@build-box").unwrap(),
+            ),
+        ),
+    )
+    .unwrap();
+    let asked = Asked::default();
+    assert_eq!(
+        context_for(
+            config.path(),
+            &asked,
+            "ssh://me@build-box/var/run/docker.sock"
+        )
+        .unwrap(),
+        Some("build-box".to_owned())
+    );
+    assert_eq!(
+        context_for(
+            config.path(),
+            &asked,
+            "ssh://me@other-box/var/run/docker.sock"
+        )
+        .unwrap(),
+        None
+    );
+    let named = Asked {
+        docker_context: Some("named".into()),
+        ..Asked::default()
+    };
+    assert_eq!(
+        context_for(
+            config.path(),
+            &named,
+            "ssh://me@other-box/var/run/docker.sock"
+        )
+        .unwrap(),
+        Some("named".to_owned())
+    );
 }

@@ -15,13 +15,9 @@ import { forgetProjectViews, keepFacet, keptFacet } from "./projectViews";
 
 afterEach(forgetProjectViews);
 
-describe("the Inbox's scope", () => {
-  it("offers this workspace's, this project's and every project's, narrowest first, as Chats does (#1921)", () => {
-    expect(INBOX_SCOPES.map((one) => one.says)).toEqual([
-      "This workspace",
-      "This project",
-      "All projects",
-    ]);
+describe("the shared scope switch", () => {
+  it("says Workspace, Project and All, narrowest first, as Chats and Asks do (ADR 0121, amended 2026-11-12)", () => {
+    expect(INBOX_SCOPES.map((one) => one.says)).toEqual(["Workspace", "Project", "All"]);
   });
 
   it("is every project's until the person picks another (ADR 0121 decision 4)", () => {

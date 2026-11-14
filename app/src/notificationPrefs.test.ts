@@ -10,6 +10,7 @@ import {
   setExpiringSound,
   setFinishedAfter,
   setQuietHours,
+  setRemind,
   setSourceOn,
 } from "./notificationPrefs";
 import { forgetThisLaunch } from "./regions";
@@ -52,6 +53,7 @@ describe("quiet hours, kept in the layout file (#1989)", () => {
         finishedAfter: 5,
         off: [],
         expiringSound: false,
+        remind: "gently",
       },
       said: [],
     });
@@ -106,6 +108,7 @@ describe("how long a task works before its finish notifies (#6005, ADR 0121 deci
       finishedAfter: 15,
       off: [],
       expiringSound: false,
+      remind: "gently",
     });
   });
 
@@ -165,5 +168,28 @@ describe("the Expiring sound (ADR 0121 decision 12)", () => {
     expect(loadNotifications({ notifications: { expiringSound: "yes" } }).said.join(" ")).toContain(
       "notifications.expiringSound",
     );
+  });
+});
+
+describe("Remind me (#6344, ADR 0121 amended 2026-11-12)", () => {
+  it("is Gently until the person changes it, and left out of the file at Gently", async () => {
+    expect(notificationPrefs().remind).toBe("gently");
+    setRemind("often");
+    await vi.waitFor(() => expect(written()).toHaveLength(1));
+    expect(written()[0].notifications).toEqual({ remind: "often" });
+    setRemind("gently");
+    await vi.waitFor(() => expect(written()).toHaveLength(2));
+    expect(written()[1].notifications).toBeUndefined();
+  });
+
+  it("is read from the file the window was handed, so it survives a restart", () => {
+    handed({ version: 2, regions: [], notifications: { remind: "off" } });
+    expect(notificationPrefs().remind).toBe("off");
+  });
+
+  it("reads a value that is no pace as Gently, and says so", () => {
+    const { prefs, said } = loadNotifications({ notifications: { remind: "loudly" } });
+    expect(prefs.remind).toBe("gently");
+    expect(said.join(" ")).toContain("notifications.remind");
   });
 });

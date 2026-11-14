@@ -8,10 +8,12 @@ import {
   setExpiringSound,
   setFinishedAfter,
   setQuietHours,
+  setRemind,
   setSourceOn,
   useNotificationPrefs,
   type Source,
 } from "../notificationPrefs";
+import { type Remind, REMINDS } from "../handBounce";
 import { setQuietNow, useQuiet } from "../quiet";
 import { ATTENTION_ALSO } from "./catalogue";
 import { Choice, Field } from "./components";
@@ -27,6 +29,8 @@ import type { LiveSetting, SettingsGroup } from "./groups";
  * - **Notifications per source**, for Should know only, since a Blocking ask always notifies and
  *   Just so you know never does: a failed task, and a long finish while away, after how many
  *   minutes.
+ * - **Remind me** (#6344, ADR 0121 amended 2026-11-12): how often the ✋ bounces again while a
+ *   Blocking ask waits: Off, Gently (the backoff, the default) or Often (every 5 minutes).
  * - **The Expiring sound** (decision 12), off until turned on.
  * - **Stuck?** (#6014): the project's thresholds, kept in its settings files, where they stay
  *   while the operator decides whether they become this machine's. Their row says so; every other
@@ -45,6 +49,7 @@ export function notificationsGroup(plane?: PlaneId): SettingsGroup {
       quietNow,
       typing,
       blocking,
+      remind,
       source("task-failed"),
       source("task-done"),
       finishedAfter,
@@ -153,6 +158,38 @@ const blocking: LiveSetting = {
           Always notify
         </p>
       ),
+    };
+  },
+};
+
+/** What each pace of Remind me is called and says, in the order offered. */
+const REMIND_SAID: Readonly<Record<Remind, { label: string; says: string }>> = {
+  off: { label: "Off", says: "No reminders. The ✋ still bounces when an ask arrives." },
+  gently: {
+    label: "Gently",
+    says: "After 5, 10, 20 and 40 minutes, then every hour.",
+  },
+  often: { label: "Often", says: "Every 5 minutes." },
+};
+
+const remind: LiveSetting = {
+  id: "you.notifications.remind",
+  label: "Remind me",
+  help: "How often the ✋ bounces again while an ask stops a chat. A new ask, an answer or opening Asks starts the count again. It stays still during Quiet, while you type and while the window is behind.",
+  writes: "this machine",
+  useControl: function useRemind() {
+    const { remind: pace } = useNotificationPrefs();
+    return {
+      control: (ids) => (
+        <Choice
+          kind="radio"
+          ids={ids}
+          options={REMINDS.map((value) => ({ value, ...REMIND_SAID[value] }))}
+          value={pace}
+          onValueChange={(to) => setRemind(REMINDS.find((one) => one === to) ?? "gently")}
+        />
+      ),
+      grouped: true,
     };
   },
 };

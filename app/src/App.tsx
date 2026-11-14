@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { OPEN_POOL_SETUP_ASK } from "./poolSetupAsked";
 import { saidOfLate, useLateAnswers } from "./answerWatch";
 import {
   useCallback,
@@ -43,6 +44,7 @@ import { SessionBusNotice } from "./SessionBusNotice";
 import { EngineDownloadNotice } from "./EngineDownloadNotice";
 import { EngineSandboxNotice } from "./EngineSandboxNotice";
 import { PoolMintingNotice } from "./PoolMintingNotice";
+import { PoolPinChangedNotice } from "./PoolPinChangedNotice";
 import { HostFailingNotice } from "./HostFailingNotice";
 import { VaultsWaitingNotice } from "./VaultsWaitingNotice";
 import { Notice, NoticeList } from "./Notice";
@@ -177,6 +179,7 @@ import {
 import { FOCUS_BACK, FOCUS_MODE, useFocusMode } from "./keys/focusMode";
 import { unsavedOf } from "./SavingView";
 import { useRailMode } from "./railMode";
+import { Measured } from "./slowLog";
 
 /**
  * Puts the app's own `charter` on a terminal's `PATH`, and answers what the core said — the
@@ -1619,6 +1622,15 @@ function App() {
    *  launch or another window hands this one takes it back, so only the person's own open from
    *  the welcome opens Pool setup. */
   const [runElsewhereNext, setRunElsewhereNext] = useState(false);
+  // Needs you's Open Pool setup, on the entry that a cluster is ready (#4496).
+  useEffect(() => {
+    const heard = (event: Event) => {
+      const plane = (event as CustomEvent<{ plane?: unknown }>).detail?.plane;
+      if (typeof plane === "string") windowDoes.openPoolSetup(plane);
+    };
+    window.addEventListener(OPEN_POOL_SETUP_ASK, heard);
+    return () => window.removeEventListener(OPEN_POOL_SETUP_ASK, heard);
+  }, [windowDoes]);
   useEffect(() => {
     if (!runElsewhereNext || inFront === undefined) return;
     setRunElsewhereNext(false);
@@ -2771,12 +2783,6 @@ function App() {
     })),
     there: askedThere,
   });
-  /** Go to project (#1700 item 5): that project in front, with its Inbox open, as the ✋ does. */
-  const openInboxOf = useCallback((plane: string) => {
-    if (!planesNow.current.includes(plane)) return;
-    setShowing({ at: "plane", plane });
-    setInboxAsk((was) => ({ plane, at: (was?.at ?? 0) + 1 }));
-  }, []);
   const elsewhere = useMemo<Elsewhere>(
     () => ({
       ...(JSON.parse(elsewhereSaid) as Pick<
@@ -2784,9 +2790,8 @@ function App() {
         "asking" | "quiet" | "waitingHere" | "there"
       >),
       onPress: pressNeeding,
-      onOpen: openInboxOf,
     }),
-    [elsewhereSaid, pressNeeding, openInboxOf],
+    [elsewhereSaid, pressNeeding],
   );
 
   /**
@@ -3188,6 +3193,19 @@ function App() {
               <EngineSandboxNotice />
               {/* A cluster pool that began minting without asking: told once, blocking nothing (#4442). */}
               <PoolMintingNotice onOpenPools={() => openSettingsAt("you.machine.pools")} />
+              {/* A pool on another machine whose pin no longer holds: Check and trust again opens
+            Pool setup on it, in the project in front or the next to come to it (#6270). */}
+              <PoolPinChangedNotice
+                onCheckAndTrust={(pool) =>
+                  void commands
+                    .poolSetupPool(pool)
+                    .catch(() => undefined)
+                    .then(() => {
+                      if (inFront !== undefined) windowDoes.openPoolSetup(inFront);
+                      else setRunElsewhereNext(true);
+                    })
+                }
+              />
 
               {/* The session host stopped unexpectedly three times in five minutes, and the window's
             supervisor stopped starting it again: Try again (#2007). */}
@@ -3308,52 +3326,55 @@ function App() {
           their splits and their chat states and draw nothing at all. */}
             <div className="project-views" ref={setProjectSlot} />
             {planes.map((plane) => (
-              <PlaneView
-                key={plane}
-                plane={plane}
-                inFront={plane === inFront}
-                kept={keptDrawn.has(plane)}
-                slot={projectSlot}
-                projects={drawn}
-                pinnedProjects={pinnedProjects}
-                window={windowDoes}
-                onReport={onReport}
-                onSessionRows={onSessionRows}
-                alerts={alertsOfEach.get(plane) ?? alerts}
-                statusNotices={plane === inFront ? statusNotices : undefined}
-                contributed={contributedPanels}
-                views={extensionViews}
-                commands={extensionCommands}
-                settingsAsked={settingsAsk?.plane === plane ? settingsAsk.at : undefined}
-                savingAsked={savingAsk?.plane === plane ? savingAsk.at : undefined}
-                poolSetupAsked={poolSetupAsk?.plane === plane ? poolSetupAsk.at : undefined}
-                licencesAsked={licencesAsk?.plane === plane ? licencesAsk.at : undefined}
-                focusMode={focusMode.on}
-                tabWindow={tabWindow?.number}
-                settingsTabAsked={settingsTabAsk?.plane === plane ? settingsTabAsk.at : undefined}
-                settingsLinkAsked={settingsLinkAsk?.plane === plane ? settingsLinkAsk : undefined}
-                yourSettingsAsked={
-                  yourSettingsAsk?.plane === plane ? yourSettingsAsk.at : undefined
-                }
-                firstChatAsked={firstChat?.plane === plane ? firstChat : undefined}
-                shellAsked={shellAsk?.plane === plane ? shellAsk : undefined}
-                fileAsked={fileAsk?.plane === plane ? fileAsk : undefined}
-                artifactAsked={artifactAsk?.plane === plane ? artifactAsk : undefined}
-                closeAsked={closeAsk?.plane === plane ? closeAsk : undefined}
-                onAsking={onAsking}
-                awayRefused={awayRefusals.held[plane]}
-                onAway={answerAway}
-                waiting={registry.held[plane]}
-                questions={registry.questions[plane]}
-                inboxAsked={inboxAsk?.plane === plane ? inboxAsk.at : undefined}
-                inboxGroup={inboxAsk?.plane === plane ? inboxAsk.session : undefined}
-                inboxUpdate={inboxAsk?.plane === plane ? inboxAsk.update : undefined}
-                elsewhere={elsewhere}
-                everyChat={everyChat}
-                windowLines={plane === inFront ? windowLines : undefined}
-                profileNames={profileNames.of[plane]}
-                onSeen={plane === inFront ? onSeen : undefined}
-              />
+              // What each project costs to draw, for a stall to name (`slowLog.ts`, H9): the
+              // one in front apart from the ones behind it.
+              <Measured key={plane} id={plane === inFront ? "PlaneView" : "PlaneView (behind)"}>
+                <PlaneView
+                  plane={plane}
+                  inFront={plane === inFront}
+                  kept={keptDrawn.has(plane)}
+                  slot={projectSlot}
+                  projects={drawn}
+                  pinnedProjects={pinnedProjects}
+                  window={windowDoes}
+                  onReport={onReport}
+                  onSessionRows={onSessionRows}
+                  alerts={alertsOfEach.get(plane) ?? alerts}
+                  statusNotices={plane === inFront ? statusNotices : undefined}
+                  contributed={contributedPanels}
+                  views={extensionViews}
+                  commands={extensionCommands}
+                  settingsAsked={settingsAsk?.plane === plane ? settingsAsk.at : undefined}
+                  savingAsked={savingAsk?.plane === plane ? savingAsk.at : undefined}
+                  poolSetupAsked={poolSetupAsk?.plane === plane ? poolSetupAsk.at : undefined}
+                  licencesAsked={licencesAsk?.plane === plane ? licencesAsk.at : undefined}
+                  focusMode={focusMode.on}
+                  tabWindow={tabWindow?.number}
+                  settingsTabAsked={settingsTabAsk?.plane === plane ? settingsTabAsk.at : undefined}
+                  settingsLinkAsked={settingsLinkAsk?.plane === plane ? settingsLinkAsk : undefined}
+                  yourSettingsAsked={
+                    yourSettingsAsk?.plane === plane ? yourSettingsAsk.at : undefined
+                  }
+                  firstChatAsked={firstChat?.plane === plane ? firstChat : undefined}
+                  shellAsked={shellAsk?.plane === plane ? shellAsk : undefined}
+                  fileAsked={fileAsk?.plane === plane ? fileAsk : undefined}
+                  artifactAsked={artifactAsk?.plane === plane ? artifactAsk : undefined}
+                  closeAsked={closeAsk?.plane === plane ? closeAsk : undefined}
+                  onAsking={onAsking}
+                  awayRefused={awayRefusals.held[plane]}
+                  onAway={answerAway}
+                  waiting={registry.held[plane]}
+                  questions={registry.questions[plane]}
+                  inboxAsked={inboxAsk?.plane === plane ? inboxAsk.at : undefined}
+                  inboxGroup={inboxAsk?.plane === plane ? inboxAsk.session : undefined}
+                  inboxUpdate={inboxAsk?.plane === plane ? inboxAsk.update : undefined}
+                  elsewhere={elsewhere}
+                  everyChat={everyChat}
+                  windowLines={plane === inFront ? windowLines : undefined}
+                  profileNames={profileNames.of[plane]}
+                  onSeen={plane === inFront ? onSeen : undefined}
+                />
+              </Measured>
             ))}
 
             {/* Settings drawn where the opener is, with no project open (#1206). */}

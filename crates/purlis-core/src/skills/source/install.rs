@@ -215,9 +215,15 @@ pub(super) fn install_from(
     // The files each review read are the ones copied: read once, so a set that fit one read for
     // its review fits it for its install too (#4024).
     // A skill they refer to that is met at `level` already is left as it is, as the review left
-    // it (#4032, #4155).
-    let reviewed =
-        review::reviewed(source, &names, &review::met_at(plane, level)).map_err(Unread::said)?;
+    // it (#4032, #4155), and one only a hint brings comes along only where it was accepted
+    // (#5874).
+    let reviewed = review::reviewed(
+        source,
+        &names,
+        &review::met_at(plane, level),
+        review::Hints::Only(&names),
+    )
+    .map_err(Unread::said)?;
     let now = Accepted {
         pin: pin.clone(),
         skills: reviewed

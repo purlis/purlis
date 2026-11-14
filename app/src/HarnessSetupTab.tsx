@@ -101,17 +101,17 @@ export function HarnessSetupTab({
         <>
           <h2>{any ? "A harness is installed" : "No harness found"}</h2>
           {any ? (
-            <p className="came-back">
+            <p className="came-back ui-text-secondary">
               Start a chat and pick it. A harness that is not signed in asks for its own login when
               its chat starts.
             </p>
           ) : (
             // The explanation, then the way out, each a paragraph of its own (#1719).
             <>
-              <p className="came-back">
+              <p className="came-back ui-text-secondary">
                 A chat runs a harness, and none is installed on this machine.
               </p>
-              <p className="came-back">
+              <p className="came-back ui-text-secondary">
                 Install one with its own installer: Install runs that command in a shell. When it
                 has finished, press Check again. Signing in is the harness&apos;s own first screen,
                 when its chat starts.
@@ -133,7 +133,7 @@ export function HarnessSetupTab({
           <li key={row.name} className="harness-row">
             <span className="harness-row-says">
               <span className="tab-name">{row.title}</span>
-              <span className="harness-row-state">{harnessSays(row)}</span>
+              <span className="harness-row-state ui-text-secondary">{harnessSays(row)}</span>
             </span>
             {!row.installed && (
               // `tabIndex={0}` on every button, per `docs/ui-primitives.md` (#189).
@@ -147,7 +147,7 @@ export function HarnessSetupTab({
               </Button>
             )}
             {!row.installed && (
-              <span className="harness-row-how">
+              <span className="harness-row-how ui-text-secondary">
                 <code className="harness-installer">{row.installer}</code>
                 <span>from {row.installer_page}</span>
               </span>
@@ -160,7 +160,7 @@ export function HarnessSetupTab({
         <section aria-labelledby="harness-setup-local">
           <h2 id="harness-setup-local">A model on this machine</h2>
           {local.map((one) => (
-            <p className="came-back" key={one.title}>
+            <p className="came-back ui-text-secondary" key={one.title}>
               {one.title} is running on this machine, at <code>{one.base_url}</code>. {one.harness}{" "}
               can use it with no account: install {one.harness}, then add {one.title} as a provider
               in its config, as its providers page shows.

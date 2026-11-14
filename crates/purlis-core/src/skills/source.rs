@@ -49,7 +49,7 @@ pub use lock::{Kept, Locked, Lockfile};
 pub use outgoing::{Outgoing, Purpose, Stop, export_folder, export_zip, gather, gather_set};
 pub use review::{
     Accepted, AcceptedSkill, Browse, Clash, Offered, Review, ReviewFile, SetReview, SkillReview,
-    TooMuch, browse, linted, review, review_all, review_set,
+    TooMuch, browse, linted, review, review_all, review_set, review_set_without, review_without,
 };
 pub use update::{
     Changed, FileChange, Offer, Unasked, Unconfirmed, UpdateReview, Updates, line_diff, update,

@@ -23,12 +23,16 @@
 //!   ([`super::Asks::keep_opened`]), as the file it was then.
 //! - **A `file://` address is a file link** under these same rules when it names this machine
 //!   (`file:///…`, `file://localhost/…`, spec Q2). One naming another host is not, and says why.
+//! - **A branch's file links only when the branch offers it** (#6357,
+//!   [`LocalFile::offered_by`]): what git tracks there, or doesn't ignore, which is all the light
+//!   editor opens (`files::open`). One git ignores is no link, and its hover says why.
 
 use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
 use super::{Asking, Asks, Kind, LinkKind, Opening, Pane, Resolved, Runs, Target};
+use crate::files::Branch;
 
 /// **A file a path names**, as the core resolved it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -136,18 +140,68 @@ pub fn home_of(pane: &Pane) -> Option<Home> {
 /// The most links one path is followed through: what the system's own resolution allows.
 const MOST_LINKS: usize = 40;
 
+/// **Whether a branch offers one of its files** (#6357): asked with the project (resolved), the
+/// branch, and the file's path in its folder. `Some(true)` for a file git tracks there or does
+/// not ignore, `Some(false)` for one it doesn't offer, and `None` where it could not say.
+pub type Offers = dyn Fn(&Path, Branch<'_>, &str) -> Option<bool> + Send + Sync;
+
+/// What the hover of a file its branch doesn't offer says (#6357). It names no cause: an ignored
+/// file and one in a submodule are both outside what the editor opens.
+pub const NOT_OFFERED: &str =
+    "purlis will not open this file in its editor: it is not one of its branch's own files";
+
 /// **A file path** (#6216): opened in the light editor, at its line, never by the system.
 pub struct LocalFile {
     /// The home folder a `~/` path starts from; `None` where the environment names none.
     home: Option<PathBuf>,
     /// The folders a hover never looks in ([`LocalFile::guarded`]).
     guarded: Vec<PathBuf>,
+    /// What says whether a branch offers a file ([`LocalFile::offered_by`]); with none, every
+    /// branch's file links and the editor alone decides.
+    offers: Option<Box<Offers>>,
 }
 
 impl LocalFile {
     /// Paths read with `home` as the home folder, looking in none of `guarded`.
     pub fn with(home: Option<PathBuf>, guarded: Vec<PathBuf>) -> Self {
-        Self { home, guarded }
+        Self {
+            home,
+            guarded,
+            offers: None,
+        }
+    }
+
+    /// **A branch's file links only where `offers` says the branch offers it** (#6357), so the
+    /// link and the light editor agree: the editor opens only what git tracks or doesn't ignore.
+    /// The app asks its bounded reader, which starts no git in the app's process.
+    #[must_use]
+    pub fn offered_by(
+        mut self,
+        offers: impl Fn(&Path, Branch<'_>, &str) -> Option<bool> + Send + Sync + 'static,
+    ) -> Self {
+        self.offers = Some(Box::new(offers));
+        self
+    }
+
+    /// Whether the branch `read_from` names doesn't offer the file: only `Some(false)` is.
+    fn not_offered(&self, project: Option<&Path>, read_from: &ReadFrom) -> bool {
+        let (Some(offers), Some(project)) = (self.offers.as_deref(), project) else {
+            return false;
+        };
+        let ReadFrom::Branch {
+            ws,
+            repo,
+            piece,
+            path,
+        } = read_from
+        else {
+            return false;
+        };
+        let branch = match piece {
+            Some(piece) => Branch::piece(ws, repo, piece),
+            None => Branch::repo(ws, repo),
+        };
+        offers(project, branch, path) == Some(false)
     }
 
     /// Paths read with the person's own home folder, and this system's guarded folders.
@@ -312,6 +366,9 @@ impl LinkKind for LocalFile {
         let Some(read_from) = read_from(project.as_deref(), &path) else {
             return Resolved::Quiet;
         };
+        if self.not_offered(project.as_deref(), &read_from) {
+            return Resolved::NotALink(NOT_OFFERED.into());
+        }
         let home = home_of(pane);
         let in_home = home
             .as_ref()

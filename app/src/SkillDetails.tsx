@@ -9,11 +9,13 @@ import {
   type SkillDetails,
   type SkillDiff,
   type SkillLifecycle,
+  type SkillUse,
   type SkillVersion,
   type SkillVersionBefore,
   type StatsRow,
 } from "./bindings";
 import { counted, saidAt } from "./dispatches";
+import { Badge } from "./ui/badge/Badge";
 import { Button } from "./ui/button/Button";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
@@ -290,31 +292,81 @@ function VersionRow({
   );
 }
 
-/** **The skills this one names, and those that name it** (decision 57): on its Overview. */
-export function SkillUses({ name, details: page }: { name: string; details: SkillDetails }) {
+/** Why a hint's row is marked (#5874, `prototype/skill-hints` A): where it is named bare, and
+ *  the reference that would make it one. */
+export function hintSaid(one: SkillUse): string {
+  const where = one.line === null ? "Named bare" : `Named bare on line ${one.line}`;
+  return `${where}, so a chat may or may not load it. Write skills:${one.name} to make it a reference.`;
+}
+
+/**
+ * **The skills this one names, and those that name it** (decision 57): on its Overview. A skill
+ * named only bare beside the word skill is a hint (#4510): its row carries a Hint mark, why on a
+ * line of its own, and Write skills:<name>, which `onWrite` makes; a skill that names this one
+ * bare is marked too, and its fix is left to its own tab (#5874, `prototype/skill-hints` A).
+ */
+export function SkillUses({
+  name,
+  details: page,
+  busy = false,
+  onWrite,
+}: {
+  name: string;
+  details: SkillDetails;
+  busy?: boolean;
+  /** Writes the hint at `hint` as a reference; absent where purlis does not keep the text. */
+  onWrite?: (hint: string) => void;
+}) {
+  const by = [
+    ...page.used_by.map((other) => ({ other, hint: false })),
+    ...page.hinted_by
+      .filter((other) => !page.used_by.includes(other))
+      .map((other) => ({ other, hint: true })),
+  ];
   return (
     <section aria-labelledby="skill-uses-heading" data-testid="skill-uses">
       <h3 id="skill-uses-heading">Uses and used by</h3>
       {page.uses.length === 0 ? (
         <p className="honest">{name} names no other skill.</p>
       ) : (
-        <ul aria-label={`Skills ${name} names`}>
+        <ul className="skill-uses-rows" aria-label={`Skills ${name} names`}>
           {page.uses.map((one) => (
-            <li key={one.said} data-broken={one.broken || undefined}>
-              Uses <code>{one.name}</code>
-              {one.project ? "" : " (built in)"}
-              {one.broken && " — no skill has this name, so the reference is broken"}
+            <li
+              key={one.said}
+              data-broken={one.broken || undefined}
+              data-hint={one.hint || undefined}
+            >
+              <span className="skill-uses-row-said">
+                Uses <code>{one.name}</code>
+                {one.project ? "" : " (built in)"}
+                {one.broken && " — no skill has this name, so the reference is broken"}
+                {one.hint && <span className="skill-uses-row-why honest">{hintSaid(one)}</span>}
+              </span>
+              {one.hint && <Badge variant="waiting">Hint</Badge>}
+              {one.hint && onWrite !== undefined && (
+                <Button size="sm" isDisabled={busy} onPress={() => onWrite(one.name)}>
+                  Write skills:{one.name}
+                </Button>
+              )}
             </li>
           ))}
         </ul>
       )}
-      {page.used_by.length === 0 ? (
+      {by.length === 0 ? (
         <p className="honest">No other skill of this project names {name}.</p>
       ) : (
-        <ul aria-label={`Skills that name ${name}`}>
-          {page.used_by.map((other) => (
-            <li key={other}>
-              Used by <code>{other}</code>
+        <ul className="skill-uses-rows" aria-label={`Skills that name ${name}`}>
+          {by.map(({ other, hint }) => (
+            <li key={other} data-hint={hint || undefined}>
+              <span className="skill-uses-row-said">
+                Used by <code>{other}</code>
+                {hint && (
+                  <span className="skill-uses-row-why honest">
+                    It names {name} bare. Its own tab offers the fix.
+                  </span>
+                )}
+              </span>
+              {hint && <Badge variant="waiting">Hint</Badge>}
             </li>
           ))}
         </ul>

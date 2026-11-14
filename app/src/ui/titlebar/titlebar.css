@@ -12,7 +12,8 @@
    attribute). */
 
 /* ---------------------------------------------------------------------------------------------
-   The project's name and the slash after it (R92): quiet, 500, then a faint "/".
+   The project's name and the slash after it (R92): the body's strong line in the quiet tier
+   (`ui-text-body ui-text-strong`, #6389), then a faint "/".
    --------------------------------------------------------------------------------------------- */
 
 [data-part="project"][data-scope="titlebar"] {
@@ -20,8 +21,6 @@
   min-inline-size: 0;
   overflow: hidden;
   color: var(--text-quiet);
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-medium);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -89,8 +88,6 @@
   border-radius: var(--radius-control);
   color: var(--text-quiet);
   background-color: transparent;
-  font: inherit;
-  font-size: var(--font-size-md);
   line-height: 1;
   white-space: nowrap;
   cursor: default;
@@ -198,8 +195,6 @@
   border-radius: var(--radius-full);
   color: var(--state-waiting);
   background-color: var(--wash-warning);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-strong);
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
@@ -217,8 +212,6 @@
   border-radius: var(--radius-full);
   color: var(--state-waiting);
   background-color: var(--wash-warning);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-strong);
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
@@ -352,20 +345,13 @@
   flex: none;
   padding-inline: var(--space-2);
   border-radius: var(--radius-sm);
-  color: var(--text-muted);
   background-color: var(--surface-overlay);
-  font-family: var(--font-mono);
-  font-size: var(--font-size-xs);
 }
 
 /* A column's heading (R96): its words in the quiet tier, small capitals. */
 [data-part="header"][data-scope="titlebar"] {
   margin: var(--space-3) var(--space-4) var(--space-2);
   color: var(--text-quiet);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-strong);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 
 /* Two columns side by side, the line between them a part of its own. */
@@ -510,8 +496,6 @@
 
 [data-part="empty"][data-scope="titlebar"] {
   padding: var(--space-3);
-  color: var(--text-quiet);
-  font-size: var(--font-size-sm);
 }
 
 /* A project's mark (R96): its two letters in its own colour on that colour's surface. */
@@ -564,9 +548,6 @@
   border-radius: var(--radius-control);
   color: var(--text-secondary);
   background-color: transparent;
-  font: inherit;
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-medium);
   cursor: default;
   appearance: none;
 }

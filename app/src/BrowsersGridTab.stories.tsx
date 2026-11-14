@@ -77,7 +77,7 @@ type Story = StoryObj<typeof meta>;
 
 /**
  * **This project's three browsers**: Tab reaches the scope switch and then the grid, whose
- * arrows walk its tiles; the switch's arrows pick All projects, which adds the other project's
+ * arrows walk its tiles; the switch's arrows pick All, which adds the other project's
  * browser and names each tile's project.
  */
 export const ThisProject: Story = {
@@ -87,7 +87,7 @@ export const ThisProject: Story = {
     await expect(canvas.getAllByRole("option")).toHaveLength(3);
 
     await userEvent.tab();
-    await expect(canvas.getByRole("radio", { name: /This project/ })).toHaveFocus();
+    await expect(canvas.getByRole("radio", { name: /^Project/ })).toHaveFocus();
     expectFocusInSight();
     await userEvent.tab();
     const first = canvas.getByRole("option", { name: /Browser b1 of steward 1/ });
@@ -98,7 +98,7 @@ export const ThisProject: Story = {
     expectFocusInSight();
 
     await userEvent.tab({ shift: true });
-    // All projects stands after This project: the switch reads narrowest first (#1921).
+    // All stands after Project: the switch reads narrowest first (#1921).
     await userEvent.keyboard("{ArrowRight}");
     await waitFor(() => expect(canvas.getAllByRole("option")).toHaveLength(4));
     await expect(grid).toHaveTextContent("shop · alpha");
@@ -117,7 +117,7 @@ export const NoneHere: Story = {
     await expect(canvas.getByText("No browser runs in this project")).toBeVisible();
     await expect(canvas.getByText("1 browser runs in all projects.")).toBeVisible();
     await userEvent.tab();
-    await expect(canvas.getByRole("radio", { name: /This project/ })).toHaveFocus();
+    await expect(canvas.getByRole("radio", { name: /^Project/ })).toHaveFocus();
     await userEvent.tab();
     const widen = canvas.getByRole("button", { name: "Show all projects" });
     await expect(widen).toHaveFocus();

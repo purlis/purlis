@@ -8,11 +8,10 @@ import {
   type DispatchArrival,
   type DispatchArrived,
   type DispatchGone,
-  type PlaneChanged,
   type PlaneId,
 } from "./bindings";
 import { listen } from "./here";
-import { concerns, SIDEBAR } from "./planeChanged";
+import { followPlaneChanged, SIDEBAR } from "./planeChanged";
 
 /**
  * **What the project's dispatch grants ask of the person now** (#1506), read once per project
@@ -131,16 +130,18 @@ export function useDispatchArrival(plane: PlaneId): Arrival & {
           if (made.gone) stop();
           else made.stops.push(stop);
         };
+        // The project's file and its personas both concern the sidebar: which grants wait, and
+        // which of them name a persona that is not defined. Followed as every reader of the
+        // plane is, so a window hidden meanwhile reads once as it is shown (`planeChanged.ts`).
+        hear(
+          followPlaneChanged(
+            [plane],
+            () => SIDEBAR,
+            () => read(plane),
+          ),
+        );
         void (async () => {
           try {
-            hear(
-              await listen<PlaneChanged>("plane-changed", (event) => {
-                if (event.payload.plane !== plane) return;
-                // The project's file and its personas both concern the sidebar: which grants
-                // wait, and which of them name a persona that is not defined.
-                if (concerns(event.payload.answers, SIDEBAR)) read(plane);
-              }),
-            );
             hear(
               await listen<{ plane: PlaneId }>("dispatch-arrival", (event) => {
                 if (event.payload.plane === plane) read(plane);

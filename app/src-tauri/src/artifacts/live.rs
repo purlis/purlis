@@ -73,6 +73,12 @@ impl Key {
         super::queried::is_extension(&self.query)
     }
 
+    /// Whether it is a `purlis.chats` feed.
+    fn of_chats(&self) -> bool {
+        self.catalogued()
+            .is_some_and(|query| query.name == purlis_core::chattools::CHATS)
+    }
+
     fn catalogued(&self) -> Option<&'static Query> {
         let (id, _) = self.query.rsplit_once('@')?;
         purlis_core::catalogue::find(id).map(|(query, _)| query)
@@ -88,10 +94,20 @@ pub(crate) struct Who {
 }
 
 /// Every subscription of this run, and the instant a wake is already set for.
-#[derive(Default)]
 pub(crate) struct Live {
     hub: live::Hub<Key, Who>,
     waking: Option<Instant>,
+}
+
+impl Default for Live {
+    /// Its `purlis.chats` feeds hand an answer on only when it changed
+    /// ([`live::Hub::handing_on_only_changes`]).
+    fn default() -> Self {
+        Self {
+            hub: live::Hub::handing_on_only_changes(Key::of_chats),
+            waking: None,
+        }
+    }
 }
 
 /// **What `said` after a load's word says about a subscription**, with the query string after
@@ -186,9 +202,7 @@ pub(super) fn asked<R: Runtime>(app: tauri::AppHandle<R>, ask: Ask) {
                 &ask.name,
                 &params,
             )
-            // A core query that reads what no plane change moves is asked again on its
-            // freshness (`purlis.forge_milestones`, #6233).
-            .map(|query| query.fresh_seconds.map(std::time::Duration::from_secs))
+            .map(freshness)
         };
         let every = match admitted {
             Ok(every) => every,
@@ -207,6 +221,13 @@ pub(super) fn asked<R: Runtime>(app: tauri::AppHandle<R>, ask: Ask) {
             .subscribe_every(key, who, Instant::now(), every);
         perform(&app, todo);
     });
+}
+
+/// **How often a subscription to core query `query` is asked again**: a query that reads what
+/// no plane change moves declares its freshness (`purlis.forge_milestones`, #6233); any other
+/// is asked again only when the plane moves it.
+fn freshness(query: &Query) -> Option<std::time::Duration> {
+    query.fresh_seconds.map(std::time::Duration::from_secs)
 }
 
 /// **The plane `plane` moved `changes`** (`None`: not known): each feed of it they may have
@@ -545,5 +566,84 @@ mod tests {
         every.sort_by(|a, b| a.workspace.cmp(&b.workspace));
         assert_eq!(every, [alpha, beta]);
         assert!(live.hub.any(|key| *key == todos));
+    }
+
+    #[test]
+    fn only_a_chats_feed_holds_back_an_answer_read_again_unchanged() {
+        // #6235's review: a page of any other feed shows its answer's time, which moves.
+        let mut live = Live::default();
+        let plane: PlaneId = serde_json::from_str("\"plane\"").unwrap();
+        let t = Instant::now();
+        for (query, handed_again) in [("purlis.chats@1", false), ("purlis.todo_list@1", true)] {
+            let key = Key::of(plane.clone(), "alpha".into(), query.into(), &json!({}));
+            let who = Who {
+                label: format!("artifact-{query}"),
+                load: LOAD.into(),
+                id: 1,
+            };
+            live.hub.subscribe(key.clone(), who, t);
+            live.hub
+                .finished(&key, Answer::data(json!({}), chrono::Utc::now()), t);
+            let later = t + live::MIN_INTERVAL;
+            live.hub.moved(later, |k| *k == key);
+            let again = live
+                .hub
+                .finished(&key, Answer::data(json!({}), chrono::Utc::now()), later);
+            assert_eq!(
+                again.iter().any(|d| matches!(d, Do::Hand(..))),
+                handed_again,
+                "{query}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_core_query_with_a_freshness_is_asked_again_on_it_until_its_tab_closes() {
+        let artifacts = Artifacts::default();
+        let plane: PlaneId = serde_json::from_str("\"plane\"").unwrap();
+        let key = Key::of(
+            plane,
+            "alpha".into(),
+            "purlis.forge_milestones@1".into(),
+            &json!({}),
+        );
+        let every = key.catalogued().and_then(freshness);
+        let fresh = std::time::Duration::from_secs(60);
+        assert_eq!(every, Some(fresh), "it declares its freshness");
+        let who = Who {
+            label: "artifact-1".into(),
+            load: LOAD.into(),
+            id: 1,
+        };
+        let runs = |done: &[Do<Key, Who>]| done.iter().filter(|d| matches!(d, Do::Run(_))).count();
+        let t = Instant::now();
+        assert_eq!(
+            runs(
+                &artifacts
+                    .live()
+                    .hub
+                    .subscribe_every(key.clone(), who, t, every)
+            ),
+            1
+        );
+        let answer = Answer::data(json!({ "milestones": [] }), chrono::Utc::now());
+        let done = artifacts.live().hub.finished(&key, answer.clone(), t);
+        assert!(done.contains(&Do::WakeAt(t + fresh)), "{done:?}");
+        // Asked again once its freshness has passed, and not before.
+        assert_eq!(runs(&artifacts.live().hub.tick(t + fresh / 2)), 0);
+        assert_eq!(runs(&artifacts.live().hub.tick(t + fresh)), 1);
+        artifacts.live().hub.finished(&key, answer, t + fresh);
+        // The tab closes: nothing is asked again, however long the wake waits.
+        artifacts.unsubscribe_label("artifact-1");
+        assert_eq!(artifacts.feeds(), 0);
+        for later in [2, 3, 10] {
+            assert!(artifacts.live().hub.tick(t + fresh * later).is_empty());
+        }
+    }
+
+    #[test]
+    fn a_core_query_only_the_plane_moves_has_no_freshness() {
+        let todos = purlis_core::catalogue::find("purlis.todo_list").map(|(q, _)| q);
+        assert_eq!(todos.and_then(freshness), None);
     }
 }

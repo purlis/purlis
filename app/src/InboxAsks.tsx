@@ -498,6 +498,7 @@ export const SOURCE_SAID: Record<Shown["source"], string> = {
   "sandbox-only": "Asks you to make a sandbox-only profile",
   "old-harness-plugins": "Old harness plugin settings, ignored now",
   signing: "Lanes wait on signed commits",
+  "pool-setup": "Your cluster is ready for Pool setup",
   browser: "Asks what its browser may reach",
   "browser-needs-you": "Needs you in its browser",
   "browser-site": "Asks to let its browser reach a new site",
@@ -727,6 +728,7 @@ export function Ask({
         if (opened === true) return;
         noteAnswered(plane, {
           at: Date.now(),
+          session: ask.session,
           chain: ask.chain,
           says: ask.says,
           answer: option.label,
@@ -1140,6 +1142,7 @@ function Reply({ plane, ask }: { plane: PlaneId; ask: Shown }) {
         }
         noteAnswered(plane, {
           at: Date.now(),
+          session: ask.session,
           chain: ask.chain,
           says: ask.says,
           answer: text.trim(),
@@ -1205,7 +1208,13 @@ function Reply({ plane, ask }: { plane: PlaneId; ask: Shown }) {
 
 /** Notes `answer` given to `ask` just now, for the list's recently answered. */
 function answeredNow(plane: PlaneId, ask: Shown, answer: string) {
-  noteAnswered(plane, { at: Date.now(), chain: ask.chain, says: ask.says, answer });
+  noteAnswered(plane, {
+    at: Date.now(),
+    session: ask.session,
+    chain: ask.chain,
+    says: ask.says,
+    answer,
+  });
 }
 
 /**

@@ -18,7 +18,9 @@
 //!   subscribes ([`Hub::subscribe_every`], #5971): extensions are never long-running and push
 //!   nothing (ADR 0053), so its freshness is what keeps a page on it live. **So is a core
 //!   query with a `fresh_seconds`** (`purlis.forge_milestones`, #6233), which reads what no
-//!   change of the plane moves.
+//!   change of the plane moves. Such a feed is asked at most once per freshness by its key,
+//!   however its subscribers come and go: one left with no one is kept until its freshness
+//!   passes, its last run and its answer with it, so subscribing again starts nothing early.
 //!
 //! The hub holds no clock and starts nothing itself: it says what to do ([`Do`]), and its
 //! caller runs the query, hands the answers and wakes it, so it is tested with the instants it
@@ -101,12 +103,32 @@ struct Feed<W> {
 /// each subscriber a `W`.
 pub struct Hub<K, W> {
     feeds: HashMap<K, Feed<W>>,
+    /// The feeds whose answer is handed on only when it says something new
+    /// ([`Self::handing_on_only_changes`]).
+    changes_only: fn(&K) -> bool,
 }
 
 impl<K, W> Default for Hub<K, W> {
     fn default() -> Self {
         Self {
             feeds: HashMap::new(),
+            changes_only: |_| false,
+        }
+    }
+}
+
+impl<K, W> Hub<K, W> {
+    /// **A hub whose feeds `which` names hand an answer on only when it says something the
+    /// feed's last did not**, whenever each was read (#6235): the `purlis.chats` feeds. A chats
+    /// feed is asked again at every move of any board of the project, and most moves change
+    /// nothing of its workspace's chats, so handing each answer on would redraw every page of
+    /// it at every move. Every other core feed is asked again only when the plane changed what
+    /// it reads, and its answer's time is the "as of" a page shows: one read again with the
+    /// same data is still news of that time, so it is handed on.
+    pub fn handing_on_only_changes(which: fn(&K) -> bool) -> Self {
+        Self {
+            feeds: HashMap::new(),
+            changes_only: which,
         }
     }
 }
@@ -128,6 +150,7 @@ impl<K: Clone + Eq + Hash, W: Clone + PartialEq> Hub<K, W> {
         every: Option<Duration>,
     ) -> Vec<Do<K, W>> {
         self.unsubscribe(|w| *w == who);
+        self.forget_spent(now);
         let feed = self.feeds.entry(key.clone()).or_insert_with(|| Feed {
             who: Vec::new(),
             running: false,
@@ -146,17 +169,35 @@ impl<K: Clone + Eq + Hash, W: Clone + PartialEq> Hub<K, W> {
     }
 
     /// **Every subscriber `gone` names is dropped**, and each feed left with none with it: an
-    /// answer of a run still in flight for it is then handed to no one.
+    /// answer of a run still in flight for it is then handed to no one. A feed with a
+    /// freshness is kept, with no one, until it has passed ([`Self::forget_spent`]): its runs
+    /// are counted by its key, not by how long someone held it, so a page that lets go and
+    /// subscribes again, however often, starts no run sooner than its freshness allows (#6233).
     pub fn unsubscribe(&mut self, gone: impl Fn(&W) -> bool) {
         for feed in self.feeds.values_mut() {
             feed.who.retain(|w| !gone(w));
         }
-        self.feeds.retain(|_, feed| !feed.who.is_empty());
+        self.feeds
+            .retain(|_, feed| !feed.who.is_empty() || feed.every.is_some());
+    }
+
+    /// Forgets each feed with no one whose run is done and whose freshness has passed at
+    /// `now`: a subscription after it is asked again anyway.
+    fn forget_spent(&mut self, now: Instant) {
+        self.feeds.retain(|_, feed| {
+            !feed.who.is_empty()
+                || feed.running
+                || feed
+                    .every
+                    .zip(feed.started)
+                    .is_some_and(|(every, at)| now < at + every)
+        });
     }
 
     /// **The plane moved what each feed `moved` names may answer**: each is asked again, now or
     /// once it is due.
     pub fn moved(&mut self, now: Instant, moved: impl Fn(&K) -> bool) -> Vec<Do<K, W>> {
+        self.forget_spent(now);
         let keys: Vec<K> = self.feeds.keys().filter(|k| moved(k)).cloned().collect();
         let mut out = Vec::new();
         for key in keys {
@@ -169,16 +210,18 @@ impl<K: Clone + Eq + Hash, W: Clone + PartialEq> Hub<K, W> {
     }
 
     /// **Feed `key`'s run answered `answer`**: handed to every subscriber it has now, and run
-    /// again when it is due if something moved it meanwhile. An answer that says what the
-    /// feed's last one said, whenever it was read, is handed to no one (#6235): every page of
-    /// the feed already holds it. A feed with a freshness hands each one on, since its time is
-    /// what is fresh.
+    /// again when it is due if something moved it meanwhile. On a feed that hands on only
+    /// changes ([`Self::handing_on_only_changes`]), an answer that says what the feed's last one
+    /// said, whenever it was read, is handed to no one (#6235): every page of the feed already
+    /// holds it. A feed with a freshness hands each one on, since its time is what is fresh.
     pub fn finished(&mut self, key: &K, answer: Answer, now: Instant) -> Vec<Do<K, W>> {
+        let changes_only = (self.changes_only)(key);
         let Some(feed) = self.feeds.get_mut(key) else {
             return Vec::new();
         };
         feed.running = false;
-        let unchanged = feed.every.is_none()
+        let unchanged = changes_only
+            && feed.every.is_none()
             && feed
                 .last
                 .as_ref()
@@ -198,6 +241,7 @@ impl<K: Clone + Eq + Hash, W: Clone + PartialEq> Hub<K, W> {
 
     /// **The instant a [`Do::WakeAt`] named came**: every feed whose interval has passed runs.
     pub fn tick(&mut self, now: Instant) -> Vec<Do<K, W>> {
+        self.forget_spent(now);
         let keys: Vec<K> = self.feeds.keys().cloned().collect();
         keys.iter().flat_map(|key| self.due(key, now)).collect()
     }
@@ -209,6 +253,12 @@ impl<K: Clone + Eq + Hash, W: Clone + PartialEq> Hub<K, W> {
 
     /// How many feeds there are: one per query, parameters and place subscribed to.
     pub fn feeds(&self) -> usize {
+        self.feeds.values().filter(|f| !f.who.is_empty()).count()
+    }
+
+    /// How many feeds the hub holds, those kept with no one until their freshness passes
+    /// among them.
+    pub fn kept(&self) -> usize {
         self.feeds.len()
     }
 
@@ -218,7 +268,8 @@ impl<K: Clone + Eq + Hash, W: Clone + PartialEq> Hub<K, W> {
         let Some(feed) = self.feeds.get_mut(key) else {
             return Vec::new();
         };
-        if feed.running {
+        // A feed with no one is kept only to count its runs by: nobody is there to ask for.
+        if feed.running || feed.who.is_empty() {
             return Vec::new();
         }
         let next_fresh = feed.every.zip(feed.started).map(|(every, at)| at + every);
@@ -518,7 +569,7 @@ mod tests {
     fn a_run_that_answers_what_the_feed_last_answered_hands_nothing_on() {
         // #6235: a board's move asks every chats feed again; most answer as they did.
         let t = Instant::now();
-        let mut hub = Hub::default();
+        let mut hub = Hub::handing_on_only_changes(|key| *key == "chats");
         hub.subscribe("chats", ("page-a", 1), t);
         assert_eq!(
             handed(&hub.finished(&"chats", answer(1), t)),
@@ -540,6 +591,22 @@ mod tests {
     }
 
     #[test]
+    fn a_core_feed_other_than_chats_hands_on_each_answer_it_is_asked_again_for() {
+        // Its answer's time is the "as of" a page shows, so the same data read again is news.
+        let t = Instant::now();
+        let mut hub = Hub::default();
+        hub.subscribe("todos", ("page-a", 1), t);
+        hub.finished(&"todos", answer(1), t);
+        let later = t + MIN_INTERVAL;
+        assert_eq!(runs(&hub.moved(later, |_| true)), ["todos"]);
+        let same = Answer::data(json!({ "n": 1 }), chrono::Utc::now());
+        assert_eq!(
+            handed(&hub.finished(&"todos", same, later)),
+            [("page-a", 1)]
+        );
+    }
+
+    #[test]
     fn a_feed_with_a_freshness_hands_on_each_answer_it_is_asked_again_for() {
         let t = Instant::now();
         let every = Duration::from_secs(60);
@@ -553,6 +620,86 @@ mod tests {
             [("page-a", 1)],
             "its answer's time is what is fresh"
         );
+    }
+
+    #[test]
+    fn a_page_that_subscribes_again_and_again_asks_at_most_once_per_freshness() {
+        // #6233: re-subscribing must not reset the feed, or a page could hammer GitHub.
+        let t = Instant::now();
+        let every = Duration::from_secs(60);
+        let mut hub = Hub::default();
+        let mut started = 0;
+        let mut handed_on = 0;
+        for n in 0..50u64 {
+            let at = t + Duration::from_millis(n * 100);
+            // The same subscriber, and a fresh id of the same page, alike.
+            for who in [("page-a", 1), ("page-a", n + 2)] {
+                let done = hub.subscribe_every("milestones", who, at, Some(every));
+                started += runs(&done).len();
+                handed_on += handed(&done).len();
+            }
+            // The page lets go of its last id each round: the feed is left with no one.
+            hub.unsubscribe(|w| *w == ("page-a", n + 2));
+            hub.unsubscribe(|w| *w == ("page-a", 1));
+            if n == 0 {
+                hub.finished(&"milestones", answer(1), at);
+            }
+        }
+        assert_eq!(
+            started, 1,
+            "one run for every subscription within the freshness"
+        );
+        assert!(
+            handed_on >= 98,
+            "each later subscription is handed the last answer"
+        );
+        // Once the freshness has passed it is asked again, once.
+        let later = t + every + Duration::from_secs(1);
+        assert_eq!(
+            runs(&hub.subscribe_every("milestones", ("page-a", 1), later, Some(every))),
+            ["milestones"]
+        );
+        assert!(
+            runs(&hub.subscribe_every("milestones", ("page-a", 1), later, Some(every))).is_empty()
+        );
+    }
+
+    #[test]
+    fn a_feed_left_with_no_one_while_its_run_is_in_flight_does_not_start_another() {
+        let t = Instant::now();
+        let every = Duration::from_secs(60);
+        let mut hub = Hub::default();
+        assert_eq!(
+            runs(&hub.subscribe_every("milestones", ("page-a", 1), t, Some(every))),
+            ["milestones"]
+        );
+        hub.unsubscribe(|_| true);
+        assert_eq!(hub.feeds(), 0, "no feed has a subscriber");
+        let back = t + Duration::from_secs(2);
+        assert!(
+            runs(&hub.subscribe_every("milestones", ("page-a", 1), back, Some(every))).is_empty()
+        );
+        // Its answer reaches whoever subscribes by then.
+        assert_eq!(
+            handed(&hub.finished(&"milestones", answer(1), back)),
+            [("page-a", 1)]
+        );
+    }
+
+    #[test]
+    fn a_feed_with_no_one_is_forgotten_once_its_freshness_has_passed() {
+        let t = Instant::now();
+        let every = Duration::from_secs(60);
+        let mut hub = Hub::default();
+        hub.subscribe_every("milestones", ("page-a", 1), t, Some(every));
+        hub.finished(&"milestones", answer(1), t);
+        hub.unsubscribe(|_| true);
+        assert!(hub.tick(t + every).is_empty(), "nobody is there to ask for");
+        assert_eq!(hub.kept(), 0, "nothing is kept past its freshness");
+        // A core feed with no freshness is dropped with its last subscriber, as before.
+        hub.subscribe("todos", ("page-a", 1), t);
+        hub.unsubscribe(|_| true);
+        assert_eq!(hub.kept(), 0);
     }
 
     #[test]

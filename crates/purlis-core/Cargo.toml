@@ -211,6 +211,9 @@ ureq = { version = "3.4", default-features = false, features = ["rustls", "platf
 # workspace's lockfile through `ureq`; `curve25519-dalek` is a major ahead of the copy `snow` and
 # `ed25519-dalek` hold, which `deny.toml` allows.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+# A TLS pool's CA is shown at Connect by its subject (#6267, ADR 0123 §3): the certificate read
+# with `x509-cert`, already in this workspace's lockfile through `sigstore-verify`.
+x509-cert = { version = "0.2", default-features = false, features = ["std"] }
 curve25519-dalek = { version = "5", default-features = false }
 # The request and response types `ureq` speaks, and the URL a token may be sent to is parsed with.
 http = "1"

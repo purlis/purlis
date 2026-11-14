@@ -10,6 +10,7 @@ import { MOVED_JUST_NOW } from "./InboxAsks";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 import { forgetInbox } from "./inboxRules";
 import { forgetProjectViews } from "./projectViews";
+import { forgetAsksScope } from "./asksScope";
 import type { Shown } from "./bindings";
 
 /**
@@ -27,6 +28,7 @@ afterEach(() => {
   clearMocks();
   forgetInbox();
   forgetProjectViews();
+  forgetAsksScope(PLANE);
   vi.useRealTimers();
 });
 
@@ -66,10 +68,17 @@ function core(answers: Record<string, (args: Record<string, unknown>) => unknown
   return calls;
 }
 
-function draw(asks: readonly Shown[]) {
+function draw(asks: readonly Shown[], more: Partial<Parameters<typeof Inbox>[0]> = {}) {
   const onAnswered = vi.fn();
   render(
-    <Inbox plane={PLANE} asks={asks} onGo={vi.fn()} onLeave={vi.fn()} onAnswered={onAnswered} />,
+    <Inbox
+      plane={PLANE}
+      asks={asks}
+      onGo={vi.fn()}
+      onLeave={vi.fn()}
+      onAnswered={onAnswered}
+      {...more}
+    />,
   );
   return { onAnswered };
 }
@@ -146,5 +155,63 @@ describe("identical requests from several chats (#6009)", () => {
       expect(calls.find(({ cmd }) => cmd === "keep_sandbox_block")?.args.session).toBe(5),
     );
     expect(allowed(calls)).toEqual([]);
+  });
+});
+
+/** Chat 4 has focus and dispatched 5; chat 6 is 4's sibling. All three work in alpha. */
+const PARENT: Record<number, number> = { 4: 1, 5: 4, 6: 1 };
+const IN_VIEW = {
+  chat: { session: 4, name: "steward 4", tasks: 1 },
+  askedBy: (session: number) => PARENT[session],
+  here: "alpha",
+  workspaceOf: () => "alpha",
+};
+const pick = (scope: RegExp) =>
+  userEvent.click(
+    within(screen.getByRole("radiogroup", { name: "Show what needs you in" })).getByRole("radio", {
+      name: scope,
+    }),
+  );
+
+describe("identical requests within the scope in view (ADR 0121, amended 2026-11-12, decision 8)", () => {
+  it("are one chat's row under Chat where only that chat's is listed, and one group under Workspace", async () => {
+    core();
+    draw([host(4), host(6)], IN_VIEW);
+    expect(screen.queryByRole("row", { name: /chats want to reach/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Allow for all" })).toBeNull();
+    expect(screen.getByRole("group", { name: "Answers to steward 4" })).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Answers to steward 6" })).toBeNull();
+    await pick(/^Workspace/);
+    expect(screen.getByRole("row", { name: "2 chats want to reach api.example.com" })).toBeTruthy();
+  });
+
+  it("allows each chat Workspace lists on Allow for all", async () => {
+    const calls = core();
+    draw([host(4), host(6)], IN_VIEW);
+    await pick(/^Workspace/);
+    read();
+    const group = screen.getByRole("row", { name: "2 chats want to reach api.example.com" });
+    await userEvent.click(within(group).getByRole("button", { name: "Allow for all" }));
+    await waitFor(() =>
+      expect(allowed(calls)).toEqual([
+        [4, "chat"],
+        [6, "chat"],
+      ]),
+    );
+  });
+
+  it("never allows a chat Chat does not list on Allow for all", async () => {
+    const calls = core();
+    draw([host(4), host(5), host(6)], IN_VIEW);
+    read();
+    const group = screen.getByRole("row", { name: "2 chats want to reach api.example.com" });
+    await userEvent.click(within(group).getByRole("button", { name: "Allow for all" }));
+    await waitFor(() =>
+      expect(allowed(calls)).toEqual([
+        [4, "chat"],
+        [5, "chat"],
+      ]),
+    );
+    expect(allowed(calls).some(([session]) => session === 6)).toBe(false);
   });
 });

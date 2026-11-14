@@ -227,8 +227,9 @@ const LEAST_ROWS = 20;
 const MOST_ROWS = 40;
 
 /** **How many of the Library's rows make a screen, and so its first frame** (#4351): what the
- *  window's height can show. Two hundred rows took a third of a second to lay out, in which the
- *  tab showed none of them, and each row past what shows still delays the first frame. */
+ *  window's height can show. Each row past what shows delays the first frame: in jsdom, an
+ *  opening that drew all two hundred rows took 140 ms to the row, against 28 ms for a screen of
+ *  them (#5276). */
 function rowsThatFit(): number {
   return Math.min(MOST_ROWS, Math.max(LEAST_ROWS, Math.ceil(window.innerHeight / ROW_PX)));
 }
@@ -240,10 +241,14 @@ function rowsThatFit(): number {
  * React Aria builds a collection's rows without yielding. Mounted with the
  * list and keyed by scope, so each list it draws starts from the top.
  *
- * The chosen row is drawn on the first frame, with every row before it, wherever the list has
- * it. What is drawn never shrinks while the list stands, so a row drawn stays drawn, and a press,
- * the keyboard and the search box work on the rows there while the rest come. A screen's size is
- * read once, as the list is mounted: a window taller than it has the rest a frame on.
+ * **A row chosen past the screens drawn has its own screen drawn ahead** (#5276): on its frame,
+ * with the screens drawn and none of those between, so an opening at row 200 of 200 builds two
+ * screens, not all two hundred, and the chosen row has the rows either side of it at once. A
+ * screen drawn ahead is keyed as the screens reaching it key it, so it is never drawn afresh and
+ * the keyboard on its rows stays there. What is drawn never shrinks while the list stands, so a
+ * row drawn stays drawn, and a press, the keyboard and the search box work on the rows there
+ * while the rest come. A screen's size is read once, as the list is mounted: a window taller than
+ * it has the rest a frame on.
  */
 function LibraryRows({
   rows,
@@ -252,28 +257,33 @@ function LibraryRows({
 }: {
   rows: readonly StudioSkill[];
   row: (skill: StudioSkill) => ReactNode;
-  /** The chosen row's id, drawn at once wherever it is. */
+  /** The chosen row's id, drawn at once wherever it is, with its screen. */
   chosen: string | undefined;
 }) {
   const [rowsPerScreen] = useState(rowsThatFit);
   const [screens, setScreens] = useState(1);
+  /** The screens drawn ahead of the rest, each for a row chosen in it before they reached it. */
+  const [ahead, setAhead] = useState<readonly number[]>([]);
   const at = chosen === undefined ? -1 : rows.findIndex((one) => skillRowId(one) === chosen);
-  const needed = Math.max(screens, Math.ceil((at + 1) / rowsPerScreen));
+  const its = Math.floor(at / rowsPerScreen);
   // Adjusted as it is drawn (React's state set while rendering), so the chosen row's frame has it.
-  if (needed !== screens) setScreens(needed);
-  const drawn = Math.min(rows.length, needed * rowsPerScreen);
-  const more = drawn < rows.length;
+  if (its >= screens && !ahead.includes(its)) setAhead([...ahead, its]);
+  const more = screens * rowsPerScreen < rows.length;
   useEffect(() => {
     if (!more) return;
     return afterPaint(() => startTransition(() => setScreens((was) => was + 1)));
   }, [more, screens]);
   // A screen at a time, each kept as it was drawn, so a screen added draws its own rows alone.
-  return Array.from({ length: Math.ceil(drawn / rowsPerScreen) }, (_, n) => (
+  const drawn = [
+    ...Array.from({ length: screens }, (_, n) => n),
+    ...ahead.filter((n) => n >= screens).sort((a, b) => a - b),
+  ].filter((n) => n * rowsPerScreen < rows.length);
+  return drawn.map((n) => (
     <LibraryScreen
       key={n}
       rows={rows}
       from={n * rowsPerScreen}
-      to={Math.min(drawn, (n + 1) * rowsPerScreen)}
+      to={Math.min(rows.length, (n + 1) * rowsPerScreen)}
       row={row}
     />
   ));

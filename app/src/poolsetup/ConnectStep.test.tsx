@@ -6,9 +6,30 @@ import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PoolSetupShown, PoolSetupStep } from "../bindings";
-import { ConnectStep, routeOf, verdictsOf } from "./ConnectStep";
+import { ConnectStep, overOf, routeOf, tcpRouteOf, verdictsOf } from "./ConnectStep";
 
 const FINGERPRINT = "SHA256:dmeCC9oOb+c7VYVBSUAdgQchZHZQyXKWgKnGQxfh2rA";
+const CA =
+  "7A:3F:91:0C:5E:D2:84:B6:19:EE:47:2A:C0:6D:F3:58:91:0B:7C:AA:E4:32:6F:1D:88:C5:09:B7:2E:64:D1:3F";
+
+/** A tcp:// machine, reached over Docker's API over TLS (#6267). */
+const tlsMachine = (more: Partial<NonNullable<PoolSetupStep["machine"]>> = {}) => ({
+  route: "tcp://lab:2376",
+  identity: null,
+  host: "lab",
+  key: null,
+  known: null,
+  trusted: null,
+  now: null,
+  engine: null,
+  over: "tls",
+  tls: null,
+  ca: null,
+  trusted_ca: null,
+  ca_now: null,
+  context: null,
+  ...more,
+});
 
 const step = (more: Partial<PoolSetupStep>): PoolSetupStep => ({
   id: "connect",
@@ -36,11 +57,19 @@ const step = (more: Partial<PoolSetupStep>): PoolSetupStep => ({
     trusted: null,
     now: null,
     engine: null,
+    over: "ssh",
+    tls: null,
+    ca: null,
+    trusted_ca: null,
+    ca_now: null,
+    context: null,
   },
   cause: null,
   also: null,
   parts: [],
   undo: null,
+  admin: null,
+  prefill: null,
   ...more,
 });
 
@@ -52,7 +81,15 @@ const shown = (one: PoolSetupStep): PoolSetupShown => ({
   noticed: false,
   others: [],
   recommended: "build-box",
-  contexts: { names: [], recommended: null, chosen: null, pools: [] },
+  contexts: {
+    names: [],
+    recommended: null,
+    chosen: null,
+    pools: [],
+    joining: false,
+    pinned: null,
+    key_changed: false,
+  },
   steps: [one],
 });
 
@@ -63,6 +100,7 @@ function core(more: Record<string, (args: unknown) => unknown> = {}) {
     if (cmd in more) return more[cmd]?.(args);
     if (cmd === "pool_setup_ssh_hosts") return [];
     if (cmd === "pool_setup_podman_connections") return [];
+    if (cmd === "pool_setup_docker_contexts") return [];
     return null;
   });
   return calls;
@@ -103,6 +141,12 @@ describe("ConnectStep", () => {
           trusted: null,
           now: null,
           engine: null,
+          over: "ssh",
+          tls: null,
+          ca: null,
+          trusted_ca: null,
+          ca_now: null,
+          context: null,
         },
       }),
     );
@@ -167,6 +211,12 @@ describe("ConnectStep", () => {
           trusted: null,
           now: null,
           engine: null,
+          over: "ssh",
+          tls: null,
+          ca: null,
+          trusted_ca: null,
+          ca_now: null,
+          context: null,
         },
       }),
     );
@@ -197,6 +247,12 @@ describe("ConnectStep", () => {
           trusted: null,
           now: null,
           engine: null,
+          over: "ssh",
+          tls: null,
+          ca: null,
+          trusted_ca: null,
+          ca_now: null,
+          context: null,
         },
       }),
     );
@@ -223,6 +279,12 @@ describe("ConnectStep", () => {
           trusted: null,
           now: null,
           engine: null,
+          over: "ssh",
+          tls: null,
+          ca: null,
+          trusted_ca: null,
+          ca_now: null,
+          context: null,
         },
       }),
     );
@@ -289,5 +351,391 @@ describe("ConnectStep", () => {
     expect(routeOf(" sam@build-box ")).toBe("ssh://sam@build-box");
     expect(routeOf("ssh://build-box")).toBe("ssh://build-box");
     expect(routeOf("")).toBe("");
+  });
+
+  it("offers SSH first, and over TLS keeps the machine as a tcp:// route, contacting nothing", async () => {
+    const calls = core();
+    draw(step({ machine: null }));
+    const ssh = await screen.findByRole("radio", { name: /SSH/ });
+    expect(ssh).toBeChecked();
+    await userEvent.click(screen.getByRole("radio", { name: /Docker's API over TLS/ }));
+    await userEvent.type(
+      await screen.findByRole("textbox", { name: "The machine's address" }),
+      "lab:2376",
+    );
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "pool_setup_machine",
+        args: { route: "tcp://lab:2376", identity: null },
+      }),
+    );
+    expect(calls.some((call) => call.cmd === "pool_setup_connect")).toBe(false);
+  });
+
+  it("keeps the TLS files once all are named, the key from a vault by its names alone", async () => {
+    const calls = core({ pool_setup_tls_files: () => shown(step({})) });
+    draw(step({ machine: tlsMachine(), cause: "plain-tcp", state: "attention" }));
+    // A tcp:// machine without its files is plain TCP, refused, until TLS is chosen.
+    await userEvent.click(await screen.findByRole("button", { name: "Use TLS instead" }));
+    await userEvent.type(
+      await screen.findByRole("textbox", { name: "Authority (CA) file" }),
+      "/home/me/ca.pem",
+    );
+    await userEvent.type(screen.getByRole("textbox", { name: "Certificate" }), "/home/me/cert.pem");
+    await userEvent.click(screen.getByRole("radio", { name: /In a vault entry/ }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Vault" }), "docker-box");
+    await userEvent.type(screen.getByRole("textbox", { name: "Key in the vault" }), "TLS_KEY");
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "pool_setup_tls_files",
+        args: {
+          plane: "p",
+          ca: "/home/me/ca.pem",
+          cert: "/home/me/cert.pem",
+          key: null,
+          keyVault: "docker-box",
+          keyName: "TLS_KEY",
+        },
+      }),
+    );
+    // Connect to waits, and isn't named for the machine, until what is typed is what is kept.
+    expect(screen.getByRole("button", { name: "Connect" })).toBeDisabled();
+  });
+
+  it("connects to a tcp:// machine once its files are kept", async () => {
+    const calls = core({ pool_setup_connect: () => shown(step({})) });
+    draw(
+      step({
+        machine: tlsMachine({
+          tls: {
+            ca: "/ca.pem",
+            cert: "/cert.pem",
+            key: "/key.pem",
+            key_vault: null,
+            key_name: null,
+          },
+        }),
+        next: {
+          id: "connect-machine",
+          label: "Connect to lab",
+          does: "Reads the CA file.",
+          command: null,
+          url: null,
+        },
+      }),
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "Connect to lab" }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({ cmd: "pool_setup_connect", args: { plane: "p" } }),
+    );
+  });
+
+  it("trusts a tcp:// machine by the fingerprint of the authority it showed", async () => {
+    const calls = core();
+    draw(
+      step({
+        next: {
+          id: "trust-machine",
+          label: "Trust this machine",
+          does: "Keeps this CA for the pool.",
+          command: null,
+          url: null,
+        },
+        machine: tlsMachine({
+          tls: {
+            ca: "/ca.pem",
+            cert: "/cert.pem",
+            key: "/key.pem",
+            key_vault: null,
+            key_name: null,
+          },
+          ca: { fingerprint: CA, subject: "CN=lab CA", file: "/ca.pem" },
+        }),
+      }),
+    );
+    expect(await screen.findByText("CN=lab CA")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Trust this machine" }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "pool_setup_trust",
+        args: { plane: "p", fingerprint: CA },
+      }),
+    );
+  });
+
+  it("checks a TLS machine's certificate in place of a sign-in", () => {
+    expect(verdictsOf("tls-wrong-name", false, "tls")).toEqual([
+      "ok",
+      "ok",
+      "ok",
+      "missing",
+      "todo",
+      "todo",
+    ]);
+    expect(verdictsOf("tls-client-refused", false, "tls")[3]).toBe("missing");
+  });
+
+  it("spells a TLS machine as tcp:// and tells the routes apart", () => {
+    expect(tcpRouteOf(" lab:2376 ")).toBe("tcp://lab:2376");
+    expect(tcpRouteOf("tcp://lab")).toBe("tcp://lab");
+    const files = { ca: "/ca", cert: "/c", key: "/k", key_vault: null, key_name: null };
+    expect(overOf(tlsMachine({ tls: files }))).toBe("tls");
+    expect(overOf(tlsMachine()), "plain TCP, no files").toBe("ssh");
+    expect(overOf(tlsMachine({ route: "ssh://lab", tls: null }))).toBe("ssh");
+    expect(overOf(null)).toBe("ssh");
+  });
+
+  it("keeps the route choice when SSH is chosen back from TLS, before the core reads again", async () => {
+    core();
+    draw(step({ machine: tlsMachine(), cause: "plain-tcp", state: "attention" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Use TLS instead" }));
+    await userEvent.click(await screen.findByRole("radio", { name: /SSH/ }));
+    expect(screen.getByRole("radio", { name: /Docker's API over TLS/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Use SSH instead" })).toBeNull();
+  });
+
+  it("shows a file typed from the home as purlis keeps it, and connects once kept", async () => {
+    const files = (ca: string) => ({
+      ca,
+      cert: "/home/me/cert.pem",
+      key: "/home/me/key.pem",
+      key_vault: null,
+      key_name: null,
+    });
+    const kept = step({
+      machine: tlsMachine({ tls: files("/home/me/ca.pem") }),
+      next: {
+        id: "connect-machine",
+        label: "Connect to lab",
+        does: "Reads the CA file.",
+        command: null,
+        url: null,
+      },
+    });
+    core({ pool_setup_tls_files: () => shown(kept) });
+    const props = { onShown: vi.fn(), changed: vi.fn(), onNext: vi.fn() };
+    const one = step({ machine: tlsMachine(), cause: "plain-tcp", state: "attention" });
+    const { rerender } = render(<ConnectStep step={one} shown={shown(one)} plane="p" {...props} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Use TLS instead" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Authority (CA) file" }), "~/ca.pem");
+    await userEvent.type(screen.getByRole("textbox", { name: "Certificate" }), "/home/me/cert.pem");
+    await userEvent.type(screen.getByRole("textbox", { name: "Key" }), "/home/me/key.pem");
+    await waitFor(() => expect(props.onShown).toHaveBeenCalled());
+    rerender(<ConnectStep step={kept} shown={shown(kept)} plane="p" {...props} />);
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Authority (CA) file" })).toHaveValue(
+        "/home/me/ca.pem",
+      ),
+    );
+    expect(screen.getByRole("button", { name: "Connect to lab" })).toBeEnabled();
+  });
+
+  // From a Docker context (#6268).
+
+  const sshContext = {
+    name: "build-box",
+    current: true,
+    over: "ssh",
+    route: "ssh://me@build-box",
+    refused: null,
+  };
+
+  it("keeps a Docker context picked by its name, for the core to read again, and contacts nothing", async () => {
+    const calls = core({
+      pool_setup_ssh_hosts: () => ["gpu"],
+      pool_setup_docker_contexts: () => [sshContext],
+    });
+    const props = draw(step({ machine: null }));
+    await userEvent.click(await screen.findByRole("radio", { name: /build-box/ }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "pool_setup_docker_context",
+        args: { name: "build-box" },
+      }),
+    );
+    expect(props.changed).toHaveBeenCalled();
+    expect(screen.getByText("From your Docker contexts")).toBeVisible();
+    expect(calls.some((call) => call.cmd === "pool_setup_machine")).toBe(false);
+    expect(calls.some((call) => call.cmd === "pool_setup_connect")).toBe(false);
+  });
+
+  it("picks the Docker context kept, and never takes its route for a machine typed", async () => {
+    const calls = core({ pool_setup_docker_contexts: () => [sshContext] });
+    draw(
+      step({
+        machine: {
+          ...tlsMachine(),
+          route: "ssh://me@build-box",
+          host: "build-box",
+          over: "ssh",
+          context: "build-box",
+        },
+      }),
+    );
+    await waitFor(() => expect(screen.getByRole("radio", { name: /build-box/ })).toBeChecked());
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(calls.some((call) => call.cmd === "pool_setup_machine")).toBe(false);
+    expect(calls.some((call) => call.cmd === "pool_setup_docker_context")).toBe(false);
+  });
+
+  it("offers a context on this machine's own socket as this machine's Docker", async () => {
+    const calls = core({
+      pool_setup_ssh_hosts: () => ["gpu"],
+      pool_setup_docker_contexts: () => [
+        { name: "desktop-linux", current: false, over: "here", route: null, refused: null },
+      ],
+    });
+    draw(step({ machine: null }));
+    const here = await screen.findByRole("radio", { name: /desktop-linux/ });
+    expect(screen.getByText(/This machine's own Docker/)).toBeVisible();
+    await userEvent.click(here);
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "pool_setup_docker_context",
+        args: { name: "desktop-linux" },
+      }),
+    );
+  });
+
+  it("offers a TLS context on Docker's API over TLS, its files the context's own", async () => {
+    const calls = core({
+      pool_setup_docker_contexts: () => [
+        sshContext,
+        { name: "lab", current: false, over: "tls", route: "tcp://lab:2376", refused: null },
+      ],
+    });
+    draw(step({ machine: null }));
+    await userEvent.click(await screen.findByRole("radio", { name: /Docker's API over TLS/ }));
+    await userEvent.click(await screen.findByRole("radio", { name: /^lab/ }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({ cmd: "pool_setup_docker_context", args: { name: "lab" } }),
+    );
+    expect(calls.some((call) => call.cmd === "pool_setup_tls_files")).toBe(false);
+  });
+
+  it("says a pool's context moved, and keeps the pool as it is or connects again", async () => {
+    const calls = core();
+    const moved = step({
+      state: "attention",
+      cause: "context-moved",
+      findings: [
+        "Your context build-box now points somewhere else than this pool. Connect again to follow it, or keep the pool as it is.",
+      ],
+      next: {
+        id: "connect-again",
+        label: "Connect again",
+        does: "Starts setting up a pool on the machine build-box names now.",
+        command: null,
+        url: null,
+      },
+      other: {
+        id: "keep-pool-as-it-is",
+        label: "Keep the pool as it is",
+        does: "The pool stays on the machine it runs on now.",
+        command: null,
+        url: null,
+      },
+      prefill: { route: "ssh://me@new-box", context: "build-box" },
+      machine: {
+        ...tlsMachine(),
+        route: "ssh://me@build-box/var/run/docker.sock",
+        host: "build-box",
+        over: "ssh",
+        context: "build-box",
+      },
+    });
+    const props = { onShown: vi.fn(), changed: vi.fn(), onNext: vi.fn(), onConnectAgain: vi.fn() };
+    render(
+      <ConnectStep step={moved} shown={{ ...shown(moved), pool: "build" }} plane="p" {...props} />,
+    );
+    expect(await screen.findByText("Your context points somewhere else")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Connect again" }));
+    expect(props.onConnectAgain).toHaveBeenCalledWith({
+      route: "ssh://me@new-box",
+      context: "build-box",
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Keep the pool as it is" }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "pool_setup_keep_pool_as_it_is",
+        args: { pool: "build" },
+      }),
+    );
+    expect(props.changed).toHaveBeenCalled();
+  });
+
+  describe("a made pool whose pin no longer holds (#6270)", () => {
+    const OTHER = "SHA256:tGq2HWbnxdQ1Q3yxD6vk2u0bxs6WtJ5gT3f7a6Fe8E0";
+    const changed = step({
+      state: "attention",
+      cause: "pool-pin-changed",
+      findings: ["build-box shows a different key than the one you trusted."],
+      next: {
+        id: "check-and-trust-again",
+        label: "Check and trust again",
+        does: "Shows the key the machine shows now, for you to check and trust.",
+        command: null,
+        url: null,
+      },
+    });
+    const metAgain = step({
+      findings: ["This is the key build-box shows now."],
+      next: {
+        id: "trust-machine",
+        label: "Trust this machine",
+        does: "Keeps this key for the pool in place of the one trusted.",
+        command: null,
+        url: null,
+      },
+      machine: tlsMachine({
+        route: "ssh://sam@build-box",
+        host: "build-box",
+        over: "ssh",
+        key: { algorithm: "ED25519", fingerprint: OTHER },
+        trusted: { algorithm: "ED25519", fingerprint: FINGERPRINT },
+      }),
+    });
+    const made = (one: PoolSetupStep): PoolSetupShown => ({ ...shown(one), pool: "builds" });
+
+    it("meets the machine again on Check and trust again, for the pool it is", async () => {
+      const calls = core({ pool_setup_check_and_trust_again: () => made(metAgain) });
+      const props = { onShown: vi.fn(), changed: vi.fn(), onNext: vi.fn() };
+      render(<ConnectStep step={changed} shown={made(changed)} plane="p" {...props} />);
+      await userEvent.click(await screen.findByRole("button", { name: "Check and trust again" }));
+      await waitFor(() => expect(props.onShown).toHaveBeenCalledWith(made(metAgain)));
+      expect(calls.find((call) => call.cmd === "pool_setup_check_and_trust_again")?.args).toEqual({
+        plane: "p",
+        pool: "builds",
+      });
+      expect(calls.some((call) => call.cmd === "pool_setup_trust_again")).toBe(false);
+    });
+
+    it("shows the key it shows now beside the one trusted, and trusts that one for the pool", async () => {
+      const calls = core({
+        pool_setup_trust_again: () => made(step({ state: "done", next: null })),
+      });
+      const props = { onShown: vi.fn(), changed: vi.fn(), onNext: vi.fn() };
+      render(<ConnectStep step={metAgain} shown={made(metAgain)} plane="p" {...props} />);
+      expect(await screen.findByText(OTHER)).toBeInTheDocument();
+      // The key trusted before stays on the machine's card, marked Trusted.
+      expect(screen.getByText(FINGERPRINT)).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Trust this machine" }));
+      await waitFor(() => expect(props.onShown).toHaveBeenCalled());
+      expect(calls.find((call) => call.cmd === "pool_setup_trust_again")?.args).toEqual({
+        plane: "p",
+        pool: "builds",
+        fingerprint: OTHER,
+      });
+      expect(calls.some((call) => call.cmd === "pool_setup_trust")).toBe(false);
+    });
+
+    it("never forgets a made pool's machine on This isn't it", async () => {
+      const calls = core({ pool_setup_check_again: () => made(changed) });
+      const props = { onShown: vi.fn(), changed: vi.fn(), onNext: vi.fn() };
+      render(<ConnectStep step={metAgain} shown={made(metAgain)} plane="p" {...props} />);
+      await userEvent.click(await screen.findByRole("button", { name: "This isn't it" }));
+      await waitFor(() => expect(props.onShown).toHaveBeenCalledWith(made(changed)));
+      expect(calls.some((call) => call.cmd === "pool_setup_machine")).toBe(false);
+    });
   });
 });

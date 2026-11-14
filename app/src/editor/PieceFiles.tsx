@@ -550,6 +550,7 @@ export function Shown({
   read,
   line,
   column,
+  landing,
   onLine,
   onLines,
   source = false,
@@ -560,6 +561,8 @@ export function Shown({
   line?: number;
   /** The column on `line` the cursor lands at, from 1. */
   column?: number;
+  /** The jump that brought the file here, so a jump again lands again (`LightEditor`). */
+  landing?: number;
   onLine?: (line: number) => void;
   onLines?: (lines: Lines | undefined) => void;
   /** Markdown's source rather than the rendering. */
@@ -593,6 +596,7 @@ export function Shown({
           text={read.text}
           line={line}
           column={column}
+          landing={landing}
           onLine={onLine}
           onLines={onLines}
         />
@@ -653,17 +657,24 @@ export function PieceFileTab({
   const [kept, setKept] = useState<Kept>();
   const read = useFile(plane, cut, path, setKept) ?? READING;
   const changed = useChanged(plane, cut, path);
-  const at = useCursorLine(plane, cut, path, line);
+  const landed = useRootLanding(plane, cut, path);
+  const lands = landed?.line ?? line;
+  const at = useCursorLine(plane, cut, path, lands);
   const selection = useSelectedLines(path);
   // A jump to a line (a diff, a record) lands in the text at that line; a file opened to be read
   // is rendered.
-  const [source, setSource] = useState(line !== undefined);
+  const [source, setSource] = useState(lands !== undefined);
+  const [sourceFor, setSourceFor] = useState(landed?.at);
+  if (landed !== undefined && landed.at !== sourceFor) {
+    setSourceFor(landed.at);
+    setSource(true);
+  }
   // What acts on a branch's file — your editor, its path, a chat's context — names a branch,
   // which the plane root is not (issue 1916): there the file is read, and that is all.
   const ofABranch = !isPlaneRoot(cut);
   return (
     <div className="piece-file">
-      <header className="piece-files-head" {...editorToolbar}>
+      <header {...editorToolbar("piece-files-head")}>
         {/* The tab is the file's name: the path alone, quiet (#3147). */}
         <ToolbarFile path={path} named={false} />
         <span className="piece-files-actions">
@@ -683,7 +694,9 @@ export function PieceFileTab({
       <Shown
         path={path}
         read={read}
-        line={line}
+        line={lands}
+        column={landed?.column}
+        landing={landed?.at}
         onLine={at.moved}
         onLines={selection.selected}
         source={source}
@@ -691,6 +704,24 @@ export function PieceFileTab({
       />
     </div>
   );
+}
+
+/**
+ * **A jump into the project's root lands in the file's own tab** (#6356): the root has no
+ * branch's file tab to land in (`PlaneView.tsx`), so a pane's link to a file there, or any jump
+ * to one at a line, opens this tab, which takes the line and column from the pending jump as
+ * the Files tab does. Only the root's: a branch's jump is the Files tab's to settle.
+ */
+function useRootLanding(plane: PlaneId, cut: Place, path: string) {
+  const jump = usePendingJump(plane, cut);
+  const root = isPlaneRoot(cut);
+  const [landed, setLanded] = useState<{ at: number; line?: number; column?: number }>();
+  if (root && jump !== undefined && jump.path === path && jump.at !== landed?.at)
+    setLanded({ at: jump.at, line: jump.line, column: jump.column });
+  useEffect(() => {
+    if (landed !== undefined) settleJump(landed.at);
+  }, [landed]);
+  return landed;
 }
 
 /**
@@ -723,7 +754,7 @@ export function OutsideFileTab({
     ) ?? READING;
   return (
     <div className="piece-file">
-      <header className="piece-files-head" {...editorToolbar}>
+      <header {...editorToolbar("piece-files-head")}>
         <ToolbarFile path={path} named={false} />
       </header>
       <Shown
@@ -894,7 +925,7 @@ export function PieceFilesTab({
             />
           ) : (
             <>
-              <header className="piece-files-head" {...editorToolbar}>
+              <header {...editorToolbar("piece-files-head")}>
                 <ToolbarFile path={picked} />
                 <span className="piece-files-actions">
                   <SourceToggle
@@ -927,6 +958,7 @@ export function PieceFilesTab({
                 read={read}
                 line={line}
                 column={column}
+                landing={landed !== undefined && landed.path === picked ? landed.at : undefined}
                 onLine={at.moved}
                 onLines={selection.selected}
                 source={showsSource}

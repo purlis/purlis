@@ -122,6 +122,7 @@ function linkSaid(link: PoolLink | "asking" | undefined): string | undefined {
   if (link.state === "suspended") return "suspended";
   if (link.state === "removed") return "removed outside purlis";
   if (link.state === "on_another_engine") return "on another Docker engine";
+  if (link.state === "pin_changed") return "machine not trusted";
   return "not linked";
 }
 
@@ -254,7 +255,14 @@ function openedAgo(opened: number, now: number): string {
 
 /** Whether a pool's link says its runner is on a Docker engine that Docker no longer reaches. */
 function linkOnAnotherEngine(link: PoolLink | "asking" | undefined): boolean {
-  return typeof link === "object" && link.state === "on_another_engine";
+  return (
+    typeof link === "object" && (link.state === "on_another_engine" || link.state === "pin_changed")
+  );
+}
+
+/** **The machine of a pool whose pin no longer holds** (#6270): removing it forgets it here. */
+function untrustedOf(link: PoolLink | "asking" | undefined): string | undefined {
+  return typeof link === "object" && link.state === "pin_changed" ? link.change.host : undefined;
 }
 
 /**
@@ -276,6 +284,7 @@ export function RemovePool({
   name,
   cluster = false,
   elsewhere = false,
+  untrusted,
   onRemove,
   onCancel,
 }: {
@@ -284,11 +293,15 @@ export function RemovePool({
   cluster?: boolean;
   /** Its runner is on a Docker engine that Docker no longer reaches (#4325): nothing there goes. */
   elsewhere?: boolean;
+  /** **Its machine, which isn't the one trusted any more** (#6270): nothing is sent there, so the
+   *  pool is forgotten here and its runner stays there. Asked as `elsewhere`. */
+  untrusted?: string;
   onRemove: (discarding: readonly string[]) => void;
   onCancel: () => void;
 }) {
   const named = useNamedBy(name);
-  const held = useHeldRunners(name, cluster);
+  // Nothing is read of a machine no longer trusted: its runners stay there, discarded by none.
+  const held = useHeldRunners(name, cluster || untrusted !== undefined);
   const [again, setAgain] = useState(false);
   const discarding = held.state === "read" ? held.held : [];
   // Each ask is a dialog of its own, so the second opens with the keyboard on its Cancel and not
@@ -304,7 +317,7 @@ export function RemovePool({
             : `Delete the conversations on ${runnersSaid(discarding)}?`
         }
         description={
-          <p className="came-back">
+          <p className="came-back ui-text-secondary">
             {elsewhere
               ? `They stay on the Docker engine that Docker doesn't reach now, but purlis forgets them with pool ${name} and can no longer bring them back. To keep them, cancel and keep the pool.`
               : `They are deleted with pool ${name} and cannot be brought back. To keep them, cancel and keep the pool.`}
@@ -326,12 +339,14 @@ export function RemovePool({
       title={`Remove pool ${name}?`}
       description={
         <>
-          <p className="came-back">
-            {elsewhere
-              ? "Its runner is on another Docker engine, which Docker doesn't reach now, so its container and home stay there, with everything chats left in them. purlis forgets the pool, and says what to remove once Docker points back. There is no undo."
-              : cluster
-                ? "Its runner's claim is deleted from your team's cluster, and its runner with it, with everything chats left there, and this machine is taken out of the runner's peers. There is no undo."
-                : "Its runner's container and home are removed from your Docker, with everything chats left in them, and this machine is taken out of the runner's peers. There is no undo."}
+          <p className="came-back ui-text-secondary">
+            {untrusted !== undefined
+              ? `${untrusted} isn't the machine you trusted any more, so purlis sends nothing to ${untrusted}: its runner's container and home stay there, with everything chats left in them. purlis forgets the pool here, and says how to remove them on ${untrusted}. There is no undo.`
+              : elsewhere
+                ? "Its runner is on another Docker engine, which Docker doesn't reach now, so its container and home stay there, with everything chats left in them. purlis forgets the pool, and says what to remove once Docker points back. There is no undo."
+                : cluster
+                  ? "Its runner's claim is deleted from your team's cluster, and its runner with it, with everything chats left there, and this machine is taken out of the runner's peers. There is no undo."
+                  : "Its runner's container and home are removed from your Docker, with everything chats left in them, and this machine is taken out of the runner's peers. There is no undo."}
           </p>
           <HeldLine held={held} elsewhere={elsewhere} />
           <NamedByLine named={named} />
@@ -364,7 +379,7 @@ function HeldLine({ held, elsewhere }: { held: HeldRunners; elsewhere: boolean }
   if (held.state === "reading") return null;
   if (held.state === "trouble")
     return (
-      <p className="came-back">
+      <p className="came-back ui-text-secondary">
         {"purlis could not read whether its older runners still hold chats' conversations: "}
         <bdi>{held.why}</bdi>
         {". If one does, nothing is removed, and purlis says so."}
@@ -373,12 +388,12 @@ function HeldLine({ held, elsewhere }: { held: HeldRunners; elsewhere: boolean }
   if (held.held.length === 0) return null;
   return (
     <>
-      <p className="came-back pool-named-lead" id={said}>
+      <p className="came-back ui-text-secondary pool-named-lead" id={said}>
         {elsewhere
           ? "These older runners may still hold conversations from chats that ran on them. Removing the pool means purlis can no longer bring those conversations back:"
           : "These older runners may still hold conversations from chats that ran on them. Removing the pool deletes those conversations:"}
       </p>
-      <ul className="came-back pool-named-by" aria-labelledby={said}>
+      <ul className="came-back ui-text-secondary pool-named-by" aria-labelledby={said}>
         {held.held.map((runner) => (
           <li key={runner}>
             {"Runner "}
@@ -397,7 +412,7 @@ function NamedByLine({ named }: { named: NamedBy }) {
   if (named.state === "reading") return null;
   if (named.state === "trouble")
     return (
-      <p className="came-back">
+      <p className="came-back ui-text-secondary">
         {
           "Workspaces and projects set to run on it go back to this machine. purlis could not read which: "
         }
@@ -407,10 +422,10 @@ function NamedByLine({ named }: { named: NamedBy }) {
   if (named.named.length === 0) return null;
   return (
     <>
-      <p className="came-back pool-named-lead" id={said}>
+      <p className="came-back ui-text-secondary pool-named-lead" id={said}>
         These go back to this machine:
       </p>
-      <ul className="came-back pool-named-by" aria-labelledby={said}>
+      <ul className="came-back ui-text-secondary pool-named-by" aria-labelledby={said}>
         {named.named.flatMap((one) => [
           ...(one.project
             ? [
@@ -458,7 +473,7 @@ export function DiscardHeldRunner({
       onClose={onCancel}
       title={`Discard runner ${name}'s conversations?`}
       description={
-        <p className="came-back">
+        <p className="came-back ui-text-secondary">
           Its container and home are removed from your Docker, with every conversation and
           everything else its chats left in them.
         </p>
@@ -471,7 +486,7 @@ export function DiscardHeldRunner({
       onClose={onCancel}
       title="Discard them for good?"
       description={
-        <p className="came-back">
+        <p className="came-back ui-text-secondary">
           {`Runner ${name}'s conversations cannot be brought back after this. There is no undo.`}
         </p>
       }
@@ -568,6 +583,10 @@ function PoolEntry({
             {remade !== undefined && <p className="ui-setting-help ui-text-secondary">{remade}</p>}
             {typeof link === "object" && link.state === "down" && (
               <p className="ui-setting-help ui-text-secondary">{link.why}</p>
+            )}
+            {/* Its Notice, with Check and trust again, stands in the window's Notices (#6270). */}
+            {typeof link === "object" && link.state === "pin_changed" && (
+              <p className="ui-setting-help ui-text-secondary">{link.change.said}</p>
             )}
             {versionSaid(version) !== undefined && (
               <p className="ui-setting-help ui-text-secondary">{versionSaid(version)}</p>
@@ -890,6 +909,7 @@ const poolsList = (plane: string | undefined): LiveSetting => ({
               name={asking}
               cluster={clusters.some((one) => one.name === asking)}
               elsewhere={linkOnAnotherEngine(now.links[asking])}
+              untrusted={untrustedOf(now.links[asking])}
               onCancel={() => setAsking(undefined)}
               onRemove={(discarding) => {
                 setAsking(undefined);

@@ -2014,7 +2014,6 @@ describe("the grants table's look (DS-9, #1841)", () => {
     const whole = await table();
 
     expect(whole).toHaveAttribute("data-scope", "table");
-    expect(whole).toHaveAttribute("data-fixed");
     const headings = within(whole).getAllByRole("columnheader");
     expect(headings.map((one) => one.textContent)).toEqual([
       "Dispatch to",
@@ -2025,6 +2024,28 @@ describe("the grants table's look (DS-9, #1841)", () => {
     for (const heading of headings) expect(drawnWith(heading, "white-space")).toBe("nowrap");
     // The caption is the shared table's too.
     expect(drawnWith(whole.querySelector("caption") as HTMLElement, "text-align")).toBe("start");
+  });
+
+  it("keeps every heading whole in the label role: no column is narrower than its name (#6443)", async () => {
+    // A fixed layout holds each column at its share whatever its name says, and macOS's WebView
+    // cut "Where it comes from" there once the label role spaced its capitals. Laid out as the
+    // limits table is, a column's one-line name is the least it is drawn at, in any font; the
+    // shares stay what each column asks for. `settings-tables.e2e.ts` measures it in the WebView.
+    core({ grants: [MINE, OURS] });
+    render(<Table />);
+    const whole = await table();
+
+    expect(whole).not.toHaveAttribute("data-fixed");
+    expect(drawnWith(whole, "table-layout")).toBe("auto");
+    const headings = within(whole).getAllByRole("columnheader");
+    expect(headings.map((one) => drawnWith(one, "width"))).toEqual(["22%", "32%", "23%", "23%"]);
+    for (const heading of headings) {
+      expect(heading).toHaveClass("ui-text-label");
+      expect(drawnWith(heading, "white-space")).toBe("nowrap");
+    }
+    // What a cell says breaks anywhere, so a long name never makes its column wider.
+    for (const cell of whole.querySelectorAll<HTMLElement>("tbody td"))
+      expect(drawnWith(cell, "overflow-wrap")).toBe("anywhere");
   });
 
   it("says a shortened heading's whole words in a tooltip", async () => {

@@ -17,16 +17,9 @@ fn a_look_that_left_the_tree_alone_tells_the_git_standings_alone() {
     // #933: a commit, a push or a fetch that brought nothing in moved the git standing
     // and no file, and used to be told as "anything may have moved".
     assert_eq!(
-        answers_of(what_it_did(false)),
+        answers_of(Tells::of(plane("").path()).what_it_did(false)),
         Some(vec![crate::planewatch::PlaneAnswer::Git])
     );
-}
-
-#[test]
-fn a_look_that_moved_the_tree_tells_every_reader() {
-    // A fetch that fast-forwarded, a save that rebased: files moved that the watch does
-    // not see (it is not recursive) or that nobody watches at all.
-    assert_eq!(answers_of(what_it_did(true)), None);
 }
 
 #[test]
@@ -114,7 +107,7 @@ fn plane(toml: &str) -> tempfile::TempDir {
 }
 
 #[test]
-fn a_fetch_that_fast_forwards_the_plane_tells_the_window_everything() {
+fn a_fetch_that_fast_forwards_the_plane_tells_the_window_the_files_it_brought_in() {
     // #1028: the fetch end to end. `origin` is on a forge charter knows, mapped by the
     // plane's own config onto a local bare repository, never the network; somebody else's
     // commit waits there, and auto-save is on, so the look fast-forwards onto it.
@@ -144,11 +137,14 @@ fn a_fetch_that_fast_forwards_the_plane_tells_the_window_everything() {
         &elsewhere,
         &["clone", "-q", &bare, &theirs.display().to_string()],
     );
-    std::fs::write(theirs.join("theirs.md"), "theirs\n").unwrap();
+    let memory = theirs.join("workspaces/alpha/memory");
+    std::fs::create_dir_all(&memory).unwrap();
+    std::fs::write(memory.join("theirs.md"), "theirs\n").unwrap();
     git(&theirs, &["add", "-A"]);
     git(&theirs, &["commit", "-q", "-m", "theirs"]);
     git(&theirs, &["push", "-q", "origin", "main"]);
 
+    let tells = Tells::of(&root);
     let mut state = State::default();
     assert!(
         state.look(&root, Instant::now(), None),
@@ -156,13 +152,50 @@ fn a_fetch_that_fast_forwards_the_plane_tells_the_window_everything() {
     );
 
     assert!(
-        root.join("theirs.md").is_file(),
+        root.join("workspaces/alpha/memory/theirs.md").is_file(),
         "the clean tree was not fast-forwarded"
     );
     assert!(state.moved_tree, "a fast-forward moved the tree");
-    // What the loop tells the window (`tell(moved_tree)`): `null`, every answer, so a view
-    // whose files no watch covers reads again too.
-    assert_eq!(answers_of(what_it_did(state.moved_tree)), None);
+    // What the loop tells the window: the files the fast-forward brought in, placed as the
+    // watch places a write (felt speed round 4, H9). A memory moves its workspace's panels
+    // and the views, and the git standing moved: never every answer, which drew every view
+    // of every chat again.
+    assert_eq!(
+        answers_of(tells.what_it_did(state.moved_tree)),
+        Some(vec![
+            crate::planewatch::PlaneAnswer::Panels {
+                workspace: Some("alpha".into())
+            },
+            crate::planewatch::PlaneAnswer::Git,
+            crate::planewatch::PlaneAnswer::Views,
+        ])
+    );
+}
+
+#[test]
+fn a_tree_that_moved_with_the_planes_head_where_it_was_tells_every_reader() {
+    // A workspace repo's merge moved files the plane's history does not hold: not known.
+    let dir = plane("[plane]\nmode = \"commit\"\n");
+    let tells = Tells::of(dir.path());
+    assert_eq!(answers_of(tells.what_it_did(true)), None);
+}
+
+#[test]
+fn a_save_after_a_fast_forward_tells_the_git_standing_alone() {
+    let dir = plane("[plane]\nmode = \"commit\"\n");
+    let root = dir.path();
+    let tells = Tells::of(root);
+    std::fs::create_dir_all(root.join("workspaces/alpha/todos")).unwrap();
+    std::fs::write(root.join("workspaces/alpha/todos/one.md"), "t\n").unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-q", "-m", "a todo"]);
+    assert_ne!(answers_of(tells.what_it_did(true)), None);
+
+    // What was told is not told again.
+    assert_eq!(
+        answers_of(tells.what_it_did(false)),
+        Some(vec![crate::planewatch::PlaneAnswer::Git])
+    );
 }
 
 fn commits(root: &Path) -> usize {

@@ -37,7 +37,7 @@ import {
   type Key,
 } from "react-aria-components";
 import { TwistMark } from "../tree/Tree";
-import { ListChooses, ListFolds, ListSize, useSaidOnRow } from "./List";
+import { groupHeader, ListChooses, ListFolds, ListSize, useSaidOnRow } from "./List";
 
 /** **Folded or not**, held by its owner (`folded`) or here, starting as `defaultFolded`. */
 function useFolded(
@@ -107,13 +107,13 @@ function FoldRow({
       ref={said}
       isDisabled={chooses}
       onAction={() => onOpen(!open)}
-      data-scope="list"
-      data-part={part}
+      {...(part === "header"
+        ? groupHeader("list", named)
+        : { "data-scope": "list", "data-part": "run" })}
       data-size={size}
       data-fold={id}
       data-expanded={open || undefined}
       data-tone={tone}
-      data-named={named || undefined}
     >
       {children}
     </AriaGridListItem>

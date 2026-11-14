@@ -89,6 +89,10 @@ pub struct Resumed {
     /// What was guessed because the record could not say it — its profile, its directory —
     /// each one sentence the window says on the new chat.
     pub notes: Vec<String>,
+    /// Whether the chat resumed is Pool setup's Get help chat ([`held_from_clusters`]): it
+    /// started held from every cluster, and the new chat is recorded as one, so each of its
+    /// later starts is held too.
+    pub held_from_clusters: bool,
 }
 
 impl Resumed {
@@ -110,6 +114,7 @@ impl Resumed {
             // The default persona's grants, where the record's persona reaches past them, until
             // the person allows its own on its tab (#1362, D-1362-6).
             held: self.start.held.clone(),
+            held_from_clusters: self.held_from_clusters,
             show_footer: false,
             pinned: false,
             number: None,
@@ -143,6 +148,19 @@ pub fn resumed_holds(root: &Path, persona: Option<&str>) -> Option<crate::reopen
     )
 }
 
+/// Whether `record` is of Pool setup's Get help chat: its `held-from: clusters`, or the app's
+/// record of the chat it names by id still saying so (a record written before the key).
+fn held_from_clusters(root: &Path, record: &Listed) -> bool {
+    record.held_from_clusters
+        || record.chat_id.as_deref().is_some_and(|id| {
+            crate::reopen::read_or_refusal(root).is_ok_and(|open| {
+                open.chats
+                    .iter()
+                    .any(|chat| chat.identity.id.as_deref() == Some(id) && chat.held_from_clusters)
+            })
+        })
+}
+
 /// The chat that resumes the record at the plane-relative `path` ([`sessionrecord::locate`]),
 /// named `name`, or the one sentence saying why nothing may start.
 ///
@@ -159,11 +177,17 @@ pub fn resumed_holds(root: &Path, persona: Option<&str>) -> Option<crate::reopen
 ///
 /// **Where.** The record's `cwd:` where it is still a directory inside the record's place,
 /// else the place's own directory, said in a note ([`where_it_starts`]).
+///
+/// **A help chat's record** ([`held_from_clusters`]) starts as a restart of the chat would
+/// ([`crate::poolsetup::help::ready_held`]): held from every cluster, and refused where it
+/// would run without the sandbox.
 pub fn ready(root: &Path, path: &str, name: &str, after_failure: bool) -> Result<Resumed, String> {
     let opened = sessionrecord::open(root, path)?;
     let place = opened.place.clone();
     let record = opened.listed;
     let (cwd, moved) = where_it_starts(root, &place, record.cwd.as_deref())?;
+    let held = held_from_clusters(root, &record);
+    let ready_as = |start: &Start| crate::poolsetup::help::ready_held(held, start, root);
     let mut notes: Vec<String> = moved.into_iter().collect();
     let persona = record
         .persona
@@ -225,7 +249,7 @@ pub fn ready(root: &Path, path: &str, name: &str, after_failure: bool) -> Result
                 },
                 ..base.clone()
             };
-            match start::ready(&start, root) {
+            match ready_as(&start) {
                 Ok(ready) => {
                     let used = start.profile.as_deref().unwrap_or_default();
                     if named != Some(used) {
@@ -238,6 +262,7 @@ pub fn ready(root: &Path, path: &str, name: &str, after_failure: bool) -> Result
                         ready,
                         fresh,
                         notes,
+                        held_from_clusters: held,
                     });
                 }
                 Err(why) => refused = Some(why),
@@ -259,7 +284,7 @@ pub fn ready(root: &Path, path: &str, name: &str, after_failure: bool) -> Result
         profile: Some(default),
         ..base
     };
-    let ready = start::ready(&start, root)?;
+    let ready = ready_as(&start)?;
     Ok(Resumed {
         record,
         place,
@@ -267,6 +292,7 @@ pub fn ready(root: &Path, path: &str, name: &str, after_failure: bool) -> Result
         ready,
         fresh,
         notes,
+        held_from_clusters: held,
     })
 }
 

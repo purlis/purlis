@@ -205,3 +205,43 @@ fn a_name_both_referenced_and_quoted_is_a_reference_only() {
     assert!(!graph["ship"].uses[0].hint);
     assert!(graph["deploy"].hinted_by.is_empty());
 }
+
+/// #5874: the skill's tab offers "Write skills:<name>" on a hint's row. It writes every quote
+/// that hints at that name as a reference, inside its own marks, and leaves every other line,
+/// quote and name as it was; the text then reads it as a reference and no longer as a hint.
+#[test]
+fn a_hint_written_as_a_reference_turns_every_quote_of_that_name_and_nothing_else() {
+    let text = "# Ship\n\
+                Use the Skill tool with \"grilling\" first.\n\
+                Then run \"grilling\" on the plan.\n\
+                Load the skill `grilling` again, and the skill `deploy`.\n";
+    let written = written_as_reference(text, "ship", "grilling", "skills");
+    assert_eq!(
+        written,
+        "# Ship\n\
+         Use the Skill tool with \"skills:grilling\" first.\n\
+         Then run \"grilling\" on the plan.\n\
+         Load the skill `skills:grilling` again, and the skill `deploy`.\n"
+    );
+    let known = |one: &str| ["grilling", "deploy"].contains(&one);
+    let hints: Vec<String> = hints_in(&written, "ship", &known)
+        .into_iter()
+        .map(|one| one.name)
+        .collect();
+    assert_eq!(hints, ["deploy"]);
+    assert!(
+        uses_in(&written, "skills", &known, &|_| false)
+            .iter()
+            .any(|one| one.name == "grilling" && !one.broken && !one.hint)
+    );
+}
+
+/// #5874: the hint's row says the line it is on, 1 for the first, as the Text tab numbers them.
+#[test]
+fn a_hint_says_the_first_line_it_is_on() {
+    let text =
+        "---\nname: ship\n---\nShip it.\nUse the skill \"grilling\".\nThe skill \"grilling\".\n";
+    assert_eq!(hint_line(text, "ship", "grilling"), Some(5));
+    assert_eq!(hint_line(text, "ship", "deploy"), None);
+    assert_eq!(hint_line("Run \"grilling\".", "ship", "grilling"), None);
+}

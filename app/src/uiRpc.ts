@@ -1214,6 +1214,7 @@ export const commands = {
 	skillFile: __WINDOW_ONLY_RESULT,
 	skillFolderOpen: __WINDOW_ONLY_RESULT,
 	skillSave: __WINDOW_ONLY_RESULT,
+	skillHintWrite: __WINDOW_ONLY_RESULT,
 	skillTriggerTestsStart: __WINDOW_ONLY_RESULT,
 	skillRename: __WINDOW_ONLY_RESULT,
 	skillCopy: __WINDOW_ONLY_RESULT,
@@ -1499,6 +1500,8 @@ export const commands = {
 	skillExportReview: __WINDOW_ONLY_RESULT,
 	skillExport: __WINDOW_ONLY_RESULT,
 	skillUpdates: __WINDOW_ONLY_RESULT,
+	skillPolicy: __WINDOW_ONLY_RESULT,
+	skillActs: __WINDOW_ONLY_RESULT,
 	skillUpdateReview: __WINDOW_ONLY_RESULT,
 	skillUpdate: __WINDOW_ONLY_RESULT,
 	skillExtensionSources: __WINDOW_ONLY_RESULT,
@@ -1950,12 +1953,22 @@ export const commands = {
 	poolSetupMachine: __WINDOW_ONLY_RESULT,
 	poolSetupSshHosts: __WINDOW_ONLY_RESULT,
 	poolSetupPodmanConnections: __WINDOW_ONLY_RESULT,
+	poolSetupDockerContexts: __WINDOW_ONLY_RESULT,
+	poolSetupDockerContext: __WINDOW_ONLY_RESULT,
+	poolSetupKeepPoolAsItIs: __WINDOW_ONLY_RESULT,
 	poolSetupConnect: __WINDOW_ONLY_RESULT,
 	poolSetupTrust: __WINDOW_ONLY_RESULT,
+	poolSetupCheckAndTrustAgain: __WINDOW_ONLY_RESULT,
+	poolSetupTrustAgain: __WINDOW_ONLY_RESULT,
+	poolSetupTlsFiles: __WINDOW_ONLY_RESULT,
 	poolSetupChooseCluster: __WINDOW_ONLY_RESULT,
 	poolSetupInstall: __WINDOW_ONLY_RESULT,
 	poolSetupOperatorImage: __WINDOW_ONLY_RESULT,
 	poolSetupClusterPool: __WINDOW_ONLY_RESULT,
+	poolSetupPinAgain: __WINDOW_ONLY_RESULT,
+	poolSetupAskAdmin: __WINDOW_ONLY_RESULT,
+	poolSetupGetHelp: __WINDOW_ONLY_RESULT,
+	poolSetupStopWaiting: __WINDOW_ONLY_RESULT,
 	poolSetupName: __WINDOW_ONLY_RESULT,
 	poolSetupPool: __WINDOW_ONLY_RESULT,
 	poolSetupAdd: __WINDOW_ONLY_RESULT,
@@ -1974,6 +1987,7 @@ export const commands = {
 	addDockerPool: __WINDOW_ONLY_RESULT,
 	removeDockerPool: __WINDOW_ONLY_RESULT,
 	dockerPoolLink: __WINDOW_ONLY_RESULT,
+	poolsPinChanged: __WINDOW_ONLY_RESULT,
 	dockerPoolsRemoved: __WINDOW_ONLY_RESULT,
 	dockerPoolMakeAgain: __WINDOW_ONLY_RESULT,
 	dockerPoolReplaceRunner: __WINDOW_ONLY_RESULT,
@@ -2693,6 +2707,8 @@ export const PERSONA_SCOPE_KEY = "persona/" as const;
 
 export const POOL_MINTS_WITHOUT_ASKING = "pool-mints-without-asking" as const;
 
+export const POOL_PIN_CHANGED = "pool-pin-changed" as const;
+
 export const PROJECT_READY = "project-ready" as const;
 
 export const REPORT_DRAFTS_CHANGED = "report-drafts-changed" as const;
@@ -2714,6 +2730,12 @@ export const SKILL_RUNS_PANEL = "runs" as const;
 export const SKILL_STUDIO_IN = "skills.studio:" as const;
 
 export const SPECIMEN_BUSY = "purlis is drawing another theme specimen, and draws one at a time: ask again in a moment" as const;
+
+export const TASK_SCREENS_KEPT_FOR_DAYS = 30 as const;
+
+export const TASK_SCREENS_MOST_KEPT = 200 as const;
+
+export const TASK_SCREENS_MOST_KEPT_MIB = 256 as const;
 
 export const UNICODE_RULE = {"invisible":[[0,31],[127,160],[173,173],[847,847],[1536,1541],[1564,1564],[1757,1757],[1807,1807],[2192,2193],[2274,2274],[4447,4448],[5760,5760],[6068,6069],[6155,6159],[8192,8207],[8232,8239],[8287,8303],[12288,12288],[12644,12644],[65024,65039],[65279,65279],[65440,65440],[65520,65531],[69821,69821],[69837,69837],[78896,78911],[113824,113827],[119155,119162],[917504,921599]],"extended_pictographic":[[169,169],[174,174],[8252,8252],[8265,8265],[8482,8482],[8505,8505],[8596,8601],[8617,8618],[8986,8987],[9000,9000],[9096,9096],[9167,9167],[9193,9203],[9208,9210],[9410,9410],[9642,9643],[9654,9654],[9664,9664],[9723,9726],[9728,9733],[9735,9746],[9748,9861],[9872,9989],[9992,10002],[10004,10004],[10006,10006],[10013,10013],[10017,10017],[10024,10024],[10035,10036],[10052,10052],[10055,10055],[10060,10060],[10062,10062],[10067,10069],[10071,10071],[10083,10087],[10133,10135],[10145,10145],[10160,10160],[10175,10175],[10548,10549],[11013,11015],[11035,11036],[11088,11088],[11093,11093],[12336,12336],[12349,12349],[12951,12951],[12953,12953],[126976,127231],[127245,127247],[127279,127279],[127340,127345],[127358,127359],[127374,127374],[127377,127386],[127405,127461],[127489,127503],[127514,127514],[127535,127535],[127538,127546],[127548,127551],[127561,127994],[128000,128317],[128326,128591],[128640,128767],[128884,128895],[128981,129023],[129036,129039],[129096,129103],[129114,129119],[129160,129167],[129198,129279],[129292,129338],[129340,129349],[129351,129791],[130048,131069]],"emoji_modifier":[[127995,127999]],"emoji_sequences":[[35,65039,8419],[42,65039,8419],[48,65039,8419],[49,65039,8419],[50,65039,8419],[51,65039,8419],[52,65039,8419],[53,65039,8419],[54,65039,8419],[55,65039,8419],[56,65039,8419],[57,65039,8419],[127988,917607,917602,917605,917614,917607,917631],[127988,917607,917602,917619,917603,917620,917631],[127988,917607,917602,917623,917612,917619,917631]],"brahmic_letter":[[2304,2363],[2365,2380],[2382,2384],[2389,2403],[2417,2435],[2437,2444],[2447,2448],[2451,2472],[2474,2480],[2482,2482],[2486,2489],[2493,2500],[2503,2504],[2507,2508],[2510,2510],[2519,2519],[2524,2525],[2527,2531],[2544,2545],[2556,2556],[2561,2563],[2565,2570],[2575,2576],[2579,2600],[2602,2608],[2610,2611],[2613,2614],[2616,2617],[2622,2626],[2631,2632],[2635,2636],[2641,2641],[2649,2652],[2654,2654],[2672,2677],[2689,2691],[2693,2701],[2703,2705],[2707,2728],[2730,2736],[2738,2739],[2741,2745],[2749,2757],[2759,2761],[2763,2764],[2768,2768],[2784,2787],[2809,2812],[2817,2819],[2821,2828],[2831,2832],[2835,2856],[2858,2864],[2866,2867],[2869,2873],[2877,2884],[2887,2888],[2891,2892],[2902,2903],[2908,2909],[2911,2915],[2929,2929],[2946,2947],[2949,2954],[2958,2960],[2962,2965],[2969,2970],[2972,2972],[2974,2975],[2979,2980],[2984,2986],[2990,3001],[3006,3010],[3014,3016],[3018,3020],[3024,3024],[3031,3031],[3072,3084],[3086,3088],[3090,3112],[3114,3129],[3133,3140],[3142,3144],[3146,3148],[3157,3158],[3160,3162],[3165,3165],[3168,3171],[3200,3203],[3205,3212],[3214,3216],[3218,3240],[3242,3251],[3253,3257],[3261,3268],[3270,3272],[3274,3276],[3285,3286],[3293,3294],[3296,3299],[3313,3315],[3328,3340],[3342,3344],[3346,3386],[3389,3396],[3398,3400],[3402,3404],[3406,3406],[3412,3415],[3423,3427],[3450,3455]],"arabic_letter":[[1552,1562],[1568,1623],[1625,1631],[1646,1747],[1749,1756],[1761,1768],[1773,1775],[1786,1788],[1791,1791],[1872,1919],[2208,2249],[2260,2271],[2275,2281],[2288,2303],[64336,64433],[64467,64829],[64848,64911],[64914,64967],[65008,65019],[65136,65140],[65142,65276]],"virama":[[2381,2381],[2509,2509],[2637,2637],[2765,2765],[2893,2893],[3021,3021],[3149,3149],[3277,3277],[3387,3388],[3405,3405]],"line_break":[[10,13],[133,133],[8232,8233]],"blank":[[160,160],[5760,5760],[8192,8202],[8239,8239],[8287,8287],[12288,12288]]} as const;
 
@@ -3090,6 +3112,11 @@ export type AnswerPath =
  *  sends `signing_forget` for them all (#5633).
  */
 { via: "signing" } | 
+/**
+ *  Open Pool setup sends `pool_setup_stop_waiting` and opens the project's Pool setup tab;
+ *  Dismiss sends `pool_setup_stop_waiting` alone (#4496).
+ */
+{ via: "pool-setup" } | 
 /**
  *  `allow_chat_browser`, with the open web for `open-web`, and `keep_chat_browser_off` for
  *  Keep off, with the person's reason (#2013).
@@ -3652,7 +3679,12 @@ export type AskSource =
  *  **A chat paused as looping** (#6015, ADR 0121 decision 20): the same command failing
  *  again and again, or its asks refused again and again. It's fine, continue, or Stop.
  */
-"looping";
+"looping" | 
+/**
+ *  **Pool setup's cluster is ready** (#4496): the admin the person asked has given what
+ *  the install couldn't, and Pool setup goes on. Said once, about no chat.
+ */
+"pool-setup";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -4549,6 +4581,12 @@ export type ChatCard = {
 	started_by: string,
 	/**  Whether its last screen was kept: *Read it* is disabled where it was not. */
 	screen_kept: boolean,
+	/**
+	 *  Whether a dispatch started it. True with no task for a handoff, or a task that ended
+	 *  owing no report: its card is drawn from its chat's record, and *Reopen* says why it does
+	 *  nothing in words of its own.
+	 */
+	dispatched: boolean,
 };
 
 /**
@@ -5073,8 +5111,11 @@ export type ClusterPoolAdding = {
 	context: string,
 	/**  The cluster's Pool. */
 	pool: string,
-	/**  The cluster operator key Check its key showed, spelled as it showed it. */
-	key: string,
+	/**
+	 *  The cluster operator key the person pasted, as their cluster's admin gave it (#4495).
+	 *  None only where this machine made the signing key in this Pool setup.
+	 */
+	pasted: string | null,
 	/**
 	 *  The longest wait for its runner to be vouched for, in minutes, where the person raised it
 	 *  after an add that ran out (spec #4275): saved to the pool. None is purlis's default.
@@ -5084,8 +5125,15 @@ export type ClusterPoolAdding = {
 
 /**  What Check its key read of a cluster's Pool. */
 export type ClusterPoolKey = {
-	/**  The cluster operator key the Pool's status names, spelled as it gives it. */
-	key: string,
+	/**
+	 *  The cluster operator key the Pool's status names, spelled as it gives it: only once it is
+	 *  confirmed (#4495), by the key pasted from the admin, or as the one this setup made.
+	 */
+	key: string | null,
+	/**  Whether this machine made that key in this Pool setup, so no paste is asked for (#4495). */
+	made_here: boolean,
+	/**  Whether the key pasted is the Pool's, where one was pasted (#4495). */
+	matches: boolean | null,
 	/**  The namespace the context names, where the pool's claim would be made. */
 	namespace: string,
 };
@@ -9068,6 +9116,8 @@ export type OfferedSkill = {
 	 *  `None` where they were not read to browse, and its review reads them.
 	 */
 	marks: string[] | null,
+	/**  What the project's controls would refuse of installing it, before its review (#6031). */
+	refused: PolicyRefused | null,
 };
 
 /**
@@ -9094,7 +9144,12 @@ export type OldHome =
  */
 "held" | 
 /**  It could not be read, so it is kept, held, all the same. */
-"unread";
+"unread" | 
+/**
+ *  It is on the engine trusted before, on the pool's other machine (#6270): nothing of it
+ *  was read or removed on the engine trusted now, and `purlis pool left-behind` lists it.
+ */
+"elsewhere";
 
 /**  **What helps a profile over what a pool's older runner takes** (#5175): by what makes its image. */
 export type OlderRunner = 
@@ -10375,6 +10430,23 @@ export type PluginOffShown = {
 	command: string | null,
 };
 
+/**  **Which of the controls refuses**, what a row's mark says (#6031). */
+export type PolicyKind = "blocked" | "not-allowed" | "too-young" | "undated" | "unread";
+
+/**
+ *  **What the controls would refuse, said before a review** (#6031): the core's sentence, and
+ *  when it can be taken where it is refused for its age alone.
+ */
+export type PolicyRefused = {
+	kind: PolicyKind,
+	why: string,
+	/**
+	 *  When it is old enough to take, in seconds since the epoch, where its source says when it
+	 *  was made.
+	 */
+	until: number | null,
+};
+
 /**  A pool as the person typed it: each limit left empty takes the default. */
 export type PoolAdding = {
 	name: string,
@@ -10540,7 +10612,13 @@ export type PoolLink =
  *  Docker points at another engine than the one that made it (#4166): its container may be
  *  there still, so it is not said to be removed and Make the runner again is not offered.
  */
-{ state: "on_another_engine" };
+{ state: "on_another_engine" } | 
+/**
+ *  **Its machine's pin no longer holds** (#6270, ADR 0123 §3): another host key, CA or
+ *  engine. Nothing is sent there until the person checks it and trusts it again, and removing
+ *  the pool forgets it here, leaving its runner there.
+ */
+{ state: "pin_changed"; change: PoolPinChanged };
 
 /**
  *  **A project, and its workspaces, that name a pool** (#4678): what removing the pool sets back
@@ -10582,6 +10660,26 @@ export type PoolOwed = {
 	opened: number,
 	/**  Whether it is open in a window now, so it brings the work back on its own. */
 	open_now: boolean,
+};
+
+/**
+ *  **A pool on another machine whose pin no longer holds** (#6270, ADR 0123 §3): what the
+ *  window's Notice (cause `pool-pin-changed`) says, in the core's words, the same as `purlis pool
+ *  doctor`'s.
+ */
+export type PoolPinChanged = {
+	pool: string,
+	host: string,
+	/**  `key`, `ca` or `engine`. */
+	what: string,
+	/**
+	 *  What was pinned, and what the machine shows now: a key's or a CA's SHA-256, or an
+	 *  engine's id.
+	 */
+	pinned: string,
+	now: string,
+	title: string,
+	said: string,
 };
 
 /**  One of this machine's profiles, as a pool's runner stands with it. */
@@ -10670,6 +10768,13 @@ export type PoolSetupAction = {
 	url: string | null,
 };
 
+/**  A CA, as Connect shows it to confirm (#6267). */
+export type PoolSetupCa = {
+	fingerprint: string,
+	subject: string | null,
+	file: string,
+};
+
 /**  One line of what Try it checks (#4483): `ok`, `missing`, `todo` or `skip`. */
 export type PoolSetupCheck = {
 	/**  What it checks: `chat`, `signins` or `identity`. */
@@ -10686,6 +10791,18 @@ export type PoolSetupContexts = {
 	chosen: string | null,
 	/**  The chosen cluster's Pools, by name, where its operator runs (#4494). */
 	pools: string[],
+	/**
+	 *  Whether the person joins their team's install (#4495): the key is then confirmed by
+	 *  pasting the one their admin gave them.
+	 */
+	joining: boolean,
+	/**  The cluster operator key a kept cluster pool pinned here (#4495). */
+	pinned: string | null,
+	/**
+	 *  Whether its Pool names a key now that the pin never vouched for (#4495). The key itself
+	 *  isn't sent: it is shown only once the key pasted from the admin matched it.
+	 */
+	key_changed: boolean,
 };
 
 /**
@@ -10694,6 +10811,20 @@ export type PoolSetupContexts = {
  */
 export type PoolSetupCreated = {
 	breaks: string[],
+};
+
+/**
+ *  **A context of the person's Docker, as Connect offers it** (#6268): its name, whether it is
+ *  the one their `docker` uses now, and what its endpoint was read into: `over` `ssh` or `tls`
+ *  with its `route`, `here` for a socket on this machine (the local kind), or `refused` with
+ *  why purlis doesn't use it.
+ */
+export type PoolSetupDockerContext = {
+	name: string,
+	current: boolean,
+	over: string,
+	route: string | null,
+	refused: string | null,
 };
 
 /**  Why Try it didn't pass, and the step that mends it, where one does (#4483). */
@@ -10726,6 +10857,18 @@ export type PoolSetupMachine = {
 	now: PoolSetupKey | null,
 	/**  The engine's id trusted for it. */
 	engine: string | null,
+	/**  **Over Docker's TLS API** (#6267): `tls` for a `tcp://` machine, `ssh` otherwise. */
+	over: string,
+	/**  The TLS files named under Options. */
+	tls: PoolSetupTlsFiles | null,
+	/**  The CA read at Connect to, to confirm. */
+	ca: PoolSetupCa | null,
+	/**  The CA's fingerprint trusted for it. */
+	trusted_ca: string | null,
+	/**  The fingerprint the CA file holds now, where that isn't the one trusted. */
+	ca_now: string | null,
+	/**  The Docker context the route was read from (#6268). */
+	context: string | null,
 };
 
 /**  A limit a profile is over. */
@@ -10759,6 +10902,15 @@ export type PoolSetupPodmanConnection = {
 	name: string,
 	route: string,
 	identity: string | null,
+};
+
+/**
+ *  **A machine to open Connect with** (#6268): its route, and the Docker context it was read
+ *  from, where it was read from one.
+ */
+export type PoolSetupPrefill = {
+	route: string,
+	context: string | null,
 };
 
 /**  One of this machine's profiles against a pool's limit (#4482). */
@@ -10829,8 +10981,24 @@ export type PoolSetupStep = {
 	also: PoolSetupAction | null,
 	/**  Install's parts, each with its own button (#4493). */
 	parts: PoolSetupPart[],
+	/**
+	 *  The words for the person's cluster's admin (#4496), where doctor shows they can't
+	 *  install. Held free of secrets by the core.
+	 */
+	admin: string | null,
 	/**  How the step is undone by hand, never by a button: uninstalling from a cluster. */
 	undo: PoolSetupSee | null,
+	/**  What Set up Docker on another machine, or Connect again, opens Connect with (#6268). */
+	prefill: PoolSetupPrefill | null,
+};
+
+/**  The TLS files named for a `tcp://` machine, as Connect's Options show them (#6267). */
+export type PoolSetupTlsFiles = {
+	ca: string,
+	cert: string,
+	key: string | null,
+	key_vault: string | null,
+	key_name: string | null,
 };
 
 /**  What Try it found. */
@@ -12294,6 +12462,13 @@ export type ReviewSkill = {
 	description: string,
 	folder: string,
 	brought_by: string | null,
+	/**
+	 *  Whether [`Self::brought_by`] only names it bare, as a hint (#4510): the review says it
+	 *  comes along by a hint, and the person may untick it (#5874).
+	 */
+	brought_by_hint: boolean,
+	/**  The skills it names only bare, as hints, each once. */
+	hints: string[],
 	/**
 	 *  The skills it refers to that the level it lands in holds already (#4032): left as they
 	 *  are, not brought along.
@@ -14315,6 +14490,38 @@ export type SigningWaiting = {
 	why?: string | null,
 };
 
+/**  **One skill act this machine recorded** (#6031), as the audit wrote it: metadata only. */
+export type SkillAct = {
+	/**  When it was written, in seconds since the epoch. */
+	at: number | null,
+	act: SkillActKind,
+	skills: string[],
+	/**  The source, as an audit names it. */
+	source: string,
+	/**  The commit or revision. */
+	pin: string,
+	/**  The level, as a sentence names it. */
+	level: string,
+	by: SkillActBy,
+};
+
+/**  Where a recorded act was made: the person's own scope either way. */
+export type SkillActBy = 
+/**  In the Skill studio, in the window. */
+"window" | 
+/**  With `purlis skill` at a terminal, written by the session host. */
+"terminal";
+
+/**  One of the three skill acts an org's project audits (SK-11). */
+export type SkillActKind = "install" | "update" | "remove";
+
+/**  **The skill acts this machine recorded**, newest first, at most [`MOST_ACTS`]. */
+export type SkillActs = {
+	acts: SkillAct[],
+	/**  Whether there are older ones than those listed. */
+	more: boolean,
+};
+
 /**
  *  A skill a chat would have loaded that could not be loaded (SK-8): the core's `Broken`, for
  *  the window. purlis-core keeps no UI typing crate, so its level is the studio's `Level`.
@@ -14451,6 +14658,8 @@ export type SkillDetails = {
 	uses: SkillUse[],
 	/**  The project's skills that name it. */
 	used_by: string[],
+	/**  The project's skills that name it only bare, as a hint (#4510, #5874). */
+	hinted_by: string[],
 	/**  Whether the project holds more skills than the graph reads. */
 	uses_cut: boolean,
 	/**
@@ -14959,6 +15168,33 @@ export type SkillPinsTogether = {
 };
 
 /**
+ *  **The project's skill controls** (#6031): where they are set, what they are, and what they do
+ *  to each source asked about.
+ */
+export type SkillPolicy = {
+	/**  The shared settings file, as the project spells it: `charter.toml` or `purlis.toml`. */
+	file: string,
+	state: SkillPolicyState,
+	sources: SourcePolicy[],
+};
+
+/**  **The project's controls, as its shared settings hold them.** */
+export type SkillPolicyState = 
+/**  The shared settings hold no `[skill_policy]`: no controls, and nothing audited. */
+{ kind: "none" } | 
+/**
+ *  The table cannot be read, or this machine's file holds one too: every install and update
+ *  is refused until it is fixed, and why.
+ */
+{ kind: "refused"; why: string } | 
+/**  The table, each entry as a sentence names it. */
+{ kind: "set"; 
+/**  `None` where it holds no allow list: every source not blocked is allowed. */
+allow: string[] | null; block: string[]; min_age_days: number; exempt: string[]; 
+/**  What it does, in one line: what Sources says above its list. */
+said: string };
+
+/**
  *  **How a chat's router did on its latest prompt** (#4297, ADR 0102 §6): the core's routing
  *  record of it, as the chat's tab and the studio say it. No word of the prompt.
  */
@@ -15186,6 +15422,11 @@ export type SkillUpdateOffer = {
 	pinned: SourceCommit,
 	newer: SourceCommit,
 	edited: boolean,
+	/**
+	 *  What the project's controls would refuse of taking it, before its review (#6031): with
+	 *  when it can be taken, where it is too young.
+	 */
+	refused: PolicyRefused | null,
 };
 
 /**  An installed skill whose source could not be asked. */
@@ -15211,6 +15452,16 @@ export type SkillUse = {
 	project: boolean,
 	/**  Whether no skill has that name. */
 	broken: boolean,
+	/**
+	 *  Whether the text names it only bare, beside the word skill: a hint (#4510), which the tab
+	 *  marks and offers to write as `skills:<name>` (#5874).
+	 */
+	hint: boolean,
+	/**
+	 *  The first line of the copy the tab shows first that names it bare, from 1, where it is a
+	 *  hint there.
+	 */
+	line: number | null,
 };
 
 /**  Who uses a skill, as Delete shows before it deletes. */
@@ -15322,9 +15573,14 @@ export type SlowMoment =
 { kind: "answer"; command: string; ms: number; at: number | null; hot: number } | 
 /**
  *  A gap of `ms` between two of the window's frames, seen at `at`, while `hot` chats were
- *  working, with the tab in front (`front`) and whether a view of a chat was opening.
+ *  working, with the tab in front (`front`) and whether a view of a chat was opening, and
+ *  what the window's thread did in that frame, the top five of each (felt speed round 4,
+ *  H9): the regions whose React commits took longest (`react`), the core's events handled
+ *  (`events`) and answers handled (`answers`) by name and count, and the scripts the webview
+ *  said made the frame long (`scripts`). `dark`: the thread answered all through the gap,
+ *  so the webview withheld its frames (a locked screen, a display asleep, a window covered).
  */
-{ kind: "stall"; ms: number; at: number | null; hot: number; front: string | null; opening: boolean } | 
+{ kind: "stall"; ms: number; at: number | null; hot: number; front: string | null; opening: boolean; dark: boolean; react: StallTook[]; events: StallCounted[]; answers: StallCounted[]; scripts: StallTook[] } | 
 /**
  *  The core's main thread ran a ping `ms` after it was asked to at `at`, busy with the
  *  command `running` when the wait was noticed (`crate::mainwatch`). The core writes it; the
@@ -15427,6 +15683,17 @@ export type SourceOffering =
  */
 export type SourceOrigin = { kind: "git"; remote: SourceRemote; label: string } | { kind: "extension"; id: string; label: string };
 
+/**  **What the controls do to one source** the window lists (#6031). */
+export type SourcePolicy = {
+	origin: SourceOrigin,
+	/**  Which of them refuses it, where one does. */
+	kind: PolicyKind | null,
+	/**  Why they do not allow every skill of it, in the core's sentence; `None` where they do. */
+	refused: string | null,
+	/**  The skills of it they do allow, where they allow some alone. */
+	only: string[],
+};
+
 /**  A repository and the branch read from it. */
 export type SourceRemote = {
 	url: string,
@@ -15488,6 +15755,18 @@ export type StaleRemote = {
 	 *  it (#2117).
 	 */
 	pushes_kept: string[],
+};
+
+/**  Something the window handled `n` times in a stalled frame, by name. */
+export type StallCounted = {
+	name: string,
+	n: number,
+};
+
+/**  Something the window's thread did in a stalled frame, by name, and how long it took there. */
+export type StallTook = {
+	name: string,
+	ms: number,
 };
 
 /**  Everything the picker draws, read from the plane when it is opened. */
@@ -16316,7 +16595,10 @@ export type TaskQuestion = {
 export type TaskScreens = {
 	/**  `[task_screens] keep` in the project's local file, `true` where it is not set. */
 	keep: boolean,
-	/**  How many screens are kept now: none where `keep` is off. */
+	/**
+	 *  How many screens are kept now. Where `keep` is off, the ones a delete left (#6451's
+	 *  review): a screen that could not be deleted is still counted.
+	 */
 	kept: number,
 };
 
