@@ -487,6 +487,7 @@ export const commands = {
 	keepVaultBlocked: __WINDOW_ONLY_RESULT,
 	putAwayRefusedVault: __WINDOW_ONLY_RESULT,
 	keepAskedWorkspace: __WINDOW_ONLY_RESULT,
+	rereadHeldMerge: __WINDOW_ONLY_RESULT,
 	mergeHeldRequest: __WINDOW_ONLY_RESULT,
 	dontMergeHeldRequest: __WINDOW_ONLY_RESULT,
 	allowChatBrowser: __WINDOW_ONLY_RESULT,
@@ -3213,9 +3214,12 @@ export type AnswerPath =
 { via: "paused" } | 
 /**
  *  `merge_held_request` for Merge and `dont_merge_held_request` for Don't merge, each for
- *  request `number` of `repo` at `head`, the key the ask was raised at (R-115).
+ *  request `number` of `repo` at `head`, the key the ask was raised at (R-115). `facts` are
+ *  what the row shows of it, as the forge last gave them (T1-40): Merge hands back the
+ *  ruleset state among them, which it is bound to (R-150), and `reread_held_merge` reads
+ *  them again before Merge asks once more (Q248).
  */
-{ via: "merge-hold"; repo: string; number: number; head: string } | 
+{ via: "merge-hold"; repo: string; number: number; head: string; facts: MergeShown } | 
 /**
  *  `vouch_clone` for Trust this clone, on the clone at `folder` (relative to the project)
  *  at `place`, the address its remote named when the refusal was raised (R-330): the clone
@@ -8717,6 +8721,45 @@ export type MemoryView = {
 	text: string,
 };
 
+/**
+ *  **What a re-read of a held merge found** (Q248): the head the request is at now, and what its
+ *  row shows of it, with the time the forge was read.
+ */
+export type MergeReread = {
+	/**
+	 *  The head the request is at now: another than the ask's, and that ask is retired for one
+	 *  at this head (Q242).
+	 */
+	head: string,
+	facts: MergeShown,
+};
+
+/**
+ *  **What a merge row shows of its request** (T1-40; R-120, R-147, Q248), every one of them read
+ *  from the forge with the app's own login, never from the chat
+ *  (`purlis_core::mergehold::Facts`).
+ */
+export type MergeShown = {
+	/**
+	 *  The request's title, written out inertly: its author may be the chat, so the row draws it
+	 *  as text the chat may have written (Q248).
+	 */
+	title: string,
+	/**  Who opened it, by the forge's login, written out inertly. */
+	author: string,
+	/**  The branch it merges into: the ask's key's. */
+	base: string,
+	/**
+	 *  The checks at its head, as one of the five words: `PASSED`, `FAILED`, `RUNNING`, `NOT
+	 *  RUN` or `UNKNOWN`.
+	 */
+	checks: string,
+	/**  When the forge was read for these, in seconds since 1970: "Checks PASSED as of 14:02". */
+	read_at: number,
+	/**  Whether a ruleset protects the base, as purlis read it. */
+	ruleset: RulesetShown,
+};
+
 /**  What a merge did, for the window to report. */
 export type Merged = {
 	branch: string,
@@ -12871,6 +12914,18 @@ export type RuleShown = {
 	/**  The rule offered, where the same Allow was given it twice in a week. */
 	offer?: RuleOffered | null,
 };
+
+/**
+ *  **Whether a ruleset protects a merge's base** (R-147), as its row shows it and its Merge hands
+ *  back (R-150).
+ */
+export type RulesetShown = 
+/**  A ruleset protects it. */
+"protects" | 
+/**  None does. */
+"none" | 
+/**  The forge did not say. */
+"unknown";
 
 /**  How a skill run ended, as the Runs panel draws it. */
 export type RunEnd = 

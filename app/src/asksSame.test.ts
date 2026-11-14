@@ -226,6 +226,14 @@ describe("identical requests from several chats", () => {
         repo: "o/r",
         number: 12,
         head: "0123456789abcdef0123456789abcdef01234567",
+        facts: {
+          title: "Add the parser",
+          author: "octo",
+          base: "main",
+          checks: "PASSED",
+          read_at: 1_763_000_000,
+          ruleset: "none",
+        },
       },
       risk: {
         class: "merge",
