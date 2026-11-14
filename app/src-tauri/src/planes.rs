@@ -2070,6 +2070,8 @@ impl Held {
             self.chats.asks_may_have_moved();
             return Ok(());
         }
+        // The answer is in the chat's Chat log already, as the registry applied it, a late one
+        // included ([`crate::hooks::Hooks::answer`], R-229).
         if let Some(refused) = refused {
             crate::pausing::answered(self, session, refused);
         }
@@ -3968,6 +3970,12 @@ impl Planes {
                     // is a bug to report, which the chat is not told to wait on, and neither is
                     // a block it only read back (#1884), whose quiet line nobody has to answer.
                     if !told.ours && told.quiet.is_none() {
+                        // R-229: an ask raised, in the chat's Chat log.
+                        crate::chatlog::raised(
+                            strong.hooks(),
+                            told.session,
+                            purlis_core::eventlog::stops::AskGroup::Sandbox,
+                        );
                         let turn = strong.board().glance(told.session).turns;
                         strong.chats().blocks().raised(told.session, turn);
                         // A block heard while it waits on its own work is an ask (#3878).

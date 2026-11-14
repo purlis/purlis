@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use super::*;
 use crate::eventlog::stops::{
-    self, Answer, AskAnswered, AskGroup, Block, Hold, Source, Stop, Target,
+    self, Answer, AnsweredBy, AskAnswered, AskGroup, Block, Hold, Source, Stop, Target,
 };
 use crate::eventlog::{ArgsKey, Log, Recorder, Retention, RunOf, VERSION};
 
@@ -72,6 +72,7 @@ fn the_blocked_log_is_a_30_day_view_of_the_event_log() {
     let answered = serde_json::to_value(AskAnswered {
         ask: AskGroup::Sandbox,
         answer: Answer::Allowed,
+        by: AnsweredBy::Window,
     })
     .unwrap();
     let events = vec![

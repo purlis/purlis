@@ -4728,6 +4728,7 @@ export type ChatLog = {
 	/**  purlis knows the chat by its number: open, or ended here and still kept. */
 	known: boolean,
 	rows: ChatLogRow[],
+	summary: ChatLogSummary,
 };
 
 /**  One row of a chat's Chat log. */
@@ -4741,8 +4742,39 @@ export type ChatLogRow =
 at: string | null; cause: string; protection: StartProtection | null } | 
 /**  The chat's run ended: `completed`, `failed` or `stopped`, why, and its exit code. */
 { kind: "ended"; at: string | null; state: string; cause: string; code: number | null } | 
+/**
+ *  The chat's sandbox was lifted for a run (`off`) or put back on (`on`), and who did it:
+ *  `actor_kind` `human`, `host` or `agent`, and the actor's word.
+ */
+{ kind: "protection_changed"; at: string | null; change: string; actor_kind: string; actor: string } | 
+/**  The chat raised an ask, by its group's word. */
+{ kind: "ask_raised"; at: string | null; ask: string } | 
+/**  The chat's ask was answered: `allowed` or `refused`, and by whom: `window` or `inbox`. */
+{ kind: "ask_answered"; at: string | null; ask: string; answer: string; by: string } | 
+/**
+ *  purlis held an action and asked the person: the tool, and the guard's arm it was held
+ *  at, where it names one (`merge-hold`).
+ */
+{ kind: "held"; at: string | null; tool: string; arm: string | null; 
+/**  It was held under one of the chat's sub-agents. */
+sub_agent: boolean } | 
+/**  The chat was paused as looping: the rule's word and how many times. */
+{ kind: "loop_paused"; at: string | null; rule: string; times: number } | 
 /**  A call was blocked: by whom, how much its report is worth, at what, and why it said. */
 { kind: "blocked"; at: string | null; tool: string; source: string; qualifier: string | null; target_kind: string | null; target: string | null; harness: string; reason: string | null };
+
+/**
+ *  What heads a chat's Chat log: its allowed calls in one count, with those its person's rules
+ *  allowed, and its honesty lines.
+ */
+export type ChatLogSummary = {
+	allowed: number,
+	by_your_rules: number,
+	/**  What reports its calls is within its own reach. */
+	unverified: boolean,
+	/**  It ran with No sandbox. */
+	ran_as_you: boolean,
+};
 
 /**  What a number names, as the window is sent it. */
 export type ChatLookup = 
