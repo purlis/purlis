@@ -126,6 +126,8 @@ pub(super) fn a_pool_on_the_cluster(
         &machine.config,
         &purlis_core::pools::kubectl_here(&machine.config).expect("kubectl on this machine"),
         &team,
+        // The operator's key, as the cluster's admin would give it to the person.
+        Some(&team.pin().expect("its pin").key.spelled()),
         &desktop,
         LONG,
     )

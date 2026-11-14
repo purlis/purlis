@@ -59,12 +59,32 @@ pub enum Slow {
     /// A gap of `ms` milliseconds between two of the window's frames, seen at `at`, while `hot`
     /// chats were in their turn, `front` the name of the tab in front (if any), and `opening`
     /// whether a view of a chat was being opened.
+    ///
+    /// And what the window's thread did in that frame (felt speed round 4, H9), the largest
+    /// few of each: `react`, the regions whose React commits took longest; `events`, the core's
+    /// events it handled, by name and count; `answers`, the commands whose answers it handled;
+    /// `scripts`, the scripts the webview said made the frame long, where it says. Empty in a
+    /// line written before they were kept.
+    ///
+    /// `dark`: the window's thread answered all through the gap, so its frames were withheld (a
+    /// locked screen, a display asleep, a window covered), not held up. Time away, not a stall
+    /// the person felt; `false` in a line written before it was kept.
     Stall {
         ms: u32,
         at: u64,
         hot: u32,
         front: Option<String>,
         opening: bool,
+        #[serde(default)]
+        dark: bool,
+        #[serde(default)]
+        react: Vec<Took>,
+        #[serde(default)]
+        events: Vec<Counted>,
+        #[serde(default)]
+        answers: Vec<Counted>,
+        #[serde(default)]
+        scripts: Vec<Took>,
     },
     /// The core's main thread ran a ping `ms` milliseconds after it was asked to, at `at`, and
     /// `running` is the window command it was running when the wait passed 200 ms, or `None`
@@ -77,6 +97,22 @@ pub enum Slow {
     /// The window command `command`, received on the core's main thread at `at`, held it for
     /// `ms` milliseconds before it went back to the window's next ask.
     CoreCommand { command: String, ms: u32, at: u64 },
+}
+
+/// Something the window's thread did in a stalled frame, by its name, and the milliseconds it
+/// took there. A region's name or a script's, never what it showed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Took {
+    pub name: String,
+    pub ms: u32,
+}
+
+/// Something the window handled `n` times in a stalled frame, by its name: an event's or a
+/// command's, never what it carried.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Counted {
+    pub name: String,
+    pub n: u32,
 }
 
 /// Where the log is on this machine, or `None` with no home directory to keep it under.

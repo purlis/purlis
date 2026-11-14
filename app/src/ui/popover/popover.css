@@ -190,22 +190,13 @@
 [data-scope="popover"][data-part="header"] {
   padding-block: var(--space-1) 0;
   padding-inline: var(--space-3);
-  color: var(--text-secondary);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-strong);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 
-/* A group named by data (a persona's name) is written as the name is, in the secondary role:
-   one line, and no capitals, which are for purlis's own words. */
+/* A group named by data (a persona's name) wears the secondary, not the label (`Menu.tsx`,
+   `Select.tsx`): one line, cut where it does not fit. */
 [data-scope="popover"][data-part="header"][data-named] {
   overflow: hidden;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-regular);
   text-overflow: ellipsis;
-  text-transform: none;
-  letter-spacing: normal;
   white-space: nowrap;
 }
 

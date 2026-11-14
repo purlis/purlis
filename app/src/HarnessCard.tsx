@@ -30,9 +30,9 @@ export function HarnessSummary({ glance }: { glance: HarnessGlance }) {
     <section className="harness-glance" aria-label={glance.label} data-testid="harness-glance">
       <p className="what-here">{glance.label}</p>
       {glance.lines.length === 0 ? (
-        <p className="came-back">{NOTHING_LACKING}</p>
+        <p className="came-back ui-text-secondary">{NOTHING_LACKING}</p>
       ) : (
-        <ul className="came-back">
+        <ul className="came-back ui-text-secondary">
           {glance.lines.map((line) => (
             <li key={line}>{line}</li>
           ))}

@@ -72,7 +72,7 @@ function Head({ title, lead, take }: { title: string; lead?: ReactNode; take: bo
   }, []);
   return (
     <header className="agent-identity-head">
-      <h2 ref={ref} tabIndex={-1} className="agent-identity-title">
+      <h2 ref={ref} tabIndex={-1} className="agent-identity-title ui-text-title">
         {title}
       </h2>
       {lead && <p className="agent-identity-lead">{lead}</p>}
@@ -531,7 +531,7 @@ export function StartOverAsk({
       onClose={onClose}
       title="Start over?"
       description={
-        <p className="came-back">
+        <p className="came-back ui-text-secondary">
           This App's key goes from your vault, and nothing used it yet. The App itself stays on
           GitHub until you delete it there.
         </p>

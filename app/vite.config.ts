@@ -123,7 +123,7 @@ function familyStylesheets(): Plugin {
 }
 
 // https://v2.tauri.app/start/frontend/vite/
-export default defineConfig(async () => ({
+export default defineConfig(async ({ command }) => ({
   plugins: [
     react({ jsxImportSource: PARTS_JSX }),
     familyStylesheets(),
@@ -138,6 +138,14 @@ export default defineConfig(async () => ({
     alias: [
       { find: `${PARTS_JSX}/jsx-runtime`, replacement: here("src/ui/jsx-runtime.ts") },
       { find: `${PARTS_JSX}/jsx-dev-runtime`, replacement: here("src/ui/jsx-dev-runtime.ts") },
+      // React's profiling build of the renderer, so a shipped window's `Profiler` still says
+      // what each region's commits cost and a stall can name it (`src/slowLog.ts`, felt speed
+      // round 4, H9). The production build drops the profiler's timing; this one keeps it, at
+      // a few clock reads a component, and is otherwise the production build. `vite dev` and the
+      // tests draw with the development build, which keeps it already.
+      ...(command === "build"
+        ? [{ find: /^react-dom\/client$/, replacement: "react-dom/profiling" }]
+        : []),
     ],
   },
   css: { postcss: { plugins: [keyedOnClasses()] } },

@@ -153,3 +153,99 @@ fn a_file_that_is_not_one_purlis_wrote_reads_as_none() {
         assert!(every(&root).is_empty(), "{text}");
     }
 }
+
+#[test]
+fn the_sweep_takes_a_chat_ended_exactly_thirty_days_ago_as_a_dispatch_record_is() {
+    // `retention` collects a dispatch record "30 days or more" after its end.
+    let (_dir, root) = project();
+    keep(&root, &chat(702, ID, "2026-10-14T00:00:00Z")).unwrap();
+    keep(&root, &chat(703, OTHER, "2026-10-14T00:00:01Z")).unwrap();
+    assert_eq!(sweep(&root, at("2026-11-13T00:00:00Z")), 1);
+    assert_eq!(
+        every(&root)
+            .iter()
+            .map(|one| one.number)
+            .collect::<Vec<_>>(),
+        vec![703]
+    );
+}
+
+#[test]
+fn a_chat_whose_end_stands_in_the_future_is_swept_though_other_chats_keep_closing() {
+    // Each keep rewrites the file, so its last write never ages: an end in the future is due
+    // at once, as a dispatch record's words are (`dispatchrecord::talk_is_due`).
+    let (_dir, root) = project();
+    let now = SystemTime::now();
+    let stamp = |time: SystemTime| chrono::DateTime::<chrono::Utc>::from(time).to_rfc3339();
+    let a_year = std::time::Duration::from_secs(365 * 24 * 3600);
+    let ahead = serde_json::to_value(OnDisk::of(&chat(702, ID, &stamp(now + a_year)))).unwrap();
+    std::fs::create_dir_all(dir(&root)).unwrap();
+    std::fs::write(
+        path(&root),
+        serde_json::json!({"v": 1, "chats": [ahead]}).to_string(),
+    )
+    .unwrap();
+    keep(&root, &chat(703, OTHER, &stamp(now))).unwrap();
+    assert_eq!(sweep(&root, now), 1);
+    assert_eq!(
+        every(&root)
+            .iter()
+            .map(|one| one.number)
+            .collect::<Vec<_>>(),
+        vec![703]
+    );
+}
+
+#[test]
+fn a_chat_kept_with_an_end_ahead_of_this_clock_is_kept_as_ending_now() {
+    let (_dir, root) = project();
+    let before = chrono::Utc::now();
+    let ahead = (before + chrono::Duration::days(365)).to_rfc3339();
+    keep(&root, &chat(702, ID, &ahead)).unwrap();
+    let ended = chrono::DateTime::parse_from_rfc3339(&every(&root)[0].ended).unwrap();
+    assert!(ended >= before && ended <= chrono::Utc::now(), "{ended}");
+    assert_eq!(
+        sweep(&root, SystemTime::now()),
+        0,
+        "an end of now is not due"
+    );
+}
+
+#[test]
+fn the_sweep_takes_what_a_killed_write_left_behind_and_nothing_else() {
+    // A write killed between its temp file and the rename leaves the temp file, holding titles.
+    let (_dir, root) = project();
+    std::fs::create_dir_all(dir(&root)).unwrap();
+    let left = dir(&root).join(".purlis-generated.closed.json.4242.k1.tmp");
+    let older = dir(&root).join(".charter-generated.closed.json.4242.k2.tmp");
+    let other = dir(&root).join("notes.txt");
+    let long_ago = SystemTime::now() - std::time::Duration::from_secs(3600);
+    for file in [&left, &older, &other] {
+        std::fs::write(file, "{}").unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(file)
+            .unwrap()
+            .set_modified(long_ago)
+            .unwrap();
+    }
+    sweep(&root, SystemTime::now());
+    assert!(!left.exists());
+    assert!(!older.exists());
+    assert!(
+        other.exists(),
+        "a file purlis never names is not its to take"
+    );
+}
+
+#[test]
+fn the_sweep_leaves_a_write_still_under_way() {
+    // Where the folder cannot be locked, the sweep runs beside a write: a temp file written
+    // within the lock's longest wait may be one, and stays.
+    let (_dir, root) = project();
+    std::fs::create_dir_all(dir(&root)).unwrap();
+    let live = dir(&root).join(".purlis-generated.closed.json.4242.k1.tmp");
+    std::fs::write(&live, "{}").unwrap();
+    sweep(&root, SystemTime::now());
+    assert!(live.exists());
+}

@@ -33,7 +33,12 @@ pub enum PoolCommand {
     /// image is checked against the runner image contract first. With `--on ssh://…`, the pool's
     /// Docker is on that machine, reached over SSH with your own SSH settings and agent: purlis
     /// shows the key the machine presents, and makes the pool only once you give its fingerprint
-    /// with `--trust`.
+    /// with `--trust`. With `--on tcp://…`, it is reached over Docker's TLS API with the CA,
+    /// client certificate and key you name: purlis shows the CA's fingerprint, and makes the pool
+    /// only once you give it with `--trust`. Plain tcp:// without them is refused. With
+    /// `--context NAME`, the machine is the one your Docker context names, read once into one of
+    /// those two.
+    #[command(group(clap::ArgGroup::new("machine").args(["on", "context"])))]
     Add {
         /// The pool's name: lower-case letters, digits and dashes.
         name: String,
@@ -61,18 +66,27 @@ pub enum PoolCommand {
         /// The widest frame its runner's browsers are watched at, in pixels.
         #[arg(long)]
         width: Option<u32>,
-        /// The machine its Docker is on: ssh://[user@]host[:port][/socket]. Plain tcp:// is
-        /// refused.
-        #[arg(long, value_name = "ROUTE")]
+        /// The machine its Docker is on: ssh://[user@]host[:port][/socket], or
+        /// tcp://host[:port] with --tls-ca, --tls-cert and a key. Plain tcp:// is refused.
+        #[arg(long, value_name = "ROUTE", conflicts_with = "context")]
         on: Option<String>,
+        /// The machine its Docker is on, as your Docker context NAME names it (`docker context
+        /// ls`): read once, into its ssh:// or tcp:// address and its TLS files. The pool keeps
+        /// those, and never follows the context.
+        #[arg(long, value_name = "NAME", conflicts_with_all = ["identity", "tls_ca"])]
+        context: Option<String>,
         /// The fingerprint of that machine's host key, as you checked it there
-        /// (SHA256:…, from `ssh-keygen -lf`).
-        #[arg(long, value_name = "FINGERPRINT", requires = "on")]
+        /// (SHA256:…, from `ssh-keygen -lf`), or over TLS of its CA (sha256:…, or as
+        /// `openssl x509 -noout -fingerprint -sha256` prints it).
+        #[arg(long, value_name = "FINGERPRINT", requires = "machine")]
         trust: Option<String>,
         /// The key file ssh signs in to that machine with, as a Podman connection names it
         /// (`podman system connection list`). Without it, your SSH agent and settings.
         #[arg(long, value_name = "FILE", requires = "on")]
         identity: Option<String>,
+        /// The files Docker's TLS API is reached with (#6267).
+        #[command(flatten)]
+        tls: Box<TlsArgs>,
     },
     /// Record profiles of this machine's on a pool, for its chats to use. Its runner keeps them
     /// the next time their sign-ins are asked, and `purlis profile sign-in <profile> --pool
@@ -108,6 +122,13 @@ pub enum PoolCommand {
         /// One JSON object for a script.
         #[arg(long)]
         json: bool,
+    },
+    /// Check a pool on another machine: that its machine and engine are the ones you trusted.
+    /// It exits 1 when they aren't, or when the machine can't be reached, saying why. It opens
+    /// the pool's connection, and changes nothing.
+    Doctor {
+        /// The pool's name.
+        name: String,
     },
     /// List the runners left on another Docker engine: a removal that found Docker answering as
     /// another engine than the one that made a runner forgot it here, and left its container
@@ -166,6 +187,11 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
              purlis pool setup in your own terminal."
                 .to_owned(),
         ),
+        PoolCommand::Doctor { .. } if in_a_chat => Err(
+            "purlis pool doctor reaches the pool's machine, which a chat doesn't reach. Run it \
+             in your own terminal."
+                .to_owned(),
+        ),
         // A chat never chooses which of the person's accounts a pool's runner holds.
         PoolCommand::AddProfile { .. } if in_a_chat => Err(
             "Recording a profile on a pool is the person's choice, which a chat doesn't make. \
@@ -199,9 +225,12 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
             frames,
             width,
             on,
+            context,
             trust,
             identity,
+            tls,
         } => {
+            let tls = tls_files(&tls.tls_ca, &tls.tls_cert, &tls.tls_key, &tls.tls_key_in)?;
             let asked = Asked {
                 name: name.clone(),
                 image: image.clone(),
@@ -215,6 +244,12 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
                 on: on.clone(),
                 trust: trust.clone(),
                 identity: identity.clone(),
+                tls,
+                docker_context: None,
+            };
+            let asked = match context {
+                None => asked,
+                Some(name) => with_docker_context(asked, name)?,
             };
             added(&config()?, &asked)
         }
@@ -254,6 +289,7 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
             crate::poolsetup::answered(name.as_deref(), *json)?;
             Ok(0)
         }
+        PoolCommand::Doctor { name } => crate::poolsetup::doctor(name),
         // A chat can't read the pool's file, so it is told what can be asked for, and no value.
         PoolCommand::Limits { json, .. } if in_a_chat => {
             let held = runners::PoolLimitsHeld {
@@ -339,7 +375,9 @@ fn writes_a_pool(command: &PoolCommand) -> bool {
         | PoolCommand::RemoveProfile { .. }
         | PoolCommand::Limit { .. } => true,
         PoolCommand::LeftBehind { remove } => *remove,
-        PoolCommand::Limits { .. } | PoolCommand::Setup { .. } => false,
+        PoolCommand::Limits { .. } | PoolCommand::Setup { .. } | PoolCommand::Doctor { .. } => {
+            false
+        }
     }
 }
 
@@ -453,6 +491,23 @@ fn taken_off(_config: &std::path::Path, pool: &str, name: &str) -> Result<Option
 }
 
 /// **Adds the pool `asked` asks for**, as Pool setup's button does.
+/// **`asked`, on the machine your Docker context `name` names** (#6268): read once, as this
+/// machine's `docker` lists and describes it.
+fn with_docker_context(asked: Asked, name: &str) -> Result<Asked, String> {
+    let docker = poolsetup::docker_here()
+        .ok_or_else(|| "purlis found no docker on this machine.".to_owned())?;
+    let contexts = purlis_core::dockercontext::contexts_here(docker.program());
+    let Some(context) = contexts.iter().find(|one| one.name == name) else {
+        return Err(format!(
+            "Your Docker has no context named {}. docker context ls lists the ones it has.",
+            purlis_core::shown::short(name)
+        ));
+    };
+    asked
+        .reading_docker_context(context)
+        .map_err(|why| why.to_string())
+}
+
 fn added(config: &std::path::Path, asked: &Asked) -> Result<u8, String> {
     let docker = poolsetup::docker_here()
         .ok_or_else(|| "purlis found no docker on this machine.".to_owned())?;
@@ -578,4 +633,72 @@ mod tests {
             "waiting for the person: Asks (\u{270b}) in the purlis window, for up to 2 minutes"
         );
     }
+}
+
+/// **`purlis pool add`'s flags for a machine reached over Docker's TLS API** (#6267).
+#[derive(Debug, clap::Args)]
+pub struct TlsArgs {
+    /// Over TLS: the CA Docker's certificates there are signed with.
+    #[arg(long, value_name = "FILE", requires = "on")]
+    tls_ca: Option<std::path::PathBuf>,
+    /// Over TLS: your client certificate.
+    #[arg(long, value_name = "FILE", requires = "tls_ca")]
+    tls_cert: Option<std::path::PathBuf>,
+    /// Over TLS: your client certificate's key, where it is.
+    #[arg(
+        long,
+        value_name = "FILE",
+        requires = "tls_cert",
+        conflicts_with = "tls_key_in"
+    )]
+    tls_key: Option<std::path::PathBuf>,
+    /// Over TLS: your client certificate's key, kept in a vault entry of this project's
+    /// (VAULT/KEY). It is written to disk only for each run of docker, and removed after.
+    #[arg(long, value_name = "VAULT/KEY", requires = "tls_cert")]
+    tls_key_in: Option<String>,
+}
+
+/// **The TLS files `purlis pool add` was given** (#6267), each made absolute against the folder it
+/// runs in; a key in a vault is this project's (`VAULT/KEY`). `None` where none was given; refused
+/// where some but not all were.
+fn tls_files(
+    ca: &Option<std::path::PathBuf>,
+    cert: &Option<std::path::PathBuf>,
+    key: &Option<std::path::PathBuf>,
+    key_in: &Option<String>,
+) -> Result<Option<purlis_core::tlsroute::Files>, String> {
+    if ca.is_none() && cert.is_none() && key.is_none() && key_in.is_none() {
+        return Ok(None);
+    }
+    let here =
+        std::env::current_dir().map_err(|why| format!("this folder can't be read: {why}"))?;
+    let absolute = |path: &std::path::Path| here.join(path);
+    let (Some(ca), Some(cert)) = (ca, cert) else {
+        return Err(purlis_core::tlsroute::NO_VERIFY.to_owned());
+    };
+    let key = match (key, key_in) {
+        (Some(key), None) => purlis_core::tlsroute::KeyFrom::File(absolute(key)),
+        (None, Some(key_in)) => {
+            let (vault, key) = key_in.split_once('/').ok_or_else(|| {
+                format!("--tls-key-in is VAULT/KEY, as in docker-box/TLS_KEY, not {key_in}")
+            })?;
+            let plane = project_here().ok_or_else(|| {
+                "run this in the project whose vault holds the key, or name the key's file with \
+                 --tls-key"
+                    .to_owned()
+            })?;
+            purlis_core::tlsroute::KeyFrom::Vault {
+                plane,
+                vault: vault.to_owned(),
+                key: key.to_owned(),
+            }
+        }
+        _ => {
+            return Err(
+                "name your client certificate's key with --tls-key FILE or --tls-key-in VAULT/KEY"
+                    .to_owned(),
+            );
+        }
+    };
+    purlis_core::tlsroute::Files::new(absolute(ca), absolute(cert), key).map(Some)
 }

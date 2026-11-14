@@ -58,6 +58,9 @@ pub const NONE_YET: &str = "_No session records yet — a chat's Smart close wri
 /// The frontmatter value of a fact charter does not have.
 const UNKNOWN: &str = "unknown";
 
+/// The `held-from` value of Pool setup's Get help chat ([`ChatFacts::held_from_clusters`]).
+const HELD_FROM_CLUSTERS: &str = "clusters";
+
 /// The frontmatter value of a chat that has no persona.
 const NO_PERSONA: &str = "none";
 
@@ -85,6 +88,10 @@ pub struct ChatFacts {
     /// app's record of it ([`crate::reopen::Chat::unsandboxed`]). A record says `sandbox: off`
     /// for it, which is where ADR 0067 §7 puts a chat's opt-out until the audit exists.
     pub unsandboxed: bool,
+    /// Whether it is Pool setup's Get help chat, held from every cluster at each start — the
+    /// app's record of it ([`crate::reopen::Chat::held_from_clusters`]). A record says
+    /// `held-from: clusters` for it, so a **Resume** of the record holds it as a restart does.
+    pub held_from_clusters: bool,
     /// Who the chat is beyond its number (ADR 0066, #871): its ULID, the device that minted
     /// it and its current run, from the app's record of it ([`crate::reopen::Chat::identity`]).
     /// A record writes the first three as `chat-id`, `device` and `run`, each `unknown` where
@@ -199,6 +206,9 @@ pub struct Listed {
     /// ULID. `None` for `unknown`, for anything else, and for a record written before the key,
     /// which names its chat only by number.
     pub chat_id: Option<String>,
+    /// Whether the chat was Pool setup's Get help chat: its `held-from: clusters`
+    /// ([`ChatFacts::held_from_clusters`]).
+    pub held_from_clusters: bool,
 }
 
 /// A record read back by its plane-relative path ([`open`]).
@@ -605,6 +615,9 @@ fn render(new: &New) -> String {
     if chat.is_some_and(|c| c.unsandboxed) {
         lines.push("sandbox: off".to_owned());
     }
+    if chat.is_some_and(|c| c.held_from_clusters) {
+        lines.push(format!("held-from: {HELD_FROM_CLUSTERS}"));
+    }
     for piece in &facts.pieces {
         lines.push(format!(
             "piece: {}/{} @ {}",
@@ -753,6 +766,7 @@ pub(crate) fn listed(place: &Place, file: String, text: &str) -> Listed {
     let profile = value("profile").filter(|v| crate::profiles::name_ok(v));
     let cwd = value("cwd").filter(|v| relative_dir_ok(v));
     let chat_id = value("chat-id").and_then(|v| crate::reopen::a_ulid(&v));
+    let held_from_clusters = value("held-from").as_deref() == Some(HELD_FROM_CLUSTERS);
     Listed {
         when: when_of(&file),
         shown: shown(place, &file),
@@ -764,6 +778,7 @@ pub(crate) fn listed(place: &Place, file: String, text: &str) -> Listed {
         profile,
         cwd,
         chat_id,
+        held_from_clusters,
     }
 }
 
@@ -1153,6 +1168,7 @@ pub fn chat_facts(root: &Path, number: u32) -> ChatFacts {
             conversation: None,
             cwd: None,
             unsandboxed: false,
+            held_from_clusters: false,
             identity: crate::reopen::Identity::default(),
             handed_from: Handed::No,
         };
@@ -1174,6 +1190,7 @@ pub fn chat_facts(root: &Path, number: u32) -> ChatFacts {
             .as_deref()
             .and_then(|dir| plane_relative(root, dir)),
         unsandboxed: chat.unsandboxed,
+        held_from_clusters: chat.held_from_clusters,
         // A handoff's: the handing chat's id where the app's record of where it came from
         // holds one (ADR 0066's `HandedFrom.id`, #872, read as a ULID or not at all), else
         // not known. A task is no handoff.

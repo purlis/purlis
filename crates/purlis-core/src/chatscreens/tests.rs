@@ -93,7 +93,7 @@ fn forgetting_all_takes_every_screen() {
     let (_dir, root) = project();
     keep(&root, CHAT, "a").unwrap();
     keep(&root, OTHER, "b").unwrap();
-    assert_eq!(forget_all(&root), 2);
+    assert_eq!(forget_all(&root), Ok(2));
     assert!(!is_kept(&root, CHAT) && !is_kept(&root, OTHER));
 }
 
@@ -260,6 +260,23 @@ fn a_screen_not_written_for_its_record_s_age_goes_whatever_names_it() {
 }
 
 #[test]
+fn a_screen_last_written_exactly_thirty_days_ago_goes() {
+    // plane-format.md: "last written 30 days or more before", as a dispatch record is.
+    let (_dir, root) = project();
+    keep(&root, CHAT, "old").unwrap();
+    let written = SystemTime::now() - Duration::from_secs(3600);
+    std::fs::File::options()
+        .write(true)
+        .open(dir(&root).join(format!("{CHAT}.screen")))
+        .unwrap()
+        .set_modified(written)
+        .unwrap();
+    let now = written + crate::retention::KEEP_FOR;
+    assert_eq!(sweep(&root, |_| true, now), 1);
+    assert!(!is_kept(&root, CHAT));
+}
+
+#[test]
 fn a_screen_is_replaced_whole_and_leaves_no_temp_file() {
     let (_dir, root) = project();
     keep(&root, CHAT, "first").unwrap();
@@ -268,6 +285,7 @@ fn a_screen_is_replaced_whole_and_leaves_no_temp_file() {
     let names: Vec<String> = std::fs::read_dir(dir(&root))
         .unwrap()
         .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .filter(|name| name != LOCK_NAME)
         .collect();
     assert_eq!(names, vec![format!("{CHAT}.screen")]);
 }
@@ -287,4 +305,197 @@ fn what_the_store_holds_is_counted_and_nothing_where_it_is_off() {
     // Off by a hand edit: the count is read as nothing, and what was kept goes.
     assert_eq!(held(&root), (0, 0));
     assert!(every_kept(&root).is_empty());
+}
+
+/// What a write of chat `id`'s screen that was killed before its rename leaves in the store, as
+/// [`crate::rewrite::replace`] names it, last written `age` ago.
+fn a_killed_write_s_temp(root: &Path, id: &str, age: Duration) -> PathBuf {
+    std::fs::create_dir_all(dir(root)).unwrap();
+    // A write takes the store's lock before it writes its temp, so the lock's file is there.
+    std::fs::write(dir(root).join(LOCK_NAME), "").unwrap();
+    let temp = dir(root).join(format!(
+        "{}{id}{SUFFIX}.4242.k1.tmp",
+        crate::rewrite::TEMP_PREFIX
+    ));
+    std::fs::write(&temp, "a whole screen, never renamed").unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&temp)
+        .unwrap()
+        .set_modified(SystemTime::now() - age)
+        .unwrap();
+    temp
+}
+
+#[test]
+fn turning_keeping_off_takes_every_temp_a_killed_write_left() {
+    // #6451's review: a temp left by a write killed before its rename holds a whole screen, and
+    // nothing named `<ULID>.screen` points at it. With the store's lock held, even one a moment
+    // old is no write under way (#6508's review): every write holds that lock.
+    let (_dir, root) = settable();
+    let killed = a_killed_write_s_temp(&root, CHAT, LOCK_WAIT + Duration::from_secs(1));
+    let just_killed = a_killed_write_s_temp(&root, OTHER, Duration::ZERO);
+
+    set_keep(&root, false).unwrap();
+
+    assert!(!killed.exists(), "the killed write's screen goes");
+    assert!(!just_killed.exists(), "and so does one killed a moment ago");
+}
+
+#[test]
+fn turning_keeping_off_unlocked_leaves_a_write_that_may_be_under_way() {
+    // Where the filesystem cannot `flock`, a young temp may be a write that is not waiting.
+    let (_dir, root) = settable();
+    let killed = a_killed_write_s_temp(&root, CHAT, LOCK_WAIT + Duration::from_secs(1));
+    let under_way = a_killed_write_s_temp(&root, OTHER, Duration::ZERO);
+
+    no_flock::here(|| set_keep(&root, false)).unwrap();
+
+    assert!(!killed.exists());
+    assert!(
+        under_way.exists(),
+        "a write younger than the lock wait may be live"
+    );
+}
+
+#[test]
+fn the_sweep_at_open_takes_a_killed_write_s_temp_and_leaves_a_write_under_way() {
+    let (_dir, root) = project();
+    let killed = a_killed_write_s_temp(&root, CHAT, LOCK_WAIT + Duration::from_secs(1));
+    let under_way = a_killed_write_s_temp(&root, OTHER, Duration::ZERO);
+
+    sweep(&root, |_| true, SystemTime::now());
+
+    assert!(!killed.exists());
+    assert!(under_way.exists());
+}
+
+#[test]
+fn a_temp_of_another_store_s_name_is_never_taken() {
+    let (_dir, root) = project();
+    std::fs::create_dir_all(dir(&root)).unwrap();
+    let not_ours = dir(&root).join(format!(
+        "{}notes.txt.4242.k1.tmp",
+        crate::rewrite::TEMP_PREFIX
+    ));
+    std::fs::write(&not_ours, "x").unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&not_ours)
+        .unwrap()
+        .set_modified(SystemTime::now() - LOCK_WAIT - Duration::from_secs(1))
+        .unwrap();
+
+    assert_eq!(forget_all(&root), Ok(0));
+
+    assert!(not_ours.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_screen_that_could_not_be_deleted_is_said_and_still_counted() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let (_dir, root) = settable();
+    keep(&root, CHAT, "abc").unwrap();
+    // The folder lets nothing in it be deleted.
+    std::fs::set_permissions(dir(&root), std::fs::Permissions::from_mode(0o500)).unwrap();
+
+    let turned_off = set_keep(&root, false);
+    let counted = held(&root);
+    std::fs::set_permissions(dir(&root), std::fs::Permissions::from_mode(0o700)).unwrap();
+
+    let said = turned_off.expect_err("a screen stayed");
+    assert!(
+        said.starts_with("1 kept screen could not be deleted"),
+        "{said}"
+    );
+    assert!(!keeps(&root), "the setting is off all the same");
+    assert_eq!(counted, (1, 3), "the row counts what is really there");
+}
+
+#[test]
+fn a_killed_write_s_temp_that_could_not_be_deleted_is_counted_as_it_is_said() {
+    // #6508's review: off counted an undeletable temp as "1 kept screen", and the row then
+    // counted 0 kept.
+    use std::os::unix::fs::PermissionsExt as _;
+    let (_dir, root) = settable();
+    let temp = a_killed_write_s_temp(&root, CHAT, Duration::ZERO);
+    let bytes = std::fs::metadata(&temp).unwrap().len();
+    std::fs::set_permissions(dir(&root), std::fs::Permissions::from_mode(0o500)).unwrap();
+
+    let turned_off = set_keep(&root, false);
+    let counted = held(&root);
+    std::fs::set_permissions(dir(&root), std::fs::Permissions::from_mode(0o700)).unwrap();
+
+    let said = turned_off.expect_err("the temp stayed");
+    assert!(
+        said.starts_with("1 kept screen could not be deleted"),
+        "{said}"
+    );
+    assert_eq!(counted, (1, bytes), "the row counts it too");
+}
+
+#[test]
+fn a_screen_written_as_keeping_is_turned_off_does_not_stay() {
+    // #6451's review: keep checks the setting, then writes. Turned off between the two, the
+    // screen landed after every screen was deleted, and stayed.
+    let (_dir, root) = settable();
+    let turning_off = std::rc::Rc::new(std::cell::RefCell::new(None));
+    let _hook = crate::rewrite::hook::set({
+        let (root, turning_off) = (root.clone(), std::rc::Rc::clone(&turning_off));
+        move |_, _| {
+            let root = root.clone();
+            *turning_off.borrow_mut() = Some(std::thread::spawn(move || set_keep(&root, false)));
+            // Long enough for a turn-off that does not wait for the write to finish first.
+            std::thread::sleep(Duration::from_millis(300));
+            Ok(())
+        }
+    });
+
+    let _ = keep(&root, CHAT, "landed after the delete");
+    let turned_off = turning_off
+        .borrow_mut()
+        .take()
+        .expect("turned off")
+        .join()
+        .unwrap();
+
+    assert_eq!(turned_off, Ok(()));
+    assert!(!dir(&root).join(format!("{CHAT}{SUFFIX}")).exists());
+}
+
+#[test]
+fn a_filesystem_that_cannot_flock_still_keeps_deletes_and_sweeps() {
+    // #6508's review: the lock is best effort, as `rewrite`'s is: a filesystem with no `flock`
+    // (ENOLCK) is not a reason to keep nothing, refuse to turn it off, or never sweep.
+    let (_dir, root) = settable();
+    no_flock::here(|| {
+        keep(&root, CHAT, "kept\r\n").expect("kept without a lock");
+        assert_eq!(kept(&root, CHAT).as_deref(), Some("kept\r\n"));
+
+        let later = SystemTime::now() + crate::retention::KEEP_FOR + Duration::from_secs(60);
+        assert_eq!(sweep(&root, |_| true, later), 1, "the 30 days still run");
+        assert_eq!(kept(&root, CHAT), None);
+
+        keep(&root, OTHER, "kept\r\n").expect("kept without a lock");
+        assert_eq!(set_keep(&root, false), Ok(()), "off still deletes");
+        assert!(!is_kept(&root, OTHER));
+    });
+}
+
+#[test]
+fn turning_it_off_while_another_purlis_writes_says_to_wait_and_try_again() {
+    // #6508's review: the window said purlis "could not take their lock", an internal.
+    let (_dir, root) = settable();
+    keep(&root, CHAT, "abc").unwrap();
+    let _writing = locked(&root).unwrap().expect("this filesystem locks");
+
+    let said = set_keep(&root, false).expect_err("not deleted");
+
+    assert!(
+        said.contains("another purlis was still writing one"),
+        "{said}"
+    );
+    assert!(said.contains("then turn it off again"), "{said}");
+    assert!(!said.contains("lock"), "{said}");
 }

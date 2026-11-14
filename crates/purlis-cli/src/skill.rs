@@ -2898,10 +2898,15 @@ fn install_from_an_extension(
                     }
                 };
             }
-            Named::These(names) => {
-                source::extension::review(studio, root, id, &settled.without_skipped(names), level)
-                    .map(Some)
-            }
+            Named::These(names) => source::extension::review(
+                studio,
+                root,
+                id,
+                &settled.without_skipped(names),
+                level,
+                &[],
+            )
+            .map(Some),
             // One listing names them and is reviewed: one revision, and no file asked twice.
             Named::All => source::extension::review_every(studio, root, id, &settled.skips, level)
                 .map(|(set, held)| (!set.review.skills.is_empty()).then_some((set.review, held))),

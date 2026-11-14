@@ -1232,7 +1232,24 @@ fn a_cluster_pools_row_of_another_shape_refuses_the_file_whole_and_never_replace
         change(&mut row);
         file(&pool_row, &row)
     };
+    // How its key was confirmed (#4495) is read with it, as either word, and absent is none.
+    for (word, confirmed) in [
+        ("pasted", clusterpool::Confirmed::Pasted),
+        ("made-here", clusterpool::Confirmed::MadeHere),
+    ] {
+        folder
+            .replace_file(
+                crate::machine::RUNNERS_FILE,
+                pool_with(&|row| row["keyConfirmed"] = word.into()).as_bytes(),
+            )
+            .unwrap();
+        let pool = cluster_pools(config.path()).unwrap().remove(0);
+        assert_eq!(pool.confirmed(), Some(confirmed));
+        assert_eq!(cluster_pool_to_row(&pool)["keyConfirmed"], word);
+    }
     for text in [
+        pool_with(&|row| row["keyConfirmed"] = "shown".into()),
+        pool_with(&|row| row["keyConfirmed"] = true.into()),
         pool_with(&|row| row["kubeconfig"] = "kube/config".into()),
         pool_with(&|row| row["context"] = "--server=evil".into()),
         pool_with(&|row| row["pool"] = "Default".into()),
@@ -1899,4 +1916,227 @@ fn where_a_pools_engine_is_is_part_of_what_defines_it() {
     let here = pool("b", Set::default());
     let there = pool("b", Set::default()).on(Some(remote()));
     assert_ne!(here.definition_digest(), there.definition_digest());
+}
+
+const CA: &str = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+fn tls_remote(key: crate::tlsroute::KeyFrom) -> crate::tlsroute::Remote {
+    crate::tlsroute::Remote {
+        route: crate::tlsroute::Route::parse("tcp://build-box").unwrap(),
+        files: crate::tlsroute::Files::new(
+            "/home/me/.docker/ca.pem".into(),
+            "/home/me/.docker/cert.pem".into(),
+            key,
+        )
+        .unwrap(),
+        pin: crate::tlsroute::Pin {
+            ca: crate::tlsroute::Fingerprint::parse(CA).unwrap(),
+            engine: "ABCD:EFGH:IJKL".to_owned(),
+        },
+    }
+}
+
+#[test]
+fn a_pool_over_dockers_tls_api_is_kept_with_its_files_and_ca_pin_in_the_ruled_keys() {
+    let config = tempfile::tempdir().unwrap();
+    for (key, tls) in [
+        (
+            crate::tlsroute::KeyFrom::File("/home/me/.docker/key.pem".into()),
+            serde_json::json!({
+                "ca": "/home/me/.docker/ca.pem",
+                "cert": "/home/me/.docker/cert.pem",
+                "key": "/home/me/.docker/key.pem",
+            }),
+        ),
+        (
+            crate::tlsroute::KeyFrom::Vault {
+                plane: "/home/me/plane".into(),
+                vault: "docker-box".to_owned(),
+                key: "TLS_KEY".to_owned(),
+            },
+            serde_json::json!({
+                "ca": "/home/me/.docker/ca.pem",
+                "cert": "/home/me/.docker/cert.pem",
+                "keyIn": { "plane": "/home/me/plane", "vault": "docker-box", "key": "TLS_KEY" },
+            }),
+        ),
+    ] {
+        let _ = std::fs::remove_dir_all(crate::machine::dir(config.path()));
+        let kept = pool("build-box", Set::default()).on_engine(Some(tls_remote(key).into()));
+        record_pool(config.path(), &kept).unwrap();
+        assert_eq!(
+            the_file(config.path())["pools"],
+            serde_json::json!([{
+                "name": "build-box",
+                "kind": "remote-docker",
+                "route": "tcp://build-box:2376",
+                "tls": tls,
+                "pin": { "ca": CA, "engine": "ABCD:EFGH:IJKL" },
+                "image": IMAGE,
+            }])
+        );
+        let read = pools(config.path()).unwrap();
+        assert_eq!(read, vec![kept]);
+        assert!(read[0].on_another_machine());
+        assert_eq!(read[0].remote(), None, "no SSH route is read into it");
+    }
+}
+
+#[test]
+fn a_tcp_row_without_its_files_its_ca_or_a_whole_pin_is_not_read() {
+    let config = tempfile::tempdir().unwrap();
+    let file = crate::machine::dir(config.path()).join(crate::machine::RUNNERS_FILE);
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    let tls = serde_json::json!({ "ca": "/ca.pem", "cert": "/cert.pem", "key": "/key.pem" });
+    for row in [
+        // Plain tcp://: no files at all.
+        serde_json::json!({ "name": "b", "kind": "remote-docker", "image": IMAGE,
+            "route": "tcp://box:2375", "pin": { "ca": CA, "engine": "X" } }),
+        // TLS that verifies no server.
+        serde_json::json!({ "name": "b", "kind": "remote-docker", "image": IMAGE,
+            "route": "tcp://box:2376", "tls": { "cert": "/cert.pem", "key": "/key.pem" },
+            "pin": { "ca": CA, "engine": "X" } }),
+        serde_json::json!({ "name": "b", "kind": "remote-docker", "image": IMAGE,
+            "route": "tcp://box:2376", "tls": tls, "pin": { "ca": CA } }),
+        serde_json::json!({ "name": "b", "kind": "remote-docker", "image": IMAGE,
+            "route": "tcp://box:2376", "tls": tls,
+            "pin": { "hostKey": HOST_KEY, "engine": "X" } }),
+        serde_json::json!({ "name": "b", "kind": "remote-docker", "image": IMAGE,
+            "route": "tcp://box:2376",
+            "tls": { "ca": "ca.pem", "cert": "/cert.pem", "key": "/key.pem" },
+            "pin": { "ca": CA, "engine": "X" } }),
+        serde_json::json!({ "name": "b", "kind": "remote-docker", "image": IMAGE,
+            "route": "tcp://box:2376",
+            "tls": { "ca": "/ca.pem", "cert": "/cert.pem", "key": "/key.pem",
+                     "keyIn": { "plane": "/p", "vault": "v", "key": "k" } },
+            "pin": { "ca": CA, "engine": "X" } }),
+        // An SSH route with TLS files is no row purlis writes.
+        serde_json::json!({ "name": "b", "kind": "remote-docker", "image": IMAGE,
+            "route": "ssh://me@box/var/run/docker.sock", "tls": tls,
+            "pin": { "hostKey": HOST_KEY, "engine": "X" } }),
+        serde_json::json!({ "name": "b", "kind": "docker", "image": IMAGE, "tls": tls }),
+    ] {
+        std::fs::write(
+            &file,
+            serde_json::json!({ "version": 1, "pools": [row], "runners": [] }).to_string(),
+        )
+        .unwrap();
+        assert!(pools(config.path()).is_err(), "{row} was read");
+    }
+}
+
+/// A pool whose route was read from a Docker context keeps its name beside the route (#6268),
+/// over either route; a local pool or a bad name is no row purlis writes; and keeping the pool
+/// as it is forgets the name alone.
+#[test]
+fn a_pool_read_from_a_docker_context_keeps_its_name_and_forgets_only_it_when_kept_as_it_is() {
+    let config = tempfile::tempdir().unwrap();
+    let ssh = pool("build-box", Set::default())
+        .on(Some(remote()))
+        .from_docker_context(Some("build-box".to_owned()));
+    let tls = pool("lab", Set::default())
+        .on_engine(Some(
+            tls_remote(crate::tlsroute::KeyFrom::File(
+                "/home/me/.docker/key.pem".into(),
+            ))
+            .into(),
+        ))
+        .from_docker_context(Some("lab".to_owned()));
+    record_pool(config.path(), &ssh).unwrap();
+    record_pool(config.path(), &tls).unwrap();
+    let file = the_file(config.path());
+    assert_eq!(file["pools"][0]["dockerContext"], "build-box");
+    assert_eq!(file["pools"][1]["dockerContext"], "lab");
+    let read = pools(config.path()).unwrap();
+    assert_eq!(read, vec![ssh.clone(), tls]);
+    assert_eq!(read[0].docker_context(), Some("build-box"));
+    // A context's name is no part of what the pool runs on.
+    assert_eq!(
+        ssh.definition_digest(),
+        pool("build-box", Set::default())
+            .on(Some(remote()))
+            .definition_digest()
+    );
+
+    forget_docker_context(config.path(), "build-box").unwrap();
+    let read = pools(config.path()).unwrap();
+    assert_eq!(read[0].docker_context(), None);
+    assert_eq!(read[0].remote(), Some(&remote()));
+    assert_eq!(read[1].docker_context(), Some("lab"));
+    assert!(forget_docker_context(config.path(), "no-such-pool").is_err());
+
+    let file = crate::machine::dir(config.path()).join(crate::machine::RUNNERS_FILE);
+    for row in [
+        serde_json::json!({ "name": "b", "kind": "docker", "image": IMAGE,
+            "dockerContext": "box" }),
+        serde_json::json!({ "name": "b", "kind": "remote-docker", "image": IMAGE,
+            "route": "ssh://me@box/var/run/docker.sock",
+            "pin": { "hostKey": HOST_KEY, "engine": "X" }, "dockerContext": "-bad name" }),
+    ] {
+        std::fs::write(
+            &file,
+            serde_json::json!({ "version": 1, "pools": [row], "runners": [] }).to_string(),
+        )
+        .unwrap();
+        assert!(pools(config.path()).is_err(), "{row} was read");
+    }
+}
+
+/// **Check and trust again keeps the new pin, and only it** (#6270, ADR 0123 §3): the route, the
+/// files and everything else of the pool stay as they were.
+#[test]
+fn a_pool_pinned_again_keeps_only_its_new_pin() {
+    let config = tempfile::tempdir().unwrap();
+    let kept = pool("build-box", Set::default()).on(Some(remote()));
+    record_pool(config.path(), &kept).unwrap();
+    let mut again = remote();
+    again.pin.engine = crate::sshroute::EnginePin::Docker("MNOP:QRST:UVWX".to_owned());
+    pin_again(config.path(), "build-box", &again.clone().into()).unwrap();
+    assert_eq!(
+        pools(config.path()).unwrap(),
+        vec![kept.clone().on(Some(again.clone()))]
+    );
+    // Over TLS, the same: only the CA and engine pinned.
+    let tls = pool("over-tls", Set::default()).on_engine(Some(
+        tls_remote(crate::tlsroute::KeyFrom::File("/k.pem".into())).into(),
+    ));
+    record_pool(config.path(), &tls).unwrap();
+    let mut tls_again = tls_remote(crate::tlsroute::KeyFrom::File("/k.pem".into()));
+    tls_again.pin.ca = crate::tlsroute::Fingerprint::of_der(b"another ca");
+    pin_again(config.path(), "over-tls", &tls_again.clone().into()).unwrap();
+    assert_eq!(
+        pools(config.path()).unwrap()[1],
+        tls.on_engine(Some(tls_again.into()))
+    );
+}
+
+#[test]
+fn a_pin_is_kept_again_only_for_the_same_route_of_a_pool_on_another_machine() {
+    let config = tempfile::tempdir().unwrap();
+    record_pool(
+        config.path(),
+        &pool("build-box", Set::default()).on(Some(remote())),
+    )
+    .unwrap();
+    record_pool(config.path(), &pool("here", Set::default())).unwrap();
+    let elsewhere = Remote {
+        route: crate::sshroute::Route::parse("ssh://me@other-box/var/run/docker.sock").unwrap(),
+        ..remote()
+    };
+    let before = the_file(config.path());
+    for (name, remote) in [
+        ("build-box", elsewhere.into()),
+        (
+            "build-box",
+            tls_remote(crate::tlsroute::KeyFrom::File("/k.pem".into())).into(),
+        ),
+        ("here", remote().into()),
+        ("gone", remote().into()),
+    ] {
+        assert!(
+            pin_again(config.path(), name, &remote).is_err(),
+            "{name} pinned again"
+        );
+    }
+    assert_eq!(the_file(config.path()), before, "nothing changed");
 }

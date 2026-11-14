@@ -152,13 +152,15 @@ export function RepoPicker({
             </div>
           ))}
           {found.repos.length === 0 && found.trouble.length === 0 && (
-            <p className="came-back">
+            <p className="came-back ui-text-secondary">
               Your forge login reaches no repos under this project&apos;s owners.
             </p>
           )}
           {/* A filter that matched nothing says so, rather than leave an empty list (#630). */}
           {shown.length === 0 && found.repos.length > 0 && (
-            <p className="came-back">No repo you can reach matches {filter.trim()}.</p>
+            <p className="came-back ui-text-secondary">
+              No repo you can reach matches {filter.trim()}.
+            </p>
           )}
           <span id={listLabel} hidden>
             Repos you can reach

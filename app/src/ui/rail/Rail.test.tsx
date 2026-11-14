@@ -54,8 +54,9 @@ describe("the rail family (#2915)", () => {
     expect(tabs[0]).toHaveAttribute("data-variant", "project");
     expect(tabs[0]).toHaveAttribute("data-selected");
     expect(tabs[1]).not.toHaveAttribute("data-selected");
-    expect(tabs[0].querySelector('[data-part="badge"]')).toHaveAttribute("data-count", "3");
-    expect(tabs[1].querySelector('[data-part="badge"]')).toBeNull();
+    // The badge family's round count (#6342).
+    expect(tabs[0].querySelector('[data-part="round"]')).toHaveAttribute("data-drawn", "3");
+    expect(tabs[1].querySelector('[data-part="round"]')).toBeNull();
     expect(screen.getByRole("tablist", { name: "Projects" })).toHaveAttribute(
       "aria-orientation",
       "vertical",

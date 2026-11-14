@@ -24,16 +24,17 @@
 //!   every sandboxed chat for reading and for writing, as it denies the dispatch records and the
 //!   kept screens. A chat's title is the person's, and so is the list of what they ran.
 //! - **Swept like a dispatch record** ([`sweep`], run at the project's open from
-//!   [`crate::retention::on_open`]): a chat that ended more than
-//!   [`crate::retention::KEEP_FOR`] (30 days) ago goes. Held to [`MOST_KEPT`] besides, the
-//!   oldest close going first.
+//!   [`crate::retention::on_open`]): a chat that ended
+//!   [`crate::retention::KEEP_FOR`] (30 days) or more ago goes. Held to [`MOST_KEPT`] besides, the
+//!   oldest close going first. A write killed before its rename leaves a temp file holding
+//!   titles, and the sweep removes it.
 //! - **Read as the app wrote it**: one file of at most [`MOST_FILE_BYTES`], opened following no
 //!   link, written whole through a temp file at 0600 under the folder's lock. An entry that does
 //!   not hold together (an id that is not a ULID, a time that is not one) is left out, and a
 //!   file that is not one purlis wrote reads as empty. Losing it only costs those chats their
 //!   card: nothing starts, ends or allows anything by it.
 //!
-//! **Tier:** Clone state, device-bound, transient, never committed.
+//! **Tier:** Clone state (ADR 0069), never committed; not rebuildable.
 
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
@@ -222,6 +223,16 @@ fn locked(root: &Path) -> std::io::Result<crate::rewrite::Lock> {
     crate::rewrite::Lock::bounded(&dir)
 }
 
+/// `ended`, or now where it stands in the future: a clock ahead wrote it, and an entry kept with
+/// it would never age ([`sweep`]).
+fn no_later_than_now(ended: &str) -> String {
+    let now = chrono::Utc::now();
+    match chrono::DateTime::parse_from_rfc3339(ended) {
+        Ok(at) if at > now => now.to_rfc3339(),
+        _ => ended.to_owned(),
+    }
+}
+
 /// **Keeps `chat`, which has just closed for good**, in the project at `root`: the newest entry,
 /// replacing one of the same ULID (a chat closed again) or the same number, then held to
 /// [`MOST_KEPT`]. Refused for an id that is not a ULID or a time that is not one.
@@ -233,6 +244,7 @@ pub fn keep(root: &Path, chat: &ChatRecord) -> std::io::Result<()> {
     }
     let chat = ChatRecord {
         title: chat.title.chars().take(MOST_TITLE_CHARS).collect(),
+        ended: no_later_than_now(&chat.ended),
         ..chat.clone()
     };
     let entry = serde_json::to_value(OnDisk::of(&chat)).map_err(std::io::Error::other)?;
@@ -246,31 +258,29 @@ pub fn keep(root: &Path, chat: &ChatRecord) -> std::io::Result<()> {
     write_all(root, std::iter::once(entry).chain(others))
 }
 
-/// **Takes away every chat that ended more than [`crate::retention::KEEP_FOR`] before `now`**,
+/// **Takes away every chat that ended [`crate::retention::KEEP_FOR`] or more before `now`**,
 /// and every entry that does not hold together, in the project at `root`: what a dispatch
-/// record is swept at. Answers how many went.
+/// record is swept at. An end that stands in the future is due at once: [`keep`] writes none,
+/// so it was written by a clock ahead of this one, and when it ended cannot be told. Answers
+/// how many went.
 pub fn sweep(root: &Path, now: SystemTime) -> usize {
-    let file = path(root);
-    if !std::fs::symlink_metadata(&file).is_ok_and(|meta| meta.is_file()) {
+    if !std::fs::symlink_metadata(dir(root)).is_ok_and(|meta| meta.is_dir()) {
         return 0;
     }
     let Ok(_held) = locked(root) else {
         return 0;
     };
+    // Under the lock no write is under way, so an old temp file here is a killed write's.
+    remove_left_behind(root);
+    let file = path(root);
+    if !std::fs::symlink_metadata(&file).is_ok_and(|meta| meta.is_file()) {
+        return 0;
+    }
     let values = read_values(&file);
     let before = values.len();
-    let now: chrono::DateTime<chrono::Utc> = now.into();
     let kept: Vec<serde_json::Value> = values
         .into_iter()
-        .filter(|value| {
-            sound(value.clone()).is_some_and(|chat| {
-                chrono::DateTime::parse_from_rfc3339(&chat.ended).is_ok_and(|ended| {
-                    (now - ended.with_timezone(&chrono::Utc))
-                        .to_std()
-                        .map_or(true, |age| age <= crate::retention::KEEP_FOR)
-                })
-            })
-        })
+        .filter(|value| sound(value.clone()).is_some_and(|chat| !due(&chat, now)))
         .collect();
     let gone = before - kept.len();
     if gone == 0 {
@@ -283,6 +293,60 @@ pub fn sweep(root: &Path, now: SystemTime) -> usize {
             0
         }
     }
+}
+
+/// Removes what a write of [`FILE_NAME`] killed before its rename left in the folder: the temp
+/// file [`crate::rewrite::replace`] writes, `.purlis-generated.closed.json.<pid>.<tag>.tmp` (or
+/// an older build's prefix), which holds chats' titles and nothing else ever removes. Called
+/// under the folder's lock, which every write holds; as that lock may not have been taken, only
+/// a temp file last written more than [`crate::rewrite::MOST_WAIT`] ago goes. Nothing else in
+/// the folder is touched.
+fn remove_left_behind(root: &Path) {
+    let Ok(names) = std::fs::read_dir(dir(root)) else {
+        return;
+    };
+    let now = SystemTime::now();
+    for one in names.flatten() {
+        // A lock that could not be taken (`Lock(None)`) lets a write run beside the sweep: a
+        // temp file written within the longest wait for the lock may still be one.
+        let stale = one
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .is_ok_and(|written| {
+                now.duration_since(written)
+                    .is_ok_and(|age| age > crate::rewrite::MOST_WAIT)
+            });
+        if stale
+            && left_behind(&one.file_name().to_string_lossy())
+            && let Err(why) = std::fs::remove_file(one.path())
+        {
+            tracing::warn!(error = %why, "a closed chats' temp file was not removed");
+        }
+    }
+}
+
+/// Whether `name` is a temp file a write of [`FILE_NAME`] leaves when it is cut short.
+fn left_behind(name: &str) -> bool {
+    let prefix = crate::names::GENERATED_TEMP_PREFIX;
+    std::iter::once(prefix.write)
+        .chain(prefix.reads.iter().copied())
+        .filter_map(|prefix| name.strip_prefix(prefix))
+        .filter_map(|rest| rest.strip_prefix(FILE_NAME))
+        .filter_map(|rest| rest.strip_prefix('.'))
+        .filter_map(|rest| rest.strip_suffix(".tmp"))
+        // `<pid>.<tag>`: the two parts a write adds.
+        .any(|rest| {
+            rest.split_once('.')
+                .is_some_and(|(pid, tag)| !pid.is_empty() && !tag.is_empty() && !tag.contains('.'))
+        })
+}
+
+/// Whether `chat` is [`crate::retention::KEEP_FOR`] or more old at `now`, or ended after `now`.
+fn due(chat: &ChatRecord, now: SystemTime) -> bool {
+    chrono::DateTime::parse_from_rfc3339(&chat.ended).map_or(true, |ended| {
+        now.duration_since(SystemTime::from(ended))
+            .map_or(true, |age| age >= crate::retention::KEEP_FOR)
+    })
 }
 
 #[cfg(test)]

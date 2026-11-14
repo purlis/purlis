@@ -887,6 +887,7 @@ fn a_record(root: &Path, place: Place, title: &str, h: u32, conversation: Option
                     conversation: conversation.map(str::to_owned),
                     cwd: None,
                     unsandboxed: false,
+                    held_from_clusters: false,
                     identity: Default::default(),
                     handed_from: purlis_core::sessionrecord::Handed::No,
                 }),

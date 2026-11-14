@@ -113,6 +113,10 @@ impl PoolAdding {
             trust: self.trust.clone(),
             // A Podman connection's key file is the one Connect kept with its route (#6269).
             identity: None,
+            // A tcp:// machine's files are the ones Connect kept for it (#6267).
+            tls: None,
+            // The Docker context Connect read the machine from is the one it kept (#6268).
+            docker_context: None,
         }
     }
 }
@@ -157,6 +161,75 @@ pub enum PoolLink {
     /// Docker points at another engine than the one that made it (#4166): its container may be
     /// there still, so it is not said to be removed and Make the runner again is not offered.
     OnAnotherEngine,
+    /// **Its machine's pin no longer holds** (#6270, ADR 0123 §3): another host key, CA or
+    /// engine. Nothing is sent there until the person checks it and trusts it again, and removing
+    /// the pool forgets it here, leaving its runner there.
+    PinChanged { change: Box<PoolPinChanged> },
+}
+
+/// **A pool on another machine whose pin no longer holds** (#6270, ADR 0123 §3): what the
+/// window's Notice (cause `pool-pin-changed`) says, in the core's words, the same as `purlis pool
+/// doctor`'s.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolPinChanged {
+    pub pool: String,
+    pub host: String,
+    /// `key`, `ca` or `engine`.
+    pub what: String,
+    /// What was pinned, and what the machine shows now: a key's or a CA's SHA-256, or an
+    /// engine's id.
+    pub pinned: String,
+    pub now: String,
+    pub title: String,
+    pub said: String,
+}
+
+impl From<purlis_core::poolsetup::pinchange::PinChange> for PoolPinChanged {
+    fn from(change: purlis_core::poolsetup::pinchange::PinChange) -> PoolPinChanged {
+        use purlis_core::poolsetup::pinchange::Changed;
+        PoolPinChanged {
+            what: match change.what {
+                Changed::Key => "key",
+                Changed::Ca => "ca",
+                Changed::Engine => "engine",
+            }
+            .to_owned(),
+            pool: change.pool,
+            host: change.host,
+            pinned: change.pinned,
+            now: change.now,
+            title: change.title,
+            said: change.said,
+        }
+    }
+}
+
+/// The event a pool's pin found changed, or holding again, raises its Notice on (#6270).
+pub const POOL_PIN_CHANGED: &str = "pool-pin-changed";
+
+/// **The pools on another machine whose pin was found changed** (#6270, ADR 0123 §3), each as its
+/// Notice says it. It contacts no machine: each was found where a run for the pool was refused,
+/// and goes once its pin holds again or the pool is removed. The window's alone
+/// (`ui::WINDOW_ONLY`).
+#[tauri::command]
+#[specta::specta]
+pub async fn pools_pin_changed() -> Result<Vec<PoolPinChanged>, String> {
+    Ok(purlis_core::poolsetup::pinchange::found_now()
+        .into_iter()
+        .map(PoolPinChanged::from)
+        .collect())
+}
+
+/// **Pool `name`'s pin change, where its machine's pin no longer holds** (#6270): reached as a
+/// run for it is, so what it finds is kept for the window too.
+#[cfg(unix)]
+fn pin_change_of(machine: &Machine, name: &str) -> Option<PoolPinChanged> {
+    let pool = purlis_core::runners::pools(&machine.config)
+        .ok()?
+        .into_iter()
+        .find(|pool| pool.name() == name)?;
+    let finding = purlis_core::sshroute::pool::docker_of(&machine.docker, &pool).err()?;
+    purlis_core::poolsetup::pinchange::of(name, &finding).map(PoolPinChanged::from)
 }
 
 /// **A pool whose runner was removed outside purlis** (#4149): what the Notice of a refused
@@ -190,6 +263,9 @@ pub enum OldHome {
     Held,
     /// It could not be read, so it is kept, held, all the same.
     Unread,
+    /// It is on the engine trusted before, on the pool's other machine (#6270): nothing of it
+    /// was read or removed on the engine trusted now, and `purlis pool left-behind` lists it.
+    Elsewhere,
 }
 
 /// **Which version a pool's runner runs, against this desktop's** (#2749): what its row says
@@ -428,6 +504,24 @@ pub async fn remove_docker_pool(
             let removed = if is_a_cluster_pool(&config, &name)? {
                 crate::clusterpools::remove_on(&config, &name)
             } else {
+                // On a machine no longer trusted, nothing is sent there: the pool is forgotten
+                // here, as the person was told, and its runner stays there (#6270). Whether it
+                // is, is decided from the change already found, so this contacts nothing and
+                // works once the machine is unreachable too.
+                let found = purlis_core::poolsetup::pinchange::found_now();
+                if let Some(forgot) =
+                    purlis_core::pools::forget_where_untrusted(&config, &name, elsewhere, &found)
+                {
+                    let left = forgot.map_err(|why| refused_said(&why.to_string()))?;
+                    crate::notheld::recheck(&config);
+                    crate::poolfollow::forget_waiting(&config, &name);
+                    if let Some(host) =
+                        tauri::Manager::try_state::<crate::sessionhost::SessionHost>(&app)
+                    {
+                        links_end_once_gone(&host.connection(), &config, &name);
+                    }
+                    return Ok(Some(left));
+                }
                 let machine = Machine::here(&config)?;
                 as_the_person_was_told(&machine, &name, elsewhere)?;
                 elsewhere_only_from_your_own(&name, elsewhere, crate::poolprofiles::owned)?;
@@ -549,10 +643,18 @@ pub async fn docker_pool_link(name: String) -> Result<PoolLink, String> {
             let machine = Machine::here(&config)?;
             let kept = purlis_core::runners::runner_for(&machine.config, &name)
                 .map_err(|why| why.to_string())?;
-            // A pool on another machine whose forward or pin doesn't hold is down, saying why.
+            // A pool on another machine whose forward or pin doesn't hold is down, saying why;
+            // one whose pin changed says what changed (#6270).
             let machine = match machine.for_pool(&name) {
                 Ok(machine) => machine,
-                Err(why) => return Ok(PoolLink::Down { why }),
+                Err(why) => {
+                    return Ok(match pin_change_of(&machine, &name) {
+                        Some(change) => PoolLink::PinChanged {
+                            change: Box::new(change),
+                        },
+                        None => PoolLink::Down { why },
+                    });
+                }
             };
             match machine.running(&kept) {
                 // One that stopped on a full disk says so, not that it suspended (#6205).
@@ -673,6 +775,7 @@ pub fn make_again_on(machine: &Machine, name: &str) -> Result<MadeAgain, String>
             purlis_core::pools::OldHome::Removed => OldHome::Removed,
             purlis_core::pools::OldHome::Held => OldHome::Held,
             purlis_core::pools::OldHome::Unread => OldHome::Unread,
+            purlis_core::pools::OldHome::Elsewhere => OldHome::Elsewhere,
         },
     })
 }

@@ -156,12 +156,7 @@ impl ToARunner {
     /// never wakes one; only the window's relayed link does ([`Self::of_kept_waking`]).
     pub fn of_kept(machine: &Machine, kept: &Kept) -> Result<ToARunner, String> {
         let desktop = machine.desktop()?;
-        Ok(ToARunner::kept(
-            kept,
-            machine,
-            desktop.into_identity(),
-            false,
-        ))
+        ToARunner::kept(kept, machine, desktop.into_identity(), false)
     }
 
     /// [`Self::of_kept`], **a suspended runner started again** as it is linked to (#2051): one a
@@ -169,29 +164,30 @@ impl ToARunner {
     /// starts. The window's relayed link alone: its chats are what the person asked for.
     pub fn of_kept_waking(machine: &Machine, kept: &Kept) -> Result<ToARunner, String> {
         let desktop = machine.desktop()?;
-        Ok(ToARunner::kept(
-            kept,
-            machine,
-            desktop.into_identity(),
-            true,
-        ))
+        ToARunner::kept(kept, machine, desktop.into_identity(), true)
     }
 
-    fn kept(kept: &Kept, machine: &Machine, desktop: Identity, resumes: bool) -> ToARunner {
+    fn kept(
+        kept: &Kept,
+        machine: &Machine,
+        desktop: Identity,
+        resumes: bool,
+    ) -> Result<ToARunner, String> {
         // A pool on another machine is reached through its own SSH forward (#6266): each run of
         // `docker` for it is pointed at the forward's socket, which the check before every
         // connection opens again where it dropped, its engine checked against the pin first
         // (ADR 0123 §8). A dropped forward drops the link, and the reconnect comes back here.
         // A Podman pool's runs are Podman's own client's, and its check reads its runtime config
-        // there over the pinned SSH (#6269): the same `docker` the pool's other runs are given.
+        // there over the pinned SSH (#6269); a pool over Docker's TLS API is pointed at its route
+        // (#6267): the same `docker` the pool's other runs are given.
+        // Where it can't be pointed there the link is refused: never this machine's engine.
         let remote = purlis_core::sshroute::pool::is_remote(&machine.config, kept.pool());
         let local = machine.docker.clone();
-        let docker = if remote {
-            purlis_core::sshroute::pool::docker_for_link(&machine.config, &local, kept.pool())
-                .unwrap_or_else(|_| local.clone())
-        } else {
-            local.clone()
-        };
+        let docker = purlis_core::sshroute::pool::docker_for_kept_link(
+            &machine.config,
+            &local,
+            kept.pool(),
+        )?;
         let made = kept.made.clone();
         let checking = docker.clone();
         let preparing = docker.clone();
@@ -227,12 +223,12 @@ impl ToARunner {
             let (env, cleared, held) = preparing.prepared().map_err(|why| why.0)?.into_parts();
             Ok(purlis_host::Prepared { env, cleared, held })
         }));
-        ToARunner {
+        Ok(ToARunner {
             connector,
             device: desktop.device,
             key: desktop.key,
             pinned: kept.pinned.clone(),
-        }
+        })
     }
 
     /// **The cluster pool `pool`'s runner `kept`**, as this machine keeps it under `config`,
@@ -662,6 +658,7 @@ pub fn count_of(
         Err(PoolLink::OnAnotherEngine) => {
             Err("Docker points at another engine than the one the runner was made on".to_owned())
         }
+        Err(PoolLink::PinChanged { change }) => Err(change.said),
         Err(PoolLink::Linked) => Err("the runner did not list".to_owned()),
     }
 }

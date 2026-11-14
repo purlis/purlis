@@ -54,7 +54,7 @@ function Row({
   return (
     <section className="agent-identity-row" aria-label={row.host}>
       <header className="agent-identity-row-head">
-        <h2 ref={heading} tabIndex={-1} className="agent-identity-title">
+        <h2 ref={heading} tabIndex={-1} className="agent-identity-title ui-text-title">
           {row.host}
         </h2>
         {proved && <Badge variant="ok">Set up</Badge>}
@@ -170,7 +170,7 @@ export function RemoveIdentity({
       onClose={onClose}
       title={`Remove the identity on ${host}?`}
       description={
-        <p className="came-back">
+        <p className="came-back ui-text-secondary">
           Its tool lines, its key and its live tokens go at once, and chats stop acting as it. The
           App itself stays on GitHub until you delete it there.
         </p>

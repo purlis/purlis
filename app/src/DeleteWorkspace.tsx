@@ -91,7 +91,7 @@ export function DeleteWorkspace({
       onClose={onCancel}
       title={`Delete workspace ${workspace}?`}
       description={
-        <p className="came-back">
+        <p className="came-back ui-text-secondary">
           This deletes workspace {workspace} and everything in it: every repo cloned there, every
           branch folder made in it, its memory and its todos. There is no undo.
         </p>
@@ -123,7 +123,7 @@ export function DeleteWorkspace({
       )}
 
       {refusal === undefined && atRisk !== undefined && risky.length === 0 && (
-        <p className="came-back">
+        <p className="came-back ui-text-secondary">
           purlis found no uncommitted or unpushed work in it. It checks again when you press Delete,
           against the workspace as it is then.
         </p>
@@ -131,7 +131,7 @@ export function DeleteWorkspace({
 
       {risky.length > 0 && (
         <>
-          <h3>What purlis would discard</h3>
+          <h3 className="ui-text-heading">What purlis would discard</h3>
           {/* The core's sentences, one per row, and never a count. `svc: 2 unpushed commit(s)` is
               what a terminal shows and what the refusal repeats — and once there has been a
               refusal these rows ARE the refusal's own list. */}

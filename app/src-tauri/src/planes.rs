@@ -544,6 +544,15 @@ pub struct RetriedProject {
     pub started: Vec<(String, u32)>,
 }
 
+/// Whether a plane let go of still has its finished tasks' screens to keep (#6305).
+#[derive(Debug, Clone, Copy)]
+enum TaskScreens {
+    /// A close of this plane alone: they are kept as it is let go of, within their own deadline.
+    KeepNow,
+    /// A quit: every plane's were kept together, before the first was let go of.
+    Kept,
+}
+
 impl Held {
     pub fn root(&self) -> &Path {
         &self.root
@@ -2072,7 +2081,11 @@ impl Held {
     /// and it is the one writer that sets [`reopen::Record::relaunch_after_update`]. It goes
     /// through the same gated [`Records::write`] as every other, so a plane whose record this
     /// launch never put back is left exactly as it was.
-    fn let_go(&self, to_update: bool) {
+    ///
+    /// `screens` says whether the screens of the tasks that had finished are still to keep
+    /// (#6305): a close of one plane keeps them here, and a quit has kept every plane's before
+    /// it lets go of the first, so none waits out another's ending (#6508's review).
+    fn let_go(&self, to_update: bool, screens: TaskScreens) {
         // Nobody is told of its standing any more (H6c).
         purlis_core::planegit::tell_when_standing_moves(&self.root, None);
         // Auto-save first: ending the chats below tells the worker each one ended, and a plane
@@ -2092,7 +2105,11 @@ impl Held {
         });
         // A task that had finished is left out of the next launch's put back, so its screen is
         // kept now, while its session still shows it (#6305).
-        self.chats.keep_finished_screens();
+        if let TaskScreens::KeepNow = screens {
+            self.chats
+                .start_keeping_finished_screens()
+                .wait_until(crate::chatcard::screens_by_from_now());
+        }
         self.chats.end_all();
         self.hooks.stop();
         drop(
@@ -2471,7 +2488,7 @@ impl Closing {
     /// and every window drawing it told. Only then may it be opened again.
     pub(crate) fn finish(self) {
         let _one_at_a_time = self.one_at_a_time.enter(LETTING_GO_WAITS);
-        self.held.let_go(false);
+        self.held.let_go(false, TaskScreens::KeepNow);
         (self.released)(&self.held.root);
         (self.closed)(&self.plane);
     }
@@ -4085,7 +4102,7 @@ impl Planes {
         let mut open = self.map();
         if self.letting_go.quitting() {
             drop(open);
-            held.let_go(false);
+            held.let_go(false, TaskScreens::KeepNow);
             (self.released)(&held.root);
             return id;
         }
@@ -4818,7 +4835,10 @@ impl Planes {
             Box::new(move |record| records.write(record))
         };
         // The project every chat started here is of, sandbox and all (#1410).
-        let mut chats = Chats::on_host(recorder, (self.hosting)(reporting, &root), root.clone());
+        let mut host = (self.hosting)(reporting, &root);
+        // On the host itself, before the chats share it (#6508's review): every start reaches it.
+        host.stopped_by(Arc::clone(&self.kill_switch));
+        let mut chats = Chats::on_host(recorder, host, root.clone());
         // What the session host hands on from the hook channel it owns for this plane (#2000).
         if let Some(relayed) = hooks.relayed_from_the_host() {
             chats.sessions().hear_through(relayed);
@@ -4840,7 +4860,6 @@ impl Planes {
                 })
             }
         }));
-        chats.stopped_by(Arc::clone(&self.kill_switch));
         chats.on_device(device);
         chats.keeping_pools_in(self.pools_in.clone());
         // Each run a start begins goes into the host's event log, before the chat's program
@@ -5021,11 +5040,9 @@ impl Planes {
             let saves = Arc::clone(&self.saves);
             let plane = id.clone();
             let root = root.clone();
+            let tells = crate::autosave::Tells::of(&root);
             Arc::new(move |looked: crate::autosave::Looked| {
-                changes(
-                    plane.clone(),
-                    crate::autosave::what_it_did(looked.moved_tree),
-                );
+                changes(plane.clone(), tells.what_it_did(looked.moved_tree));
                 if looked.saved {
                     saves(plane.clone(), root.clone());
                 }
@@ -5629,8 +5646,19 @@ impl Planes {
         for held in &all {
             crate::chatbrowsers::kept_at_quit(held);
         }
+        // Every plane's task screens are read at once, and waited for once, until one deadline
+        // (as for their saving above), before any plane's chats are ended: a plane let go of
+        // later would otherwise have only what the earlier ones' endings left of it.
+        let coming: Vec<_> = all
+            .iter()
+            .map(|held| held.chats.start_keeping_finished_screens())
+            .collect();
+        let screens_by = crate::chatcard::screens_by_from_now();
+        for screens in coming {
+            screens.wait_until(screens_by);
+        }
         for held in all {
-            held.let_go(to_update);
+            held.let_go(to_update, TaskScreens::Kept);
             (self.released)(&held.root);
         }
         // Every way out of the app lets go of every plane here — a quit, and a restart to

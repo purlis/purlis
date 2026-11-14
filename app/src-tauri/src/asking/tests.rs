@@ -3541,3 +3541,38 @@ fn a_runner_chats_login_and_tool_are_vault_uses_naming_the_pool() {
         ]
     );
 }
+
+/// **Ready raises one entry** (#4496): nothing while the person waits, one Ask in the project the
+/// setup was asked from once the recheck found the cluster ready, none in another, and none once
+/// it is answered.
+#[cfg(unix)]
+#[test]
+fn pool_setups_ready_ask_is_one_in_its_own_project_and_gone_once_answered() {
+    let (config, project, other) = (
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    use purlis_core::poolsetup::{admin, choose_cluster};
+    choose_cluster(config.path(), "kind-team").unwrap();
+    admin::asked(config.path(), Some(project.path()), 1).unwrap();
+    assert!(pool_setup_ready(project.path(), config.path()).is_none());
+    // As the background recheck marks it, once the admin has given what was missing.
+    let file = purlis_core::machine::dir(config.path()).join("pool-setup.json");
+    let mut held: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    held["admin"]["ready"] = 2.into();
+    std::fs::write(&file, held.to_string()).unwrap();
+
+    let shown = pool_setup_ready(project.path(), config.path()).expect("the ready Ask");
+    assert_eq!(shown.source, AskSource::PoolSetup);
+    assert_eq!(shown.answer, AnswerPath::PoolSetup);
+    assert_eq!(shown.session, 0);
+    assert!(shown.says.contains("kind-team"), "{}", shown.says);
+    let ids: Vec<&str> = shown.options.iter().map(|one| one.id.as_str()).collect();
+    assert_eq!(ids, [OPEN_POOL_SETUP, DISMISS]);
+    assert!(pool_setup_ready(other.path(), config.path()).is_none());
+
+    admin::forget(config.path()).unwrap();
+    assert!(pool_setup_ready(project.path(), config.path()).is_none());
+}
