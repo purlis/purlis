@@ -38,7 +38,14 @@ const TRUST_CLONE: Shown = {
 };
 
 /** Chat 2's turn that ended after the refusal, as the core counts it. */
-const ENDED: FinishedTurn = { session: 2, key: "01TURNENDED", at: AT, failed: false, blocked: 0 };
+const ENDED: FinishedTurn = {
+  session: 2,
+  key: "01TURNENDED",
+  at: AT,
+  failed: false,
+  blocked: 0,
+  blocks: [],
+};
 
 const WAITING: ChatStates = { ...nothingKnown, bySession: { 2: "waiting" }, movedAt: { 2: 7 } };
 const CHATS = fixedChats(WAITING);

@@ -12,7 +12,7 @@ import type { ChatLogRow, FinishedBlock, FinishedTurn } from "./bindings";
 import { ChatLogRows } from "./ChatLogTab";
 import { Inbox } from "./Inbox";
 import { finishUpdates, finishWaysOf, groupedFinishes } from "./finishRows";
-import { BlockWaysOut, finishRowWays } from "./BlockWaysOut";
+import { BlockWaysOut, FinishRowWays } from "./BlockWaysOut";
 import {
   GO_TO_CHAT,
   SHOW_THIS_CHECK,
@@ -344,14 +344,17 @@ describe("a finish row's ways out (Q272)", () => {
     const rows = groupedFinishes(updates).map(({ update, keys }) => ({
       update,
       dismiss: () => undefined,
-      ways: finishRowWays({
-        plane: PLANE,
-        turns,
-        keys,
-        who: update.chain.at(-1) ?? "this chat",
-        nameOf,
-        go: (session) => went.push(session),
-      }),
+      ways:
+        finishWaysOf(turns, keys).length > 0 ? (
+          <FinishRowWays
+            plane={PLANE}
+            turns={turns}
+            keys={keys}
+            who={update.chain.at(-1) ?? "this chat"}
+            nameOf={nameOf}
+            go={(session) => went.push(session)}
+          />
+        ) : undefined,
     }));
     render(
       <Inbox

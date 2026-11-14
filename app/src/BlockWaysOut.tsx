@@ -184,8 +184,12 @@ async function tellEach(
  * Tell the chat… types only into the chats whose own turn holds a block that offers it, and
  * names them where there is more than one; Go to chat goes to the chat that holds the
  * Can't-tell block.
+ *
+ * A component, not a helper the view calls while it draws: what `go` presses reads refs, and
+ * a function handed one during render is what react-hooks/refs refuses. Draw it only where
+ * {@link finishWaysOf} finds a block, so a row with none has no empty form.
  */
-export function finishRowWays({
+export function FinishRowWays({
   plane,
   turns,
   keys,
@@ -202,9 +206,9 @@ export function finishRowWays({
   nameOf: (session: number) => string;
   /** Go to chat: the chat `session` in front. */
   go: (session: number) => void;
-}): ReactNode | undefined {
+}): ReactNode {
   const blocks = finishWaysOf(turns, keys);
-  if (blocks.length === 0) return undefined;
+  if (blocks.length === 0) return null;
   const to = finishWaysTo(turns, keys);
   return (
     <BlockWaysOut
