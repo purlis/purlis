@@ -5796,8 +5796,9 @@ impl Chats {
             // before its program exists, so its very first hook's report lowers it. Set by how
             // purlis started it, and never more attended than the fact it had, as this app held
             // it or its record kept it, so a resume, a relaunch and a reattach carry an
-            // unattended chat forward.
-            self.began_attended_or_not(session, chat, harness, on_the_runner, &started_in);
+            // unattended chat forward. At its first start, a chat another chat asked for is never
+            // more attended than that chat (Q279).
+            self.began_attended_or_not(session, chat, harness, on_the_runner, &started_in, why);
             if !reattaching && !on_the_runner && chat.runs_on.is_none() {
                 lock(&self.starting_at).insert(
                     session,
@@ -7319,6 +7320,14 @@ impl Chats {
     /// starts it ([`purlis_core::attendance::Begun`]: a task a dispatch started, a chat a runner
     /// runs, or a person's), on `harness`, in the words `started_in`, and never more attended
     /// than the fact this app held for it or its record kept ([`Chat::unattended`]).
+    ///
+    /// **A chat another chat asked for inherits that chat's attendance** at its first start
+    /// (`why` is [`Why::New`]; Q279, R-358, T1-49 #6619): a handoff an unattended chat asked
+    /// for starts unattended, whatever workspace it lands in, and so does one whose asker this
+    /// app holds no fact for (fail closed, as A4 reads a missing fact). One the person started
+    /// from a chat's tab ([`purlis_core::reopen::HandedFrom::by_person`]) is the window's, and
+    /// attended. A later start reads its own record, which kept the fact (Q275), and never the
+    /// asker again, which may be gone by then.
     fn began_attended_or_not(
         &self,
         session: u32,
@@ -7326,6 +7335,7 @@ impl Chats {
         harness: Option<Harness>,
         on_the_runner: bool,
         started_in: &[String],
+        why: Why,
     ) {
         use purlis_core::attendance::{Begun, Fact};
         use purlis_core::dispatchunattended::Attendance;
@@ -7341,11 +7351,20 @@ impl Chats {
             Begun::Person
         };
         let mut facts = lock(&self.attendance);
+        // The asking chat's fact, as this app holds it, where a chat asked for this one.
+        let asker_unattended = why == Why::New
+            && chat
+                .from
+                .as_ref()
+                .filter(|from| !from.by_person)
+                .is_some_and(|from| facts.get(&from.chat).is_none_or(|held| held.unattended()));
+        let kept_unattended = chat.unattended || asker_unattended;
         // The fact held here, whole, so the mode that differed comes with it (R-243); the
-        // record's word alone where it says less attended than what is held, or nothing is held.
+        // record's word (or the asker's) alone where it says less attended than what is held,
+        // or nothing is held.
         let prior = match facts.get(&session) {
-            Some(held) if held.unattended() || !chat.unattended => *held,
-            _ => Fact::kept(if chat.unattended {
+            Some(held) if held.unattended() || !kept_unattended => *held,
+            _ => Fact::kept(if kept_unattended {
                 Attendance::Unattended
             } else {
                 Attendance::Attended

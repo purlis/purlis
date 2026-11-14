@@ -12433,6 +12433,201 @@ fn a_task_a_dispatch_started_is_unattended_and_its_record_says_so() {
     chats.end_all();
 }
 
+// ----- a handoff inherits the asking chat's attendance (T1-49, #6619; Q279, R-358) -----
+
+/// A handoff chat `asker` asked for, or that the person started from `asker`'s tab.
+fn handed_off_by(dir: &std::path::Path, name: &str, asker: u32, by_person: bool) -> Chat {
+    let mut chat = started_by(dir, name, purlis_core::reopen::Mode::Handoff);
+    if let Some(from) = chat.from.as_mut() {
+        from.chat = asker;
+        from.by_person = by_person;
+    }
+    chat
+}
+
+/// A person's chat whose own hook has reported the bypass: unattended, by a report.
+fn an_unattended_asker(chats: &Chats, dir: &std::path::Path, name: &str) -> u32 {
+    let asker = chats
+        .start(&chat(&a_claude(dir), name, None), SIZE)
+        .unwrap();
+    chats.heard_attendance(&a_bypass_report(asker));
+    assert!(held_unattended(chats, asker), "the asker is unattended");
+    asker
+}
+
+/// Catches the gap itself: a handoff begun as a person's chat whose asker is never read
+/// (`asker_unattended` mutated to `false`).
+#[test]
+fn a_handoff_an_unattended_chat_asks_for_starts_unattended_and_its_record_says_so() {
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let asker = an_unattended_asker(&chats, dir.path(), "ide.7");
+
+    let handoff = chats
+        .start(&handed_off_by(dir.path(), "ide.8", asker, false), SIZE)
+        .unwrap();
+
+    assert!(
+        held_unattended(&chats, handoff),
+        "an unattended chat's handoff is unattended"
+    );
+    let kept = chats
+        .record()
+        .chats
+        .into_iter()
+        .find(|chat| chat.name == "ide.8")
+        .expect("the handoff is recorded");
+    assert!(kept.unattended, "a relaunch carries it: {kept:?}");
+    chats.end_all();
+}
+
+/// Catches an asker read as unattended whatever its fact says (`is_none_or(..)` mutated to
+/// `true`), and a person's start from a chat's tab read as that chat's (the `!by_person` filter
+/// removed).
+#[test]
+fn a_handoff_from_an_attended_chat_or_from_the_window_starts_attended() {
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let attended = chats
+        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+        .unwrap();
+    assert!(!held_unattended(&chats, attended));
+    let unattended = an_unattended_asker(&chats, dir.path(), "ide.8");
+
+    let from_an_attended_chat = chats
+        .start(&handed_off_by(dir.path(), "ide.9", attended, false), SIZE)
+        .unwrap();
+    let from_the_window = chats
+        .start(&handed_off_by(dir.path(), "ide.10", unattended, true), SIZE)
+        .unwrap();
+
+    assert!(
+        !held_unattended(&chats, from_an_attended_chat),
+        "an attended chat's handoff is attended"
+    );
+    assert!(
+        !held_unattended(&chats, from_the_window),
+        "the person's handoff from a chat's tab is the window's, and attended"
+    );
+    chats.end_all();
+}
+
+/// Catches a missing fact read as attended (`is_none_or` mutated to `is_some_and`): fail
+/// closed, as A4 reads it.
+#[test]
+fn a_handoff_whose_asker_purlis_holds_no_fact_for_starts_unattended() {
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let nobody = 999;
+    assert!(chats.attendance_of(nobody).is_none());
+
+    let handoff = chats
+        .start(&handed_off_by(dir.path(), "ide.7", nobody, false), SIZE)
+        .unwrap();
+
+    assert!(held_unattended(&chats, handoff), "fail closed");
+    chats.end_all();
+}
+
+/// Catches the asker read at every start and not the first alone (`why == Why::New` removed):
+/// an attended handoff relaunched once its asker has gone is still attended, by its record.
+#[test]
+fn an_attended_handoff_relaunched_after_its_asker_has_gone_stays_attended() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = a_claude(dir.path());
+    let (chats, _) = recorded();
+    let record = Record {
+        chats: vec![Chat {
+            unattended: false,
+            resume: Some(SessionId::new(ID).expect("a valid id in a test")),
+            ..handed_off_by(dir.path(), "ide.7", 999, false)
+        }],
+        ..one_recorded(&claude)
+    };
+
+    let open = chats.put_back_here(&record, SIZE);
+
+    assert_eq!(open.len(), 1, "it starts again");
+    assert!(
+        !held_unattended(&chats, open[0].session),
+        "its record, not its gone asker, says it is attended"
+    );
+    chats.end_all();
+}
+
+/// **R-358's integration**: a task's handoff is refused a release-floor line by A4, which
+/// reads the fact this app holds for it as the hook's ask is answered
+/// ([`crate::handoff`]'s `Ask::Attendance`), on a line whose own mode says nothing amiss. An
+/// attended chat's handoff publishing the same line is not refused.
+#[test]
+fn an_unattended_tasks_handoff_is_refused_a_release_floor_line_by_a4() {
+    purlis_core::unsteered!();
+    use purlis_core::dispatchunattended::Attendance;
+    use purlis_core::toolgate::{Arm, Attending, Call, Launched, Plane, verdict};
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let task = chats
+        .start(
+            &started_by(dir.path(), "ide.7", purlis_core::reopen::Mode::Task),
+            SIZE,
+        )
+        .unwrap();
+    let person = chats
+        .start(&chat(&a_claude(dir.path()), "ide.8", None), SIZE)
+        .unwrap();
+    let tasks_handoff = chats
+        .start(&handed_off_by(dir.path(), "ide.9", task, false), SIZE)
+        .unwrap();
+    let persons_handoff = chats
+        .start(&handed_off_by(dir.path(), "ide.10", person, false), SIZE)
+        .unwrap();
+    // What A4 is told of chat `session`, as the app answers the hook's ask for a line whose
+    // bypass bit is clear and whose mode is unproven, so nothing it says moves the fact.
+    let answered = |session: u32| {
+        chats
+            .attendance_of(session)
+            .map_or(Attendance::Unattended, |fact| fact.hearing(false, None))
+    };
+    let refused = |session: u32| {
+        let asked = || answered(session);
+        let state = std::env::temp_dir();
+        let forges = Vec::new();
+        let plane = Plane {
+            root: "/nowhere/plane",
+            forges: &forges,
+            session_dir: "",
+            launched: Launched {
+                sandboxed: false,
+                chat_dir: None,
+                attendance: Some(Attending(&asked)),
+            },
+        };
+        let call = Call {
+            command: "gh release create v1.0.0",
+            cwd: "/nowhere/plane",
+            state_dir: &state,
+            caller: purlis_core::handoffguard::Caller {
+                agent_id: None,
+                harness: Some("claude"),
+                permission_mode: Some("default"),
+            },
+        };
+        verdict(&call, Some(&plane)).and_then(|said| said.arm)
+    };
+
+    assert_eq!(
+        refused(tasks_handoff),
+        Some(Arm::ReleaseFloor),
+        "an unattended task's handoff published"
+    );
+    assert_eq!(
+        refused(persons_handoff),
+        None,
+        "an attended chat's handoff was refused"
+    );
+    chats.end_all();
+}
+
 #[test]
 fn a_chat_its_record_kept_unattended_relaunches_unattended() {
     let dir = tempfile::tempdir().unwrap();

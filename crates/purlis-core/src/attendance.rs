@@ -54,9 +54,12 @@ use crate::harness::Harness;
 /// **How purlis started a chat**, as the start path names it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Begun {
-    /// A person started it fresh, or will read it: the window, a handoff. A resume or a
-    /// relaunch is a start of this kind too, but its fact comes from [`Fact::resumed`], which
-    /// carries the prior fact forward, never from [`Fact::at_start`] alone.
+    /// A person started it fresh: the window, or a handoff. A resume or a relaunch is a start
+    /// of this kind too, but its fact comes from [`Fact::resumed`], which carries the prior
+    /// fact forward, never from [`Fact::at_start`] alone. **A handoff has a reader only if the
+    /// chat that asked for it had one** (Q279, R-358): one an unattended chat asked for, or a
+    /// chat whose fact the app does not hold, is begun this way but its fact is
+    /// [`Fact::resumed`] from the asker's unattended one, so it starts unattended and stays so.
     Person,
     /// Another chat dispatched it.
     Task,
