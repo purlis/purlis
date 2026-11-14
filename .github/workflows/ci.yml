@@ -247,7 +247,7 @@ jobs:
       # cargo-nextest runs every test binary's tests at once, each test in a process of its own,
       # where `cargo test` runs the binaries one after another. Its settings are in
       # `.config/nextest.toml`. A machine without it runs the same tests with `cargo test`.
-      - uses: taiki-e/install-action@682ce6c3c696a4cd5168a05f98e51aa02b877941 # v2.89.1
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # The pinned engine makes its sandbox with user namespaces, which Ubuntu 23.10 and later
@@ -423,7 +423,7 @@ jobs:
         with:
           shared-key: rust
           save-if: false
-      - uses: taiki-e/install-action@682ce6c3c696a4cd5168a05f98e51aa02b877941 # v2.89.1
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # Where a person's `git lfs install` writes it, for every git of this machine's.
@@ -607,7 +607,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - if: steps.scope.outputs.run == 'true'
-        uses: taiki-e/install-action@682ce6c3c696a4cd5168a05f98e51aa02b877941 # v2.89.1
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # tauri::generate_context! reads the built frontend, so it has to exist before a build.
@@ -740,7 +740,7 @@ jobs:
         with:
           save-if: false
       - if: steps.scope.outputs.run == 'true'
-        uses: taiki-e/install-action@682ce6c3c696a4cd5168a05f98e51aa02b877941 # v2.89.1
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       - name: The tests, purlis and the fake harness, built
@@ -1480,7 +1480,7 @@ jobs:
         run: sudo mdutil -a -i off
       # tauri::generate_context! reads the built frontend, as in the `rust` job.
       - run: mkdir -p app/dist
-      - uses: taiki-e/install-action@682ce6c3c696a4cd5168a05f98e51aa02b877941 # v2.89.1
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # The names the studio probe's network tests look up, from the hosts file, not outside DNS
