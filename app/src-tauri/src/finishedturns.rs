@@ -11,7 +11,7 @@
 //! counted as new. Only the last day's finishes are answered, as an update is kept a day
 //! (`purlis_core::inboxupdates::KEPT_FOR_SECS`).
 
-use purlis_core::eventlog::finishes::{self, Finish, How};
+use purlis_core::eventlog::finishes::{self, Finish, How, Unresolved};
 
 use crate::planes::PlaneId;
 
@@ -27,6 +27,29 @@ pub struct FinishedTurn {
     pub failed: bool,
     /// Its turn's blocks still unresolved at its end, one a target: none for a failed run.
     pub blocked: u32,
+    /// Those blocks, each by who blocked it and what at (T1-33, R-300), as the Chat log words a
+    /// block's: what its finish row offers ways out of.
+    pub blocks: Vec<FinishedBlock>,
+}
+
+/// **An unresolved block of a finished turn** (T1-33, R-300): its source and target, in the
+/// words the Chat log row reads them in.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct FinishedBlock {
+    pub source: String,
+    pub target_kind: Option<String>,
+    pub target: Option<String>,
+}
+
+impl From<Unresolved> for FinishedBlock {
+    fn from(Unresolved { source, target }: Unresolved) -> Self {
+        let (target_kind, target) = target.as_ref().map(crate::chatlog::target_of).unzip();
+        Self {
+            source: crate::chatlog::word_of(source),
+            target_kind,
+            target,
+        }
+    }
 }
 
 /// The finishes of chat `session` (logged as `chat`) among `events` that ended at or after
@@ -45,6 +68,7 @@ fn finished_of(
                  at_ms,
                  how,
                  blocked,
+                 unresolved,
                  ..
              }| {
                 let at = at_ms? / 1000;
@@ -54,6 +78,7 @@ fn finished_of(
                     at: u32::try_from(at).unwrap_or(u32::MAX),
                     failed: how == How::Failed,
                     blocked,
+                    blocks: unresolved.into_iter().map(FinishedBlock::from).collect(),
                 })
             },
         )

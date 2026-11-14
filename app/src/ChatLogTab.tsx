@@ -9,6 +9,10 @@ import { BlockTag } from "./BlockTag";
 import { atSaid, blockSourceSaid, blockTags, rowSaid, type BlockRow } from "./chatLog";
 import { ToggleButton } from "./ui/button/Button";
 import { useBlocksLookedAt, useChatLogFilter } from "./blockedMarkers";
+import { BlockWaysOut } from "./BlockWaysOut";
+
+/** **A block row's ways out** (T1-33, R-300): Tell the chat…'s typing and Go to chat. */
+export type ChatLogWays = { tell: () => Promise<string | undefined>; go: () => void };
 
 /** What the reason is, above it: the words of the harness's own check, never purlis's. */
 const REASON_OF = "The check's reason, as written";
@@ -19,35 +23,41 @@ const REASON_OF = "The check's reason, as written";
  * holds it, shows the harness's reason as written. The reason is the chat's side's text: drawn
  * as one text node, never parsed or marked up, and nowhere but the detail.
  */
-function BlockedRow({ row }: { row: BlockRow }) {
+function BlockedRow({ row, name, ways }: { row: BlockRow; name: string; ways?: ChatLogWays }) {
   const tags = blockTags(row);
   // The reason is in the page only while its detail is open: a closed panel is hidden, and still
   // a copy a find or a screen reader's browse could reach.
   const [open, setOpen] = useState(false);
   return (
-    <Disclosure
-      size="sm"
-      isExpanded={open}
-      onExpandedChange={setOpen}
-      label={<span className="chat-log-said ui-text-body">{rowSaid(row)}</span>}
-      trail={
-        tags.length === 0 ? undefined : (
-          <span className="chat-log-tags">
-            {tags.map((tag) => (
-              <BlockTag key={tag.kind} kind={tag.kind} word={tag.word} />
-            ))}
-          </span>
-        )
-      }
-    >
-      <p className="chat-log-source ui-text-secondary">{blockSourceSaid(row)}</p>
-      {open && row.reason !== null && (
-        <figure className="chat-log-reason-of">
-          <figcaption className="ui-text-secondary">{REASON_OF}</figcaption>
-          <bdi className="chat-log-reason ui-text-body">{row.reason}</bdi>
-        </figure>
+    <>
+      <Disclosure
+        size="sm"
+        isExpanded={open}
+        onExpandedChange={setOpen}
+        label={<span className="chat-log-said ui-text-body">{rowSaid(row)}</span>}
+        trail={
+          tags.length === 0 ? undefined : (
+            <span className="chat-log-tags">
+              {tags.map((tag) => (
+                <BlockTag key={tag.kind} kind={tag.kind} word={tag.word} />
+              ))}
+            </span>
+          )
+        }
+      >
+        <p className="chat-log-source ui-text-secondary">{blockSourceSaid(row)}</p>
+        {open && row.reason !== null && (
+          <figure className="chat-log-reason-of">
+            <figcaption className="ui-text-secondary">{REASON_OF}</figcaption>
+            <bdi className="chat-log-reason ui-text-body">{row.reason}</bdi>
+          </figure>
+        )}
+      </Disclosure>
+      {/* Its ways out (T1-33, R-300): beside the row, never in its closed detail. */}
+      {ways !== undefined && (
+        <BlockWaysOut blocks={[row]} who={name} tell={ways.tell} go={ways.go} />
       )}
-    </Disclosure>
+    </>
   );
 }
 
@@ -70,14 +80,23 @@ const BLOCK_ROWS: readonly ChatLogRow["kind"][] = ["blocked"];
  * end and its result; a block between opens its detail, and nothing else in it is pressed in
  * phase 1.
  */
-export function ChatLogRows({ name, rows }: { name: string; rows: readonly ChatLogRow[] }) {
+export function ChatLogRows({
+  name,
+  rows,
+  ways,
+}: {
+  name: string;
+  rows: readonly ChatLogRow[];
+  /** A block row's ways out (T1-33); none where the chat is not one to tell or go to. */
+  ways?: ChatLogWays;
+}) {
   return (
     <ol className="chat-log" aria-label={`Chat log of ${name}`}>
       {rows.map((row, at) => (
         <li key={`${row.kind}:${row.at ?? ""}:${at}`} className="chat-log-row" data-kind={row.kind}>
           <span className="chat-log-at ui-text-secondary">{atSaid(row.at)}</span>
           {row.kind === "blocked" ? (
-            <BlockedRow row={row} />
+            <BlockedRow row={row} name={name} ways={ways} />
           ) : (
             <span className="chat-log-said ui-text-body">{rowSaid(row)}</span>
           )}
@@ -96,10 +115,13 @@ export function ChatLogTab({
   plane,
   session,
   name,
+  onShowChat,
 }: {
   plane: PlaneId;
   session?: number;
   name: string;
+  /** Go to chat (T1-33, R-199): the chat in front. */
+  onShowChat?: (session: number) => void;
 }) {
   const [log, setLog] = useState<ChatLog>();
   const [said, setSaid] = useState<string>();
@@ -141,6 +163,18 @@ export function ChatLogTab({
     };
   }, [plane, session]);
 
+  // **Its block rows' ways out** (T1-33, R-300): Tell the chat… types through the core's one
+  // way in, and answers why where nothing was typed.
+  const ways: ChatLogWays | undefined =
+    session === undefined
+      ? undefined
+      : {
+          tell: () =>
+            commands
+              .tellChatBlocked(plane, session)
+              .then((done) => (done.status === "error" ? done.error : undefined)),
+          go: () => onShowChat?.(session),
+        };
   if (said !== undefined)
     return <EmptyState headline="purlis could not read this chat's log" body={said} />;
   if (session === undefined || (log !== undefined && !log.known))
@@ -173,7 +207,7 @@ export function ChatLogTab({
             body="Nothing was blocked in this chat on this machine."
           />
         ) : (
-          <ChatLogRows name={name} rows={rows} />
+          <ChatLogRows name={name} rows={rows} ways={ways} />
         )}
       </>
     );
@@ -191,7 +225,7 @@ export function ChatLogTab({
   return (
     <>
       {head}
-      <ChatLogRows name={name} rows={log.rows} />
+      <ChatLogRows name={name} rows={log.rows} ways={ways} />
     </>
   );
 }

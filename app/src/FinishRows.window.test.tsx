@@ -24,9 +24,9 @@ const AT = Math.floor(Date.parse("2026-11-13T11:00:00Z") / 1000);
 
 /** Chat 3's three turns, as the core counts them. */
 const COUNTED: FinishedTurn[] = [
-  { session: 3, key: "01TURNSUCCESS", at: AT - 2, failed: false, blocked: 0 },
-  { session: 3, key: "01TURNALLOW", at: AT - 1, failed: false, blocked: 0 },
-  { session: 3, key: "01TURNUNRESOLVED", at: AT, failed: false, blocked: 1 },
+  { session: 3, key: "01TURNSUCCESS", at: AT - 2, failed: false, blocked: 0, blocks: [] },
+  { session: 3, key: "01TURNALLOW", at: AT - 1, failed: false, blocked: 0, blocks: [] },
+  { session: 3, key: "01TURNUNRESOLVED", at: AT, failed: false, blocked: 1, blocks: [] },
 ];
 
 const WAITING: ChatStates = { ...nothingKnown, bySession: { 3: "waiting" }, movedAt: { 3: 7 } };

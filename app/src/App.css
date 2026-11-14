@@ -9508,3 +9508,32 @@ nav.piece-files-head {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* **A block's ways out** (T1-33, R-300): under its Chat log row's sentence, in the row's second
+   column, and in a finish row's form; a way's read-only detail under them. */
+.chat-log-row .block-ways {
+  grid-column: 2;
+}
+
+.block-ways {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.block-ways-decides,
+.block-ways-detail p,
+.block-ways-detail ul {
+  margin: 0;
+}
+
+.block-ways-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-inline-start: var(--space-3);
+}
+
+.block-ways-detail ul {
+  padding-inline-start: var(--space-4);
+}

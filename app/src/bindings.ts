@@ -3552,6 +3552,11 @@ export const commands = {
 	 */
 	chatBlocks: (plane: PlaneId, asked: BlocksAsked[]) => typedError<ChatBlocks[], string>(__TAURI_INVOKE("chat_blocks", { plane, asked })),
 	/**
+	 *  **Tell the chat…, pressed twice** (T1-33, Q267): chat `session` is typed [`TELL_LINE`] where
+	 *  it waits, through T1-36's way in. Answers why where nothing was typed.
+	 */
+	tellChatBlocked: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("tell_chat_blocked", { plane, session })),
+	/**
 	 *  **The question a task is paused on, for the window to show before the person answers it**
 	 *  (#1496): chat `session`'s question to its asking chat. `null` where there is none to
 	 *  answer: the chat is no task, has reported or ended, or asks nothing now.
@@ -9851,6 +9856,16 @@ export type FillShown = {
 	code: boolean,
 };
 
+/**
+ *  **An unresolved block of a finished turn** (T1-33, R-300): its source and target, in the
+ *  words the Chat log row reads them in.
+ */
+export type FinishedBlock = {
+	source: string,
+	target_kind: string | null,
+	target: string | null,
+};
+
 /**  What finishing them came to. What each step said is in the app's log. */
 export type FinishedMoving = {
 	/**  What still waits, if anything: an item the person did not allow keeps its vault here. */
@@ -9936,6 +9951,11 @@ export type FinishedTurn = {
 	failed: boolean,
 	/**  Its turn's blocks still unresolved at its end, one a target: none for a failed run. */
 	blocked: number,
+	/**
+	 *  Those blocks, each by who blocked it and what at (T1-33, R-300), as the Chat log words a
+	 *  block's: what its finish row offers ways out of.
+	 */
+	blocks: FinishedBlock[],
 };
 
 /**  One ended task's tokens, by its dispatch record's id. */

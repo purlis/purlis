@@ -72,6 +72,16 @@ pub struct Finish {
     pub how: How,
     /// Its turn's blocks still unresolved at its end, one a target.
     pub blocked: u32,
+    /// **Those blocks**, oldest first, each by who blocked it and what at (T1-33, R-300): what
+    /// its finish row offers ways out of. As many as [`Self::blocked`] counts.
+    pub unresolved: Vec<Unresolved>,
+}
+
+/// **An unresolved block of a turn** (T1-33, R-300): who blocked it, and what at where it says.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unresolved {
+    pub source: Source,
+    pub target: Option<Target>,
 }
 
 /// What a block was aimed at: its tool, its arguments' keyed digest, and its target where it
@@ -85,14 +95,16 @@ struct Aim {
 }
 
 /// **The blocks of the turn so far**, each with its aim, as they stand: a later success on its
-/// aim, or, for a sandbox block, a sandbox ask's Allow, takes it out.
+/// aim, or, for a sandbox block, a sandbox ask's Allow, takes it out. Each keeps the first
+/// target its aim was blocked at, which its finish row names (T1-33).
 #[derive(Debug, Default)]
 struct Turn {
-    unresolved: Vec<Aim>,
+    unresolved: Vec<(Aim, Option<Target>)>,
 }
 
 impl Turn {
     fn blocked(&mut self, block: Block) {
+        let shown = block.target.clone();
         let target = block.target.filter(|_| block.args.is_none());
         let aim = Aim {
             source: block.source,
@@ -100,23 +112,35 @@ impl Turn {
             args: block.args,
             target,
         };
-        if !self.unresolved.contains(&aim) {
-            self.unresolved.push(aim);
+        if !self.unresolved.iter().any(|(held, _)| *held == aim) {
+            self.unresolved.push((aim, shown));
         }
     }
 
     fn came_back(&mut self, tool: &str, args: &str) {
         self.unresolved
-            .retain(|aim| !(aim.tool == tool && aim.args.as_deref() == Some(args)));
+            .retain(|(aim, _)| !(aim.tool == tool && aim.args.as_deref() == Some(args)));
     }
 
     /// A sandbox ask was allowed: every sandbox block of the turn is resolved, and no other.
     fn sandbox_allowed(&mut self) {
-        self.unresolved.retain(|aim| aim.source != Source::Sandbox);
+        self.unresolved
+            .retain(|(aim, _)| aim.source != Source::Sandbox);
     }
 
     fn count(&self) -> u32 {
         u32::try_from(self.unresolved.len()).unwrap_or(u32::MAX)
+    }
+
+    /// The unresolved blocks, as a finish names them.
+    fn named(&self) -> Vec<Unresolved> {
+        self.unresolved
+            .iter()
+            .map(|(aim, target)| Unresolved {
+                source: aim.source,
+                target: target.clone(),
+            })
+            .collect()
     }
 }
 
@@ -131,22 +155,23 @@ pub fn finishes(events: &[Event], chat: &str) -> Vec<Finish> {
         .filter(|event| event.chat.as_deref() == Some(chat))
     {
         let own = event.parent_run.is_none();
-        let ended = |how, blocked| Finish {
+        let ended = |how, blocked, unresolved| Finish {
             seq: event.seq,
             ulid: event.ulid.clone(),
             at_ms: super::written_at_ms(&event.ulid),
             how,
             blocked,
+            unresolved,
         };
         match event.kind.as_str() {
             PROMPT if own => turn = Turn::default(),
             TURN_ENDED if own => {
-                out.push(ended(How::Finished, turn.count()));
+                out.push(ended(How::Finished, turn.count(), turn.named()));
                 turn = Turn::default();
             }
             "run.ended" if own => {
                 if event.body.get("state").and_then(serde_json::Value::as_str) == Some("failed") {
-                    out.push(ended(How::Failed, 0));
+                    out.push(ended(How::Failed, 0, Vec::new()));
                 }
                 turn = Turn::default();
             }

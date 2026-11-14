@@ -623,6 +623,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Typed into a session as the person: one of the explorer's rows, as several are
     // (#1151), and the keys themselves.
     "reference_into_chat",
+    // A block's Tell the chat… (T1-33, Q267): one line of purlis's own, typed into the chat as
+    // the person's second press asks.
+    "tell_chat_blocked",
     "send_input",
     "send_input_bytes",
     // Quiet by hand, and a pane typed in (#6017): the person's own say over their notifications.

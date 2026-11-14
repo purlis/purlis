@@ -42,6 +42,9 @@ export type UpdateRow = {
   read?: () => void;
   /** Its source's own answers, in their order: a refused dispatch's three. */
   answers?: readonly UpdateAnswer[];
+  /** **A finish row's ways out** (T1-33, R-300): those of its turn's unresolved blocks, as
+   *  `BlockWaysOut` draws them on a block's Chat log row too. None of them allows. */
+  ways?: ReactNode;
   /** Put it away: and, where its source lists it, put away there too. */
   dismiss: () => void;
   /** What Dismiss does, as its tooltip, where it does more than put the update away. */
@@ -214,7 +217,7 @@ function UpdateItem({
   /** The ask of a clicked notification that opens this line in place, where one did (#6005). */
   opened?: number;
 }) {
-  const { update, go, more, report, read, answers = [], dismiss, dismissSays } = row;
+  const { update, go, more, report, read, answers = [], ways, dismiss, dismissSays } = row;
   const id = useId();
   const [said, setSaid] = useState<string>();
   /** Its report is open in place (#5651). */
@@ -381,6 +384,7 @@ function UpdateItem({
           </ButtonRow>
         </MessageForm>
       )}
+      {ways !== undefined && <MessageForm>{ways}</MessageForm>}
       <NothingDone said={said} />
     </MessageRow>
   );

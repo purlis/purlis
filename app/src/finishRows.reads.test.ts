@@ -17,6 +17,7 @@ const turn = (blocked: number): FinishedTurn => ({
   at: 1_700_000_000,
   failed: false,
   blocked,
+  blocks: [],
 });
 
 /** A store of one chat, whose moves the test makes. */

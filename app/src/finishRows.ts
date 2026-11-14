@@ -19,6 +19,7 @@
 import { useEffect, useState } from "react";
 import {
   commands,
+  type FinishedBlock,
   type FinishedTurn,
   type InboxUpdate,
   type PlaneId,
@@ -41,6 +42,15 @@ const BLOCKED_KEY = ":blocked";
 /** The key of `turn`'s row: the event that ended it, and whether a block stopped it. */
 const keyOf = (turn: FinishedTurn) =>
   `finish:${turn.session}:${turn.key}${!turn.failed && turn.blocked > 0 ? BLOCKED_KEY : ""}`;
+
+/** **The chats the finish rows `keys` stand for** (T1-33): a grouped row's every chat. */
+export function finishSessionsOf(
+  turns: readonly FinishedTurn[],
+  keys: readonly string[],
+): number[] {
+  const these = new Set(keys);
+  return [...new Set(turns.filter((turn) => these.has(keyOf(turn))).map((turn) => turn.session))];
+}
 
 /** **The finish rows of `turns`**, each named by its chat. */
 export function finishUpdates(
@@ -174,4 +184,28 @@ export function useFinishedTurns(plane: PlaneId, chats: Chats): readonly Finishe
     };
   }, [plane, store, chats.plane]);
   return held?.plane === plane ? held.turns : NONE;
+}
+
+/**
+ * **What the finish rows `keys` offer ways out of** (T1-33, R-300): the unresolved blocks of
+ * the turns they stand for, each once, a grouped row's every chat's. A failed run's row, or a
+ * turn with no block left, offers none.
+ */
+export function finishWaysOf(
+  turns: readonly FinishedTurn[],
+  keys: readonly string[],
+): FinishedBlock[] {
+  const these = new Set(keys);
+  const seen = new Set<string>();
+  const out: FinishedBlock[] = [];
+  for (const turn of turns) {
+    if (turn.failed || !these.has(keyOf(turn))) continue;
+    for (const block of turn.blocks) {
+      const said = JSON.stringify([block.source, block.target_kind, block.target]);
+      if (seen.has(said)) continue;
+      seen.add(said);
+      out.push(block);
+    }
+  }
+  return out;
 }

@@ -39,7 +39,7 @@ const update = (key: string, kind: InboxUpdate["kind"]): InboxUpdate => ({
 /** A turn of chat 3's that ended after a block still unresolved (T1-31), as its row is noted. */
 const STOPPED_AFTER_A_BLOCK: InboxUpdate = {
   ...finishUpdates(
-    [{ session: 3, key: "01TURN", at: 1_500, failed: false, blocked: 1 }],
+    [{ session: 3, key: "01TURN", at: 1_500, failed: false, blocked: 1, blocks: [] }],
     () => "steward 3",
   )[0],
   read: false,

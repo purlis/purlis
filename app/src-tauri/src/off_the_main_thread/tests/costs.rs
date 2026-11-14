@@ -564,6 +564,8 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "answer_pause",
             "ask_chat_restart",
             "keep_sandbox_block",
+            // A block's Tell the chat… (T1-33, Q267): purlis's own line, typed in turn.
+            "tell_chat_blocked",
         ],
     ),
     (
