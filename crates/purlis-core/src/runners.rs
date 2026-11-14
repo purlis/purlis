@@ -112,6 +112,9 @@ pub struct Pool {
     /// `remote-docker`, its route and pin, over SSH or Docker's TLS API (#6267). `None` is this
     /// machine's own Docker.
     remote: Option<RemoteEngine>,
+    /// **The Docker context its route was read from** (#6268, `dockerContext`), for doctor alone:
+    /// never followed, and no part of what defines the pool.
+    docker_context: Option<String>,
 }
 
 /// **The engine of a pool on another machine** (#6266, ADR 0123 §2–§3): the SSH route to it, and
@@ -250,6 +253,7 @@ impl Pool {
             profiles: None,
             refused_limits: Vec::new(),
             remote: None,
+            docker_context: None,
         })
     }
 
@@ -263,6 +267,20 @@ impl Pool {
     #[must_use]
     pub fn on_engine(self, remote: Option<RemoteEngine>) -> Pool {
         Pool { remote, ..self }
+    }
+
+    /// **This pool, its route read from the Docker context `name`** (#6268), or from none.
+    #[must_use]
+    pub fn from_docker_context(self, name: Option<String>) -> Pool {
+        Pool {
+            docker_context: name,
+            ..self
+        }
+    }
+
+    /// **The Docker context its route was read from**, where it was read from one (#6268).
+    pub fn docker_context(&self) -> Option<&str> {
+        self.docker_context.as_deref()
     }
 
     /// **Its SSH route and pin, where it is on another machine reached over SSH** (#6266). A pool
@@ -358,6 +376,8 @@ impl Pool {
         if let Some(fields) = row.as_object_mut() {
             fields.remove("pricePerHour");
             fields.remove("profiles");
+            // Where its route was read from decides nothing it runs on (#6268).
+            fields.remove("dockerContext");
             // These apply from the next attempt, so a change makes nothing again (Q13).
             for limit in crate::poollimits::all() {
                 if limit.takes_effect == crate::poollimits::TakesEffect::NextAttempt {
@@ -376,6 +396,7 @@ impl Pool {
             profiles: self.profiles.clone(),
             refused_limits: self.refused_limits.clone(),
             remote: self.remote.clone(),
+            docker_context: self.docker_context.clone(),
             ..Pool::new(&self.name, self.image.clone(), set)?
         })
     }
@@ -743,6 +764,24 @@ pub fn record_pool_locked(
         )));
     }
     held.pools.push(pool.clone());
+    write(config_root, &held)
+}
+
+/// **Keeps the pool `name` as it is** (#6268, ADR 0123 §7): it stays on its route, and forgets
+/// the Docker context it was read from, so doctor stops comparing them. Refused where no such
+/// pool is kept.
+pub fn forget_docker_context(config_root: &Path, name: &str) -> Result<(), Refused> {
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    let Some(pool) = held.pools.iter_mut().find(|pool| pool.name() == name) else {
+        return Err(Refused::Other(format!(
+            "no Docker pool named {} is on this machine",
+            crate::shown::short(name)
+        )));
+    };
+    if pool.docker_context.take().is_none() {
+        return Ok(());
+    }
     write(config_root, &held)
 }
 
@@ -2014,6 +2053,9 @@ fn pool_to_row(pool: &Pool) -> serde_json::Value {
         }
         None => {}
     }
+    if let (Some(name), true) = (pool.docker_context(), pool.on_another_machine()) {
+        row["dockerContext"] = name.into();
+    }
     row["image"] = pool.image().as_str().into();
     let set = pool.set();
     if let Some(millicpus) = set.millicpus {
@@ -2139,6 +2181,7 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         "identity",
         "pin",
         "tls",
+        "dockerContext",
     ];
     if fields
         .keys()
@@ -2152,7 +2195,8 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
             if !fields.contains_key("route")
                 && !fields.contains_key("pin")
                 && !fields.contains_key("identity")
-                && !fields.contains_key("tls") =>
+                && !fields.contains_key("tls")
+                && !fields.contains_key("dockerContext") =>
         {
             None
         }
@@ -2182,6 +2226,13 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
             Some(whole as u32)
         }
     };
+    let docker_context = match fields.get("dockerContext") {
+        None => None,
+        Some(name) => Some(name.as_str()?)
+            .filter(|name| crate::dockercontext::a_name(name))
+            .map(str::to_owned)
+            .map(Some)?,
+    };
     let name = text("name")?;
     // The same checks as the command's. A bad value costs that limit alone (#4381).
     let (chosen, refused_limits) = crate::poollimits::Chosen::read_row(fields, Some(name));
@@ -2206,6 +2257,7 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         .map(|pool| Pool {
             refused_limits,
             remote,
+            docker_context,
             ..pool
         })
 }

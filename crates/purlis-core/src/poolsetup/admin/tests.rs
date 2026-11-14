@@ -34,6 +34,7 @@ fn refused_the_rights() -> doctor::Report {
 fn on_the_cluster(report: doctor::Report) -> Facts {
     Facts {
         engine: Engine::Missing,
+        elsewhere: None,
         connect: None,
         pool: None,
         identity: Identity::None,

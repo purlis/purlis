@@ -19,6 +19,7 @@ import {
   type PoolNamedBy,
   type PoolProfiles as PoolProfilesAnswered,
   type PoolRemoved,
+  type PoolSetupPrefill,
   type PoolVersion,
   type PoolsShown,
   type RunnerImageOffered,
@@ -230,6 +231,31 @@ export function usePoolSetupStart(): SetupStart {
 export async function startANewPoolSetup(): Promise<void> {
   const said = await caught(commands.poolSetupAdd());
   startedSetup(said.status === "ok" && said.data === true);
+}
+
+/**
+ * **A machine picked on Connect** (#6268): the Docker context it was read from, read again by
+ * the core, or the route alone. Why not, if not.
+ */
+export async function pickPoolSetupMachine(prefill: PoolSetupPrefill): Promise<string | undefined> {
+  const said = await caught(
+    prefill.context !== null
+      ? commands.poolSetupDockerContext(prefill.context)
+      : commands.poolSetupMachine(prefill.route, null),
+  );
+  return said.status === "error" ? said.error : undefined;
+}
+
+/**
+ * **Connect again** (#6268, ADR 0123 §7): a new pool's setup on the machine a pool's Docker
+ * context names now, its Connect step filled in. The pool it came from stays as it is.
+ */
+export async function startPoolSetupOn(prefill: PoolSetupPrefill): Promise<string | undefined> {
+  const started = await caught(commands.poolSetupAdd());
+  if (started.status === "error") return started.error;
+  const why = await pickPoolSetupMachine(prefill);
+  startedSetup(started.data);
+  return why;
 }
 
 /** **Start over**: the unfinished setup is forgotten, and a pool it made stays. Why not, if not. */
