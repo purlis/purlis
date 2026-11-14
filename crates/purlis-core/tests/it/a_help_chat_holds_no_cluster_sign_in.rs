@@ -315,3 +315,97 @@ fn a_help_chat_is_not_started_again_in_a_project_without_the_sandbox() {
         "the project runs its chats unsandboxed"
     );
 }
+
+/// The session record the help chat writes, as `purlis session record` writes it from inside
+/// it: every fact in its frontmatter from the app's record of the chat
+/// ([`purlis_core::sessionrecord::chat_facts`]). Its plane-relative path.
+fn help_chats_session_record(root: &Path) -> String {
+    let chat = purlis_core::reopen::Chat {
+        identity: purlis_core::reopen::Identity {
+            id: Some("01K6E8ZK6V4Q9T0N3M2B1C5D7F".to_owned()),
+            ..Default::default()
+        },
+        ..help_chat(root)
+    };
+    let record = purlis_core::reopen::Record {
+        chats: vec![chat],
+        ..Default::default()
+    };
+    purlis_core::reopen::write(root, &record).expect("the record is written");
+    let facts = purlis_core::sessionrecord::Facts {
+        place: purlis_core::active::Place::PlaneRoot,
+        at: chrono::NaiveDate::from_ymd_opt(2026, 11, 14)
+            .unwrap()
+            .and_hms_opt(4, 0, 0)
+            .unwrap(),
+        chat: Some(purlis_core::sessionrecord::chat_facts(root, 1)),
+        persona: None,
+        pieces: Vec::new(),
+    };
+    let shown = purlis_core::sessionrecord::record(
+        root,
+        &purlis_core::sessionrecord::New {
+            title: "Why the Pool step failed",
+            body: "## Goal\n\ng\n\n## Done\n\nd\n\n## Decisions\n\nx\n\n## Open\n\no\n\n## \
+                   How to resume\n\nr\n",
+            facts: &facts,
+        },
+    )
+    .expect("the session record is written")
+    .shown;
+    // Once the chat is closed, the app's record of it is gone: only the session record is left.
+    purlis_core::reopen::write(root, &purlis_core::reopen::Record::default())
+        .expect("the record is written");
+    shown
+}
+
+/// **Resuming a help chat's session record starts it as a restart does** (#4497, story 60): held
+/// from every cluster, and recorded as a help chat, so its own later starts are held too.
+#[test]
+fn a_help_chat_resumed_from_its_session_record_is_held_as_at_its_first_start() {
+    purlis_core::unsteered!();
+    let Some(project) = Project::new(
+        "a_help_chat_holds_no_cluster_sign_in::a_help_chat_resumed_from_its_session_record_is_held_as_at_its_first_start",
+    ) else {
+        return;
+    };
+    let root = project.root();
+    let shown = help_chats_session_record(root);
+
+    let resumed = purlis_core::sessionresume::ready(root, &shown, "help.2", false)
+        .expect("the help chat resumes");
+    let applied = resumed.ready.sandbox.as_ref().expect("sandboxed");
+    assert_eq!(applied.level(), sandbox::Level::Full);
+    assert_eq!(held(applied), (false, true), "the help chat resumed");
+    assert!(
+        resumed.chat("help.2").held_from_clusters,
+        "the resumed chat is recorded as a help chat"
+    );
+}
+
+/// **A help chat is not resumed where the project now runs chats without the sandbox**, as its
+/// first start and a restart are refused there.
+#[test]
+fn a_help_chat_is_not_resumed_in_a_project_without_the_sandbox() {
+    purlis_core::unsteered!();
+    let Some(project) = Project::new(
+        "a_help_chat_holds_no_cluster_sign_in::a_help_chat_is_not_resumed_in_a_project_without_the_sandbox",
+    ) else {
+        return;
+    };
+    let root = project.root();
+    let shown = help_chats_session_record(root);
+    let local = root.join(profiles::LOCAL_FILE);
+    let text = fs::read_to_string(&local).unwrap_or_default();
+    fs::write(&local, format!("[sandbox]\nlevel = \"off\"\n\n{text}")).unwrap();
+    sandbox::personal::set_by_you(root, None, Some(sandbox::personal::Choice::Off))
+        .expect("your level");
+
+    let refused = purlis_core::sessionresume::ready(root, &shown, "help.2", false)
+        .expect_err("a help chat is not resumed without the sandbox");
+    if project.sandbox_only {
+        // A sandbox-only profile (Linux) starts no chat unsandboxed: it refuses in its own words.
+        return;
+    }
+    assert_eq!(refused, help::PROJECT_UNSANDBOXED);
+}

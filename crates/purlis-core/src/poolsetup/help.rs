@@ -48,7 +48,17 @@ pub fn ready_again(
     start: &crate::start::Start,
     root: &std::path::Path,
 ) -> Result<crate::start::Ready, String> {
-    if !chat.held_from_clusters {
+    ready_held(chat.held_from_clusters, start, root)
+}
+
+/// [`ready_again`] for a chat known only by whether it is a help chat (`held`): a **Resume** of
+/// its session record, which says so ([`crate::sessionrecord::Listed::held_from_clusters`]).
+pub fn ready_held(
+    held: bool,
+    start: &crate::start::Start,
+    root: &std::path::Path,
+) -> Result<crate::start::Ready, String> {
+    if !held {
         return crate::start::ready(start, root);
     }
     if start.without_sandbox.is_some() {
