@@ -252,13 +252,17 @@ import { usePersonaMarks } from "./usePersonaMarks";
 import { taskChangesTitle, taskChangesView } from "./taskChanges";
 import { heldFor as blockHeldFor, type HeldBlock, useSandboxBlocks } from "./sandboxBlocks";
 import {
+  CHAT_LOG_ANSWER,
   finishAsksOf,
+  finishKey,
   finishUpdates,
   finishWaysOf,
   groupedFinishes,
+  stoppedAfterBlock,
   useFinishedTurns,
 } from "./finishRows";
 import { FinishRowWays } from "./BlockWaysOut";
+import { openTheChatLogOf } from "./chatLog";
 import { taskBlockGroups, whoseOf, withoutGrouped, type TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksAnswered, TaskBlocksNotice } from "./TaskBlocksNotice";
 import {
@@ -775,10 +779,13 @@ import {
 } from "./seen";
 import {
   BlockedMarkers,
+  askToOpenChatLog,
   filterChatLog,
   markerOf,
   useBlockedMarkers,
   type BlockedMarkersHeld,
+  type ChatLogFilter,
+  whenAChatLogIsAsked,
 } from "./blockedMarkers";
 import { SeenRowsOf } from "./seenRows";
 import { listLinksOf } from "./paneLinksOpen";
@@ -10412,6 +10419,29 @@ export const PlaneView = memo(function PlaneView({
     pressNow.current = press;
   }, [by, press]);
   const pressTaskEnd = useCallback((offer: Offer) => pressNow.current(offer), []);
+  /**
+   * **Chat `session`'s Chat log, opened showing `filter`** (R-226): the press of its own row in
+   * the chat's list (`chat.log:<session>`), so every entry point opens it as that row does. One
+   * function for the life of the view, so a list that offers it is not drawn again with the
+   * catalogue. A chat the catalogue has no such row of opens nothing. It reads refs, so a
+   * control built while the view draws asks for it with askToOpenChatLog instead.
+   */
+  const openChatLog = useCallback(
+    (session: number, filter: ChatLogFilter) => {
+      filterChatLog(plane, session, filter);
+      const offer = byNow.current(chatLogId(session));
+      if (offer?.available === true) pressNow.current(offer);
+    },
+    [plane],
+  );
+  // A Chat log a control asked for while the view drew (askToOpenChatLog) opens here.
+  useEffect(
+    () =>
+      whenAChatLogIsAsked((asked, session, filter) => {
+        if (asked === plane) openChatLog(session, filter);
+      }),
+    [plane, openChatLog],
+  );
   /** A link out of Settings (#1387, #1388): the catalogue's row it names, run as the palette
    *  runs it. One the catalogue does not hold now does nothing. */
   useEffect(() => {
@@ -11403,11 +11433,7 @@ export const PlaneView = memo(function PlaneView({
       of: (session) =>
         seen === undefined ? undefined : markerOf(blocksCounted.get(session), seen),
       // **It opens the Chat log, filtered to blocks** (R-301), as its row in the chat's list does.
-      open: (session) => {
-        filterChatLog(plane, session, "blocks");
-        const offer = offers.find((one) => one.id === chatLogId(session));
-        if (offer?.available === true) press(offer);
-      },
+      open: (session, filter = "blocks") => openChatLog(session, filter),
       // **Its Chat log opened is a look** (R-175).
       look: (session) => {
         if (!blocksCounted.has(session)) return false;
@@ -11416,7 +11442,7 @@ export const PlaneView = memo(function PlaneView({
         return true;
       },
     }),
-    [blocksCounted, blocksLooks, offers, plane, press, see, seen],
+    [blocksCounted, blocksLooks, openChatLog, see, seen],
   );
   const [noticeCauses, setNoticeCauses] = useState<readonly string[]>([]);
   useEffect(() => {
@@ -11494,6 +11520,10 @@ export const PlaneView = memo(function PlaneView({
         ? undefined
         : groupedFinishes(keptUpdates, new Set(finishAsks.keys()));
     const members = new Map(grouped?.map(({ update, keys }) => [update.key, keys]));
+    // Each finish row's chat, by the finish the core answers now (R-226): a row kept from
+    // before a restart names the number its chat had then, which another chat may have now.
+    const finishedBy = new Map(finishedTurns.map((turn) => [finishKey(turn), turn.session]));
+    const namedIn = new Map(keptUpdates?.map((one) => [one.key, one.chain.at(-1)]));
     const each = (keys: readonly string[]) => keys.flatMap((key) => members.get(key) ?? [key]);
     const rows = grouped?.map(({ update, keys }): UpdateRow => {
       const read = () => settleUpdates(keys, "read");
@@ -11602,6 +11632,39 @@ export const PlaneView = memo(function PlaneView({
             : "Put this update away, and the chat's needs-you item with it",
         };
       }
+      // **A block result opens its chat's Chat log** (R-226): the turn's finish row that ended
+      // with a block unresolved, at its blocks, as the marker does (R-301). A row that stands
+      // for several chats (R-181) offers each of them its own.
+      const blockedChats = stoppedAfterBlock(update)
+        ? [
+            ...new Map(
+              keys.flatMap((key) => {
+                const chat = finishedBy.get(key);
+                return chat !== undefined && open(chat) !== undefined
+                  ? [[chat, chatNames.get(chat) ?? namedIn.get(key) ?? "this chat"] as const]
+                  : [];
+              }),
+            ),
+          ]
+        : [];
+      if (blockedChats.length > 0)
+        return {
+          update,
+          go,
+          read,
+          dismiss: put,
+          // Built here, not by a helper: what it presses reads refs, so it is handed to no
+          // function while the view draws (react-hooks/refs).
+          answers: blockedChats.map(([chat, name]) => ({
+            ...CHAT_LOG_ANSWER,
+            name: openTheChatLogOf(name),
+            press: () => {
+              askToOpenChatLog(plane, chat, "blocks");
+              read();
+              return undefined;
+            },
+          })),
+        };
       // A finished task opens in place to show its report, or why it failed (#5651).
       const report = task?.report.trim() ? task.report : undefined;
       return { update, go, report, read, dismiss: put, ways };
@@ -11638,6 +11701,7 @@ export const PlaneView = memo(function PlaneView({
     };
   }, [
     keptUpdates,
+    finishedTurns,
     finishAsks,
     finishedTurns,
     nameOf,

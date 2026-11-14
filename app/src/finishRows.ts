@@ -33,6 +33,7 @@ import {
 } from "./bindings";
 import { answerThrough } from "./asks";
 import type { ChatStates, Chats } from "./chatState";
+import { OPEN_THE_CHAT_LOG, openTheChatLogOf } from "./chatLog";
 import type { UpdateAnswer } from "./InboxUpdatesList";
 import { allowsNextTime, waysOut } from "./blockWays";
 
@@ -48,8 +49,12 @@ export const FAILED = "Failed";
 /** The end of a finish row's key whose turn ended after a block. */
 const BLOCKED_KEY = ":blocked";
 
-/** The key of `turn`'s row: the event that ended it, and whether a block stopped it. */
-const keyOf = (turn: FinishedTurn) =>
+/**
+ * **The key of `turn`'s row**: its chat's number, the event that ended it, and whether a block
+ * stopped it. The event is the chat's own (the core finds it through the chat's logged id), so
+ * a kept row whose key no finish answered now has is of a chat not open here under that number.
+ */
+export const finishKey = (turn: FinishedTurn) =>
   `finish:${turn.session}:${turn.key}${!turn.failed && turn.blocked > 0 ? BLOCKED_KEY : ""}`;
 
 /**
@@ -68,7 +73,7 @@ export function finishWaysTo(
   const allow: { session: number; target: string }[] = [];
   let go: number | undefined;
   for (const turn of turns) {
-    if (turn.failed || !these.has(keyOf(turn))) continue;
+    if (turn.failed || !these.has(finishKey(turn))) continue;
     const ways = waysOut(turn.blocks);
     if (ways.includes("tell") && !tell.includes(turn.session)) tell.push(turn.session);
     if (ways.includes("go") && go === undefined) go = turn.session;
@@ -114,7 +119,7 @@ export function finishUpdates(
   asks: readonly Shown[] = [],
 ): UpdateNoted[] {
   return withAnEndFor(turns, asks).map((turn) => ({
-    key: keyOf(turn),
+    key: finishKey(turn),
     kind: turn.failed ? "chat-failed" : "turn-finished",
     at: turn.at,
     session: turn.session,
@@ -159,7 +164,7 @@ export function finishAsksOf({
   for (const ask of asks) {
     const turn = newest.get(ask.session);
     if (turn === undefined) continue;
-    const key = keyOf(turn);
+    const key = finishKey(turn);
     const row = on.get(key) ?? { more: [], answers: [] };
     const what = ask.answer.via === "trust-clone" ? ask.answer.folder : ask.says;
     row.more.push(ask.says);
@@ -223,6 +228,28 @@ export function finishRowsOf({
 /** **Whether `update` is a finish row whose turn ended after a block** (R-182). */
 export const stoppedAfterBlock = (update: Pick<InboxUpdate, "kind" | "key">): boolean =>
   update.kind === "turn-finished" && update.key.endsWith(BLOCKED_KEY);
+
+/** What every block result's way to its Chat log says, whatever chat it names (R-226). */
+export const CHAT_LOG_ANSWER = {
+  label: OPEN_THE_CHAT_LOG,
+  title: "See what was blocked, in its chat log.",
+} as const;
+
+/**
+ * **A block result's way to its chat's Chat log** (R-226, T1-37): the answer of a finish row
+ * whose turn ended after a block ({@link stoppedAfterBlock}), naming the chat called `name`.
+ * `open` opens that chat's Chat log at its blocks.
+ */
+export function chatLogAnswer(name: string, open: () => void): UpdateAnswer {
+  return {
+    ...CHAT_LOG_ANSWER,
+    name: openTheChatLogOf(name),
+    press: () => {
+      open();
+      return undefined;
+    },
+  };
+}
 
 /** A row as Updates lists it, and every update it stands for. */
 export type Grouped = { update: InboxUpdate; keys: readonly string[] };
@@ -352,7 +379,7 @@ export function finishWaysOf(
   const seen = new Set<string>();
   const out: FinishedBlock[] = [];
   for (const turn of turns) {
-    if (turn.failed || !these.has(keyOf(turn))) continue;
+    if (turn.failed || !these.has(finishKey(turn))) continue;
     for (const block of turn.blocks) {
       const said = JSON.stringify([
         block.source,

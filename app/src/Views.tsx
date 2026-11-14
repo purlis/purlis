@@ -150,7 +150,7 @@ import {
   type ViewRef,
 } from "./tabs";
 import { VaultTab } from "./VaultTab";
-import { listedMemoryOffers, memoryKeyRun, toKeep, type Offer } from "./actions";
+import { chatLogId, listedMemoryOffers, memoryKeyRun, toKeep, type Offer } from "./actions";
 import { factsChanged } from "./extensionFacts";
 import { onExtensionsChanged } from "./extensionsOn";
 import { ViewOpenButton } from "./ViewOpen";
@@ -942,7 +942,16 @@ export function ViewPane({
           /* A session record (SI-8d): read-only Markdown the window renders from the core's
              `session_record`, keyed by the record so a pane that comes to show another starts
              from its own read. */
-          <SessionRecordTab key={`${plane}\u0000${view.key}`} plane={plane} path={view.key} />
+          <SessionRecordTab
+            key={`${plane}\u0000${view.key}`}
+            plane={plane}
+            path={view.key}
+            chatNamed={(session) => {
+              // Its chat's Chat log, where the window has its row (R-226): by the chat's name.
+              const offer = offerFor?.(chatLogId(session));
+              return offer?.available === true ? offer.name : undefined;
+            }}
+          />
         ) : todoAt !== undefined ? (
           /* A todo (#1214): its facts and its whole text, read again when the plane changes,
              keyed by the todo so a pane that comes to show another starts from its own read. */

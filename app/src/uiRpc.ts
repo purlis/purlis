@@ -1125,6 +1125,8 @@ export const commands = {
 	 *  and for a record another machine wrote.
 	 */
 	dispatches: DispatchMade[],
+	/**  The number of the chat that wrote it, where that chat is open here (R-226). */
+	session: number | null,
 } | null, string>(__TAURI_INVOKE("session_record", { plane, path })),
 	/**
 	 *  Every dispatch of the project purlis draws, newest first, for its Dispatches tab (#1452):
@@ -4078,6 +4080,8 @@ export type BlockedLately = {
 	said: string,
 	/**  The chat it was, by the name it was shown under, where the record has it. */
 	chat: string | null,
+	/**  Its chat's number, where that chat is open here: what its Chat log opens by (R-226). */
+	session: number | null,
 	/**  When it was last refused, in seconds since 1970. */
 	at: number,
 	/**  How many times it was refused in the record. */
@@ -14201,6 +14205,8 @@ export type SessionRecordView = {
 	 *  and for a record another machine wrote.
 	 */
 	dispatches: DispatchMade[],
+	/**  The number of the chat that wrote it, where that chat is open here (R-226). */
+	session: number | null,
 };
 
 /**  What a save is: Edit as TOML's whole text, or a form's changes to the text it was read as. */

@@ -909,12 +909,19 @@ pub(crate) struct SessionRecordView {
     /// them: persona, task and outcome, from this machine's dispatch records. Empty for none,
     /// and for a record another machine wrote.
     pub dispatches: Vec<crate::dispatches::DispatchMade>,
+    /// The number of the chat that wrote it, where that chat is open here (R-226).
+    pub session: Option<u32>,
 }
 
 /// The record at `path`, or charter's sentence saying why not. `Ok(None)` is a record that is
 /// not there any more — a tab put back at a launch can name one — which the window draws as a
-/// view whose source has gone, not as a failure.
-pub(crate) fn session_record(root: &Path, path: &str) -> Result<Option<SessionRecordView>, String> {
+/// view whose source has gone, not as a failure. Its chat is named by the number `session_of`
+/// finds its id open under, where the record names its chat by id.
+pub(crate) fn session_record(
+    root: &Path,
+    path: &str,
+    session_of: &dyn Fn(&str) -> Option<u32>,
+) -> Result<Option<SessionRecordView>, String> {
     let (place, file) = sessionrecord::locate(path)?;
     let Some(dir) = sessionrecord::dir(root, &place) else {
         return Err(format!("no workspace '{}'", place.word()));
@@ -949,6 +956,7 @@ pub(crate) fn session_record(root: &Path, path: &str) -> Result<Option<SessionRe
         // With no chat counted as open: the command that answers the window fills these in
         // from the chats it holds (`dispatches::made_by`).
         dispatches: crate::dispatches::made_on(root, path, &[]),
+        session: opened.listed.chat_id.as_deref().and_then(session_of),
     }))
 }
 

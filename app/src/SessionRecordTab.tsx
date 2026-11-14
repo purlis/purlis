@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useMemo, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import Markdown, { type Components } from "react-markdown";
 import { LoaderCircle } from "lucide-react";
 import { EmptyState } from "./ui/empty-state/EmptyState";
@@ -14,6 +14,8 @@ import { jumpTo } from "./fileJump";
 import { codeSpans, recordRef, type RecordRef } from "./recordRefs";
 import { ToYourEditor } from "./editor/ToYourEditor";
 import { Button } from "./ui/button/Button";
+import { BlockedMarkers } from "./blockedMarkers";
+import { OPEN_THE_CHAT_LOG, openTheChatLogOf } from "./chatLog";
 
 /**
  * **One session record, in a tab of its own** (SI-8d): what a chat wrote of its session when it
@@ -34,8 +36,23 @@ import { Button } from "./ui/button/Button";
  * file of the record's workspace (`recordRefs.ts`, D-984-3) is a button that jumps to it in the
  * light editor at its line (`fileJump.ts`), and the files named are listed after the record,
  * each with *Open in your editor* at that line. A plane-root record names none.
+ *
+ * **The record's chat's Chat log opens from it** (R-226, T1-37): where the core names the chat
+ * that wrote it by its number here (`session`, a chat open in this window) and `chatNamed` finds
+ * that chat's Chat log row, *Open the chat log* follows the facts. A record of a chat that has
+ * closed has none.
  */
-export function SessionRecordTab({ plane, path }: { plane: PlaneId; path: string }) {
+export function SessionRecordTab({
+  plane,
+  path,
+  chatNamed,
+}: {
+  plane: PlaneId;
+  path: string;
+  /** The name of chat `session`, where the window can open its Chat log. */
+  chatNamed?: (session: number) => string | undefined;
+}) {
+  const openChatLog = useContext(BlockedMarkers).open;
   const [said, setSaid] = useState<{ record?: SessionRecordView | null; trouble?: string }>();
   /** Bumped by Read again: the tab reads once when it opens (NO-8's follow-up, #1296). */
   const [again, setAgain] = useState(0);
@@ -97,6 +114,8 @@ export function SessionRecordTab({ plane, path }: { plane: PlaneId; path: string
     );
   }
   const { row } = record;
+  const writer = record.session;
+  const writerName = writer === null ? undefined : chatNamed?.(writer);
   return (
     <>
       <Facts
@@ -131,6 +150,15 @@ export function SessionRecordTab({ plane, path }: { plane: PlaneId; path: string
           ],
         }}
       />
+      {writer !== null && writerName !== undefined && (
+        <Button
+          variant="ghost"
+          aria-label={openTheChatLogOf(writerName)}
+          onPress={() => openChatLog(writer, "all")}
+        >
+          {OPEN_THE_CHAT_LOG}
+        </Button>
+      )}
       {record.dispatches.length > 0 && (
         /* What this chat handed to other chats before it wrote the record (#1452): from this
            machine's dispatch records, so a record another machine wrote lists none. */

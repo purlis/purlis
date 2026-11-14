@@ -351,6 +351,16 @@ pub fn answer(
         // merges nothing for it; it answers before it reads the forge, and holds the ask for
         // the person once it has.
         Ask::Merge(merge) => crate::mergeholds::asked(&held.weak(), &merge),
+        // Whether the asking chat is attended, by the fact this app holds for it (T1-18,
+        // R-109): what A4 reads. No ticket, for the record's reason: the line names only the
+        // chat whose token it carries, and what it says can only lower the answer, never the
+        // fact, which only the reports the board takes move.
+        Ask::Attendance(asked) => Answer::Attended {
+            attended: held.chats().attendance_of(asked.chat).is_some_and(|fact| {
+                fact.hearing(asked.unattended, asked.claude_code_mode)
+                    == purlis_core::dispatchunattended::Attendance::Attended
+            }),
+        },
         // A brokered git action (#1335): no ticket, for the record's reason — the line names
         // only the chat whose token it carries, and what it asks is checked against the app's
         // record of that chat.

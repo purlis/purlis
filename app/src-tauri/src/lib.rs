@@ -1231,7 +1231,9 @@ async fn session_record(
 ) -> Result<Option<panels::SessionRecordView>, String> {
     let held = planes.held(&plane)?;
     off_the_window("reading the session record", move || {
-        let mut view = panels::session_record(held.root(), &path)?;
+        // Its chat, where it is open here: the record's tab opens its Chat log (R-226).
+        let mut view =
+            panels::session_record(held.root(), &path, &|id| held.chats().session_of_id(id))?;
         // A dispatch that has not ended is running only where its chat is open, which the project
         // this app holds knows and the files do not (#1457).
         if let Some(view) = view.as_mut() {

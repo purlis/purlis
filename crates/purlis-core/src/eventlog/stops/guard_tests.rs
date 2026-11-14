@@ -120,6 +120,7 @@ impl Case {
             launched: Launched {
                 sandboxed: self.sandboxed,
                 chat_dir: chat_dir.as_deref(),
+                attendance: None,
             },
         };
         let cwd = self.cwd.display().to_string();

@@ -384,7 +384,7 @@ function UpdateItem({
           >
             {answers.map((answer) => (
               <Button
-                key={answer.label}
+                key={answer.name}
                 // An answer that allows is a grant, drawn as every grant is (ADR 0097 §6).
                 variant={answer.allows ? "grants" : "secondary"}
                 className={answer.allows ? "inbox-answer allows" : "inbox-answer"}

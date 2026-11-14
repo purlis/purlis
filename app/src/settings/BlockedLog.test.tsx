@@ -28,6 +28,7 @@ const NETWORK: SandboxNetwork = {
       looked_up: null,
       said: "blocked by the sandbox",
       chat: "fix the build",
+      session: null,
       at: 1_790_000_000,
       times: 1,
       reached: false,

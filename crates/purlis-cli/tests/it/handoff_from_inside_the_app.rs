@@ -273,7 +273,8 @@ fn opens_as_nine(tickets: &Tickets, connection: u64, ask: Ask) -> Answer {
         | Ask::ThemePreview(_)
         | Ask::ThemeDraft(_)
         | Ask::Prompt(_)
-        | Ask::Merge(_) => Answer::No {
+        | Ask::Merge(_)
+        | Ask::Attendance(_) => Answer::No {
             why: "not a handoff".to_owned(),
         },
     }

@@ -61,6 +61,7 @@ function record(place: string, body: string): SessionRecordView {
     persona_hosts_locked: null,
     persona_hosts_wait: false,
     dispatches: [],
+    session: null,
   };
 }
 
