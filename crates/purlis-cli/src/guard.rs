@@ -113,9 +113,13 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
     // What the app told this chat at its start: whether it was given a sandbox, and the folder
     // it was started in (#1345). A harness the app did not start has neither.
     let chat_dir = std::env::var(purlis_core::sandboxblock::CHAT_DIR_ENV).ok();
+    // Whether a person is at the chat, by the fact the app holds for it (R-109): asked only of
+    // a line A4 would refuse unattended, and only in a chat the app started, which has a fact.
+    let asked_attendance = || attendance_of_this_chat(permission_mode.as_deref());
     let launched = Launched {
         sandboxed: purlis_core::sandbox::chat_is_sandboxed(),
         chat_dir: chat_dir.as_deref(),
+        attendance: crate::session::chat_number().map(|_| toolgate::Attending(&asked_attendance)),
     };
     let plane = found.as_ref().map(|found| Plane {
         root: &found.root,
@@ -138,8 +142,8 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
     }
     // The merge hold (R-114, R-115): in a chat the app started, a merge is refused to the chat
     // in any mode, and its request is handed to the app, which asks the person. After the
-    // refusals, so A4 still answers an unattended merge in its own words (its precedence is
-    // read with attendance, R-145).
+    // refusals, and ahead of A4, which leaves a merge the hold stands for to it, attended or not
+    // (R-145).
     if let Some(verdict) = held_merge(&command, &cwd) {
         return crate::hooks::Answered::of(Answer::Deny(verdict));
     }
@@ -163,6 +167,37 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
         return crate::hooks::Answered::of(Answer::Deny(toolgate::too_deep()));
     }
     crate::hooks::Answered::of(allowed.map_or(Answer::Nothing, Answer::Say))
+}
+
+/// How long the guard waits for the app to say whether this chat is attended (R-109): the app
+/// answers from what it holds, so this is the time a slow app may take, inside the hook's
+/// [`BUDGET`].
+const ATTENDANCE_IS_ANSWERED_WITHIN: Duration = Duration::from_millis(500);
+
+/// **This chat's attendance fact, as the app holds it** (R-109, T1-18,
+/// [`purlis_core::attendance::Fact`]), as it would stand once the app heard what this line's
+/// payload says (`permission_mode`). **Unattended unless the app says attended**: no app, an
+/// app older than the ask, a refusal and a wait past [`ATTENDANCE_IS_ANSWERED_WITHIN`] all read
+/// as unattended, so A4 never takes a chat for attended where its fact may say otherwise.
+fn attendance_of_this_chat(
+    permission_mode: Option<&str>,
+) -> purlis_core::dispatchunattended::Attendance {
+    use purlis_core::dispatchunattended::Attendance;
+    use purlis_core::hookwire::{Answer, Ask, AttendanceAsk};
+    let answer = crate::brokered::asked(
+        |chat| {
+            Ask::Attendance(AttendanceAsk::read(
+                chat,
+                permission_mode,
+                &purlis_core::envvar::var,
+            ))
+        },
+        ATTENDANCE_IS_ANSWERED_WITHIN,
+    );
+    match answer {
+        Ok(Ok(Answer::Attended { attended: true })) => Attendance::Attended,
+        _ => Attendance::Unattended,
+    }
 }
 
 /// How long the guard waits for the app to take a held merge: the app reads the request from
