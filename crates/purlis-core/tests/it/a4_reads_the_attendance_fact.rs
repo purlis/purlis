@@ -91,12 +91,12 @@ fn a4_denies_an_unattended_chat_whatever_the_harness_mode() {
         }
     }
     // Attended, a mode that skips the person's prompts is A4's attended rule: the floor does
-    // not refuse what the fact says a person watches. Codex reports its bypass on every line
-    // (R-289), and A4 keys on nothing but the fact.
+    // not refuse what the fact says a person watches. A line's own bypass bit is the one thing
+    // that still lowers it for that line (Q275), as the next test says.
     let attended = Fact::at_start(Begun::Person, Some(Harness::Codex), &[]);
     assert_eq!(attended.attendance(), Attendance::Attended);
     for harness in HARNESSES {
-        for mode in [Some("bypassPermissions"), Some("auto"), Some("never")] {
+        for mode in [Some("auto"), Some("acceptEdits"), Some("never"), None] {
             assert_eq!(
                 refused_by(RELEASE, Some(attended.attendance()), harness, mode),
                 None,
@@ -113,6 +113,39 @@ fn a4_denies_an_unattended_chat_whatever_the_harness_mode() {
     assert_eq!(
         refused_by(RELEASE, None, Some("claude"), Some("default")),
         None
+    );
+}
+
+/// Q275: on every harness, a line's own bypass bit lowers A4's answer for that line. R-289 keeps
+/// a mode the harness doesn't measure from raising anything, and never keeps this bit from
+/// lowering: a `claude --permission-mode bypassPermissions` nested in an attended Codex chat may
+/// not publish.
+#[test]
+fn an_attended_codex_chat_running_a_nested_bypass_publish_is_refused() {
+    purlis_core::unsteered!();
+    let attended = Fact::at_start(Begun::Person, Some(Harness::Codex), &[]);
+    assert_eq!(attended.attendance(), Attendance::Attended);
+    for harness in HARNESSES {
+        assert_eq!(
+            refused_by(
+                RELEASE,
+                Some(attended.attendance()),
+                harness,
+                Some("bypassPermissions")
+            ),
+            Some(Arm::ReleaseFloor),
+            "an attended {harness:?} chat's bypass line published"
+        );
+    }
+    // The bit lowers and never raises: the same line in an unattended chat is refused as before.
+    assert_eq!(
+        refused_by(
+            RELEASE,
+            Some(Attendance::Unattended),
+            Some("codex"),
+            Some("default")
+        ),
+        Some(Arm::ReleaseFloor)
     );
 }
 
