@@ -112,6 +112,7 @@ const SIGN_INS: PoolSetupStep = {
   cause: null,
   checks: [],
   admin: null,
+  prefill: null,
 };
 
 const go = async (name: string) =>
