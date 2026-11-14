@@ -91,10 +91,18 @@ fn a4_denies_an_unattended_chat_whatever_the_harness_mode() {
         }
     }
     // Attended, a mode that skips the person's prompts is A4's attended rule: the floor does
-    // not refuse what the fact says a person watches. A line's own bypass bit is the one thing
-    // that still lowers it for that line (Q275), as the next test says.
+    // not refuse what the fact says a person watches. Codex reports its bypass on every line
+    // (R-289), and on Codex A4 keys on nothing but the fact. A line's own bypass bit lowers it
+    // only on a harness whose mode purlis can check (Q276), as the next tests say.
     let attended = Fact::at_start(Begun::Person, Some(Harness::Codex), &[]);
     assert_eq!(attended.attendance(), Attendance::Attended);
+    for mode in [Some("bypassPermissions"), Some("auto"), Some("never")] {
+        assert_eq!(
+            refused_by(RELEASE, Some(attended.attendance()), Some("codex"), mode),
+            None,
+            "an attended Codex chat reporting {mode:?} was refused"
+        );
+    }
     for harness in HARNESSES {
         for mode in [Some("auto"), Some("acceptEdits"), Some("never"), None] {
             assert_eq!(
@@ -116,16 +124,35 @@ fn a4_denies_an_unattended_chat_whatever_the_harness_mode() {
     );
 }
 
-/// Q275: on every harness, a line's own bypass bit lowers A4's answer for that line. R-289 keeps
-/// a mode the harness doesn't measure from raising anything, and never keeps this bit from
-/// lowering: a `claude --permission-mode bypassPermissions` nested in an attended Codex chat may
-/// not publish.
+/// Q276: Codex reports `bypassPermissions` on every line (R-289), so on Codex the bit is no
+/// fact: an attended Codex chat's publish, its payload saying bypassPermissions, is let through.
 #[test]
-fn an_attended_codex_chat_running_a_nested_bypass_publish_is_refused() {
+fn an_attended_codex_chats_publish_in_its_reported_bypass_is_let_through() {
     purlis_core::unsteered!();
     let attended = Fact::at_start(Begun::Person, Some(Harness::Codex), &[]);
     assert_eq!(attended.attendance(), Attendance::Attended);
-    for harness in HARNESSES {
+    assert_eq!(
+        refused_by(
+            RELEASE,
+            Some(attended.attendance()),
+            Some("codex"),
+            Some("bypassPermissions")
+        ),
+        None,
+        "an attended Codex chat could not publish"
+    );
+}
+
+/// Q276: on a harness whose mode purlis can check, Claude Code's, a line's own bypass bit
+/// lowers A4's answer for that line: an attended Claude Code chat's line in bypassPermissions
+/// may not publish, by the registry's name, the kind's word, or none (a terminal's own Claude
+/// Code).
+#[test]
+fn an_attended_claude_code_chats_line_in_bypass_permissions_is_refused() {
+    purlis_core::unsteered!();
+    let attended = Fact::at_start(Begun::Person, Some(Harness::ClaudeCode), &[]);
+    assert_eq!(attended.attendance(), Attendance::Attended);
+    for harness in [Some("claude-code"), Some("claude"), None] {
         assert_eq!(
             refused_by(
                 RELEASE,
@@ -137,16 +164,22 @@ fn an_attended_codex_chat_running_a_nested_bypass_publish_is_refused() {
             "an attended {harness:?} chat's bypass line published"
         );
     }
-    // The bit lowers and never raises: the same line in an unattended chat is refused as before.
-    assert_eq!(
-        refused_by(
-            RELEASE,
-            Some(Attendance::Unattended),
-            Some("codex"),
-            Some("default")
-        ),
-        Some(Arm::ReleaseFloor)
-    );
+}
+
+/// Q276: elsewhere A4 reads the held fact alone, and a Codex chat nobody is at is still
+/// refused, because its fact says so, whatever its line reports.
+#[test]
+fn an_unattended_codex_chat_is_refused_a_publish() {
+    purlis_core::unsteered!();
+    let unattended = Fact::at_start(Begun::Task, Some(Harness::Codex), &[]);
+    assert_eq!(unattended.attendance(), Attendance::Unattended);
+    for mode in [Some("bypassPermissions"), Some("default"), None] {
+        assert_eq!(
+            refused_by(RELEASE, Some(unattended.attendance()), Some("codex"), mode),
+            Some(Arm::ReleaseFloor),
+            "an unattended Codex chat reporting {mode:?} published"
+        );
+    }
 }
 
 #[test]

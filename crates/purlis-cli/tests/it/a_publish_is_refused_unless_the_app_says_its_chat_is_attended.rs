@@ -1,11 +1,12 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **A4 asks the app whether its chat is attended** (T1-18, #6409; R-109, R-145; Q275), through
+//! **A4 asks the app whether its chat is attended** (T1-18, #6409; R-109, R-145; Q275, Q276), through
 //! the real `purlis hook pretooluse` of a chat the app started. The hook asks the app of a line
 //! A4 would refuse unattended, and takes the chat for attended only where the app says so: no
-//! app, and an app that refuses the ask, both read as unattended. A line's own bypass bit lowers
-//! the answer for that line whatever the app says. A merge the hold stands for is the hold's,
+//! app, and an app that refuses the ask, both read as unattended. On Claude Code, whose mode purlis
+//! can check, a line's own bypass bit lowers the answer for that line whatever the app says; on
+//! Codex, which reports the bypass on every line, it does not (Q276). A merge the hold stands for is the hold's,
 //! never A4's, in the bypass too.
 //!
 //! The app here is a listener that answers the attendance ask as a test sets it, and a merge
@@ -150,9 +151,14 @@ impl Chat {
         }
     }
 
-    /// The `permissionDecisionReason` the chat's hook printed for `command` in `mode`, or
-    /// `None` where it did not deny.
+    /// The `permissionDecisionReason` the chat's Claude Code hook printed for `command` in
+    /// `mode`, or `None` where it did not deny.
     fn denial(&self, command: &str, mode: &str) -> Option<String> {
+        self.denial_on("claude-code", command, mode)
+    }
+
+    /// [`Self::denial`], in a chat on the harness the registry names `harness`.
+    fn denial_on(&self, harness: &str, command: &str, mode: &str) -> Option<String> {
         let payload = serde_json::json!({
             "session_id": "11111111-2222-4333-8444-555555555555",
             "cwd": ".",
@@ -168,7 +174,7 @@ impl Chat {
             .env_clear()
             .env("CHARTER_ROOT", &self.root)
             .env("HOME", &self.home)
-            .env("CHARTER_HARNESS", "claude-code")
+            .env("CHARTER_HARNESS", harness)
             .env("PATH", "/usr/bin:/bin")
             .env(SOCKET_ENV, &self.socket)
             .env(CHAT_ENV, CHAT.to_string())
@@ -240,15 +246,41 @@ fn a_publish_is_let_through_only_where_the_app_says_the_chat_is_attended() {
     assert_eq!(chat.attendance_asked(), 3, "the app was asked each time");
 }
 
-/// Q275: a line's own bypass bit lowers A4's answer for that line, whatever the app says of the
-/// chat: a harness nested in an attended chat, its prompts off, may not publish.
+/// Q276: Codex reports `bypassPermissions` on every line, so an attended Codex chat's publish,
+/// its payload saying bypassPermissions, is let through.
 #[test]
-fn a_bypass_line_in_an_attended_chat_is_refused_a_publish() {
+fn an_attended_codex_chats_publish_in_its_reported_bypass_is_let_through() {
+    purlis_core::unsteered!();
+    let chat = Chat::answered(Answer::Attended { attended: true });
+    assert_eq!(
+        chat.denial_on("codex", RELEASE, "bypassPermissions"),
+        None,
+        "an attended Codex chat could not publish"
+    );
+    assert_eq!(chat.attendance_asked(), 1, "the app was asked");
+}
+
+/// Q276: on Claude Code, whose mode purlis can check, a line's own bypass bit lowers A4's
+/// answer for that line, whatever the app says of the chat.
+#[test]
+fn an_attended_claude_code_chats_line_in_bypass_permissions_is_refused_a_publish() {
     purlis_core::unsteered!();
     let chat = Chat::answered(Answer::Attended { attended: true });
     let reason = chat
-        .denial(RELEASE, "bypassPermissions")
+        .denial_on("claude-code", RELEASE, "bypassPermissions")
         .expect("a bypass line is refused");
+    assert!(reason.contains(A4_SAYS), "{reason}");
+    assert_eq!(chat.rule().as_deref(), Some(REASON_RELEASE_FLOOR));
+}
+
+/// Q276: a Codex chat the app says nobody is at is refused a publish, whatever its line reports.
+#[test]
+fn an_unattended_codex_chat_is_refused_a_publish() {
+    purlis_core::unsteered!();
+    let chat = Chat::answered(Answer::Attended { attended: false });
+    let reason = chat
+        .denial_on("codex", RELEASE, "bypassPermissions")
+        .expect("an unattended Codex chat is refused");
     assert!(reason.contains(A4_SAYS), "{reason}");
     assert_eq!(chat.rule().as_deref(), Some(REASON_RELEASE_FLOOR));
 }
