@@ -228,7 +228,7 @@ export function Extensions({
 
       {listed?.unreadable && (
         <>
-          <p className="came-back">
+          <p className="came-back ui-text-secondary">
             purlis could not read this machine&rsquo;s extension record, so nothing an extension
             declares is in force: {listed.unreadable}
           </p>
@@ -244,7 +244,7 @@ export function Extensions({
         </>
       )}
 
-      <h3>purlis&rsquo;s own themes</h3>
+      <h3 className="ui-text-heading">purlis&rsquo;s own themes</h3>
       <ul className="contributes">
         {(listed?.built_in_themes ?? []).map((name) => (
           <li key={name}>
@@ -253,7 +253,7 @@ export function Extensions({
         ))}
       </ul>
 
-      <h3>Installed</h3>
+      <h3 className="ui-text-heading">Installed</h3>
       {/* A claim, then the way out as the window names it (`docs/ui-copy.md`, #630). */}
       {listed && installed.length === 0 && (
         <EmptyState
@@ -272,7 +272,7 @@ export function Extensions({
 
       {(listed?.dropped ?? []).length > 0 && (
         <>
-          <h3>Dropped from the record</h3>
+          <h3 className="ui-text-heading">Dropped from the record</h3>
           <ul className="contributes">
             {listed?.dropped.map((why) => (
               <li key={why}>{why}</li>
@@ -318,7 +318,7 @@ function InstalledRows({
         <ListFilter noun={EXTENSIONS} total={rows.length} query={query} onQuery={setQuery} />
       )}
       {filtered && shown.length === 0 && (
-        <p className="came-back" role="status">
+        <p className="came-back ui-text-secondary" role="status">
           {noMatchSaid(EXTENSIONS, query)}
         </p>
       )}
@@ -335,7 +335,7 @@ function InstalledRows({
             </span>
             {/* Said as it arrives (#630): a row's trouble is read out, not only drawn. */}
             {row.refused && (
-              <span className="came-back" role="status">
+              <span className="came-back ui-text-secondary" role="status">
                 {row.refused}
               </span>
             )}
@@ -344,12 +344,20 @@ function InstalledRows({
             )}
             {/* Why the theme engine refused each colour theme, or what it left out (#2321). */}
             {row.theme_trouble.map((trouble) => (
-              <span key={trouble.name} className="came-back theme-trouble" role="status">
+              <span
+                key={trouble.name}
+                className="came-back ui-text-secondary theme-trouble"
+                role="status"
+              >
                 {themeTroubleSaid(trouble)}
               </span>
             ))}
             {(iconTrouble.get(row.id) ?? []).map((trouble) => (
-              <span key={trouble.name} className="came-back icon-trouble" role="status">
+              <span
+                key={trouble.name}
+                className="came-back ui-text-secondary icon-trouble"
+                role="status"
+              >
                 {troubleSaid(trouble)}
               </span>
             ))}

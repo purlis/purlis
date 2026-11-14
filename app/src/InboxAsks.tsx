@@ -32,6 +32,8 @@ import { RunFacts, SecretAskNotice, type SecretAskGiven } from "./SecretAskNotic
 import { AskDecision, REASON_TYPED_MOST, waysOf } from "./AskDecision";
 import { RuleOffer, ruleMadeOf } from "./AskRules";
 import { SecretFillSite } from "./SecretFillNotice";
+import { MergeFacts } from "./MergeFacts";
+import { confirmationOf, fallbackConfirm, rereadMerge } from "./mergeHold";
 import { Button, ButtonRow, IconButton } from "./ui/button/Button";
 import {
   MessageBody,
@@ -291,6 +293,20 @@ export const DECISIONS: ReadonlySet<Shown["source"]> = new Set<Shown["source"]>(
   "budget",
   "looping",
 ]);
+
+/** The option id only a block loop's pause offers: its lead, Tell it to stop trying (`pauses.rs`). */
+const STOP_TRYING = "stop-trying";
+
+/**
+ * **Whether every answer of `ask` waits for its row to settle** (T1-36, ADR 0097), not only its
+ * Allows: a block loop's pause, whose answers each move a chat held still, Stop chat as much as
+ * Let it keep trying, so none may land under a pointer an ask joining above just moved. Only the
+ * block loop's (Q267 amended): the failing and refused loops keep their own, and their Stop, a
+ * refusal, is never held (#1695).
+ */
+export function holdsEveryAnswer(ask: Shown): boolean {
+  return ask.source === "looping" && ask.options.some((one) => one.id === STOP_TRYING);
+}
 
 /** What a decision of each kind asks, as its row's title: a question. */
 const QUESTION: Partial<Record<Shown["source"], string>> = {
@@ -593,16 +609,21 @@ export function Ask({
    *  as a decision's does (`AskDecision`, #6011): with what a secret's notice gave, read only
    *  once its Allow there is pressed, and the words its pressed button showed, which the
    *  question's own Allow repeats. It holds only for the ask, the question and the answer it
-   *  was asked of (Q242): where the row moves under it (a held merge at a new head, say), the
-   *  question is taken back, and nothing the person pressed carries over. */
+   *  was asked of (Q242): where the row moves under it (a held merge at a new head, say, or its
+   *  facts refreshed, Q248), the question is taken back, and nothing the person pressed carries
+   *  over. A held merge's is asked of what the forge says when it is asked (`rereadMerge`). */
   const [askedOf, setAsking] = useState<{
     option: Offered;
     given?: () => SecretAskGiven;
     said: string;
     of: string;
   }>();
-  const question = [ask.ask, ask.risk?.confirm ?? "", JSON.stringify(ask.answer)].join("\n");
+  const question = confirmationOf(ask);
   const asking = askedOf?.of === question ? askedOf : undefined;
+  /** **Asked once more before it acts** (ADR 0121 decision 8, Q268, Q269): a high-risk ask, and
+   *  a held merge whatever its risk, in its own sentence or purlis's. */
+  const twice = ask.risk != null || ask.answer.via === "merge-hold";
+  const confirmSaid = ask.risk?.confirm ?? fallbackConfirm(ask);
   const who = chainSaid(ask.chain);
   /** A secret's one notice draws its own answers (#5080). */
   const secretNotice = ask.secret != null || ask.run != null;
@@ -674,10 +695,25 @@ export function Ask({
    *  the form drew other words), a second press of it takes the question back, and every other
    *  answer acts. */
   const answerOrAsk = (option: Offered, given?: () => SecretAskGiven, said = option.label) => {
-    if (ask.risk != null && option.allows) {
-      setAsking(
-        asking?.option.id === option.id ? undefined : { option, given, said, of: question },
-      );
+    if (twice && option.allows) {
+      if (asking?.option.id === option.id || ask.answer.via !== "merge-hold") {
+        setAsking(
+          asking?.option.id === option.id ? undefined : { option, given, said, of: question },
+        );
+        return;
+      }
+      // **A held merge is read again before it asks once more** (Q248): the question is asked
+      // of what the forge says now, and shown once the row does.
+      if (busy) return;
+      setBusy(true);
+      setSaid(undefined);
+      void rereadMerge(plane, ask)
+        .catch((err: unknown) => ({ refused: String(err), question: undefined }))
+        .then(({ question: of, refused }) => {
+          if (refused !== undefined) setSaid(refused);
+          else if (of !== undefined) setAsking({ option, given, said, of });
+        })
+        .finally(() => setBusy(false));
       return;
     }
     answer(option, given);
@@ -696,7 +732,10 @@ export function Ask({
     // **An Allow waits for the row to settle** (#1695), as an update's does: with the hand's
     // list retired, the Inbox is where a permission or a host is allowed from outside its
     // pane, and an ask joining above must not put another's Allow under the pointer.
-    if (option.allows && tooSoon()) {
+    // On a held merge, Don't merge waits as Merge does (T1-40, ADR 0097): both act on the head
+    // the row names, and neither may land on a row just drawn. A block loop's every answer waits
+    // too (T1-36).
+    if ((option.allows || ask.source === "merge-hold" || holdsEveryAnswer(ask)) && tooSoon()) {
       setSaid(MOVED_JUST_NOW);
       return;
     }
@@ -826,9 +865,7 @@ export function Ask({
                 className={option.allows ? "inbox-answer allows" : "inbox-answer"}
                 aria-disabled={busy || undefined}
                 aria-busy={busy || undefined}
-                aria-expanded={
-                  ask.risk != null && option.allows ? asking?.option.id === option.id : undefined
-                }
+                aria-expanded={twice && option.allows ? asking?.option.id === option.id : undefined}
                 onPress={() => answerOrAsk(option)}
               >
                 {option.label}
@@ -838,9 +875,9 @@ export function Ask({
         )}
         {/* **Asked once more** (ADR 0121 decision 8, #6178): only the Allow here answers, held
               by the settle guard as every grant is; Cancel takes the question back. */}
-        {ask.risk != null && asking !== undefined && (
-          <ButtonRow className="inbox-answers" role="group" aria-label={ask.risk.confirm}>
-            <span className="ask-confirm ui-text-strong">{ask.risk.confirm}</span>
+        {twice && asking !== undefined && (
+          <ButtonRow className="inbox-answers" role="group" aria-label={confirmSaid}>
+            <span className="ask-confirm ui-text-strong">{confirmSaid}</span>
             <Button
               variant={grants(asking.option) ? "grants" : "primary"}
               className="inbox-answer allows"
@@ -979,6 +1016,14 @@ export function Ask({
             )}
           </Tooltip>
         )}
+        {/* **What a merge row shows of its request** (T1-40): the forge's facts, the checks as of
+              their read, the ruleset state with the gap beside it, and the title last, as text
+              the chat may have written. */}
+        {ask.answer.via === "merge-hold" && (
+          <p className="inbox-merge ui-text-secondary">
+            <MergeFacts facts={ask.answer.facts} />
+          </p>
+        )}
         {shape.said !== undefined && (
           <ChatText
             id={`${id}-said`}
@@ -1049,6 +1094,7 @@ export function Ask({
             who={who}
             offers={shape.offers}
             grants={ALLOW_OR_KEEP.has(ask.source)}
+            holdsEvery={holdsEveryAnswer(ask)}
             ready={ask.writes == null || ask.writes.kind === "not-shown" || changeDrawn}
             busy={busy}
             reason={shape.reason}

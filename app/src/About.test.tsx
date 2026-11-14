@@ -281,14 +281,26 @@ describe("Copy diagnostics (#4774)", () => {
   it("ends with the slow-answer and stall log's recent entries, one JSON line each (#4725)", async () => {
     const slow: SlowMoment[] = [
       { kind: "answer", command: "opened_chats", ms: 1_840, at: 1_762_000_000_000, hot: 3 },
-      { kind: "stall", ms: 412, at: 1_762_000_001_000, hot: 9, front: "steward 3", opening: true },
+      {
+        kind: "stall",
+        ms: 412,
+        at: 1_762_000_001_000,
+        hot: 9,
+        front: "steward 3",
+        opening: true,
+        dark: false,
+        react: [{ name: "ChatView", ms: 180 }],
+        events: [],
+        answers: [{ name: "opened_chats", n: 2 }],
+        scripts: [],
+      },
     ];
     const report = await copiedReport({ slow });
 
     expect(report.slice(5)).toEqual([
       "Slow answers and stalls, most recent last:",
       '  {"kind":"answer","command":"opened_chats","ms":1840,"at":1762000000000,"hot":3}',
-      '  {"kind":"stall","ms":412,"at":1762000001000,"hot":9,"front":"steward 3","opening":true}',
+      '  {"kind":"stall","ms":412,"at":1762000001000,"hot":9,"front":"steward 3","opening":true,"dark":false,"react":[{"name":"ChatView","ms":180}],"events":[],"answers":[{"name":"opened_chats","n":2}],"scripts":[]}',
     ]);
   });
 

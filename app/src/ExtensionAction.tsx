@@ -105,7 +105,7 @@ export function AskFirst({
         </>
       }
       description={
-        <p className="came-back">
+        <p className="came-back ui-text-secondary">
           {action.deletes
             ? "This action deletes. purlis asks before every action that deletes. The extension decides what it deletes. purlis does not stop it."
             : `${extension} asks purlis to ask you before it runs this.`}

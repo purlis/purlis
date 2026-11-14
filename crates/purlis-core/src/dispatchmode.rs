@@ -111,9 +111,11 @@ pub fn of_its_own_harness(report: &crate::hookwire::Report, now: Option<&str>) -
 impl crate::hookwire::Report {
     /// **This report's mode, as one that cannot prove it came from the chat's armed hook**
     /// (#3822): any mode it names reads as [`Reported::Asks`], and one naming none still names
-    /// none. What the hook channel makes of a report without its chat's armed key.
+    /// none. What the hook channel makes of a report without its chat's armed key. Its Claude
+    /// Code mode is not read at all (R-095): attendance hears a mode only from the armed hook.
     pub fn mode_unproven(&mut self) {
         self.detail.mode = self.detail.mode.map(|_| Reported::Asks);
+        self.detail.claude_code_mode = None;
     }
 }
 

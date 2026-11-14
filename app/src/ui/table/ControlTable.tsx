@@ -23,9 +23,8 @@ import {
   type DragEventHandler,
   type ReactNode,
 } from "react";
-import clsx from "clsx";
 import { Tooltip } from "../tooltip/Tooltip";
-import { Rule, type CellAlign } from "./Table";
+import { headPart, Rule, type CellAlign } from "./Table";
 import {
   CellWords,
   choicesOfElement,
@@ -145,9 +144,7 @@ export function ControlColumn({
       {...chosen.attributes}
       style={chosen.style}
       scope="col"
-      className={clsx("ui-text-label", className)}
-      data-scope="table"
-      data-part="head"
+      {...headPart(className)}
       data-align={align}
       data-actions={actions || undefined}
       aria-label={hideName ? full || "Actions" : shortened ? full : undefined}

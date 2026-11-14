@@ -40,7 +40,7 @@ export function RemovePersona({
       }}
       title={`Delete persona ${persona}?`}
       description={
-        <p className="came-back">
+        <p className="came-back ui-text-secondary">
           This deletes <code>personas/{persona}/</code> — its definition, its memory and its
           reference files — and the agent purlis generated for it. Its vault is left alone. Commit
           the deletion to share it.

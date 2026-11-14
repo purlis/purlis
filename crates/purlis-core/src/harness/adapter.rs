@@ -95,6 +95,18 @@ pub trait HarnessAdapter: Sync {
         None
     }
 
+    /// **The permission mode this harness's hook payload names, as attendance reads it**
+    /// (T1-17, [`crate::attendance::Fact`]), from the payload's `permission_mode`. `None` by
+    /// default: a harness whose word is not read is attended or not only by how purlis started
+    /// it, and never by Claude Code's strings. Codex's constant bypass report is so (Q152).
+    fn attendance_mode(
+        &self,
+        permission_mode: Option<&str>,
+    ) -> Option<crate::attendance::ClaudeCodeMode> {
+        let _ = permission_mode;
+        None
+    }
+
     /// **The words that start a task on this harness at `level`** (#3787), added after the
     /// profile's own `command` (the program, then the profile's words). None where the level
     /// is the harness's default, where `command` names a mode of its own (the person's

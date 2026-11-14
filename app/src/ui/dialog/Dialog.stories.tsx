@@ -419,7 +419,9 @@ function Picker() {
               </div>
             </div>
             <div>
-              <h3 style={{ marginTop: 0 }}>{picked}</h3>
+              <h3 className="ui-text-body ui-text-strong" style={{ marginTop: 0 }}>
+                {picked}
+              </h3>
               <Reserved as="div" texts={["Billed to Claude Code.", "Billed to opencode."]}>
                 {`Billed to ${harness}.`}
               </Reserved>

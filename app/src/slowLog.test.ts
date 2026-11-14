@@ -133,6 +133,12 @@ describe("a stall", () => {
         hot: 12,
         front: "steward 3",
         opening: true,
+        // The test's frames are not the thread's: whether it was dark is the culprits' test's.
+        dark: expect.any(Boolean),
+        react: [],
+        events: [],
+        answers: [],
+        scripts: [],
       },
     ]);
   });
@@ -184,7 +190,19 @@ describe("the recent entries", () => {
   it("are the core's answer, newest last, and nothing when it could not read the log", async () => {
     const entries: SlowMoment[] = [
       { kind: "answer", command: "plane_sidebar", ms: 1_250, at: 1, hot: 3 },
-      { kind: "stall", ms: 340, at: 2, hot: 12, front: "steward 3", opening: true },
+      {
+        kind: "stall",
+        ms: 340,
+        at: 2,
+        hot: 12,
+        front: "steward 3",
+        opening: true,
+        dark: false,
+        react: [{ name: "PlaneView", ms: 210 }],
+        events: [{ name: "chat-events", n: 4 }],
+        answers: [],
+        scripts: [],
+      },
     ];
     vi.spyOn(commands, "slowLogRecent").mockResolvedValueOnce({ status: "ok", data: entries });
     expect(await recentSlowLog()).toEqual(entries);

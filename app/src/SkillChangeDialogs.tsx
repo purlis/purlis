@@ -222,7 +222,7 @@ function Reach({
 }) {
   return (
     <section className="skill-change-reach" aria-label={heading} data-testid={testid}>
-      <h3>{heading}</h3>
+      <h3 className="ui-text-heading">{heading}</h3>
       {refused !== undefined ? (
         <p className="trouble">
           {`purlis could not read who uses it: ${refused} `}

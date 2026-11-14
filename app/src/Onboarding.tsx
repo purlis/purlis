@@ -143,7 +143,7 @@ export function Onboarding({
   // Whether this is a first run is the kept place's to say, and a window with no project draws
   // before it has: nothing is counted until then, or that person sees a count come and go.
   const stepSaid = steps.placeKnown && (!progress.finished_once || step === "harness") && (
-    <nav className="onboarding-steps" aria-label="Setting up">
+    <nav className="onboarding-steps ui-text-secondary" aria-label="Setting up">
       <p className="onboarding-count">
         Step {counted.at + 1} of {counted.steps.length}: {STEP_NAMES[counted.steps[counted.at]]}
       </p>
@@ -153,7 +153,9 @@ export function Onboarding({
   return (
     <div className="onboarding">
       {steps.trouble !== undefined && (
-        <p className="came-back">{steps.trouble}. The steps still work until purlis quits.</p>
+        <p className="came-back ui-text-secondary">
+          {steps.trouble}. The steps still work until purlis quits.
+        </p>
       )}
 
       {step === "harness" && progress.made ? (
