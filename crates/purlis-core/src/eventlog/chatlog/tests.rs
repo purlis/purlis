@@ -1213,3 +1213,35 @@ fn a_codex_chats_summary_cant_tell_its_mode() {
         "its latest start's"
     );
 }
+
+/// R-007, R-099 (core): **an opencode chat's summary can't tell its mode**: opencode reports no
+/// mode purlis can check, so its summary says Can't tell rather than guessing one, and taken
+/// over the whole chat, an opencode start then a Claude Code one still can't tell. A Claude
+/// Code chat's mode is read from its armed hook, and says nothing of the kind.
+#[test]
+fn an_opencode_chats_summary_cant_tell_its_mode() {
+    const THREE: &str = "01K6CHAT000000000000000006";
+    let dir = tempfile::tempdir().unwrap();
+    let mut log = Log::open(dir.path(), DEVICE).unwrap();
+    started_as(&mut log, ONE, "opencode", "seatbelt", "floor");
+    started_as(&mut log, TWO, "claude", "seatbelt", "floor");
+    started_as(&mut log, THREE, "opencode", "seatbelt", "floor");
+    started_as(&mut log, THREE, "claude", "seatbelt", "floor");
+    drop(log);
+    let events = crate::eventlog::read(dir.path()).unwrap();
+
+    let (_, mode, harness) = cant_tell_of(&events, ONE);
+    assert!(mode, "opencode reports no mode purlis can check");
+    assert_eq!(harness, Some(crate::harness::Harness::Opencode));
+    assert!(
+        !cant_tell_of(&events, TWO).1,
+        "Claude Code's armed hook says its mode"
+    );
+    let (_, mode, harness) = cant_tell_of(&events, THREE);
+    assert!(mode, "can't tell once is can't tell");
+    assert_eq!(
+        harness,
+        Some(crate::harness::Harness::ClaudeCode),
+        "its latest start's"
+    );
+}

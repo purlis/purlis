@@ -177,15 +177,18 @@ const MATRIX: [Row; 10] = [
                 "Can't tell (bypass reported for every chat; attendance from how purlis started it)",
                 chat_log("a_codex_chats_summary_cant_tell_its_mode"),
             ),
-            cell("Can't tell", owed("R-007")),
+            cell(
+                "Can't tell",
+                chat_log("an_opencode_chats_summary_cant_tell_its_mode"),
+            ),
         ],
     },
     Row {
         layer: "A hold the app performs (merge, push)",
         cells: [
-            cell("enforced", owed("R-115, R-116")),
-            cell("enforced", owed("R-115, R-116")),
-            cell("enforced", owed("R-115, R-116")),
+            cell("enforced", MERGE_HOLD),
+            cell("enforced", MERGE_HOLD),
+            cell("enforced", MERGE_HOLD),
         ],
     },
     // Phase 3 brings these holds, and their tests (R-165). What ships until then, that no
@@ -221,18 +224,29 @@ const MATRIX: [Row; 10] = [
     Row {
         layer: "The block loop's count",
         cells: [
-            cell("enforced", owed("R-206")),
+            cell("enforced", BLOCK_LOOP),
             cell(
                 "enforced for sandbox, policy and project blocks; unverified guard reports never count",
-                owed("R-206, R-103"),
+                BLOCK_LOOP,
             ),
             cell(
                 "enforced for sandbox, policy and project blocks; unverified guard reports never count",
-                owed("R-206, R-103"),
+                BLOCK_LOOP,
             ),
         ],
     },
 ];
+
+/// R-206, R-103: what the block loop counts, on each harness.
+const BLOCK_LOOP: Test = Test::Named {
+    file: "src/looping/blocked_tests.rs",
+    name: "the_block_loop_counts_on_each_harness_only_what_it_can_verify",
+};
+
+/// R-115, R-116: each harness's shell call reaches the hook that holds a merge. The person's
+/// press, which no harness takes part in, is
+/// `tests/it/the_app_merges_on_the_persons_press_and_the_chat_never_merges.rs`.
+const MERGE_HOLD: Test = here("a_merge_from_each_harness_reaches_the_hook_that_holds_it");
 
 /// R-095: Claude Code's mode, as attendance reads it, comes from its armed hook alone (T1-17).
 const ATTENDANCE_MODE: Test = Test::Named {
@@ -616,6 +630,33 @@ fn armed_groups() -> Vec<Group> {
     }
     groups.push(route("PreToolUse", None, crate::opencode::DEFAULT_PRE));
     groups
+}
+
+#[test]
+fn a_merge_from_each_harness_reaches_the_hook_that_holds_it() {
+    // R-115, R-116: on every harness, the chat's shell command reaches `purlis hook pretooluse`
+    // before it runs, and that hook holds a merge (`purlis-cli`'s `guard::held_merge`, by
+    // `mergehold::held`): what the app then performs is the same whatever the harness.
+    let groups = armed_groups();
+    for harness in HARNESSES {
+        assert!(
+            groups.iter().any(|g| g.harness == harness
+                && g.event == "PreToolUse"
+                && g.words.iter().any(|w| w == "pretooluse")
+                && g.matcher
+                    .as_deref()
+                    .and_then(plain_names)
+                    .is_some_and(|names| {
+                        names.iter().any(|name| name.eq_ignore_ascii_case("bash"))
+                    })),
+            "{}: its shell does not reach the hook that holds a merge",
+            harness.title()
+        );
+    }
+    assert!(matches!(
+        crate::mergehold::held("gh pr merge 12 --squash"),
+        Some(crate::mergehold::Held::Request(_))
+    ));
 }
 
 #[test]

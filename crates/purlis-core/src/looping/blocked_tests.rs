@@ -182,6 +182,42 @@ fn the_harness_own_check_never_counts_toward_the_block_loop() {
     }
 }
 
+/// R-206, R-103, on each harness (ADR 0124's matrix, "The block loop's count"): three blocks
+/// from the sandbox, the project setting or the policy pause the chat whatever its harness; a
+/// guard's three denies pause it only where its hook reports from outside the chat's reach
+/// (Claude Code's, under Seatbelt), and from Codex or opencode, whose reports are unverified,
+/// they never count.
+#[test]
+fn the_block_loop_counts_on_each_harness_only_what_it_can_verify() {
+    for harness in Harness::ALL {
+        let verified = reported_from_outside_its_reach(&on(harness));
+        assert_eq!(verified, harness == Harness::ClaudeCode, "{harness:?}");
+        let mut loops = Loops::default();
+        for _ in 0..2 {
+            assert_eq!(
+                loops.called(CHAT, &denied("aa"), verified),
+                None,
+                "{harness:?}"
+            );
+        }
+        assert_eq!(
+            loops.called(CHAT, &denied("aa"), verified),
+            verified.then_some(Why::Blocked { times: 3 }),
+            "{harness:?}: a guard's denies"
+        );
+        for source in [Source::Sandbox, Source::ProjectSetting, Source::Policy] {
+            let mut loops = Loops::default();
+            loops.stopped(CHAT, &block(source, "aa"));
+            loops.stopped(CHAT, &block(source, "aa"));
+            assert_eq!(
+                loops.stopped(CHAT, &block(source, "aa")),
+                Some(Why::Blocked { times: 3 }),
+                "{harness:?}: {source:?}"
+            );
+        }
+    }
+}
+
 /// R-209.
 #[test]
 fn unverified_reports_never_count_toward_the_block_loop() {
