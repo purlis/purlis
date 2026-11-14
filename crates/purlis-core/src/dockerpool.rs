@@ -1469,6 +1469,19 @@ pub fn free_from_df(printed: &str) -> Option<u64> {
     available.checked_mul(1024)
 }
 
+/// **How Docker's disk stands for a runner** (#6205), as a container of the runner's image sees
+/// it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Room {
+    Enough,
+    /// Less free than a runner needs: what is free, where `df` said.
+    Short(Option<u64>),
+    /// The image's `df` couldn't even start for a full disk: its last line.
+    FullSaid(String),
+    /// The image has no `df`, or the engine didn't answer: nothing is held up.
+    Unknown,
+}
+
 /// **When an add found Docker's disk full** (#6205).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FullAt {
@@ -1505,6 +1518,27 @@ pub fn disk_full_said(at: FullAt, last: Option<&str>) -> String {
         .map(|line| format!(" {by}: \"{line}\"."))
         .unwrap_or_default();
     format!("{head} {MAKE_ROOM}. Then try again.{wrote}")
+}
+
+/// **Docker's disk on another machine, `host`, found full** (#6272, ADR 0123 §7): #6205's words,
+/// naming the machine, with what was `free` where `df` said. The way to make room there is the
+/// finding's to say.
+#[must_use]
+pub fn disk_full_there(host: &str, free: Option<u64>) -> String {
+    match free {
+        Some(free) => format!(
+            "Docker's disk on {host} is full: it has {} free, and a runner needs at least {}",
+            size_said(free),
+            size_said(LEAST_FREE)
+        ),
+        None => format!("Docker's disk on {host} is full"),
+    }
+}
+
+/// **Whether `free` bytes are too few to make a runner on** (#6205).
+#[must_use]
+pub fn too_little_free(free: u64) -> bool {
+    free < LEAST_FREE
 }
 
 /// **Why runner `name` stopped later on a full disk**, said on its pool's row (#6205).
@@ -2622,6 +2656,7 @@ pub struct Docker {
 /// purlis's own, which prints and ends, and a version once read is not asked again.
 pub const READS_WITHIN: std::time::Duration = std::time::Duration::from_secs(20);
 
+mod asked;
 pub mod contract;
 pub mod settings;
 
@@ -3385,49 +3420,64 @@ impl Docker {
     /// probe is, whose root is on that disk. An image with no `df`, or an engine that does not
     /// answer, says nothing, and nothing is held up.
     fn has_room(&self, runner: &Runner) -> Result<(), Refused> {
-        let args: Vec<String> = [
-            "run",
-            "--rm",
-            "--user",
-            &runner.user.spelled(),
-            "--cap-drop",
-            "ALL",
-            "--security-opt",
-            "no-new-privileges",
-            "--network",
-            "none",
-            "--read-only",
-            "--entrypoint",
-            "df",
-            runner.image.as_str(),
-            "-Pk",
-            "/",
-        ]
-        .iter()
-        .map(|word| (*word).to_owned())
-        .collect();
+        match self.room_as(&runner.image, Some(runner.user)) {
+            Room::Short(free) => Err(refused(disk_full_said(FullAt::Before(free), None))),
+            Room::FullSaid(last) => Err(refused(disk_full_said(FullAt::Before(None), Some(&last)))),
+            Room::Enough | Room::Unknown => Ok(()),
+        }
+    }
+
+    /// **Whether Docker's disk has room for a runner of `image`** (#6205, #6272): [`Docker::has_room`]'s
+    /// reading, run as the image's own user, for doctor to ask of a pool on another machine.
+    #[must_use]
+    pub fn room_for(&self, image: &Image) -> Room {
+        match self.room_as(image, None) {
+            Room::FullSaid(_) => Room::Short(None),
+            room => room,
+        }
+    }
+
+    /// [`Docker::room_for`], run as `user` where one is named.
+    fn room_as(&self, image: &Image, user: Option<User>) -> Room {
+        let mut args: Vec<String> = vec!["run".into(), "--rm".into()];
+        if let Some(user) = user {
+            args.extend(["--user".into(), user.spelled()]);
+        }
+        args.extend(
+            [
+                "--cap-drop",
+                "ALL",
+                "--security-opt",
+                "no-new-privileges",
+                "--network",
+                "none",
+                "--read-only",
+                "--entrypoint",
+                "df",
+                image.as_str(),
+                "-Pk",
+                "/",
+            ]
+            .iter()
+            .map(|word| (*word).to_owned()),
+        );
         let Ok(prepared) = self.prepared() else {
-            return Ok(());
+            return Room::Unknown;
         };
         let Ok(ran) = self.spawned(&prepared, &args, None, MOST_SAID, Some(PROBE_WITHIN)) else {
-            return Ok(());
+            return Room::Unknown;
         };
         let said = String::from_utf8_lossy(&ran.said);
         if !ran.status.success() {
             if names_a_full_disk(&said) {
-                let last = last_line(&said);
-                return Err(refused(disk_full_said(
-                    FullAt::Before(None),
-                    last.as_deref(),
-                )));
+                return Room::FullSaid(last_line(&said).unwrap_or_default());
             }
-            return Ok(());
+            return Room::Unknown;
         }
         match free_from_df(&String::from_utf8_lossy(&ran.printed)) {
-            Some(free) if free < LEAST_FREE => {
-                Err(refused(disk_full_said(FullAt::Before(Some(free)), None)))
-            }
-            _ => Ok(()),
+            Some(free) if free < LEAST_FREE => Room::Short(Some(free)),
+            Some(_) => Room::Enough,
+            None => Room::Unknown,
         }
     }
 

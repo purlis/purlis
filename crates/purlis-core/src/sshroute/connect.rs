@@ -83,6 +83,23 @@ pub enum Finding {
     ClientRefused { host: String, cert: String },
     /// The server says the client certificate has expired.
     ClientExpired { host: String, cert: String },
+    /// **Doctor's checks of the engine** (#6272, ADR 0123 §7): it doesn't give containers its
+    /// default seccomp profile, as the local kind's daemon check holds it to.
+    Unconfined { host: String, podman: bool },
+    /// Its platform (`docker info`'s OS and architecture) has no runner image: what it is, and
+    /// what the image is built for.
+    Architecture {
+        host: String,
+        platform: String,
+        built_for: Vec<String>,
+    },
+    /// Docker's disk there is too full to make a runner on (#6205): what is free, where `df`
+    /// said.
+    DiskFull { host: String, free: Option<u64> },
+    /// It couldn't download the runner image from its registry.
+    ImageUnreachable { host: String, registry: String },
+    /// **The Docker context the pool's route was read from now names another route** (#6268).
+    ContextMoved { name: String },
     /// Something else went wrong on this machine (no ssh, a folder that couldn't be made).
     Here(String),
 }

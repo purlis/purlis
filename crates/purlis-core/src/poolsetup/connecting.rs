@@ -450,22 +450,8 @@ fn moved_reading(connect: &Connecting) -> Option<Reading> {
         connect.docker_context.as_ref()?,
         connect.context_now.as_ref()?,
     );
-    Some(Reading::attention(
-        format!(
-            "Your context {name} now points somewhere else than this pool. Connect again to \
-             follow it, or keep the pool as it is."
-        ),
-        Some(Action {
-            id: ActionId::ConnectAgain,
-            label: "Connect again".to_owned(),
-            does: format!(
-                "Starts setting up a pool on the machine {name} names now. This pool keeps \
-                 running where it does until you remove it."
-            ),
-            command: None,
-            url: None,
-        }),
-    ))
+    let (words, next) = said_with_next(&Finding::ContextMoved { name: name.clone() });
+    Some(Reading::attention(words, next))
 }
 
 /// **Keep the pool as it is**, beside Connect again: the pool stays on its route, and forgets
@@ -618,6 +604,11 @@ pub fn cause(finding: &Finding) -> &'static str {
         Finding::WrongName { .. } => "tls-wrong-name",
         Finding::ClientRefused { .. } => "tls-client-refused",
         Finding::ClientExpired { .. } => "tls-client-expired",
+        Finding::Unconfined { .. } => "unconfined",
+        Finding::Architecture { .. } => "unsupported-architecture",
+        Finding::DiskFull { .. } => "disk-full",
+        Finding::ImageUnreachable { .. } => "image-unreachable",
+        Finding::ContextMoved { .. } => CONTEXT_MOVED,
         Finding::Here(_) => "here",
     }
 }
@@ -626,6 +617,13 @@ pub fn cause(finding: &Finding) -> &'static str {
 #[must_use]
 pub fn said(finding: &Finding) -> String {
     said_with_next(finding).0
+}
+
+/// **What a finding says, and its one way on**, the same in the window and in `purlis pool
+/// doctor`.
+#[must_use]
+pub fn said_and_next(finding: &Finding) -> (String, Option<Action>) {
+    said_with_next(finding)
 }
 
 fn said_with_next(finding: &Finding) -> (String, Option<Action>) {
@@ -833,6 +831,71 @@ fn said_with_next(finding: &Finding) -> (String, Option<Action>) {
             ),
             check_again(),
         ),
+        Finding::Unconfined { host, podman } => (
+            if *podman {
+                format!(
+                    "Podman on {host} doesn't give containers its default seccomp profile, so \
+                     purlis makes no runner there. On {host}, set Podman's seccomp profile back \
+                     to its default, then check again."
+                )
+            } else {
+                format!(
+                    "Docker on {host} doesn't give containers its built-in seccomp profile, so \
+                     purlis makes no runner there. On {host}, set the daemon's seccomp profile \
+                     back to its default, then check again."
+                )
+            },
+            check_again(),
+        ),
+        Finding::Architecture {
+            host,
+            platform,
+            built_for,
+        } => (
+            format!(
+                "{host} is {platform}, and the runner image is built for {}. Pick a machine that \
+                 is {}.",
+                super::doctoring::and_listed(built_for),
+                if built_for.len() == 1 {
+                    "that"
+                } else {
+                    "one of those"
+                }
+            ),
+            change(),
+        ),
+        Finding::DiskFull { host, free } => (
+            format!(
+                "{}, so purlis makes no runner there. To make room, run docker system df on \
+                 {host} to see what takes it, then docker system prune there to remove what \
+                 nothing uses, or give Docker there a bigger disk. Then check again.",
+                crate::dockerpool::disk_full_there(host, *free)
+            ),
+            check_again(),
+        ),
+        Finding::ImageUnreachable { host, registry } => (
+            format!(
+                "{host} couldn't download the runner image. Check that {host} can reach \
+                 {registry}, then check again."
+            ),
+            check_again(),
+        ),
+        Finding::ContextMoved { name } => (
+            format!(
+                "Your context {name} now points somewhere else than this pool. Connect again to \
+                 follow it, or keep the pool as it is."
+            ),
+            Some(Action {
+                id: ActionId::ConnectAgain,
+                label: "Connect again".to_owned(),
+                does: format!(
+                    "Starts setting up a pool on the machine {name} names now. This pool keeps \
+                     running where it does until you remove it."
+                ),
+                command: None,
+                url: None,
+            }),
+        ),
         Finding::Here(why) => (why.clone(), check_again()),
     }
 }
@@ -876,6 +939,249 @@ pub fn by_hand(route: Option<&str>) -> super::See {
              docker -H {} info --format '{{{{.ID}}}}'",
             crate::shellseg::shell_quote(&address)
         ),
+    }
+}
+
+/// **Connect's See what this does, as it stands** (#6272, ADR 0123 §7): where a finding stands,
+/// the commands of its one way on, else what prints the machine's key or CA to compare.
+/// `purlis pool doctor` prints the same.
+#[must_use]
+pub fn see(connect: &Connecting) -> super::See {
+    let route = connect.route.as_deref();
+    connect
+        .finding
+        .as_ref()
+        .and_then(|finding| see_of(finding, connect))
+        .unwrap_or_else(
+            || match route.filter(|route| crate::tlsroute::is_tcp(route)) {
+                Some(tcp) => by_hand_tls(tcp, connect.tls.as_ref()),
+                None => by_hand(route),
+            },
+        )
+}
+
+/// **The commands behind finding `finding`'s way on**, for the machine `connect` names: each by
+/// hand, as purlis runs it or as the person mends it. `None` where the finding has none of its
+/// own, and the step's own stand.
+fn see_of(finding: &Finding, connect: &Connecting) -> Option<super::See> {
+    let q = |text: &str| crate::shellseg::shell_quote(text);
+    let route = connect.route.as_deref().unwrap_or_default();
+    let tls = crate::tlsroute::is_tcp(route);
+    let ssh = Route::parse(route).ok();
+    // `ssh` and where it signs in, as the person's own ssh reads it.
+    let to = ssh.as_ref().map_or_else(
+        || "ssh USER@HOST".to_owned(),
+        |route| {
+            let at = route.user().map_or_else(
+                || route.host().to_owned(),
+                |user| format!("{user}@{}", route.host()),
+            );
+            match route.port() {
+                Some(port) => format!("ssh -p {port} {}", q(&at)),
+                None => format!("ssh {}", q(&at)),
+            }
+        },
+    );
+    let to_t = to.replacen("ssh ", "ssh -t ", 1);
+    // `docker`, pointed at the machine as purlis points it.
+    let docker = if tls {
+        let parsed = crate::tlsroute::Route::parse(route).ok();
+        let address = parsed.map_or_else(|| "tcp://HOST:2376".to_owned(), |route| route.spelled());
+        let files = connect.tls.as_ref();
+        let named =
+            |path: Option<String>, stand: &str| q(&path.unwrap_or_else(|| stand.to_owned()));
+        format!(
+            "docker -H {} --tlsverify --tlscacert {} --tlscert {} --tlskey {}",
+            q(&address),
+            named(files.map(|files| files.ca.display().to_string()), "ca.pem"),
+            named(
+                files.map(|files| files.cert.display().to_string()),
+                "cert.pem"
+            ),
+            named(
+                files.and_then(|files| files.key_file().map(|key| key.display().to_string())),
+                "key.pem"
+            ),
+        )
+    } else {
+        format!(
+            "docker -H {}",
+            q(&ssh
+                .as_ref()
+                .map_or_else(|| "ssh://USER@HOST".to_owned(), Route::spelled))
+        )
+    };
+    let tls_at = || {
+        let parsed = crate::tlsroute::Route::parse(route).ok();
+        parsed.map_or_else(
+            || "HOST:2376".to_owned(),
+            |route| format!("{}:{}", route.host(), route.port()),
+        )
+    };
+    let see = |note: String, text: String| Some(super::See { note, text });
+    match finding {
+        Finding::NoSuchName { host } if tls => see(
+            format!("This asks this machine's name service for {host}. It only reads."),
+            format!("nslookup {}", q(host)),
+        ),
+        Finding::NoSuchName { host } => see(
+            format!(
+                "The first prints what your SSH settings make of {host}, and the second lists the \
+                 hosts they name, to pick from. Both only read."
+            ),
+            format!("ssh -G {}\ngrep -i '^host ' ~/.ssh/config", q(host)),
+        ),
+        Finding::NoAnswer { host, port } => see(
+            format!(
+                "This asks whether anything answers on port {port} of {host}, from this machine. \
+                 It only reads."
+            ),
+            format!("nc -vz {} {port}", q(host)),
+        ),
+        Finding::NotMet { host, .. } => see(
+            format!(
+                "This signs in to {host} as purlis does, and prints what SSH says as it goes. It \
+                 changes nothing there."
+            ),
+            format!("{} -v -o BatchMode=yes true", to),
+        ),
+        Finding::SignInRefused { host } => see(
+            format!(
+                "The first lists the keys your SSH agent holds, and the second adds your own key \
+                 to it. The third signs in to {host} as purlis does, never asking for a password."
+            ),
+            format!("ssh-add -l\nssh-add\n{to} -o BatchMode=yes true"),
+        ),
+        Finding::NoEngine { host, .. } => see(
+            format!(
+                "The first shows which of Docker's sockets {host} has. The second starts Docker \
+                 there and keeps it on, asking for your password on {host}."
+            ),
+            format!(
+                "{to} 'ls -l /var/run/docker.sock \"$XDG_RUNTIME_DIR/docker.sock\"'\n\
+                 {to_t} sudo systemctl enable --now docker"
+            ),
+        ),
+        Finding::NotAllowed { host, user, .. } => {
+            let user = if user.is_empty() {
+                "$USER"
+            } else {
+                user.as_str()
+            };
+            see(
+                format!(
+                    "The first adds {user} to the docker group on {host}, asking for your password \
+                     there: anyone in that group controls Docker on {host}. The second signs in \
+                     again, so the group counts, and asks Docker for its id as purlis does. \
+                     Rootless Docker or Podman keeps Docker to your own account instead."
+                ),
+                format!(
+                    "{to_t} sudo usermod -aG docker {}\n{to} docker info --format '{{{{.ID}}}}'",
+                    q(user)
+                ),
+            )
+        }
+        Finding::EngineSilent { host, .. } => see(
+            format!("This asks Docker on {host} how it is, as purlis reaches it. It only reads."),
+            format!("{docker} info"),
+        ),
+        Finding::ForwardingRefused { host } => see(
+            format!(
+                "Run on {host} by its admin, this prints the forwarding settings its SSH server \
+                 runs with. It only reads."
+            ),
+            "sudo sshd -T | grep -i forwarding".to_owned(),
+        ),
+        Finding::NeedsPodman { .. } => see(
+            "This shows whether Podman is installed on this machine. It only reads.".to_owned(),
+            "podman --version".to_owned(),
+        ),
+        Finding::TlsFile { file, .. } => see(
+            "This shows whether the file is there and who may read it. It only reads.".to_owned(),
+            format!("ls -l {}", q(file)),
+        ),
+        Finding::NotSignedByCa { host, ca } => see(
+            format!(
+                "This checks {host}'s certificate against the CA you chose, as purlis does. It \
+                 only reads."
+            ),
+            format!(
+                "openssl s_client -connect {} -CAfile {} -verify_return_error </dev/null",
+                q(&tls_at()),
+                q(ca)
+            ),
+        ),
+        Finding::ServerExpired { host } => see(
+            format!("This prints when {host}'s certificate expires. It only reads."),
+            format!(
+                "openssl s_client -connect {} </dev/null 2>/dev/null | openssl x509 -noout \
+                 -subject -enddate",
+                q(&tls_at())
+            ),
+        ),
+        Finding::WrongName { host, .. } => see(
+            format!("This prints the names {host}'s certificate is for. It only reads."),
+            format!(
+                "openssl s_client -connect {} </dev/null 2>/dev/null | openssl x509 -noout -ext \
+                 subjectAltName",
+                q(&tls_at())
+            ),
+        ),
+        Finding::ClientRefused { cert, .. } | Finding::ClientExpired { cert, .. } => see(
+            "This prints who signed your client certificate and when it expires. It only reads."
+                .to_owned(),
+            format!("openssl x509 -noout -issuer -enddate -in {}", q(cert)),
+        ),
+        Finding::Unconfined { host, .. } => see(
+            format!(
+                "This prints the security options Docker on {host} gives containers, as purlis \
+                 reads them. It only reads."
+            ),
+            format!("{docker} info --format '{{{{json .SecurityOptions}}}}'"),
+        ),
+        Finding::Architecture { host, .. } => see(
+            format!("This prints the platform of {host}, as purlis reads it. It only reads."),
+            format!("{docker} info --format '{{{{.OSType}}}}/{{{{.Architecture}}}}'"),
+        ),
+        Finding::DiskFull { host, .. } => see(
+            format!(
+                "The first shows what takes Docker's disk on {host}. The second removes what \
+                 nothing uses there: stopped containers, unused networks and images, and the \
+                 build cache. It keeps volumes, so a runner's home and sign-ins stay."
+            ),
+            format!("{docker} system df\n{docker} system prune"),
+        ),
+        Finding::ImageUnreachable { host, registry } => {
+            let asked = format!("curl -sSI https://{registry}/v2/");
+            if tls {
+                see(
+                    format!(
+                        "Run on {host}, this asks {registry} for an answer, as Docker there does \
+                         before it downloads. It only reads."
+                    ),
+                    asked,
+                )
+            } else {
+                see(
+                    format!(
+                        "This asks {registry} for an answer from {host}, as Docker there does \
+                         before it downloads. It only reads."
+                    ),
+                    format!("{to} {}", q(&asked)),
+                )
+            }
+        }
+        Finding::ContextMoved { name } => see(
+            format!("This prints where your context {name} points now. It only reads."),
+            format!(
+                "docker context inspect {} --format '{{{{.Endpoints.docker.Host}}}}'",
+                q(name)
+            ),
+        ),
+        Finding::KeyChanged { .. }
+        | Finding::CaChanged { .. }
+        | Finding::EngineChanged { .. }
+        | Finding::Here(_) => None,
     }
 }
 

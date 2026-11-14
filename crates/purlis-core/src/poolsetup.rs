@@ -38,6 +38,7 @@ pub mod admin;
 pub mod asked;
 pub mod cluster;
 pub mod connecting;
+pub mod doctoring;
 pub mod help;
 pub mod install;
 pub mod pinchange;
@@ -1356,16 +1357,7 @@ fn see_of(kind: Kind, id: StepId, facts: &Facts, choices: &Choices) -> Option<Se
         });
     }
     match (id, pool) {
-        (StepId::Connect, _) => {
-            let connect = facts.connect.as_ref();
-            let route = connect.and_then(|connect| connect.route.as_deref());
-            Some(match route.filter(|route| crate::tlsroute::is_tcp(route)) {
-                Some(tcp) => {
-                    connecting::by_hand_tls(tcp, connect.and_then(|connect| connect.tls.as_ref()))
-                }
-                None => connecting::by_hand(route),
-            })
-        }
+        (StepId::Connect, _) => Some(connecting::see(&facts.connect.clone().unwrap_or_default())),
         (StepId::Where, _) if kind != Kind::Cluster => Some(See {
             note: "This is how purlis asks after Docker. It only reads.".to_owned(),
             text: "docker version".to_owned(),
