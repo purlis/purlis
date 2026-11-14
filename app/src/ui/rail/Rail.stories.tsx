@@ -11,8 +11,9 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Fragment, useState } from "react";
 import { expect, waitFor } from "storybook/test";
 import { TOOLTIP_CLOSE_DELAY, TOOLTIP_DELAY } from "../tooltip/Tooltip";
+import { Button } from "../button/Button";
 import { Plus } from "lucide-react";
-import { expectFocusInSight } from "../../stories.testkit";
+import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import {
   Rail,
   RailAction,
@@ -24,6 +25,12 @@ import {
 } from "./Rail";
 import { useProjectTints } from "./projectColour";
 import { AsStripTab, useTabStrip } from "../tabs/TabStrip";
+
+/** `value`, which the story has drawn: it fails here, by name, where it is not. */
+function drawn<T>(value: T | null | undefined, what: string): T {
+  if (value === null || value === undefined) throw new Error(`${what} is not drawn`);
+  return value;
+}
 
 /** The prototype's projects; one has work not saved, and one a save that is blocked (S8). */
 const PROJECTS: {
@@ -62,12 +69,23 @@ function TheRail({
   peek = false,
   loading = false,
   short = false,
+  waits,
+  steps,
 }: {
   peek?: boolean;
   loading?: boolean;
   short?: boolean;
+  /** How many wait in each project, in the list's order, in place of the prototype's. */
+  waits?: number[];
+  /** The counts the first project's waiting steps through, one per press of "Next count". */
+  steps?: number[];
 }) {
   const [current, setCurrent] = useState("charter");
+  const [step, setStep] = useState(0);
+  const waitingOf = (name: string, at: number) =>
+    steps !== undefined && at === 0
+      ? steps[step % steps.length]
+      : (waits?.[at] ?? PROJECTS.find((one) => one.name === name)?.waiting ?? 0);
   const [said, setSaid] = useState("Nothing pressed");
   const tintOf = useProjectTints();
   const strip = useTabStrip({ keys: PROJECTS.map((one) => one.name), selected: current });
@@ -88,7 +106,7 @@ function TheRail({
           peek={peek}
         >
           <RailList>
-            {PROJECTS.map((one) => (
+            {PROJECTS.map((one, at) => (
               <Fragment key={one.name}>
                 <AsStripTab strip={strip} tabKey={one.name} selected={one.name === current}>
                   {(tab) => (
@@ -97,7 +115,7 @@ function TheRail({
                       id={`rail-${one.name}`}
                       name={one.name}
                       current={one.name === current}
-                      waiting={one.waiting}
+                      waiting={waitingOf(one.name, at)}
                       unsaved={one.unsaved}
                       colour={tintOf(one.name)}
                       load={
@@ -153,6 +171,11 @@ function TheRail({
       <p role="status" style={{ margin: 0 }}>
         {said}
       </p>
+      {steps !== undefined && (
+        <Button variant="secondary" onPress={() => setStep((was) => was + 1)}>
+          Next count
+        </Button>
+      )}
     </div>
   );
 }
@@ -335,5 +358,68 @@ export const Loading: Story = {
     await userEvent.keyboard("{Escape}");
     await untilNoTooltip();
     await atRest();
+  },
+};
+
+/** The round count on a tab (#6342), or `null` where none is drawn. */
+const roundOn = (tab: HTMLElement) =>
+  tab.querySelector<HTMLElement>('[data-scope="count"][data-part="round"]');
+
+/**
+ * **Each tab's count is one small circle in the ✋'s colour** (#6342): 0 draws none, 1 and 9 as
+ * they are, 10 and 120 as 9+, every circle 16px; each tab says the real number.
+ */
+export const RoundCounts: Story = {
+  args: { waits: [0, 1, 9, 10, 120, 0] },
+  play: async ({ canvas, userEvent }) => {
+    const tabs = canvas.getAllByRole("tab");
+    await expect(roundOn(tabs[0])).toBeNull();
+    await expect(tabs.slice(1, 5).map((tab) => roundOn(tab)?.dataset.drawn)).toEqual([
+      "1",
+      "9",
+      "9+",
+      "9+",
+    ]);
+    for (const tab of tabs.slice(1, 5)) {
+      const box = drawn(roundOn(tab), "a tab's count").getBoundingClientRect();
+      await expect([Math.round(box.width), Math.round(box.height)]).toEqual([16, 16]);
+    }
+    await expect(tabs[4]).toHaveAccessibleDescription("120 waiting");
+    await expect(tabs[3]).toHaveAccessibleDescription(/^10 waiting/);
+    await userEvent.tab();
+    await untilFocused(() => tabs[0], "Tab lands on the first project");
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(() => tabs[1], "↓ to the next");
+    expectFocusInSight();
+    await userEvent.keyboard("{Escape}");
+    await untilNoTooltip();
+  },
+};
+
+/**
+ * **A tab's changed count slides once, and the tab is not drawn again** (#6342): 2 to 3 slides
+ * up, 3 to 12 slides again (its other keyframes), 12 to 40 is 9+ both times and does not.
+ */
+export const CountSlides: Story = {
+  args: { steps: [2, 3, 12, 40] },
+  parameters: { screenshot: false },
+  play: async ({ canvas, userEvent }) => {
+    const tab = canvas.getAllByRole("tab")[0];
+    const circle = drawn(roundOn(tab), "a tab's count");
+    const next = canvas.getByRole("button", { name: "Next count" });
+    const slide = () => getComputedStyle(circle, "::before").animationName;
+    await expect(slide()).toBe("none");
+    next.focus();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(circle).toHaveAttribute("data-drawn", "3"));
+    await expect(slide()).toBe("count-round-up-a");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(circle).toHaveAttribute("data-drawn", "9+"));
+    await expect(slide()).toBe("count-round-up-b");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(tab).toHaveAccessibleDescription(/^40 waiting/));
+    await expect(slide()).toBe("count-round-up-b");
+    await expect(roundOn(tab)).toBe(circle);
+    await expect(canvas.getAllByRole("tab")[0]).toBe(tab);
   },
 };

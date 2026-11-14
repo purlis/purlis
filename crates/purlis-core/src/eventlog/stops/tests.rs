@@ -144,6 +144,7 @@ fn stop_kinds_are_written_to_the_existing_event_log_and_no_new_store_appears() {
         Stop::AskAnswered(AskAnswered {
             ask: AskGroup::LoopPause,
             answer: Answer::Allowed,
+            by: crate::eventlog::stops::AnsweredBy::Window,
         }),
     ];
     for stop in &stops {

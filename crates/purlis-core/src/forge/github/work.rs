@@ -269,9 +269,26 @@ impl GitHub {
         base: &str,
         doing: &str,
     ) -> Result<Vec<T>, ForgeError> {
+        match self.pages_upto(caller, base, doing, MOST_PAGES)? {
+            (out, false) => Ok(out),
+            (_, true) => Err(ForgeError::new(format!(
+                "{doing}: ran past {MOST_PAGES} pages"
+            ))),
+        }
+    }
+
+    /// [`Self::pages`], `most` pages at most, and whether there may be more: the last page
+    /// read was full.
+    fn pages_upto<T: serde::de::DeserializeOwned>(
+        &self,
+        caller: &Caller,
+        base: &str,
+        doing: &str,
+        most: usize,
+    ) -> Result<(Vec<T>, bool), ForgeError> {
         let joint = if base.contains('?') { '&' } else { '?' };
         let mut out = Vec::new();
-        for page in 1..=MOST_PAGES {
+        for page in 1..=most {
             let call = Call::get(
                 format!("{base}{joint}per_page=100&page={page}"),
                 LIST_TIMEOUT,
@@ -280,12 +297,10 @@ impl GitHub {
             let short = batch.len() < 100;
             out.extend(batch);
             if short {
-                return Ok(out);
+                return Ok((out, false));
             }
         }
-        Err(ForgeError::new(format!(
-            "{doing}: ran past {MOST_PAGES} pages"
-        )))
+        Ok((out, true))
     }
 
     /// One GraphQL document from `queries/` and its variables, its `data` read as `T`.
@@ -602,16 +617,17 @@ impl GitHub {
         caller: &Caller,
         repo: &str,
         all: bool,
-    ) -> Result<Vec<crate::forge::backend::MilestoneProgress>, ForgeError> {
+    ) -> Result<crate::forge::backend::Milestones, ForgeError> {
         let issues = Self::issues_of(repo)?;
         let repo_path = issues.trim_end_matches("/issues");
         let state = if all { "all" } else { "open" };
-        let listed: Vec<Progress> = self.pages(
+        let (listed, cut): (Vec<Progress>, bool) = self.pages_upto(
             caller,
             &format!("{repo_path}/milestones?state={state}"),
             &format!("listing the milestones of {repo}"),
+            crate::forge::backend::MILESTONE_PAGES,
         )?;
-        Ok(listed
+        let listed = listed
             .into_iter()
             .map(|m| crate::forge::backend::MilestoneProgress {
                 number: m.number,
@@ -624,7 +640,8 @@ impl GitHub {
                 url: m.html_url,
                 updated_at: m.updated_at,
             })
-            .collect())
+            .collect();
+        Ok(crate::forge::backend::Milestones { listed, cut })
     }
 
     pub(crate) fn create_milestone(

@@ -103,6 +103,49 @@ fn its_fine_on_a_loop_lets_it_go_on_and_counts_again_from_nothing() {
     }
 }
 
+/// Q261: **Raise the budget answers its ask**, so the ask is no longer Not answered, and the
+/// chat stays held: it goes on only once a look finds it within the limit the person raised
+/// ([`let_go_of_budgets`]).
+#[test]
+fn raise_the_budget_answers_its_ask_and_keeps_it_held_until_a_look_finds_it_within() {
+    let pauses = Pauses::default();
+    pauses.pause(TASK, at_time(30, 30), AT, vec![BELOW]);
+
+    let answered = pauses.answer(TASK, RAISE).expect("answered");
+    assert_eq!(answered.then, Then::Raise);
+    assert!(answered.held.is_empty(), "nothing goes on yet");
+    assert!(pauses.holds(TASK) && pauses.holds(BELOW), "held still");
+    assert_eq!(
+        pauses.at_budgets(),
+        vec![(
+            TASK,
+            Reached::Time {
+                limit: 30,
+                worked: 30
+            }
+        )],
+        "the look that finds it within the new limit lets it go"
+    );
+}
+
+/// Q262: **an ask is answered once**. A budget pause's first Raise the budget is its answer;
+/// a later press, another Raise or Continue, writes none.
+#[test]
+fn raise_then_continue_writes_one_answer() {
+    let pauses = Pauses::default();
+    pauses.pause(TASK, at_time(30, 30), AT, vec![BELOW]);
+
+    let presses =
+        [RAISE, RAISE, CONTINUE].map(|option| pauses.answer(TASK, option).expect("answered"));
+    assert_eq!(
+        presses.iter().map(|one| one.answers).collect::<Vec<_>>(),
+        [true, false, false],
+        "one answer written, at the first press"
+    );
+    assert_eq!(presses[2].then, Then::GoOn, "Continue still lets it go on");
+    assert!(!pauses.holds(TASK));
+}
+
 #[test]
 fn stop_on_a_loop_is_the_windows_stop() {
     let pauses = Pauses::default();
@@ -123,8 +166,8 @@ fn an_answer_the_ask_does_not_offer_or_to_no_pause_is_refused_and_changes_nothin
         "a loop offers no Continue"
     );
     assert!(
-        pauses.answer(TASK, "raise").is_err(),
-        "Raise the budget is the window's"
+        pauses.answer(TASK, RAISE).is_err(),
+        "a loop offers no Raise the budget"
     );
     assert!(pauses.holds(TASK), "still paused");
 }

@@ -828,17 +828,22 @@ impl Blocks {
             .is_some_and(|mine| mine.contains(block))
     }
 
-    /// `block` of chat `session` was answered: it is held no longer.
-    pub fn answered(&self, session: u32, block: &HeldBlock) {
+    /// `block` of chat `session` was answered: it is held no longer. Whether this call let it
+    /// go, found held and removed under one lock: of two answers racing for one block, only
+    /// the one that did writes its answer (Q262 amended).
+    pub fn answered(&self, session: u32, block: &HeldBlock) -> bool {
         self.no_longer_waits(session, block);
         if let Some(mine) = self.calls().get_mut(&session) {
             mine.held.retain(|one| one.block != *block);
         }
         self.loud(session, |one| one == block);
         self.noticed().remove(&session);
+        let mut removed = false;
         let mut held = self.held();
         if let Some(mine) = held.get_mut(&session) {
+            let before = mine.len();
             mine.retain(|one| one != block);
+            removed = mine.len() < before;
             if mine.is_empty() {
                 held.remove(&session);
             }
@@ -850,6 +855,7 @@ impl Blocks {
                 since.remove(&session);
             }
         }
+        removed
     }
 
     /// Chat `session` ended: nothing is held for it, and each ask it still had is a block now
@@ -1432,9 +1438,16 @@ pub async fn allow_sandbox_block_for_tasks(
             &held.audit_then_record(network.as_ref()),
             (crate::sandboxing::now_secs(), &|told| tell(told)),
         )?;
-        // Each task allowed starts its block count again (R-211, Q253).
+        // Each task allowed starts its block count again (R-211, Q253), and is the person's
+        // Allow in its Chat log (R-229).
         for task in &done.answered {
             crate::pausing::allowed(&held, *task);
+            crate::chatlog::answered_in_the_window(
+                held.hooks(),
+                *task,
+                purlis_core::eventlog::stops::AskGroup::Sandbox,
+                true,
+            );
         }
         Ok(done)
     })
@@ -1454,7 +1467,17 @@ pub fn keep_sandbox_block_for_tasks(
 ) -> Result<Vec<u32>, String> {
     let held = planes.held(&plane)?;
     let audit = held.audit_then_record(planes.network());
-    keep_blocked(held.chats(), session, &seen, reason.as_deref(), &audit)
+    let kept = keep_blocked(held.chats(), session, &seen, reason.as_deref(), &audit)?;
+    // R-229: each task's Keep blocked, in its Chat log.
+    for task in &kept {
+        crate::chatlog::answered_in_the_window(
+            held.hooks(),
+            *task,
+            purlis_core::eventlog::stops::AskGroup::Sandbox,
+            false,
+        );
+    }
+    Ok(kept)
 }
 
 /// [`keep_sandbox_block_for_tasks`] on `chats`.
