@@ -32,6 +32,8 @@ export interface TabMemoryLook {
   /** The web content processes' memory, in kilobytes: footprint on macOS, resident on Linux. */
   webContentKb: number;
   webContentProcesses: number;
+  /** Each web content process the look counted, by pid, with its own kilobytes. */
+  webContentEach: { pid: number; kb: number }[];
 }
 
 /**
@@ -54,9 +56,15 @@ export function tabMemoryLook(
       appKb,
       webContentKb: web.webContentFootprintKb,
       webContentProcesses: web.webContentProcesses,
+      webContentEach: web.webContentEach,
     };
   }
-  return { appKb, webContentKb: web.webContentKb, webContentProcesses: web.webContentProcesses };
+  return {
+    appKb,
+    webContentKb: web.webContentKb,
+    webContentProcesses: web.webContentProcesses,
+    webContentEach: web.webContentEach,
+  };
 }
 
 /** What M8 says of one open tab. */

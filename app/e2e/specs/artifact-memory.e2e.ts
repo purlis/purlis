@@ -86,28 +86,69 @@ function look(pid: number): TabMemoryLook {
 
 const total = (seen: TabMemoryLook) => seen.appKb + seen.webContentKb;
 
+/** One look `settledLook` took, for its log: when, and what it saw or why it saw nothing. */
+interface Sample {
+  ms: number;
+  seen?: TabMemoryLook;
+  missed?: string;
+}
+
 /** Where `settledLook` has got to, kept in one place its wait can write. */
 interface Looking {
   last: TabMemoryLook | null;
   settled: TabMemoryLook | null;
   missed: unknown;
   gone: boolean;
+  /** Whether two looks in a row ever agreed, and why the last such pair was not ready. */
+  steadied: boolean;
+  unready: string | null;
+  samples: Sample[];
+}
+
+/** A look in a line: its total and each web content process by pid. */
+function said(seen: TabMemoryLook): string {
+  const each = seen.webContentEach.map((one) => `${one.pid}:${Math.round(one.kb / 1024)}`);
+  return `${Math.round(total(seen) / 1024)} MB [${each.join(" ")}]`;
+}
+
+/** The samples in lines, for the failure and the run's output. */
+function samplesSaid(samples: Sample[]): string {
+  return samples
+    .map(
+      (one) =>
+        `  +${one.ms} ms ${one.seen === undefined ? `missed: ${one.missed}` : said(one.seen)}`,
+    )
+    .join("\n");
 }
 
 /**
- * A look once two in a row, a second apart, agree within `SETTLED_KB` and `ready` holds.
+ * A look once two in a row, a second apart, agree within `SETTLED_KB` and `ready` holds of it:
+ * `ready` answers `null` when it does, or why not.
  *
  * A look that fails is one more second to wait, not the verdict: `footprint` can miss a web
  * content process that `ps` still lists, one starting or exiting (#6232). Two good looks in a
  * row are still needed, and a look failing until the timeout fails the test with its own words.
  * The app itself gone fails it at once.
+ *
+ * A wait that runs out says which of its two conditions never held (#6589): no two looks ever
+ * agreed, or they did and `ready` refused them, in `ready`'s words. Either way it gives every
+ * look it took, each web content process by pid.
  */
 async function settledLook(
   pid: number,
-  ready: (seen: TabMemoryLook) => boolean,
+  ready: (seen: TabMemoryLook) => string | null,
   what: string,
 ): Promise<TabMemoryLook> {
-  const looking: Looking = { last: null, settled: null, missed: null, gone: false };
+  const looking: Looking = {
+    last: null,
+    settled: null,
+    missed: null,
+    gone: false,
+    steadied: false,
+    unready: null,
+    samples: [],
+  };
+  const started = Date.now();
   try {
     await browser.waitUntil(
       () => {
@@ -121,21 +162,31 @@ async function settledLook(
         } catch (error) {
           looking.missed = error;
           looking.last = null;
+          looking.samples.push({ ms: Date.now() - started, missed: String(error) });
           return false;
         }
+        looking.samples.push({ ms: Date.now() - started, seen: now });
         const before = looking.last;
         const steady = before !== null && Math.abs(total(now) - total(before)) <= SETTLED_KB;
         looking.last = now;
-        if (steady && ready(now)) looking.settled = now;
+        if (steady) {
+          looking.steadied = true;
+          looking.unready = ready(now);
+          if (looking.unready === null) looking.settled = now;
+        }
         return looking.settled !== null;
       },
       { timeout: 60_000, interval: 1_000 },
     );
   } catch {
-    const why = looking.missed === null ? "" : `; the last look failed: ${String(looking.missed)}`;
-    throw new Error(`the app's memory never settled ${what}${why}`);
+    const missed = looking.missed === null ? "" : `; a look failed: ${String(looking.missed)}`;
+    const why = looking.steadied
+      ? `its memory settled, but ${looking.unready ?? "it was never ready"}`
+      : `its memory never settled: no two looks a second apart agreed within ${SETTLED_KB / 1024} MB`;
+    throw new Error(`${what}: ${why}${missed}; its looks:\n${samplesSaid(looking.samples)}`);
   }
   if (looking.gone || looking.settled === null) throw new Error(`the app (pid ${pid}) is gone`);
+  console.log(`purlis-artifact-tab-looks ${what}:\n${samplesSaid(looking.samples)}`);
   return looking.settled;
 }
 
@@ -170,7 +221,7 @@ describe("an open artifact tab's memory (ADR 0086 M8)", function () {
     expect(await artifactWebviews()).toEqual([]);
     const pid = theApp();
 
-    const before = await settledLook(pid, () => true, "before the tab opened");
+    const before = await settledLook(pid, () => null, "before the tab opened");
     await icon.click();
     await browser.waitUntil(async () => (await artifactWebviews()).length === 1, {
       timeout: 20_000,
@@ -178,8 +229,11 @@ describe("an open artifact tab's memory (ADR 0086 M8)", function () {
     });
     const after = await settledLook(
       pid,
-      (seen) => seen.webContentProcesses > before.webContentProcesses,
-      "with the tab open, or its page started no web content process of its own",
+      (seen) =>
+        seen.webContentProcesses > before.webContentProcesses
+          ? null
+          : `its page started no web content process of its own: ${said(seen)} against ${said(before)} before the tab opened`,
+      "with the tab open",
     );
 
     const budgetKb = artifactTabBudgetKb(process.platform);
