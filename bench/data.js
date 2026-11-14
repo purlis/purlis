@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794667295382,
+  "lastUpdate": 1794685991168,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -49350,6 +49350,48 @@ window.BENCHMARK_DATA = {
             "value": 101.916462,
             "unit": "ms",
             "extra": "median of 5 runs: 101.250, 101.771, 101.916, 102.608, 102.906 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "09ff7031886059e4c0f4393b7f774b2dc9749864",
+          "message": "Bump astro from 7.4.5 to 7.4.12 in /site (#6547)\n\nBumps [astro](https://github.com/withastro/astro/tree/HEAD/packages/astro) from 7.4.5 to 7.4.12.\n- [Release notes](https://github.com/withastro/astro/releases)\n- [Changelog](https://github.com/withastro/astro/blob/main/packages/astro/CHANGELOG.md)\n- [Commits](https://github.com/withastro/astro/commits/astro@7.4.12/packages/astro)\n\n---\nupdated-dependencies:\n- dependency-name: astro\n  dependency-version: 7.4.12\n  dependency-type: direct:production\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-14T19:21:52Z",
+          "tree_id": "dd15631cc920680e0f7546547abd7fb30a664c5c",
+          "url": "https://github.com/purlis/purlis/commit/09ff7031886059e4c0f4393b7f774b2dc9749864"
+        },
+        "date": 1794685985123,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.35641,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.331, 0.346, 0.356, 0.364, 0.364 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3458075,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.249, 16.283, 16.346, 16.373, 16.785 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.9660545,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.366, 100.910, 100.966, 101.717, 103.097 ms"
           }
         ]
       }
