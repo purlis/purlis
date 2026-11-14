@@ -7,12 +7,20 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import type { ChatLogRow, FinishedTurn } from "./bindings";
+import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import type { ChatLogRow, FinishedBlock, FinishedTurn } from "./bindings";
 import { ChatLogRows } from "./ChatLogTab";
 import { Inbox } from "./Inbox";
-import { finishUpdates, finishWaysOf } from "./finishRows";
-import { BlockWaysOut } from "./BlockWaysOut";
-import { GO_TO_CHAT, SHOW_THIS_CHECK, SHOW_THIS_GUARD, TELL_THE_CHAT } from "./blockWays";
+import { finishUpdates, finishWaysOf, groupedFinishes } from "./finishRows";
+import { BlockWaysOut, finishRowWays } from "./BlockWaysOut";
+import {
+  GO_TO_CHAT,
+  SHOW_THIS_CHECK,
+  SHOW_THIS_GUARD,
+  TELL_THE_CHAT,
+  TOLD,
+  TYPE_IT,
+} from "./blockWays";
 import { forgetInbox } from "./inboxRules";
 import { forgetProjectViews } from "./projectViews";
 
@@ -26,6 +34,7 @@ import { forgetProjectViews } from "./projectViews";
 
 afterEach(() => {
   cleanup();
+  clearMocks();
   forgetInbox();
   forgetProjectViews();
 });
@@ -42,6 +51,7 @@ const blocked = (over: Partial<Blocked> = {}): Blocked => ({
   target: "A3b",
   harness: "claude",
   reason: null,
+  resolved: false,
   ...over,
 });
 
@@ -58,7 +68,7 @@ let pressed: string[] = [];
 const WAYS = {
   tell: () => {
     pressed.push("tell");
-    return Promise.resolve(undefined);
+    return Promise.resolve({ typed: TOLD });
   },
   go: () => pressed.push("go"),
 };
@@ -162,6 +172,17 @@ describe("a harness-check block's ways out", () => {
   });
 });
 
+describe("Tell the chat… is offered only while the block stands (Q272)", () => {
+  it("a since-resolved Chat log row offers no Tell", () => {
+    expect(waysOf(rowOf(blocked({ resolved: true })))).toEqual([SHOW_THIS_GUARD]);
+    cleanup();
+    expect(waysOf(rowOf(blocked({ ...CHECK, resolved: true })))).toEqual([SHOW_THIS_CHECK]);
+    cleanup();
+    // One still unresolved offers it.
+    expect(waysOf(rowOf(GUARD))).toEqual([TELL_THE_CHAT, SHOW_THIS_GUARD]);
+  });
+});
+
 describe("a Can't-tell block's way out", () => {
   it("a Can't-tell block offers Go to chat", async () => {
     const row = rowOf(CANT_TELL);
@@ -186,10 +207,22 @@ describe("Tell the chat…", () => {
     expect(pressed).toEqual(["tell"]);
   });
 
+  it("says it typed on a plain status line, never as a press that did nothing", async () => {
+    const row = rowOf(GUARD);
+    await userEvent.click(within(row).getByRole("button", { name: TELL_THE_CHAT }));
+    await userEvent.click(within(row).getByRole("button", { name: TYPE_IT }));
+    const typed = await within(row).findByText(TOLD);
+    expect(typed).toHaveAttribute("role", "status");
+    // NothingDone's line is for a press that did nothing (#1693): never the success.
+    expect(typed).not.toHaveClass("inbox-refused");
+  });
+
   it("says why nothing was typed where the chat is not waiting", async () => {
     pressed = [];
     const tell = vi.fn(() =>
-      Promise.resolve("steward 3 is working, so nothing was typed. Press again once it waits."),
+      Promise.resolve({
+        why: "steward 3 is working, so nothing was typed. Press again once it waits.",
+      }),
     );
     render(<BlockWaysOut blocks={[GUARD]} who="steward 3" tell={tell} go={() => undefined} />);
     await userEvent.click(screen.getByRole("button", { name: TELL_THE_CHAT }));
@@ -209,7 +242,9 @@ describe("where the ways out are", () => {
     at: AT,
     failed: false,
     blocked: 1,
-    blocks: [{ source: "guard", target_kind: "guard_arm", target: "A3b" }],
+    blocks: [
+      { source: "guard", qualifier: null, target_kind: "guard_arm", target: "A3b", harness: "claude" },
+    ],
   };
 
   it("a block's ways out are on its finish row and its Chat log row and not on the marker", async () => {
@@ -255,5 +290,124 @@ describe("where the ways out are", () => {
     expect(marker).not.toMatch(/BlockWaysOut|blockWays/);
     for (const label of [TELL_THE_CHAT, SHOW_THIS_GUARD, SHOW_THIS_CHECK, GO_TO_CHAT])
       expect(marker).not.toContain(label);
+  });
+});
+
+describe("a finish row's ways out (Q272)", () => {
+  const PLANE = "/home/dev/plane";
+  const AT = Math.floor(Date.parse("2026-11-13T11:00:00Z") / 1000);
+  const NAMES: Record<number, string> = {
+    3: "steward 3",
+    4: "planner 4",
+    5: "coder 5",
+    6: "reviewer 6",
+  };
+  const nameOf = (session: number) => NAMES[session] ?? String(session);
+  const block = (over: Partial<FinishedBlock>): FinishedBlock => ({
+    source: "guard",
+    qualifier: null,
+    target_kind: null,
+    target: null,
+    harness: "claude",
+    ...over,
+  });
+  const turn = (session: number, one: FinishedBlock): FinishedTurn => ({
+    session,
+    key: `01TURN${session}`,
+    at: AT - session,
+    failed: false,
+    blocked: 1,
+    blocks: [one],
+  });
+
+  /** What `tell_chat_blocked` was asked to type into, in order. */
+  let told: number[] = [];
+  /** The chats Go to chat went to. */
+  let went: number[] = [];
+
+  /** Updates › Mine with the finish rows of `turns`, grouped and wired as PlaneView wires them. */
+  function finishRowsOf(turns: readonly FinishedTurn[]) {
+    told = [];
+    went = [];
+    mockIPC((cmd, args) => {
+      if (cmd !== "tell_chat_blocked") return null;
+      told.push((args as { session: number }).session);
+      return null;
+    });
+    const updates = finishUpdates(turns, nameOf).map((one) => ({ ...one, read: false }));
+    const rows = groupedFinishes(updates).map(({ update, keys }) => ({
+      update,
+      dismiss: () => undefined,
+      ways: finishRowWays({
+        plane: PLANE,
+        turns,
+        keys,
+        who: update.chain.at(-1) ?? "this chat",
+        nameOf,
+        go: (session) => went.push(session),
+      }),
+    }));
+    render(
+      <Inbox
+        part="updates"
+        plane={PLANE}
+        asks={[]}
+        onGo={() => undefined}
+        onLeave={() => undefined}
+        updates={{ rows, onMarkAllRead: () => undefined, onDismissAll: () => undefined }}
+      />,
+    );
+  }
+
+  it("a grouped finish row tells only the chats whose block offers Tell, and names them", async () => {
+    finishRowsOf([
+      turn(3, block({ source: "guard", target_kind: "guard_arm", target: "A3b" })),
+      turn(4, block({ source: "sandbox", qualifier: "cant_tell" })),
+      turn(5, block({ source: "sandbox" })),
+      turn(6, block({ source: "harness_check", harness: "codex" })),
+    ]);
+    const row = await screen.findByRole("row", { name: /Finished its turn · 1 blocked/ });
+    await userEvent.click(within(row).getByRole("button", { name: TELL_THE_CHAT }));
+    const asking = within(row).getByRole("region", { name: "Tell the chat" });
+    // The confirming text names the chats it types into, and no other.
+    expect(asking.textContent).toContain("steward 3");
+    expect(asking.textContent).toContain("reviewer 6");
+    expect(asking.textContent).not.toContain("planner 4");
+    expect(asking.textContent).not.toContain("coder 5");
+    await userEvent.click(within(asking).getByRole("button", { name: TYPE_IT }));
+    const typed = await within(row).findByText(/^Typed in /);
+    await waitFor(() => expect([...told].sort()).toEqual([3, 6]));
+    expect(typed.textContent).toContain("steward 3");
+    expect(typed.textContent).toContain("reviewer 6");
+    expect(typed.textContent).not.toContain("planner 4");
+  });
+
+  it("a grouped finish row's Go to chat goes to the chat that holds the Can't-tell block", async () => {
+    finishRowsOf([
+      turn(3, block({ source: "guard", target_kind: "guard_arm", target: "A3b" })),
+      turn(4, block({ source: "sandbox", qualifier: "cant_tell" })),
+    ]);
+    const row = await screen.findByRole("row", { name: /Finished its turn · 1 blocked/ });
+    await userEvent.click(within(row).getByRole("button", { name: GO_TO_CHAT }));
+    expect(went).toEqual([4]);
+  });
+
+  it("a Can't-tell block on a finish row offers Go to chat, and no Tell or Show", async () => {
+    finishRowsOf([turn(4, block({ source: "guard", qualifier: "cant_tell" }))]);
+    const row = await screen.findByRole("row", { name: /Finished its turn · 1 blocked/ });
+    expect(waysOf(row)).toEqual([GO_TO_CHAT]);
+    await userEvent.click(within(row).getByRole("button", { name: GO_TO_CHAT }));
+    expect(went).toEqual([4]);
+  });
+
+  it("a harness-check block on a finish row names its harness", async () => {
+    finishRowsOf([turn(6, block({ source: "harness_check", harness: "codex" }))]);
+    const row = await screen.findByRole("row", { name: /Finished its turn · 1 blocked/ });
+    expect(waysOf(row)).toEqual([TELL_THE_CHAT, SHOW_THIS_CHECK]);
+    expect(row.textContent).toContain("only Codex's own check decides");
+    await userEvent.click(within(row).getByRole("button", { name: SHOW_THIS_CHECK }));
+    expect(within(row).getByRole("region", { name: "This check" }).textContent).toContain(
+      "Codex",
+    );
   });
 });
