@@ -57,12 +57,16 @@ export function TryStep({
   const [triedIn, setTriedIn] = useState<string>();
   /** What the try proved of the agent's identity, this visit, in the identity's line (#4490). */
   const [proved, setProved] = useState<PoolSetupCheck>();
-  const checks = step.checks.map((check) =>
+  /** The link's round trip, measured by this visit's try, on a pool on another machine (#6272). */
+  const [link, setLink] = useState<PoolSetupCheck>();
+  const stepChecks = step.checks.map((check) =>
     proved && check.about === "identity" && check.verdict === "ok" ? proved : check,
   );
   const passed = step.state === "done";
-  // Anything that didn't pass, skipped or not done, keeps the end from reading as done.
-  const except = checks.some((check) => check.verdict !== "ok");
+  // Anything that didn't pass, skipped or not done, keeps the end from reading as done. The
+  // link's round trip is a measure, said beside them: a chat started over it.
+  const except = stepChecks.some((check) => check.verdict !== "ok");
+  const checks = link ? [...stepChecks, link] : stepChecks;
 
   // Leaving the step, or closing the tab, cancels a try still under way (#4976).
   useEffect(
@@ -77,6 +81,7 @@ export function TryStep({
     under.current = true;
     setFailed(undefined);
     setProved(undefined);
+    setLink(undefined);
     const tried = await commands.poolSetupTry(plane, pool, workspace ?? null);
     under.current = false;
     setTrying(false);
@@ -86,6 +91,7 @@ export function TryStep({
     if (tried.data.cancelled) return;
     setTriedIn(tried.data.workspace ?? undefined);
     setProved(tried.data.identity ?? undefined);
+    setLink(tried.data.link ?? undefined);
     changed();
   };
 

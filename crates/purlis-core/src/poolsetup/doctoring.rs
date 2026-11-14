@@ -59,12 +59,12 @@ pub fn check_with(
     })?;
     let through = crate::sshroute::pool::docker_of(docker, pool)?;
     engine(&through, &host, pool.image())?;
-    if let (Some(name), Some(route)) = (pool.docker_context(), route_of(pool)) {
-        if crate::dockercontext::moved(&contexts(), name, &route).is_some() {
-            return Err(Finding::ContextMoved {
-                name: name.to_owned(),
-            });
-        }
+    if let (Some(name), Some(route)) = (pool.docker_context(), route_of(pool))
+        && crate::dockercontext::moved(&contexts(), name, &route).is_some()
+    {
+        return Err(Finding::ContextMoved {
+            name: name.to_owned(),
+        });
     }
     let round_trip = round_trip(&through).map_err(|why| Finding::EngineSilent {
         host: host.clone(),

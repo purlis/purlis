@@ -301,7 +301,7 @@ export const NotAllowedToUseDocker: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     const list = within(canvas.getByRole("list", { name: "What purlis checked on build-box" }));
-    await expect(list.getAllByRole("listitem")).toHaveLength(7);
+    await expect(list.getAllByRole("listitem")).toHaveLength(11);
     const again = canvas.getByRole("button", { name: "Check again" });
     again.focus();
     await userEvent.tab();
@@ -710,7 +710,7 @@ const NOT_SIGNED = tlsFinding(
 export const FindsCertificateFromAnotherAuthority: Story = {
   beforeEach: faked([]),
   args: { step: NOT_SIGNED, shown: shown(NOT_SIGNED) },
-  play: playFinding(6),
+  play: playFinding(10),
 };
 
 const EXPIRED = tlsFinding(
@@ -722,7 +722,7 @@ const EXPIRED = tlsFinding(
 export const FindsCertificateExpired: Story = {
   beforeEach: faked([]),
   args: { step: EXPIRED, shown: shown(EXPIRED) },
-  play: playFinding(6),
+  play: playFinding(10),
 };
 
 const WRONG_NAME = tlsFinding(
@@ -735,7 +735,7 @@ const WRONG_NAME = tlsFinding(
 export const FindsCertificateForAnotherName: Story = {
   beforeEach: faked([]),
   args: { step: WRONG_NAME, shown: shown(WRONG_NAME) },
-  play: playFinding(6),
+  play: playFinding(10),
 };
 
 const CA_CHANGED = connect({
@@ -833,6 +833,375 @@ export const ContextMoved: Story = {
     await expect(again).toHaveFocus();
     await userEvent.tab();
     await expect(canvas.getByRole("button", { name: "Keep the pool as it is" })).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
+// --- Doctor's every finding (#6272, ADR 0123 §7) ------------------------------------------------
+// Each finding's words and its commands are the core's (`connecting::said_and_next`,
+// `connecting::see`), as `purlis pool doctor` prints them too.
+
+const CHECK_AGAIN = action(
+  "check-again",
+  "Check again",
+  "Contacts the machine again. It changes nothing.",
+);
+const CHANGE = action(
+  "change-machine",
+  "Change the machine",
+  "Goes back to the machine, to pick or type it again.",
+);
+
+/** A finding over SSH on build-box, with its one way on and its commands. */
+const sshFinding = (
+  cause: string,
+  finding: string,
+  see: { note: string; text: string } = SEE,
+  next = CHECK_AGAIN,
+  more: Partial<PoolSetupStep> = {},
+) =>
+  connect({
+    state: "attention",
+    cause,
+    findings: [finding],
+    see,
+    next,
+    machine: machine({
+      trusted: { algorithm: "ssh-ed25519", fingerprint: FINGERPRINT },
+      engine: "ABCD:EFGH:IJKL",
+    }),
+    ...more,
+  });
+
+/** A finding's card, by its title, its failing line among `lines`, its commands and its way on
+ * reached by the keyboard. */
+const playDoctor =
+  (title: string, lines: number, host = "build-box"): Story["play"] =>
+  async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText(title)).toBeVisible();
+    const list = within(canvas.getByRole("list", { name: `What purlis checked on ${host}` }));
+    await expect(list.getAllByRole("listitem")).toHaveLength(lines);
+    const see = canvas.getByRole("button", { name: "See what this does" });
+    await userEvent.click(see);
+    await expect(canvas.getByRole("button", { name: /Copy/ })).toBeVisible();
+    const first = canvas.getAllByRole("button", {
+      name: /Check again|Change the machine|Check and trust again/,
+    })[0];
+    first?.focus();
+    await expect(first).toHaveFocus();
+    await expectFocusInSight();
+  };
+
+const NO_SUCH_NAME = sshFinding(
+  "no-such-name",
+  "purlis couldn't find a machine called build-box. Check the name, or pick it from your SSH hosts.",
+  {
+    note: "The first prints what your SSH settings make of build-box, and the second lists the hosts they name, to pick from. Both only read.",
+    text: "ssh -G build-box\ngrep -i '^host ' ~/.ssh/config",
+  },
+  CHANGE,
+);
+
+/** The name doesn't resolve: the first line fails, and the way on is another name. */
+export const FindsNoSuchName: Story = {
+  beforeEach: faked([]),
+  args: { step: NO_SUCH_NAME, shown: shown(NO_SUCH_NAME) },
+  play: playDoctor("purlis couldn't find that machine", 11),
+};
+
+const NO_ANSWER = sshFinding(
+  "no-answer",
+  "build-box didn't answer on port 22. Check that it's on and on this network, and connect your VPN if you use one.",
+  {
+    note: "This asks whether anything answers on port 22 of build-box, from this machine. It only reads.",
+    text: "nc -vz build-box 22",
+  },
+);
+
+/** Nothing answers on the port: the machine is off, elsewhere, or behind a VPN. */
+export const FindsNoAnswer: Story = {
+  beforeEach: faked([]),
+  args: { step: NO_ANSWER, shown: shown(NO_ANSWER) },
+  play: playDoctor("The machine didn't answer", 11),
+};
+
+const NOT_MET = sshFinding(
+  "not-met",
+  "purlis couldn't reach SSH on build-box (it said: kex_exchange_identification: Connection closed). Check that SSH is running there, then check again.",
+  {
+    note: "This signs in to build-box as purlis does, and prints what SSH says as it goes. It changes nothing there.",
+    text: "ssh sam@build-box -v -o BatchMode=yes true",
+  },
+);
+
+/** Something answers on the port, and it isn't SSH, or SSH closed on purlis. */
+export const FindsSshNotThere: Story = {
+  beforeEach: faked([]),
+  args: { step: NOT_MET, shown: shown(NOT_MET) },
+  play: playDoctor("SSH didn't answer there", 11),
+};
+
+const SIGN_IN_REFUSED = sshFinding(
+  "sign-in-refused",
+  "build-box didn't accept your sign-in. purlis signs in with your SSH agent and never asks for a password. Add your key to the agent with `ssh-add`, then check again.",
+  {
+    note: "The first lists the keys your SSH agent holds, and the second adds your own key to it. The third signs in to build-box as purlis does, never asking for a password.",
+    text: "ssh-add -l\nssh-add\nssh sam@build-box -o BatchMode=yes true",
+  },
+);
+
+/** No key in the agent the machine takes: the sign-in's line fails. */
+export const FindsNoAgentKey: Story = {
+  beforeEach: faked([]),
+  args: { step: SIGN_IN_REFUSED, shown: shown(SIGN_IN_REFUSED) },
+  play: playDoctor("The machine didn't accept your sign-in", 11),
+};
+
+const NO_ENGINE = sshFinding(
+  "no-engine",
+  "build-box has no Docker running that sam can use. Start Docker there, or name its socket in the address, then check again.",
+  {
+    note: "The first shows which of Docker's sockets build-box has. The second starts Docker there and keeps it on, asking for your password on build-box.",
+    text: `ssh sam@build-box 'ls -l /var/run/docker.sock "$XDG_RUNTIME_DIR/docker.sock"'\nssh -t sam@build-box sudo systemctl enable --now docker`,
+  },
+);
+
+/** No engine's socket there: Docker's line fails. */
+export const FindsNoSocket: Story = {
+  beforeEach: faked([]),
+  args: { step: NO_ENGINE, shown: shown(NO_ENGINE) },
+  play: playDoctor("No Docker there that you can use", 11),
+};
+
+const ENGINE_SILENT = sshFinding(
+  "engine-silent",
+  "Docker on build-box didn't answer through SSH. Check that Docker is running there, then check again.",
+  {
+    note: "This asks Docker on build-box how it is, as purlis reaches it. It only reads.",
+    text: "docker -H ssh://sam@build-box info",
+  },
+);
+
+/** The socket is there and Docker behind it doesn't answer. */
+export const FindsDockerSilent: Story = {
+  beforeEach: faked([]),
+  args: { step: ENGINE_SILENT, shown: shown(ENGINE_SILENT) },
+  play: playDoctor("Docker didn't answer there", 11),
+};
+
+const ENGINE_CHANGED = sshFinding(
+  "pool-engine-changed",
+  "The Docker engine on build-box isn't the one you trusted: it was reset or reinstalled. purlis makes and links no runner there until you check it and trust it again. Runners made on the old engine aren't on this one.",
+  SEE,
+  action(
+    "check-and-trust-again",
+    "Check and trust again",
+    "Checks the engine there again, for you to trust.",
+  ),
+);
+
+/** A made pool's engine answers with another id under the same key: its line fails. */
+export const FindsEngineChanged: Story = {
+  beforeEach: faked([]),
+  args: { step: ENGINE_CHANGED, shown: shown(ENGINE_CHANGED, "build-box") },
+  play: playDoctor("Docker there isn't the one you trusted", 11),
+};
+
+const UNCONFINED = sshFinding(
+  "unconfined",
+  "Docker on build-box doesn't give containers its built-in seccomp profile, so purlis makes no runner there. On build-box, set the daemon's seccomp profile back to its default, then check again.",
+  {
+    note: "This prints the security options Docker on build-box gives containers, as purlis reads them. It only reads.",
+    text: "docker -H ssh://sam@build-box info --format '{{json .SecurityOptions}}'",
+  },
+);
+
+/** Docker there is set to another seccomp profile, or none: the local kind's daemon check. */
+export const FindsDockerUnconfined: Story = {
+  beforeEach: faked([]),
+  args: { step: UNCONFINED, shown: shown(UNCONFINED, "build-box") },
+  play: playDoctor("Docker there doesn't confine runners", 11),
+};
+
+const ARCHITECTURE = sshFinding(
+  "unsupported-architecture",
+  "build-box is linux/s390x, and the runner image is built for linux/amd64 and linux/arm64. Pick a machine that is one of those.",
+  {
+    note: "This prints the platform of build-box, as purlis reads it. It only reads.",
+    text: "docker -H ssh://sam@build-box info --format '{{.OSType}}/{{.Architecture}}'",
+  },
+  CHANGE,
+);
+
+/** A machine of a platform the runner image isn't built for. */
+export const FindsUnsupportedArchitecture: Story = {
+  beforeEach: faked([]),
+  args: { step: ARCHITECTURE, shown: shown(ARCHITECTURE) },
+  play: playDoctor("There's no runner image for that machine", 11),
+};
+
+const IMAGE_UNREACHABLE = sshFinding(
+  "image-unreachable",
+  "build-box couldn't download the runner image. Check that build-box can reach ghcr.io, then check again.",
+  {
+    note: "This asks ghcr.io for an answer from build-box, as Docker there does before it downloads. It only reads.",
+    text: "ssh sam@build-box 'curl -sSI https://ghcr.io/v2/'",
+  },
+);
+
+/** The machine lacks the runner image and can't reach its registry. */
+export const FindsImageUnreachable: Story = {
+  beforeEach: faked([]),
+  args: { step: IMAGE_UNREACHABLE, shown: shown(IMAGE_UNREACHABLE, "build-box") },
+  play: playDoctor("The machine couldn't download the runner image", 11),
+};
+
+const DISK_FULL = sshFinding(
+  "disk-full",
+  "Docker's disk on build-box is full: it has 512 MB free, and a runner needs at least 1.0 GB, so purlis makes no runner there. To make room, run docker system df on build-box to see what takes it, then docker system prune there to remove what nothing uses, or give Docker there a bigger disk. Then check again.",
+  {
+    note: "The first shows what takes Docker's disk on build-box. The second removes what nothing uses there: stopped containers, unused networks and images, and the build cache. It keeps volumes, so a runner's home and sign-ins stay.",
+    text: "docker -H ssh://sam@build-box system df\ndocker -H ssh://sam@build-box system prune",
+  },
+);
+
+/** Docker's disk there has less free than a runner needs: the last line fails. */
+export const FindsDiskFull: Story = {
+  beforeEach: faked([]),
+  args: { step: DISK_FULL, shown: shown(DISK_FULL, "build-box") },
+  play: playDoctor("Docker's disk there is full", 11),
+};
+
+const HERE = sshFinding("here", "purlis found no ssh on this machine.");
+
+/** Something on this machine stopped the check before the other machine was asked. */
+export const FindsSomethingHere: Story = {
+  beforeEach: faked([]),
+  args: { step: HERE, shown: shown(HERE) },
+  play: playDoctor("That didn't work", 11),
+};
+
+const NOT_A_ROUTE = connect({
+  state: "attention",
+  cause: "not-a-route",
+  findings: ["a route starts with ssh://, as in ssh://you@build-box"],
+  next: CHANGE,
+  machine: machine({ route: "sftp://build-box", host: null }),
+});
+
+/** What was typed is no address purlis can read: refused on its card, with Change the machine. */
+export const NotAnAddress: Story = {
+  beforeEach: faked([]),
+  args: { step: NOT_A_ROUTE, shown: shown(NOT_A_ROUTE) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText("That isn't an address purlis can read")).toBeVisible();
+    const change = canvas.getByRole("button", { name: "Change the machine" });
+    change.focus();
+    await expect(change).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
+const tlsDoctor = (cause: string, finding: string, see: { note: string; text: string }) => ({
+  ...tlsFinding(cause, finding),
+  see,
+});
+
+const TLS_FILE = tlsDoctor(
+  "tls-file",
+  "/Users/sam/.docker/lab/ca.pem isn't there. Check the file named under Options, then check again.",
+  {
+    note: "This shows whether the file is there and who may read it. It only reads.",
+    text: "ls -l /Users/sam/.docker/lab/ca.pem",
+  },
+);
+
+/** A file named under Options can't be used. */
+export const FindsTlsFileMissing: Story = {
+  beforeEach: faked([]),
+  args: { step: TLS_FILE, shown: shown(TLS_FILE) },
+  play: playDoctor("purlis can't use one of the files you named", 10, "lab.example.internal"),
+};
+
+const CLIENT_REFUSED = tlsDoctor(
+  "tls-client-refused",
+  "Docker on lab.example.internal didn't accept your client certificate. Check /Users/sam/.docker/lab/cert.pem: it must be signed by the CA Docker on lab.example.internal trusts, the file its --tlscacert names.",
+  {
+    note: "This prints who signed your client certificate and when it expires. It only reads.",
+    text: "openssl x509 -noout -issuer -enddate -in /Users/sam/.docker/lab/cert.pem",
+  },
+);
+
+/** Docker there refuses the client certificate. */
+export const FindsClientCertificateRefused: Story = {
+  beforeEach: faked([]),
+  args: { step: CLIENT_REFUSED, shown: shown(CLIENT_REFUSED) },
+  play: playDoctor("Docker there didn't accept your certificate", 10, "lab.example.internal"),
+};
+
+const CLIENT_EXPIRED = tlsDoctor(
+  "tls-client-expired",
+  "Your client certificate has expired. Check /Users/sam/.docker/lab/cert.pem, make a new one, then check again.",
+  {
+    note: "This prints who signed your client certificate and when it expires. It only reads.",
+    text: "openssl x509 -noout -issuer -enddate -in /Users/sam/.docker/lab/cert.pem",
+  },
+);
+
+/** The client certificate has expired. */
+export const FindsClientCertificateExpired: Story = {
+  beforeEach: faked([]),
+  args: { step: CLIENT_EXPIRED, shown: shown(CLIENT_EXPIRED) },
+  play: playDoctor("Your certificate has expired", 10, "lab.example.internal"),
+};
+
+const FOR_ADMIN = sshFinding(
+  "not-allowed",
+  "sam on build-box isn't allowed to use Docker. On build-box, add sam to the docker group, or use rootless Docker or Podman, then check again.",
+  {
+    note: "The first adds sam to the docker group on build-box, asking for your password there: anyone in that group controls Docker on build-box. The second signs in again, so the group counts, and asks Docker for its id as purlis does. Rootless Docker or Podman keeps Docker to your own account instead.",
+    text: "ssh -t sam@build-box sudo usermod -aG docker sam\nssh sam@build-box docker info --format '{{.ID}}'",
+  },
+  CHECK_AGAIN,
+  {
+    also: action(
+      "send-to-admin",
+      "Send to your admin",
+      "Shows the words to send the machine's admin: what's wrong, the machine's fingerprints and the commands. They hold no password, token, key or credential.",
+    ),
+    admin: `Hello. I'm setting up purlis to run my chats in Docker on build-box, and its check found something there I can't change with my own account. Could you have a look?
+
+What the check found:
+sam on build-box isn't allowed to use Docker. On build-box, add sam to the docker group, or use rootless Docker or Podman, then check again.
+
+The machine, as purlis reaches it:
+Route: ssh://sam@build-box
+Machine: build-box
+Reached by: SSH
+Its key, trusted: ${FINGERPRINT} (ssh-ed25519)
+Its engine, trusted: ABCD:EFGH:IJKL
+
+The first adds sam to the docker group on build-box, asking for your password there: anyone in that group controls Docker on build-box. The second signs in again, so the group counts, and asks Docker for its id as purlis does. Rootless Docker or Podman keeps Docker to your own account instead.
+ssh -t sam@build-box sudo usermod -aG docker sam
+ssh sam@build-box docker info --format '{{.ID}}'
+
+Once it's done, tell me, and I'll press Check again. Sent from purlis 0.5.2. It holds no password, token, key or credential.`,
+  },
+);
+
+/** Send to your admin, open: the route, the host and the fingerprints, to copy, and no key. */
+export const SendToYourAdmin: Story = {
+  beforeEach: faked([]),
+  args: { step: FOR_ADMIN, shown: shown(FOR_ADMIN, "build-box") },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Send to your admin" }));
+    await expect(canvas.getByText(/Route: ssh:\/\/sam@build-box/)).toBeVisible();
+    const copy = canvas.getAllByRole("button", { name: /Copy/ })[0];
+    copy?.focus();
+    await expect(copy).toHaveFocus();
     await expectFocusInSight();
   },
 };
