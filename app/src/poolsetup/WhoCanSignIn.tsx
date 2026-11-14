@@ -3,7 +3,7 @@
 
 import { useId, useState } from "react";
 import { Notice } from "../Notice";
-import { Button } from "../ui/button/Button";
+import { Button, ButtonRow } from "../ui/button/Button";
 import { Radio, RadioGroup } from "../ui/choice/Radio";
 import { Recommended } from "./parts";
 
@@ -95,14 +95,16 @@ export function WhoCanSignIn({
           Only me, and people I trust with my logins
         </Radio>
       </RadioGroup>
-      <Button
-        size="sm"
-        aria-label={`Save who can sign in to ${host}`}
-        aria-disabled={unchanged || saving || undefined}
-        onPress={press}
-      >
-        {saving ? "Saving…" : "Save"}
-      </Button>
+      {/* In a row of its own, so it stays a button's width wherever the question stands. */}
+      <ButtonRow size="sm">
+        <Button
+          aria-label={`Save who can sign in to ${host}`}
+          aria-disabled={unchanged || saving || undefined}
+          onPress={press}
+        >
+          {saving ? "Saving…" : "Save"}
+        </Button>
+      </ButtonRow>
       {asking && forgetsLoginsOf !== undefined && (
         <Notice
           cause={`pool-forget-logins:${forgetsLoginsOf}`}
