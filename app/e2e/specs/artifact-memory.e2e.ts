@@ -132,8 +132,11 @@ async function settledLook(
       { timeout: 60_000, interval: 1_000 },
     );
   } catch {
+    // The last look says which half failed: totals still moving, or a page with no web content
+    // process of its own (one WebKit had started before the tab, say), main run 43516240829.
+    const seen = looking.last === null ? "" : `; the last look: ${JSON.stringify(looking.last)}`;
     const why = looking.missed === null ? "" : `; the last look failed: ${String(looking.missed)}`;
-    throw new Error(`the app's memory never settled ${what}${why}`);
+    throw new Error(`the app's memory never settled ${what}${seen}${why}`);
   }
   if (looking.gone || looking.settled === null) throw new Error(`the app (pid ${pid}) is gone`);
   return looking.settled;
@@ -179,7 +182,7 @@ describe("an open artifact tab's memory (ADR 0086 M8)", function () {
     const after = await settledLook(
       pid,
       (seen) => seen.webContentProcesses > before.webContentProcesses,
-      "with the tab open, or its page started no web content process of its own",
+      `with the tab open, or its page started no web content process of its own (before it: ${before.webContentProcesses})`,
     );
 
     const budgetKb = artifactTabBudgetKb(process.platform);

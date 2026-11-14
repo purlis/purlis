@@ -270,7 +270,14 @@ pub fn take_up_sandbox_block(
     shown: BlockShown,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
-    taken_up(held.chats().blocks(), session, &shown)
+    taken_up(held.chats().blocks(), session, &shown)?;
+    // R-229: its quiet line is an ask now, raised in the chat's Chat log.
+    crate::chatlog::raised(
+        held.hooks(),
+        session,
+        purlis_core::eventlog::stops::AskGroup::Sandbox,
+    );
+    Ok(())
 }
 
 /// [`take_up_sandbox_block`] on `blocks`.

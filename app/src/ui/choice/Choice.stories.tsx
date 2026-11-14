@@ -19,6 +19,12 @@ import { Slider } from "./Slider";
 import { Switch } from "./Switch";
 import { Button } from "../button/Button";
 
+/** `value`, which the story has drawn: it fails here, by name, where it is not. */
+function drawn<T>(value: T | null | undefined, what: string): T {
+  if (value === null || value === undefined) throw new Error(`${what} is not drawn`);
+  return value;
+}
+
 /** A column the story's controls stand in, as a form's rows do. */
 function Column({ children }: { children: ReactNode }) {
   return (
@@ -303,6 +309,60 @@ export const SegmentedControlMd: Story = {
 export const SegmentedControlSm: Story = {
   render: () => <Segments size="sm" />,
   play: segmentsByKeyboard,
+};
+
+/** The counts a chip's round count is drawn at (#6342), each beside its words. */
+const ROUND_CHIPS = [
+  ["none", "None", 0],
+  ["one", "One", 1],
+  ["nine", "Nine", 9],
+  ["ten", "Ten", 10],
+  ["many", "Many", 120],
+] as const;
+
+function RoundCountChips() {
+  const [scope, setScope] = useState("none");
+  return (
+    <SegmentedControl
+      size="sm"
+      aria-label="Show what needs you in"
+      value={scope}
+      onChange={setScope}
+    >
+      {ROUND_CHIPS.map(([value, says, count]) => (
+        <Segment key={value} value={value} count={count} countAs="round">
+          {says}
+        </Segment>
+      ))}
+    </SegmentedControl>
+  );
+}
+
+/**
+ * **A chip's count is the badge family's round count** (#6342): 14px in the ✋'s colour, none at
+ * 0, 1 and 9 as they are, 10 and 120 as 9+; each chip is named with the real number.
+ */
+export const RoundCountsOnChips: Story = {
+  render: () => <RoundCountChips />,
+  play: async ({ canvas, userEvent }) => {
+    const round = (chip: HTMLElement) =>
+      chip.closest("label")?.querySelector<HTMLElement>('[data-scope="count"][data-part="round"]');
+    const none = canvas.getByRole("radio", { name: "None" });
+    await expect(round(none)).toBeNull();
+    const counted = ["One 1", "Nine 9", "Ten 10", "Many 120"].map((name) =>
+      canvas.getByRole("radio", { name }),
+    );
+    await expect(counted.map((chip) => round(chip)?.dataset.drawn)).toEqual(["1", "9", "9+", "9+"]);
+    for (const chip of counted) {
+      const box = drawn(round(chip), "a chip's count").getBoundingClientRect();
+      await expect([Math.round(box.width), Math.round(box.height)]).toEqual([14, 14]);
+    }
+    await userEvent.tab();
+    await untilFocused(() => none, "Tab lands on the picked chip");
+    await userEvent.keyboard("{ArrowRight}{ArrowRight}{ArrowRight}{ArrowRight}");
+    await untilFocused(() => counted[3], "→ along to the last");
+    expectFocusInSight();
+  },
 };
 
 /**
