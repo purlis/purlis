@@ -169,7 +169,8 @@ fn a_turns_unresolved_blocks_are_counted_at_its_end() {
     );
 
     // A success before the block resolves nothing; a block of an earlier turn is not this
-    // turn's; and a report that is no proof (unverified) is never counted.
+    // turn's; and a report that is no proof (unverified) is counted, as the marker counts it
+    // (Q280).
     let dir = tempfile::tempdir().unwrap();
     Turns::in_dir(dir.path(), CHAT)
         .prompt()
@@ -179,7 +180,7 @@ fn a_turns_unresolved_blocks_are_counted_at_its_end() {
         .prompt()
         .block(LIST, Some(Qualifier::Unverified))
         .stop();
-    assert_eq!(counted(dir.path(), CHAT), vec![1, 0], "order and turns");
+    assert_eq!(counted(dir.path(), CHAT), vec![1, 1], "order and turns");
 }
 
 /// R-241 (core): a turn that ended is a finished finish, a run of the chat's own that ended
@@ -260,7 +261,7 @@ fn a_call_comes_back_under_the_recorders_own_post_tool_words() {
 
 /// **R-300 (T1-33): a finish names its turn's unresolved blocks**, each by who blocked it and
 /// what at, so its finish row offers that block's ways out. One a target, as it is counted; a
-/// block that came back, or a qualified one, is none of them.
+/// block that came back is none of them.
 #[test]
 fn a_finish_names_its_unresolved_blocks_by_source_and_target() {
     let dir = tempfile::tempdir().unwrap();
@@ -283,8 +284,6 @@ fn a_finish_names_its_unresolved_blocks_by_source_and_target() {
         // Another call blocked, then come back: resolved.
         .block(LIST, None)
         .came_back(LIST, false)
-        // A report that can't be told counts toward nothing.
-        .block("digest-of-cat", Some(Qualifier::CantTell))
         .stop();
     let finishes = finishes_in(dir.path(), CHAT).unwrap();
     assert_eq!(finishes.len(), 1);
@@ -305,4 +304,96 @@ fn a_finish_names_its_unresolved_blocks_by_source_and_target() {
         finish.blocked,
         "the count is the blocks it names"
     );
+}
+
+/// **Q280 (R-300, R-192, Q272): a harness-check block and a Can't-tell block reach the finish
+/// row**, each with its qualifier and the chat's harness, so the ways out the row offers are
+/// theirs (Show this check names the harness; Go to chat), and the finish counts what the
+/// Blocked marker's tally counts of the same turn. Mutation: the finish keeping only blocks
+/// `crate::looping::counts` takes (the turn reads 0 while the marker reads 2), or naming no
+/// qualifier or no harness.
+#[test]
+fn a_harness_check_and_a_cant_tell_block_reach_the_finish_row_as_the_marker_counts_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut turns = Turns::in_dir(dir.path(), CHAT);
+    turns
+        .write(
+            None,
+            "run.started",
+            serde_json::json!({ "harness": "codex" }),
+        )
+        .prompt();
+    // As the recorder writes the harness's own refusal (`stops::block_of_line`): no target.
+    turns.block_by(Source::HarnessCheck, PUSH, None);
+    turns.block_by(Source::Guard, LIST, Some(Qualifier::CantTell));
+    turns.stop();
+
+    let finishes = finishes_in(dir.path(), CHAT).unwrap();
+    assert_eq!(finishes.len(), 1);
+    let finish = &finishes[0];
+    assert_eq!(
+        finish.unresolved,
+        vec![
+            Unresolved {
+                source: Source::HarnessCheck,
+                qualifier: None,
+                target: None,
+                harness: "codex".to_owned(),
+            },
+            Unresolved {
+                source: Source::Guard,
+                qualifier: Some(Qualifier::CantTell),
+                target: None,
+                harness: "codex".to_owned(),
+            },
+        ],
+    );
+
+    // The marker's tally of the same log, as the window reads it.
+    let mut marker = crate::eventlog::chatlog::Blocks::default();
+    for delivery in crate::eventlog::subscribe(dir.path(), 0).poll().unwrap() {
+        marker.take(delivery);
+    }
+    let tally = marker.since(CHAT, None).tally;
+    assert_eq!(
+        tally.blocks, 1,
+        "the harness's own check is a plain block: {tally:?}"
+    );
+    assert_eq!(tally.cant_tell_blocks, 1, "{tally:?}");
+    assert_eq!(
+        finish.blocked,
+        tally.blocks + tally.unverified_blocks + tally.cant_tell_blocks,
+        "the finish row and the marker agree on the count"
+    );
+}
+
+/// Q263, Q280: **one function decides what an Allow resolves**, for the block loop and the
+/// finish row alike: a sandbox ask's Allow, and a sandbox block. Mutation: `&&` for `||` in
+/// `looping::allow_resolves`, or it answering `true` or `false` whatever it is asked.
+#[test]
+fn one_function_decides_what_an_allow_resolves_for_the_loop_and_the_finish_row() {
+    use crate::looping::allow_resolves;
+    for ask in [
+        AskGroup::Sandbox,
+        AskGroup::HarnessPrompt,
+        AskGroup::Consent,
+        AskGroup::Hold,
+        AskGroup::LoopPause,
+        AskGroup::Budget,
+        AskGroup::HookGiveUp,
+    ] {
+        for source in [
+            Source::Guard,
+            Source::Sandbox,
+            Source::Policy,
+            Source::ProjectSetting,
+            Source::HarnessCheck,
+        ] {
+            assert_eq!(
+                allow_resolves(ask, source),
+                ask == AskGroup::Sandbox && source == Source::Sandbox,
+                "{ask:?} {source:?}"
+            );
+        }
+    }
 }

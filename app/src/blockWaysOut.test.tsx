@@ -318,6 +318,12 @@ describe("where the ways out are", () => {
   });
 });
 
+/**
+ * The rows here are those the core's finish now hands over (Q280): every block the Blocked
+ * marker counts, a harness's own check (no target, the chat's harness) and a Can't-tell report
+ * included, as the core's finish test feeds them (`crates/purlis-core/src/eventlog/finishes/
+ * tests.rs`, `a_harness_check_and_a_cant_tell_block_reach_the_finish_row_…`).
+ */
 describe("a finish row's ways out (Q272)", () => {
   const PLANE = "/home/dev/plane";
   const AT = Math.floor(Date.parse("2026-11-13T11:00:00Z") / 1000);
@@ -391,7 +397,7 @@ describe("a finish row's ways out (Q272)", () => {
   it("a grouped finish row tells only the chats whose block offers Tell, and names them", async () => {
     finishRowsOf([
       turn(3, block({ source: "guard", target_kind: "guard_arm", target: "A3b" })),
-      turn(4, block({ source: "sandbox", qualifier: "cant_tell" })),
+      turn(4, block({ source: "guard", qualifier: "cant_tell" })),
       turn(5, block({ source: "sandbox" })),
       turn(6, block({ source: "harness_check", harness: "codex" })),
     ]);
@@ -414,7 +420,7 @@ describe("a finish row's ways out (Q272)", () => {
   it("a grouped finish row's Go to chat goes to the chat that holds the Can't-tell block", async () => {
     finishRowsOf([
       turn(3, block({ source: "guard", target_kind: "guard_arm", target: "A3b" })),
-      turn(4, block({ source: "sandbox", qualifier: "cant_tell" })),
+      turn(4, block({ source: "guard", qualifier: "cant_tell" })),
     ]);
     const row = await screen.findByRole("row", { name: /Finished its turn · 1 blocked/ });
     await userEvent.click(within(row).getByRole("button", { name: GO_TO_CHAT }));

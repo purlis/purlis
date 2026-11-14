@@ -17,9 +17,11 @@
 //!   (R-103); a refusal whose ask is open, a hold, is no block (R-215). Counted apart from the
 //!   person's refusals and from the cool-off (R-350). Counted per aim, in a map of at most
 //!   [`AIMS_KEPT`] aims, the oldest dropped, so blocked calls that alternate still pause; and a
-//!   call counts once, however many connections it held (Q253). An Allow on any path (a hook's
-//!   ask, a held connection, the chooser, a late answer), a different call that came back and
-//!   Let it keep trying clear every aim (R-210, R-211, R-218).
+//!   call counts once, however many connections it held (Q253). A different call that came
+//!   back and Let it keep trying clear every aim (R-210, R-218). An Allow clears only the aims
+//!   it resolves (R-211 as Q263 and Q280 narrow it): a sandbox ask's, on any of its paths (a
+//!   held connection, the chooser), the aims of the sandbox blocks, and an Allow of another
+//!   kind of ask none (`allow_resolves`, which the turn's finish row reads too).
 //!
 //!   **Accepted limits** (Q133, Q235, Q253): a reworded retry is a different target. Only a
 //!   tool with a post-tool line resets the count by succeeding (R-210 is narrower than "any
@@ -45,7 +47,7 @@
 
 use std::collections::HashMap;
 
-use crate::eventlog::stops::{self, Block, Source, Stop, Target};
+use crate::eventlog::stops::{self, AskGroup, Block, Source, Stop, Target};
 use crate::stuck::Failing;
 
 /// **How many times what reads Stuck? a loop is**: a chat reads Stuck? at the same command's
@@ -149,9 +151,11 @@ impl Counted {
 
 /// **What a block was aimed at** (R-206): the tool plus its argument digest, as its hook sent
 /// it. Where a block names no digest (a held connection no call was heard for), its target
-/// summary stands in for it.
+/// summary stands in for it. Who blocked it too, since an Allow resolves only a sandbox block
+/// ([`allow_resolves`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Aim {
+    source: Source,
     tool: String,
     args: Option<String>,
     target: Option<Target>,
@@ -163,32 +167,38 @@ impl Aim {
     fn of(block: &Block) -> Option<Self> {
         let target = block.target.clone().filter(|_| block.args.is_none());
         (block.args.is_some() || target.is_some()).then(|| Self {
+            source: block.source,
             tool: crate::shown::readable(&block.tool, stops::TARGET_CHARS),
             args: block.args.clone(),
             target,
         })
     }
 
-    /// The target of a call a hook line names.
-    fn of_call(call: &crate::hookwire::ToolCall) -> Self {
-        Self {
-            tool: stops::line_tool(call),
-            args: call.args.clone(),
-            target: None,
-        }
+    /// Whether this is the aim of the call a hook line names: its tool and its digest, whoever
+    /// blocked it.
+    fn is_of_call(&self, call: &crate::hookwire::ToolCall) -> bool {
+        self.args.is_some() && self.args == call.args && self.tool == stops::line_tool(call)
     }
 }
 
 /// **Whether `block` is proof toward the block loop** (Q235, Q237): a guard's, the sandbox's, a
 /// policy's or a project's, reported plainly. Never the harness's own check (R-208), never a
-/// report that is qualified (R-209). The turn's finish row counts by it too
-/// ([`crate::eventlog::finishes`]).
+/// report that is qualified (R-209). The turn's finish row shows more than this, every block the
+/// Blocked marker counts (Q280), since a block that is no proof still stopped the turn.
 pub(crate) fn counts(block: &Block) -> bool {
     block.qualifier.is_none()
         && match block.source {
             Source::Guard | Source::Sandbox | Source::Policy | Source::ProjectSetting => true,
             Source::HarnessCheck => false,
         }
+}
+
+/// **Whether an Allow of an ask of group `ask` resolves a block by `source`** (Q263, Q280): only
+/// a sandbox ask's Allow, and only a sandbox block. An Allow of another kind of ask (a harness's
+/// own prompt, a consent) resolves nothing. The one rule for the block loop ([`Loops::allowed`])
+/// and for the turn's finish row ([`crate::eventlog::finishes`]).
+pub(crate) fn allow_resolves(ask: AskGroup, source: Source) -> bool {
+    ask == AskGroup::Sandbox && source == Source::Sandbox
 }
 
 /// What has been counted of each chat of one project, in memory.
@@ -212,14 +222,13 @@ impl Loops {
 
     /// The person answered one of chat `chat`'s asks, and `refused` it or not: whether that
     /// makes it a loop, held to `limits`, told only as the count reaches it. An allow starts the
-    /// count again, and the block count with it (R-211); a refusal leaves the block count as it
-    /// is (R-350).
+    /// count again. Neither touches the block count (R-350): these are the harness's own asks,
+    /// whose Allow resolves no block (`allow_resolves`, Q280).
     pub fn answered(&mut self, chat: u32, refused: bool, limits: &Limits) -> Option<Why> {
         let counted = self.chats.entry(chat).or_default();
         counted.refused = if refused {
             counted.refused.saturating_add(1)
         } else {
-            counted.blocked.clear();
             0
         };
         let times = counted.refused;
@@ -252,12 +261,14 @@ impl Loops {
         (times == BLOCKED_TIMES).then_some(Why::Blocked { times })
     }
 
-    /// **The person allowed a sandbox ask of chat `chat`'s** (R-211, Q253): a held connection's,
-    /// the chooser's or one answered late. Its block count starts again; its refusals' count is
-    /// [`Loops::answered`]'s alone.
-    pub fn allowed(&mut self, chat: u32) {
+    /// **The person allowed an ask of group `ask` of chat `chat`'s** (R-211, Q253, Q280): the
+    /// count of each aim that Allow resolves (`allow_resolves`) starts again, and no other's.
+    /// Its refusals' count is [`Loops::answered`]'s alone.
+    pub fn allowed(&mut self, chat: u32, ask: AskGroup) {
         if let Some(counted) = self.chats.get_mut(&chat) {
-            counted.blocked.clear();
+            counted
+                .blocked
+                .retain(|(aim, _)| !allow_resolves(ask, aim.source));
         }
     }
 
@@ -286,8 +297,7 @@ impl Loops {
                 .as_deref()
                 .is_some_and(|id| counted.calls.iter().any(|one| one == id));
             if !blocked_under_it {
-                let aim = Aim::of_call(call);
-                counted.blocked.retain(|(was, _)| *was == aim);
+                counted.blocked.retain(|(was, _)| was.is_of_call(call));
             }
         }
         None

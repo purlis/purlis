@@ -2055,11 +2055,9 @@ impl Held {
         // chat's same request, and the chat is told on its next turn to make it again. The
         // board is not moved: the chat still waits on its harness's own prompt, if it does.
         if let Some(late) = self.hooks.answer(session, ask, option)? {
+            // An Allow of the harness's own ask resolves no block, late or not, so the block
+            // count stands (Q263, Q280: `looping::allow_resolves`).
             let allowed = late.choice.kind == purlis_core::harness::model::ChoiceKind::Allow;
-            // An Allow answered late starts the block count again too (R-211, Q253).
-            if allowed {
-                crate::pausing::allowed(self, session);
-            }
             self.chats.tell_outcome(
                 session,
                 purlis_core::askoutcome::Outcome {

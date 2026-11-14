@@ -214,9 +214,12 @@ impl Pauses {
         self.inner().loops.stopped_under(chat, stop, call)
     }
 
-    /// The person allowed a sandbox ask of chat `chat`'s: its block count starts again (R-211).
+    /// The person allowed a sandbox ask of chat `chat`'s: the count of its sandbox blocks starts
+    /// again, and no other's (R-211, Q280).
     pub fn allowed(&self, chat: u32) {
-        self.inner().loops.allowed(chat);
+        self.inner()
+            .loops
+            .allowed(chat, purlis_core::eventlog::stops::AskGroup::Sandbox);
     }
 
     /// Chat `call.chat`'s hook line said it made or ended `call`, reported from outside its
@@ -544,8 +547,9 @@ pub(crate) fn stopped(
 }
 
 /// **The person allowed a sandbox ask of chat `chat`'s** (R-211, Q253), on any of its paths: a
-/// held connection's Notice, the question for several tasks, the chooser, an ask answered late.
-/// Its block count starts again, as an Allow of a hook's ask starts it ([`answered`]).
+/// held connection's Notice, the question for several tasks, the chooser. The count of its
+/// sandbox blocks starts again, and no other's; an Allow of the harness's own ask ([`answered`])
+/// starts none (Q263, Q280).
 pub(crate) fn allowed(held: &Held, chat: u32) {
     held.pauses().allowed(chat);
 }
