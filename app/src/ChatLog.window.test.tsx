@@ -447,6 +447,7 @@ describe("a block row's detail (R-340, T1-29)", () => {
       harness: "claude",
       reason: REASON,
       resolved: false,
+      allow_levels: [],
     };
     core((session) => [started(session), block]);
     render(<App />);

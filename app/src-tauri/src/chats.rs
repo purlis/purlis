@@ -1020,6 +1020,9 @@ pub struct Chats {
     /// Who writes a stop of a chat's into the event log (R-290): a held connection's refusal
     /// once the chat has stopped waiting on it. Empty until the project's hooks record.
     stops: Arc<Mutex<Option<StopWriter>>>,
+    /// Who audits the end of a chat's waiting Allow next time · once (T1-34, Q278): used up by
+    /// its attempt, or put out without it. Empty until the project's hooks record.
+    nexts_ended: Arc<Mutex<Option<NextEnded>>>,
     /// The project's Secret asks, which a start whose profile's credential its vault holds none
     /// of waits on (#5074, ADR 0109). Empty until the project is held.
     secret_asks: Mutex<Option<Arc<purlis_core::secrets::ask::Asks>>>,
@@ -1718,6 +1721,7 @@ impl Chats {
             blocks: Arc::default(),
             asks_moved: Arc::new(Mutex::new(None)),
             stops: Arc::new(Mutex::new(None)),
+            nexts_ended: Arc::new(Mutex::new(None)),
             secret_asks: Mutex::new(None),
             refused: Arc::new(Mutex::new(None)),
             refused_more: Arc::new(Mutex::new(None)),
@@ -3417,6 +3421,29 @@ impl Chats {
         }
     }
 
+    /// **What waits for each open chat's next attempt** (T1-34, R-291): each target a chat's
+    /// board lets through once, with the chat's number. Each board is read outside the hold of
+    /// the open chats: one in the session host is asked over its link.
+    pub fn next_attempts(&self) -> Vec<(u32, String)> {
+        let boards: Vec<(u32, Arc<dyn purlis_core::sandbox::Board>)> = {
+            let open = lock(&self.open);
+            open.iter()
+                .filter_map(|(number, running)| {
+                    Some((*number, running.confinement.as_ref()?.asks()?.clone()))
+                })
+                .collect()
+        };
+        boards
+            .into_iter()
+            .flat_map(|(number, board)| {
+                board
+                    .next_attempts()
+                    .into_iter()
+                    .map(move |target| (number, target))
+            })
+            .collect()
+    }
+
     /// Whether chat `session`'s proxy is asking the person about `target` (#1666): what the
     /// window's Notice says a connection waits on.
     pub fn asking(&self, session: u32, target: Option<&str>) -> bool {
@@ -3765,6 +3792,13 @@ impl Chats {
     /// asked live (#1709).
     pub fn tell_asks_moved_to(&self, moved: AsksMoved) {
         *lock(&self.asks_moved) = Some(moved);
+    }
+
+    /// **Who audits, from now on, the end of a chat's waiting Allow next time · once** (T1-34,
+    /// Q278): its attempt used it up, or it was put out without one. Its grant and its removal
+    /// are audited where they are made (`network::allow_next`, `sandboxing::revoke`).
+    pub fn audit_nexts_ended_with(&self, audit: NextEnded) {
+        *lock(&self.nexts_ended) = Some(audit);
     }
 
     /// The project's Secret asks, which a start asks for a missing profile credential through
@@ -5449,6 +5483,7 @@ impl Chats {
                     blocks: Arc::clone(&self.blocks),
                     moved: Arc::clone(&self.asks_moved),
                     stops: Arc::clone(&self.stops),
+                    ended: Arc::clone(&self.nexts_ended),
                 },
                 self.project.clone(),
             )
@@ -9405,6 +9440,11 @@ pub type Narrowed = Arc<dyn Fn(u32) + Send + Sync + 'static>;
 /// What is told a project's asks may have moved (#1709).
 pub type AsksMoved = Arc<dyn Fn() + Send + Sync + 'static>;
 
+/// **What audits the end of chat `number`'s waiting Allow next time · once of `target`**
+/// (T1-34, Q278): its attempt used it up, or it was put out without one. In memory alone, it
+/// is otherwise forgotten as the chat, its session host or the app restarts.
+pub type NextEnded = Arc<dyn Fn(u32, &str) + Send + Sync + 'static>;
+
 /// **What writes a sandbox block of chat `number`'s into the event log** (R-290), made durable
 /// before it answers: the one road every sandbox block takes (Q254), and why it is written
 /// ([`BlockWritten`]), which says whether an ask was withdrawn and whether the block loop counts
@@ -9462,6 +9502,8 @@ struct Asking {
     moved: Arc<Mutex<Option<AsksMoved>>>,
     /// Who writes a refusal that became a block (R-290).
     stops: Arc<Mutex<Option<StopWriter>>>,
+    /// Who audits a waiting Allow next time · once that ended (T1-34, Q278).
+    ended: Arc<Mutex<Option<NextEnded>>>,
 }
 
 /// **A chat's board of live asks** (#1666): what purlis's own proxy holds a connection on
@@ -9498,6 +9540,7 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::pl
         blocks,
         moved,
         stops,
+        ended,
     } = asking;
     let askable = {
         let (hear, whose) = (Arc::clone(&hear), Arc::clone(&whose));
@@ -9569,6 +9612,14 @@ fn asked_by_the_proxy(asking: Asking, root: PathBuf) -> purlis_core::sandbox::pl
                     }
                 }
                 record(&target, purlis_core::sandboxblock::record::TIMED_OUT);
+            }
+            // A waiting Allow next time · once ended (T1-34, Q278): used up by this attempt, as
+            // the person's grant, or put out without one. Audited as that grant ending, for
+            // the chat it waited for.
+            Heard::UsedNext(target) | Heard::DroppedNext(target) => {
+                if let Some(audit) = lock(&ended).clone() {
+                    told(Box::new(move || audit(chat, &target)));
+                }
             }
         }
     });

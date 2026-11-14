@@ -53,8 +53,10 @@
 //! (#2977, id 207), 1.82's skill change at a terminal the host audits (#6030, id 208), 1.83's
 //! rest of what a chat started without there, as `programs` answers it too (#6078, id 209),
 //! 1.84's live asks held open while the person is Quiet (#6007, id 210), 1.85's chat held
-//! still and let go on (#6015, id 211), and 1.87's held connection given up as the chat moved
-//! on from it (R-290, Q240, id 212).
+//! still and let go on (#6015, id 211), 1.87's held connection given up as the chat moved
+//! on from it (R-290, Q240, id 212), and 1.88's Allow next time of a block, made and removed,
+//! and listed by `reach_of` until it is used (T1-34, R-291, ids 213 to 215), and told used up
+//! or put out, so the window audits its end (Q278).
 //! 1.35 adds no frame of the
 //! control lane: its origin frame is a browser view's bytes, held by
 //! `a_browser_views_bytes_are_whole_frames_however_they_are_cut.rs` (#2300). Each must read back

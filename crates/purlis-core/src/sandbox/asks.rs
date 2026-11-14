@@ -24,6 +24,15 @@
 //!   ([`Heard::Asked`]): told together once the window has passed, each host and port named
 //!   whole as the proxy heard it, never a wildcard, so the person answers once.
 //! - **Keep blocked** refuses what is held on that host now and what comes after, until an Allow.
+//! - **Allow next time** (T1-34, R-291, Q188): once the chat stopped waiting and the refusal is a
+//!   block, its Allow next time · once makes a grant with no ask open ([`Asks::allow_next`]). The
+//!   chat's next attempt at that target goes on at once, never held or asked about, and uses it
+//!   up, as the person's grant; one held already when it lands takes it (Q278). Until then it is
+//!   listed ([`Asks::next_attempts`]), and it can be removed ([`Asks::forget_next`]). It is held
+//!   in memory alone, so a chat, session host or app restart forgets it; its use and an end
+//!   without its attempt are told ([`Heard::UsedNext`], [`Heard::DroppedNext`]), so each is
+//!   audited. A wider label is an Allow at its scope ([`Asks::allow`]), which stays until it is
+//!   removed.
 //! - **Bounded.** At most [`MOST_HELD`] connections are held at once; one more is refused at
 //!   once, as before, and not asked about ([`Answer::Busy`]).
 //! - **Held open while the person is Quiet** (ADR 0121 decision 13, #6007). While the window
@@ -83,6 +92,13 @@ pub enum Heard {
     /// A connection to `host:port` was held and nobody answered, or the chat moved on from it:
     /// it was refused.
     TimedOut(String),
+    /// **The chat's next attempt at `host` used up its Allow next time · once** (T1-34, Q278):
+    /// let through as the person's grant, and ended, so the app audits its end.
+    UsedNext(String),
+    /// **An Allow next time · once of `host` ended without its attempt** (T1-34, Q278): put out
+    /// by a newer one past the most a board keeps, or by a Keep blocked that covers it. The app
+    /// audits its end.
+    DroppedNext(String),
 }
 
 /// Who hears what a board tells.
@@ -101,6 +117,11 @@ struct State {
     left_out_blocked: Vec<u16>,
     /// Hosts kept blocked, until an Allow.
     blocked: Vec<Host>,
+    /// Targets allowed for the chat's next attempt alone (T1-34, R-291): each goes as an attempt
+    /// it covers goes on, held or not yet. **In memory only** (Q278): a chat, session host or app
+    /// restart forgets one not used yet, as the merge hold is forgotten. Its grant, its use, its
+    /// removal and its eviction are each audited ([`Heard::UsedNext`], [`Heard::DroppedNext`]).
+    next: Vec<Host>,
     /// Targets held and given up on, which an Allow tells the chat to retry.
     gave_up: Vec<String>,
     /// Targets asked about and not answered yet, so each is asked once.
@@ -263,6 +284,14 @@ impl Asks {
         if kept_blocked(&state, parsed.as_ref(), &named, port) {
             return Answer::Refused;
         }
+        // Allowed for its next attempt (T1-34, R-291): on at once, never asked about, and used
+        // up by this attempt, under the same hold, so two attempts never both take it. It is the
+        // person's grant, never one the chat holds (Q278), and its use is told, so it is audited.
+        if let Some(used) = take_next(&mut state, parsed.as_ref()) {
+            drop(state);
+            (self.tell)(Heard::UsedNext(used));
+            return Answer::Allowed(By::You);
+        }
         // Allowed already, since the chat started: on at once, and carried from now on. Kept
         // under the same hold, so a Keep blocked cannot come between.
         if let (Some(by), Some(host)) = (known, &parsed) {
@@ -299,12 +328,18 @@ impl Asks {
                 None => state.gathering = Some((vec![target.clone()], Instant::now() + self.group)),
             }
         }
+        // An Allow next time · once that lands while it is held takes it (Q278).
+        let mut used = None;
         let answer = loop {
             if let Some(by) = allowed_in(&state, &named, port, defaults) {
                 break Answer::Allowed(by);
             }
             if kept_blocked(&state, parsed.as_ref(), &named, port) {
                 break Answer::Refused;
+            }
+            if let Some(taken) = take_next(&mut state, parsed.as_ref()) {
+                used = Some(taken);
+                break Answer::Allowed(By::You);
             }
             // The chat moved on from it (R-290): refused now, as a timeout is.
             if state.cut.contains(&ticket) {
@@ -358,6 +393,9 @@ impl Asks {
         if answer == Answer::TimedOut {
             (self.tell)(Heard::TimedOut(target));
         }
+        if let Some(used) = used {
+            (self.tell)(Heard::UsedNext(used));
+        }
         answer
     }
 
@@ -371,13 +409,10 @@ impl Asks {
         let mut cut = Vec::new();
         for held in &state.held {
             // An answer that reached it first wins, whenever its connection wakes to read it.
+            let parsed = Host::parse(&held.target).ok();
             let answered = allowed_in(&state, &held.named, held.port, &held.defaults).is_some()
-                || kept_blocked(
-                    &state,
-                    Host::parse(&held.target).ok().as_ref(),
-                    &held.named,
-                    held.port,
-                );
+                || kept_blocked(&state, parsed.as_ref(), &held.named, held.port)
+                || next_for(&state, parsed.as_ref()).is_some();
             if held.target == target && !answered {
                 cut.push(held.ticket);
             }
@@ -436,6 +471,12 @@ impl Asks {
             Host::parse(entry).is_ok_and(|allowed| !host.covers(&allowed) && !allowed.covers(host))
         });
         let ended = state.live.len() != before;
+        // Allow next time ends with it too: the later answer wins, and each it ends is told, so
+        // its end is audited (Q278).
+        let (nexts_ended, kept): (Vec<Host>, Vec<Host>) = std::mem::take(&mut state.next)
+            .into_iter()
+            .partition(|allowed| host.covers(allowed) || allowed.covers(host));
+        state.next = kept;
         if !state.blocked.contains(host) {
             state.blocked.push(host.clone());
             if state.blocked.len() > MOST_KEPT {
@@ -447,6 +488,9 @@ impl Asks {
         state.asked.retain(other);
         drop(state);
         self.changed.notify_all();
+        for one in nexts_ended {
+            (self.tell)(Heard::DroppedNext(one.to_string()));
+        }
         ended
     }
 
@@ -473,6 +517,42 @@ impl Asks {
         self.state()
             .live
             .retain(|(one, kept)| *one != entry || *kept != by);
+    }
+
+    /// **Allow next time · once, from a block** (T1-34, R-291, Q188): `host` is let on for the
+    /// chat's next attempt at it alone, with no ask open. That attempt goes on at once and uses
+    /// it up ([`Self::hold`]), and one held already when it lands takes it (Q278). A Keep
+    /// blocked it covers ends, as an Allow ends one: the later answer wins. Made once: allowing
+    /// it again while it waits changes nothing. **Held in memory alone** (Q278): a chat, session
+    /// host or app restart forgets it. The oldest put out past the most a board keeps is told
+    /// ([`Heard::DroppedNext`]), so its end is audited.
+    pub fn allow_next(&self, host: &Host) {
+        let mut state = self.state();
+        state.blocked.retain(|one| !host.covers(one));
+        let mut dropped = None;
+        if !state.next.contains(host) {
+            state.next.push(host.clone());
+            if state.next.len() > MOST_KEPT {
+                dropped = Some(state.next.remove(0));
+            }
+        }
+        drop(state);
+        self.changed.notify_all();
+        if let Some(dropped) = dropped {
+            (self.tell)(Heard::DroppedNext(dropped.to_string()));
+        }
+    }
+
+    /// The targets allowed for the chat's next attempt and not used yet, each as a grant
+    /// writes it: what the Allowed list shows of them until they are used or removed.
+    pub fn next_attempts(&self) -> Vec<String> {
+        self.state().next.iter().map(ToString::to_string).collect()
+    }
+
+    /// **An Allow next time of `host` was removed** before it was used: the next attempt at it
+    /// is held and asked about again.
+    pub fn forget_next(&self, host: &Host) {
+        self.state().next.retain(|one| one != host);
     }
 }
 
@@ -546,6 +626,20 @@ fn allowed_in(state: &State, host: &str, port: u16, defaults: &[u16]) -> Option<
         .iter()
         .find(|(entry, _)| allows_on(std::slice::from_ref(entry), host, port, defaults))
         .map(|(_, by)| *by)
+}
+
+/// Where among `state`'s waiting Allow next time · once one covers `host`, if one does.
+fn next_for(state: &State, host: Option<&Host>) -> Option<usize> {
+    let host = host?;
+    state.next.iter().position(|one| one.covers(host))
+}
+
+/// **Takes the Allow next time · once that covers `host`**, if one waits (T1-34, R-291): used
+/// up, under the board's hold, so two attempts never both take it. The target as its grant
+/// wrote it, which its audit names.
+fn take_next(state: &mut State, host: Option<&Host>) -> Option<String> {
+    let at = next_for(state, host)?;
+    Some(state.next.remove(at).to_string())
 }
 
 /// Whether `target`, `host` on `port`, is one kept blocked in `state`: a host, or a service

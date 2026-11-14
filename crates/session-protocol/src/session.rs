@@ -564,9 +564,25 @@ use crate::view::{Limits, Views};
 /// there ends now as a timeout does, told as one, so the window writes its block on the one
 /// timeout path. A host before 1.87 is not sent it, and such a connection is a block only once
 /// its hold runs out.
+///
+/// 1.88 has a host take a block's Allow next time · once (T1-34, R-291):
+/// [`ReachChange::AllowNext`] on [`Command::ChangeReach`] lets the chat's next attempt at a host
+/// on with no ask, and that attempt uses it up; [`ReachChange::ForgetNext`] removes one not used
+/// yet; and [`ReachNow::next`] lists those waiting, which the window's Allowed list shows. Its
+/// proxy tells [`SandboxTold::UsedNext`] as an attempt uses one up and
+/// [`SandboxTold::DroppedNext`] as one ends without its attempt, so the window audits each end
+/// (Q278). A host before 1.88 is not sent them, and the window says it can't allow a next
+/// attempt there.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 87,
+    minor: 88,
+};
+
+/// The version that first takes a block's Allow next time · once ([`ReachChange::AllowNext`],
+/// T1-34): none is sent to a host before.
+pub const KNOWS_ALLOW_NEXT: Version = Version {
+    major: 1,
+    minor: 88,
 };
 
 /// The version that first gives up a held connection the chat moved on from
@@ -1650,6 +1666,11 @@ pub enum ReachChange {
     /// now as a timeout does. Taken by a confinement whose proxy asks nobody as a change of
     /// nothing.
     GiveUp { target: String },
+    /// The person allowed `host` for the chat's next attempt at it alone, from its block, with
+    /// no ask open (1.88, T1-34, R-291): that attempt goes on and uses it up.
+    AllowNext { host: String },
+    /// An Allow next time of `host` was removed before it was used (1.88, T1-34).
+    ForgetNext { host: String },
 }
 
 /// Where a confinement is, as the host started it (1.4): its proxy's ports on the loopback
@@ -1685,6 +1706,9 @@ pub struct ReachNow {
     /// The hosts allowed live, each with its layer.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub allowed_live: Vec<Listed>,
+    /// The hosts allowed for the chat's next attempt and not used yet (1.88, T1-34).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub next: Vec<String>,
 }
 
 /// What a confinement's proxy did, as the host tells the window (1.4).
@@ -1709,6 +1733,12 @@ pub enum SandboxTold {
     Asked { targets: Vec<String> },
     /// A connection to `target` was held and nobody answered.
     TimedOut { target: String },
+    /// The chat's next attempt at `target` used up its Allow next time · once (1.88, T1-34,
+    /// Q278), so the window audits its end.
+    UsedNext { target: String },
+    /// An Allow next time · once of `target` ended without its attempt (1.88, T1-34, Q278):
+    /// put out past the most a board keeps, or by a Keep blocked. The window audits its end.
+    DroppedNext { target: String },
 }
 
 /// What a [`Command::Start`] asks for.

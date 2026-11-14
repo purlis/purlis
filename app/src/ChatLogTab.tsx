@@ -8,6 +8,7 @@ import {
   type ChatLog,
   type ChatLogRow,
   type ChatLogSummary,
+  type GrantLevel,
   type PlaneId,
 } from "./bindings";
 import { EmptyState } from "./ui/empty-state/EmptyState";
@@ -29,10 +30,16 @@ import {
 import { ToggleButton } from "./ui/button/Button";
 import { useBlocksLookedAt, useChatLogFilter } from "./blockedMarkers";
 import { BlockWaysOut } from "./BlockWaysOut";
-import { TOLD, type Told } from "./blockWays";
+import { TOLD, type NextTimeSaid, type Told } from "./blockWays";
+import { sandboxCommandReturned } from "./sandboxAsked";
 
-/** **A block row's ways out** (T1-33, R-300): Tell the chat…'s typing and Go to chat. */
-export type ChatLogWays = { tell: () => Promise<Told>; go: () => void };
+/** **A block row's ways out** (T1-33, R-300): Tell the chat…'s typing and Go to chat, and a
+ *  sandbox block's Allow next time (T1-34, R-291). */
+export type ChatLogWays = {
+  tell: () => Promise<Told>;
+  go: () => void;
+  allowNext?: (target: string, level: GrantLevel) => Promise<NextTimeSaid>;
+};
 
 /** What heads a log with nothing to say above its rows. */
 const QUIET: ChatLogSummary = {
@@ -86,7 +93,13 @@ function BlockedRow({ row, name, ways }: { row: BlockRow; name: string; ways?: C
       </Disclosure>
       {/* Its ways out (T1-33, R-300): beside the row, never in its closed detail. */}
       {ways !== undefined && (
-        <BlockWaysOut blocks={[row]} who={name} tell={ways.tell} go={ways.go} />
+        <BlockWaysOut
+          blocks={[row]}
+          who={name}
+          tell={ways.tell}
+          go={ways.go}
+          allowNext={ways.allowNext}
+        />
       )}
     </>
   );
@@ -136,7 +149,13 @@ function QualifiedLine({
         )}
       </Disclosure>
       {ways !== undefined && (
-        <BlockWaysOut blocks={row.rows} who={name} tell={ways.tell} go={ways.go} />
+        <BlockWaysOut
+          blocks={row.rows}
+          who={name}
+          tell={ways.tell}
+          go={ways.go}
+          allowNext={ways.allowNext}
+        />
       )}
     </>
   );
@@ -276,6 +295,14 @@ export function ChatLogTab({
                 done.status === "error" ? { why: done.error } : { typed: TOLD },
               ),
           go: () => onShowChat?.(session),
+          // A sandbox block's Allow next time (T1-34, R-291): judged again by the core.
+          allowNext: (target, level) =>
+            commands
+              .allowNextTime(plane, session, target, level)
+              .then((done): NextTimeSaid =>
+                done.status === "error" ? { why: done.error } : { said: done.data.said },
+              )
+              .finally(sandboxCommandReturned),
         };
   if (said !== undefined)
     return <EmptyState headline="purlis could not read this chat's log" body={said} />;

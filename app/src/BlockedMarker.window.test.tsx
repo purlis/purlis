@@ -316,6 +316,7 @@ describe("the blocked marker", () => {
       harness: "claude",
       reason: null,
       resolved: false,
+      allow_levels: [],
     };
     const ended: ChatLogRow = {
       kind: "ended",

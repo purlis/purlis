@@ -5503,6 +5503,15 @@ pub trait Board: Send + Sync + std::fmt::Debug {
     /// The chat moved on from what is held on `target`, a host and port ([`asks::Asks::give_up`],
     /// R-290): whether one was held there, so it ends now as a timeout does.
     fn give_up(&self, target: &str) -> bool;
+    /// **The person allowed `host` for the chat's next attempt at it alone**, from its block's
+    /// Allow next time · once, with no ask open ([`asks::Asks::allow_next`], T1-34, R-291): or
+    /// why the board could not take it, so nothing is said to be allowed.
+    fn allow_next(&self, host: &hosts::Host) -> Result<(), String>;
+    /// The targets allowed for the chat's next attempt and not used yet
+    /// ([`asks::Asks::next_attempts`]).
+    fn next_attempts(&self) -> Vec<String>;
+    /// An Allow next time of `host` was removed before it was used ([`asks::Asks::forget_next`]).
+    fn forget_next(&self, host: &hosts::Host);
 }
 
 impl Board for asks::Asks {
@@ -5540,6 +5549,19 @@ impl Board for asks::Asks {
 
     fn give_up(&self, target: &str) -> bool {
         asks::Asks::give_up(self, target)
+    }
+
+    fn allow_next(&self, host: &hosts::Host) -> Result<(), String> {
+        asks::Asks::allow_next(self, host);
+        Ok(())
+    }
+
+    fn next_attempts(&self) -> Vec<String> {
+        asks::Asks::next_attempts(self)
+    }
+
+    fn forget_next(&self, host: &hosts::Host) {
+        asks::Asks::forget_next(self, host);
     }
 }
 

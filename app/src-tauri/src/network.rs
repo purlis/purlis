@@ -1116,6 +1116,178 @@ pub async fn allow_blocked_host(
     .await
 }
 
+/// **Allow next time on a sandbox block** (T1-34; R-291, Q188): the window's alone
+/// (`WINDOW_ONLY`), pressed on chat `session`'s block of `target` in its Chat log or on its
+/// turn's finish row, with no ask open. A chat never reaches it.
+#[tauri::command]
+#[specta::specta]
+pub async fn allow_next_time(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    session: u32,
+    target: String,
+    level: GrantLevel,
+) -> Result<Allowed, String> {
+    let held = planes.held(&plane)?;
+    let network = planes.network().cloned();
+    // Off the window's thread (#1949): the Blocked log is read, the grant judged, audited and
+    // kept.
+    crate::off_the_window("keeping your Allow", move || {
+        let root = held.root();
+        let (blocked_log, _) = blocked_log_of(
+            root,
+            &sandbox::Plane::read(root),
+            &held.chats().logged_names(),
+        )?;
+        let audit = held.audit_then_record(network.as_ref());
+        allow_next(
+            root,
+            held.chats(),
+            &blocked_log,
+            (session, &target, level),
+            &audit,
+            now_secs(),
+        )
+    })
+    .await
+}
+
+/// **Allow next time on chat `session`'s sandbox block of `target`, at `level`** (T1-34, R-291),
+/// in the project at `root`: a grant made with no ask open, **judged again by the core**, never
+/// on the window's word.
+///
+/// - **Only a block the row offers it on:** a host purlis's own proxy refused for this chat, as
+///   `blocked_log` has it (a sandbox block with no qualifier, Q265). A host only the chat's hook
+///   named, a guard's block, another chat's, and any host the window names are refused, and
+///   nothing is audited.
+/// - **Once** is the chat's next attempt at it alone: audited, then held on the chat's board
+///   ([`purlis_core::sandbox::Board::allow_next`]), which that attempt uses up. Until then it is
+///   listed under Allowed, and it can be removed there. Never past a policy lock, and only for a
+///   chat whose proxy asks live, where there is a next attempt to let through.
+/// - **A wider label** is the grant the block's Notice makes at that level
+///   ([`crate::sandboxing::allow_host_from_a_block`]), which stays until it is removed.
+///
+/// **A waiting once lives in memory alone** (Q278): a chat, session host or app restart forgets
+/// it, as the merge hold is forgotten, and nothing on disk outlives it. It is audited when it is
+/// granted (here), when its attempt uses it up, as the person's grant and never the chat's, and
+/// when it is put out past the most a board keeps ([`once_ended`], told by the chat's board),
+/// and when it is removed (`sandboxing::revoke`).
+fn allow_next(
+    root: &Path,
+    chats: &crate::chats::Chats,
+    blocked_log: &[Listed],
+    (session, target, level): (u32, &str, GrantLevel),
+    audit: Audit<'_>,
+    at: u64,
+) -> Result<Allowed, String> {
+    let host = grant::host(target).map_err(|why| why.to_string())?;
+    let named = host.to_string();
+    let chat = chats
+        .id_of(session)
+        .ok_or_else(|| format!("Nothing was allowed: chat {session} is not open."))?;
+    let blocked_here = blocked_log.iter().any(|one| {
+        one.chat == chat
+            && seen_by_the_sandbox(&one.block)
+            && matches!(
+                &one.block.target,
+                Some(Target::Host(blocked))
+                    if Host::parse(blocked.as_str()).is_ok_and(|blocked| blocked == host)
+            )
+    });
+    if !blocked_here {
+        return Err(format!(
+            "Nothing was allowed: the sandbox did not block {named} for this chat, so Allow \
+             next time can't allow it."
+        ));
+    }
+    if level != GrantLevel::Once {
+        return crate::sandboxing::allow_host_from_a_block(
+            root,
+            &sandbox::Machine::this(),
+            chats,
+            session,
+            (&named, level),
+            audit,
+            at,
+        );
+    }
+    let what = grant::What::Host(host.clone());
+    if let Some(why) = sandbox::policy::Locks::of(root).refuses_grant(&what, grant::Level::Once) {
+        return Err(why);
+    }
+    let board = chats.board_of(session).ok_or_else(|| {
+        "Nothing was allowed: this chat's sandbox doesn't ask about hosts while it runs, so \
+         there is no next attempt to let through. Allow it for this chat or longer."
+            .to_owned()
+    })?;
+    let (word, written) = (what.word(), named.as_str());
+    let audited = |granted: bool| grant::Audited {
+        granted,
+        what: word,
+        target: written,
+        level: grant::Level::Once,
+    };
+    audit(Some(session), &audited(true))?;
+    // Kept only once audited: where the board can't take it, the audit is told it ended.
+    if let Err(why) = board.allow_next(&host) {
+        if let Err(unsaid) = audit(Some(session), &audited(false)) {
+            tracing::warn!("purlis: an Allow next time not kept was not audited ({unsaid})");
+        }
+        return Err(format!("Nothing was allowed: {why}"));
+    }
+    Ok(Allowed {
+        said: format!(
+            "Allowed {named} once: the chat's next attempt at it goes through, and Allowed lists \
+             it until then."
+        ),
+        // Its board takes it: nothing restarts.
+        live: true,
+    })
+}
+
+/// **The audit of a waiting Allow next time · once of `target` that ended** (T1-34, Q278): its
+/// attempt used it up, or it was put out without one. The person's grant ending, as a removal
+/// is audited.
+pub(crate) fn once_ended(target: &str) -> grant::Audited<'_> {
+    grant::Audited {
+        granted: false,
+        what: "host",
+        target,
+        level: grant::Level::Once,
+    }
+}
+
+/// **The labels a sandbox block's row may offer for Allow next time** (T1-34, Q278; #1906: no
+/// Allow that wouldn't unblock it), in their order, under `locks`, as the Blocked log's
+/// [`levels_for`] says its row's: only for a host purlis's own proxy refused (no qualifier), and
+/// only those the policy keeps. None for any other block, which offers no Allow next time.
+pub(crate) fn next_time_levels(
+    locks: &sandbox::policy::Locks,
+    source: &str,
+    qualifier: Option<&str>,
+    target_kind: Option<&str>,
+    target: Option<&str>,
+) -> Vec<GrantLevel> {
+    let host = match (source, qualifier, target_kind, target) {
+        ("sandbox", None, Some("host"), Some(target)) => Host::parse(target).ok(),
+        _ => None,
+    };
+    let Some(host) = host else {
+        return Vec::new();
+    };
+    let what = grant::What::Host(host);
+    [
+        grant::Level::Once,
+        grant::Level::You,
+        grant::Level::Chat,
+        grant::Level::Project,
+    ]
+    .into_iter()
+    .filter(|level| locks.refuses_grant(&what, *level).is_none())
+    .map(GrantLevel::from)
+    .collect()
+}
+
 #[cfg(test)]
 #[path = "network_tests.rs"]
 mod tests;

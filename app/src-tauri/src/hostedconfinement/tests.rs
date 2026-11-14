@@ -148,6 +148,14 @@ fn what_a_proxy_in_the_host_did_reaches_the_windows_hearing() {
         SandboxTold::TimedOut {
             target: "pypi.example.com:443".into(),
         },
+        // A waiting Allow next time · once its attempt used up, and one put out (1.88, T1-34,
+        // Q278): each audited in the window as it is in a proxy of the window's own.
+        SandboxTold::UsedNext {
+            target: "registry.example.com:443".into(),
+        },
+        SandboxTold::DroppedNext {
+            target: "old.example.com:443".into(),
+        },
     ] {
         hears.told(told);
     }
@@ -167,8 +175,33 @@ fn what_a_proxy_in_the_host_did_reaches_the_windows_hearing() {
         *heard.asked.lock().unwrap(),
         [
             Heard::Asked(vec!["pypi.example.com:443".into()]),
-            Heard::TimedOut("pypi.example.com:443".into())
+            Heard::TimedOut("pypi.example.com:443".into()),
+            Heard::UsedNext("registry.example.com:443".into()),
+            Heard::DroppedNext("old.example.com:443".into()),
         ]
+    );
+}
+
+/// **A session host older than 1.88 is never sent Allow next time · once** (T1-34, R-291): its
+/// proxy could not take it, so the window refuses it in a sentence that says what still works,
+/// and nothing is said to be allowed; a host at 1.88 or later takes it.
+///
+/// Mutation it kills: the `KNOWS_ALLOW_NEXT` gate dropped or moved by one minor.
+#[test]
+fn an_older_session_host_is_refused_allow_next_time_once_through_its_version_gate() {
+    use purlis_session_protocol::session::KNOWS_ALLOW_NEXT;
+    use purlis_session_protocol::version::Version;
+    let older = Version {
+        major: KNOWS_ALLOW_NEXT.major,
+        minor: KNOWS_ALLOW_NEXT.minor - 1,
+    };
+    let refused = super::refuses_allow_next(older).expect("an older host is refused");
+    assert!(refused.contains("older than this window"), "{refused}");
+    assert!(refused.contains("for this chat or longer"), "{refused}");
+    assert_eq!(super::refuses_allow_next(KNOWS_ALLOW_NEXT), None);
+    assert_eq!(
+        super::refuses_allow_next(purlis_session_protocol::session::VERSION),
+        None
     );
 }
 

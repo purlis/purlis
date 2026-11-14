@@ -4113,6 +4113,20 @@ impl Planes {
                 None => Ok(()),
             })
         });
+        // A chat's waiting Allow next time · once that ended, used up by its attempt or put out
+        // without one (T1-34, Q278), is audited as the person's grant ending, and recorded, as a
+        // removal is. Weak for the handoff's reason.
+        held.chats().audit_nexts_ended_with({
+            let weak = Arc::downgrade(&held);
+            let network = self.network.clone();
+            Arc::new(move |chat, target: &str| {
+                let Some(strong) = weak.upgrade() else { return };
+                let audit = strong.audit_then_record(network.as_ref());
+                if let Err(why) = audit(Some(chat), &crate::network::once_ended(target)) {
+                    tracing::warn!("purlis: the end of an Allow next time was not audited ({why})");
+                }
+            })
+        });
         held.hooks.tell_calls_to({
             let weak = Arc::downgrade(&held);
             Arc::new(move |call| {

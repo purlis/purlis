@@ -470,6 +470,7 @@ export const commands = {
 	/**  **A chat's Network view** (#1662): what chat `session` reaches now, and what it was refused. */
 	chatNetwork: (plane: PlaneId, session: number) => typedError<ChatNetwork, string>(__TAURI_INVOKE("chat_network", { plane, session })),
 	allowBlockedHost: __WINDOW_ONLY_RESULT,
+	allowNextTime: __WINDOW_ONLY_RESULT,
 	allowSandboxPort: __WINDOW_ONLY_RESULT,
 	sandboxKeptBlocked: __WINDOW_ONLY_RESULT,
 	listGrantableFolder: __WINDOW_ONLY_RESULT,
@@ -4799,7 +4800,9 @@ sub_agent: boolean } |
 /**  A call was blocked: by whom, how much its report is worth, at what, and why it said. */
 { kind: "blocked"; at: string | null; tool: string; source: string; qualifier: string | null; target_kind: string | null; target: string | null; harness: string; reason: string | null; 
 /**  It has since been resolved (Q272): its row offers no Tell the chat…. */
-resolved: boolean };
+resolved: boolean; 
+/**  The labels its Allow next time may offer (T1-34, Q278), as policy keeps them. */
+allow_levels: GrantLevel[] };
 
 /**
  *  What heads a chat's Chat log: its allowed calls in one count, with those its person's rules
@@ -6797,6 +6800,8 @@ export type FinishedBlock = {
 	 *  `harness_check` block was.
 	 */
 	harness: string,
+	/**  The labels its Allow next time may offer (T1-34, Q278), as policy keeps them. */
+	allow_levels: GrantLevel[],
 };
 
 /**  What finishing them came to. What each step said is in the app's log. */

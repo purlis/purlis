@@ -273,6 +273,7 @@ const BLOCK: Extract<ChatLogRow, { kind: "blocked" }> = {
   harness: "claude",
   reason: null,
   resolved: false,
+  allow_levels: [],
 };
 
 /** The tags a row carries, by their words. */
@@ -469,7 +470,11 @@ export const UnverifiedRowsCollapse: Story = {
 };
 
 /** **A block row's ways out** (T1-33, R-300): what a story's presses reach, none of them a core's. */
-const WAYS = { tell: () => Promise.resolve({ typed: TOLD }), go: () => undefined };
+const WAYS = {
+  tell: () => Promise.resolve({ typed: TOLD }),
+  go: () => undefined,
+  allowNext: () => Promise.resolve({ said: "Allowed registry.example.com:443 once." }),
+};
 
 /** The ways out a row offers, by their words. */
 const waysOf = (canvas: Canvas) =>
@@ -536,5 +541,51 @@ export const CantTellBlockWayOut: Story = {
     const go = canvas.getByRole("button", { name: "Go to chat" });
     go.focus();
     await expectFocusInSight();
+  },
+};
+
+/**
+ * **A sandbox block's ways out** (T1-34; R-196, R-291): a sandbox block offers Allow next time
+ * and Show this rule. Show this rule, from the keyboard, opens a read-only detail; Allow next
+ * time offers the shipped Allow labels, in their order.
+ */
+export const SandboxBlockWaysOut: Story = {
+  args: {
+    rows: [
+      START,
+      {
+        ...BLOCK,
+        source: "sandbox",
+        target_kind: "host",
+        target: "registry.example.com:443",
+        allow_levels: ["once", "you", "chat", "project"],
+      },
+    ],
+    ways: WAYS,
+  },
+  play: async ({ canvas }) => {
+    await expect(waysOf(canvas)).toEqual(["Allow next time", "Show this rule"]);
+    const rule = canvas.getByRole("button", { name: "Show this rule" });
+    rule.focus();
+    await userEvent.keyboard("{Enter}");
+    await expect(rule).toHaveAttribute("aria-expanded", "true");
+    await expectFocusInSight();
+    const detail = canvas.getByRole("region", { name: "This rule" });
+    await expect(detail.textContent).toContain("registry.example.com:443");
+    await expect(detail.querySelectorAll("button")).toHaveLength(0);
+    const next = canvas.getByRole("button", { name: "Allow next time" });
+    next.focus();
+    await userEvent.keyboard("{Enter}");
+    await expect(next).toHaveAttribute("aria-expanded", "true");
+    await expect(
+      Array.from(canvas.getByRole("region", { name: "Next time" }).querySelectorAll("button")).map(
+        (one) => one.textContent?.trim(),
+      ),
+    ).toEqual([
+      "Allow once",
+      "Allow for me on this machine",
+      "Allow only for this chat",
+      "Allow for everyone in this project",
+    ]);
   },
 };

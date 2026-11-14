@@ -892,6 +892,12 @@ export const commands = {
 	/**  **Allow** on a row of the Blocked log (#1662): the window's alone (`WINDOW_ONLY`). */
 	allowBlockedHost: (plane: PlaneId, host: string, level: GrantLevel) => typedError<Allowed, string>(__TAURI_INVOKE("allow_blocked_host", { plane, host, level })),
 	/**
+	 *  **Allow next time on a sandbox block** (T1-34; R-291, Q188): the window's alone
+	 *  (`WINDOW_ONLY`), pressed on chat `session`'s block of `target` in its Chat log or on its
+	 *  turn's finish row, with no ask open. A chat never reaches it.
+	 */
+	allowNextTime: (plane: PlaneId, session: number, target: string, level: GrantLevel) => typedError<Allowed, string>(__TAURI_INVOKE("allow_next_time", { plane, session, target, level })),
+	/**
 	 *  **Allow port** on Settings' Network page (#1970): the service on this Mac at `port`, for open
 	 *  chat `chat` alone or for every chat of this project on this machine, granted by
 	 *  [`allow_port`] through the path a block's Notice takes. The window's alone (`WINDOW_ONLY`).
@@ -8056,7 +8062,9 @@ sub_agent: boolean } |
 /**  A call was blocked: by whom, how much its report is worth, at what, and why it said. */
 { kind: "blocked"; at: string | null; tool: string; source: string; qualifier: string | null; target_kind: string | null; target: string | null; harness: string; reason: string | null; 
 /**  It has since been resolved (Q272): its row offers no Tell the chat…. */
-resolved: boolean };
+resolved: boolean; 
+/**  The labels its Allow next time may offer (T1-34, Q278), as policy keeps them. */
+allow_levels: GrantLevel[] };
 
 /**
  *  What heads a chat's Chat log: its allowed calls in one count, with those its person's rules
@@ -10054,6 +10062,8 @@ export type FinishedBlock = {
 	 *  `harness_check` block was.
 	 */
 	harness: string,
+	/**  The labels its Allow next time may offer (T1-34, Q278), as policy keeps them. */
+	allow_levels: GrantLevel[],
 };
 
 /**  What finishing them came to. What each step said is in the app's log. */
