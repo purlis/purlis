@@ -113,12 +113,14 @@ export function linesSelected(
  *  record or the knowledge graph), with the cursor at `column` on it (a pane's file link).
  *  `onLine` hears the line the cursor moves to, which is the line *Open in your editor* hands
  *  on (RC-20); `onLines` hears the lines selected, which a reference to part of the file names
- *  (FM-9). */
+ *  (FM-9). `landing` names the jump that brought the file here, so a jump again to the same line
+ *  and column brings it into view again. */
 export function LightEditor({
   path,
   text,
   line,
   column,
+  landing,
   onLine,
   onLines,
 }: {
@@ -126,6 +128,7 @@ export function LightEditor({
   text: string;
   line?: number;
   column?: number;
+  landing?: number;
   onLine?: (line: number) => void;
   onLines?: (lines: { first: number; last: number } | undefined) => void;
 }) {
@@ -168,7 +171,7 @@ export function LightEditor({
       views.current = [];
       view.destroy();
     };
-  }, [path, text, line, column]);
+  }, [path, text, line, column, landing]);
   return (
     <>
       <div
