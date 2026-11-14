@@ -2593,6 +2593,15 @@ impl Hooks {
                 Box::new(move |block| hear_block(block))
             },
             permission: {
+                // R-229: each ask held is written raised before the window is told of it, so
+                // no answer to it is written before it.
+                let raised: purlis_core::hookwire::permission::Raising = {
+                    let events = Arc::clone(&events);
+                    let root = plane.root().to_path_buf();
+                    Arc::new(move |raised: &purlis_core::harness::asks::Raised| {
+                        hook_ask_raised(&events, &root, raised);
+                    })
+                };
                 // A hook that gives up leaves its harness's prompt in the pane: the board says
                 // the chat waits in its terminal, and the window is told (R-204).
                 let gave_up: purlis_core::hookwire::permission::GivingUp = {
@@ -2605,10 +2614,11 @@ impl Hooks {
                         }
                     })
                 };
-                let held = crate::asking::permitting_or_given_up(
+                let held = crate::asking::permitting_told_or_given_up(
                     plane.clone(),
                     Arc::clone(&asks),
                     Arc::clone(&asks_told),
+                    raised,
                     gave_up,
                 );
                 let skill_runs = Arc::clone(&skill_runs);
@@ -2995,30 +3005,64 @@ impl Hooks {
         ask: &str,
         option: &str,
     ) -> Result<Option<purlis_core::harness::hooked::lapsed::Late>, String> {
+        use purlis_core::eventlog::stops::{AskAnswered, Stop};
         use purlis_core::harness::asks::Refused;
         let id: purlis_core::harness::asks::AskId = ask.parse()?;
         let chat = session.to_string();
         let now = std::time::Instant::now();
-        let answered = match self
-            .asks
-            .answer(&chat, &id, option, crate::asking::the_window(), now)
-        {
-            Ok(_) => Ok(None),
+        let by = crate::asking::the_window();
+        // R-229: the ask's group, read from the ask before it is answered and held no more.
+        let group = self.group_of(&id, now);
+        let answered = match self.asks.answer(&chat, &id, option, by, now) {
+            Ok(applied) => {
+                crate::chatlog::record(
+                    self,
+                    session,
+                    Stop::AskAnswered(AskAnswered::applied(group, &applied)),
+                );
+                Ok(None)
+            }
             Err(refused @ (Refused::TimedOut | Refused::Unknown)) => {
                 // Past its deadline but not yet seen so: it lapses now, and is answered so.
                 self.asks.time_out(now);
-                match self
-                    .asks
-                    .answer_late(&chat, &id, option, crate::asking::the_window(), now)
-                {
+                match self.asks.answer_late(&chat, &id, option, by, now) {
                     Err(Refused::Unknown) => Err(refused),
-                    late => late.map(Some),
+                    late => late.map(|late| {
+                        // A late answer is the person's answer all the same (#6007).
+                        crate::chatlog::record(
+                            self,
+                            session,
+                            Stop::AskAnswered(AskAnswered::chosen(group, &late.choice, by)),
+                        );
+                        Some(late)
+                    }),
                 }
             }
             Err(refused) => Err(refused),
         };
         crate::asking::tell(&self.plane, &self.asks, &self.asks_told);
         answered.map_err(|refused| refused.to_string())
+    }
+
+    /// **The group of hook ask `id`** (R-229), read from the ask while it waits or has lapsed;
+    /// one held nowhere any more is a harness's prompt, as every ask held here is.
+    fn group_of(
+        &self,
+        id: &purlis_core::harness::asks::AskId,
+        now: std::time::Instant,
+    ) -> purlis_core::eventlog::stops::AskGroup {
+        use purlis_core::eventlog::stops::AskGroup;
+        self.asks
+            .pending(now)
+            .into_iter()
+            .chain(
+                self.asks
+                    .lapsed(now)
+                    .into_iter()
+                    .map(|lapsed| lapsed.raised),
+            )
+            .find(|raised| raised.id == *id)
+            .map_or(AskGroup::HarnessPrompt, |raised| AskGroup::of(&raised.ask))
     }
 
     /// Records every hook call this project's channel hears into `events` from now on (FD-9).
@@ -3651,19 +3695,7 @@ impl Hooks {
         number: u32,
         stop: purlis_core::eventlog::stops::Stop,
     ) -> std::io::Result<()> {
-        let events = self
-            .events
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
-        match events {
-            Some(events) => events.record(Entry::Stop {
-                plane: self.plane.root().to_path_buf(),
-                number: Some(number),
-                stop,
-            }),
-            None => Ok(()),
-        }
+        write_stop_into(&self.events, self.plane.root(), number, stop)
     }
 
     /// Who is told, from now on, each time a chat's own harness moves it onto another
@@ -4281,6 +4313,47 @@ pub fn code_of(exit: &Exit) -> Option<i32> {
         Exit::Code(code) => i32::try_from(*code).ok(),
         // A signal leaves no code behind, and it is not a clean end.
         Exit::Signal(_) => None,
+    }
+}
+
+/// [`Hooks::write_stop`], into `events` for the project at `root`: nothing where this machine
+/// keeps no event log.
+fn write_stop_into(
+    events: &Mutex<Option<Events>>,
+    root: &std::path::Path,
+    number: u32,
+    stop: purlis_core::eventlog::stops::Stop,
+) -> std::io::Result<()> {
+    let events = events
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    match events {
+        Some(events) => events.record(Entry::Stop {
+            plane: root.to_path_buf(),
+            number: Some(number),
+            stop,
+        }),
+        None => Ok(()),
+    }
+}
+
+/// **A hook ask, held just now, in its chat's Chat log** (R-229): raised, by the group its ask
+/// is. A write that fails is said in the app's log and changes nothing the person sees.
+fn hook_ask_raised(
+    events: &Mutex<Option<Events>>,
+    root: &std::path::Path,
+    raised: &purlis_core::harness::asks::Raised,
+) {
+    use purlis_core::eventlog::stops::{AskGroup, AskRaised, Stop};
+    let Ok(chat) = raised.chat.parse::<u32>() else {
+        return;
+    };
+    let stop = Stop::AskRaised(AskRaised {
+        ask: AskGroup::of(&raised.ask),
+    });
+    if let Err(why) = write_stop_into(events, root, chat, stop) {
+        tracing::warn!("purlis: chat {chat}'s ask.raised was not written to its log: {why}");
     }
 }
 

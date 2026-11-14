@@ -4,7 +4,9 @@
 //! **Whether a chat is attended: one fact purlis sets** (T1-17, #6408; Q142, Q152, Q105). The
 //! expand step: the fact stands beside the readers of today, which keep reading what they read
 //! ([`crate::dispatchunattended::Mark`], [`crate::floorguard::unattended`]), until each moves to
-//! it (A4 #6409, dispatch #6410, the briefing #6411, the commit gate #6412).
+//! it (A4 #6409, dispatch #6410, the briefing #6411, the commit gate #6412). The briefing has
+//! moved: it reads [`crate::briefing::Ask::attendance`], which the hook fills from the payload's
+//! bypass bit until A4 hands it the fact it holds (#6409).
 //!
 //! A chat is **unattended** if purlis started it unattended, or if it reports a mode purlis
 //! didn't set:
@@ -31,6 +33,11 @@
 //! fact per chat in the app and persists it across the app's restarts, starting each chat with
 //! [`Fact::at_start`] and each resume or relaunch with [`Fact::resumed`] of the fact it kept.
 //! Dispatch (#6410), the briefing (#6411) and the commit gate (#6412) read the fact A4 holds.
+//! The commit gate takes it as an argument ([`crate::commitgate::nudge`]); until the holder
+//! reaches a hook's process, its caller passes the old one-way mark heard from the report.
+//! Dispatch reads it already, from the app's record of the chat
+//! ([`crate::dispatchunattended::fact_of`]), lowered by the old mark until that holder hears
+//! the reports itself.
 
 use crate::dispatchunattended::Attendance;
 use crate::harness::Harness;

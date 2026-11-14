@@ -5483,7 +5483,8 @@ export const PlaneView = memo(function PlaneView({
     // A jump to a line (a search hit) opens the branch's file tab, which picks the file and
     // lands on the line (`fileJump.ts`); a file ⌘P found opens in a tab of its own.
     const { place, path } = fileAsked;
-    // The plane root has no branch's file tab to land in: its file opens in a tab of its own.
+    // The plane root has no branch's file tab to land in: its file opens in a tab of its own,
+    // which lands on the jump's line and column itself (#6356).
     const jump = fileAsked.line !== undefined && !isPlaneRoot(place);
     showView(
       jump ? pieceFilesView(place) : pieceFileView(place, path),

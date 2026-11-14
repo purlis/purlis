@@ -1210,8 +1210,11 @@ mod cases {
             spent(&over);
             return;
         }
-        // The open milestones, each with its issue counts, in the forge's order.
+        // The open milestones, each with its issue counts, in the forge's order: one page, not
+        // full, so nothing is cut.
         let read = read.unwrap();
+        assert!(!read.cut, "two milestones fill no page");
+        let read = read.listed;
         let shown: Vec<_> = read
             .iter()
             .map(|m| {
