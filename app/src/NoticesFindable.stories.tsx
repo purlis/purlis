@@ -15,7 +15,7 @@ import { ActionResultNotice } from "./ActionResultNotice";
 import type { CloneToVouch } from "./bindings";
 import { CloneVouchNotice, cloneVouchCause } from "./CloneVouchNotice";
 import { Notice, NoticeList } from "./Notice";
-import { expectFocusInSight, untilFocused } from "./stories.testkit";
+import { expectFocusInSight, untilFocused, untilSettled } from "./stories.testkit";
 import { forgetAskForTests } from "./windowControls";
 
 const clone = (folder: string, place: string): CloneToVouch =>
@@ -278,6 +278,10 @@ export const ToTheNamedFolder: Story = {
           .find((one) => one.closest('[data-cause*="repos/web|"]') !== null) ?? null,
       "on web's Trust this clone",
     );
+    // Go to scrolls web's row into sight; its picture waits until the row stops moving, as one
+    // taken mid-scroll differs run to run (stories runs 43586619075 and 43591063550, WebKit).
+    const web = document.activeElement;
+    if (web !== null) await untilSettled(web);
     expectFocusInSight();
   },
 };
