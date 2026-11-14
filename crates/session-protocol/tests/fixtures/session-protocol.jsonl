@@ -261,3 +261,9 @@
 {"reply":{"re":211,"ok":"done"}}
 {"call":{"id":212,"command":"change_reach","confinement":"01J9CNFNMNT0000000000000000","change":"give_up","target":"api.example.com:443"}}
 {"reply":{"re":212,"ok":{"reach_changed":{"retry":[]}}}}
+{"call":{"id":213,"command":"change_reach","confinement":"01J9CNFNMNT0000000000000000","change":"allow_next","host":"api.example.com:443"}}
+{"reply":{"re":213,"ok":{"reach_changed":{"retry":[]}}}}
+{"call":{"id":214,"command":"change_reach","confinement":"01J9CNFNMNT0000000000000000","change":"forget_next","host":"api.example.com:443"}}
+{"reply":{"re":214,"ok":{"reach_changed":{"retry":[]}}}}
+{"call":{"id":215,"command":"reach_of","confinement":"01J9CNFNMNT0000000000000000"}}
+{"reply":{"re":215,"ok":{"reach":{"next":["api.example.com:443"]}}}}

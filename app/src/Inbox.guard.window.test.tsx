@@ -12,6 +12,8 @@ import { forgetInbox } from "./inboxRules";
 import { forgetProjectViews } from "./projectViews";
 import { chatGroup, openEveryAnswer } from "./test-inbox";
 import type { Shown } from "./bindings";
+import { BlockWaysOut } from "./BlockWaysOut";
+import { ALLOW_NEXT_TIME, ROW_MOVED_JUST_NOW } from "./blockWays";
 
 /**
  * **The press-settle guard, characterised** (#3123, #1693, #1695, #3167): an Allow in the Inbox
@@ -265,5 +267,41 @@ describe("where the keyboard lands after an ask is answered and removed (#3123, 
     // The row itself, not one of its buttons: an answer is never one key away by accident.
     expect(row.tagName).not.toBe("BUTTON");
     expect(row).toHaveTextContent("Run cargo build");
+  });
+});
+
+// T1-34 (ADR 0097, `mayAct`): a sandbox block's Allow next time grants without an ask, so each of
+// its labels waits for its row to settle, as an ask's Allow does.
+describe.each(BOTH)("the settle guard on Allow next time, pressed by the %s (T1-34)", (by) => {
+  const SANDBOX_BLOCK = {
+    source: "sandbox",
+    qualifier: null,
+    target_kind: "host",
+    target: "registry.example.com:443",
+    harness: "claude",
+  };
+
+  it("the settle guard covers Allow next time: nothing during the settle window, and it acts once settled", async () => {
+    const allowNext = vi.fn(() => Promise.resolve({ said: "Allowed it once." }));
+    render(
+      <BlockWaysOut
+        blocks={[SANDBOX_BLOCK]}
+        who="steward 3"
+        tell={() => Promise.resolve({})}
+        go={() => undefined}
+        allowNext={allowNext}
+      />,
+    );
+    read();
+    await press(screen.getByRole("button", { name: ALLOW_NEXT_TIME }), by);
+    // Its labels were drawn just now: a press on one does nothing, and says why.
+    await press(screen.getByRole("button", { name: "Allow once" }), by);
+    expect(allowNext).not.toHaveBeenCalled();
+    expect(screen.getByRole("status")).toHaveTextContent(ROW_MOVED_JUST_NOW);
+
+    read();
+    await press(screen.getByRole("button", { name: "Allow once" }), by);
+    expect(allowNext).toHaveBeenCalledTimes(1);
+    expect(allowNext).toHaveBeenCalledWith("registry.example.com:443", "once");
   });
 });

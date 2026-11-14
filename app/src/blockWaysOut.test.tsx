@@ -14,13 +14,17 @@ import { Inbox } from "./Inbox";
 import { finishUpdates, finishWaysOf, groupedFinishes } from "./finishRows";
 import { BlockWaysOut, FinishRowWays } from "./BlockWaysOut";
 import {
+  ALLOW_NEXT_TIME,
   GO_TO_CHAT,
+  NEXT_TIME_LEVELS,
   SHOW_THIS_CHECK,
   SHOW_THIS_GUARD,
+  SHOW_THIS_RULE,
   TELL_THE_CHAT,
   TOLD,
   TYPE_IT,
 } from "./blockWays";
+import { SANDBOX_ALLOW_SAID } from "./allowLabels";
 import { forgetInbox } from "./inboxRules";
 import { forgetProjectViews } from "./projectViews";
 
@@ -71,7 +75,18 @@ const WAYS = {
     return Promise.resolve({ typed: TOLD });
   },
   go: () => pressed.push("go"),
+  allowNext: (target: string, level: string) => {
+    pressed.push(`allow:${target}:${level}`);
+    return Promise.resolve({ said: `Allowed ${target} once, for this chat's next attempt.` });
+  },
 };
+
+/** A block by the sandbox of a connection purlis's own proxy refused (T1-34). */
+const SANDBOX = blocked({
+  source: "sandbox",
+  target_kind: "host",
+  target: "registry.example.com:443",
+});
 
 /** The one Chat log row drawn for `row`, with its ways out. */
 function rowOf(row: Blocked): HTMLElement {
@@ -416,5 +431,132 @@ describe("a finish row's ways out (Q272)", () => {
     expect(row.textContent).toContain("only Codex's own check decides");
     await userEvent.click(within(row).getByRole("button", { name: SHOW_THIS_CHECK }));
     expect(within(row).getByRole("region", { name: "This check" }).textContent).toContain("Codex");
+  });
+});
+
+describe("a sandbox block's ways out (T1-34; R-196, R-291)", () => {
+  it("a sandbox block offers Allow next time and Show this rule", async () => {
+    const row = rowOf(SANDBOX);
+    expect(waysOf(row)).toEqual([ALLOW_NEXT_TIME, SHOW_THIS_RULE]);
+    expect([ALLOW_NEXT_TIME, SHOW_THIS_RULE]).toEqual(["Allow next time", "Show this rule"]);
+    // Show this rule opens a read-only detail in phase 1: the rule, and nothing to press.
+    const show = within(row).getByRole("button", { name: SHOW_THIS_RULE });
+    expect(show).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(show);
+    expect(show).toHaveAttribute("aria-expanded", "true");
+    const rule = within(row).getByRole("region", { name: "This rule" });
+    expect(rule.textContent).toContain("registry.example.com:443");
+    expect(within(rule).queryAllByRole("button")).toEqual([]);
+    expect(within(rule).queryAllByRole("switch")).toEqual([]);
+  });
+
+  it("Allow next time offers the shipped Allow labels, in their order, and no new one", async () => {
+    const row = rowOf(SANDBOX);
+    // Nothing grants on the row itself: Allow next time asks which first.
+    expect(row.querySelector('[data-variant="grants"]')).toBeNull();
+    await userEvent.click(within(row).getByRole("button", { name: ALLOW_NEXT_TIME }));
+    const choices = within(row).getByRole("region", { name: "Next time" });
+    const labels = within(choices)
+      .getAllByRole("button")
+      .map((one) => one.textContent?.trim());
+    expect(labels).toEqual(NEXT_TIME_LEVELS.map((level) => SANDBOX_ALLOW_SAID[level]));
+    expect(labels).toEqual([
+      "Allow once",
+      "Allow for me on this machine",
+      "Allow only for this chat",
+      "Allow for everyone in this project",
+    ]);
+    expect(pressed).toEqual([]);
+  });
+
+  it("a sandbox block offers Allow next time only where an Allow would unblock it", () => {
+    // A report only the chat's own hook made (Q265), one since resolved, and one of a folder
+    // offer Show this rule alone; a Can't-tell one only Go to chat.
+    for (const over of [
+      { qualifier: "unverified" },
+      { resolved: true },
+      { target_kind: "folder", target: "/opt/cache" },
+      { target: null },
+    ]) {
+      expect(waysOf(rowOf({ ...SANDBOX, ...over })), JSON.stringify(over)).toEqual([
+        SHOW_THIS_RULE,
+      ]);
+      cleanup();
+    }
+    expect(waysOf(rowOf({ ...SANDBOX, qualifier: "cant_tell" }))).toEqual([GO_TO_CHAT]);
+  });
+});
+
+describe("a finish row's Allow next time (T1-34, Q273)", () => {
+  const PLANE = "/home/dev/plane";
+  const AT = Math.floor(Date.parse("2026-11-13T11:00:00Z") / 1000);
+  const NAMES: Record<number, string> = { 3: "steward 3", 4: "planner 4" };
+  const nameOf = (session: number) => NAMES[session] ?? String(session);
+  const turn = (session: number, one: FinishedBlock): FinishedTurn => ({
+    session,
+    key: `01TURN${session}`,
+    at: AT - session,
+    failed: false,
+    blocked: 1,
+    blocks: [one],
+  });
+
+  it("allows only for the chat whose block it is, by its target", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "performance"] });
+    try {
+      const asked: { session: number; target: string; level: string }[] = [];
+      mockIPC((cmd, args) => {
+        if (cmd !== "allow_next_time") return null;
+        asked.push(args as (typeof asked)[number]);
+        return { said: "Allowed registry.example.com:443 once.", live: true };
+      });
+      const turns = [
+        turn(3, {
+          source: "sandbox",
+          qualifier: null,
+          target_kind: "host",
+          target: "registry.example.com:443",
+          harness: "claude",
+        }),
+        turn(4, {
+          source: "guard",
+          qualifier: null,
+          target_kind: "guard_arm",
+          target: "A3b",
+          harness: "claude",
+        }),
+      ];
+      const keys = finishUpdates(turns, nameOf).map((one) => one.key);
+      render(
+        <FinishRowWays
+          plane={PLANE}
+          turns={turns}
+          keys={keys}
+          who="steward 3"
+          nameOf={nameOf}
+          go={() => undefined}
+        />,
+      );
+      expect(buttonsOf(screen.getByRole("group", { name: /^Ways out/ }))).toEqual([
+        ALLOW_NEXT_TIME,
+        TELL_THE_CHAT,
+        SHOW_THIS_GUARD,
+        SHOW_THIS_RULE,
+      ]);
+      await userEvent.click(screen.getByRole("button", { name: ALLOW_NEXT_TIME }), {
+        advanceTimers: vi.advanceTimersByTime,
+      });
+      vi.advanceTimersByTime(2000);
+      await userEvent.click(screen.getByRole("button", { name: "Allow once" }), {
+        advanceTimers: vi.advanceTimersByTime,
+      });
+      await vi.waitFor(() =>
+        expect(asked).toEqual([
+          { plane: PLANE, session: 3, target: "registry.example.com:443", level: "once" },
+        ]),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

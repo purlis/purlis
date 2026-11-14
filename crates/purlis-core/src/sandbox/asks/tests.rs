@@ -566,3 +566,88 @@ fn an_allow_before_the_give_up_carries_the_connection_and_tells_no_timeout() {
         heard.lock().unwrap()
     );
 }
+
+/// **Allow next time, from a block** (T1-34, R-291, Q188): once the chat stopped waiting on a
+/// held connection, its block's Allow next time makes a grant with no ask open. "Once" is used
+/// up by the chat's next attempt at that target, which goes on with no new ask, and is listed
+/// until then; a wider label's grant stays until it is removed.
+#[test]
+fn a_grant_from_a_block_with_no_open_ask_lets_the_next_attempt_through_once() {
+    let (asks, heard) = board(Duration::from_millis(150), Duration::from_millis(20));
+    // The block: a held connection nobody answered, so no ask is open on it now.
+    assert_eq!(
+        held(&asks, "api.example.com", 443).join().unwrap(),
+        Answer::TimedOut
+    );
+    assert!(!asks.asks_about(&host("api.example.com")), "no ask is open");
+    heard.lock().unwrap().clear();
+
+    // Allow next time · once, by the block's target.
+    asks.allow_next(&host("api.example.com:443"));
+    assert_eq!(
+        asks.next_attempts(),
+        vec!["api.example.com:443".to_owned()],
+        "listed until it is used"
+    );
+    assert_eq!(asks.holding(), 0, "nothing is held for it");
+
+    // The chat's next attempt goes on at once, with no new ask, and the grant is gone.
+    assert_eq!(
+        asks.hold("api.example.com", 443, &[443]),
+        Answer::Allowed(By::Chat)
+    );
+    assert!(
+        heard.lock().unwrap().is_empty(),
+        "nothing was asked: {:?}",
+        heard.lock().unwrap()
+    );
+    assert!(asks.next_attempts().is_empty(), "used, it is gone");
+    assert!(
+        asks.allowed_live().is_empty(),
+        "once is never a live Allow that stays"
+    );
+    // So the attempt after it is held and asked about again.
+    assert_eq!(
+        held(&asks, "api.example.com", 443).join().unwrap(),
+        Answer::TimedOut
+    );
+
+    // Another host's attempt never uses it.
+    asks.allow_next(&host("api.example.com:443"));
+    assert_eq!(
+        held(&asks, "other.example.com", 443).join().unwrap(),
+        Answer::TimedOut
+    );
+    assert_eq!(asks.next_attempts().len(), 1, "still waiting for its own");
+    // Removed before it is used, it lets nothing on.
+    asks.forget_next(&host("api.example.com:443"));
+    assert!(asks.next_attempts().is_empty());
+    assert_eq!(
+        held(&asks, "api.example.com", 443).join().unwrap(),
+        Answer::TimedOut
+    );
+
+    // A wider label's grant stays until it is removed: every attempt goes on.
+    asks.allow(&host("api.example.com"), By::You);
+    for _ in 0..3 {
+        assert_eq!(
+            asks.hold("api.example.com", 443, &[443]),
+            Answer::Allowed(By::You)
+        );
+    }
+    asks.forget(&host("api.example.com"), By::You);
+    assert_eq!(
+        held(&asks, "api.example.com", 443).join().unwrap(),
+        Answer::TimedOut
+    );
+}
+
+/// The later answer wins (T1-34): Keep blocked after Allow next time ends it.
+#[test]
+fn keep_blocked_after_allow_next_time_ends_it() {
+    let (asks, _) = board(Duration::from_millis(100), Duration::from_millis(20));
+    asks.allow_next(&host("api.example.com:443"));
+    asks.keep_blocked(&host("api.example.com"));
+    assert!(asks.next_attempts().is_empty());
+    assert_eq!(asks.hold("api.example.com", 443, &[443]), Answer::Refused);
+}

@@ -54,6 +54,9 @@ const LABELS = [
   "Show this guard",
   "Show this check",
   "Go to chat",
+  // A sandbox block's ways out (T1-34, R-196), as `blockWays.ts` writes them.
+  "Allow next time",
+  "Show this rule",
 ];
 
 /** A block's ways out (T1-33), each by the name `blockWays.ts` writes it under. */
@@ -62,6 +65,9 @@ const WAYS_OUT: Record<string, string> = {
   SHOW_THIS_GUARD: "Show this guard",
   SHOW_THIS_CHECK: "Show this check",
   GO_TO_CHAT: "Go to chat",
+  // A sandbox block's (T1-34, R-196).
+  ALLOW_NEXT_TIME: "Allow next time",
+  SHOW_THIS_RULE: "Show this rule",
 };
 
 /** The loop pause's labels (R-217), in the order its ask offers them. */
@@ -106,7 +112,7 @@ describe("an ask's answers are labelled once, in the registry", () => {
     expect(LOOP_PAUSE.every((label) => LABELS.includes(label))).toBe(true);
   });
 
-  it("knows a block's ways out as blockWays.ts writes them, once (T1-33)", () => {
+  it("knows a block's ways out as blockWays.ts writes them, once (T1-33, T1-34)", () => {
     const ways = readFileSync(join(HERE, "blockWays.ts"), "utf8");
     for (const [name, label] of Object.entries(WAYS_OUT)) {
       expect(new RegExp(`export const ${name} = "([^"]*)";`).exec(ways)?.[1], name).toBe(label);
