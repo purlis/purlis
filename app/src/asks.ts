@@ -137,6 +137,7 @@ export async function trustEach(
 ): Promise<string | undefined> {
   const refused: string[] = [];
   for (const clone of clones) {
+    // The core leaves such a clone out of every trust ask (Q257); this holds if one ever came.
     if (clone.place === null) {
       refused.push(
         `${clone.folder}'s remote names more than one address, so purlis didn't trust it. Give origin one address, then trust it.`,

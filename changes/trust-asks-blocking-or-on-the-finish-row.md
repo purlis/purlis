@@ -8,3 +8,5 @@
 - **Trust these clones lists each clone, with Trust all and Choose….** Each clone purlis has no
   record of shows its remote and the day it was made. Choose… opens a box for each clone, and
   Trust chosen trusts only the ones you tick. Every trust waits until its row has settled.
+- **A finish row that holds Trust this clone has no Dismiss**, and Dismiss all leaves it, so
+  the ask can't leave the window while it waits. A trust refused there says why on the row.

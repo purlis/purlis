@@ -11502,9 +11502,11 @@ export const PlaneView = memo(function PlaneView({
           : session !== undefined
             ? () => (showChat(session), read())
             : undefined;
-      // A window-only ask no chat waits on, on its chat's finish row (T1-42, R-329).
+      // A window-only ask no chat waits on, on its chat's finish row (T1-42, R-329). The row
+      // has no Dismiss while the ask is on it (Q274): the ask is on no other surface, so a
+      // dismissed row would take it from the window for good.
       const onIt = finishAsks.get(update.key);
-      if (onIt !== undefined) return { update, go, read, dismiss: put, ...onIt };
+      if (onIt !== undefined) return { update, go, read, ...onIt };
       const refused = away.get(update.key);
       if (update.kind === "refused-away" && refused !== undefined)
         return { update, ...awayRow(refused, (one, how) => onAway?.(plane, one, how), put) };
@@ -11588,7 +11590,8 @@ export const PlaneView = memo(function PlaneView({
       // The lines of the list shown (#5646): Mine's or Project's, never the other's.
       onMarkAllRead: (keys: readonly string[]) => settleUpdates(each(keys), "read"),
       onDismissAll: (shown: readonly string[]) => {
-        const keys = each(shown);
+        // A finish row that holds a window-only ask is never put away (Q274).
+        const keys = each(shown).filter((key) => !finishAsks.has(key));
         const these = new Set(keys);
         // Each update a source lists is put away there too, as its own Dismiss would.
         for (const one of keptUpdates ?? []) {

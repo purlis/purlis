@@ -135,15 +135,25 @@ export function finishAsksOf({
         name: `${option.label}: ${what}`,
         title: TRUSTS_IT,
         allows: option.allows,
+        // A refusal is said on the row (Q274), as an ask's row says it.
         press: () =>
-          void answerThrough(plane, ask, option.id)
-            .catch(() => undefined)
+          answerThrough(plane, ask, option.id)
+            .catch((err: unknown) => String(err))
             .finally(reread),
       });
     on.set(key, row);
   }
+  // Two asks on one row would draw two buttons alike (Q274): each then shows its whole name.
   return new Map(
-    [...on].map(([key, row]) => [key, { more: row.more.join(" "), answers: row.answers }]),
+    [...on].map(([key, row]) => {
+      const labels = row.answers.map((answer) => answer.label);
+      const answers = row.answers.map((answer) =>
+        labels.indexOf(answer.label) === labels.lastIndexOf(answer.label)
+          ? answer
+          : { ...answer, label: answer.name },
+      );
+      return [key, { more: row.more.join(" "), answers }];
+    }),
   );
 }
 

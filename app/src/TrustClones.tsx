@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState } from "react";
+import { daySaid } from "./ages";
 import type { CloneToVouch } from "./bindings";
 import { FixWay } from "./Notice";
 import { ButtonRow } from "./ui/button/Button";
@@ -24,14 +25,11 @@ export const CHOOSE_CLONES = "Choose the clones to trust";
 
 /** When a clone was made, as the row says it: a day, or that its disk keeps no such time. */
 function Made({ at }: { at: number | null }) {
-  if (at === null) return <>made at a time its disk doesn't keep</>;
+  if (at === null) return <>creation time unknown</>;
   const when = new Date(at * 1000);
   return (
     <>
-      made{" "}
-      <time dateTime={when.toISOString()}>
-        {when.toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" })}
-      </time>
+      made <time dateTime={when.toISOString()}>{daySaid(when)}</time>
     </>
   );
 }
@@ -53,10 +51,17 @@ export function ClonesToTrust({ clones }: { clones: readonly CloneToVouch[] }) {
 }
 
 /**
+ * **What a tick in Choose… is of** (Q274): a clone's folder and the remote it named when it was
+ * ticked. A clone whose remote changes is no longer ticked, so Trust chosen never sends a remote
+ * the person didn't tick.
+ */
+const tickOf = (clone: CloneToVouch) => `${clone.folder}\n${remoteOf(clone)}`;
+
+/**
  * **Choose…'s boxes** (R-337): one for each clone, none ticked, and Trust chosen, which trusts
  * only the ticked ones and waits for the row to settle (`mayAct`, ADR 0097) as every trust does.
- * Cancel puts the boxes away. A clone whose remote names several addresses can't be trusted, so
- * its box is off and says why.
+ * Cancel puts the boxes away. The core leaves a clone whose remote names several addresses out
+ * of the ask (Q257), and `trustEach` refuses one if it ever came, so no box here asks after it.
  */
 export function TrustClonesChooser({
   clones,
@@ -72,27 +77,23 @@ export function TrustClonesChooser({
   onCancel: () => void;
 }) {
   const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
-  const tick = (folder: string, on: boolean) =>
+  const tick = (clone: CloneToVouch, on: boolean) =>
     setChosen((was) => {
       const next = new Set(was);
-      if (on) next.add(folder);
-      else next.delete(folder);
+      if (on) next.add(tickOf(clone));
+      else next.delete(tickOf(clone));
       return next;
     });
+  const ticked = clones.filter((clone) => chosen.has(tickOf(clone)));
   return (
     <>
       <CheckboxGroup aria-label={CHOOSE_CLONES} className="inbox-clones-chosen">
         {clones.map((clone) => (
           <Checkbox
             key={clone.folder}
-            isSelected={chosen.has(clone.folder)}
-            isDisabled={clone.place === null}
-            onChange={(on) => tick(clone.folder, on)}
-            description={
-              clone.place === null
-                ? `Its remote names ${remoteOf(clone)}. Give origin one address, then trust it.`
-                : remoteOf(clone)
-            }
+            isSelected={chosen.has(tickOf(clone))}
+            onChange={(on) => tick(clone, on)}
+            description={remoteOf(clone)}
           >
             {clone.folder}
           </Checkbox>
@@ -104,8 +105,8 @@ export function TrustClonesChooser({
             label: "Trust chosen",
             allows: true,
             busy,
-            off: chosen.size === 0 ? "Tick the clones to trust first." : undefined,
-            onPress: () => onTrust(clones.filter((clone) => chosen.has(clone.folder))),
+            off: ticked.length === 0 ? "Tick the clones to trust first." : undefined,
+            onPress: () => onTrust(ticked),
           }}
           mayAct={mayAct}
         />
