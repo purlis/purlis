@@ -11,6 +11,7 @@ import { forgetProjectViews } from "./projectViews";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 import { MOVED_JUST_NOW } from "./InboxAsks";
 import { TRUST_ALL_ASK, TRUST_CLONE_ASK, MADE } from "./trustAsks.testkit";
+import type { CloneToVouch, Shown } from "./bindings";
 
 /**
  * **The trust asks' rows in Asks** (T1-42; R-330, R-337): Trust this clone carries its control
@@ -46,6 +47,12 @@ const press = userEvent.setup({ advanceTimers: (ms) => vi.advanceTimersByTime(ms
 
 /** The person reads what was drawn for longer than an answer waits for its row to settle. */
 const read = () => new Promise((done) => setTimeout(done, SETTLE_MS + 50));
+
+/** {@link TRUST_ALL_ASK} with each of its clones as `change` makes it. */
+function withClones(change: (clone: CloneToVouch) => CloneToVouch): Shown {
+  const clones = TRUST_ALL_ASK.answer.via === "trust-clones" ? TRUST_ALL_ASK.answer.clones : [];
+  return { ...TRUST_ALL_ASK, answer: { via: "trust-clones", clones: clones.map(change) } };
+}
 
 const rowOf = (source: string) =>
   document.querySelector<HTMLElement>(`[role="row"][data-source="${source}"]`) as HTMLElement;
@@ -127,6 +134,57 @@ describe("the Trust these clones row (R-337)", () => {
         { plane: PLANE, folder: "workspaces/beta/repos/web", place: "github.com/acme/web" },
       ]),
     );
+  });
+});
+
+describe("Choose…'s ticks are the folder and remote ticked (Q274)", () => {
+  it("drops a tick when its clone's remote changes under it", async () => {
+    const view = render(
+      <Inbox plane={PLANE} asks={[TRUST_ALL_ASK]} onGo={() => {}} onLeave={() => {}} />,
+    );
+    const row = rowOf("trust-clones");
+    await read();
+    await press.click(within(row).getByRole("button", { name: "Choose…" }));
+    const chooser = await screen.findByRole("group", { name: "Choose the clones to trust" });
+    await press.click(
+      within(chooser).getByRole("checkbox", { name: /workspaces\/beta\/repos\/web/ }),
+    );
+    const moved = withClones((clone) =>
+      clone.folder === "workspaces/beta/repos/web"
+        ? { ...clone, place: "github.com/evil/web", places: ["github.com/evil/web"] }
+        : clone,
+    );
+
+    view.rerender(<Inbox plane={PLANE} asks={[moved]} onGo={() => {}} onLeave={() => {}} />);
+
+    expect(
+      within(screen.getByRole("group", { name: "Choose the clones to trust" })).getByRole(
+        "checkbox",
+        { name: /workspaces\/beta\/repos\/web/ },
+      ),
+    ).not.toBeChecked();
+    await read();
+    await press.click(within(rowOf("trust-clones")).getByRole("button", { name: "Trust chosen" }));
+    expect(vouched).toEqual([]);
+  });
+});
+
+describe("when each clone was made (Q274)", () => {
+  it("says the day as every age past a month is said", () => {
+    render(<Inbox plane={PLANE} asks={[TRUST_ALL_ASK]} onGo={() => {}} onLeave={() => {}} />);
+
+    const each = within(rowOf("trust-clones")).getAllByRole("listitem");
+
+    expect(each[0].querySelector("time")).toHaveTextContent(/^28 Oct 2026$/);
+  });
+
+  it("says a clone's creation time is unknown where its disk keeps none", () => {
+    const unknown = withClones((clone) => ({ ...clone, made: null }));
+    render(<Inbox plane={PLANE} asks={[unknown]} onGo={() => {}} onLeave={() => {}} />);
+
+    const each = within(rowOf("trust-clones")).getAllByRole("listitem");
+
+    expect(each[0]).toHaveTextContent(/creation time unknown$/);
   });
 });
 

@@ -50,17 +50,22 @@ function core({
   asks,
   onFinishRows,
   turns,
+  refuses,
 }: {
   asks: readonly Shown[];
   onFinishRows: readonly Shown[];
   turns: readonly FinishedTurn[];
+  refuses?: string;
 }) {
   mockIPC((cmd, args) => {
     asked.push({ cmd, args });
     if (cmd === "asks_waiting")
       return { plane: PLANE, asks, with_asking_chat: [], on_finish_rows: onFinishRows };
     if (cmd === "finished_turns") return turns;
-    if (cmd === "vouch_clone") return "github.com/acme/api";
+    if (cmd === "vouch_clone") {
+      if (refuses !== undefined) throw refuses;
+      return "github.com/acme/api";
+    }
     return null;
   });
 }
@@ -183,5 +188,49 @@ describe("a window-only ask, Blocking or on its chat's finish row (T1-42, R-329)
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("says on the finish row why a trust pressed there was refused (Q274)", async () => {
+    const why =
+      "workspaces/alpha/api's remote is now github.com/acme/other, so purlis didn't trust it.";
+    core({ asks: [], onFinishRows: [TRUST_CLONE], turns: [ENDED], refuses: why });
+    render(<Window />);
+    await waitFor(() =>
+      expect(finishRow()).toHaveTextContent("Trust this clone so chats can use GitHub"),
+    );
+    const trust = within(finishRow() as HTMLElement).getByRole("button", {
+      name: /^Trust this clone/,
+    });
+    await read();
+
+    await userEvent.click(trust);
+
+    await waitFor(() =>
+      expect(within(finishRow() as HTMLElement).getByRole("status")).toHaveTextContent(why),
+    );
+  });
+
+  it("names each of two asks on one finish row where it can be seen (Q274)", async () => {
+    const other: Shown = {
+      ...TRUST_CLONE,
+      ask: "trust-clone:2:workspaces/alpha/web|github.com/acme/web",
+      answer: { via: "trust-clone", folder: "workspaces/alpha/web", place: "github.com/acme/web" },
+    };
+    core({ asks: [], onFinishRows: [TRUST_CLONE, other], turns: [ENDED] });
+    render(<Window />);
+    await waitFor(() =>
+      expect(
+        within(finishRow() as HTMLElement).getAllByRole("button", { name: /^Trust this clone/ }),
+      ).toHaveLength(2),
+    );
+
+    const seen = within(finishRow() as HTMLElement)
+      .getAllByRole("button", { name: /^Trust this clone/ })
+      .map((button) => button.textContent);
+
+    expect(seen).toEqual([
+      expect.stringContaining("workspaces/alpha/api"),
+      expect.stringContaining("workspaces/alpha/web"),
+    ]);
   });
 });
