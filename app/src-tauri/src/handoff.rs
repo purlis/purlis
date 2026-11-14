@@ -2559,30 +2559,25 @@ pub fn heard_mode(held: &Held, report: &purlis_core::hookwire::Report) {
     );
 }
 
-/// **How chat `session`, recorded as `asking`, is taken to run**: unattended where its harness
-/// ever reported its prompts off, or where the command it was started with switches them off
-/// (its own words on its record, or its profile's as this machine declares it, which is what
-/// "set at start" comes to). Never a word of the request.
+/// **How chat `session`, recorded as `asking`, is taken to run** (R-110, #6410): its attendance
+/// fact, read from its record (a task is a chat nobody is at; its own words and its profile's
+/// as this machine declares it are the command it started with), lowered by what its harness
+/// reported ([`purlis_core::dispatchunattended::attendance_of`]). Never a word of the request.
+/// Every dispatch reader takes it from here: the handoff path, the dispatch grants, the
+/// dispatch-away path and [`attended`].
 fn attendance(
     held: &Held,
     session: u32,
     asking: &Chat,
     profiles: &purlis_core::profiles::ProfileSet,
 ) -> purlis_core::dispatchunattended::Attendance {
-    use purlis_core::dispatchunattended::bypass_in;
-    let mut mark = held.unattended().mark(session);
-    let own: Vec<String> = std::iter::once(asking.program.clone())
-        .chain(asking.args.iter().cloned())
-        .collect();
+    use purlis_core::dispatchunattended::{attendance_of, fact_of};
     let declared = asking
         .profile
         .as_deref()
         .and_then(|name| profiles.get(name))
-        .is_some_and(|profile| bypass_in(&profile.command).is_some());
-    if declared || bypass_in(&own).is_some() {
-        mark.heard(Some(purlis_core::floorguard::UNATTENDED_MODE));
-    }
-    mark.attendance()
+        .map(|profile| profile.command.as_slice());
+    attendance_of(fact_of(asking, declared), held.unattended().mark(session))
 }
 
 /// **Whether a person is at chat `session`** (#1501): judged as a dispatch from it is, by

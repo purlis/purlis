@@ -96,6 +96,12 @@ pub struct Asking {
     /// again then.
     #[serde(default)]
     pub cooling_until: Option<u32>,
+    /// **The window-only asks no chat waits on** (T1-42, R-329, Q181): each a chat's whose turn
+    /// has ended, drawn on that chat's finish row with its control. Listed apart from
+    /// [`Asking::asks`], so neither the ✋, Asks nor a notification counts them: a Blocking ask
+    /// is one a chat waits on. Only [`every_ask`] puts any here ([`finish_rows_apart`]).
+    #[serde(default)]
+    pub on_finish_rows: Vec<Shown>,
 }
 
 /// A task question its asking chat has, as the task's row says it: `asking steward 2 · 1m`.
@@ -990,6 +996,7 @@ pub fn asking(plane: &PlaneId, hooks: &HookAsks) -> Asking {
         snoozed_until: None,
         cooling: Vec::new(),
         cooling_until: None,
+        on_finish_rows: Vec::new(),
     }
 }
 
@@ -2259,15 +2266,20 @@ pub fn window_only(refused: &purlis_core::windowonly::Refusal) -> Shown {
     }
 }
 
-/// The option id of Trust these clones' one answer: Trust all.
+/// The option id of Trust these clones' Trust all.
 pub const TRUST_ALL: &str = "trust-all";
+
+/// The option id of Trust these clones' Choose… (R-337): the window draws a box for each clone
+/// under the row, and trusts only those the person ticks, each with the clone Notice's own press.
+pub const CHOOSE: &str = "choose";
 
 /// The key of the project's Trust these clones: one per project, however many clones it lists.
 const TRUST_CLONES_KEY: &str = "trust-clones";
 
-/// **The adapter for the clones purlis has no record of** (R-336, Q184): the project's one ask
-/// for all of them, no chat's, with Trust all. Every word is purlis's; each folder and address is
-/// one the core read from the clone, said inertly.
+/// **The adapter for the clones purlis has no record of** (R-336, R-337, Q184): the project's one
+/// ask for all of them, no chat's, with Trust all and Choose…, each clone with its remote and when
+/// it was made. Every word is purlis's; each folder and address is one the core read from the
+/// clone, said inertly.
 pub fn trust_these_clones(ask: &purlis_core::windowonly::TrustTheseClones) -> Shown {
     let named: Vec<String> = ask
         .clones
@@ -2283,25 +2295,31 @@ pub fn trust_these_clones(ask: &purlis_core::windowonly::TrustTheseClones) -> Sh
             purlis_core::windowonly::TRUST_THESE_CLONES,
             named.join(", ")
         )),
-        options: vec![Offered {
-            id: TRUST_ALL.to_owned(),
-            label: "Trust all".to_owned(),
-            allows: true,
-            preselected: None,
-            scope: None,
-        }],
+        options: vec![
+            Offered {
+                id: TRUST_ALL.to_owned(),
+                label: "Trust all".to_owned(),
+                allows: true,
+                preselected: None,
+                scope: None,
+            },
+            // It leads to a trust, so it waits for its row to settle as Trust all does.
+            Offered {
+                id: CHOOSE.to_owned(),
+                label: "Choose…".to_owned(),
+                allows: true,
+                preselected: None,
+                scope: None,
+            },
+        ],
         source: AskSource::TrustClones,
         chain: vec![said_inertly("purlis")],
         answer: AnswerPath::TrustClones {
             clones: ask
                 .clones
                 .iter()
-                .map(|clone| crate::clonevouch::CloneToVouch {
-                    workspace: clone.workspace.clone(),
-                    folder: clone.folder.clone(),
-                    place: clone.place.clone(),
-                    places: clone.places.clone(),
-                })
+                .cloned()
+                .map(crate::clonevouch::CloneToVouch::of)
                 .collect(),
         },
         // Since when is the registry's to say, as for every ask (`Waiting::since`).
@@ -2321,6 +2339,27 @@ pub fn trust_these_clones(ask: &purlis_core::windowonly::TrustTheseClones) -> Sh
         secret: None,
         run: None,
     }
+}
+
+/// **Whether a chat waits on its window-only ask, as the board has it** (T1-42, R-329): in its
+/// turn, or stopped on a prompt it asked mid-turn, it does; once its turn has ended on the person
+/// it does not, and its ask sits on its finish row. A chat the board has no state for is taken to
+/// wait, so its ask is never kept from Asks for want of a hook.
+pub fn waits_on_its_ask(glance: &crate::host::Glance) -> bool {
+    glance.state != purlis_core::state::State::Waiting
+        || glance.in_its_turn()
+        || glance.waits_on_its_prompt()
+}
+
+/// **`asks` split into the Blocking and those for a finish row** (T1-42, R-329, Q181): a
+/// window-only ask (Trust this clone) whose chat does not wait on it, by `waits`, moves to the
+/// second list; every other ask stays, in its order.
+pub fn finish_rows_apart(
+    asks: Vec<Shown>,
+    waits: &dyn Fn(u32) -> bool,
+) -> (Vec<Shown>, Vec<Shown>) {
+    asks.into_iter()
+        .partition(|ask| ask.source != AskSource::TrustClone || waits(ask.session))
 }
 
 /// **The project's Trust these clones, less every clone a chat's own Trust this clone asks for**
@@ -4465,8 +4504,12 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     );
     // A permission ask that timed out says nothing of the chat's wait (#6007): its harness's own
     // prompt still waits in the pane, and only the pane answers it, so it is listed too.
+    // A window-only refusal is a refusal, not the chat's wait (R-328, R-329): like a block, it
+    // stands beside whatever the chat asks of its own, which stays an ask when it moves to the
+    // chat's finish row.
     let said: std::collections::HashSet<u32> = asks
         .iter()
+        .filter(|ask| ask.source != AskSource::TrustClone)
         .filter(|ask| {
             ask.source != AskSource::Permission || (waiting.timed_out)(&ask.ask).is_none()
         })
@@ -4951,13 +4994,14 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
             since: u32::try_from(one.since).unwrap_or(u32::MAX),
         })
         .collect();
-    Asking {
+    let asking = Asking {
         plane: plane.clone(),
         with_asking_chat,
         snoozed: Vec::new(),
         snoozed_until: None,
         cooling: Vec::new(),
         cooling_until: None,
+        on_finish_rows: Vec::new(),
         // A grade's chat is drawn nowhere, and asks nobody (SK-16): the grade ends it at its
         // first ask, with that end, and none of its asks is listed.
         asks: derive(&waiting)
@@ -5012,6 +5056,15 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
                     }),
             )
             .collect(),
+    };
+    // A window-only ask no chat waits on sits on its chat's finish row, not in Asks (R-329).
+    let (asks, on_finish_rows) = finish_rows_apart(asking.asks, &|session| {
+        waits_on_its_ask(&board.glance(session))
+    });
+    Asking {
+        asks,
+        on_finish_rows,
+        ..asking
     }
 }
 

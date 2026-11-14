@@ -142,6 +142,7 @@ fn every_automatic_read(f: &support::Fixture) {
             payload: &payload,
             env: &no_env,
             now: chrono::Utc::now(),
+            attendance: purlis_core::dispatchunattended::Attendance::Attended,
         },
         None,
     );

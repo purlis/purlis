@@ -76,6 +76,12 @@ export function controlReached(ask: ControlAsk): void {
   told();
 }
 
+/** For a test or a story: let go of the ask in flight, so one left by the last does not reach
+ *  the next one's Notices view within its {@link ASK_WAITS_MS}. */
+export function forgetAskForTests(): void {
+  if (asked !== undefined) controlReached(asked);
+}
+
 /** The control asked for of `project`'s Notices view and not reached yet. */
 export const useAskedControl = (project: string | undefined): ControlAsk | undefined =>
   useSyncExternalStore(subscribe, () =>

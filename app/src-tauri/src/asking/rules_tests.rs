@@ -37,6 +37,7 @@ fn listing(asks: Vec<Shown>) -> Asking {
         snoozed_until: None,
         cooling: Vec::new(),
         cooling_until: None,
+        on_finish_rows: Vec::new(),
     }
 }
 

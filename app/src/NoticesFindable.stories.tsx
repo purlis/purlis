@@ -16,6 +16,7 @@ import type { CloneToVouch } from "./bindings";
 import { CloneVouchNotice, cloneVouchCause } from "./CloneVouchNotice";
 import { Notice, NoticeList } from "./Notice";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
+import { forgetAskForTests } from "./windowControls";
 
 const clone = (folder: string, place: string): CloneToVouch =>
   ({ folder, place, places: [place] }) as unknown as CloneToVouch;
@@ -107,7 +108,13 @@ function TheNotices({
   );
 }
 
-const meta = { component: TheNotices } satisfies Meta<typeof TheNotices>;
+const meta = {
+  component: TheNotices,
+  // A Go to's ask is the window's, and waits two seconds for its project's Notices view: one a
+  // story leaves unreached (another project's view, or none of its kind) must not open the next
+  // story's view on the kind it asked for.
+  beforeEach: () => forgetAskForTests(),
+} satisfies Meta<typeof TheNotices>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 

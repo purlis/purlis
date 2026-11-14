@@ -8,7 +8,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { UNDO_MS } from "./undo";
-import type { InboxUpdate } from "./bindings";
+import type { InboxUpdate, Shown } from "./bindings";
 import { aTabForEachChat } from "./laidOut.testkit";
 import { forgetInbox } from "./inboxRules";
 import { forgetProjectViews } from "./projectViews";
@@ -75,7 +75,9 @@ const machine: {
   dismissed: Record<string, string[]>;
   hostsSeen: boolean;
   gone: string[];
-} = { updates: [], dismissed: {}, hostsSeen: false, gone: [] };
+  /** The window-only asks the core lists apart, each for its chat's finish row (R-329). */
+  onFinishRows: Shown[];
+} = { updates: [], dismissed: {}, hostsSeen: false, gone: [], onFinishRows: [] };
 
 function core() {
   const asked: Asked[] = [];
@@ -110,7 +112,14 @@ function core() {
         order: [...machine.gone],
         certain: true,
       };
+    if (cmd === "note_inbox_updates" && machine.onFinishRows.length > 0)
+      // The finish rows the window notes are kept as the inbox store keeps them.
+      for (const noted of a.noted as InboxUpdate[])
+        if (noted.kind === "turn-finished" && !machine.updates.some((one) => one.key === noted.key))
+          machine.updates.push({ ...noted, read: false });
     if (cmd === "inbox_updates" || cmd === "note_inbox_updates") return kept();
+    if (cmd === "asks_waiting")
+      return { plane: PLANE, asks: [], with_asking_chat: [], on_finish_rows: machine.onFinishRows };
     if (cmd === "settle_inbox_updates") {
       const keys = a.keys as string[] | null;
       for (const one of machine.updates)
@@ -194,6 +203,7 @@ beforeEach(() => {
   machine.dismissed = {};
   machine.hostsSeen = false;
   machine.gone = ["delta", "echo"];
+  machine.onFinishRows = [];
   vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
 });
 
@@ -317,6 +327,44 @@ describe("Dismiss all on Project (#5650)", () => {
     await userEvent.click(within(view).getByRole("button", { name: "Undo" }));
 
     expect(within(view).getByText(/Added: api.example.com/)).toBeInTheDocument();
+  });
+});
+
+/** Chat 1's refused mint, for a clone purlis has no record of, its turn ended (R-330). */
+const TRUST_CLONE: Shown = {
+  session: 1,
+  ask: "trust-clone:1:workspaces/alpha/api|github.com/acme/api",
+  says: "Trust this clone so chats can use GitHub: workspaces/alpha/api was not cloned by purlis, and its remote is github.com/acme/api. Trust it only if you made this clone yourself.",
+  options: [{ id: "press", label: "Trust this clone", allows: true }],
+  source: "trust-clone",
+  chain: ["steward 1"],
+  answer: { via: "trust-clone", folder: "workspaces/alpha/api", place: "github.com/acme/api" },
+  since: AT,
+};
+
+describe("a finish row that holds a window-only ask (Q274)", () => {
+  const trustRow = () =>
+    screen.queryByText(/^Trust this clone so chats can use GitHub/)?.closest('[role="row"]') ??
+    null;
+
+  it("has no Dismiss, and Dismiss all leaves it while it waits", async () => {
+    machine.onFinishRows = [TRUST_CLONE];
+    const { asked } = launch();
+    const view = await mineListed();
+    await waitFor(() => expect(trustRow()).not.toBeNull());
+    expect(
+      within(trustRow() as HTMLElement).queryByRole("button", { name: /^Dismiss/ }),
+    ).toBeNull();
+
+    await userEvent.click(within(view).getByRole("button", { name: "Dismiss all" }));
+    undoGoes();
+
+    await waitFor(() => expect(asked("settle_inbox_updates")).toHaveLength(1));
+    expect(asked("settle_inbox_updates")).toEqual([
+      { plane: PLANE, keys: ["task:a", "task:b"], how: "dismissed" },
+    ]);
+    expect(mine()).toHaveLength(0);
+    expect(trustRow()).not.toBeNull();
   });
 });
 

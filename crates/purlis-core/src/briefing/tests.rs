@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use super::*;
+use crate::dispatchunattended::Attendance;
 
 fn plane() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
@@ -56,6 +57,27 @@ fn told(root: &Path, env: &[(&str, &str)], payload: Value) -> Vec<String> {
 }
 
 fn told_at(root: &Path, cwd: &Path, env: &[(&str, &str)], payload: Value) -> Vec<String> {
+    told_as(root, cwd, env, payload, Attendance::Attended)
+}
+
+/// What a session outside the plane is told whose attendance fact says nobody is at it.
+fn told_unattended(root: &Path, env: &[(&str, &str)], payload: Value) -> Vec<String> {
+    told_as(
+        root,
+        root.parent().expect("the plane has a parent"),
+        env,
+        payload,
+        Attendance::Unattended,
+    )
+}
+
+fn told_as(
+    root: &Path,
+    cwd: &Path,
+    env: &[(&str, &str)],
+    payload: Value,
+    attendance: Attendance,
+) -> Vec<String> {
     let env: HashMap<String, String> = env
         .iter()
         .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
@@ -68,6 +90,7 @@ fn told_at(root: &Path, cwd: &Path, env: &[(&str, &str)], payload: Value) -> Vec
             payload: &payload,
             env: &lookup,
             now: now(),
+            attendance,
         },
         None,
     )
@@ -261,11 +284,7 @@ fn ten_workspaces_are_all_named_by_the_gate_in_the_order_they_always_were() {
 #[test]
 fn an_unattended_run_is_told_only_the_ten_most_recently_used_workspaces_too() {
     let (_d, root) = plane_of_workspaces(13);
-    let got = told(
-        &root,
-        &[("PURLIS_SESSION_ID", "s1")],
-        serde_json::json!({"permission_mode": UNATTENDED_MODE}),
-    );
+    let got = told_unattended(&root, &[("PURLIS_SESSION_ID", "s1")], serde_json::json!({}));
     assert!(got[0].starts_with("⬢ **STOP"), "{}", got[0]);
     assert!(
         got[0].contains("`w10`, …and 5 more: `purlis workspace list`)"),
@@ -293,11 +312,7 @@ fn a_locked_or_pinned_session_is_not_asked() {
 #[test]
 fn an_unattended_run_is_told_to_stop_rather_than_guess() {
     let (_d, root) = plane();
-    let got = told(
-        &root,
-        &[("PURLIS_SESSION_ID", "s1")],
-        serde_json::json!({"permission_mode": "bypassPermissions"}),
-    );
+    let got = told_unattended(&root, &[("PURLIS_SESSION_ID", "s1")], serde_json::json!({}));
     assert!(got[0].starts_with("⬢ **STOP — this run has no workspace and nobody to ask.**"));
 }
 
@@ -314,6 +329,7 @@ fn skills_told(root: &Path, env: &[(&str, &str)]) -> Option<String> {
         payload: &serde_json::json!({}),
         env: &lookup,
         now: now(),
+        attendance: Attendance::Attended,
     })
 }
 
@@ -532,11 +548,7 @@ fn a_harness_that_cannot_lock_a_session_is_asked_to_confirm_and_never_told_it_lo
         codex[0]
     );
     assert!(!codex[0].contains("**locks**"), "{}", codex[0]);
-    let unattended = told(
-        &root,
-        &[("PURLIS_HARNESS", "codex")],
-        serde_json::json!({"permission_mode": "bypassPermissions"}),
-    );
+    let unattended = told_unattended(&root, &[("PURLIS_HARNESS", "codex")], serde_json::json!({}));
     assert!(
         unattended[0].contains("with no workspace confirmed and none pinned"),
         "{}",
@@ -583,6 +595,7 @@ fn the_workspace_the_briefing_reads_is_the_sessions_pointer_or_the_pin() {
             payload: &payload,
             env: &lookup,
             now: now(),
+            attendance: Attendance::Attended,
         })
     };
     assert_eq!(of(&[]), "default");
@@ -1245,6 +1258,7 @@ fn told_part(root: &Path, env: &[(&str, &str)], part: Part) -> Vec<String> {
             payload: &payload,
             env: &lookup,
             now: now(),
+            attendance: Attendance::Attended,
         },
         None,
         part,
@@ -1428,6 +1442,7 @@ fn filed_at(root: &Path, cwd: &Path, env: &[(&str, &str)], piece: Option<&str>) 
             payload: &serde_json::json!({}),
             env: &lookup,
             now: now(),
+            attendance: Attendance::Attended,
         },
         piece.map(str::to_owned),
     )

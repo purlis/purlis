@@ -55,6 +55,17 @@ const fn here(name: &'static str) -> Test {
     Test::Named { file: THIS, name }
 }
 
+/// Where the Chat log's summary is confirmed: what it says purlis can't tell of a chat's
+/// harness (R-097, R-099, R-100).
+const CHAT_LOG: &str = "src/eventlog/chatlog/tests.rs";
+
+const fn chat_log(name: &'static str) -> Test {
+    Test::Named {
+        file: CHAT_LOG,
+        name,
+    }
+}
+
 /// Where files and egress are confirmed enforced on each harness (R-353).
 const ENFORCED: &str = "src/sandbox/enforced_tests.rs";
 
@@ -126,13 +137,17 @@ const MATRIX: [Row; 10] = [
             ),
             // R-325's core half, a block from a reported rejection and none guessed, is tested
             // in `HARNESS_CHECK` on a fixture, and no cell names that test: Codex is not armed
-            // with the word, so no Codex rejection is reported today. The Can't tell the window
-            // shows is owed by R-100.
+            // with the word, so no Codex rejection is reported today. The Can't tell the Chat
+            // log heads with is its summary's (R-100, R-097); the window's words are its
+            // stories' (`app/src/ChatLogTab.stories.tsx`).
             cell(
                 "Can't tell (no denial signal yet; a hook-reported rejection becomes a block)",
-                owed("R-100"),
+                chat_log("a_codex_chats_summary_cant_tell_its_own_checks_blocks"),
             ),
-            cell("Can't tell (no denial signal)", owed("R-097")),
+            cell(
+                "Can't tell (no denial signal)",
+                chat_log("an_opencode_chats_summary_cant_tell_its_own_checks_blocks"),
+            ),
         ],
     },
     Row {
@@ -160,7 +175,7 @@ const MATRIX: [Row; 10] = [
             cell("enforced (the armed hook)", ATTENDANCE_MODE),
             cell(
                 "Can't tell (bypass reported for every chat; attendance from how purlis started it)",
-                owed("R-099"),
+                chat_log("a_codex_chats_summary_cant_tell_its_mode"),
             ),
             cell("Can't tell", owed("R-007")),
         ],
