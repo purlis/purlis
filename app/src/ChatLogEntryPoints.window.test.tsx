@@ -276,7 +276,15 @@ function core({
         const read: ChatLog = {
           known: true,
           rows: session === 7 ? [started(7), BLOCK] : [started(session)],
-          summary: { allowed: 0, by_your_rules: 0, unverified: false, ran_as_you: false },
+          summary: {
+            allowed: 0,
+            by_your_rules: 0,
+            unverified: false,
+            ran_as_you: false,
+            harness: null,
+            cant_tell_its_checks_blocks: false,
+            cant_tell_its_mode: false,
+          },
         };
         return read;
       }
