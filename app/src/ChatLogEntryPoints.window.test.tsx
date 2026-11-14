@@ -209,11 +209,23 @@ const settingsFile = (which: "shared" | "local") => ({
   fields: [],
 });
 
-/** The stand-in core: chat 7 has two blocks, a Blocked log row, a blocked turn and a record. */
-function core() {
+/**
+ * The stand-in core: chat 7 has two blocks, a Blocked log row, a blocked turn and a record.
+ * `turns` are the finishes the event log answers, of the chats `waiting`; `before` are the
+ * Updates the machine kept from before the window opened.
+ */
+function core({
+  turns = [TURN],
+  waiting = [7],
+  before = [],
+}: {
+  turns?: readonly FinishedTurn[];
+  waiting?: readonly number[];
+  before?: readonly InboxUpdate[];
+} = {}) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   const seen = new Set<string>();
-  const kept: InboxUpdate[] = [];
+  const kept: InboxUpdate[] = [...before];
   const shown = () => [...kept].sort((one, other) => other.at - one.at);
   mockIPC(
     (cmd, args) => {
@@ -231,7 +243,7 @@ function core() {
         };
       if (cmd === "opened_chats") return CHATS;
       if (cmd === "reopened_layout") return aTabForEachChat(CHATS, () => "alpha");
-      if (cmd === "chat_states") return [WAITING];
+      if (cmd === "chat_states") return waiting.map((session) => ({ ...WAITING, session }));
       if (
         [
           "reopened_views",
@@ -258,7 +270,7 @@ function core() {
       }
       if (cmd === "settle_inbox_updates") return shown();
       if (cmd === "finished_turns")
-        return (given.sessions as number[]).includes(TURN.session) ? [TURN] : [];
+        return turns.filter((turn) => (given.sessions as number[]).includes(turn.session));
       if (cmd === "chat_log") {
         const session = Number(given.session);
         const read: ChatLog = {
@@ -344,6 +356,15 @@ async function landedOnTalksLog(
     expect(filter).toHaveAttribute("aria-pressed", "false");
     await waitFor(() => expect(log).toHaveTextContent("c0ffee7"));
   }
+}
+
+/** Updates, shown: pressed only where it is not in front already, which would hide it. */
+async function showUpdates(): Promise<HTMLElement> {
+  const tab = within(await screen.findByRole("tablist", { name: "Attention" })).getByRole("tab", {
+    name: /^Updates\b/,
+  });
+  if (tab.getAttribute("aria-selected") !== "true") await userEvent.click(tab);
+  return screen.findByRole("tabpanel", { name: "Updates" });
 }
 
 /** Chat `name`'s row in the sidebar. */
@@ -445,5 +466,75 @@ describe("the Chat log opens from each of its five entry points", () => {
     );
 
     await landedOnTalksLog(asked, true);
+  });
+
+  it.each([
+    { name: "3", session: 3 },
+    { name: "talk", session: 7 },
+  ])("a grouped block result opens the chat log of each chat it names: $name", async (chosen) => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    // Chat 3's turn ended as chat 7's did, after one block: the two are one row (R-181).
+    const { asked } = core({
+      turns: [TURN, { ...TURN, session: 3, key: "01TURNTHREE", at: TURN.at - 10 }],
+      waiting: [3, 7],
+    });
+    render(<App />);
+    await screen.findAllByTestId("pane");
+
+    const inbox = await showUpdates();
+    // One row names both chats, once both finishes are counted.
+    const row = await waitFor(
+      () => {
+        const [only, ...more] = within(inbox).getAllByText(/· 1 blocked this turn/);
+        expect(more).toEqual([]);
+        const found = only.closest<HTMLElement>('[role="row"]');
+        expect(found).toHaveAccessibleName(/\b3\b.*\btalk\b|\btalk\b.*\b3\b/);
+        return found as HTMLElement;
+      },
+      { timeout: 3000 },
+    );
+    const ways = within(row).getAllByRole("button", { name: /^Open the chat log/ });
+    expect(ways.map((one) => one.getAttribute("aria-label")).sort()).toEqual([
+      "Open the chat log of 3",
+      "Open the chat log of talk",
+    ]);
+
+    await userEvent.click(
+      within(row).getByRole("button", { name: `Open the chat log of ${chosen.name}` }),
+    );
+
+    await waitFor(() => expect(selected()).toContain(`Chat log · ${chosen.name}`));
+    await waitFor(() =>
+      expect(asked("chat_log")).toContainEqual({ plane: PLANE, session: chosen.session }),
+    );
+  });
+
+  it("a block result kept from before a restart opens no chat log under its old number", async () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    // A turn of the chat that was number 7 before purlis restarted: the 7 open now is another
+    // chat, whose event log holds no such finish.
+    core({
+      turns: [],
+      before: [
+        {
+          key: "finish:7:01TURNBEFORERESTART:blocked",
+          kind: "turn-finished",
+          at: Math.floor(Date.now() / 1000) - 60,
+          session: 7,
+          chain: ["talk"],
+          says: "Finished its turn · 1 blocked this turn",
+          read: false,
+        },
+      ],
+    });
+    render(<App />);
+    await screen.findAllByTestId("pane");
+
+    const inbox = await showUpdates();
+    const result = await within(inbox).findByText(/· 1 blocked this turn/, undefined, {
+      timeout: 3000,
+    });
+    const row = result.closest<HTMLElement>('[role="row"]') as HTMLElement;
+    expect(within(row).queryByRole("button", { name: /^Open the chat log/ })).toBeNull();
   });
 });
