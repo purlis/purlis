@@ -46,10 +46,11 @@ pub fn answered(name: Option<&str>, json: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// **`purlis pool doctor <name>`** (#6270, ADR 0123 §3): whether pool `name`'s machine and engine
-/// are the ones the person trusted, in the window's words, on stdout. Exits 1 where they aren't or
-/// the machine can't be reached. It reaches the machine as a run for the pool does, and changes
-/// nothing.
+/// **`purlis pool doctor <name>`** (#6270, #6272, ADR 0123 §3 and §7): every check of pool
+/// `name`'s machine and engine, each finding in the window's words with its next step and that
+/// step's commands, on stdout, and the link's round trip where every check passed. Exits 1 where
+/// one failed. It reaches the machine as a run for the pool does, and changes nothing there but
+/// downloading the runner image where the machine lacks it.
 pub fn doctor(name: &str) -> Result<u8, String> {
     let config = purlis_core::machine::config_root()
         .ok_or_else(|| "this machine has no home folder to read pools from".to_owned())?;
@@ -58,21 +59,14 @@ pub fn doctor(name: &str) -> Result<u8, String> {
         .iter()
         .find(|pool| pool.name() == name)
         .ok_or_else(|| format!("there is no pool named {name} on this machine"))?;
-    let host = match pool.remote_engine() {
-        None => {
-            println!(
-                "Pool {name} runs on this machine's Docker, so it has no other machine to check."
-            );
-            return Ok(0);
-        }
-        Some(purlis_core::runners::RemoteEngine::Ssh(remote)) => remote.route.host().to_owned(),
-        Some(purlis_core::runners::RemoteEngine::Tls(remote)) => remote.route.host().to_owned(),
+    let Some(machine) = poolsetup::doctoring::machine_of(pool) else {
+        println!("Pool {name} runs on this machine's Docker, so it has no other machine to check.");
+        return Ok(0);
     };
     let docker = poolsetup::docker_here()
         .ok_or_else(|| "purlis found no docker command on this machine.".to_owned())?;
-    let reached = purlis_core::sshroute::pool::docker_of(&docker, pool);
-    let (said, code) =
-        poolsetup::pinchange::doctor_said(name, reached.as_ref().map(|_| host.as_str()));
+    let found = poolsetup::doctoring::check(&docker, pool);
+    let (said, code) = poolsetup::doctoring::said_for(name, &machine, &found);
     print!("{said}");
     Ok(code)
 }

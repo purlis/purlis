@@ -330,9 +330,94 @@ describe("ConnectStep", () => {
       "ok",
       "missing",
       "todo",
+      "todo",
+      "todo",
+      "todo",
+      "todo",
     ]);
-    expect(verdictsOf(null, true).every((one) => one === "ok")).toBe(true);
     expect(verdictsOf("no-such-name", false)[0]).toBe("missing");
+  });
+
+  it("marks no line of the engine's as passed that doctor didn't run (#6272 review)", () => {
+    const reached = ["ok", "ok", "ok", "ok", "ok", "ok", "ok"];
+    expect(verdictsOf(null, true)).toEqual([...reached, "todo", "todo", "todo", "todo"]);
+    const onConnect = {
+      checked: ["unconfined", "unsupported-architecture"],
+      diskUnmeasured: false,
+    };
+    expect(verdictsOf(null, true, "ssh", onConnect)).toEqual([
+      ...reached,
+      "ok",
+      "ok",
+      "todo",
+      "todo",
+    ]);
+    const every = {
+      checked: ["unconfined", "unsupported-architecture", "image-unreachable", "disk-full"],
+      diskUnmeasured: false,
+    };
+    expect(verdictsOf(null, true, "ssh", every).every((one) => one === "ok")).toBe(true);
+    const unmeasured = {
+      checked: ["unconfined", "unsupported-architecture", "image-unreachable"],
+      diskUnmeasured: true,
+    };
+    expect(verdictsOf(null, true, "tls", unmeasured).at(-1)).toBe("warn");
+  });
+
+  it("says every check passed only where every line passed, and a disk it couldn't measure", () => {
+    core();
+    const done = (checked: string[], disk_unmeasured: boolean) =>
+      step({
+        state: "done",
+        next: null,
+        machine: {
+          ...tlsMachine({ route: "ssh://sam@build-box", host: "build-box", over: "ssh" }),
+          trusted: { algorithm: "ED25519", fingerprint: FINGERPRINT },
+          engine: "ABCD",
+          checked,
+          disk_unmeasured,
+        },
+      });
+    draw(done(["unconfined", "unsupported-architecture"], false));
+    expect(screen.queryByText("Every check passed")).toBeNull();
+    expect(screen.getByText("Connected")).toBeTruthy();
+    cleanup();
+    draw(done(["unconfined", "unsupported-architecture", "image-unreachable"], true));
+    expect(screen.getByText("purlis couldn't measure its disk")).toBeTruthy();
+    cleanup();
+    draw(done(["unconfined", "unsupported-architecture", "image-unreachable", "disk-full"], false));
+    expect(screen.getByText("Every check passed")).toBeTruthy();
+  });
+
+  it("offers another image, on a new setup of the same machine, for an image of your own", async () => {
+    core();
+    const props = { onShown: vi.fn(), changed: vi.fn(), onNext: vi.fn(), onConnectAgain: vi.fn() };
+    render(
+      <ConnectStep
+        step={step({
+          state: "attention",
+          cause: "unsupported-architecture",
+          findings: ["build-box is linux/amd64, and your image is built for linux/arm64."],
+          next: {
+            id: "change-image",
+            label: "Use another image",
+            does: "Starts setting up a new pool on build-box.",
+            command: null,
+            url: null,
+          },
+          prefill: { route: "ssh://sam@build-box", context: null },
+        })}
+        shown={{ ...shown(step({})), pool: "builds" }}
+        plane="p"
+        {...props}
+      />,
+    );
+    expect(screen.getByText("Your image isn't built for that machine")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Use another image" }));
+    expect(props.onConnectAgain).toHaveBeenCalledWith({
+      route: "ssh://sam@build-box",
+      context: null,
+    });
   });
 
   it("fails Docker's line for an SSH server that refuses forwarding, after the sign-in passed", () => {
@@ -344,7 +429,79 @@ describe("ConnectStep", () => {
       "missing",
       "todo",
       "todo",
+      "todo",
+      "todo",
+      "todo",
+      "todo",
     ]);
+  });
+
+  it("asks the engine last, in the core's order, over SSH and over TLS alike", () => {
+    const order = ["unconfined", "unsupported-architecture", "image-unreachable", "disk-full"];
+    order.forEach((cause, at) => {
+      expect(verdictsOf(cause, false).indexOf("missing")).toBe(7 + at);
+      expect(verdictsOf(cause, false, "tls").indexOf("missing")).toBe(6 + at);
+    });
+    expect(verdictsOf("pool-engine-changed", false).indexOf("missing")).toBe(6);
+  });
+
+  it("shows a finding's commands under See what this does, beside its one way on", async () => {
+    core();
+    draw(
+      step({
+        state: "attention",
+        cause: "disk-full",
+        findings: ["Docker's disk on build-box is full, so purlis makes no runner there."],
+        next: {
+          id: "check-again",
+          label: "Check again",
+          does: "Contacts the machine again and runs its checks. For a pool already made, that downloads the runner image there where it is missing, which can take a few minutes. Nothing else changes.",
+          command: null,
+          url: null,
+        },
+        see: {
+          note: "The first shows what takes Docker's disk on build-box.",
+          text: "docker -H ssh://sam@build-box system df\ndocker -H ssh://sam@build-box system prune",
+        },
+      }),
+    );
+    expect(screen.getByText("Docker's disk there is full")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "See what this does" }));
+    expect(screen.getByText(/system prune/)).toBeTruthy();
+  });
+
+  it("shows the words for the machine's admin to copy, and asks nothing of the core", async () => {
+    const calls = core();
+    draw(
+      step({
+        state: "attention",
+        cause: "not-allowed",
+        findings: ["sam on build-box isn't allowed to use Docker."],
+        next: {
+          id: "check-again",
+          label: "Check again",
+          does: "Contacts the machine again and runs its checks. For a pool already made, that downloads the runner image there where it is missing, which can take a few minutes. Nothing else changes.",
+          command: null,
+          url: null,
+        },
+        also: {
+          id: "send-to-admin",
+          label: "Send to your admin",
+          does: "Shows the words to send the machine's admin.",
+          command: null,
+          url: null,
+        },
+        admin: "Hello. Route: ssh://sam@build-box",
+      }),
+    );
+    expect(screen.queryByText(/Route: ssh:\/\/sam@build-box/)).toBeNull();
+    const toggle = screen.getByRole("button", { name: "Send to your admin" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    await userEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText(/Route: ssh:\/\/sam@build-box/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Copy/ })).toBeTruthy();
+    expect(calls.some((call) => call.cmd === "pool_setup_ask_admin")).toBe(false);
   });
 
   it("spells a host as Docker's ssh:// route", () => {
@@ -469,6 +626,10 @@ describe("ConnectStep", () => {
       "ok",
       "ok",
       "missing",
+      "todo",
+      "todo",
+      "todo",
+      "todo",
       "todo",
       "todo",
     ]);

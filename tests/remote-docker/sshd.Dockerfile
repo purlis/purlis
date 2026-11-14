@@ -3,8 +3,9 @@
 
 # **The other machine of the remote parity job** (#6266, ADR 0123 Testing): OpenSSH's server,
 # sharing docker:dind's /var/run, so /var/run/docker.sock is that engine. `pool` may use Docker
-# there and `outsider` may not. Its one host key is ed25519, so the key a client meets is that
-# file's. Forwarding is on, as a person's sshd has it by default. A test puts each of
+# there and `outsider` may not. `nokey` has no key at all that sshd accepts, so the agent's is
+# refused (#6272). Its one host key is ed25519, so the key a client meets is that file's.
+# Forwarding is on, as a person's sshd has it by default. A test puts each of
 # `DisableForwarding yes`, `AllowStreamLocalForwarding no` and `AllowTcpForwarding no` (which
 # turns off sshd's local forwards, the socket's too) ahead of these for a while, sshd taking a
 # keyword's first value (#6349). Every behaviour of the parity job meets it at once, so it takes
@@ -18,7 +19,8 @@ FROM alpine:3.22@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34
 ARG POOL_UID=1000
 RUN apk add --no-cache openssh-server iproute2 procps \
  && adduser -D -u "$POOL_UID" -s /bin/sh pool && adduser -D -s /bin/sh outsider \
- && sed -i -e 's/^pool:!/pool:*/' -e 's/^outsider:!/outsider:*/' /etc/shadow \
+ && adduser -D -s /bin/sh nokey \
+ && sed -i -e 's/^pool:!/pool:*/' -e 's/^outsider:!/outsider:*/' -e 's/^nokey:!/nokey:*/' /etc/shadow \
  && rm -f /etc/ssh/ssh_host_* \
  && ssh-keygen -q -t ed25519 -N '' -f /etc/ssh/ssh_host_ed25519_key \
  && printf '%s\n' 'HostKey /etc/ssh/ssh_host_ed25519_key' 'PasswordAuthentication no' \

@@ -56,6 +56,51 @@ pub fn docker_of(docker: &Docker, pool: &Pool) -> Result<Docker, Finding> {
     reached
 }
 
+/// **`f`, asked of the engine `engine` names, reached with its pin before any pool is made on
+/// it** (#6272, Connect's checks of the engine): over SSH through a forward of its own, opened
+/// for this alone and let go of after; over Docker's TLS API at its route. The engine is held to
+/// the pin first, so nothing is asked of another.
+pub fn with_engine<T>(
+    docker: &Docker,
+    engine: &crate::runners::RemoteEngine,
+    f: impl FnOnce(&Docker) -> T,
+) -> Result<T, Finding> {
+    let remote = match engine {
+        crate::runners::RemoteEngine::Tls(remote) => {
+            // One name for every such check: what it keeps is kept by pin.
+            let through =
+                crate::tlsroute::pool::docker_over(docker, "purlis-connect-check", remote)?;
+            return Ok(f(&through));
+        }
+        crate::runners::RemoteEngine::Ssh(remote) => remote,
+    };
+    let (engine_links, settings_in) = folders_for(docker)?;
+    let ssh = super::ssh_here().map_err(Finding::Here)?;
+    let pool = super::connecting_name();
+    let opening = Opening {
+        ssh: &ssh,
+        route: &remote.route,
+        pool: &pool,
+        key: &remote.pin.host_key,
+        engine_links: &engine_links,
+        settings_in: &settings_in,
+    };
+    let held = forward::open(&opening)
+        .map_err(|said| diagnosed(&ssh, remote, &pool, &settings_in, said))?;
+    let through = pointed(
+        docker,
+        &ssh,
+        &pool,
+        remote,
+        held.socket().to_path_buf(),
+        &settings_in,
+    )?;
+    connect::engine_holds(&through, &remote.route, &remote.pin)?;
+    let answered = f(&through);
+    drop(held);
+    Ok(answered)
+}
+
 /// [`docker_of`], before what it found is kept.
 fn reach(docker: &Docker, pool: &Pool) -> Result<Docker, Finding> {
     let remote = match pool.remote_engine() {

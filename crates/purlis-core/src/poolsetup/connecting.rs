@@ -42,6 +42,11 @@ pub struct Connecting {
     /// to the machine** (#6271, ADR 0123 §5): their answer kept beside the pin, or the pool's
     /// mark.
     pub owned: bool,
+    /// **Which of doctor's checks of the engine passed there, last it ran** (#6272), by the cause
+    /// each would fail with, and whether it couldn't measure the disk
+    /// ([`super::doctoring::lay_over`]).
+    pub checked: Vec<&'static str>,
+    pub disk_unmeasured: bool,
 }
 
 /// **The CA a press of Connect to read** for a machine over TLS (#6267), the machine's own
@@ -150,6 +155,11 @@ pub struct Machine {
     /// **The pin trusted, as it is kept, spelled as JSON** (#6271): what an answer of who can
     /// sign in is given for, handed back with it so a pin trusted again meanwhile refuses it.
     pub pin: Option<String>,
+    /// **Which of doctor's checks of the engine passed, last it ran there** (#6272), by the cause
+    /// each would fail with: the window marks no other line of them as passed.
+    pub checked: Vec<&'static str>,
+    /// That doctor couldn't measure Docker's disk there, which holds nothing up.
+    pub disk_unmeasured: bool,
 }
 
 /// The machine's name in a sentence: the host of the route, or "the machine".
@@ -178,6 +188,8 @@ pub(super) fn reading(connect: &Connecting) -> (Reading, Machine, Option<&'stati
         over: "ssh",
         context: connect.docker_context.clone(),
         owned: connect.owned,
+        checked: connect.checked.clone(),
+        disk_unmeasured: connect.disk_unmeasured,
         pin: connect
             .trusted
             .as_ref()
@@ -326,6 +338,8 @@ fn reading_tls(connect: &Connecting) -> (Reading, Machine, Option<&'static str>)
         engine: connect.trusted_tls.as_ref().map(|pin| pin.engine.clone()),
         context: connect.docker_context.clone(),
         owned: connect.owned,
+        checked: connect.checked.clone(),
+        disk_unmeasured: connect.disk_unmeasured,
         pin: connect
             .trusted_tls
             .as_ref()
@@ -450,22 +464,8 @@ fn moved_reading(connect: &Connecting) -> Option<Reading> {
         connect.docker_context.as_ref()?,
         connect.context_now.as_ref()?,
     );
-    Some(Reading::attention(
-        format!(
-            "Your context {name} now points somewhere else than this pool. Connect again to \
-             follow it, or keep the pool as it is."
-        ),
-        Some(Action {
-            id: ActionId::ConnectAgain,
-            label: "Connect again".to_owned(),
-            does: format!(
-                "Starts setting up a pool on the machine {name} names now. This pool keeps \
-                 running where it does until you remove it."
-            ),
-            command: None,
-            url: None,
-        }),
-    ))
+    let (words, next) = said_with_next(&Finding::ContextMoved { name: name.clone() });
+    Some(Reading::attention(words, next))
 }
 
 /// **Keep the pool as it is**, beside Connect again: the pool stays on its route, and forgets
@@ -587,6 +587,13 @@ fn met_again_tls(
     )
 }
 
+/// **What Check again does**, the same wherever it is offered (#6272): it reads the machine
+/// again, and, for a pool already made, runs every check of doctor's, which downloads the runner
+/// image there where it is missing.
+const CHECK_AGAIN_DOES: &str = "Contacts the machine again and runs its checks. For a pool \
+                                already made, that downloads the runner image there where it is \
+                                missing, which can take a few minutes. Nothing else changes.";
+
 /// What Connect to does over TLS.
 const CONNECT_TLS_DOES: &str = "Reads the CA file, and checks that the machine's certificate is \
                                 signed by it and accepts yours. It keeps nothing, and nothing on \
@@ -618,6 +625,11 @@ pub fn cause(finding: &Finding) -> &'static str {
         Finding::WrongName { .. } => "tls-wrong-name",
         Finding::ClientRefused { .. } => "tls-client-refused",
         Finding::ClientExpired { .. } => "tls-client-expired",
+        Finding::Unconfined { .. } => "unconfined",
+        Finding::Architecture { .. } => "unsupported-architecture",
+        Finding::DiskFull { .. } => "disk-full",
+        Finding::ImageUnreachable { .. } => "image-unreachable",
+        Finding::ContextMoved { .. } => CONTEXT_MOVED,
         Finding::Here(_) => "here",
     }
 }
@@ -626,6 +638,13 @@ pub fn cause(finding: &Finding) -> &'static str {
 #[must_use]
 pub fn said(finding: &Finding) -> String {
     said_with_next(finding).0
+}
+
+/// **What a finding says, and its one way on**, the same in the window and in `purlis pool
+/// doctor`.
+#[must_use]
+pub fn said_and_next(finding: &Finding) -> (String, Option<Action>) {
+    said_with_next(finding)
 }
 
 fn said_with_next(finding: &Finding) -> (String, Option<Action>) {
@@ -638,12 +657,7 @@ fn said_with_next(finding: &Finding) -> (String, Option<Action>) {
             url: None,
         })
     };
-    let check_again = || {
-        again(
-            "Check again",
-            "Contacts the machine again. It changes nothing.",
-        )
-    };
+    let check_again = || again("Check again", CHECK_AGAIN_DOES);
     let change = || {
         Some(Action {
             id: ActionId::ChangeMachine,
@@ -833,6 +847,94 @@ fn said_with_next(finding: &Finding) -> (String, Option<Action>) {
             ),
             check_again(),
         ),
+        Finding::Unconfined { host, podman } => (
+            if *podman {
+                format!(
+                    "Podman on {host} doesn't give containers its default seccomp profile, so \
+                     purlis makes no runner there. On {host}, set Podman's seccomp profile back \
+                     to its default, then check again."
+                )
+            } else {
+                format!(
+                    "Docker on {host} doesn't give containers its built-in seccomp profile, so \
+                     purlis makes no runner there. On {host}, set the daemon's seccomp profile \
+                     back to its default, then check again."
+                )
+            },
+            check_again(),
+        ),
+        Finding::Architecture {
+            host,
+            platform,
+            built_for,
+            own_image: true,
+        } => (
+            format!(
+                "{host} is {platform}, and your image is built for {}. Use an image built for \
+                 {platform}, on a new pool on {host}.",
+                super::doctoring::and_listed(built_for),
+            ),
+            Some(Action {
+                id: ActionId::ChangeImage,
+                label: "Use another image".to_owned(),
+                does: format!(
+                    "Starts setting up a new pool on {host}, where you pick an image built for \
+                     {platform}. This pool stays as it is until you remove it."
+                ),
+                command: None,
+                url: None,
+            }),
+        ),
+        Finding::Architecture {
+            host,
+            platform,
+            built_for,
+            own_image: false,
+        } => (
+            format!(
+                "{host} is {platform}, and the runner image is built for {}. Pick a machine that \
+                 is {}.",
+                super::doctoring::and_listed(built_for),
+                if built_for.len() == 1 {
+                    "that"
+                } else {
+                    "one of those"
+                }
+            ),
+            change(),
+        ),
+        Finding::DiskFull { host, free } => (
+            format!(
+                "{}, so purlis makes no runner there. To make room, run docker system df on \
+                 {host} to see what takes it, then docker image prune there to remove images \
+                 nothing uses, or give Docker there a bigger disk. Then check again.",
+                crate::dockerpool::disk_full_there(host, *free)
+            ),
+            check_again(),
+        ),
+        Finding::ImageUnreachable { host, registry } => (
+            format!(
+                "{host} couldn't download the runner image. Check that {host} can reach \
+                 {registry}, then check again."
+            ),
+            check_again(),
+        ),
+        Finding::ContextMoved { name } => (
+            format!(
+                "Your context {name} now points somewhere else than this pool. Connect again to \
+                 follow it, or keep the pool as it is."
+            ),
+            Some(Action {
+                id: ActionId::ConnectAgain,
+                label: "Connect again".to_owned(),
+                does: format!(
+                    "Starts setting up a pool on the machine {name} names now. This pool keeps \
+                     running where it does until you remove it."
+                ),
+                command: None,
+                url: None,
+            }),
+        ),
         Finding::Here(why) => (why.clone(), check_again()),
     }
 }
@@ -879,6 +981,390 @@ pub fn by_hand(route: Option<&str>) -> super::See {
     }
 }
 
+/// **The machine, in lines another person can check** (#6272, ADR 0123 §4): its route, its host,
+/// how it is reached, and the fingerprints of its key or CA and its engine's id, each as trusted
+/// and as shown now. Never a key, a certificate's private half, a file's path or a vault's name.
+#[must_use]
+pub fn machine_lines(machine: &Machine) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some(route) = &machine.route {
+        lines.push(format!("Route: {route}"));
+    }
+    if let Some(host) = &machine.host {
+        lines.push(format!("Machine: {host}"));
+    }
+    lines.push(format!(
+        "Reached by: {}",
+        if machine.over == "tls" {
+            "Docker's API over TLS"
+        } else {
+            "SSH"
+        }
+    ));
+    let key = |label: &str, key: &Option<KeyShown>| {
+        key.as_ref()
+            .map(|key| format!("{label}: {} ({})", key.fingerprint, key.algorithm))
+    };
+    lines.extend(key("Its key, trusted", &machine.trusted));
+    lines.extend(key("Its key, shown", &machine.key));
+    lines.extend(key("Its key now", &machine.now));
+    if let Some(ca) = &machine.trusted_ca {
+        lines.push(format!("Its CA, trusted: {ca}"));
+    }
+    if let Some(ca) = &machine.ca {
+        lines.push(format!("Its CA, shown: {}", ca.fingerprint));
+    }
+    if let Some(ca) = &machine.ca_now {
+        lines.push(format!("Its CA now: {ca}"));
+    }
+    if let Some(engine) = &machine.engine {
+        lines.push(format!("Its engine, trusted: {engine}"));
+    }
+    lines
+}
+
+/// **Whether a finding of cause `cause` is for the machine's admin to mend**: named here, each
+/// one something on the machine that the person's own account there can't change. Anything else
+/// (their own agent, the address they typed, the files they named, this machine, a platform no
+/// account changes) goes to no admin, a cause added later included, until it is named.
+#[must_use]
+pub fn for_the_admin(cause: &str) -> bool {
+    matches!(
+        cause,
+        "no-answer"
+            | "not-met"
+            | "pool-pin-changed"
+            | "no-engine"
+            | "not-allowed"
+            | "engine-silent"
+            | "forwarding-refused"
+            | "pool-engine-changed"
+            | "tls-not-signed"
+            | "tls-expired"
+            | "tls-wrong-name"
+            | "tls-client-refused"
+            | "unconfined"
+            | "disk-full"
+            | "image-unreachable"
+    )
+}
+
+/// **The words for the machine's admin** (#6272, ADR 0123 §4), where the person can't mend the
+/// finding themselves: what the check found, the machine in [`machine_lines`], and the commands.
+/// Held free of secrets, and of every path of this machine's ([`without_local_paths`]).
+#[must_use]
+pub fn admin_words(machine: &Machine, found: &[String], see: &super::See) -> String {
+    let host = machine.host.as_deref().unwrap_or("the machine");
+    let version = env!("CARGO_PKG_VERSION");
+    let words = format!(
+        "Hello. I'm setting up purlis to run my chats in Docker on {host}, and its check found \
+         something there I can't change with my own account. Could you have a look?\n\
+         \n\
+         What the check found:\n\
+         {found}\n\
+         \n\
+         The machine, as purlis reaches it:\n\
+         {machine_lines}\n\
+         \n\
+         {note}\n\
+         {commands}\n\
+         \n\
+         Once it's done, tell me, and I'll have purlis check again. Sent from purlis {version}. It \
+         holds no password, token, key or credential.",
+        found = found.join("\n"),
+        machine_lines = machine_lines(machine).join("\n"),
+        note = see.note,
+        commands = see.text,
+    );
+    super::admin::held_free_of_secrets(&without_local_paths(&words, machine))
+}
+
+/// **`text` with every path of this machine's that Connect names put as a placeholder** (#6272):
+/// the TLS files' and the SSH key's. What is sent to the machine's admin or told to Get help's
+/// chat names no file of the person's: the reader puts their own in its place. A path a command
+/// quotes stays quoted, and a bare one is quoted, so a command copied still reads as one.
+#[must_use]
+pub fn without_local_paths(text: &str, machine: &Machine) -> String {
+    let mut paths: Vec<(&str, &str)> = Vec::new();
+    if let Some(tls) = &machine.tls {
+        paths.push((tls.ca.as_str(), "<your CA file>"));
+        paths.push((tls.cert.as_str(), "<your client certificate>"));
+        if let Some(key) = &tls.key {
+            paths.push((key.as_str(), "<your client key>"));
+        }
+    }
+    if let Some(identity) = &machine.identity {
+        paths.push((identity.as_str(), "<your SSH key>"));
+    }
+    // The longest first, so one path that holds another is put whole.
+    paths.sort_by_key(|(path, _)| std::cmp::Reverse(path.len()));
+    let mut out = text.to_owned();
+    for (path, placeholder) in paths.into_iter().filter(|(path, _)| !path.is_empty()) {
+        let quoted = crate::shellseg::shell_quote(path);
+        out = out
+            .replace(&quoted, &format!("'{placeholder}'"))
+            .replace(path, &format!("'{placeholder}'"));
+    }
+    out
+}
+
+/// **The commands of `see`, sorted** (#6272): those that only read, and those that change
+/// something, each line once, in its order. A line changes something where it runs one of the
+/// commands purlis offers to mend a machine: adding to a group, starting a service, adding a key
+/// to the agent, removing images or downloading one.
+#[must_use]
+pub fn sorted(see: &super::See) -> (Vec<&str>, Vec<&str>) {
+    const CHANGING: [&str; 4] = ["sudo usermod ", "sudo systemctl ", " prune", " pull "];
+    see.text.lines().partition(|line| {
+        let line = line.trim();
+        !(line == "ssh-add" || CHANGING.iter().any(|one| line.contains(one)))
+    })
+}
+
+/// **Connect's See what this does, as it stands** (#6272, ADR 0123 §7): where a finding stands,
+/// the commands of its one way on, else what prints the machine's key or CA to compare.
+/// `purlis pool doctor` prints the same.
+#[must_use]
+pub fn see(connect: &Connecting) -> super::See {
+    let route = connect.route.as_deref();
+    connect
+        .finding
+        .as_ref()
+        .and_then(|finding| see_of(finding, connect))
+        .unwrap_or_else(
+            || match route.filter(|route| crate::tlsroute::is_tcp(route)) {
+                Some(tcp) => by_hand_tls(tcp, connect.tls.as_ref()),
+                None => by_hand(route),
+            },
+        )
+}
+
+/// **The commands behind finding `finding`'s way on**, for the machine `connect` names: each by
+/// hand, as purlis runs it or as the person mends it. `None` where the finding has none of its
+/// own, and the step's own stand.
+fn see_of(finding: &Finding, connect: &Connecting) -> Option<super::See> {
+    let q = |text: &str| crate::shellseg::shell_quote(text);
+    let route = connect.route.as_deref().unwrap_or_default();
+    let tls = crate::tlsroute::is_tcp(route);
+    let ssh = Route::parse(route).ok();
+    // `ssh` and where it signs in, as the person's own ssh reads it.
+    let to = ssh.as_ref().map_or_else(
+        || "ssh USER@HOST".to_owned(),
+        |route| {
+            let at = route.user().map_or_else(
+                || route.host().to_owned(),
+                |user| format!("{user}@{}", route.host()),
+            );
+            match route.port() {
+                Some(port) => format!("ssh -p {port} {}", q(&at)),
+                None => format!("ssh {}", q(&at)),
+            }
+        },
+    );
+    let to_t = to.replacen("ssh ", "ssh -t ", 1);
+    // `docker`, pointed at the machine as purlis points it.
+    let docker = if tls {
+        let parsed = crate::tlsroute::Route::parse(route).ok();
+        let address = parsed.map_or_else(|| "tcp://HOST:2376".to_owned(), |route| route.spelled());
+        let files = connect.tls.as_ref();
+        let named =
+            |path: Option<String>, stand: &str| q(&path.unwrap_or_else(|| stand.to_owned()));
+        format!(
+            "docker -H {} --tlsverify --tlscacert {} --tlscert {} --tlskey {}",
+            q(&address),
+            named(files.map(|files| files.ca.display().to_string()), "ca.pem"),
+            named(
+                files.map(|files| files.cert.display().to_string()),
+                "cert.pem"
+            ),
+            named(
+                files.and_then(|files| files.key_file().map(|key| key.display().to_string())),
+                "key.pem"
+            ),
+        )
+    } else {
+        format!(
+            "docker -H {}",
+            q(&ssh
+                .as_ref()
+                .map_or_else(|| "ssh://USER@HOST".to_owned(), Route::spelled))
+        )
+    };
+    let tls_at = || {
+        let parsed = crate::tlsroute::Route::parse(route).ok();
+        parsed.map_or_else(
+            || "HOST:2376".to_owned(),
+            |route| format!("{}:{}", route.host(), route.port()),
+        )
+    };
+    let see = |note: String, text: String| Some(super::See { note, text });
+    match finding {
+        Finding::NoSuchName { host } if tls => see(
+            format!("This asks this machine's name service for {host}. It only reads."),
+            format!("nslookup {}", q(host)),
+        ),
+        Finding::NoSuchName { host } => see(
+            format!(
+                "The first prints what your SSH settings make of {host}, and the second lists the \
+                 hosts they name, to pick from. Both only read."
+            ),
+            format!("ssh -G {}\ngrep -i '^host ' ~/.ssh/config", q(host)),
+        ),
+        Finding::NoAnswer { host, port } => see(
+            format!(
+                "This asks whether anything answers on port {port} of {host}, from this machine. \
+                 It only reads."
+            ),
+            format!("nc -vz {} {port}", q(host)),
+        ),
+        Finding::NotMet { host, .. } => see(
+            format!(
+                "This signs in to {host} as purlis does, and prints what SSH says as it goes. It \
+                 changes nothing there."
+            ),
+            format!("{} -v -o BatchMode=yes true", to),
+        ),
+        Finding::SignInRefused { host } => see(
+            format!(
+                "The first lists the keys your SSH agent holds, and the second adds your own key \
+                 to it. The third signs in to {host} as purlis does, never asking for a password."
+            ),
+            format!("ssh-add -l\nssh-add\n{to} -o BatchMode=yes true"),
+        ),
+        Finding::NoEngine { host, .. } => see(
+            format!(
+                "The first shows which of Docker's sockets {host} has. The second starts Docker \
+                 there and keeps it on, asking for your password on {host}."
+            ),
+            format!(
+                "{to} 'ls -l /var/run/docker.sock \"$XDG_RUNTIME_DIR/docker.sock\"'\n\
+                 {to_t} sudo systemctl enable --now docker"
+            ),
+        ),
+        Finding::NotAllowed { host, user, .. } => {
+            let user = if user.is_empty() {
+                "$USER"
+            } else {
+                user.as_str()
+            };
+            see(
+                format!(
+                    "The first adds {user} to the docker group on {host}, asking for your password \
+                     there: anyone in that group controls Docker on {host}. The second signs in \
+                     again, so the group counts, and asks Docker for its id as purlis does. \
+                     Rootless Docker or Podman keeps Docker to your own account instead."
+                ),
+                format!(
+                    "{to_t} sudo usermod -aG docker {}\n{to} docker info --format '{{{{.ID}}}}'",
+                    q(user)
+                ),
+            )
+        }
+        Finding::EngineSilent { host, .. } => see(
+            format!("This asks Docker on {host} how it is, as purlis reaches it. It only reads."),
+            format!("{docker} info"),
+        ),
+        Finding::ForwardingRefused { host } => see(
+            format!(
+                "Run on {host} by its admin, this prints the forwarding settings its SSH server \
+                 runs with. It only reads."
+            ),
+            "sudo sshd -T | grep -i forwarding".to_owned(),
+        ),
+        Finding::NeedsPodman { .. } => see(
+            "This shows whether Podman is installed on this machine. It only reads.".to_owned(),
+            "podman --version".to_owned(),
+        ),
+        Finding::TlsFile { file, .. } => see(
+            "This shows whether the file is there and who may read it. It only reads.".to_owned(),
+            format!("ls -l {}", q(file)),
+        ),
+        Finding::NotSignedByCa { host, ca } => see(
+            format!(
+                "This checks {host}'s certificate against the CA you chose, as purlis does. It \
+                 only reads."
+            ),
+            format!(
+                "openssl s_client -connect {} -CAfile {} -verify_return_error </dev/null",
+                q(&tls_at()),
+                q(ca)
+            ),
+        ),
+        Finding::ServerExpired { host } => see(
+            format!("This prints when {host}'s certificate expires. It only reads."),
+            format!(
+                "openssl s_client -connect {} </dev/null 2>/dev/null | openssl x509 -noout \
+                 -subject -enddate",
+                q(&tls_at())
+            ),
+        ),
+        Finding::WrongName { host, .. } => see(
+            format!("This prints the names {host}'s certificate is for. It only reads."),
+            format!(
+                "openssl s_client -connect {} </dev/null 2>/dev/null | openssl x509 -noout -ext \
+                 subjectAltName",
+                q(&tls_at())
+            ),
+        ),
+        Finding::ClientRefused { cert, .. } | Finding::ClientExpired { cert, .. } => see(
+            "This prints who signed your client certificate and when it expires. It only reads."
+                .to_owned(),
+            format!("openssl x509 -noout -issuer -enddate -in {}", q(cert)),
+        ),
+        Finding::Unconfined { host, .. } => see(
+            format!(
+                "This prints the security options Docker on {host} gives containers, as purlis \
+                 reads them. It only reads."
+            ),
+            format!("{docker} info --format '{{{{json .SecurityOptions}}}}'"),
+        ),
+        Finding::Architecture { host, .. } => see(
+            format!("This prints the platform of {host}, as purlis reads it. It only reads."),
+            format!("{docker} info --format '{{{{.OSType}}}}/{{{{.Architecture}}}}'"),
+        ),
+        Finding::DiskFull { host, .. } => see(
+            format!(
+                "The first shows what takes Docker's disk on {host}, so you can look before you \
+                 remove anything. It only reads. The second removes only images that have no \
+                 name and that no container uses: volumes, named images and stopped containers \
+                 stay, other people's included."
+            ),
+            format!("{docker} system df\n{docker} image prune"),
+        ),
+        Finding::ImageUnreachable { host, registry } => {
+            let asked = format!("curl -sSI https://{registry}/v2/");
+            if tls {
+                see(
+                    format!(
+                        "Run on {host}, this asks {registry} for an answer, as Docker there does \
+                         before it downloads. It only reads."
+                    ),
+                    asked,
+                )
+            } else {
+                see(
+                    format!(
+                        "This asks {registry} for an answer from {host}, as Docker there does \
+                         before it downloads. It only reads."
+                    ),
+                    format!("{to} {}", q(&asked)),
+                )
+            }
+        }
+        Finding::ContextMoved { name } => see(
+            format!("This prints where your context {name} points now. It only reads."),
+            format!(
+                "docker context inspect {} --format '{{{{.Endpoints.docker.Host}}}}'",
+                q(name)
+            ),
+        ),
+        Finding::KeyChanged { .. }
+        | Finding::CaChanged { .. }
+        | Finding::EngineChanged { .. }
+        | Finding::Here(_) => None,
+    }
+}
+
 /// **The route Connect keeps, read**: `route` as it was given, signing in with `identity` where
 /// a Podman connection names one (#6269).
 pub fn route_of(route: &str, identity: Option<&std::path::Path>) -> Result<Route, Finding> {
@@ -897,6 +1383,8 @@ pub fn meet_chosen(
     docker: &crate::dockerpool::Docker,
     chosen: &super::Chosen,
 ) -> super::Pressed {
+    // Met anew: what doctor found there before stands no more.
+    super::doctoring::forget(&chosen.route);
     if crate::tlsroute::is_tcp(&chosen.route) {
         let met = match &chosen.tls {
             Some(files) => meet_tls(config, &chosen.route, files),
@@ -931,18 +1419,52 @@ pub fn trust_chosen(
         } else {
             trust_tls(docker, &chosen.route, files, fingerprint, config)
         };
-        return match trusted {
+        let checked = trusted.and_then(|remote| {
+            let engine = crate::runners::RemoteEngine::Tls(remote.clone());
+            engine_checked(docker, &[&chosen.route, &remote.route.spelled()], &engine)
+                .map(|()| remote)
+        });
+        return match checked {
             Ok(remote) => super::trusted_tls_read_from(config, &remote, files).map(Ok),
             Err(finding) => Ok(Err(finding)),
         };
     }
-    match chosen
+    let checked = chosen
         .route_read()
         .and_then(|route| trust(docker, &route, fingerprint))
-    {
+        .and_then(|remote| {
+            let engine = crate::runners::RemoteEngine::Ssh(remote.clone());
+            engine_checked(docker, &[&chosen.route, &remote.route.spelled()], &engine)
+                .map(|()| remote)
+        });
+    match checked {
         Ok(remote) => super::trusted(config, &remote).map(Ok),
         Err(finding) => Ok(Err(finding)),
     }
+}
+
+/// **Connect's checks of the engine, for a machine just trusted** (#6272, ADR 0123 §7): reached
+/// as a pool on it would be, with its pin, and asked [`super::doctoring::on_connect`]'s
+/// questions. What they found is kept for each of `routes`, the route as Connect keeps it and as
+/// the pool will be made on, so the next read shows it; a finding keeps nothing of the machine,
+/// as any other of Trust's does.
+fn engine_checked(
+    docker: &crate::dockerpool::Docker,
+    routes: &[&str],
+    engine: &crate::runners::RemoteEngine,
+) -> Result<(), Finding> {
+    let host = match engine {
+        crate::runners::RemoteEngine::Ssh(remote) => remote.route.host().to_owned(),
+        crate::runners::RemoteEngine::Tls(remote) => remote.route.host().to_owned(),
+    };
+    let found = crate::sshroute::pool::with_engine(docker, engine, |through| {
+        super::doctoring::on_connect(through, &host)
+    })
+    .and_then(|found| found);
+    for route in routes {
+        super::doctoring::note(route, &found);
+    }
+    found.map(|_| ())
 }
 
 /// **Check and trust again** (#6270, ADR 0123 §3): pool `name`'s machine met again as Connect to
