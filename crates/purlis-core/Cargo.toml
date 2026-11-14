@@ -190,7 +190,8 @@ unicode-normalization = "0.1.25"
 # **A marked link's words, as a reader sees them** (#6218): UTS #39's skeleton, so a look-alike of
 # `.`, `:` or `/` reads as the character it looks like, and its restriction levels, so a host
 # written in mixed scripts or with a restricted letter asks. From unicode-rs, the authors of the
-# unicode-* crates the tree already has; its own dependencies are already in the tree.
+# unicode-* crates the tree already has. It brings one crate new to the tree, `unicode-script`
+# 0.5 (the same authors, MIT or Apache-2.0), for the script of each character.
 unicode-security = "0.1"
 # The diagnostic log (`applog`, #647): what the app notices and nobody asked to see goes to
 # `tracing`, and from there to a file that rotates daily and to standard error. `tracing` is
