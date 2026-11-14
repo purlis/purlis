@@ -546,7 +546,9 @@ fn alternating_blocked_calls_still_pause() {
 
     // The same resets clear every aim they resolve: a different success and Let it keep
     // trying every aim, a sandbox ask's Allow every sandbox aim (Q280).
-    let resets: [(Source, fn(&mut Loops)); 3] = [
+    /// Whose blocks a reset is tried on, and the reset.
+    type Reset = (Source, fn(&mut Loops));
+    let resets: [Reset; 3] = [
         (Source::Guard, |loops| {
             loops.called(CHAT, &succeeded("cc"), true);
         }),
