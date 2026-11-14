@@ -29,6 +29,61 @@ pub struct Connecting {
     pub trusted: Option<Pin>,
     /// What the last contact found wrong.
     pub finding: Option<Finding>,
+    /// **Over Docker's TLS API** (#6267): the files named under Options, the CA read at the last
+    /// press of Connect to (in this read only), and the CA pin the person trusted, or the pool's.
+    pub tls: Option<crate::tlsroute::Files>,
+    pub met_ca: Option<CaMet>,
+    pub trusted_tls: Option<crate::tlsroute::Pin>,
+    /// **The Docker context the route was read from** (#6268), and the route it names now, read
+    /// fresh, where that is another one (ADR 0123 §7).
+    pub docker_context: Option<String>,
+    pub context_now: Option<String>,
+}
+
+/// **The CA a press of Connect to read** for a machine over TLS (#6267), the machine's own
+/// certificate found to be signed by it: what the person checks before trusting it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CaMet {
+    pub fingerprint: crate::tlsroute::Fingerprint,
+    pub subject: Option<String>,
+    pub file: String,
+}
+
+/// A CA, as Connect shows it (#6267).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CaShown {
+    /// Its SHA-256, as `openssl x509 -fingerprint -sha256` prints it.
+    pub fingerprint: String,
+    pub subject: Option<String>,
+    pub file: String,
+}
+
+/// The TLS files named, as Connect's Options show them (#6267): paths, and a vault entry's names.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct TlsShown {
+    pub ca: String,
+    pub cert: String,
+    pub key: Option<String>,
+    pub key_vault: Option<String>,
+    pub key_name: Option<String>,
+}
+
+impl From<&crate::tlsroute::Files> for TlsShown {
+    fn from(files: &crate::tlsroute::Files) -> TlsShown {
+        let (key, key_vault, key_name) = match &files.key {
+            crate::tlsroute::KeyFrom::File(path) => (Some(path.display().to_string()), None, None),
+            crate::tlsroute::KeyFrom::Vault { vault, key, .. } => {
+                (None, Some(vault.clone()), Some(key.clone()))
+            }
+        };
+        TlsShown {
+            ca: files.ca.display().to_string(),
+            cert: files.cert.display().to_string(),
+            key,
+            key_vault,
+            key_name,
+        }
+    }
 }
 
 /// **The key a first contact met**, and the one the person's own ssh knows for the machine,
@@ -73,6 +128,18 @@ pub struct Machine {
     pub now: Option<KeyShown>,
     /// The engine's id trusted for it.
     pub engine: Option<String>,
+    /// **Over Docker's TLS API** (#6267): `"tls"` for a `tcp://` machine, `"ssh"` otherwise.
+    pub over: &'static str,
+    /// The files named under Options.
+    pub tls: Option<TlsShown>,
+    /// The CA read at Connect to, to confirm before trusting it.
+    pub ca: Option<CaShown>,
+    /// The CA's fingerprint trusted for it.
+    pub trusted_ca: Option<String>,
+    /// The fingerprint the CA file holds now, where that isn't the one trusted.
+    pub ca_now: Option<String>,
+    /// The Docker context the route was read from (#6268).
+    pub context: Option<String>,
 }
 
 /// The machine's name in a sentence: the host of the route, or "the machine".
@@ -84,6 +151,13 @@ fn host_of(route: Option<&str>) -> String {
 
 /// **What Connect's facts mean**: its reading, the machine it shows and the cause of a finding.
 pub(super) fn reading(connect: &Connecting) -> (Reading, Machine, Option<&'static str>) {
+    if connect
+        .route
+        .as_deref()
+        .is_some_and(crate::tlsroute::is_tcp)
+    {
+        return reading_tls(connect);
+    }
     let host = host_of(connect.route.as_deref());
     let mut machine = Machine {
         route: connect.route.clone(),
@@ -91,6 +165,8 @@ pub(super) fn reading(connect: &Connecting) -> (Reading, Machine, Option<&'stati
         host: connect.route.as_ref().map(|_| host.clone()),
         trusted: connect.trusted.as_ref().map(|pin| (&pin.host_key).into()),
         engine: connect.trusted.as_ref().map(|pin| pin.engine.shown()),
+        over: "ssh",
+        context: connect.docker_context.clone(),
         ..Machine::default()
     };
     if let Some(finding) = &connect.finding {
@@ -103,6 +179,13 @@ pub(super) fn reading(connect: &Connecting) -> (Reading, Machine, Option<&'stati
             machine,
             Some(cause(finding)),
         );
+    }
+    // Met again, to be trusted again (#6270): the key it shows now, beside the one trusted.
+    if let (Some(pin), Some(met)) = (&connect.trusted, &connect.met) {
+        return met_again(machine, &host, pin, met);
+    }
+    if let Some(moved) = moved_reading(connect) {
+        return (moved, machine, Some(CONTEXT_MOVED));
     }
     if let Some(pin) = &connect.trusted {
         return (
@@ -210,6 +293,285 @@ pub(super) fn reading(connect: &Connecting) -> (Reading, Machine, Option<&'stati
     )
 }
 
+/// **[`reading`] for a machine reached at a `tcp://` address** (#6267): refused as plain TCP until
+/// its TLS files are named, then read by Connect to and trusted as SSH is.
+fn reading_tls(connect: &Connecting) -> (Reading, Machine, Option<&'static str>) {
+    let route = connect.route.clone().unwrap_or_default();
+    let parsed = crate::tlsroute::Route::parse(&route);
+    let host = parsed.as_ref().map_or_else(
+        |_| "the machine".to_owned(),
+        |route| route.host().to_owned(),
+    );
+    let mut machine = Machine {
+        route: Some(route.clone()),
+        host: parsed.as_ref().ok().map(|_| host.clone()),
+        over: "tls",
+        tls: connect.tls.as_ref().map(TlsShown::from),
+        trusted_ca: connect.trusted_tls.as_ref().map(|pin| pin.ca.shown()),
+        engine: connect.trusted_tls.as_ref().map(|pin| pin.engine.clone()),
+        context: connect.docker_context.clone(),
+        ..Machine::default()
+    };
+    if let Some(finding) = &connect.finding {
+        if let Finding::CaChanged { now, .. } = finding {
+            machine.ca_now = Some(now.clone());
+        }
+        let (words, next) = said_with_next(finding);
+        return (
+            Reading::attention(words, next),
+            machine,
+            Some(cause(finding)),
+        );
+    }
+    if let Err(why) = parsed {
+        return (
+            Reading::attention(
+                why,
+                Some(Action {
+                    id: ActionId::ChangeMachine,
+                    label: "Change the machine".to_owned(),
+                    does: "Goes back to the machine, to pick or type it again.".to_owned(),
+                    command: None,
+                    url: None,
+                }),
+            ),
+            machine,
+            Some("not-a-route"),
+        );
+    }
+    if connect.tls.is_none() {
+        // Plain tcp:// until the files Docker's --tlsverify takes are named (ADR 0123 §2).
+        return (
+            Reading::attention(
+                format!(
+                    "{} If TLS is on for Docker there, name its CA, client certificate and key \
+                     under Options.",
+                    crate::sshroute::PLAIN_TCP
+                ),
+                Some(Action {
+                    id: ActionId::UseSshInstead,
+                    label: "Use SSH instead".to_owned(),
+                    does: "Goes back to the machine, to pick or type it again.".to_owned(),
+                    command: None,
+                    url: None,
+                }),
+            ),
+            machine,
+            Some("plain-tcp"),
+        );
+    }
+    if let (Some(pin), Some(met)) = (&connect.trusted_tls, &connect.met_ca) {
+        return met_again_tls(machine, &host, pin, met);
+    }
+    if let Some(moved) = moved_reading(connect) {
+        return (moved, machine, Some(CONTEXT_MOVED));
+    }
+    if let Some(pin) = &connect.trusted_tls {
+        return (
+            Reading::done(format!("{host}, CA {}", pin.ca.shown())),
+            machine,
+            None,
+        );
+    }
+    let Some(met) = &connect.met_ca else {
+        return (
+            Reading::to_do(
+                format!("purlis hasn't contacted {host} yet."),
+                Some(Action {
+                    id: ActionId::ConnectMachine,
+                    label: format!("Connect to {host}"),
+                    does: CONNECT_TLS_DOES.to_owned(),
+                    command: None,
+                    url: None,
+                }),
+            ),
+            machine,
+            None,
+        );
+    };
+    machine.ca = Some(CaShown {
+        fingerprint: met.fingerprint.shown(),
+        subject: met.subject.clone(),
+        file: met.file.clone(),
+    });
+    (
+        Reading::to_do(
+            format!(
+                "{host}'s certificate is signed by this CA. Check it is the CA Docker on {host} \
+                 trusts before you trust it: run the command under See what this does there, and \
+                 compare the two fingerprints."
+            ),
+            Some(Action {
+                id: ActionId::TrustMachine,
+                label: "Trust this machine".to_owned(),
+                does: format!(
+                    "Keeps this CA for the pool, then checks that Docker answers on {host}. \
+                     purlis connects only to a machine whose certificate this CA signed, and \
+                     checks the file still holds it before every run."
+                ),
+                command: None,
+                url: None,
+            }),
+        ),
+        machine,
+        None,
+    )
+}
+
+/// **The cause of doctor's check of a Docker context** (ADR 0123 §7, #6268): the context the
+/// pool's route was read from now names another route.
+pub const CONTEXT_MOVED: &str = "context-moved";
+
+/// **Doctor's check of the pool's Docker context** (ADR 0123 §7): where it now names another
+/// route, said in the record's words, with Connect again as the way on. The pool runs where it
+/// did: nothing it runs on follows the context.
+fn moved_reading(connect: &Connecting) -> Option<Reading> {
+    let (name, _now) = (
+        connect.docker_context.as_ref()?,
+        connect.context_now.as_ref()?,
+    );
+    Some(Reading::attention(
+        format!(
+            "Your context {name} now points somewhere else than this pool. Connect again to \
+             follow it, or keep the pool as it is."
+        ),
+        Some(Action {
+            id: ActionId::ConnectAgain,
+            label: "Connect again".to_owned(),
+            does: format!(
+                "Starts setting up a pool on the machine {name} names now. This pool keeps \
+                 running where it does until you remove it."
+            ),
+            command: None,
+            url: None,
+        }),
+    ))
+}
+
+/// **Keep the pool as it is**, beside Connect again: the pool stays on its route, and forgets
+/// the context's name, so doctor stops comparing them.
+pub(super) fn keep_as_it_is() -> Option<Action> {
+    Some(Action {
+        id: ActionId::KeepPoolAsItIs,
+        label: "Keep the pool as it is".to_owned(),
+        does: "The pool stays on the machine it runs on now, and purlis stops comparing it with \
+               the context."
+            .to_owned(),
+        command: None,
+        url: None,
+    })
+}
+
+/// What Connect again opens Connect with: the context as it is now.
+pub(super) fn followed(connect: &Connecting) -> Option<super::Prefill> {
+    Some(super::Prefill {
+        route: connect.context_now.clone()?,
+        context: Some(connect.docker_context.clone()?),
+    })
+}
+
+/// **A made pool's machine, met again by Check and trust again** (#6270, ADR 0123 §3): the key it
+/// shows now beside the one trusted, and Trust this machine, which pins only what is confirmed.
+fn met_again(
+    mut machine: Machine,
+    host: &str,
+    pin: &Pin,
+    met: &Met,
+) -> (Reading, Machine, Option<&'static str>) {
+    machine.key = Some((&met.key).into());
+    machine.known = met.known.as_ref().map(|known| *known == met.key);
+    let (finding, does) = if met.key == pin.host_key {
+        (
+            format!(
+                "{host} shows the key you trusted. Its engine isn't the one you trusted: trust \
+                 it again to use the engine there now for the pool."
+            ),
+            format!(
+                "Keeps this key for the pool and the engine {host} runs now, then checks that \
+                 Docker answers there. The pool's runners stay on the engine trusted before."
+            ),
+        )
+    } else {
+        (
+            format!(
+                "This is the key {host} shows now, and it's different than the one you trusted \
+                 ({} trusted). Check it on {host} before you trust it: run the command under See \
+                 what this does there, and compare the two.",
+                pin.host_key.fingerprint()
+            ),
+            format!(
+                "Keeps this key for the pool in place of the one trusted, and the engine {host} \
+                 runs now, then checks that Docker answers there."
+            ),
+        )
+    };
+    (
+        Reading::to_do(
+            finding,
+            Some(Action {
+                id: ActionId::TrustMachine,
+                label: "Trust this machine".to_owned(),
+                does,
+                command: None,
+                url: None,
+            }),
+        ),
+        machine,
+        None,
+    )
+}
+
+/// [`met_again`] over Docker's TLS API: the CA the file holds now beside the one trusted.
+fn met_again_tls(
+    mut machine: Machine,
+    host: &str,
+    pin: &crate::tlsroute::Pin,
+    met: &CaMet,
+) -> (Reading, Machine, Option<&'static str>) {
+    machine.ca = Some(CaShown {
+        fingerprint: met.fingerprint.shown(),
+        subject: met.subject.clone(),
+        file: met.file.clone(),
+    });
+    let finding = if met.fingerprint == pin.ca {
+        format!(
+            "{} holds the CA you trusted. Docker on {host} isn't the engine you trusted: trust \
+             it again to use the engine there now for the pool.",
+            met.file
+        )
+    } else {
+        format!(
+            "{} holds this CA now, and it's different than the one you trusted ({} trusted). \
+             Check it is the CA Docker on {host} trusts before you trust it: run the command \
+             under See what this does there, and compare the two fingerprints.",
+            met.file,
+            pin.ca.shown()
+        )
+    };
+    (
+        Reading::to_do(
+            finding,
+            Some(Action {
+                id: ActionId::TrustMachine,
+                label: "Trust this machine".to_owned(),
+                does: format!(
+                    "Keeps this CA for the pool in place of the one trusted, and the engine {host} \
+                     runs now, then checks that Docker answers there."
+                ),
+                command: None,
+                url: None,
+            }),
+        ),
+        machine,
+        None,
+    )
+}
+
+/// What Connect to does over TLS.
+const CONNECT_TLS_DOES: &str = "Reads the CA file, and checks that the machine's certificate is \
+                                signed by it and accepts yours. It keeps nothing, and nothing on \
+                                the machine changes.";
+
 /// What Connect to does.
 const CONNECT_DOES: &str = "Reads the key the machine shows, and keeps nothing. Nothing on it \
                             changes.";
@@ -229,6 +591,13 @@ pub fn cause(finding: &Finding) -> &'static str {
         Finding::ForwardingRefused { .. } => "forwarding-refused",
         Finding::EngineChanged { .. } => "pool-engine-changed",
         Finding::NeedsPodman { .. } => "needs-podman",
+        Finding::TlsFile { .. } => "tls-file",
+        Finding::CaChanged { .. } => "pool-pin-changed",
+        Finding::NotSignedByCa { .. } => "tls-not-signed",
+        Finding::ServerExpired { .. } => "tls-expired",
+        Finding::WrongName { .. } => "tls-wrong-name",
+        Finding::ClientRefused { .. } => "tls-client-refused",
+        Finding::ClientExpired { .. } => "tls-client-expired",
         Finding::Here(_) => "here",
     }
 }
@@ -379,6 +748,71 @@ fn said_with_next(finding: &Finding) -> (String, Option<Action>) {
             ),
             check_again(),
         ),
+        Finding::TlsFile { file, why, .. } => (
+            format!("{file} {why}. Check the file named under Options, then check again."),
+            check_again(),
+        ),
+        Finding::CaChanged {
+            host,
+            pinned,
+            now,
+            file,
+        } => (
+            format!(
+                "{file} no longer holds the CA you trusted for {host} ({now} now, {pinned} \
+                 trusted). This happens when the CA is replaced, and can mean something else is \
+                 answering in its place, so purlis connects to nothing there until you check it \
+                 and trust it again."
+            ),
+            Some(Action {
+                id: ActionId::CheckAndTrustAgain,
+                label: "Check and trust again".to_owned(),
+                does: "Shows the CA the file holds now, for you to check and trust.".to_owned(),
+                command: None,
+                url: None,
+            }),
+        ),
+        Finding::NotSignedByCa { host, ca } => (
+            format!(
+                "{host}'s certificate isn't signed by the CA you chose. Check {ca}: it must be \
+                 the CA Docker's certificates on {host} are signed with."
+            ),
+            check_again(),
+        ),
+        Finding::ServerExpired { host } => (
+            format!(
+                "{host}'s certificate has expired. Make Docker a new one on {host}, the file its \
+                 --tlscert names there, then check again."
+            ),
+            check_again(),
+        ),
+        Finding::WrongName { host, name } => (
+            if name.is_empty() {
+                format!(
+                    "{host}'s certificate is for another name. Connect by the name it is for, or \
+                     check the file Docker's --tlscert names on {host}."
+                )
+            } else {
+                format!(
+                    "{host}'s certificate is for another name ({name}). Connect by that name, or \
+                     check the file Docker's --tlscert names on {host}."
+                )
+            },
+            change(),
+        ),
+        Finding::ClientRefused { host, cert } => (
+            format!(
+                "Docker on {host} didn't accept your client certificate. Check {cert}: it must \
+                 be signed by the CA Docker on {host} trusts, the file its --tlscacert names."
+            ),
+            check_again(),
+        ),
+        Finding::ClientExpired { cert, .. } => (
+            format!(
+                "Your client certificate has expired. Check {cert}, make a new one, then check again."
+            ),
+            check_again(),
+        ),
         Finding::Here(why) => (why.clone(), check_again()),
     }
 }
@@ -403,6 +837,9 @@ fn shown(said: &str) -> String {
 /// the person to compare, and the engine check, by hand.
 #[must_use]
 pub fn by_hand(route: Option<&str>) -> super::See {
+    if let Some(tcp) = route.filter(|route| crate::tlsroute::is_tcp(route)) {
+        return by_hand_tls(tcp, None);
+    }
     let route = route.and_then(|route| Route::parse(route).ok());
     let host = route
         .as_ref()
@@ -429,6 +866,314 @@ pub fn route_of(route: &str, identity: Option<&std::path::Path>) -> Result<Route
     match identity {
         Some(identity) => route.with_identity(identity).map_err(Finding::Here),
         None => Ok(route),
+    }
+}
+
+/// **What a press of Connect to finds for the machine Connect keeps** (#6266, #6267), by its
+/// route: the key an SSH machine shows, or the CA a TLS machine's files hold, its certificate
+/// found signed by it. Nothing is kept.
+pub fn meet_chosen(
+    config: &std::path::Path,
+    docker: &crate::dockerpool::Docker,
+    chosen: &super::Chosen,
+) -> super::Pressed {
+    if crate::tlsroute::is_tcp(&chosen.route) {
+        let met = match &chosen.tls {
+            Some(files) => meet_tls(config, &chosen.route, files),
+            None => Err(Finding::Here(crate::sshroute::PLAIN_TCP.to_owned())),
+        };
+        return match met {
+            Ok(met) => super::Pressed::MetCa(met),
+            Err(finding) => super::Pressed::Found(finding),
+        };
+    }
+    match chosen.route_read().and_then(|route| meet(docker, &route)) {
+        Ok(met) => super::Pressed::Met(met),
+        Err(finding) => super::Pressed::Found(finding),
+    }
+}
+
+/// **What a press of Trust this machine does for the machine Connect keeps**, by its route, the
+/// person having confirmed `fingerprint`: the pin kept for the Pool step ([`super::trusted`],
+/// [`super::trusted_tls`]), or what went wrong, with nothing kept.
+pub fn trust_chosen(
+    config: &std::path::Path,
+    docker: &crate::dockerpool::Docker,
+    chosen: &super::Chosen,
+    fingerprint: &str,
+) -> Result<Result<(), Finding>, crate::runners::Refused> {
+    if crate::tlsroute::is_tcp(&chosen.route) {
+        let Some(files) = &chosen.tls else {
+            return Ok(Err(Finding::Here(crate::sshroute::PLAIN_TCP.to_owned())));
+        };
+        let trusted = if chosen.docker_context.is_some() {
+            trust_tls_read_once(docker, &chosen.route, files, fingerprint, config)
+        } else {
+            trust_tls(docker, &chosen.route, files, fingerprint, config)
+        };
+        return match trusted {
+            Ok(remote) => super::trusted_tls_read_from(config, &remote, files).map(Ok),
+            Err(finding) => Ok(Err(finding)),
+        };
+    }
+    match chosen
+        .route_read()
+        .and_then(|route| trust(docker, &route, fingerprint))
+    {
+        Ok(remote) => super::trusted(config, &remote).map(Ok),
+        Err(finding) => Ok(Err(finding)),
+    }
+}
+
+/// **Check and trust again** (#6270, ADR 0123 §3): pool `name`'s machine met again as Connect to
+/// meets a new one, without its pin: the key an SSH machine shows now, or the CA a TLS machine's
+/// file holds now, its certificate found signed by it. Nothing is kept. Refused where no pool on
+/// another machine is called `name`.
+pub fn meet_pool(
+    config: &std::path::Path,
+    docker: &crate::dockerpool::Docker,
+    name: &str,
+) -> Result<super::Pressed, crate::runners::Refused> {
+    Ok(match remote_of(config, name)? {
+        crate::runners::RemoteEngine::Ssh(remote) => match meet(docker, &remote.route) {
+            Ok(met) => super::Pressed::Met(met),
+            Err(finding) => super::Pressed::Found(finding),
+        },
+        crate::runners::RemoteEngine::Tls(remote) => {
+            match meet_tls(config, &remote.route.spelled(), &remote.files) {
+                Ok(met) => super::Pressed::MetCa(met),
+                Err(finding) => super::Pressed::Found(finding),
+            }
+        }
+    })
+}
+
+/// **Trust this machine, for a pool met again** (#6270, ADR 0123 §3): pool `name`'s machine met
+/// again and held to `fingerprint`, the key or CA the person confirmed, its engine's id read anew,
+/// and that pin kept for the pool in place of the one that no longer held
+/// ([`crate::runners::pin_again`]): its route and files stay as they were. Then the change found of
+/// it goes ([`super::pinchange::holds`]), and the pool's next run is checked against the new pin
+/// at once, since what was checked and what failed are kept by pin.
+///
+/// What went wrong is answered with nothing kept.
+pub fn trust_pool(
+    config: &std::path::Path,
+    docker: &crate::dockerpool::Docker,
+    name: &str,
+    fingerprint: &str,
+) -> Result<Result<(), Finding>, crate::runners::Refused> {
+    let again = match remote_of(config, name)? {
+        crate::runners::RemoteEngine::Ssh(remote) => {
+            match trust(docker, &remote.route, fingerprint) {
+                // The route as the pool keeps it, socket and all: only the pin changes.
+                Ok(trusted) => crate::runners::RemoteEngine::Ssh(Remote {
+                    route: remote.route,
+                    pin: trusted.pin,
+                }),
+                Err(finding) => return Ok(Err(finding)),
+            }
+        }
+        crate::runners::RemoteEngine::Tls(remote) => {
+            match trust_tls(
+                docker,
+                &remote.route.spelled(),
+                &remote.files,
+                fingerprint,
+                config,
+            ) {
+                Ok(trusted) => crate::runners::RemoteEngine::Tls(crate::tlsroute::Remote {
+                    pin: trusted.pin,
+                    ..remote
+                }),
+                Err(finding) => return Ok(Err(finding)),
+            }
+        }
+    };
+    crate::runners::pin_again(config, name, &again)?;
+    super::pinchange::holds(name);
+    Ok(Ok(()))
+}
+
+/// Pool `name`'s engine on another machine, as `config` keeps it.
+fn remote_of(
+    config: &std::path::Path,
+    name: &str,
+) -> Result<crate::runners::RemoteEngine, crate::runners::Refused> {
+    crate::runners::pools(config)?
+        .into_iter()
+        .find(|pool| pool.name() == name)
+        .and_then(|pool| pool.remote_engine().cloned())
+        .ok_or_else(|| {
+            crate::runners::Refused::Other(format!(
+                "no pool on another machine is called {name} here"
+            ))
+        })
+}
+
+/// **What Connect to finds over TLS** (#6267): the CA `files` name, read, and the machine at
+/// `route` met by purlis's own handshake against it with the client certificate. Nothing is kept.
+pub fn meet_tls(
+    config: &std::path::Path,
+    route: &str,
+    files: &crate::tlsroute::Files,
+) -> Result<CaMet, Finding> {
+    meet_tls_with(route, files, &crate::tlsroute::folders_chats_write(config))
+}
+
+/// [`meet_tls`], with `chats_write` the folders chats write
+/// ([`crate::tlsroute::held_from_chats`]).
+pub(crate) fn meet_tls_with(
+    route: &str,
+    files: &crate::tlsroute::Files,
+    chats_write: &[std::path::PathBuf],
+) -> Result<CaMet, Finding> {
+    let route = crate::tlsroute::Route::parse(route).map_err(Finding::Here)?;
+    crate::tlsroute::held_from_chats(files, chats_write, route.host())?;
+    let ca = crate::tlsroute::read_ca(&files.ca, route.host())?;
+    let through = crate::tlsroute::Through {
+        route: route.clone(),
+        files: files.clone(),
+        ca: ca.fingerprint,
+        engine: None,
+    };
+    let material = through.material()?;
+    crate::tlsroute::handshake(&route, files, &material)?;
+    Ok(CaMet {
+        fingerprint: ca.fingerprint,
+        subject: ca.subject(),
+        file: files.ca.display().to_string(),
+    })
+}
+
+/// **What Trust this machine does over TLS** (#6267, ADR 0123 §3): the CA read again and held to
+/// `fingerprint`, the one the person confirmed, the machine met again, and the engine's id read
+/// over TLS. The route, its files and the pin. Nothing is kept here.
+pub fn trust_tls(
+    docker: &crate::dockerpool::Docker,
+    route: &str,
+    files: &crate::tlsroute::Files,
+    fingerprint: &str,
+    config: &std::path::Path,
+) -> Result<crate::tlsroute::Remote, Finding> {
+    trust_tls_with(
+        docker,
+        route,
+        files,
+        fingerprint,
+        &crate::tlsroute::folders_chats_write(config),
+    )
+}
+
+/// **[`trust_tls`] for the files a Docker context names** (#6268, the 2026-11-14 amendment of
+/// ADR 0123): they are Docker's, which `docker context update` rewrites and `docker context rm`
+/// deletes, so they are copied once into purlis's own store
+/// ([`crate::dockercontext::keep_tls`]) and the copies are what is checked and trusted. The
+/// remote names the copies.
+pub fn trust_tls_read_once(
+    docker: &crate::dockerpool::Docker,
+    route: &str,
+    files: &crate::tlsroute::Files,
+    fingerprint: &str,
+    config: &std::path::Path,
+) -> Result<crate::tlsroute::Remote, Finding> {
+    let host = crate::tlsroute::Route::parse(route).map_err(Finding::Here)?;
+    let copies = crate::dockercontext::keep_tls(config, files, host.host())?;
+    trust_tls(docker, route, &copies, fingerprint, config)
+}
+
+/// [`trust_tls`], with `chats_write` the folders chats write
+/// ([`crate::tlsroute::held_from_chats`]).
+pub(crate) fn trust_tls_with(
+    docker: &crate::dockerpool::Docker,
+    route: &str,
+    files: &crate::tlsroute::Files,
+    fingerprint: &str,
+    chats_write: &[std::path::PathBuf],
+) -> Result<crate::tlsroute::Remote, Finding> {
+    let route = crate::tlsroute::Route::parse(route).map_err(Finding::Here)?;
+    let confirmed = crate::tlsroute::Fingerprint::parse(fingerprint).map_err(Finding::Here)?;
+    crate::tlsroute::held_from_chats(files, chats_write, route.host())?;
+    let ca = crate::tlsroute::read_ca(&files.ca, route.host())?;
+    if ca.fingerprint != confirmed {
+        // What was confirmed isn't what the file holds now: confirmed again, never trusted unseen.
+        return Err(Finding::Here(format!(
+            "{} holds the CA {}, not {}, which you confirmed. Connect to {} again and check the \
+             CA it holds now.",
+            files.ca.display(),
+            ca.fingerprint.shown(),
+            confirmed.shown(),
+            route.host()
+        )));
+    }
+    let through = crate::tlsroute::Through {
+        route: route.clone(),
+        files: files.clone(),
+        ca: ca.fingerprint,
+        engine: None,
+    };
+    let material = through.material()?;
+    crate::tlsroute::handshake(&route, files, &material)?;
+    let engine = docker
+        .clone()
+        .over_tls(through)
+        .engine_id_said()
+        .map_err(|why| Finding::EngineSilent {
+            host: route.host().to_owned(),
+            said: why.0,
+        })?;
+    Ok(crate::tlsroute::Remote {
+        route,
+        files: files.clone(),
+        pin: crate::tlsroute::Pin {
+            ca: ca.fingerprint,
+            engine,
+        },
+    })
+}
+
+/// **[`by_hand`] over TLS** (#6267): what prints the CA's fingerprint on the machine, for the
+/// person to compare, and the engine check with the files named, as purlis runs it.
+#[must_use]
+pub fn by_hand_tls(route: &str, files: Option<&crate::tlsroute::Files>) -> super::See {
+    let parsed = crate::tlsroute::Route::parse(route).ok();
+    let host = parsed
+        .as_ref()
+        .map_or_else(|| "the machine".to_owned(), |route| route.host().to_owned());
+    let address = parsed.map_or_else(|| "tcp://HOST:2376".to_owned(), |route| route.spelled());
+    let q = |text: &str| crate::shellseg::shell_quote(text);
+    let (ca, cert, key) = files.map_or_else(
+        || {
+            (
+                "ca.pem".to_owned(),
+                "cert.pem".to_owned(),
+                "key.pem".to_owned(),
+            )
+        },
+        |files| {
+            (
+                files.ca.display().to_string(),
+                files.cert.display().to_string(),
+                files
+                    .key_file()
+                    .map_or_else(|| "key.pem".to_owned(), |key| key.display().to_string()),
+            )
+        },
+    );
+    super::See {
+        note: format!(
+            "The first command, run on {host} itself with the CA Docker's --tlscacert names \
+             there, prints its fingerprint, to compare with the one shown here. The second asks \
+             Docker there for its engine's id, as purlis does. Both only read."
+        ),
+        text: format!(
+            "openssl x509 -noout -fingerprint -sha256 -in /etc/docker/ca.pem\n\
+             docker -H {} --tlsverify --tlscacert {} --tlscert {} --tlskey {} info --format \
+             '{{{{.ID}}}}'",
+            q(&address),
+            q(&ca),
+            q(&cert),
+            q(&key)
+        ),
     }
 }
 

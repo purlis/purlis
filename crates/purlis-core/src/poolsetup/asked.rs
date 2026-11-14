@@ -31,11 +31,59 @@ pub struct Asked {
     /// **The machine its engine is on**, for a pool on another machine (#6266): an `ssh://`
     /// route, as Connect has it.
     pub on: Option<String>,
-    /// The fingerprint of the host key the person confirmed for that machine (`SHA256:…`).
+    /// The fingerprint of the host key the person confirmed for that machine (`SHA256:…`), or,
+    /// over Docker's TLS API, of its CA (`sha256:…`, #6267).
     pub trust: Option<String>,
     /// The key file ssh signs in to that machine with, where a Podman connection names one
     /// (#6269).
     pub identity: Option<String>,
+    /// **The files Docker's `--tlsverify` takes**, for a machine at a `tcp://` address (#6267).
+    pub tls: Option<crate::tlsroute::Files>,
+    /// **The Docker context `on` and `tls` were read from** (#6268), kept with the pool by name.
+    pub docker_context: Option<String>,
+}
+
+impl Asked {
+    /// **This, on the machine the Docker context `context` names** (#6268, ADR 0123 §2): its
+    /// route and TLS files, read once, and its name. Refused for this machine's own socket, or
+    /// an endpoint purlis doesn't use.
+    pub fn reading_docker_context(
+        self,
+        context: &crate::dockercontext::DockerContext,
+    ) -> Result<Asked, Refused> {
+        use crate::dockercontext::Endpoint;
+        let (on, tls) = match &context.endpoint {
+            Endpoint::Here => {
+                return Err(Refused::Other(format!(
+                    "Docker context {} is this machine's own Docker. Leave out --context to add \
+                     a pool on this machine.",
+                    context.name
+                )));
+            }
+            Endpoint::Refused(why) => return Err(Refused::Other(why.clone())),
+            Endpoint::Ssh(route) => (route.spelled(), None),
+            Endpoint::Tls { route, files } => (route.spelled(), Some(files.clone())),
+        };
+        Ok(Asked {
+            on: Some(on),
+            tls,
+            identity: None,
+            docker_context: Some(context.name.clone()),
+            ..self
+        })
+    }
+}
+
+/// **The Docker context the pool made on `route` keeps** (#6268): the one named on the command,
+/// else the one Connect read that same machine from.
+pub fn context_for(config: &Path, asked: &Asked, route: &str) -> Result<Option<String>, Refused> {
+    if let Some(name) = &asked.docker_context {
+        return Ok(Some(name.clone()));
+    }
+    Ok(super::read_choices(config)?
+        .connect
+        .filter(|chosen| crate::dockercontext::same_route(&chosen.route, route))
+        .and_then(|chosen| chosen.docker_context))
 }
 
 /// What [`create`] did.
@@ -164,17 +212,41 @@ impl Asked {
         );
         with("--frames", number(self.frames));
         with("--width", number(self.width));
+        // A route read from a Docker context is named by the context, its files with it (#6268).
+        let context = self
+            .docker_context
+            .clone()
+            .filter(|name| crate::dockercontext::a_name(name));
         // Only a route and a fingerprint that read as one, so neither means more in a shell.
         with(
             "--on",
-            self.on
-                .clone()
-                .filter(|on| crate::sshroute::Route::parse(on).is_ok()),
+            self.on.clone().filter(|on| {
+                context.is_none()
+                    && (crate::sshroute::Route::parse(on).is_ok()
+                        || crate::tlsroute::Route::parse(on).is_ok())
+            }),
         );
+        let named = context.is_some();
+        with("--context", context);
         with(
             "--trust",
-            self.trust.clone().filter(|trust| a_fingerprint(trust)),
+            self.trust.clone().filter(|trust| {
+                a_fingerprint(trust) || crate::tlsroute::Fingerprint::parse(trust).is_ok()
+            }),
         );
+        if let Some(files) = self.tls.as_ref().filter(|_| !named) {
+            let path = |path: &std::path::Path| {
+                Some(crate::shellseg::shell_quote(&path.display().to_string()))
+            };
+            with("--tls-ca", path(&files.ca));
+            with("--tls-cert", path(&files.cert));
+            match &files.key {
+                crate::tlsroute::KeyFrom::File(key) => with("--tls-key", path(key)),
+                crate::tlsroute::KeyFrom::Vault { vault, key, .. } => {
+                    with("--tls-key-in", Some(format!("{vault}/{key}")));
+                }
+            }
+        }
         words.join(" ")
     }
 
@@ -206,7 +278,7 @@ pub fn remote_of(
     config: &Path,
     docker: &Docker,
     asked: &Asked,
-) -> Result<Option<crate::runners::Remote>, Refused> {
+) -> Result<Option<crate::runners::RemoteEngine>, Refused> {
     let Some(on) = asked
         .on
         .as_deref()
@@ -215,6 +287,9 @@ pub fn remote_of(
     else {
         return Ok(None);
     };
+    if crate::tlsroute::is_tcp(on) {
+        return tls_remote_of(config, docker, on, asked).map(|remote| Some(remote.into()));
+    }
     let identity = asked
         .identity
         .as_deref()
@@ -241,7 +316,7 @@ pub fn remote_of(
         (same && confirmed).then_some(crate::runners::Remote { route: kept, pin })
     });
     if let Some(kept) = kept {
-        return Ok(Some(kept));
+        return Ok(Some(kept.into()));
     }
     let said =
         |finding: crate::sshroute::connect::Finding| Refused::Other(super::connect_said(&finding));
@@ -259,8 +334,89 @@ pub fn remote_of(
         )));
     };
     super::connecting::trust(docker, &route, trust)
-        .map(Some)
+        .map(|remote| Some(remote.into()))
         .map_err(said)
+}
+
+/// **[`remote_of`] at a `tcp://` address** (#6267, ADR 0123 §2–§3): refused as plain TCP without
+/// its TLS files; what Connect kept where it is the same machine, files and CA; else the CA the
+/// files name, read and the machine met against it, held to the fingerprint the person gave.
+/// With no fingerprint, refused with the CA's, to check and give.
+fn tls_remote_of(
+    config: &Path,
+    docker: &Docker,
+    on: &str,
+    asked: &Asked,
+) -> Result<crate::tlsroute::Remote, Refused> {
+    let route = crate::tlsroute::Route::parse(on).map_err(Refused::Other)?;
+    let chosen = super::read_choices(config)?.connect.filter(|chosen| {
+        crate::tlsroute::Route::parse(&chosen.route).ok().as_ref() == Some(&route)
+    });
+    // The files given, else those Connect kept for this same machine (the window's Pool step).
+    let Some(files) = asked
+        .tls
+        .as_ref()
+        .or_else(|| chosen.as_ref().and_then(|chosen| chosen.tls.as_ref()))
+    else {
+        return Err(Refused::Other(crate::sshroute::PLAIN_TCP.to_owned()));
+    };
+    let files = &files.clone();
+    // Files read from a Docker context are Docker's: the pool runs on purlis's own copies of them
+    // (#6268), and what Connect kept for this machine is those same copies where it trusted them.
+    let read_once = asked.docker_context.is_some()
+        || (asked.tls.is_none()
+            && chosen
+                .as_ref()
+                .is_some_and(|chosen| chosen.docker_context.is_some()));
+    let copies = if read_once {
+        Some(
+            crate::dockercontext::tls_copies_at(config, files, route.host())
+                .map_err(|finding| Refused::Other(super::connect_said(&finding)))?,
+        )
+    } else {
+        None
+    };
+    let trust = asked.trust.as_deref().map(str::trim);
+    let kept = chosen.and_then(|chosen| {
+        let pin = chosen.trusted_tls?;
+        let same = crate::tlsroute::Route::parse(&chosen.route).ok()? == route
+            && chosen.tls.as_ref() == Some(copies.as_ref().unwrap_or(files));
+        let confirmed = trust.is_none_or(|trust| {
+            crate::tlsroute::Fingerprint::parse(trust).is_ok_and(|trust| trust == pin.ca)
+        });
+        (same && confirmed).then(|| crate::tlsroute::Remote {
+            route: route.clone(),
+            files: copies.clone().unwrap_or_else(|| files.clone()),
+            pin,
+        })
+    });
+    if let Some(kept) = kept {
+        return Ok(kept);
+    }
+    let said =
+        |finding: crate::sshroute::connect::Finding| Refused::Other(super::connect_said(&finding));
+    let Some(trust) = trust else {
+        let met = super::connecting::meet_tls(config, on, files).map_err(said)?;
+        return Err(Refused::Other(format!(
+            "{}'s certificate is signed by the CA in {}{}, fingerprint {}. Check it on {}: \
+             openssl x509 -noout -fingerprint -sha256 -in <the file Docker's --tlscacert names \
+             there> prints it. If it is the same, run this again with --trust {}.",
+            route.host(),
+            met.file,
+            met.subject
+                .as_deref()
+                .map(|subject| format!(" ({subject})"))
+                .unwrap_or_default(),
+            met.fingerprint.shown(),
+            route.host(),
+            met.fingerprint.spelled()
+        )));
+    };
+    if read_once {
+        return super::connecting::trust_tls_read_once(docker, on, files, trust, config)
+            .map_err(said);
+    }
+    super::connecting::trust_tls(docker, on, files, trust, config).map_err(said)
 }
 
 /// **Makes the pool `asked` asks for**: the one way to it, from the button and from `purlis pool
@@ -273,7 +429,20 @@ pub fn create(
     desktop: &Pinned,
 ) -> Result<Created, Refused> {
     let remote = remote_of(config, docker, asked)?;
-    let pool = asked.pool().map_err(Refused::Other)?.on(remote);
+    let context = match &remote {
+        Some(crate::runners::RemoteEngine::Ssh(remote)) => {
+            context_for(config, asked, &remote.route.spelled())?
+        }
+        Some(crate::runners::RemoteEngine::Tls(remote)) => {
+            context_for(config, asked, &remote.route.spelled())?
+        }
+        None => None,
+    };
+    let pool = asked
+        .pool()
+        .map_err(Refused::Other)?
+        .on_engine(remote)
+        .from_docker_context(context);
     let through = crate::sshroute::pool::docker_of(docker, &pool)
         .map_err(|finding| Refused::Other(super::connect_said(&finding)))?;
     let docker = &through;
@@ -286,7 +455,7 @@ pub fn create(
         }
     }
     crate::pools::add(config, docker, &pool, desktop)?;
-    if pool.remote().is_some() {
+    if pool.on_another_machine() {
         // What Connect kept is the pool's now.
         super::forget_machine(config)?;
     }

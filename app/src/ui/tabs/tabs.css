@@ -410,8 +410,9 @@
   padding-block: calc(var(--space-4) + var(--space-1));
   padding-inline: calc(var(--space-5) + var(--space-1));
   background-color: var(--terminal-background);
+  /* The family's tier, which the parts manifest names (`editor_look`) and a theme sets: the
+     secondary role (`editorToolbar`, #6389) gives the words their size. */
   color: var(--text-muted);
-  font-size: var(--font-size-sm);
 }
 
 [data-scope="editor"][data-part="toolbar"] > b {

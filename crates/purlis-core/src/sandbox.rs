@@ -2519,6 +2519,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
                 home.join(crate::machine::CLUSTER_KUBECONFIGS_DIR),
                 Access::ReadWrite,
             );
+            // purlis's own copies of the TLS files read from Docker contexts (#6268): a client
+            // key among them, denied as the kubeconfigs are, before any pool names them.
+            deny(
+                Class::HumanPowers,
+                home.join(crate::machine::DOCKER_CONTEXT_TLS_DIR),
+                Access::ReadWrite,
+            );
             // What the human's forge sign-in fetched: the native transport's ETag store
             // holds raw answers, private repos' among them, so a chat neither reads nor
             // writes it (ADR 0070 §3 and §4).
@@ -2527,6 +2534,17 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
                 home.join(crate::forge::etag::DIR),
                 Access::ReadWrite,
             );
+        }
+        // The files each pool over Docker's TLS API names (#6267): its CA, which a chat could
+        // otherwise swap, and its client certificate and a key kept where it is, which would
+        // reach that engine as the person. Neither read nor written, as the cluster pools'
+        // kubeconfigs are not, each by its name and by its real path.
+        for file in crate::runners::tls_files(&config_root) {
+            let resolved = real(&file);
+            if resolved != file {
+                deny(Class::HumanPowers, resolved, Access::ReadWrite);
+            }
+            deny(Class::HumanPowers, file, Access::ReadWrite);
         }
     }
     // This machine's profiles (ADR 0095, #2034): the folders purlis made, each holding a
@@ -2654,6 +2672,29 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
     }
     paths.extend(held_whole);
     paths.extend(studio_held);
+    // Pool setup's Get help chat holds no sign-in to a cluster (#4497,
+    // [`policy::holding_from_clusters`]): the person's kubeconfigs, `~/.kube` and every file
+    // `KUBECONFIG` names, as kubectl reads them.
+    if policy::held_from_clusters() {
+        let named = machine.env.get(kubeconfig::ENV).unwrap_or_default();
+        let kubeconfigs = machine
+            .home
+            .iter()
+            .map(|home| home.join(".kube"))
+            .chain(std::env::split_paths(&named).filter(|path| path.is_absolute()));
+        for path in kubeconfigs {
+            if !paths.iter().any(|kept| kept.path == path) {
+                paths.push(Denial {
+                    class: Class::HumanPowers,
+                    path,
+                    access: Access::ReadWrite,
+                    named: None,
+                    reach: Reach::AndBelow,
+                    any_case: false,
+                });
+            }
+        }
+    }
     // Everything held in the state folder, under each of its spellings and where `$PURLIS_HOME`
     // puts it, is held under every spelling of its name on macOS's case-folding disk: a store not
     // there yet is made under the name as typed, and purlis reads it under its own. One pass

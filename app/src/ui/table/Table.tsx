@@ -33,6 +33,7 @@
  * the pointer's ground, a chosen row's wash and the keyboard's ring, drawn inside the row or the
  * cell, change a colour, never a size.
  */
+import clsx from "clsx";
 import {
   createContext,
   useCallback,
@@ -76,6 +77,20 @@ export type { ColumnChoices, ColumnLength, ColumnSize } from "./CellWords";
 
 /** What the table hands its header and its rows: whether every row ends in its menu's column. */
 const Drawn = createContext({ menus: false });
+
+/**
+ * **A column's name, as a part** (#6482): its scope and part and the section label it wears,
+ * with a site's own class beside it. Every column name of a `Table` and a `ControlTable` spreads
+ * it, so none is dressed by hand and a new one cannot miss the label (as a fold's group name
+ * did, #6473).
+ */
+export function headPart(className?: string) {
+  return {
+    className: clsx("ui-text-label", className),
+    "data-scope": "table",
+    "data-part": "head",
+  } as const;
+}
 
 /**
  * **The rule between rows** (`table.rule`, its own part, #2804): drawn at a cell's top edge, and
@@ -271,26 +286,14 @@ export function TableHeader({ children }: { children: ReactNode }) {
   return (
     <AriaTableHeader data-scope="table" data-part="header">
       {selectionBehavior === "toggle" && (
-        <AriaColumn
-          id="purlis:choose"
-          textValue="Choose"
-          data-scope="table"
-          data-part="head"
-          data-choose=""
-        >
+        <AriaColumn id="purlis:choose" textValue="Choose" {...headPart()} data-choose="">
           {selectionMode === "multiple" ? <Choose /> : <VisuallyHidden>Choose</VisuallyHidden>}
           <Rule />
         </AriaColumn>
       )}
       {children}
       {menus && (
-        <AriaColumn
-          id="purlis:menu"
-          textValue="Actions"
-          data-scope="table"
-          data-part="head"
-          data-actions=""
-        >
+        <AriaColumn id="purlis:menu" textValue="Actions" {...headPart()} data-actions="">
           <VisuallyHidden>Actions</VisuallyHidden>
           <Rule />
         </AriaColumn>
@@ -343,8 +346,7 @@ export function TableColumn({
       {...chosen.attributes}
       style={chosen.style}
       allowsSorting={allowsSorting}
-      data-scope="table"
-      data-part="head"
+      {...headPart()}
       data-align={align}
     >
       {({ sortDirection }) => (

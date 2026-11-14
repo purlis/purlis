@@ -33,12 +33,16 @@ export function ScopeSwitch<S extends string>({
   scopes,
   scope,
   onPick,
+  countAs,
 }: {
   /** What the group is called: "Show the chats of". */
   label: string;
   scopes: readonly ScopeOffer<S>[];
   scope: S;
   onPick: (to: S) => void;
+  /** `round`: its counts are what waits on the person (Asks' chips, #6342), each the badge
+   *  family's round count, drawn only above 0. */
+  countAs?: "round";
 }) {
   return (
     <SegmentedControl
@@ -58,6 +62,7 @@ export function ScopeSwitch<S extends string>({
           aria-label={one.name}
           tooltip={one.tip ?? one.name}
           count={one.count}
+          countAs={countAs}
           isDisabled={one.disabled}
         >
           {one.says}

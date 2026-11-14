@@ -31,6 +31,7 @@ const CARD: ChatCard = {
   place: "smart-ide",
   started_by: "steward 4",
   screen_kept: true,
+  dispatched: true,
   task: {
     id: "01K9DISPATCH0000000000000A",
     asker: 0,
@@ -153,6 +154,7 @@ describe("a closed chat found by its number in the palette", () => {
       place: "smart-ide",
       started_by: "you",
       screen_kept: false,
+      dispatched: false,
       task: null,
     };
     core((n) => (n === 702 ? { is: "ended", card: ordinary } : { is: "no_chat" }));

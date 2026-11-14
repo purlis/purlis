@@ -63,19 +63,10 @@
   padding-block: var(--space-3) var(--space-1);
   padding-inline: var(--space-4);
   color: var(--text-quiet);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-strong);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
-/* A group named by data (a project, a day) is written as the name is. */
-[data-scope="tree"][data-part="header"][data-named] {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-regular);
-  text-transform: none;
-  letter-spacing: normal;
-}
+/* A group named by data (a project, a day) is written as the name is: the list family's rule
+   (`list.css`), which writes a list's and a tree's alike (#6482). */
 
 /* ---------------------------------------------------------------------------------------------
    A row, at rest: the list's row, one step in per level.

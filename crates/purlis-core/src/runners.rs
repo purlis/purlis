@@ -109,8 +109,12 @@ pub struct Pool {
     /// Values in its row its limits can't be, kept as they were typed (#4381).
     refused_limits: Vec<crate::poollimits::RefusedValue>,
     /// **Where its engine is, where it is on another machine** (#6266, ADR 0123): kind
-    /// `remote-docker`, its route and pin. `None` is this machine's own Docker.
-    remote: Option<Remote>,
+    /// `remote-docker`, its route and pin, over SSH or Docker's TLS API (#6267). `None` is this
+    /// machine's own Docker.
+    remote: Option<RemoteEngine>,
+    /// **The Docker context its route was read from** (#6268, `dockerContext`), for doctor alone:
+    /// never followed, and no part of what defines the pool.
+    docker_context: Option<String>,
 }
 
 /// **The engine of a pool on another machine** (#6266, ADR 0123 §2–§3): the SSH route to it, and
@@ -119,6 +123,47 @@ pub struct Pool {
 pub struct Remote {
     pub route: crate::sshroute::Route,
     pub pin: crate::sshroute::Pin,
+}
+
+/// **Where a pool on another machine's engine is, by its route** (#6266, #6267, ADR 0123 §2):
+/// over SSH, its socket forwarded ([`Remote`]); or over Docker's TLS API, with its files and
+/// pinned CA ([`crate::tlsroute::Remote`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RemoteEngine {
+    Ssh(Remote),
+    Tls(crate::tlsroute::Remote),
+}
+
+impl From<Remote> for RemoteEngine {
+    fn from(remote: Remote) -> RemoteEngine {
+        RemoteEngine::Ssh(remote)
+    }
+}
+
+impl From<crate::tlsroute::Remote> for RemoteEngine {
+    fn from(remote: crate::tlsroute::Remote) -> RemoteEngine {
+        RemoteEngine::Tls(remote)
+    }
+}
+
+impl RemoteEngine {
+    /// The route, as it is kept.
+    #[must_use]
+    pub fn spelled(&self) -> String {
+        match self {
+            RemoteEngine::Ssh(remote) => remote.route.spelled(),
+            RemoteEngine::Tls(remote) => remote.route.spelled(),
+        }
+    }
+
+    /// The machine, as the person named it.
+    #[must_use]
+    pub fn host(&self) -> &str {
+        match self {
+            RemoteEngine::Ssh(remote) => remote.route.host(),
+            RemoteEngine::Tls(remote) => remote.route.host(),
+        }
+    }
 }
 
 /// The kind of a pool on another machine, in its row (#6266).
@@ -208,18 +253,55 @@ impl Pool {
             profiles: None,
             refused_limits: Vec::new(),
             remote: None,
+            docker_context: None,
         })
     }
 
     /// **This pool, its engine on another machine** (`remote`, #6266), or this machine's (`None`).
     #[must_use]
     pub fn on(self, remote: Option<Remote>) -> Pool {
+        self.on_engine(remote.map(RemoteEngine::Ssh))
+    }
+
+    /// **This pool, its engine on another machine by either route** (#6267), or this machine's.
+    #[must_use]
+    pub fn on_engine(self, remote: Option<RemoteEngine>) -> Pool {
         Pool { remote, ..self }
     }
 
-    /// Where its engine is, where it is on another machine (#6266).
+    /// **This pool, its route read from the Docker context `name`** (#6268), or from none.
+    #[must_use]
+    pub fn from_docker_context(self, name: Option<String>) -> Pool {
+        Pool {
+            docker_context: name,
+            ..self
+        }
+    }
+
+    /// **The Docker context its route was read from**, where it was read from one (#6268).
+    pub fn docker_context(&self) -> Option<&str> {
+        self.docker_context.as_deref()
+    }
+
+    /// **Its SSH route and pin, where it is on another machine reached over SSH** (#6266). A pool
+    /// reached over Docker's TLS API has none: [`Pool::remote_engine`] says where either is, and
+    /// [`Pool::on_another_machine`] whether it is elsewhere at all.
     pub fn remote(&self) -> Option<&Remote> {
+        match &self.remote {
+            Some(RemoteEngine::Ssh(remote)) => Some(remote),
+            _ => None,
+        }
+    }
+
+    /// **Where its engine is, where it is on another machine**, by either route (#6267).
+    pub fn remote_engine(&self) -> Option<&RemoteEngine> {
         self.remote.as_ref()
+    }
+
+    /// **Whether its engine is on another machine**, by either route: what every gate a local
+    /// engine passes asks (#6266, #6267).
+    pub fn on_another_machine(&self) -> bool {
+        self.remote.is_some()
     }
 
     /// **How its runner's browsers are watched over the link** (#3297): what the person set,
@@ -294,6 +376,8 @@ impl Pool {
         if let Some(fields) = row.as_object_mut() {
             fields.remove("pricePerHour");
             fields.remove("profiles");
+            // Where its route was read from decides nothing it runs on (#6268).
+            fields.remove("dockerContext");
             // These apply from the next attempt, so a change makes nothing again (Q13).
             for limit in crate::poollimits::all() {
                 if limit.takes_effect == crate::poollimits::TakesEffect::NextAttempt {
@@ -312,6 +396,7 @@ impl Pool {
             profiles: self.profiles.clone(),
             refused_limits: self.refused_limits.clone(),
             remote: self.remote.clone(),
+            docker_context: self.docker_context.clone(),
             ..Pool::new(&self.name, self.image.clone(), set)?
         })
     }
@@ -679,6 +764,56 @@ pub fn record_pool_locked(
         )));
     }
     held.pools.push(pool.clone());
+    write(config_root, &held)
+}
+
+/// **Keeps the pool `name` as it is** (#6268, ADR 0123 §7): it stays on its route, and forgets
+/// the Docker context it was read from, so doctor stops comparing them. Refused where no such
+/// pool is kept.
+pub fn forget_docker_context(config_root: &Path, name: &str) -> Result<(), Refused> {
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    let Some(pool) = held.pools.iter_mut().find(|pool| pool.name() == name) else {
+        return Err(Refused::Other(format!(
+            "no Docker pool named {} is on this machine",
+            crate::shown::short(name)
+        )));
+    };
+    if pool.docker_context.take().is_none() {
+        return Ok(());
+    }
+    write(config_root, &held)
+}
+
+/// **Keeps `remote`'s pin for pool `name`, on another machine** (#6270, ADR 0123 §3): what the
+/// person confirmed at Check and trust again, and only it. Refused, with nothing changed, where no
+/// such pool is kept, where it is on this machine, or where `remote` names another route or other
+/// files than the pool's: trusting again changes what the machine is trusted as, never which
+/// machine it is.
+///
+/// A login opt-in is bound to the pool's definition, its pin among it (`poollogins::Bound`), so
+/// each is asked again after this.
+pub fn pin_again(config_root: &Path, name: &str, remote: &RemoteEngine) -> Result<(), Refused> {
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    let Some(at) = held.pools.iter().position(|pool| pool.name() == name) else {
+        return Err(Refused::Other(format!(
+            "no pool named {name} is on this machine"
+        )));
+    };
+    let same = match (held.pools[at].remote_engine(), remote) {
+        (Some(RemoteEngine::Ssh(was)), RemoteEngine::Ssh(now)) => was.route == now.route,
+        (Some(RemoteEngine::Tls(was)), RemoteEngine::Tls(now)) => {
+            was.route == now.route && was.files == now.files
+        }
+        _ => false,
+    };
+    if !same {
+        return Err(Refused::Other(format!(
+            "pool {name} is not reached at that machine, so nothing of it was trusted again"
+        )));
+    }
+    held.pools[at] = held.pools[at].clone().on_engine(Some(remote.clone()));
     write(config_root, &held)
 }
 
@@ -1148,11 +1283,19 @@ pub fn forget_pool(config_root: &Path, name: &str) -> Result<(), Refused> {
 pub fn forget_pool_locked(config_root: &Path, name: &str, _locked: &Locked) -> Result<(), Refused> {
     let mut held = load(config_root)?;
     let before = held.pools.len() + held.clusters.len();
+    // What this process holds for a pool over Docker's TLS API goes with it (#6267).
+    for kept in held.pools.iter().filter(|kept| kept.name() == name) {
+        if let Some(RemoteEngine::Tls(remote)) = kept.remote_engine() {
+            crate::tlsroute::pool::forget_pool(name, remote);
+        }
+    }
     held.pools.retain(|kept| kept.name() != name);
     held.clusters.retain(|kept| kept.name() != name);
     if held.pools.len() + held.clusters.len() != before {
         write(config_root, &held)?;
     }
+    // A pin change found of it goes with it (#6270).
+    crate::poolsetup::pinchange::holds(name);
     // A choice left behind must never stop a removal, which has already changed the record.
     if let Err(why) = crate::poolsetup::forget_pool_locked(config_root, name) {
         tracing::warn!("purlis: pool {name}'s Pool setup choices are kept: {why}");
@@ -1641,7 +1784,11 @@ pub fn forget(config_root: &Path, name: &str) -> Result<(), Refused> {
     forget_locked(config_root, name, &lock(config_root))
 }
 
-fn forget_locked(config_root: &Path, name: &str, _locked: &Locked) -> Result<(), Refused> {
+pub(crate) fn forget_locked(
+    config_root: &Path,
+    name: &str,
+    _locked: &Locked,
+) -> Result<(), Refused> {
     let mut held = load(config_root)?;
     let before = held.runners.len();
     held.runners.retain(|kept| kept.name() != name);
@@ -1886,13 +2033,28 @@ fn pool_to_row(pool: &Pool) -> serde_json::Value {
         "name": pool.name(),
         "kind": "docker",
     });
-    if let Some(remote) = pool.remote() {
-        row["kind"] = REMOTE_DOCKER.into();
-        row["route"] = remote.route.spelled().into();
-        if let Some(identity) = remote.route.identity() {
-            row["identity"] = identity.display().to_string().into();
+    match pool.remote_engine() {
+        Some(RemoteEngine::Ssh(remote)) => {
+            row["kind"] = REMOTE_DOCKER.into();
+            row["route"] = remote.route.spelled().into();
+            if let Some(identity) = remote.route.identity() {
+                row["identity"] = identity.display().to_string().into();
+            }
+            row["pin"] = remote.pin.to_json();
         }
-        row["pin"] = remote.pin.to_json();
+        Some(RemoteEngine::Tls(remote)) => {
+            row["kind"] = REMOTE_DOCKER.into();
+            row["route"] = remote.route.spelled().into();
+            row["tls"] = tls_to_row(&remote.files);
+            row["pin"] = serde_json::json!({
+                "ca": remote.pin.ca.spelled(),
+                "engine": remote.pin.engine,
+            });
+        }
+        None => {}
+    }
+    if let (Some(name), true) = (pool.docker_context(), pool.on_another_machine()) {
+        row["dockerContext"] = name.into();
     }
     row["image"] = pool.image().as_str().into();
     let set = pool.set();
@@ -2018,6 +2180,8 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         "route",
         "identity",
         "pin",
+        "tls",
+        "dockerContext",
     ];
     if fields
         .keys()
@@ -2030,7 +2194,9 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         "docker"
             if !fields.contains_key("route")
                 && !fields.contains_key("pin")
-                && !fields.contains_key("identity") =>
+                && !fields.contains_key("identity")
+                && !fields.contains_key("tls")
+                && !fields.contains_key("dockerContext") =>
         {
             None
         }
@@ -2060,6 +2226,13 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
             Some(whole as u32)
         }
     };
+    let docker_context = match fields.get("dockerContext") {
+        None => None,
+        Some(name) => Some(name.as_str()?)
+            .filter(|name| crate::dockercontext::a_name(name))
+            .map(str::to_owned)
+            .map(Some)?,
+    };
     let name = text("name")?;
     // The same checks as the command's. A bad value costs that limit alone (#4381).
     let (chosen, refused_limits) = crate::poollimits::Chosen::read_row(fields, Some(name));
@@ -2084,15 +2257,24 @@ fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         .map(|pool| Pool {
             refused_limits,
             remote,
+            docker_context,
             ..pool
         })
 }
 
-/// A `remote-docker` row's `route`, `identity` and `pin` (#6266, #6269): a route that names its
-/// socket, the key file a Podman connection named where there is one, and both halves of the
-/// pin. Anything else is not as purlis writes it.
-fn remote_from_row(fields: &serde_json::Map<String, serde_json::Value>) -> Option<Remote> {
-    let route = crate::sshroute::Route::parse(fields.get("route")?.as_str()?).ok()?;
+/// A `remote-docker` row's `route`, `identity` and `pin` (#6266, #6269), or over Docker's TLS API
+/// its `route`, `tls` and `pin` (#6267): a route that names its socket, the key file a Podman
+/// connection named where there is one, and both halves of the pin. Anything else is not as purlis
+/// writes it.
+fn remote_from_row(fields: &serde_json::Map<String, serde_json::Value>) -> Option<RemoteEngine> {
+    let spelled = fields.get("route")?.as_str()?;
+    if crate::tlsroute::is_tcp(spelled) {
+        return tls_remote_from_row(spelled, fields).map(RemoteEngine::Tls);
+    }
+    if fields.contains_key("tls") {
+        return None;
+    }
+    let route = crate::sshroute::Route::parse(spelled).ok()?;
     route.socket()?;
     let route = match fields.get("identity") {
         None => route,
@@ -2101,7 +2283,89 @@ fn remote_from_row(fields: &serde_json::Map<String, serde_json::Value>) -> Optio
             .ok()?,
     };
     let pin = crate::sshroute::Pin::from_json(fields.get("pin")?.as_object()?)?;
-    Some(Remote { route, pin })
+    Some(RemoteEngine::Ssh(Remote { route, pin }))
+}
+
+/// **A `remote-docker` row over Docker's TLS API** (#6267): a `tcp://` route, its `tls` files and
+/// a pin of the CA and the engine. Plain `tcp://` (no `tls`), a `tls` without its CA, and an SSH
+/// key file are not as purlis writes it, and refuse the row.
+fn tls_remote_from_row(
+    spelled: &str,
+    fields: &serde_json::Map<String, serde_json::Value>,
+) -> Option<crate::tlsroute::Remote> {
+    if fields.contains_key("identity") {
+        return None;
+    }
+    let route = crate::tlsroute::Route::parse(spelled).ok()?;
+    let files = tls_from_row(fields.get("tls")?)?;
+    let pin = fields.get("pin")?.as_object()?;
+    if pin.len() != 2 {
+        return None;
+    }
+    let ca = crate::tlsroute::Fingerprint::parse(pin.get("ca")?.as_str()?).ok()?;
+    let engine = pin.get("engine")?.as_str()?;
+    if !usable_noted(engine) {
+        return None;
+    }
+    Some(crate::tlsroute::Remote {
+        route,
+        files,
+        pin: crate::tlsroute::Pin {
+            ca,
+            engine: engine.to_owned(),
+        },
+    })
+}
+
+/// **A `tls` object read** (#6267): `{"ca", "cert", "key"}` or `{"ca", "cert", "keyIn": {"plane",
+/// "vault", "key"}}`, each path absolute. Anything else is no `tls` purlis writes.
+pub fn tls_from_row(value: &serde_json::Value) -> Option<crate::tlsroute::Files> {
+    let tls = value.as_object()?;
+    let path = |key: &str| {
+        tls.get(key)
+            .and_then(serde_json::Value::as_str)
+            .map(std::path::PathBuf::from)
+    };
+    let key = match (tls.get("key"), tls.get("keyIn")) {
+        (Some(_), None) => crate::tlsroute::KeyFrom::File(path("key")?),
+        (None, Some(key_in)) => {
+            let key_in = key_in.as_object()?;
+            if key_in.len() != 3 {
+                return None;
+            }
+            let text = |key: &str| key_in.get(key).and_then(serde_json::Value::as_str);
+            crate::tlsroute::KeyFrom::Vault {
+                plane: text("plane")?.into(),
+                vault: text("vault")?.to_owned(),
+                key: text("key")?.to_owned(),
+            }
+        }
+        _ => return None,
+    };
+    if tls.len() != 3 {
+        return None;
+    }
+    crate::tlsroute::Files::new(path("ca")?, path("cert")?, key).ok()
+}
+
+/// **A pool's TLS files as its row keeps them** (#6267): paths, and a vault entry's names.
+#[must_use]
+pub fn tls_to_row(files: &crate::tlsroute::Files) -> serde_json::Value {
+    let mut tls = serde_json::json!({
+        "ca": files.ca.display().to_string(),
+        "cert": files.cert.display().to_string(),
+    });
+    match &files.key {
+        crate::tlsroute::KeyFrom::File(path) => tls["key"] = path.display().to_string().into(),
+        crate::tlsroute::KeyFrom::Vault { plane, vault, key } => {
+            tls["keyIn"] = serde_json::json!({
+                "plane": plane.display().to_string(),
+                "vault": vault,
+                "key": key,
+            });
+        }
+    }
+    tls
 }
 
 /// The kind a cluster pool's row, and its runner's, are of (#3292).
@@ -2150,6 +2414,10 @@ pub struct ClusterPool {
     chosen: Box<crate::poollimits::Chosen>,
     /// Values in its row its limits can't be, kept as they were typed (#4381).
     refused_limits: Vec<crate::poollimits::RefusedValue>,
+    /// **How the person confirmed the key it pins** (`keyConfirmed`, #4495): pasted from their
+    /// admin, or made by this machine in the same setup. `None` for a pool pinned before purlis
+    /// kept it. A roll the pinned key vouched for keeps it.
+    confirmed: Option<clusterpool::Confirmed>,
 }
 
 impl ClusterPool {
@@ -2247,7 +2515,21 @@ impl ClusterPool {
             profiles: None,
             chosen: Box::default(),
             refused_limits: Vec::new(),
+            confirmed: None,
         })
+    }
+
+    /// This pool, its key confirmed as `confirmed` says (#4495).
+    #[must_use]
+    pub fn confirmed_by(mut self, confirmed: clusterpool::Confirmed) -> ClusterPool {
+        self.confirmed = Some(confirmed);
+        self
+    }
+
+    /// How the person confirmed the key it pins (#4495), where purlis kept it.
+    #[must_use]
+    pub fn confirmed(&self) -> Option<clusterpool::Confirmed> {
+        self.confirmed
     }
 
     /// This pool, under what its team set for its limits as it was added (#4287).
@@ -2746,6 +3028,26 @@ pub fn cluster_holds(config_root: &Path) -> Vec<std::path::PathBuf> {
     held
 }
 
+/// **The files every pool over Docker's TLS API names** (#6267): its CA, its client certificate
+/// and a client key kept where it is, as each pool's row names them. What a chat's sandbox holds
+/// from every chat, reading included. Empty where none is, or where the pools aren't read.
+pub fn tls_files(config_root: &Path) -> Vec<std::path::PathBuf> {
+    let mut files: Vec<std::path::PathBuf> = Vec::new();
+    for pool in pools(config_root).unwrap_or_default() {
+        if let Some(RemoteEngine::Tls(remote)) = pool.remote_engine() {
+            let named = [remote.files.ca.as_path(), remote.files.cert.as_path()]
+                .into_iter()
+                .chain(remote.files.key_file());
+            for file in named {
+                if !files.iter().any(|kept| kept == file) {
+                    files.push(file.to_path_buf());
+                }
+            }
+        }
+    }
+    files
+}
+
 /// **Where every cluster pool's kubectl keeps its caches** (`--cache-dir`, #3292): a folder of
 /// this user's alone beside the pools' own copies of their contexts, made where it is not.
 pub fn kubectl_cache(config_root: &Path) -> Result<std::path::PathBuf, Refused> {
@@ -2820,6 +3122,23 @@ pub fn keep_cluster_pin(config_root: &Path, name: &str, pin: &PoolPin) -> Result
     write(config_root, &held)
 }
 
+/// **Pins the cluster pool `name`'s key again on the person's word** (#4495): `pin`, confirmed
+/// as `confirmed` says, kept with it.
+pub fn keep_cluster_pin_confirmed(
+    config_root: &Path,
+    name: &str,
+    pin: &PoolPin,
+    confirmed: clusterpool::Confirmed,
+) -> Result<(), Refused> {
+    let _locked = lock(config_root);
+    let mut held = load(config_root)?;
+    let Some(at) = held.clusters.iter().position(|pool| pool.name() == name) else {
+        return Ok(());
+    };
+    held.clusters[at] = held.clusters[at].repinned(pin).confirmed_by(confirmed);
+    write(config_root, &held)
+}
+
 /// **Keeps what the team set for the cluster pool `name`'s limits** (#4287), as its Pool says now:
 /// the person's own values stay, and hold to it from the next attempt.
 pub fn keep_cluster_team_limits(
@@ -2884,7 +3203,8 @@ pub fn put_away_mint_notice(config_root: &Path, name: &str) -> Result<(), Refuse
 
 /// A cluster pool's row (#3292): `{"name", "kind": "cluster", "kubeconfig", "context", "pool",
 /// "namespace", "operatorKey", "cluster", "holds", "owned", "mintInCluster", "mintNoticeDue",
-/// "profiles"}`, `cluster` left out only of a pool kept before its cluster was pinned (#3305), `owned`,
+/// "profiles", "keyConfirmed"}`, `keyConfirmed` `pasted` or `made-here` and left out of a pool
+/// pinned before purlis kept it (#4495), `cluster` left out only of a pool kept before its cluster was pinned (#3305), `owned`,
 /// `mintInCluster` and `mintNoticeDue` `true` alone, left out otherwise (#4071, #4204, #4442), and `profiles` as a Docker
 /// pool's, left out where none were chosen (#3819).
 fn cluster_pool_to_row(pool: &ClusterPool) -> serde_json::Value {
@@ -2917,6 +3237,9 @@ fn cluster_pool_to_row(pool: &ClusterPool) -> serde_json::Value {
     if let Some(profiles) = pool.profiles() {
         row["profiles"] = profiles.into();
     }
+    if let Some(confirmed) = pool.confirmed {
+        row["keyConfirmed"] = confirmed.word().into();
+    }
     pool.chosen.to_row(&mut row);
     pool.chosen.team_to_row(&mut row);
     for refused in &pool.refused_limits {
@@ -2943,6 +3266,7 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
         "mintInCluster",
         "mintNoticeDue",
         "profiles",
+        "keyConfirmed",
     ];
     if fields
         .keys()
@@ -2979,6 +3303,11 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
         Some(serde_json::Value::Bool(true)) => true,
         Some(_) => return None,
     };
+    // One of its words alone: any other refuses the row.
+    let confirmed = match fields.get("keyConfirmed") {
+        None => None,
+        Some(word) => Some(clusterpool::Confirmed::of_word(word.as_str()?)?),
+    };
     let holds = fields
         .get("holds")?
         .as_array()?
@@ -3011,6 +3340,7 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
         profiles,
         chosen: Box::new(chosen),
         refused_limits,
+        confirmed,
         ..pool
     })
     .ok()

@@ -351,6 +351,44 @@ fn the_review_brings_a_skill_named_bare_along_as_a_hint() {
     assert!(grilling.brought_by_hint);
 }
 
+/// #5874: the person may untick a skill that comes along only by a hint, since the skill that
+/// hints at it runs without it. The review read again without it leaves it out, and installing
+/// what that review accepted lands the rest alone; a skill a reference brings still comes along.
+#[test]
+fn a_skill_only_a_hint_brings_is_left_out_of_the_review_and_the_install_when_unticked() {
+    let remote = Upstream::new();
+    let plan = b"---\nname: plan\ndescription: Plans the work.\n---\n\nUse the Skill tool with \
+                 \"grilling\", then skills:notify.\n";
+    let grilling = b"---\nname: grilling\ndescription: Asks hard questions.\n---\n\nAsk.\n";
+    let tree = remote.tree(&[
+        ("skills/plan/SKILL.md", "100644", plan),
+        ("skills/grilling/SKILL.md", "100644", grilling),
+        ("skills/notify/SKILL.md", "100644", NOTIFY),
+    ]);
+    remote.commit(&tree, None);
+    let tmp = plane();
+    let root = tmp.path();
+    let source = remote.source();
+    let names = ["plan".to_owned()];
+    let all = review(root, &source, &names, &Level::project()).unwrap();
+    let brought: Vec<&str> = all.skills.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(brought, ["plan", "notify", "grilling"]);
+
+    // A reference cannot be left out: unticking notify leaves it in.
+    let without = ["grilling".to_owned(), "notify".to_owned()];
+    let left = review_without(root, &source, &names, &Level::project(), &without).unwrap();
+    let kept: Vec<&str> = left.skills.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(kept, ["plan", "notify"]);
+
+    let (made, _) = on(root, |cx| {
+        install(cx, &source, &Level::project(), &left.accepted(), None)
+    });
+    made.unwrap();
+    assert!(root.join("skills/plan/SKILL.md").is_file());
+    assert!(root.join("skills/notify/SKILL.md").is_file());
+    assert!(!root.join("skills/grilling").exists());
+}
+
 #[test]
 fn an_install_lands_a_pinned_copy_and_a_lockfile_entry() {
     let (remote, commit) = good_remote();

@@ -69,7 +69,7 @@ function Pane({
       <div className="pane-top">
         <div className="pane-head">
           <div className="pane-chips">
-            <span className="pane-name">{name}</span>
+            <span className="pane-name ui-text-heading">{name}</span>
           </div>
         </div>
       </div>

@@ -6445,6 +6445,7 @@ dependencies = [
  "url",
  "uuid",
  "wiremock",
+ "x509-cert",
  "xattr",
  "zeroize",
  "zip",

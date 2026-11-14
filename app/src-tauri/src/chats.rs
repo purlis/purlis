@@ -836,7 +836,7 @@ pub struct Chats {
     project: PathBuf,
     /// Whatever runs the sessions (FD-3). A trait object, so nothing here can reach past
     /// [`SessionHost`] to a pty: a chat layer that did would not compile against another host.
-    sessions: Box<dyn SessionHost>,
+    sessions: Arc<dyn SessionHost>,
     /// Told as each chat starts, before its program does.
     starting: Mutex<Option<Starting>>,
     /// Told as each chat put back is reattached in the session host, before anything else is
@@ -872,6 +872,11 @@ pub struct Chats {
     /// The chats told what their settings left out on the way to a runner, by session, so a chat
     /// started again says it once (#3867).
     left_out_told: Mutex<std::collections::HashSet<u32>>,
+    /// The window's asks of which chats run on an older sandbox, and of why each runs at its
+    /// level, each read once per burst (felt speed round 4, H10): a restart of every chat asked
+    /// ten times in 48 seconds, each ask compiling every chat's sandbox beside the others.
+    older_asks: purlis_core::burst::Burst<Option<OlderSandbox>>,
+    level_asks: purlis_core::burst::Burst<Vec<LevelWhy>>,
     /// The skills each chat's persona names that it started without (SK-5, #2768), by session:
     /// what its tab's Notice says until it is put away ([`Self::skills_missing`]).
     skills_missing: Mutex<HashMap<u32, SkillsMissing>>,
@@ -1227,6 +1232,9 @@ struct StartKey {
     level_as: Option<String>,
     made: purlis_core::sandbox::Made,
     grants: purlis_core::sandbox::grant::Grants,
+    /// Whether it is held from every cluster at each start, as Pool setup's Get help chat is
+    /// ([`purlis_core::reopen::Chat::held_from_clusters`]).
+    held_from_clusters: bool,
 }
 
 /// What a start would compile now, for [`StartKey`]: the sandbox it settles to, none at all,
@@ -1635,7 +1643,7 @@ impl Chats {
     pub fn on_host(record_it: Recorder, host: Box<dyn SessionHost>, project: PathBuf) -> Self {
         Self {
             project,
-            sessions: host,
+            sessions: Arc::from(host),
             starting: Mutex::new(None),
             reattached: Mutex::new(None),
             beginning: Mutex::new(None),
@@ -1646,6 +1654,8 @@ impl Chats {
             trusting: Mutex::new(None),
             late_notes: Mutex::new(HashMap::new()),
             left_out_told: Mutex::new(std::collections::HashSet::new()),
+            older_asks: purlis_core::burst::Burst::default(),
+            level_asks: purlis_core::burst::Burst::default(),
             skills_missing: Mutex::new(HashMap::new()),
             project_settings: crate::projectsettings::Watch::new(),
             sizes: Mutex::new(HashMap::new()),
@@ -2371,12 +2381,6 @@ impl Chats {
         *lock(&self.never_started) = Some(tell);
     }
 
-    /// Refuses every chat start while `switch` is thrown (OV-1), at the sessions every start
-    /// reaches.
-    pub fn stopped_by(&mut self, switch: std::sync::Arc<crate::killswitch::KillSwitch>) {
-        self.sessions.stopped_by(switch);
-    }
-
     /// The sessions underneath, for everything that is about a terminal and not about a chat.
     pub fn sessions(&self) -> &dyn SessionHost {
         self.sessions.as_ref()
@@ -2795,27 +2799,27 @@ impl Chats {
         // it lists any, and one whose command does not switch the harness's prompts off. Both
         // may have changed since it was dispatched, and nobody chose the change for this chat.
         purlis_core::dispatchprofiles::may_start_again(&self.project, chat)?;
-        let ready = purlis_core::start::ready(
-            &purlis_core::start::Start {
-                profile: Some(profile),
-                persona: chat.persona.clone(),
-                name: chat.name.clone(),
-                cwd: chat.cwd.clone(),
-                resume: chat.resume.clone(),
-                // The chat's own footer choice, brought back with it. It rides on the
-                // environment, which is rebuilt at every start, so a relaunch that did not
-                // carry it would silently blank a footer the operator had turned on.
-                show_footer: chat.show_footer,
-                resuming: None,
-                without_sandbox: opt_out,
-                // A handed-off chat keeps holding the asking chat's persona grants across a
-                // relaunch until the person allows its own (#1362, D-1362-5).
-                held: chat.held.clone(),
-                grants: self.grants_of(chat),
-                made: made_of(chat, why),
-            },
-            &self.project,
-        )?;
+        let start = purlis_core::start::Start {
+            profile: Some(profile),
+            persona: chat.persona.clone(),
+            name: chat.name.clone(),
+            cwd: chat.cwd.clone(),
+            resume: chat.resume.clone(),
+            // The chat's own footer choice, brought back with it. It rides on the
+            // environment, which is rebuilt at every start, so a relaunch that did not
+            // carry it would silently blank a footer the operator had turned on.
+            show_footer: chat.show_footer,
+            resuming: None,
+            without_sandbox: opt_out,
+            // A handed-off chat keeps holding the asking chat's persona grants across a
+            // relaunch until the person allows its own (#1362, D-1362-5).
+            held: chat.held.clone(),
+            grants: self.grants_of(chat),
+            made: made_of(chat, why),
+        };
+        // **Pool setup's Get help chat is held from every cluster at each start** (#4497,
+        // story 60), as at its first: a relaunch, a restart and a move all come through here.
+        let ready = purlis_core::poolsetup::help::ready_again(chat, &start, &self.project)?;
         // The core's start knows no chat, so it says "nothing recorded"; this chat may know
         // better — a workspace rename left it without its conversation (charter#367).
         let ready = purlis_core::start::Ready {
@@ -4106,13 +4110,20 @@ impl Chats {
     /// ([`Running::confines`]) with what the same start compiles now, never by a settings file
     /// having been written: a change that compiles to the same sandbox leaves nothing behind.
     ///
-    /// git is asked once about the project's local file for every chat compared (#2179).
+    /// git is asked once about the project's local file for every chat compared (#2179), and
+    /// the plane's folders are walked once for every start compiled
+    /// ([`purlis_core::sandbox::planted::read_once`]). **Read once per burst** ([`Self::older_asks`]):
+    /// an ask while one reads waits for the next read, which every ask that came meanwhile shares.
     pub fn on_older_sandbox(&self) -> Option<OlderSandbox> {
-        purlis_core::profiles::git_asked_once(|| {
-            self.on_older_sandbox_on(
-                &purlis_core::sandbox::Machine::this(),
-                &purlis_core::sandbox::backend::installed,
-            )
+        self.older_asks.ask(|| {
+            purlis_core::profiles::git_asked_once(|| {
+                purlis_core::sandbox::planted::read_once(|| {
+                    self.on_older_sandbox_on(
+                        &purlis_core::sandbox::Machine::this(),
+                        &purlis_core::sandbox::backend::installed,
+                    )
+                })
+            })
         })
     }
 
@@ -4188,13 +4199,15 @@ impl Chats {
                 // What the chat's next start would be made as.
                 made: made_of(&chat, Why::Relaunch),
                 grants: with.grants.clone(),
+                // Compiled as its next start compiles it (`start_recorded_checked`).
+                held_from_clusters: chat.held_from_clusters,
             };
             let known = compiled
                 .iter()
                 .find(|(one, _)| *one == key)
                 .map(|(_, now)| now.clone());
             let now = known.unwrap_or_else(|| {
-                let now = match purlis_core::sandbox::decide_granted(
+                let decide = || match purlis_core::sandbox::decide_granted(
                     key.harness,
                     &self.project,
                     machine,
@@ -4214,6 +4227,11 @@ impl Chats {
                         CompiledNow::Unconfined
                     }
                     Err(_) => CompiledNow::Refused,
+                };
+                let now = if key.held_from_clusters {
+                    purlis_core::sandbox::policy::holding_from_clusters(decide)
+                } else {
+                    decide()
                 };
                 compiled.push((key, now.clone()));
                 now
@@ -4264,9 +4282,14 @@ impl Chats {
     ///
     /// Each distinct start is read once per ask, as in [`Self::on_older_sandbox`] (#2157): the
     /// window asks whenever a chat opens or closes, and on every focus.
+    /// Read once per burst, with the plane walked once, as [`Self::on_older_sandbox`] is.
     pub fn level_whys(&self) -> Vec<LevelWhy> {
-        purlis_core::profiles::git_asked_once(|| {
-            self.level_whys_on(&purlis_core::sandbox::Machine::this())
+        self.level_asks.ask(|| {
+            purlis_core::profiles::git_asked_once(|| {
+                purlis_core::sandbox::planted::read_once(|| {
+                    self.level_whys_on(&purlis_core::sandbox::Machine::this())
+                })
+            })
         })
     }
 
@@ -8856,11 +8879,15 @@ impl Chats {
         lock(&self.open).len()
     }
 
-    /// **Keeps the screens of the task chats that had finished, as the app quits** (#6305): the
-    /// next launch leaves each out of its put back (`finished::left_out`), so none closes
-    /// through [`Self::close_as`], where a screen is kept. Before [`Self::end_all`], while their
-    /// sessions still show them.
-    pub fn keep_finished_screens(&self) {
+    /// **Starts keeping the screens of the task chats that had finished, as the app quits**
+    /// (#6305): the next launch leaves each out of its put back (`finished::left_out`), so none
+    /// closes through [`Self::close_as`], where a screen is kept. Before [`Self::end_all`], while
+    /// their sessions still show them.
+    ///
+    /// **It returns at once**: the quit starts every project's before it waits for any, and
+    /// then waits once, until the one deadline it gives them all
+    /// ([`crate::chatcard::ScreensComing::wait_until`]).
+    pub fn start_keeping_finished_screens(&self) -> crate::chatcard::ScreensComing {
         let finished: Vec<(u32, String)> = self
             .record()
             .chats
@@ -8873,7 +8900,7 @@ impl Chats {
                 Some((number, chat.identity.id.clone()?))
             })
             .collect();
-        crate::chatcard::keep_screens_at_quit(&self.project, self.sessions(), &finished);
+        crate::chatcard::start_keeping_screens_at_quit(&self.project, &self.sessions, &finished)
     }
 
     /// Ends every chat, and does not return until their programs are gone.

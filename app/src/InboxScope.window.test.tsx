@@ -181,7 +181,8 @@ describe("the scope chips (ADR 0121, amended 2026-11-12)", () => {
 
   it("shows a chip's count only above 0", () => {
     draw(ASKS, { ...strip("beta"), ...focus(6, 0) });
-    const counts = [...document.querySelectorAll('.inbox-scope [data-part="count"]')].map(
+    // Each the badge family's round count (#6342), heard as the real number.
+    const counts = [...document.querySelectorAll('.inbox-scope [data-part="round"]')].map(
       (one) => one.textContent,
     );
     expect(counts).toEqual(["1", "3"]);

@@ -3428,6 +3428,8 @@ fn commands() -> Builder<tauri::Wry> {
             "POOL_MINTS_WITHOUT_ASKING",
             clusterpools::POOL_MINTS_WITHOUT_ASKING,
         )
+        // The event a pool's pin found changed, or holding again, raises its Notice on (#6270).
+        .constant("POOL_PIN_CHANGED", dockerpools::POOL_PIN_CHANGED)
         // The event the engine's downloads changed on (#2207).
         .constant("ENGINE_DOWNLOAD", enginedownload::ENGINE_DOWNLOAD)
         // What `theme_specimen` answers while the painter draws another specimen (#2331): the
@@ -3458,6 +3460,20 @@ fn commands() -> Builder<tauri::Wry> {
         .constant(
             "A_QUESTION_WAITS_SECS",
             purlis_core::dispatchtalk::A_QUESTION_WAITS_SECS,
+        )
+        // What the Keep task screens row says of the store (#6306, #6451's review): its caps
+        // and how long a screen is kept, from the core's own numbers.
+        .constant(
+            "TASK_SCREENS_MOST_KEPT",
+            purlis_core::chatscreens::MOST_KEPT as u64,
+        )
+        .constant(
+            "TASK_SCREENS_MOST_KEPT_MIB",
+            purlis_core::chatscreens::MOST_KEPT_BYTES / (1024 * 1024),
+        )
+        .constant(
+            "TASK_SCREENS_KEPT_FOR_DAYS",
+            purlis_core::retention::KEEP_FOR.as_secs() / (24 * 60 * 60),
         )
         // The one rule for a character a reader does not see (SK-51, #3202): the window marks
         // what it draws itself from the core's own tables, never from a list of its own.
@@ -4218,6 +4234,14 @@ pub fn run() {
                     let _ = window.emit(clusterpools::POOL_MINTS_WITHOUT_ASKING, ());
                 }));
             }
+            // A pool's pin found changed, or holding again, raises or puts away its Notice
+            // (#6270).
+            {
+                let window = app.handle().clone();
+                purlis_core::poolsetup::pinchange::telling(Box::new(move || {
+                    let _ = window.emit(dockerpools::POOL_PIN_CHANGED, ());
+                }));
+            }
             // A finish leans on that lock, and is refused without it.
             app.manage(vaultswaiting::VaultsWaiting::of(
                 waiting,
@@ -4493,6 +4517,9 @@ pub fn run() {
             // What sends a system notification for an ask (#1694): managed before any plane is
             // opened, since the first chat to move may bring one.
             app.manage(asknotify::Notifier::start(app.handle()));
+            // Pool setup's wait for an admin (#4496): checked again now and then, raising its one
+            // ask once the cluster is ready.
+            poolsetuptab::recheck_now_and_then(app.handle());
             // What a project's chats tell its window, sent as one event about every 100 ms
             // rather than one each (#4746): managed before any plane is opened, as the
             // notifier is, since the first chat to move tells the window.

@@ -604,18 +604,28 @@ Secrets in the operator's namespace is the power to vouch for any runner.
 
 **Adding the pool in a person's window** (#3292): the add pool dialog (the palette's Add a Docker
 pool…, or Add a pool… in Settings › This machine › Pools once one is kept), Kind Cluster, their
-kubeconfig's context for the cluster and the Pool's name. Check its key shows
-the operator key the Pool's status names; give your people that key to check it against, as
+kubeconfig's context for the cluster, the Pool's name and the operator key their admin gave
+them. Check its key compares that key with the one the Pool's status names, and shows it only
+where they are the same (#4495); nothing is pinned otherwise. Only Pool setup on the machine that
+made the signing key in that same setup, through the same context and in the same cluster, pins
+without a paste. Give your people the key from the signing key's own Secret, never from a Pool's
+status, which is what their purlis checks it against:
 
 ```bash
-kubectl get pools.runners.purlis.dev <pool> --output jsonpath='{.status.signingKey}'
+kubectl -n purlis-system get secret purlis-cluster-operator-signing-key \
+  --output jsonpath='{.data.key\.pem}' | base64 --decode |
+  openssl pkey -pubout -outform DER | tail -c 32 | od -An -tx1 -v | tr -d ' \n' |
+  sed 's/^/ed25519:/'
+echo
 ```
 
-prints it. Add pool pins it and makes the person's one kept Claim, `<pool>-<a label of their
+prints it, or the Pool step of your own Pool setup shows the key your machine pinned. Add pool pins it and makes the person's one kept Claim, `<pool>-<a label of their
 desktop>`, marked `runners.purlis.dev/desktop: <that label>`, in the namespace their context
 names (`default` where it names none). Removing the pool deletes only that Claim. A Pool that
-later names another key refuses every link to that desktop's runner, and the window asks the
-person to check it and add the pool again.
+later names another key refuses every link to that desktop's runner. The pool's Pool step in Pool
+setup then shows the key pinned, not the one named now, and pins the new one only once the person
+pastes the key their admin gives them and it is the same, in the same cluster (#4495); the runner
+stays the one paired. How each pin was confirmed, pasted or made here, is kept with it.
 
 A runner is paired once, and **its pairing is its Claim's, not its pod's** (#2057, ruled
 2026-10-28). The pairing lives in the runner's home: a kept Claim's runner keeps it on its
@@ -878,8 +888,12 @@ both from the one version of the Secret the kubelet holds then.
    ```
 
    Every Pool names the new key alone, and every statement is signed by it alone. A desktop
-   that missed the roll refuses the pool's new key and asks for the pool to be added again, as
-   for any key it did not pin. The old key signs nothing now; delete any copy of it.
+   that missed the roll refuses the pool's new key, and its Pool setup shows the key it pinned
+   and asks for the new one. Give your people the new key as you gave the first, from the
+   Secret (the command under **Adding the pool in a person's window** above prints `key.pem`'s
+   public half), never from a Pool's status: their purlis pins it again only
+   where the key they paste is the one the Pool names, in the same cluster. The old key signs
+   nothing now; delete any copy of it.
 
 **A roll given up** (`next.pem` removed without step 3) leaves desktops that had moved their pin
 pinned to a key the operator no longer uses: they ask again. Roll forward rather than back.

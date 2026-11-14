@@ -9,6 +9,7 @@ use StepState::{Attention, Current, Done, Later};
 fn on_a_cluster(cluster: ClusterFacts) -> Facts {
     Facts {
         engine: Engine::Missing,
+        elsewhere: None,
         connect: None,
         pool: None,
         identity: Identity::None,
@@ -61,6 +62,7 @@ fn empty_cluster() -> Installed {
         key: false,
         operator: Operator::Absent,
         claims: Some((0, 0)),
+        claims_in_force_in: None,
     }
 }
 
@@ -243,6 +245,7 @@ fn an_installed_operator_shows_check_and_install_done_with_what_was_found() {
                 image: "ghcr.io/purlis/purlis-cluster-operator@sha256:abc".into(),
             },
             claims: Some((3, 2)),
+            claims_in_force_in: None,
         })),
         ..contexts(&["kind-team"], Some("kind-team"))
     });
@@ -374,11 +377,15 @@ fn operator_runs(pools: &[&str]) -> ClusterFacts {
                 image: "ghcr.io/purlis/purlis-cluster-operator@sha256:abc".into(),
             },
             claims: Some((0, 0)),
+            claims_in_force_in: None,
         })),
         pools: Some(pools.iter().map(|pool| (*pool).to_owned()).collect()),
         ..contexts(&["kind-team"], Some("kind-team"))
     }
 }
+
+/// The key a kept pool pinned, as its row spells it.
+const PINNED: &str = "ed25519:79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664";
 
 fn a_cluster_pool(owned: bool, mints: bool, sign_ins: SignIns) -> PoolFacts {
     PoolFacts {
@@ -390,6 +397,8 @@ fn a_cluster_pool(owned: bool, mints: bool, sign_ins: SignIns) -> PoolFacts {
             pool: "team".into(),
             owned,
             mints,
+            pinned: PINNED.into(),
+            now: crate::pools::PinNow::Holds,
         }),
     }
 }
@@ -421,6 +430,63 @@ fn a_teammate_on_a_cluster_with_pools_is_offered_to_add_one_and_passes_install()
         "{pool:?}"
     );
     assert_eq!(pool.next.as_ref().unwrap().id, ActionId::AddClusterPool);
+}
+
+/// The operator refuses for good a Claim made within its settle time of the policy on claims
+/// (`operator/src/admission.rs`, #3854), so a pool is added only once the policy is in force.
+fn policy_in_force_in(seconds: u64, pools: &[&str]) -> ClusterFacts {
+    let mut facts = operator_runs(pools);
+    if let Some(Ok(installed)) = facts.installed.as_mut() {
+        installed.claims_in_force_in = Some(seconds);
+    }
+    facts
+}
+
+#[test]
+fn a_pool_is_added_only_once_the_policy_on_claims_is_in_force() {
+    let facts = on_a_cluster(policy_in_force_in(12, &["team"]));
+    let setup = of(Kind::Cluster, &facts, &chose("kind-team"));
+    let pool = setup.step(StepId::Pool).unwrap();
+    assert_eq!(pool.state, Attention, "{pool:?}");
+    assert!(
+        pool.next
+            .as_ref()
+            .is_none_or(|next| next.id != ActionId::AddClusterPool),
+        "{pool:?}"
+    );
+    assert!(pool.findings[0].contains("12 seconds"), "{pool:?}");
+
+    // A Pool is made meanwhile: the policy holds Claims, not Pools.
+    let empty = on_a_cluster(policy_in_force_in(12, &[]));
+    let setup = of(Kind::Cluster, &empty, &chose("kind-team"));
+    let pool = setup.step(StepId::Pool).unwrap();
+    assert_eq!(pool.next.as_ref().unwrap().id, ActionId::CreateClusterPool);
+
+    // In force: Add the pool here.
+    let ready = on_a_cluster(policy_in_force_in(0, &["team"]));
+    let setup = of(Kind::Cluster, &ready, &chose("kind-team"));
+    let pool = setup.step(StepId::Pool).unwrap();
+    assert_eq!(pool.next.as_ref().unwrap().id, ActionId::AddClusterPool);
+}
+
+#[test]
+fn the_policy_on_claims_is_in_force_its_settle_time_after_the_later_of_it_and_its_binding() {
+    let at = |text: &str| chrono::DateTime::parse_from_rfc3339(text).unwrap().to_utc();
+    let policy = "2026-11-13T08:03:40Z";
+    let binding = "2026-11-13T08:03:41Z";
+    assert_eq!(
+        in_force_in(policy, binding, at("2026-11-13T08:04:02Z")),
+        Some(14)
+    );
+    assert_eq!(
+        in_force_in(binding, policy, at("2026-11-13T08:04:02Z")),
+        Some(14)
+    );
+    assert_eq!(
+        in_force_in(policy, binding, at("2026-11-13T08:05:00Z")),
+        Some(0)
+    );
+    assert_eq!(in_force_in("", binding, at("2026-11-13T08:05:00Z")), None);
 }
 
 #[test]
@@ -515,4 +581,190 @@ fn a_new_setup_forgets_the_context_chosen_and_keeps_the_operators_image() {
     assert_eq!(choices.kind, None);
     assert_eq!(choices.context, None);
     assert_eq!(choices.operator_image.as_deref(), Some(image.as_str()));
+}
+
+/// A teammate's cluster (#4495): purlis's definitions are served, and their sign-in can't read
+/// the install, so nothing of it is known but that it is their team's.
+fn joining(pools: Option<&[&str]>) -> ClusterFacts {
+    ClusterFacts {
+        chosen: Some("kind-team".into()),
+        joining: true,
+        pools: pools.map(|pools| pools.iter().map(|pool| (*pool).to_owned()).collect()),
+        ..contexts(&["kind-team"], Some("kind-team"))
+    }
+}
+
+#[test]
+fn a_teammate_who_cannot_read_the_install_passes_check_and_install_with_no_admin_setting() {
+    let setup = of(
+        Kind::Cluster,
+        &on_a_cluster(joining(Some(&["team"]))),
+        &chose("kind-team"),
+    );
+    assert_eq!(states(&setup)[..4], [Done, Done, Done, Current]);
+    let check = setup.step(StepId::Check).unwrap();
+    assert!(check.findings[0].contains("your team"), "{check:?}");
+    assert!(
+        check.see.is_none(),
+        "doctor's commands are an admin's: {check:?}"
+    );
+    let install = setup.step(StepId::Install).unwrap();
+    assert_eq!(install.line.as_deref(), Some("Installed by your team"));
+    assert!(install.parts.is_empty(), "{install:?}");
+    assert!(install.undo.is_none(), "{install:?}");
+    assert!(install.see.is_none(), "{install:?}");
+    assert!(setup.contexts.joining);
+    let pool = setup.step(StepId::Pool).unwrap();
+    assert!(pool.findings[0].contains("the pool team"), "{pool:?}");
+    assert_eq!(pool.next.as_ref().unwrap().id, ActionId::AddClusterPool);
+    assert!(pool.see.is_none(), "making a Pool is an admin's: {pool:?}");
+}
+
+#[test]
+fn a_teammate_who_cannot_list_the_pools_is_asked_for_the_name_their_admin_gave() {
+    for pools in [None, Some(&[][..])] {
+        let setup = of(
+            Kind::Cluster,
+            &on_a_cluster(joining(pools)),
+            &chose("kind-team"),
+        );
+        let pool = setup.step(StepId::Pool).unwrap();
+        assert_eq!(pool.state, Current);
+        assert!(pool.findings[0].contains("pool's name"), "{pool:?}");
+        assert_eq!(pool.next.as_ref().unwrap().id, ActionId::AddClusterPool);
+    }
+}
+
+#[test]
+fn a_teammate_is_shown_no_minting_opt_in() {
+    let facts = Facts {
+        pool: Some(a_cluster_pool(true, false, SignIns::Read(Vec::new()))),
+        ..on_a_cluster(joining(None))
+    };
+    let setup = of(Kind::Cluster, &facts, &chose("kind-team"));
+    assert!(setup.step(StepId::Identity).unwrap().see.is_none());
+}
+
+#[test]
+fn a_kept_pool_whose_pool_names_a_key_never_vouched_for_asks_for_it_to_be_checked_again() {
+    let named = "ed25519:".to_owned() + &"ab".repeat(32);
+    let mut pool = a_cluster_pool(true, false, SignIns::Read(Vec::new()));
+    let kept = pool.cluster.as_mut().unwrap();
+    kept.now = crate::pools::PinNow::Changed {
+        named: named.clone(),
+    };
+    let facts = Facts {
+        pool: Some(pool),
+        ..on_a_cluster(joining(None))
+    };
+    let setup = of(Kind::Cluster, &facts, &chose("kind-team"));
+    let step = setup.step(StepId::Pool).unwrap();
+    assert_eq!(step.state, Attention);
+    assert!(
+        step.findings[0].contains("another cluster operator key"),
+        "{step:?}"
+    );
+    assert_eq!(step.next.as_ref().unwrap().id, ActionId::CheckKeyAgain);
+    assert_eq!(setup.contexts.named_now.as_deref(), Some(named.as_str()));
+    assert_eq!(setup.contexts.pinned.as_deref(), Some(PINNED));
+    // Nothing after it reads as done while links to its runner are refused.
+    assert_eq!(setup.at, Some(StepId::Pool));
+    // The key the Pool names now is never shown before it is confirmed: not in what
+    // `purlis pool setup --json` prints either, which is this setup serialised.
+    let printed = serde_json::to_string(&setup).unwrap();
+    assert!(
+        !printed.contains(named.trim_start_matches("ed25519:")),
+        "{printed}"
+    );
+    assert!(!printed.contains("named_now"), "{printed}");
+}
+
+#[test]
+fn a_kept_pool_whose_pool_is_in_another_cluster_is_added_again_and_never_pinned_again() {
+    let mut pool = a_cluster_pool(true, false, SignIns::Read(Vec::new()));
+    pool.cluster.as_mut().unwrap().now = crate::pools::PinNow::OtherCluster;
+    let facts = Facts {
+        pool: Some(pool),
+        ..on_a_cluster(operator_runs(&["team"]))
+    };
+    let setup = of(Kind::Cluster, &facts, &chose("kind-team"));
+    let step = setup.step(StepId::Pool).unwrap();
+    assert_eq!(step.state, Attention);
+    assert!(step.findings[0].contains("another cluster"), "{step:?}");
+    assert_eq!(step.next.as_ref().unwrap().id, ActionId::RemovePool);
+    assert_eq!(setup.contexts.named_now, None);
+}
+
+#[test]
+fn a_kept_pool_shows_the_key_pinned_here_for_teammates_to_check_theirs_against() {
+    let facts = Facts {
+        pool: Some(a_cluster_pool(true, false, SignIns::Read(Vec::new()))),
+        ..on_a_cluster(operator_runs(&["team"]))
+    };
+    let setup = of(Kind::Cluster, &facts, &chose("kind-team"));
+    assert_eq!(setup.step(StepId::Pool).unwrap().state, Done);
+    assert_eq!(setup.contexts.pinned.as_deref(), Some(PINNED));
+    assert_eq!(setup.contexts.named_now, None);
+}
+
+/// A stand-in kubectl answering as a cluster purlis is installed on answers a teammate holding
+/// the guide's rights alone: the definitions are served, and every read of the install, of
+/// another namespace or of the list of pools is forbidden.
+#[cfg(unix)]
+fn teammates_kind(dir: &std::path::Path) -> Kubectl {
+    use std::os::unix::fs::PermissionsExt;
+    let script = dir.join("kubectl");
+    let ran = dir.join("ran");
+    std::fs::write(
+        &script,
+        format!(
+            r#"#!/bin/sh
+printf '%s\n' "$*" >> '{ran}'
+case "$*" in
+  *"config view --output json") printf '%s' '{{"contexts":[{{"name":"kind-team"}}],"current-context":"kind-team"}}' ;;
+  *"api-resources --api-group runners.purlis.dev --output name") printf 'claims.runners.purlis.dev\npools.runners.purlis.dev\n' ;;
+  *"auth can-i"*) echo no; exit 1 ;;
+  *) echo 'Error from server (Forbidden): forbidden' >&2; exit 1 ;;
+esac
+"#,
+            ran = ran.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    Kubectl::at(script)
+}
+
+#[cfg(unix)]
+#[test]
+fn a_teammate_with_the_guides_rights_alone_is_read_as_joining_and_doctor_isnt_asked() {
+    let dir = tempfile::tempdir().unwrap();
+    let kubectl = teammates_kind(dir.path());
+    let facts = super::read(Ok(&kubectl), Some("kind-team"), true);
+    assert!(facts.joining, "{facts:?}");
+    assert_eq!(facts.doctor, None);
+    assert_eq!(facts.installed, None);
+    assert_eq!(facts.pools, None);
+    let ran = std::fs::read_to_string(dir.path().join("ran")).unwrap();
+    assert!(!ran.contains("secret"), "{ran}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_cluster_without_purlis_whose_install_cant_be_read_is_not_joining() {
+    let dir = tempfile::tempdir().unwrap();
+    let kubectl = teammates_kind(dir.path());
+    // The definitions aren't served: discovery names nothing of the group.
+    let script = std::fs::read_to_string(dir.path().join("kubectl")).unwrap();
+    std::fs::write(
+        dir.path().join("kubectl"),
+        script.replace(
+            r"printf 'claims.runners.purlis.dev\npools.runners.purlis.dev\n'",
+            ":",
+        ),
+    )
+    .unwrap();
+    let facts = super::read(Ok(&kubectl), Some("kind-team"), true);
+    assert!(!facts.joining, "{facts:?}");
+    assert!(facts.doctor.is_some(), "doctor says what is lacking");
 }

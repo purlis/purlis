@@ -6,7 +6,9 @@
 //!
 //! - **Only a repo of the asking workspace**, one of its clones whose `origin` is on GitHub,
 //!   named by `repo` or, with none named, the workspace's only clone. Never an owner/repo the
-//!   caller writes: the forge path is read off the clone ([`crate::forge::pr::Repo::of_clone`]).
+//!   caller writes: **the repo is the one the project's inventory records for that clone**
+//!   ([`recorded`], the operator's ruling of 2026-11-12), and a clone whose live origin
+//!   ([`crate::forge::pr::Repo::of_clone`]) names another, or that has no record, is refused.
 //! - **As whoever asks** ([`Reach::caller`]): a page as the person in the window, in the
 //!   background (`Caller::window().background()`), which [`crate::forge::route`] sends on their
 //!   sign-in, else their `gh` login; a chat's MCP call as that chat (`Caller::mcp`), on its own
@@ -132,28 +134,77 @@ pub fn read(
             }
         },
     };
-    let repo = Repo::of_clone(root, &clone.path).map_err(|_| {
-        Unanswered::refused(format!(
-            "{} has no origin on a GitHub host this project declares, so it has no milestones \
-             purlis can read.",
-            clone.name
-        ))
-    })?;
+    // The repo is the one the project records for the clone, never its live origin alone,
+    // which anything that writes the clone's `.git/config` can point elsewhere (the operator's
+    // ruling of 2026-11-12). The two must agree, and neither is named to the page.
+    let repo = match (
+        Repo::of_clone(root, &clone.path),
+        recorded(root, &clone.name),
+    ) {
+        (Ok(live), Some(recorded)) if same(&live, &recorded) => recorded,
+        (Ok(_), None) => {
+            return Err(Unanswered::refused(format!(
+                "This project records no repo for {}, so purlis does not read its milestones. \
+                 Record it with `purlis discover`, or clone it from the window.",
+                clone.name
+            )));
+        }
+        (Err(_), None) => {
+            return Err(Unanswered::refused(format!(
+                "{} has no origin on a GitHub host this project declares, so it has no \
+                 milestones purlis can read.",
+                clone.name
+            )));
+        }
+        _ => {
+            return Err(Unanswered::refused(format!(
+                "The origin of {} is not the repo this project records for it, so purlis does \
+                 not read its milestones. Set its origin back, or record the repo again with \
+                 `purlis discover`.",
+                clone.name
+            )));
+        }
+    };
     if repo.forge.kind != Kind::GitHub {
         return Err(Unanswered::refused(format!(
             "{} is on GitLab, and purlis reads milestones from GitHub only.",
             clone.name
         )));
     }
-    let listed = (reach.backend_of)(&repo)
+    let read = (reach.backend_of)(&repo)
         .milestone_progress(&reach.caller, &repo.path, all)
         .map_err(|error| unanswered(&repo.path, &error))?;
     Ok(json!({
         "repo": clone.name,
         "path": repo.path,
         "state": if all { "all" } else { "open" },
-        "milestones": listed.iter().map(milestone).collect::<Vec<_>>(),
+        "cut": read.cut,
+        "milestones": read.listed.iter().map(milestone).collect::<Vec<_>>(),
     }))
+}
+
+/// The repo the project's inventory records for the clone `name` (`inventory/repos.json`, a
+/// Plane-tier record no chat writes), on a forge this project declares; `None` when it records
+/// none there.
+fn recorded(root: &Path, name: &str) -> Option<Repo> {
+    let doc = crate::inventory::load(root, "").ok()?;
+    let row = crate::inventory::listed(&doc)
+        .into_iter()
+        .find(|row| row.get("name").and_then(Value::as_str) == Some(name))?;
+    let record = crate::inventory::read(&row)?;
+    let forge = crate::forge::resolve_host(&record.ssh_url, root)?;
+    (forge.kind == record.forge && !record.path_with_namespace.is_empty()).then_some(Repo {
+        forge,
+        path: record.path_with_namespace,
+    })
+}
+
+/// Whether the clone's live origin names the recorded repo: one forge, one host and one path,
+/// in any case, as GitHub and GitLab read them.
+fn same(live: &Repo, recorded: &Repo) -> bool {
+    live.forge.kind == recorded.forge.kind
+        && live.forge.host.eq_ignore_ascii_case(&recorded.forge.host)
+        && live.path.eq_ignore_ascii_case(&recorded.path)
 }
 
 /// One milestone as data.
@@ -206,6 +257,11 @@ pub fn result() -> Value {
         "repo": string("The repo of this workspace, by its folder's name."),
         "path": string("Its owner/name on GitHub."),
         "state": string("open or all, as asked."),
+        "cut": {
+            "type": "boolean",
+            "description": "Whether GitHub may list more milestones than these: purlis reads \
+                            the first 300 at most.",
+        },
         "milestones": super::list_of(super::object(json!({
             "number": integer("Its number on GitHub."),
             "title": string("Its title."),

@@ -104,6 +104,12 @@ export const ChatWorkspaceProject: Story = {
     await expect(scopes.getAllByRole("radio").map((one) => one.getAttribute("aria-label"))).toEqual(
       ["Chat, 2 waiting on you", "Workspace, 3 waiting on you", "Project, 4 waiting on you"],
     );
+    // Each count the badge family's round count, in the ✋'s colour (#6342).
+    await expect(
+      [
+        ...canvasElement.querySelectorAll<HTMLElement>('[data-scope="count"][data-part="round"]'),
+      ].map((one) => one.dataset.drawn),
+    ).toEqual(["2", "3", "4"]);
     await expect(rows(canvasElement)).toHaveLength(2);
     await userEvent.tab();
     await untilFocused(

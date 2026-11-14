@@ -33,7 +33,7 @@ export function StepHead({
   return (
     <header className="pool-setup-head">
       <div className="pool-setup-title-row">
-        <h1 ref={ref} tabIndex={-1} className="pool-setup-title">
+        <h1 ref={ref} tabIndex={-1} className="pool-setup-title ui-text-title">
           {title}
         </h1>
         {tag}
