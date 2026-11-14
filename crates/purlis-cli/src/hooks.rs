@@ -433,7 +433,25 @@ fn briefing_ask<'a>(hook: &'a Hook) -> purlis_core::briefing::Ask<'a> {
         payload: hook.payload,
         env: &env,
         now: hook.now,
+        attendance: attendance_here(hook),
     }
+}
+
+/// **The attendance fact, as far as the hook can read it alone** (R-111, #6411). The fact is
+/// held per chat in the app, and handing it to this hook is T1-18's (#6409): until then the hook
+/// reads the one part of it its own payload carries, the bypass bit that lowers the fact
+/// ([`purlis_core::attendance::Fact::heard`], Q271), through the reader of today
+/// ([`purlis_core::dispatchunattended::Mark`]). So the briefing is never told more attended than
+/// it was. What only the app sees, how a chat began and a mode purlis did not set, reaches it
+/// with #6409.
+fn attendance_here(hook: &Hook) -> purlis_core::dispatchunattended::Attendance {
+    let mut mark = purlis_core::dispatchunattended::Mark::default();
+    mark.heard(
+        hook.payload
+            .get("permission_mode")
+            .and_then(serde_json::Value::as_str),
+    );
+    mark.attendance()
 }
 
 /// **What others say to a chat at its start, quoted**: each extension's section, the reports
