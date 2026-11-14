@@ -537,6 +537,24 @@ pub fn sessionstart_skills(payload: &str, now: Option<&str>) {
     });
 }
 
+/// **This chat's attendance, as the commit gate reads it** (R-112, T1-21). The gate keys on the
+/// chat's attendance fact ([`purlis_core::attendance::Fact`]); the fact's holder, which keeps it
+/// per chat in the app, is T1-18's (#6409) and does not yet reach a hook's process. Until it
+/// does, this hands the gate the most this process can know: unattended where this report says
+/// the chat's prompts are off, read one way only as the app's mark is
+/// ([`purlis_core::dispatchunattended::Mark`]), so nothing in a payload can make a chat read as
+/// more attended than it did before. Reading the held fact here is #6409's, and removing the
+/// mark is T1-22's (#6413).
+fn attendance(hook: &Hook) -> purlis_core::dispatchunattended::Attendance {
+    let mut mark = purlis_core::dispatchunattended::Mark::default();
+    mark.heard(
+        hook.payload
+            .get("permission_mode")
+            .and_then(serde_json::Value::as_str),
+    );
+    mark.attendance()
+}
+
 /// `userpromptsubmit`'s own work, handed to the turn that is starting as one
 /// `additionalContext`: the heartbeat; the commitment gate
 /// ([`purlis_core::commitgate`], charter#369), which tells a prompt asking for work with a real
@@ -556,7 +574,9 @@ pub fn userpromptsubmit(payload: &str, now: Option<&str>) {
         if !hook.in_plane {
             return;
         }
-        let mut parts: Vec<String> = purlis_core::commitgate::nudge(hook).into_iter().collect();
+        let mut parts: Vec<String> = purlis_core::commitgate::nudge(hook, attendance(hook))
+            .into_iter()
+            .collect();
         // What this chat's router points the prompt at (SK-15c): only where the chat's start
         // armed it for a router that reads prompts, so no other chat's prompt leaves this hook.
         if env(purlis_core::skills::PROMPT_ROUTER_ENV).as_deref() == Some("1")
