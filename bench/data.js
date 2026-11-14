@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794647486347,
+  "lastUpdate": 1794650913582,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -49182,6 +49182,48 @@ window.BENCHMARK_DATA = {
             "value": 100.89590150000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.137, 100.605, 100.896, 101.509, 101.879 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "7ef6e5efd7360643fdaf04e9fbd42c6cafdf8a06",
+          "message": "fix: port the purlis.chats second review fixes onto main (#6492) (#6573)\n\n* purlis.chats second review fixes, onto main (#6235)\n\nPorts 745a0e2a2, the second-round review fixes of #6287 that never merged.\n\n- An id-less chat a dispatch record names is the open chat with its number whose run started\n  no later than the record, or, for an asker, the chat an earlier record named with the same\n  number, name, persona and workspace: an open id-less asker or worker is listed once, its\n  ended task points at it, and an id-less chat that asked twice is one row.\n- A project's drawn dispatch records are let go of when it closes.\n- Only a purlis.chats feed holds back an answer read again unchanged; every other core feed\n  hands each one on, since its time is the \"as of\" a page shows.\n- The ADR 0122 amendment says a chat's tasks-at-work state can show a task running in another\n  workspace, though not which or where.\n- A test that history picks up a task that ended after it was drawn running.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7ACYWAEPNQJBRMG6J67XQ1S\nPurlis-Persona: steward\n\n* fix(chats): never merge an id-less chat across records; a closed project's records are not held again\n\nReview findings on #6573 (#6492). Board numbers restart with each run and dispatch records carry\nno run identity, so an earlier record cannot prove two id-less refs are one chat. Each record\ntherefore lists its own chat. chatlisting counts closes, so an answer that began before\nproject_closed draws a throwaway drawing. Key::of_chats now uses chattools::CHATS. The ADR 0122\namendment states the rule.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6ZPW5F9817YGADZBAKV8ZKA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-14T09:35:27Z",
+          "tree_id": "930117bb17b7736e77c116fb229dd6b7a6af5fbd",
+          "url": "https://github.com/purlis/purlis/commit/7ef6e5efd7360643fdaf04e9fbd42c6cafdf8a06"
+        },
+        "date": 1794650907416,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3332935,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.327, 0.329, 0.333, 0.341, 0.343 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.272444,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.029, 16.144, 16.272, 16.327, 16.555 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.945913,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.275, 101.329, 101.946, 102.246, 102.611 ms"
           }
         ]
       }
