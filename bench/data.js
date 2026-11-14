@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794691666862,
+  "lastUpdate": 1794699538868,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -49476,6 +49476,48 @@ window.BENCHMARK_DATA = {
             "value": 101.65476899999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.084, 101.272, 101.655, 102.335, 102.452 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4ceffd96c5f688d1af067a9bca92355e35bc8408",
+          "message": "Ask running chats to restart when a pool over Docker's TLS API is added (#6662)\n\n* Ask running chats to restart when a pool over Docker's TLS API is added (#6472)\n\nCount the TLS pool files (named and real paths) the way the cluster programs\nare counted in on_older_sandbox_on, give them a reason of their own, and have\nthe window ask again on tls-pool-added. purlis's own Docker-context copies are\nleft out: their whole folder is held from every chat whatever the pools name.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7DRRJWQAM33YAYVGPMXJ4GP\nPurlis-Persona: steward\n\n* Box the compiled sandbox now that it holds the TLS pools' files too (#6472)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7DRRJWQAM33YAYVGPMXJ4GP\nPurlis-Persona: steward\n\n* Regenerate the UI's TypeScript for OnOlderSandbox.pool's doc (#6472)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7DRRJWQAM33YAYVGPMXJ4GP\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-14T23:01:28Z",
+          "tree_id": "ecf50b8fdf6b669f57272ce0bc0281aa6658ac1a",
+          "url": "https://github.com/purlis/purlis/commit/4ceffd96c5f688d1af067a9bca92355e35bc8408"
+        },
+        "date": 1794699531475,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.367421,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.325, 0.341, 0.367, 0.375, 0.376 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.413638499999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.325, 16.382, 16.414, 16.451, 16.498 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.69407799999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.213, 101.538, 101.694, 101.832, 101.853 ms"
           }
         ]
       }
