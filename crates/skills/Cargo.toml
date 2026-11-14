@@ -23,9 +23,6 @@ serde_json.workspace = true
 # A `SKILL.md`'s frontmatter, parsed as the YAML it is before purlis hands a harness only the keys
 # it knows to be safe (SK-8, #2771). Pure Rust; no encodings beyond UTF-8.
 yaml-rust2 = { version = "0.13", default-features = false }
-# A Codex command line's `bash -lc '…'` unwrapped as a shell reads its quotes, by the CI grader
-# (spec #5714). Already in this workspace's lockfile through purlis-core, so it adds no crate.
-shell-words = "1"
 # A grant is written beside the file and renamed over it, never half-written.
 tempfile.workspace = true
 # What a review marks as a character no reader sees, and how (SK-49, #3172).

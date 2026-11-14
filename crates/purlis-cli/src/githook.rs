@@ -97,7 +97,7 @@ fn message(args: &[String]) -> ExitCode {
     };
     let scan = diffscan::message_checked(&top, &said);
     if !scan.refused.is_empty() {
-        refuse(Stopped::Commit, &top, &scan);
+        say_refused(Stopped::Commit, &top, &scan);
         return ExitCode::from(MESSAGE_REFUSED);
     }
     purlis_core::provenance::stamp(&file, &top, &purlis_core::envvar::var);
@@ -145,14 +145,20 @@ fn named(repo: &Path) -> String {
     )
 }
 
-/// Says what `scan` refused, masked, on standard error, and tells the app.
+/// Says what `scan` refused, masked, on standard error, tells the app, and fails.
 fn refuse(stopped: Stopped, repo: &Path, scan: &diffscan::Scan) -> ExitCode {
+    say_refused(stopped, repo, scan);
+    ExitCode::FAILURE
+}
+
+/// Says what `scan` refused, masked, on standard error, and tells the app, for a caller that
+/// fails with an exit code of its own.
+fn say_refused(stopped: Stopped, repo: &Path, scan: &diffscan::Scan) {
     eprint!("{}", diffscan::refusal(stopped, &scan.refused));
     for problem in &scan.problems {
         eprintln!("  (and {problem})");
     }
     tell_the_app(diffscan::summary(stopped, repo, &scan.refused));
-    ExitCode::FAILURE
 }
 
 /// The app's needs-you item for this refusal. The commit is refused whatever this answers, and

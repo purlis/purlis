@@ -28,7 +28,7 @@ uuid = { version = "1", features = ["v4"] }
 # that stack leaves (ruling (b), #5691) is here, where real crashes are made, not in the core.
 purlis-core.workspace = true
 # To read the memory a real minidump holds, and show none of it is in the report.
-minidump = "0.26"
+minidump = "0.27"
 serde_json.workspace = true
 tempfile.workspace = true
 
