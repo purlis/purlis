@@ -222,20 +222,33 @@ pub fn push_told(
     reach: &Reach,
     say: &mut dyn FnMut(Say),
 ) -> (u8, Option<UnsignedRefused>) {
+    let (code, unsigned, _) = push_sent(piece, reach, say);
+    (code, unsigned)
+}
+
+/// [`push_told`], and **the commit the push sent**, where it went (T1-41, Q277): the one its
+/// refspec named by id, which the remote's branch is now at. Never a `HEAD` read after the
+/// push, which a chat may have moved meanwhile.
+pub fn push_sent(
+    piece: &Piece,
+    reach: &Reach,
+    say: &mut dyn FnMut(Say),
+) -> (u8, Option<UnsignedRefused>, Option<String>) {
     mended(piece.root, piece.ws, piece.repo, say);
     let mut unsigned = None;
+    let mut sent = None;
     let ran = Here::of(piece, true).and_then(|here| {
         let lock = broker::lock_of(&here.git_dir);
         let _held = lock
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        pushed(piece, &here, reach, say, &mut unsigned)
+        pushed(piece, &here, reach, say, &mut unsigned, &mut sent)
     });
     let code = ran.unwrap_or_else(|why| {
         say(Say::Fail(why.into()));
         1
     });
-    (code, unsigned)
+    (code, unsigned, sent.filter(|_| code == 0))
 }
 
 /// The clone's config freed of a base recorded under no branch ([`worktree::mend_nameless_base`]),
@@ -1821,6 +1834,7 @@ fn pushed(
     reach: &Reach,
     say: &mut dyn FnMut(Say),
     unsigned: &mut Option<UnsignedRefused>,
+    sent_commit: &mut Option<String>,
 ) -> Result<u8, String> {
     let (repo, label) = (piece.repo, &here.label);
     let branch = &here.branch;
@@ -1951,6 +1965,8 @@ fn pushed(
     say(Say::Done(
         format!("{label}: {branch} pushed to {remote}").into(),
     ));
+    // The commit the refspec named, which the remote took (Q277).
+    *sent_commit = Some(ours);
     Ok(0)
 }
 

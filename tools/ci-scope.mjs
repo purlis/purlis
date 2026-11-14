@@ -185,10 +185,12 @@ export const RUST_READERS = [
   "e2e/recordedForge.test.ts",
   "e2e/standInForge.test.ts",
   "e2e/upgrade.test.ts",
+  "src/LoopPauseAsk.window.test.tsx",
   "src/PersonaMark.test.tsx",
   "src/StripMarks.test.tsx",
   "src/allowLabels.test.ts",
   "src/artifactPage.test.ts",
+  "src/askLabels.guard.test.ts",
   "src/copy.rust.test.ts",
   "src/layoutProjects.test.ts",
   "src/settings/linkedGroups.test.ts",
@@ -208,6 +210,8 @@ export const RUST_READERS = [
   "src/ui/field/refusingFields.guard.test.ts",
   "src/ui/menu/submenuRows.guard.test.ts",
   "src/ui/notice/noticeCardFill.test.ts",
+  "src/waitingInItsTerminal.guard.test.ts",
+  "src/windowControls.test.ts",
   "src/windowprefs.test.ts",
 ];
 
@@ -255,6 +259,7 @@ export const WHOLE_TREE_GUARDS = [
   { crate: "purlis-core", test: "every_first_party_source_file_carries_its_licence_header" },
   { crate: "purlis-core", test: "no_tracked_file_is_one_a_sandboxed_chat_may_not_write" },
   { crate: "purlis-core", test: "a_no_seed_mark_is_made_only_in_the_window" },
+  { crate: "purlis-core", test: "only_attendance_compares_permission_mode_with_bypass" },
 ];
 
 // The files at the root a change to which runs the docs alone: what an agent reads to steer

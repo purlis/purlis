@@ -183,7 +183,7 @@ function modeStatus(sandbox: SandboxState | undefined, yourLevel?: () => void): 
       return [
         on
           ? (required ?? "On for everyone in this project.")
-          : "Not turned on in this project, so chats here start at the floor.",
+          : "Not turned on in this project, so chats here start in the basic sandbox.",
         // Your own level, where it starts your chats here otherwise (#2071).
         ...yoursSaid(sandbox?.yours ?? null, on),
         // The opt-out count is this machine's, and is never sent (ADR 0067 §7, V78 d).
@@ -206,11 +206,11 @@ function yoursSaid(yours: YourLevel | null, on: boolean): string[] {
   const how = yours.confirmed ? "your level, confirmed on this machine" : "your level";
   switch (yours.level) {
     case "off":
-      return [`Off for you: ${how}.`];
+      return [`No sandbox for you: ${how}.`];
     case "floor":
-      return on ? [`Floor for you: ${how}.`] : [];
+      return on ? [`Basic sandbox for you: ${how}.`] : [];
     case "on":
-      return on ? [] : [`On for you: ${how}.`];
+      return on ? [] : [`Full sandbox for you: ${how}.`];
     default:
       return [];
   }

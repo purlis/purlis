@@ -423,3 +423,202 @@ fn a_pool_on_another_machine_is_sent_no_vault_value_and_chats_still_move_there()
     );
     assert!(Bound::read_with(Ok("/var/run/docker.sock".into()), config.path(), "first").is_ok());
 }
+
+const HOST_KEY: &str =
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiGzfjDDJsgYLYCmdkf8Fel9sE6Ma14Y2+c33Y/qZ2n";
+
+/// **A pool `name` on another machine, reached over SSH and pinned to engine `engine`**, its one
+/// runner `<name>/<name>`, marked owned for that pin where `owned` (#6271).
+fn a_pool_on_another_machine(name: &str, engine: &str, owned: bool) -> tempfile::TempDir {
+    let config = a_pool_with_a_runner_draining();
+    change_runners(config.path(), |text| {
+        let pool = &mut text["pools"][0];
+        pool["name"] = name.into();
+        pool["kind"] = "remote-docker".into();
+        pool["route"] = "ssh://me@build-box/var/run/docker.sock".into();
+        pool["pin"] = serde_json::json!({ "hostKey": HOST_KEY, "engine": engine });
+        if owned {
+            pool["owned"] = pool["pin"].clone();
+        }
+        let runners = text["runners"].as_array_mut().unwrap();
+        runners.remove(1);
+        runners[0]["name"] = name.into();
+        runners[0].as_object_mut().unwrap().remove("draining");
+    });
+    config
+}
+
+/// **A marked pool on another machine's runner may be sent a value, bound to its pin** (#6271,
+/// ADR 0123 §5): whatever this machine's own engine is, since it is not the one its runner runs
+/// on, and the Ask names the machine as pinned.
+#[test]
+fn a_marked_pool_on_another_machine_is_bound_to_its_pin_whatever_this_machines_engine_is() {
+    let config = a_pool_on_another_machine("marked-box", "ABCD", true);
+    let reached = Some("marked-box/marked-box");
+    let bound = Bound::over_the_link_with(
+        Err("purlis finds no Docker engine on this machine".to_owned()),
+        config.path(),
+        "marked-box",
+        reached,
+    )
+    .unwrap();
+    let key = crate::sshroute::HostKey::parse(HOST_KEY).unwrap();
+    assert!(bound.engine.contains("build-box"), "{}", bound.engine);
+    assert!(
+        bound.engine.contains(&key.fingerprint()),
+        "{}",
+        bound.engine
+    );
+    assert!(bound.engine.contains("ABCD"), "{}", bound.engine);
+    assert_eq!(bound.runner, "01JB0DRAINING000000000000000");
+}
+
+/// **The opt-in is bound to the pin** (#6271): the same pool and runner pinned to another engine
+/// is another bound, so an opt-in given before a pin change asks again.
+#[test]
+fn a_pool_on_another_machine_pinned_again_is_another_bound() {
+    let one = a_pool_on_another_machine("pinned-box", "ABCD", true);
+    let two = a_pool_on_another_machine("pinned-box", "WXYZ", true);
+    let bound = |config: &tempfile::TempDir| {
+        Bound::over_the_link_with(
+            Ok("/var/run/docker.sock".into()),
+            config.path(),
+            "pinned-box",
+            Some("pinned-box/pinned-box"),
+        )
+        .unwrap()
+    };
+    let (one, two) = (bound(&one), bound(&two));
+    assert_eq!(one.runner, two.runner);
+    assert_ne!(one.engine, two.engine);
+    let opt_ins = OptIns::default();
+    opt_ins.allow("steward", "forge", one);
+    assert_eq!(
+        opt_ins.standing("steward", "forge", &two),
+        Standing::Changed
+    );
+}
+
+/// **An unmarked pool on another machine is sent nothing, and the chat is told why and how the
+/// person marks it** (#6271): not yours, never to be asked again for now.
+#[test]
+fn an_unmarked_pool_on_another_machine_is_sent_nothing_and_says_how_to_mark_it() {
+    let config = a_pool_on_another_machine("unmarked-box", "ABCD", false);
+    let sent = Bound::over_the_link_with_kinded(
+        Ok("/var/run/docker.sock".into()),
+        config.path(),
+        "unmarked-box",
+        Some("unmarked-box/unmarked-box"),
+    );
+    let Err(NotSent::NotYours(why)) = &sent else {
+        panic!("{sent:?}");
+    };
+    assert!(why.contains("another machine"), "{why}");
+    assert!(why.contains("no vault value"), "{why}");
+    assert!(why.contains("Who can sign in to build-box?"), "{why}");
+    assert!(
+        why.contains("in Settings › Pools, answer Who can sign in to build-box? on its row"),
+        "{why}"
+    );
+}
+
+/// **Where this machine's records of its pools do not read, nothing is known of the pool**
+/// (#6271): not sent, and unconfirmed (try again), never "not yours", which a chat would take as
+/// the person's final word.
+#[test]
+fn a_pool_whose_records_do_not_read_is_unconfirmed_not_refused_as_not_yours() {
+    let config = a_pool_on_another_machine("unread-box", "ABCD", true);
+    std::fs::write(
+        crate::machine::dir(config.path()).join(crate::machine::RUNNERS_FILE),
+        "{ not json",
+    )
+    .unwrap();
+    let sent = Bound::over_the_link_with_kinded(
+        Err("purlis finds no Docker engine on this machine".to_owned()),
+        config.path(),
+        "unread-box",
+        Some("unread-box/unread-box"),
+    );
+    assert!(matches!(&sent, Err(NotSent::Unconfirmed(_))), "{sent:?}");
+}
+
+/// **A marked pool whose pin no longer holds is sent nothing** (#6270, #6271): the change found
+/// by a run, until the person trusts the machine again.
+#[test]
+fn a_marked_pool_on_another_machine_whose_pin_changed_is_sent_nothing() {
+    let config = a_pool_on_another_machine("changed-box", "ABCD", true);
+    let sent = || {
+        Bound::over_the_link_with_kinded(
+            Ok("/var/run/docker.sock".into()),
+            config.path(),
+            "changed-box",
+            Some("changed-box/changed-box"),
+        )
+    };
+    assert!(sent().is_ok());
+    let key = crate::sshroute::HostKey::parse(HOST_KEY).unwrap();
+    let other = crate::sshroute::HostKey::parse(
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB4FjtV1Gw3x8aKkx0vZ6m1XzjF7gZbJ0sqvM2Wl3e7k",
+    )
+    .unwrap();
+    crate::poolsetup::pinchange::found(
+        "changed-box",
+        &crate::sshroute::connect::Finding::KeyChanged {
+            host: "build-box".into(),
+            pinned: key,
+            now: other,
+        },
+    );
+    let refused = sent();
+    crate::poolsetup::pinchange::holds("changed-box");
+    let Err(NotSent::NotYours(why)) = &refused else {
+        panic!("{refused:?}");
+    };
+    assert!(why.contains("no vault value"), "{why}");
+    assert!(sent().is_ok(), "trusted again");
+}
+
+/// **A socket forwarded from another machine by anything but this kind is not this machine's**
+/// (#6271, ADR 0123 §5): a Docker pool on the window's engine stays refused where that engine is
+/// `ssh://` or `tcp://`, however a pool on another machine is marked.
+#[test]
+fn a_local_pool_on_an_engine_elsewhere_is_refused_though_a_pool_on_another_machine_is_marked() {
+    let config = a_pool_with_a_runner_draining();
+    crate::runners::record_pool(
+        config.path(),
+        &Pool::new("marked-elsewhere", image('a'), Set::default())
+            .unwrap()
+            .on(Some(crate::runners::Remote {
+                route: crate::sshroute::Route::parse("ssh://me@build-box/var/run/docker.sock")
+                    .unwrap(),
+                pin: crate::sshroute::Pin {
+                    host_key: crate::sshroute::HostKey::parse(HOST_KEY).unwrap(),
+                    engine: crate::sshroute::EnginePin::Docker("ABCD".to_owned()),
+                },
+            })),
+    )
+    .unwrap();
+    crate::runners::set_remote_owned(
+        config.path(),
+        "marked-elsewhere",
+        true,
+        &serde_json::json!({ "hostKey": HOST_KEY, "engine": "ABCD" }),
+    )
+    .unwrap();
+    for host in ["ssh://me@build-box", "tcp://build-box:2376"] {
+        let engine = crate::dockerpool::settings::engine_on_this_machine(
+            Some(host),
+            &crate::dockerpool::settings::Places {
+                home: None,
+                tmp: None,
+                runtime: None,
+                system: Path::new("/var/run/docker.sock"),
+            },
+        );
+        let sent = Bound::over_the_link_with(engine, config.path(), "first", Some("first/first"));
+        assert!(
+            matches!(&sent, Err(why) if why.contains("no vault value")),
+            "{host}: {sent:?}"
+        );
+    }
+}

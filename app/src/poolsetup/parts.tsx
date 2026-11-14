@@ -14,6 +14,8 @@ import { CodeBlock } from "../ui/code/CodeBlock";
 import { Disclosure } from "../ui/disclosure/Disclosure";
 import { Reserved } from "../ui/dialog/Reserved";
 import { NoticeBox, NoticeMark, NoticeMessage, NoticeTitle } from "../ui/notice/Notice";
+import { goToPlaced, goToPlacedSays, placedControlsNamedIn } from "../placedControls";
+import { askSettingsLink } from "../settings/links";
 
 /** A step's heading and its plain sentences. Takes the focus as a step opens. */
 export function StepHead({
@@ -112,16 +114,25 @@ export function Options({ open, children }: { open?: boolean; children: ReactNod
 export const RUN_IT_YOURSELF =
   "This is exactly what the button runs. Run it yourself if you prefer, and purlis marks this step done.";
 
-/** **The exact commands**, and what running them means (Q30). */
+/**
+ * **The exact commands**, and what running them means (Q30). A note that names a control in
+ * Settings carries Go to it, through the project `plane`'s window (R-357: Remove on the pool).
+ */
 export function SeeWhat({
   text,
   note = RUN_IT_YOURSELF,
   open,
+  plane,
 }: {
   text: string;
   note?: string;
   open?: boolean;
+  plane?: string;
 }) {
+  const named =
+    plane === undefined
+      ? []
+      : placedControlsNamedIn(note).filter((control) => "settings" in control.at);
   return (
     <Disclosure
       label="See what this does"
@@ -131,6 +142,20 @@ export function SeeWhat({
     >
       <div className="pool-setup-fold-body">
         <p className="pool-setup-does">{note}</p>
+        {plane !== undefined && named.length > 0 && (
+          <ButtonRow size="md">
+            {named.map((control) => (
+              <Button
+                key={control.words}
+                onPress={() =>
+                  goToPlaced(control, plane, note, (link) => askSettingsLink(plane, link))
+                }
+              >
+                {goToPlacedSays(control)}
+              </Button>
+            ))}
+          </ButtonRow>
+        )}
         {text !== "" && <CodeBlock label="Commands" text={text} />}
       </div>
     </Disclosure>

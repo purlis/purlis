@@ -359,25 +359,6 @@ fn an_unattended_chat_with_no_sandbox_dispatches_to_no_other_persona_whatever_is
     );
 }
 
-// ---- the mark -----------------------------------------------------------------------------------
-
-#[test]
-fn a_chat_that_once_reported_its_prompts_off_stays_unattended() {
-    let mut mark = Mark::default();
-    assert_eq!(mark.attendance(), Attendance::Attended);
-    mark.heard(Some("default"));
-    mark.heard(None);
-    assert_eq!(mark.attendance(), Attendance::Attended);
-
-    mark.heard(Some("bypassPermissions"));
-    assert_eq!(mark.attendance(), Attendance::Unattended);
-
-    // A later report that says otherwise changes nothing: it is a line a chat could send.
-    mark.heard(Some("default"));
-    mark.heard(None);
-    assert_eq!(mark.attendance(), Attendance::Unattended);
-}
-
 // ---- what it starts -----------------------------------------------------------------------------
 
 fn words(command: &[&str]) -> Vec<String> {

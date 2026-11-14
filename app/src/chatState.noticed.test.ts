@@ -10,6 +10,7 @@ const told = (more: Partial<ChatNoticed>): ChatNoticed => ({
   session: 3,
   stuck: null,
   left_work: null,
+  mode: null,
   ...more,
 });
 

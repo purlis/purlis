@@ -34,6 +34,7 @@ import {
   type RadioGroupProps as AriaRadioGroupProps,
   type RadioProps as AriaRadioProps,
 } from "react-aria-components";
+import { VisuallyHidden } from "react-aria";
 import { Check } from "lucide-react";
 import { RoundCount } from "../badge/Badge";
 import { Tooltip, type Tip } from "../tooltip/Tooltip";
@@ -159,12 +160,17 @@ export interface SegmentProps extends Option {
   /** `round`: its count is what waits on the person (an Asks chip, #6342), the badge family's
    *  round count, 14px in the ✋'s colour, one character, and none at 0. */
   countAs?: "round";
+  /** What a screen reader reads after its name, never drawn: why one `isDisabled` is out of
+   *  reach, as a radio's `description` says it. A disabled segment takes no focus, so its
+   *  tooltip alone would tell only a pointer (`ui/unavailable.ts`). */
+  description?: ReactNode;
 }
 
 /** **One segment** of a segmented control. */
-export function Segment({ children, count, countAs, tooltip, ...rest }: SegmentProps) {
+export function Segment({ children, count, countAs, tooltip, description, ...rest }: SegmentProps) {
   const id = useId();
   const counted = count !== undefined && (countAs !== "round" || count > 0);
+  const described = description === undefined || description === null ? undefined : `${id}-says`;
   return tipped(
     tooltip,
     <AriaRadio
@@ -174,6 +180,9 @@ export function Segment({ children, count, countAs, tooltip, ...rest }: SegmentP
         rest["aria-label"] === undefined
           ? (rest["aria-labelledby"] ?? (counted ? `${id}-label ${id}-count` : `${id}-label`))
           : undefined
+      }
+      aria-describedby={
+        [rest["aria-describedby"], described].filter(Boolean).join(" ") || undefined
       }
       data-scope="segment"
       data-part="root"
@@ -189,6 +198,7 @@ export function Segment({ children, count, countAs, tooltip, ...rest }: SegmentP
             {count}
           </span>
         ))}
+      {described !== undefined && <VisuallyHidden id={described}>{description}</VisuallyHidden>}
     </AriaRadio>,
   );
 }

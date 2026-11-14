@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   commands,
   type BlockedLately,
@@ -11,6 +11,8 @@ import {
   type SandboxNetwork,
 } from "../bindings";
 import { ALLOW_SAID } from "../allowLabels";
+import { BlockedMarkers } from "../blockedMarkers";
+import { OPEN_THE_CHAT_LOG, openTheChatLogOf } from "../chatLog";
 import { Notice } from "../Notice";
 import { inTheWindow } from "../personaHostsAllow";
 import { useReadOnlySaid } from "../ReadOnlyLine";
@@ -20,9 +22,9 @@ import { Button } from "../ui/button/Button";
 
 /**
  * **Settings › Sandbox › Network** (#1662, spec #1661): the hosts every sandboxed chat here
- * reaches without asking (**Open hosts**), and what chats here were refused lately (**Blocked
- * lately**), each with Allow. Both are the core's, read from the project's files and this
- * machine's network record; nothing here lists a host of its own. The **Allowed** list beside
+ * reaches without asking (**Open hosts**), and what was blocked for chats here in the last 30
+ * days (the **Blocked log**, T1-32), each host with Allow. Both are the core's, read from the
+ * project's files and this machine's event log; nothing here lists a host of its own. The **Allowed** list beside
  * them is `GrantedList.tsx`'s.
  */
 
@@ -139,11 +141,14 @@ function capital(said: string): string {
 }
 
 /**
- * The rows of a refusals list (Blocked lately, or a chat's own), each with Allow where the core
+ * The rows of a refusals list (the Blocked log, or a chat's own), each with Allow where the core
  * says one may be kept: **Allow for me on this machine** keeps the host for this project on this
  * machine, and **Allow for everyone in this project** commits it: the registry's words, every
  * level side by side (#1700, `allowLabels.ts`). A row a chat reaches now says so. A refused
  * lookup's host is shown and never has an Allow: a program's printed words named it (#1663).
+ *
+ * **A row whose chat is open here opens its Chat log, at its blocks** (R-226, T1-37): the core
+ * names the chat by its number where this window has it open, and none where it has not.
  */
 export function RefusedRows({
   plane,
@@ -156,6 +161,7 @@ export function RefusedRows({
 }) {
   const [said, setSaid] = useState<string>();
   const [trouble, setTrouble] = useState<string>();
+  const openChatLog = useContext(BlockedMarkers).open;
   /** Why an Allow for everyone is off: the project is read-only (#1759). */
   const readOnly = useReadOnlySaid();
   const allow = (host: string, level: GrantLevel) => {
@@ -198,6 +204,15 @@ export function RefusedRows({
                   {ALLOW_SAID[level]}
                 </Button>
               ))}
+            {row.chat !== null && row.session != null && (
+              <Button
+                variant="ghost"
+                aria-label={openTheChatLogOf(row.chat)}
+                onPress={() => row.session != null && openChatLog(row.session, "blocks")}
+              >
+                {OPEN_THE_CHAT_LOG}
+              </Button>
+            )}
           </li>
         ))}
       </ul>
@@ -211,8 +226,9 @@ export function RefusedRows({
   );
 }
 
-/** **Blocked lately**: what chats here were refused in the last 30 days, newest first. */
-export function BlockedLatelyList({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
+/** **The Blocked log** (R-221, R-222): what was blocked for chats here in the last 30 days,
+ *  newest first, read from the event log. "Blocked lately" is folded into it. */
+export function BlockedLogList({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
   const { network, said, setSaid } = useNetwork(plane);
   return (
     <div id={ids.id} aria-labelledby={ids.labelledBy}>
@@ -221,7 +237,7 @@ export function BlockedLatelyList({ plane, ids }: { plane: PlaneId; ids: RowIds 
       ) : network.blocked.length === 0 ? (
         <p>Nothing was blocked here in the last 30 days.</p>
       ) : (
-        <RefusedRows plane={plane} rows={network.blocked} label="Blocked lately" />
+        <RefusedRows plane={plane} rows={network.blocked} label="Blocked log" />
       )}
       {said !== undefined && <Trouble said={said} onDismiss={() => setSaid(undefined)} />}
     </div>

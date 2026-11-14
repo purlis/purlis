@@ -255,3 +255,30 @@ export const TheRunnerIsAsleep: Story = {
     },
   },
 };
+
+/** What the core says where only the pool's own Remove takes the last profile off (R-357): its
+ *  note carries Go to Remove on the pool, in Settings › You › This machine › Pools. */
+export const OnlyRemoveTakesItOff: Story = {
+  beforeEach: () => {
+    mockIPC((cmd) => {
+      if (cmd === "pool_setup_sign_ins_by_hand")
+        return {
+          note: "No command takes work off yet. Pool dev-box names none of its profiles, so it keeps the profile a new chat in your project gets. Tick another profile and this shows a command for it, or use Remove on the pool in Settings › You › This machine › Pools.",
+          text: "",
+        };
+      if (cmd === "pool_profiles") return PROFILES;
+      if (cmd === "pool_setup_sizes") return SIZES;
+      if (cmd === "pool_limits") return { groups: [], advanced: [], waiting: [] };
+      return null;
+    });
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const see = await canvas.findByRole("button", { name: "See what this does" });
+    await userEvent.click(see);
+    await expect(see).toHaveFocus();
+    await userEvent.tab();
+    await expect(canvas.getByRole("button", { name: "Go to Remove on the pool" })).toHaveFocus();
+    await expectFocusInSight();
+  },
+};

@@ -12,6 +12,8 @@ import { forgetInbox } from "./inboxRules";
 import { forgetProjectViews } from "./projectViews";
 import { chatGroup, openEveryAnswer } from "./test-inbox";
 import type { Shown } from "./bindings";
+import { BlockWaysOut } from "./BlockWaysOut";
+import { ALLOW_NEXT_TIME, ROW_MOVED_JUST_NOW } from "./blockWays";
 
 /**
  * **The press-settle guard, characterised** (#3123, #1693, #1695, #3167): an Allow in the Inbox
@@ -60,6 +62,35 @@ const permission = (
     chain,
     answer: { via: "hook" },
   }) satisfies Shown;
+
+/** A chat paused at 3 blocks on the same target (T1-36): three answers, the lead first. */
+const blockLoop = {
+  session: 5,
+  ask: "paused:5",
+  says: "steward 5 was blocked 3 times on the same thing. Let it keep trying?",
+  options: [
+    { id: "stop-trying", label: "Tell it to stop trying", allows: false, preselected: true },
+    { id: "keep-trying", label: "Let it keep trying", allows: true },
+    { id: "stop", label: "Stop chat", allows: false },
+  ],
+  source: "looping",
+  chain: ["steward 5"],
+  answer: { via: "paused" },
+} satisfies Shown;
+
+/** A chat paused for failing the same command again and again: the old loop pause (#6015). */
+const failingLoop = {
+  session: 6,
+  ask: "paused:6",
+  says: "It may be looping: the same command failed 6 times.",
+  options: [
+    { id: "fine", label: "It's fine, continue", allows: true },
+    { id: "stop", label: "Stop", allows: false },
+  ],
+  source: "looping",
+  chain: ["steward 6"],
+  answer: { via: "paused" },
+} satisfies Shown;
 
 /** A core that records what the window sends. */
 function core() {
@@ -180,6 +211,34 @@ describe.each(BOTH)("the press-settle guard, pressed by the %s (#3123)", (by) =>
     expect(answered(calls)).toBe(true);
   });
 
+  // T1-36: a block loop's pause moves a chat held still, so each of its three answers waits for
+  // its row to settle, Stop chat as much as Let it keep trying.
+  it.each(["Tell it to stop trying", "Let it keep trying", "Stop chat"])(
+    "holds %s on a loop pause until its row has settled, and acts once it has",
+    async (name) => {
+      const calls = core();
+      render(<Inbox plane={PLANE} asks={[blockLoop]} onGo={vi.fn()} onLeave={vi.fn()} />);
+      openEveryAnswer();
+      await press(screen.getByRole("button", { name }), by);
+      expect(screen.getByRole("status")).toHaveTextContent(MOVED_JUST_NOW);
+      expect(calls.some(({ cmd }) => cmd === "answer_pause")).toBe(false);
+
+      read();
+      await press(screen.getByRole("button", { name }), by);
+      expect(calls.filter(({ cmd }) => cmd === "answer_pause")).toHaveLength(1);
+    },
+  );
+
+  // Q267 amended: only the block loop's answers wait. Another loop's Stop is a refusal, and a
+  // refusal is never held (#1695).
+  it("never holds Stop on a loop pause that is not the block loop's", async () => {
+    const calls = core();
+    render(<Inbox plane={PLANE} asks={[failingLoop]} onGo={vi.fn()} onLeave={vi.fn()} />);
+    openEveryAnswer();
+    await press(screen.getByRole("button", { name: "Stop" }), by);
+    expect(calls.filter(({ cmd }) => cmd === "answer_pause")).toHaveLength(1);
+  });
+
   it("never holds a Deny", async () => {
     const calls = core();
     const { again } = draw([permission(4, "01J0B", ["steward 4"], "Run cargo build")]);
@@ -208,5 +267,71 @@ describe("where the keyboard lands after an ask is answered and removed (#3123, 
     // The row itself, not one of its buttons: an answer is never one key away by accident.
     expect(row.tagName).not.toBe("BUTTON");
     expect(row).toHaveTextContent("Run cargo build");
+  });
+});
+
+// T1-34 (ADR 0097, `mayAct`): a sandbox block's Allow next time grants without an ask, so each of
+// its labels waits for its row to settle, as an ask's Allow does.
+describe.each(BOTH)("the settle guard on Allow next time, pressed by the %s (T1-34)", (by) => {
+  const SANDBOX_BLOCK = {
+    source: "sandbox",
+    qualifier: null,
+    target_kind: "host",
+    target: "registry.example.com:443",
+    harness: "claude",
+    allow_levels: ["once", "you", "chat", "project"] as const,
+  };
+
+  it("the settle guard covers Allow next time: nothing during the settle window, and it acts once settled", async () => {
+    const allowNext = vi.fn(() => Promise.resolve({ said: "Allowed it once." }));
+    render(
+      <BlockWaysOut
+        blocks={[SANDBOX_BLOCK]}
+        who="steward 3"
+        tell={() => Promise.resolve({})}
+        go={() => undefined}
+        allowNext={allowNext}
+      />,
+    );
+    read();
+    await press(screen.getByRole("button", { name: ALLOW_NEXT_TIME }), by);
+    // Its labels were drawn just now: a press on one does nothing, and says why.
+    await press(screen.getByRole("button", { name: "Allow once" }), by);
+    expect(allowNext).not.toHaveBeenCalled();
+    expect(screen.getByRole("status")).toHaveTextContent(ROW_MOVED_JUST_NOW);
+
+    read();
+    await press(screen.getByRole("button", { name: "Allow once" }), by);
+    expect(allowNext).toHaveBeenCalledTimes(1);
+    expect(allowNext).toHaveBeenCalledWith("registry.example.com:443", "once");
+  });
+
+  // Q278: what the row offers is keyed by the targets it shows too, so a label that comes to
+  // stand for another host under the pointer is a moved row, not a settled one.
+  it("a row whose target changed under its open labels is not settled: nothing until it is read", async () => {
+    const allowNext = vi.fn(() => Promise.resolve({ said: "Allowed it once." }));
+    const drawn = (target: string) => (
+      <BlockWaysOut
+        blocks={[{ ...SANDBOX_BLOCK, target }]}
+        who="steward 3"
+        tell={() => Promise.resolve({})}
+        go={() => undefined}
+        allowNext={allowNext}
+      />
+    );
+    const { rerender } = render(drawn("registry.example.com:443"));
+    read();
+    await press(screen.getByRole("button", { name: ALLOW_NEXT_TIME }), by);
+    read();
+    // The same ways, the same detail open, another host under the same label.
+    rerender(drawn("mirror.example.com:443"));
+    await press(screen.getByRole("button", { name: "Allow once" }), by);
+    expect(allowNext).not.toHaveBeenCalled();
+    expect(screen.getByRole("status")).toHaveTextContent(ROW_MOVED_JUST_NOW);
+
+    read();
+    await press(screen.getByRole("button", { name: "Allow once" }), by);
+    expect(allowNext).toHaveBeenCalledTimes(1);
+    expect(allowNext).toHaveBeenCalledWith("mirror.example.com:443", "once");
   });
 });

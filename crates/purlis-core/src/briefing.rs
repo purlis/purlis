@@ -57,9 +57,6 @@ use crate::counts::{counted, plural};
 use crate::workspaces::Plane;
 use crate::{memstore, personagrant, pieces, shown};
 
-/// `hooks.UNATTENDED_MODE`: the harness's own name for a run with nobody at the keyboard.
-pub const UNATTENDED_MODE: &str = "bypassPermissions";
-
 /// How many of the newest memory titles each store shows — `_MEM_DIGEST_N`.
 const MEM_DIGEST_N: usize = 10;
 
@@ -119,6 +116,12 @@ pub struct Ask<'a> {
     /// The environment, as a lookup.
     pub env: &'a dyn Fn(&str) -> Option<String>,
     pub now: DateTime<Utc>,
+    /// **Whether anyone is at the chat** (R-111, T1-20, #6411): the chat's attendance fact
+    /// ([`crate::attendance::Fact::attendance`]), the same on every harness. The briefing never
+    /// reads it from the payload's `permission_mode`, so a mode that asks never makes an
+    /// unattended chat look watched (Q198, Q270), and a resume briefs as the fact it carried
+    /// forward (Q271).
+    pub attendance: crate::dispatchunattended::Attendance,
 }
 
 impl Ask<'_> {
@@ -169,7 +172,7 @@ impl Ask<'_> {
     }
 
     fn unattended(&self) -> bool {
-        self.text("permission_mode") == Some(UNATTENDED_MODE)
+        self.attendance == crate::dispatchunattended::Attendance::Unattended
     }
 }
 
@@ -649,11 +652,16 @@ fn exists(root: &Path, name: &str) -> bool {
 /// What an unattended run with no workspace is told: stop, rather than guess one. The variable
 /// that pins one is named under both of its names, and the re-launch sets both: an older purlis
 /// reads only the old one, and two names set to two values are refused (#1284).
+///
+/// **Unattended in words true of every harness and every reason** (Q280): a task, a runner, a
+/// handoff from an unattended chat or a mode purlis didn't set, on Claude Code, Codex or
+/// opencode alike. It never quotes one harness's name for its mode, as it once quoted Claude
+/// Code's to every chat (`sessionstart-tells-an-unattended-unlocked-run-to-stop`, ADR 0046).
 fn unattended_stop(locks: bool, current: &str, existing: &str) -> String {
     use crate::envvar::in_words;
     format!(
-        "⬢ **STOP — this run has no workspace and nobody to ask.** It is running unattended \
-         (`permission_mode: {UNATTENDED_MODE}`) with no workspace {} and none pinned via {}. \
+        "⬢ **STOP — this run has no workspace and nobody to ask.** It runs unattended, with \
+         nobody there to answer, and with no workspace {} and none pinned via {}. \
          **Do not guess one** — it would silently claim `{current}`{}. Do no repo work. Say \
          plainly that the run is misconfigured and stop; whoever launched it should re-launch \
          with `{}` set (existing: {existing}).",

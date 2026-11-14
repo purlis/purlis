@@ -466,6 +466,7 @@ fn told_the_host(
         args: None,
         decision: crate::hookwire::Decision::None,
         rule: None,
+        arm: None,
         hook_ms: 0,
         agent: None,
         at_ms: crate::hookwire::ms_since_1970(std::time::SystemTime::now()),

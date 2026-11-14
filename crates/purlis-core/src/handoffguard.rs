@@ -633,9 +633,11 @@ pub struct Caller<'a> {
     /// `$CHARTER_HARNESS`. Read here rather than from the environment because the core holds
     /// no globals; the CLI passes what the process was given.
     pub harness: Option<&'a str>,
-    /// The payload's `permission_mode` — [`crate::floorguard::unattended`]'s input. **A7 no
+    /// The payload's `permission_mode` — [`crate::attendance::says_prompts_off`]'s input. **A7 no
     /// longer reads it** (#1444): whether anybody answers a chat's prompts is the app's own
-    /// mark on that chat, read where a handoff is decided. The release floor still does.
+    /// mark on that chat, read where a handoff is decided. Nor does the release floor, A4, in a
+    /// chat the app started, which reads the chat's attendance fact (T1-18,
+    /// [`crate::toolgate::Launched::attendance`]); only for a harness the app did not start.
     pub permission_mode: Option<&'a str>,
 }
 
@@ -1522,7 +1524,7 @@ mod tests {
         let caller = Caller {
             agent_id: Some("sub-1"),
             harness: Some("claude-code"),
-            permission_mode: Some(crate::floorguard::UNATTENDED_MODE),
+            permission_mode: Some(crate::attendance::PROMPTS_OFF),
         };
         // Whatever its harness says of its prompts, a sub-agent is refused, and first.
         assert_eq!(
@@ -1574,7 +1576,7 @@ mod tests {
             let caller = Caller {
                 agent_id: None,
                 harness: Some(harness),
-                permission_mode: Some(crate::floorguard::UNATTENDED_MODE),
+                permission_mode: Some(crate::attendance::PROMPTS_OFF),
             };
             assert_eq!(handoff_refusal(CANONICAL, caller), None, "{harness}");
             // And everything it still refuses, it refuses there too.

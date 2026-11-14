@@ -65,10 +65,10 @@ export const GONE = "No longer listed. Nothing here can be answered.";
 export function oftenSaid(item: Pick<AwayRefusal, "times" | "workspace">): string {
   const often =
     item.times === 1
-      ? "Refused once"
+      ? "Blocked once"
       : item.times === 2
-        ? "Refused twice"
-        : `Refused ${item.times} times`;
+        ? "Blocked twice"
+        : `Blocked ${item.times} times`;
   return item.workspace != null ? `${often}, for work in ${clipped(item.workspace)}` : often;
 }
 

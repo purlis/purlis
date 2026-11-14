@@ -1,0 +1,21 @@
+{
+  "source": "GitLab 19.4 REST API docs (gitlab-org/gitlab 19-4-stable-ee, doc/api), merge_requests.md: Retrieve a merge request (sha, target_branch, squash_on_merge, title, author.username)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "projects/acme%2Fapi/merge_requests/12"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"iid\": 12, \"state\": \"opened\", \"sha\": \"0123456789abcdef0123456789abcdef01234567\", \"target_branch\": \"main\", \"squash\": false, \"squash_on_merge\": true, \"title\": \"Add the parser\", \"author\": {\"username\": \"octo\"}}",
+        "err": ""
+      }
+    }
+  ]
+}

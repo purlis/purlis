@@ -143,6 +143,7 @@ describe("what a menu lists", () => {
       "Links in 3 steward…",
       "Activity of 3 steward",
       "Network of 3 steward",
+      "Chat log of 3 steward",
     ]);
     expect(chat.below).toEqual(["End chat 3 steward…"]);
   });

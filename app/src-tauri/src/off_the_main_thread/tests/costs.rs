@@ -82,6 +82,7 @@ fn app_on(root: &Path) -> (tauri::App<MockRuntime>, PlaneId) {
             crate::stopping::all_tasks_ending,
             crate::vaultroute::vault_refusals,
             crate::activity::activity_chat,
+            crate::finishedturns::finished_turns,
             crate::smartclose::smart_closing,
             crate::smartclose::smart_close_offer,
             crate::stopping::stopping_chats,
@@ -152,6 +153,13 @@ fn the_reads(plane: &PlaneId) -> Vec<(&'static str, Value)> {
         ("all_tasks_ending", chat.clone()),
         ("vault_refusals", chat.clone()),
         ("activity_chat", json!({ "plane": plane, "key": "alpha" })),
+        // The blocked markers' counts (R-174, T1-30): read off the window's thread.
+        (
+            "chat_blocks",
+            json!({ "plane": plane, "asked": [{ "session": 1, "after": null }] }),
+        ),
+        // The finish rows' finishes (R-178, T1-31): read off the window's thread.
+        ("finished_turns", json!({ "plane": plane, "sessions": [1] })),
         ("smart_closing", p.clone()),
         ("smart_close_offer", chat.clone()),
         ("stopping_chats", p.clone()),
@@ -425,6 +433,8 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "keep_dispatch_blocked",
             "put_away_refused_vault",
             "keep_asked_workspace",
+            // Don't merge on a held merge (R-115): the ask taken from the holds, in memory.
+            "dont_merge_held_request",
             "dismiss_sign_in",
             "dismiss_sandbox_only",
             "keep_sandbox_block_for_tasks",
@@ -554,6 +564,8 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "answer_pause",
             "ask_chat_restart",
             "keep_sandbox_block",
+            // A block's Tell the chat… (T1-33, Q267): purlis's own line, typed in turn.
+            "tell_chat_blocked",
         ],
     ),
     (

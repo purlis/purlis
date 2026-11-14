@@ -167,18 +167,20 @@ describe("Settings › Sandbox › Your level", () => {
     await atYourLevel();
     expect(screen.getAllByText(/on this machine only/)[0]).toBeInTheDocument();
     // Each level starts as chosen, and a lower one written another way waits for Confirm.
-    expect(screen.getByText(/Floor starts the floor even where the project/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Basic sandbox starts a chat in the basic sandbox even where the project/),
+    ).toBeInTheDocument();
     await waitFor(() => expect(picker("As scribe")).toBeInTheDocument());
     expect(await offeredIn(picker("This project"))).toEqual([
       "not set — the project's level (full sandbox)",
       "Full sandbox",
-      "Floor",
+      "Basic sandbox",
       "No sandbox",
     ]);
     expect(await offeredIn(picker("As steward"))).toEqual([
       "not set — as this project",
       "Full sandbox",
-      "Floor",
+      "Basic sandbox",
       "No sandbox",
     ]);
   });
@@ -282,16 +284,16 @@ describe("Settings › Sandbox's summary", () => {
     core({ modeOn: true, yours: { level: "off", confirmed: true } });
     await atSandbox();
     expect(
-      await screen.findByText(/Off for you: your level, confirmed on this machine\./),
+      await screen.findByText(/No sandbox for you: your level, confirmed on this machine\./),
     ).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Change your level" }));
     expect(await screen.findByRole("region", { name: "Your level" })).toBeInTheDocument();
   });
 
-  it("says the floor where your level is the floor, and the project's own otherwise", async () => {
+  it("says Basic sandbox where your level is the basic sandbox, and the project's own otherwise", async () => {
     core({ modeOn: true, yours: { level: "floor", confirmed: true } });
     await atSandbox();
-    expect(await screen.findByText(/Floor for you: your level/)).toBeInTheDocument();
+    expect(await screen.findByText(/Basic sandbox for you: your level/)).toBeInTheDocument();
     cleanup();
     core({ modeOn: true });
     await atSandbox();

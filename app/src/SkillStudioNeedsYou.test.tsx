@@ -7,11 +7,12 @@
  * core faked at its command boundary.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { forgetStudio, renderStudio } from "./SkillStudioTab.testkit";
-import { AT_THE_ROOT, inWorkspace } from "./skillStudio";
+import { PLANE, STUDIO_HISTORY, forgetStudio, renderStudio } from "./SkillStudioTab.testkit";
+import { openViewAt } from "./ui/panel/viewHistory";
+import { AT_THE_ROOT, askSkillStudio, inWorkspace } from "./skillStudio";
 import { need, skill, studio } from "./skillsListing.testkit";
 import type { NeedsYou, Studio } from "./bindings";
 import { OPEN_PROPOSAL_ASK } from "./proposedChangeOpen";
@@ -102,6 +103,32 @@ describe("Needs you", () => {
     const item = await screen.findByTestId("skill-need");
     await waitFor(() => expect(item).toHaveAttribute("data-need", "tidy-up:unmoved"));
     expect(item).toHaveTextContent("One commit, which can be undone.");
+  });
+
+  it("opens the item a way in names, over one chosen before it (R-357)", async () => {
+    core(studio([DEPLOY], { needs: NEEDS }));
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "needs");
+    await user.click(await screen.findByTestId("need-tidy-up:unmoved"));
+    const item = await screen.findByTestId("skill-need");
+    await waitFor(() => expect(item).toHaveAttribute("data-need", "tidy-up:unmoved"));
+
+    // A Go to from outside the studio, opened where the window opens it (`PlaneView`).
+    act(() => {
+      askSkillStudio(PLANE, AT_THE_ROOT, "needs", "tidy-up:old-plugin-keys");
+      openViewAt(STUDIO_HISTORY, {
+        page: "needs",
+        scope: AT_THE_ROOT,
+        item: "tidy-up:old-plugin-keys",
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("skill-need")).toHaveAttribute(
+        "data-need",
+        "tidy-up:old-plugin-keys",
+      ),
+    );
   });
 
   it("accepts a change to review, as one commit", async () => {

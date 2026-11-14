@@ -35,6 +35,19 @@ pub struct Unvouched {
     pub place: Option<String>,
     /// Every address its `origin` names now, each once, in the order git gives them.
     pub places: Vec<String>,
+    /// **When it was made** (R-337): its folder's creation time, in seconds since 1970, where its
+    /// disk keeps one; `None` where it keeps none.
+    pub made: Option<u64>,
+}
+
+impl Unvouched {
+    /// **The address its remote names, as the person reads it**: the one address, or, where it
+    /// names several, each joined by "and".
+    pub fn remote_said(&self) -> String {
+        self.place
+            .clone()
+            .unwrap_or_else(|| self.places.join(" and "))
+    }
 }
 
 /// Every clone in the workspaces of the project at `root` that has a remote on a forge the
@@ -75,16 +88,29 @@ pub fn unvouched_clones(root: &Path, config_root: &Path) -> Vec<Unvouched> {
                 .unwrap_or(&repo.path)
                 .to_string_lossy()
                 .into_owned();
+            let made = created_at(&repo.path);
             out.push(Unvouched {
                 workspace: workspace.clone(),
                 folder,
                 path: repo.path,
                 place: (places.len() == 1).then(|| places[0].clone()),
                 places,
+                made,
             });
         }
     }
     out
+}
+
+/// When the folder at `path` was made, in seconds since 1970, where its disk keeps a creation
+/// time.
+fn created_at(path: &Path) -> Option<u64> {
+    std::fs::metadata(path)
+        .and_then(|meta| meta.created())
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|since| since.as_secs())
 }
 
 /// The person's press on a clone made outside purlis: records `seen`, the address the window

@@ -62,6 +62,7 @@ fn asked(chat: u32) -> PermissionAsked {
         permission_request: Source::ClaudeCode,
         payload: serde_json::json!({"tool_name": "Bash"}),
         ran_for_ms: None,
+        speaker: Default::default(),
     }
 }
 
@@ -195,6 +196,7 @@ pub(super) fn the_windows(window: &Arc<Window>, holding: &Arc<Holding>) -> Heari
                 writeln!(writer, "ran {line}").unwrap();
             }
         }),
+        reason: Box::new(|_| {}),
     }
 }
 
@@ -1416,6 +1418,7 @@ fn tool_call(chat: u32, id: &str) -> ToolCall {
         args: None,
         decision: super::super::Decision::None,
         rule: None,
+        arm: None,
         hook_ms: 1,
         agent: None,
         at_ms: 0,

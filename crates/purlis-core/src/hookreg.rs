@@ -60,8 +60,12 @@ impl Handler {
     }
 }
 
+/// **The word of the harness's own check's refusal** (R-094): Claude Code's `PermissionDenied`,
+/// which it fires when its own check refuses a call (its auto-mode classifier among them).
+pub const HARNESS_DENIED: &str = "permissiondenied";
+
 /// Every hook the Rust `charter` answers, in the order a session meets them.
-pub const HANDLERS: [Handler; 19] = [
+pub const HANDLERS: [Handler; 20] = [
     Handler {
         name: "sessionstart",
         event: "SessionStart",
@@ -167,6 +171,19 @@ pub const HANDLERS: [Handler; 19] = [
         matcher: Some("mcp__purlis__.*"),
         timeout: 5,
     },
+    // The harness's own check refused a call (R-094): Claude Code's `PermissionDenied`, whose
+    // line the host writes as a block by that check ([`HARNESS_DENIED`]). Its own event, never
+    // a tool event's group, so a version that does not know the event loses this hook alone:
+    // Claude Code 2.1.323's `claude plugin validate` says of an event it does not know "entry
+    // ignored at runtime". Measured on claude 2.1.323 only: no version from before the event
+    // has been run with this file (an open measurement). It answers nothing, so the check's
+    // refusal stands.
+    Handler {
+        name: HARNESS_DENIED,
+        event: "PermissionDenied",
+        matcher: None,
+        timeout: 5,
+    },
     Handler {
         name: "notification",
         event: "Notification",
@@ -212,6 +229,17 @@ pub const HANDLERS: [Handler; 19] = [
 /// persona (#1451). No persona is a sub-agent now, and nothing reads the call: no hook runs
 /// before a `SendMessage`, so its end says nothing in a chat's line either (#1460).
 pub const NO_OPS: [&str; 2] = ["posttooluse-bash", "posttooluse-message"];
+
+/// **Whether a call of `tool`, by Claude Code's name for it, is heard as it comes back**: some
+/// `PostToolUse` hook's matcher names it (Q240). A call of a tool none names, such as Grep, has
+/// no post-tool line to wait for. Each such matcher is a list of whole names, never a pattern.
+pub fn comes_back(tool: &str) -> bool {
+    HANDLERS.iter().any(|h| {
+        h.hears_a_call_come_back()
+            && h.matcher
+                .is_some_and(|matcher| matcher.split('|').any(|name| name == tool))
+    })
+}
 
 /// The handler for `name`, if this binary answers it.
 pub fn find(name: &str) -> Option<&'static Handler> {
@@ -291,6 +319,34 @@ mod tests {
         for h in HANDLERS {
             let tool_event = matches!(h.event, "PreToolUse" | "PostToolUse" | "PostToolUseFailure");
             assert_eq!(h.matcher.is_some(), tool_event, "{}", h.name);
+        }
+    }
+
+    #[test]
+    fn a_tool_a_post_tool_hook_names_comes_back_and_grep_does_not() {
+        for tool in ["Bash", "Read", "Edit", "Write", "Task", "Skill"] {
+            assert!(comes_back(tool), "{tool}");
+        }
+        for tool in [
+            "Grep",
+            "mcp__purlis__dispatch",
+            "mcp__purlis__memory_add",
+            "",
+        ] {
+            assert!(!comes_back(tool), "{tool}");
+        }
+    }
+
+    #[test]
+    fn every_post_tool_matcher_is_a_list_of_whole_names() {
+        for h in HANDLERS.iter().filter(|h| h.hears_a_call_come_back()) {
+            let matcher = h.matcher.unwrap_or_default();
+            assert!(
+                matcher.split('|').all(|name| !name.is_empty()
+                    && name.chars().all(|c| c.is_alphanumeric() || c == '_')),
+                "{}: {matcher}",
+                h.name
+            );
         }
     }
 

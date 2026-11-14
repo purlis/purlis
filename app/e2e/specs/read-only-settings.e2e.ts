@@ -48,7 +48,7 @@ const SHARED_ONLY = ["Default workspace", "Default persona", "Update channel", "
 const NETWORK_ON = [
   "Open hosts",
   "Allowed",
-  "Blocked lately",
+  "Blocked log",
   "Folders a block's Allow may name",
   "Who may dispatch to whom",
 ];

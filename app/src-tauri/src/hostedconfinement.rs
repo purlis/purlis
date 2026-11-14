@@ -148,6 +148,18 @@ impl Hears {
                     asked(Heard::TimedOut(target));
                 }
             }
+            // A waiting Allow next time · once that ended (1.88, T1-34, Q278): audited here, as
+            // one in a proxy of the window's own is.
+            SandboxTold::UsedNext { target } => {
+                if let Some(asked) = &self.asked {
+                    asked(Heard::UsedNext(target));
+                }
+            }
+            SandboxTold::DroppedNext { target } => {
+                if let Some(asked) = &self.asked {
+                    asked(Heard::DroppedNext(target));
+                }
+            }
         }
     }
 }
@@ -323,6 +335,18 @@ impl Board for HostBoard {
         }
     }
 
+    /// Sent only to a host that knows it (1.87, R-290): an older one's connection is a block
+    /// once its hold runs out.
+    fn give_up(&self, target: &str) -> bool {
+        if self.link.version() < purlis_session_protocol::session::KNOWS_GIVE_UP {
+            return false;
+        }
+        self.change(ReachChange::GiveUp {
+            target: target.to_owned(),
+        });
+        true
+    }
+
     fn allowed_live(&self) -> Vec<(String, By)> {
         self.now()
             .allowed_live
@@ -330,6 +354,45 @@ impl Board for HostBoard {
             .map(|listed| (listed.host, by_of(listed.layer)))
             .collect()
     }
+
+    /// Sent only to a host that knows it (1.88, T1-34): an older one is told nothing, and
+    /// nothing is said to be allowed ([`refuses_allow_next`]).
+    fn allow_next(&self, host: &Host) -> Result<(), String> {
+        if let Some(why) = refuses_allow_next(self.link.version()) {
+            return Err(why);
+        }
+        change(
+            &self.link,
+            &self.id,
+            ReachChange::AllowNext {
+                host: host.to_string(),
+            },
+        )
+        .map(|_| ())
+    }
+
+    fn next_attempts(&self) -> Vec<String> {
+        self.now().next
+    }
+
+    fn forget_next(&self, host: &Host) {
+        if self.link.version() >= purlis_session_protocol::session::KNOWS_ALLOW_NEXT {
+            self.change(ReachChange::ForgetNext {
+                host: host.to_string(),
+            });
+        }
+    }
+}
+
+/// **Why a session host at `version` can't take a block's Allow next time · once**, where it
+/// can't (1.88, T1-34): one before [`purlis_session_protocol::session::KNOWS_ALLOW_NEXT`] has
+/// no next attempt to hold, so it is never sent one. What still works is said.
+fn refuses_allow_next(version: purlis_session_protocol::version::Version) -> Option<String> {
+    (version < purlis_session_protocol::session::KNOWS_ALLOW_NEXT).then(|| {
+        "the session host this chat runs in is older than this window, so it can't let one \
+         attempt through. Allow it for this chat or longer, or restart the session host."
+            .to_owned()
+    })
 }
 
 /// How a service on `port` the host left out of a chat's plan is named to it: its loopback

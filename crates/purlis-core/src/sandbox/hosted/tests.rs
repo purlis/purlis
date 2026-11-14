@@ -205,3 +205,47 @@ fn a_port_is_given_back_only_while_this_machines_sandbox_gives_it_now() {
     crate::sandbox::local::revoke_port(project.path(), 5432).unwrap();
     assert!(super::gives_here(project.path(), 5432).is_err(), "removed");
 }
+
+/// **The window's Allow next time reaches the host's board** (1.88, T1-34; R-291): `AllowNext`
+/// holds the host for the chat's next attempt there, `ForgetNext` takes it off, a proxy that
+/// asks nobody refuses both in a sentence, and any other change is not theirs.
+///
+/// Mutations it kills: `board.allow_next` deleted from `Hosted::change`, and the allow and the
+/// removal swapped.
+#[test]
+fn the_windows_allow_next_time_reaches_the_hosts_board_and_its_removal_takes_it_off() {
+    use purlis_session_protocol::session::ReachChange;
+    let board =
+        crate::sandbox::asks::Asks::new(std::sync::Arc::new(|_: crate::sandbox::asks::Heard| {}));
+    let allow = ReachChange::AllowNext {
+        host: "api.example.com:443".to_owned(),
+    };
+    assert_eq!(
+        super::next_changed(Some(&board), &allow),
+        Some(Ok(Vec::new()))
+    );
+    assert_eq!(
+        board.next_attempts(),
+        vec!["api.example.com:443".to_owned()]
+    );
+    let forget = ReachChange::ForgetNext {
+        host: "api.example.com:443".to_owned(),
+    };
+    assert_eq!(
+        super::next_changed(Some(&board), &forget),
+        Some(Ok(Vec::new()))
+    );
+    assert!(board.next_attempts().is_empty());
+    assert!(matches!(super::next_changed(None, &allow), Some(Err(_))));
+    let not_a_host = ReachChange::AllowNext {
+        host: "not a host".to_owned(),
+    };
+    assert!(matches!(
+        super::next_changed(Some(&board), &not_a_host),
+        Some(Err(_))
+    ));
+    let other = ReachChange::GiveUp {
+        target: "api.example.com:443".to_owned(),
+    };
+    assert_eq!(super::next_changed(Some(&board), &other), None);
+}

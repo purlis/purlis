@@ -579,7 +579,7 @@ function ARefusedCard() {
         {/* Why first, in its pictures' place over its name, as the gallery draws it. */}
         <RowDescription>surface.base is not a colour</RowDescription>
         <RowLabel>broken</RowLabel>
-        <RowBelow data-testid="refused-from">Yours, on this machine · Refused</RowBelow>
+        <RowBelow data-testid="refused-from">Yours, on this machine · Not applied</RowBelow>
       </ListOption>
     </ListBox>
   );
@@ -597,7 +597,7 @@ export const ARefusedCardSaysWhereItComesFrom: Story = {
     const list = canvas.getByRole("listbox", { name: "Themes" });
     const broken = within(list).getByRole("option", { name: "broken" });
     await expect(broken).toHaveAccessibleDescription(
-      "surface.base is not a colour Yours, on this machine · Refused",
+      "surface.base is not a colour Yours, on this machine · Not applied",
     );
     const from = canvas.getByTestId("refused-from");
     // Its own words' height, never the card's: a line or two is under four of its ems.

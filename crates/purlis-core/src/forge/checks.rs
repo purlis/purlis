@@ -70,7 +70,7 @@ pub struct Checks {
 }
 
 impl Checks {
-    fn unknown(why: impl Into<String>) -> Checks {
+    pub(crate) fn unknown(why: impl Into<String>) -> Checks {
         Checks {
             total: None,
             ci: Ci::Unknown,

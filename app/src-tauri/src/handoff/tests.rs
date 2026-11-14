@@ -206,6 +206,12 @@ impl Plane {
     /// With a profile `name` the project offers and this machine approved, whose own
     /// command switches the harness's permission prompts off.
     fn with_a_profile_that_asks_nobody(self, name: &str) -> Self {
+        self.with_a_profile_whose_command_adds(name, "--dangerously-skip-permissions")
+    }
+
+    /// With a profile `name` the project offers and this machine approved: `work`'s harness,
+    /// whose own command adds `flag`.
+    fn with_a_profile_whose_command_adds(self, name: &str, flag: &str) -> Self {
         let local = self.root.join(purlis_core::profiles::LOCAL_FILE);
         // `work`'s own stand-in: on the sandbox-only `work` of the child
         // [`ran_on_a_sandbox_only_stand_in`] started, the `claude` its `PATH` finds.
@@ -219,8 +225,8 @@ impl Plane {
         };
         let mut text = std::fs::read_to_string(&local).expect("the local file");
         text.push_str(&format!(
-                "[harness.{name}]\nkind = \"claude\"\ncommand = [{work:?}, \"--dangerously-skip-permissions\"]\n"
-            ));
+            "[harness.{name}]\nkind = \"claude\"\ncommand = [{work:?}, {flag:?}]\n"
+        ));
         std::fs::write(&local, text).expect("the profile");
         let set = purlis_core::profiles::current(&self.root);
         purlis_core::profiletrust::record_launched(
@@ -1054,7 +1060,7 @@ fn a_person_is_at_a_chat_until_its_harness_says_its_prompts_are_off() {
     let held = planes.held(&id).expect("held");
     let asking = a_chat_as(&held, &plane.root, Some("steward"), &plane.root);
     assert!(attended(&held, asking));
-    held.unattended().heard(asking, true);
+    its_harness_reports(&held, asking, true);
     assert!(!attended(&held, asking));
     assert!(
         !attended(&held, asking + 1000),
@@ -1071,7 +1077,7 @@ fn a_handoff_from_a_chat_nobody_is_at_is_refused_plainly_and_nothing_is_held() {
     let asking = a_chat_without_sandbox_as(&held, &plane.root, Some("steward"), &plane.root);
     let before = held.chats().open_now().len();
     // Its harness reported its permission prompts off, on a report the board took.
-    held.unattended().heard(asking, true);
+    its_harness_reports(&held, asking, true);
 
     let (said, told) = a_handoff(&held, &id, asking, Some("devops"), None, INTO_ALPHA);
 
@@ -1143,7 +1149,7 @@ fn a_handoff_counts_toward_the_running_limit_of_a_chat_nobody_is_at_and_of_no_ot
         assert!(matches!(said, Answer::Opened { .. }), "{said:?}");
     }
     // Nobody is at it: the two it opened are two running, and one may.
-    held.unattended().heard(asking, true);
+    its_harness_reports(&held, asking, true);
     let (said, told) = a_handoff(&held, &id, asking, None, None, INTO_ALPHA);
     assert_eq!(
         said,
@@ -1195,7 +1201,7 @@ fn a_codex_chat_hands_off_to_its_own_persona_though_its_harness_reports_its_prom
         .start_ready(&chat, &ready, STARTING)
         .expect("it runs");
     // What Codex's hook payload says of its permission mode, as the board took it.
-    held.unattended().heard(asking, true);
+    its_harness_reports(&held, asking, true);
 
     let (said, told) = a_handoff(&held, &id, asking, None, Some("ship it"), INTO_ALPHA);
 
@@ -1215,6 +1221,62 @@ fn a_codex_chat_hands_off_to_its_own_persona_though_its_harness_reports_its_prom
     // A handoff keeps the chain above it too, from the app's record of the asking chat
     // (#1521, D-1521-7).
     assert_eq!(from.above, Some(vec![Some("ops".to_owned())]));
+}
+
+/// **R-110** (T1-22, #6413): a chat attended by its start, whose every report says
+/// `bypassPermissions` though no armed hook of a harness purlis measures said it, is attended to
+/// dispatch. A Codex chat a person started is the one: Codex names the bypass for every chat
+/// (R-289), so its fact never hears it, and dispatch reads the fact this app holds
+/// ([`crate::chats::Chats::attendance_of`]), the same one A4 reads.
+///
+/// Red before T1-22: dispatch read the one-way mark beside the fact, which every such report
+/// lowered, so the chat was taken for one nobody is at.
+#[test]
+fn dispatch_treats_a_chat_reporting_bypass_outside_its_armed_hook_as_attended() {
+    let plane = Plane::new().with_a_codex_persona();
+    let planes = planes_recording_events(&plane.root.join("events"));
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let start = purlis_core::start::Start {
+        profile: Some("cx".to_owned()),
+        persona: Some("ops".to_owned()),
+        name: "1".to_owned(),
+        cwd: Some(plane.root.clone()),
+        without_sandbox: Some(purlis_core::sandbox::OptOut { reason: None }),
+        ..Default::default()
+    };
+    let ready = purlis_core::start::ready(&start, &plane.root).expect("the Codex chat starts");
+    assert_eq!(ready.harness, Some(purlis_core::harness::Harness::Codex));
+    let chat = Chat {
+        program: ready.program.clone(),
+        cwd: ready.cwd.clone(),
+        name: "1".to_owned(),
+        resume: ready.session.clone(),
+        profile: Some("cx".to_owned()),
+        persona: Some("ops".to_owned()),
+        ..Default::default()
+    };
+    let asking = held
+        .chats()
+        .start_ready(&chat, &ready, STARTING)
+        .expect("it runs");
+    assert!(attended(&held, asking), "a person started it");
+
+    // What Codex's payloads say of its permission mode, on every report the board takes.
+    for _ in 0..3 {
+        its_harness_reports(&held, asking, true);
+    }
+
+    assert!(
+        attended(&held, asking),
+        "a chat attended by its start is attended to dispatch"
+    );
+    assert!(
+        held.chats()
+            .attendance_of(asking)
+            .is_some_and(|fact| !fact.unattended()),
+        "the fact dispatch reads"
+    );
 }
 
 #[test]
@@ -3239,7 +3301,9 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::ProposeSkillSet(_) => 20,
             Ask::ReportDraft(_) => 21,
             Ask::ProposePin(_) => 22,
-            Ask::Chats(_) => 23,
+            Ask::Merge(_) => 23,
+            Ask::Chats(_) => 24,
+            Ask::Attendance(_) => 25,
         }
     }
     let asks = vec![
@@ -3390,16 +3454,31 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
                 skill: None,
             },
         })),
+        // A held merge (R-114): the person alone merges it, by the app's own forge call.
+        Ask::Merge(purlis_core::hookwire::MergeAsk {
+            chat,
+            request: purlis_core::mergehold::Request {
+                repo: None,
+                number: 12,
+            },
+            cwd: "/nowhere".to_owned(),
+        }),
         // The chats of the asking chat's workspace (#6235): names and states, never a write.
         Ask::Chats(purlis_core::hookwire::ChatsAsk {
             chat,
             history: true,
             limit: None,
         }),
+        // Whether the asking chat is attended (#6409): its fact, read, never moved.
+        Ask::Attendance(purlis_core::hookwire::AttendanceAsk {
+            chat,
+            unattended: false,
+            claude_code_mode: None,
+        }),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=23).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=25).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 
@@ -4012,6 +4091,29 @@ fn a_chat_without_sandbox_as(held: &Held, root: &Path, persona: Option<&str>, cw
     held.chats()
         .start_ready(&chat, &ready, STARTING)
         .expect("it runs")
+}
+
+/// **Chat `chat`'s harness reported**, on a report the board took, as the socket's listener
+/// hears it, whether its permission prompts are off: what moves the chat's attendance fact,
+/// which every dispatch reader reads (T1-22, #6413). It lowers the fact only on a harness whose
+/// mode purlis measures, and nothing raises it.
+fn its_harness_reports(held: &Held, chat: u32, prompts_off: bool) {
+    use purlis_core::hookwire::{Conversation, Report};
+    let conversation = held
+        .board()
+        .conversation(chat)
+        .map_or(Conversation::Unknown, Conversation::Named);
+    held.hooks().hear_as_the_socket_does(&Report {
+        chat,
+        event: purlis_core::state::Event::UserPromptSubmit,
+        conversation,
+        pid: Some(4000 + chat),
+        agent: None,
+        detail: purlis_core::state::Detail {
+            unattended: prompts_off,
+            ..purlis_core::state::Detail::default()
+        },
+    });
 }
 
 fn a_dispatch(chat: u32, ticket: &str, to: Option<&str>, name: &str) -> Ask {
@@ -5781,7 +5883,7 @@ fn a_chat_nobody_is_at_starts_no_chat_in_another_workspace_without_a_standing_gr
     let asking = a_chat_without_sandbox_as(&held, &plane.root, Some("steward"), &alpha);
     let before = held.chats().open_now().len();
     // Its harness reported its permission prompts off.
-    held.unattended().heard(asking, true);
+    its_harness_reports(&held, asking, true);
 
     let (said, told) = dispatch_in(
         &held,
@@ -5872,7 +5974,7 @@ fn a_crossing_of_a_chat_with_no_record_of_how_its_run_started_is_refused_as_unsa
     let held = planes.held(&id).expect("held");
     let alpha = held.root().join("workspaces").join("alpha");
     let asking = a_chat_without_sandbox_as(&held, &plane.root, Some("steward"), &alpha);
-    held.unattended().heard(asking, true);
+    its_harness_reports(&held, asking, true);
     // As though its start had compiled a sandbox, with no record of how its run started.
     held.chats().runs_as_recorded(
         asking,
@@ -5928,7 +6030,7 @@ fn a_chat_nobody_is_at_with_no_sandbox_is_told_so_before_a_limit() {
     assert_ne!(limit, unsandboxed);
 
     // Nobody at it: told it has no sandbox first.
-    held.unattended().heard(asking, true);
+    its_harness_reports(&held, asking, true);
     let (said, told) = dispatch(&held, &id, &tickets, asking, Some("devops"), "check it");
     assert_eq!(
         said,
@@ -6591,17 +6693,17 @@ fn a_dispatch_names_its_profile_among_the_project_s_and_no_other() {
 
 #[test]
 fn a_chat_nobody_is_at_is_refused_what_no_standing_grant_covers_and_nothing_is_held() {
-    let plane = a_plane_with_personas();
+    let plane = a_plane_with_a_profile_that_asks_nobody();
     let planes = planes_recording_events(&plane.root.join("events"));
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
     let asking = a_chat_without_sandbox_as(&held, &plane.root, Some("steward"), &plane.root);
     let before = held.chats().open_now().len();
     // Its harness reported its permission prompts off, on a report the board took.
-    held.unattended().heard(asking, false);
-    held.unattended().heard(asking, true);
+    its_harness_reports(&held, asking, false);
+    its_harness_reports(&held, asking, true);
     // A later report that says otherwise takes nothing back.
-    held.unattended().heard(asking, false);
+    its_harness_reports(&held, asking, false);
 
     let (said, told) = dispatch(
         &held,
@@ -6629,44 +6731,81 @@ fn a_chat_nobody_is_at_is_refused_what_no_standing_grant_covers_and_nothing_is_h
     // Its own persona needs no grant.
     let (own, _) = dispatch(&held, &id, &Tickets::default(), asking, None, "tidy up");
     assert!(matches!(own, Answer::Dispatched { .. }), "{own:?}");
-    // And a chat started again in its place is marked afresh.
+    // Its fact goes with it, and a chat started again in its place is judged by its own held
+    // fact (T1-22): a new chat from a person is attended, and one whose profile switches the
+    // prompts off starts unattended, before its harness says anything.
     let _ = held.close_chat(asking);
+    assert_eq!(held.chats().attendance_of(asking), None);
+    let again = a_chat_without_sandbox_as(&held, &plane.root, Some("steward"), &plane.root);
     assert_eq!(
-        held.unattended().mark(asking).attendance(),
+        attendance(&held, again),
         purlis_core::dispatchunattended::Attendance::Attended
+    );
+    let asks_nobody = a_chat_on_profile(&held, &plane.root, "yolo");
+    assert_eq!(
+        attendance(&held, asks_nobody),
+        purlis_core::dispatchunattended::Attendance::Unattended
     );
 }
 
 #[test]
 fn a_chat_started_with_its_prompts_off_is_unattended_before_its_harness_says_so() {
-    let plane = a_plane_with_personas();
+    let flags = [
+        ("skips", "--dangerously-skip-permissions"),
+        ("bypasses", "--permission-mode=bypassPermissions"),
+    ];
+    let plane = flags
+        .iter()
+        .fold(a_plane_with_personas(), |plane, (profile, flag)| {
+            plane.with_a_profile_whose_command_adds(profile, flag)
+        });
     let planes = planes();
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
-    let profiles = purlis_core::profiles::derive(&plane.root);
-    let asks = Chat {
-        program: "claude".to_owned(),
-        profile: Some("work".to_owned()),
-        ..Default::default()
-    };
+    // Started by a person on a profile that asks: attended, by the fact the app holds.
+    let asks = a_chat_on_profile(&held, &plane.root, "work");
     assert_eq!(
-        attendance(&held, 41, &asks, &profiles),
+        attendance(&held, asks),
         purlis_core::dispatchunattended::Attendance::Attended
     );
-    for flag in [
-        "--dangerously-skip-permissions",
-        "--permission-mode=bypassPermissions",
-    ] {
-        let bypassed = Chat {
-            args: vec![flag.to_owned()],
-            ..asks.clone()
-        };
+    // Started on a profile whose own words switch the prompts off: unattended from its start,
+    // before any hook of its harness has reported.
+    for (profile, flag) in flags {
+        let bypassed = a_chat_on_profile(&held, &plane.root, profile);
         assert_eq!(
-            attendance(&held, 41, &bypassed, &profiles),
+            attendance(&held, bypassed),
             purlis_core::dispatchunattended::Attendance::Unattended,
             "{flag}"
         );
     }
+}
+
+/// A chat a person starts through the app on `profile`, as [`a_chat_as`] starts one, running
+/// as no persona.
+fn a_chat_on_profile(held: &Held, root: &Path, profile: &str) -> u32 {
+    let start = purlis_core::start::Start {
+        profile: Some(profile.to_owned()),
+        name: "1".to_owned(),
+        cwd: Some(root.to_path_buf()),
+        made: if crate::sandboxing::claude_is_wrapped_here_for_tests() {
+            purlis_core::sandbox::Made::Window
+        } else {
+            purlis_core::sandbox::Made::default()
+        },
+        ..Default::default()
+    };
+    let ready = purlis_core::start::ready(&start, root).expect("the person's chat starts");
+    let chat = Chat {
+        program: ready.program.clone(),
+        cwd: ready.cwd.clone(),
+        name: "1".to_owned(),
+        resume: ready.session.clone(),
+        profile: Some(profile.to_owned()),
+        ..Default::default()
+    };
+    held.chats()
+        .start_ready(&chat, &ready, STARTING)
+        .expect("it runs")
 }
 
 /// [`a_plane_with_personas`], with an approved profile `yolo` that asks nobody and a
@@ -7985,7 +8124,7 @@ fn a_refusal_with_nobody_there_is_kept_with_the_workspace_its_task_would_have_wo
     let held = planes.held(&id).expect("held");
     std::fs::create_dir_all(held.root().join("workspaces").join("beta")).expect("beta");
     held.chats().recorded_as_confined(steward);
-    held.unattended().heard(steward, true);
+    its_harness_reports(&held, steward, true);
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("a clock")
@@ -8061,7 +8200,7 @@ fn a_handoff_with_nobody_there_crosses_into_another_workspace_only_under_a_named
     let held = planes.held(&id).expect("held");
     std::fs::create_dir_all(held.root().join("workspaces").join("beta")).expect("beta");
     held.chats().recorded_as_confined(steward);
-    held.unattended().heard(steward, true);
+    its_harness_reports(&held, steward, true);
     // Steward may dispatch to any persona, for the person on this machine.
     purlis_core::sandbox::local::grant_dispatch_any(held.root(), "steward").expect("any");
     let now = std::time::SystemTime::now()
@@ -8151,7 +8290,7 @@ fn a_confined_chat_nobody_is_at_is_refused_for_lack_of_a_grant_and_the_person_re
     let kept = || purlis_core::dispatchaway::list(held.root(), now());
     // The app started it inside a sandbox, and its harness reported its prompts off.
     held.chats().recorded_as_confined(steward);
-    held.unattended().heard(steward, true);
+    its_harness_reports(&held, steward, true);
     let before = held.chats().open_now().len();
     let missing = Missing {
         asking: Some("steward".to_owned()),
@@ -12412,6 +12551,9 @@ mod cant_report_asks;
 /// hook seam (#1457).
 mod needed_you_at_the_hook;
 
+/// No block is ever the source of an ask: Asks holds asks only (R-171, R-240, #6417).
+mod blocks_are_never_asks;
+
 /// **A task another chat dispatches starts where its asking chat runs** (#2003, D-2003-7): the
 /// window's answer to the dispatch (`task_dispatched`) starts it through the seam every chat
 /// starts through, so in a project whose chats run in the session host, the host runs it. Who
@@ -12736,9 +12878,9 @@ fn a_task_starts_in_its_asking_chat_s_mode_capped_at_auto() {
         (Reported::PromptsOff, Level::Classifier, "bypass"),
         (Reported::Asks, Level::Asks, "back-to-asking"),
     ] {
-        held.unattended().heard_mode(asking, Some(reported));
+        held.task_modes().heard_mode(asking, Some(reported));
         // A report that names no mode takes nothing back.
-        held.unattended().heard_mode(asking, None);
+        held.task_modes().heard_mode(asking, None);
         assert_eq!(task_level(name), level, "{name}");
     }
 }
@@ -12781,7 +12923,7 @@ fn a_task_s_level_is_heard_only_from_its_asking_chat_s_own_harness() {
         held.hooks().hear(&report);
         heard_mode(&held, &report);
     };
-    let level = || held.unattended().task_level(asking);
+    let level = || held.task_modes().task_level(asking);
     assert_eq!(level(), Level::Asks);
     // Its own harness speaks first, so the board knows its process.
     hears(Conversation::Named(own.clone()), None, Reported::Asks);
@@ -13292,6 +13434,92 @@ fn a_run_grant_held_on_the_window_s_plane_is_listed_there_and_the_window_is_told
             run.join().expect("it ends"),
             RunHeld::Refused { .. }
         ));
+    });
+}
+
+/// **R-327, a regression watch for the phase 1 gate** (Q199): a run grant raised in the asks
+/// registry is a Blocking ask the ✋ counts (`asking::counted`, ADR 0121 decision 3), one more
+/// than before it was raised, and none once it is answered. Chat 212's run-grant case, which
+/// was never reproduced, stays watched here.
+#[test]
+fn a_raised_run_grant_is_a_blocking_ask_the_core_counts() {
+    use crate::asking::AskSource;
+    use purlis_core::harness::asks::{Admitted, Answerer};
+    use purlis_core::secrets::ask::run::{Bound, Hosts, Offer, RunAnswer, RunHeld, RunNeed};
+    let plane = Plane::new();
+    let branch = a_workspace_branch_folder(&plane);
+    let host = Pretend::default();
+    let (planes, _told) = planes_telling_asks(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let blocking = |held: &Held| crate::asking::counted(held).asks;
+    let before = blocking(&held).len();
+    let need = RunNeed {
+        ahead: false,
+        fills: Vec::new(),
+        offer: Offer::Program,
+        not_its_vault: false,
+        bound: Bound {
+            chat: 212,
+            name: "curl".to_owned(),
+            program: PathBuf::from("/usr/bin/curl"),
+            vault: "sentry".to_owned(),
+            env: vec!["TOKEN=TOKEN".to_owned()],
+            file: Vec::new(),
+            cwd: branch,
+            args: vec!["https://example.com/".to_owned()],
+        },
+        persona: "steward".to_owned(),
+        hosts: Hosts::Every,
+        caution: None,
+        command: "curl https://example.com/".to_owned(),
+    };
+
+    std::thread::scope(|scope| {
+        let run = scope.spawn(|| {
+            held.secret_asks().allowed_or_held(
+                need,
+                std::time::Duration::from_secs(60),
+                &mut |_| held.chats().asks_may_have_moved(),
+            )
+        });
+        let open = loop {
+            if let Some(open) = held.secret_asks().open_runs().into_iter().next() {
+                break open;
+            }
+            assert!(!run.is_finished(), "the run ended without asking");
+            std::thread::yield_now();
+        };
+
+        let counted = blocking(&held);
+        assert_eq!(
+            counted.len(),
+            before + 1,
+            "one more Blocking ask: {counted:?}"
+        );
+        assert_eq!(
+            counted
+                .iter()
+                .filter(|ask| ask.source == AskSource::RunGrant)
+                .map(|ask| ask.session)
+                .collect::<Vec<_>>(),
+            [212],
+            "the one counted is chat 212's run grant"
+        );
+
+        let by = Answerer::admitted(Admitted::LocalUi).expect("the window");
+        held.secret_asks()
+            .answer_run(open.id, RunAnswer::Refuse, by)
+            .expect("answered");
+        assert!(matches!(
+            run.join().expect("it ends"),
+            RunHeld::Refused { .. }
+        ));
+        assert_eq!(
+            blocking(&held).len(),
+            before,
+            "answered, it is counted no more"
+        );
     });
 }
 
@@ -15583,4 +15811,88 @@ fn a_help_chat_restarted_is_held_from_clusters_as_at_its_first_start() {
     let _ = held.chats().close(again);
     let _ = held.chats().close(session);
     let _ = held.chats().close(ordinary);
+}
+
+// ----- the attendance fact A4 reads (T1-18, #6409; Q275) -----
+
+/// The hook's attendance ask of chat `chat`'s tool line, whose own payload says `unattended`.
+fn attendance_asked(held: &Held, plane: &PlaneId, chat: u32, unattended: bool) -> Answer {
+    answer(
+        held,
+        plane,
+        &Tickets::default(),
+        1,
+        Ask::Attendance(purlis_core::hookwire::AttendanceAsk {
+            chat,
+            unattended,
+            claude_code_mode: None,
+        }),
+        &nobody,
+    )
+}
+
+/// R-109: the hook asks the app whether its chat is attended, and the app answers by the fact it
+/// holds: attended only for a chat it holds an attended fact for, and never raised by the line.
+#[test]
+fn the_app_answers_the_attendance_ask_by_the_fact_it_holds() {
+    let plane = a_plane_with_personas();
+    let planes = planes();
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_as(&held, &plane.root, Some("steward"), &plane.root);
+    let attended = |answer: Answer| match answer {
+        Answer::Attended { attended } => attended,
+        other => panic!("an attendance answer, not {other:?}"),
+    };
+
+    assert!(attended(attendance_asked(&held, &id, asking, false)));
+    // The line's own bypass bit lowers the answer for that line, and moves nothing held.
+    assert!(!attended(attendance_asked(&held, &id, asking, true)));
+    assert!(attended(attendance_asked(&held, &id, asking, false)));
+    // A chat this app holds no fact for is never attended.
+    assert!(!attended(attendance_asked(&held, &id, asking + 100, false)));
+}
+
+/// R-107, Q271: a report the board takes from the chat's own harness, as the socket's listener
+/// hears it, lowers the fact A4 reads, and the record a relaunch reads keeps it.
+#[test]
+fn a_report_the_socket_hears_lowers_the_fact_and_the_record_keeps_it() {
+    use purlis_core::hookwire::{Conversation, Report};
+    let plane = a_plane_with_personas();
+    let planes = planes();
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_as(&held, &plane.root, Some("steward"), &plane.root);
+    let own = held
+        .board()
+        .conversation(asking)
+        .expect("the board holds the chat's conversation");
+    let unattended = || {
+        held.chats()
+            .attendance_of(asking)
+            .expect("a fact is held for it")
+            .unattended()
+    };
+    assert!(!unattended(), "a person's chat");
+
+    held.hooks().hear_as_the_socket_does(&Report {
+        chat: asking,
+        event: purlis_core::state::Event::UserPromptSubmit,
+        conversation: Conversation::Named(own),
+        pid: Some(4000 + asking),
+        agent: None,
+        detail: purlis_core::state::Detail {
+            unattended: true,
+            ..purlis_core::state::Detail::default()
+        },
+    });
+
+    assert!(unattended(), "its bypass bit lowered the fact");
+    let record = held.chats().record();
+    let kept = record
+        .chats
+        .iter()
+        .find(|chat| chat.number == Some(asking))
+        .expect("recorded");
+    assert!(kept.unattended, "{kept:?}");
 }
