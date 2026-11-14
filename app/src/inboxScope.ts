@@ -5,26 +5,27 @@ import { useSyncExternalStore } from "react";
 import { keepFacet, keptFacet, onProjectViews, type Facet } from "./projectViews";
 
 /**
- * **Which asks the Inbox lists** (qw359): every project's this window knows of (the default, ADR
- * 0121 decision 4), this project's, or those of the workspace in front on the strip. At the plane root the
- * workspace's are the asks of the chats filed in no workspace.
- *
- * Only what waits on the person is narrowed. A project's Notices and its updates are the
- * project's, and are listed whatever the scope.
+ * **The shared scopes** (qw359): the workspace in front on the strip, this project, or every
+ * project this window knows of. The Browsers grid and Updates' scope switch read them; Asks has
+ * its own, Chat, Workspace and Project (`asksScope.ts`), so its changes never move these. At the
+ * plane root the workspace's are what the chats filed in no workspace hold.
  */
 export type InboxScope = "all" | "project" | "workspace";
 
-/** The scopes, as the switch says them, narrowest first, as the Chats view's are (#1921). */
+/**
+ * The scopes, as the switch says them, narrowest first, in the words Chats and Asks use (ADR
+ * 0121, amended 2026-11-12, #6347): Workspace, Project, and the grid's own All.
+ */
 export const INBOX_SCOPES: readonly { scope: InboxScope; says: string; of: string }[] = [
-  { scope: "workspace", says: "This workspace", of: "this workspace" },
-  { scope: "project", says: "This project", of: "this project" },
-  { scope: "all", says: "All projects", of: "all projects" },
+  { scope: "workspace", says: "Workspace", of: "this workspace" },
+  { scope: "project", says: "Project", of: "this project" },
+  { scope: "all", says: "All", of: "all projects" },
 ];
 
 /**
- * **The scope Asks opens on where the person picked none**: every project's (ADR 0121 decision
- * 4), so an ask from another open project is listed without a press. A narrower pick narrows
- * the list and never the ✋, which counts every project's.
+ * **The scope kept under `inbox.scope` where the person picked none**: every project's, as it
+ * was when Asks read it too (ADR 0121 decision 4). Updates, which reads it now, offers no All,
+ * so it is drawn there as Project ({@link scopeDrawn}); a pick kept before reads back unchanged.
  */
 export const DEFAULT_INBOX_SCOPE: InboxScope = "all";
 

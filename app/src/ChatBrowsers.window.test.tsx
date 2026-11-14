@@ -954,7 +954,7 @@ describe("the Browsers grid (#2027)", () => {
     await userEvent.click(
       within(await screen.findByRole("radiogroup", { name: "Show the browsers of" })).getByRole(
         "radio",
-        { name: /All projects/ },
+        { name: /^All/ },
       ),
     );
 
@@ -998,7 +998,7 @@ describe("the Browsers grid (#2027)", () => {
     await findUnder("steward 1");
     await fromThePalette("Open browsers");
     const scopes = await screen.findByRole("radiogroup", { name: "Show the browsers of" });
-    await userEvent.click(within(scopes).getByRole("radio", { name: /All projects/ }));
+    await userEvent.click(within(scopes).getByRole("radio", { name: /^All/ }));
     // Its tabs are not back yet: a tab its tile opened now would be laid out over.
     expect(
       within(await grid()).queryByRole("option", { name: "Browser b1 of steward 5" }),
