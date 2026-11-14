@@ -49,6 +49,10 @@ const FACTS: MergeShown = {
   checks: "PASSED",
   read_at: READ_AT,
   ruleset: "none",
+  look: "not-viewed",
+  since_viewed: null,
+  pushed_here: true,
+  digest: "d-passed",
 };
 
 const hold: Shown = {
@@ -129,7 +133,15 @@ describe("a held merge on its chat's pane", () => {
     await userEvent.click(screen.getByRole("button", { name: "Merge" }));
     await vi.waitFor(() =>
       expect(sent("merge_held_request")).toEqual([
-        { plane: PLANE, session: SESSION, repo: "o/r", number: 12, head: HEAD, ruleset: "none" },
+        {
+          plane: PLANE,
+          session: SESSION,
+          repo: "o/r",
+          number: 12,
+          head: HEAD,
+          ruleset: "none",
+          digest: "d-passed",
+        },
       ]),
     );
   });
@@ -190,7 +202,15 @@ describe("a held merge on its chat's pane", () => {
     await userEvent.click(screen.getByRole("button", { name: "Merge" }));
     await vi.waitFor(() =>
       expect(sent("merge_held_request")).toEqual([
-        { plane: PLANE, session: SESSION, repo: "o/r", number: 12, head: HEAD, ruleset: "none" },
+        {
+          plane: PLANE,
+          session: SESSION,
+          repo: "o/r",
+          number: 12,
+          head: HEAD,
+          ruleset: "none",
+          digest: "d-passed",
+        },
       ]),
     );
   });

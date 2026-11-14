@@ -173,6 +173,7 @@ fn facts() -> purlis_core::mergehold::Facts {
             failed: Vec::new(),
         },
         ruleset: purlis_core::mergehold::Ruleset::None,
+        approved: false,
         read_at: 40,
     }
 }

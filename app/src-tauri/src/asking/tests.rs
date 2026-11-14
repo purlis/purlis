@@ -1621,6 +1621,7 @@ fn a_held_merge(session: u32) -> purlis_core::mergehold::Waits {
                 failed: Vec::new(),
             },
             ruleset: purlis_core::mergehold::Ruleset::Protects,
+            approved: false,
             read_at: 40,
         },
         since: 40,
@@ -1675,6 +1676,10 @@ fn a_held_merge_is_one_ask_in_asks_offering_merge_and_dont_merge() {
                 checks: "PASSED".to_owned(),
                 read_at: 40,
                 ruleset: RulesetShown::Protects,
+                look: LookShown::NotViewed,
+                since_viewed: None,
+                pushed_here: false,
+                digest: a_held_merge(3).facts.digest(),
             },
         }
     );
