@@ -71,7 +71,7 @@ export function finishWaysTo(
   const tell: number[] = [];
   let go: number | undefined;
   for (const turn of turns) {
-    if (turn.failed || !these.has(keyOf(turn))) continue;
+    if (turn.failed || !these.has(finishKey(turn))) continue;
     const ways = waysOut(turn.blocks);
     if (ways.includes("tell") && !tell.includes(turn.session)) tell.push(turn.session);
     if (ways.includes("go") && go === undefined) go = turn.session;
@@ -370,7 +370,7 @@ export function finishWaysOf(
   const seen = new Set<string>();
   const out: FinishedBlock[] = [];
   for (const turn of turns) {
-    if (turn.failed || !these.has(keyOf(turn))) continue;
+    if (turn.failed || !these.has(finishKey(turn))) continue;
     for (const block of turn.blocks) {
       const said = JSON.stringify([
         block.source,

@@ -115,6 +115,7 @@ const BLOCK: ChatLogRow = {
   target: null,
   harness: "claude",
   reason: null,
+  resolved: false,
 };
 
 /** The Blocked log: chat 7's block, with the number of the chat it was, open here. */
@@ -143,6 +144,7 @@ const TURN: FinishedTurn = {
   at: 1_790_000_100,
   failed: false,
   blocked: 1,
+  blocks: [],
 };
 
 /** A session record chat 7 wrote. */
