@@ -221,6 +221,11 @@ pub enum ActionId {
     UseSshInstead,
     /// A pin that no longer holds: show what the machine shows now, to trust again.
     CheckAndTrustAgain,
+    /// Connect: the pool's Docker context now names another route (ADR 0123 §7, #6268): a new
+    /// setup of Docker on another machine, with the context as it is now.
+    ConnectAgain,
+    /// Connect: the same, and the pool stays on its route, forgetting the context's name.
+    KeepPoolAsItIs,
 }
 
 /// The one thing to do on a step: its button, what the button does, and, where one exists, the
@@ -298,6 +303,11 @@ pub struct Step {
     /// `plain-tcp`, …).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cause: Option<&'static str>,
+    /// **What Set up Docker on another machine, or Connect again, opens Connect with** (#6268):
+    /// on Where, the window's `DOCKER_HOST` or current context; on Connect, the pool's context as
+    /// it is now.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prefill: Option<Prefill>,
     /// The choice purlis didn't recommend, for the person to take instead (story 4 of #4469).
     pub also: Option<Action>,
     /// Install's parts, each with its own button (#4493).
@@ -307,6 +317,14 @@ pub struct Step {
     /// The words for the person's cluster's admin, where doctor shows they can't install
     /// (#4496): Check the cluster's alone, and held free of secrets.
     pub admin: Option<String>,
+}
+
+/// **A machine to open Connect with** (#6268): a route, and the Docker context it was read from,
+/// where it was read from one (Connect then picks that context, its TLS files with it).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Prefill {
+    pub route: String,
+    pub context: Option<String>,
 }
 
 /// The whole answer.
@@ -449,6 +467,10 @@ pub struct Facts {
     pub engine: Engine,
     /// Connect's facts, for a pool on another machine (#6266): `None` for this machine's.
     pub connect: Option<connecting::Connecting>,
+    /// **Where this machine's Docker points elsewhere** (#6268): the SSH or TLS address its
+    /// `DOCKER_HOST` or current context names, for Set up Docker on another machine to open
+    /// Connect with.
+    pub elsewhere: Option<Prefill>,
     pub pool: Option<PoolFacts>,
     pub identity: Identity,
     /// Whether the project's clones have a remote on a forge: with none, gh and git push have
@@ -502,6 +524,9 @@ pub struct Chosen {
     /// kept as soon as they are named, and the CA pin once the person trusted it.
     pub tls: Option<crate::tlsroute::Files>,
     pub trusted_tls: Option<crate::tlsroute::Pin>,
+    /// **The Docker context the route was read from** (#6268), where the person picked one: its
+    /// name alone, for doctor to compare the context with later. Never followed.
+    pub docker_context: Option<String>,
 }
 
 impl Chosen {
@@ -1117,8 +1142,22 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
             skippable: id.skippable(),
             see: see_of(kind, id, facts, choices),
             checks: Vec::new(),
-            other: if says {
+            other: if !says {
+                None
+            } else if cause == Some(connecting::CONTEXT_MOVED) {
+                connecting::keep_as_it_is()
+            } else {
                 other_of(kind, id, facts)
+            },
+            prefill: if !says {
+                None
+            } else if cause == Some(connecting::CONTEXT_MOVED) {
+                facts.connect.as_ref().and_then(connecting::followed)
+            } else if id == StepId::Where
+                && kind == Kind::Docker
+                && facts.engine == Engine::Elsewhere
+            {
+                facts.elsewhere.clone()
             } else {
                 None
             },
@@ -1476,6 +1515,25 @@ pub fn read_pressed(
             connecting::Connecting::default(),
         ),
     };
+    // Doctor's check of the Docker context a pool's route was read from (ADR 0123 §7, #6268):
+    // read fresh, and only for such a pool.
+    if let (Some(kept), Some(docker)) = (&kept, here.docker)
+        && let Some(name) = kept.docker_context()
+        && let Some(route) = connect.route.clone()
+    {
+        connect.docker_context = Some(name.to_owned());
+        connect.context_now = crate::dockercontext::moved(
+            &crate::dockercontext::contexts_here(docker.program()),
+            name,
+            &route,
+        );
+    }
+    if kept.is_none() {
+        connect.docker_context = choices
+            .connect
+            .as_ref()
+            .and_then(|chosen| chosen.docker_context.clone());
+    }
     match pressed {
         // Met again by Check and trust again (#6270): what it shows now stands in place of the
         // change that was found, for the person to check.
@@ -1522,8 +1580,23 @@ pub fn read_pressed(
     } else {
         contexts
     };
+    // Where this machine's Docker points elsewhere, the address it points at (#6268).
+    let elsewhere = match (engine, here.docker) {
+        (Engine::Elsewhere, Some(docker)) if kind == Kind::Docker => {
+            let host = crate::envvar::var("DOCKER_HOST").filter(|host| !host.trim().is_empty());
+            // Docker follows no context where DOCKER_HOST is set, so none is read.
+            let contexts = if host.is_some() {
+                Vec::new()
+            } else {
+                crate::dockercontext::contexts_here(docker.program())
+            };
+            prefill_of(host.as_deref(), &contexts)
+        }
+        _ => None,
+    };
     let facts = Facts {
         engine,
+        elsewhere,
         connect: remote.then_some(connect),
         pool,
         identity: identity_in(here.plane, &hosts),
@@ -1873,6 +1946,11 @@ pub fn read_choices(config: &Path) -> Result<Choices, Refused> {
 /// The `connect` kept, read: a route as it was given, its key file where one is, and a whole
 /// pin where there is one.
 fn chosen_from(held: HeldConnect) -> Option<Chosen> {
+    let docker_context = match held.docker_context {
+        None => None,
+        Some(name) if crate::dockercontext::a_name(&name) => Some(name),
+        Some(_) => return None,
+    };
     if crate::tlsroute::is_tcp(&held.route) {
         // An SSH key file is no part of a route over TLS (#6267).
         if held.identity.is_some() {
@@ -1904,6 +1982,7 @@ fn chosen_from(held: HeldConnect) -> Option<Chosen> {
             trusted: None,
             tls,
             trusted_tls,
+            docker_context,
         });
     }
     if held.tls.is_some() {
@@ -1935,6 +2014,7 @@ fn chosen_from(held: HeldConnect) -> Option<Chosen> {
         trusted,
         tls: None,
         trusted_tls: None,
+        docker_context,
     })
 }
 
@@ -1951,6 +2031,13 @@ struct HeldConnect {
     /// A pin, as a pool's `pin` in `runners.json` ([`crate::sshroute::Pin::to_json`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     trusted: Option<serde_json::Value>,
+    /// The Docker context the route was read from (#6268).
+    #[serde(
+        rename = "dockerContext",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    docker_context: Option<String>,
 }
 
 /// The file's form. Its fields are spelled out and not flattened from [`Choices`]: flattening
@@ -2008,6 +2095,7 @@ fn write_choices(config: &Path, choices: Choices) -> Result<(), Refused> {
                 })),
                 (None, None) => None,
             },
+            docker_context: chosen.docker_context,
         }),
     };
     let text = serde_json::to_string_pretty(&held)
@@ -2067,6 +2155,7 @@ pub fn choose_machine(
         trusted: None,
         tls: tls.filter(|_| crate::tlsroute::is_tcp(route)),
         trusted_tls: None,
+        docker_context: None,
     });
     write_choices(config, choices)
 }
@@ -2090,6 +2179,10 @@ pub fn choose_tls_files(
             "TLS files are named only for a machine reached at a tcp:// address".to_owned(),
         ));
     }
+    // Files of the person's own are no longer the context's (#6268).
+    if chosen.tls != files {
+        chosen.docker_context = None;
+    }
     chosen.tls = files;
     chosen.trusted_tls = None;
     write_choices(config, choices)
@@ -2111,12 +2204,15 @@ pub fn trusted(config: &Path, remote: &crate::runners::Remote) -> Result<(), Ref
     let _locked = runners::lock(config);
     let mut choices = read_choices(config)?;
     choices.kind = Some(Kind::RemoteDocker);
+    let route = remote.route.spelled();
+    let docker_context = context_kept(choices.connect.as_ref(), &route);
     choices.connect = Some(Chosen {
-        route: remote.route.spelled(),
+        route,
         identity: remote.route.identity().map(Path::to_path_buf),
         trusted: Some(remote.pin.clone()),
         tls: None,
         trusted_tls: None,
+        docker_context,
     });
     write_choices(config, choices)
 }
@@ -2124,17 +2220,107 @@ pub fn trusted(config: &Path, remote: &crate::runners::Remote) -> Result<(), Ref
 /// **Keeps what the person trusted on Connect over Docker's TLS API** (#6267): the route, its
 /// files and the CA pin the Pool step's pool is made with.
 pub fn trusted_tls(config: &Path, remote: &crate::tlsroute::Remote) -> Result<(), Refused> {
+    trusted_tls_read_from(config, remote, &remote.files)
+}
+
+/// [`trusted_tls`], for a remote whose files are purlis's own copies of `read_from`, the files
+/// Connect kept (#6268): the Docker context they were read from stays kept with them.
+pub fn trusted_tls_read_from(
+    config: &Path,
+    remote: &crate::tlsroute::Remote,
+    read_from: &crate::tlsroute::Files,
+) -> Result<(), Refused> {
     let _locked = runners::lock(config);
     let mut choices = read_choices(config)?;
     choices.kind = Some(Kind::RemoteDocker);
+    let route = remote.route.spelled();
+    let docker_context = context_kept(choices.connect.as_ref(), &route).filter(|_| {
+        choices
+            .connect
+            .as_ref()
+            .and_then(|chosen| chosen.tls.as_ref())
+            == Some(read_from)
+    });
     choices.connect = Some(Chosen {
-        route: remote.route.spelled(),
+        route,
         identity: None,
         trusted: None,
         tls: Some(remote.files.clone()),
         trusted_tls: Some(remote.pin.clone()),
+        docker_context,
     });
     write_choices(config, choices)
+}
+
+/// **The Docker context kept with what Connect chose** (#6268), where what is trusted now is
+/// still the route read from it.
+fn context_kept(chosen: Option<&Chosen>, route: &str) -> Option<String> {
+    let chosen = chosen?;
+    crate::dockercontext::same_route(&chosen.route, route)
+        .then(|| chosen.docker_context.clone())
+        .flatten()
+}
+
+/// **Keeps the Docker context picked on Connect** (#6268, ADR 0123 §2): read once into the SSH
+/// or TLS route its endpoint names, with its TLS material's paths, and its name beside them. One
+/// on this machine's own socket is the local kind, chosen as such; one purlis doesn't use is
+/// refused in its own words and keeps nothing.
+pub fn choose_docker_context(
+    config: &Path,
+    context: &crate::dockercontext::DockerContext,
+) -> Result<(), Refused> {
+    use crate::dockercontext::Endpoint;
+    let (route, tls) = match &context.endpoint {
+        Endpoint::Here => return choose_kind(config, Kind::Docker),
+        Endpoint::Refused(why) => return Err(Refused::Other(why.clone())),
+        Endpoint::Ssh(route) => (route.spelled(), None),
+        Endpoint::Tls { route, files } => (route.spelled(), Some(files.clone())),
+    };
+    let _locked = runners::lock(config);
+    let mut choices = read_choices(config)?;
+    choices.kind = Some(Kind::RemoteDocker);
+    choices.connect = Some(Chosen {
+        route,
+        identity: None,
+        trusted: None,
+        tls,
+        trusted_tls: None,
+        docker_context: Some(context.name.clone()),
+    });
+    write_choices(config, choices)
+}
+
+/// **What Set up Docker on another machine opens Connect with** (#6268, ADR 0123 §6): the
+/// window's `DOCKER_HOST` where it is an `ssh://` or `tcp://` address, else the current context's
+/// route where that is one purlis uses.
+#[must_use]
+pub fn prefill_of(
+    docker_host: Option<&str>,
+    contexts: &[crate::dockercontext::DockerContext],
+) -> Option<Prefill> {
+    if let Some(host) = docker_host.map(str::trim).filter(|host| !host.is_empty()) {
+        // Docker follows no context where DOCKER_HOST is set, so neither does the prefill.
+        let route = if crate::tlsroute::is_tcp(host) {
+            crate::tlsroute::Route::parse(host)
+                .ok()
+                .map(|route| route.spelled())
+        } else if host.starts_with("ssh://") {
+            crate::sshroute::Route::parse(host)
+                .ok()
+                .map(|route| route.spelled())
+        } else {
+            None
+        };
+        return route.map(|route| Prefill {
+            route,
+            context: None,
+        });
+    }
+    let current = contexts.iter().find(|one| one.current)?;
+    Some(Prefill {
+        route: current.endpoint.route()?,
+        context: Some(current.name.clone()),
+    })
 }
 
 /// **Keeps that the person chose their team's cluster on Where, through kubeconfig context

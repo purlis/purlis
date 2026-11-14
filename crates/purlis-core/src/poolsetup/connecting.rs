@@ -34,6 +34,10 @@ pub struct Connecting {
     pub tls: Option<crate::tlsroute::Files>,
     pub met_ca: Option<CaMet>,
     pub trusted_tls: Option<crate::tlsroute::Pin>,
+    /// **The Docker context the route was read from** (#6268), and the route it names now, read
+    /// fresh, where that is another one (ADR 0123 §7).
+    pub docker_context: Option<String>,
+    pub context_now: Option<String>,
 }
 
 /// **The CA a press of Connect to read** for a machine over TLS (#6267), the machine's own
@@ -134,6 +138,8 @@ pub struct Machine {
     pub trusted_ca: Option<String>,
     /// The fingerprint the CA file holds now, where that isn't the one trusted.
     pub ca_now: Option<String>,
+    /// The Docker context the route was read from (#6268).
+    pub context: Option<String>,
 }
 
 /// The machine's name in a sentence: the host of the route, or "the machine".
@@ -160,6 +166,7 @@ pub(super) fn reading(connect: &Connecting) -> (Reading, Machine, Option<&'stati
         trusted: connect.trusted.as_ref().map(|pin| (&pin.host_key).into()),
         engine: connect.trusted.as_ref().map(|pin| pin.engine.shown()),
         over: "ssh",
+        context: connect.docker_context.clone(),
         ..Machine::default()
     };
     if let Some(finding) = &connect.finding {
@@ -176,6 +183,9 @@ pub(super) fn reading(connect: &Connecting) -> (Reading, Machine, Option<&'stati
     // Met again, to be trusted again (#6270): the key it shows now, beside the one trusted.
     if let (Some(pin), Some(met)) = (&connect.trusted, &connect.met) {
         return met_again(machine, &host, pin, met);
+    }
+    if let Some(moved) = moved_reading(connect) {
+        return (moved, machine, Some(CONTEXT_MOVED));
     }
     if let Some(pin) = &connect.trusted {
         return (
@@ -299,6 +309,7 @@ fn reading_tls(connect: &Connecting) -> (Reading, Machine, Option<&'static str>)
         tls: connect.tls.as_ref().map(TlsShown::from),
         trusted_ca: connect.trusted_tls.as_ref().map(|pin| pin.ca.shown()),
         engine: connect.trusted_tls.as_ref().map(|pin| pin.engine.clone()),
+        context: connect.docker_context.clone(),
         ..Machine::default()
     };
     if let Some(finding) = &connect.finding {
@@ -352,6 +363,9 @@ fn reading_tls(connect: &Connecting) -> (Reading, Machine, Option<&'static str>)
     if let (Some(pin), Some(met)) = (&connect.trusted_tls, &connect.met_ca) {
         return met_again_tls(machine, &host, pin, met);
     }
+    if let Some(moved) = moved_reading(connect) {
+        return (moved, machine, Some(CONTEXT_MOVED));
+    }
     if let Some(pin) = &connect.trusted_tls {
         return (
             Reading::done(format!("{host}, CA {}", pin.ca.shown())),
@@ -402,6 +416,58 @@ fn reading_tls(connect: &Connecting) -> (Reading, Machine, Option<&'static str>)
         machine,
         None,
     )
+}
+
+/// **The cause of doctor's check of a Docker context** (ADR 0123 §7, #6268): the context the
+/// pool's route was read from now names another route.
+pub const CONTEXT_MOVED: &str = "context-moved";
+
+/// **Doctor's check of the pool's Docker context** (ADR 0123 §7): where it now names another
+/// route, said in the record's words, with Connect again as the way on. The pool runs where it
+/// did: nothing it runs on follows the context.
+fn moved_reading(connect: &Connecting) -> Option<Reading> {
+    let (name, _now) = (
+        connect.docker_context.as_ref()?,
+        connect.context_now.as_ref()?,
+    );
+    Some(Reading::attention(
+        format!(
+            "Your context {name} now points somewhere else than this pool. Connect again to \
+             follow it, or keep the pool as it is."
+        ),
+        Some(Action {
+            id: ActionId::ConnectAgain,
+            label: "Connect again".to_owned(),
+            does: format!(
+                "Starts setting up a pool on the machine {name} names now. This pool keeps \
+                 running where it does until you remove it."
+            ),
+            command: None,
+            url: None,
+        }),
+    ))
+}
+
+/// **Keep the pool as it is**, beside Connect again: the pool stays on its route, and forgets
+/// the context's name, so doctor stops comparing them.
+pub(super) fn keep_as_it_is() -> Option<Action> {
+    Some(Action {
+        id: ActionId::KeepPoolAsItIs,
+        label: "Keep the pool as it is".to_owned(),
+        does: "The pool stays on the machine it runs on now, and purlis stops comparing it with \
+               the context."
+            .to_owned(),
+        command: None,
+        url: None,
+    })
+}
+
+/// What Connect again opens Connect with: the context as it is now.
+pub(super) fn followed(connect: &Connecting) -> Option<super::Prefill> {
+    Some(super::Prefill {
+        route: connect.context_now.clone()?,
+        context: Some(connect.docker_context.clone()?),
+    })
 }
 
 /// **A made pool's machine, met again by Check and trust again** (#6270, ADR 0123 §3): the key it
@@ -840,8 +906,13 @@ pub fn trust_chosen(
         let Some(files) = &chosen.tls else {
             return Ok(Err(Finding::Here(crate::sshroute::PLAIN_TCP.to_owned())));
         };
-        return match trust_tls(docker, &chosen.route, files, fingerprint, config) {
-            Ok(remote) => super::trusted_tls(config, &remote).map(Ok),
+        let trusted = if chosen.docker_context.is_some() {
+            trust_tls_read_once(docker, &chosen.route, files, fingerprint, config)
+        } else {
+            trust_tls(docker, &chosen.route, files, fingerprint, config)
+        };
+        return match trusted {
+            Ok(remote) => super::trusted_tls_read_from(config, &remote, files).map(Ok),
             Err(finding) => Ok(Err(finding)),
         };
     }
@@ -991,6 +1062,23 @@ pub fn trust_tls(
         fingerprint,
         &crate::tlsroute::folders_chats_write(config),
     )
+}
+
+/// **[`trust_tls`] for the files a Docker context names** (#6268, the 2026-11-14 amendment of
+/// ADR 0123): they are Docker's, which `docker context update` rewrites and `docker context rm`
+/// deletes, so they are copied once into purlis's own store
+/// ([`crate::dockercontext::keep_tls`]) and the copies are what is checked and trusted. The
+/// remote names the copies.
+pub fn trust_tls_read_once(
+    docker: &crate::dockerpool::Docker,
+    route: &str,
+    files: &crate::tlsroute::Files,
+    fingerprint: &str,
+    config: &std::path::Path,
+) -> Result<crate::tlsroute::Remote, Finding> {
+    let host = crate::tlsroute::Route::parse(route).map_err(Finding::Here)?;
+    let copies = crate::dockercontext::keep_tls(config, files, host.host())?;
+    trust_tls(docker, route, &copies, fingerprint, config)
 }
 
 /// [`trust_tls`], with `chats_write` the folders chats write

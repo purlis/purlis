@@ -35,7 +35,10 @@ pub enum PoolCommand {
     /// shows the key the machine presents, and makes the pool only once you give its fingerprint
     /// with `--trust`. With `--on tcp://…`, it is reached over Docker's TLS API with the CA,
     /// client certificate and key you name: purlis shows the CA's fingerprint, and makes the pool
-    /// only once you give it with `--trust`. Plain tcp:// without them is refused.
+    /// only once you give it with `--trust`. Plain tcp:// without them is refused. With
+    /// `--context NAME`, the machine is the one your Docker context names, read once into one of
+    /// those two.
+    #[command(group(clap::ArgGroup::new("machine").args(["on", "context"])))]
     Add {
         /// The pool's name: lower-case letters, digits and dashes.
         name: String,
@@ -65,12 +68,17 @@ pub enum PoolCommand {
         width: Option<u32>,
         /// The machine its Docker is on: ssh://[user@]host[:port][/socket], or
         /// tcp://host[:port] with --tls-ca, --tls-cert and a key. Plain tcp:// is refused.
-        #[arg(long, value_name = "ROUTE")]
+        #[arg(long, value_name = "ROUTE", conflicts_with = "context")]
         on: Option<String>,
+        /// The machine its Docker is on, as your Docker context NAME names it (`docker context
+        /// ls`): read once, into its ssh:// or tcp:// address and its TLS files. The pool keeps
+        /// those, and never follows the context.
+        #[arg(long, value_name = "NAME", conflicts_with_all = ["identity", "tls_ca"])]
+        context: Option<String>,
         /// The fingerprint of that machine's host key, as you checked it there
         /// (SHA256:…, from `ssh-keygen -lf`), or over TLS of its CA (sha256:…, or as
         /// `openssl x509 -noout -fingerprint -sha256` prints it).
-        #[arg(long, value_name = "FINGERPRINT", requires = "on")]
+        #[arg(long, value_name = "FINGERPRINT", requires = "machine")]
         trust: Option<String>,
         /// The key file ssh signs in to that machine with, as a Podman connection names it
         /// (`podman system connection list`). Without it, your SSH agent and settings.
@@ -217,6 +225,7 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
             frames,
             width,
             on,
+            context,
             trust,
             identity,
             tls,
@@ -236,6 +245,11 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
                 trust: trust.clone(),
                 identity: identity.clone(),
                 tls,
+                docker_context: None,
+            };
+            let asked = match context {
+                None => asked,
+                Some(name) => with_docker_context(asked, name)?,
             };
             added(&config()?, &asked)
         }
@@ -477,6 +491,23 @@ fn taken_off(_config: &std::path::Path, pool: &str, name: &str) -> Result<Option
 }
 
 /// **Adds the pool `asked` asks for**, as Pool setup's button does.
+/// **`asked`, on the machine your Docker context `name` names** (#6268): read once, as this
+/// machine's `docker` lists and describes it.
+fn with_docker_context(asked: Asked, name: &str) -> Result<Asked, String> {
+    let docker = poolsetup::docker_here()
+        .ok_or_else(|| "purlis found no docker on this machine.".to_owned())?;
+    let contexts = purlis_core::dockercontext::contexts_here(docker.program());
+    let Some(context) = contexts.iter().find(|one| one.name == name) else {
+        return Err(format!(
+            "Your Docker has no context named {}. docker context ls lists the ones it has.",
+            purlis_core::shown::short(name)
+        ));
+    };
+    asked
+        .reading_docker_context(context)
+        .map_err(|why| why.to_string())
+}
+
 fn added(config: &std::path::Path, asked: &Asked) -> Result<u8, String> {
     let docker = poolsetup::docker_here()
         .ok_or_else(|| "purlis found no docker on this machine.".to_owned())?;
