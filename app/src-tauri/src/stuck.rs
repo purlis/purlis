@@ -14,8 +14,9 @@
 //! - **Activity** ([`heard`], [`ran`]): a tool beginning or coming back, a turn's output, a
 //!   command that ran and whether it failed, as its hooks said. Never its terminal's bytes.
 //! - **"It's fine"** ([`stuck_fine`]): clears Stuck? until the chat changes state.
-//! - **A mode purlis didn't set** ([`mode_heard`], T1-44): what a Claude Code chat's attendance
-//!   fact heard from its armed hook, a standing fault its pane says (R-243).
+//! - **A mode purlis didn't set** ([`attendance_heard`], T1-44): what the one attendance fact
+//!   the app holds for a Claude Code chat heard from its armed hook, a standing fault its pane
+//!   says (R-243).
 //!
 //! **No notification is sent from here** (#6005 decides that). In memory only.
 
@@ -318,13 +319,22 @@ pub fn heard(held: &Held, chat: u32) {
     held.noticed().heard(chat);
 }
 
-/// **A hook report of chat `report.chat`, after the board took it** (T1-44): heard by its
-/// attendance fact, and the window told the mode purlis didn't set that it reported, where one
-/// flipped the fact (R-243). Only Claude Code's armed hook is read for its mode, so every other
-/// harness's chat is told none.
-pub fn mode_heard(held: &Held, report: &purlis_core::hookwire::Report) {
-    if let Some(differs) = held.chats().heard_attendance(report) {
-        held.noticed().mode_differs(report.chat, differs);
+/// **A hook report of chat `report.chat`, after the board took it, heard by its attendance
+/// fact** (T1-18, T1-44): the one fact `chats` holds for the chat, which A4 reads
+/// ([`crate::chats::Chats::heard_attendance`]), and `noticed` told the mode purlis didn't set
+/// that it reported, read from that same fact (R-243). Only Claude Code's armed hook is read
+/// for its mode, so every other harness's chat is told none.
+pub fn attendance_heard(
+    chats: &crate::chats::Chats,
+    noticed: &Noticed,
+    report: &purlis_core::hookwire::Report,
+) {
+    chats.heard_attendance(report);
+    if let Some(differs) = chats
+        .attendance_of(report.chat)
+        .and_then(purlis_core::attendance::Fact::mode_differs)
+    {
+        noticed.mode_differs(report.chat, differs);
     }
 }
 

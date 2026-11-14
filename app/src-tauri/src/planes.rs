@@ -3670,15 +3670,14 @@ impl Planes {
                     held.unattended()
                         .heard(report.chat, report.detail.unattended);
                     // And its attendance fact, which A4 reads (T1-18): the same report, from the
-                    // live listener alone, never a line a spool drain hands the event log.
-                    held.chats().heard_attendance(report);
+                    // live listener alone, never a line a spool drain hands the event log. A mode
+                    // purlis didn't set that it names is a standing fault its pane says (R-243,
+                    // T1-44).
+                    crate::stuck::attendance_heard(held.chats(), held.noticed(), report);
                     // And the mode its own harness runs in, which a task it dispatches starts
                     // from (#3787): the same report, its own harness's alone, and never a line
                     // the chat sends.
                     crate::handoff::heard_mode(&held, report);
-                    // And by its attendance fact: a mode purlis didn't set is a standing fault
-                    // its pane says (R-243, T1-44).
-                    crate::stuck::mode_heard(&held, report);
                     // The model its own harness says the chat runs on, for a commit's
                     // `Assisted-by` (#1021): judged against the conversation the board holds
                     // for the chat now, so a nested harness's report names none.

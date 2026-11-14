@@ -532,11 +532,6 @@ struct Running {
     /// attributes its run began with: what a block its hook line reports is worth toward the
     /// block loop (R-209).
     reports_verified: bool,
-    /// **Whether it is attended, as purlis sets it** (T1-17, T1-44): set at its start from how
-    /// it was made and the words that set its mode, moved by its hook reports
-    /// ([`Chats::heard_attendance`]). Read here only for the mode it reported that purlis
-    /// didn't set (R-243); its attendance's readers move to it later (#6409).
-    attendance: purlis_core::attendance::Fact,
 }
 
 /// **Whether the plane's skills reach a chat starting now** (#3445, #3466): a chat
@@ -6114,7 +6109,6 @@ impl Chats {
                 reports_verified: purlis_core::eventlog::stops::reported_from_outside_its_reach(
                     &attributes,
                 ),
-                attendance,
             },
         );
         drop(open);
@@ -6954,19 +6948,6 @@ impl Chats {
         self.ending.load(Ordering::SeqCst)
     }
 
-    /// **A hook report of chat `report.chat`, after the board took it, heard by the chat's
-    /// attendance fact** (T1-44): the mode purlis didn't set that it reported, once one flipped
-    /// the fact (R-243). `None` for a chat not open here, and on every harness but Claude Code.
-    pub fn heard_attendance(
-        &self,
-        report: &purlis_core::hookwire::Report,
-    ) -> Option<purlis_core::attendance::ModeDiffers> {
-        let mut open = lock(&self.open);
-        let running = open.get_mut(&report.chat)?;
-        running.attendance.heard(report);
-        running.attendance.mode_differs()
-    }
-
     /// Chat `session`'s own record, as the app keeps it while it is open: what a handoff from it
     /// reads its grants from (#1362), never the request.
     pub fn recorded_chat(&self, session: u32) -> Option<Chat> {
@@ -7325,12 +7306,16 @@ impl Chats {
             Begun::Person
         };
         let mut facts = lock(&self.attendance);
-        let held_unattended = facts.get(&session).is_some_and(|fact| fact.unattended());
-        let prior = Fact::kept(if held_unattended || chat.unattended {
-            Attendance::Unattended
-        } else {
-            Attendance::Attended
-        });
+        // The fact held here, whole, so the mode that differed comes with it (R-243); the
+        // record's word alone where it says less attended than what is held, or nothing is held.
+        let prior = match facts.get(&session) {
+            Some(held) if held.unattended() || !chat.unattended => *held,
+            _ => Fact::kept(if chat.unattended {
+                Attendance::Unattended
+            } else {
+                Attendance::Attended
+            }),
+        };
         facts.insert(session, Fact::resumed(prior, begun, harness, started_in));
     }
 

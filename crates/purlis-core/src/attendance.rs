@@ -45,7 +45,9 @@
 //! **Who reads it**: A4, the release floor ([`crate::toolgate`]), which the hook asks of a line
 //! it would refuse unattended, with what that line's own report says ([`Fact::hearing`]).
 //! Dispatch (#6410), the briefing (#6411) and the commit gate (#6412) read it through their seams
-//! until T1-22 (#6413).
+//! until T1-22 (#6413). The window reads [`Fact::mode_differs`] from the same fact (T1-44,
+//! #6435): the mode purlis didn't set that the chat reported, a standing fault its pane says in a
+//! Notice and never in Asks (R-243). A resume carries it with the fact ([`Fact::resumed`]).
 
 use crate::dispatchunattended::Attendance;
 use crate::harness::Harness;
@@ -240,6 +242,7 @@ impl Fact {
             attendance,
             set: None,
             reported: None,
+            differed: None,
         }
     }
 
