@@ -698,6 +698,7 @@ fn key_at(was: &MergeKey, at: &purlis_core::forge::pr::HeadAt) -> Result<MergeKe
 /// and the ask shows the facts `digest` is of (T1-41). The ask is answered at the press, so a
 /// second press merges nothing; where the forge refuses, it waits again and the refusal is
 /// said.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 #[specta::specta]
 pub async fn merge_held_request(

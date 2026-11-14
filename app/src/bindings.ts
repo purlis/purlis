@@ -967,9 +967,11 @@ export const commands = {
 	rereadHeldMerge: (plane: PlaneId, session: number, repo: string, number: number, head: string) => typedError<MergeReread, string>(__TAURI_INVOKE("reread_held_merge", { plane, session, repo, number, head })),
 	/**
 	 *  **View changes**, pressed on chat `session`'s merge ask (R-302): the changes of request
-	 *  `number` of `repo` at `head`, read in the clone the merge ran in, and its head marked viewed
-	 *  (R-122), only while the forge, read now with the app's own login, says the request is at
-	 *  `head`. A head that moved is viewed by nobody, and its row is asked again at the new head.
+	 *  `number` of `repo` at `head` into its base, **read from the forge with the app's own login**
+	 *  (Q277), never from a clone a chat can write. Its head is marked viewed (R-122) only where
+	 *  the whole diff was shown, while the forge, read now, says the request is at `head` and its
+	 *  base. A head or base that moved is viewed by nobody, and its row is asked again where it is.
+	 *  A forge that can't give the diff refuses in a sentence, and marks nothing (#6432).
 	 */
 	viewHeldMerge: (plane: PlaneId, session: number, repo: string, number: number, head: string) => typedError<string, string>(__TAURI_INVOKE("view_held_merge", { plane, session, repo, number, head })),
 	/**

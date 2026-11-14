@@ -1,0 +1,21 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest, pulls/reviews: List reviews for a pull request (per_page at most 100; user.type is User, Bot or Organization)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "repos/acme/api/pulls/12/reviews?per_page=100&page=1"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "[{\"id\": 80, \"user\": {\"login\": \"ana\", \"type\": \"User\"}, \"state\": \"APPROVED\", \"commit_id\": \"6dcb09b5b57875f334f61aebed695e2e4193db5e\", \"body\": \"Looks right.\"}]",
+        "err": ""
+      }
+    }
+  ]
+}

@@ -53,7 +53,7 @@ mod scene;
 use scene::{MERGE, SAVE, SHA, Scene};
 
 /// Every case, by the seam method it covers. The parity test compares this with the traits.
-const CASES: [&str; 36] = [
+const CASES: [&str; 39] = [
     "owned",
     "about",
     "reachable",
@@ -64,6 +64,9 @@ const CASES: [&str; 36] = [
     "body",
     "head",
     "ruleset_protects",
+    "reviews",
+    "changes",
+    "commits_between",
     "set_body",
     "by_head",
     "request_auto_merge",
@@ -509,6 +512,97 @@ mod cases {
                 .ruleset_protects(&over.caller, &scene.path("api"), "main"),
             Ok(true)
         );
+        spent(&over);
+    }
+
+    /// GitHub lists a request's reviews with who wrote each, what kind of account, its state and
+    /// the commit it reviewed; GitLab's are not read yet (T1-41), so it says so and asks nothing.
+    pub fn reviews(kind: &str, how: How) {
+        use purlis_core::forge::pr::{Review, ReviewState, Reviewer};
+        let Some(over) = over(kind, "reviews", how) else {
+            return;
+        };
+        let scene = &over.scene;
+        let path = scene.path("api");
+        let read = over.backend.reviews(&over.caller, &path, &open(scene));
+        if kind == "gitlab" {
+            let why = read.expect_err("GitLab answers that it cannot").to_string();
+            assert!(
+                why.contains("does not read the reviews") && why.contains(&path),
+                "{why}"
+            );
+        } else if let How::Live = how {
+            // The fixture's reviews are whoever wrote them: a list is the answer.
+            read.expect("GitHub lists the open request's reviews");
+        } else {
+            assert_eq!(
+                read,
+                Ok(vec![Review {
+                    login: "ana".to_owned(),
+                    by: Reviewer::Person,
+                    state: ReviewState::Approved,
+                    commit: scene.head.clone(),
+                }])
+            );
+        }
+        spent(&over);
+    }
+
+    /// GitHub reads a request's changes from its compare of the base and the head; GitLab's are
+    /// not read yet (Q277), so it says so in a sentence and asks nothing.
+    pub fn changes(kind: &str, how: How) {
+        let Some(over) = over(kind, "changes", how) else {
+            return;
+        };
+        let scene = &over.scene;
+        let path = scene.path("api");
+        let read = over
+            .backend
+            .changes(&over.caller, &path, "main", &scene.head);
+        if kind == "gitlab" {
+            let why = read.expect_err("GitLab answers that it cannot").to_string();
+            assert!(
+                why.contains("can't read a request's changes") && why.contains(&path),
+                "{why}"
+            );
+        } else if let How::Live = how {
+            read.expect("GitHub compares the open request's base and head");
+        } else {
+            assert_eq!(
+                read,
+                Ok(purlis_core::forge::pr::Changes {
+                    text: "diff --git a/src/parser.rs b/src/parser.rs\n@@ -1 +1,2 @@\n fn a() {}\n\
+                           +fn parse() {}\n"
+                        .to_owned(),
+                    whole: true,
+                })
+            );
+        }
+        spent(&over);
+    }
+
+    /// GitHub counts the commits one is ahead of another by its compare; GitLab does not compare
+    /// yet (T1-41), so it says so and asks nothing.
+    pub fn commits_between(kind: &str, how: How) {
+        let Some(over) = over(kind, "commits_between", how) else {
+            return;
+        };
+        let scene = &over.scene;
+        let path = scene.path("api");
+        let read = over
+            .backend
+            .commits_between(&over.caller, &path, &scene.merge, &scene.head);
+        if kind == "gitlab" {
+            let why = read.expect_err("GitLab answers that it cannot").to_string();
+            assert!(
+                why.contains("does not compare commits") && why.contains(&path),
+                "{why}"
+            );
+        } else if let How::Live = how {
+            read.expect("GitHub compares the landed commit with the open head");
+        } else {
+            assert_eq!(read, Ok(3));
+        }
         spent(&over);
     }
 
@@ -1385,6 +1479,24 @@ macro_rules! contract {
             fn ruleset_protects_says_a_ruleset_protects_the_branch() {
                 purlis_core::unsteered!();
                 super::cases::ruleset_protects(stringify!($forge), super::How::$how);
+            }
+            #[test]
+            $(#[$attr])?
+            fn reviews_lists_who_reviewed_the_request_and_of_which_commit() {
+                purlis_core::unsteered!();
+                super::cases::reviews(stringify!($forge), super::How::$how);
+            }
+            #[test]
+            $(#[$attr])?
+            fn changes_reads_the_requests_changes_from_the_forge() {
+                purlis_core::unsteered!();
+                super::cases::changes(stringify!($forge), super::How::$how);
+            }
+            #[test]
+            $(#[$attr])?
+            fn commits_between_counts_the_commits_one_is_ahead_of_the_other() {
+                purlis_core::unsteered!();
+                super::cases::commits_between(stringify!($forge), super::How::$how);
             }
             #[test]
             $(#[$attr])?
@@ -2614,9 +2726,12 @@ mod network_log {
             // housekeeping-only rules, a classic protection, a plain 404 Not Found and a 403
             // (Q252), and one rules call for a branch with a slash; on GitLab, one
             // `repository/branches/{b}` call for each of no branch, a branch named fix-404, a
-            // wildcard rule and an unprotected branch (Q252).
+            // wildcard rule and an unprotected branch (Q252). A request's reviews, its changes and
+            // a count of commits between two (T1-41, Q277) are one call each on GitHub and none on
+            // GitLab, and their scenes nine more on GitHub: a page each of kinds and a bad commit,
+            // two pages, three full ones, and two compares.
             let expected = match kind {
-                "github" => 100,
+                "github" => 112,
                 _ => 111,
             };
             assert_eq!(paths.len(), expected, "{kind}: the recorded REST calls");
