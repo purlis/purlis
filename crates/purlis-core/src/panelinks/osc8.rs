@@ -40,16 +40,7 @@ pub fn kind_of(target: Option<&str>) -> Result<Kind, String> {
     if target.len() > MOST_TARGET {
         return Err("the address this link names is longer than purlis reads".into());
     }
-    let scheme = target
-        .split_once(':')
-        .map(|(scheme, _)| scheme)
-        .filter(|scheme| {
-            scheme.starts_with(|c: char| c.is_ascii_alphabetic())
-                && scheme
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
-        });
-    let Some(scheme) = scheme else {
+    let Some((scheme, _)) = scheme_of(target) else {
         return Err("purlis could not read the address this link names".into());
     };
     match scheme.to_ascii_lowercase().as_str() {
@@ -241,14 +232,20 @@ const SCHEMES: [&str; 14] = [
 
 /// Whether `word` starts with a scheme: one of [`SCHEMES`] and a colon, or any scheme and `://`.
 fn has_scheme(word: &str) -> bool {
-    let Some((scheme, rest)) = word.split_once(':') else {
-        return false;
-    };
-    scheme.starts_with(|c: char| c.is_ascii_alphabetic())
-        && scheme
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
-        && (SCHEMES.contains(&scheme.to_ascii_lowercase().as_str()) || rest.starts_with("//"))
+    scheme_of(word).is_some_and(|(scheme, rest)| {
+        SCHEMES.contains(&scheme.to_ascii_lowercase().as_str()) || rest.starts_with("//")
+    })
+}
+
+/// `address`'s scheme and what follows its colon, when it starts with one (RFC 3986: a letter,
+/// then letters, digits, `+`, `-` or `.`).
+fn scheme_of(address: &str) -> Option<(&str, &str)> {
+    address.split_once(':').filter(|(scheme, _)| {
+        scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+            && scheme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+    })
 }
 
 /// Whether `shape` names a host a browser would go to: see [`names_a_target`].
@@ -449,10 +446,7 @@ fn host_key(url: &url::Url) -> Option<String> {
 /// A web address, a host or an email names no file.
 fn names_file(word: &str, file: &Path, pane: &Pane) -> Option<String> {
     let (words, _, _) = at_line(word);
-    let path = if words
-        .get(..5)
-        .is_some_and(|scheme| scheme.eq_ignore_ascii_case("file:"))
-    {
+    let path = if super::file::addressed(words) {
         let Some(path) = url::Url::parse(words)
             .ok()
             .filter(|said| said.scheme() == "file")

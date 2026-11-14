@@ -98,6 +98,9 @@ function readsAsAPath(text: string): boolean {
   return words.includes("/") ? /[\p{L}\p{N}]/u.test(words) : EXTENSION.test(words);
 }
 
+/** A `file:` address, in any case: `FILE:` is the same scheme. */
+const FILE_ADDRESS = /^file:/iu;
+
 /**
  * **The candidates in `line`**, left to right: addresses (`scheme://…`, a `file://` one a file),
  * then file paths outside them, with the punctuation a sentence puts after one left out, then
@@ -109,7 +112,7 @@ export function candidatesIn(line: string): Found[] {
     const text = balanced(match[0].replace(TRAILING, ""));
     if (text.length === 0) continue;
     // A `file:` address names a file, under a file's rules (#6216, spec Q2).
-    const kind = /^file:/iu.test(text) ? "file" : "url";
+    const kind = FILE_ADDRESS.test(text) ? "file" : "url";
     found.push({ kind, text, start: match.index, end: match.index + text.length });
   }
   const addresses = [...found];
@@ -164,7 +167,7 @@ const lives = new WeakMap<Promise<LinkSeen | null>, number>();
 /** Whether `link`'s answer looks at the disk, and so is kept only {@link FILE_ANSWER_LIFE}: a
  *  path, or a link a program marked whose target is a `file:` address. */
 const namesAFile = (link: LinkCandidate) =>
-  link.kind === "file" || (link.kind === "osc8" && /^file:/iu.test(link.target ?? ""));
+  link.kind === "file" || (link.kind === "osc8" && FILE_ADDRESS.test(link.target ?? ""));
 
 /** **The answer kept for `key`**, while it still counts: a file's for {@link FILE_ANSWER_LIFE}. */
 function held(kept: Kept, key: string): Promise<LinkSeen | null> | undefined {
@@ -406,6 +409,10 @@ const MOVES_CSI = "ABCDEFGHIJKLMPSTXZ@`abdefjkrsu";
  *  reset. */
 const MOVES_ESC = "78DEMc";
 
+/** A marked link's target as it is kept and handed on: cut one past {@link MOST_TARGET}, so the
+ *  core sees it is too long. */
+const cutTarget = (target: string) => target.slice(0, MOST_TARGET + 1);
+
 /** The most marked links a pane keeps: the oldest goes first. */
 const MOST_MARKED = 256;
 
@@ -468,7 +475,7 @@ function marking(pane: Terminal, marked: Marked[]): IDisposable {
       const start = pane.registerMarker(0);
       if (start !== undefined)
         open = {
-          target: target.slice(0, MOST_TARGET + 1),
+          target: cutTarget(target),
           buffer,
           start,
           startX: at(),
@@ -524,16 +531,26 @@ function wordsOf(pane: Terminal, marked: Marked): string {
     text += marked.moved || y === last ? row + blank : row;
   }
   if (marked.moved) return text.trim();
-  const { before, after } = besideOf(
+  return withBeside(
     pane,
+    text,
     { y: marked.start.line, x: marked.startX },
     { y: marked.end.line, x: marked.endX },
   );
-  return ((/^\s/u.test(text) ? "" : before) + text + (/\s$/u.test(text) ? "" : after)).trim();
 }
 
 /** Where a cell is on the buffer, zero-based. */
 type Cell = { y: number; x: number };
+
+/**
+ * **A link's words `text` with the characters drawn against them** ({@link besideOf}), the link
+ * running from cell `start` to just before `end`: text drawn against the link reads as one word
+ * with it; across a blank, it does not.
+ */
+function withBeside(pane: Terminal, text: string, start: Cell, end: Cell): string {
+  const { before, after } = besideOf(pane, start, end);
+  return ((/^\s/u.test(text) ? "" : before) + text + (/\s$/u.test(text) ? "" : after)).trim();
+}
 
 /**
  * **The characters drawn next to a link, with no space between**: from the cell before `start`
@@ -712,7 +729,7 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
    * core asks first if any of them names another target.
    */
   const markedCandidate = (target: string, range: IBufferRange): LinkCandidate => {
-    const cut = target.slice(0, MOST_TARGET + 1);
+    const cut = cutTarget(target);
     const runs = rowsOf(range, pane.cols);
     // As in wordsOf, a row's blank tail inside the link is no space.
     const cells = runs
@@ -722,17 +739,12 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
           "",
       )
       .join("");
-    const { before, after } = besideOf(
+    const linked = withBeside(
       pane,
+      cells,
       { y: range.start.y - 1, x: range.start.x - 1 },
       { y: range.end.y - 1, x: range.end.x },
     );
-    // Text drawn against the link reads as one word with it; across a blank, it does not.
-    const linked = (
-      (/^\s/u.test(cells) ? "" : before) +
-      cells +
-      (/\s$/u.test(cells) ? "" : after)
-    ).trim();
     const one = markedAt(range, cut);
     const words = one === undefined ? "" : wordsOf(pane, one);
     const text = words.includes(linked) ? words : [words, linked].filter(Boolean).join(" ");

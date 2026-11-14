@@ -282,10 +282,7 @@ impl LinkKind for LocalFile {
         }
         let (words, line, column) = at_line(text);
         // `FILE:` is the same scheme as `file:`: one naming another host is refused either way.
-        let addressed = words
-            .get(..5)
-            .is_some_and(|scheme| scheme.eq_ignore_ascii_case("file:"));
-        let named = if addressed {
+        let named = if addressed(words) {
             match on_this_machine(words) {
                 Ok(path) => path,
                 Err(why) => return why,
@@ -505,6 +502,13 @@ fn slashed(path: &Path) -> Option<String> {
         .collect();
     let parts = parts?;
     (!parts.is_empty()).then(|| parts.join("/"))
+}
+
+/// Whether `words` is a `file:` address. `FILE:` is the same scheme as `file:`.
+pub(super) fn addressed(words: &str) -> bool {
+    words
+        .get(..5)
+        .is_some_and(|scheme| scheme.eq_ignore_ascii_case("file:"))
 }
 
 #[cfg(test)]
