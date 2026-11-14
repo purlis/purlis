@@ -126,6 +126,9 @@ pub struct Answered {
     /// app raises as a needs-you item naming the window's Update. Every other refusal is the
     /// chat's to retry, told in the answer alone.
     pub needs: Option<crate::state::Need>,
+    /// **The commit a branch folder's push sent** (T1-41, Q277), where it went: what the app
+    /// records as the chat's push, never a `HEAD` read after it.
+    pub pushed: Option<String>,
 }
 
 impl From<Answer> for Answered {
@@ -133,6 +136,7 @@ impl From<Answer> for Answered {
         Self {
             answer,
             needs: None,
+            pushed: None,
         }
     }
 }
@@ -156,6 +160,7 @@ fn isolated_answer(
 ) -> Answered {
     let no = |why: String| Answered::from(Answer::No { why });
     let mut needs = None;
+    let mut sent = None;
     // The guard's question before plain git writes a branch folder (#3931): no git runs, so
     // none of the checks below on where git would run is asked.
     if let GitWork::WorktreeClaim { repo, piece, act } = &ask.work {
@@ -286,7 +291,9 @@ fn isolated_answer(
                 // `lease` is the `--force-with-lease` typed, which asks for nothing a plain
                 // push does not (#3895).
                 GitWork::WorktreePush { .. } => {
-                    let (code, unsigned) = crate::pieceupdate::push_told(&at, &reach, &mut say);
+                    let (code, unsigned, pushed) =
+                        crate::pieceupdate::push_sent(&at, &reach, &mut say);
+                    sent = pushed;
                     if let Some(refused) = unsigned {
                         waits_on_signing(root, &ask.workspace, (repo, piece), asker, refused, now);
                     } else if code == 0 {
@@ -580,6 +587,7 @@ fn isolated_answer(
             code,
         },
         needs,
+        pushed: sent.filter(|_| code == 0),
     }
 }
 

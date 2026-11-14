@@ -30,6 +30,17 @@
 //!   its row showed ([`Seen`]), and merges only while that is the state the ask holds, which a
 //!   re-read just before the press refreshes ([`Holds::refresh`]).
 //!
+//! - **Who looked, and who pushed** (T1-41; R-122, R-124, R-125): each waiting ask says whether
+//!   the person viewed its head in purlis, or the forge approves it by someone else, named
+//!   ([`Look`]), and whether the chat's own push sent it ([`Pushes`]), each kept by the forge's
+//!   host and the repo ([`OnHost`], Q277). A head the person viewed an older head of says how
+//!   many commits lie between, whichever path found the move ([`Holds::uncounted`]). A watch of
+//!   the forge retires an ask whose head moved, and redraws one whose facts changed at the same
+//!   head ([`Holds::watch`]). A merge takes two presses whatever they say ([`PRESSES`], Q268).
+//! - **A press is bound to every fact it was shown** (the follow-up Q269 named): the window
+//!   hands back the digest of what its row showed ([`Facts::digest`], [`Holds::shows`]), and a
+//!   press's own read that finds any fact changed asks once more.
+//!
 //! **Not here yet** (each its ticket's): A4's refusal of an unattended merge still answers first
 //! (its precedence is read with attendance, R-145, #6409). A line whose request cannot be read (a
 //! raw API call, a merge with no number) is refused with no ask.
@@ -39,6 +50,9 @@
 use std::sync::{Mutex, PoisonError};
 
 use crate::harness::asks::{Answerer, HumanScope};
+
+mod looked;
+pub use looked::{Ahead, HeadMoved, Look, OnHost, PRESSES, Pushes, Viewed, Watched, approves};
 
 /// The source a merge ask is listed under, and the one a rule made from an answer may never
 /// name ([`crate::askrules::Store::make`]).
@@ -432,6 +446,10 @@ pub struct Facts {
     /// The checks at the ask's head.
     pub checks: crate::forge::checks::Checks,
     pub ruleset: Ruleset,
+    /// Who approves the ask's head on the forge: a person who is neither the request's author
+    /// nor an app or a bot, by login ([`approves`], R-122). A review the forge did not give in
+    /// time, or could not give whole, is no approval.
+    pub approved_by: Option<String>,
     /// When the forge was read for these facts, in seconds since 1970: a try again at the same
     /// head reads it again, and the newer read replaces these ([`Holds::raise`]).
     pub read_at: u64,
@@ -487,6 +505,16 @@ pub fn read(
             )
         })
     };
+    let reviews = {
+        let path = path.to_owned();
+        alongside(&backend, move |forge| {
+            let pr = crate::forge::pr::Pr {
+                number,
+                url: String::new(),
+            };
+            forge.reviews(&crate::forge::backend::Caller::window(), &path, &pr)
+        })
+    };
     let ruleset = {
         let (path, base) = (path.to_owned(), at.base.clone());
         alongside(&backend, move |forge| {
@@ -502,12 +530,20 @@ pub fn read(
         Ok(Err(why)) => Ruleset::Unknown(why.to_string()),
         Err(_) => Ruleset::Unknown(late.to_owned()),
     };
+    let approved_by = match (
+        reviews.recv_timeout(left()),
+        HeadSha::try_from(at.sha.as_str()),
+    ) {
+        (Ok(Ok(reviews)), Ok(head)) => approves(&reviews, &head, &at.author),
+        _ => None,
+    };
     Ok(Read {
         facts: Facts {
             title: at.title.clone(),
             author: at.author.clone(),
             checks,
             ruleset,
+            approved_by,
             read_at: now,
         },
         at,
@@ -662,9 +698,41 @@ pub struct Waits {
     /// more, of these facts. Only [`Reread::AsksOnceMore`] sets it, a raise whose facts show
     /// otherwise clears it, and [`Holds::press`] merges nothing without it.
     pub asked: bool,
+    /// What the person has seen of its head (R-122): said by [`Holds::every`] as it lists it.
+    pub look: Look,
+    /// Whether purlis recorded the asking chat pushing its head (R-124): said by
+    /// [`Holds::every`] as it lists it. A head it did not is flagged.
+    pub pushed_here: bool,
 }
 
 impl Facts {
+    /// **The digest of what these facts show the person** (the follow-up Q269 named): the
+    /// title, the author, the checks' word, the ruleset state and who approves (by login,
+    /// Q277), never when they were read. The window hands it back with a press, which merges only while the ask shows
+    /// the same ([`Holds::shows`]).
+    pub fn digest(&self) -> String {
+        use sha2::Digest;
+        let shown = [
+            self.title.as_str(),
+            self.author.as_str(),
+            self.checks.ci.word(),
+            match self.ruleset.seen() {
+                Seen::Protects => "protects",
+                Seen::None => "none",
+                Seen::Unknown => "unknown",
+            },
+            match &self.approved_by {
+                Some(by) => by.as_str(),
+                None => "\u{1f}not approved",
+            },
+        ]
+        .join("\u{1e}");
+        sha2::Sha256::digest(shown.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    }
+
     /// Whether `self` and `other` show the person the same, whenever each was read.
     fn shows_as(&self, other: &Facts) -> bool {
         Facts {
@@ -680,9 +748,13 @@ pub enum Reread {
     /// Merge was pressed once: the read is what the person is asked once more of (Q248), and the
     /// ask is marked asked (Q269).
     AsksOnceMore,
-    /// The once-more Merge was pressed: the read is checked before the merge, and leaves the
-    /// mark as it is (checks or a title that change after the question still merge, Q269).
+    /// The once-more Merge was pressed: the read is checked before the merge, and keeps the
+    /// mark only while every fact shows as it did (the follow-up Q269 named: checks or a title
+    /// that change after the question ask again).
     Presses,
+    /// The watch of the forge read it (R-125): as a press's read, it keeps the mark only while
+    /// every fact shows as it did.
+    Watches,
 }
 
 impl Waits {
@@ -757,6 +829,15 @@ pub enum NotMerged {
 #[derive(Debug, Default)]
 pub struct Holds {
     held: Mutex<Vec<Waits>>,
+    /// The head the person last viewed of each request (R-122), in memory only.
+    viewed: Viewed,
+    /// The heads purlis recorded each chat pushing (R-124), in memory only.
+    pushes: Pushes,
+    /// The forge's host each waiting ask was raised on (Q277): what its viewed head and pushes
+    /// are kept under, with its repo.
+    hosts: Mutex<Vec<(u32, MergeKey, String)>>,
+    /// The commits between heads, as the forge counted them (R-123).
+    ahead: Ahead,
 }
 
 impl Holds {
@@ -795,6 +876,8 @@ impl Holds {
             facts,
             since: now,
             asked: false,
+            look: Look::NotViewed { since: None },
+            pushed_here: false,
         });
         Raised::New
     }
@@ -822,13 +905,13 @@ impl Holds {
         if now == *was {
             let one = &mut held[at];
             let asked = one.asked;
-            let before = one.facts.ruleset.seen();
+            let before = one.facts.clone();
             one.replace(facts.clone());
             one.asked = match why {
                 Reread::AsksOnceMore => one.facts.shows_as(&facts),
-                // The press's own read keeps the mark only while the ruleset is what the person
-                // was asked of: a changed one is asked of again (Q269).
-                Reread::Presses => asked && one.facts.ruleset.seen() == before,
+                // A press's or the watch's read keeps the mark only while every fact is what
+                // the person was asked of: one that changed is asked of again (Q269, T1-41).
+                Reread::Presses | Reread::Watches => asked && one.facts.shows_as(&before),
             };
             return Ok(Refreshed::Same);
         }
@@ -838,19 +921,174 @@ impl Holds {
         let since = facts.read_at;
         held.remove(at);
         held.retain(|one| !(one.session == session && one.key.same_request(&now)));
+        // The ask at the new head is on the forge the old one was raised on.
+        if let Some(host) = self.host_of(session, was) {
+            self.hosts
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push((session, now.clone(), host));
+        }
         held.push(Waits {
             session,
             key: now,
             facts,
             since,
             asked: false,
+            look: Look::NotViewed { since: None },
+            pushed_here: false,
         });
         Ok(Refreshed::Moved)
     }
 
-    /// Every merge ask that waits, oldest first.
+    /// Every merge ask that waits, oldest first, each saying what the person has seen of its
+    /// head and whether its chat pushed it (T1-41), by the forge's host it was raised on and
+    /// its repo (Q277). An ask on no known host was viewed by nobody and pushed by no chat.
     pub fn every(&self) -> Vec<Waits> {
-        self.lock().clone()
+        let mut every = self.lock().clone();
+        for one in &mut every {
+            let on = self.on_host(one.session, &one.key);
+            let viewed = on
+                .as_ref()
+                .and_then(|on| self.viewed.of(on, one.key.number));
+            // Counted from the head the person viewed, however the move was found (Q277).
+            let since = match (&on, &viewed) {
+                (Some(on), Some(from)) if *from != one.key.head => {
+                    self.ahead.of(on, from, &one.key.head)
+                }
+                _ => None,
+            };
+            one.look = Look::of(
+                viewed.as_ref(),
+                &one.key.head,
+                one.facts.approved_by.as_deref(),
+                since,
+            );
+            one.pushed_here = on
+                .as_ref()
+                .is_some_and(|on| self.pushes.pushed(one.session, on, &one.key.head));
+        }
+        every
+    }
+
+    /// The forge's host chat `session`'s ask for `key` was raised on.
+    fn host_of(&self, session: u32, key: &MergeKey) -> Option<String> {
+        self.hosts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .find(|(of, at, _)| *of == session && at == key)
+            .map(|(_, _, host)| host.clone())
+    }
+
+    /// The repo on its forge that chat `session`'s ask for `key` is of.
+    fn on_host(&self, session: u32, key: &MergeKey) -> Option<OnHost> {
+        self.host_of(session, key)
+            .map(|host| OnHost::new(&host, key.repo.clone()))
+    }
+
+    /// **Chat `session`'s ask for `key` was raised on the forge at `host`** (Q277): what its
+    /// viewed head and pushes are kept under. Only the hosts of asks that wait are kept.
+    pub fn raised_on(&self, session: u32, key: &MergeKey, host: &str) {
+        let waiting = self.lock().clone();
+        let mut hosts = self.hosts.lock().unwrap_or_else(PoisonError::into_inner);
+        hosts.retain(|(of, at, _)| {
+            !(*of == session && at == key)
+                && waiting
+                    .iter()
+                    .any(|one| one.session == *of && one.key == *at)
+        });
+        hosts.push((session, key.clone(), host.to_owned()));
+    }
+
+    /// **View changes** was pressed on chat `session`'s ask for `key` (R-302): the person
+    /// viewed its whole diff at its head, read from the forge (Q277). An ask on no known host
+    /// marks nothing.
+    pub fn view(&self, session: u32, key: &MergeKey) {
+        if let Some(on) = self.on_host(session, key) {
+            self.viewed.mark(&on, key.number, &key.head);
+        }
+    }
+
+    /// purlis pushed `head` to `repo` for chat `session` (R-124): the commit the push sent.
+    pub fn pushed(&self, session: u32, repo: &OnHost, head: &HeadSha) {
+        self.pushes.record(session, repo, head);
+    }
+
+    /// **The waiting asks whose head the person viewed an older head of, with no count yet**
+    /// (R-123, Q277): the repo, the viewed head and the ask's head. The app asks the forge for
+    /// each count ([`Holds::ahead`]) on every path that finds a move: the chat's try again, a
+    /// re-read, View changes and the watch.
+    pub fn uncounted(&self) -> Vec<(OnHost, HeadSha, HeadSha)> {
+        let waiting = self.lock().clone();
+        let mut uncounted: Vec<(OnHost, HeadSha, HeadSha)> = Vec::new();
+        for one in waiting {
+            let Some(on) = self.on_host(one.session, &one.key) else {
+                continue;
+            };
+            let Some(from) = self.viewed.of(&on, one.key.number) else {
+                continue;
+            };
+            let one = (on, from, one.key.head);
+            if one.1 != one.2
+                && self.ahead.of(&one.0, &one.1, &one.2).is_none()
+                && !uncounted.contains(&one)
+            {
+                uncounted.push(one);
+            }
+        }
+        uncounted
+    }
+
+    /// The forge counted `to` `commits` ahead of `from` in `repo` (R-123).
+    pub fn ahead(&self, repo: &OnHost, from: &HeadSha, to: &HeadSha, commits: u32) {
+        self.ahead.count(repo, from, to, commits);
+    }
+
+    /// **Whether chat `session`'s ask for `key` shows what `digest` is of** ([`Facts::digest`]):
+    /// what a press hands back of its row.
+    pub fn shows(&self, session: u32, key: &MergeKey, digest: &str) -> bool {
+        self.lock()
+            .iter()
+            .any(|one| one.session == session && one.key == *key && one.facts.digest() == digest)
+    }
+
+    /// **The watch of every waiting ask's request** (R-125): `read` says where the forge has
+    /// each now, or nothing where it did not answer. The same head shows the new read, and the
+    /// ask keeps its asked mark only while every fact shows as it did; a moved head retires the
+    /// ask for one at the new head (Q242). What the window must redraw is said: each ask that
+    /// moved, and each whose facts changed at the same head (Q277).
+    pub fn watch(&self, read: &dyn Fn(&MergeKey) -> Option<(MergeKey, Facts)>) -> Vec<Watched> {
+        let mut watched = Vec::new();
+        let waiting = self.lock().clone();
+        for one in waiting {
+            let Some((now, facts)) = read(&one.key) else {
+                continue;
+            };
+            let same = now == one.key;
+            if self
+                .refresh(one.session, &one.key, now.clone(), facts, Reread::Watches)
+                .is_err()
+            {
+                continue;
+            }
+            if !same {
+                watched.push(Watched::Moved(HeadMoved {
+                    session: one.session,
+                    was: one.key,
+                    now,
+                }));
+            } else if self.lock().iter().any(|after| {
+                after.session == one.session
+                    && after.key == one.key
+                    && !after.facts.shows_as(&one.facts)
+            }) {
+                watched.push(Watched::Changed {
+                    session: one.session,
+                    key: one.key,
+                });
+            }
+        }
+        watched
     }
 
     /// The key of chat `session`'s waiting ask for request `number` of `repo` at `head`: what
@@ -944,6 +1182,11 @@ impl Holds {
     /// Chat `session` has closed: none of its merge asks waits.
     pub fn forget(&self, session: u32) {
         self.lock().retain(|one| one.session != session);
+        self.pushes.forget(session);
+        self.hosts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .retain(|(of, _, _)| *of != session);
     }
 }
 

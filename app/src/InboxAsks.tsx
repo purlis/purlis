@@ -15,6 +15,7 @@ import { RestartEndsLine } from "./RestartEnds";
 import {
   commands,
   type CloneToVouch,
+  type MergeShown,
   type Offered,
   type PlaneId,
   type ReachedWhy,
@@ -41,6 +42,7 @@ import { AskDecision, REASON_TYPED_MOST, waysOf } from "./AskDecision";
 import { RuleOffer, ruleMadeOf } from "./AskRules";
 import { SecretFillSite } from "./SecretFillNotice";
 import { MergeFacts } from "./MergeFacts";
+import { useViewChanges, VIEW_CHANGES } from "./MergeChanges";
 import { confirmationOf, fallbackConfirm, rereadMerge } from "./mergeHold";
 import { Button, ButtonRow, IconButton } from "./ui/button/Button";
 import {
@@ -1059,9 +1061,7 @@ export function Ask({
               their read, the ruleset state with the gap beside it, and the title last, as text
               the chat may have written. */}
         {ask.answer.via === "merge-hold" && (
-          <p className="inbox-merge ui-text-secondary">
-            <MergeFacts facts={ask.answer.facts} />
-          </p>
+          <MergeRowFacts plane={plane} ask={ask} facts={ask.answer.facts} />
         )}
         {shape.said !== undefined && (
           <ChatText
@@ -1580,4 +1580,28 @@ export function landOnGroupIn(plane: PlaneId, session: number, source?: Shown["s
   if (landOnGroup(session, source) || keptAsksScope(plane) === "project") return;
   pickAsksScope(plane, "project");
   requestAnimationFrame(() => landOnGroup(session, source));
+}
+
+/** **A merge row's facts, and its View changes** (T1-40, T1-41; R-302): what the forge said of
+ *  the request, what the person has seen of its head, and the press that shows its changes and
+ *  marks the head viewed. Where it showed nothing, its words say why. */
+function MergeRowFacts({ plane, ask, facts }: { plane: string; ask: Shown; facts: MergeShown }) {
+  const changes = useViewChanges(plane, ask);
+  return (
+    <>
+      <p className="inbox-merge ui-text-secondary">
+        <MergeFacts facts={facts} />{" "}
+        <Button
+          variant="link"
+          size="sm"
+          aria-busy={changes.busy || undefined}
+          onPress={changes.view}
+        >
+          {VIEW_CHANGES}
+        </Button>
+        {changes.refused !== undefined && ` ${changes.refused}`}
+      </p>
+      {changes.dialog}
+    </>
+  );
 }

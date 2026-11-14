@@ -885,7 +885,8 @@ export async function answerTaken(
         // A merge a chat's hook held (R-115): Merge is the app's own forge call, at the head the
         // ask was raised at; Don't merge merges nothing. The chat never merges.
         if (option === "merge")
-          // It hands back the ruleset state its row showed, which the press is bound to (R-150).
+          // It hands back the ruleset state its row showed, and the digest of every fact it
+          // showed, which the press is bound to (R-150, T1-41).
           return commands.mergeHeldRequest(
             plane,
             ask.session,
@@ -893,6 +894,7 @@ export async function answerTaken(
             path.number,
             path.head,
             path.facts.ruleset,
+            path.facts.digest,
           );
         if (option === "dont-merge")
           return commands.dontMergeHeldRequest(

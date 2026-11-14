@@ -23,13 +23,15 @@ export function confirmationOf(ask: Shown, facts?: MergeShown): string {
   return [ask.ask, ask.risk?.confirm ?? "", bound].join("\n");
 }
 
-/** What a merge row shows of `facts`, but when they were read. */
+/** What a merge row shows of `facts`, but when they were read: the digest the press hands back
+ *  among them (T1-41), so a fact the row doesn't spell out, such as an approval, asks anew too. */
 const said = (facts: MergeShown) => [
   facts.title,
   facts.author,
   facts.base,
   facts.checks,
   facts.ruleset,
+  facts.digest,
 ];
 
 /**
