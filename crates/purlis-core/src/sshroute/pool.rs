@@ -44,7 +44,20 @@ pub fn folders() -> Result<(PathBuf, PathBuf), Finding> {
 ///
 /// **Over Docker's TLS API** (#6267), the same program pointed at the pool's route, its files
 /// checked against the pinned CA before every run ([`crate::tlsroute::pool::docker_over`]).
+///
+/// **What it finds of the pin is kept for the window** ([`crate::poolsetup::pinchange`], #6270): a
+/// changed key, CA or engine is found, and a run that gets through says the pin holds.
 pub fn docker_of(docker: &Docker, pool: &Pool) -> Result<Docker, Finding> {
+    let reached = reach(docker, pool);
+    match &reached {
+        Ok(_) => crate::poolsetup::pinchange::holds(pool.name()),
+        Err(finding) => crate::poolsetup::pinchange::found(pool.name(), finding),
+    }
+    reached
+}
+
+/// [`docker_of`], before what it found is kept.
+fn reach(docker: &Docker, pool: &Pool) -> Result<Docker, Finding> {
     let remote = match pool.remote_engine() {
         None => return Ok(docker.clone()),
         Some(crate::runners::RemoteEngine::Tls(remote)) => {

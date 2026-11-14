@@ -48,6 +48,7 @@ const PLACES = {
   "sandbox-only": { at: "no-chat" },
   "old-harness-plugins": { at: "no-chat" },
   signing: { at: "no-chat" },
+  "pool-setup": { at: "no-chat" },
   browser: { at: "pane" },
   "browser-needs-you": { at: "pane" },
   "browser-site": { at: "pane" },

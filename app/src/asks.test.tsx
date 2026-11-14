@@ -10,6 +10,7 @@ import { IN_ITS_CHAT, answerTaken, answerThrough, asksMoved, notSnoozed, useAsks
 import type { Shown } from "./bindings";
 import { OPEN_BROWSER_ASK, type OpenBrowserAsk } from "./browserNeedsYou";
 import { OPEN_PROPOSAL_ASK } from "./proposedChangeOpen";
+import { OPEN_POOL_SETUP_ASK } from "./poolSetupAsked";
 import { REVIEW_PIN_ASK } from "./proposedPinOpen";
 import { REMOVE_WORKSPACE_ASK } from "./removeWorkspaceAsk";
 import { OPEN_RUNNER_WRITE_ASK } from "./runnerWriteOpen";
@@ -166,6 +167,19 @@ const CLAUDE_SANDBOX_ONLY: Shown = {
   says: "Claude Code needs a sandbox-only profile here: on Linux a sandboxed Claude Code chat runs only on one.",
   chain: ["Claude Code"],
   answer: { via: "sandbox-only", harness: "claude" },
+};
+
+const POOL_SETUP_READY: Shown = {
+  session: 0,
+  ask: "pool-setup-ready",
+  says: "Your cluster is ready for Pool setup.",
+  options: [
+    { id: "open", label: "Open Pool setup", allows: false },
+    { id: "dismiss", label: "Dismiss", allows: false },
+  ],
+  source: "pool-setup",
+  chain: ["purlis"],
+  answer: { via: "pool-setup" },
 };
 
 const OLD_PLUGINS: Shown = {
@@ -421,6 +435,32 @@ describe("answering through the path an ask names", () => {
     expect(calls.map((one) => [one.cmd, one.args])).toEqual([
       ["make_sandbox_only_profile", { plane: PLANE, harness: "claude" }],
       ["dismiss_sandbox_only", { plane: PLANE, harness: "claude" }],
+    ]);
+  });
+
+  it("opens Pool setup from its ready entry, and either answer forgets the wait (#4496)", async () => {
+    const calls = sent({ pool_setup_stop_waiting: null });
+    const opened: unknown[] = [];
+    const heard = (event: Event) => opened.push((event as CustomEvent).detail);
+    window.addEventListener(OPEN_POOL_SETUP_ASK, heard);
+    try {
+      expect(await answerTaken(PLANE, POOL_SETUP_READY, "open")).toEqual({
+        refused: undefined,
+        live: false,
+        opened: true,
+      });
+      expect(opened).toEqual([{ plane: PLANE }]);
+      expect(await answerTaken(PLANE, POOL_SETUP_READY, "dismiss")).toEqual({
+        refused: undefined,
+        live: false,
+      });
+      expect(opened).toHaveLength(1);
+    } finally {
+      window.removeEventListener(OPEN_POOL_SETUP_ASK, heard);
+    }
+    expect(calls.map((one) => one.cmd)).toEqual([
+      "pool_setup_stop_waiting",
+      "pool_setup_stop_waiting",
     ]);
   });
 

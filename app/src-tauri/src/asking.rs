@@ -755,6 +755,9 @@ pub enum AskSource {
     /// **The clones purlis has no record of** (R-336, Q184): one ask for all of them, no chat's,
     /// never one per clone. Trust all records each, as its Notice's Trust this clone does.
     TrustClones,
+    /// **Pool setup's cluster is ready** (#4496): the admin the person asked has given what
+    /// the install couldn't, and Pool setup goes on. Said once, about no chat.
+    PoolSetup,
 }
 
 /// **The existing, checked path an ask is answered by** (#1690): the command the window
@@ -812,6 +815,9 @@ pub enum AnswerPath {
     /// all; Sign and retry all sends `signing_sign_and_retry` for every waiting lane; Dismiss
     /// sends `signing_forget` for them all (#5633).
     Signing,
+    /// Open Pool setup sends `pool_setup_stop_waiting` and opens the project's Pool setup tab;
+    /// Dismiss sends `pool_setup_stop_waiting` alone (#4496).
+    PoolSetup,
     /// `allow_chat_browser`, with the open web for `open-web`, and `keep_chat_browser_off` for
     /// Keep off, with the person's reason (#2013).
     Browser,
@@ -4254,6 +4260,60 @@ pub fn signing_waiting(root: &std::path::Path, on: impl FnOnce() -> bool) -> Opt
     })
 }
 
+/// The option id of Open Pool setup on the Ask that a cluster is ready (#4496).
+pub const OPEN_POOL_SETUP: &str = "open";
+
+/// **Pool setup's cluster is ready, as one Ask** (#4496, story 45): the person sent the words to
+/// their admin, and the background recheck found the cluster no longer stops the setup. Listed
+/// in the project the setup was asked from (in every one where none was named), about no chat,
+/// until it is answered: Open Pool setup, or Dismiss. Nothing where nothing is ready.
+#[cfg(unix)]
+pub fn pool_setup_ready(root: &std::path::Path, config: &std::path::Path) -> Option<Shown> {
+    let choices = purlis_core::poolsetup::read_choices(config).ok()?;
+    let asked = purlis_core::poolsetup::admin::ready(&choices)?;
+    if let Some(project) = &asked.project {
+        let same = project == root
+            || matches!(
+                (std::fs::canonicalize(project), std::fs::canonicalize(root)),
+                (Ok(one), Ok(other)) if one == other
+            );
+        if !same {
+            return None;
+        }
+    }
+    Some(Shown {
+        session: 0,
+        ask: "pool-setup-ready".to_owned(),
+        says: said_inertly(&format!(
+            "Your cluster is ready for Pool setup: what your admin was asked for is there, on \
+             context {}. Pool setup goes on where you stopped.",
+            asked.context
+        )),
+        options: vec![
+            refuses(OPEN_POOL_SETUP, "Open Pool setup"),
+            refuses(DISMISS, "Dismiss"),
+        ],
+        source: AskSource::PoolSetup,
+        chain: vec![said_inertly("purlis")],
+        answer: AnswerPath::PoolSetup,
+        since: None,
+        held_until: None,
+        expires: None,
+        blocks: None,
+        timed_out: None,
+        risk: None,
+        writes: None,
+        lines: None,
+        last_message: None,
+        login: None,
+        fill: None,
+        earlier_messages: None,
+        rule: None,
+        secret: None,
+        run: None,
+    })
+}
+
 /// How far up who-asked-whom a chain is followed: far past any depth a dispatch is allowed.
 const MOST_CHAIN: usize = 64;
 
@@ -5023,6 +5083,8 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
             )
             // The lanes a forge refused for unsigned commits (#5633): one Ask for them all.
             .chain(signing_waiting(root, signing_on))
+            // Pool setup's cluster, ready once the admin the person asked has given it (#4496).
+            .chain(pool_setup_ready_here(root))
             // What the project expects and this machine has not allowed (#6000): a consent.
             .chain(consents::sandbox_expects(
                 purlis_core::sandbox::services::awaiting(
@@ -5133,6 +5195,22 @@ pub mod pauses;
 
 #[cfg(test)]
 mod tests;
+
+/// [`pool_setup_ready`], on this machine's config home, where it has one.
+fn pool_setup_ready_here(root: &std::path::Path) -> Option<Shown> {
+    #[cfg(unix)]
+    {
+        // Read only where a config home is there, and never past a test build's fence: every
+        // project's Asks are listed through here, so a fenced run reads one outside it as none.
+        let config = purlis_core::machine::config_root_read_in(&purlis_core::envvar::var)?;
+        pool_setup_ready(root, &config)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = root;
+        None
+    }
+}
 
 /// Whether this Mac has a signing key, asked of the keychain's attributes only, never its value.
 fn signing_on() -> bool {

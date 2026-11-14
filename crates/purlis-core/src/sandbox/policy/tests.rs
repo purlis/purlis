@@ -9,7 +9,10 @@ use std::path::{Path, PathBuf};
 use super::super::grant::{self, Grants, What};
 use super::super::hosts::Host;
 use super::super::{Compiled, Machine, Os, Plane, Policy, Preset};
-use super::{Locks, Seen, TEST_LOCKS, holding_no_kept_grants, holding_to_its_folder, judge};
+use super::{
+    Locks, Seen, TEST_LOCKS, holding_from_clusters, holding_no_kept_grants, holding_to_its_folder,
+    judge,
+};
 
 const FILE: &str = "/etc/purlis/policy.json";
 
@@ -1599,6 +1602,36 @@ fn a_shell_held_to_its_folder_is_decided_with_no_preset_and_no_host_and_only_whi
     assert!(held.forbids_live_asks());
     assert!(!held.keeps_scope(crate::sandbox::grant::Level::Chat));
     assert!(held.relayed_internal().is_empty());
+    assert_eq!(
+        Locks::of(plane.path()),
+        open,
+        "held only while it is decided"
+    );
+}
+
+/// **A chat held from clusters is granted no host** (Pool setup's Get help, #4497): as though
+/// policy fixed no host, with no personal or persona host, no Allow kept of any scope and no live
+/// ask, so neither a project's nor the person's word reaches a cluster's API server from it. Only
+/// while it is decided.
+#[test]
+fn a_chat_held_from_clusters_is_granted_no_host_and_only_while_it_is() {
+    let plane = tempfile::tempdir().unwrap();
+    let open = Locks::of(plane.path());
+    let held = holding_from_clusters(|| Locks::of(plane.path()));
+    assert_eq!(held.allowed_hosts(), Some(&[][..]));
+    assert!(held.forbids_personal_hosts() && held.forbids_persona_hosts());
+    assert!(held.forbids_socket_grants());
+    assert!(held.forbids_live_asks());
+    assert!(
+        [
+            grant::Level::Once,
+            grant::Level::Chat,
+            grant::Level::You,
+            grant::Level::Machine
+        ]
+        .iter()
+        .all(|level| !held.keeps_scope(*level))
+    );
     assert_eq!(
         Locks::of(plane.path()),
         open,

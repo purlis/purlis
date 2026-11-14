@@ -44,6 +44,7 @@ import { onSandboxCommand, runGrantsMoved, sandboxCommandReturned } from "./sand
 import { askOpenProposal } from "./proposedChangeOpen";
 import { askReviewPin } from "./proposedPinOpen";
 import { proposeOldKeysRemoval } from "./oldHarnessPlugins";
+import { askOpenPoolSetup, POOL_SETUP_READY } from "./poolSetupAsked";
 import { askOpenRunnerWrite } from "./runnerWriteOpen";
 import { askOpenRunnerDispatch } from "./runnerDispatchOpen";
 import { askProfileSignIn, askSettingsLink } from "./settings/links";
@@ -204,6 +205,8 @@ export function useAsks(planes: readonly string[]): {
     // sandbox's, such as what a project expects: it is no one project's word, so each list is
     // read again.
     stops.push(listen(POOL_SIGN_IN_CONFIRM, () => reader.soonAll()).catch(() => undefined));
+    // Pool setup's ready entry (#4496) is no one project's event either.
+    stops.push(listen(POOL_SETUP_READY, () => reader.soonAll()).catch(() => undefined));
     const offSandbox = onSandboxCommand(() => reader.soonAll());
     // **What a project expects is read again where its Notice reads it** (#6000): as its
     // settings change on disk (a pull or a hand comes to declare it) and as the window comes
@@ -471,6 +474,8 @@ export function opensItsWindow(ask: Shown, option: string): boolean {
       return option === "set-up" || setUpForgeOf(option) !== undefined;
     case "old-harness-plugins":
       return option === "remove";
+    case "pool-setup":
+      return option === "open";
     case "sandbox-only":
       return option === "make";
     case "take-over":
@@ -640,6 +645,17 @@ export async function answerTaken(
           return gone;
         }
         break;
+      }
+      case "pool-setup": {
+        // Pool setup's cluster is ready (#4496): Open Pool setup forgets the wait and opens the
+        // project's tab, where the setup goes on; Dismiss forgets it alone. Either is said once.
+        const forgot = await commands.poolSetupStopWaiting();
+        if (forgot.status === "error") return forgot;
+        if (option === "open") {
+          askOpenPoolSetup(plane);
+          opened = true;
+        }
+        return { status: "ok" };
       }
       case "old-harness-plugins": {
         // The old `[harness_plugins]` keys (#3467): Remove holds purlis's proposed change for

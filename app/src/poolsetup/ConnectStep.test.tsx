@@ -66,6 +66,7 @@ const step = (more: Partial<PoolSetupStep>): PoolSetupStep => ({
   also: null,
   parts: [],
   undo: null,
+  admin: null,
   ...more,
 });
 
@@ -77,7 +78,15 @@ const shown = (one: PoolSetupStep): PoolSetupShown => ({
   noticed: false,
   others: [],
   recommended: "build-box",
-  contexts: { names: [], recommended: null, chosen: null, pools: [] },
+  contexts: {
+    names: [],
+    recommended: null,
+    chosen: null,
+    pools: [],
+    joining: false,
+    pinned: null,
+    key_changed: false,
+  },
   steps: [one],
 });
 
@@ -511,5 +520,80 @@ describe("ConnectStep", () => {
       ),
     );
     expect(screen.getByRole("button", { name: "Connect to lab" })).toBeEnabled();
+  });
+
+  describe("a made pool whose pin no longer holds (#6270)", () => {
+    const OTHER = "SHA256:tGq2HWbnxdQ1Q3yxD6vk2u0bxs6WtJ5gT3f7a6Fe8E0";
+    const changed = step({
+      state: "attention",
+      cause: "pool-pin-changed",
+      findings: ["build-box shows a different key than the one you trusted."],
+      next: {
+        id: "check-and-trust-again",
+        label: "Check and trust again",
+        does: "Shows the key the machine shows now, for you to check and trust.",
+        command: null,
+        url: null,
+      },
+    });
+    const metAgain = step({
+      findings: ["This is the key build-box shows now."],
+      next: {
+        id: "trust-machine",
+        label: "Trust this machine",
+        does: "Keeps this key for the pool in place of the one trusted.",
+        command: null,
+        url: null,
+      },
+      machine: tlsMachine({
+        route: "ssh://sam@build-box",
+        host: "build-box",
+        over: "ssh",
+        key: { algorithm: "ED25519", fingerprint: OTHER },
+        trusted: { algorithm: "ED25519", fingerprint: FINGERPRINT },
+      }),
+    });
+    const made = (one: PoolSetupStep): PoolSetupShown => ({ ...shown(one), pool: "builds" });
+
+    it("meets the machine again on Check and trust again, for the pool it is", async () => {
+      const calls = core({ pool_setup_check_and_trust_again: () => made(metAgain) });
+      const props = { onShown: vi.fn(), changed: vi.fn(), onNext: vi.fn() };
+      render(<ConnectStep step={changed} shown={made(changed)} plane="p" {...props} />);
+      await userEvent.click(await screen.findByRole("button", { name: "Check and trust again" }));
+      await waitFor(() => expect(props.onShown).toHaveBeenCalledWith(made(metAgain)));
+      expect(calls.find((call) => call.cmd === "pool_setup_check_and_trust_again")?.args).toEqual({
+        plane: "p",
+        pool: "builds",
+      });
+      expect(calls.some((call) => call.cmd === "pool_setup_trust_again")).toBe(false);
+    });
+
+    it("shows the key it shows now beside the one trusted, and trusts that one for the pool", async () => {
+      const calls = core({
+        pool_setup_trust_again: () => made(step({ state: "done", next: null })),
+      });
+      const props = { onShown: vi.fn(), changed: vi.fn(), onNext: vi.fn() };
+      render(<ConnectStep step={metAgain} shown={made(metAgain)} plane="p" {...props} />);
+      expect(await screen.findByText(OTHER)).toBeInTheDocument();
+      // The key trusted before stays on the machine's card, marked Trusted.
+      expect(screen.getByText(FINGERPRINT)).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Trust this machine" }));
+      await waitFor(() => expect(props.onShown).toHaveBeenCalled());
+      expect(calls.find((call) => call.cmd === "pool_setup_trust_again")?.args).toEqual({
+        plane: "p",
+        pool: "builds",
+        fingerprint: OTHER,
+      });
+      expect(calls.some((call) => call.cmd === "pool_setup_trust")).toBe(false);
+    });
+
+    it("never forgets a made pool's machine on This isn't it", async () => {
+      const calls = core({ pool_setup_check_again: () => made(changed) });
+      const props = { onShown: vi.fn(), changed: vi.fn(), onNext: vi.fn() };
+      render(<ConnectStep step={metAgain} shown={made(metAgain)} plane="p" {...props} />);
+      await userEvent.click(await screen.findByRole("button", { name: "This isn't it" }));
+      await waitFor(() => expect(props.onShown).toHaveBeenCalledWith(made(changed)));
+      expect(calls.some((call) => call.cmd === "pool_setup_machine")).toBe(false);
+    });
   });
 });

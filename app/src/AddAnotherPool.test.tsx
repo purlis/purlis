@@ -43,7 +43,15 @@ const FINISHED: PoolSetupShown = {
   noticed: false,
   others: [],
   recommended: "docker",
-  contexts: { names: [], recommended: null, chosen: null, pools: [] },
+  contexts: {
+    names: [],
+    recommended: null,
+    chosen: null,
+    pools: [],
+    joining: false,
+    pinned: null,
+    key_changed: false,
+  },
   steps: [
     step("where", "Where chats run", "done", { line: "Docker on this Mac" }),
     step("pool", "Pool", "done", { line: "dev-box" }),
@@ -62,7 +70,15 @@ const NEW: PoolSetupShown = {
   noticed: false,
   others: ["dev-box"],
   recommended: "docker-2",
-  contexts: { names: [], recommended: null, chosen: null, pools: [] },
+  contexts: {
+    names: [],
+    recommended: null,
+    chosen: null,
+    pools: [],
+    joining: false,
+    pinned: null,
+    key_changed: false,
+  },
   steps: [
     step("where", "Where chats run", "current", {
       findings: ["Docker is ready."],

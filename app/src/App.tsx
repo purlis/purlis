@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { OPEN_POOL_SETUP_ASK } from "./poolSetupAsked";
 import { saidOfLate, useLateAnswers } from "./answerWatch";
 import {
   useCallback,
@@ -44,6 +45,7 @@ import { SessionBusNotice } from "./SessionBusNotice";
 import { EngineDownloadNotice } from "./EngineDownloadNotice";
 import { EngineSandboxNotice } from "./EngineSandboxNotice";
 import { PoolMintingNotice } from "./PoolMintingNotice";
+import { PoolPinChangedNotice } from "./PoolPinChangedNotice";
 import { HostFailingNotice } from "./HostFailingNotice";
 import { VaultsWaitingNotice } from "./VaultsWaitingNotice";
 import { Notice, NoticeList } from "./Notice";
@@ -1649,6 +1651,15 @@ function App() {
    *  launch or another window hands this one takes it back, so only the person's own open from
    *  the welcome opens Pool setup. */
   const [runElsewhereNext, setRunElsewhereNext] = useState(false);
+  // Needs you's Open Pool setup, on the entry that a cluster is ready (#4496).
+  useEffect(() => {
+    const heard = (event: Event) => {
+      const plane = (event as CustomEvent<{ plane?: unknown }>).detail?.plane;
+      if (typeof plane === "string") windowDoes.openPoolSetup(plane);
+    };
+    window.addEventListener(OPEN_POOL_SETUP_ASK, heard);
+    return () => window.removeEventListener(OPEN_POOL_SETUP_ASK, heard);
+  }, [windowDoes]);
   useEffect(() => {
     if (!runElsewhereNext || inFront === undefined) return;
     setRunElsewhereNext(false);
@@ -3213,6 +3224,19 @@ function App() {
               <EngineSandboxNotice />
               {/* A cluster pool that began minting without asking: told once, blocking nothing (#4442). */}
               <PoolMintingNotice onOpenPools={() => openSettingsAt("you.machine.pools")} />
+              {/* A pool on another machine whose pin no longer holds: Check and trust again opens
+            Pool setup on it, in the project in front or the next to come to it (#6270). */}
+              <PoolPinChangedNotice
+                onCheckAndTrust={(pool) =>
+                  void commands
+                    .poolSetupPool(pool)
+                    .catch(() => undefined)
+                    .then(() => {
+                      if (inFront !== undefined) windowDoes.openPoolSetup(inFront);
+                      else setRunElsewhereNext(true);
+                    })
+                }
+              />
 
               {/* The session host stopped unexpectedly three times in five minutes, and the window's
             supervisor stopped starting it again: Try again (#2007). */}

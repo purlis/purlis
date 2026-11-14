@@ -64,6 +64,9 @@ const CONTEXTS = {
   recommended: "kind-team",
   chosen: null,
   pools: [],
+  joining: false,
+  pinned: null,
+  key_changed: false,
 };
 
 const shown = (
@@ -177,7 +180,15 @@ export const NoClusterInTheKubeconfig: Story = {
         }),
         ...AFTER_CHECK(0),
       ],
-      { names: [], recommended: null, chosen: null, pools: [] },
+      {
+        names: [],
+        recommended: null,
+        chosen: null,
+        pools: [],
+        joining: false,
+        pinned: null,
+        key_changed: false,
+      },
     ),
   ),
 };
@@ -201,7 +212,15 @@ export const NoKubectl: Story = {
         }),
         ...AFTER_CHECK(0),
       ],
-      { names: [], recommended: null, chosen: null, pools: [] },
+      {
+        names: [],
+        recommended: null,
+        chosen: null,
+        pools: [],
+        joining: false,
+        pinned: null,
+        key_changed: false,
+      },
     ),
   ),
 };
@@ -462,7 +481,15 @@ const onPool = (findings: string, next: PoolSetupAction, pools: string[]) =>
   shown(
     "pool",
     [...INSTALLED, step("pool", "Pool", "current", { findings: [findings], next }), ...AFTER_POOL],
-    { names: ["kind-team"], recommended: "kind-team", chosen: "kind-team", pools },
+    {
+      names: ["kind-team"],
+      recommended: "kind-team",
+      chosen: "kind-team",
+      pools,
+      joining: false,
+      pinned: null,
+      key_changed: false,
+    },
   );
 
 const KEY = "ed25519:9f2c4e6a8b0d1f3e5a7c9b1d3f5e7a9c1b3d5f7e9a1c3b5d7f9e1a3c5b7d9f1e";
@@ -497,11 +524,13 @@ export const TheKeyToCheckBeforeAdding: Story = {
           act(
             "add-cluster-pool",
             "Add the pool here",
-            "Pins the cluster operator key the pool names, then claims your runner of it and pairs it with this machine. Nothing else on the cluster changes.",
+            "Checks the cluster operator key the pool names against the one your admin gave you, pins it, then claims your runner of it and pairs it with this machine. Nothing else on the cluster changes.",
           ),
           ["team", "gpu"],
         );
-      if (cmd === "cluster_pool_key") return { key: KEY, namespace: "purlis-runners-3f9a1c2b" };
+      // The admin made the signing key in this setup, so its key is shown at once (#4495).
+      if (cmd === "cluster_pool_key")
+        return { key: KEY, made_here: true, matches: null, namespace: "purlis-runners-3f9a1c2b" };
       return null;
     });
   },
@@ -537,7 +566,288 @@ export const MarkThePoolAsYourOwn: Story = {
         step("identity", "Agent identity", "later"),
         step("try", "Try it", "later"),
       ],
-      { names: ["kind-team"], recommended: "kind-team", chosen: "kind-team", pools: ["team"] },
+      {
+        names: ["kind-team"],
+        recommended: "kind-team",
+        chosen: "kind-team",
+        pools: ["team"],
+        joining: false,
+        pinned: null,
+        key_changed: false,
+      },
     ),
   ),
+};
+
+/** A teammate joining their team's install (#4495): Check and Install read as the team's. */
+const JOINED = [
+  DONE_WHERE,
+  step("check", "Check the cluster", "done", {
+    line: "Installed by your team",
+    findings: [
+      "purlis is on this cluster already, installed by your team, so there's nothing to check or install. Your sign-in doesn't need to read the install itself.",
+    ],
+  }),
+  step("install", "Install", "done", {
+    line: "Installed by your team",
+    findings: [
+      "purlis's cluster operator is on this cluster, installed by your team. Installing, changing and uninstalling it are your cluster admin's, so there's nothing to do here.",
+    ],
+  }),
+];
+
+const TEAMMATE = {
+  names: ["kind-team"],
+  recommended: "kind-team",
+  chosen: "kind-team",
+  pools: [],
+  joining: true,
+  pinned: null,
+  key_changed: false,
+};
+
+const ADMINS_KEY = "ed25519:4b7e1a9c3d5f7b2e8a0c6d4f1b3e5a7c9d2f4b6e8a1c3d5f7b9e2a4c6d8f0b1e";
+
+export const ATeammateTypesThePoolsName: Story = {
+  beforeEach: () => {
+    mockIPC((cmd, args) => {
+      if (cmd === "pool_setup")
+        return shown(
+          "pool",
+          [
+            ...JOINED,
+            step("pool", "Pool", "current", {
+              findings: [
+                "A pool is a named place your chats run. Your sign-in can't list your team's pools, so type the pool's name your cluster's admin gave you. purlis reads the key it names, for you to check against the one your admin gave you too.",
+              ],
+              next: act(
+                "add-cluster-pool",
+                "Read the pool's key",
+                "Asks for the key your admin gave you, to check the pool's against. Nothing is pinned or claimed yet.",
+              ),
+            }),
+            ...AFTER_POOL,
+          ],
+          TEAMMATE,
+        );
+      // Shown only once the key pasted is the pool's (#4495).
+      if (cmd === "cluster_pool_key") {
+        const pasted = (args as { pasted: string | null }).pasted;
+        const matches = pasted === null ? null : pasted.trim().toLowerCase() === ADMINS_KEY;
+        return {
+          key: matches === true ? ADMINS_KEY : null,
+          made_here: false,
+          matches,
+          namespace: "purlis-runners-7c2e9a41",
+        };
+      }
+      return null;
+    });
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const name = await canvas.findByRole("textbox", { name: "Pool's name" });
+    name.focus();
+    await expect(name).toHaveFocus();
+    await userEvent.keyboard("team");
+    await expectFocusInSight();
+  },
+};
+
+export const ATeammatePastesTheirAdminsKey: Story = {
+  beforeEach: ATeammateTypesThePoolsName.beforeEach,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.type(await canvas.findByRole("textbox", { name: "Pool's name" }), "team");
+    await userEvent.click(canvas.getByRole("button", { name: "Read the pool's key" }));
+    const box = await canvas.findByRole("textbox", { name: "Key your admin gave you" });
+    await expect(canvas.queryByText(ADMINS_KEY)).toBeNull();
+    await userEvent.type(box, ADMINS_KEY);
+    await userEvent.click(canvas.getByRole("button", { name: "Check the key" }));
+    await canvas.findByText(ADMINS_KEY);
+    const pin = await canvas.findByRole("button", { name: "Pin the key and add the pool" });
+    pin.focus();
+    await expect(pin).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
+export const NothingIsPinnedBeforeThePaste: Story = {
+  beforeEach: ATeammateTypesThePoolsName.beforeEach,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.type(await canvas.findByRole("textbox", { name: "Pool's name" }), "team");
+    await userEvent.click(canvas.getByRole("button", { name: "Read the pool's key" }));
+    const check = await canvas.findByRole("button", { name: "Check the key" });
+    check.focus();
+    await userEvent.keyboard("{Enter}");
+    await canvas.findByText(/Paste the key your cluster's admin gave you first/);
+    // The picture is taken with the button focused from the keyboard, as a keyboard user is
+    // left: reached by Tab, so its focus ring is drawn in every engine, not only after a
+    // keyboard press the engine has already counted.
+    const after = canvas.getByRole("button", { name: "Check the key" });
+    await userEvent.tab({ shift: true });
+    await expect(after).not.toHaveFocus();
+    await userEvent.tab();
+    await expect(after).toHaveFocus();
+  },
+};
+
+const NEW_KEY = "ed25519:e1d3c5b7a9f2e4d6c8b0a1f3e5d7c9b2a4f6e8d0c1b3a5f7e9d2c4b6a8f0e1d3";
+
+export const AChangedKeyAsksAgain: Story = {
+  beforeEach: faked({
+    ...shown(
+      "pool",
+      [
+        ...INSTALLED,
+        step("pool", "Pool", "attention", {
+          findings: [
+            "Your cluster's pool team now names another cluster operator key than the one pinned on this machine, and the pinned key didn't vouch for it. purlis refuses every link to your runner until you check the new key with your cluster's admin and pin it.",
+          ],
+          next: act(
+            "check-key-again",
+            "Check the new key",
+            "Asks for the key your admin gives you, and pins the pool's new key only if it is the same.",
+          ),
+        }),
+        ...AFTER_POOL,
+      ],
+      {
+        names: ["kind-team"],
+        recommended: "kind-team",
+        chosen: "kind-team",
+        pools: ["team"],
+        joining: false,
+        pinned: KEY,
+        key_changed: true,
+      },
+    ),
+    pool: "team",
+  }),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByText(KEY);
+    // The new key isn't shown before the paste (#4495).
+    await expect(canvas.queryByText(NEW_KEY)).toBeNull();
+    const box = await canvas.findByRole("textbox", { name: "Key your admin gave you" });
+    box.focus();
+    await expect(box).toHaveFocus();
+    await userEvent.tab();
+    await expect(canvas.getByRole("button", { name: "Pin the new key" })).toBeVisible();
+    await expectFocusInSight();
+  },
+};
+
+export const TheKeyPinnedHereForTeammates: Story = {
+  beforeEach: faked({
+    ...shown(
+      "pool",
+      [...INSTALLED, step("pool", "Pool", "done", { line: "team" }), ...AFTER_POOL],
+      {
+        names: ["kind-team"],
+        recommended: "kind-team",
+        chosen: "kind-team",
+        pools: ["team"],
+        joining: false,
+        pinned: KEY,
+        key_changed: false,
+      },
+    ),
+    pool: "team",
+  }),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByText(KEY);
+    const go = await canvas.findByRole("button", { name: "Continue" });
+    go.focus();
+    await expect(go).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
+/** Doctor's lines on a cluster where the person may not apply the install (#4496). */
+const REFUSED_CHECKS = [
+  { about: "cluster", verdict: "ok", title: "asked context kind-team", more: null },
+  { about: "cluster", verdict: "ok", title: "Kubernetes v1.36.4", more: null },
+  {
+    about: "cluster",
+    verdict: "missing",
+    title: "you may not apply the install's cluster-scoped definitions",
+    more: "Next: ask your cluster's admin to install purlis, or for the rights.",
+  },
+] as PoolSetupStep["checks"];
+
+const ADMIN_WORDS =
+  "Hello. I'd like to run purlis chats on our Kubernetes cluster, and purlis's check found it lacks what I can't add with my own sign-in. Could you have a look?\n\nWhat the check found, in its own words:\nok: asked context kind-team\nok: Kubernetes v1.36.4\nmissing: you may not apply the install's cluster-scoped definitions.\n\nThe check only reads. Run it with your own sign-in:\nkubectl version\nkubectl auth can-i create namespaces\n\nSent from purlis. It holds no password, token, key or credential.";
+
+const onCheck = (state: string, also: PoolSetupAction) =>
+  shown("check", [
+    DONE_WHERE,
+    step("check", "Check the cluster", state, {
+      line: state === "waiting" ? "Waiting for your admin" : null,
+      findings: [
+        "The cluster lacks something the install doesn't add, so nothing changes until it has it. Each line says what to do, and this step checks again.",
+      ],
+      checks: REFUSED_CHECKS,
+      next: act("check-again", "Check again", "Asks the cluster again. It changes nothing."),
+      also,
+      admin: ADMIN_WORDS,
+    }),
+    ...AFTER_CHECK(1),
+  ]);
+
+export const SendToYourAdmin: Story = {
+  beforeEach: faked(
+    onCheck(
+      "attention",
+      act(
+        "send-to-admin",
+        "Send to your admin",
+        "Shows the words to send your cluster's admin: what's missing, what purlis needs and the commands. They hold no password, token, key or credential.",
+      ),
+    ),
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const send = await canvas.findByRole("button", { name: "Send to your admin" });
+    send.focus();
+    await expect(send).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
+export const WaitingForYourAdmin: Story = {
+  beforeEach: faked(
+    onCheck(
+      "waiting",
+      act(
+        "stop-waiting",
+        "Stop waiting",
+        "Forgets that you asked your admin. Nothing on the cluster changes.",
+      ),
+    ),
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findAllByText("Waiting for your admin");
+    const copy = await canvas.findByRole("button", { name: /Copy/ });
+    copy.focus();
+    await expect(copy).toHaveFocus();
+    await userEvent.tab();
+    await expectFocusInSight();
+  },
+};
+
+/** Get help under a step that needs attention (#4497): a chat that explains it, and changes nothing. */
+export const GetHelpOnAStepThatNeedsYou: Story = {
+  beforeEach: SendToYourAdmin.beforeEach,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByText(/It changes nothing itself: every fix is made here/);
+    const help = await canvas.findByRole("button", { name: "Get help" });
+    help.focus();
+    await expect(help).toHaveFocus();
+    await expectFocusInSight();
+  },
 };

@@ -289,6 +289,19 @@ impl Locks {
                 ..held
             };
         }
+        // Pool setup's Get help chat reaches no cluster ([`holding_from_clusters`]).
+        if HOLDING_FROM_CLUSTERS.get() {
+            return Self {
+                hosts: Some(Vec::new()),
+                no_personal_hosts: true,
+                no_persona_hosts: true,
+                no_socket_grants: true,
+                no_live_asks: true,
+                allow_scopes: Some(Vec::new()),
+                relayed_internal: Vec::new(),
+                ..held
+            };
+        }
         // A grade's chat keeps no Allow of any scope (SK-16, [`holding_no_kept_grants`]).
         if HOLDING_NO_KEPT_GRANTS.get() {
             return Self {
@@ -1217,6 +1230,8 @@ thread_local! {
     /// Whether this thread is deciding the sandbox of an outcome eval's chat that has a shell
     /// ([`holding_to_its_folder`]).
     static HOLDING_TO_ITS_FOLDER: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Whether this thread is deciding Pool setup's Get help chat ([`holding_from_clusters`]).
+    static HOLDING_FROM_CLUSTERS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// **Decides `decide` as for an outcome eval's chat that has a shell** (#4476, the person's
@@ -1250,6 +1265,28 @@ pub fn holding_no_kept_grants<T>(decide: impl FnOnce() -> T) -> T {
     }
     let _held = Held(HOLDING_NO_KEPT_GRANTS.replace(true));
     decide()
+}
+
+/// **Decides `decide` as for Pool setup's Get help chat** (#4497): held from every cluster, so
+/// the chat can't change a pool. It is granted no host, as an administrator's policy that fixes
+/// none would hold it, with no personal or persona host, no socket, no live ask and no Allow
+/// kept of any scope, so no cluster's API server is reached from it; and the sandbox's floor
+/// denies it the person's kubeconfigs, `~/.kube` and every file `KUBECONFIG` names
+/// ([`held_from_clusters`]). Only the thread that asks is held, and only while `decide` runs.
+pub fn holding_from_clusters<T>(decide: impl FnOnce() -> T) -> T {
+    struct Held(bool);
+    impl Drop for Held {
+        fn drop(&mut self) {
+            HOLDING_FROM_CLUSTERS.set(self.0);
+        }
+    }
+    let _held = Held(HOLDING_FROM_CLUSTERS.replace(true));
+    decide()
+}
+
+/// Whether this thread is deciding a chat held from clusters ([`holding_from_clusters`]).
+pub(crate) fn held_from_clusters() -> bool {
+    HOLDING_FROM_CLUSTERS.get()
 }
 
 #[cfg(test)]
