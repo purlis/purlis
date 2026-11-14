@@ -134,14 +134,14 @@ describe("Updates' Mine and Project (#5646)", () => {
     expect(shown.onDismissAll).toHaveBeenCalledWith(["task:a", "task:b"]);
   });
 
-  it("keeps the scope switch: this project's updates, or this workspace's alone", async () => {
+  it("keeps the scope switch, said Workspace and Project: this project's updates, or this workspace's alone", async () => {
     draw(strip);
     expect(
       scopes()
         .getAllByRole("radio")
         .map((one) => one.getAttribute("aria-label")),
-    ).toEqual(["This workspace, 1 update", "This project, 2 updates"]);
-    await userEvent.click(scopes().getByRole("radio", { name: "This workspace, 1 update" }));
+    ).toEqual(["Workspace, 1 update", "Project, 2 updates"]);
+    await userEvent.click(scopes().getByRole("radio", { name: "Workspace, 1 update" }));
     expect(screen.getByText(/Fix the build: done/)).toBeInTheDocument();
     expect(screen.queryByText(/Ship the docs: failed/)).toBeNull();
   });

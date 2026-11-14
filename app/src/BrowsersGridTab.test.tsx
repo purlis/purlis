@@ -8,6 +8,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { BrowsersGridTab, LIVE_AT_MOST } from "./BrowsersGridTab";
 import {
   forgetProjectsBrowsers,
+  keepBrowsersScope,
   keptBrowsersScope,
   tellProjectBrowsers,
   tileTitle,
@@ -107,7 +108,7 @@ describe("the Browsers grid", () => {
     );
   });
 
-  it("narrows and widens with the Inbox's scope switch, each scope counted", async () => {
+  it("offers Workspace, Project and All, opens on Project, and narrows and widens, each counted", async () => {
     tell();
     render(<BrowsersGridTab plane={HERE} workspace="alpha" />);
     const scopes = screen.getByRole("radiogroup", { name: "Show the browsers of" });
@@ -115,17 +116,28 @@ describe("the Browsers grid", () => {
       within(scopes)
         .getAllByRole("radio")
         .map((one) => one.closest("label")?.textContent),
-    ).toEqual(["This workspace1", "This project2", "All projects3"]);
+    ).toEqual(["Workspace1", "Project2", "All3"]);
+    // The grid opens on Project (#2027), whatever Asks opens on.
+    expect(within(scopes).getByRole("radio", { name: "Project, 2 browsers" })).toBeChecked();
 
-    await userEvent.click(within(scopes).getByRole("radio", { name: /This workspace/ }));
+    await userEvent.click(within(scopes).getByRole("radio", { name: /^Workspace/ }));
     expect(tiles()).toEqual(["A1"]);
-    await userEvent.click(within(scopes).getByRole("radio", { name: /All projects/ }));
+    await userEvent.click(within(scopes).getByRole("radio", { name: /^All/ }));
     expect(tiles()).toEqual(["A1", "A2", "B1"]);
     // Among every project's, a tile says which project it is of.
     const there = within(grid()).getAllByRole("option")[2];
     expect(within(there).getByText(/^other · alpha/)).toBeInTheDocument();
     // Kept for the project, as the Inbox's pick is.
     expect(keptBrowsersScope(HERE)).toBe("all");
+  });
+
+  it("reads back the pick kept for the project, under its new name", () => {
+    keepBrowsersScope(HERE, "all");
+    tell();
+    render(<BrowsersGridTab plane={HERE} workspace="alpha" />);
+    const scopes = screen.getByRole("radiogroup", { name: "Show the browsers of" });
+    expect(within(scopes).getByRole("radio", { name: "All, 3 browsers" })).toBeChecked();
+    expect(tiles()).toEqual(["A1", "A2", "B1"]);
   });
 
   it("opens a pressed browser in its own project, by the keyboard too", async () => {
@@ -224,10 +236,10 @@ describe("live tiles are bounded", () => {
     seeing.show("A2", true);
     await vi.waitFor(() => expect(watched.map((one) => one.program)).toEqual(["A2"]));
     const scopes = screen.getByRole("radiogroup", { name: "Show the browsers of" });
-    // A2 is filed in beta: This workspace (alpha) leaves it out, This project lists it again.
-    await userEvent.click(within(scopes).getByRole("radio", { name: /This workspace/ }));
+    // A2 is filed in beta: Workspace (alpha) leaves it out, Project lists it again.
+    await userEvent.click(within(scopes).getByRole("radio", { name: /^Workspace/ }));
     await vi.waitFor(() => expect(unwatched).toEqual(["A2"]));
-    await userEvent.click(within(scopes).getByRole("radio", { name: /This project/ }));
+    await userEvent.click(within(scopes).getByRole("radio", { name: /^Project/ }));
     expect(tiles()).toEqual(["A1", "A2"]);
     expect(watched.map((one) => one.program)).toEqual(["A2"]);
   });
@@ -264,7 +276,7 @@ describe("the scope switch", () => {
     tell();
     render(<BrowsersGridTab plane={HERE} workspace="alpha" />);
     const scopes = screen.getByRole("radiogroup", { name: "Show the browsers of" });
-    expect(within(scopes).getByRole("radio", { name: "All projects, 3 browsers" })).toBeTruthy();
-    expect(within(scopes).getByRole("radio", { name: "This workspace, 1 browser" })).toBeTruthy();
+    expect(within(scopes).getByRole("radio", { name: "All, 3 browsers" })).toBeTruthy();
+    expect(within(scopes).getByRole("radio", { name: "Workspace, 1 browser" })).toBeTruthy();
   });
 });

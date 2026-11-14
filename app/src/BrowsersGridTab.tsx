@@ -107,10 +107,10 @@ function useInSight(): {
 
 /**
  * **The Browsers grid** (#2027, spec #2008): every browser in scope as a live tile, about a
- * frame a second, drawn while the tab can be seen. The switch at the top is the Inbox's
- * (`ScopeSwitch`, `inboxScope.ts`): every project this window holds, this project (the
- * default), or the workspace whose strip the tab is on, each with its count, the pick kept for
- * the project. A scope with nothing in it says how many run in the nearest wider one, with one
+ * frame a second, drawn while the tab can be seen. The switch at the top is the shared one
+ * (`ScopeSwitch`, `inboxScope.ts`), Workspace, Project (the default) and the grid's own All:
+ * the workspace whose strip the tab is on, this project, or every project this window holds,
+ * each with its count, the pick kept for the project. A scope with nothing in it says how many run in the nearest wider one, with one
  * press to widen.
  *
  * The tiles are one list to act on (`ListBox`, `layout="grid"`): one Tab stop, the arrows walk
@@ -122,7 +122,7 @@ export function BrowsersGridTab({
   workspace,
 }: {
   plane: string;
-  /** The workspace whose strip the tab is on, by the strip's key: This workspace's. */
+  /** The workspace whose strip the tab is on, by the strip's key: Workspace's. */
   workspace?: string;
 }) {
   const projects = useProjectsBrowsers();

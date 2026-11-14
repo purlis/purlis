@@ -48,7 +48,7 @@ afterEach(() => {
 });
 
 describe("which browsers the grid shows", () => {
-  it("shows every project's for All projects", () => {
+  it("shows every project's for All", () => {
     expect(tilesIn("all", PROJECTS, HERE, "alpha").map((one) => one.program)).toEqual([
       "A1",
       "A2",
@@ -56,14 +56,14 @@ describe("which browsers the grid shows", () => {
     ]);
   });
 
-  it("shows this project's alone for This project", () => {
+  it("shows this project's alone for Project", () => {
     expect(tilesIn("project", PROJECTS, HERE, "alpha").map((one) => one.program)).toEqual([
       "A1",
       "A2",
     ]);
   });
 
-  it("shows those of this project's workspace in front for This workspace", () => {
+  it("shows those of this project's workspace in front for Workspace", () => {
     // B1 is filed in a workspace of the same name, in another project: not this one's.
     expect(tilesIn("workspace", PROJECTS, HERE, "alpha").map((one) => one.program)).toEqual(["A1"]);
   });
