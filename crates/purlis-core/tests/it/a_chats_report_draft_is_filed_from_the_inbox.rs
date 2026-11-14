@@ -50,7 +50,7 @@ fn consent(agent_drafts: Option<bool>) -> Consent {
 }
 
 /// Reports knowing nothing of this machine, kept under `root`, sending to `intake`.
-fn reports(root: &Path, agent_drafts: Option<bool>, intake: &Arc<Recorded>) -> Reports {
+pub(crate) fn reports(root: &Path, agent_drafts: Option<bool>, intake: &Arc<Recorded>) -> Reports {
     Reports::new(Known::default())
         .with_consent(consent(agent_drafts))
         .sending_to(
