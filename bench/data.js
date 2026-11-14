@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794650913582,
+  "lastUpdate": 1794659787522,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -49224,6 +49224,48 @@ window.BENCHMARK_DATA = {
             "value": 101.945913,
             "unit": "ms",
             "extra": "median of 5 runs: 101.275, 101.329, 101.946, 102.246, 102.611 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "d2e9814a56baf332b91e4e349b904485cdd946c7",
+          "message": "Always Send Asks Once waits for its dialog to be seen (#6628) (#6629)\n\nThe play found the dialog with findByRole and went straight to the keyboard, but the\ndialog's scrim fades in from opacity 0 as it opens, so on a slow runner the closing\ntoBeVisible could still read it as hidden. The play now waits for the dialog to be\nvisible before its keyboard steps. The file's other plays already wait for what they\nread, or assert an absence.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7CWYJNK18ATC9TNPHW43QKS\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-14T11:54:54Z",
+          "tree_id": "147ee01cccc33195d6c344d7ec1ba78a0a7f9ac4",
+          "url": "https://github.com/purlis/purlis/commit/d2e9814a56baf332b91e4e349b904485cdd946c7"
+        },
+        "date": 1794659779805,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6677885,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.654, 0.655, 0.668, 0.670, 0.688 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5994935,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.523, 16.582, 16.599, 16.671, 16.820 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.4370655,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.039, 101.923, 102.437, 102.644, 102.936 ms"
           }
         ]
       }
