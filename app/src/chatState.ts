@@ -19,6 +19,7 @@ import {
   commands,
   type ChildAgent,
   type ChatNoticed,
+  type ModeDiffers,
   type HowFailed,
   type Moved,
   type Need,
@@ -135,8 +136,12 @@ export type ChatStates = {
 };
 
 /** What the core noticed of one chat (#6014): `null` is "no", for Stuck?, and "not known", for
- *  work left. */
-export type Noticed = { readonly stuck: string | null; readonly leftWork: boolean | null };
+ *  work left. `mode` is the mode purlis didn't set that it reported (R-243), or `null`. */
+export type Noticed = {
+  readonly stuck: string | null;
+  readonly leftWork: boolean | null;
+  readonly mode: ModeDiffers | null;
+};
 
 /** One task that came to nothing, as its asking chat's item is told it (`Need`'s
  *  `task_failed`). */
@@ -884,11 +889,27 @@ export function leftWorkOf(states: ChatStates, session: number): boolean | undef
   return states.noticed?.[session]?.leftWork ?? undefined;
 }
 
+/** **The mode purlis didn't set that chat `session` reported** (R-243, T1-44), with the mode it
+ *  set, or nothing: only a Claude Code chat's armed hook is read for one. */
+export function modeDiffersOf(states: ChatStates, session: number): ModeDiffers | undefined {
+  return states.noticed?.[session]?.mode ?? undefined;
+}
+
+const sameMode = (a: ModeDiffers | null, b: ModeDiffers | null) =>
+  a === b || (a !== null && b !== null && a.set === b.set && a.reported === b.reported);
+
 /** `told` taken: what the core noticed of its chat now. The same states where nothing changed. */
 export function noticed(states: ChatStates, told: ChatNoticed): ChatStates {
   const was = states.noticed?.[told.session];
-  const now: Noticed = { stuck: told.stuck, leftWork: told.left_work };
-  if (was !== undefined && was.stuck === now.stuck && was.leftWork === now.leftWork) return states;
+  // A core older than T1-44 tells no mode.
+  const now: Noticed = { stuck: told.stuck, leftWork: told.left_work, mode: told.mode ?? null };
+  if (
+    was !== undefined &&
+    was.stuck === now.stuck &&
+    was.leftWork === now.leftWork &&
+    sameMode(was.mode, now.mode)
+  )
+    return states;
   return { ...states, noticed: { ...states.noticed, [told.session]: now } };
 }
 

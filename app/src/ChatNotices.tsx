@@ -21,6 +21,7 @@ import { DraftReadyNotice } from "./DraftReadyNotice";
 import { HostLostNotice } from "./HostLostNotice";
 import { MoveNotice } from "./MoveNotice";
 import { TaskQuietNotice } from "./TaskQuietNotice";
+import { ModeDiffersNotice } from "./ModeDiffersNotice";
 import { PersonaGrantsNotice } from "./PersonaGrantsNotice";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
 import { SigningRefusalNotice } from "./SigningRefusal";
@@ -473,6 +474,8 @@ export function ChatNotices({
       {/* Its move to or from a pool's runner (#2048). */}
       <MoveNotice plane={plane} session={session} />
       <TaskQuietNotice plane={plane} session={session} />
+      {/* A mode purlis didn't set that its Claude Code reported (R-243): a standing fault. */}
+      <ModeDiffersNotice session={session} />
       {/* An extension's offer of its view about this chat (#4769): one quiet note. */}
       <ChatOffers session={session} pane={pane} />
       {restartSaid?.trouble !== undefined && (

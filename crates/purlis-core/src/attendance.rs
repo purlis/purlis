@@ -43,7 +43,10 @@
 //! it would refuse unattended, with what that line's own report says ([`Fact::hearing`]);
 //! dispatch, from the fact the app holds ([`of_held`]); and the briefing and the commit gate,
 //! whose hooks ask the app as A4's does ([`of_a_line`]). **Each fails closed**: a chat the app
-//! started whose app does not answer, or for which it holds no fact, is unattended.
+//! started whose app does not answer, or for which it holds no fact, is unattended. The window
+//! reads [`Fact::mode_differs`] from the same fact (T1-44, #6435): the mode purlis didn't set
+//! that the chat reported, a standing fault its pane says in a Notice and never in Asks (R-243).
+//! A resume carries it with the fact ([`Fact::resumed`]).
 
 use crate::dispatchunattended::Attendance;
 use crate::harness::Harness;
@@ -204,6 +207,21 @@ pub struct Fact {
     set: Option<ClaudeCodeMode>,
     /// The last mode the chat's armed hook reported.
     reported: Option<ClaudeCodeMode>,
+    /// The last reported mode purlis didn't set, with the mode it set: what flipped the fact,
+    /// kept as the fact is (R-243).
+    differed: Option<ModeDiffers>,
+}
+
+/// **A Claude Code chat reported a mode purlis didn't set** (R-243, T1-44, #6435): the standing
+/// fault the window says in a Notice, never in Asks. Only Claude Code's armed hook is read for
+/// its mode, so no other harness has one (R-289).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct ModeDiffers {
+    /// The mode purlis started the chat in.
+    pub set: ClaudeCodeMode,
+    /// The mode its armed hook reported: [`ClaudeCodeMode::Unknown`] for a string nobody
+    /// measured.
+    pub reported: ClaudeCodeMode,
 }
 
 impl Fact {
@@ -221,6 +239,7 @@ impl Fact {
             },
             set: (harness == Some(Harness::ClaudeCode)).then(|| ClaudeCodeMode::set_in(command)),
             reported: None,
+            differed: None,
         }
     }
 
@@ -238,6 +257,8 @@ impl Fact {
         if prior.attendance == Attendance::Unattended {
             fact.attendance = Attendance::Unattended;
         }
+        // The mode that flipped it is carried forward with it (R-243).
+        fact.differed = prior.differed;
         fact
     }
 
@@ -268,6 +289,7 @@ impl Fact {
             attendance,
             set: None,
             reported: None,
+            differed: None,
         }
     }
 
@@ -292,6 +314,10 @@ impl Fact {
         self.reported = Some(said);
         if said != set || said == ClaudeCodeMode::Unknown {
             self.attendance = Attendance::Unattended;
+            self.differed = Some(ModeDiffers {
+                set,
+                reported: said,
+            });
         }
     }
 
@@ -303,5 +329,14 @@ impl Fact {
     /// The last mode the chat's armed hook reported, where its harness's is read.
     pub fn reported(self) -> Option<ClaudeCodeMode> {
         self.reported
+    }
+
+    /// **The mode purlis didn't set that the chat reported** (R-243): the last one, with the
+    /// mode purlis set, once any has flipped the fact. It stands as the fact does, so a later
+    /// report of the mode set clears nothing (R-318). `None` where none was reported: on every
+    /// harness but Claude Code, and on a chat unattended only by how it started or by a line
+    /// whose mode is unproven.
+    pub fn mode_differs(self) -> Option<ModeDiffers> {
+        self.differed
     }
 }

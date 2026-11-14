@@ -14,6 +14,9 @@
 //! - **Activity** ([`heard`], [`ran`]): a tool beginning or coming back, a turn's output, a
 //!   command that ran and whether it failed, as its hooks said. Never its terminal's bytes.
 //! - **"It's fine"** ([`stuck_fine`]): clears Stuck? until the chat changes state.
+//! - **A mode purlis didn't set** ([`attendance_heard`], T1-44): what the one attendance fact
+//!   the app holds for a Claude Code chat heard from its armed hook, a standing fault its pane
+//!   says (R-243).
 //!
 //! **No notification is sent from here** (#6005 decides that). In memory only.
 
@@ -36,6 +39,30 @@ pub struct ChatNoticed {
     /// Whether its folder held uncommitted work when it last stopped working; none where that
     /// is not known.
     pub left_work: Option<bool>,
+    /// The mode purlis didn't set that it reported, once one made it unattended (R-243,
+    /// T1-44): a standing fault its pane says in a Notice, never an ask. None on every harness
+    /// but Claude Code.
+    pub mode: Option<ModeDiffers>,
+}
+
+/// **A Claude Code chat reported a mode purlis didn't set** (R-243): each mode as Claude Code
+/// names it (`default`, `acceptEdits`, `plan`, `auto`, `bypassPermissions`), or `unknown` for a
+/// string nobody measured ([`purlis_core::attendance::ModeDiffers`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct ModeDiffers {
+    /// The mode purlis started it in.
+    pub set: String,
+    /// The mode its armed hook reported.
+    pub reported: String,
+}
+
+impl From<purlis_core::attendance::ModeDiffers> for ModeDiffers {
+    fn from(differs: purlis_core::attendance::ModeDiffers) -> Self {
+        Self {
+            set: differs.set.as_str().to_owned(),
+            reported: differs.reported.as_str().to_owned(),
+        }
+    }
 }
 
 /// Told each [`ChatNoticed`]. The telling carries its project.
@@ -46,6 +73,7 @@ pub type Teller = Arc<dyn Fn(ChatNoticed) + Send + Sync + 'static>;
 struct Said {
     stuck: Option<String>,
     left_work: Option<bool>,
+    mode: Option<purlis_core::attendance::ModeDiffers>,
 }
 
 /// How long a turn's timer sleeps at most before it looks at the clock again: the machine's
@@ -196,6 +224,12 @@ impl Noticed {
         self.look(chat);
     }
 
+    /// Chat `chat`'s attendance fact names `differs`, the mode purlis didn't set that it
+    /// reported (R-243): the window is told where that changed.
+    pub fn mode_differs(&self, chat: u32, differs: purlis_core::attendance::ModeDiffers) {
+        self.tell_if_changed(chat, |said| said.mode = Some(differs));
+    }
+
     /// **"It's fine"**: chat `chat` is not stuck until it changes state.
     pub fn fine(&self, chat: u32) {
         held_lock(&self.watch).fine(chat);
@@ -232,6 +266,7 @@ impl Noticed {
             session,
             stuck: said.stuck.clone(),
             left_work: said.left_work,
+            mode: said.mode.map(ModeDiffers::from),
         }
     }
 
@@ -282,6 +317,25 @@ pub(crate) fn limits_of(held: &Held, chat: u32) -> Limits {
 /// Chat `chat` began or got back a command, or its turn put something out.
 pub fn heard(held: &Held, chat: u32) {
     held.noticed().heard(chat);
+}
+
+/// **A hook report of chat `report.chat`, after the board took it, heard by its attendance
+/// fact** (T1-18, T1-44): the one fact `chats` holds for the chat, which A4 reads
+/// ([`crate::chats::Chats::heard_attendance`]), and `noticed` told the mode purlis didn't set
+/// that it reported, read from that same fact (R-243). Only Claude Code's armed hook is read
+/// for its mode, so every other harness's chat is told none.
+pub fn attendance_heard(
+    chats: &crate::chats::Chats,
+    noticed: &Noticed,
+    report: &purlis_core::hookwire::Report,
+) {
+    chats.heard_attendance(report);
+    if let Some(differs) = chats
+        .attendance_of(report.chat)
+        .and_then(purlis_core::attendance::Fact::mode_differs)
+    {
+        noticed.mode_differs(report.chat, differs);
+    }
 }
 
 /// Chat `chat` ran `command`, which `failed` or not.

@@ -4903,6 +4903,12 @@ export type ChatNoticed = {
 	 *  is not known.
 	 */
 	left_work: boolean | null,
+	/**
+	 *  The mode purlis didn't set that it reported, once one made it unattended (R-243,
+	 *  T1-44): a standing fault its pane says in a Notice, never an ask. None on every harness
+	 *  but Claude Code.
+	 */
+	mode: ModeDiffers | null,
 };
 
 /**  A chat on a device, as its row names it. */
@@ -8917,6 +8923,18 @@ export type Merged = {
 	branch: string,
 	was: string,
 	now: string,
+};
+
+/**
+ *  **A Claude Code chat reported a mode purlis didn't set** (R-243): each mode as Claude Code
+ *  names it (`default`, `acceptEdits`, `plan`, `auto`, `bypassPermissions`), or `unknown` for a
+ *  string nobody measured ([`purlis_core::attendance::ModeDiffers`]).
+ */
+export type ModeDiffers = {
+	/**  The mode purlis started it in. */
+	set: string,
+	/**  The mode its armed hook reported. */
+	reported: string,
 };
 
 /**  What the person's mouse did, in a browser they drive (#2014). */

@@ -7306,12 +7306,16 @@ impl Chats {
             Begun::Person
         };
         let mut facts = lock(&self.attendance);
-        let held_unattended = facts.get(&session).is_some_and(|fact| fact.unattended());
-        let prior = Fact::kept(if held_unattended || chat.unattended {
-            Attendance::Unattended
-        } else {
-            Attendance::Attended
-        });
+        // The fact held here, whole, so the mode that differed comes with it (R-243); the
+        // record's word alone where it says less attended than what is held, or nothing is held.
+        let prior = match facts.get(&session) {
+            Some(held) if held.unattended() || !chat.unattended => *held,
+            _ => Fact::kept(if chat.unattended {
+                Attendance::Unattended
+            } else {
+                Attendance::Attended
+            }),
+        };
         facts.insert(session, Fact::resumed(prior, begun, harness, started_in));
     }
 

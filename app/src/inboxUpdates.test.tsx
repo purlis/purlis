@@ -491,8 +491,8 @@ describe("a chat that reads Stuck? (#6014, ADR 0121 decision 19)", () => {
   it("is a Should-know update From your chats, drawn while it reads so", () => {
     const said = stuckUpdates(
       {
-        3: { stuck: "no new command or output for 15 minutes", leftWork: null },
-        4: { stuck: null, leftWork: true },
+        3: { stuck: "no new command or output for 15 minutes", leftWork: null, mode: null },
+        4: { stuck: null, leftWork: true, mode: null },
       },
       nameOf,
       NOW,
