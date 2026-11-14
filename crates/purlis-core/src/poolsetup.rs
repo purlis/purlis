@@ -527,6 +527,10 @@ pub struct Chosen {
     /// **The Docker context the route was read from** (#6268), where the person picked one: its
     /// name alone, for doctor to compare the context with later. Never followed.
     pub docker_context: Option<String>,
+    /// **Connect's last answer** (#6271, ADR 0123 §5): that only the person, and people they trust
+    /// with their logins, can sign in to the machine. Kept only beside a trusted pin, and
+    /// forgotten when the machine is trusted again; the pool made with that pin is marked so.
+    pub owned: bool,
 }
 
 impl Chosen {
@@ -1456,12 +1460,14 @@ pub fn read_pressed(
                         .identity()
                         .map(|path| path.display().to_string()),
                     trusted: Some(remote.pin.clone()),
+                    owned: kept.owned(),
                     ..connecting::Connecting::default()
                 },
                 runners::RemoteEngine::Tls(remote) => connecting::Connecting {
                     route: Some(remote.route.spelled()),
                     tls: Some(remote.files.clone()),
                     trusted_tls: Some(remote.pin.clone()),
+                    owned: kept.owned(),
                     ..connecting::Connecting::default()
                 },
             };
@@ -1500,6 +1506,7 @@ pub fn read_pressed(
                     .connect
                     .as_ref()
                     .and_then(|chosen| chosen.trusted_tls.clone()),
+                owned: choices.connect.as_ref().is_some_and(|chosen| chosen.owned),
                 ..connecting::Connecting::default()
             };
             let engine = if here.docker.is_some() {
@@ -1951,6 +1958,11 @@ fn chosen_from(held: HeldConnect) -> Option<Chosen> {
         Some(name) if crate::dockercontext::a_name(&name) => Some(name),
         Some(_) => return None,
     };
+    // Connect's last answer is kept only beside a pin (#6271).
+    if held.owned && held.trusted.is_none() {
+        return None;
+    }
+    let owned = held.owned;
     if crate::tlsroute::is_tcp(&held.route) {
         // An SSH key file is no part of a route over TLS (#6267).
         if held.identity.is_some() {
@@ -1983,6 +1995,7 @@ fn chosen_from(held: HeldConnect) -> Option<Chosen> {
             tls,
             trusted_tls,
             docker_context,
+            owned,
         });
     }
     if held.tls.is_some() {
@@ -2015,6 +2028,7 @@ fn chosen_from(held: HeldConnect) -> Option<Chosen> {
         tls: None,
         trusted_tls: None,
         docker_context,
+        owned,
     })
 }
 
@@ -2038,6 +2052,9 @@ struct HeldConnect {
         skip_serializing_if = "Option::is_none"
     )]
     docker_context: Option<String>,
+    /// Connect's last answer (#6271): `true` alone, and only beside `trusted`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    owned: bool,
 }
 
 /// The file's form. Its fields are spelled out and not flattened from [`Choices`]: flattening
@@ -2096,6 +2113,7 @@ fn write_choices(config: &Path, choices: Choices) -> Result<(), Refused> {
                 (None, None) => None,
             },
             docker_context: chosen.docker_context,
+            owned: chosen.owned,
         }),
     };
     let text = serde_json::to_string_pretty(&held)
@@ -2156,6 +2174,7 @@ pub fn choose_machine(
         tls: tls.filter(|_| crate::tlsroute::is_tcp(route)),
         trusted_tls: None,
         docker_context: None,
+        owned: false,
     });
     write_choices(config, choices)
 }
@@ -2188,6 +2207,29 @@ pub fn choose_tls_files(
     write_choices(config, choices)
 }
 
+/// **Keeps who the person said can sign in to the machine Connect trusted** (#6271, ADR 0123 §5):
+/// only they, and people they trust with their logins (`true`), or others might, or they're not
+/// sure. The window's alone (`pool_setup_choose_owned`). Refused where no machine is trusted yet,
+/// since the answer is for the machine as pinned.
+pub fn choose_owned(config: &Path, owned: bool) -> Result<(), Refused> {
+    let _locked = runners::lock(config);
+    let mut choices = read_choices(config)?;
+    let Some(chosen) = choices
+        .connect
+        .as_mut()
+        .filter(|chosen| chosen.trusted.is_some() || chosen.trusted_tls.is_some())
+    else {
+        return Err(Refused::Other(
+            "trust the machine before saying who can sign in to it".to_owned(),
+        ));
+    };
+    if chosen.owned == owned {
+        return Ok(());
+    }
+    chosen.owned = owned;
+    write_choices(config, choices)
+}
+
 /// **Forgets the machine Connect read** (#6266), once a pool is made on it.
 pub fn forget_machine(config: &Path) -> Result<(), Refused> {
     let _locked = runners::lock(config);
@@ -2213,6 +2255,7 @@ pub fn trusted(config: &Path, remote: &crate::runners::Remote) -> Result<(), Ref
         tls: None,
         trusted_tls: None,
         docker_context,
+        owned: false,
     });
     write_choices(config, choices)
 }
@@ -2248,6 +2291,7 @@ pub fn trusted_tls_read_from(
         tls: Some(remote.files.clone()),
         trusted_tls: Some(remote.pin.clone()),
         docker_context,
+        owned: false,
     });
     write_choices(config, choices)
 }
@@ -2286,6 +2330,7 @@ pub fn choose_docker_context(
         tls,
         trusted_tls: None,
         docker_context: Some(context.name.clone()),
+        owned: false,
     });
     write_choices(config, choices)
 }
