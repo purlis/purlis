@@ -15,6 +15,11 @@
  * - **Grouped across chats** (R-181): identical finish rows of several chats are one row that
  *   names them all ({@link groupedFinishes}); its Read and Dismiss settle each.
  * - **Quiet's "stopped after a block"** (R-182): {@link stoppedAfterBlock} is the bucket's test.
+ * - **A window-only ask no chat waits on sits here** (T1-42, R-329, Q181): the core lists it
+ *   apart from Asks (`Asking.on_finish_rows`) once its chat's turn has ended, and it is drawn on
+ *   that chat's newest finish row, its words under the line and its control beside them
+ *   ({@link finishRowsOf}). A chat with no finish counted yet gets one, so the ask is never
+ *   drawn nowhere. Such a row stands alone, never grouped with another chat's.
  */
 import { useEffect, useState } from "react";
 import {
@@ -22,9 +27,12 @@ import {
   type FinishedTurn,
   type InboxUpdate,
   type PlaneId,
+  type Shown,
   type UpdateNoted,
 } from "./bindings";
+import { answerThrough } from "./asks";
 import type { ChatStates, Chats } from "./chatState";
+import type { UpdateAnswer } from "./InboxUpdatesList";
 
 /** What a finish row adds where its turn ended with blocks still unresolved (Q164). */
 export const BLOCKED_THIS_TURN = (blocked: number) => `· ${blocked} blocked this turn`;
@@ -42,12 +50,36 @@ const BLOCKED_KEY = ":blocked";
 const keyOf = (turn: FinishedTurn) =>
   `finish:${turn.session}:${turn.key}${!turn.failed && turn.blocked > 0 ? BLOCKED_KEY : ""}`;
 
-/** **The finish rows of `turns`**, each named by its chat. */
+/**
+ * **`turns`, with a finish for each chat of `asks` that has none counted** (R-329): its turn
+ * ended, or the core would not have listed its ask apart, so the ask has a row to sit on.
+ */
+function withAnEndFor(
+  turns: readonly FinishedTurn[],
+  asks: readonly Shown[],
+): readonly FinishedTurn[] {
+  const counted = new Set(turns.filter((turn) => !turn.failed).map((turn) => turn.session));
+  const added = new Map<number, FinishedTurn>();
+  for (const ask of asks)
+    if (!counted.has(ask.session) && !added.has(ask.session))
+      added.set(ask.session, {
+        session: ask.session,
+        key: `ask-${ask.ask}`,
+        at: ask.since ?? Math.floor(Date.now() / 1000),
+        failed: false,
+        blocked: 0,
+      });
+  return added.size === 0 ? turns : [...turns, ...added.values()];
+}
+
+/** **The finish rows of `turns`**, each named by its chat, and one for each chat of `asks`
+ *  that has none counted (R-329). */
 export function finishUpdates(
   turns: readonly FinishedTurn[],
   nameOf: (session: number) => string,
+  asks: readonly Shown[] = [],
 ): UpdateNoted[] {
-  return turns.map((turn) => ({
+  return withAnEndFor(turns, asks).map((turn) => ({
     key: keyOf(turn),
     kind: turn.failed ? "chat-failed" : "turn-finished",
     at: turn.at,
@@ -58,6 +90,99 @@ export function finishUpdates(
       : turn.blocked > 0
         ? `${FINISHED_ITS_TURN} ${BLOCKED_THIS_TURN(turn.blocked)}`
         : FINISHED_ITS_TURN,
+  }));
+}
+
+/** What a window-only ask adds to the finish row it sits on: its words, and its answers. */
+export type OnAFinishRow = { more: string; answers: readonly UpdateAnswer[] };
+
+/**
+ * **The window-only asks on each finish row, by the row's key** (T1-42, R-329): each ask on its
+ * chat's newest finish ({@link withAnEndFor} gives one to a chat with none), its words under the
+ * line and each of its options an answer, sent through the path the ask names
+ * ({@link answerThrough}), the same press its row in Asks makes. An answer that allows waits for
+ * the row to settle, as every update's does (`InboxUpdatesList`). `reread` reads the asks again
+ * once it is answered.
+ */
+export function finishAsksOf({
+  plane,
+  turns,
+  asks,
+  reread,
+}: {
+  plane: PlaneId;
+  turns: readonly FinishedTurn[];
+  asks: readonly Shown[];
+  reread: () => void;
+}): ReadonlyMap<string, OnAFinishRow> {
+  const newest = new Map<number, FinishedTurn>();
+  for (const turn of withAnEndFor(turns, asks)) {
+    if (turn.failed) continue;
+    const was = newest.get(turn.session);
+    if (was === undefined || turn.at >= was.at) newest.set(turn.session, turn);
+  }
+  const on = new Map<string, { more: string[]; answers: UpdateAnswer[] }>();
+  for (const ask of asks) {
+    const turn = newest.get(ask.session);
+    if (turn === undefined) continue;
+    const key = keyOf(turn);
+    const row = on.get(key) ?? { more: [], answers: [] };
+    const what = ask.answer.via === "trust-clone" ? ask.answer.folder : ask.says;
+    row.more.push(ask.says);
+    for (const option of ask.options)
+      row.answers.push({
+        label: option.label,
+        name: `${option.label}: ${what}`,
+        title: TRUSTS_IT,
+        allows: option.allows,
+        // A refusal is said on the row (Q274), as an ask's row says it.
+        press: () =>
+          answerThrough(plane, ask, option.id)
+            .catch((err: unknown) => String(err))
+            .finally(reread),
+      });
+    on.set(key, row);
+  }
+  // Two asks on one row would draw two buttons alike (Q274): each then shows its whole name.
+  return new Map(
+    [...on].map(([key, row]) => {
+      const labels = row.answers.map((answer) => answer.label);
+      const answers = row.answers.map((answer) =>
+        labels.indexOf(answer.label) === labels.lastIndexOf(answer.label)
+          ? answer
+          : { ...answer, label: answer.name },
+      );
+      return [key, { more: row.more.join(" "), answers }];
+    }),
+  );
+}
+
+/** What Trust this clone does, as its tooltip on a finish row. */
+const TRUSTS_IT =
+  "Record this clone as yours, so chats in its workspace can use your GitHub access with it.";
+
+/**
+ * **The finish rows of `turns`, with the window-only asks no chat waits on** (T1-42, R-329):
+ * each row as {@link finishUpdates} makes it, and where an ask of `asks` sits on it, its words
+ * and its control ({@link finishAsksOf}).
+ */
+export function finishRowsOf({
+  plane,
+  turns,
+  asks,
+  nameOf,
+  reread,
+}: {
+  plane: PlaneId;
+  turns: readonly FinishedTurn[];
+  asks: readonly Shown[];
+  nameOf: (session: number) => string;
+  reread: () => void;
+}): ({ update: UpdateNoted } & Partial<OnAFinishRow>)[] {
+  const on = finishAsksOf({ plane, turns, asks, reread });
+  return finishUpdates(turns, nameOf, asks).map((update) => ({
+    update,
+    ...on.get(update.key),
   }));
 }
 
@@ -73,11 +198,15 @@ export type Grouped = { update: InboxUpdate; keys: readonly string[] };
  * finished turns of several chats that say the same and are read alike are one row, where the
  * newest of them stands, naming each chat once. Any other update stands alone.
  */
-export function groupedFinishes(updates: readonly InboxUpdate[]): Grouped[] {
+export function groupedFinishes(
+  updates: readonly InboxUpdate[],
+  /** The rows that stand alone: each finish row a window-only ask sits on (R-329). */
+  apart: ReadonlySet<string> = new Set(),
+): Grouped[] {
   const out: { update: InboxUpdate; keys: string[]; names: string[] }[] = [];
   const groups = new Map<string, (typeof out)[number]>();
   for (const update of updates) {
-    if (update.kind !== "turn-finished") {
+    if (update.kind !== "turn-finished" || apart.has(update.key)) {
       out.push({ update, keys: [update.key], names: [] });
       continue;
     }
