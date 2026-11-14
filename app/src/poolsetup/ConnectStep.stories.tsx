@@ -61,6 +61,7 @@ const connect = (more: Partial<PoolSetupStep>): PoolSetupStep => ({
   also: null,
   parts: [],
   undo: null,
+  admin: null,
   prefill: null,
   ...more,
 });
@@ -102,7 +103,15 @@ const shown = (step: PoolSetupStep, pool: string | null = null): PoolSetupShown 
   noticed: false,
   others: [],
   recommended: "build-box",
-  contexts: { names: [], recommended: null, chosen: null, pools: [] },
+  contexts: {
+    names: [],
+    recommended: null,
+    chosen: null,
+    pools: [],
+    joining: false,
+    pinned: null,
+    key_changed: false,
+  },
   steps: [step],
 });
 

@@ -117,5 +117,19 @@ fn said(setup: &Setup) -> String {
     if let Some(other) = other {
         let _ = writeln!(out, "Or: {}. {}", other.label, other.does);
     }
+    // Send to your admin's words (#4496), as the window gives them: held free of secrets.
+    if let Some(words) = setup
+        .at
+        .and_then(|at| setup.step(at))
+        .and_then(|step| step.admin.as_ref())
+    {
+        let _ = writeln!(
+            out,
+            "For your admin, to send by chat or email. It holds no password, token, key or credential:"
+        );
+        for line in words.lines() {
+            let _ = writeln!(out, "  {line}");
+        }
+    }
     out
 }

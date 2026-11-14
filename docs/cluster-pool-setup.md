@@ -189,16 +189,22 @@ spec:
 EOF
 ```
 
-You should see `pool.runners.purlis.dev/team created`. Now print the pool's key, which you'll check
-in the next step:
+You should see `pool.runners.purlis.dev/team created`. Now print the operator's key, which you'll
+check in the next step and give your teammates. It comes from the signing key itself, the Secret
+step 4 made, which only someone who may read Secrets in `purlis-system` can see, and not from the
+pool's status, which is the very thing everyone checks it against:
 
 <!-- kind: pool-key -->
 
 ```bash
-kubectl get pools.runners.purlis.dev team --output jsonpath='{.status.signingKey}'
+kubectl -n purlis-system get secret purlis-cluster-operator-signing-key \
+  --output jsonpath='{.data.key\.pem}' | base64 --decode |
+  openssl pkey -pubout -outform DER | tail -c 32 | od -An -tx1 -v | tr -d ' \n' |
+  sed 's/^/ed25519:/'
+echo
 ```
 
-It can print nothing for a few seconds. Run it again until it prints the key.
+It prints `ed25519:` and 64 hex digits: the key's public half, never the key.
 
 ## 7. Connect from the window
 
@@ -209,9 +215,13 @@ in `a_chat_runs_on_a_cluster_runner_through_kubectl_exec`._
    palette.
 2. Set **Kind** to Cluster.
 3. Give it a **Name**, leave **Kubeconfig** empty unless yours is somewhere unusual, choose the
-   **Context** and type `team` as the **Pool**.
-4. Press **Check its key**. The key shown must be the one step 6 printed. If it isn't, stop: you
-   may be talking to another cluster.
+   **Context**, type `team` as the **Pool**, and paste the key step 6 printed as **Key from your
+   admin**.
+4. Press **Check its key**. purlis compares the key you pasted with the one the pool names, and
+   shows it only if they are the same. If they aren't, stop: you may be talking to another
+   cluster. Where this machine made the signing key in the same Pool setup, through the same
+   context and in the same cluster, no paste is needed, in Pool setup or here; on any other
+   machine, context or cluster, it is.
 5. Press **Add pool**. Its runner is claimed and paired, which can take a few minutes while the
    node pulls the image.
 6. Sign your profiles in when the dialog offers it. A chat on the runner needs a profile signed in
@@ -285,10 +295,23 @@ kubectl auth can-i get pools.runners.purlis.dev/team --as <their name>
 kubectl auth can-i create claims.runners.purlis.dev --namespace <their namespace> --as <their name>
 ```
 
-You should see `yes` three times at the end. Give them the pool's key too, so they can check it in step 7.
-They only need step 7, and the operator gives them a namespace of their own for their runners.
+You should see `yes` three times at the end. Give them the pool's name and its key, the one step 6
+printed from the signing key's Secret, through a channel of your own such as your team's chat:
+Pool setup's Pool step shows the key your machine pinned too, once you've added the pool. Never
+copy it from the pool's status: anyone who may write a Pool's status could put their own key
+there, and the key you give is what your teammate's purlis checks the status against. They only need step 7, and the operator gives them a
+namespace of their own for their runners.
+
+In Pool setup (the palette's Add a cluster pool…), a teammate whose sign-in holds only these rights
+sees Check the cluster and Install as installed by your team, types the pool's name, and pastes the
+key you gave them. purlis pins it only if it is the key the pool names, so a teammate whose
+kubeconfig reaches another cluster is stopped there.
 
 ## If something goes wrong
+
+In Pool setup, a step that needs you offers **Get help**: a chat that holds the step, what it
+found and its error, with no secret values, and explains them. It changes nothing itself, so
+every fix below is still yours to make.
 
 - **Check its key says `kubectl` failed:** read kubectl's words after it. If they say the server
   has no such resource, the operator isn't installed on that context's cluster. If they say the

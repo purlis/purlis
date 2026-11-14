@@ -48,7 +48,15 @@ const WHERE = (where: Partial<PoolSetupStep>, state: string): PoolSetupShown => 
   noticed: false,
   recommended: "docker",
   others: [],
-  contexts: { names: [], recommended: null, chosen: null, pools: [] },
+  contexts: {
+    names: [],
+    recommended: null,
+    chosen: null,
+    pools: [],
+    joining: false,
+    pinned: null,
+    key_changed: false,
+  },
   steps: [step("where", "Where chats run", state, where), step("pool", "Pool", "later"), ...LATER],
 });
 
@@ -70,7 +78,15 @@ const POOL_FORM: PoolSetupShown = {
   noticed: false,
   recommended: "docker",
   others: [],
-  contexts: { names: [], recommended: null, chosen: null, pools: [] },
+  contexts: {
+    names: [],
+    recommended: null,
+    chosen: null,
+    pools: [],
+    joining: false,
+    pinned: null,
+    key_changed: false,
+  },
   steps: [
     DONE_WHERE,
     step("pool", "Pool", "current", {
@@ -361,7 +377,15 @@ export const MadeByHand: Story = {
     noticed: true,
     recommended: "docker",
     others: [],
-    contexts: { names: [], recommended: null, chosen: null, pools: [] },
+    contexts: {
+      names: [],
+      recommended: null,
+      chosen: null,
+      pools: [],
+      joining: false,
+      pinned: null,
+      key_changed: false,
+    },
     steps: [
       DONE_WHERE,
       step("pool", "Pool", "done", { line: "dev-box" }),
@@ -390,7 +414,15 @@ export const ThePoolIsMade: Story = {
     noticed: false,
     recommended: "docker",
     others: [],
-    contexts: { names: [], recommended: null, chosen: null, pools: [] },
+    contexts: {
+      names: [],
+      recommended: null,
+      chosen: null,
+      pools: [],
+      joining: false,
+      pinned: null,
+      key_changed: false,
+    },
     steps: [
       DONE_WHERE,
       step("pool", "Pool", "done", { line: "dev-box" }),
@@ -419,7 +451,15 @@ export const TheRunnerWasRemoved: Story = {
     noticed: false,
     recommended: "docker",
     others: [],
-    contexts: { names: [], recommended: null, chosen: null, pools: [] },
+    contexts: {
+      names: [],
+      recommended: null,
+      chosen: null,
+      pools: [],
+      joining: false,
+      pinned: null,
+      key_changed: false,
+    },
     steps: [
       DONE_WHERE,
       step("pool", "Pool", "attention", {
@@ -495,7 +535,15 @@ export const ARunnerBeingMade: Story = {
     noticed: false,
     recommended: "docker",
     others: [],
-    contexts: { names: [], recommended: null, chosen: null, pools: [] },
+    contexts: {
+      names: [],
+      recommended: null,
+      chosen: null,
+      pools: [],
+      joining: false,
+      pinned: null,
+      key_changed: false,
+    },
     steps: [
       DONE_WHERE,
       step("pool", "Pool", "attention", {

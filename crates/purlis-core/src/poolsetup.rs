@@ -34,9 +34,11 @@ use crate::forge::agentidentity::HostFound;
 use crate::profilestore::sign_in::Standing;
 use crate::runners::{self, Refused};
 
+pub mod admin;
 pub mod asked;
 pub mod cluster;
 pub mod connecting;
+pub mod help;
 pub mod install;
 pub mod signins;
 pub mod trying;
@@ -186,6 +188,13 @@ pub enum ActionId {
     AddClusterPool,
     /// A cluster pool is marked as the person's own on its row, in Settings › Pools (#4071).
     MarkAsOwn,
+    /// Doctor shows the person can't install: the words for their cluster's admin (#4496).
+    SendToAdmin,
+    /// The person stops waiting for their admin (#4496).
+    StopWaiting,
+    /// A cluster pool's Pool names a key its pin never vouched for: the person checks the new
+    /// one with their admin and pins it again (#4495).
+    CheckKeyAgain,
     CreatePool,
     MakeRunnerAgain,
     UseOtherDocker,
@@ -304,6 +313,9 @@ pub struct Step {
     pub parts: Vec<install::Part>,
     /// What undoes the step by hand, where only that does (uninstalling from a cluster, story 56).
     pub undo: Option<See>,
+    /// The words for the person's cluster's admin, where doctor shows they can't install
+    /// (#4496): Check the cluster's alone, and held free of secrets.
+    pub admin: Option<String>,
 }
 
 /// **A machine to open Connect with** (#6268): a route, and the Docker context it was read from,
@@ -334,6 +346,17 @@ pub struct Contexts {
     pub names: Vec<String>,
     pub recommended: Option<String>,
     pub chosen: Option<String>,
+    /// Whether the person joins their team's install (#4495): the window then asks for the key
+    /// their admin gave them before anything is pinned.
+    pub joining: bool,
+    /// The cluster operator key a kept cluster pool pinned here, for teammates to check theirs
+    /// against (#4495).
+    pub pinned: Option<String>,
+    /// The key its Pool names now, where the pin never vouched for it (#4495). Never serialised:
+    /// a key is shown only once the person confirmed it, so `purlis pool setup --json` leaves it
+    /// out, and the window is told only that the key changed.
+    #[serde(skip)]
+    pub named_now: Option<String>,
     /// The chosen cluster's Pools, by name, where its operator runs (#4494).
     pub pools: Vec<String>,
 }
@@ -477,6 +500,10 @@ pub struct Choices {
     /// When a real chat was last seen to start on each pool, from Try it (#4483), in seconds
     /// since the epoch: the proof setup ends on, which nothing else could read back.
     pub tried: BTreeMap<String, u64>,
+    /// That the person sent the words to their cluster's admin, and waits (#4496).
+    pub admin: Option<admin::Asked>,
+    /// The signing key this setup made, by its public half (#4495).
+    pub made: Option<MadeKey>,
     /// **The machine Connect read, and the pin the person trusted there** (#6266), for a pool on
     /// another machine before it is made.
     pub connect: Option<Chosen>,
@@ -1050,6 +1077,9 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
     let mut at = None;
     let mut steps = Vec::with_capacity(kind.steps().len());
     for &id in kind.steps() {
+        let waits = id == StepId::Check
+            && kind == Kind::Cluster
+            && admin::waiting_on(choices, facts.cluster.chosen.as_deref());
         let mut machine = None;
         let mut cause = None;
         let reading = match (kind, id) {
@@ -1078,18 +1108,27 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
             StepState::Later
         } else {
             at = Some(id);
-            if reading.attention {
+            if reading.attention && waits {
+                StepState::Waiting
+            } else if reading.attention {
                 StepState::Attention
             } else {
                 StepState::Current
             }
         };
         let says = !matches!(state, StepState::Later | StepState::Skipped);
+        let words = (id == StepId::Check && says)
+            .then(|| admin::text(facts, choices))
+            .flatten();
         steps.push(Step {
             id,
             name: id.name(),
             state,
-            line: reading.line,
+            line: if state == StepState::Waiting {
+                Some("Waiting for your admin".to_owned())
+            } else {
+                reading.line
+            },
             findings: if says { reading.findings } else { Vec::new() },
             next: if says { reading.next } else { None },
             skippable: id.skippable(),
@@ -1128,9 +1167,23 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
             },
             also: if id == StepId::Where && state != StepState::Done && facts.pool.is_none() {
                 cluster::also(kind, facts)
+            } else if words.is_some() && state == StepState::Waiting {
+                action(
+                    ActionId::StopWaiting,
+                    "Stop waiting",
+                    "Forgets that you asked your admin. Nothing on the cluster changes.",
+                )
+            } else if words.is_some() {
+                action(
+                    ActionId::SendToAdmin,
+                    "Send to your admin",
+                    "Shows the words to send your cluster's admin: what's missing, what purlis \
+                     needs and the commands. They hold no password, token, key or credential.",
+                )
             } else {
                 None
             },
+            admin: words,
         });
     }
     if let (Some(name), Some(at)) = (
@@ -1145,6 +1198,7 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
     {
         check.checks = cluster::checks_of(facts);
     }
+    let kept = facts.pool.as_ref().and_then(|pool| pool.cluster.as_ref());
     Setup {
         kind,
         pool,
@@ -1155,6 +1209,12 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
             names: facts.cluster.contexts.clone(),
             recommended: facts.cluster.recommended().map(str::to_owned),
             chosen: facts.cluster.chosen.clone(),
+            joining: facts.cluster.joining,
+            pinned: kept.map(|kept| kept.pinned.clone()),
+            named_now: kept.and_then(|kept| match &kept.now {
+                crate::pools::PinNow::Changed { named } => Some(named.clone()),
+                _ => None,
+            }),
             pools: facts.cluster.pools.clone().unwrap_or_default(),
         },
     }
@@ -1858,6 +1918,8 @@ pub fn read_choices(config: &Path) -> Result<Choices, Refused> {
         pool: held.pool,
         skipped: held.skipped,
         tried: held.tried,
+        admin: held.admin,
+        made: held.made,
         connect: match held.connect {
             None => None,
             Some(connect) => Some(chosen_from(connect).ok_or_else(unreadable)?),
@@ -1984,6 +2046,10 @@ struct Held {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     tried: BTreeMap<String, u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    admin: Option<admin::Asked>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    made: Option<MadeKey>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     connect: Option<HeldConnect>,
 }
 
@@ -1998,6 +2064,8 @@ fn write_choices(config: &Path, choices: Choices) -> Result<(), Refused> {
         pool: choices.pool,
         skipped: choices.skipped,
         tried: choices.tried,
+        admin: choices.admin,
+        made: choices.made,
         connect: choices.connect.map(|chosen| HeldConnect {
             route: chosen.route,
             tls: chosen.tls.as_ref().map(runners::tls_to_row),
@@ -2270,11 +2338,96 @@ pub fn install_part(
             "nothing was applied: choose your team's cluster on Where first".to_owned(),
         ));
     };
-    install::apply(
+    let made = install::apply(
         &kubectl.clone().with_context(context),
         part,
         choices.operator_image.as_deref(),
-    )
+    )?;
+    // The signing key this setup made (#4495): its own Pools' key is then pinned without a paste,
+    // in this cluster only. Where the cluster can't be told, nothing is kept, and a paste is
+    // asked for as on every other path.
+    let Some(key) = made else {
+        return Ok(());
+    };
+    let Ok(cluster) = kubectl.clone().with_context(context).cluster_uid() else {
+        return Ok(());
+    };
+    let context = context.to_owned();
+    let _locked = runners::lock(config);
+    let mut choices = read_choices(config)?;
+    choices.made = Some(MadeKey {
+        context,
+        cluster,
+        key: key.spelled(),
+    });
+    write_choices(config, choices)
+}
+
+/// **The signing key this setup made** (#4495): on which context, in which cluster (the uid of
+/// its `kube-system` namespace, as a Pool's `status.cluster` names it), and its public half, as
+/// `ed25519:` and 64 hex digits. Only the public half: the key itself went to the cluster alone.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MadeKey {
+    pub context: String,
+    /// Empty where it was kept before the cluster was: then it confirms nothing.
+    #[serde(default)]
+    pub cluster: String,
+    pub key: String,
+}
+
+/// **How the cluster operator key a Pool names (`named`, with its cluster) is confirmed before it
+/// is pinned** (#4495): by the key the person `pasted`, as their cluster's admin gave it, which
+/// must be the same; or, with nothing pasted, only where this machine made the signing key in
+/// this setup, on `context`, in the same cluster, and `named` names its public half
+/// ([`made_here`]). Anything else pins nothing.
+pub fn confirm_key(
+    config: &Path,
+    context: &str,
+    named: &crate::clusterpool::PoolPin,
+    pasted: Option<&str>,
+) -> Result<crate::clusterpool::Confirmed, Refused> {
+    use crate::clusterpool::{Confirmed, OperatorKey};
+    if let Some(pasted) = pasted.filter(|pasted| !pasted.trim().is_empty()) {
+        let pasted =
+            OperatorKey::from_pasted(pasted).map_err(|why| Refused::Other(why.to_string()))?;
+        return if pasted == named.key {
+            Ok(Confirmed::Pasted)
+        } else {
+            Err(Refused::Other(
+                "the key you pasted isn't the one the cluster's pool names, so nothing was \
+                 pinned. Stop here and check with your cluster's admin: you may be reaching \
+                 another cluster."
+                    .to_owned(),
+            ))
+        };
+    }
+    if made_here(config, context, named) {
+        return Ok(Confirmed::MadeHere);
+    }
+    Err(Refused::Other(
+        "nothing was pinned: paste the key your cluster's admin gave you, and purlis pins the \
+         pool's key only if it is the same."
+            .to_owned(),
+    ))
+}
+
+/// **Whether this machine made the signing key the Pool names (`named`), in this setup, on
+/// `context`, in the cluster it names** (#4495): then no paste is asked for. The context's name
+/// alone is not enough: a context renamed, or pointed at another cluster since, names another
+/// cluster's `kube-system` uid, and confirms nothing. Pool setup's Pool step, Settings' Add a
+/// pool and [`crate::pools::add_cluster`] all ask this, through [`confirm_key`].
+#[must_use]
+pub fn made_here(config: &Path, context: &str, named: &crate::clusterpool::PoolPin) -> bool {
+    read_choices(config)
+        .ok()
+        .and_then(|choices| choices.made)
+        .is_some_and(|made| {
+            made.context == context
+                && !made.cluster.is_empty()
+                && made.cluster == named.cluster
+                && crate::clusterpool::OperatorKey::from_spelled(&made.key)
+                    .is_ok_and(|key| key == named.key)
+        })
 }
 
 /// **Makes the Pool `name` in the cluster chosen on Where** (#4494), of runner image `image` by
@@ -2459,6 +2612,7 @@ fn forget_the_new_one(config: &Path, choices: Choices) -> Result<(), Refused> {
         && choices.context.is_none()
         && choices.name.is_none()
         && choices.pool.is_none()
+        && choices.made.is_none()
     {
         return Ok(());
     }
@@ -2470,6 +2624,8 @@ fn forget_the_new_one(config: &Path, choices: Choices) -> Result<(), Refused> {
             name: None,
             name_free: false,
             pool: None,
+            // A key made in this setup confirms nothing in the next one.
+            made: None,
             ..choices
         },
     )
@@ -2563,5 +2719,8 @@ pub(crate) fn forget_pool_locked(config: &Path, pool: &str) -> Result<(), Refuse
     Ok(())
 }
 
+#[cfg(test)]
+#[path = "poolsetup/confirm_tests.rs"]
+mod confirm_tests;
 #[cfg(test)]
 mod tests;
