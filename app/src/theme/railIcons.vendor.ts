@@ -26,7 +26,7 @@ export const LUCIDE: Readonly<Record<string, string>> = {
   asks: "hand",
   updates: "bell",
   // #5645: the warning sign, for what stands wrong until it is fixed.
-  notices: "triangle-alert",
+  notices: "triangle-exclamation-point",
   personas: "users",
   vaults: "key",
   memory: "archive",
