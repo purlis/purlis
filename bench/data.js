@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794622363370,
+  "lastUpdate": 1794624089509,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -48930,6 +48930,48 @@ window.BENCHMARK_DATA = {
             "value": 102.0780555,
             "unit": "ms",
             "extra": "median of 5 runs: 101.536, 101.943, 102.078, 102.167, 102.617 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "31c2915b76a3677a9772cdd43fe9d4feac1b7d11",
+          "message": "fixes main: M8 finds the page's web content process by pid and settles on what the tab moves (#6596)\n\n* e2e: M8's settle wait says which condition never held, and logs every look by pid (#6589)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7BMPY5T4BF1VWEV0A0CYF15\nPurlis-Persona: steward\n\n* e2e: M8 finds the page's process by pid and settles on what the tab can move (#6589)\n\nThe settle wait held the whole sum, the window's own web content included, to 2 MB a second\napart, and took the page as started once the count of web content processes rose. The loop\nof #6592 measured the window's process moving 3 to 5 MB between looks in a quarter of its\npairs, and processes earlier pages left sit beside it, which WebKit ends when it likes: the\ncount then holds while the page's new process is there.\n\n- pageProcesses: the page's processes are the pids the look before the tab did not hold.\n- tabSteady: two looks of the same pids whose app and page agree within 2 MB.\n- artifactTabVerdict: new processes whole plus what kept ones grew by; one that exited is\n  left out and named.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7BMPY5T4BF1VWEV0A0CYF15\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-14T01:55:50Z",
+          "tree_id": "946ddf60777cdf1a9b53e241abaeb75d81cd9ae1",
+          "url": "https://github.com/purlis/purlis/commit/31c2915b76a3677a9772cdd43fe9d4feac1b7d11"
+        },
+        "date": 1794624083615,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.703183,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.684, 0.693, 0.703, 0.704, 0.711 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7415165,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.658, 16.727, 16.742, 16.763, 16.858 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.106946,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.147, 102.019, 102.107, 102.172, 102.564 ms"
           }
         ]
       }
