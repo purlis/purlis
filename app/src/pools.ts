@@ -382,6 +382,18 @@ export async function markPoolOwned(name: string, owned: boolean): Promise<strin
   return said.status === "error" ? said.error : undefined;
 }
 
+/** Says who can sign in to pool `name`'s other machine, as it is pinned (#6271): only the person,
+ *  and people they trust with their logins (`owned`), or others might. `undefined` once it is
+ *  kept, else why not. The window's alone. */
+export async function markRemotePoolOwned(
+  name: string,
+  owned: boolean,
+): Promise<string | undefined> {
+  const said = await caught(commands.setRemotePoolOwned(name, owned));
+  await rereadPools();
+  return said.status === "error" ? said.error : undefined;
+}
+
 /** What a pool's runner keeps of this machine's profiles, as last asked: the ones chosen for
  *  it and the others Add a profile… offers (#4047), that they are being asked, or why not. */
 export type PoolProfiles = PoolProfilesAnswered | "asking" | { trouble: string };

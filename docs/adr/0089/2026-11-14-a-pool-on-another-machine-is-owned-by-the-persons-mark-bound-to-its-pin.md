@@ -7,9 +7,11 @@ choices not quoted from the record were made in #6271 and are named in its pull 
 
 1. **A pool on another machine (`remote-docker`) is owned only by the person's mark.** Its runner
    is not this machine, so it is not owned without one. The mark is per pool, not set by default,
-   and the person's alone: their answer to the last question of Connect (*"Only you, and people
-   you trust with your logins, can sign in to this machine"*), or *This is my own* on the pool's
-   row in Settings › Pools. It is never set from a chat, from `purlis pool add`, or by the machine.
+   and the person's alone: their answer to the last question of Connect, asked as the accepted
+   prototype asks it (#6265, choice 9): *"Who can sign in to {host}?"*, with *Others might, or
+   I'm not sure* recommended, and *Only me, and people I trust with my logins* the mark. The same
+   question stands on the pool's row in Settings › Pools. It is never set from a chat or by the
+   machine.
 2. **The mark is bound to the pin.** It names the machine as pinned (the host key or the CA, and
    the engine), and is kept as that pin (`owned` in `runners.json`). A pin kept again that differs
    clears it, so after **Check and trust again** the person marks the machine again if they still

@@ -2152,7 +2152,10 @@ fn a_pool_on_another_machine_marked_owned_keeps_the_pin_it_was_marked_for() {
         &pool("build-box", Set::default()).on(Some(remote())),
     )
     .unwrap();
-    assert!(!pools(config.path()).unwrap()[0].owned(), "not marked by default");
+    assert!(
+        !pools(config.path()).unwrap()[0].owned(),
+        "not marked by default"
+    );
     set_remote_owned(config.path(), "build-box", true).unwrap();
     let row = &the_file(config.path())["pools"][0];
     assert_eq!(row["owned"], row["pin"]);

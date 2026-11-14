@@ -44,6 +44,15 @@ pub struct PoolRow {
     /// How long its runner is left without a link from this machine before it suspends
     /// itself, as `runners.json` spells it (`24h`, `90m`; #3471).
     pub suspend_after: String,
+    /// **The machine its engine is on, where that is another machine** (#6271): its host, as the
+    /// person named it. Left out for this machine's own Docker.
+    #[specta(optional)]
+    pub machine: Option<String>,
+    /// **Whether the person said only they, and people they trust with their logins, can sign in
+    /// to that machine, as it is pinned** (#6271, ADR 0123 §5). Left out for this machine's own
+    /// Docker, which needs no mark.
+    #[specta(optional)]
+    pub owned: Option<bool>,
 }
 
 /// What the Pools group draws: the pools, and the limits a new pool gets by default.
@@ -387,6 +396,41 @@ fn row(pool: &Pool) -> PoolRow {
         image: pool.image().as_str().to_owned(),
         limits: shown(pool.limits()),
         suspend_after: after_shown(pool.suspend_after()),
+        machine: pool.remote_engine().map(|remote| remote.host().to_owned()),
+        owned: pool.on_another_machine().then(|| pool.owned()),
+    }
+}
+
+/// **The person says who can sign in to the machine of pool `name`, on another machine, as it is
+/// pinned** (#6271, ADR 0123 §5): only they, and people they trust with their logins (`owned`),
+/// or others might. The window's alone (`ui::WINDOW_ONLY`): no chat reaches it. Taken back, every
+/// login opted in on the pool is forgotten, so a later mark asks about each again.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_remote_pool_owned(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    name: String,
+    owned: bool,
+) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        let held = planes.every_held();
+        crate::off_the_window("keeping your answer", move || {
+            purlis_core::runners::set_remote_owned(&config_root()?, &name, owned)
+                .map_err(|why| why.to_string())?;
+            if !owned {
+                for project in held {
+                    project.browsers().forget_pool_logins(&name);
+                }
+            }
+            Ok(())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (planes, name, owned);
+        Err(NOT_HERE.to_owned())
     }
 }
 

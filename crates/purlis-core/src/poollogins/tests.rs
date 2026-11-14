@@ -464,7 +464,11 @@ fn a_marked_pool_on_another_machine_is_bound_to_its_pin_whatever_this_machines_e
     .unwrap();
     let key = crate::sshroute::HostKey::parse(HOST_KEY).unwrap();
     assert!(bound.engine.contains("build-box"), "{}", bound.engine);
-    assert!(bound.engine.contains(&key.fingerprint()), "{}", bound.engine);
+    assert!(
+        bound.engine.contains(&key.fingerprint()),
+        "{}",
+        bound.engine
+    );
     assert!(bound.engine.contains("ABCD"), "{}", bound.engine);
     assert_eq!(bound.runner, "01JB0DRAINING000000000000000");
 }
@@ -489,7 +493,10 @@ fn a_pool_on_another_machine_pinned_again_is_another_bound() {
     assert_ne!(one.engine, two.engine);
     let opt_ins = OptIns::default();
     opt_ins.allow("steward", "forge", one);
-    assert_eq!(opt_ins.standing("steward", "forge", &two), Standing::Changed);
+    assert_eq!(
+        opt_ins.standing("steward", "forge", &two),
+        Standing::Changed
+    );
 }
 
 /// **An unmarked pool on another machine is sent nothing, and the chat is told why and how the
@@ -508,7 +515,8 @@ fn an_unmarked_pool_on_another_machine_is_sent_nothing_and_says_how_to_mark_it()
     };
     assert!(why.contains("another machine"), "{why}");
     assert!(why.contains("no vault value"), "{why}");
-    assert!(why.contains("This is my own"), "{why}");
+    assert!(why.contains("Who can sign in to build-box?"), "{why}");
+    assert!(why.contains("Settings, under Pools"), "{why}");
 }
 
 /// **A marked pool whose pin no longer holds is sent nothing** (#6270, #6271): the change found
