@@ -1073,3 +1073,143 @@ fn the_marker_count_is_the_verified_blocks_after_the_last_look() {
         Marker::default()
     );
 }
+
+/// **Q272 (T1-33): a block row says whether it has since been resolved**, so its row offers
+/// Tell the chat… only while it stands: a later call on the same target that came back
+/// resolves it, a failed retry or another call's success does not, and a sandbox block is also
+/// resolved by an Allow of a sandbox ask, as a turn's finish reads it (Q263).
+#[test]
+fn a_block_row_is_resolved_once_a_later_call_on_its_target_comes_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut log = Log::open(dir.path(), DEVICE).unwrap();
+    let block_of = |source: Source, args: &str| {
+        serde_json::to_value(Stop::Block(Block {
+            tool: "Bash".to_owned(),
+            source,
+            qualifier: None,
+            target: None,
+            args: Some(args.to_owned()),
+        }))
+        .unwrap()
+    };
+    let came_back = |args: &str| serde_json::json!({ "decision": "allow", "hook_ms": 1, "tool": "Bash", "args": args });
+    let mut write = |kind: &str, body: serde_json::Value| {
+        log.append(Some(ONE), Some(RUN_ONE), None, kind, body)
+            .unwrap();
+    };
+    write(stops::BLOCK, block_of(Source::Guard, "digest-of-push"));
+    write(stops::BLOCK, block_of(Source::Guard, "digest-of-ls"));
+    write(stops::BLOCK, block_of(Source::Guard, "digest-of-cat"));
+    write(stops::BLOCK, block_of(Source::Sandbox, "digest-of-curl"));
+    // Its call came back: resolved.
+    write("hook.posttooluse-blocked", came_back("digest-of-push"));
+    // A failed retry is no call that came back.
+    write("hook.posttoolusefailure-blocked", came_back("digest-of-ls"));
+    // Another call's success resolves nothing of these.
+    write("hook.posttooluse-blocked", came_back("digest-of-other"));
+    // A sandbox ask allowed resolves the sandbox block, and no guard's.
+    write(
+        stops::ASK_ANSWERED,
+        serde_json::to_value(Stop::AskAnswered(AskAnswered {
+            ask: AskGroup::Sandbox,
+            answer: Answer::Allowed,
+            by: crate::eventlog::stops::AnsweredBy::Window,
+        }))
+        .unwrap(),
+    );
+    let events = super::super::read(dir.path()).unwrap();
+    let resolved: Vec<bool> = rows(&events, ONE)
+        .into_iter()
+        .filter_map(|row| match row {
+            Row::Blocked { resolved, .. } => Some(resolved),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(resolved, vec![true, false, false, true]);
+}
+
+/// What chat `chat`'s summary says purlis can't tell: of its harness's own check's blocks, and
+/// of its mode, with the harness it names.
+fn cant_tell_of(events: &[Event], chat: &str) -> (bool, bool, Option<crate::harness::Harness>) {
+    let read = summary(events, chat);
+    (
+        read.cant_tell_its_checks_blocks,
+        read.cant_tell_its_mode,
+        read.harness,
+    )
+}
+
+/// R-097 (core), Q96: **an opencode chat's summary can't tell its own check's blocks**: opencode
+/// gives no denial signal, so what its check blocked never reaches purlis, and the Chat log says
+/// Can't tell rather than showing none. A Claude Code chat, whose `PermissionDenied` hook reports
+/// each one, says nothing of the kind.
+#[test]
+fn an_opencode_chats_summary_cant_tell_its_own_checks_blocks() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut log = Log::open(dir.path(), DEVICE).unwrap();
+    started_as(&mut log, ONE, "opencode", "seatbelt", "floor");
+    started_as(&mut log, TWO, "claude", "seatbelt", "floor");
+    drop(log);
+    let events = crate::eventlog::read(dir.path()).unwrap();
+
+    let (blocks, _, harness) = cant_tell_of(&events, ONE);
+    assert!(blocks, "opencode reports no block of its own check");
+    assert_eq!(harness, Some(crate::harness::Harness::Opencode));
+    let (blocks, _, harness) = cant_tell_of(&events, TWO);
+    assert!(!blocks, "Claude Code reports each through PermissionDenied");
+    assert_eq!(harness, Some(crate::harness::Harness::ClaudeCode));
+}
+
+/// R-100 (core), Q96, Q25: **a Codex chat's summary can't tell its own check's blocks**: Codex
+/// gives no denial signal yet (a rejection its hook reports becomes a block, and none is armed
+/// today), so its blocks are Can't tell; and a chat with no start in the log can't tell either,
+/// since nothing says which harness it ran.
+#[test]
+fn a_codex_chats_summary_cant_tell_its_own_checks_blocks() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut log = Log::open(dir.path(), DEVICE).unwrap();
+    started_as(&mut log, ONE, "codex", "seatbelt", "floor");
+    tool_event(&mut log, TWO, "pretooluse", "allow", "toolu_1", None);
+    drop(log);
+    let events = crate::eventlog::read(dir.path()).unwrap();
+
+    let (blocks, _, harness) = cant_tell_of(&events, ONE);
+    assert!(blocks, "Codex reports no block of its own check yet");
+    assert_eq!(harness, Some(crate::harness::Harness::Codex));
+    assert_eq!(
+        cant_tell_of(&events, TWO),
+        (true, true, None),
+        "no start: nothing says what its harness reports"
+    );
+}
+
+/// R-099 (core), Q152: **a Codex chat's summary can't tell its mode**: Codex reports bypass for
+/// every chat, so what it reports is never read as a verified mode, and attendance goes by how
+/// purlis started it. It is taken over the whole chat, as the honesty lines are (Q261): a Codex
+/// start, then a Claude Code one, still can't tell. A Claude Code chat's mode is read from its
+/// armed hook, and says nothing of the kind.
+#[test]
+fn a_codex_chats_summary_cant_tell_its_mode() {
+    const THREE: &str = "01K6CHAT000000000000000006";
+    let dir = tempfile::tempdir().unwrap();
+    let mut log = Log::open(dir.path(), DEVICE).unwrap();
+    started_as(&mut log, ONE, "codex", "seatbelt", "floor");
+    started_as(&mut log, TWO, "claude", "seatbelt", "floor");
+    started_as(&mut log, THREE, "codex", "seatbelt", "floor");
+    started_as(&mut log, THREE, "claude", "seatbelt", "floor");
+    drop(log);
+    let events = crate::eventlog::read(dir.path()).unwrap();
+
+    assert!(cant_tell_of(&events, ONE).1, "Codex's bypass is no mode");
+    assert!(
+        !cant_tell_of(&events, TWO).1,
+        "Claude Code's armed hook says its mode"
+    );
+    let (_, mode, harness) = cant_tell_of(&events, THREE);
+    assert!(mode, "can't tell once is can't tell");
+    assert_eq!(
+        harness,
+        Some(crate::harness::Harness::ClaudeCode),
+        "its latest start's"
+    );
+}

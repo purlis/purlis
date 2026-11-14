@@ -10,9 +10,9 @@ use std::sync::Mutex;
 
 use purlis_core::eventlog::stops::Stop;
 use purlis_core::forge::checks::{Checks, Ci};
-use purlis_core::forge::pr::{HeadAt, Repo as OnForge};
+use purlis_core::forge::pr::{Changes, HeadAt, Repo as OnForge};
 use purlis_core::hookwire::{Answer, MergeAsk};
-use purlis_core::mergehold::{self, Request, Reread, Seen};
+use purlis_core::mergehold::{self, HeadSha, Request, Reread, Seen};
 
 use super::{MergeHolds, Project, answer};
 
@@ -29,6 +29,12 @@ struct Fake {
     holds: MergeHolds,
     read: Mutex<Result<mergehold::Read, String>>,
     recorded: Mutex<Vec<(u32, Stop)>>,
+    /// What the forge gives of the request's changes (Q277): View changes reads them here.
+    changes: Mutex<Result<Changes, String>>,
+    /// How often the window was told the asks may have moved.
+    redrawn: Mutex<usize>,
+    /// Every count of commits asked of the forge: from, to.
+    counted: Mutex<Vec<(String, String)>>,
 }
 
 /// What the forge says of request 12 at `sha`: a title, an author, passed checks and a ruleset
@@ -57,6 +63,7 @@ fn facts() -> mergehold::Facts {
             failed: Vec::new(),
         },
         ruleset: mergehold::Ruleset::Protects,
+        approved_by: None,
         read_at: 40,
     }
 }
@@ -84,6 +91,12 @@ impl Fake {
             holds: MergeHolds::default(),
             read: Mutex::new(Ok(at(HEAD))),
             recorded: Mutex::new(Vec::new()),
+            changes: Mutex::new(Ok(Changes {
+                text: format!("diff of main...{}", &HEAD[..7]),
+                whole: true,
+            })),
+            redrawn: Mutex::new(0),
+            counted: Mutex::new(Vec::new()),
         };
         fake.lists("o/r", "https://github.com/o/r");
         fake
@@ -140,7 +153,26 @@ impl Project for Fake {
     fn record(&self, chat: u32, stop: Stop) {
         self.recorded.lock().unwrap().push((chat, stop));
     }
-    fn moved(&self) {}
+    fn moved(&self) {
+        *self.redrawn.lock().unwrap() += 1;
+    }
+    fn changes(&self, on: &OnForge, base: &str, head: &str) -> Result<Changes, String> {
+        assert_eq!(
+            (on.path.as_str(), on.forge.host.as_str(), base),
+            ("o/r", "github.com", "main"),
+            "the changes are read from the forge the ask was raised on, never a clone"
+        );
+        assert_eq!(head, HEAD);
+        self.changes.lock().unwrap().clone()
+    }
+    fn commits(&self, on: &OnForge, from: &HeadSha, to: &HeadSha) -> Option<u32> {
+        assert_eq!(on.path, "o/r");
+        self.counted
+            .lock()
+            .unwrap()
+            .push((from.as_str().to_owned(), to.as_str().to_owned()));
+        Some(2)
+    }
 }
 
 /// The person pressed Merge once on chat 4's ask at [`HEAD`]: the window read it again and
@@ -650,7 +682,16 @@ fn a_press_whose_fresh_read_disagrees_with_what_was_shown_is_refused() {
     };
 
     assert_eq!(
-        super::pressed_in(&project, 4, "o/r", 12, HEAD, Seen::Protects, &backend_of),
+        super::pressed_in(
+            &project,
+            4,
+            "o/r",
+            12,
+            HEAD,
+            Seen::Protects,
+            &facts().digest(),
+            &backend_of
+        ),
         Err(mergehold::NotMerged::RulesetChanged.to_string())
     );
     assert_eq!(
@@ -659,4 +700,310 @@ fn a_press_whose_fresh_read_disagrees_with_what_was_shown_is_refused() {
         "the forge was asked for no merge"
     );
     assert_eq!(project.holds.every().len(), 1, "the ask still waits");
+}
+
+/// T1-41 (R-302), Q277: View changes shows the request's changes as the forge gives them, never
+/// read in the clone the merge ran in, and marks its head viewed only while the forge says the
+/// request is at the head its row shows. A head that moved is viewed by nobody.
+#[test]
+fn view_changes_marks_the_head_viewed_only_at_the_head_the_forge_is_at() {
+    purlis_core::unsteered!();
+    let project = Fake::new();
+    assert!(matches!(
+        answer(&project, &project.ask(12)),
+        Answer::MergeHeld { .. }
+    ));
+    assert_eq!(
+        project.holds.every()[0].look,
+        mergehold::Look::NotViewed { since: None }
+    );
+
+    let changes = super::viewed(&project, 4, "o/r", 12, HEAD).expect("its changes");
+
+    assert_eq!(changes, "diff of main...0123456");
+    assert_eq!(project.holds.every()[0].look, mergehold::Look::Viewed);
+
+    let other = Fake::new();
+    assert!(matches!(
+        answer(&other, &other.ask(12)),
+        Answer::MergeHeld { .. }
+    ));
+    *other.read.lock().unwrap() = Ok(at(MOVED));
+    assert_eq!(
+        super::viewed(&other, 4, "o/r", 12, HEAD),
+        Err(super::VIEW_MOVED.to_owned())
+    );
+    assert_eq!(
+        other.holds.every()[0].look,
+        mergehold::Look::NotViewed { since: None },
+        "nothing is marked viewed at a head the forge is no longer at"
+    );
+}
+
+/// Q277: a head is marked viewed only where the person was shown the whole diff, at the base
+/// the forge reports now. A diff the forge cut, one past purlis's own cap, a request retargeted
+/// to another base, and a forge that can't serve a diff (GitLab today, #6432) each mark
+/// nothing, and the last says why in a sentence. Kills: `view` called whatever `whole` says,
+/// the base left unchecked, and an Err that still marks.
+#[test]
+fn view_changes_marks_nothing_where_the_diff_was_cut_the_base_moved_or_the_forge_serves_none() {
+    purlis_core::unsteered!();
+    let raised = || {
+        let project = Fake::new();
+        assert!(matches!(
+            answer(&project, &project.ask(12)),
+            Answer::MergeHeld { .. }
+        ));
+        project
+    };
+    let not_viewed = |project: &Fake| {
+        project
+            .holds
+            .every()
+            .iter()
+            .all(|one| one.look == mergehold::Look::NotViewed { since: None })
+    };
+
+    let cut = raised();
+    *cut.changes.lock().unwrap() = Ok(Changes {
+        text: "diff --git a/a b/a\n".to_owned(),
+        whole: false,
+    });
+    let shown = super::viewed(&cut, 4, "o/r", 12, HEAD).expect("what the forge gave");
+    assert!(shown.starts_with("diff --git a/a b/a"), "{shown}");
+    assert!(shown.ends_with(super::CHANGES_CUT), "{shown}");
+    assert!(not_viewed(&cut), "a diff the forge cut");
+
+    let too_long = raised();
+    *too_long.changes.lock().unwrap() = Ok(Changes {
+        text: "+".repeat(super::CHANGES_SHOWN + 1),
+        whole: true,
+    });
+    let shown = super::viewed(&too_long, 4, "o/r", 12, HEAD).expect("its first part");
+    assert!(shown.len() <= super::CHANGES_SHOWN + super::CHANGES_CUT.len());
+    assert!(not_viewed(&too_long), "a diff past purlis's cap");
+
+    let retargeted = raised();
+    let mut release = at(HEAD);
+    release.at.base = "release".to_owned();
+    *retargeted.read.lock().unwrap() = Ok(release);
+    assert_eq!(
+        super::viewed(&retargeted, 4, "o/r", 12, HEAD),
+        Err(super::VIEW_MOVED.to_owned())
+    );
+    assert!(
+        not_viewed(&retargeted),
+        "a request retargeted to another base"
+    );
+
+    let gitlab = raised();
+    *gitlab.changes.lock().unwrap() =
+        Err("purlis can't read a request's changes of o/r from this forge yet".to_owned());
+    let refused = super::viewed(&gitlab, 4, "o/r", 12, HEAD).expect_err("refused");
+    assert_eq!(
+        refused,
+        format!(
+            "purlis could not read these changes from the forge (purlis can't read a request's \
+             changes of o/r from this forge yet). {}",
+            super::VIEW_NOTHING
+        )
+    );
+    assert!(not_viewed(&gitlab), "a forge that can't serve a diff");
+}
+
+/// R-123, Q277: "N commits since you looked" holds where the chat's try again finds the move,
+/// not only the watch: the forge is asked for the commits from the head the person viewed.
+/// Kills: no count asked on the raise's path.
+#[test]
+fn a_try_again_at_a_moved_head_says_the_commits_since_you_looked() {
+    purlis_core::unsteered!();
+    let project = Fake::new();
+    assert!(matches!(
+        answer(&project, &project.ask(12)),
+        Answer::MergeHeld { .. }
+    ));
+    super::viewed(&project, 4, "o/r", 12, HEAD).expect("viewed");
+
+    *project.read.lock().unwrap() = Ok(at(MOVED));
+    assert!(matches!(
+        answer(&project, &project.ask(12)),
+        Answer::MergeHeld { .. }
+    ));
+
+    assert_eq!(
+        *project.counted.lock().unwrap(),
+        [(HEAD.to_owned(), MOVED.to_owned())]
+    );
+    assert_eq!(
+        project.holds.every()[0].look,
+        mergehold::Look::NotViewed { since: Some(2) }
+    );
+}
+
+/// R-125, Q277: a reading of the watch that finds the facts changed at the same head tells the
+/// window, so the row is redrawn, as a moved head does; one that finds nothing changed tells
+/// it nothing. Kills: the redraw kept for moved heads alone.
+#[test]
+fn the_watch_redraws_a_row_whose_facts_changed_at_the_same_head() {
+    purlis_core::unsteered!();
+    let project = Fake::new();
+    assert!(matches!(
+        answer(&project, &project.ask(12)),
+        Answer::MergeHeld { .. }
+    ));
+    let before = *project.redrawn.lock().unwrap();
+
+    let mut later = at(HEAD);
+    later.facts.read_at = 60;
+    *project.read.lock().unwrap() = Ok(later);
+    assert!(super::watched_once(&project));
+    assert_eq!(*project.redrawn.lock().unwrap(), before, "nothing changed");
+
+    let mut failed = at(HEAD);
+    failed.facts.checks.ci = Ci::Failed;
+    failed.facts.read_at = 70;
+    *project.read.lock().unwrap() = Ok(failed);
+    assert!(super::watched_once(&project));
+    assert_eq!(
+        *project.redrawn.lock().unwrap(),
+        before + 1,
+        "the checks failed at the same head"
+    );
+    assert_eq!(project.holds.every()[0].facts.checks.ci, Ci::Failed);
+}
+
+/// Q277: a watch that found no ask waiting stops, then looks once more, so an ask raised as it
+/// stopped, whose own start found the watch still running, is watched. Kills: a watch that
+/// stops without looking again.
+#[test]
+fn a_watch_that_finds_an_ask_raised_as_it_stopped_carries_on() {
+    purlis_core::unsteered!();
+    use std::sync::atomic::Ordering;
+    let project = Fake::new();
+    let holds = &project.holds;
+
+    holds.watching.store(true, Ordering::SeqCst);
+    assert!(!super::carries_on(holds), "no ask waits: it stops");
+    assert!(!holds.watching.load(Ordering::SeqCst));
+
+    assert!(matches!(
+        answer(&project, &project.ask(12)),
+        Answer::MergeHeld { .. }
+    ));
+    holds.watching.store(true, Ordering::SeqCst);
+    assert!(super::carries_on(holds), "an ask waits: it carries on");
+    assert!(
+        holds.watching.load(Ordering::SeqCst),
+        "and is the one watch"
+    );
+}
+
+/// The follow-up Q269 named: a press is bound to every fact its row showed, by the digest of
+/// them. Shown passing checks, a press whose fresh read finds them failed merges nothing and
+/// asks the forge for no merge.
+#[test]
+fn a_press_shown_other_facts_than_its_fresh_read_is_refused() {
+    purlis_core::unsteered!();
+    let project = Fake::new();
+    assert!(matches!(
+        answer(&project, &project.ask(12)),
+        Answer::MergeHeld { .. }
+    ));
+    asked_once_more(&project);
+    let shown = facts().digest();
+    let mut failed = at(HEAD);
+    failed.facts.checks.ci = Ci::Failed;
+    failed.facts.read_at = 90;
+    *project.read.lock().unwrap() = Ok(failed);
+    let reached = Mutex::new(0);
+    let backend_of = |on: &OnForge| {
+        *reached.lock().unwrap() += 1;
+        on.forge.backend_over(recorded(Vec::new()))
+    };
+
+    let refused = super::pressed_in(
+        &project,
+        4,
+        "o/r",
+        12,
+        HEAD,
+        Seen::Protects,
+        &shown,
+        &backend_of,
+    )
+    .expect_err("nothing merged");
+
+    assert!(refused.contains("nothing was merged"), "{refused}");
+    assert_eq!(
+        *reached.lock().unwrap(),
+        0,
+        "the forge was asked for no merge"
+    );
+    assert_eq!(project.holds.every().len(), 1, "the ask still waits");
+}
+
+/// Q269, Q277: the case only the digest catches. The core holds the very facts the fresh read
+/// gives, and the ask is asked once more, but the window hands back a digest of facts it showed
+/// before: nothing is merged, and the press says what to do in purlis's words. Kills: the
+/// digest check in `pressed_in` removed, or `Holds::shows` answering yes.
+#[test]
+fn a_press_that_hands_back_a_stale_digest_merges_nothing_though_the_core_holds_the_same_facts() {
+    purlis_core::unsteered!();
+    let project = Fake::new();
+    assert!(matches!(
+        answer(&project, &project.ask(12)),
+        Answer::MergeHeld { .. }
+    ));
+    asked_once_more(&project);
+    assert!(project.holds.every()[0].asked, "asked once more");
+    let mut running = facts();
+    running.checks.ci = Ci::Running;
+    let reached = Mutex::new(0);
+    let backend_of = |on: &OnForge| {
+        *reached.lock().unwrap() += 1;
+        on.forge.backend_over(recorded(Vec::new()))
+    };
+
+    assert_eq!(
+        super::pressed_in(
+            &project,
+            4,
+            "o/r",
+            12,
+            HEAD,
+            Seen::Protects,
+            &running.digest(),
+            &backend_of,
+        ),
+        Err(super::SHOWN_OTHER.to_owned())
+    );
+    assert_eq!(
+        super::SHOWN_OTHER,
+        "what you were shown of this merge changed since, so nothing was merged. Press Merge \
+         again to be asked of what it shows now."
+    );
+    assert_eq!(
+        *reached.lock().unwrap(),
+        0,
+        "the forge was asked for no merge"
+    );
+    assert!(
+        project.holds.every()[0].asked,
+        "the core's facts are the same"
+    );
+}
+
+/// Q277: every sentence a held merge's row may say about why nothing happened ends as a
+/// sentence does, with a period.
+#[test]
+fn a_held_merges_refusals_end_with_a_period() {
+    purlis_core::unsteered!();
+    for said in [
+        super::MOVED,
+        super::VIEW_MOVED,
+        super::SHOWN_OTHER,
+        super::VIEW_NOTHING,
+    ] {
+        assert!(said.ends_with('.'), "{said}");
+    }
 }

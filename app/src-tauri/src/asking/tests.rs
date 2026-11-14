@@ -1621,10 +1621,13 @@ fn a_held_merge(session: u32) -> purlis_core::mergehold::Waits {
                 failed: Vec::new(),
             },
             ruleset: purlis_core::mergehold::Ruleset::Protects,
+            approved_by: None,
             read_at: 40,
         },
         since: 40,
         asked: false,
+        look: purlis_core::mergehold::Look::NotViewed { since: None },
+        pushed_here: false,
     }
 }
 
@@ -1675,6 +1678,11 @@ fn a_held_merge_is_one_ask_in_asks_offering_merge_and_dont_merge() {
                 checks: "PASSED".to_owned(),
                 read_at: 40,
                 ruleset: RulesetShown::Protects,
+                look: LookShown::NotViewed,
+                approved_by: None,
+                since_viewed: None,
+                pushed_here: false,
+                digest: a_held_merge(3).facts.digest(),
             },
         }
     );
@@ -3300,6 +3308,7 @@ fn a_snoozed_chats_asks_are_listed_apart_until_it_asks_something_new() {
         snoozed_until: None,
         cooling: Vec::new(),
         cooling_until: None,
+        on_finish_rows: Vec::new(),
     };
 
     let split = snoozed_apart(
@@ -3351,6 +3360,7 @@ fn a_chat_snoozed_for_an_hour_says_when_it_comes_back_and_is_listed_again_then()
         snoozed_until: None,
         cooling: Vec::new(),
         cooling_until: None,
+        on_finish_rows: Vec::new(),
     };
 
     let split = snoozed_apart(listing(), Some(&store), &root, NOW + 3_599);
@@ -3804,6 +3814,7 @@ fn unvouched(name: &str) -> purlis_core::forge::gitcredential::vouch::Unvouched 
         folder,
         place: Some(format!("github.com/acme/{name}")),
         places: vec![format!("github.com/acme/{name}")],
+        made: Some(1_690_000_000),
     }
 }
 
@@ -3863,12 +3874,116 @@ fn unrecorded_clones_are_exactly_one_trust_these_clones_ask() {
             .iter()
             .map(|one| one.id.as_str())
             .collect::<Vec<_>>(),
-        [TRUST_ALL]
+        [TRUST_ALL, CHOOSE]
     );
     assert_eq!(
         trust_clones_folders(&asks),
         [["workspaces/alpha/repos/api", "workspaces/alpha/repos/web"]]
     );
+}
+
+/// **Trust these clones offers Trust all and Choose…, and says when each clone was made**
+/// (T1-42, R-337): each clone with its remote and its folder's creation time, where its disk
+/// keeps one.
+#[test]
+fn the_clones_ask_offers_trust_all_and_choose_and_says_when_each_clone_was_made() {
+    let mut world = World::new();
+    let mut web = unvouched("web");
+    web.made = None;
+    world.unrecorded = Some(trust_these(vec![unvouched("api"), web]));
+
+    let asks = world.asks();
+
+    let ask = asks
+        .iter()
+        .find(|ask| ask.source == AskSource::TrustClones)
+        .expect("the clones' one ask");
+    assert_eq!(
+        ask.options
+            .iter()
+            .map(|one| (one.id.as_str(), one.label.as_str(), one.allows))
+            .collect::<Vec<_>>(),
+        [(TRUST_ALL, "Trust all", true), (CHOOSE, "Choose…", true)]
+    );
+    let AnswerPath::TrustClones { clones } = &ask.answer else {
+        panic!("answered as the clones' ask: {ask:?}");
+    };
+    assert_eq!(
+        clones
+            .iter()
+            .map(|clone| (clone.folder.as_str(), clone.place.as_deref(), clone.made))
+            .collect::<Vec<_>>(),
+        [
+            (
+                "workspaces/alpha/repos/api",
+                Some("github.com/acme/api"),
+                Some(1_690_000_000)
+            ),
+            (
+                "workspaces/alpha/repos/web",
+                Some("github.com/acme/web"),
+                None
+            ),
+        ]
+    );
+}
+
+/// **A window-only ask is Blocking while a chat waits on it, and otherwise on its chat's finish
+/// row** (T1-42, R-329, Q181): a chat in its turn waits on its Trust this clone, so its ask
+/// stays in [`Asking::asks`]; one whose turn has ended does not, so its ask is listed apart, in
+/// [`Asking::on_finish_rows`], and neither the ✋ nor a notification counts it. Every other ask
+/// stays where it is, whatever its chat's state.
+#[test]
+fn a_window_only_ask_is_blocking_while_its_chat_is_in_its_turn_and_otherwise_on_its_finish_row() {
+    let mut world = World::new();
+    world.window_only = vec![trust_this(2, "api"), trust_this(3, "web")];
+    world.queue = vec![3];
+    world.at_prompt = vec![3];
+
+    let (blocking, on_finish_rows) = finish_rows_apart(world.asks(), &|session| session == 2);
+
+    let trust = |asks: &[Shown]| -> Vec<u32> {
+        asks.iter()
+            .filter(|ask| ask.source == AskSource::TrustClone)
+            .map(|ask| ask.session)
+            .collect()
+    };
+    assert_eq!(trust(&blocking), [2], "chat 2 is in its turn: {blocking:?}");
+    assert_eq!(trust(&on_finish_rows), [3], "chat 3's turn ended");
+    assert!(
+        on_finish_rows
+            .iter()
+            .all(|ask| ask.source == AskSource::TrustClone),
+        "only a window-only ask moves to a finish row: {on_finish_rows:?}"
+    );
+    assert!(
+        blocking
+            .iter()
+            .any(|ask| ask.session == 3 && ask.source != AskSource::TrustClone),
+        "chat 3's own question stays an ask: {blocking:?}"
+    );
+}
+
+/// **What a chat waits on, as the board has it** (R-329): in its turn, or stopped on a prompt it
+/// asked mid-turn, it waits; a turn ended on the person does not; a chat the board has no state
+/// for is taken to wait, so its ask is never hidden from Asks.
+#[test]
+fn a_chat_waits_on_its_window_only_ask_unless_its_turn_has_ended() {
+    let glance = |state, asking, own_work| crate::host::Glance {
+        state,
+        asking,
+        turns: 1,
+        prompt: None,
+        own_work,
+        wakes_on_its_own_work: false,
+    };
+    use purlis_core::state::State;
+
+    assert!(waits_on_its_ask(&glance(State::Running, false, false)));
+    assert!(waits_on_its_ask(&glance(State::Waiting, true, false)));
+    assert!(waits_on_its_ask(&glance(State::Waiting, false, true)));
+    assert!(waits_on_its_ask(&glance(State::Unknown, false, false)));
+    assert!(!waits_on_its_ask(&glance(State::Waiting, false, false)));
 }
 
 /// **One ask per clone** (Q257): a clone with a chat's own Trust this clone is left out of the
@@ -3908,4 +4023,39 @@ fn trust_these_clones_is_not_raised_when_each_of_its_clones_has_a_chats_ask() {
         !asks.iter().any(|ask| ask.source == AskSource::TrustClones),
         "{asks:?}"
     );
+}
+
+/// **Ready raises one entry** (#4496): nothing while the person waits, one Ask in the project the
+/// setup was asked from once the recheck found the cluster ready, none in another, and none once
+/// it is answered.
+#[cfg(unix)]
+#[test]
+fn pool_setups_ready_ask_is_one_in_its_own_project_and_gone_once_answered() {
+    let (config, project, other) = (
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    use purlis_core::poolsetup::{admin, choose_cluster};
+    choose_cluster(config.path(), "kind-team").unwrap();
+    admin::asked(config.path(), Some(project.path()), 1).unwrap();
+    assert!(pool_setup_ready(project.path(), config.path()).is_none());
+    // As the background recheck marks it, once the admin has given what was missing.
+    let file = purlis_core::machine::dir(config.path()).join("pool-setup.json");
+    let mut held: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    held["admin"]["ready"] = 2.into();
+    std::fs::write(&file, held.to_string()).unwrap();
+
+    let shown = pool_setup_ready(project.path(), config.path()).expect("the ready Ask");
+    assert_eq!(shown.source, AskSource::PoolSetup);
+    assert_eq!(shown.answer, AnswerPath::PoolSetup);
+    assert_eq!(shown.session, 0);
+    assert!(shown.says.contains("kind-team"), "{}", shown.says);
+    let ids: Vec<&str> = shown.options.iter().map(|one| one.id.as_str()).collect();
+    assert_eq!(ids, [OPEN_POOL_SETUP, DISMISS]);
+    assert!(pool_setup_ready(other.path(), config.path()).is_none());
+
+    admin::forget(config.path()).unwrap();
+    assert!(pool_setup_ready(project.path(), config.path()).is_none());
 }

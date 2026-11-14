@@ -2742,6 +2742,18 @@ body {
 .inbox-hidden {
   margin: 0;
 }
+/* The clones Trust these clones would trust, each with its remote and when it was made (T1-42,
+   R-337): secondary lines of the row, one a clone, and Choose…'s boxes under it, one a line. */
+.inbox-clones {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.inbox-clones-chosen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
 .inbox-none {
   margin: var(--space-2) 0;
   color: var(--text-secondary);
@@ -9025,6 +9037,16 @@ nav.piece-files-head {
 .pool-setup-say-actions {
   margin-top: var(--space-3);
 }
+/* Get help under a step that needs attention (#4497): set apart from the step's own actions. */
+.pool-setup-help {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
 @media (max-width: 720px) {
   .pool-setup {
     grid-template-columns: minmax(0, 1fr);
@@ -9474,4 +9496,41 @@ nav.piece-files-head {
   display: block;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* **A block's ways out** (T1-33, R-300): under its Chat log row's sentence, in the row's second
+   column, and in a finish row's form; a way's read-only detail under them. */
+.chat-log-row .block-ways {
+  grid-column: 2;
+}
+
+.block-ways {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.block-ways-decides,
+.block-ways-detail p,
+.block-ways-detail ul {
+  margin: 0;
+}
+
+.block-ways-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-inline-start: var(--space-3);
+}
+
+.block-ways-detail ul {
+  padding-inline-start: var(--space-4);
+}
+
+/* A chat's unverified blocks, collapsed into one line (R-105, T1-38): its detail lists the
+   latest of them, one fixed-words line each. */
+.chat-log-qualified {
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
 }

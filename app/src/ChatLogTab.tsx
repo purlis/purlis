@@ -16,15 +16,23 @@ import { BlockTag } from "./BlockTag";
 import {
   allowedSaid,
   atSaid,
+  blockSaid,
   blockSourceSaid,
   blockTags,
   drawnRows,
   honestyLines,
+  qualifiedDetail,
   rowSaid,
   type BlockRow,
+  type QualifiedRow,
 } from "./chatLog";
 import { ToggleButton } from "./ui/button/Button";
 import { useBlocksLookedAt, useChatLogFilter } from "./blockedMarkers";
+import { BlockWaysOut } from "./BlockWaysOut";
+import { TOLD, type Told } from "./blockWays";
+
+/** **A block row's ways out** (T1-33, R-300): Tell the chat…'s typing and Go to chat. */
+export type ChatLogWays = { tell: () => Promise<Told>; go: () => void };
 
 /** What heads a log with nothing to say above its rows. */
 const QUIET: ChatLogSummary = {
@@ -32,6 +40,9 @@ const QUIET: ChatLogSummary = {
   by_your_rules: 0,
   unverified: false,
   ran_as_you: false,
+  harness: null,
+  cant_tell_its_checks_blocks: false,
+  cant_tell_its_mode: false,
 };
 
 /** What the reason is, above it: the words of the harness's own check, never purlis's. */
@@ -43,35 +54,91 @@ const REASON_OF = "The check's reason, as written";
  * holds it, shows the harness's reason as written. The reason is the chat's side's text: drawn
  * as one text node, never parsed or marked up, and nowhere but the detail.
  */
-function BlockedRow({ row }: { row: BlockRow }) {
+function BlockedRow({ row, name, ways }: { row: BlockRow; name: string; ways?: ChatLogWays }) {
   const tags = blockTags(row);
   // The reason is in the page only while its detail is open: a closed panel is hidden, and still
   // a copy a find or a screen reader's browse could reach.
   const [open, setOpen] = useState(false);
   return (
-    <Disclosure
-      size="sm"
-      isExpanded={open}
-      onExpandedChange={setOpen}
-      label={<span className="chat-log-said ui-text-body">{rowSaid(row)}</span>}
-      trail={
-        tags.length === 0 ? undefined : (
-          <span className="chat-log-tags">
-            {tags.map((tag) => (
-              <BlockTag key={tag.kind} kind={tag.kind} word={tag.word} />
-            ))}
-          </span>
-        )
-      }
-    >
-      <p className="chat-log-source ui-text-secondary">{blockSourceSaid(row)}</p>
-      {open && row.reason !== null && (
-        <figure className="chat-log-reason-of">
-          <figcaption className="ui-text-secondary">{REASON_OF}</figcaption>
-          <bdi className="chat-log-reason ui-text-body">{row.reason}</bdi>
-        </figure>
+    <>
+      <Disclosure
+        size="sm"
+        isExpanded={open}
+        onExpandedChange={setOpen}
+        label={<span className="chat-log-said ui-text-body">{rowSaid(row)}</span>}
+        trail={
+          tags.length === 0 ? undefined : (
+            <span className="chat-log-tags">
+              {tags.map((tag) => (
+                <BlockTag key={tag.kind} kind={tag.kind} word={tag.word} />
+              ))}
+            </span>
+          )
+        }
+      >
+        <p className="chat-log-source ui-text-secondary">{blockSourceSaid(row)}</p>
+        {open && row.reason !== null && (
+          <figure className="chat-log-reason-of">
+            <figcaption className="ui-text-secondary">{REASON_OF}</figcaption>
+            <bdi className="chat-log-reason ui-text-body">{row.reason}</bdi>
+          </figure>
+        )}
+      </Disclosure>
+      {/* Its ways out (T1-33, R-300): beside the row, never in its closed detail. */}
+      {ways !== undefined && (
+        <BlockWaysOut blocks={[row]} who={name} tell={ways.tell} go={ways.go} />
       )}
-    </Disclosure>
+    </>
+  );
+}
+
+/** The tag of a collapsed line, by its qualifier. */
+const QUALIFIED_TAG = { unverified: "Unverified", cant_tell: "Can't tell" } as const;
+
+/**
+ * **A chat's unverified blocks, or those purlis can't tell more of, as one line** (R-104,
+ * R-105; T1-38): their count, "12 unverified", and its tag; its detail lists the latest of them
+ * in fixed words, who blocked a call and when, and counts the rest. Nothing the chat's side
+ * wrote, its tool, its target or a harness's reason, is drawn. Its blocks' ways out (T1-33,
+ * R-300) stand beside it, as a block row's do.
+ */
+function QualifiedLine({
+  row,
+  name,
+  ways,
+}: {
+  row: QualifiedRow;
+  name: string;
+  ways?: ChatLogWays;
+}) {
+  const detail = qualifiedDetail(row);
+  return (
+    <>
+      <Disclosure
+        size="sm"
+        label={<span className="chat-log-said ui-text-body">{rowSaid(row)}</span>}
+        trail={
+          <span className="chat-log-tags">
+            <BlockTag kind={row.qualifier} word={QUALIFIED_TAG[row.qualifier]} />
+          </span>
+        }
+      >
+        <p className="chat-log-source ui-text-secondary">{detail.said}</p>
+        <ol className="chat-log-qualified">
+          {detail.listed.map((one, at) => (
+            <li key={`${one.at ?? ""}:${at}`} className="ui-text-body">
+              {[atSaid(one.at), blockSaid(one)].filter((part) => part !== "").join(" · ")}
+            </li>
+          ))}
+        </ol>
+        {detail.earlier !== null && (
+          <p className="chat-log-source ui-text-secondary">{detail.earlier}</p>
+        )}
+      </Disclosure>
+      {ways !== undefined && (
+        <BlockWaysOut blocks={row.rows} who={name} tell={ways.tell} go={ways.go} />
+      )}
+    </>
   );
 }
 
@@ -100,10 +167,13 @@ export function ChatLogRows({
   name,
   rows,
   summary = QUIET,
+  ways,
 }: {
   name: string;
   rows: readonly ChatLogRow[];
   summary?: ChatLogSummary;
+  /** A block row's ways out (T1-33); none where the chat is not one to tell or go to. */
+  ways?: ChatLogWays;
 }) {
   const allowed = allowedSaid(summary);
   return (
@@ -123,7 +193,9 @@ export function ChatLogRows({
           >
             <span className="chat-log-at ui-text-secondary">{atSaid(row.at)}</span>
             {row.kind === "blocked" ? (
-              <BlockedRow row={row} />
+              <BlockedRow row={row} name={name} ways={ways} />
+            ) : row.kind === "qualified" ? (
+              <QualifiedLine row={row} name={name} ways={ways} />
             ) : (
               <span className="chat-log-said ui-text-body">{rowSaid(row)}</span>
             )}
@@ -143,10 +215,13 @@ export function ChatLogTab({
   plane,
   session,
   name,
+  onShowChat,
 }: {
   plane: PlaneId;
   session?: number;
   name: string;
+  /** Go to chat (T1-33, R-199): the chat in front. */
+  onShowChat?: (session: number) => void;
 }) {
   const [log, setLog] = useState<ChatLog>();
   const [said, setSaid] = useState<string>();
@@ -188,6 +263,20 @@ export function ChatLogTab({
     };
   }, [plane, session]);
 
+  // **Its block rows' ways out** (T1-33, R-300): Tell the chat… types through the core's one
+  // way in, and answers why where nothing was typed.
+  const ways: ChatLogWays | undefined =
+    session === undefined
+      ? undefined
+      : {
+          tell: () =>
+            commands
+              .tellChatBlocked(plane, session)
+              .then((done): Told =>
+                done.status === "error" ? { why: done.error } : { typed: TOLD },
+              ),
+          go: () => onShowChat?.(session),
+        };
   if (said !== undefined)
     return <EmptyState headline="purlis could not read this chat's log" body={said} />;
   if (session === undefined || (log !== undefined && !log.known))
@@ -220,7 +309,7 @@ export function ChatLogTab({
             body="Nothing was blocked in this chat on this machine."
           />
         ) : (
-          <ChatLogRows name={name} rows={rows} />
+          <ChatLogRows name={name} rows={rows} ways={ways} />
         )}
       </>
     );
@@ -238,7 +327,7 @@ export function ChatLogTab({
   return (
     <>
       {head}
-      <ChatLogRows name={name} rows={log.rows} summary={log.summary} />
+      <ChatLogRows name={name} rows={log.rows} summary={log.summary} ways={ways} />
     </>
   );
 }

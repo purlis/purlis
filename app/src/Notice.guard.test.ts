@@ -175,6 +175,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 1,
     why: ACTION,
   },
+  "BlockWaysOut.tsx": {
+    count: 1,
+    why:
+      "what Tell the chat…'s Type it in the chat typed, and into which chats (T1-33, Q272), " +
+      "said under the button just pressed and replaced by its next press: an answer to the " +
+      "press, not a standing line. Why nothing was typed is `NothingDone`'s",
+  },
   "inboxRowParts.tsx": {
     count: 1,
     why:
@@ -560,6 +567,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why:
       "Pool setup's progress, said politely as it goes (#4480): reading what this machine has " +
       "and rechecking by itself. Nothing to do about either, so no way out.",
+  },
+  "poolsetup/GetHelp.tsx": {
+    count: 1,
+    why:
+      "why Get help started no chat (#4497), beside its own button: what that press answered, " +
+      "not a standing line, and the button is pressed again",
   },
   "poolsetup/PoolStep.tsx": {
     count: 1,

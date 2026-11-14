@@ -1620,6 +1620,48 @@ pub enum Ask {
     /// reason. **It carries no answer**: nothing a chat sends on this socket answers an ask
     /// (V16a).
     Merge(MergeAsk),
+    /// **Whether this chat is attended, by the fact the app holds for it** (R-109, T1-18,
+    /// [`crate::attendance::Fact`]): what the hook asks of a line A4 would refuse an unattended
+    /// chat. The app answers [`Answer::Attended`] with the fact as it would stand once it heard
+    /// what the line itself says ([`crate::attendance::Fact::hearing`]), which can only lower
+    /// it, so a line nobody proved can never raise it. **It moves nothing**: the fact is fed by
+    /// the reports the board takes alone. No ticket, for a record's reason.
+    Attendance(AttendanceAsk),
+}
+
+/// **A tool line's ask for its chat's attendance** ([`Ask::Attendance`], R-109): what the line's
+/// own payload says, read as a report of the same payload is ([`Report::read`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct AttendanceAsk {
+    /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
+    pub chat: u32,
+    /// The payload's `permission_mode` is the bypass ([`crate::floorguard::unattended`]): read by
+    /// the fact on Claude Code alone.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unattended: bool,
+    /// The Claude Code mode the payload names, as the chat's harness's adapter reads it
+    /// ([`crate::harness::HarnessAdapter::attendance_mode`]); absent on every other harness.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claude_code_mode: Option<crate::attendance::ClaudeCodeMode>,
+}
+
+impl AttendanceAsk {
+    /// The ask of chat `chat`'s tool line, whose payload says `permission_mode`, under the
+    /// harness `env` names.
+    pub fn read(
+        chat: u32,
+        permission_mode: Option<&str>,
+        env: &dyn Fn(&str) -> Option<String>,
+    ) -> Self {
+        Self {
+            chat,
+            unattended: crate::floorguard::unattended(permission_mode),
+            claude_code_mode: chat_harness(env)
+                .as_deref()
+                .and_then(crate::harness::Harness::of_registry_or_kind)
+                .and_then(|harness| harness.adapter().attendance_mode(permission_mode)),
+        }
+    }
 }
 
 /// **A held merge, as the hook hands it to the app** ([`Ask::Merge`]): the request the command
@@ -2417,6 +2459,9 @@ pub enum Answer {
     /// request from the forge and holds one ask for it, and this is what the chat is told. The
     /// only answer on which the hook records the merge as a hold; any other, or none, is a block.
     MergeHeld { said: String },
+    /// **Whether the asking chat is attended** ([`Ask::Attendance`], R-109): its fact, as it
+    /// would stand once it heard the asking line. `false` for a chat the app holds no fact for.
+    Attended { attended: bool },
     /// The app will not, and this is the sentence saying why. The asker prints the command
     /// to run in a terminal and says this underneath it: a refusal the operator cannot see
     /// is a handoff that vanished.
@@ -2750,6 +2795,7 @@ impl Ask {
             Self::ThemeDraft(draft) => draft.chat,
             Self::Prompt(asked) => asked.chat,
             Self::Merge(asked) => asked.chat,
+            Self::Attendance(asked) => asked.chat,
         }
     }
 }

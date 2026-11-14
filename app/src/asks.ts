@@ -23,6 +23,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   commands,
   type Asking,
+  type CloneToVouch,
   type EntriesOf,
   type GrantLevel,
   type PlaneChanged,
@@ -43,6 +44,7 @@ import { onSandboxCommand, runGrantsMoved, sandboxCommandReturned } from "./sand
 import { askOpenProposal } from "./proposedChangeOpen";
 import { askReviewPin } from "./proposedPinOpen";
 import { proposeOldKeysRemoval } from "./oldHarnessPlugins";
+import { askOpenPoolSetup, POOL_SETUP_READY } from "./poolSetupAsked";
 import { askOpenRunnerWrite } from "./runnerWriteOpen";
 import { askOpenRunnerDispatch } from "./runnerDispatchOpen";
 import { askProfileSignIn, askSettingsLink } from "./settings/links";
@@ -124,6 +126,33 @@ export function notSnoozed<Row extends { plane: string; session: number }>(
 const firstOf = (one: number | null, two: number | null): number | null =>
   one === null ? two : two === null ? one : Math.min(one, two);
 
+/**
+ * **Trusts each of `clones`** (R-336, R-337): the clone Notice's own press on each, at the one
+ * address its remote names, for Trust all and for the clones Choose… ticked. Each clone it trusts
+ * leaves the ask; one it can't is said, and the rest are still trusted. Answers what was refused,
+ * or nothing.
+ */
+export async function trustEach(
+  plane: string,
+  clones: readonly CloneToVouch[],
+): Promise<string | undefined> {
+  const refused: string[] = [];
+  for (const clone of clones) {
+    // The core leaves such a clone out of every trust ask (Q257); this holds if one ever came.
+    if (clone.place === null) {
+      refused.push(
+        `${clone.folder}'s remote names more than one address, so purlis didn't trust it. Give origin one address, then trust it.`,
+      );
+      continue;
+    }
+    const trusted = await commands
+      .vouchClone(plane, clone.folder, clone.place)
+      .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+    if (trusted.status === "error") refused.push(trusted.error);
+  }
+  return refused.length === 0 ? undefined : refused.join(" ");
+}
+
 /** Each project's asks, by its id: the last whole list the core derived for it. */
 export function useAsks(planes: readonly string[]): {
   held: Record<string, readonly Shown[]>;
@@ -176,6 +205,8 @@ export function useAsks(planes: readonly string[]): {
     // sandbox's, such as what a project expects: it is no one project's word, so each list is
     // read again.
     stops.push(listen(POOL_SIGN_IN_CONFIRM, () => reader.soonAll()).catch(() => undefined));
+    // Pool setup's ready entry (#4496) is no one project's event either.
+    stops.push(listen(POOL_SETUP_READY, () => reader.soonAll()).catch(() => undefined));
     const offSandbox = onSandboxCommand(() => reader.soonAll());
     // **What a project expects is read again where its Notice reads it** (#6000): as its
     // settings change on disk (a pull or a hand comes to declare it) and as the window comes
@@ -238,6 +269,8 @@ function listReader(
           // And none a cool-off holds (#6010).
           cooling: listed?.cooling ?? [],
           cooling_until: listed?.cooling_until ?? null,
+          // And none on a chat's finish row (T1-42, R-329).
+          on_finish_rows: listed?.on_finish_rows ?? [],
         };
         // **An answer that says what the last one said changes nothing** (#4727): every burst of
         // a busy chat's moves reads the list again, and a fresh list each time drew the whole
@@ -441,6 +474,8 @@ export function opensItsWindow(ask: Shown, option: string): boolean {
       return option === "set-up" || setUpForgeOf(option) !== undefined;
     case "old-harness-plugins":
       return option === "remove";
+    case "pool-setup":
+      return option === "open";
     case "sandbox-only":
       return option === "make";
     case "take-over":
@@ -610,6 +645,17 @@ export async function answerTaken(
           return gone;
         }
         break;
+      }
+      case "pool-setup": {
+        // Pool setup's cluster is ready (#4496): Open Pool setup forgets the wait and opens the
+        // project's tab, where the setup goes on; Dismiss forgets it alone. Either is said once.
+        const forgot = await commands.poolSetupStopWaiting();
+        if (forgot.status === "error") return forgot;
+        if (option === "open") {
+          askOpenPoolSetup(plane);
+          opened = true;
+        }
+        return { status: "ok" };
       }
       case "old-harness-plugins": {
         // The old `[harness_plugins]` keys (#3467): Remove holds purlis's proposed change for
@@ -855,7 +901,8 @@ export async function answerTaken(
         // A merge a chat's hook held (R-115): Merge is the app's own forge call, at the head the
         // ask was raised at; Don't merge merges nothing. The chat never merges.
         if (option === "merge")
-          // It hands back the ruleset state its row showed, which the press is bound to (R-150).
+          // It hands back the ruleset state its row showed, and the digest of every fact it
+          // showed, which the press is bound to (R-150, T1-41).
           return commands.mergeHeldRequest(
             plane,
             ask.session,
@@ -863,6 +910,7 @@ export async function answerTaken(
             path.number,
             path.head,
             path.facts.ruleset,
+            path.facts.digest,
           );
         if (option === "dont-merge")
           return commands.dontMergeHeldRequest(
@@ -886,20 +934,8 @@ export async function answerTaken(
         // clone Notice's own press on each, at the one address its remote names. Each clone it
         // trusts leaves the ask; one it can't is said, and the rest are still trusted.
         if (option !== "trust-all") break;
-        const refused: string[] = [];
-        for (const clone of path.clones) {
-          if (clone.place === null) {
-            refused.push(
-              `${clone.folder}'s remote names more than one address, so purlis didn't trust it. Give origin one address, then trust it.`,
-            );
-            continue;
-          }
-          const trusted = await commands.vouchClone(plane, clone.folder, clone.place);
-          if (trusted.status === "error") refused.push(trusted.error);
-        }
-        return refused.length === 0
-          ? { status: "ok" }
-          : { status: "error", error: refused.join(" ") };
+        const refused = await trustEach(plane, path.clones);
+        return refused === undefined ? { status: "ok" } : { status: "error", error: refused };
       }
       case "workspace-removal":
         // Keep puts the question away. Remove… removes nothing (qw356): it opens the window's

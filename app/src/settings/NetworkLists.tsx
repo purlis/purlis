@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   commands,
   type BlockedLately,
@@ -11,6 +11,8 @@ import {
   type SandboxNetwork,
 } from "../bindings";
 import { ALLOW_SAID } from "../allowLabels";
+import { BlockedMarkers } from "../blockedMarkers";
+import { OPEN_THE_CHAT_LOG, openTheChatLogOf } from "../chatLog";
 import { Notice } from "../Notice";
 import { inTheWindow } from "../personaHostsAllow";
 import { useReadOnlySaid } from "../ReadOnlyLine";
@@ -144,6 +146,9 @@ function capital(said: string): string {
  * machine, and **Allow for everyone in this project** commits it: the registry's words, every
  * level side by side (#1700, `allowLabels.ts`). A row a chat reaches now says so. A refused
  * lookup's host is shown and never has an Allow: a program's printed words named it (#1663).
+ *
+ * **A row whose chat is open here opens its Chat log, at its blocks** (R-226, T1-37): the core
+ * names the chat by its number where this window has it open, and none where it has not.
  */
 export function RefusedRows({
   plane,
@@ -156,6 +161,7 @@ export function RefusedRows({
 }) {
   const [said, setSaid] = useState<string>();
   const [trouble, setTrouble] = useState<string>();
+  const openChatLog = useContext(BlockedMarkers).open;
   /** Why an Allow for everyone is off: the project is read-only (#1759). */
   const readOnly = useReadOnlySaid();
   const allow = (host: string, level: GrantLevel) => {
@@ -198,6 +204,15 @@ export function RefusedRows({
                   {ALLOW_SAID[level]}
                 </Button>
               ))}
+            {row.chat !== null && row.session != null && (
+              <Button
+                variant="ghost"
+                aria-label={openTheChatLogOf(row.chat)}
+                onPress={() => row.session != null && openChatLog(row.session, "blocks")}
+              >
+                {OPEN_THE_CHAT_LOG}
+              </Button>
+            )}
           </li>
         ))}
       </ul>

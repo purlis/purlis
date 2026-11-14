@@ -119,12 +119,14 @@ pub enum ChatLogRow {
         target: Option<String>,
         harness: String,
         reason: Option<String>,
+        /// It has since been resolved (Q272): its row offers no Tell the chat….
+        resolved: bool,
     },
 }
 
 /// What heads a chat's Chat log: its allowed calls in one count, with those its person's rules
-/// allowed, and its honesty lines.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, specta::Type)]
+/// allowed, its honesty lines, and what purlis can't tell of its harness.
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, specta::Type)]
 pub struct ChatLogSummary {
     pub allowed: u32,
     pub by_your_rules: u32,
@@ -132,6 +134,13 @@ pub struct ChatLogSummary {
     pub unverified: bool,
     /// It ran with No sandbox.
     pub ran_as_you: bool,
+    /// Its harness, by the word the plane calls it, where its latest start names one purlis
+    /// ships: what the Can't tell lines name.
+    pub harness: Option<String>,
+    /// Its harness does not report what its own check blocks (R-097, R-100).
+    pub cant_tell_its_checks_blocks: bool,
+    /// Its harness reports no mode purlis can check (R-099).
+    pub cant_tell_its_mode: bool,
 }
 
 /// **The reasons the harnesses' own checks gave, for the app's life** (R-340): held as the
@@ -174,7 +183,7 @@ fn protection_of(in_force: InForce) -> StartProtection {
 }
 
 /// A closed word's own spelling, as the log writes it.
-fn word_of(value: impl serde::Serialize) -> String {
+pub(crate) fn word_of(value: impl serde::Serialize) -> String {
     serde_json::to_value(value)
         .ok()
         .and_then(|word| word.as_str().map(str::to_owned))
@@ -182,7 +191,7 @@ fn word_of(value: impl serde::Serialize) -> String {
 }
 
 /// A block's target, as its kind's word and its value.
-fn target_of(target: &Target) -> (String, String) {
+pub(crate) fn target_of(target: &Target) -> (String, String) {
     match target {
         Target::Host(host) => ("host".to_owned(), host.as_str().to_owned()),
         Target::Folder(folder) => ("folder".to_owned(), folder.as_str().to_owned()),
@@ -259,6 +268,7 @@ fn row_of(row: Row, reason: &dyn Fn(&str) -> Option<String>) -> ChatLogRow {
             block,
             call,
             harness,
+            resolved,
         } => {
             let harness_check = matches!(
                 &block,
@@ -299,6 +309,7 @@ fn row_of(row: Row, reason: &dyn Fn(&str) -> Option<String>) -> ChatLogRow {
                 // The reason is the chat's or its harness's words (Q259): only a harness's own
                 // check's block carries one, never a guard's or the sandbox's.
                 reason: call.as_deref().filter(|_| harness_check).and_then(reason),
+                resolved,
             }
         }
     }
@@ -311,6 +322,9 @@ fn summary_of(
         by_your_rules,
         unverified,
         ran_as_you,
+        harness,
+        cant_tell_its_checks_blocks,
+        cant_tell_its_mode,
     }: Summary,
 ) -> ChatLogSummary {
     ChatLogSummary {
@@ -318,6 +332,9 @@ fn summary_of(
         by_your_rules,
         unverified,
         ran_as_you,
+        harness: harness.map(|harness| harness.name().to_owned()),
+        cant_tell_its_checks_blocks,
+        cant_tell_its_mode,
     }
 }
 

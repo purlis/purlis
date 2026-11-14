@@ -12327,3 +12327,210 @@ fn a_timed_out_hold_is_written_to_the_event_log_as_one_sandbox_block() {
 
 /// The hash of the arguments of the call a connection was held under, as its hook sent it.
 const HELD_CALLS_ARGS: &str = "5e1f0c0e8a7d6b4c3a2918f7e6d5c4b3a29180f7e6d5c4b3a2918f7e6d5c4b3a";
+
+// ----- the attendance fact A4 reads (T1-18, #6409; Q271, Q275) -----
+
+/// A line of chat `chat`'s own Claude Code hook whose `permission_mode` is the bypass: what lowers
+/// its attendance fact (Q271).
+fn a_bypass_report(chat: u32) -> purlis_core::hookwire::Report {
+    purlis_core::hookwire::Report {
+        chat,
+        event: purlis_core::state::Event::UserPromptSubmit,
+        conversation: purlis_core::hookwire::Conversation::Named(ID.to_owned()),
+        pid: None,
+        agent: None,
+        detail: purlis_core::state::Detail {
+            unattended: true,
+            ..purlis_core::state::Detail::default()
+        },
+    }
+}
+
+/// Whether chat `session`'s attendance fact, as this app holds it, says nobody is at it.
+fn held_unattended(chats: &Chats, session: u32) -> bool {
+    chats
+        .attendance_of(session)
+        .unwrap_or_else(|| panic!("chat {session} holds no attendance fact"))
+        .unattended()
+}
+
+#[test]
+fn a_task_a_dispatch_started_is_unattended_and_its_record_says_so() {
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let task = chats
+        .start(
+            &started_by(dir.path(), "ide.7", purlis_core::reopen::Mode::Task),
+            SIZE,
+        )
+        .unwrap();
+    let person = chats
+        .start(&chat(&a_claude(dir.path()), "ide.8", None), SIZE)
+        .unwrap();
+
+    assert!(held_unattended(&chats, task), "a task has nobody at it");
+    assert!(
+        !held_unattended(&chats, person),
+        "a person's chat is attended"
+    );
+    // What a relaunch reads: the record keeps the task unattended, the person's chat not.
+    let kept: Vec<(String, bool)> = chats
+        .record()
+        .chats
+        .iter()
+        .map(|chat| (chat.name.clone(), chat.unattended))
+        .collect();
+    assert_eq!(
+        kept,
+        [("ide.7".to_owned(), true), ("ide.8".to_owned(), false)]
+    );
+    chats.end_all();
+}
+
+#[test]
+fn a_chat_its_record_kept_unattended_relaunches_unattended() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = a_claude(dir.path());
+    for kept in [true, false] {
+        let (chats, _) = recorded();
+        let record = Record {
+            chats: vec![Chat {
+                unattended: kept,
+                ..chat(&claude, "ide.7", Some(ID))
+            }],
+            ..one_recorded(&claude)
+        };
+        let open = chats.put_back_here(&record, SIZE);
+        assert_eq!(open.len(), 1, "it starts again");
+        // A person's start, which alone would be attended: the record's fact is never raised.
+        assert_eq!(
+            held_unattended(&chats, open[0].session),
+            kept,
+            "a chat recorded unattended: {kept}"
+        );
+        chats.end_all();
+    }
+}
+
+#[test]
+fn a_report_that_lowers_the_fact_is_written_down() {
+    let dir = tempfile::tempdir().unwrap();
+    let (chats, wrote) = recorded();
+    let session = chats
+        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+        .unwrap();
+    assert!(!held_unattended(&chats, session));
+    lock(&wrote).clear();
+
+    chats.heard_attendance(&a_bypass_report(session));
+
+    assert!(held_unattended(&chats, session), "the bypass bit lowers it");
+    let last = lock(&wrote)
+        .last()
+        .cloned()
+        .expect("the lowered fact is written");
+    assert!(last.chats[0].unattended, "{:?}", last.chats[0]);
+    // A report that moves nothing writes nothing more.
+    let written = lock(&wrote).len();
+    chats.heard_attendance(&a_bypass_report(session));
+    assert_eq!(lock(&wrote).len(), written);
+    chats.end_all();
+}
+
+/// Q275: Restart and Restart without sandbox each start the chat under a new number, and the
+/// fact a report lowered comes with it.
+#[test]
+fn a_chat_a_report_lowered_comes_back_unattended_from_a_restart() {
+    let plane = a_sandboxed_plane();
+    let chats = restartable_chats_of(plane.path(), Pretend::default());
+    // Restart without sandbox records its opt-out before it starts (ADR 0067 §7).
+    chats.when_the_sandbox_is_decided(Box::new(|_| Ok(())));
+    let first = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    assert!(!held_unattended(&chats, first), "a person's chat");
+    chats.heard_attendance(&a_bypass_report(first));
+    assert!(held_unattended(&chats, first));
+
+    chats.ask_restart(first).expect("asked");
+    let restarted = chats.restart(first, SIZE).expect("restarts");
+    chats.close(first).expect("the old run ends");
+    assert_ne!(restarted, first, "a new number");
+    assert!(held_unattended(&chats, restarted), "Restart");
+
+    let unsandboxed = chats
+        .restart_without_sandbox(restarted, SIZE)
+        .expect("restarts without the sandbox");
+    chats.close(restarted).expect("the old run ends");
+    assert_ne!(unsandboxed, restarted, "a new number");
+    assert!(
+        held_unattended(&chats, unsandboxed),
+        "Restart without sandbox"
+    );
+    assert!(chats.record().chats[0].unattended, "and its record says so");
+    let _ = chats.close(unsandboxed);
+}
+
+/// Q275: Resume on the band of a chat the person ended starts it under a new number, and the
+/// fact a report lowered comes with it.
+#[test]
+fn a_chat_a_report_lowered_comes_back_unattended_from_a_resume_after_end() {
+    let plane = a_sandboxed_plane();
+    let chats = restartable_chats_of(plane.path(), Pretend::default());
+    let session = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    chats.heard_attendance(&a_bypass_report(session));
+    chats.close(session).expect("End… ends it");
+    assert!(
+        chats.attendance_of(session).is_none(),
+        "its fact went with it"
+    );
+
+    let resumed = chats.resume_ended(session, SIZE).expect("resumes");
+
+    assert_ne!(resumed, session, "a new number");
+    assert!(held_unattended(&chats, resumed), "Resume after End");
+    let _ = chats.close(resumed);
+}
+
+/// Q275: the program's first hook can report before its start returns, so the fact is held
+/// before the program begins, and a report then lowers it.
+#[test]
+fn a_report_that_arrives_as_the_chat_starts_lowers_its_fact() {
+    let plane = a_sandboxed_plane();
+    let host = Pretend::default();
+    let chats = restartable_chats_of(plane.path(), host.clone());
+    host.holds_once_announced();
+    std::thread::scope(|scope| {
+        let starting = scope.spawn(|| chats.start(&a_resumable_chat_in(plane.path()), SIZE));
+        // Its number is announced and its program not yet begun: what is held for it now is
+        // what its first hook's report reaches.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let held = loop {
+            if let Some(&number) = lock(&chats.attendance).keys().next() {
+                break Some(number);
+            }
+            if std::time::Instant::now() > deadline {
+                break None;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        };
+        if let Some(number) = held {
+            chats.heard_attendance(&a_bypass_report(number));
+        }
+        host.lets_announced_go();
+        let session = starting.join().expect("the start").expect("starts");
+        assert_eq!(
+            held,
+            Some(session),
+            "no fact was held before its program began"
+        );
+        assert!(held_unattended(&chats, session), "the report at its start");
+        assert!(
+            lock(&chats.open)[&session].chat.unattended,
+            "and its record carries it"
+        );
+        let _ = chats.close(session);
+    });
+}

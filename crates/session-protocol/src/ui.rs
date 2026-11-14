@@ -402,6 +402,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     // person's press alone. No chat answers its own ask. Nor does one have the app read its
     // request again before Merge asks once more (Q248): that read is the person's press.
     "reread_held_merge",
+    "view_held_merge",
     "merge_held_request",
     "dont_merge_held_request",
     // What a chat's browser may reach, on its first browser call's Ask (#2013): the person's
@@ -625,6 +626,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Typed into a session as the person: one of the explorer's rows, as several are
     // (#1151), and the keys themselves.
     "reference_into_chat",
+    // A block's Tell the chat… (T1-33, Q267): one line of purlis's own, typed into the chat as
+    // the person's second press asks.
+    "tell_chat_blocked",
     "send_input",
     "send_input_bytes",
     // Quiet by hand, and a pane typed in (#6017): the person's own say over their notifications.
@@ -992,6 +996,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_podman_connections",
     "pool_setup_connect",
     "pool_setup_trust",
+    // Check and trust again (#6270): meeting a made pool's machine again and keeping the pin the
+    // person confirmed are theirs, as trusting a new one is; and what was found changed is read
+    // only by the window that shows its Notice.
+    "pool_setup_check_and_trust_again",
+    "pool_setup_trust_again",
+    "pools_pin_changed",
     // Naming a tcp:// machine's TLS files, a vault entry among them, is the person's too (#6267).
     "pool_setup_tls_files",
     "pool_setup_name",
@@ -1019,6 +1029,13 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_install",
     "pool_setup_operator_image",
     "pool_setup_cluster_pool",
+    // Pinning a cluster pool's changed key again (#4495), only as the person confirmed it.
+    "pool_setup_pin_again",
+    // Send to your admin's wait (#4496): kept, and forgotten, only on the person's press.
+    "pool_setup_ask_admin",
+    "pool_setup_stop_waiting",
+    // Get help (#4497): it starts a chat as the person.
+    "pool_setup_get_help",
     "add_docker_pool",
     "remove_docker_pool",
     "docker_pool_link",

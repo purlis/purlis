@@ -70,6 +70,12 @@ use regex::Regex;
 pub const UNATTENDED_MODE: &str = "bypassPermissions";
 
 /// True when the host says there is nobody to answer a prompt — `_unattended`.
+///
+/// **All A4 goes by for a harness the app did not start** (T1-18, R-109): in a chat the app
+/// started, the gate reads the chat's attendance fact ([`crate::toolgate::Launched::attendance`]),
+/// and this bit, on the line's own payload, only ever lowers that answer for the line, on a
+/// harness whose mode purlis can check (Q275, Q276). It is also one bit a report hands the fact
+/// ([`crate::attendance::Fact::heard`]).
 pub fn unattended(permission_mode: Option<&str>) -> bool {
     permission_mode == Some(UNATTENDED_MODE)
 }

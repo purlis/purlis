@@ -673,6 +673,10 @@ pub enum SentFor {
     /// chat of its own, in a throwaway piece, under the sandbox. The query is the fixture's, not
     /// purlis's: a grade measures what the chat does with it, so it is sent as it is written.
     Grade,
+    /// Pool setup's **Get help** on a step that failed (#4497, spec #4469 story 59): the person's
+    /// press, on a message the core wrote about the step. It starts only under the project's
+    /// sandbox, where no chat changes a pool (story 60).
+    PoolSetupHelp,
 }
 
 /// Opens `chat` **started on its prompt**: the prompt is the chat's first message, handed to
@@ -694,6 +698,17 @@ pub fn start_sent(
     why: SentFor,
 ) -> Result<StartedTyped, String> {
     sent(held, chat, size, why, None, |_| {})
+}
+
+/// **Why a help chat won't start** (#4497): only under the project's sandbox, which holds every
+/// power over a pool from a chat. Any other chat starts as its project says.
+fn unsandboxed_help(why: SentFor, sandboxed: bool) -> Option<String> {
+    (why == SentFor::PoolSetupHelp && !sandboxed).then(|| {
+        "This project runs chats without the sandbox, and Get help opens a chat only under it, \
+         so the chat can't change your pools. Turn the sandbox on for this project, or read the \
+         step's findings in Pool setup."
+            .to_owned()
+    })
 }
 
 /// **Opens a grade's chat started on its trigger test's query** ([`SentFor::Grade`]): as
@@ -745,8 +760,12 @@ fn sent(
     let ready = match why {
         SentFor::Grade => purlis_core::skills::grades::ready_to_grade_on(&start, &root, model),
         SentFor::FixASave => purlis_core::start::ready(&start, &root),
+        SentFor::PoolSetupHelp => purlis_core::poolsetup::help::ready_to_help(&start, &root),
     }
     .and_then(|ready| crate::handoff::told_first(ready, &chat.profile, &chat.prompt))?;
+    if let Some(why) = unsandboxed_help(why, ready.sandbox.is_some()) {
+        return Err(why);
+    }
     let record = Chat {
         program: ready.program.clone(),
         // What the RECORD keeps: the profile's own words. Never the message: a relaunch
@@ -766,6 +785,8 @@ fn sent(
         renamed_from: None,
         // A grade's chat is drawn nowhere and never put back (SK-16).
         graded: why == SentFor::Grade,
+        // Every later start of a help chat is held from clusters as its first was.
+        held_from_clusters: why == SentFor::PoolSetupHelp,
         ..Default::default()
     };
     before(number);
@@ -1240,6 +1261,22 @@ fn submits(bytes: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use purlis_core::harness::Harness;
+
+    /// **Get help's chat starts only under the sandbox** (#4497): where the project runs chats
+    /// without it, nothing starts, and it says why; every other chat is left to its project.
+    #[test]
+    fn a_help_chat_is_refused_where_it_would_start_without_the_sandbox() {
+        let why = super::unsandboxed_help(super::SentFor::PoolSetupHelp, false).expect("refused");
+        assert!(why.contains("only under it"), "{why}");
+        assert_eq!(
+            super::unsandboxed_help(super::SentFor::PoolSetupHelp, true),
+            None
+        );
+        assert_eq!(
+            super::unsandboxed_help(super::SentFor::FixASave, false),
+            None
+        );
+    }
     use purlis_core::hookwire::Conversation;
     use purlis_core::state::{Detail, Started};
 

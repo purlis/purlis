@@ -80,6 +80,13 @@ const ALLOWED: &[(&str, Option<&str>, &str)] = &[
         "the network log telling a Charter address from a third party's; it calls nothing",
     ),
     (
+        "crates/purlis-core/src/poolsetup/admin.rs",
+        Some("github.com/purlis/purlis/blob/main/docs/cluster-pool-setup.md\""),
+        "the cluster guide's page, as text in the words Send to your admin gives and in a Get \
+         help chat's opening (#4496, #4497): the person and their admin read it, purlis never \
+         fetches it, as the theme schema's address below",
+    ),
+    (
         "crates/purlis-core/src/theme/published.rs",
         Some("raw.githubusercontent.com/purlis/purlis/v"),
         "the theme schema's address at this release, which a theme's `$schema` names: purlis \

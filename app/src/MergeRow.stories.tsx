@@ -22,17 +22,23 @@ const HEAD = "0123456789abcdef0123456789abcdef01234567";
 const REFUSED =
   "the forge did not merge it: Repository rule violations found for refs/heads/main. 2 of 2 required status checks are expected.";
 
-const facts = (ruleset: RulesetShown): MergeShown => ({
+const facts = (ruleset: RulesetShown, shown: Partial<MergeShown> = {}): MergeShown => ({
   title: "Add the parser",
   author: "octo",
   base: "main",
   checks: "PASSED",
   read_at: 1_763_000_000,
   ruleset,
+  look: "not-viewed",
+  approved_by: null,
+  since_viewed: null,
+  pushed_here: true,
+  digest: "d-passed",
+  ...shown,
 });
 
 /** The merge chat 3's hook held: request 12 of `o/r` at one head, into main. */
-const hold = (ruleset: RulesetShown): Shown => ({
+const hold = (ruleset: RulesetShown, shown: Partial<MergeShown> = {}): Shown => ({
   session: 3,
   ask: `merge:3:o/r#12@${HEAD}`,
   says: "Merge request 12 of o/r at 0123456789ab? There is no undo.",
@@ -42,7 +48,7 @@ const hold = (ruleset: RulesetShown): Shown => ({
   ],
   source: "merge-hold",
   chain: ["steward 3"],
-  answer: { via: "merge-hold", repo: "o/r", number: 12, head: HEAD, facts: facts(ruleset) },
+  answer: { via: "merge-hold", repo: "o/r", number: 12, head: HEAD, facts: facts(ruleset, shown) },
   risk: {
     class: "merge",
     why: "Merges request 12 of o/r at 0123456 into main, with no undo",
@@ -51,8 +57,8 @@ const hold = (ruleset: RulesetShown): Shown => ({
   since: 1_763_000_000,
 });
 
-function MergeRow({ ruleset }: { ruleset: RulesetShown }) {
-  const [asks] = useState(() => [hold(ruleset)]);
+function MergeRow({ ruleset, shown }: { ruleset: RulesetShown; shown?: Partial<MergeShown> }) {
+  const [asks] = useState(() => [hold(ruleset, shown)]);
   return (
     <div style={{ inlineSize: 420 }}>
       <Inbox plane="/plane" asks={asks} onGo={() => {}} onLeave={() => {}} />
@@ -170,5 +176,24 @@ export const AForgeRefusalShowsOnTheRow: Story = {
     await read();
     await userEvent.click(within(again).getByRole("button", { name: "Merge" }));
     await waitFor(() => expect(within(row).getByRole("status")).toHaveTextContent(REFUSED));
+  },
+};
+
+/** **A moved head needs the once-more press, with the commit count** (T1-41; R-123, Q268): the
+ *  person viewed the request two commits ago, so the row says so, and Merge asks once more
+ *  before anything merges: `a moved head needs the once-more press with the commit count`. */
+export const AMovedHeadNeedsTheOnceMorePress: Story = {
+  args: { ruleset: "protects", shown: { look: "not-viewed", since_viewed: 2 } },
+  play: async ({ canvasElement }) => {
+    const row = rowOf(canvasElement);
+    await expect(row).toHaveTextContent("2 commits since you looked.");
+    await answersOf(row);
+    await read();
+    await userEvent.click(within(row).getByRole("button", { name: "Merge" }));
+    await expect(
+      await within(row).findByRole("group", {
+        name: "Merge request 12 of o/r at 0123456 into main?",
+      }),
+    ).toBeVisible();
   },
 };

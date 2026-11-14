@@ -514,6 +514,7 @@ const RECORD: SessionRecordView = {
   persona_hosts_locked: null,
   persona_hosts_wait: false,
   dispatches: [{ persona: "devops", task: "check prod", outcome: "done" }],
+  session: null,
 };
 
 /** One dispatch that ran and reported, and one still running (#1452). */

@@ -37,6 +37,7 @@ fn facts(ci: Ci, ruleset: Ruleset, read_at: u64) -> Facts {
             failed: Vec::new(),
         },
         ruleset,
+        approved_by: None,
         read_at,
     }
 }

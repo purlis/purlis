@@ -126,6 +126,8 @@ const UNLINKED: Readonly<Record<string, string>> = {
   "crates/purlis-core/src/profilestore/sign_in/terminal.rs: Open in terminal": CLI,
   "crates/purlis-core/src/planegit.rs: Update": CHAT,
   "crates/purlis-core/src/planegit/update.rs: Update": CHAT,
+  // `purlis pool doctor`'s answer for a pool whose pin changed (main's #6270), in a terminal.
+  "crates/purlis-core/src/poolsetup/pinchange.rs: Check and trust": CLI,
   "crates/purlis-core/src/projectgit.rs: Save": CHAT,
   "crates/purlis-core/src/rootupdate.rs: Update": CHAT,
   "crates/purlis-core/src/sandbox/level_why.rs: Confirm": BESIDE,
@@ -220,6 +222,8 @@ describe("the window controls the core's messages name", () => {
     "crates/purlis-core/src/planegit/resolve.rs: Resolve": "during a resolve: Abort stands there",
     "crates/purlis-core/src/planegit/resolvefolder.rs: Resolve":
       "during a resolve: Abort stands there",
+    "crates/purlis-core/src/poolsetup/cluster.rs: Remove":
+      "said on Pool setup's Open Pools action, which goes to Settings › Pools where Remove stands",
   };
 
   it("gives every core message naming a control in a view or in Settings its Go to", () => {

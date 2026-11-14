@@ -3241,6 +3241,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::ProposePin(_) => 22,
             Ask::Merge(_) => 23,
             Ask::Chats(_) => 24,
+            Ask::Attendance(_) => 25,
         }
     }
     let asks = vec![
@@ -3406,10 +3407,16 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             history: true,
             limit: None,
         }),
+        // Whether the asking chat is attended (#6409): its fact, read, never moved.
+        Ask::Attendance(purlis_core::hookwire::AttendanceAsk {
+            chat,
+            unattended: false,
+            claude_code_mode: None,
+        }),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=24).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=25).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 
@@ -15573,4 +15580,197 @@ fn allow_for_this_chat_ahead_of_a_run_is_refused_once_its_key_is_a_browser_login
         .expect("kept off");
         waits.join().expect("it settles");
     });
+}
+
+/// The cluster API server [`a_help_chat_restarted_is_held_from_clusters_as_at_its_first_start`]'s
+/// project lets its chats reach.
+const CLUSTER_API: &str = "k8s.team.example";
+
+/// Whether a chat compiled to `confines` reaches [`CLUSTER_API`], and whether it is denied the
+/// person's `~/.kube`.
+fn cluster_held(confines: &purlis_core::sandbox::Confines) -> (bool, bool) {
+    let reaches = confines.hosts.iter().any(|host| host == CLUSTER_API)
+        || confines
+            .decides()
+            .hosts()
+            .iter()
+            .any(|host| host == CLUSTER_API);
+    let kube = PathBuf::from(std::env::var_os("HOME").expect("a home")).join(".kube");
+    let denied = confines.denied.iter().any(|denial| denial.path == kube);
+    (reaches, denied)
+}
+
+/// **Pool setup's Get help chat is held from every cluster after a restart as at its first
+/// start** (#4497, story 60): started as the window's Get help starts it
+/// ([`crate::curation::start_sent`]), its record says what it is, and Restart starts it again
+/// held, never without the sandbox, and with no "older sandbox" Notice of its own.
+#[test]
+fn a_help_chat_restarted_is_held_from_clusters_as_at_its_first_start() {
+    if ran_on_a_sandbox_only_stand_in() {
+        return;
+    }
+    assert!(sandboxed_here(), "work runs sandboxed here");
+    let plane = Plane::new();
+    std::fs::write(
+        plane.root.join(purlis_core::plane::MANIFEST),
+        format!("[sandbox]\nmode = \"on\"\nhosts = [\"{CLUSTER_API}\"]\n"),
+    )
+    .expect("charter.toml");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+
+    // Not vacuous: an ordinary chat of this project reaches the cluster.
+    let ordinary = a_chat_on_work(&held, &plane.root);
+    assert_eq!(
+        cluster_held(&held.chats().confines_of(ordinary).expect("sandboxed")),
+        (true, false),
+        "an ordinary chat"
+    );
+
+    let started = crate::curation::start_sent(
+        &kept(&held),
+        crate::curation::ChatTyped {
+            profile: "work".to_owned(),
+            persona: None,
+            cwd: plane.root.clone(),
+            label: "Help: Docker".to_owned(),
+            prompt: "purlis: I'm stuck on a step of Pool setup.".to_owned(),
+            then_a_space: false,
+            starts_runs: None,
+            studio: None,
+            skill: None,
+        },
+        STARTING,
+        crate::curation::SentFor::PoolSetupHelp,
+    )
+    .expect("the help chat starts");
+    let session = started.session;
+    assert_eq!(
+        cluster_held(&held.chats().confines_of(session).expect("sandboxed")),
+        (false, true),
+        "the help chat at its first start"
+    );
+    let recorded = held.chats().recorded_chat(session).expect("recorded");
+    assert!(recorded.held_from_clusters, "its record says what it is");
+    assert!(
+        recorded.resume.is_some(),
+        "it has a conversation to restart on"
+    );
+
+    // Start without the sandbox is refused for it, and it keeps running as it was.
+    let refused = held
+        .chats()
+        .restart_without_sandbox(session, STARTING)
+        .expect_err("a help chat never runs without the sandbox");
+    assert_eq!(refused, purlis_core::poolsetup::help::ONLY_SANDBOXED);
+    assert!(held.chats().confines_of(session).is_some());
+
+    // Restart starts it again through its record, held as at its first start.
+    held.chats().ask_restart(session).expect("asked");
+    let again = held
+        .chats()
+        .restart(session, STARTING)
+        .expect("it restarts");
+    assert_eq!(
+        cluster_held(&held.chats().confines_of(again).expect("sandboxed")),
+        (false, true),
+        "the help chat started again: no cluster host, ~/.kube denied"
+    );
+    // And the restarted chat is on the sandbox its next start would compile: no Notice.
+    let older = held.chats().on_older_sandbox();
+    assert!(
+        older
+            .as_ref()
+            .is_none_or(|older| older.chats.iter().all(|one| one.session != again)),
+        "{older:?}"
+    );
+    let _ = held.chats().close(again);
+    let _ = held.chats().close(session);
+    let _ = held.chats().close(ordinary);
+}
+
+// ----- the attendance fact A4 reads (T1-18, #6409; Q275) -----
+
+/// The hook's attendance ask of chat `chat`'s tool line, whose own payload says `unattended`.
+fn attendance_asked(held: &Held, plane: &PlaneId, chat: u32, unattended: bool) -> Answer {
+    answer(
+        held,
+        plane,
+        &Tickets::default(),
+        1,
+        Ask::Attendance(purlis_core::hookwire::AttendanceAsk {
+            chat,
+            unattended,
+            claude_code_mode: None,
+        }),
+        &nobody,
+    )
+}
+
+/// R-109: the hook asks the app whether its chat is attended, and the app answers by the fact it
+/// holds: attended only for a chat it holds an attended fact for, and never raised by the line.
+#[test]
+fn the_app_answers_the_attendance_ask_by_the_fact_it_holds() {
+    let plane = a_plane_with_personas();
+    let planes = planes();
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_as(&held, &plane.root, Some("steward"), &plane.root);
+    let attended = |answer: Answer| match answer {
+        Answer::Attended { attended } => attended,
+        other => panic!("an attendance answer, not {other:?}"),
+    };
+
+    assert!(attended(attendance_asked(&held, &id, asking, false)));
+    // The line's own bypass bit lowers the answer for that line, and moves nothing held.
+    assert!(!attended(attendance_asked(&held, &id, asking, true)));
+    assert!(attended(attendance_asked(&held, &id, asking, false)));
+    // A chat this app holds no fact for is never attended.
+    assert!(!attended(attendance_asked(&held, &id, asking + 100, false)));
+}
+
+/// R-107, Q271: a report the board takes from the chat's own harness, as the socket's listener
+/// hears it, lowers the fact A4 reads, and the record a relaunch reads keeps it.
+#[test]
+fn a_report_the_socket_hears_lowers_the_fact_and_the_record_keeps_it() {
+    use purlis_core::hookwire::{Conversation, Report};
+    let plane = a_plane_with_personas();
+    let planes = planes();
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_as(&held, &plane.root, Some("steward"), &plane.root);
+    let own = held
+        .board()
+        .conversation(asking)
+        .expect("the board holds the chat's conversation");
+    let unattended = || {
+        held.chats()
+            .attendance_of(asking)
+            .expect("a fact is held for it")
+            .unattended()
+    };
+    assert!(!unattended(), "a person's chat");
+
+    held.hooks().hear_as_the_socket_does(&Report {
+        chat: asking,
+        event: purlis_core::state::Event::UserPromptSubmit,
+        conversation: Conversation::Named(own),
+        pid: Some(4000 + asking),
+        agent: None,
+        detail: purlis_core::state::Detail {
+            unattended: true,
+            ..purlis_core::state::Detail::default()
+        },
+    });
+
+    assert!(unattended(), "its bypass bit lowered the fact");
+    let record = held.chats().record();
+    let kept = record
+        .chats
+        .iter()
+        .find(|chat| chat.number == Some(asking))
+        .expect("recorded");
+    assert!(kept.unattended, "{kept:?}");
 }

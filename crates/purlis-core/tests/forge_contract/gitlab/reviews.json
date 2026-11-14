@@ -1,0 +1,4 @@
+{
+  "source": "none: purlis does not read a GitLab merge request's approvals yet (T1-41), so the case asks nothing",
+  "exchanges": []
+}

@@ -1002,7 +1002,7 @@ pub trait ChatBoard: Send + Sync {
 /// A session host that runs nothing, for a test of what sits above the seam.
 #[cfg(test)]
 pub(crate) mod pretend {
-    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
     use std::time::Duration;
 
@@ -1040,6 +1040,9 @@ pub(crate) mod pretend {
         taking: Mutex<Duration>,
         /// The numbers whose start does not return until let go ([`Pretend::hangs_number`]).
         hanging: Mutex<Vec<u32>>,
+        /// Whether a start, once it has announced its number, holds until let go
+        /// ([`Pretend::holds_once_announced`]).
+        held_once_announced: AtomicBool,
         /// How many starts are under way now, and the most there were at once.
         starting: AtomicU32,
         most_starting: AtomicU32,
@@ -1382,6 +1385,18 @@ pub(crate) mod pretend {
             lock(&self.seen.hanging).retain(|one| *one != number);
         }
 
+        /// Every start from now holds once it has announced its number, until
+        /// [`Self::lets_announced_go`]: a program whose first hook reports before its start
+        /// returns.
+        pub fn holds_once_announced(&self) {
+            self.seen.held_once_announced.store(true, Ordering::SeqCst);
+        }
+
+        /// The starts [`Self::holds_once_announced`] held return.
+        pub fn lets_announced_go(&self) {
+            self.seen.held_once_announced.store(false, Ordering::SeqCst);
+        }
+
         /// The most starts that were under way at once.
         pub fn most_at_once(&self) -> u32 {
             self.seen.most_starting.load(Ordering::SeqCst)
@@ -1537,6 +1552,9 @@ pub(crate) mod pretend {
             let id = wanted.unwrap_or_else(|| self.deal());
             self.seen.dealt.fetch_max(id, Ordering::SeqCst);
             announce(id);
+            while self.seen.held_once_announced.load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(2));
+            }
             let program = opening.program.clone().unwrap_or_default();
             // Under one hold: starts come several at once (`restoring.rs`), and a test reads
             // an opening by its place among the ones asked.

@@ -296,6 +296,36 @@ pub struct OperatorKey([u8; 32]);
 /// The prefix of an operator key's spelling.
 const ED25519: &str = "ed25519:";
 
+/// **How the person confirmed the cluster operator key a pool pins** (#4495), kept with the pin
+/// (`keyConfirmed` in `runners.json`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Confirmed {
+    /// The key they pasted, as their cluster's admin gave it to them, was the Pool's.
+    Pasted,
+    /// This machine made the signing key in the same Pool setup, and the Pool names its key.
+    MadeHere,
+}
+
+impl Confirmed {
+    /// Its word, as `runners.json` keeps it.
+    #[must_use]
+    pub fn word(self) -> &'static str {
+        match self {
+            Confirmed::Pasted => "pasted",
+            Confirmed::MadeHere => "made-here",
+        }
+    }
+
+    /// The confirmation `word` names, or none.
+    #[must_use]
+    pub fn of_word(word: &str) -> Option<Confirmed> {
+        [Confirmed::Pasted, Confirmed::MadeHere]
+            .into_iter()
+            .find(|one| one.word() == word)
+    }
+}
+
 impl OperatorKey {
     /// The key `spelled` names, or a refusal saying it is not one.
     pub fn from_spelled(spelled: &str) -> Result<OperatorKey, Refused> {
@@ -309,6 +339,31 @@ impl OperatorKey {
                      ed25519: and 64 lower-case hex digits"
                 ))
             })
+    }
+
+    /// **The key a person pasted**, as their cluster's admin gave it to them (#4495): read as
+    /// the one spelling once what copying adds is put aside (spaces, line breaks, capitals, and
+    /// the `ed25519:` prefix, which may be left off). Anything else refuses it.
+    pub fn from_pasted(pasted: &str) -> Result<OperatorKey, Refused> {
+        let plain: String = pasted
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<String>()
+            .to_ascii_lowercase();
+        let hex = plain.strip_prefix(ED25519).unwrap_or(&plain);
+        bytes_of(hex).map(OperatorKey).ok_or_else(|| {
+            Refused::Other(
+                "that isn't a cluster operator's key: paste it as your cluster's admin gave it, \
+                 ed25519: and 64 hex digits"
+                    .into(),
+            )
+        })
+    }
+
+    /// The key whose 32 bytes are `public`: the public half of a key this machine made.
+    #[must_use]
+    pub fn of_public(public: [u8; 32]) -> OperatorKey {
+        OperatorKey(public)
     }
 
     /// Its spelling, `ed25519:<64 hex>`.
@@ -1291,6 +1346,21 @@ impl Kubectl {
             ));
         }
         Ok(kept)
+    }
+
+    /// **The cluster this kubectl's context reaches**, by the uid of its `kube-system` namespace:
+    /// what a Pool's `status.cluster` names, and so what a pin holds (#3305, #4495).
+    pub fn cluster_uid(&self) -> Result<String, Refused> {
+        let answer = self.json(
+            &["get", "namespace", "kube-system", "--output", "json"],
+            None,
+        )?;
+        answer
+            .pointer("/metadata/uid")
+            .and_then(serde_json::Value::as_str)
+            .filter(|uid| !uid.is_empty() && plain(uid))
+            .map(str::to_owned)
+            .ok_or_else(|| Refused::Other("the cluster did not say which cluster it is".into()))
     }
 
     /// **The namespace this kubectl's context names**, where a cluster pool's claims are made

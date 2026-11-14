@@ -7,7 +7,7 @@
  * that calls the person (#6343). Drawn in every cell of the theme matrix.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { expect, fn, waitFor, within } from "storybook/test";
 import { ActivityBar, ActivityCount, ActivityDot, VIEW_MARKS, type Tabbed } from "./ActivityBar";
 import type { ViewId } from "./regions";
@@ -42,6 +42,9 @@ function Attention({
   const [open, setOpen] = useState<ViewId | undefined>("updates");
   const [step, setStep] = useState(0);
   const asked = hand[step % hand.length];
+  // Its own ids: a story that draws several bars (Hand Counts) names each tab from its own badge,
+  // where one id shared would read the first bar's count in every tab's name.
+  const id = useId();
   return (
     <div style={{ display: "flex", blockSize: 200 }}>
       <ActivityBar
@@ -60,16 +63,16 @@ function Attention({
         }}
         bounce={bounce}
         onBounced={onBounced}
-        panelOf={(view) => `story-panel-${view}`}
-        tabOf={(view) => `story-tab-${view}`}
+        panelOf={(view) => `${id}-panel-${view}`}
+        tabOf={(view) => `${id}-tab-${view}`}
         onPick={(view) => setOpen((was) => (was === view ? undefined : view))}
       />
       {VIEWS.map(({ view, name }) => (
         <div
           key={view}
-          id={`story-panel-${view}`}
+          id={`${id}-panel-${view}`}
           role="tabpanel"
-          aria-labelledby={`story-tab-${view}`}
+          aria-labelledby={`${id}-tab-${view}`}
           hidden={view !== open}
         >
           {name}

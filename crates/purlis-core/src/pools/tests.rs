@@ -1600,6 +1600,7 @@ mod cluster {
             config,
             &cluster.kubectl(),
             &team(cluster),
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -1829,6 +1830,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             &team(&cluster),
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -1841,7 +1843,14 @@ mod cluster {
                 // Kept pointing at its own copy of the context.
                 let copy = runners::kubeconfig_kept_at(config.path(), "team");
                 let held = held_kubectl(&cluster);
-                assert_eq!(pool, team(&cluster).kept_at(&copy).holding(held).unwrap());
+                assert_eq!(
+                    pool,
+                    team(&cluster)
+                        .kept_at(&copy)
+                        .holding(held)
+                        .unwrap()
+                        .confirmed_by(crate::clusterpool::Confirmed::Pasted)
+                );
                 assert_eq!(runner, kept);
             }
             other => panic!("{other:?}"),
@@ -1863,6 +1872,7 @@ mod cluster {
                     .iter()
                     .map(|it| it.display().to_string())
                     .collect::<Vec<_>>(),
+                "keyConfirmed": "pasted",
             })
         );
         assert_eq!(file["runners"][0]["pool"], "cluster");
@@ -1904,6 +1914,7 @@ mod cluster {
                 config.path(),
                 &cluster.kubectl(),
                 &team(&cluster).minting_in_cluster(recorded.is_none()),
+                Some(&cluster.pin().key.spelled()),
                 &desktop(),
                 Duration::ZERO,
             )
@@ -1932,6 +1943,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             &team(&cluster),
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -1959,6 +1971,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             &team(&cluster),
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -2004,6 +2017,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             &team(&cluster),
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -2055,6 +2069,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             &checked,
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -2062,6 +2077,164 @@ mod cluster {
         assert!(why.to_string().contains("check the key again"), "{why}");
         assert!(runners::cluster_pools(config.path()).unwrap().is_empty());
         assert!(!cluster.calls().contains(" create "), "{}", cluster.calls());
+    }
+
+    /// **Every add is held to the key the person confirmed**, whoever calls it: with nothing pasted
+    /// and no key made here, or a paste that isn't the Pool's key, nothing is kept or claimed, and a
+    /// pool that says it was confirmed some other way is held to the same. The right paste is
+    /// kept as how the pin was confirmed.
+    #[test]
+    fn an_add_pins_only_a_key_the_person_confirmed_whatever_the_caller_says() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let other = crate::clusterpool::tests::Operator::new().key().spelled();
+        let claimed = team(&cluster).confirmed_by(crate::clusterpool::Confirmed::MadeHere);
+        for pasted in [None, Some(""), Some(other.as_str())] {
+            let why = add_cluster(
+                config.path(),
+                &cluster.kubectl(),
+                &claimed,
+                pasted,
+                &desktop(),
+                Duration::ZERO,
+            )
+            .unwrap_err();
+            assert!(why.to_string().contains("nothing was pinned"), "{why}");
+            assert!(runners::cluster_pools(config.path()).unwrap().is_empty());
+            assert!(!cluster.calls().contains(" create "), "{}", cluster.calls());
+        }
+        let claim = claim_name(OURS, "team");
+        cluster.vouch("ada", &claim, &claim, cluster.runner.key);
+        let right = cluster.pin().key.spelled().to_uppercase();
+        add_cluster(
+            config.path(),
+            &cluster.kubectl(),
+            &team(&cluster),
+            Some(&right),
+            &desktop(),
+            Duration::ZERO,
+        )
+        .unwrap();
+        let kept = runners::cluster_pools(config.path()).unwrap();
+        assert_eq!(
+            kept[0].confirmed(),
+            Some(crate::clusterpool::Confirmed::Pasted)
+        );
+    }
+
+    /// **A changed key asks again** (#4495): a Pool that names another key than the one pinned
+    /// here, and that the pinned key didn't vouch for, reads as changed, with the key it names
+    /// now; one the pinned key rolled to holds; one in another cluster says so.
+    #[test]
+    fn a_pool_naming_a_key_the_pinned_one_never_vouched_for_reads_as_changed() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let kubectl = cluster.kubectl();
+        assert_eq!(
+            pin_now(config.path(), &kubectl, "team", runners::now()),
+            PinNow::Holds
+        );
+        let next = crate::clusterpool::tests::Operator::new();
+        cluster.rolls_to(&next, runners::now() + 3600);
+        assert_eq!(
+            pin_now(config.path(), &kubectl, "team", runners::now()),
+            PinNow::Holds
+        );
+        let other = crate::clusterpool::tests::Operator::new().key();
+        cluster.names_key(&other);
+        assert_eq!(
+            pin_now(config.path(), &kubectl, "team", runners::now()),
+            PinNow::Changed {
+                named: other.spelled()
+            }
+        );
+        cluster.write(
+            "pool.json",
+            &serde_json::json!({"status": {
+                "signingKey": cluster.operator.key().spelled(),
+                "cluster": "0f0f0f0f-0f0f-4f0f-8f0f-0f0f0f0f0f0f",
+            }})
+            .to_string(),
+        );
+        assert_eq!(
+            pin_now(config.path(), &kubectl, "team", runners::now()),
+            PinNow::OtherCluster
+        );
+        // Reading changes nothing kept.
+        assert_eq!(
+            runners::cluster_pools(config.path()).unwrap()[0]
+                .pin()
+                .unwrap(),
+            cluster.pin()
+        );
+    }
+
+    /// **Pinning again takes only the key the person confirmed** (#4495): the key the Pool names
+    /// now, and only where it is the one they pasted. Another key, or another cluster, leaves the
+    /// pin as it was; the key pinned again is what the next link checks.
+    #[test]
+    fn a_changed_key_is_pinned_again_only_as_the_person_confirmed_it_and_in_the_same_cluster() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        let kubectl = cluster.kubectl();
+        let pinned = || {
+            runners::cluster_pools(config.path()).unwrap()[0]
+                .pin()
+                .unwrap()
+        };
+        let new = crate::clusterpool::tests::Operator::new();
+        cluster.names_key(&new.key());
+
+        let wrong = crate::clusterpool::tests::Operator::new().key().spelled();
+        let why = pin_again(config.path(), &kubectl, "team", &wrong).unwrap_err();
+        assert!(why.to_string().contains("isn't the one"), "{why}");
+        assert_eq!(pinned(), cluster.pin(), "a refusal leaves the pin");
+
+        cluster.write(
+            "pool.json",
+            &serde_json::json!({"status": {
+                "signingKey": new.key().spelled(),
+                "cluster": "0f0f0f0f-0f0f-4f0f-8f0f-0f0f0f0f0f0f",
+            }})
+            .to_string(),
+        );
+        let why = pin_again(config.path(), &kubectl, "team", &new.key().spelled()).unwrap_err();
+        assert!(why.to_string().contains("another cluster"), "{why}");
+        assert_eq!(pinned(), cluster.pin(), "another cluster leaves the pin");
+
+        cluster.names_key(&new.key());
+        let pasted = new
+            .key()
+            .spelled()
+            .trim_start_matches("ed25519:")
+            .to_uppercase();
+        pin_again(config.path(), &kubectl, "team", &pasted).unwrap();
+        assert_eq!(pinned().key, new.key());
+        // How it was confirmed is kept with the pin.
+        assert_eq!(
+            runners::cluster_pools(config.path()).unwrap()[0].confirmed(),
+            Some(crate::clusterpool::Confirmed::Pasted)
+        );
+        assert_eq!(
+            pin_now(config.path(), &kubectl, "team", runners::now()),
+            PinNow::Holds
+        );
+    }
+
+    /// Nothing is pinned again for a pool this machine doesn't keep.
+    #[test]
+    fn a_pool_is_not_pinned_again_where_none_is_kept_by_that_name() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let why = pin_again(
+            config.path(),
+            &cluster.kubectl(),
+            "team",
+            &cluster.operator.key().spelled(),
+        )
+        .unwrap_err();
+        assert!(
+            why.to_string().contains("no cluster pool named team"),
+            "{why}"
+        );
     }
 
     #[test]
@@ -2073,6 +2246,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             &team(&cluster),
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -2098,6 +2272,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             &team(&cluster),
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -2142,6 +2317,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             &pool,
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -2191,6 +2367,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             &team(&cluster),
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -2224,6 +2401,7 @@ mod cluster {
             config,
             &cluster.kubectl(),
             &team(cluster),
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -3163,6 +3341,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             &team(&cluster),
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -3179,6 +3358,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             &team(&cluster),
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -3213,6 +3393,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             &team(&cluster),
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -3338,6 +3519,7 @@ mod cluster {
             config.path(),
             &cluster.kubectl(),
             &team(&cluster),
+            Some(&cluster.pin().key.spelled()),
             &desktop(),
             Duration::ZERO,
         )
@@ -5070,4 +5252,173 @@ fn a_start_in_a_workspace_is_refused_while_the_machine_store_cannot_be_read() {
     let here = crate::machine::StartChoice::ThisMachine;
     assert!(chat_place(config.path(), plane, Some("app"), Some(&here)).is_ok());
     assert!(chat_place(config.path(), plane, None, None).is_ok());
+}
+
+/// Pool `first`, as `config` keeps it, made a pool on another machine (#6270): its row names a
+/// route and a pin, as Connect keeps them.
+fn on_another_machine(config: &Path) {
+    let file = crate::machine::dir(config).join(crate::machine::RUNNERS_FILE);
+    let mut held: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    let row = &mut held["pools"][0];
+    row["kind"] = "remote-docker".into();
+    row["route"] = "ssh://me@build-box/var/run/docker.sock".into();
+    row["pin"] = serde_json::json!({
+        "hostKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiGzfjDDJsgYLYCmdkf8Fel9sE6Ma14Y2+c33Y/qZ2n",
+        "engine": "engine-b",
+    });
+    std::fs::write(&file, held.to_string()).unwrap();
+    assert!(runners::pools(config).unwrap()[0].on_another_machine());
+}
+
+/// **On another machine, once its new engine is trusted, the runner is made again on it**
+/// (#6270, ADR 0123 §3): the person trusted the engine Docker now reaches there, so the runner
+/// made on the one trusted before is made again here, and the old one is left where it is,
+/// remembered as left behind. Nothing of it is read or removed on the new engine.
+#[test]
+fn a_pool_on_another_machine_makes_its_runner_again_on_the_engine_trusted_now() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let old = removed_with_its_making_kept(config.path(), &fake, &ours);
+    on_another_machine(config.path());
+    fake.set("engine", "engine-b\n");
+
+    let again = make_again_here(config.path(), &fake, &ours).unwrap();
+
+    assert_eq!(again.old_home, OldHome::Elsewhere);
+    assert!(
+        !again.sign_ins_kept,
+        "nothing is carried from another engine"
+    );
+    assert_eq!(again.kept.name(), AGAIN_NAMED);
+    assert_eq!(
+        runners::runner_for(config.path(), "first").unwrap().name(),
+        AGAIN_NAMED
+    );
+    let log = fake.file("log");
+    assert!(!log.contains("target=/to"), "nothing carried: {log}");
+    assert!(
+        !log.contains(&format!("rm --force {}", old.made.container.as_str())),
+        "nothing removed on the new engine: {log}"
+    );
+    let left = runners::left::read(config.path()).unwrap();
+    assert_eq!(left.len(), 1, "the old one is remembered as left behind");
+}
+
+/// **A pool whose machine is no longer trusted is removed by forgetting it here** (#6270, ADR
+/// 0123 §3): nothing is sent to a machine whose pin doesn't hold, so its runner's container and
+/// home stay there, and the words say what they are and how to remove them on it.
+#[test]
+fn a_pool_on_a_machine_no_longer_trusted_is_forgotten_here_and_nothing_is_sent_there() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let kept = a_pool_added(config.path(), &fake, &ours);
+    on_another_machine(config.path());
+    std::fs::write(fake.file_path("log"), "").unwrap();
+
+    let left = forget_untrusted(config.path(), "first").unwrap();
+
+    assert_eq!(fake.file("log"), "", "nothing was run");
+    assert!(left.contains("build-box"), "{left}");
+    assert!(
+        left.contains(&format!(
+            "docker container rm --force {}",
+            kept.made.container.as_str()
+        )),
+        "{left}"
+    );
+    assert!(
+        left.contains(&format!(
+            "docker volume rm --force {}",
+            kept.made.runner.volume()
+        )),
+        "{left}"
+    );
+    assert!(runners::runner_for(config.path(), "first").is_err());
+    assert!(runners::pools(config.path()).unwrap().is_empty());
+}
+
+#[test]
+fn a_pool_on_this_machine_is_never_only_forgotten() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_added(config.path(), &fake, &desktop());
+    assert!(forget_untrusted(config.path(), "first").is_err());
+    assert_eq!(runners::pools(config.path()).unwrap().len(), 1);
+}
+
+/// A key change of pool `pool` on build-box, as a refused run would have found it.
+fn key_changed_of(pool: &str) -> crate::poolsetup::pinchange::PinChange {
+    crate::poolsetup::pinchange::PinChange {
+        pool: pool.to_owned(),
+        host: "build-box".to_owned(),
+        what: crate::poolsetup::pinchange::Changed::Key,
+        pinned: "SHA256:pinned".to_owned(),
+        now: "SHA256:now".to_owned(),
+        title: format!("Pool {pool}: build-box shows a different key"),
+        said: format!("Pool {pool}: build-box shows a different key than the one you trusted."),
+    }
+}
+
+/// **Remove on a machine whose key changed and that is now unreachable still forgets the pool**
+/// (#6270, review of #6553): whether it is forgotten is decided from the change already found, so
+/// Remove contacts nothing, and works when the machine no longer answers at all.
+#[test]
+fn a_pool_whose_key_changed_is_forgotten_from_what_was_found_even_once_its_machine_is_unreachable()
+{
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    let kept = a_pool_added(config.path(), &fake, &desktop());
+    on_another_machine(config.path());
+    // build-box answers nothing now: no name of it resolves, and no Docker is handed in to reach.
+    std::fs::write(fake.file_path("log"), "").unwrap();
+
+    let left = forget_where_untrusted(config.path(), "first", true, &[key_changed_of("first")])
+        .expect("a change was found of it")
+        .unwrap();
+
+    assert_eq!(fake.file("log"), "", "nothing was run");
+    assert!(
+        left.contains(&format!(
+            "docker container rm --force {}",
+            kept.made.container.as_str()
+        )),
+        "{left}"
+    );
+    assert!(runners::pools(config.path()).unwrap().is_empty());
+}
+
+/// Where no change was found of the pool, Remove is the usual one, and nothing is forgotten here.
+#[test]
+fn a_pool_with_no_change_found_is_left_to_the_usual_remove() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_added(config.path(), &fake, &desktop());
+    on_another_machine(config.path());
+
+    assert!(
+        forget_where_untrusted(config.path(), "first", true, &[key_changed_of("other")]).is_none()
+    );
+    assert_eq!(runners::pools(config.path()).unwrap().len(), 1);
+}
+
+/// Where the person was not told the pool is only forgotten, nothing is: the row had not said so.
+#[test]
+fn a_pool_whose_key_changed_is_not_forgotten_where_the_person_was_not_told_so() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_added(config.path(), &fake, &desktop());
+    on_another_machine(config.path());
+
+    let refused = forget_where_untrusted(config.path(), "first", false, &[key_changed_of("first")])
+        .expect("a change was found of it")
+        .unwrap_err();
+
+    assert!(
+        refused.to_string().contains("nothing was removed"),
+        "{refused}"
+    );
+    assert_eq!(runners::pools(config.path()).unwrap().len(), 1);
 }

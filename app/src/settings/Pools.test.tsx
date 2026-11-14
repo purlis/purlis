@@ -163,7 +163,12 @@ beforeEach(() => {
         } satisfies PoolsShown;
       if (cmd === "cluster_contexts")
         return { kubeconfig: "/home/op/.kube/config", contexts: ["team", "kind"], current: "team" };
-      if (cmd === "cluster_pool_key") return { key: OPERATOR_KEY, namespace: "op" };
+      // Shown only once the key pasted is the Pool's (#4495).
+      if (cmd === "cluster_pool_key") {
+        const pasted = a.pasted as string | null;
+        const matches = pasted === null ? null : pasted.trim() === OPERATOR_KEY;
+        return { key: matches ? OPERATOR_KEY : null, made_here: false, matches, namespace: "op" };
+      }
       if (cmd === "add_cluster_pool") {
         if (addRefused !== undefined) throw addRefused;
         clustersAdded.push(a.adding);
@@ -1250,6 +1255,10 @@ describe("A cluster pool (#3292)", () => {
     const dialog = await screen.findByRole("dialog", { name: "Add a pool" });
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Name" }), "team");
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Pool" }), "default");
+    await userEvent.type(
+      within(dialog).getByRole("textbox", { name: "Key from your admin" }),
+      OPERATOR_KEY,
+    );
     await userEvent.click(within(dialog).getByRole("button", { name: "Check its key" }));
     await within(dialog).findByText(OPERATOR_KEY);
     await userEvent.click(within(dialog).getByRole("button", { name: "Add pool" }));
@@ -1287,7 +1296,7 @@ describe("A cluster pool (#3292)", () => {
     expect(within(dialog).queryByRole("textbox", { name: /Longest wait/ })).toBeNull();
   });
 
-  it("is added from the same dialog once its cluster operator key is shown to check", async () => {
+  it("is added from the same dialog once the key pasted from the admin is the Pool's (#4495)", async () => {
     render(<App />);
     await palette("Add a pool…");
     const first = await screen.findByRole("dialog", { name: "Add a pool" });
@@ -1295,10 +1304,21 @@ describe("A cluster pool (#3292)", () => {
     const dialog = await screen.findByRole("dialog", { name: "Add a pool" });
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Name" }), "team");
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Pool" }), "default");
-    // Nothing is added before its key is shown.
+    // Nothing is added before its key is confirmed, and nothing of it is shown before the paste.
     expect(within(dialog).queryByRole("button", { name: "Add pool" })).toBeNull();
     await userEvent.click(within(dialog).getByRole("button", { name: "Check its key" }));
-    expect(await within(dialog).findByText(OPERATOR_KEY)).toBeInTheDocument();
+    expect(
+      await within(dialog).findByText(/Paste the key your cluster's admin gave you/),
+    ).toBeInTheDocument();
+    const box = within(dialog).getByRole("textbox", { name: "Key from your admin" });
+    await userEvent.type(box, "ed25519:" + "cd".repeat(32));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Check its key" }));
+    expect(await within(dialog).findByText(/isn't the one pool default names/)).toBeInTheDocument();
+    expect(within(dialog).queryByText(OPERATOR_KEY)).toBeNull();
+    await userEvent.clear(box);
+    await userEvent.type(box, OPERATOR_KEY);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Check its key" }));
+    expect(await within(dialog).findByText(OPERATOR_KEY, { selector: "code" })).toBeInTheDocument();
     expect(clustersAdded).toEqual([]);
     await userEvent.click(within(dialog).getByRole("button", { name: "Add pool" }));
     await waitFor(() =>
@@ -1308,7 +1328,7 @@ describe("A cluster pool (#3292)", () => {
           kubeconfig: null,
           context: "team",
           pool: "default",
-          key: OPERATOR_KEY,
+          pasted: OPERATOR_KEY,
           vouch_wait: null,
         },
       ]),
@@ -1325,10 +1345,14 @@ describe("A cluster pool (#3292)", () => {
     await userEvent.click(within(first).getByRole("radio", { name: /Cluster/ }));
     const dialog = await screen.findByRole("dialog", { name: "Add a pool" });
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Pool" }), "default");
+    await userEvent.type(
+      within(dialog).getByRole("textbox", { name: "Key from your admin" }),
+      OPERATOR_KEY,
+    );
     await userEvent.click(within(dialog).getByRole("button", { name: "Check its key" }));
-    await within(dialog).findByText(OPERATOR_KEY);
+    await within(dialog).findByText(OPERATOR_KEY, { selector: "code" });
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Pool" }), "s");
-    expect(within(dialog).queryByText(OPERATOR_KEY)).toBeNull();
+    expect(within(dialog).queryByText(OPERATOR_KEY, { selector: "code" })).toBeNull();
     expect(within(dialog).getByRole("button", { name: "Check its key" })).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add a pool" })).toBeNull());

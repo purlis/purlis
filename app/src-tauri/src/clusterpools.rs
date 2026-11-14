@@ -62,8 +62,13 @@ pub struct ClusterContexts {
 /// What Check its key read of a cluster's Pool.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct ClusterPoolKey {
-    /// The cluster operator key the Pool's status names, spelled as it gives it.
-    pub key: String,
+    /// The cluster operator key the Pool's status names, spelled as it gives it: only once it is
+    /// confirmed (#4495), by the key pasted from the admin, or as the one this setup made.
+    pub key: Option<String>,
+    /// Whether this machine made that key in this Pool setup, so no paste is asked for (#4495).
+    pub made_here: bool,
+    /// Whether the key pasted is the Pool's, where one was pasted (#4495).
+    pub matches: Option<bool>,
     /// The namespace the context names, where the pool's claim would be made.
     pub namespace: String,
 }
@@ -77,8 +82,9 @@ pub struct ClusterPoolAdding {
     pub context: String,
     /// The cluster's Pool.
     pub pool: String,
-    /// The cluster operator key Check its key showed, spelled as it showed it.
-    pub key: String,
+    /// The cluster operator key the person pasted, as their cluster's admin gave it (#4495).
+    /// None only where this machine made the signing key in this Pool setup.
+    pub pasted: Option<String>,
     /// The longest wait for its runner to be vouched for, in minutes, where the person raised it
     /// after an add that ran out (spec #4275): saved to the pool. None is purlis's default.
     pub vouch_wait: Option<u32>,
@@ -427,20 +433,44 @@ fn a_fresh_runner_at_work(config: &Path, kubectl: &Kubectl, name: &str) -> Optio
 
 /// [`cluster_pool_key`], with `kubectl`.
 pub fn key_with(
+    config: &Path,
     kubectl: &Kubectl,
     kubeconfig: &Path,
     context: &str,
     pool: &str,
+    pasted: Option<&str>,
 ) -> Result<ClusterPoolKey, String> {
     let pointed = kubectl.clone().pointed_at(kubeconfig, context);
     let said =
         |why: purlis_core::clusterpool::Refused| crate::devices::shown_safely(&why.to_string());
-    let key = pointed.pool_pin(pool.trim()).map_err(said)?.key;
+    let pin = pointed.pool_pin(pool.trim()).map_err(said)?;
     let namespace = pointed.namespace().map_err(said)?;
-    Ok(ClusterPoolKey {
-        key: key.spelled(),
+    Ok(key_shown(config, context, &pin, pasted, namespace))
+}
+
+/// **What Check its key says of the key the Pool names (`pin`, with its cluster)** (#4495): the
+/// key itself only once it is confirmed, by `pasted` or as the one this setup made on `context`
+/// in that cluster, so the box for the admin's key is never filled from the cluster's own word.
+fn key_shown(
+    config: &Path,
+    context: &str,
+    pin: &purlis_core::clusterpool::PoolPin,
+    pasted: Option<&str>,
+    namespace: String,
+) -> ClusterPoolKey {
+    let key = &pin.key;
+    let made_here = purlis_core::poolsetup::made_here(config, context.trim(), pin);
+    let matches = pasted
+        .filter(|pasted| !pasted.trim().is_empty())
+        .map(|pasted| {
+            purlis_core::clusterpool::OperatorKey::from_pasted(pasted).is_ok_and(|one| &one == key)
+        });
+    ClusterPoolKey {
+        key: (made_here || matches == Some(true)).then(|| key.spelled()),
+        made_here,
+        matches,
         namespace,
-    })
+    }
 }
 
 /// **Check its key**: the cluster operator key the cluster's Pool `pool` names, through
@@ -451,11 +481,20 @@ pub async fn cluster_pool_key(
     kubeconfig: Option<String>,
     context: String,
     pool: String,
+    pasted: Option<String>,
 ) -> Result<ClusterPoolKey, String> {
     crate::off_the_window("reading the cluster operator's key", move || {
         usable(&context, &pool)?;
         let path = kubeconfig_of(kubeconfig.as_deref(), home().as_deref())?;
-        key_with(&kubectl(&config_root()?)?, &path, &context, &pool)
+        let config = config_root()?;
+        key_with(
+            &config,
+            &kubectl(&config)?,
+            &path,
+            &context,
+            &pool,
+            pasted.as_deref(),
+        )
     })
     .await
 }
@@ -523,15 +562,10 @@ pub fn add_on(
         .pointed_at(&kubeconfig, adding.context.trim());
     let said =
         |why: purlis_core::clusterpool::Refused| crate::devices::shown_safely(&why.to_string());
-    // The key and cluster the Pool names now: pinned only where the key is the one checked.
+    // The key and cluster the Pool names now: pinned only where the key is the one pasted from
+    // the cluster's admin, however it was copied, or the one this setup made (#4495). The core's
+    // add asks it, before anything is kept or claimed.
     let pin = pointed.pool_pin(adding.pool.trim()).map_err(said)?;
-    if pin.key.spelled() != adding.key.trim() {
-        return Err(format!(
-            "The cluster's pool {} now names another cluster operator key than the one you \
-             checked, so nothing was added. Check its key again.",
-            adding.pool.trim()
-        ));
-    }
     let namespace = pointed.namespace().map_err(said)?;
     let pool = ClusterPool::new(
         adding.name.trim(),
@@ -552,8 +586,15 @@ pub fn add_on(
     let desktop =
         purlis_core::linkkey::desktop(config, &*purlis_core::linkkey::this_builds_keyring(config))?
             .pinned();
-    purlis_core::pools::add_cluster(config, kubectl, &pool, &desktop, within)
-        .map_err(|why| add_refused(adding.name.trim(), within, &why))?;
+    purlis_core::pools::add_cluster(
+        config,
+        kubectl,
+        &pool,
+        adding.pasted.as_deref(),
+        &desktop,
+        within,
+    )
+    .map_err(|why| add_refused(adding.name.trim(), within, &why))?;
     Ok(row(&pool))
 }
 

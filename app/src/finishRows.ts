@@ -15,16 +15,27 @@
  * - **Grouped across chats** (R-181): identical finish rows of several chats are one row that
  *   names them all ({@link groupedFinishes}); its Read and Dismiss settle each.
  * - **Quiet's "stopped after a block"** (R-182): {@link stoppedAfterBlock} is the bucket's test.
+ * - **A window-only ask no chat waits on sits here** (T1-42, R-329, Q181): the core lists it
+ *   apart from Asks (`Asking.on_finish_rows`) once its chat's turn has ended, and it is drawn on
+ *   that chat's newest finish row, its words under the line and its control beside them
+ *   ({@link finishRowsOf}). A chat with no finish counted yet gets one, so the ask is never
+ *   drawn nowhere. Such a row stands alone, never grouped with another chat's.
  */
 import { useEffect, useState } from "react";
 import {
   commands,
+  type FinishedBlock,
   type FinishedTurn,
   type InboxUpdate,
   type PlaneId,
+  type Shown,
   type UpdateNoted,
 } from "./bindings";
+import { answerThrough } from "./asks";
 import type { ChatStates, Chats } from "./chatState";
+import { OPEN_THE_CHAT_LOG, openTheChatLogOf } from "./chatLog";
+import type { UpdateAnswer } from "./InboxUpdatesList";
+import { waysOut } from "./blockWays";
 
 /** What a finish row adds where its turn ended with blocks still unresolved (Q164). */
 export const BLOCKED_THIS_TURN = (blocked: number) => `· ${blocked} blocked this turn`;
@@ -38,17 +49,68 @@ export const FAILED = "Failed";
 /** The end of a finish row's key whose turn ended after a block. */
 const BLOCKED_KEY = ":blocked";
 
-/** The key of `turn`'s row: the event that ended it, and whether a block stopped it. */
-const keyOf = (turn: FinishedTurn) =>
+/**
+ * **The key of `turn`'s row**: its chat's number, the event that ended it, and whether a block
+ * stopped it. The event is the chat's own (the core finds it through the chat's logged id), so
+ * a kept row whose key no finish answered now has is of a chat not open here under that number.
+ */
+export const finishKey = (turn: FinishedTurn) =>
   `finish:${turn.session}:${turn.key}${!turn.failed && turn.blocked > 0 ? BLOCKED_KEY : ""}`;
 
-/** **The finish rows of `turns`**, each named by its chat. */
+/**
+ * **Which chats a finish row's ways out act on** (Q272): Tell the chat… types only into the
+ * chats whose own turn holds a block that offers it, never into every chat of a grouped row,
+ * and Go to chat goes to the chat that holds the Can't-tell block. Each chat once, in the
+ * order the turns come.
+ */
+export function finishWaysTo(
+  turns: readonly FinishedTurn[],
+  keys: readonly string[],
+): { tell: number[]; go: number | undefined } {
+  const these = new Set(keys);
+  const tell: number[] = [];
+  let go: number | undefined;
+  for (const turn of turns) {
+    if (turn.failed || !these.has(finishKey(turn))) continue;
+    const ways = waysOut(turn.blocks);
+    if (ways.includes("tell") && !tell.includes(turn.session)) tell.push(turn.session);
+    if (ways.includes("go") && go === undefined) go = turn.session;
+  }
+  return { tell, go };
+}
+
+/**
+ * **`turns`, with a finish for each chat of `asks` that has none counted** (R-329): its turn
+ * ended, or the core would not have listed its ask apart, so the ask has a row to sit on.
+ */
+function withAnEndFor(
+  turns: readonly FinishedTurn[],
+  asks: readonly Shown[],
+): readonly FinishedTurn[] {
+  const counted = new Set(turns.filter((turn) => !turn.failed).map((turn) => turn.session));
+  const added = new Map<number, FinishedTurn>();
+  for (const ask of asks)
+    if (!counted.has(ask.session) && !added.has(ask.session))
+      added.set(ask.session, {
+        session: ask.session,
+        key: `ask-${ask.ask}`,
+        at: ask.since ?? Math.floor(Date.now() / 1000),
+        failed: false,
+        blocked: 0,
+        blocks: [],
+      });
+  return added.size === 0 ? turns : [...turns, ...added.values()];
+}
+
+/** **The finish rows of `turns`**, each named by its chat, and one for each chat of `asks`
+ *  that has none counted (R-329). */
 export function finishUpdates(
   turns: readonly FinishedTurn[],
   nameOf: (session: number) => string,
+  asks: readonly Shown[] = [],
 ): UpdateNoted[] {
-  return turns.map((turn) => ({
-    key: keyOf(turn),
+  return withAnEndFor(turns, asks).map((turn) => ({
+    key: finishKey(turn),
     kind: turn.failed ? "chat-failed" : "turn-finished",
     at: turn.at,
     session: turn.session,
@@ -61,9 +123,124 @@ export function finishUpdates(
   }));
 }
 
+/** What a window-only ask adds to the finish row it sits on: its words, and its answers. */
+export type OnAFinishRow = { more: string; answers: readonly UpdateAnswer[] };
+
+/**
+ * **The window-only asks on each finish row, by the row's key** (T1-42, R-329): each ask on its
+ * chat's newest finish ({@link withAnEndFor} gives one to a chat with none), its words under the
+ * line and each of its options an answer, sent through the path the ask names
+ * ({@link answerThrough}), the same press its row in Asks makes. An answer that allows waits for
+ * the row to settle, as every update's does (`InboxUpdatesList`). `reread` reads the asks again
+ * once it is answered.
+ */
+export function finishAsksOf({
+  plane,
+  turns,
+  asks,
+  reread,
+}: {
+  plane: PlaneId;
+  turns: readonly FinishedTurn[];
+  asks: readonly Shown[];
+  reread: () => void;
+}): ReadonlyMap<string, OnAFinishRow> {
+  const newest = new Map<number, FinishedTurn>();
+  for (const turn of withAnEndFor(turns, asks)) {
+    if (turn.failed) continue;
+    const was = newest.get(turn.session);
+    if (was === undefined || turn.at >= was.at) newest.set(turn.session, turn);
+  }
+  const on = new Map<string, { more: string[]; answers: UpdateAnswer[] }>();
+  for (const ask of asks) {
+    const turn = newest.get(ask.session);
+    if (turn === undefined) continue;
+    const key = finishKey(turn);
+    const row = on.get(key) ?? { more: [], answers: [] };
+    const what = ask.answer.via === "trust-clone" ? ask.answer.folder : ask.says;
+    row.more.push(ask.says);
+    for (const option of ask.options)
+      row.answers.push({
+        label: option.label,
+        name: `${option.label}: ${what}`,
+        title: TRUSTS_IT,
+        allows: option.allows,
+        // A refusal is said on the row (Q274), as an ask's row says it.
+        press: () =>
+          answerThrough(plane, ask, option.id)
+            .catch((err: unknown) => String(err))
+            .finally(reread),
+      });
+    on.set(key, row);
+  }
+  // Two asks on one row would draw two buttons alike (Q274): each then shows its whole name.
+  return new Map(
+    [...on].map(([key, row]) => {
+      const labels = row.answers.map((answer) => answer.label);
+      const answers = row.answers.map((answer) =>
+        labels.indexOf(answer.label) === labels.lastIndexOf(answer.label)
+          ? answer
+          : { ...answer, label: answer.name },
+      );
+      return [key, { more: row.more.join(" "), answers }];
+    }),
+  );
+}
+
+/** What Trust this clone does, as its tooltip on a finish row. */
+const TRUSTS_IT =
+  "Record this clone as yours, so chats in its workspace can use your GitHub access with it.";
+
+/**
+ * **The finish rows of `turns`, with the window-only asks no chat waits on** (T1-42, R-329):
+ * each row as {@link finishUpdates} makes it, and where an ask of `asks` sits on it, its words
+ * and its control ({@link finishAsksOf}).
+ */
+export function finishRowsOf({
+  plane,
+  turns,
+  asks,
+  nameOf,
+  reread,
+}: {
+  plane: PlaneId;
+  turns: readonly FinishedTurn[];
+  asks: readonly Shown[];
+  nameOf: (session: number) => string;
+  reread: () => void;
+}): ({ update: UpdateNoted } & Partial<OnAFinishRow>)[] {
+  const on = finishAsksOf({ plane, turns, asks, reread });
+  return finishUpdates(turns, nameOf, asks).map((update) => ({
+    update,
+    ...on.get(update.key),
+  }));
+}
+
 /** **Whether `update` is a finish row whose turn ended after a block** (R-182). */
 export const stoppedAfterBlock = (update: Pick<InboxUpdate, "kind" | "key">): boolean =>
   update.kind === "turn-finished" && update.key.endsWith(BLOCKED_KEY);
+
+/** What every block result's way to its Chat log says, whatever chat it names (R-226). */
+export const CHAT_LOG_ANSWER = {
+  label: OPEN_THE_CHAT_LOG,
+  title: "See what was blocked, in its chat log.",
+} as const;
+
+/**
+ * **A block result's way to its chat's Chat log** (R-226, T1-37): the answer of a finish row
+ * whose turn ended after a block ({@link stoppedAfterBlock}), naming the chat called `name`.
+ * `open` opens that chat's Chat log at its blocks.
+ */
+export function chatLogAnswer(name: string, open: () => void): UpdateAnswer {
+  return {
+    ...CHAT_LOG_ANSWER,
+    name: openTheChatLogOf(name),
+    press: () => {
+      open();
+      return undefined;
+    },
+  };
+}
 
 /** A row as Updates lists it, and every update it stands for. */
 export type Grouped = { update: InboxUpdate; keys: readonly string[] };
@@ -73,11 +250,15 @@ export type Grouped = { update: InboxUpdate; keys: readonly string[] };
  * finished turns of several chats that say the same and are read alike are one row, where the
  * newest of them stands, naming each chat once. Any other update stands alone.
  */
-export function groupedFinishes(updates: readonly InboxUpdate[]): Grouped[] {
+export function groupedFinishes(
+  updates: readonly InboxUpdate[],
+  /** The rows that stand alone: each finish row a window-only ask sits on (R-329). */
+  apart: ReadonlySet<string> = new Set(),
+): Grouped[] {
   const out: { update: InboxUpdate; keys: string[]; names: string[] }[] = [];
   const groups = new Map<string, (typeof out)[number]>();
   for (const update of updates) {
-    if (update.kind !== "turn-finished") {
+    if (update.kind !== "turn-finished" || apart.has(update.key)) {
       out.push({ update, keys: [update.key], names: [] });
       continue;
     }
@@ -174,4 +355,34 @@ export function useFinishedTurns(plane: PlaneId, chats: Chats): readonly Finishe
     };
   }, [plane, store, chats.plane]);
   return held?.plane === plane ? held.turns : NONE;
+}
+
+/**
+ * **What the finish rows `keys` offer ways out of** (T1-33, R-300): the unresolved blocks of
+ * the turns they stand for, each once, a grouped row's every chat's. A failed run's row, or a
+ * turn with no block left, offers none.
+ */
+export function finishWaysOf(
+  turns: readonly FinishedTurn[],
+  keys: readonly string[],
+): FinishedBlock[] {
+  const these = new Set(keys);
+  const seen = new Set<string>();
+  const out: FinishedBlock[] = [];
+  for (const turn of turns) {
+    if (turn.failed || !these.has(finishKey(turn))) continue;
+    for (const block of turn.blocks) {
+      const said = JSON.stringify([
+        block.source,
+        block.qualifier,
+        block.target_kind,
+        block.target,
+        block.harness,
+      ]);
+      if (seen.has(said)) continue;
+      seen.add(said);
+      out.push(block);
+    }
+  }
+  return out;
 }

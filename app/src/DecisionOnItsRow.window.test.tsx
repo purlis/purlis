@@ -463,6 +463,11 @@ const FACTS: MergeShown = {
   checks: "PASSED",
   read_at: READ_AT,
   ruleset: "none",
+  look: "not-viewed",
+  approved_by: null,
+  since_viewed: null,
+  pushed_here: true,
+  digest: "d-passed",
 };
 
 /** A merge chat 3's hook held (R-114), on its row (T1-40). It is high-risk (Q239): the core
@@ -578,6 +583,7 @@ describe("a held merge in Asks (R-115)", () => {
           number: 12,
           head: "0123456789abcdef0123456789abcdef01234567",
           ruleset: "none",
+          digest: "d-passed",
         },
       ]),
     );
@@ -846,6 +852,7 @@ describe("a refusal whose only way out is the window's press (R-328, R-330, R-33
         folder: "workspaces/alpha/api",
         place: "github.com/acme/api",
         places: ["github.com/acme/api"],
+        made: null,
       }),
     );
     const { view } = await opened([TRUST_CLONE]);

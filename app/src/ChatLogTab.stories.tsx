@@ -10,6 +10,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent } from "storybook/test";
 import { expectFocusInSight } from "./stories.testkit";
 import type { ChatLogRow } from "./bindings";
+import { TOLD } from "./blockWays";
 import { ChatLogRows } from "./ChatLogTab";
 
 const START: ChatLogRow = {
@@ -234,7 +235,15 @@ export const LoopPaused: Story = {
  */
 export const Heading: Story = {
   args: {
-    summary: { allowed: 212, by_your_rules: 9, unverified: true, ran_as_you: true },
+    summary: {
+      allowed: 212,
+      by_your_rules: 9,
+      unverified: true,
+      ran_as_you: true,
+      harness: "claude",
+      cant_tell_its_checks_blocks: false,
+      cant_tell_its_mode: false,
+    },
   },
   play: async ({ canvas }) => {
     const list = canvas.getByRole("list", { name: "Chat log of steward 3" });
@@ -263,6 +272,7 @@ const BLOCK: Extract<ChatLogRow, { kind: "blocked" }> = {
   target: "A3b",
   harness: "claude",
   reason: null,
+  resolved: false,
 };
 
 /** The tags a row carries, by their words. */
@@ -345,19 +355,18 @@ export const BlockedByTheHarnessCheck: Story = {
   },
 };
 
-/** **An unverified report** (R-185): a block a chat reported from inside its own reach. */
+/**
+ * **An unverified report** (R-185, R-104): a block a chat reported from inside its own reach,
+ * collapsed into its count's line. Its detail says who blocked a call in fixed words, never the
+ * tool or target the chat's side wrote.
+ */
 export const BlockedUnverified: Story = {
   args: { rows: [START, { ...BLOCK, qualifier: "unverified" }] },
   play: async ({ canvas }) =>
-    aBlockRow(
-      canvas,
-      "purlis blocked a reset that would destroy commits",
-      ["Unverified"],
-      "Blocked by purlis's guards",
-    ),
+    aBlockRow(canvas, "1 unverified", ["Unverified"], "purlis blocked a call"),
 };
 
-/** **A block purlis can't tell more of** (R-185): the Can't tell tag. */
+/** **A block purlis can't tell more of** (R-185, R-104): its own line, with the Can't tell tag. */
 export const BlockedCantTell: Story = {
   args: {
     rows: [
@@ -366,10 +375,166 @@ export const BlockedCantTell: Story = {
     ],
   },
   play: async ({ canvas }) =>
-    aBlockRow(
-      canvas,
-      "The sandbox blocked a Bash call",
-      ["Sandbox", "Can't tell"],
-      "Blocked by the sandbox",
-    ),
+    aBlockRow(canvas, "1 can't tell", ["Can't tell"], "The sandbox blocked a call"),
+};
+
+/** What heads a log of a chat on `harness`, whose check's blocks and mode purlis can't tell. */
+const cantTell = (harness: string) => ({
+  allowed: 0,
+  by_your_rules: 0,
+  unverified: true,
+  ran_as_you: false,
+  harness,
+  cant_tell_its_checks_blocks: true,
+  cant_tell_its_mode: true,
+});
+
+/**
+ * **An opencode chat's own-check block state reads Can't tell** (R-097): opencode gives no
+ * denial signal, so its log says it can't tell what its check blocks, rather than showing none.
+ */
+export const OpencodeOwnCheckCantTell: Story = {
+  args: { summary: cantTell("opencode") },
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.getByText(
+        "Can't tell what opencode's own check blocks: it does not report them, so they are not in this log.",
+      ),
+    ).toBeVisible();
+  },
+};
+
+/**
+ * **A Codex chat's own-check block cell reads Can't tell** (R-100): Codex gives no denial signal
+ * yet, so its log says it can't tell what its check blocks.
+ */
+export const CodexOwnCheckCantTell: Story = {
+  args: { summary: cantTell("codex") },
+  play: async ({ canvas }) => {
+    await expect(
+      canvas.getByText(
+        "Can't tell what Codex's own check blocks: it does not report them, so they are not in this log.",
+      ),
+    ).toBeVisible();
+  },
+};
+
+/**
+ * **A Codex chat's mode never reads as verified** (R-099, Q152): Codex reports bypass for every
+ * chat, so its log says it can't tell the mode, and names none.
+ */
+export const CodexModeCantTell: Story = {
+  args: { summary: cantTell("codex") },
+  play: async ({ canvasElement, canvas }) => {
+    await expect(
+      canvas.getByText(
+        "Can't tell which mode this chat runs in: Codex reports none purlis can check, so purlis goes by how it started the chat.",
+      ),
+    ).toBeVisible();
+    await expect(canvasElement.textContent).not.toMatch(
+      // A whole word: the chat's honesty line "Unverified: …" may stand above (R-235).
+      /bypass|auto mode|plan mode|default mode|\bverified\b/i,
+    );
+  },
+};
+
+/**
+ * **Unverified rows collapse into one capped line** (R-105): 40 unverified reports are one row,
+ * "40 unverified", where the first stood; its detail says "40 unverified" again and lists only
+ * the latest 10, in fixed words.
+ */
+export const UnverifiedRowsCollapse: Story = {
+  args: {
+    rows: [
+      START,
+      ...Array.from({ length: 40 }, (_, minute) => ({
+        ...BLOCK,
+        qualifier: "unverified",
+        at: at(minute + 10),
+      })),
+    ],
+  },
+  play: async ({ canvas }) => {
+    const rows = rowsOf(canvas);
+    await expect(rows).toHaveLength(2);
+    await expect(said(rows[1])?.textContent).toBe("40 unverified");
+    const open = canvas.getByRole("button", { expanded: false });
+    open.focus();
+    await userEvent.keyboard("{Enter}");
+    const detail = canvas.getByRole("group");
+    await expect(detail.textContent).toContain("40 unverified");
+    await expect(detail.querySelectorAll("li")).toHaveLength(10);
+    await expect(detail.textContent).toContain("30 earlier ones are not listed.");
+  },
+};
+
+/** **A block row's ways out** (T1-33, R-300): what a story's presses reach, none of them a core's. */
+const WAYS = { tell: () => Promise.resolve({ typed: TOLD }), go: () => undefined };
+
+/** The ways out a row offers, by their words. */
+const waysOf = (canvas: Canvas) =>
+  Array.from(
+    canvas.getByRole("group", { name: "Ways out for steward 3" }).querySelectorAll("button"),
+  ).map((one) => one.textContent?.trim());
+
+/**
+ * **A guard block's ways out** (R-184, R-189, R-191): Tell the chat… and Show this guard, and no
+ * Allow. Show this guard, from the keyboard, opens a read-only detail with the guard's group.
+ */
+export const GuardBlockWaysOut: Story = {
+  args: { rows: [START, BLOCK], ways: WAYS },
+  play: async ({ canvas }) => {
+    await expect(waysOf(canvas)).toEqual(["Tell the chat…", "Show this guard"]);
+    await expect(canvas.queryByRole("button", { name: /allow/i })).toBeNull();
+    await expect(canvas.queryByText(/Project folder/)).toBeNull();
+    const show = canvas.getByRole("button", { name: "Show this guard" });
+    show.focus();
+    await userEvent.keyboard("{Enter}");
+    await expect(show).toHaveAttribute("aria-expanded", "true");
+    await expectFocusInSight();
+    await expect(canvas.getByRole("region", { name: "This guard" }).textContent).toContain(
+      "Project folder",
+    );
+  },
+};
+
+/**
+ * **A harness-check block's ways out** (R-192 to R-194): Tell the chat… and Show this check, the
+ * sentence that only that check decides, and no Allow and no command to copy.
+ */
+export const HarnessCheckBlockWaysOut: Story = {
+  args: {
+    rows: [START, { ...BLOCK, source: "harness_check", target_kind: null, target: null }],
+    ways: WAYS,
+  },
+  play: async ({ canvas }) => {
+    await expect(waysOf(canvas)).toEqual(["Tell the chat…", "Show this check"]);
+    await expect(
+      canvas.getByText("purlis can't allow this; only Claude Code's own check decides"),
+    ).toBeVisible();
+    await expect(canvas.queryByRole("button", { name: /allow|copy/i })).toBeNull();
+    const tell = canvas.getByRole("button", { name: "Tell the chat…" });
+    tell.focus();
+    await userEvent.keyboard("{Enter}");
+    await expect(tell).toHaveAttribute("aria-expanded", "true");
+    await expectFocusInSight();
+    await expect(canvas.getByRole("button", { name: "Type it in the chat" })).toBeVisible();
+  },
+};
+
+/** **A Can't-tell block's way out** (R-199): Go to chat, and nothing else. */
+export const CantTellBlockWayOut: Story = {
+  args: {
+    rows: [
+      START,
+      { ...BLOCK, source: "sandbox", qualifier: "cant_tell", target_kind: null, target: null },
+    ],
+    ways: WAYS,
+  },
+  play: async ({ canvas }) => {
+    await expect(waysOf(canvas)).toEqual(["Go to chat"]);
+    const go = canvas.getByRole("button", { name: "Go to chat" });
+    go.focus();
+    await expectFocusInSight();
+  },
 };

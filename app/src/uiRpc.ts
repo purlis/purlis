@@ -477,7 +477,8 @@ export const commands = {
 	/**  The vaults chat `session` was refused and the person has not answered, oldest first. */
 	vaultRefusals: (plane: PlaneId, session: number) => typedError<VaultRefused[], string>(__TAURI_INVOKE("vault_refusals", { plane, session })),
 	/**
-	 *  **Whether a person is at chat `session`** (#1501): not where its harness ever reported its
+	 *  **Whether a person is at chat `session`** (#1501): its attendance fact, as every dispatch
+	 *  reader takes it (R-110, #6410): not for a task, nor where its harness ever reported its
 	 *  prompts off or it was started with them off, and not for a chat this app does not have
 	 *  open. What the window asks before it explains anything on that chat's tab: a chat nobody is
 	 *  at is told nothing, as it is told of no dispatch. It only reads.
@@ -488,6 +489,7 @@ export const commands = {
 	putAwayRefusedVault: __WINDOW_ONLY_RESULT,
 	keepAskedWorkspace: __WINDOW_ONLY_RESULT,
 	rereadHeldMerge: __WINDOW_ONLY_RESULT,
+	viewHeldMerge: __WINDOW_ONLY_RESULT,
 	mergeHeldRequest: __WINDOW_ONLY_RESULT,
 	dontMergeHeldRequest: __WINDOW_ONLY_RESULT,
 	allowChatBrowser: __WINDOW_ONLY_RESULT,
@@ -1122,6 +1124,8 @@ export const commands = {
 	 *  and for a record another machine wrote.
 	 */
 	dispatches: DispatchMade[],
+	/**  The number of the chat that wrote it, where that chat is open here (R-226). */
+	session: number | null,
 } | null, string>(__TAURI_INVOKE("session_record", { plane, path })),
 	/**
 	 *  Every dispatch of the project purlis draws, newest first, for its Dispatches tab (#1452):
@@ -1628,6 +1632,7 @@ export const commands = {
 	 *  nothing of Quiet or snooze is touched (R-177): it only reads.
 	 */
 	chatBlocks: (plane: PlaneId, asked: BlocksAsked[]) => typedError<ChatBlocks[], string>(__TAURI_INVOKE("chat_blocks", { plane, asked })),
+	tellChatBlocked: __WINDOW_ONLY_RESULT,
 	taskQuestion: __WINDOW_ONLY_RESULT,
 	taskQuestionAnswered: __WINDOW_ONLY_RESULT,
 	answerTaskQuestion: __WINDOW_ONLY_RESULT,
@@ -1994,11 +1999,17 @@ export const commands = {
 	poolSetupPodmanConnections: __WINDOW_ONLY_RESULT,
 	poolSetupConnect: __WINDOW_ONLY_RESULT,
 	poolSetupTrust: __WINDOW_ONLY_RESULT,
+	poolSetupCheckAndTrustAgain: __WINDOW_ONLY_RESULT,
+	poolSetupTrustAgain: __WINDOW_ONLY_RESULT,
 	poolSetupTlsFiles: __WINDOW_ONLY_RESULT,
 	poolSetupChooseCluster: __WINDOW_ONLY_RESULT,
 	poolSetupInstall: __WINDOW_ONLY_RESULT,
 	poolSetupOperatorImage: __WINDOW_ONLY_RESULT,
 	poolSetupClusterPool: __WINDOW_ONLY_RESULT,
+	poolSetupPinAgain: __WINDOW_ONLY_RESULT,
+	poolSetupAskAdmin: __WINDOW_ONLY_RESULT,
+	poolSetupGetHelp: __WINDOW_ONLY_RESULT,
+	poolSetupStopWaiting: __WINDOW_ONLY_RESULT,
 	poolSetupName: __WINDOW_ONLY_RESULT,
 	poolSetupPool: __WINDOW_ONLY_RESULT,
 	poolSetupAdd: __WINDOW_ONLY_RESULT,
@@ -2017,6 +2028,7 @@ export const commands = {
 	addDockerPool: __WINDOW_ONLY_RESULT,
 	removeDockerPool: __WINDOW_ONLY_RESULT,
 	dockerPoolLink: __WINDOW_ONLY_RESULT,
+	poolsPinChanged: __WINDOW_ONLY_RESULT,
 	dockerPoolsRemoved: __WINDOW_ONLY_RESULT,
 	dockerPoolMakeAgain: __WINDOW_ONLY_RESULT,
 	dockerPoolReplaceRunner: __WINDOW_ONLY_RESULT,
@@ -2736,6 +2748,8 @@ export const PERSONA_SCOPE_KEY = "persona/" as const;
 
 export const POOL_MINTS_WITHOUT_ASKING = "pool-mints-without-asking" as const;
 
+export const POOL_PIN_CHANGED = "pool-pin-changed" as const;
+
 export const PROJECT_READY = "project-ready" as const;
 
 export const REPORT_DRAFTS_CHANGED = "report-drafts-changed" as const;
@@ -3140,6 +3154,11 @@ export type AnswerPath =
  */
 { via: "signing" } | 
 /**
+ *  Open Pool setup sends `pool_setup_stop_waiting` and opens the project's Pool setup tab;
+ *  Dismiss sends `pool_setup_stop_waiting` alone (#4496).
+ */
+{ via: "pool-setup" } | 
+/**
  *  `allow_chat_browser`, with the open web for `open-web`, and `keep_chat_browser_off` for
  *  Keep off, with the person's reason (#2013).
  */
@@ -3216,8 +3235,9 @@ export type AnswerPath =
  *  `merge_held_request` for Merge and `dont_merge_held_request` for Don't merge, each for
  *  request `number` of `repo` at `head`, the key the ask was raised at (R-115). `facts` are
  *  what the row shows of it, as the forge last gave them (T1-40): Merge hands back the
- *  ruleset state among them, which it is bound to (R-150), and `reread_held_merge` reads
- *  them again before Merge asks once more (Q248).
+ *  ruleset state and the digest of them, which it is bound to (R-150, T1-41), and
+ *  `reread_held_merge` reads them again before Merge asks once more (Q248).
+ *  `view_held_merge` shows its changes and marks its head viewed (R-302).
  */
 { via: "merge-hold"; repo: string; number: number; head: string; facts: MergeShown } | 
 /**
@@ -3736,7 +3756,12 @@ export type AskSource =
  *  **The clones purlis has no record of** (R-336, Q184): one ask for all of them, no chat's,
  *  never one per clone. Trust all records each, as its Notice's Trust this clone does.
  */
-"trust-clones";
+"trust-clones" | 
+/**
+ *  **Pool setup's cluster is ready** (#4496): the admin the person asked has given what
+ *  the install couldn't, and Pool setup goes on. Said once, about no chat.
+ */
+"pool-setup";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -3777,6 +3802,13 @@ export type Asking = {
 	 *  again then.
 	 */
 	cooling_until?: number | null,
+	/**
+	 *  **The window-only asks no chat waits on** (T1-42, R-329, Q181): each a chat's whose turn
+	 *  has ended, drawn on that chat's finish row with its control. Listed apart from
+	 *  [`Asking::asks`], so neither the ✋, Asks nor a notification counts them: a Blocking ask
+	 *  is one a chat waits on. Only [`every_ask`] puts any here ([`finish_rows_apart`]).
+	 */
+	on_finish_rows?: Shown[],
 };
 
 /**  What a chat's row says while it is at its task limit. */
@@ -4047,6 +4079,8 @@ export type BlockedLately = {
 	said: string,
 	/**  The chat it was, by the name it was shown under, where the record has it. */
 	chat: string | null,
+	/**  Its chat's number, where that chat is open here: what its Chat log opens by (R-226). */
+	session: number | null,
 	/**  When it was last refused, in seconds since 1970. */
 	at: number,
 	/**  How many times it was refused in the record. */
@@ -4760,11 +4794,13 @@ sub_agent: boolean } |
 /**  The chat was paused as looping: the rule's word and how many times. */
 { kind: "loop_paused"; at: string | null; rule: string; times: number } | 
 /**  A call was blocked: by whom, how much its report is worth, at what, and why it said. */
-{ kind: "blocked"; at: string | null; tool: string; source: string; qualifier: string | null; target_kind: string | null; target: string | null; harness: string; reason: string | null };
+{ kind: "blocked"; at: string | null; tool: string; source: string; qualifier: string | null; target_kind: string | null; target: string | null; harness: string; reason: string | null; 
+/**  It has since been resolved (Q272): its row offers no Tell the chat…. */
+resolved: boolean };
 
 /**
  *  What heads a chat's Chat log: its allowed calls in one count, with those its person's rules
- *  allowed, and its honesty lines.
+ *  allowed, its honesty lines, and what purlis can't tell of its harness.
  */
 export type ChatLogSummary = {
 	allowed: number,
@@ -4773,6 +4809,15 @@ export type ChatLogSummary = {
 	unverified: boolean,
 	/**  It ran with No sandbox. */
 	ran_as_you: boolean,
+	/**
+	 *  Its harness, by the word the plane calls it, where its latest start names one purlis
+	 *  ships: what the Can't tell lines name.
+	 */
+	harness: string | null,
+	/**  Its harness does not report what its own check blocks (R-097, R-100). */
+	cant_tell_its_checks_blocks: boolean,
+	/**  Its harness reports no mode purlis can check (R-099). */
+	cant_tell_its_mode: boolean,
 };
 
 /**  What a number names, as the window is sent it. */
@@ -5197,6 +5242,8 @@ export type CloneToVouch = {
 	place: string | null,
 	/**  Every address its remote names now, each once. */
 	places: string[],
+	/**  When it was made, in seconds since 1970, where its disk keeps a creation time (R-337). */
+	made: number | null,
 };
 
 /**  What [`CLOSE_HANDED`] carries: the project and the chats a link's close would end. */
@@ -5250,8 +5297,11 @@ export type ClusterPoolAdding = {
 	context: string,
 	/**  The cluster's Pool. */
 	pool: string,
-	/**  The cluster operator key Check its key showed, spelled as it showed it. */
-	key: string,
+	/**
+	 *  The cluster operator key the person pasted, as their cluster's admin gave it (#4495).
+	 *  None only where this machine made the signing key in this Pool setup.
+	 */
+	pasted: string | null,
 	/**
 	 *  The longest wait for its runner to be vouched for, in minutes, where the person raised it
 	 *  after an add that ran out (spec #4275): saved to the pool. None is purlis's default.
@@ -5261,8 +5311,15 @@ export type ClusterPoolAdding = {
 
 /**  What Check its key read of a cluster's Pool. */
 export type ClusterPoolKey = {
-	/**  The cluster operator key the Pool's status names, spelled as it gives it. */
-	key: string,
+	/**
+	 *  The cluster operator key the Pool's status names, spelled as it gives it: only once it is
+	 *  confirmed (#4495), by the key pasted from the admin, or as the one this setup made.
+	 */
+	key: string | null,
+	/**  Whether this machine made that key in this Pool setup, so no paste is asked for (#4495). */
+	made_here: boolean,
+	/**  Whether the key pasted is the Pool's, where one was pasted (#4495). */
+	matches: boolean | null,
 	/**  The namespace the context names, where the pool's claim would be made. */
 	namespace: string,
 };
@@ -6721,6 +6778,24 @@ export type FillShown = {
 	code: boolean,
 };
 
+/**
+ *  **An unresolved block of a finished turn** (T1-33, R-300): its source, qualifier and
+ *  target, and the chat's harness (Q272), in the words the Chat log row reads them in, so a
+ *  finish row offers the ways out its Chat log row does.
+ */
+export type FinishedBlock = {
+	source: string,
+	/**  `unverified` or `cant_tell`, or none for a plain report. */
+	qualifier: string | null,
+	target_kind: string | null,
+	target: string | null,
+	/**
+	 *  The chat's harness (`claude`, `codex`, `opencode`), or `unknown`: whose own check a
+	 *  `harness_check` block was.
+	 */
+	harness: string,
+};
+
 /**  What finishing them came to. What each step said is in the app's log. */
 export type FinishedMoving = {
 	/**  What still waits, if anything: an item the person did not allow keeps its vault here. */
@@ -6806,6 +6881,11 @@ export type FinishedTurn = {
 	failed: boolean,
 	/**  Its turn's blocks still unresolved at its end, one a target: none for a failed run. */
 	blocked: number,
+	/**
+	 *  Those blocks, each by who blocked it and what at (T1-33, R-300), as the Chat log words a
+	 *  block's: what its finish row offers ways out of.
+	 */
+	blocks: FinishedBlock[],
 };
 
 /**  One ended task's tokens, by its dispatch record's id. */
@@ -8527,6 +8607,18 @@ export type LoginShown = {
 	replaces_form?: string | null,
 };
 
+/**  **What the person has seen of a merge's head** (T1-41, R-122), as its row says it. */
+export type LookShown = 
+/**  Viewed in purlis, at this head. */
+"viewed" | 
+/**
+ *  Approved at this head on the forge, by a person who is neither its author nor an app or
+ *  a bot.
+ */
+"approved" | 
+/**  Neither. */
+"not-viewed";
+
 /**  A chat whose program ended with its session host, as the Notice on its pane shows it. */
 export type LostChat = {
 	plane: PlaneId,
@@ -8796,6 +8888,31 @@ export type MergeShown = {
 	read_at: number,
 	/**  Whether a ruleset protects the base, as purlis read it. */
 	ruleset: RulesetShown,
+	/**
+	 *  What the person has seen of its head (T1-41, R-122): viewed in purlis, approved on the
+	 *  forge by someone else, or neither. A merge takes two presses whichever it is (Q268).
+	 */
+	look: LookShown,
+	/**
+	 *  Where it is approved: the login of the person who approved this head (Q277), said
+	 *  inertly, as text after purlis's own words and never as a control.
+	 */
+	approved_by: string | null,
+	/**
+	 *  Where it was not viewed: how many commits its head is ahead of the one the person
+	 *  viewed, where purlis knows it (R-123): "2 commits since you looked".
+	 */
+	since_viewed: number | null,
+	/**
+	 *  Whether purlis recorded the asking chat pushing its head (R-124). A head it did not is
+	 *  flagged.
+	 */
+	pushed_here: boolean,
+	/**
+	 *  The digest of what these facts show (`purlis_core::mergehold::Facts::digest`): Merge
+	 *  hands it back, and merges only while the ask shows the same.
+	 */
+	digest: string,
 };
 
 /**  What a merge did, for the window to report. */
@@ -9345,7 +9462,12 @@ export type OldHome =
  */
 "held" | 
 /**  It could not be read, so it is kept, held, all the same. */
-"unread";
+"unread" | 
+/**
+ *  It is on the engine trusted before, on the pool's other machine (#6270): nothing of it
+ *  was read or removed on the engine trusted now, and `purlis pool left-behind` lists it.
+ */
+"elsewhere";
 
 /**  **What helps a profile over what a pool's older runner takes** (#5175): by what makes its image. */
 export type OlderRunner = 
@@ -10813,7 +10935,13 @@ export type PoolLink =
  *  Docker points at another engine than the one that made it (#4166): its container may be
  *  there still, so it is not said to be removed and Make the runner again is not offered.
  */
-{ state: "on_another_engine" };
+{ state: "on_another_engine" } | 
+/**
+ *  **Its machine's pin no longer holds** (#6270, ADR 0123 §3): another host key, CA or
+ *  engine. Nothing is sent there until the person checks it and trusts it again, and removing
+ *  the pool forgets it here, leaving its runner there.
+ */
+{ state: "pin_changed"; change: PoolPinChanged };
 
 /**
  *  **A project, and its workspaces, that name a pool** (#4678): what removing the pool sets back
@@ -10855,6 +10983,26 @@ export type PoolOwed = {
 	opened: number,
 	/**  Whether it is open in a window now, so it brings the work back on its own. */
 	open_now: boolean,
+};
+
+/**
+ *  **A pool on another machine whose pin no longer holds** (#6270, ADR 0123 §3): what the
+ *  window's Notice (cause `pool-pin-changed`) says, in the core's words, the same as `purlis pool
+ *  doctor`'s.
+ */
+export type PoolPinChanged = {
+	pool: string,
+	host: string,
+	/**  `key`, `ca` or `engine`. */
+	what: string,
+	/**
+	 *  What was pinned, and what the machine shows now: a key's or a CA's SHA-256, or an
+	 *  engine's id.
+	 */
+	pinned: string,
+	now: string,
+	title: string,
+	said: string,
 };
 
 /**  One of this machine's profiles, as a pool's runner stands with it. */
@@ -10966,6 +11114,18 @@ export type PoolSetupContexts = {
 	chosen: string | null,
 	/**  The chosen cluster's Pools, by name, where its operator runs (#4494). */
 	pools: string[],
+	/**
+	 *  Whether the person joins their team's install (#4495): the key is then confirmed by
+	 *  pasting the one their admin gave them.
+	 */
+	joining: boolean,
+	/**  The cluster operator key a kept cluster pool pinned here (#4495). */
+	pinned: string | null,
+	/**
+	 *  Whether its Pool names a key now that the pin never vouched for (#4495). The key itself
+	 *  isn't sent: it is shown only once the key pasted from the admin matched it.
+	 */
+	key_changed: boolean,
 };
 
 /**
@@ -11119,6 +11279,11 @@ export type PoolSetupStep = {
 	also: PoolSetupAction | null,
 	/**  Install's parts, each with its own button (#4493). */
 	parts: PoolSetupPart[],
+	/**
+	 *  The words for the person's cluster's admin (#4496), where doctor shows they can't
+	 *  install. Held free of secrets by the core.
+	 */
+	admin: string | null,
 	/**  How the step is undone by hand, never by a button: uninstalling from a cluster. */
 	undo: PoolSetupSee | null,
 };
@@ -14057,6 +14222,8 @@ export type SessionRecordView = {
 	 *  and for a record another machine wrote.
 	 */
 	dispatches: DispatchMade[],
+	/**  The number of the chat that wrote it, where that chat is open here (R-226). */
+	session: number | null,
 };
 
 /**  What a save is: Edit as TOML's whole text, or a form's changes to the text it was read as. */

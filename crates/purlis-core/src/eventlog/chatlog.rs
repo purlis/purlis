@@ -27,7 +27,10 @@ use std::io;
 use std::path::Path;
 
 use super::Event;
-use super::stops::{self, AskAnswered, AskGroup, AskRaised, Block, Hold, LoopPause, Qualifier};
+use super::stops::{
+    self, Answer, AskAnswered, AskGroup, AskRaised, Block, Hold, LoopPause, Qualifier, Source,
+};
+use crate::harness::Harness;
 use crate::sandbox::protection::{InForce, SANDBOX};
 
 /// **Whether an event of `kind` is part of a chat's story**: its runs starting and ending, its
@@ -126,7 +129,19 @@ pub enum Row {
         /// The chat's harness, by the word its latest `run.started` gave (`claude`, `codex`,
         /// `opencode`), or `unknown`: whose own check a `harness_check` block was.
         harness: String,
+        /// **It has since been resolved** (Q272): a later call on its target came back, as a
+        /// turn's finish reads one ([`super::finishes`]), or, for a sandbox block, a sandbox ask
+        /// was allowed after it. A resolved row offers no Tell the chat…, whose line says what
+        /// was just blocked.
+        resolved: bool,
     },
+}
+
+/// Marks the block row at `at` of `rows` resolved.
+fn resolve(rows: &mut [Row], at: usize) {
+    if let Some(Row::Blocked { resolved, .. }) = rows.get_mut(at) {
+        *resolved = true;
+    }
 }
 
 /// The call id of `event`, a tool hook's event (`hook.*`) with a `call`.
@@ -154,13 +169,45 @@ pub fn rows(events: &[Event], chat: &str) -> Vec<Row> {
     let mut rows = Vec::new();
     let mut harness = super::UNKNOWN.to_owned();
     let mut before: Option<&Event> = None;
+    // Each block row not yet resolved: where it is, who blocked it, and its call's tool and
+    // arguments' digest, where it names one.
+    let mut standing: Vec<(usize, Source, String, Option<String>)> = Vec::new();
     for event in events
         .iter()
         .filter(|event| event.chat.as_deref() == Some(chat))
     {
         let previous = before.replace(event);
+        if super::finishes::came_back(&event.kind) {
+            let field = |name: &str| event.body.get(name).and_then(serde_json::Value::as_str);
+            if let (Some(tool), Some(args)) = (field("tool"), field("args")) {
+                // As a block writes its tool: one short line (`stops::line_tool`).
+                let tool = crate::shown::readable(tool, stops::TARGET_CHARS);
+                standing.retain(|(at, _, blocked, digest)| {
+                    let back = *blocked == tool && digest.as_deref() == Some(args);
+                    if back {
+                        resolve(&mut rows, *at);
+                    }
+                    !back
+                });
+            }
+        }
         if !is_story(&event.kind) {
             continue;
+        }
+        if event.kind == stops::ASK_ANSWERED
+            && let Ok(AskAnswered {
+                ask: AskGroup::Sandbox,
+                answer: Answer::Allowed,
+                ..
+            }) = serde_json::from_value(event.body.clone())
+        {
+            standing.retain(|(at, source, _, _)| {
+                let allowed = *source == Source::Sandbox;
+                if allowed {
+                    resolve(&mut rows, *at);
+                }
+                !allowed
+            });
         }
         let word = |field: &str| {
             event
@@ -211,14 +258,26 @@ pub fn rows(events: &[Event], chat: &str) -> Vec<Row> {
                 sub_agent: !own,
             }),
             stops::LOOP_PAUSE => read(event).map(|pause| Row::LoopPaused { at_ms, pause }),
-            stops::BLOCK => Some(Row::Blocked {
-                at_ms,
-                block: serde_json::from_value(event.body.clone()).ok(),
-                call: previous
-                    .filter(|previous| previous.run == event.run)
-                    .and_then(call_of),
-                harness: harness.clone(),
-            }),
+            stops::BLOCK => {
+                let block: Option<Block> = serde_json::from_value(event.body.clone()).ok();
+                if let Some(block) = &block {
+                    standing.push((
+                        rows.len(),
+                        block.source,
+                        block.tool.clone(),
+                        block.args.clone(),
+                    ));
+                }
+                Some(Row::Blocked {
+                    at_ms,
+                    block,
+                    call: previous
+                        .filter(|previous| previous.run == event.run)
+                        .and_then(call_of),
+                    harness: harness.clone(),
+                    resolved: false,
+                })
+            }
             _ => None,
         };
         rows.extend(row);
@@ -249,6 +308,15 @@ pub struct Summary {
     pub unverified: bool,
     /// The chat ran with No sandbox at some point: as the person, with all they can reach.
     pub ran_as_you: bool,
+    /// The harness its latest start names, where purlis ships it; `None` where no start names
+    /// one it knows.
+    pub harness: Option<Harness>,
+    /// Some start's harness does not report what its own check blocks (R-097, R-100), or
+    /// nothing says which harness it ran: its log can't tell of those blocks.
+    pub cant_tell_its_checks_blocks: bool,
+    /// Some start's harness reports no mode purlis can check (R-099, Q152), or nothing says which
+    /// harness it ran: its log can't tell which mode it ran in.
+    pub cant_tell_its_mode: bool,
 }
 
 /// **What heads chat `chat`'s Chat log** among `events` ([`Summary`]), from its tool events,
@@ -267,6 +335,11 @@ pub struct Summary {
 /// - **Ran as you** (Q261): any start's sandbox layer was at `off`, No sandbox (where a start
 ///   did not record its protection, one with no sandbox backend, `none`), or its sandbox was
 ///   lifted for a run (`trust.sandbox.off`).
+/// - **Can't tell** (R-097, R-099, R-100; T1-38): any start's harness reports no block of its
+///   own check, or no mode purlis can check ([`Harness::reports_its_checks_blocks`],
+///   [`Harness::reports_a_mode_purlis_can_check`]), taken over the whole chat as the honesty
+///   lines are; and a chat with no start, or one whose harness purlis does not ship, can't tell
+///   either. The harness named is the latest start's.
 ///
 /// **The counts are only as good as the chat's hook lines** (Q235): a chat whose hooks run
 /// within its reach can write lines that say `allow` for calls it never made, and so inflate
@@ -284,6 +357,12 @@ pub fn summary(events: &[Event], chat: &str) -> Summary {
                 serde_json::from_value(event.body.clone()).unwrap_or_default();
             started = true;
             summary.unverified |= !stops::reported_from_outside_its_reach(&attributes);
+            let harness = attributes.harness.as_deref().and_then(Harness::of_kind);
+            summary.harness = harness;
+            summary.cant_tell_its_checks_blocks |=
+                !harness.is_some_and(Harness::reports_its_checks_blocks);
+            summary.cant_tell_its_mode |=
+                !harness.is_some_and(Harness::reports_a_mode_purlis_can_check);
             summary.ran_as_you |= match &attributes.protection {
                 Some(in_force) => in_force
                     .layers
@@ -318,6 +397,8 @@ pub fn summary(events: &[Event], chat: &str) -> Summary {
         }
     }
     summary.unverified |= !started;
+    summary.cant_tell_its_checks_blocks |= !started;
+    summary.cant_tell_its_mode |= !started;
     summary
 }
 

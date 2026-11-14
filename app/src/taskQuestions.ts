@@ -31,6 +31,9 @@ export type QuestionsHeld = {
   readonly cooling?: readonly Shown[];
   /** When the first cool-off ends by itself, in seconds since 1970. */
   readonly cooling_until?: number | null;
+  /** **The window-only asks no chat waits on** (T1-42, R-329), listed apart: each drawn on its
+   *  chat's finish row, never in Asks. None from a core that lists none. */
+  readonly on_finish_rows?: readonly Shown[];
 };
 
 /** Where a task's question stands. `since` is in seconds since 1970: when it was asked, or

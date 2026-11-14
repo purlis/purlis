@@ -186,6 +186,20 @@ pub struct Chat {
     /// every other chat, and every record written before this field — not a format change, for
     /// [`Self::pinned`]'s reason.
     pub graded: bool,
+    /// **Whether this chat is Pool setup's Get help chat, held from every cluster** (#4497,
+    /// story 60): every start of it, the first and each one after (a relaunch, a restart, a move),
+    /// is decided under [`crate::sandbox::policy::holding_from_clusters`]. `false` is every other
+    /// chat, and every record written before this field — not a format change, for
+    /// [`Self::pinned`]'s reason.
+    pub held_from_clusters: bool,
+    /// **Whether the chat's attendance fact says nobody is at it** (T1-18, #6409; Q271): the
+    /// fact the app holds for it ([`crate::attendance::Fact`]), kept so a relaunch after the
+    /// app's restart carries it forward ([`crate::attendance::Fact::resumed`]) and never starts
+    /// an unattended chat as attended. **It only ever lowers a start**: a record that says
+    /// `false` starts the chat as its kind and profile say. `false` is every attended chat, and
+    /// every record written before this field — not a format change, for [`Self::pinned`]'s
+    /// reason.
+    pub unattended: bool,
     /// The chat this chat's tab shows in place of it, by that chat's [`Self::number`], where the
     /// person switched the tab to one (#1486): a task below this chat, at any depth.
     ///
@@ -1737,6 +1751,14 @@ struct ChatOnDisk {
     /// graded a skill writes the record it always wrote.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     graded: bool,
+    /// [`Chat::held_from_clusters`]: Pool setup's Get help chat. Absent for every other chat, so
+    /// a project that never asked Pool setup for help writes the record it always wrote.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    held_from_clusters: bool,
+    /// [`Chat::unattended`]: the chat's attendance fact says nobody is at it. Absent for every
+    /// attended chat, so a project with none writes the record it always wrote.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    unattended: bool,
     /// The chat this chat's tab shows in place of it, by number — see [`Chat::shows`]. Absent
     /// (zero) while the tab shows its own chat, so a project where no tab was switched to a
     /// task writes the record it always wrote.
@@ -2071,6 +2093,8 @@ impl From<&Record> for OnDisk {
                     tab_opened: chat.tab_opened,
                     unseen: chat.unseen,
                     graded: chat.graded,
+                    held_from_clusters: chat.held_from_clusters,
+                    unattended: chat.unattended,
                     shows: chat.shows.unwrap_or_default(),
                     beside: chat.beside.unwrap_or_default(),
                     renamed_from: chat.renamed_from.clone().unwrap_or_default(),
@@ -2166,6 +2190,8 @@ impl From<ChatOnDisk> for Chat {
             tab_opened,
             unseen: chat.unseen,
             graded: chat.graded,
+            held_from_clusters: chat.held_from_clusters,
+            unattended: chat.unattended,
             from,
             reopened: ReopenedTask::read(&chat.reopened),
             held: chat.held.map(|value| HeldGrants {

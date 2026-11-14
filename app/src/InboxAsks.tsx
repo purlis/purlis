@@ -12,8 +12,17 @@ import {
 } from "react";
 import { Send, X } from "lucide-react";
 import { RestartEndsLine } from "./RestartEnds";
-import { commands, type Offered, type PlaneId, type ReachedWhy, type Shown } from "./bindings";
-import { answerTaken, asksMoved, secretAskEntries } from "./asks";
+import {
+  commands,
+  type CloneToVouch,
+  type MergeShown,
+  type Offered,
+  type PlaneId,
+  type ReachedWhy,
+  type Shown,
+} from "./bindings";
+import { answerTaken, asksMoved, secretAskEntries, trustEach } from "./asks";
+import { CHOOSE, ClonesToTrust, TrustClonesChooser } from "./TrustClones";
 import { counted as countedSaid } from "./dispatches";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
 import { KindIcon, kindOfAsk, RowAge } from "./InboxRow";
@@ -33,6 +42,7 @@ import { AskDecision, REASON_TYPED_MOST, waysOf } from "./AskDecision";
 import { RuleOffer, ruleMadeOf } from "./AskRules";
 import { SecretFillSite } from "./SecretFillNotice";
 import { MergeFacts } from "./MergeFacts";
+import { useViewChanges, VIEW_CHANGES } from "./MergeChanges";
 import { confirmationOf, fallbackConfirm, rereadMerge } from "./mergeHold";
 import { Button, ButtonRow, IconButton } from "./ui/button/Button";
 import {
@@ -292,6 +302,10 @@ export const DECISIONS: ReadonlySet<Shown["source"]> = new Set<Shown["source"]>(
   // A chat paused at its budget or as looping (#6015).
   "budget",
   "looping",
+  // A window-only refusal's control, and the clones' one ask (T1-42, R-330, R-337): the press
+  // is on the row, as Q181 has it.
+  "trust-clone",
+  "trust-clones",
 ]);
 
 /** The option id only a block loop's pause offers: its lead, Tell it to stop trying (`pauses.rs`). */
@@ -322,6 +336,8 @@ const QUESTION: Partial<Record<Shown["source"], string>> = {
   confirmation: "Confirm what this command asks?",
   budget: "Let it go on past its budget?",
   looping: "Let it go on?",
+  "trust-clone": "Trust this clone?",
+  "trust-clones": "Trust these clones?",
 };
 
 /** **The question a decision asks** (#5998), named as the person reads it: a run grant names
@@ -514,6 +530,7 @@ export const SOURCE_SAID: Record<Shown["source"], string> = {
   "sandbox-only": "Asks you to make a sandbox-only profile",
   "old-harness-plugins": "Old harness plugin settings, ignored now",
   signing: "Lanes wait on signed commits",
+  "pool-setup": "Your cluster is ready for Pool setup",
   browser: "Asks what its browser may reach",
   "browser-needs-you": "Needs you in its browser",
   "browser-site": "Asks to let its browser reach a new site",
@@ -601,6 +618,8 @@ export function Ask({
   const id = useId();
   const [said, setSaid] = useState<string>();
   const [busy, setBusy] = useState(false);
+  /** Choose…'s boxes are open under the row, on Trust these clones (R-337). */
+  const [choosing, setChoosing] = useState(false);
   /** Why the person keeps it blocked, if they say: told to the chat with the answer. */
   const [reason, setReason] = useState("");
   /** The site as the person changed it, on a login's ask (#4595). */
@@ -658,6 +677,8 @@ export function Ask({
     ask.answer.via === "browser-login" || ask.answer.via === "secret-fill" ? ask.answer.shown : "",
     // The question asked once more is drawn anew, and its Allow waits to settle (#6178).
     asking === undefined ? "" : `confirming ${asking.option.id}`,
+    // Choose…'s boxes, just opened, are drawn anew too (R-337).
+    choosing ? "choosing" : "",
   ].join("\n");
   /** Its watch to be seen, once its row is attached (`useSettledPlace`). */
   const seenAttached = useRef<() => void>(undefined);
@@ -689,6 +710,27 @@ export function Ask({
     if (!tooSoon()) return true;
     setSaid(MOVED_JUST_NOW);
     return false;
+  };
+  /** **Choose…'s boxes are open under the row** (R-337): what stands below it moved, and its
+   *  Trust chosen waits to settle from then. */
+  const choose = (open: boolean) => {
+    setChoosing(open);
+    onOpen(open);
+  };
+  /** **Trust chosen** (R-337): the clone Notice's own press on each ticked clone. */
+  const trustChosen = (chosen: readonly CloneToVouch[]) => {
+    if (busy) return;
+    setBusy(true);
+    setSaid(undefined);
+    void trustEach(plane, chosen)
+      .then((refused) => {
+        if (refused !== undefined) setSaid(refused);
+        else choose(false);
+      })
+      .finally(() => {
+        setBusy(false);
+        asksMoved(plane);
+      });
   };
   /** **A press in its form** (#6178): a grant on a high-risk ask asks once more under its
    *  answers, its Allow saying what the button pressed said (`said`, the option's label unless
@@ -1020,9 +1062,7 @@ export function Ask({
               their read, the ruleset state with the gap beside it, and the title last, as text
               the chat may have written. */}
         {ask.answer.via === "merge-hold" && (
-          <p className="inbox-merge ui-text-secondary">
-            <MergeFacts facts={ask.answer.facts} />
-          </p>
+          <MergeRowFacts plane={plane} ask={ask} facts={ask.answer.facts} />
         )}
         {shape.said !== undefined && (
           <ChatText
@@ -1038,6 +1078,8 @@ export function Ask({
         )}
         {/* What a run answered on its row lets run, read before its answers (#5998). */}
         {shape.decision && ask.run != null && <RunFacts run={ask.run} />}
+        {/* Each clone it would trust, with its remote and when it was made (R-337). */}
+        {ask.answer.via === "trust-clones" && <ClonesToTrust clones={ask.answer.clones} />}
         {/* Why its Allow is missing: the lines it runs over, which its line put on one
               (#3502), and a character it holds that reads otherwise (SK-51). */}
         {shape.answers && (shape.lines !== undefined || shape.hidden !== undefined) && (
@@ -1101,10 +1143,26 @@ export function Ask({
             mayAct={mayAct}
             confirm={ask.risk?.confirm}
             onOpen={onOpen}
-            onAnswer={(option, why) => answer(option, undefined, why ?? "")}
+            onAnswer={(option, why) =>
+              // Choose… answers nothing: it opens a box for each clone under the row (R-337).
+              ask.source === "trust-clones" && option.id === CHOOSE
+                ? choose(!choosing)
+                : answer(option, undefined, why ?? "")
+            }
           >
             {shape.go && <ChatActions who={who} onGo={onGo} onSnooze={onSnooze} onStop={onStop} />}
           </AskDecision>
+          {choosing && ask.answer.via === "trust-clones" && (
+            <MessageForm id={`${id}-chosen`}>
+              <TrustClonesChooser
+                clones={ask.answer.clones}
+                busy={busy}
+                mayAct={mayAct}
+                onTrust={trustChosen}
+                onCancel={() => choose(false)}
+              />
+            </MessageForm>
+          )}
           {/* **The rule it offers** (#6010), after the same Allow twice: its wider grants. */}
           <RuleOffer
             ask={ask}
@@ -1523,4 +1581,28 @@ export function landOnGroupIn(plane: PlaneId, session: number, source?: Shown["s
   if (landOnGroup(session, source) || keptAsksScope(plane) === "project") return;
   pickAsksScope(plane, "project");
   requestAnimationFrame(() => landOnGroup(session, source));
+}
+
+/** **A merge row's facts, and its View changes** (T1-40, T1-41; R-302): what the forge said of
+ *  the request, what the person has seen of its head, and the press that shows its changes and
+ *  marks the head viewed. Where it showed nothing, its words say why. */
+function MergeRowFacts({ plane, ask, facts }: { plane: string; ask: Shown; facts: MergeShown }) {
+  const changes = useViewChanges(plane, ask);
+  return (
+    <>
+      <p className="inbox-merge ui-text-secondary">
+        <MergeFacts facts={facts} />{" "}
+        <Button
+          variant="link"
+          size="sm"
+          aria-busy={changes.busy || undefined}
+          onPress={changes.view}
+        >
+          {VIEW_CHANGES}
+        </Button>
+        {changes.refused !== undefined && ` ${changes.refused}`}
+      </p>
+      {changes.dialog}
+    </>
+  );
 }

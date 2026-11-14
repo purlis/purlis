@@ -6,6 +6,7 @@ import type { PlaneId, Shown } from "./bindings";
 import { answerTaken, asksMoved } from "./asks";
 import { Notice, type NoticeAction } from "./Notice";
 import { MergeFacts } from "./MergeFacts";
+import { useViewChanges, VIEW_CHANGES } from "./MergeChanges";
 import { confirmationOf, fallbackConfirm, rereadMerge } from "./mergeHold";
 import { NOTICE_MOVED_JUST_NOW, SETTLE_MS } from "./noticeSettle";
 
@@ -23,6 +24,8 @@ import { NOTICE_MOVED_JUST_NOW, SETTLE_MS } from "./noticeSettle";
  *   question is asked of what the forge says now; and **the Merge it asks with waits to settle**,
  *   so a double click that opened the question doesn't answer it too.
  * - **Don't merge** merges nothing.
+ * - **View changes** shows the request's changes and marks its head viewed (T1-41, R-302), so it
+ *   says so beside the facts.
  *
  * It shows what the merge row does (`MergeFacts`, T1-40): the checks as of the forge's read, the
  * ruleset state with the gap beside it, and the title last, as text the chat may have written.
@@ -63,6 +66,7 @@ function OneHold({
 }) {
   const [refused, setRefused] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const changes = useViewChanges(plane, hold);
   /** The question Merge asked once more, for the ask it was asked of. */
   const [asked, setAsked] = useState<string>();
   // A merge always asks once more (Q268): in the risk's own sentence, or in purlis's own where
@@ -133,19 +137,28 @@ function OneHold({
   const fixes: readonly [NoticeAction, ...NoticeAction[]] = confirming
     ? [mergeWay, { label: "Cancel", busy, onPress: () => setAsked(undefined) }]
     : [mergeWay, { label: dont.label, busy, onPress: () => send(dont.id, dont.label) }];
+  // Shown while nothing is asked once more: the question stands alone.
+  const viewWay: NoticeAction | undefined = confirming
+    ? undefined
+    : { label: VIEW_CHANGES, busy: changes.busy, onPress: changes.view };
+  const trouble = refused ?? changes.refused;
   return (
-    <Notice
-      cause={`merge-hold:${hold.ask}`}
-      at="pane"
-      tone={refused === undefined ? "news" : "trouble"}
-      label="Merge held"
-      since={hold.since}
-      waits
-      fixes={fixes}
-    >
-      {confirming ? confirm : hold.risk == null ? hold.says : `${hold.says} ${hold.risk.why}.`}
-      {refused !== undefined && ` ${refused}`}
-      {hold.answer.via === "merge-hold" && <MergeFacts facts={hold.answer.facts} />}
-    </Notice>
+    <>
+      <Notice
+        cause={`merge-hold:${hold.ask}`}
+        at="pane"
+        tone={trouble === undefined ? "news" : "trouble"}
+        label="Merge held"
+        since={hold.since}
+        waits
+        fixes={fixes}
+        link={viewWay}
+      >
+        {confirming ? confirm : hold.risk == null ? hold.says : `${hold.says} ${hold.risk.why}.`}
+        {trouble !== undefined && ` ${trouble}`}
+        {hold.answer.via === "merge-hold" && <MergeFacts facts={hold.answer.facts} />}
+      </Notice>
+      {changes.dialog}
+    </>
   );
 }

@@ -107,6 +107,9 @@ const QUIET: ChatLogSummary = {
   by_your_rules: 0,
   unverified: false,
   ran_as_you: false,
+  harness: "claude",
+  cant_tell_its_checks_blocks: false,
+  cant_tell_its_mode: false,
 };
 
 function core(rows: (session: number) => ChatLogRow[] = here, summary: ChatLogSummary = QUIET) {
@@ -355,6 +358,38 @@ describe("the rows of a chat's Chat log (T1-28)", () => {
     },
   );
 
+  it("a Codex chat's Chat log heads with Can't tell for its check's blocks and its mode", async () => {
+    // R-099, R-100 (T1-38): from the core's flags for the chat's harness, below the honesty
+    // lines and above the allowed line; and nothing reads as a mode Codex runs in.
+    core(() => [started(3)], {
+      ...QUIET,
+      allowed: 4,
+      unverified: true,
+      harness: "codex",
+      cant_tell_its_checks_blocks: true,
+      cant_tell_its_mode: true,
+    });
+    render(<App />);
+    const log = await opened("steward 3");
+
+    const unverified = screen.getByText(/^Unverified: /);
+    const blocks = screen.getByText(
+      "Can't tell what Codex's own check blocks: it does not report them, so they are not in this log.",
+    );
+    const mode = screen.getByText(
+      "Can't tell which mode this chat runs in: Codex reports none purlis can check, so purlis goes by how it started the chat.",
+    );
+    const allowed = screen.getByText("4 allowed · 0 by your rules");
+    for (const [above, below] of [
+      [unverified, blocks],
+      [blocks, mode],
+      [mode, allowed],
+      [allowed, log],
+    ])
+      expect(above.compareDocumentPosition(below) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(log.textContent).not.toMatch(/bypass/i);
+  });
+
   it("the allowed line says both counts, by your rules even at 0", async () => {
     // R-234, Q261: the second count is said whatever it is, so 0 reads as 0, never as unsaid.
     core(() => [started(3)], { ...QUIET, allowed: 12, by_your_rules: 0 });
@@ -411,6 +446,7 @@ describe("a block row's detail (R-340, T1-29)", () => {
       target: null,
       harness: "claude",
       reason: REASON,
+      resolved: false,
     };
     core((session) => [started(session), block]);
     render(<App />);
@@ -419,8 +455,9 @@ describe("a block row's detail (R-340, T1-29)", () => {
 
     // Nothing shows it until the detail is opened: not the row's line, its tags or its name.
     expect(document.body.textContent).not.toContain(KEY);
-    await userEvent.click(within(row).getByRole("button", { expanded: false }));
-    const detail = within(row).getByRole("group");
+    // Its disclosure, the first of its closed buttons, before its ways out (T1-33).
+    await userEvent.click(within(row).getAllByRole("button", { expanded: false })[0]);
+    const detail = within(row).getAllByRole("group")[0];
 
     // As written: one element holds exactly the text, never read as markup.
     const shown = within(detail).getByText((_, element) => element?.textContent === REASON, {

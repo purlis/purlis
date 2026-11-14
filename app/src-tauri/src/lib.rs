@@ -58,6 +58,8 @@ mod createproject;
 mod curation;
 // Each chat's finishes, for its finish rows (R-241, R-178, T1-31).
 mod finishedturns;
+// A block's Tell the chat… (T1-33, Q267): purlis's own line, typed through T1-36's way in.
+mod blockways;
 mod layout;
 mod mergeholds;
 mod pane_links;
@@ -1229,7 +1231,9 @@ async fn session_record(
 ) -> Result<Option<panels::SessionRecordView>, String> {
     let held = planes.held(&plane)?;
     off_the_window("reading the session record", move || {
-        let mut view = panels::session_record(held.root(), &path)?;
+        // Its chat, where it is open here: the record's tab opens its Chat log (R-226).
+        let mut view =
+            panels::session_record(held.root(), &path, &|id| held.chats().session_of_id(id))?;
         // A dispatch that has not ended is running only where its chat is open, which the project
         // this app holds knows and the files do not (#1457).
         if let Some(view) = view.as_mut() {
@@ -3433,6 +3437,8 @@ fn commands() -> Builder<tauri::Wry> {
             "POOL_MINTS_WITHOUT_ASKING",
             clusterpools::POOL_MINTS_WITHOUT_ASKING,
         )
+        // The event a pool's pin found changed, or holding again, raises its Notice on (#6270).
+        .constant("POOL_PIN_CHANGED", dockerpools::POOL_PIN_CHANGED)
         // The event the engine's downloads changed on (#2207).
         .constant("ENGINE_DOWNLOAD", enginedownload::ENGINE_DOWNLOAD)
         // What `theme_specimen` answers while the painter draws another specimen (#2331): the
@@ -4237,6 +4243,14 @@ pub fn run() {
                     let _ = window.emit(clusterpools::POOL_MINTS_WITHOUT_ASKING, ());
                 }));
             }
+            // A pool's pin found changed, or holding again, raises or puts away its Notice
+            // (#6270).
+            {
+                let window = app.handle().clone();
+                purlis_core::poolsetup::pinchange::telling(Box::new(move || {
+                    let _ = window.emit(dockerpools::POOL_PIN_CHANGED, ());
+                }));
+            }
             // A finish leans on that lock, and is refused without it.
             app.manage(vaultswaiting::VaultsWaiting::of(
                 waiting,
@@ -4512,6 +4526,9 @@ pub fn run() {
             // What sends a system notification for an ask (#1694): managed before any plane is
             // opened, since the first chat to move may bring one.
             app.manage(asknotify::Notifier::start(app.handle()));
+            // Pool setup's wait for an admin (#4496): checked again now and then, raising its one
+            // ask once the cluster is ready.
+            poolsetuptab::recheck_now_and_then(app.handle());
             // What a project's chats tell its window, sent as one event about every 100 ms
             // rather than one each (#4746): managed before any plane is opened, as the
             // notifier is, since the first chat to move tells the window.

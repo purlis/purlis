@@ -32,6 +32,7 @@ const blocked = (over: Partial<Blocked> = {}): Blocked => ({
   target: "A3b",
   harness: "claude",
   reason: null,
+  resolved: false,
   ...over,
 });
 
@@ -75,10 +76,11 @@ const tagsOf = (row: HTMLElement) =>
     tag.textContent?.trim(),
   );
 
-/** Opens a row's detail and answers it. */
+/** Opens a row's detail and answers it: its disclosure, the first of its closed buttons, before
+ *  its ways out (T1-33). */
 async function detailOf(row: HTMLElement): Promise<HTMLElement> {
-  await userEvent.click(within(row).getByRole("button", { expanded: false }));
-  return within(row).getByRole("group");
+  await userEvent.click(within(row).getAllByRole("button", { expanded: false })[0]);
+  return within(row).getAllByRole("group")[0];
 }
 
 describe("a block row", () => {
@@ -117,12 +119,13 @@ describe("a block row", () => {
       blocked({ source: "sandbox", qualifier: "cant_tell", target_kind: null, target: null }),
       blocked({ source: "harness_check", harness: "codex", qualifier: "unverified" }),
     ]);
+    // Unverified and can't-tell reports collapse into a line each (R-105, T1-38), tagged with
+    // their qualifier alone: who blocked each is in the line's detail, in fixed words.
     expect(rows.map(tagsOf)).toEqual([
       ["Sandbox"],
       ["Claude Code's own check"],
       ["Unverified"],
-      ["Sandbox", "Can't tell"],
-      ["Codex's own check", "Unverified"],
+      ["Can't tell"],
     ]);
   });
 
@@ -140,7 +143,8 @@ describe("a block row", () => {
   it("every block row detail names its source", async () => {
     const cases: [Blocked, string][] = [
       [blocked(), "Blocked by purlis's guards"],
-      [blocked({ qualifier: "unverified" }), "Blocked by purlis's guards"],
+      // An unverified report's detail names who blocked a call, in fixed words (R-104).
+      [blocked({ qualifier: "unverified" }), "purlis blocked a call"],
       [blocked({ source: "harness_check", target: null }), "Blocked by Claude Code's own check"],
       [
         blocked({ source: "sandbox", target_kind: "host", target: "a.dev" }),
@@ -165,7 +169,7 @@ describe("a block row", () => {
     const tags = rows.flatMap((row) =>
       Array.from(row.querySelectorAll<HTMLElement>('[data-scope="badge"]')),
     );
-    expect(tags).toHaveLength(4);
+    expect(tags).toHaveLength(2);
     for (const tag of tags) {
       expect(tag.dataset.variant).toBe("neutral");
       const icon = tag.querySelector("svg");

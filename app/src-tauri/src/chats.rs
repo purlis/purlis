@@ -1086,6 +1086,13 @@ pub struct Chats {
     /// come before the chat is listed as open. Forgotten as each start is announced and as the
     /// chat closes, so a model never outlives the program it was reported for.
     models: Mutex<HashMap<u32, String>>,
+    /// **Each chat's attendance fact** (T1-18, #6409; [`purlis_core::attendance::Fact`]), by
+    /// the chat's number: set by how purlis started it, never more attended than the fact it
+    /// had ([`purlis_core::attendance::Fact::resumed`]), and lowered by the reports the board
+    /// takes from it ([`Self::heard_attendance`]). What A4 reads ([`Self::attendance_of`]), and
+    /// what the record's `unattended` keeps for a relaunch. Kept across a start of the chat's
+    /// program again, and forgotten as the chat closes.
+    attendance: Mutex<HashMap<u32, purlis_core::attendance::Fact>>,
     /// **What each chat had left running of its own as its turn last ended** (#5747), by the
     /// chat's number: what the record's `own_work` says while that program runs
     /// ([`Self::heard_own_work`]). Kept apart from the board, whose wait lapses after an hour and
@@ -1251,6 +1258,9 @@ struct StartKey {
     level_as: Option<String>,
     made: purlis_core::sandbox::Made,
     grants: purlis_core::sandbox::grant::Grants,
+    /// Whether it is held from every cluster at each start, as Pool setup's Get help chat is
+    /// ([`purlis_core::reopen::Chat::held_from_clusters`]).
+    held_from_clusters: bool,
 }
 
 /// What a start would compile now, for [`StartKey`]: the sandbox it settles to, none at all,
@@ -1731,6 +1741,7 @@ impl Chats {
             restarting: Mutex::new(std::collections::HashSet::new()),
             told: Mutex::new(HashMap::new()),
             models: Mutex::new(HashMap::new()),
+            attendance: Mutex::new(HashMap::new()),
             own_work: Mutex::new(HashMap::new()),
             going: crate::goingaway::Going::default(),
             fresh_starting: Arc::default(),
@@ -2824,27 +2835,27 @@ impl Chats {
         // it lists any, and one whose command does not switch the harness's prompts off. Both
         // may have changed since it was dispatched, and nobody chose the change for this chat.
         purlis_core::dispatchprofiles::may_start_again(&self.project, chat)?;
-        let ready = purlis_core::start::ready(
-            &purlis_core::start::Start {
-                profile: Some(profile),
-                persona: chat.persona.clone(),
-                name: chat.name.clone(),
-                cwd: chat.cwd.clone(),
-                resume: chat.resume.clone(),
-                // The chat's own footer choice, brought back with it. It rides on the
-                // environment, which is rebuilt at every start, so a relaunch that did not
-                // carry it would silently blank a footer the operator had turned on.
-                show_footer: chat.show_footer,
-                resuming: None,
-                without_sandbox: opt_out,
-                // A handed-off chat keeps holding the asking chat's persona grants across a
-                // relaunch until the person allows its own (#1362, D-1362-5).
-                held: chat.held.clone(),
-                grants: self.grants_of(chat),
-                made: made_of(chat, why),
-            },
-            &self.project,
-        )?;
+        let start = purlis_core::start::Start {
+            profile: Some(profile),
+            persona: chat.persona.clone(),
+            name: chat.name.clone(),
+            cwd: chat.cwd.clone(),
+            resume: chat.resume.clone(),
+            // The chat's own footer choice, brought back with it. It rides on the
+            // environment, which is rebuilt at every start, so a relaunch that did not
+            // carry it would silently blank a footer the operator had turned on.
+            show_footer: chat.show_footer,
+            resuming: None,
+            without_sandbox: opt_out,
+            // A handed-off chat keeps holding the asking chat's persona grants across a
+            // relaunch until the person allows its own (#1362, D-1362-5).
+            held: chat.held.clone(),
+            grants: self.grants_of(chat),
+            made: made_of(chat, why),
+        };
+        // **Pool setup's Get help chat is held from every cluster at each start** (#4497,
+        // story 60), as at its first: a relaunch, a restart and a move all come through here.
+        let ready = purlis_core::poolsetup::help::ready_again(chat, &start, &self.project)?;
         // The core's start knows no chat, so it says "nothing recorded"; this chat may know
         // better — a workspace rename left it without its conversation (charter#367).
         let ready = purlis_core::start::Ready {
@@ -4278,13 +4289,15 @@ impl Chats {
                 // What the chat's next start would be made as.
                 made: made_of(&chat, Why::Relaunch),
                 grants: with.grants.clone(),
+                // Compiled as its next start compiles it (`start_recorded_checked`).
+                held_from_clusters: chat.held_from_clusters,
             };
             let known = compiled
                 .iter()
                 .find(|(one, _)| *one == key)
                 .map(|(_, now)| now.clone());
             let now = known.unwrap_or_else(|| {
-                let now = match purlis_core::sandbox::decide_granted(
+                let decide = || match purlis_core::sandbox::decide_granted(
                     key.harness,
                     &self.project,
                     machine,
@@ -4304,6 +4317,11 @@ impl Chats {
                         CompiledNow::Unconfined
                     }
                     Err(_) => CompiledNow::Refused,
+                };
+                let now = if key.held_from_clusters {
+                    purlis_core::sandbox::policy::holding_from_clusters(decide)
+                } else {
+                    decide()
                 };
                 compiled.push((key, now.clone()));
                 now
@@ -5603,9 +5621,11 @@ impl Chats {
         // A task whose harness says it may not run in auto starts asking, and its pane says why
         // (#6315).
         let mut hooks = hooks;
-        // The words that set its mode, as its attendance fact reads them (T1-44): the
-        // profile's own, then those purlis adds for a task's level. Never a line the chat sends.
-        let mut sets_its_mode = command.clone();
+        // **How purlis starts it, for its attendance fact** (T1-18, R-106): the profile's own
+        // words and those purlis adds for a task's mode, never a line the chat sends.
+        let mut started_in: Vec<String> = std::iter::once(program.clone())
+            .chain(command.iter().cloned())
+            .collect();
         if let Some(harness) = harness.filter(|_| !on_the_runner) {
             let start = purlis_core::dispatchmode::task_start(
                 harness,
@@ -5614,7 +5634,7 @@ impl Chats {
                 chat.graded,
                 &purlis_core::harness_plugin::Env::of(&env),
             );
-            sets_its_mode.extend(start.words.iter().cloned());
+            started_in.extend(start.words.iter().cloned());
             hooks.extend(start.words);
             late.extend(start.said);
         }
@@ -5742,6 +5762,12 @@ impl Chats {
             whose.store(session, std::sync::atomic::Ordering::SeqCst);
             lock(&self.starting_as).insert(session, chat.persona.clone());
             lock(&self.named_while_starting).insert(session, None);
+            // **Its attendance fact** (T1-18, #6409; R-106, R-318, Q271, Q275): held from here,
+            // before its program exists, so its very first hook's report lowers it. Set by how
+            // purlis started it, and never more attended than the fact it had, as this app held
+            // it or its record kept it, so a resume, a relaunch and a reattach carry an
+            // unattended chat forward.
+            self.began_attended_or_not(session, chat, harness, on_the_runner, &started_in);
             if !reattaching && !on_the_runner && chat.runs_on.is_none() {
                 lock(&self.starting_at).insert(
                     session,
@@ -5947,6 +5973,7 @@ impl Chats {
                 lock(&self.starting_as).remove(&announced);
                 lock(&self.named_while_starting).remove(&announced);
                 lock(&self.starting_at).remove(&announced);
+                lock(&self.attendance).remove(&announced);
             }
             if announced > 0
                 && let Some(gone) = lock(&self.never_started).as_ref()
@@ -6052,27 +6079,13 @@ impl Chats {
                 under.identity.run = run;
             }
         }
-        // Its attendance fact (T1-17, T1-44): a start in the place of a chat still held here
-        // carries the fact it had forward, never rebuilding it as attended (R-318). Keeping it
-        // across the app's restarts is #6409's.
-        let begun = if on_the_runner {
-            purlis_core::attendance::Begun::Runner
-        } else if chat.from.as_ref().is_some_and(|from| {
-            !from.by_person && matches!(from.mode, purlis_core::reopen::Mode::Task)
-        }) {
-            purlis_core::attendance::Begun::Task
-        } else {
-            purlis_core::attendance::Begun::Person
-        };
-        let attendance = match open.get(&session) {
-            Some(was) => purlis_core::attendance::Fact::resumed(
-                was.attendance,
-                begun,
-                harness,
-                &sets_its_mode,
-            ),
-            None => purlis_core::attendance::Fact::at_start(begun, harness, &sets_its_mode),
-        };
+        // **What its attendance fact says, on the record a restart and a resume start from**
+        // (Q275): read under `open`, so a report that lowers the fact after this read finds the
+        // record in place ([`Self::heard_attendance`]). `attendance` is taken inside `open` and
+        // never the other way round.
+        under.unattended |= lock(&self.attendance)
+            .get(&session)
+            .is_some_and(|fact| fact.unattended());
         open.insert(
             session,
             Running {
@@ -6216,6 +6229,7 @@ impl Chats {
         lock(&self.sizes).remove(&session);
         lock(&self.owed).remove(&session);
         lock(&self.models).remove(&session);
+        lock(&self.attendance).remove(&session);
         lock(&self.own_work).remove(&session);
         lock(&self.told).remove(&session);
         lock(&self.records).remove(&session);
@@ -7285,6 +7299,78 @@ impl Chats {
         }
     }
 
+    /// **Chat `session`'s attendance fact, as it begins a start** (T1-18, #6409): how purlis
+    /// starts it ([`purlis_core::attendance::Begun`]: a task a dispatch started, a chat a runner
+    /// runs, or a person's), on `harness`, in the words `started_in`, and never more attended
+    /// than the fact this app held for it or its record kept ([`Chat::unattended`]).
+    fn began_attended_or_not(
+        &self,
+        session: u32,
+        chat: &Chat,
+        harness: Option<Harness>,
+        on_the_runner: bool,
+        started_in: &[String],
+    ) {
+        use purlis_core::attendance::{Begun, Fact};
+        use purlis_core::dispatchunattended::Attendance;
+        let begun = if on_the_runner {
+            Begun::Runner
+        } else if chat
+            .from
+            .as_ref()
+            .is_some_and(|from| from.mode == purlis_core::reopen::Mode::Task)
+        {
+            Begun::Task
+        } else {
+            Begun::Person
+        };
+        let mut facts = lock(&self.attendance);
+        let held_unattended = facts.get(&session).is_some_and(|fact| fact.unattended());
+        let prior = Fact::kept(if held_unattended || chat.unattended {
+            Attendance::Unattended
+        } else {
+            Attendance::Attended
+        });
+        facts.insert(session, Fact::resumed(prior, begun, harness, started_in));
+    }
+
+    /// **A report the board took from chat `report.chat`, heard by its attendance fact**
+    /// (T1-18, R-107, Q271): only the live listener's, never a line a spool drain hands the
+    /// event log, whose mode is not proven. It can only lower the fact; written down when it
+    /// does, so a restart right after carries it.
+    pub fn heard_attendance(&self, report: &purlis_core::hookwire::Report) {
+        let lowered = {
+            let mut facts = lock(&self.attendance);
+            let Some(fact) = facts.get_mut(&report.chat) else {
+                return;
+            };
+            let was = fact.attendance();
+            fact.heard(report);
+            fact.attendance() != was
+        };
+        if lowered {
+            self.lowered_on_its_record(report.chat);
+            self.write_it_down();
+        }
+    }
+
+    /// **Chat `session`'s record says it is unattended** (Q275), once its fact is: Restart,
+    /// Restart without sandbox and Resume after End each start it under a new number from this
+    /// record, so the fact a report lowered comes with it. Taken after `attendance` is let go,
+    /// as the lock order says ([`Self::open_it_as`]'s insert reads `attendance` inside
+    /// `open`); a chat not on the board yet takes the fact as it is put there.
+    fn lowered_on_its_record(&self, session: u32) {
+        if let Some(running) = lock(&self.open).get_mut(&session) {
+            running.chat.unattended = true;
+        }
+    }
+
+    /// **Chat `session`'s attendance fact** (T1-18, #6409): what A4 reads, through the hook's
+    /// ask. `None` for a chat this app holds no fact for.
+    pub fn attendance_of(&self, session: u32) -> Option<purlis_core::attendance::Fact> {
+        lock(&self.attendance).get(&session).copied()
+    }
+
     /// What a chat's harness said, in `report`, about the model its program runs on (ADR 0087
     /// §6, #1021), kept for the record's `model` so a commit's `Assisted-by` can name it.
     ///
@@ -8088,6 +8174,7 @@ impl Chats {
             .map(|&session| (session, self.sessions.process_id(session)))
             .collect();
         let models = lock(&self.models).clone();
+        let attendance = lock(&self.attendance).clone();
         let own_work = lock(&self.own_work).clone();
         let layout = lock(&self.layout).clone();
         // **A one-job program is never written** (#4761): read before `open`, as each lock here
@@ -8205,6 +8292,12 @@ impl Chats {
                 // What its harness said this program runs on (#1021), and nothing a record put
                 // back carried from an earlier run.
                 model: models.get(&session).cloned(),
+                // Whether its attendance fact says nobody is at it (T1-18), so a relaunch never
+                // starts it attended; never taken back while it is recorded.
+                unattended: chat.unattended
+                    || attendance
+                        .get(&session)
+                        .is_some_and(|fact| fact.unattended()),
                 // What it had left running of its own as its turn last ended (#5747), and
                 // nothing a record put back carried from an earlier program: that was told.
                 own_work: own_work.get(&session).and_then(|own| own.work),
