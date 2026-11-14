@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794626309348,
+  "lastUpdate": 1794628102476,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -49014,6 +49014,48 @@ window.BENCHMARK_DATA = {
             "value": 101.52271950000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.311, 101.514, 101.523, 102.318, 102.613 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fa5e7497b9b21b9c5fdd700e17d42471be0ff7b6",
+          "message": "Docker on another machine: when the pin changes (#6270) (#6553)\n\n* Pool pin changes: name each change, keep what was found, pin a pool again (#6270)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B6AZWQZASV0XZ0AQRJ5W8J\nPurlis-Persona: steward\n\n* Check and trust again: meet a made pool's machine again and keep only the pin confirmed; make its runner again on a newly trusted engine (#6270)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B6AZWQZASV0XZ0AQRJ5W8J\nPurlis-Persona: steward\n\n* purlis pool doctor: says a changed pin in the Notice's words and exits 1 (#6270)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B6AZWQZASV0XZ0AQRJ5W8J\nPurlis-Persona: steward\n\n* Window commands for a changed pin: read what was found, check and trust again, remove by forgetting (#6270)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B6AZWQZASV0XZ0AQRJ5W8J\nPurlis-Persona: steward\n\n* Add the pin change module the earlier commits use (#6270)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B6AZWQZASV0XZ0AQRJ5W8J\nPurlis-Persona: steward\n\n* Pool setup's Connect: Check and trust again on a made pool, trusting only the key or CA shown (#6270)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B6AZWQZASV0XZ0AQRJ5W8J\nPurlis-Persona: steward\n\n* The window's Notice for a changed pin, with Check and trust again and Remove pool…; stories; changelog (#6270)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B6AZWQZASV0XZ0AQRJ5W8J\nPurlis-Persona: steward\n\n* Pools row and Remove pool for a changed pin; Make the runner again says where the old runner stays; fmt and clippy (#6270)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B6AZWQZASV0XZ0AQRJ5W8J\nPurlis-Persona: steward\n\n* Story baselines CI drew for the pin-change Notice and Connect's Check and trust again; fixture tests open by shedding the shell's steering (#6270)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7B6AZWQZASV0XZ0AQRJ5W8J\nPurlis-Persona: steward\n\n* Remove pool on a changed pin keeps its card and says why when it is refused, never that it is forgotten (#6270)\n\nremovePool answers a RemoveCame union: removed, with what stays, or refused,\nwith why. The pin-change Notice drops its card only once the pool is removed;\na refused Remove (another removal going, or the core's refusal) keeps the card\nand says why in purlis's words. Review finding 1 on #6553.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7BNH1RM9VF5Q8874EXCVXJX\nPurlis-Persona: steward\n\n* Remove of a pool whose pin changed decides from what was found, so it contacts nothing and works once the machine is unreachable (#6270)\n\npools::forget_where_untrusted decides from the changes already found\n(pinchange::found_now) instead of meeting the machine again through\ndocker_of: a pool with a recorded pin change is forgotten here with no\ncontact, even when its machine no longer answers. Review finding 2 on #6553.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7BNH1RM9VF5Q8874EXCVXJX\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-14T03:13:33Z",
+          "tree_id": "bad0acc33d51d57b0db9a0c8e678e69cca51ae99",
+          "url": "https://github.com/purlis/purlis/commit/fa5e7497b9b21b9c5fdd700e17d42471be0ff7b6"
+        },
+        "date": 1794628094237,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7036629999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.669, 0.673, 0.704, 0.728, 0.756 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6156735,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.317, 16.376, 16.616, 16.757, 16.853 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.0445195,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.280, 101.400, 102.045, 102.067, 103.317 ms"
           }
         ]
       }
