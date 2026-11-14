@@ -15,7 +15,7 @@ import { ActionResultNotice } from "./ActionResultNotice";
 import type { CloneToVouch } from "./bindings";
 import { CloneVouchNotice, cloneVouchCause } from "./CloneVouchNotice";
 import { Notice, NoticeList } from "./Notice";
-import { expectFocusInSight, untilFocused, untilSettled } from "./stories.testkit";
+import { expectFocusInSight, untilFocused } from "./stories.testkit";
 import { forgetAskForTests } from "./windowControls";
 
 const clone = (folder: string, place: string): CloneToVouch =>
@@ -258,8 +258,11 @@ export const ToTheControlThenTrusted: Story = {
 
 /** **Go to the clone a result names** (R-333): by its folder's path, or its exact name in quotes
  *  or code, never by a bare word, so folders named "clone" and "save", listed first, are not
- *  taken for the “web” the result names (its words say "Trust this clone" and "save again"). */
+ *  taken for the “web” the result names (its words say "Trust this clone" and "save again").
+ *  Not pictured: in WebKit, after Go to scrolls web's row into sight, no frame holds still
+ *  (stories runs 43586619075, 43591063550 and 43593834195). Its keyboard path is what it holds. */
 export const ToTheNamedFolder: Story = {
+  parameters: { screenshot: false },
   args: {
     result: true,
     title: "“web” was not saved",
@@ -278,10 +281,6 @@ export const ToTheNamedFolder: Story = {
           .find((one) => one.closest('[data-cause*="repos/web|"]') !== null) ?? null,
       "on web's Trust this clone",
     );
-    // Go to scrolls web's row into sight; its picture waits until the row stops moving, as one
-    // taken mid-scroll differs run to run (stories runs 43586619075 and 43591063550, WebKit).
-    const web = document.activeElement;
-    if (web !== null) await untilSettled(web);
     expectFocusInSight();
   },
 };
