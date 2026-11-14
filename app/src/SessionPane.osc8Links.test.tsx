@@ -251,6 +251,18 @@ describe("a link a program marked (OSC 8)", () => {
     expect(said).toHaveTextContent("not javascript: links.");
   });
 
+  it("names the refused target in the refusal, beside its words", async () => {
+    opens = { answer: "refused", reason: JS };
+    const { drawn } = await hovered("javascript:alert(1)", "Click here");
+    await screen.findByRole("tooltip", {}, { timeout: 2000 });
+
+    click(drawn, 8, 0, { ctrlKey: true });
+
+    const said = await screen.findByRole("dialog", { name: "Link not opened" });
+    expect(within(said).getByText("javascript:alert(1)")).toBeInTheDocument();
+    expect(within(said).getByText("Click here")).toBeInTheDocument();
+  });
+
   it("is read whole where its words wrap over two rows", async () => {
     const { term, drawn } = await opened();
     const long = `${"w".repeat(76)}rapped`;

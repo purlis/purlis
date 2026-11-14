@@ -358,7 +358,14 @@ export function LinkAnswer({
       onClose={onClose}
       data-testid="pane-link-refused"
     >
-      <CodeBlock label="The link" text={candidate.text} />
+      {candidate.kind === "osc8" && candidate.target ? (
+        <>
+          <CodeBlock label="Its text" text={candidate.text} />
+          <CodeBlock label="Where it goes" text={candidate.target} />
+        </>
+      ) : (
+        <CodeBlock label="The link" text={candidate.text} />
+      )}
     </Dialog>
   );
 }
