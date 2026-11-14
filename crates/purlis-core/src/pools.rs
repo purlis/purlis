@@ -215,6 +215,80 @@ pub fn remove_discarding(
     Ok(removed)
 }
 
+/// **Pool `name`'s Remove, where a pin change was found of it** (#6270, ADR 0123 §3): decided from
+/// `found`, the changes already found ([`crate::poolsetup::pinchange::found_now`]), so Remove
+/// never contacts the machine to decide, and forgets the pool even once the machine is
+/// unreachable. `None` where no change was found of it: the usual Remove is for it. Where one
+/// was, and `elsewhere` says the person was not told the pool is only forgotten here, nothing is
+/// done; else it is forgotten here ([`forget_untrusted`]), saying what stays on the machine.
+pub fn forget_where_untrusted(
+    config_root: &Path,
+    name: &str,
+    elsewhere: bool,
+    found: &[crate::poolsetup::pinchange::PinChange],
+) -> Option<Result<String, Refused>> {
+    if !found.iter().any(|change| change.pool == name) {
+        return None;
+    }
+    if !elsewhere {
+        return Some(Err(Refused::Other(format!(
+            "Pool {name}'s machine isn't the one you trusted any more, so nothing was removed. \
+             Look at its row, and remove it again."
+        ))));
+    }
+    Some(forget_untrusted(config_root, name))
+}
+
+/// **Removes pool `name`, on a machine whose pin no longer holds, by forgetting it here** (#6270,
+/// ADR 0123 §3): nothing is sent to that machine, so its runners' containers and homes stay there.
+/// What stays, and the commands that remove it on that machine, are answered. Refused for a pool
+/// on this machine.
+pub fn forget_untrusted(config_root: &Path, name: &str) -> Result<String, Refused> {
+    let locked = runners::lock(config_root);
+    let pool = runners::pools(config_root)?
+        .into_iter()
+        .find(|pool| pool.name() == name)
+        .ok_or_else(|| Refused::Other(format!("no pool named {name} is on this machine")))?;
+    let host = match pool.remote_engine() {
+        Some(runners::RemoteEngine::Ssh(remote)) => remote.route.host().to_owned(),
+        Some(runners::RemoteEngine::Tls(remote)) => remote.route.host().to_owned(),
+        None => {
+            return Err(Refused::Other(format!(
+                "pool {name} runs on this machine's Docker, so it is removed, never only \
+                 forgotten"
+            )));
+        }
+    };
+    let of_it: Vec<runners::Kept> = runners::read(config_root)?
+        .into_iter()
+        .filter(|kept| kept.pool() == name)
+        .collect();
+    let mut left = Vec::new();
+    for kept in &of_it {
+        runners::forget_locked(config_root, kept.name(), &locked)?;
+        let (id, volume) = (kept.made.container.as_str(), kept.made.runner.volume());
+        left.push(format!(
+            "Runner {}'s container {id} and its home volume {volume} stay on {host}, with \
+             everything chats left in them. To remove them, run this on {host}: docker \
+             container rm --force {id} && docker volume rm --force {volume}",
+            kept.name()
+        ));
+    }
+    runners::forget_pool_locked(config_root, name, &locked)?;
+    crate::machine::update(config_root, |store| {
+        for recent in &mut store.recents {
+            recent.forget_pool(name);
+        }
+    })
+    .map_err(|why| {
+        Refused::Other(format!(
+            "pool {name} was forgotten, but the workspaces that ran their chats on it could not \
+             be set back to this machine: {why}"
+        ))
+    })?;
+    Ok(left.join(" "))
+}
+
 /// `runner a`, or `runners a, b and c`, for a sentence the window shows.
 fn runners_said(names: &[String]) -> String {
     match names {
@@ -997,6 +1071,10 @@ pub enum OldHome {
     Held,
     /// It could not be read, so it is not known to hold none: the runner stays held all the same.
     Unread,
+    /// **It is on the engine trusted before** (#6270): a pool on another machine whose engine
+    /// there was trusted again. Nothing of it is read or removed on the new engine; it is
+    /// remembered as left behind (`purlis pool left-behind`).
+    Elsewhere,
 }
 
 /// **Makes the pool `name`'s runner again, once it was removed outside purlis** (#4149): Docker
@@ -1041,11 +1119,17 @@ fn make_again_as(
         .find(|pool| pool.name() == name)
         .ok_or_else(|| Refused::Other(format!("no pool named {name} is on this machine")))?;
     let old = runners::runner_for(config_root, name)?;
-    let gone = match docker
+    let (gone, elsewhere) = match docker
         .missing(&old.made, old.engine.as_deref())
         .map_err(|why| Refused::Other(why.0))?
     {
-        Some(Missing::Removed(gone)) => gone,
+        Some(Missing::Removed(gone)) => (gone, false),
+        // On another machine, `docker` reaches only the engine its pin names, so this is the one
+        // the person trusted again (#6270): the runner is made here, and nothing of the old one,
+        // on the engine trusted before, is carried, read or removed.
+        Some(Missing::OnAnotherEngine) if pool.on_another_machine() => {
+            (crate::dockerpool::Gone { home_kept: false }, true)
+        }
         // Made here, it would be a second runner on the wrong engine (#4166).
         Some(Missing::OnAnotherEngine) => {
             return Err(Refused::Other(format!(
@@ -1101,20 +1185,24 @@ fn make_again_as(
     // #4633). A home that could not be read is held too: this press is the only look it gets.
     // It reads under the runners lock, as the whole of this press runs (D-4859-2): only a look's
     // read runs outside it (#4861).
-    let old_home = match holds_a_conversation(config_root, docker, &old, &made) {
-        Ok(true) => OldHome::Held,
-        Ok(false) => OldHome::Removed,
-        Err(why) => {
-            tracing::warn!(
-                "purlis: runner {} of pool {name} was made again, and the home of the one \
-                 removed outside purlis could not be read, so it is kept until it is discarded \
-                 in Devices: {why}",
-                old.name()
-            );
-            OldHome::Unread
+    let old_home = if elsewhere {
+        OldHome::Elsewhere
+    } else {
+        match holds_a_conversation(config_root, docker, &old, &made) {
+            Ok(true) => OldHome::Held,
+            Ok(false) => OldHome::Removed,
+            Err(why) => {
+                tracing::warn!(
+                    "purlis: runner {} of pool {name} was made again, and the home of the one \
+                     removed outside purlis could not be read, so it is kept until it is \
+                     discarded in Devices: {why}",
+                    old.name()
+                );
+                OldHome::Unread
+            }
         }
     };
-    if old_home != OldHome::Removed {
+    if old_home != OldHome::Removed && old_home != OldHome::Elsewhere {
         // Its sign-ins were carried here already: a later Discard or bring back carries none
         // again.
         let held = runners::note_locked(

@@ -658,6 +658,7 @@ pub fn count_of(
         Err(PoolLink::OnAnotherEngine) => {
             Err("Docker points at another engine than the one the runner was made on".to_owned())
         }
+        Err(PoolLink::PinChanged { change }) => Err(change.said),
         Err(PoolLink::Linked) => Err("the runner did not list".to_owned()),
     }
 }

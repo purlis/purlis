@@ -1958,6 +1958,8 @@ export const commands = {
 	poolSetupKeepPoolAsItIs: __WINDOW_ONLY_RESULT,
 	poolSetupConnect: __WINDOW_ONLY_RESULT,
 	poolSetupTrust: __WINDOW_ONLY_RESULT,
+	poolSetupCheckAndTrustAgain: __WINDOW_ONLY_RESULT,
+	poolSetupTrustAgain: __WINDOW_ONLY_RESULT,
 	poolSetupTlsFiles: __WINDOW_ONLY_RESULT,
 	poolSetupChooseCluster: __WINDOW_ONLY_RESULT,
 	poolSetupInstall: __WINDOW_ONLY_RESULT,
@@ -1985,6 +1987,7 @@ export const commands = {
 	addDockerPool: __WINDOW_ONLY_RESULT,
 	removeDockerPool: __WINDOW_ONLY_RESULT,
 	dockerPoolLink: __WINDOW_ONLY_RESULT,
+	poolsPinChanged: __WINDOW_ONLY_RESULT,
 	dockerPoolsRemoved: __WINDOW_ONLY_RESULT,
 	dockerPoolMakeAgain: __WINDOW_ONLY_RESULT,
 	dockerPoolReplaceRunner: __WINDOW_ONLY_RESULT,
@@ -2703,6 +2706,8 @@ export const ENGINE_SANDBOX_NEEDED = "engine-sandbox-needed" as const;
 export const PERSONA_SCOPE_KEY = "persona/" as const;
 
 export const POOL_MINTS_WITHOUT_ASKING = "pool-mints-without-asking" as const;
+
+export const POOL_PIN_CHANGED = "pool-pin-changed" as const;
 
 export const PROJECT_READY = "project-ready" as const;
 
@@ -9127,7 +9132,12 @@ export type OldHome =
  */
 "held" | 
 /**  It could not be read, so it is kept, held, all the same. */
-"unread";
+"unread" | 
+/**
+ *  It is on the engine trusted before, on the pool's other machine (#6270): nothing of it
+ *  was read or removed on the engine trusted now, and `purlis pool left-behind` lists it.
+ */
+"elsewhere";
 
 /**  **What helps a profile over what a pool's older runner takes** (#5175): by what makes its image. */
 export type OlderRunner = 
@@ -10590,7 +10600,13 @@ export type PoolLink =
  *  Docker points at another engine than the one that made it (#4166): its container may be
  *  there still, so it is not said to be removed and Make the runner again is not offered.
  */
-{ state: "on_another_engine" };
+{ state: "on_another_engine" } | 
+/**
+ *  **Its machine's pin no longer holds** (#6270, ADR 0123 §3): another host key, CA or
+ *  engine. Nothing is sent there until the person checks it and trusts it again, and removing
+ *  the pool forgets it here, leaving its runner there.
+ */
+{ state: "pin_changed"; change: PoolPinChanged };
 
 /**
  *  **A project, and its workspaces, that name a pool** (#4678): what removing the pool sets back
@@ -10632,6 +10648,26 @@ export type PoolOwed = {
 	opened: number,
 	/**  Whether it is open in a window now, so it brings the work back on its own. */
 	open_now: boolean,
+};
+
+/**
+ *  **A pool on another machine whose pin no longer holds** (#6270, ADR 0123 §3): what the
+ *  window's Notice (cause `pool-pin-changed`) says, in the core's words, the same as `purlis pool
+ *  doctor`'s.
+ */
+export type PoolPinChanged = {
+	pool: string,
+	host: string,
+	/**  `key`, `ca` or `engine`. */
+	what: string,
+	/**
+	 *  What was pinned, and what the machine shows now: a key's or a CA's SHA-256, or an
+	 *  engine's id.
+	 */
+	pinned: string,
+	now: string,
+	title: string,
+	said: string,
 };
 
 /**  One of this machine's profiles, as a pool's runner stands with it. */

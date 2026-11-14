@@ -1080,3 +1080,93 @@ fn the_prefill_is_docker_host_where_it_is_remote_and_else_the_current_context() 
         "tcp://lab.example:2376"
     );
 }
+
+fn pin_of(text: &str) -> Pin {
+    Pin {
+        host_key: key(text),
+        engine: crate::sshroute::EnginePin::Docker("OLD:ENGINE".into()),
+    }
+}
+
+/// **Check and trust again, over SSH** (#6270): a made pool's machine met again shows the key it
+/// shows now beside the one trusted, for the person to check, and offers Trust this machine.
+#[test]
+fn a_machine_met_again_shows_the_key_it_shows_now_beside_the_one_trusted() {
+    let step = connect_of(&remote_facts(Connecting {
+        trusted: Some(pin_of(KEY)),
+        met: Some(Met {
+            key: key(OTHER),
+            known: None,
+        }),
+        ..routed("ssh://me@build-box")
+    }));
+    assert_eq!(step.next.as_ref().unwrap().id, ActionId::TrustMachine);
+    let machine = step.machine.unwrap();
+    assert_eq!(machine.trusted.unwrap().fingerprint, FINGERPRINT);
+    assert_eq!(machine.key.unwrap().fingerprint, key(OTHER).fingerprint());
+    assert!(
+        step.findings[0].contains("than the one you trusted"),
+        "{:?}",
+        step.findings
+    );
+}
+
+/// Where only the engine changed, the key shown is the one trusted, and trusting reads the
+/// engine there anew.
+#[test]
+fn a_machine_met_again_with_the_key_trusted_says_its_engine_is_trusted_anew() {
+    let step = connect_of(&remote_facts(Connecting {
+        trusted: Some(pin_of(KEY)),
+        met: Some(Met {
+            key: key(KEY),
+            known: None,
+        }),
+        ..routed("ssh://me@build-box")
+    }));
+    assert_eq!(step.next.as_ref().unwrap().id, ActionId::TrustMachine);
+    assert!(
+        step.findings[0].contains("the key you trusted"),
+        "{:?}",
+        step.findings
+    );
+    assert!(
+        step.next.unwrap().does.contains("engine"),
+        "trusting keeps the engine there now"
+    );
+}
+
+/// **Check and trust again, over TLS** (#6270): the CA the file holds now beside the one trusted.
+#[test]
+fn a_machine_over_tls_met_again_shows_the_ca_it_holds_now_beside_the_one_trusted() {
+    let files = crate::tlsroute::Files::new(
+        "/home/me/.docker/ca.pem".into(),
+        "/home/me/.docker/cert.pem".into(),
+        crate::tlsroute::KeyFrom::File("/home/me/.docker/key.pem".into()),
+    )
+    .unwrap();
+    let trusted = crate::tlsroute::Fingerprint::of_der(b"old ca");
+    let now = crate::tlsroute::Fingerprint::of_der(b"new ca");
+    let step = connect_of(&remote_facts(Connecting {
+        route: Some("tcp://build-box:2376".into()),
+        tls: Some(files),
+        trusted_tls: Some(crate::tlsroute::Pin {
+            ca: trusted,
+            engine: "OLD:ENGINE".into(),
+        }),
+        met_ca: Some(CaMet {
+            fingerprint: now,
+            subject: None,
+            file: "/home/me/.docker/ca.pem".into(),
+        }),
+        ..Connecting::default()
+    }));
+    assert_eq!(step.next.as_ref().unwrap().id, ActionId::TrustMachine);
+    let machine = step.machine.unwrap();
+    assert_eq!(machine.trusted_ca, Some(trusted.shown()));
+    assert_eq!(machine.ca.unwrap().fingerprint, now.shown());
+    assert!(
+        step.findings[0].contains("than the one you trusted"),
+        "{:?}",
+        step.findings
+    );
+}

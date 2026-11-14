@@ -207,3 +207,61 @@ fn a_key_kept_in_a_vault_entry_reaches_the_engine_and_is_left_on_no_disk() {
     );
     tlsroute::forget_vault_keys();
 }
+
+/// **A pool whose CA changed is trusted again by the CA the person confirmed, and works again**
+/// (#6270, ADR 0123 §3): the pool pinned to another CA than its file holds refuses every run and
+/// is found for the window; Check and trust again shows the CA the file holds now; that one is
+/// kept as its pin, its route and files as they were.
+#[test]
+fn a_pool_whose_ca_changed_is_trusted_again_by_the_ca_confirmed_and_works() {
+    purlis_core::unsteered!();
+    use purlis_core::poolsetup::{Pressed, pinchange};
+    let Some(fixture) = fixture() else { return };
+    let files = fixture.files("ca.pem");
+    let mut remote = fixture.trusted(&files);
+    let ca = remote.pin.ca;
+    // Pinned while the file held the other CA: it holds dind's own now.
+    remote.pin.ca = tlsroute::read_ca(&fixture.dir.join("other-ca.pem"), "dind")
+        .expect("the other CA")
+        .fingerprint;
+    let config = fixture.config();
+    let image = purlis_core::dockerpool::Image::pinned(&format!(
+        "ghcr.io/purlis/purlis-runner@sha256:{}",
+        "0".repeat(64)
+    ))
+    .expect("an image");
+    let pool =
+        purlis_core::runners::Pool::new("swapped-ca", image, purlis_core::runners::Set::default())
+            .expect("a pool")
+            .on_engine(Some(remote.clone().into()));
+    purlis_core::runners::record_pool(&config, &pool).expect("kept");
+    assert!(matches!(
+        purlis_core::sshroute::pool::docker_of(&fixture.docker, &pool),
+        Err(Finding::CaChanged { .. })
+    ));
+    assert!(
+        pinchange::found_now()
+            .iter()
+            .any(|one| one.pool == "swapped-ca" && one.what == pinchange::Changed::Ca)
+    );
+    let Pressed::MetCa(met) =
+        connecting::meet_pool(&config, &fixture.docker, "swapped-ca").expect("met again")
+    else {
+        panic!("the CA the file holds now is met");
+    };
+    assert_eq!(met.fingerprint, ca);
+    connecting::trust_pool(&config, &fixture.docker, "swapped-ca", &ca.spelled())
+        .expect("asked")
+        .expect("trusted again");
+    let again = purlis_core::runners::pools(&config)
+        .expect("the pools")
+        .into_iter()
+        .find(|one| one.name() == "swapped-ca")
+        .expect("the pool");
+    let Some(purlis_core::runners::RemoteEngine::Tls(kept)) = again.remote_engine() else {
+        panic!("still over TLS");
+    };
+    assert_eq!(kept.pin.ca, ca);
+    assert_eq!(kept.files, remote.files, "its files are as they were");
+    purlis_core::sshroute::pool::docker_of(&fixture.docker, &again).expect("it works again");
+}

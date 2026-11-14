@@ -44,6 +44,7 @@ import { SessionBusNotice } from "./SessionBusNotice";
 import { EngineDownloadNotice } from "./EngineDownloadNotice";
 import { EngineSandboxNotice } from "./EngineSandboxNotice";
 import { PoolMintingNotice } from "./PoolMintingNotice";
+import { PoolPinChangedNotice } from "./PoolPinChangedNotice";
 import { HostFailingNotice } from "./HostFailingNotice";
 import { VaultsWaitingNotice } from "./VaultsWaitingNotice";
 import { Notice, NoticeList } from "./Notice";
@@ -3199,6 +3200,19 @@ function App() {
               <EngineSandboxNotice />
               {/* A cluster pool that began minting without asking: told once, blocking nothing (#4442). */}
               <PoolMintingNotice onOpenPools={() => openSettingsAt("you.machine.pools")} />
+              {/* A pool on another machine whose pin no longer holds: Check and trust again opens
+            Pool setup on it, in the project in front or the next to come to it (#6270). */}
+              <PoolPinChangedNotice
+                onCheckAndTrust={(pool) =>
+                  void commands
+                    .poolSetupPool(pool)
+                    .catch(() => undefined)
+                    .then(() => {
+                      if (inFront !== undefined) windowDoes.openPoolSetup(inFront);
+                      else setRunElsewhereNext(true);
+                    })
+                }
+              />
 
               {/* The session host stopped unexpectedly three times in five minutes, and the window's
             supervisor stopped starting it again: Try again (#2007). */}

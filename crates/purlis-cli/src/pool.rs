@@ -123,6 +123,13 @@ pub enum PoolCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Check a pool on another machine: that its machine and engine are the ones you trusted.
+    /// It exits 1 when they aren't, or when the machine can't be reached, saying why. It opens
+    /// the pool's connection, and changes nothing.
+    Doctor {
+        /// The pool's name.
+        name: String,
+    },
     /// List the runners left on another Docker engine: a removal that found Docker answering as
     /// another engine than the one that made a runner forgot it here, and left its container
     /// and home volume there.
@@ -178,6 +185,11 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
         PoolCommand::Setup { .. } if in_a_chat => Err(
             "Pool setup reads this machine's Docker and pools, which a chat doesn't reach. Run \
              purlis pool setup in your own terminal."
+                .to_owned(),
+        ),
+        PoolCommand::Doctor { .. } if in_a_chat => Err(
+            "purlis pool doctor reaches the pool's machine, which a chat doesn't reach. Run it \
+             in your own terminal."
                 .to_owned(),
         ),
         // A chat never chooses which of the person's accounts a pool's runner holds.
@@ -277,6 +289,7 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
             crate::poolsetup::answered(name.as_deref(), *json)?;
             Ok(0)
         }
+        PoolCommand::Doctor { name } => crate::poolsetup::doctor(name),
         // A chat can't read the pool's file, so it is told what can be asked for, and no value.
         PoolCommand::Limits { json, .. } if in_a_chat => {
             let held = runners::PoolLimitsHeld {
@@ -362,7 +375,9 @@ fn writes_a_pool(command: &PoolCommand) -> bool {
         | PoolCommand::RemoveProfile { .. }
         | PoolCommand::Limit { .. } => true,
         PoolCommand::LeftBehind { remove } => *remove,
-        PoolCommand::Limits { .. } | PoolCommand::Setup { .. } => false,
+        PoolCommand::Limits { .. } | PoolCommand::Setup { .. } | PoolCommand::Doctor { .. } => {
+            false
+        }
     }
 }
 

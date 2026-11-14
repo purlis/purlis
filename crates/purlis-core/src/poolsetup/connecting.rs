@@ -180,6 +180,10 @@ pub(super) fn reading(connect: &Connecting) -> (Reading, Machine, Option<&'stati
             Some(cause(finding)),
         );
     }
+    // Met again, to be trusted again (#6270): the key it shows now, beside the one trusted.
+    if let (Some(pin), Some(met)) = (&connect.trusted, &connect.met) {
+        return met_again(machine, &host, pin, met);
+    }
     if let Some(moved) = moved_reading(connect) {
         return (moved, machine, Some(CONTEXT_MOVED));
     }
@@ -356,6 +360,9 @@ fn reading_tls(connect: &Connecting) -> (Reading, Machine, Option<&'static str>)
             Some("plain-tcp"),
         );
     }
+    if let (Some(pin), Some(met)) = (&connect.trusted_tls, &connect.met_ca) {
+        return met_again_tls(machine, &host, pin, met);
+    }
     if let Some(moved) = moved_reading(connect) {
         return (moved, machine, Some(CONTEXT_MOVED));
     }
@@ -461,6 +468,103 @@ pub(super) fn followed(connect: &Connecting) -> Option<super::Prefill> {
         route: connect.context_now.clone()?,
         context: Some(connect.docker_context.clone()?),
     })
+}
+
+/// **A made pool's machine, met again by Check and trust again** (#6270, ADR 0123 §3): the key it
+/// shows now beside the one trusted, and Trust this machine, which pins only what is confirmed.
+fn met_again(
+    mut machine: Machine,
+    host: &str,
+    pin: &Pin,
+    met: &Met,
+) -> (Reading, Machine, Option<&'static str>) {
+    machine.key = Some((&met.key).into());
+    machine.known = met.known.as_ref().map(|known| *known == met.key);
+    let (finding, does) = if met.key == pin.host_key {
+        (
+            format!(
+                "{host} shows the key you trusted. Its engine isn't the one you trusted: trust \
+                 it again to use the engine there now for the pool."
+            ),
+            format!(
+                "Keeps this key for the pool and the engine {host} runs now, then checks that \
+                 Docker answers there. The pool's runners stay on the engine trusted before."
+            ),
+        )
+    } else {
+        (
+            format!(
+                "This is the key {host} shows now, and it's different than the one you trusted \
+                 ({} trusted). Check it on {host} before you trust it: run the command under See \
+                 what this does there, and compare the two.",
+                pin.host_key.fingerprint()
+            ),
+            format!(
+                "Keeps this key for the pool in place of the one trusted, and the engine {host} \
+                 runs now, then checks that Docker answers there."
+            ),
+        )
+    };
+    (
+        Reading::to_do(
+            finding,
+            Some(Action {
+                id: ActionId::TrustMachine,
+                label: "Trust this machine".to_owned(),
+                does,
+                command: None,
+                url: None,
+            }),
+        ),
+        machine,
+        None,
+    )
+}
+
+/// [`met_again`] over Docker's TLS API: the CA the file holds now beside the one trusted.
+fn met_again_tls(
+    mut machine: Machine,
+    host: &str,
+    pin: &crate::tlsroute::Pin,
+    met: &CaMet,
+) -> (Reading, Machine, Option<&'static str>) {
+    machine.ca = Some(CaShown {
+        fingerprint: met.fingerprint.shown(),
+        subject: met.subject.clone(),
+        file: met.file.clone(),
+    });
+    let finding = if met.fingerprint == pin.ca {
+        format!(
+            "{} holds the CA you trusted. Docker on {host} isn't the engine you trusted: trust \
+             it again to use the engine there now for the pool.",
+            met.file
+        )
+    } else {
+        format!(
+            "{} holds this CA now, and it's different than the one you trusted ({} trusted). \
+             Check it is the CA Docker on {host} trusts before you trust it: run the command \
+             under See what this does there, and compare the two fingerprints.",
+            met.file,
+            pin.ca.shown()
+        )
+    };
+    (
+        Reading::to_do(
+            finding,
+            Some(Action {
+                id: ActionId::TrustMachine,
+                label: "Trust this machine".to_owned(),
+                does: format!(
+                    "Keeps this CA for the pool in place of the one trusted, and the engine {host} \
+                     runs now, then checks that Docker answers there."
+                ),
+                command: None,
+                url: None,
+            }),
+        ),
+        machine,
+        None,
+    )
 }
 
 /// What Connect to does over TLS.
@@ -819,6 +923,91 @@ pub fn trust_chosen(
         Ok(remote) => super::trusted(config, &remote).map(Ok),
         Err(finding) => Ok(Err(finding)),
     }
+}
+
+/// **Check and trust again** (#6270, ADR 0123 §3): pool `name`'s machine met again as Connect to
+/// meets a new one, without its pin: the key an SSH machine shows now, or the CA a TLS machine's
+/// file holds now, its certificate found signed by it. Nothing is kept. Refused where no pool on
+/// another machine is called `name`.
+pub fn meet_pool(
+    config: &std::path::Path,
+    docker: &crate::dockerpool::Docker,
+    name: &str,
+) -> Result<super::Pressed, crate::runners::Refused> {
+    Ok(match remote_of(config, name)? {
+        crate::runners::RemoteEngine::Ssh(remote) => match meet(docker, &remote.route) {
+            Ok(met) => super::Pressed::Met(met),
+            Err(finding) => super::Pressed::Found(finding),
+        },
+        crate::runners::RemoteEngine::Tls(remote) => {
+            match meet_tls(config, &remote.route.spelled(), &remote.files) {
+                Ok(met) => super::Pressed::MetCa(met),
+                Err(finding) => super::Pressed::Found(finding),
+            }
+        }
+    })
+}
+
+/// **Trust this machine, for a pool met again** (#6270, ADR 0123 §3): pool `name`'s machine met
+/// again and held to `fingerprint`, the key or CA the person confirmed, its engine's id read anew,
+/// and that pin kept for the pool in place of the one that no longer held
+/// ([`crate::runners::pin_again`]): its route and files stay as they were. Then the change found of
+/// it goes ([`super::pinchange::holds`]), and the pool's next run is checked against the new pin
+/// at once, since what was checked and what failed are kept by pin.
+///
+/// What went wrong is answered with nothing kept.
+pub fn trust_pool(
+    config: &std::path::Path,
+    docker: &crate::dockerpool::Docker,
+    name: &str,
+    fingerprint: &str,
+) -> Result<Result<(), Finding>, crate::runners::Refused> {
+    let again = match remote_of(config, name)? {
+        crate::runners::RemoteEngine::Ssh(remote) => {
+            match trust(docker, &remote.route, fingerprint) {
+                // The route as the pool keeps it, socket and all: only the pin changes.
+                Ok(trusted) => crate::runners::RemoteEngine::Ssh(Remote {
+                    route: remote.route,
+                    pin: trusted.pin,
+                }),
+                Err(finding) => return Ok(Err(finding)),
+            }
+        }
+        crate::runners::RemoteEngine::Tls(remote) => {
+            match trust_tls(
+                docker,
+                &remote.route.spelled(),
+                &remote.files,
+                fingerprint,
+                config,
+            ) {
+                Ok(trusted) => crate::runners::RemoteEngine::Tls(crate::tlsroute::Remote {
+                    pin: trusted.pin,
+                    ..remote
+                }),
+                Err(finding) => return Ok(Err(finding)),
+            }
+        }
+    };
+    crate::runners::pin_again(config, name, &again)?;
+    super::pinchange::holds(name);
+    Ok(Ok(()))
+}
+
+/// Pool `name`'s engine on another machine, as `config` keeps it.
+fn remote_of(
+    config: &std::path::Path,
+    name: &str,
+) -> Result<crate::runners::RemoteEngine, crate::runners::Refused> {
+    crate::runners::pools(config)?
+        .into_iter()
+        .find(|pool| pool.name() == name)
+        .and_then(|pool| pool.remote_engine().cloned())
+        .ok_or_else(|| {
+            crate::runners::Refused::Other(format!(
+                "no pool on another machine is called {name} here"
+            ))
+        })
 }
 
 /// **What Connect to finds over TLS** (#6267): the CA `files` name, read, and the machine at

@@ -40,6 +40,7 @@ pub mod cluster;
 pub mod connecting;
 pub mod help;
 pub mod install;
+pub mod pinchange;
 pub mod signins;
 pub mod trying;
 
@@ -763,6 +764,13 @@ fn pool_reading(facts: &Facts) -> Reading {
         ),
         Runner::Gone => make_again(format!(
             "The runner of pool {name} was removed outside purlis."
+        )),
+        // On another machine, the engine there was trusted again (#6270): the runner is on the
+        // one trusted before, and is made again on this one.
+        Runner::OnAnotherEngine if facts.connect.is_some() => make_again(format!(
+            "The runner of pool {name} is on another engine, the one you trusted before on {}, \
+             and Docker there now is a new one.",
+            made_on(facts)
         )),
         Runner::OnAnotherEngine => Reading::attention(
             format!("The runner of pool {name} was made on another Docker than this one."),
@@ -1527,8 +1535,16 @@ pub fn read_pressed(
             .and_then(|chosen| chosen.docker_context.clone());
     }
     match pressed {
-        Some(Pressed::Met(met)) => connect.met = Some(met),
-        Some(Pressed::MetCa(met)) => connect.met_ca = Some(met),
+        // Met again by Check and trust again (#6270): what it shows now stands in place of the
+        // change that was found, for the person to check.
+        Some(Pressed::Met(met)) => {
+            connect.met = Some(met);
+            connect.finding = None;
+        }
+        Some(Pressed::MetCa(met)) => {
+            connect.met_ca = Some(met);
+            connect.finding = None;
+        }
         Some(Pressed::Found(finding)) => connect.finding = Some(finding),
         None => {}
     }
