@@ -882,8 +882,10 @@ const playDoctor =
     await expect(canvas.getByText(title)).toBeVisible();
     const list = within(canvas.getByRole("list", { name: `What purlis checked on ${host}` }));
     await expect(list.getAllByRole("listitem")).toHaveLength(lines);
+    // Opened by the keyboard, so no pointer is left on it for the picture to catch mid-hover.
     const see = canvas.getByRole("button", { name: "See what this does" });
-    await userEvent.click(see);
+    see.focus();
+    await userEvent.keyboard("{Enter}");
     await expect(canvas.getByRole("button", { name: /Copy/ })).toBeVisible();
     const first = canvas.getAllByRole("button", {
       name: /Check again|Change the machine|Check and trust again/,
