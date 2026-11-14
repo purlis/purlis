@@ -251,7 +251,7 @@ import { PersonaMarks, ReloadPersonaMarks } from "./PersonaMark";
 import { usePersonaMarks } from "./usePersonaMarks";
 import { taskChangesTitle, taskChangesView } from "./taskChanges";
 import { heldFor as blockHeldFor, type HeldBlock, useSandboxBlocks } from "./sandboxBlocks";
-import { finishUpdates, groupedFinishes, useFinishedTurns } from "./finishRows";
+import { finishAsksOf, finishUpdates, groupedFinishes, useFinishedTurns } from "./finishRows";
 import { taskBlockGroups, whoseOf, withoutGrouped, type TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksAnswered, TaskBlocksNotice } from "./TaskBlocksNotice";
 import {
@@ -11309,6 +11309,18 @@ export const PlaneView = memo(function PlaneView({
    */
   /** Each chat's finishes as the core counts them, asked as a turn ends (T1-31, R-178). */
   const finishedTurns = useFinishedTurns(plane, chats);
+  /** The window-only asks no chat waits on, each on its chat's finish row (T1-42, R-329). */
+  const onFinishRows = questions?.on_finish_rows ?? NO_ASKS;
+  const finishAsks = useMemo(
+    () =>
+      finishAsksOf({
+        plane,
+        turns: finishedTurns,
+        asks: onFinishRows,
+        reread: () => asksMoved(plane),
+      }),
+    [plane, finishedTurns, onFinishRows],
+  );
   const derivedUpdates = useMemo(() => {
     const at = seenAt();
     return [
@@ -11321,7 +11333,7 @@ export const PlaneView = memo(function PlaneView({
       ...browserAskUpdates(browserAsksEnded, nameOf),
       ...reportSentUpdates(sentDrafts),
       // Each chat's turn that ended, or run that failed: its finish row (T1-31, R-241).
-      ...finishUpdates(finishedTurns, nameOf),
+      ...finishUpdates(finishedTurns, nameOf, onFinishRows),
       // A chat that reads Stuck? (#6014): a Should-know line while it does.
       ...stuckUpdates(noticedChats, nameOf, at),
       // A chat another chat started, announced and not looked at yet (#4759).
@@ -11337,6 +11349,7 @@ export const PlaneView = memo(function PlaneView({
     sidebar,
     browserAsksEnded,
     finishedTurns,
+    onFinishRows,
     sentDrafts,
     noticedChats,
     finishedTasks,
@@ -11467,7 +11480,11 @@ export const PlaneView = memo(function PlaneView({
     const open = (session: number | null) =>
       session !== null && tabHolding(tabs, session) !== undefined ? session : undefined;
     // Identical finish rows of several chats are one row (R-181): it reads and puts away each.
-    const grouped = keptUpdates === undefined ? undefined : groupedFinishes(keptUpdates);
+    // A finish row a window-only ask sits on stands alone, its control for its chat (R-329).
+    const grouped =
+      keptUpdates === undefined
+        ? undefined
+        : groupedFinishes(keptUpdates, new Set(finishAsks.keys()));
     const members = new Map(grouped?.map(({ update, keys }) => [update.key, keys]));
     const each = (keys: readonly string[]) => keys.flatMap((key) => members.get(key) ?? [key]);
     const rows = grouped?.map(({ update, keys }): UpdateRow => {
@@ -11485,6 +11502,9 @@ export const PlaneView = memo(function PlaneView({
           : session !== undefined
             ? () => (showChat(session), read())
             : undefined;
+      // A window-only ask no chat waits on, on its chat's finish row (T1-42, R-329).
+      const onIt = finishAsks.get(update.key);
+      if (onIt !== undefined) return { update, go, read, dismiss: put, ...onIt };
       const refused = away.get(update.key);
       if (update.kind === "refused-away" && refused !== undefined)
         return { update, ...awayRow(refused, (one, how) => onAway?.(plane, one, how), put) };
@@ -11593,6 +11613,7 @@ export const PlaneView = memo(function PlaneView({
     };
   }, [
     keptUpdates,
+    finishAsks,
     settleUpdates,
     sentDrafts,
     finishedTasks,

@@ -23,6 +23,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   commands,
   type Asking,
+  type CloneToVouch,
   type EntriesOf,
   type GrantLevel,
   type PlaneChanged,
@@ -123,6 +124,32 @@ export function notSnoozed<Row extends { plane: string; session: number }>(
 /** The earlier of two times, either of which may be missing. */
 const firstOf = (one: number | null, two: number | null): number | null =>
   one === null ? two : two === null ? one : Math.min(one, two);
+
+/**
+ * **Trusts each of `clones`** (R-336, R-337): the clone Notice's own press on each, at the one
+ * address its remote names, for Trust all and for the clones Choose… ticked. Each clone it trusts
+ * leaves the ask; one it can't is said, and the rest are still trusted. Answers what was refused,
+ * or nothing.
+ */
+export async function trustEach(
+  plane: string,
+  clones: readonly CloneToVouch[],
+): Promise<string | undefined> {
+  const refused: string[] = [];
+  for (const clone of clones) {
+    if (clone.place === null) {
+      refused.push(
+        `${clone.folder}'s remote names more than one address, so purlis didn't trust it. Give origin one address, then trust it.`,
+      );
+      continue;
+    }
+    const trusted = await commands
+      .vouchClone(plane, clone.folder, clone.place)
+      .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+    if (trusted.status === "error") refused.push(trusted.error);
+  }
+  return refused.length === 0 ? undefined : refused.join(" ");
+}
 
 /** Each project's asks, by its id: the last whole list the core derived for it. */
 export function useAsks(planes: readonly string[]): {
@@ -238,6 +265,8 @@ function listReader(
           // And none a cool-off holds (#6010).
           cooling: listed?.cooling ?? [],
           cooling_until: listed?.cooling_until ?? null,
+          // And none on a chat's finish row (T1-42, R-329).
+          on_finish_rows: listed?.on_finish_rows ?? [],
         };
         // **An answer that says what the last one said changes nothing** (#4727): every burst of
         // a busy chat's moves reads the list again, and a fresh list each time drew the whole
@@ -878,20 +907,8 @@ export async function answerTaken(
         // clone Notice's own press on each, at the one address its remote names. Each clone it
         // trusts leaves the ask; one it can't is said, and the rest are still trusted.
         if (option !== "trust-all") break;
-        const refused: string[] = [];
-        for (const clone of path.clones) {
-          if (clone.place === null) {
-            refused.push(
-              `${clone.folder}'s remote names more than one address, so purlis didn't trust it. Give origin one address, then trust it.`,
-            );
-            continue;
-          }
-          const trusted = await commands.vouchClone(plane, clone.folder, clone.place);
-          if (trusted.status === "error") refused.push(trusted.error);
-        }
-        return refused.length === 0
-          ? { status: "ok" }
-          : { status: "error", error: refused.join(" ") };
+        const refused = await trustEach(plane, path.clones);
+        return refused === undefined ? { status: "ok" } : { status: "error", error: refused };
       }
       case "workspace-removal":
         // Keep puts the question away. Remove… removes nothing (qw356): it opens the window's

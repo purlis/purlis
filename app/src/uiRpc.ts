@@ -3766,6 +3766,13 @@ export type Asking = {
 	 *  again then.
 	 */
 	cooling_until?: number | null,
+	/**
+	 *  **The window-only asks no chat waits on** (T1-42, R-329, Q181): each a chat's whose turn
+	 *  has ended, drawn on that chat's finish row with its control. Listed apart from
+	 *  [`Asking::asks`], so neither the ✋, Asks nor a notification counts them: a Blocking ask
+	 *  is one a chat waits on. Only [`every_ask`] puts any here ([`finish_rows_apart`]).
+	 */
+	on_finish_rows?: Shown[],
 };
 
 /**  What a chat's row says while it is at its task limit. */
@@ -5148,6 +5155,8 @@ export type CloneToVouch = {
 	place: string | null,
 	/**  Every address its remote names now, each once. */
 	places: string[],
+	/**  When it was made, in seconds since 1970, where its disk keeps a creation time (R-337). */
+	made: number | null,
 };
 
 /**  What [`CLOSE_HANDED`] carries: the project and the chats a link's close would end. */

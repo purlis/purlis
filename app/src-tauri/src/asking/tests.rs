@@ -3260,6 +3260,7 @@ fn a_snoozed_chats_asks_are_listed_apart_until_it_asks_something_new() {
         snoozed_until: None,
         cooling: Vec::new(),
         cooling_until: None,
+        on_finish_rows: Vec::new(),
     };
 
     let split = snoozed_apart(
@@ -3311,6 +3312,7 @@ fn a_chat_snoozed_for_an_hour_says_when_it_comes_back_and_is_listed_again_then()
         snoozed_until: None,
         cooling: Vec::new(),
         cooling_until: None,
+        on_finish_rows: Vec::new(),
     };
 
     let split = snoozed_apart(listing(), Some(&store), &root, NOW + 3_599);
