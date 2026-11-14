@@ -259,6 +259,7 @@ export const WHOLE_TREE_GUARDS = [
   { crate: "purlis-core", test: "every_first_party_source_file_carries_its_licence_header" },
   { crate: "purlis-core", test: "no_tracked_file_is_one_a_sandboxed_chat_may_not_write" },
   { crate: "purlis-core", test: "a_no_seed_mark_is_made_only_in_the_window" },
+  { crate: "purlis-core", test: "only_attendance_compares_permission_mode_with_bypass" },
 ];
 
 // The files at the root a change to which runs the docs alone: what an agent reads to steer

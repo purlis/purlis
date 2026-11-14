@@ -206,6 +206,12 @@ impl Plane {
     /// With a profile `name` the project offers and this machine approved, whose own
     /// command switches the harness's permission prompts off.
     fn with_a_profile_that_asks_nobody(self, name: &str) -> Self {
+        self.with_a_profile_whose_command_adds(name, "--dangerously-skip-permissions")
+    }
+
+    /// With a profile `name` the project offers and this machine approved: `work`'s harness,
+    /// whose own command adds `flag`.
+    fn with_a_profile_whose_command_adds(self, name: &str, flag: &str) -> Self {
         let local = self.root.join(purlis_core::profiles::LOCAL_FILE);
         // `work`'s own stand-in: on the sandbox-only `work` of the child
         // [`ran_on_a_sandbox_only_stand_in`] started, the `claude` its `PATH` finds.
@@ -219,8 +225,8 @@ impl Plane {
         };
         let mut text = std::fs::read_to_string(&local).expect("the local file");
         text.push_str(&format!(
-                "[harness.{name}]\nkind = \"claude\"\ncommand = [{work:?}, \"--dangerously-skip-permissions\"]\n"
-            ));
+            "[harness.{name}]\nkind = \"claude\"\ncommand = [{work:?}, {flag:?}]\n"
+        ));
         std::fs::write(&local, text).expect("the profile");
         let set = purlis_core::profiles::current(&self.root);
         purlis_core::profiletrust::record_launched(
@@ -6687,7 +6693,7 @@ fn a_dispatch_names_its_profile_among_the_project_s_and_no_other() {
 
 #[test]
 fn a_chat_nobody_is_at_is_refused_what_no_standing_grant_covers_and_nothing_is_held() {
-    let plane = a_plane_with_personas();
+    let plane = a_plane_with_a_profile_that_asks_nobody();
     let planes = planes_recording_events(&plane.root.join("events"));
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
@@ -6725,44 +6731,81 @@ fn a_chat_nobody_is_at_is_refused_what_no_standing_grant_covers_and_nothing_is_h
     // Its own persona needs no grant.
     let (own, _) = dispatch(&held, &id, &Tickets::default(), asking, None, "tidy up");
     assert!(matches!(own, Answer::Dispatched { .. }), "{own:?}");
-    // And a chat started again in its place is marked afresh.
+    // Its fact goes with it, and a chat started again in its place is judged by its own held
+    // fact (T1-22): a new chat from a person is attended, and one whose profile switches the
+    // prompts off starts unattended, before its harness says anything.
     let _ = held.close_chat(asking);
+    assert_eq!(held.chats().attendance_of(asking), None);
+    let again = a_chat_without_sandbox_as(&held, &plane.root, Some("steward"), &plane.root);
     assert_eq!(
-        held.unattended().mark(asking).attendance(),
+        attendance(&held, again),
         purlis_core::dispatchunattended::Attendance::Attended
+    );
+    let asks_nobody = a_chat_on_profile(&held, &plane.root, "yolo");
+    assert_eq!(
+        attendance(&held, asks_nobody),
+        purlis_core::dispatchunattended::Attendance::Unattended
     );
 }
 
 #[test]
 fn a_chat_started_with_its_prompts_off_is_unattended_before_its_harness_says_so() {
-    let plane = a_plane_with_personas();
+    let flags = [
+        ("skips", "--dangerously-skip-permissions"),
+        ("bypasses", "--permission-mode=bypassPermissions"),
+    ];
+    let plane = flags
+        .iter()
+        .fold(a_plane_with_personas(), |plane, (profile, flag)| {
+            plane.with_a_profile_whose_command_adds(profile, flag)
+        });
     let planes = planes();
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
-    let profiles = purlis_core::profiles::derive(&plane.root);
-    let asks = Chat {
-        program: "claude".to_owned(),
-        profile: Some("work".to_owned()),
-        ..Default::default()
-    };
+    // Started by a person on a profile that asks: attended, by the fact the app holds.
+    let asks = a_chat_on_profile(&held, &plane.root, "work");
     assert_eq!(
-        attendance(&held, 41, &asks, &profiles),
+        attendance(&held, asks),
         purlis_core::dispatchunattended::Attendance::Attended
     );
-    for flag in [
-        "--dangerously-skip-permissions",
-        "--permission-mode=bypassPermissions",
-    ] {
-        let bypassed = Chat {
-            args: vec![flag.to_owned()],
-            ..asks.clone()
-        };
+    // Started on a profile whose own words switch the prompts off: unattended from its start,
+    // before any hook of its harness has reported.
+    for (profile, flag) in flags {
+        let bypassed = a_chat_on_profile(&held, &plane.root, profile);
         assert_eq!(
-            attendance(&held, 41, &bypassed, &profiles),
+            attendance(&held, bypassed),
             purlis_core::dispatchunattended::Attendance::Unattended,
             "{flag}"
         );
     }
+}
+
+/// A chat a person starts through the app on `profile`, as [`a_chat_as`] starts one, running
+/// as no persona.
+fn a_chat_on_profile(held: &Held, root: &Path, profile: &str) -> u32 {
+    let start = purlis_core::start::Start {
+        profile: Some(profile.to_owned()),
+        name: "1".to_owned(),
+        cwd: Some(root.to_path_buf()),
+        made: if crate::sandboxing::claude_is_wrapped_here_for_tests() {
+            purlis_core::sandbox::Made::Window
+        } else {
+            purlis_core::sandbox::Made::default()
+        },
+        ..Default::default()
+    };
+    let ready = purlis_core::start::ready(&start, root).expect("the person's chat starts");
+    let chat = Chat {
+        program: ready.program.clone(),
+        cwd: ready.cwd.clone(),
+        name: "1".to_owned(),
+        resume: ready.session.clone(),
+        profile: Some(profile.to_owned()),
+        ..Default::default()
+    };
+    held.chats()
+        .start_ready(&chat, &ready, STARTING)
+        .expect("it runs")
 }
 
 /// [`a_plane_with_personas`], with an approved profile `yolo` that asks nobody and a

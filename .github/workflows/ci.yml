@@ -1734,6 +1734,7 @@ jobs:
           every_first_party_source_file_carries_its_licence_header::
           no_tracked_file_is_one_a_sandboxed_chat_may_not_write::
           a_no_seed_mark_is_made_only_in_the_window::
+          only_attendance_compares_permission_mode_with_bypass::
           no_old_name_is_spelled_in_the_window_or_its_assets::
           every_deferral_names_its_ticket::
           every_repo_path_comes_from_the_resolver::
