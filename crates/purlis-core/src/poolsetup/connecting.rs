@@ -1021,7 +1021,7 @@ pub fn admin_words(machine: &Machine, found: &[String], see: &super::See) -> Str
          {note}\n\
          {commands}\n\
          \n\
-         Once it's done, tell me, and I'll press Check again. Sent from purlis {version}. It \
+         Once it's done, tell me, and I'll have purlis check again. Sent from purlis {version}. It \
          holds no password, token, key or credential.",
         found = found.join("\n"),
         machine = machine_lines(machine).join("\n"),

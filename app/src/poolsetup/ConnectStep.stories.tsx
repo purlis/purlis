@@ -1187,7 +1187,7 @@ The first adds sam to the docker group on build-box, asking for your password th
 ssh -t sam@build-box sudo usermod -aG docker sam
 ssh sam@build-box docker info --format '{{.ID}}'
 
-Once it's done, tell me, and I'll press Check again. Sent from purlis 0.5.2. It holds no password, token, key or credential.`,
+Once it's done, tell me, and I'll have purlis check again. Sent from purlis 0.5.2. It holds no password, token, key or credential.`,
   },
 );
 
