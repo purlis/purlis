@@ -256,6 +256,16 @@ impl Report {
                             .adapter()
                             .reported_mode(field("permission_mode").as_deref())
                     }),
+                // The mode attendance hears (T1-17): only Claude Code's, by its measured
+                // strings, so no other harness is read by them.
+                claude_code_mode: chat_harness(env)
+                    .as_deref()
+                    .and_then(crate::harness::Harness::of_registry_or_kind)
+                    .and_then(|harness| {
+                        harness
+                            .adapter()
+                            .attendance_mode(field("permission_mode").as_deref())
+                    }),
                 // Only a `Stop` of the chat's own can end its turn, so only there is it asked.
                 helpers_at_work: event == Event::Stop
                     && chat_harness(env).as_deref() == Some(BACKGROUND_TASKS_HARNESS)

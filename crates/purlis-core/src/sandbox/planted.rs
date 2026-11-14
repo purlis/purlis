@@ -28,6 +28,72 @@ const SKIPPED: [&str; 3] = [".git", "node_modules", "target"];
 /// (`workspaces/<name>/.worktrees/<repo>/<branch>`).
 pub const CLONE_DEPTH: usize = 6;
 
+/// The walks one look has made: [`directories_to`] by its root and depth, and
+/// [`git_folders_found`] by the folders it searched.
+#[derive(Default)]
+struct Walked {
+    directories: std::collections::HashMap<(PathBuf, usize), Vec<PathBuf>>,
+    git_folders: std::collections::HashMap<Vec<PathBuf>, Found>,
+}
+
+/// What [`git_folders_found`] found: each pin with the folder it was found in, and the folder
+/// that crowded the search out.
+type Found = (Vec<(PathBuf, PathBuf)>, Option<PathBuf>);
+
+thread_local! {
+    static WALKED: std::cell::RefCell<Option<Walked>> = const { std::cell::RefCell::new(None) };
+}
+
+/// **`work`, with each walk of the plane made once** (felt speed round 4, H10): every
+/// [`directories`] and every search for repositories ([`git_folder_pins_whole`],
+/// [`git_folders_kept`]) in it is answered by the first one, for the same folders.
+///
+/// For one look at the chats open, never longer: the window's look at which chats run on an
+/// older sandbox compiles once for each distinct start, and each compile walked the plane again,
+/// about 60% of its time. The walks are what a compile reads of the plane's folders, so the
+/// look's compiles judge one plane, read once, and the next look reads it again. A chat's own
+/// start does not open one: it walks the plane as it starts.
+///
+/// This thread's: a look runs on one. A look inside another shares its walks.
+pub fn read_once<T>(work: impl FnOnce() -> T) -> T {
+    /// Drops the walks when the outermost look ends, however it ends.
+    struct Looking(bool);
+    impl Drop for Looking {
+        fn drop(&mut self) {
+            if self.0 {
+                WALKED.with_borrow_mut(|walked| *walked = None);
+            }
+        }
+    }
+    let _looking = Looking(WALKED.with_borrow_mut(|walked| {
+        let outermost = walked.is_none();
+        if outermost {
+            *walked = Some(Walked::default());
+        }
+        outermost
+    }));
+    work()
+}
+
+/// `walk`'s answer, kept in the look this thread is in (`read`, `keep`), or `walk` itself
+/// outside one. The borrow is not held across `walk`.
+fn walked_once<V: Clone>(
+    read: impl Fn(&Walked) -> Option<V>,
+    keep: impl FnOnce(&mut Walked, V),
+    walk: impl FnOnce() -> V,
+) -> V {
+    if let Some(kept) = WALKED.with_borrow(|walked| walked.as_ref().and_then(&read)) {
+        return kept;
+    }
+    let answer = walk();
+    WALKED.with_borrow_mut(|walked| {
+        if let Some(walked) = walked {
+            keep(walked, answer.clone());
+        }
+    });
+    answer
+}
+
 /// `root` and the directories below it, to [`DEPTH`], without links or [`SKIPPED`] ones.
 pub fn directories(root: &Path) -> Vec<PathBuf> {
     directories_to(root, DEPTH)
@@ -35,6 +101,18 @@ pub fn directories(root: &Path) -> Vec<PathBuf> {
 
 /// [`directories`], to `depth` below `root`.
 pub fn directories_to(root: &Path, depth: usize) -> Vec<PathBuf> {
+    let key = (root.to_path_buf(), depth);
+    walked_once(
+        |walked| walked.directories.get(&key).cloned(),
+        |walked, found| {
+            walked.directories.insert(key.clone(), found);
+        },
+        || directories_walked(root, depth),
+    )
+}
+
+/// [`directories_to`], walked.
+fn directories_walked(root: &Path, depth: usize) -> Vec<PathBuf> {
     let mut found = vec![root.to_path_buf()];
     let mut looked = 0;
     let mut level = vec![root.to_path_buf()];
@@ -373,7 +451,18 @@ pub fn git_folders_kept(folders: &[PathBuf]) -> Vec<(PathBuf, PathBuf)> {
 
 /// [`git_folders_kept`], and the folder that held the most in the first search for repositories
 /// that was crowded out ([`Repositories::crowded`]).
-fn git_folders_found(folders: &[PathBuf]) -> (Vec<(PathBuf, PathBuf)>, Option<PathBuf>) {
+fn git_folders_found(folders: &[PathBuf]) -> Found {
+    walked_once(
+        |walked| walked.git_folders.get(folders).cloned(),
+        |walked, found| {
+            walked.git_folders.insert(folders.to_vec(), found);
+        },
+        || git_folders_searched(folders),
+    )
+}
+
+/// [`git_folders_found`], searched.
+fn git_folders_searched(folders: &[PathBuf]) -> Found {
     let mut crowded: Option<PathBuf> = None;
     let mut pins: Vec<(PathBuf, PathBuf)> = Vec::new();
     for folder in folders {
@@ -2850,6 +2939,41 @@ fn once_each(mut found: Vec<Resolved>) -> Vec<Resolved> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn one_look_at_the_chats_sandbox_walks_the_plane_once_and_the_next_look_walks_it_again() {
+        // **The window's look at which chats run on an older sandbox compiled each distinct
+        // start in turn, and each compile walked the plane again** (felt speed round 4, H10):
+        // the walks for its directories and its repositories were about 60% of a compile, and
+        // a look compiles once per persona and grant set. Inside one `read_once` the walks
+        // are the look's: a folder made after the first is not walked again, and the next
+        // look walks the plane anew.
+        let plane = tempfile::tempdir().expect("a plane");
+        let root = plane.path();
+        std::fs::create_dir_all(root.join("ws/first/.git")).expect("a clone");
+
+        let (dirs, pins, later_dirs, later_pins) = read_once(|| {
+            let dirs = directories(root);
+            let pins = git_folder_pins_whole(&[root.to_path_buf()]);
+            std::fs::create_dir_all(root.join("ws/second/.git")).expect("another clone");
+            (
+                dirs,
+                pins,
+                directories(root),
+                git_folder_pins_whole(&[root.to_path_buf()]),
+            )
+        });
+        assert_eq!(later_dirs, dirs, "one look walks the directories once");
+        assert_eq!(later_pins, pins, "and the repositories once");
+
+        let next_dirs = directories(root);
+        assert!(next_dirs.contains(&root.join("ws/second")), "{next_dirs:?}");
+        assert_ne!(
+            git_folder_pins_whole(&[root.to_path_buf()]),
+            pins,
+            "the next look finds the clone made since"
+        );
+    }
 
     #[test]
     fn a_hooks_path_is_read_from_the_core_section_in_any_case_and_quoting() {

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { QuizBand } from "./QuizBand";
+import { Measured } from "./slowLog";
 import {
   createContext,
   Fragment,
@@ -514,7 +515,10 @@ export function PaneFrame({
                   gone={said?.gone}
                 />
               ) : (
-                head && line.has("name") && <span className="pane-name">{head.chat.name}</span>
+                head &&
+                line.has("name") && (
+                  <span className="pane-name ui-text-heading">{head.chat.name}</span>
+                )
               )}
               {/* **Its number beside its name** (#6212): the chat's current one, so a chat
               started again says its new number; while the pane shows a task, the task's. */}
@@ -574,7 +578,7 @@ export function PaneFrame({
               {/* **harness · workspace on a pane with no foot** (spec #5191): a shell's and a
               one-job program's keep their heads. */}
               {line.has("where") && saysWhere(head, harness) && (
-                <span className="pane-head-where">
+                <span className="pane-head-where ui-text-secondary">
                   <PaneWhere
                     head={head}
                     harness={harness}
@@ -741,7 +745,7 @@ export function ChatFoot({
 /** **A chat's number on its pane's head** (#6212): `#641`, beside its name or the path to the task
  *  it shows. Its stories draw this one, so the window's and theirs cannot drift apart. */
 export function PaneNumber({ session }: { session: number }) {
-  return <span className="pane-number">{chatNumberSaid(session)}</span>;
+  return <span className="pane-number ui-text-meta">{chatNumberSaid(session)}</span>;
 }
 
 /**
@@ -1673,131 +1677,136 @@ export function LayoutPanes({
       />
     );
     return (
-      <PaneFrame
-        plane={plane}
-        tasksOn={tasksOn}
-        usingOn={usingOn}
-        pane={layout.pane}
-        tab={tab}
-        session={content.session}
-        focused={layout.pane === focused}
-        oneJob={isOneJob(content)}
-        shell={shells.has(content.session)}
-        // No close on a pane showing a task: nothing on screen ends the task, and the session's
-        // close is its tab's (#1486). A task's own pane keeps its minimise whatever it shows
-        // (#1489): switched to a task of its own, it is still the pane that is sent back.
-        closes={
-          (crumb === undefined && endedTask === undefined) ||
-          closeOf(layout.pane)?.does.verb === "sendBack"
-        }
-        alone={alone}
-        crumbs={shownPath}
-        said={
-          endedTask === undefined
-            ? undefined
-            : {
-                state: endedAs === undefined ? undefined : <StateShown shown={endedAs} />,
-                gone: (session) => !hidden.some((other) => other.session === session),
-              }
-        }
-        // **What the head says of the chat, and its right-click** (#4760): the chat's list,
-        // then this pane's rows, its close its own. A task's two ways to end are rows of its
-        // list (`command-table.md`, rule 4), no longer buttons beside its path (#1488).
-        head={head}
-        headMenu={{
-          offers,
-          tab,
-          pane: paneRowsOf(
-            layout.pane,
+      // What a chat's pane costs to draw, for a stall to name (`slowLog.ts`, H9): the one the
+      // person is in apart from the others.
+      <Measured id={layout.pane === focused ? "chat pane (focused)" : "chat pane"}>
+        <PaneFrame
+          plane={plane}
+          tasksOn={tasksOn}
+          usingOn={usingOn}
+          pane={layout.pane}
+          tab={tab}
+          session={content.session}
+          focused={layout.pane === focused}
+          oneJob={isOneJob(content)}
+          shell={shells.has(content.session)}
+          // No close on a pane showing a task: nothing on screen ends the task, and the session's
+          // close is its tab's (#1486). A task's own pane keeps its minimise whatever it shows
+          // (#1489): switched to a task of its own, it is still the pane that is sent back.
+          closes={
+            (crumb === undefined && endedTask === undefined) ||
+            closeOf(layout.pane)?.does.verb === "sendBack"
+          }
+          alone={alone}
+          crumbs={shownPath}
+          said={
+            endedTask === undefined
+              ? undefined
+              : {
+                  state: endedAs === undefined ? undefined : <StateShown shown={endedAs} />,
+                  gone: (session) => !hidden.some((other) => other.session === session),
+                }
+          }
+          // **What the head says of the chat, and its right-click** (#4760): the chat's list,
+          // then this pane's rows, its close its own. A task's two ways to end are rows of its
+          // list (`command-table.md`, rule 4), no longer buttons beside its path (#1488).
+          head={head}
+          headMenu={{
+            offers,
             tab,
-            offerFor,
-            closeOf,
-            crumb !== undefined || endedTask !== undefined,
-            alone,
-          ),
-          onPress: (offer) => onPaneDoes(layout.pane, offer),
-        }}
-        onShowChat={onShowChat}
-        from={
-          // **A task's foot names the chat that asked** (#5205, story 22): its path's last but one.
-          // A chat with a path of one, beside its task, says what any handed-off chat says.
-          (shownPath && askedFromOf(shownPath)) ?? handedFrom[content.session]
-        }
-        harness={glances[content.session]}
-        onOpenCard={(glance) => onOpenView(harnessCardView(glance.name), glance.label)}
-        workItem={workItems[content.session]}
-        // What the chat waits on the person for, whatever it writes after (#4563).
-        strip={<WaitingStrip session={content.session} waiting={waiting} />}
-        notices={
-          <>
-            {/* The prompt it is stopped on (#5215): one row, whose way goes to the terminal. */}
-            <TerminalPromptNotice session={content.session} waiting={waiting} />
-            {noticesOf(content.session)}
-            {/* The first dispatch on this machine explains the chip, on the session's own
-                pane (#1501). */}
-            {shownPath === undefined && (
-              <ChipExplained plane={plane} session={content.session} chip={explaining} />
-            )}
-          </>
-        }
-        asked={asked[layout.pane]}
-        others={hidden}
-        doing={doing}
-        ended={
-          endedTask !== undefined ? (
-            // **A task's way back is its finished row's Reopen** (#1485), in this pane, where
-            // the row says it can be reopened.
-            <EndedBand
-              session={content.session}
-              name={endedTask.path[endedTask.path.length - 1].name}
-              how={endedAs === undefined ? undefined : <StateShown shown={endedAs} />}
-              more={row === undefined ? undefined : qualifierOf(row)}
-              report={row?.report || undefined}
-              resume={row?.reopens ? () => onResumeTask(layout.pane, row) : undefined}
-              onClear={() => onClearPane(layout.pane)}
-            />
-          ) : endedChat !== undefined ? (
-            <EndedBand
-              session={content.session}
-              name={endedChat.name}
-              resume={endedChat.resumes ? () => onResumeEnded(content.session) : undefined}
-              onOpenRecord={
-                endedRecord === undefined
-                  ? undefined
-                  : () => onOpenView(sessionView(endedRecord.path), sessionTitle(endedRecord.title))
-              }
-              onClear={() => onClearPane(layout.pane)}
-            />
-          ) : ended && !restoring.has(content.session) ? (
-            <EndedBand
-              session={content.session}
-              name={chatName(content.session)}
-              resume={resumeOf(offerFor(restartId(content.session)), (offer) =>
-                onPaneDoes(layout.pane, offer),
-              )}
-              onClear={() => onClearPane(layout.pane)}
-            />
-          ) : undefined
-        }
-      >
-        {/* A chat the launch has still to start has no terminal yet (`restoring.rs`). */}
-        {restoring.has(content.session) ? (
-          <RestoringPane name={name} />
-        ) : (
-          <SessionPane
-            plane={plane}
-            session={content.session}
-            focused={layout.pane === focused}
-            onFocus={() => onFocus(layout.pane)}
-            menu={{
-              offers: paneMenuOf(offerFor, tab),
+            pane: paneRowsOf(
+              layout.pane,
               tab,
-              onPress: (offer) => onPaneDoes(layout.pane, offer),
-            }}
-            readOnly={ended || endedTask !== undefined || endedChat !== undefined}
-          />
-        )}
-      </PaneFrame>
+              offerFor,
+              closeOf,
+              crumb !== undefined || endedTask !== undefined,
+              alone,
+            ),
+            onPress: (offer) => onPaneDoes(layout.pane, offer),
+          }}
+          onShowChat={onShowChat}
+          from={
+            // **A task's foot names the chat that asked** (#5205, story 22): its path's last but one.
+            // A chat with a path of one, beside its task, says what any handed-off chat says.
+            (shownPath && askedFromOf(shownPath)) ?? handedFrom[content.session]
+          }
+          harness={glances[content.session]}
+          onOpenCard={(glance) => onOpenView(harnessCardView(glance.name), glance.label)}
+          workItem={workItems[content.session]}
+          // What the chat waits on the person for, whatever it writes after (#4563).
+          strip={<WaitingStrip session={content.session} waiting={waiting} />}
+          notices={
+            <>
+              {/* The prompt it is stopped on (#5215): one row, whose way goes to the terminal. */}
+              <TerminalPromptNotice session={content.session} waiting={waiting} />
+              {noticesOf(content.session)}
+              {/* The first dispatch on this machine explains the chip, on the session's own
+                pane (#1501). */}
+              {shownPath === undefined && (
+                <ChipExplained plane={plane} session={content.session} chip={explaining} />
+              )}
+            </>
+          }
+          asked={asked[layout.pane]}
+          others={hidden}
+          doing={doing}
+          ended={
+            endedTask !== undefined ? (
+              // **A task's way back is its finished row's Reopen** (#1485), in this pane, where
+              // the row says it can be reopened.
+              <EndedBand
+                session={content.session}
+                name={endedTask.path[endedTask.path.length - 1].name}
+                how={endedAs === undefined ? undefined : <StateShown shown={endedAs} />}
+                more={row === undefined ? undefined : qualifierOf(row)}
+                report={row?.report || undefined}
+                resume={row?.reopens ? () => onResumeTask(layout.pane, row) : undefined}
+                onClear={() => onClearPane(layout.pane)}
+              />
+            ) : endedChat !== undefined ? (
+              <EndedBand
+                session={content.session}
+                name={endedChat.name}
+                resume={endedChat.resumes ? () => onResumeEnded(content.session) : undefined}
+                onOpenRecord={
+                  endedRecord === undefined
+                    ? undefined
+                    : () =>
+                        onOpenView(sessionView(endedRecord.path), sessionTitle(endedRecord.title))
+                }
+                onClear={() => onClearPane(layout.pane)}
+              />
+            ) : ended && !restoring.has(content.session) ? (
+              <EndedBand
+                session={content.session}
+                name={chatName(content.session)}
+                resume={resumeOf(offerFor(restartId(content.session)), (offer) =>
+                  onPaneDoes(layout.pane, offer),
+                )}
+                onClear={() => onClearPane(layout.pane)}
+              />
+            ) : undefined
+          }
+        >
+          {/* A chat the launch has still to start has no terminal yet (`restoring.rs`). */}
+          {restoring.has(content.session) ? (
+            <RestoringPane name={name} />
+          ) : (
+            <SessionPane
+              plane={plane}
+              session={content.session}
+              focused={layout.pane === focused}
+              onFocus={() => onFocus(layout.pane)}
+              menu={{
+                offers: paneMenuOf(offerFor, tab),
+                tab,
+                onPress: (offer) => onPaneDoes(layout.pane, offer),
+              }}
+              readOnly={ended || endedTask !== undefined || endedChat !== undefined}
+            />
+          )}
+        </PaneFrame>
+      </Measured>
     );
   }
   // **Each side starts at the share the tab holds** (#4751), and a drag is said back by the

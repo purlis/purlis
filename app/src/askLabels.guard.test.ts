@@ -26,6 +26,9 @@ const DRAWING_ASKS = [
   "WorkspaceRemovalNotice.tsx",
   "Inbox.tsx",
   "InboxAsks.tsx",
+  // A held merge, on its row and on its chat's pane (T1-39, T1-40).
+  "MergeHoldNotice.tsx",
+  "MergeFacts.tsx",
   "PausedNotice.tsx",
   // A block's ways out (T1-33): its Chat log row, and what draws them there and on a finish row.
   "ChatLogTab.tsx",
@@ -40,6 +43,8 @@ const LABELS = [
   "Allow for everyone in this project",
   "Keep blocked",
   "Never for this pair",
+  // A held merge's word for no (R-303).
+  "Don't merge",
   // A block loop's pause (T1-36, R-217), as `asking/pauses.rs` writes them.
   "Tell it to stop trying",
   "Let it keep trying",

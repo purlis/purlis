@@ -950,7 +950,7 @@ export function Inbox({
                     id={`chats:${key}`}
                     className="inbox-chat inbox-same-chats"
                     title={
-                      <span className="inbox-chain">
+                      <span className="inbox-chain ui-text-secondary ui-text-strong">
                         {row.same.placed.map(({ ask }) => chainSaid(ask.chain)).join(", ")}
                       </span>
                     }
@@ -978,7 +978,7 @@ export function Inbox({
                   id={`chat:${group.session}`}
                   className="inbox-chat"
                   title={
-                    <span className="inbox-chain">
+                    <span className="inbox-chain ui-text-secondary ui-text-strong">
                       {(() => {
                         const persona = personaOf?.(group.session);
                         return persona ? <PersonaMark persona={persona} /> : null;

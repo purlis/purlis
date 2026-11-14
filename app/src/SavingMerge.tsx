@@ -276,7 +276,7 @@ function ConfirmMerge({
       onClose={onCancel}
       title={`Merge the ${numbered(of)} of ${of.name} as it stands?`}
       description={
-        <p className="came-back">
+        <p className="came-back ui-text-secondary">
           {`purlis merges it into ${into} now, without waiting for its checks. `}
           {of.merge.state === "red"
             ? `${of.merge.why}. `

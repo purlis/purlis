@@ -485,7 +485,7 @@ export function Welcome({
       {/* Said, not swallowed (#1719): a welcome with no list and no word reads as a machine
           that remembers nothing. A status of its own, as the eye sees it arrive. */}
       {unread !== undefined && (
-        <p className="came-back" role="status">
+        <p className="came-back ui-text-secondary" role="status">
           purlis could not read the recent projects: {unread}
         </p>
       )}

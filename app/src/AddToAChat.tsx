@@ -47,7 +47,7 @@ export function AddToAChat({
         {/* What the filter controls is here whether anything matches or not. */}
         <div id="add-to-a-chat-chats">
           {filtered && shown.length === 0 ? (
-            <p className="came-back" role="status">
+            <p className="came-back ui-text-secondary" role="status">
               {noMatchSaid(CHATS, query)}
             </p>
           ) : (

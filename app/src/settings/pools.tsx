@@ -304,7 +304,7 @@ export function RemovePool({
             : `Delete the conversations on ${runnersSaid(discarding)}?`
         }
         description={
-          <p className="came-back">
+          <p className="came-back ui-text-secondary">
             {elsewhere
               ? `They stay on the Docker engine that Docker doesn't reach now, but purlis forgets them with pool ${name} and can no longer bring them back. To keep them, cancel and keep the pool.`
               : `They are deleted with pool ${name} and cannot be brought back. To keep them, cancel and keep the pool.`}
@@ -326,7 +326,7 @@ export function RemovePool({
       title={`Remove pool ${name}?`}
       description={
         <>
-          <p className="came-back">
+          <p className="came-back ui-text-secondary">
             {elsewhere
               ? "Its runner is on another Docker engine, which Docker doesn't reach now, so its container and home stay there, with everything chats left in them. purlis forgets the pool, and says what to remove once Docker points back. There is no undo."
               : cluster
@@ -364,7 +364,7 @@ function HeldLine({ held, elsewhere }: { held: HeldRunners; elsewhere: boolean }
   if (held.state === "reading") return null;
   if (held.state === "trouble")
     return (
-      <p className="came-back">
+      <p className="came-back ui-text-secondary">
         {"purlis could not read whether its older runners still hold chats' conversations: "}
         <bdi>{held.why}</bdi>
         {". If one does, nothing is removed, and purlis says so."}
@@ -373,12 +373,12 @@ function HeldLine({ held, elsewhere }: { held: HeldRunners; elsewhere: boolean }
   if (held.held.length === 0) return null;
   return (
     <>
-      <p className="came-back pool-named-lead" id={said}>
+      <p className="came-back ui-text-secondary pool-named-lead" id={said}>
         {elsewhere
           ? "These older runners may still hold conversations from chats that ran on them. Removing the pool means purlis can no longer bring those conversations back:"
           : "These older runners may still hold conversations from chats that ran on them. Removing the pool deletes those conversations:"}
       </p>
-      <ul className="came-back pool-named-by" aria-labelledby={said}>
+      <ul className="came-back ui-text-secondary pool-named-by" aria-labelledby={said}>
         {held.held.map((runner) => (
           <li key={runner}>
             {"Runner "}
@@ -397,7 +397,7 @@ function NamedByLine({ named }: { named: NamedBy }) {
   if (named.state === "reading") return null;
   if (named.state === "trouble")
     return (
-      <p className="came-back">
+      <p className="came-back ui-text-secondary">
         {
           "Workspaces and projects set to run on it go back to this machine. purlis could not read which: "
         }
@@ -407,10 +407,10 @@ function NamedByLine({ named }: { named: NamedBy }) {
   if (named.named.length === 0) return null;
   return (
     <>
-      <p className="came-back pool-named-lead" id={said}>
+      <p className="came-back ui-text-secondary pool-named-lead" id={said}>
         These go back to this machine:
       </p>
-      <ul className="came-back pool-named-by" aria-labelledby={said}>
+      <ul className="came-back ui-text-secondary pool-named-by" aria-labelledby={said}>
         {named.named.flatMap((one) => [
           ...(one.project
             ? [
@@ -458,7 +458,7 @@ export function DiscardHeldRunner({
       onClose={onCancel}
       title={`Discard runner ${name}'s conversations?`}
       description={
-        <p className="came-back">
+        <p className="came-back ui-text-secondary">
           Its container and home are removed from your Docker, with every conversation and
           everything else its chats left in them.
         </p>
@@ -471,7 +471,7 @@ export function DiscardHeldRunner({
       onClose={onCancel}
       title="Discard them for good?"
       description={
-        <p className="came-back">
+        <p className="came-back ui-text-secondary">
           {`Runner ${name}'s conversations cannot be brought back after this. There is no undo.`}
         </p>
       }

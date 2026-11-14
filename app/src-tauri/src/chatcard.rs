@@ -180,7 +180,9 @@ pub(crate) fn keep_screen_on_close(
 ) {
     // Where this machine keeps none, nothing is kept, and what was kept goes now.
     if !purlis_core::chatscreens::keeps(root) {
-        purlis_core::chatscreens::forget_all(root);
+        if let Err(why) = purlis_core::chatscreens::forget_all(root) {
+            tracing::info!("purlis: keeping task screens is off, and {why}");
+        }
         return;
     }
     let me = dispatchrecord::ChatRef {
@@ -200,24 +202,82 @@ pub(crate) fn keep_screen_on_close(
     }
 }
 
-/// **Keeps the last screens of the task chats `chats` as the app quits** (#6305), by number and
-/// id: the ones the next launch leaves out of its put back, having finished
+/// How long a quit waits, over every project together, for the screens of the tasks that had
+/// finished (#6305): as long as it gives every plane's saving to stop.
+pub(crate) const SCREENS_AT_QUIT_WITHIN: std::time::Duration = crate::autosave::QUIT_STOPS_WITHIN;
+
+/// [`SCREENS_AT_QUIT_WITHIN`] from now: the deadline a quit's task screens are given.
+pub(crate) fn screens_by_from_now() -> std::time::Instant {
+    std::time::Instant::now() + SCREENS_AT_QUIT_WITHIN
+}
+
+/// **Starts keeping the last screens of the task chats `chats` as the app quits** (#6305), by
+/// number and id: the ones the next launch leaves out of its put back, having finished
 /// (`finished::left_out`), which never close through `Chats::close_as`. Read while their
-/// sessions are still there, before every program is ended, each on a thread of its own, so a
-/// quit waits for one screen's read at most rather than one after another.
-pub(crate) fn keep_screens_at_quit(
+/// sessions are still there, before every program is ended, each on a thread of its own.
+///
+/// **It returns at once**, and [`ScreensComing::wait_until`] waits for them: a quit starts every
+/// project's reads before it waits for any (#6508's review), so one project's ending never eats
+/// another's time. Nothing joins the threads: one still reading when the wait gives up is left
+/// to finish or to end with the app, and the screen it would have kept is not kept (a write cut
+/// off leaves only a temporary file, which the store sweeps).
+pub(crate) fn start_keeping_screens_at_quit(
     root: &std::path::Path,
-    host: &dyn crate::host::SessionHost,
+    host: &std::sync::Arc<dyn crate::host::SessionHost>,
     chats: &[(u32, String)],
-) {
-    if chats.is_empty() {
-        return;
-    }
-    std::thread::scope(|scope| {
-        for (session, id) in chats {
-            scope.spawn(move || keep_screen_on_close(root, host, *session, id));
+) -> ScreensComing {
+    let (done, finished) = std::sync::mpsc::channel();
+    let mut left = 0;
+    for (session, id) in chats {
+        let (root, host, session, id, done) = (
+            root.to_path_buf(),
+            std::sync::Arc::clone(host),
+            *session,
+            id.clone(),
+            done.clone(),
+        );
+        let spawned = std::thread::Builder::new()
+            .name("keeping a task's screen".to_owned())
+            .spawn(move || {
+                keep_screen_on_close(&root, &*host, session, &id);
+                let _ = done.send(());
+            });
+        match spawned {
+            Ok(_) => left += 1,
+            Err(why) => tracing::info!("purlis: task chat {session}'s screen was not kept ({why})"),
         }
-    });
+    }
+    ScreensComing { finished, left }
+}
+
+/// The task screens a quit is keeping, until [`Self::wait_until`] has waited for them.
+#[must_use = "a quit waits for the screens it started keeping before it ends their sessions"]
+pub(crate) struct ScreensComing {
+    finished: std::sync::mpsc::Receiver<()>,
+    left: usize,
+}
+
+impl ScreensComing {
+    /// **Waits for every screen to be kept, and no later than `by`** (#6451's review): a view
+    /// can wait out a link's and an answer's wait, or a pool's answer wait of minutes, and a
+    /// quit is not held for one.
+    pub(crate) fn wait_until(mut self, by: std::time::Instant) {
+        while self.left > 0 {
+            let wait = by.saturating_duration_since(std::time::Instant::now());
+            match self.finished.recv_timeout(wait) {
+                Ok(()) => self.left -= 1,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    tracing::info!(
+                        "purlis: {} did not come in time as purlis quit, and {} not kept",
+                        purlis_core::counts::counted(self.left, "task screen", "task screens"),
+                        purlis_core::counts::plural(self.left, "was", "were")
+                    );
+                    break;
+                }
+            }
+        }
+    }
 }
 
 /// **What `number` names** (#6214): an open chat, one open again under another number, a
@@ -258,11 +318,13 @@ pub(crate) async fn chat_screen(
 pub(crate) struct TaskScreens {
     /// `[task_screens] keep` in the project's local file, `true` where it is not set.
     pub keep: bool,
-    /// How many screens are kept now: none where `keep` is off.
+    /// How many screens are kept now. Where `keep` is off, the ones a delete left (#6451's
+    /// review): a screen that could not be deleted is still counted.
     pub kept: u32,
 }
 
-/// The project at `root`'s [`TaskScreens`], deleting every kept screen where keeping is off.
+/// The project at `root`'s [`TaskScreens`], deleting every kept screen where keeping is off and
+/// counting the ones that stayed.
 pub(crate) fn task_screens_at(root: &std::path::Path) -> TaskScreens {
     let (kept, _) = purlis_core::chatscreens::held(root);
     TaskScreens {
@@ -405,5 +467,111 @@ mod closed_record_tests {
     #[test]
     fn an_id_that_is_no_ulid_leaves_no_record() {
         assert!(closed_record(702, "702", &chat(), None, None, now()).is_none());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    use purlis_core::dispatchrecord::{self, Asker, ChatRef, Mode, Opening, Place, Worker};
+
+    use super::*;
+    use crate::host::SessionHost;
+    use crate::host::pretend::Pretend;
+
+    const TASK: &str = "01K6W0RKER000000000000000B";
+
+    /// A project whose task chat 7 (`TASK`) has a dispatch record, running on `host` and
+    /// showing a screen of its own.
+    fn a_task_on(host: &Pretend) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().expect("a folder");
+        let root = std::fs::canonicalize(dir.path()).expect("canonical");
+        let worker = ChatRef {
+            chat: 7,
+            id: Some(TASK.to_owned()),
+            name: "devops 7".to_owned(),
+            persona: Some("devops".to_owned()),
+        };
+        dispatchrecord::open(
+            &root,
+            Opening {
+                mode: Mode::Task,
+                asker: Asker {
+                    chat: ChatRef {
+                        chat: 4,
+                        id: Some("01K6ASKER0000000000000000A".to_owned()),
+                        name: "steward 4".to_owned(),
+                        persona: Some("steward".to_owned()),
+                    },
+                    workspace: None,
+                    by_person: false,
+                    session_record: None,
+                },
+                persona: Some("devops".to_owned()),
+                worker: Worker {
+                    chat: worker,
+                    harness: Some("claude".to_owned()),
+                    profile: None,
+                    session_record: None,
+                },
+                task: Some("check prod".to_owned()),
+                place: Place::default(),
+                brief: "check prod".to_owned(),
+                report_owed: true,
+            },
+            chrono::Utc::now(),
+        )
+        .expect("recorded");
+        host.open(Some(7), &crate::host::Opening::default(), &|_| {})
+            .expect("running");
+        host.shows(7, "check prod: all green\r\n");
+        (dir, root)
+    }
+
+    #[test]
+    fn a_task_screen_is_kept_at_a_quit_that_has_time_for_it() {
+        let host = Pretend::default();
+        let (_dir, root) = a_task_on(&host);
+        let shared: Arc<dyn SessionHost> = Arc::new(host);
+
+        start_keeping_screens_at_quit(&root, &shared, &[(7, TASK.to_owned())])
+            .wait_until(Instant::now() + SCREENS_AT_QUIT_WITHIN);
+
+        assert_eq!(
+            purlis_core::chatscreens::kept(&root, TASK).as_deref(),
+            Some("check prod: all green\r\n")
+        );
+    }
+
+    #[test]
+    fn a_quit_waits_for_a_task_screen_no_longer_than_its_deadline() {
+        // #6451's review: a view a host never answers (a pool's runner on a half-open link)
+        // holds the quit only until the deadline every project shares.
+        let host = Pretend::default();
+        let (_dir, root) = a_task_on(&host);
+        host.terminal_takes(Duration::from_secs(30));
+        let shared: Arc<dyn SessionHost> = Arc::new(host.clone());
+        let began = Instant::now();
+
+        start_keeping_screens_at_quit(&root, &shared, &[(7, TASK.to_owned())])
+            .wait_until(began + Duration::from_millis(300));
+
+        let waited = began.elapsed();
+        // The read left behind finishes now, into this test's folder while it is still there,
+        // and not 30 s on into one already deleted (#6508's review).
+        host.terminal_answers();
+        while purlis_core::chatscreens::kept(&root, TASK).is_none() {
+            assert!(
+                began.elapsed() < Duration::from_secs(10),
+                "the read never finished"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            waited < Duration::from_secs(2),
+            "the quit waited {waited:?}"
+        );
     }
 }

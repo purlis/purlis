@@ -29,8 +29,9 @@
   padding-inline: var(--space-5) var(--space-3);
   border: 0;
   background-color: transparent;
+  /* Its words are the meta's (`ui-text-meta` on the root, #6389), in the foot's own tier, which
+     the parts manifest names and a theme sets on the part. */
   color: var(--text-muted);
-  font-size: var(--font-size-xs);
   line-height: 1;
   white-space: nowrap;
 }
@@ -69,12 +70,10 @@
 
 [data-scope="pane-foot"][data-part="label"] {
   color: var(--text-muted);
-  font-size: var(--font-size-xs);
 }
 
 [data-scope="pane-foot"][data-part="value"] {
   color: var(--text-secondary);
-  font-size: var(--font-size-xs);
 }
 
 /* A number with no bar of its own says a warning itself: `cache`. */

@@ -212,6 +212,60 @@ fn the_machine_connect_kept_is_taken_with_its_socket_and_key_file_wherever_the_a
             ..Asked::default()
         };
         let found = remote_of(config.path(), &docker, &asked).unwrap().unwrap();
-        assert_eq!(found, remote, "{on} {with:?}");
+        assert_eq!(found, remote.clone().into(), "{on} {with:?}");
     }
+}
+
+fn tls_files(key: crate::tlsroute::KeyFrom) -> crate::tlsroute::Files {
+    crate::tlsroute::Files::new(
+        "/home/me/.docker/ca.pem".into(),
+        "/home/me/.docker/cert.pem".into(),
+        key,
+    )
+    .unwrap()
+}
+
+#[test]
+fn the_command_names_a_tcp_machines_files_and_a_vault_entry_by_its_names_alone() {
+    let asked = Asked {
+        name: "dev-box".into(),
+        image: image(),
+        on: Some("tcp://build-box:2376".into()),
+        trust: Some(
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
+        ),
+        tls: Some(tls_files(crate::tlsroute::KeyFrom::Vault {
+            plane: "/home/me/plane".into(),
+            vault: "docker-box".into(),
+            key: "TLS_KEY".into(),
+        })),
+        ..Asked::default()
+    };
+    assert_eq!(
+        asked.command(),
+        format!(
+            "purlis pool add dev-box --image {} --on tcp://build-box:2376 --trust \
+             sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --tls-ca \
+             /home/me/.docker/ca.pem --tls-cert /home/me/.docker/cert.pem --tls-key-in \
+             docker-box/TLS_KEY",
+            image()
+        )
+    );
+}
+
+#[test]
+fn a_tcp_machine_without_its_tls_files_is_refused_as_plain_tcp_and_contacts_nothing() {
+    let config = tempfile::tempdir().unwrap();
+    let docker = FakeDocker::new(&inspected());
+    let asked = Asked {
+        name: "dev-box".into(),
+        image: image(),
+        on: Some("tcp://build-box:2375".into()),
+        ..Asked::default()
+    };
+    match remote_of(config.path(), &docker.docker(), &asked) {
+        Err(Refused::Other(why)) => assert_eq!(why, crate::sshroute::PLAIN_TCP),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(docker.file("log"), "", "docker was run");
 }

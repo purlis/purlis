@@ -157,7 +157,7 @@ const MATRIX: [Row; 10] = [
     Row {
         layer: "The mode the chat runs in (attendance)",
         cells: [
-            cell("enforced (the armed hook)", owed("R-095")),
+            cell("enforced (the armed hook)", ATTENDANCE_MODE),
             cell(
                 "Can't tell (bypass reported for every chat; attendance from how purlis started it)",
                 owed("R-099"),
@@ -218,6 +218,12 @@ const MATRIX: [Row; 10] = [
         ],
     },
 ];
+
+/// R-095: Claude Code's mode, as attendance reads it, comes from its armed hook alone (T1-17).
+const ATTENDANCE_MODE: Test = Test::Named {
+    file: "tests/it/attendance_is_one_fact_purlis_sets.rs",
+    name: "claude_code_mode_is_read_only_from_the_armed_hook",
+};
 
 /// Why `matrix`'s cells fail to name a test that exists, one line per cell; empty when every
 /// cell does. `source` reads a file from this crate's root.

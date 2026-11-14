@@ -99,7 +99,7 @@ export function ForgeSignIn({
         <Button onPress={() => setWithToken(true)}>Sign in with a token…</Button>
       </p>
       {signedIn && (
-        <p className="came-back" role="status">
+        <p className="came-back ui-text-secondary" role="status">
           Signed in to {signedIn.host} as {signedIn.login}
           {signedIn.method === "imported"
             ? `, with your ${signedIn.kind === "gitlab" ? "glab" : "gh"} login`
@@ -139,7 +139,7 @@ export function ForgeSignIn({
         </p>
       )}
       {unread !== undefined && (
-        <p className="came-back" role="status">
+        <p className="came-back ui-text-secondary" role="status">
           purlis could not read what this machine has: {unread}
         </p>
       )}

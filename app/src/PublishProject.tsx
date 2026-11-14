@@ -125,13 +125,13 @@ export function PublishProject({
       }
     >
       {published ? (
-        <p className="came-back" role="status">
+        <p className="came-back ui-text-secondary" role="status">
           Published to <code className="where">{doing.at}</code>. It is this project's remote now:
           saves push there.
         </p>
       ) : (
         <>
-          <p className="came-back">
+          <p className="came-back ui-text-secondary">
             purlis makes a new repo on {forgeName} with your own account, pushes this project&apos;s
             history to it, and makes it the project&apos;s remote. Cancel takes back everything it
             made.
@@ -160,7 +160,7 @@ export function PublishProject({
               )}
             />
             {owners.kind === "signed-out" ? (
-              <p className="came-back">
+              <p className="came-back ui-text-secondary">
                 purlis publishes with your own {forgeName} account, and this machine is not signed
                 in to {forgeName}.{" "}
                 <Button

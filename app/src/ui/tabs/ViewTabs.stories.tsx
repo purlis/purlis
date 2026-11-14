@@ -281,7 +281,7 @@ function Body({ shown }: { shown: Shown }): ReactNode {
       // and the code under it (R146, #3147).
       return (
         <div className="piece-file">
-          <header className="piece-files-head" {...editorToolbar}>
+          <header {...editorToolbar("piece-files-head")}>
             <ToolbarFile path="~/IdeaProjects/purlis/purlis.toml" named={false} />
             <span className="piece-files-actions">
               <Button size="sm">Open in your editor</Button>

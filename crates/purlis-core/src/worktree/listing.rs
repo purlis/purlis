@@ -225,6 +225,20 @@ pub fn live_trees(tree: &Path, exclude: &Path) -> (Option<Vec<PathBuf>>, String)
         return (Some(vec![tree.to_path_buf()]), String::new());
     };
     let admin = common.join("worktrees");
+    // **The block's verdict first** (felt speed round 4, H10): it is the repository's, as the
+    // listing it vouches for is, so a second tree of it in the same block reads none of the
+    // `gitdir` files again. Before, each of N trees read all N, and the doctor's workspace
+    // layer row read 17,000 files for a workspace of 133 branch folders.
+    let key = real(common);
+    let held = SCOPE.with(|scope| {
+        scope
+            .borrow()
+            .as_ref()
+            .and_then(|scope| scope.answers.get(&key).cloned())
+    });
+    if let Some(held) = held {
+        return held;
+    }
     // READ, never only `lstat`: see the module docs for the three shapes git answers 0 to.
     let names = match std::fs::read_dir(&admin) {
         Ok(entries) => entries,
@@ -424,6 +438,90 @@ mod tests {
         let (trees, why) = live_trees(&tree, &exclude);
 
         assert_eq!(trees, None);
+        assert!(why.contains("git worktree repair"), "{why}");
+    }
+
+    /// A clone with two linked worktrees, made with the git on `PATH`: the clone, then each.
+    fn clone_with_two_worktrees(dir: &Path) -> (PathBuf, PathBuf, PathBuf) {
+        let git = |args: &[&str]| {
+            let ran = crate::forklock::output(
+                std::process::Command::new("git")
+                    .args(args)
+                    .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                    .env("GIT_CONFIG_NOSYSTEM", "1"),
+            )
+            .unwrap();
+            assert!(ran.status.success(), "{ran:?}");
+        };
+        let dir = crate::contain::resolved(dir).unwrap();
+        let clone = dir.join("clone");
+        let at = clone.to_str().unwrap();
+        git(&["init", "-q", at]);
+        git(&[
+            "-C",
+            at,
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "one",
+        ]);
+        let one = dir.join("one");
+        let two = dir.join("two");
+        for (piece, branch) in [(&one, "p1"), (&two, "p2")] {
+            git(&[
+                "-C",
+                at,
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                branch,
+                piece.to_str().unwrap(),
+            ]);
+        }
+        (clone, one, two)
+    }
+
+    #[test]
+    fn one_block_reads_a_repositorys_worktrees_once_whichever_of_its_trees_asks() {
+        // **The doctor's workspace layer row asked it once per tree** (felt speed round 4, H10):
+        // each of a repository's N trees read all N `gitdir` files before the block's answer
+        // was looked up, so a workspace of 133 branch folders read 17,000 files per preflight.
+        // The verdict is the repository's, as the listing it vouches for is: inside one block a
+        // second tree is answered with it, and a later block reads the files again.
+        let dir = tempfile::tempdir().unwrap();
+        let (clone, one, two) = clone_with_two_worktrees(dir.path());
+        let exclude = clone.join(".git").join("info").join("exclude");
+        let gitdir_of_two = clone
+            .join(".git")
+            .join("worktrees")
+            .join("two")
+            .join("gitdir");
+
+        {
+            let _block = answers();
+            let (first, why) = live_trees(&clone, &exclude);
+            assert_eq!(
+                first,
+                Some(vec![clone.clone(), one.clone(), two.clone()]),
+                "{why}"
+            );
+            std::fs::remove_file(&gitdir_of_two).unwrap();
+            let (second, why) = live_trees(&one, &exclude);
+            assert_eq!(
+                second, first,
+                "the block's verdict, not a second read: {why}"
+            );
+        }
+
+        let _later = answers();
+        let (later, why) = live_trees(&one, &exclude);
+        assert_eq!(later, None, "a later block reads the gitdir files again");
         assert!(why.contains("git worktree repair"), "{why}");
     }
 
