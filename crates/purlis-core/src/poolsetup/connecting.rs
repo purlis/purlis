@@ -147,6 +147,9 @@ pub struct Machine {
     /// **Who can sign in to it, as the person answered** (#6271): only they, and people they
     /// trust with their logins (`true`), or others might, or they're not sure.
     pub owned: bool,
+    /// **The pin trusted, as it is kept, spelled as JSON** (#6271): what an answer of who can
+    /// sign in is given for, handed back with it so a pin trusted again meanwhile refuses it.
+    pub pin: Option<String>,
 }
 
 /// The machine's name in a sentence: the host of the route, or "the machine".
@@ -175,6 +178,10 @@ pub(super) fn reading(connect: &Connecting) -> (Reading, Machine, Option<&'stati
         over: "ssh",
         context: connect.docker_context.clone(),
         owned: connect.owned,
+        pin: connect
+            .trusted
+            .as_ref()
+            .map(|pin| pin.to_json().to_string()),
         ..Machine::default()
     };
     if let Some(finding) = &connect.finding {
@@ -319,6 +326,10 @@ fn reading_tls(connect: &Connecting) -> (Reading, Machine, Option<&'static str>)
         engine: connect.trusted_tls.as_ref().map(|pin| pin.engine.clone()),
         context: connect.docker_context.clone(),
         owned: connect.owned,
+        pin: connect
+            .trusted_tls
+            .as_ref()
+            .map(|pin| pin.to_json().to_string()),
         ..Machine::default()
     };
     if let Some(finding) = &connect.finding {

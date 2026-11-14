@@ -157,10 +157,7 @@ impl RemoteEngine {
     pub fn pin_json(&self) -> serde_json::Value {
         match self {
             RemoteEngine::Ssh(remote) => remote.pin.to_json(),
-            RemoteEngine::Tls(remote) => serde_json::json!({
-                "ca": remote.pin.ca.spelled(),
-                "engine": remote.pin.engine,
-            }),
+            RemoteEngine::Tls(remote) => remote.pin.to_json(),
         }
     }
 
@@ -2115,10 +2112,7 @@ fn pool_to_row(pool: &Pool) -> serde_json::Value {
             row["kind"] = REMOTE_DOCKER.into();
             row["route"] = remote.route.spelled().into();
             row["tls"] = tls_to_row(&remote.files);
-            row["pin"] = serde_json::json!({
-                "ca": remote.pin.ca.spelled(),
-                "engine": remote.pin.engine,
-            });
+            row["pin"] = remote.pin.to_json();
         }
         None => {}
     }
@@ -2971,11 +2965,22 @@ pub fn set_cluster_owned(config_root: &Path, name: &str, owned: bool) -> Result<
     write(config_root, &held)
 }
 
+/// What an answer of who can sign in to a machine is refused with when its pin is no longer the
+/// one the person was shown (#6271).
+pub const PIN_MOVED_SINCE_SHOWN: &str = "the machine was trusted again since you were shown it, \
+     so purlis kept nothing: read its row again and answer for it as it is now";
+
 /// **The person marks the pool on another machine `name` as their own, as it is pinned now, or
 /// takes the mark back** (#6271, ADR 0123 §5): called only from their press in their window
 /// (`ui::WINDOW_ONLY`), never from a chat. Refused where no pool on another machine is called
-/// `name`. Written only where it changes anything.
-pub fn set_remote_owned(config_root: &Path, name: &str, owned: bool) -> Result<(), Refused> {
+/// `name`, and a mark given for `shown`, a pin that is no longer the one on disk. Written only
+/// where it changes anything.
+pub fn set_remote_owned(
+    config_root: &Path,
+    name: &str,
+    owned: bool,
+    shown: &serde_json::Value,
+) -> Result<(), Refused> {
     let _locked = lock(config_root);
     let mut held = load(config_root)?;
     let Some(at) = held
@@ -2987,6 +2992,12 @@ pub fn set_remote_owned(config_root: &Path, name: &str, owned: bool) -> Result<(
             "no pool on another machine named {name} is on this machine"
         )));
     };
+    // The answer is for the pin the person was shown: one trusted again since is another
+    // machine as far as the mark goes, and they answer for it anew.
+    let pinned = held.pools[at].remote_engine().map(RemoteEngine::pin_json);
+    if owned && pinned.as_ref() != Some(shown) {
+        return Err(Refused::Other(PIN_MOVED_SINCE_SHOWN.to_owned()));
+    }
     if held.pools[at].owned == owned {
         return Ok(());
     }

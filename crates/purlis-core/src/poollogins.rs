@@ -299,11 +299,11 @@ impl Bound {
         let unread = |why: crate::runners::Refused| NotSent::Unconfirmed(why.to_string());
         // A pool on another machine runs on its own engine, never this machine's (#6271): its
         // mark and pin decide, below, and this machine's engine says nothing of it.
-        let elsewhere = crate::runners::pools(config_root).is_ok_and(|pools| {
-            pools
-                .iter()
-                .any(|one| one.name() == pool && one.on_another_machine())
-        });
+        // Its records unread, nothing is known of where it runs: unconfirmed, never not yours.
+        let elsewhere = crate::runners::pools(config_root)
+            .map_err(unread)?
+            .iter()
+            .any(|one| one.name() == pool && one.on_another_machine());
         let local = if elsewhere {
             None
         } else {
@@ -470,7 +470,7 @@ pub fn on_another_machine_said(pool: &str, host: &str) -> String {
     format!(
         "pool {pool} is on another machine, {host}, and you haven't said that only you sign in \
          there, so purlis sends its runner no vault value, for a browser login or a tool. Only you \
-         can say so: in Settings, under Pools, answer Who can sign in to {host}? on its row"
+         can say so: in Settings › Pools, answer Who can sign in to {host}? on its row"
     )
 }
 

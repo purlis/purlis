@@ -516,7 +516,30 @@ fn an_unmarked_pool_on_another_machine_is_sent_nothing_and_says_how_to_mark_it()
     assert!(why.contains("another machine"), "{why}");
     assert!(why.contains("no vault value"), "{why}");
     assert!(why.contains("Who can sign in to build-box?"), "{why}");
-    assert!(why.contains("Settings, under Pools"), "{why}");
+    assert!(
+        why.contains("in Settings › Pools, answer Who can sign in to build-box? on its row"),
+        "{why}"
+    );
+}
+
+/// **Where this machine's records of its pools do not read, nothing is known of the pool**
+/// (#6271): not sent, and unconfirmed (try again), never "not yours", which a chat would take as
+/// the person's final word.
+#[test]
+fn a_pool_whose_records_do_not_read_is_unconfirmed_not_refused_as_not_yours() {
+    let config = a_pool_on_another_machine("unread-box", "ABCD", true);
+    std::fs::write(
+        crate::machine::dir(config.path()).join(crate::machine::RUNNERS_FILE),
+        "{ not json",
+    )
+    .unwrap();
+    let sent = Bound::over_the_link_with_kinded(
+        Err("purlis finds no Docker engine on this machine".to_owned()),
+        config.path(),
+        "unread-box",
+        Some("unread-box/unread-box"),
+    );
+    assert!(matches!(&sent, Err(NotSent::Unconfirmed(_))), "{sent:?}");
 }
 
 /// **A marked pool whose pin no longer holds is sent nothing** (#6270, #6271): the change found
@@ -575,7 +598,13 @@ fn a_local_pool_on_an_engine_elsewhere_is_refused_though_a_pool_on_another_machi
             })),
     )
     .unwrap();
-    crate::runners::set_remote_owned(config.path(), "marked-elsewhere", true).unwrap();
+    crate::runners::set_remote_owned(
+        config.path(),
+        "marked-elsewhere",
+        true,
+        &serde_json::json!({ "hostKey": HOST_KEY, "engine": "ABCD" }),
+    )
+    .unwrap();
     for host in ["ssh://me@build-box", "tcp://build-box:2376"] {
         let engine = crate::dockerpool::settings::engine_on_this_machine(
             Some(host),

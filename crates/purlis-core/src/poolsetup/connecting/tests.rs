@@ -1180,7 +1180,7 @@ fn who_can_sign_in_is_kept_only_beside_a_trusted_pin_and_trusting_again_forgets_
     let config = tempfile::tempdir().unwrap();
     choose_machine(config.path(), Some("ssh://me@build-box"), None).unwrap();
     assert!(
-        choose_owned(config.path(), true).is_err(),
+        choose_owned(config.path(), true, &serde_json::json!({})).is_err(),
         "nothing is trusted yet"
     );
     let remote = crate::runners::Remote {
@@ -1192,7 +1192,7 @@ fn who_can_sign_in_is_kept_only_beside_a_trusted_pin_and_trusting_again_forgets_
     };
     trusted(config.path(), &remote).unwrap();
     assert!(!read_choices(config.path()).unwrap().connect.unwrap().owned);
-    choose_owned(config.path(), true).unwrap();
+    choose_owned(config.path(), true, &remote.pin.to_json()).unwrap();
     assert!(read_choices(config.path()).unwrap().connect.unwrap().owned);
     let file = || -> serde_json::Value {
         serde_json::from_str(
@@ -1204,10 +1204,31 @@ fn who_can_sign_in_is_kept_only_beside_a_trusted_pin_and_trusting_again_forgets_
         .unwrap()
     };
     assert_eq!(file()["connect"]["owned"], serde_json::json!(true));
-    choose_owned(config.path(), false).unwrap();
+    choose_owned(config.path(), false, &remote.pin.to_json()).unwrap();
     assert!(file()["connect"].get("owned").is_none());
-    choose_owned(config.path(), true).unwrap();
+    choose_owned(config.path(), true, &remote.pin.to_json()).unwrap();
     trusted(config.path(), &remote).unwrap();
+    assert!(!read_choices(config.path()).unwrap().connect.unwrap().owned);
+}
+
+/// **Connect's answer is kept only for the pin the person was shown** (#6271): one given for
+/// another pin than the one trusted is refused, and nothing is kept.
+#[test]
+fn who_can_sign_in_is_refused_for_another_pin_than_the_one_trusted() {
+    let config = tempfile::tempdir().unwrap();
+    choose_machine(config.path(), Some("ssh://me@build-box"), None).unwrap();
+    let remote = crate::runners::Remote {
+        route: Route::parse("ssh://me@build-box/var/run/docker.sock").unwrap(),
+        pin: Pin {
+            host_key: key(KEY),
+            engine: crate::sshroute::EnginePin::Docker("ABCD".to_owned()),
+        },
+    };
+    trusted(config.path(), &remote).unwrap();
+    let mut other = remote.clone();
+    other.pin.engine = crate::sshroute::EnginePin::Docker("EFGH".to_owned());
+    let refused = choose_owned(config.path(), true, &other.pin.to_json()).expect_err("another pin");
+    assert!(refused.to_string().contains("trusted again"), "{refused}");
     assert!(!read_choices(config.path()).unwrap().connect.unwrap().owned);
 }
 

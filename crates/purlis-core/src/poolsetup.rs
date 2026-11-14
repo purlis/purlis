@@ -534,6 +534,17 @@ pub struct Chosen {
 }
 
 impl Chosen {
+    /// **The pin trusted, as it is kept** (#6271): the host key's over SSH, the CA's over
+    /// Docker's TLS API, or none yet. What an answer of who can sign in names.
+    #[must_use]
+    pub fn pin_json(&self) -> Option<serde_json::Value> {
+        match (&self.trusted, &self.trusted_tls) {
+            (Some(pin), _) => Some(pin.to_json()),
+            (None, Some(pin)) => Some(pin.to_json()),
+            (None, None) => None,
+        }
+    }
+
     /// **The route, read, signing in with its key file where one was chosen.**
     pub fn route_read(&self) -> Result<crate::sshroute::Route, crate::sshroute::connect::Finding> {
         connecting::route_of(&self.route, self.identity.as_deref())
@@ -2106,10 +2117,7 @@ fn write_choices(config: &Path, choices: Choices) -> Result<(), Refused> {
             // A host key's pin over SSH, as a pool's; a CA's over Docker's TLS API (#6267).
             trusted: match (chosen.trusted, chosen.trusted_tls) {
                 (Some(pin), _) => Some(pin.to_json()),
-                (None, Some(pin)) => Some(serde_json::json!({
-                    "ca": pin.ca.spelled(),
-                    "engine": pin.engine,
-                })),
+                (None, Some(pin)) => Some(pin.to_json()),
                 (None, None) => None,
             },
             docker_context: chosen.docker_context,
@@ -2210,8 +2218,9 @@ pub fn choose_tls_files(
 /// **Keeps who the person said can sign in to the machine Connect trusted** (#6271, ADR 0123 §5):
 /// only they, and people they trust with their logins (`true`), or others might, or they're not
 /// sure. The window's alone (`pool_setup_choose_owned`). Refused where no machine is trusted yet,
-/// since the answer is for the machine as pinned.
-pub fn choose_owned(config: &Path, owned: bool) -> Result<(), Refused> {
+/// since the answer is for the machine as pinned, and for `shown`, a pin that is no longer the
+/// one trusted.
+pub fn choose_owned(config: &Path, owned: bool, shown: &serde_json::Value) -> Result<(), Refused> {
     let _locked = runners::lock(config);
     let mut choices = read_choices(config)?;
     let Some(chosen) = choices
@@ -2223,6 +2232,9 @@ pub fn choose_owned(config: &Path, owned: bool) -> Result<(), Refused> {
             "trust the machine before saying who can sign in to it".to_owned(),
         ));
     };
+    if owned && chosen.pin_json().as_ref() != Some(shown) {
+        return Err(Refused::Other(runners::PIN_MOVED_SINCE_SHOWN.to_owned()));
+    }
     if chosen.owned == owned {
         return Ok(());
     }

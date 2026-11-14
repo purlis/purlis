@@ -429,10 +429,8 @@ pub fn marked_on_connect(
     let Some(chosen) = super::read_choices(config)?.connect else {
         return Ok(false);
     };
-    let kept = match (&chosen.trusted, &chosen.trusted_tls) {
-        (Some(pin), _) => pin.to_json(),
-        (None, Some(pin)) => serde_json::json!({ "ca": pin.ca.spelled(), "engine": pin.engine }),
-        (None, None) => return Ok(false),
+    let Some(kept) = chosen.pin_json() else {
+        return Ok(false);
     };
     Ok(chosen.owned && kept == remote.pin_json() && same_machine(&chosen.route, remote))
 }

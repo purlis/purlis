@@ -2156,13 +2156,61 @@ fn a_pool_on_another_machine_marked_owned_keeps_the_pin_it_was_marked_for() {
         !pools(config.path()).unwrap()[0].owned(),
         "not marked by default"
     );
-    set_remote_owned(config.path(), "build-box", true).unwrap();
+    set_remote_owned(config.path(), "build-box", true, &remote().pin.to_json()).unwrap();
     let row = &the_file(config.path())["pools"][0];
     assert_eq!(row["owned"], row["pin"]);
     assert!(pools(config.path()).unwrap()[0].owned());
-    set_remote_owned(config.path(), "build-box", false).unwrap();
+    set_remote_owned(config.path(), "build-box", false, &remote().pin.to_json()).unwrap();
     assert!(the_file(config.path())["pools"][0].get("owned").is_none());
     assert!(!pools(config.path()).unwrap()[0].owned());
+}
+
+/// **The mark is given only for the pin the person was shown** (#6271, ADR 0123 §5): an answer
+/// given for a pin that is no longer the one on disk (trusted again meanwhile, in another window
+/// or by a run) is refused, and nothing is written. Taking the mark back needs no pin.
+#[test]
+fn a_pool_on_another_machine_is_marked_only_for_the_pin_the_person_was_shown() {
+    let config = tempfile::tempdir().unwrap();
+    record_pool(
+        config.path(),
+        &pool("build-box", Set::default()).on(Some(remote())),
+    )
+    .unwrap();
+    let before = the_file(config.path());
+    let mut other = remote();
+    other.pin.engine = crate::sshroute::EnginePin::Docker("MNOP:QRST:UVWX".to_owned());
+    let refused = set_remote_owned(config.path(), "build-box", true, &other.pin.to_json())
+        .expect_err("another pin than the one on disk");
+    assert!(refused.to_string().contains("trusted again"), "{refused}");
+    assert_eq!(the_file(config.path()), before, "nothing written");
+    set_remote_owned(config.path(), "build-box", true, &remote().pin.to_json()).unwrap();
+    set_remote_owned(config.path(), "build-box", false, &other.pin.to_json()).unwrap();
+    assert!(!pools(config.path()).unwrap()[0].owned());
+}
+
+/// **A TLS pin has one shape wherever it is written** (#6271): the row's pin, its mark and the
+/// pin an answer names are all [`crate::tlsroute::Pin::to_json`].
+#[test]
+fn a_tls_pin_is_written_in_one_shape_on_the_row_and_in_its_mark() {
+    let config = tempfile::tempdir().unwrap();
+    let remote = tls_remote(crate::tlsroute::KeyFrom::File("/k.pem".into()));
+    record_pool(
+        config.path(),
+        &pool("over-tls", Set::default()).on_engine(Some(remote.clone().into())),
+    )
+    .unwrap();
+    assert_eq!(
+        remote.pin.to_json(),
+        serde_json::json!({ "ca": CA, "engine": "ABCD:EFGH:IJKL" })
+    );
+    assert_eq!(
+        the_file(config.path())["pools"][0]["pin"],
+        remote.pin.to_json()
+    );
+    assert_eq!(
+        RemoteEngine::from(remote.clone()).pin_json(),
+        remote.pin.to_json()
+    );
 }
 
 /// Over Docker's TLS API, the same: the mark is the CA and engine pinned.
@@ -2176,7 +2224,15 @@ fn a_pool_over_tls_marked_owned_keeps_the_ca_and_engine_it_was_marked_for() {
         )),
     )
     .unwrap();
-    set_remote_owned(config.path(), "over-tls", true).unwrap();
+    set_remote_owned(
+        config.path(),
+        "over-tls",
+        true,
+        &tls_remote(crate::tlsroute::KeyFrom::File("/k.pem".into()))
+            .pin
+            .to_json(),
+    )
+    .unwrap();
     let row = &the_file(config.path())["pools"][0];
     assert_eq!(row["owned"], row["pin"]);
     assert!(pools(config.path()).unwrap()[0].owned());
@@ -2192,7 +2248,7 @@ fn a_pool_pinned_again_to_another_pin_is_no_longer_marked_owned() {
         &pool("build-box", Set::default()).on(Some(remote())),
     )
     .unwrap();
-    set_remote_owned(config.path(), "build-box", true).unwrap();
+    set_remote_owned(config.path(), "build-box", true, &remote().pin.to_json()).unwrap();
     pin_again(config.path(), "build-box", &remote().into()).unwrap();
     assert!(pools(config.path()).unwrap()[0].owned(), "the same pin");
     let mut again = remote();
@@ -2245,7 +2301,7 @@ fn the_owned_mark_of_a_pool_on_another_machine_is_not_in_its_definition() {
     )
     .unwrap();
     let before = pools(config.path()).unwrap()[0].definition_digest();
-    set_remote_owned(config.path(), "build-box", true).unwrap();
+    set_remote_owned(config.path(), "build-box", true, &remote().pin.to_json()).unwrap();
     assert_eq!(pools(config.path()).unwrap()[0].definition_digest(), before);
 }
 
@@ -2255,8 +2311,8 @@ fn only_a_pool_on_another_machine_is_marked_owned() {
     let config = tempfile::tempdir().unwrap();
     record_pool(config.path(), &pool("here", Set::default())).unwrap();
     let before = the_file(config.path());
-    assert!(set_remote_owned(config.path(), "here", true).is_err());
-    assert!(set_remote_owned(config.path(), "nowhere", true).is_err());
+    assert!(set_remote_owned(config.path(), "here", true, &remote().pin.to_json()).is_err());
+    assert!(set_remote_owned(config.path(), "nowhere", true, &remote().pin.to_json()).is_err());
     assert_eq!(the_file(config.path()), before);
 }
 

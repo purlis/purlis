@@ -10758,6 +10758,16 @@ export type PoolRow = {
 	 *  Docker, which needs no mark.
 	 */
 	owned?: boolean | null,
+	/**
+	 *  **How that machine is pinned** (#6271): `ssh` (its host key) or `tls` (its CA). Left out
+	 *  for this machine's own Docker.
+	 */
+	over?: string | null,
+	/**
+	 *  **Its pin, as purlis keeps it** (#6271): handed back with an answer of who can sign in,
+	 *  which is refused where the machine was trusted again since.
+	 */
+	pin?: string | null,
 };
 
 /**  One step's next action. */
@@ -10875,6 +10885,11 @@ export type PoolSetupMachine = {
 	 *  people they trust with their logins (`true`), or others might, or they're not sure.
 	 */
 	owned?: boolean | null,
+	/**
+	 *  **The pin trusted, as purlis keeps it** (#6271): handed back with an answer of who can
+	 *  sign in, which is refused where the machine was trusted again since.
+	 */
+	pin?: string | null,
 };
 
 /**  A limit a profile is over. */

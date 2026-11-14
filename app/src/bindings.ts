@@ -4279,11 +4279,12 @@ export const commands = {
 	poolSetupTlsFiles: (plane: PlaneId, ca: string, cert: string, key: string | null, keyVault: string | null, keyName: string | null) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup_tls_files", { plane, ca, cert, key, keyVault, keyName })),
 	/**
 	 *  **Keeps who the person said can sign in to the machine Connect trusted** (#6271, ADR 0123 §5):
-	 *  only they, and people they trust with their logins (`owned`), or others might. The window's
-	 *  alone (`ui::WINDOW_ONLY`): it is what lets the pool's runner receive vault values. A pool
+	 *  only they, and people they trust with their logins (`owned`), or others might, for `pin`, the
+	 *  pin the window showed. The window's alone (`ui::WINDOW_ONLY`): it is what lets the pool's
+	 *  runner receive vault values. A pool
 	 *  already made is marked on its row instead (`set_remote_pool_owned`).
 	 */
-	poolSetupChooseOwned: (owned: boolean) => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_owned", { owned })),
+	poolSetupChooseOwned: (owned: boolean, pin: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_owned", { owned, pin })),
 	/**
 	 *  **Keeps that the person chose their team's cluster on Where**, through kubeconfig context
 	 *  `context` (#4492): its name alone. Nothing on the cluster changes. With no context, only the
@@ -4525,10 +4526,11 @@ export const commands = {
 	/**
 	 *  **The person says who can sign in to the machine of pool `name`, on another machine, as it is
 	 *  pinned** (#6271, ADR 0123 §5): only they, and people they trust with their logins (`owned`),
-	 *  or others might. The window's alone (`ui::WINDOW_ONLY`): no chat reaches it. Taken back, every
-	 *  login opted in on the pool is forgotten, so a later mark asks about each again.
+	 *  or others might, for `pin`, the pin the window showed. The window's alone (`ui::WINDOW_ONLY`):
+	 *  no chat reaches it. Taken back, every login opted in on the pool is forgotten, so a later mark
+	 *  asks about each again.
 	 */
-	setRemotePoolOwned: (name: string, owned: boolean) => typedError<null, string>(__TAURI_INVOKE("set_remote_pool_owned", { name, owned })),
+	setRemotePoolOwned: (name: string, owned: boolean, pin: string) => typedError<null, string>(__TAURI_INVOKE("set_remote_pool_owned", { name, owned, pin })),
 	/**
 	 *  **The cluster pools whose Pool began minting without asking, for the person to be told** (#4442,
 	 *  the person's ruling of 2026-11-01): one Notice for each change. It holds and refuses nothing, as
@@ -13991,6 +13993,16 @@ export type PoolRow = {
 	 *  Docker, which needs no mark.
 	 */
 	owned?: boolean | null,
+	/**
+	 *  **How that machine is pinned** (#6271): `ssh` (its host key) or `tls` (its CA). Left out
+	 *  for this machine's own Docker.
+	 */
+	over?: string | null,
+	/**
+	 *  **Its pin, as purlis keeps it** (#6271): handed back with an answer of who can sign in,
+	 *  which is refused where the machine was trusted again since.
+	 */
+	pin?: string | null,
 };
 
 /**  One step's next action. */
@@ -14108,6 +14120,11 @@ export type PoolSetupMachine = {
 	 *  people they trust with their logins (`true`), or others might, or they're not sure.
 	 */
 	owned?: boolean | null,
+	/**
+	 *  **The pin trusted, as purlis keeps it** (#6271): handed back with an answer of who can
+	 *  sign in, which is refused where the machine was trusted again since.
+	 */
+	pin?: string | null,
 };
 
 /**  A limit a profile is over. */

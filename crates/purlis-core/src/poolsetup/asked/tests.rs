@@ -408,7 +408,7 @@ fn a_pool_made_from_what_connect_kept_is_marked_only_for_the_pin_answered_for() 
         !marked_on_connect(config.path(), &engine).unwrap(),
         "not asked"
     );
-    super::super::choose_owned(config.path(), true).unwrap();
+    super::super::choose_owned(config.path(), true, &remote.pin.to_json()).unwrap();
     assert!(marked_on_connect(config.path(), &engine).unwrap());
     let mut other = remote;
     other.pin.engine = crate::sshroute::EnginePin::Docker("WXYZ".to_owned());

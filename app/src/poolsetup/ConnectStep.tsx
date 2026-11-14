@@ -838,13 +838,15 @@ export function ConnectStep({
   };
   const madePool = shown.pool !== null;
   /** Who can sign in there (#6271): kept for the pool to be made, or a made pool's own mark. */
+  // Sent on Save alone, with the pin it was given for: one trusted again since refuses it.
   const answer = (owned: boolean) => {
     setTrouble(undefined);
     const made = shown.pool;
-    void (
+    const pin = step.machine?.pin ?? "";
+    return (
       made === null
-        ? commands.poolSetupChooseOwned(owned)
-        : commands.setRemotePoolOwned(made, owned)
+        ? commands.poolSetupChooseOwned(owned, pin)
+        : commands.setRemotePoolOwned(made, owned, pin)
     ).then((kept) => {
       if (kept.status === "error") setTrouble(kept.error);
       else changed();
@@ -1027,7 +1029,15 @@ export function ConnectStep({
           ))}
         </Say>
       )}
-      {done && <WhoCanSignIn host={host} owned={step.machine?.owned === true} onChange={answer} />}
+      {done && (
+        <WhoCanSignIn
+          host={host}
+          owned={step.machine?.owned === true}
+          over={step.machine?.over === "tls" ? "tls" : "ssh"}
+          onSave={answer}
+          forgetsLoginsOf={shown.pool ?? undefined}
+        />
+      )}
       {done && (
         <Action
           does={`Keeps ${host} as this pool's machine. Next, you choose its image and limits.`}

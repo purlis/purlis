@@ -114,6 +114,10 @@ pub struct PoolSetupMachine {
     /// people they trust with their logins (`true`), or others might, or they're not sure.
     #[specta(optional)]
     pub owned: Option<bool>,
+    /// **The pin trusted, as purlis keeps it** (#6271): handed back with an answer of who can
+    /// sign in, which is refused where the machine was trusted again since.
+    #[specta(optional)]
+    pub pin: Option<String>,
 }
 
 /// The TLS files named for a `tcp://` machine, as Connect's Options show them (#6267).
@@ -295,6 +299,7 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
                     ca_now: machine.ca_now.clone(),
                     context: machine.context.clone(),
                     owned: Some(machine.owned),
+                    pin: machine.pin.clone(),
                 }),
                 prefill: step.prefill.as_ref().map(|prefill| PoolSetupPrefill {
                     route: prefill.route.clone(),
@@ -470,24 +475,31 @@ pub async fn pool_setup_machine(
     }
 }
 
+/// **The pin the window was shown, as it hands it back** (#6271): one that does not read is no
+/// pin, so a mark given for it is refused.
+pub(crate) fn shown_pin(pin: &str) -> serde_json::Value {
+    serde_json::from_str(pin).unwrap_or(serde_json::Value::Null)
+}
+
 /// **Keeps who the person said can sign in to the machine Connect trusted** (#6271, ADR 0123 §5):
-/// only they, and people they trust with their logins (`owned`), or others might. The window's
-/// alone (`ui::WINDOW_ONLY`): it is what lets the pool's runner receive vault values. A pool
+/// only they, and people they trust with their logins (`owned`), or others might, for `pin`, the
+/// pin the window showed. The window's alone (`ui::WINDOW_ONLY`): it is what lets the pool's
+/// runner receive vault values. A pool
 /// already made is marked on its row instead (`set_remote_pool_owned`).
 #[tauri::command]
 #[specta::specta]
-pub async fn pool_setup_choose_owned(owned: bool) -> Result<(), String> {
+pub async fn pool_setup_choose_owned(owned: bool, pin: String) -> Result<(), String> {
     #[cfg(unix)]
     {
         crate::off_the_window("keeping your answer", move || {
-            purlis_core::poolsetup::choose_owned(&config_root()?, owned)
+            purlis_core::poolsetup::choose_owned(&config_root()?, owned, &shown_pin(&pin))
                 .map_err(|why| why.to_string())
         })
         .await
     }
     #[cfg(not(unix))]
     {
-        let _ = owned;
+        let _ = (owned, pin);
         Err(crate::dockerpools::NOT_HERE.to_owned())
     }
 }

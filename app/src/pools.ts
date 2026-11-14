@@ -383,13 +383,14 @@ export async function markPoolOwned(name: string, owned: boolean): Promise<strin
 }
 
 /** Says who can sign in to pool `name`'s other machine, as it is pinned (#6271): only the person,
- *  and people they trust with their logins (`owned`), or others might. `undefined` once it is
- *  kept, else why not. The window's alone. */
+ *  and people they trust with their logins (`owned`), or others might, for `pin`, the pin the row
+ *  showed. `undefined` once it is kept, else why not. The window's alone. */
 export async function markRemotePoolOwned(
   name: string,
   owned: boolean,
+  pin: string,
 ): Promise<string | undefined> {
-  const said = await caught(commands.setRemotePoolOwned(name, owned));
+  const said = await caught(commands.setRemotePoolOwned(name, owned, pin));
   await rereadPools();
   return said.status === "error" ? said.error : undefined;
 }

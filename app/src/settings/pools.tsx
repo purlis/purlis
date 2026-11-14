@@ -532,9 +532,11 @@ function PoolEntry({
   const owed = owedSaid(version, useNow());
   const [refused, setRefused] = useState<string>();
   /** Who can sign in to its other machine (#6271): what lets its runner receive saved logins. */
-  const answer = (owned: boolean) => {
-    void markRemotePoolOwned(pool.name, owned).then(setRefused);
-  };
+  const answer = (owned: boolean) =>
+    markRemotePoolOwned(pool.name, owned, pool.pin ?? "").then(setRefused);
+  // While its pin no longer holds, nothing is sent there whatever was answered (#6270): the row
+  // doesn't say only the person signs in there, and Check and trust again asks anew.
+  const pinChanged = typeof link === "object" && link.state === "pin_changed";
   const left = leftSaid(version);
   return (
     <ControlBody>
@@ -576,11 +578,13 @@ function PoolEntry({
           <div className="pools-about">
             <p className="ui-setting-help ui-text-secondary">{suspendSaid(pool, version)}</p>
             {/* A pool on another machine is the person's only by their answer (#6271). */}
-            {typeof pool.machine === "string" && (
+            {typeof pool.machine === "string" && !pinChanged && (
               <WhoCanSignIn
                 host={pool.machine}
                 owned={pool.owned === true}
-                onChange={answer}
+                over={pool.over === "tls" ? "tls" : "ssh"}
+                onSave={answer}
+                forgetsLoginsOf={pool.name}
                 onARow
               />
             )}
