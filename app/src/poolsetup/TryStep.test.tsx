@@ -201,7 +201,7 @@ describe("TryStep", () => {
         link: {
           about: "link",
           verdict: "ok",
-          title: "A round trip to build-box takes 48 ms.",
+          title: "A docker command on build-box answers in 48 ms, from start to answer.",
           more: null,
         },
       }),
@@ -214,7 +214,9 @@ describe("TryStep", () => {
     rerender(<TryStep step={step} pool="dev-box" plane="p" {...props} />);
     const lines = within(screen.getByRole("list", { name: "What was checked" }));
     expect(lines.getAllByRole("listitem")).toHaveLength(4);
-    expect(lines.getByText("A round trip to build-box takes 48 ms.")).toBeTruthy();
+    expect(
+      lines.getByText("A docker command on build-box answers in 48 ms, from start to answer."),
+    ).toBeTruthy();
     expect(screen.getByRole("heading", { name: "dev-box is ready" })).toBeTruthy();
   });
 

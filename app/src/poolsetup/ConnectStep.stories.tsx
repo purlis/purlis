@@ -291,7 +291,11 @@ const FOUND = connect({
   findings: [
     "sam on build-box isn't allowed to use Docker. On build-box, add sam to the docker group, or use rootless Docker or Podman, then check again.",
   ],
-  next: action("check-again", "Check again", "Contacts the machine again. It changes nothing."),
+  next: action(
+    "check-again",
+    "Check again",
+    "Contacts the machine again and runs its checks. For a pool already made, that downloads the runner image there where it is missing, which can take a few minutes. Nothing else changes.",
+  ),
 });
 
 /** A finding: the check list with its failing line, and one trouble card. */
@@ -317,7 +321,11 @@ const NEEDS_PODMAN = connect({
   findings: [
     "build-box runs Podman, and purlis reaches Podman with Podman's own client. Install Podman on this machine, then check again.",
   ],
-  next: action("check-again", "Check again", "Contacts the machine again. It changes nothing."),
+  next: action(
+    "check-again",
+    "Check again",
+    "Contacts the machine again and runs its checks. For a pool already made, that downloads the runner image there where it is missing, which can take a few minutes. Nothing else changes.",
+  ),
 });
 
 /** Podman there, and no Podman here to reach it with (#6269): the engine's line fails. */
@@ -341,7 +349,11 @@ const FORWARDING_REFUSED = connect({
   findings: [
     "The SSH server on build-box doesn't allow forwarding, and purlis reaches Docker there by forwarding its socket. Ask its admin to allow it for your account (`AllowTcpForwarding`, `AllowStreamLocalForwarding` and `DisableForwarding` in sshd_config, or `restrict` and `no-port-forwarding` on your key), then check again.",
   ],
-  next: action("check-again", "Check again", "Contacts the machine again. It changes nothing."),
+  next: action(
+    "check-again",
+    "Check again",
+    "Contacts the machine again and runs its checks. For a pool already made, that downloads the runner image there where it is missing, which can take a few minutes. Nothing else changes.",
+  ),
 });
 
 /** An SSH server that signs you in and refuses forwarding (#6349): Docker's line fails, named. */
@@ -384,6 +396,11 @@ export const PlainTcpRefused: Story = {
   },
 };
 
+/** What Connect asks the engine before the pool is made (#6272): it confines runners, and its
+ *  platform has a runner image. The image's download and the disk wait for the pool. */
+const ON_CONNECT = ["unconfined", "unsupported-architecture"];
+const EVERY_ENGINE_CHECK = [...ON_CONNECT, "image-unreachable", "disk-full"];
+
 const DONE = connect({
   state: "done",
   line: `build-box, key ${FINGERPRINT}`,
@@ -391,19 +408,68 @@ const DONE = connect({
     route: "ssh://sam@build-box/var/run/docker.sock",
     trusted: { algorithm: "ssh-ed25519", fingerprint: FINGERPRINT },
     engine: "ABCD:EFGH",
+    checked: ON_CONNECT,
   }),
 });
 
-/** Every check passed: the machine trusted, and Continue to the pool. */
+/** The machine trusted, and Continue to the pool: the image's download and the disk are not
+ *  checked yet, so they read as not yet, never as passed (#6272 review). */
 export const Trusted: Story = {
   beforeEach: faked([]),
   args: { step: DONE, shown: shown(DONE) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByText("Every check passed")).toBeVisible();
+    await expect(canvas.getByText("Connected")).toBeVisible();
+    await expect(canvas.queryByText("Every check passed")).toBeNull();
     const go = canvas.getByRole("button", { name: "Continue" });
     go.focus();
     await expect(go).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
+const DONE_EVERY = connect({
+  state: "done",
+  line: `build-box, key ${FINGERPRINT}`,
+  machine: machine({
+    route: "ssh://sam@build-box/var/run/docker.sock",
+    trusted: { algorithm: "ssh-ed25519", fingerprint: FINGERPRINT },
+    engine: "ABCD:EFGH",
+    checked: EVERY_ENGINE_CHECK,
+  }),
+});
+
+/** A made pool that passed every check of doctor's, its disk measured. */
+export const TrustedEveryCheck: Story = {
+  beforeEach: faked([]),
+  args: { step: DONE_EVERY, shown: shown(DONE_EVERY, "build-box") },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText("Every check passed")).toBeVisible();
+    await expectFocusInSight();
+  },
+};
+
+const DONE_UNMEASURED = connect({
+  state: "done",
+  line: `build-box, key ${FINGERPRINT}`,
+  machine: machine({
+    route: "ssh://sam@build-box/var/run/docker.sock",
+    trusted: { algorithm: "ssh-ed25519", fingerprint: FINGERPRINT },
+    engine: "ABCD:EFGH",
+    checked: [...ON_CONNECT, "image-unreachable"],
+    disk_unmeasured: true,
+  }),
+});
+
+/** A made pool whose image has no `df`: nothing is held up, and nothing says there is room. */
+export const DiskUnmeasured: Story = {
+  beforeEach: faked([]),
+  args: { step: DONE_UNMEASURED, shown: shown(DONE_UNMEASURED, "build-box") },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText("purlis couldn't measure its disk")).toBeVisible();
+    await expect(canvas.queryByText("Every check passed")).toBeNull();
     await expectFocusInSight();
   },
 };
@@ -416,6 +482,7 @@ const DONE_ONLY_YOU = connect({
     trusted: { algorithm: "ssh-ed25519", fingerprint: FINGERPRINT },
     engine: "ABCD:EFGH",
     owned: true,
+    checked: ON_CONNECT,
   }),
 });
 
@@ -684,7 +751,11 @@ const tlsFinding = (cause: string, finding: string, next = "check-again") =>
     next:
       next === "change-machine"
         ? action("change-machine", "Change the machine", "Goes back to the machine.")
-        : action("check-again", "Check again", "Contacts the machine again. It changes nothing."),
+        : action(
+            "check-again",
+            "Check again",
+            "Contacts the machine again and runs its checks. For a pool already made, that downloads the runner image there where it is missing, which can take a few minutes. Nothing else changes.",
+          ),
   });
 
 const playFinding =
@@ -775,7 +846,7 @@ const TLS_DONE = connect({
   state: "done",
   see: TLS_SEE,
   line: `lab.example.internal, CA ${CA}`,
-  machine: tlsMachine({ trusted_ca: CA, engine: "ABCD:EFGH" }),
+  machine: tlsMachine({ trusted_ca: CA, engine: "ABCD:EFGH", checked: ON_CONNECT }),
 });
 
 /** Every check passed over TLS: the authority trusted, and Continue to the pool. */
@@ -844,7 +915,7 @@ export const ContextMoved: Story = {
 const CHECK_AGAIN = action(
   "check-again",
   "Check again",
-  "Contacts the machine again. It changes nothing.",
+  "Contacts the machine again and runs its checks. For a pool already made, that downloads the runner image there where it is missing, which can take a few minutes. Nothing else changes.",
 );
 const CHANGE = action(
   "change-machine",
@@ -1043,6 +1114,36 @@ export const FindsUnsupportedArchitecture: Story = {
   play: playDoctor("There's no runner image for that machine", 11),
 };
 
+const YOUR_IMAGE = sshFinding(
+  "unsupported-architecture",
+  "build-box is linux/amd64, and your image is built for linux/arm64. Use an image built for linux/amd64, on a new pool on build-box.",
+  {
+    note: "This prints the platform of build-box, as purlis reads it. It only reads.",
+    text: "docker -H ssh://sam@build-box info --format '{{.OSType}}/{{.Architecture}}'",
+  },
+  action(
+    "change-image",
+    "Use another image",
+    "Starts setting up a new pool on build-box, where you pick an image built for linux/amd64. This pool stays as it is until you remove it.",
+  ),
+  { prefill: { route: "ssh://sam@build-box/var/run/docker.sock", context: null } },
+);
+
+/** A made pool of the person's own image, built for another platform than the machine's: the
+ *  way on is another image, on a new pool on the same machine (#6272 review). */
+export const FindsYourImageForAnotherPlatform: Story = {
+  beforeEach: faked([]),
+  args: { step: YOUR_IMAGE, shown: shown(YOUR_IMAGE, "build-box") },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText("Your image isn't built for that machine")).toBeVisible();
+    const another = canvas.getByRole("button", { name: "Use another image" });
+    another.focus();
+    await expect(another).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
 const IMAGE_UNREACHABLE = sshFinding(
   "image-unreachable",
   "build-box couldn't download the runner image. Check that build-box can reach ghcr.io, then check again.",
@@ -1061,10 +1162,10 @@ export const FindsImageUnreachable: Story = {
 
 const DISK_FULL = sshFinding(
   "disk-full",
-  "Docker's disk on build-box is full: it has 512 MB free, and a runner needs at least 1.0 GB, so purlis makes no runner there. To make room, run docker system df on build-box to see what takes it, then docker system prune there to remove what nothing uses, or give Docker there a bigger disk. Then check again.",
+  "Docker's disk on build-box is full: it has 512 MB free, and a runner needs at least 1.0 GB, so purlis makes no runner there. To make room, run docker system df on build-box to see what takes it, then docker image prune there to remove images nothing uses, or give Docker there a bigger disk. Then check again.",
   {
-    note: "The first shows what takes Docker's disk on build-box. The second removes what nothing uses there: stopped containers, unused networks and images, and the build cache. It keeps volumes, so a runner's home and sign-ins stay.",
-    text: "docker -H ssh://sam@build-box system df\ndocker -H ssh://sam@build-box system prune",
+    note: "The first shows what takes Docker's disk on build-box, so you can look before you remove anything. It only reads. The second removes only images that have no name and that no container uses: volumes, named images and stopped containers stay, other people's included.",
+    text: "docker -H ssh://sam@build-box system df\ndocker -H ssh://sam@build-box image prune",
   },
 );
 

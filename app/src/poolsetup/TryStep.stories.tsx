@@ -210,7 +210,7 @@ export const WorksExceptForThis: Story = {
   },
 };
 
-/** A pool on another machine (#6272): once its chat started, the link's round trip, measured. */
+/** A pool on another machine (#6272): once its chat started, how long a docker command takes there. */
 export const LinkRoundTrip: Story = {
   // The step as the core reads it again once the try kept its chat's start.
   args: {
@@ -227,14 +227,18 @@ export const LinkRoundTrip: Story = {
     link: {
       about: "link",
       verdict: "ok",
-      title: "A round trip to dev-box takes 48 ms.",
+      title: "A docker command on dev-box answers in 48 ms, from start to answer.",
       more: null,
     },
   })),
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("button", { name: "Start a test chat" }));
-    await expect(await canvas.findByText("A round trip to dev-box takes 48 ms.")).toBeVisible();
+    await expect(
+      await canvas.findByText(
+        "A docker command on dev-box answers in 48 ms, from start to answer.",
+      ),
+    ).toBeVisible();
     const start = canvas.getByRole("button", { name: "Start a test chat" });
     start.focus();
     await expect(start).toHaveFocus();

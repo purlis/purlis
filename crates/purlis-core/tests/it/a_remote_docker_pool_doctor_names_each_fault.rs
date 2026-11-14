@@ -13,7 +13,8 @@
 //!
 //! The architecture's and the disk's faults are images `up.sh` builds there: one built for
 //! `linux/riscv64` alone, from scratch, and one of the parity image whose `df` says its disk is
-//! nearly full. Without the fixture it runs nothing and passes. The job runs it one test at a
+//! nearly full. Without the fixture at all it says it skipped, on standard error, and passes; with
+//! part of it (the route, and not the rest `up.sh` sets), it fails. The job runs it one test at a
 //! time, as it runs the SSH route's.
 
 #![cfg(unix)]
@@ -36,10 +37,28 @@ struct Fixture {
     folders: tempfile::TempDir,
 }
 
+/// **What `up.sh` set, named `name`**: where the route is set, the rest of the fixture is too, so a
+/// name missing fails the test rather than passing it unrun.
+fn set_by_up(name: &str) -> String {
+    std::env::var(name).unwrap_or_else(|_| {
+        panic!(
+            "REMOTE_DOCKER_TEST_ROUTE is set and {name} isn't: tests/remote-docker/up.sh sets both"
+        )
+    })
+}
+
 fn fixture() -> Option<Fixture> {
-    let route = std::env::var("REMOTE_DOCKER_TEST_ROUTE").ok()?;
-    let sshd = std::env::var("REMOTE_DOCKER_TEST_SSHD").ok()?;
-    let image = std::env::var("DOCKER_POOL_TEST_IMAGE").ok()?;
+    let Ok(route) = std::env::var("REMOTE_DOCKER_TEST_ROUTE") else {
+        // Said where a person running the suite by hand reads it: this test ran nothing.
+        let _ = std::io::Write::write_all(
+            &mut std::io::stderr(),
+            b"skipped: no Docker on another machine to doctor (tests/remote-docker/up.sh sets \
+              REMOTE_DOCKER_TEST_ROUTE)\n",
+        );
+        return None;
+    };
+    let sshd = set_by_up("REMOTE_DOCKER_TEST_SSHD");
+    let image = set_by_up("DOCKER_POOL_TEST_IMAGE");
     let program =
         PathBuf::from(std::env::var_os("DOCKER_POOL_TEST_DOCKER").unwrap_or("docker".into()));
     // A short folder: a socket's path is held to 103 bytes.
@@ -187,7 +206,8 @@ fn a_pool_with_no_fault_passes_with_its_links_round_trip_measured() {
         purlis_core::poolsetup::Verdict::Ok,
         "{link:?}"
     );
-    assert!(link.title.starts_with("A round trip to "), "{link:?}");
+    assert!(link.title.starts_with("A docker command on "), "{link:?}");
+    assert_eq!(healthy.passed, doctoring::Passed::every(), "{healthy:?}");
 }
 
 #[test]
@@ -289,6 +309,62 @@ fn plain_tcp() {
         panic!("plain TCP is met: {pressed:?}");
     };
     assert_eq!(connecting::said(&finding), sshroute::PLAIN_TCP);
+    // Trust this machine, which runs Connect's checks of the engine, refuses it the same, before
+    // anything is contacted, and keeps nothing.
+    let trusted =
+        connecting::trust_chosen(&config, &fixture.docker, &chosen, "SHA256:x").expect("read");
+    assert_eq!(
+        trusted.map_err(|finding| connecting::said(&finding)),
+        Err(sshroute::PLAIN_TCP.to_owned())
+    );
+    let mut connect = connecting::Connecting {
+        route: Some(chosen.route.clone()),
+        ..connecting::Connecting::default()
+    };
+    doctoring::lay_over(&mut connect);
+    assert_eq!(connect.finding, None);
+    assert!(connect.checked.is_empty());
+}
+
+/// **Trust this machine asks the engine doctor's first checks before the pool is kept** (#6272
+/// review): it confines runners, and purlis's runner image is built for its platform. What they
+/// found is laid over the next read of the step.
+#[test]
+fn connect_checks_the_engine_before_the_pool_is_kept() {
+    purlis_core::unsteered!();
+    let Some(fixture) = fixture() else { return };
+    let config = fixture.folders.path().join("config");
+    let chosen = purlis_core::poolsetup::Chosen {
+        route: fixture.route.spelled(),
+        identity: None,
+        trusted: None,
+        tls: None,
+        trusted_tls: None,
+        docker_context: None,
+        owned: false,
+    };
+    let purlis_core::poolsetup::Pressed::Met(met) =
+        connecting::meet_chosen(&config, &fixture.docker, &chosen)
+    else {
+        panic!("not met");
+    };
+    connecting::trust_chosen(&config, &fixture.docker, &chosen, &met.key.fingerprint())
+        .expect("read")
+        .expect("trusted, every check of the engine passing");
+    let kept = purlis_core::poolsetup::read_choices(&config)
+        .expect("read")
+        .connect
+        .expect("kept");
+    let mut connect = connecting::Connecting {
+        route: Some(kept.route),
+        ..connecting::Connecting::default()
+    };
+    doctoring::lay_over(&mut connect);
+    assert_eq!(connect.finding, None);
+    assert_eq!(
+        connect.checked,
+        vec!["unconfined", "unsupported-architecture"]
+    );
 }
 
 /// A pool over TLS whose CA file holds a CA (pinned) that signed nothing of the engine's.
@@ -296,12 +372,8 @@ fn plain_tcp() {
 fn bad_tls() {
     purlis_core::unsteered!();
     let Some(fixture) = fixture() else { return };
-    let (Ok(route), Some(dir)) = (
-        std::env::var("REMOTE_DOCKER_TEST_TLS_ROUTE"),
-        std::env::var_os("REMOTE_DOCKER_TEST_TLS_DIR").map(PathBuf::from),
-    ) else {
-        return;
-    };
+    let route = set_by_up("REMOTE_DOCKER_TEST_TLS_ROUTE");
+    let dir = PathBuf::from(set_by_up("REMOTE_DOCKER_TEST_TLS_DIR"));
     use purlis_core::tlsroute::{Files, KeyFrom};
     let files = Files::new(
         dir.join("other-ca.pem"),
@@ -332,9 +404,7 @@ fn bad_tls() {
 fn unsupported_architecture() {
     purlis_core::unsteered!();
     let Some(fixture) = fixture() else { return };
-    let Ok(riscv) = std::env::var("REMOTE_DOCKER_TEST_RISCV_IMAGE") else {
-        return;
-    };
+    let riscv = set_by_up("REMOTE_DOCKER_TEST_RISCV_IMAGE");
     let remote = fixture.trusted("riscv");
     forward::let_go("riscv");
     let pool = fixture.pool("riscv", &remote.route.spelled(), remote.pin, &riscv);
@@ -346,6 +416,7 @@ fn unsupported_architecture() {
     let Finding::Architecture {
         platform,
         built_for,
+        own_image,
         ..
     } = finding
     else {
@@ -353,15 +424,15 @@ fn unsupported_architecture() {
     };
     assert_eq!(built_for, vec!["linux/riscv64".to_owned()]);
     assert_ne!(platform, "linux/riscv64");
+    // A team's own image: theirs to change, on a new pool on the same machine.
+    assert!(own_image);
 }
 
 #[test]
 fn full_disk() {
     purlis_core::unsteered!();
     let Some(fixture) = fixture() else { return };
-    let Ok(full) = std::env::var("REMOTE_DOCKER_TEST_FULL_DISK_IMAGE") else {
-        return;
-    };
+    let full = set_by_up("REMOTE_DOCKER_TEST_FULL_DISK_IMAGE");
     let remote = fixture.trusted("fulldisk");
     forward::let_go("fulldisk");
     let pool = fixture.pool("fulldisk", &remote.route.spelled(), remote.pin, &full);
