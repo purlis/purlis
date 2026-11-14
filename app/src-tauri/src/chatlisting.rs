@@ -11,7 +11,8 @@
 //! that has not moved since the app started says none.
 //!
 //! **History is read from the dispatch records once they change** ([`Drawing`]), not at each
-//! move of a board.
+//! move of a board, and what it drew is let go of when the project closes
+//! ([`project_closed`]).
 //!
 //! [`Ask::Chats`]: purlis_core::hookwire::Ask::Chats
 
@@ -32,10 +33,55 @@ fn last_moves() -> &'static Mutex<HashMap<(PlaneId, u32), i64>> {
     LAST.get_or_init(Mutex::default)
 }
 
-/// Each project's dispatch records, as history last drew them.
-fn drawings() -> &'static Mutex<HashMap<PlaneId, Drawing>> {
-    static DRAWN: OnceLock<Mutex<HashMap<PlaneId, Drawing>>> = OnceLock::new();
+/// What history drew, and how often each project closed since the app started.
+#[derive(Default)]
+struct Drawings {
+    /// Each open project's dispatch records, as history last drew them.
+    by_plane: HashMap<PlaneId, Drawing>,
+    /// How many times each project closed: an answer begun before a close holds nothing for
+    /// it after ([`with_records`]).
+    closes: HashMap<PlaneId, u64>,
+}
+
+fn drawings() -> &'static Mutex<Drawings> {
+    static DRAWN: OnceLock<Mutex<Drawings>> = OnceLock::new();
     DRAWN.get_or_init(Mutex::default)
+}
+
+/// How many times project `plane` has closed: what an answer notes as it begins.
+fn closes_of(plane: &PlaneId) -> u64 {
+    drawings()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .closes
+        .get(plane)
+        .copied()
+        .unwrap_or(0)
+}
+
+/// **`f` of project `plane`'s dispatch records**, drawn again only where they changed. An
+/// answer `begun` before the project last closed draws them for itself and holds nothing, so
+/// what [`project_closed`] let go of is not held again.
+fn with_records<R>(
+    plane: &PlaneId,
+    root: &std::path::Path,
+    begun: u64,
+    f: impl FnOnce(&[purlis_core::dispatchrecord::Record]) -> R,
+) -> R {
+    let mut drawings = drawings()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if drawings.closes.get(plane).copied().unwrap_or(0) == begun {
+        f(&drawings
+            .by_plane
+            .entry(plane.clone())
+            .or_default()
+            .drawn(root)
+            .records)
+    } else {
+        drop(drawings);
+        f(&Drawing::default().drawn(root).records)
+    }
 }
 
 /// **Chat `session` of `plane` moved on its board now.**
@@ -54,6 +100,15 @@ pub fn closed(plane: &PlaneId, session: u32) {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .remove(&(plane.clone(), session));
+}
+
+/// **Project `plane` closed**: its dispatch records, as history last drew them, are let go of.
+pub fn project_closed(plane: &PlaneId) {
+    let mut drawings = drawings()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    drawings.by_plane.remove(plane);
+    *drawings.closes.entry(plane.clone()).or_default() += 1;
 }
 
 fn last_moved(plane: &PlaneId, session: u32) -> Option<i64> {
@@ -113,6 +168,7 @@ fn count_tasks_at_work(open: &mut [(u32, Chat)]) {
 
 /// **The `purlis.chats` data of workspace `workspace`** in the project `held`, `plane`.
 pub fn answer(held: &Held, plane: &PlaneId, workspace: &str, asked: Asked) -> Value {
+    let begun = closes_of(plane);
     let board = held.board();
     let mut outcomes = crate::dispatches::Outcomes::of(held);
     let facts_of = |session: u32, from: Option<&HandedFrom>, shell: bool| {
@@ -150,15 +206,9 @@ pub fn answer(held: &Held, plane: &PlaneId, workspace: &str, asked: Asked) -> Va
     if !asked.history {
         return chats::answer(&open, &[], workspace, asked);
     }
-    let mut drawings = drawings()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let records = &drawings
-        .entry(plane.clone())
-        .or_default()
-        .drawn(held.root())
-        .records;
-    chats::answer(&open, records, workspace, asked)
+    with_records(plane, held.root(), begun, |records| {
+        chats::answer(&open, records, workspace, asked)
+    })
 }
 
 /// **The workspace a `chats` ask lists, and what it asks**: the asking chat's workspace as
@@ -265,6 +315,64 @@ mod tests {
         assert!(last_moved(&plane, 4).is_some());
         closed(&plane, 4);
         assert_eq!(last_moved(&plane, 4), None);
+    }
+
+    #[test]
+    fn a_project_that_closed_no_longer_holds_its_drawn_records() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let root = dir.path().join("project");
+        std::fs::create_dir_all(root.join("workspaces").join("alpha")).expect("a workspace");
+        std::fs::write(purlis_core::names::manifest(&root), "schema = 1\n").expect("the project");
+        let planes = crate::planes::Planes::telling(
+            std::sync::Arc::new(|_| {}),
+            crate::Shipped::default(),
+            None,
+        );
+        let id = planes.open(&root);
+        let held = planes.held(&id).expect("held");
+        let history = Asked {
+            history: true,
+            limit: chats::HISTORY_DEFAULT,
+        };
+        answer(&held, &id, "alpha", history);
+        let drawn = || {
+            drawings()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .by_plane
+                .contains_key(&id)
+        };
+        assert!(drawn(), "history drew the project's records");
+        drop(held);
+        planes.close(&id).expect("it closes");
+        assert!(!drawn(), "and let go of them when it closed");
+    }
+
+    #[test]
+    fn an_answer_begun_before_its_project_closed_does_not_hold_its_records_again() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let root = dir.path().join("project");
+        std::fs::create_dir_all(root.join("workspaces").join("alpha")).expect("a workspace");
+        let plane = PlaneId::for_tests(&root);
+        let begun = closes_of(&plane);
+        project_closed(&plane);
+        let records = with_records(&plane, &root, begun, <[_]>::len);
+        assert_eq!(records, 0);
+        let drawn = drawings()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .by_plane
+            .contains_key(&plane);
+        assert!(!drawn, "the closed project's records are not held again");
+        // An answer begun after the close holds them, as one for an open project does.
+        with_records(&plane, &root, closes_of(&plane), <[_]>::len);
+        assert!(
+            drawings()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .by_plane
+                .contains_key(&plane)
+        );
     }
 
     fn ask(chat: u32, limit: Option<u32>) -> purlis_core::hookwire::ChatsAsk {
