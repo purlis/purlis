@@ -215,6 +215,80 @@ pub fn remove_discarding(
     Ok(removed)
 }
 
+/// **Pool `name`'s Remove, where a pin change was found of it** (#6270, ADR 0123 §3): decided from
+/// `found`, the changes already found ([`crate::poolsetup::pinchange::found_now`]), so Remove
+/// never contacts the machine to decide, and forgets the pool even once the machine is
+/// unreachable. `None` where no change was found of it: the usual Remove is for it. Where one
+/// was, and `elsewhere` says the person was not told the pool is only forgotten here, nothing is
+/// done; else it is forgotten here ([`forget_untrusted`]), saying what stays on the machine.
+pub fn forget_where_untrusted(
+    config_root: &Path,
+    name: &str,
+    elsewhere: bool,
+    found: &[crate::poolsetup::pinchange::PinChange],
+) -> Option<Result<String, Refused>> {
+    if !found.iter().any(|change| change.pool == name) {
+        return None;
+    }
+    if !elsewhere {
+        return Some(Err(Refused::Other(format!(
+            "Pool {name}'s machine isn't the one you trusted any more, so nothing was removed. \
+             Look at its row, and remove it again."
+        ))));
+    }
+    Some(forget_untrusted(config_root, name))
+}
+
+/// **Removes pool `name`, on a machine whose pin no longer holds, by forgetting it here** (#6270,
+/// ADR 0123 §3): nothing is sent to that machine, so its runners' containers and homes stay there.
+/// What stays, and the commands that remove it on that machine, are answered. Refused for a pool
+/// on this machine.
+pub fn forget_untrusted(config_root: &Path, name: &str) -> Result<String, Refused> {
+    let locked = runners::lock(config_root);
+    let pool = runners::pools(config_root)?
+        .into_iter()
+        .find(|pool| pool.name() == name)
+        .ok_or_else(|| Refused::Other(format!("no pool named {name} is on this machine")))?;
+    let host = match pool.remote_engine() {
+        Some(runners::RemoteEngine::Ssh(remote)) => remote.route.host().to_owned(),
+        Some(runners::RemoteEngine::Tls(remote)) => remote.route.host().to_owned(),
+        None => {
+            return Err(Refused::Other(format!(
+                "pool {name} runs on this machine's Docker, so it is removed, never only \
+                 forgotten"
+            )));
+        }
+    };
+    let of_it: Vec<runners::Kept> = runners::read(config_root)?
+        .into_iter()
+        .filter(|kept| kept.pool() == name)
+        .collect();
+    let mut left = Vec::new();
+    for kept in &of_it {
+        runners::forget_locked(config_root, kept.name(), &locked)?;
+        let (id, volume) = (kept.made.container.as_str(), kept.made.runner.volume());
+        left.push(format!(
+            "Runner {}'s container {id} and its home volume {volume} stay on {host}, with \
+             everything chats left in them. To remove them, run this on {host}: docker \
+             container rm --force {id} && docker volume rm --force {volume}",
+            kept.name()
+        ));
+    }
+    runners::forget_pool_locked(config_root, name, &locked)?;
+    crate::machine::update(config_root, |store| {
+        for recent in &mut store.recents {
+            recent.forget_pool(name);
+        }
+    })
+    .map_err(|why| {
+        Refused::Other(format!(
+            "pool {name} was forgotten, but the workspaces that ran their chats on it could not \
+             be set back to this machine: {why}"
+        ))
+    })?;
+    Ok(left.join(" "))
+}
+
 /// `runner a`, or `runners a, b and c`, for a sentence the window shows.
 fn runners_said(names: &[String]) -> String {
     match names {
@@ -997,6 +1071,10 @@ pub enum OldHome {
     Held,
     /// It could not be read, so it is not known to hold none: the runner stays held all the same.
     Unread,
+    /// **It is on the engine trusted before** (#6270): a pool on another machine whose engine
+    /// there was trusted again. Nothing of it is read or removed on the new engine; it is
+    /// remembered as left behind (`purlis pool left-behind`).
+    Elsewhere,
 }
 
 /// **Makes the pool `name`'s runner again, once it was removed outside purlis** (#4149): Docker
@@ -1041,11 +1119,17 @@ fn make_again_as(
         .find(|pool| pool.name() == name)
         .ok_or_else(|| Refused::Other(format!("no pool named {name} is on this machine")))?;
     let old = runners::runner_for(config_root, name)?;
-    let gone = match docker
+    let (gone, elsewhere) = match docker
         .missing(&old.made, old.engine.as_deref())
         .map_err(|why| Refused::Other(why.0))?
     {
-        Some(Missing::Removed(gone)) => gone,
+        Some(Missing::Removed(gone)) => (gone, false),
+        // On another machine, `docker` reaches only the engine its pin names, so this is the one
+        // the person trusted again (#6270): the runner is made here, and nothing of the old one,
+        // on the engine trusted before, is carried, read or removed.
+        Some(Missing::OnAnotherEngine) if pool.on_another_machine() => {
+            (crate::dockerpool::Gone { home_kept: false }, true)
+        }
         // Made here, it would be a second runner on the wrong engine (#4166).
         Some(Missing::OnAnotherEngine) => {
             return Err(Refused::Other(format!(
@@ -1101,20 +1185,24 @@ fn make_again_as(
     // #4633). A home that could not be read is held too: this press is the only look it gets.
     // It reads under the runners lock, as the whole of this press runs (D-4859-2): only a look's
     // read runs outside it (#4861).
-    let old_home = match holds_a_conversation(config_root, docker, &old, &made) {
-        Ok(true) => OldHome::Held,
-        Ok(false) => OldHome::Removed,
-        Err(why) => {
-            tracing::warn!(
-                "purlis: runner {} of pool {name} was made again, and the home of the one \
-                 removed outside purlis could not be read, so it is kept until it is discarded \
-                 in Devices: {why}",
-                old.name()
-            );
-            OldHome::Unread
+    let old_home = if elsewhere {
+        OldHome::Elsewhere
+    } else {
+        match holds_a_conversation(config_root, docker, &old, &made) {
+            Ok(true) => OldHome::Held,
+            Ok(false) => OldHome::Removed,
+            Err(why) => {
+                tracing::warn!(
+                    "purlis: runner {} of pool {name} was made again, and the home of the one \
+                     removed outside purlis could not be read, so it is kept until it is \
+                     discarded in Devices: {why}",
+                    old.name()
+                );
+                OldHome::Unread
+            }
         }
     };
-    if old_home != OldHome::Removed {
+    if old_home != OldHome::Removed && old_home != OldHome::Elsewhere {
         // Its sign-ins were carried here already: a later Discard or bring back carries none
         // again.
         let held = runners::note_locked(
@@ -2330,7 +2418,11 @@ fn holdable(program: &Path) -> Result<(), Refused> {
 /// machine, pointed at the pool's kubeconfig and context here), for the desktop that is
 /// `desktop`:
 ///
-/// - the cluster's Pool must still name the key the person checked;
+/// - the cluster's Pool must still name the key the person checked, and that key must be one the
+///   person confirmed: `pasted`, as their cluster's admin gave it, or, with nothing pasted, the
+///   one this machine made in this Pool setup, on the pool's context, in that cluster
+///   ([`crate::poolsetup::confirm_key`]). Whatever the caller says of how it was confirmed, it is
+///   asked again here, so no caller pins an unconfirmed key;
 /// - **the pool keeps its own copy of the context** ([`runners::keep_kubeconfig`]), and every
 ///   later run of its kubectl is pointed at it, whatever the kubeconfig says later;
 /// - the programs its kubectl runs are found and kept with the pool, for no chat to write
@@ -2344,6 +2436,7 @@ pub fn add_cluster(
     config_root: &Path,
     kubectl: &crate::clusterpool::Kubectl,
     pool: &runners::ClusterPool,
+    pasted: Option<&str>,
     desktop: &Pinned,
     within: std::time::Duration,
 ) -> Result<runners::ClusterKept, Refused> {
@@ -2363,6 +2456,8 @@ pub fn add_cluster(
             pool.pool()
         )));
     }
+    let confirmed = crate::poolsetup::confirm_key(config_root, pool.context(), &named, pasted)?;
+    let pool = &pool.clone().confirmed_by(confirmed);
     let context = taken_from
         .context_kept()
         .map_err(|why| Refused::Other(why.to_string()))?;
@@ -2483,6 +2578,107 @@ pub fn before_cluster_link(
         tracing::warn!("purlis: pool {name}'s cluster operator key moved, and was not kept: {why}");
     }
     checked
+}
+
+/// **How a cluster pool's pin stands against what its Pool names now** (#4495), as Pool setup
+/// shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PinNow {
+    /// The Pool names the pinned key, or one the pinned key vouches for its next.
+    Holds,
+    /// The Pool names `named`, a key the pinned one never vouched for: every link to its runner
+    /// is refused until the person checks that key and pins it again ([`pin_again`]).
+    Changed { named: String },
+    /// The Pool says it is in another cluster than the one pinned: no key of it is pinned again.
+    OtherCluster,
+    /// The Pool couldn't be read, or names no key, and why: nothing is said of its key.
+    Unread(String),
+}
+
+/// **[`PinNow`] for the cluster pool `name`** at `now`, read through its own copy of its context.
+/// Only reads: a roll the pinned key vouches for is followed where a link checks it
+/// ([`before_cluster_link`]), never here.
+pub fn pin_now(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    name: &str,
+    now: u64,
+) -> PinNow {
+    let unread = |why: String| PinNow::Unread(crate::shown::short(&why));
+    let pool = match runners::cluster_pools(config_root) {
+        Ok(pools) => match pools.into_iter().find(|pool| pool.name() == name) {
+            Some(pool) => pool,
+            None => return unread(format!("no cluster pool named {name} is on this machine")),
+        },
+        Err(why) => return unread(why.to_string()),
+    };
+    let pinned = match pool.pin() {
+        Ok(pinned) => pinned,
+        Err(why) => return unread(why.to_string()),
+    };
+    let seen = match pool.kubectl(kubectl).pool(pool.pool()) {
+        Ok(seen) => seen,
+        Err(why) => return unread(why.to_string()),
+    };
+    if seen.cluster.as_deref() != Some(pinned.cluster.as_str()) {
+        return PinNow::OtherCluster;
+    }
+    match pinned.followed(&seen, now) {
+        Ok(_) => PinNow::Holds,
+        Err(why) => match seen.signing_key {
+            Some(named) if crate::clusterpool::OperatorKey::from_spelled(&named).is_ok() => {
+                PinNow::Changed { named }
+            }
+            _ => unread(why.to_string()),
+        },
+    }
+}
+
+/// **Pins the cluster pool `name`'s key again** (#4495, F on #4469): the key its Pool names now,
+/// and only where it is `pasted`, the key the person confirmed with their cluster's admin, and the
+/// Pool is still in the cluster pinned. Anything else leaves the pin as it was. Its runner is
+/// still the one paired: the next link checks the operator's word for it with the new key.
+pub fn pin_again(
+    config_root: &Path,
+    kubectl: &crate::clusterpool::Kubectl,
+    name: &str,
+    pasted: &str,
+) -> Result<(), Refused> {
+    let pool = runners::cluster_pools(config_root)?
+        .into_iter()
+        .find(|pool| pool.name() == name)
+        .ok_or_else(|| {
+            Refused::Other(format!("no cluster pool named {name} is on this machine"))
+        })?;
+    let confirmed = crate::clusterpool::OperatorKey::from_pasted(pasted)
+        .map_err(|why| Refused::Other(why.to_string()))?;
+    let was = pool.pin()?;
+    let seen = pool
+        .kubectl(kubectl)
+        .pool(pool.pool())
+        .map_err(|why| Refused::Other(why.to_string()))?;
+    let named = crate::clusterpool::PoolPin::first(pool.pool(), &seen)
+        .map_err(|why| Refused::Other(why.to_string()))?;
+    if named.cluster != was.cluster {
+        return Err(Refused::Other(format!(
+            "the cluster's pool {} says it is in another cluster than the one pinned when the pool \
+             was added, so nothing was pinned; remove the pool and add it again",
+            pool.pool()
+        )));
+    }
+    if named.key != confirmed {
+        return Err(Refused::Other(format!(
+            "the key you pasted isn't the one the cluster's pool {} names, so nothing was pinned; \
+             stop here and check with your cluster's admin: you may be reaching another cluster",
+            pool.pool()
+        )));
+    }
+    runners::keep_cluster_pin_confirmed(
+        config_root,
+        name,
+        &named,
+        crate::clusterpool::Confirmed::Pasted,
+    )
 }
 
 /// **What each cluster pool's kept runner is told of its deletion** (#3981): each pool's name and

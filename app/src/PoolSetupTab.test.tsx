@@ -28,6 +28,7 @@ const step = (id: string, name: string, state: string, more: Partial<PoolSetupSt
     also: null,
     parts: [],
     undo: null,
+    prefill: null,
     ...more,
   }) as PoolSetupStep;
 
@@ -48,7 +49,15 @@ const setup = (at: string, steps: PoolSetupStep[], pool: string | null = null): 
   noticed: false,
   recommended: "docker",
   others: [],
-  contexts: { names: [], recommended: null, chosen: null, pools: [] },
+  contexts: {
+    names: [],
+    recommended: null,
+    chosen: null,
+    pools: [],
+    joining: false,
+    pinned: null,
+    key_changed: false,
+  },
 });
 
 const READY = setup("where", [
@@ -560,6 +569,9 @@ describe("Where, on a cluster (#4492)", () => {
       recommended: "kind-team",
       chosen: null,
       pools: [],
+      joining: false,
+      pinned: null,
+      key_changed: false,
     },
   });
 
@@ -671,6 +683,58 @@ describe("Sign-ins on a cluster pool not marked as the person's own (#4071, #449
     );
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "Open Settings › Pools" })).toBeNull(),
+    );
+  });
+});
+
+describe("Docker here pointing at another machine (#6268)", () => {
+  const elsewhere = (prefill: PoolSetupStep["prefill"]) =>
+    setup("where", [
+      step("where", "Where chats run", "attention", {
+        findings: ["Docker here points at an engine purlis can't tell is on this machine."],
+        next: action("use-local-docker", "Use this machine's Docker"),
+        other: action("use-remote-docker", "Set up Docker on another machine"),
+        prefill,
+      }),
+      step("pool", "Pool", "later"),
+    ]);
+
+  it("offers Set up Docker on another machine, opening Connect with DOCKER_HOST's address", async () => {
+    const calls = core(() => elsewhere({ route: "ssh://me@build-box", context: null }));
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Set up Docker on another machine" }),
+    );
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "pool_setup_machine",
+        args: { route: "ssh://me@build-box", identity: null },
+      }),
+    );
+  });
+
+  it("opens Connect with the current context, read again by its name", async () => {
+    const calls = core(() => elsewhere({ route: "ssh://me@build-box", context: "build-box" }));
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Set up Docker on another machine" }),
+    );
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "pool_setup_docker_context",
+        args: { name: "build-box" },
+      }),
+    );
+  });
+
+  it("with nothing to fill in, opens Docker on another machine as it is", async () => {
+    const calls = core(() => elsewhere(null));
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Set up Docker on another machine" }),
+    );
+    await waitFor(() =>
+      expect(calls.map((one) => one.cmd)).toContain("pool_setup_choose_remote_docker"),
     );
   });
 });

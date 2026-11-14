@@ -981,8 +981,21 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_machine",
     "pool_setup_ssh_hosts",
     "pool_setup_podman_connections",
+    // Picking a Docker context reads it with this machine's docker, and keeping a pool as it is
+    // changes the pool's record (#6268): the person's own press, as picking a machine is.
+    "pool_setup_docker_contexts",
+    "pool_setup_docker_context",
+    "pool_setup_keep_pool_as_it_is",
     "pool_setup_connect",
     "pool_setup_trust",
+    // Check and trust again (#6270): meeting a made pool's machine again and keeping the pin the
+    // person confirmed are theirs, as trusting a new one is; and what was found changed is read
+    // only by the window that shows its Notice.
+    "pool_setup_check_and_trust_again",
+    "pool_setup_trust_again",
+    "pools_pin_changed",
+    // Naming a tcp:// machine's TLS files, a vault entry among them, is the person's too (#6267).
+    "pool_setup_tls_files",
     "pool_setup_name",
     "pool_setup_pool",
     "pool_setup_add",
@@ -1008,6 +1021,13 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_install",
     "pool_setup_operator_image",
     "pool_setup_cluster_pool",
+    // Pinning a cluster pool's changed key again (#4495), only as the person confirmed it.
+    "pool_setup_pin_again",
+    // Send to your admin's wait (#4496): kept, and forgotten, only on the person's press.
+    "pool_setup_ask_admin",
+    "pool_setup_stop_waiting",
+    // Get help (#4497): it starts a chat as the person.
+    "pool_setup_get_help",
     "add_docker_pool",
     "remove_docker_pool",
     "docker_pool_link",

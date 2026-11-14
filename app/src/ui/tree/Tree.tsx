@@ -73,7 +73,13 @@ import {
 } from "react-aria-components";
 import { mergeProps, mergeRefs, useLocale } from "react-aria";
 import { ChevronRight } from "lucide-react";
-import { rowHolds, useCollectionElement, useRowMenu, type RowMenu } from "../list/List";
+import {
+  groupHeader,
+  rowHolds,
+  useCollectionElement,
+  useRowMenu,
+  type RowMenu,
+} from "../list/List";
 import {
   heardIds,
   RowHeard,
@@ -874,14 +880,7 @@ export function TreeSection<T extends object>({
       data-part="section"
     >
       {title !== undefined && (
-        <AriaTreeHeader
-          className="ui-text-label"
-          data-scope="tree"
-          data-part="header"
-          data-named={named || undefined}
-        >
-          {title}
-        </AriaTreeHeader>
+        <AriaTreeHeader {...groupHeader("tree", named)}>{title}</AriaTreeHeader>
       )}
       {children}
     </AriaTreeSection>

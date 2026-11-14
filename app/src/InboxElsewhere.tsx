@@ -246,7 +246,7 @@ export function ElsewhereGroup({
       id={`group:${key}`}
       className="inbox-chat inbox-elsewhere"
       title={
-        <span className="inbox-chain">
+        <span className="inbox-chain ui-text-secondary ui-text-strong">
           {item.persona != null && <PersonaMark persona={item.persona} mark={item.mark} />}
           {item.name}
         </span>

@@ -6,6 +6,7 @@ import {
   type EventCallback,
   type UnlistenFn,
 } from "@tauri-apps/api/event";
+import { eventHandled } from "./slowLog";
 
 /**
  * This window's own name, and the one way the page listens for the core's events (charter#126).
@@ -36,9 +37,15 @@ export function thisWindow(): string {
 }
 
 /** Listens for `event` in this window: what the core sends every window, and what it sends
- *  this one. Never what it sends another window. Its stop never fails: see {@link quietly}. */
+ *  this one. Never what it sends another window. Its stop never fails: see {@link quietly}.
+ *  Each one handled is counted for the frame it is handled in, so a stall can name it
+ *  (`slowLog.ts`). */
 export function listen<T>(event: string, handler: EventCallback<T>): Promise<UnlistenFn> {
-  return listenAnywhere<T>(event, handler, { target: thisWindow() }).then(quietly);
+  const counted: EventCallback<T> = (heard) => {
+    eventHandled(event);
+    return handler(heard);
+  };
+  return listenAnywhere<T>(event, counted, { target: thisWindow() }).then(quietly);
 }
 
 /**

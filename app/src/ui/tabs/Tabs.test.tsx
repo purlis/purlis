@@ -95,7 +95,8 @@ describe("the parts around and inside the tabs", () => {
     expect(tabsPart("layout")).toEqual({ "data-scope": "tabs", "data-part": "layout" });
     expect(tabsPart("strip")).toEqual({ "data-scope": "tabs", "data-part": "strip" });
     expect(tabPart("closer")).toEqual({ "data-scope": "tabs", "data-part": "closer" });
-    expect(editorToolbar).toEqual({
+    expect(editorToolbar("piece-files-head")).toEqual({
+      className: "ui-text-secondary piece-files-head",
       "data-scope": "editor",
       "data-part": "toolbar",
       "data-variant": "default",

@@ -771,7 +771,7 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
 | Card | `Card` (as a `div`, `li`, `p`, `section` or `article`), `CardTitle` (`ui/card/Card.tsx`); `Facts`, `Fact` (`Facts.tsx`); `Totals`, `Tile` (`Totals.tsx`); `CardButton`, a card pressed whole (`CardButton.tsx`, #3655), its own family `card-button` (#3885) | `root`, `title`; `facts-label`, `facts-value`, `tile`, `tile-value`; a pressed card's `root`, `mark`, `press`, `title`, `more`, `line` | `raised`, `ask`; a pressed card's `door`, `pick` |
 | Notice | `Notice`, `NoticeList`, `NoticePaneRow` (`src/Notice.tsx`), drawn through `ui/notice/Notice.tsx` | `root`, `message`, `whose`, `title`, `mark`, `sub` (a card's state and age), `head`, `heading` and `end` (a card's head, layout only), and `under` (what a way out opened); `notice-card`'s `said` holds a card's live region | `news`, `trouble`, `attention` |
 | Badge | `Badge`, `HostStatus` (`ui/badge/Badge.tsx`) | `root` | `neutral`, `accent`, `waiting`, `ok` |
-| Count | `Count`, `CountGroup` (`ui/badge/Badge.tsx`) | `root`, `group` | `neutral`, `accent`, `waiting`, `hot` |
+| Count | `Count`, `CountGroup`, `RoundCount` (`ui/badge/Badge.tsx`) | `root`, `group`, `round` | `neutral`, `accent`, `waiting`, `hot` |
 | Separator | `Separator` (`ui/separator/Separator.tsx`, on React Aria's) | `root` | none |
 
 - **A card is a box one step off its surface**: an ask in the Inbox, a task's question in a chat,
@@ -833,6 +833,17 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
   tab's counts are one pill (`CountGroup`): its chats, and those that need the person in the
   needs-you colours (`hot`). A badge with a hint is the tooltip's target and a Tab stop. A number
   inside a sentence or a segmented option ("Chats 3") is words, not a count.
+- **What waits on the person is a round count** (`RoundCount`, ADR 0121 as amended 2026-11-12,
+  #6342): the ✋'s count, a project tab's on the rail and an Asks chip's (`Segment`'s
+  `countAs="round"`). A 1:1 circle in the ✋'s colours (`needs-you.count`), 11px strong figures
+  of one width, one character: 1 to 9, then 9+ (`capped`), so it never changes size. `at="mark"`
+  is 16px on a mark's corner, ringed 2px in the ground under it (`--count-ground`, the window's
+  frame by default); `at="inline"` is 14px after words. Its character is drawn by the stylesheet,
+  so a button holding it keeps a name of its own; what is heard is always the real number, its
+  `said` or its host's description. Nothing is drawn for 0. A changed drawn value slides once
+  (`--motion-duration-leave`), from below as it rises, from above as it falls; the same drawn
+  value (9+ to 9+) does not, the element is never drawn again to slide (two keyframes of the same
+  motion alternate), and under reduced motion it just changes.
 - **A separator is its own part, never a control's border** (#2804, #2877). Its colour is
   `separator.root.fill`; its width is the theme's `separator.width`, 0 for none. Both reach the
   menu's rule, the dialog's footer rule, the status bar's line, the rows of the Inbox's list and

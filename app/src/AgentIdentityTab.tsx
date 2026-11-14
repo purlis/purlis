@@ -170,7 +170,7 @@ export function RemoveIdentity({
       onClose={onClose}
       title={`Remove the identity on ${host}?`}
       description={
-        <p className="came-back">
+        <p className="came-back ui-text-secondary">
           Its tool lines, its key and its live tokens go at once, and chats stop acting as it. The
           App itself stays on GitHub until you delete it there.
         </p>

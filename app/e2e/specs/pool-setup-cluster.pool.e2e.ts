@@ -253,7 +253,8 @@ describe("Pool setup on a kind cluster", () => {
     await type("Runner image", IMAGE);
     await press("Create the pool");
     await press("Add the pool here", MAKING);
-    await expect($("aria/Cluster operator key")).toBeDisplayed();
+    // The signing key was made in this setup, so the key the Pool names is shown with no paste.
+    await expect($("aria/Key the pool names")).toBeDisplayed();
     await press("Pin the key and add the pool", MAKING);
 
     // Sign-ins: the pool is no one's own until the person says so, in Settings › Pools.

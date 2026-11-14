@@ -23,7 +23,9 @@ const STEP: PoolSetupStep = {
   skippable: true,
   also: null,
   parts: [],
+  admin: null,
   undo: null,
+  prefill: null,
   see: {
     note: "This is the sign-in the button runs.",
     text: "purlis profile sign-in personal --pool dev-box",

@@ -302,6 +302,9 @@ function descriptorsOnMacos(pid: number): number | null {
  *   **M2 on macOS is the peak**, the number ADR 0082's 1,529 MB was. Resident memory reads far
  *   low there. So each system is its own baseline: M2 on macOS and M2 on Linux are not one
  *   series. `null` on Linux.
+ * - `webContentEach`: each of those processes still alive, by pid, with its own kilobytes:
+ *   its footprint on macOS, its resident memory on Linux. What a look saw, for the log: which
+ *   process came or went between two looks is read from it, never guessed from the count.
  * - `footprintError`: why `footprint` gave no reading for some process, in its own words, or
  *   `null`. A missing reading is never a silent `null`.
  * - `harnessKb`, `harnessLargestKb`: the harnesses' memory with their child runs, together and
@@ -317,8 +320,11 @@ function descriptorsOnMacos(pid: number): number | null {
 export interface WebAndHarnessMemory {
   webContentKb: number;
   webContentProcesses: number;
+  /** The web content processes counted, by pid: which ones, for a failure to name (#6589). */
+  webContentPids: number[];
   webContentFootprintKb: number | null;
   webContentFootprintPeakKb: number | null;
+  webContentEach: { pid: number; kb: number }[];
   footprintError: string | null;
   harnessKb: number;
   harnessLargestKb: number;
@@ -360,15 +366,23 @@ export function webAndHarnessMemory(pid: number): WebAndHarnessMemory {
   let webContentFootprintKb: number | null = null;
   let webContentFootprintPeakKb: number | null = null;
   let footprintError: string | null = null;
-  let webContentProcesses = web.pids.length;
+  let webContentPids = web.pids;
+  let webContentEach = rows
+    .filter((row) => web.pids.includes(row.pid))
+    .map((row) => ({ pid: row.pid, kb: row.rssKb }));
   if (process.platform === "darwin") {
+    webContentEach = [];
     if (web.pids.length === 0) {
       footprintError = "no web content process was found to ask footprint about";
     } else {
       const read = footprintsOfLiving(web.pids);
       const each = Object.values(read.byPid);
       footprintError = read.error;
-      webContentProcesses -= read.gone.length;
+      webContentPids = web.pids.filter((one) => !read.gone.includes(one));
+      webContentEach = Object.entries(read.byPid).map(([pid, one]) => ({
+        pid: Number(pid),
+        kb: one.footprintKb,
+      }));
       if (each.length > 0) {
         webContentFootprintKb = each.reduce((sum, one) => sum + one.footprintKb, 0);
         webContentFootprintPeakKb = each.reduce((most, one) => Math.max(most, one.peakKb), 0);
@@ -378,9 +392,11 @@ export function webAndHarnessMemory(pid: number): WebAndHarnessMemory {
   const harness = harnessMemory(rows, pid);
   return {
     webContentKb: web.rssKb,
-    webContentProcesses,
+    webContentProcesses: webContentPids.length,
+    webContentPids,
     webContentFootprintKb,
     webContentFootprintPeakKb,
+    webContentEach,
     footprintError,
     harnessKb: harness.rssKb,
     harnessLargestKb: harness.largestKb,

@@ -9,6 +9,7 @@ import {
   type PlaneId,
   type PoolSetupAction,
   type PoolSetupContexts,
+  type PoolSetupPrefill,
   type PoolSetupShown,
   type PoolSetupStep,
 } from "./bindings";
@@ -18,13 +19,16 @@ import { POOLS } from "./settings/pools";
 import { CheckStep, ClusterPoolStep, ContextOptions, InstallStep } from "./poolsetup/ClusterSteps";
 import { ConnectStep } from "./poolsetup/ConnectStep";
 import { Action, Recommended, Say, SeeWhat, StepHead } from "./poolsetup/parts";
+import { GET_HELP_SAYS, GetHelp, PoolSetupPlane } from "./poolsetup/GetHelp";
 import { IdentityStep } from "./poolsetup/IdentityStep";
 import { NOTHING_CHOSEN, PoolStep, type Chosen } from "./poolsetup/PoolStep";
 import { SignInsStep } from "./poolsetup/SignInsStep";
 import { TryStep } from "./poolsetup/TryStep";
 import {
   readReleaseImage,
+  pickPoolSetupMachine,
   startANewPoolSetup,
+  startPoolSetupOn,
   startPoolSetupOver,
   usePools,
   usePoolSetupStart,
@@ -65,6 +69,8 @@ import { STEP_STATES, StepList, type StepState } from "./ui/steps/Steps";
 
 /** How often the tab asks again while it waits on Docker. */
 const RECHECK_MS = 5000;
+/** How often a step waiting for an admin is checked again while the tab is open (#4496). */
+const ADMIN_RECHECK_MS = 30_000;
 
 const STATES: readonly string[] = STEP_STATES;
 
@@ -124,7 +130,8 @@ function Where({
   contexts: PoolSetupContexts;
   onNext: () => void;
   onChose: () => void;
-  onChoseRemote: () => void;
+  /** Docker on another machine, with the machine to open Connect with where there is one. */
+  onChoseRemote: (prefill?: PoolSetupPrefill | null) => void;
   onChoseCluster: (context: string) => void;
   onRecheck: () => void;
   said: (trouble: string) => void;
@@ -247,7 +254,15 @@ function Where({
       )}
       {step.see && <SeeWhat text={step.see.text} note={step.see.note} />}
       {next && onlySaid ? (
-        <Action does={next.does}>{other}</Action>
+        <Action does={next.does}>
+          {/* Docker here points at another machine: set up a pool there (#6268). */}
+          {step.other?.id === "use-remote-docker" && (
+            <Button variant="secondary" onPress={() => onChoseRemote(step.prefill)}>
+              {step.other.label}
+            </Button>
+          )}
+          {other}
+        </Action>
       ) : next ? (
         <Action
           does={next.does}
@@ -339,7 +354,11 @@ type TabProps = {
 
 export function PoolSetupTab(props: TabProps) {
   const start = usePoolSetupStart();
-  return <PoolSetupGuide key={start.count} {...props} continuing={start.continuing} />;
+  return (
+    <PoolSetupPlane.Provider value={props.plane}>
+      <PoolSetupGuide key={start.count} {...props} continuing={start.continuing} />
+    </PoolSetupPlane.Provider>
+  );
 }
 
 function PoolSetupGuide({
@@ -435,6 +454,15 @@ function PoolSetupGuide({
     }, RECHECK_MS);
     return () => clearInterval(every);
   }, [waiting, reread]);
+  // Waiting for an admin (#4496): doctor asks the cluster, so slower than a Docker that starts.
+  const onTheAdmin = shown?.steps.some((step) => step.state === "waiting") ?? false;
+  useEffect(() => {
+    if (!onTheAdmin) return;
+    const every = setInterval(() => {
+      if (reading.current === 0) reread();
+    }, ADMIN_RECHECK_MS);
+    return () => clearInterval(every);
+  }, [onTheAdmin, reread]);
 
   if (read.state === "reading")
     return (
@@ -523,9 +551,16 @@ function PoolSetupGuide({
               key={setup.kind}
               step={step}
               kind={setup.kind}
-              onChoseRemote={() => {
+              onChoseRemote={(prefill) => {
                 setTrouble(undefined);
                 setShowing(undefined);
+                if (prefill) {
+                  void pickPoolSetupMachine(prefill).then((why) => {
+                    if (why) setTrouble(why);
+                    else reread();
+                  });
+                  return;
+                }
                 void commands.poolSetupChooseRemoteDocker().then((answer) => {
                   if (answer.status === "error") setTrouble(answer.error);
                   else reread();
@@ -553,7 +588,7 @@ function PoolSetupGuide({
               }}
             />
           ) : step?.id === "check" ? (
-            <CheckStep step={step} onNext={() => after("check")} onRecheck={reread} />
+            <CheckStep step={step} plane={plane} onNext={() => after("check")} onRecheck={reread} />
           ) : step?.id === "install" ? (
             <InstallStep step={step} onNext={() => after("install")} changed={reread} />
           ) : step?.id === "pool" && setup.kind === "cluster" ? (
@@ -561,6 +596,8 @@ function PoolSetupGuide({
               step={step}
               contexts={setup.contexts}
               image={releaseImage}
+              pool={setup.pool}
+              onOpenPools={onOpenPools}
               onNext={() => after("pool")}
               changed={() => {
                 setShowing(undefined);
@@ -578,6 +615,11 @@ function PoolSetupGuide({
                 reread();
               }}
               onNext={() => after("connect")}
+              onConnectAgain={(prefill) => {
+                setTrouble(undefined);
+                setShowing(undefined);
+                void startPoolSetupOn(prefill).then((why) => why && setTrouble(why));
+              }}
             />
           ) : step?.id === "signins" && step.next?.id === "mark-as-own" ? (
             <MarkAsOwn step={step} pool={setup.pool} onOpenPools={onOpenPools} onMarked={reread} />
@@ -635,6 +677,12 @@ function PoolSetupGuide({
             />
           ) : (
             step && <Found step={step} onRecheck={reread} />
+          )}
+          {step && (step.state === "attention" || step.state === "waiting") && (
+            <div className="pool-setup-help">
+              <p className="pool-setup-p">{GET_HELP_SAYS}</p>
+              <GetHelp step={step.id} />
+            </div>
           )}
         </div>
       </div>

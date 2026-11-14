@@ -41,9 +41,29 @@ pub fn folders() -> Result<(PathBuf, PathBuf), Finding> {
 
 /// **`docker` as pool `pool`'s runs are given it**: itself for a pool on this machine, else
 /// pointed at the pool's forward, held open, its engine checked against the pin.
+///
+/// **Over Docker's TLS API** (#6267), the same program pointed at the pool's route, its files
+/// checked against the pinned CA before every run ([`crate::tlsroute::pool::docker_over`]).
+///
+/// **What it finds of the pin is kept for the window** ([`crate::poolsetup::pinchange`], #6270): a
+/// changed key, CA or engine is found, and a run that gets through says the pin holds.
 pub fn docker_of(docker: &Docker, pool: &Pool) -> Result<Docker, Finding> {
-    let Some(remote) = pool.remote() else {
-        return Ok(docker.clone());
+    let reached = reach(docker, pool);
+    match &reached {
+        Ok(_) => crate::poolsetup::pinchange::holds(pool.name()),
+        Err(finding) => crate::poolsetup::pinchange::found(pool.name(), finding),
+    }
+    reached
+}
+
+/// [`docker_of`], before what it found is kept.
+fn reach(docker: &Docker, pool: &Pool) -> Result<Docker, Finding> {
+    let remote = match pool.remote_engine() {
+        None => return Ok(docker.clone()),
+        Some(crate::runners::RemoteEngine::Tls(remote)) => {
+            return crate::tlsroute::pool::docker_over(docker, pool.name(), remote);
+        }
+        Some(crate::runners::RemoteEngine::Ssh(remote)) => remote,
     };
     let (engine_links, settings_in) = folders_for(docker)?;
     let ssh = super::ssh_here().map_err(Finding::Here)?;
@@ -171,13 +191,20 @@ fn pointed(
 
 /// **Pool `name`'s `docker` as its link runs it, without opening its forward** (#6269): the
 /// program and the files its check reads as [`docker_of`] gives them, pointed at the forward's
-/// socket, which the check before every connection opens. `docker` itself for a pool on this
-/// machine, or one that is gone.
+/// socket, which the check before every connection opens; over TLS (#6267), pointed at its route.
+/// `docker` itself for a pool on this machine, or one that is gone.
 pub fn docker_for_link(config: &Path, docker: &Docker, name: &str) -> Result<Docker, String> {
     let pools = crate::runners::pools(config).map_err(|why| why.to_string())?;
     let Some(pool) = pools.iter().find(|pool| pool.name() == name) else {
         return Ok(docker.clone());
     };
+    // Over Docker's TLS API (#6267), its route, its files checked against the pinned CA as each
+    // run is prepared: never this machine's own engine.
+    if let Some(crate::runners::RemoteEngine::Tls(remote)) = pool.remote_engine() {
+        return Ok(docker
+            .clone()
+            .over_tls(crate::tlsroute::Through::of(remote)));
+    }
     let Some(remote) = pool.remote() else {
         return Ok(docker.clone());
     };
@@ -186,6 +213,24 @@ pub fn docker_for_link(config: &Path, docker: &Docker, name: &str) -> Result<Doc
     let ssh = super::ssh_here()?;
     let socket = super::socket_of(&engine_links, name)?;
     pointed(docker, &ssh, name, remote, socket, &settings_in).map_err(said)
+}
+
+/// **The `docker` a link to a runner of pool `name` is made with**: `docker` itself for a pool on
+/// this machine, else [`docker_for_link`]'s. Where a pool on another machine can't be pointed at
+/// its engine the link is refused with why: it never falls back to this machine's engine.
+///
+/// The pools are read first: a record that can't be read refuses the link, since it may name a
+/// pool on another machine.
+pub fn docker_for_kept_link(config: &Path, docker: &Docker, name: &str) -> Result<Docker, String> {
+    let pools = crate::runners::pools(config).map_err(|why| why.to_string())?;
+    let elsewhere = pools
+        .iter()
+        .find(|pool| pool.name() == name)
+        .is_some_and(Pool::on_another_machine);
+    if !elsewhere {
+        return Ok(docker.clone());
+    }
+    docker_for_link(config, docker, name)
 }
 
 /// **How long an engine found to be the pinned one is taken as it, over the same forward**: a
@@ -253,6 +298,7 @@ fn forget_failing(pool: &str) {
 /// **Every failing forward is tried again at its next ask, and looked at again from the start**:
 /// the person pressed Check again in Pool setup.
 pub fn look_again() {
+    crate::tlsroute::pool::look_again();
     FAILING
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -270,6 +316,12 @@ pub fn reached(
     local: Result<PathBuf, String>,
 ) -> Result<(Docker, PathBuf), String> {
     let through = docker_of_named(config, docker, name)?;
+    // Over TLS there is no socket here: a sign-in is bound to the pool's route, the one engine it
+    // reaches (#6267).
+    if let Some(tls) = through.over_tls_to() {
+        let route = PathBuf::from(tls.route.spelled());
+        return Ok((through, route));
+    }
     match through.forwarded().map(Path::to_path_buf) {
         Some(socket) => Ok((through, socket)),
         None => Ok((through, local?)),
@@ -282,7 +334,7 @@ pub fn is_remote(config: &Path, name: &str) -> bool {
     crate::runners::pools(config)
         .ok()
         .and_then(|pools| pools.into_iter().find(|pool| pool.name() == name))
-        .is_some_and(|pool| pool.remote().is_some())
+        .is_some_and(|pool| pool.on_another_machine())
 }
 
 /// **Where pool `pool`'s forward has its socket on this machine**, whether or not it is open.
@@ -482,5 +534,101 @@ mod tests {
         assert_eq!(looked.finding, refused);
         assert_eq!(looked.found_at, much_later);
         assert_eq!(looked.failures, 3);
+    }
+    /// **A link to a runner of a pool on another machine is refused where its `docker` can't be
+    /// pointed there**, over SSH to a Docker or to a Podman alike: never made with this machine's.
+    #[test]
+    fn a_link_to_a_pool_on_another_machine_never_falls_back_to_this_machines_docker() {
+        use crate::runners::{Pool, Set, record_pool};
+        let image = crate::dockerpool::Image::pinned(&format!(
+            "ghcr.io/purlis/purlis-runner@sha256:{}",
+            "0".repeat(64)
+        ))
+        .unwrap();
+        let host_key = crate::sshroute::HostKey::parse(
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiGzfjDDJsgYLYCmdkf8Fel9sE6Ma14Y2+c33Y/qZ2n",
+        )
+        .unwrap();
+        // Settings this deep leave no room for the forward's socket beside them.
+        let config = tempfile::tempdir().unwrap();
+        let deep = config.path().join("d".repeat(120)).join("docker-settings");
+        let local = Docker::at("/usr/local/bin/docker").with_settings_in(&deep);
+        for (name, engine) in [
+            (
+                "on-docker",
+                crate::sshroute::EnginePin::Docker("ABCD:EFGH:IJKL".to_owned()),
+            ),
+            (
+                "on-podman",
+                crate::sshroute::EnginePin::Podman {
+                    socket: "/run/podman/podman.sock".to_owned(),
+                    graph_root: "/var/lib/containers/storage".to_owned(),
+                },
+            ),
+        ] {
+            let remote = crate::runners::Remote {
+                route: crate::sshroute::Route::parse("ssh://me@build-box/var/run/docker.sock")
+                    .unwrap(),
+                pin: crate::sshroute::Pin {
+                    host_key: host_key.clone(),
+                    engine,
+                },
+            };
+            let pool = Pool::new(name, image.clone(), Set::default())
+                .unwrap()
+                .on(Some(remote));
+            record_pool(config.path(), &pool).unwrap();
+            assert!(is_remote(config.path(), name));
+            let linked = docker_for_kept_link(config.path(), &local, name);
+            assert!(linked.is_err(), "{name}: linked with {linked:?}");
+        }
+        // Over Docker's TLS API the link's docker is pointed at the pool's route, never here.
+        let tls = crate::tlsroute::Remote {
+            route: crate::tlsroute::Route::parse("tcp://build-box").unwrap(),
+            files: crate::tlsroute::Files::new(
+                "/home/me/.docker/ca.pem".into(),
+                "/home/me/.docker/cert.pem".into(),
+                crate::tlsroute::KeyFrom::File("/home/me/.docker/key.pem".into()),
+            )
+            .unwrap(),
+            pin: crate::tlsroute::Pin {
+                ca: crate::tlsroute::Fingerprint::of_der(b"ca"),
+                engine: "ABCD:EFGH:IJKL".to_owned(),
+            },
+        };
+        let pool = Pool::new("on-tls", image.clone(), Set::default())
+            .unwrap()
+            .on_engine(Some(crate::runners::RemoteEngine::Tls(tls.clone())));
+        record_pool(config.path(), &pool).unwrap();
+        let linked = docker_for_kept_link(config.path(), &local, "on-tls").unwrap();
+        assert_eq!(
+            linked.over_tls_to(),
+            Some(&crate::tlsroute::Through::of(&tls))
+        );
+        // A pool on this machine is linked with this machine's docker, as before.
+        record_pool(
+            config.path(),
+            &Pool::new("here", image, Set::default()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            docker_for_kept_link(config.path(), &local, "here"),
+            Ok(local)
+        );
+    }
+
+    /// **A record of pools that can't be read refuses the link**: it may name a pool on another
+    /// machine, so this machine's docker is never taken for it.
+    #[test]
+    fn a_link_is_refused_where_the_pools_cant_be_read() {
+        let config = tempfile::tempdir().unwrap();
+        let file = crate::machine::dir(config.path()).join(crate::machine::RUNNERS_FILE);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        // Readable by others, so purlis won't read it.
+        std::fs::write(&file, r#"{"version":1,"pools":[],"runners":[]}"#).unwrap();
+        assert!(crate::runners::pools(config.path()).is_err());
+        let local = Docker::at("/usr/local/bin/docker");
+        let linked = docker_for_kept_link(config.path(), &local, "build-box");
+        assert!(linked.is_err(), "linked with {linked:?}");
     }
 }
