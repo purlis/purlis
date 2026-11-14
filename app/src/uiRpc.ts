@@ -4909,7 +4909,7 @@ export type ChatNoticed = {
 	/**
 	 *  The mode purlis didn't set that it reported, once one made it unattended (R-243,
 	 *  T1-44): a standing fault its pane says in a Notice, never an ask. None on every harness
-	 *  but Claude Code.
+	 *  whose adapter reports no mode purlis can check.
 	 */
 	mode: ModeDiffers | null,
 };
@@ -8931,15 +8931,21 @@ export type Merged = {
 };
 
 /**
- *  **A Claude Code chat reported a mode purlis didn't set** (R-243): each mode as Claude Code
- *  names it (`default`, `acceptEdits`, `plan`, `auto`, `bypassPermissions`), or `unknown` for a
- *  string nobody measured ([`purlis_core::attendance::ModeDiffers`]).
+ *  **A chat reported a mode purlis didn't set** (R-243): each mode as its own harness names it,
+ *  or `unknown` for a string nobody measured ([`purlis_core::attendance::ModeDiffers`]), and
+ *  which harness reported it, so the Notice names that harness and its own mode, never one
+ *  harness's words for another's (R-005, Q280).
  */
 export type ModeDiffers = {
 	/**  The mode purlis started it in. */
 	set: string,
 	/**  The mode its armed hook reported. */
 	reported: string,
+	/**
+	 *  The harness that reported it, as the core names it (`claude`), which the window says by
+	 *  its adapter's display name; none where the app holds no harness for the chat.
+	 */
+	harness: string | null,
 };
 
 /**  What the person's mouse did, in a browser they drive (#2014). */
@@ -16224,9 +16230,11 @@ export type StartOptions = {
 /**  The protection a start recorded (R-227): the four fields of its `run.started`. */
 export type StartProtection = {
 	layers: ProtectionLayer[],
-	/**  The last commit of `charter.toml`: a commit, `none` or `unknown`. */
+	/**  The last commit of the plane's own file: a commit, `none` or `unknown`. */
 	charter_commit: string,
-	/**  The working `charter.toml` differed from that commit. */
+	/**  The plane's own file that commit is of: `purlis.toml` or `charter.toml`. */
+	charter_file: string,
+	/**  The working file differed from that commit. */
 	charter_dirty: boolean,
 	/**  How many answers were in force: none until phase 2. */
 	answers_in_force: number,

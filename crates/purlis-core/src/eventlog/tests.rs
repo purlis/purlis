@@ -4530,6 +4530,7 @@ fn a_start_whose_protection_sync_fails_is_still_begun_with_its_routing_record() 
         protection: Some(crate::sandbox::protection::InForce {
             layers: Vec::new(),
             charter_commit: NONE.to_owned(),
+            charter_file: "charter.toml".to_owned(),
             charter_dirty: false,
             answers_in_force: Vec::new(),
         }),

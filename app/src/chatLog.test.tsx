@@ -25,6 +25,7 @@ const started = (over: Partial<NonNullable<Started["protection"]>> = {}): Starte
   protection: {
     layers: [{ layer: "sandbox", level: "off", tier: "chat" }],
     charter_commit: "9b1d2e3f4a",
+    charter_file: "purlis.toml",
     charter_dirty: true,
     answers_in_force: 2,
     ...over,
@@ -57,6 +58,21 @@ describe("the Chat log start row is one line built from the start event", () => 
     ).toBe(
       "Started · Full sandbox, set by an administrator's policy · purlis.toml's commit not known · no answers in force",
     );
+  });
+
+  // Q280. Mutation caught: the file named as `purlis.toml` whatever the plane has, which says
+  // a `charter.toml` plane's commit is of a file it does not have.
+  it("names the plane's own file the start recorded the commit of", () => {
+    expect(startSaid(started({ charter_file: "charter.toml" }))).toContain(
+      "charter.toml at 9b1d2e3, with changes not committed",
+    );
+    expect(startSaid(started({ charter_file: "charter.toml", charter_commit: "none" }))).toContain(
+      "charter.toml in no commit",
+    );
+    expect(
+      startSaid(started({ charter_file: "charter.toml", charter_commit: "unknown" })),
+    ).toContain("charter.toml's commit not known");
+    expect(startSaid(started())).not.toContain("charter.toml");
   });
 
   it("says a start that recorded none, or a tier this version does not know, as such", () => {

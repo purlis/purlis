@@ -90,10 +90,12 @@ function layerSaid(layer: StartProtection["layers"][number]): string {
   return `${level}, ${by}`;
 }
 
+/** The commit of the plane's own file, by the name the start recorded it under (Q280). */
 function commitSaid(protection: StartProtection): string {
-  if (protection.charter_commit === "none") return "purlis.toml in no commit";
-  if (protection.charter_commit === "unknown") return "purlis.toml's commit not known";
-  const at = `purlis.toml at ${protection.charter_commit.slice(0, 7)}`;
+  const file = protection.charter_file;
+  if (protection.charter_commit === "none") return `${file} in no commit`;
+  if (protection.charter_commit === "unknown") return `${file}'s commit not known`;
+  const at = `${file} at ${protection.charter_commit.slice(0, 7)}`;
   return protection.charter_dirty ? `${at}, with changes not committed` : at;
 }
 
@@ -104,8 +106,8 @@ function answersSaid(count: number): string {
 
 /**
  * **The start row's one line** (R-227): the four fields of the start event, each from the
- * event and none from the chat: each layer's level and who set it, the `purlis.toml` commit,
- * and the answers in force.
+ * event and none from the chat: each layer's level and who set it, the commit of the plane's
+ * own file (`purlis.toml` or `charter.toml`), and the answers in force.
  */
 export function startSaid(row: Extract<ChatLogRow, { kind: "started" }>): string {
   const began = CAUSE_SAID[row.cause] ?? "Started again";
@@ -336,8 +338,13 @@ const ARM_SAID: Readonly<Record<string, string>> = {
 };
 
 /** The harness, by its name in the window; "Its harness" for one this version does not know. */
-export function harnessSaid(harness: string | undefined): string {
-  return HARNESSES.find((one) => one.value === harness)?.label ?? "Its harness";
+/** A harness by its adapter's display name, where the window knows it. */
+function harnessLabel(harness: string | null | undefined): string | undefined {
+  return HARNESSES.find((one) => one.value === harness)?.label;
+}
+
+export function harnessSaid(harness: string | null | undefined): string {
+  return harnessLabel(harness) ?? "Its harness";
 }
 
 /** Who blocked a call, as a sentence's subject. */
@@ -512,7 +519,7 @@ export function honestyLines(summary: ChatLogSummary): string[] {
 
 /** The chat's harness by its name in the window, or "its harness" where none is known. */
 function itsHarness(harness: string | null): string {
-  return HARNESSES.find((one) => one.value === harness)?.label ?? "its harness";
+  return harnessLabel(harness) ?? "its harness";
 }
 
 /**

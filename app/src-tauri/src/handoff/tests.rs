@@ -12878,9 +12878,9 @@ fn a_task_starts_in_its_asking_chat_s_mode_capped_at_auto() {
         (Reported::PromptsOff, Level::Classifier, "bypass"),
         (Reported::Asks, Level::Asks, "back-to-asking"),
     ] {
-        held.unattended().heard_mode(asking, Some(reported));
+        held.task_modes().heard_mode(asking, Some(reported));
         // A report that names no mode takes nothing back.
-        held.unattended().heard_mode(asking, None);
+        held.task_modes().heard_mode(asking, None);
         assert_eq!(task_level(name), level, "{name}");
     }
 }
@@ -12923,7 +12923,7 @@ fn a_task_s_level_is_heard_only_from_its_asking_chat_s_own_harness() {
         held.hooks().hear(&report);
         heard_mode(&held, &report);
     };
-    let level = || held.unattended().task_level(asking);
+    let level = || held.task_modes().task_level(asking);
     assert_eq!(level(), Level::Asks);
     // Its own harness speaks first, so the board knows its process.
     hears(Conversation::Named(own.clone()), None, Reported::Asks);

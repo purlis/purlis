@@ -50,9 +50,11 @@ pub struct ProtectionLayer {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct StartProtection {
     pub layers: Vec<ProtectionLayer>,
-    /// The last commit of `charter.toml`: a commit, `none` or `unknown`.
+    /// The last commit of the plane's own file: a commit, `none` or `unknown`.
     pub charter_commit: String,
-    /// The working `charter.toml` differed from that commit.
+    /// The plane's own file that commit is of: `purlis.toml` or `charter.toml`.
+    pub charter_file: String,
+    /// The working file differed from that commit.
     pub charter_dirty: bool,
     /// How many answers were in force: none until phase 2.
     pub answers_in_force: u32,
@@ -179,6 +181,7 @@ fn protection_of(in_force: InForce) -> StartProtection {
             })
             .collect(),
         charter_commit: in_force.charter_commit,
+        charter_file: in_force.charter_file,
         charter_dirty: in_force.charter_dirty,
         answers_in_force: u32::try_from(in_force.answers_in_force.len()).unwrap_or(u32::MAX),
     }

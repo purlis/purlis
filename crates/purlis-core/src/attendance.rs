@@ -229,6 +229,17 @@ impl Fact {
     /// whose `command` is the profile's own words and those purlis adds for a task's mode,
     /// never a line the chat sends. A resume or a relaunch starts with [`Self::resumed`].
     pub fn at_start(begun: Begun, harness: Option<Harness>, command: &[String]) -> Self {
+        Self::at_start_reading(
+            begun,
+            harness.is_some_and(Harness::reports_a_mode_purlis_can_check),
+            command,
+        )
+    }
+
+    /// [`Self::at_start`] on a harness whose adapter does or does not report a mode purlis can
+    /// check (Q280): the mode set is kept to check its reports against only where it does, by
+    /// the adapter's fact and never by which harness it is.
+    fn at_start_reading(begun: Begun, reads_its_mode: bool, command: &[String]) -> Self {
         let unattended =
             begun.unattended() || crate::dispatchunattended::bypass_in(command).is_some();
         Self {
@@ -237,7 +248,7 @@ impl Fact {
             } else {
                 Attendance::Attended
             },
-            set: (harness == Some(Harness::ClaudeCode)).then(|| ClaudeCodeMode::set_in(command)),
+            set: reads_its_mode.then(|| ClaudeCodeMode::set_in(command)),
             reported: None,
             differed: None,
         }
@@ -340,3 +351,7 @@ impl Fact {
         self.differed
     }
 }
+
+#[cfg(test)]
+#[path = "attendance_tests.rs"]
+mod tests;

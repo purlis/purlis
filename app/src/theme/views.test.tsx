@@ -1605,6 +1605,7 @@ const STATES: State[] = [
             protection: {
               layers: [{ layer: "sandbox", level: "floor", tier: "project" }],
               charter_commit: "4f2a9c1",
+              charter_file: "purlis.toml",
               charter_dirty: false,
               answers_in_force: 0,
             },

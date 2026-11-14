@@ -515,6 +515,7 @@ fn a_composed_starts_run_begins_under_its_ids_and_says_who_started_it() {
         serde_json::json!({
             "layers": [{"layer": "sandbox", "level": "off", "tier": "chat"}],
             "charter_commit": "none",
+            "charter_file": "charter.toml",
             "charter_dirty": false,
             "answers_in_force": [],
         })

@@ -12642,7 +12642,11 @@ fn a_mode_purlis_did_not_set_lowers_the_one_held_fact_and_raises_its_notice() {
         modes,
         [(
             session,
-            Some(crate::stuck::ModeDiffers::from(DEFAULT_THEN_ACCEPT_EDITS))
+            Some(crate::stuck::ModeDiffers {
+                set: "default".to_owned(),
+                reported: "acceptEdits".to_owned(),
+                harness: Some("claude".to_owned()),
+            })
         )],
         "one Notice, from the held fact"
     );

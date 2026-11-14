@@ -59,12 +59,17 @@ pub const SANDBOX: &str = "sandbox";
 pub struct InForce {
     /// Each layer's effective protection and the tier that set it.
     pub layers: Vec<Layer>,
-    /// The last commit of `charter.toml`, as git names it; [`crate::eventlog::NONE`] where no
-    /// commit has it (no repository, or the file is not in its HEAD), and
-    /// [`crate::eventlog::UNKNOWN`] where git did not answer, refused or failed.
+    /// The last commit of the plane's own file ([`Self::charter_file`]), as git names it;
+    /// [`crate::eventlog::NONE`] where no commit has it (no repository, or the file is not in
+    /// its HEAD), and [`crate::eventlog::UNKNOWN`] where git did not answer, refused or failed.
     pub charter_commit: String,
-    /// Whether the working `charter.toml` differs from that commit's: the start ran under text
-    /// no commit has. False where there is no commit to differ from.
+    /// The plane's own file that commit is of: `purlis.toml` or `charter.toml`, whichever the
+    /// plane has ([`crate::names::manifest`], Q280). A line written before it was recorded
+    /// named `charter.toml`'s commit, so it reads as that.
+    #[serde(default = "file_before_it_was_recorded")]
+    pub charter_file: String,
+    /// Whether the working file differs from that commit's: the start ran under text no commit
+    /// has. False where there is no commit to differ from.
     #[serde(default)]
     pub charter_dirty: bool,
     /// The answers in force (the Accepts of a project's recommendations): none in phase 1. Each
@@ -114,7 +119,8 @@ pub fn at_start(
         // starts with no sandbox, by no tier's choice.
         (None, None) => (Choice::Off, Tier::Purlis),
     };
-    let (charter_commit, charter_dirty) = charter_commit(root);
+    let charter_file = plane_file(root);
+    let (charter_commit, charter_dirty) = charter_commit(root, &charter_file);
     InForce {
         layers: vec![Layer {
             layer: SANDBOX.to_owned(),
@@ -122,9 +128,26 @@ pub fn at_start(
             tier,
         }],
         charter_commit,
+        charter_file,
         charter_dirty,
         answers_in_force: Vec::new(),
     }
+}
+
+/// The file a start's commit was of on a line written before [`InForce::charter_file`] was
+/// recorded: `charter.toml`, the only one git was asked about then.
+fn file_before_it_was_recorded() -> String {
+    crate::names::PLANE_MANIFEST.reads[0].to_owned()
+}
+
+/// **The plane's own file at `root`**, by its name: `purlis.toml` where the plane has it, else
+/// `charter.toml` ([`crate::names::manifest`]), the one its protection is read from.
+fn plane_file(root: &Path) -> String {
+    crate::names::manifest(root)
+        .file_name()
+        .map_or_else(file_before_it_was_recorded, |name| {
+            name.to_string_lossy().into_owned()
+        })
 }
 
 /// The tier that set the level of a sandboxed start, by why it runs at it
@@ -171,20 +194,20 @@ fn by_the_person(root: &Path, persona: Option<&str>) -> Option<Tier> {
     )
 }
 
-/// How long git may take to name `charter.toml`'s commit at a start.
+/// How long git may take to name the plane file's commit at a start.
 const GIT_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
 
-/// The last commit of the project's `charter.toml` at `root`, as git names it, and whether the
-/// working file differs from it.
+/// The last commit of `file`, the project's own file at `root` (`purlis.toml` or
+/// `charter.toml`), as git names it, and whether the working file differs from it.
 ///
 /// **`none` only where no commit can have it**: no repository at or above `root`, or a HEAD
 /// that does not hold the file. A repository git refused or failed to read is `unknown`, so a
 /// chat that can write `.git/config` cannot make the record say there is no commit.
-fn charter_commit(root: &Path) -> (String, bool) {
+fn charter_commit(root: &Path, file: &str) -> (String, bool) {
     let unknown = || (crate::eventlog::UNKNOWN.to_owned(), false);
     let none = || (crate::eventlog::NONE.to_owned(), false);
     let git = |args: &[&str]| crate::worktree::git::run(root, args, GIT_WAIT).ok();
-    let Some(log) = git(&["log", "-1", "--format=%H", "--", super::FILE]) else {
+    let Some(log) = git(&["log", "-1", "--format=%H", "--", file]) else {
         return unknown();
     };
     if !log.ok() {
@@ -202,7 +225,7 @@ fn charter_commit(root: &Path) -> (String, bool) {
         "--porcelain=v1",
         "--untracked-files=all",
         "--",
-        super::FILE,
+        file,
     ])
     .filter(crate::worktree::git::Run::ok) else {
         return unknown();

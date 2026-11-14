@@ -57,11 +57,6 @@ use crate::counts::{counted, plural};
 use crate::workspaces::Plane;
 use crate::{memstore, personagrant, pieces, shown};
 
-/// `hooks.UNATTENDED_MODE`: the harness's own name for a run with nobody at the keyboard. Only
-/// the unattended stop's recorded words name it (`sessionstart-tells-an-unattended-unlocked-run-
-/// to-stop`, ADR 0046); whether a chat is unattended is [`Ask::attendance`], never this string.
-pub const UNATTENDED_MODE: &str = "bypassPermissions";
-
 /// How many of the newest memory titles each store shows — `_MEM_DIGEST_N`.
 const MEM_DIGEST_N: usize = 10;
 
@@ -657,11 +652,16 @@ fn exists(root: &Path, name: &str) -> bool {
 /// What an unattended run with no workspace is told: stop, rather than guess one. The variable
 /// that pins one is named under both of its names, and the re-launch sets both: an older purlis
 /// reads only the old one, and two names set to two values are refused (#1284).
+///
+/// **Unattended in words true of every harness and every reason** (Q280): a task, a runner, a
+/// handoff from an unattended chat or a mode purlis didn't set, on Claude Code, Codex or
+/// opencode alike. It never quotes one harness's name for its mode, as it once quoted Claude
+/// Code's to every chat (`sessionstart-tells-an-unattended-unlocked-run-to-stop`, ADR 0046).
 fn unattended_stop(locks: bool, current: &str, existing: &str) -> String {
     use crate::envvar::in_words;
     format!(
-        "⬢ **STOP — this run has no workspace and nobody to ask.** It is running unattended \
-         (`permission_mode: {UNATTENDED_MODE}`) with no workspace {} and none pinned via {}. \
+        "⬢ **STOP — this run has no workspace and nobody to ask.** It runs unattended, with \
+         nobody there to answer, and with no workspace {} and none pinned via {}. \
          **Do not guess one** — it would silently claim `{current}`{}. Do no repo work. Say \
          plainly that the run is misconfigured and stop; whoever launched it should re-launch \
          with `{}` set (existing: {existing}).",

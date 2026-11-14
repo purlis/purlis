@@ -200,6 +200,7 @@ fn each_records(cases: &[Case]) {
             serde_json::json!({
                 "layers": [{"layer": "sandbox", "level": case.level, "tier": case.tier}],
                 "charter_commit": commit,
+                "charter_file": "charter.toml",
                 "charter_dirty": false,
                 "answers_in_force": [],
             }),
@@ -486,6 +487,70 @@ fn a_start_under_a_changed_charter_toml_records_its_commit_as_dirty() {
 
     assert_eq!(protection.charter_commit, commit);
     assert!(protection.charter_dirty, "{protection:?}");
+}
+
+/// R-227, Q280: **a `purlis.toml` plane records its own file's commit**, and the file it is of,
+/// as a `charter.toml` plane records `charter.toml`'s. Mutation caught: asking git of
+/// `charter.toml` whatever the plane has (the drift the phase-1 gate found), which records
+/// `none` for every `purlis.toml` plane; and recording a fixed file name in `charter_file`.
+#[test]
+fn a_purlis_toml_plane_records_its_own_file_s_commit_and_a_charter_toml_one_still_does() {
+    let charter = tempfile::tempdir().unwrap();
+    let charter_commit = project(charter.path(), FULL);
+    let purlis = tempfile::tempdir().unwrap();
+    let purlis_commit = project(purlis.path(), FULL);
+    git(purlis.path(), &["mv", "charter.toml", "purlis.toml"]);
+    git(
+        purlis.path(),
+        &["commit", "-q", "-m", "the plane's own name"],
+    );
+    let renamed = git(purlis.path(), &["rev-parse", "HEAD"])
+        .out
+        .trim()
+        .to_owned();
+    assert_ne!(renamed, purlis_commit, "a commit of its own");
+
+    let at = |root: &Path| at_start(root, None, &Made::Window, None, None);
+
+    let by_charter = at(charter.path());
+    assert_eq!(
+        (
+            by_charter.charter_file.as_str(),
+            by_charter.charter_commit.as_str()
+        ),
+        ("charter.toml", charter_commit.as_str())
+    );
+    assert!(!by_charter.charter_dirty, "{by_charter:?}");
+    let by_purlis = at(purlis.path());
+    assert_eq!(
+        (
+            by_purlis.charter_file.as_str(),
+            by_purlis.charter_commit.as_str()
+        ),
+        ("purlis.toml", renamed.as_str())
+    );
+    assert!(!by_purlis.charter_dirty, "{by_purlis:?}");
+
+    // Its own file changed is what makes it dirty, not a `charter.toml` beside it.
+    std::fs::write(
+        purlis.path().join("purlis.toml"),
+        format!("schema = 1\n{NEVER}"),
+    )
+    .unwrap();
+    assert!(at(purlis.path()).charter_dirty);
+}
+
+/// R-227, Q280: a start event written before the file was recorded named `charter.toml`'s
+/// commit, so it reads as that. Mutation caught: a default of `purlis.toml`, or none, which
+/// would name a file the line's commit was never of.
+#[test]
+fn a_protection_that_names_no_file_was_charter_toml_s_commit() {
+    let read: InForce = serde_json::from_value(serde_json::json!({
+        "layers": [],
+        "charter_commit": "4f2a9c1",
+    }))
+    .unwrap();
+    assert_eq!(read.charter_file, "charter.toml");
 }
 
 /// R-227, Q238: `none` is a project with no commit of `charter.toml` (no repository, or one

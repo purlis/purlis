@@ -11,8 +11,8 @@
 //! file):
 //!
 //! - **the mode's own word**, the literal `"bypassPermissions"`: in the attendance module, and
-//!   in two places that are not a chat's report: the briefing's recorded stop words (ADR 0046),
-//!   and a person's own Claude Code settings file, whose `defaultMode` a grade's start reads;
+//!   in one place that is not a chat's report: a person's own Claude Code settings file, whose
+//!   `defaultMode` a grade's start reads. The briefing's stop no longer quotes it (Q280);
 //! - **the attendance module's own name for it**, `PROMPTS_OFF`, and its comparison,
 //!   `says_prompts_off(`: in the attendance module, and in the hook channel, which hands each
 //!   report's bit to the fact ([`purlis_core::hookwire::Report::read`]);
@@ -140,9 +140,6 @@ fn only_attendance_compares_permission_mode_with_bypass() {
         [
             // The one comparison.
             "crates/purlis-core/src/attendance.rs",
-            // The stop words a chat is told, recorded from the Python charter (ADR 0046): words,
-            // never a reading of the chat's mode.
-            "crates/purlis-core/src/briefing.rs",
             // A person's own Claude Code settings file, its `permissions.defaultMode`: what a
             // grade's start refuses, never a chat's report.
             "crates/purlis-core/src/harness/claude.rs",
