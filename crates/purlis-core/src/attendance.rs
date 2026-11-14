@@ -3,8 +3,12 @@
 
 //! **Whether a chat is attended: one fact purlis sets** (T1-17, #6408; Q142, Q152, Q105). The
 //! expand step: the fact stands beside the readers of today, which keep reading what they read
-//! ([`crate::dispatchunattended::Mark`]), until each moves to it (dispatch #6410, the briefing
-//! #6411, the commit gate #6412). A4 has (#6409).
+//! ([`crate::dispatchunattended::Mark`], [`crate::floorguard::unattended`]), until each moves to
+//! it. A4 has (#6409). Dispatch (#6410), the briefing (#6411) and the commit gate (#6412) read
+//! it through a seam each until T1-22 (#6413) hands them the fact A4 holds: dispatch from the
+//! app's record of the chat ([`crate::dispatchunattended::fact_of`]), the briefing from
+//! [`crate::briefing::Ask::attendance`], the commit gate as an argument
+//! ([`crate::commitgate::nudge`]), each lowered by the old one-way mark heard from the report.
 //!
 //! A chat is **unattended** if purlis started it unattended, or if it reports a mode purlis
 //! didn't set:
@@ -40,7 +44,8 @@
 //!
 //! **Who reads it**: A4, the release floor ([`crate::toolgate`]), which the hook asks of a line
 //! it would refuse unattended, with what that line's own report says ([`Fact::hearing`]).
-//! Dispatch (#6410), the briefing (#6411) and the commit gate (#6412) are to read the same fact.
+//! Dispatch (#6410), the briefing (#6411) and the commit gate (#6412) read it through their seams
+//! until T1-22 (#6413).
 
 use crate::dispatchunattended::Attendance;
 use crate::harness::Harness;

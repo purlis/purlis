@@ -196,6 +196,14 @@ impl Harness {
         !self.adapter().sandbox_holds_what_it_starts()
     }
 
+    /// **Whether this harness reports each call its own check blocks** (R-097, R-100; ADR
+    /// 0124's harness matrix, "The harness's own check's block reported"): where it does not, a
+    /// chat's Chat log says Can't tell of them
+    /// ([`adapter::HarnessAdapter::reports_its_checks_blocks`]).
+    pub fn reports_its_checks_blocks(self) -> bool {
+        self.adapter().reports_its_checks_blocks()
+    }
+
     /// **Whether this harness reports a mode its chat runs in that purlis can check** (R-099,
     /// Q152; the matrix's "The mode the chat runs in"): where it does not, a chat's Chat log
     /// says Can't tell of its mode

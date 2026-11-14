@@ -846,6 +846,7 @@ describe("a refusal whose only way out is the window's press (R-328, R-330, R-33
         folder: "workspaces/alpha/api",
         place: "github.com/acme/api",
         places: ["github.com/acme/api"],
+        made: null,
       }),
     );
     const { view } = await opened([TRUST_CLONE]);

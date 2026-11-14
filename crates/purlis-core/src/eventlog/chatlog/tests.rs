@@ -1073,3 +1073,89 @@ fn the_marker_count_is_the_verified_blocks_after_the_last_look() {
         Marker::default()
     );
 }
+
+/// What chat `chat`'s summary says purlis can't tell: of its harness's own check's blocks, and
+/// of its mode, with the harness it names.
+fn cant_tell_of(events: &[Event], chat: &str) -> (bool, bool, Option<crate::harness::Harness>) {
+    let read = summary(events, chat);
+    (
+        read.cant_tell_its_checks_blocks,
+        read.cant_tell_its_mode,
+        read.harness,
+    )
+}
+
+/// R-097 (core), Q96: **an opencode chat's summary can't tell its own check's blocks**: opencode
+/// gives no denial signal, so what its check blocked never reaches purlis, and the Chat log says
+/// Can't tell rather than showing none. A Claude Code chat, whose `PermissionDenied` hook reports
+/// each one, says nothing of the kind.
+#[test]
+fn an_opencode_chats_summary_cant_tell_its_own_checks_blocks() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut log = Log::open(dir.path(), DEVICE).unwrap();
+    started_as(&mut log, ONE, "opencode", "seatbelt", "floor");
+    started_as(&mut log, TWO, "claude", "seatbelt", "floor");
+    drop(log);
+    let events = crate::eventlog::read(dir.path()).unwrap();
+
+    let (blocks, _, harness) = cant_tell_of(&events, ONE);
+    assert!(blocks, "opencode reports no block of its own check");
+    assert_eq!(harness, Some(crate::harness::Harness::Opencode));
+    let (blocks, _, harness) = cant_tell_of(&events, TWO);
+    assert!(!blocks, "Claude Code reports each through PermissionDenied");
+    assert_eq!(harness, Some(crate::harness::Harness::ClaudeCode));
+}
+
+/// R-100 (core), Q96, Q25: **a Codex chat's summary can't tell its own check's blocks**: Codex
+/// gives no denial signal yet (a rejection its hook reports becomes a block, and none is armed
+/// today), so its blocks are Can't tell; and a chat with no start in the log can't tell either,
+/// since nothing says which harness it ran.
+#[test]
+fn a_codex_chats_summary_cant_tell_its_own_checks_blocks() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut log = Log::open(dir.path(), DEVICE).unwrap();
+    started_as(&mut log, ONE, "codex", "seatbelt", "floor");
+    tool_event(&mut log, TWO, "pretooluse", "allow", "toolu_1", None);
+    drop(log);
+    let events = crate::eventlog::read(dir.path()).unwrap();
+
+    let (blocks, _, harness) = cant_tell_of(&events, ONE);
+    assert!(blocks, "Codex reports no block of its own check yet");
+    assert_eq!(harness, Some(crate::harness::Harness::Codex));
+    assert_eq!(
+        cant_tell_of(&events, TWO),
+        (true, true, None),
+        "no start: nothing says what its harness reports"
+    );
+}
+
+/// R-099 (core), Q152: **a Codex chat's summary can't tell its mode**: Codex reports bypass for
+/// every chat, so what it reports is never read as a verified mode, and attendance goes by how
+/// purlis started it. It is taken over the whole chat, as the honesty lines are (Q261): a Codex
+/// start, then a Claude Code one, still can't tell. A Claude Code chat's mode is read from its
+/// armed hook, and says nothing of the kind.
+#[test]
+fn a_codex_chats_summary_cant_tell_its_mode() {
+    const THREE: &str = "01K6CHAT000000000000000006";
+    let dir = tempfile::tempdir().unwrap();
+    let mut log = Log::open(dir.path(), DEVICE).unwrap();
+    started_as(&mut log, ONE, "codex", "seatbelt", "floor");
+    started_as(&mut log, TWO, "claude", "seatbelt", "floor");
+    started_as(&mut log, THREE, "codex", "seatbelt", "floor");
+    started_as(&mut log, THREE, "claude", "seatbelt", "floor");
+    drop(log);
+    let events = crate::eventlog::read(dir.path()).unwrap();
+
+    assert!(cant_tell_of(&events, ONE).1, "Codex's bypass is no mode");
+    assert!(
+        !cant_tell_of(&events, TWO).1,
+        "Claude Code's armed hook says its mode"
+    );
+    let (_, mode, harness) = cant_tell_of(&events, THREE);
+    assert!(mode, "can't tell once is can't tell");
+    assert_eq!(
+        harness,
+        Some(crate::harness::Harness::ClaudeCode),
+        "its latest start's"
+    );
+}

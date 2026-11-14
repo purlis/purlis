@@ -400,6 +400,11 @@ impl HarnessAdapter for ClaudeCode {
         false
     }
 
+    /// Yes: its `PermissionDenied` hook reports each call its own check blocks (R-094, T1-08).
+    fn reports_its_checks_blocks(&self) -> bool {
+        true
+    }
+
     /// Yes: its mode is read from the hook purlis armed (R-095, T1-17).
     fn reports_a_mode_purlis_can_check(&self) -> bool {
         true

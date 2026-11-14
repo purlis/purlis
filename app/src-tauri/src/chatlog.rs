@@ -123,8 +123,8 @@ pub enum ChatLogRow {
 }
 
 /// What heads a chat's Chat log: its allowed calls in one count, with those its person's rules
-/// allowed, and its honesty lines.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, specta::Type)]
+/// allowed, its honesty lines, and what purlis can't tell of its harness.
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, specta::Type)]
 pub struct ChatLogSummary {
     pub allowed: u32,
     pub by_your_rules: u32,
@@ -132,6 +132,13 @@ pub struct ChatLogSummary {
     pub unverified: bool,
     /// It ran with No sandbox.
     pub ran_as_you: bool,
+    /// Its harness, by the word the plane calls it, where its latest start names one purlis
+    /// ships: what the Can't tell lines name.
+    pub harness: Option<String>,
+    /// Its harness does not report what its own check blocks (R-097, R-100).
+    pub cant_tell_its_checks_blocks: bool,
+    /// Its harness reports no mode purlis can check (R-099).
+    pub cant_tell_its_mode: bool,
 }
 
 /// **The reasons the harnesses' own checks gave, for the app's life** (R-340): held as the
@@ -311,6 +318,9 @@ fn summary_of(
         by_your_rules,
         unverified,
         ran_as_you,
+        harness,
+        cant_tell_its_checks_blocks,
+        cant_tell_its_mode,
     }: Summary,
 ) -> ChatLogSummary {
     ChatLogSummary {
@@ -318,6 +328,9 @@ fn summary_of(
         by_your_rules,
         unverified,
         ran_as_you,
+        harness: harness.map(|harness| harness.name().to_owned()),
+        cant_tell_its_checks_blocks,
+        cant_tell_its_mode,
     }
 }
 
