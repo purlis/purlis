@@ -29,6 +29,7 @@ mod support;
 
 mod a_brokered_run_is_held_on_linux;
 mod a_chat_proposes_a_pin_and_pins_nothing;
+mod a_chat_reporting_bypass_outside_its_armed_hook_is_attended;
 mod a_chats_ssh_reaches_a_listed_host_through_its_route;
 mod a_chats_ssh_route_carries_from_inside_its_sandbox;
 mod a_file_tool_names_its_path_to_the_app_and_nowhere_else;

@@ -3,8 +3,10 @@
 
 //! Arm A4: the release floor — an unattended run may not publish (#299).
 //!
-//! A port of `charter/hooks.py`'s `_release_floor_reason`, `_unattended`, `UNATTENDED_MODE`,
-//! `_PUBLISH_FORGE` and `_TAG_HARMLESS`. Everything under it is already standing:
+//! A port of `charter/hooks.py`'s `_release_floor_reason`, `_PUBLISH_FORGE` and `_TAG_HARMLESS`.
+//! Its `_unattended` and `UNATTENDED_MODE` are the attendance fact's now
+//! ([`crate::attendance::says_prompts_off`], [`crate::attendance::PROMPTS_OFF`]; T1-22, #6413):
+//! whether the floor refuses is the caller's reading of the fact ([`crate::toolgate`]). Everything under it is already standing:
 //! [`crate::shellseg`] reads the line, [`crate::shellwrap::split_env`] names each segment's
 //! program, [`crate::credguard::git_subcommand`] names git's verb and
 //! [`crate::leakguard::is_charter`] recognises charter however it was spelled.
@@ -61,24 +63,6 @@ use crate::shellwrap::{self, base_lower};
 use std::sync::OnceLock;
 
 use regex::Regex;
-
-/// The `permission_mode` a host sets when there is nobody to answer a prompt —
-/// `UNATTENDED_MODE`.
-///
-/// The field is the HOST's own; charter reads it and never holds a copy, because an autonomy flag
-/// charter owned would be a second source of truth for a question the host already answers.
-pub const UNATTENDED_MODE: &str = "bypassPermissions";
-
-/// True when the host says there is nobody to answer a prompt — `_unattended`.
-///
-/// **All A4 goes by for a harness the app did not start** (T1-18, R-109): in a chat the app
-/// started, the gate reads the chat's attendance fact ([`crate::toolgate::Launched::attendance`]),
-/// and this bit, on the line's own payload, only ever lowers that answer for the line, on a
-/// harness whose mode purlis can check (Q275, Q276). It is also one bit a report hands the fact
-/// ([`crate::attendance::Fact::heard`]).
-pub fn unattended(permission_mode: Option<&str>) -> bool {
-    permission_mode == Some(UNATTENDED_MODE)
-}
 
 /// CLI `(program, noun, verb)` triples that publish or land code — `_PUBLISH_FORGE`.
 ///
@@ -586,14 +570,6 @@ mod tests {
         ] {
             assert_eq!(release_floor_reason(cmd, false), None, "{cmd}");
         }
-    }
-
-    /// The host's own field, and nothing charter holds a copy of.
-    #[test]
-    fn the_mode_is_the_hosts_word() {
-        assert!(unattended(Some(UNATTENDED_MODE)));
-        assert!(!unattended(Some("default")));
-        assert!(!unattended(None));
     }
 
     /// Creating a tag is the choke point; listing and deleting are not.

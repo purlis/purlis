@@ -179,7 +179,7 @@ const ATTENDANCE_IS_ANSWERED_WITHIN: Duration = Duration::from_millis(500);
 /// payload says (`permission_mode`). **Unattended unless the app says attended**: no app, an
 /// app older than the ask, a refusal and a wait past [`ATTENDANCE_IS_ANSWERED_WITHIN`] all read
 /// as unattended, so A4 never takes a chat for attended where its fact may say otherwise.
-fn attendance_of_this_chat(
+pub(crate) fn attendance_of_this_chat(
     permission_mode: Option<&str>,
 ) -> purlis_core::dispatchunattended::Attendance {
     use purlis_core::dispatchunattended::Attendance;
