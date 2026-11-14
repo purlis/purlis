@@ -2140,3 +2140,119 @@ fn a_pin_is_kept_again_only_for_the_same_route_of_a_pool_on_another_machine() {
     }
     assert_eq!(the_file(config.path()), before, "nothing changed");
 }
+
+/// **The owned mark of a pool on another machine names the pin it was given for** (#6271, ADR
+/// 0123 §5): `owned` in its row is that pin, written in the pin's own shape, and taking the mark
+/// back leaves the key out.
+#[test]
+fn a_pool_on_another_machine_marked_owned_keeps_the_pin_it_was_marked_for() {
+    let config = tempfile::tempdir().unwrap();
+    record_pool(
+        config.path(),
+        &pool("build-box", Set::default()).on(Some(remote())),
+    )
+    .unwrap();
+    assert!(!pools(config.path()).unwrap()[0].owned(), "not marked by default");
+    set_remote_owned(config.path(), "build-box", true).unwrap();
+    let row = &the_file(config.path())["pools"][0];
+    assert_eq!(row["owned"], row["pin"]);
+    assert!(pools(config.path()).unwrap()[0].owned());
+    set_remote_owned(config.path(), "build-box", false).unwrap();
+    assert!(the_file(config.path())["pools"][0].get("owned").is_none());
+    assert!(!pools(config.path()).unwrap()[0].owned());
+}
+
+/// Over Docker's TLS API, the same: the mark is the CA and engine pinned.
+#[test]
+fn a_pool_over_tls_marked_owned_keeps_the_ca_and_engine_it_was_marked_for() {
+    let config = tempfile::tempdir().unwrap();
+    record_pool(
+        config.path(),
+        &pool("over-tls", Set::default()).on_engine(Some(
+            tls_remote(crate::tlsroute::KeyFrom::File("/k.pem".into())).into(),
+        )),
+    )
+    .unwrap();
+    set_remote_owned(config.path(), "over-tls", true).unwrap();
+    let row = &the_file(config.path())["pools"][0];
+    assert_eq!(row["owned"], row["pin"]);
+    assert!(pools(config.path()).unwrap()[0].owned());
+}
+
+/// **A pin kept again clears the mark** (#6271, ADR 0123 §3): the person marks the machine again
+/// if they still mean it. The same pin trusted again changes nothing.
+#[test]
+fn a_pool_pinned_again_to_another_pin_is_no_longer_marked_owned() {
+    let config = tempfile::tempdir().unwrap();
+    record_pool(
+        config.path(),
+        &pool("build-box", Set::default()).on(Some(remote())),
+    )
+    .unwrap();
+    set_remote_owned(config.path(), "build-box", true).unwrap();
+    pin_again(config.path(), "build-box", &remote().into()).unwrap();
+    assert!(pools(config.path()).unwrap()[0].owned(), "the same pin");
+    let mut again = remote();
+    again.pin.engine = crate::sshroute::EnginePin::Docker("MNOP:QRST:UVWX".to_owned());
+    pin_again(config.path(), "build-box", &again.into()).unwrap();
+    assert!(!pools(config.path()).unwrap()[0].owned());
+    assert!(the_file(config.path())["pools"][0].get("owned").is_none());
+}
+
+/// A mark that names another pin than the pool's is no mark, and one of any other shape is not
+/// as purlis writes it.
+#[test]
+fn an_owned_mark_naming_another_pin_is_not_a_mark_and_one_of_another_shape_is_refused() {
+    let config = tempfile::tempdir().unwrap();
+    // Written by purlis first, so the file is this user's alone as purlis keeps it.
+    record_pool(
+        config.path(),
+        &pool("build-box", Set::default()).on(Some(remote())),
+    )
+    .unwrap();
+    let file = crate::machine::dir(config.path()).join(crate::machine::RUNNERS_FILE);
+    let with = |owned: serde_json::Value| {
+        let row = serde_json::json!({
+            "name": "build-box", "kind": "remote-docker", "image": IMAGE,
+            "route": "ssh://me@build-box/var/run/docker.sock",
+            "pin": { "hostKey": HOST_KEY, "engine": "ABCD:EFGH:IJKL" },
+            "owned": owned,
+        });
+        std::fs::write(
+            &file,
+            serde_json::json!({ "version": 1, "pools": [row], "runners": [] }).to_string(),
+        )
+        .unwrap();
+    };
+    with(serde_json::json!({ "hostKey": HOST_KEY, "engine": "ABCD:EFGH:IJKL" }));
+    assert!(pools(config.path()).unwrap()[0].owned(), "the pin it names");
+    with(serde_json::json!({ "hostKey": HOST_KEY, "engine": "ANOTHER:ENGINE" }));
+    assert!(!pools(config.path()).unwrap()[0].owned());
+    with(serde_json::json!(true));
+    assert!(pools(config.path()).is_err());
+}
+
+/// The mark is not how the pool is defined: marking it changes no digest an opt-in is bound to.
+#[test]
+fn the_owned_mark_of_a_pool_on_another_machine_is_not_in_its_definition() {
+    let config = tempfile::tempdir().unwrap();
+    record_pool(
+        config.path(),
+        &pool("build-box", Set::default()).on(Some(remote())),
+    )
+    .unwrap();
+    let before = pools(config.path()).unwrap()[0].definition_digest();
+    set_remote_owned(config.path(), "build-box", true).unwrap();
+    assert_eq!(pools(config.path()).unwrap()[0].definition_digest(), before);
+}
+
+/// A pool on this machine's own engine needs no mark, and has none to set.
+#[test]
+fn only_a_pool_on_another_machine_is_marked_owned() {
+    let config = tempfile::tempdir().unwrap();
+    record_pool(config.path(), &pool("here", Set::default())).unwrap();
+    let before = the_file(config.path());
+    assert!(set_remote_owned(config.path(), "here", true).is_err());
+    assert!(set_remote_owned(config.path(), "nowhere", true).is_err());
+    assert_eq!(the_file(config.path()), before);
+}
