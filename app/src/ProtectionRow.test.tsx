@@ -8,12 +8,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as stories from "./ProtectionRow.stories";
 
 // Whether the focus is in sight needs a layout, which jsdom has none of: the browser run holds
-// that. What jsdom can hold is that the focus is somewhere, never on the page.
+// that. What jsdom can hold is that the focus is somewhere, never on the page. A dialog has no
+// fade in jsdom, which has no animations to wait for, so words in one are seen once visible.
 vi.mock(import("./stories.testkit"), async (actual) => ({
   ...(await actual()),
   expectFocusInSight: () => {
     const at = document.activeElement;
     if (at === null || at === document.body) throw new Error("nothing has the focus");
+  },
+  untilSeenInDialog: async (words: Element) => {
+    await waitFor(() => expect(words).toBeVisible());
   },
 }));
 

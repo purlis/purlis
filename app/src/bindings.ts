@@ -6974,6 +6974,13 @@ export type Asking = {
 	 *  again then.
 	 */
 	cooling_until?: number | null,
+	/**
+	 *  **The window-only asks no chat waits on** (T1-42, R-329, Q181): each a chat's whose turn
+	 *  has ended, drawn on that chat's finish row with its control. Listed apart from
+	 *  [`Asking::asks`], so neither the ✋, Asks nor a notification counts them: a Blocking ask
+	 *  is one a chat waits on. Only [`every_ask`] puts any here ([`finish_rows_apart`]).
+	 */
+	on_finish_rows?: Shown[],
 };
 
 /**  What a chat's row says while it is at its task limit. */
@@ -7963,7 +7970,7 @@ sub_agent: boolean } |
 
 /**
  *  What heads a chat's Chat log: its allowed calls in one count, with those its person's rules
- *  allowed, and its honesty lines.
+ *  allowed, its honesty lines, and what purlis can't tell of its harness.
  */
 export type ChatLogSummary = {
 	allowed: number,
@@ -7972,6 +7979,15 @@ export type ChatLogSummary = {
 	unverified: boolean,
 	/**  It ran with No sandbox. */
 	ran_as_you: boolean,
+	/**
+	 *  Its harness, by the word the plane calls it, where its latest start names one purlis
+	 *  ships: what the Can't tell lines name.
+	 */
+	harness: string | null,
+	/**  Its harness does not report what its own check blocks (R-097, R-100). */
+	cant_tell_its_checks_blocks: boolean,
+	/**  Its harness reports no mode purlis can check (R-099). */
+	cant_tell_its_mode: boolean,
 };
 
 /**  What a number names, as the window is sent it. */
@@ -8390,6 +8406,8 @@ export type CloneToVouch = {
 	place: string | null,
 	/**  Every address its remote names now, each once. */
 	places: string[],
+	/**  When it was made, in seconds since 1970, where its disk keeps a creation time (R-337). */
+	made: number | null,
 };
 
 /**  What [`CLOSE_HANDED`] carries: the project and the chats a link's close would end. */

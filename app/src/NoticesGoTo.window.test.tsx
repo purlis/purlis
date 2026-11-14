@@ -31,6 +31,7 @@ const clone = (folder: string, place: string): CloneToVouch => ({
   folder,
   place,
   places: [place],
+  made: null,
 });
 
 const TRUST = WINDOW_CONTROLS[0];

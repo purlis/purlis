@@ -13,7 +13,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { NoSandboxAtSetup, SetupProtection } from "./bindings";
 import { FirstRun } from "./FirstRun";
 import { NewProject } from "./NewProject";
-import { expectFocusInSight, untilFocused } from "./stories.testkit";
+import { expectFocusInSight, untilFocused, untilSeenInDialog } from "./stories.testkit";
 
 /** What each story hands the page: its acts, each held to be asked about. */
 type Acts = {
@@ -42,7 +42,7 @@ function machine(setup: SetupProtection | null, noSandbox: NoSandboxAtSetup | nu
 }
 
 /** Why the machine's policy holds a new project at Full sandbox, as the core says it. */
-export const POLICY_WHY = "Your team's policy keeps every project at Full sandbox.";
+const POLICY_WHY = "Your team's policy keeps every project at Full sandbox.";
 
 /** A machine whose policy allows nothing below Full sandbox, and starts the row there. */
 const BOUND: SetupProtection = { lowest: "on", default: "on", why: POLICY_WHY, yours: null };
@@ -134,9 +134,8 @@ async function expectHeldAtFull(row: HTMLElement) {
     .map((id) => row.ownerDocument.getElementById(id)?.textContent ?? "")
     .join(" ");
   await expect(described).toContain(POLICY_WHY);
-  await expect(
-    within(row.ownerDocument.body).getByText(POLICY_WHY, { exact: false }),
-  ).toBeVisible();
+  // New project's dialog fades in as it opens, so the reason is read once it is seen (#6360).
+  await untilSeenInDialog(within(row.ownerDocument.body).getByText(POLICY_WHY, { exact: false }));
   full.focus();
   await untilFocused(() => full, "the row starts on Full sandbox");
   expectFocusInSight();
@@ -206,7 +205,7 @@ const TWO_VAULTS: NoSandboxAtSetup = {
 };
 
 /** The core's refusal where the team's committed file registers a plain-file vault (R-298). */
-export const TEAM_REFUSAL =
+const TEAM_REFUSAL =
   "No sandbox is refused here: the vault ci, which Dana Okafor registered in the project's " +
   "committed vaults.json, is a plain file a chat with no sandbox could read. Choose Basic " +
   "sandbox, or ask Dana Okafor to move it into the keychain.";

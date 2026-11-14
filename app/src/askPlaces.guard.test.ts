@@ -65,13 +65,10 @@ const PLACES = {
   looping: { at: "pane" },
   "merge-hold": { at: "pane" },
   "trust-clone": {
-    at: "asks-only",
-    debt: "a GitHub App token refused for a clone purlis has no record of is listed in Asks alone until it is drawn Blocking or on its chat's finish row (T1-42, R-329); its Trust this clone is the clone Notice's own vouch_clone, window-only",
+    at: "its-own",
+    how: "Blocking in Asks while its chat is in its turn, and on its chat's finish row once the turn ends (R-329)",
   },
-  "trust-clones": {
-    at: "asks-only",
-    debt: "the clones purlis has no record of are one ask in Asks alone, no chat's, until its row draws each clone with its remote and when it was made, with Trust all and Choose… (T1-42, R-337); its Trust is the clone Notice's own vouch_clone, window-only",
-  },
+  "trust-clones": { at: "no-chat" },
 } as const satisfies Record<AskSource, Place>;
 
 /** Each kind's place, as any place: a kind may move to or from Asks alone. */
@@ -138,6 +135,6 @@ describe("every kind of ask has a drawn place", () => {
       Object.entries(PLACE)
         .filter(([, place]) => place.at === "asks-only")
         .map(([source]) => source),
-    ).toEqual(["trust-clone", "trust-clones"]);
+    ).toEqual([]);
   });
 });
