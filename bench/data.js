@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794685991168,
+  "lastUpdate": 1794688852816,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -49392,6 +49392,48 @@ window.BENCHMARK_DATA = {
             "value": 100.9660545,
             "unit": "ms",
             "extra": "median of 5 runs: 100.366, 100.910, 100.966, 101.717, 103.097 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "acbe8d1afd81fc40e849451189fcdc53e0426c21",
+          "message": "font-size.xl is the mark step, not a type step (#6390) (#6659)\n\nKeep the token in the theme format as the size for marks (icons sized\nwith their text): a persona's mark in Start a chat, the door card's mark,\nand Tailwind's text-xl pointed at it. design-system.md records the rule,\nthemes.md's reach column drops the Welcome heading that no longer reads\nit, and primitives/text.test.ts fails with a message pointing at the rule.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7DR620JZ5E8PEG5SB1C9XHE\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-14T19:56:10Z",
+          "tree_id": "cb6d71a11563bff562ca711dc61d87b28585fb34",
+          "url": "https://github.com/purlis/purlis/commit/acbe8d1afd81fc40e849451189fcdc53e0426c21"
+        },
+        "date": 1794688846482,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.685539,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.667, 0.684, 0.686, 0.697, 0.709 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7156555,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.568, 16.688, 16.716, 16.735, 16.866 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.155184,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.117, 101.783, 102.155, 102.494, 102.820 ms"
           }
         ]
       }
