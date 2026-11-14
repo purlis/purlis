@@ -4236,18 +4236,24 @@ before misses reads none of it as a run. **A correction** writes one: the person
 built-in themselves (Use skill…, or a slash command Claude Code names as typed) in the prompt
 right after a turn of the chat that did not start it, never on a chat's first prompt and never
 when the turn before started it (`skillspan::Tracker::missed`). The event log says it too, as
-`skill.missed`. Never the prompt, nor anything of it but the skill. Nothing uploads it. A
-skill's page totals a built-in's misses by harness beside its runs
+`skill.missed`. **A filed case-6 Report** writes one too (#5739): when the person files a Report
+draft from the Inbox whose words have a `Skill:` line naming a built-in this purlis ships and a
+`Words:` line (the lines purlis-report's case 6 asks for), the row names that skill and the
+harness and version its `Harness:` line names, or the drafting chat's where it names none purlis
+starts (`Reports::file_held`, `skilluse::Reported`), in the skill log of the
+project the draft was written in. A dismissed draft, or one Always send sends unread, writes
+none, and a Report's miss has no `skill.missed` event: it is no moment of a chat's run. Never the prompt, nor anything of it but the skill; never a Report's words but the skill
+and harness. Nothing uploads it. A skill's page totals a built-in's misses by harness beside its runs
 (`skilluse::stats_with_misses`):
 
 | Field | Type | Required / default | Meaning | Status | Source |
 |---|---|---|---|---|---|
 | `ts` | ISO-8601 UTC, seconds | always | When it was missed | experimental | `skilluse::missed` |
 | `missed` | string | always (row dropped if empty) | The built-in skill, by its own name (`purlis-secrets`, never `purlis:purlis-secrets`) | experimental | `skilluse::missed` |
-| `signal` | `correction` or `report` (`unknown` is read for a word a newer purlis writes) | always | What said it was missed: a correction, or a Report the person filed that it should have started (spec #5683; no writer yet) | experimental | `skilluse::Signal` |
-| `harness` | string or **`null`** | always present | The harness the chat ran on, as a start row's `harness` says it; `null` where the run did not say | experimental | `skilluse::missed` |
-| `harness_version` | `X.Y.Z` or **`null`** | always present | The harness's version as this purlis last heard it answer (Claude Code's; `null` for Codex and opencode, which purlis does not ask, and before any answer) | experimental | `sandbox::program::version_heard` |
-| `persona` | string or **`null`** | always present; `null` when the chat is on no persona | The chat's persona | experimental | `skilluse::missed` |
+| `signal` | `correction` or `report` (`unknown` is read for a word a newer purlis writes) | always | What said it was missed: a correction, or a Report the person filed that it should have started (case 6 of spec #5683) | experimental | `skilluse::Signal` |
+| `harness` | string or **`null`** | always present | The harness the chat ran on, as a start row's `harness` says it; for a `report`, the one its `Harness:` line names, else the drafting chat's; `null` where the run or the Report did not say | experimental | `skilluse::missed` |
+| `harness_version` | `X.Y.Z` or **`null`** | always present | The harness's version as this purlis last heard it answer (Claude Code's; `null` for Codex and opencode, which purlis does not ask, and before any answer); for a `report`, the version its `Harness:` line gives as written (any shape starting with a digit), or `null` | experimental | `sandbox::program::version_heard` |
+| `persona` | string or **`null`** | always present; `null` when the chat is on no persona | The chat's persona; `null` for a `report`, which names none | experimental | `skilluse::missed` |
 
 
 ---

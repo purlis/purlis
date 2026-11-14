@@ -87,6 +87,7 @@ mod a_file_command_reads_what_git_would_in_the_reader;
 mod a_file_is_found_by_fuzzy_name;
 mod a_file_of_a_piece_opens_in_your_editor_at_a_line;
 mod a_file_shows_what_its_branch_changed;
+mod a_filed_case_six_report_records_a_miss;
 mod a_finished_task_folder_is_removed_without_force;
 mod a_folder_too_deep_to_read_costs_only_itself;
 mod a_folder_whose_pull_request_ended_is_removed_in_one_try;
