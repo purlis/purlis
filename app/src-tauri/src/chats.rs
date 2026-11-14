@@ -1310,7 +1310,7 @@ struct StartKey {
 /// or no answer, where it could not be compiled.
 #[derive(Debug, Clone)]
 enum CompiledNow {
-    Sandboxed(Settled),
+    Sandboxed(Box<Settled>),
     Unconfined,
     Refused,
 }
@@ -4402,7 +4402,7 @@ impl Chats {
                     &key.grants,
                 ) {
                     Ok(Some(Decided::Sandboxed(applied))) => {
-                        CompiledNow::Sandboxed(Settled::of(applied.confines(), &pools))
+                        CompiledNow::Sandboxed(Box::new(Settled::of(applied.confines(), &pools)))
                     }
                     Ok(Some(Decided::Unsandboxed(_) | Decided::Floorless(_)) | None) => {
                         CompiledNow::Unconfined
@@ -4418,7 +4418,7 @@ impl Chats {
                 now
             });
             let now = match now {
-                CompiledNow::Sandboxed(settled) => Some(settled),
+                CompiledNow::Sandboxed(settled) => Some(*settled),
                 CompiledNow::Unconfined => None,
                 // A chat whose sandbox could not be compiled now is not counted.
                 CompiledNow::Refused => continue,
