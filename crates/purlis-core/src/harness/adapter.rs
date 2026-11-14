@@ -83,6 +83,15 @@ pub trait HarnessAdapter: Sync {
     /// default: each adapter says how its sandbox is applied.
     fn sandbox_holds_what_it_starts(&self) -> bool;
 
+    /// **Whether this harness reports a mode its chat runs in that purlis can check** (R-095,
+    /// R-099, Q152): read from what purlis armed, as Claude Code's mode is from its armed hook
+    /// ([`Self::attendance_mode`]). `false` by default: Codex reports bypass for every chat,
+    /// which is no mode purlis set, and opencode reports none, so their chats' mode is Can't
+    /// tell, and attendance goes by how purlis started them.
+    fn reports_a_mode_purlis_can_check(&self) -> bool {
+        false
+    }
+
     /// **What this harness's hook payload says of its permission mode** (#3787), in purlis's
     /// words ([`crate::dispatchmode::Reported`]), from the payload's `permission_mode`. `None`
     /// where it says nothing purlis reads: the default, for a harness whose word for its mode

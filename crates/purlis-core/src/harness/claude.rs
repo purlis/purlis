@@ -400,6 +400,11 @@ impl HarnessAdapter for ClaudeCode {
         false
     }
 
+    /// Yes: its mode is read from the hook purlis armed (R-095, T1-17).
+    fn reports_a_mode_purlis_can_check(&self) -> bool {
+        true
+    }
+
     /// Yes (SK-16): a grade's chat is armed with purlis's MCP server alone and its read tools
     /// (`--strict-mcp-config`), is denied the tools that start a sub-agent, and says what it
     /// spent, so purlis holds it to the grade's limits. Its plugins are turned off for that chat

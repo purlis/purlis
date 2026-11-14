@@ -60,6 +60,7 @@ use std::path::Path;
 use crate::dispatchunattended::Attendance;
 use crate::forge::Forge;
 use crate::handoffguard::{self, Caller};
+use crate::harness::Harness;
 use crate::{
     branchgit, cloneupdate, commitguard, consentspelling, credguard, floorguard, guardcaps,
     leakguard, planeroot, projectgit, proseguard, pyjson, rootupdate, rulespelling, shellseg,
@@ -354,10 +355,11 @@ pub fn said(reason: &str) -> String {
 /// - **A chat the app started** is unattended as its fact says ([`Launched::attendance`]),
 ///   whatever mode its harness reports. The app is asked only of a line the floor would refuse
 ///   unattended.
-/// - **A line's own bypass bit still lowers the answer for that line** (Q275), on every
-///   harness ([`floorguard::unattended`]): R-289 keeps a mode the harness doesn't measure from
-///   raising anything, never this bit from lowering, so a `claude --permission-mode
-///   bypassPermissions` nested in an attended Codex chat is still refused. It only ever lowers.
+/// - **A line's own bypass bit lowers the answer for that line** (Q275, Q276), only on a harness
+///   whose mode purlis can check ([`Harness::reports_a_mode_purlis_can_check`], Claude Code's;
+///   [`floorguard::unattended`]). Codex reports `bypassPermissions` on every line (R-289), so
+///   there the bit is no fact, and A4 reads the held fact alone: an attended Codex chat
+///   publishes, and one nobody is at is refused because its fact says so. It only ever lowers.
 /// - **The merge hold takes precedence** (R-145, Q202): in such a chat, a line the hold reads
 ///   as a merge ([`crate::mergehold::held`]) is not A4's, attended or not. The hook refuses it
 ///   all the same and asks the person to merge the request, or refuses it as a block where it
@@ -366,6 +368,7 @@ pub fn said(reason: &str) -> String {
 ///   is all there is ([`floorguard::unattended`]), as the recorded charter answered.
 fn release_floor(
     cmd: &str,
+    harness: Option<&str>,
     permission_mode: Option<&str>,
     launched: Launched<'_>,
 ) -> Option<String> {
@@ -376,8 +379,11 @@ fn release_floor(
     if crate::mergehold::held(cmd).is_some() {
         return None;
     }
-    // The line's own bit first: it alone lowers, and spares the app the ask.
-    (floorguard::unattended(permission_mode) || (attending.0)() == Attendance::Unattended)
+    // The line's own bit first, where its harness's mode is one purlis can check: it alone
+    // lowers, and spares the app the ask.
+    let checked = Harness::of_chat(harness).is_some_and(Harness::reports_a_mode_purlis_can_check);
+    ((checked && floorguard::unattended(permission_mode))
+        || (attending.0)() == Attendance::Unattended)
         .then_some(refused)
 }
 
@@ -511,7 +517,12 @@ fn arms(call: &Call<'_>, plane: Option<&Plane<'_>>) -> Option<Verdict> {
         }
         // A4: an unattended chat may not publish (#299), by its attendance fact (R-109), and a
         // merge the hold stands for is the hold's (R-145).
-        if let Some(pub_) = release_floor(cmd, call.caller.permission_mode, plane.launched) {
+        if let Some(pub_) = release_floor(
+            cmd,
+            call.caller.harness,
+            call.caller.permission_mode,
+            plane.launched,
+        ) {
             return Some(Verdict::new(
                 Arm::ReleaseFloor,
                 REASON_RELEASE_FLOOR,
