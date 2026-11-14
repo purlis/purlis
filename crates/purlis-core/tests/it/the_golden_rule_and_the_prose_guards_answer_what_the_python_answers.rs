@@ -163,7 +163,7 @@ fn tables(cmd: &str) -> Value {
         json!(publish),
         json!(tags),
         json!(livesub::SUBSTITUTIONS),
-        json!(floorguard::UNATTENDED_MODE),
+        json!(purlis_core::attendance::PROMPTS_OFF),
         [json!(rows.len()), json!(rotation(cmd, &rows, 2))],
     ])
 }
@@ -277,7 +277,7 @@ fn the_recorded_python_answer_is_the_answer_these_guards_give() {
             json!(
                 PROBE_MODES
                     .iter()
-                    .map(|m| floorguard::unattended(*m))
+                    .map(|m| purlis_core::attendance::says_prompts_off(*m))
                     .collect::<Vec<_>>()
             ),
         );

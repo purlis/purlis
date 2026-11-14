@@ -215,6 +215,7 @@ mod no_tracked_file_is_one_a_sandboxed_chat_may_not_write;
 mod nothing_escapes;
 mod nothing_escapes_a_worktree;
 mod nothing_escapes_while_a_writer_races;
+mod only_attendance_compares_permission_mode_with_bypass;
 mod only_the_resolver_builds_the_native_transport;
 mod only_the_updater_and_report_name_charters_own_address;
 mod pool_setup_on_a_kind_cluster;

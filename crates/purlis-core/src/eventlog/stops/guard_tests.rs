@@ -165,7 +165,7 @@ fn case(arm: Arm) -> Case {
             case.sandboxed(Some(&at))
         }
         Arm::ReleaseFloor => Case {
-            permission_mode: crate::floorguard::UNATTENDED_MODE,
+            permission_mode: crate::attendance::PROMPTS_OFF,
             ..Case::plane("gh release create v1.0.0")
         },
         Arm::ForgeSubstitution => Case::plane("gh issue create --body \"$(x)\""),
