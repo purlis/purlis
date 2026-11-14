@@ -38,6 +38,27 @@ pub fn rerun_ignored(tests: &[&str], env: &[(&str, &OsStr)]) -> String {
     rerun_with(tests, env, false, true)
 }
 
+/// **The profile directory this test binary was built under**, `target[/<triple>]/<profile>`,
+/// where Cargo puts the workspace's binaries: `purlis`, `fake-harness`, `sandbox-probe`, the app.
+///
+/// A test binary is filed in its `deps/`, or in `build/<crate>/<hash>/out/` from Cargo 1.100's
+/// build directory layout, so its parent's parent is the profile directory only in the first.
+/// `None` for a binary in neither, which is not one Cargo built for a test.
+pub fn profile_dir() -> Option<std::path::PathBuf> {
+    profile_dir_of(&std::env::current_exe().ok()?).map(std::path::Path::to_path_buf)
+}
+
+/// [`profile_dir`] for the binary at `exe`.
+pub fn profile_dir_of(exe: &std::path::Path) -> Option<&std::path::Path> {
+    exe.ancestors()
+        .skip(1)
+        .find(|dir| {
+            dir.file_name()
+                .is_some_and(|name| name == "deps" || name == "build")
+        })?
+        .parent()
+}
+
 /// Set on a child [`rerun_steered`] started: its steering variables were chosen by the test,
 /// so [`rerun_if_steered`] leaves them in place.
 const STEERED_ON_PURPOSE: &str = "TESTRUN_STEERED_ON_PURPOSE";

@@ -796,9 +796,9 @@ pub(crate) fn the_app_program_wraps_for_tests(applied: &mut purlis_core::sandbox
     let Some(this) = applied.wrap_program() else {
         return;
     };
-    // The test binary under `target/<profile>` (`crate::profile_dir_of`), and the app program
+    // The test binary under `target/<profile>` (`purlis_core::testrun::profile_dir`), and the app program
     // in `target/<profile>`.
-    let app = crate::profile_dir_of(this)
+    let app = purlis_core::testrun::profile_dir_of(this)
         .map(|built| built.join(env!("CARGO_PKG_NAME")))
         .expect("the test binary is in a folder of the build");
     assert!(
