@@ -39,6 +39,18 @@ pub struct Healthy {
 /// **Every check of ADR 0123 §7 on pool `pool`**, with `docker` this machine's: what failed first,
 /// or the machine and its round trip. A pool on this machine is refused: it has no other machine.
 pub fn check(docker: &Docker, pool: &crate::runners::Pool) -> Result<Healthy, Finding> {
+    check_with(docker, pool, &|| {
+        crate::dockercontext::contexts_here(docker.program())
+    })
+}
+
+/// [`check`], with `contexts` the person's Docker contexts, read only where the pool's route was
+/// read from one.
+pub fn check_with(
+    docker: &Docker,
+    pool: &crate::runners::Pool,
+    contexts: &dyn Fn() -> Vec<crate::dockercontext::DockerContext>,
+) -> Result<Healthy, Finding> {
     let host = host_of(pool).ok_or_else(|| {
         Finding::Here(format!(
             "Pool {} runs on this machine's Docker, so it has no other machine to check.",
@@ -48,8 +60,7 @@ pub fn check(docker: &Docker, pool: &crate::runners::Pool) -> Result<Healthy, Fi
     let through = crate::sshroute::pool::docker_of(docker, pool)?;
     engine(&through, &host, pool.image())?;
     if let (Some(name), Some(route)) = (pool.docker_context(), route_of(pool)) {
-        let contexts = crate::dockercontext::contexts_here(docker.program());
-        if crate::dockercontext::moved(&contexts, name, &route).is_some() {
+        if crate::dockercontext::moved(&contexts(), name, &route).is_some() {
             return Err(Finding::ContextMoved {
                 name: name.to_owned(),
             });

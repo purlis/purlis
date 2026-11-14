@@ -401,14 +401,25 @@ pub fn engine_pin(
 }
 
 /// **Why an engine didn't answer through a forward that opened** (#6349): the machine's SSH
-/// server refusing to forward its socket, where [`forwarding_refused`] finds it does, else the
-/// engine itself, with what was said.
+/// server refusing to forward its socket, where [`forwarding_refused`] finds it does; the socket
+/// not there, or not the account's to use, where the probe finds so (#6272); else the engine
+/// itself, with what was said.
 pub fn silent_or_refused(opening: &super::forward::Opening<'_>, said: String) -> Finding {
     let host = opening.route.host().to_owned();
     if forwarding_refused(opening) {
-        Finding::ForwardingRefused { host }
-    } else {
-        Finding::EngineSilent { host, said }
+        return Finding::ForwardingRefused { host };
+    }
+    // The socket itself, as the probe finds it (#6272): not there, or not this account's to use.
+    match probe(
+        opening.ssh,
+        opening.route,
+        opening.pool,
+        opening.key,
+        opening.settings_in,
+        opening.route.user().unwrap_or_default(),
+    ) {
+        Err(finding @ (Finding::NoEngine { .. } | Finding::NotAllowed { .. })) => finding,
+        _ => Finding::EngineSilent { host, said },
     }
 }
 
