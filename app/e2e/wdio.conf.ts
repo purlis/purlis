@@ -155,7 +155,10 @@ export const config: WebdriverIO.Config = {
   // specs after it ran in an app slowed down by its two hundred chats (#5615). Those specs
   // failed there and nowhere else: theme-gallery on Ubuntu, and workspace-explorer's chat
   // start on macOS (#5586).
-  specs: process.env.PURLIS_E2E_PART
+  // [LOOP-6589] temporary: the loop's own specs, in this order.
+  specs: process.env.PURLIS_LOOP_SPECS
+    ? process.env.PURLIS_LOOP_SPECS.split(" ").map((name) => `./specs/${name}`)
+    : process.env.PURLIS_E2E_PART
     ? specsOfPart(scenarioSpecs(), process.env.PURLIS_E2E_PART).map((name) => `./specs/${name}`)
     : process.env.STRESS === "1"
       ? [...scenarioSpecs().filter((name) => name !== STRESS_SPEC), STRESS_SPEC].map(

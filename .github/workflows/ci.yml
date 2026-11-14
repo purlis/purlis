@@ -1791,32 +1791,26 @@ jobs:
   # Skipped whole, and no macOS runner held, when nothing the scenarios run has changed
   # (`changes`), and on a pull request (above: the merge queue runs them); `scenario-checks` says so.
   scenario:
-    name: scenario tests (${{ matrix.os }}, ${{ matrix.specs && format('part {0} of {1}', matrix.shard, matrix.shards) || matrix.sandbox && 'the sandbox runs' || 'the single-app runs' }})
+    name: scenario tests (${{ matrix.os }}, part ${{ matrix.shard }} of ${{ matrix.shards }}, loop ${{ matrix.rep }})
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.scenario != 'false' && github.event_name != 'pull_request' }}
+    # [LOOP-6589] temporary: three macOS legs on the draft, each looping M8 after the specs before it.
+    if: ${{ !cancelled() }}
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest]
-        shard: [1, 2, 3, 4]
+        shard: [1]
         shards: [4]
+        rep: [1, 2, 3]
         extras: [false]
         specs: [true]
         sandbox: [false]
         outcome: [false]
-        include:
-          - os: macos-latest
-            shard: extras
-            shards: 4
-            extras: true
-            specs: false
-            sandbox: false
-          - os: macos-latest
-            shard: sandbox
-            shards: 4
-            extras: false
-            specs: false
-            sandbox: true
+    env:
+      PURLIS_LOOP: "10"
+      PURLIS_LOOP_SPECS: "activity.e2e.ts artifact-isolation.e2e.ts artifact-links.e2e.ts artifact-memory.e2e.ts"
+      PURLIS_HOGS: ${{ matrix.rep == 1 && '0' || '1' }}
+      PURLIS_PRESSURE: ${{ matrix.rep == 3 && '1' || '0' }}
     runs-on: ${{ matrix.os }}
     steps: &scenario-steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

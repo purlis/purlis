@@ -4,6 +4,8 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { cpus } from "node:os";
 import { $, browser, expect } from "@wdio/globals";
 import {
   type LookTaken,
@@ -154,6 +156,7 @@ async function settledLook(
       { timeout: 60_000, interval: 1_000 },
     );
   } catch {
+    console.log(`[DEBUG-6589] failed ${what} looks: ${JSON.stringify(looking.taken)} ps:\n${spawnSync("ps", ["-axo", "pid,ppid,etime,%cpu,rss,command"], { encoding: "utf8" }).stdout.split("\n").filter((l) => /WebKit|PID/.test(l)).join("\n")}`);
     const verdict =
       looking.heldStill && wanted !== null
         ? `the app's memory settled ${what}, but ${wanted.unready}`
@@ -190,13 +193,43 @@ describe("an open artifact tab's memory (ADR 0086 M8)", function () {
     if (artifacts !== "") rmSync(artifacts, { recursive: true, force: true });
   });
 
-  it("adds no more than its budget once its page is drawn", async () => {
+  // [LOOP-6589] temporary: every core busy on the loaded legs.
+  const HOGS: ChildProcess[] = [];
+  before(() => {
+    if (process.env.PURLIS_HOGS !== "1") return;
+    for (let i = 0; i < cpus().length; i += 1)
+      HOGS.push(spawn("sh", ["-c", "while :; do :; done"], { stdio: "ignore" }));
+    console.log(`[DEBUG-6589] hogs ${HOGS.length}`);
+  });
+  after(() => {
+    for (const hog of HOGS) hog.kill("SIGKILL");
+  });
+
+  // [LOOP-6589] temporary: opened, measured and closed PURLIS_LOOP times.
+  for (const pass of Array.from({ length: Number(process.env.PURLIS_LOOP ?? "1") }, (_, i) => i + 1))
+  it(`adds no more than its budget once its page is drawn (pass ${pass})`, async () => {
+    if (pass > 1) {
+      const close = await $(closeOf(NAME));
+      if (await close.isExisting()) {
+        await close.click();
+        await browser.waitUntil(async () => (await artifactWebviews()).length === 0, {
+          timeout: 20_000,
+          timeoutMsg: "the artifact's webview outlived its tab",
+        });
+      }
+    }
     const icon = await iconFor(NAME);
     expect(await artifactWebviews()).toEqual([]);
     const pid = theApp();
 
     const seenBefore = await settledLook(pid, "before the tab opened", null);
     const before = seenBefore.look;
+    if (process.env.PURLIS_PRESSURE === "1") {
+      const pressure = spawn("sudo", ["-n", "memory_pressure", "-S", "-l", "critical"], { stdio: "pipe" });
+      pressure.stderr?.on("data", (d) => console.log(`[DEBUG-6589] pressure: ${String(d).trim()}`));
+      pressure.stdout?.on("data", (d) => console.log(`[DEBUG-6589] pressure out: ${String(d).trim().slice(0, 200)}`));
+      setTimeout(() => pressure.kill("SIGINT"), 8_000);
+    }
     await icon.click();
     await browser.waitUntil(async () => (await artifactWebviews()).length === 1, {
       timeout: 20_000,
@@ -213,6 +246,7 @@ describe("an open artifact tab's memory (ADR 0086 M8)", function () {
     const record = { row: "M8", budgetKb, before, after, ...verdict };
     logLine("artifact-tab.jsonl", record);
     console.log(`purlis-artifact-tab ${JSON.stringify(record)}`);
+    console.log(`[DEBUG-6589] pass ${pass} looks: ${JSON.stringify(record.after.webContentEach)} ps:\n${spawnSync("ps", ["-axo", "pid,ppid,etime,%cpu,rss,command"], { encoding: "utf8" }).stdout.split("\n").filter((l) => /WebKit|PID/.test(l)).join("\n")}`);
     if (!verdict.within) throw new Error(verdict.said);
   });
 });
