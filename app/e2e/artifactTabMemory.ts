@@ -104,3 +104,38 @@ export function artifactTabVerdict(
     said: `an open artifact tab added ${megabytes(addedKb)} (${parts}); its budget is ${megabytes(budgetKb)}`,
   };
 }
+
+/** One look `settledLook` took, a second after the one before: what it read, or why it failed. */
+export type LookTaken = { look: TabMemoryLook; pids: number[] } | { missed: string };
+
+/** How many of the last looks a failure names. */
+export const LOOKS_SAID = 5;
+
+const lookSaid = (taken: LookTaken) =>
+  "missed" in taken
+    ? `failed: ${taken.missed}`
+    : `${taken.look.webContentProcesses} web content processes (pid ${taken.pids.join(", ") || "none"}), ${megabytes(total(taken.look))}`;
+
+const total = (seen: TabMemoryLook) => seen.appKb + seen.webContentKb;
+
+/**
+ * What a look that never settled says of what it saw: the look before the tab opened, where
+ * there was one, and the last `LOOKS_SAID` looks, oldest first. A wait for a web content
+ * process of the tab's own that never came then says whether the count never rose (the page
+ * was drawn in a process already counted) or rose while another went, and a wait for the
+ * memory to settle says how far apart its looks stayed.
+ */
+export function unsettledSaid(
+  before: { look: TabMemoryLook; pids: number[] } | null,
+  looks: LookTaken[],
+): string {
+  const last = looks.slice(-LOOKS_SAID);
+  const parts: string[] = [];
+  if (before !== null) parts.push(`before the tab opened: ${lookSaid(before)}`);
+  parts.push(
+    last.length === 0
+      ? "no look was taken"
+      : `its last ${last.length} looks, a second apart: ${last.map(lookSaid).join("; ")}`,
+  );
+  return parts.join("; ");
+}
