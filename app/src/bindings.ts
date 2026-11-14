@@ -7959,7 +7959,7 @@ sub_agent: boolean } |
 
 /**
  *  What heads a chat's Chat log: its allowed calls in one count, with those its person's rules
- *  allowed, and its honesty lines.
+ *  allowed, its honesty lines, and what purlis can't tell of its harness.
  */
 export type ChatLogSummary = {
 	allowed: number,
@@ -7968,6 +7968,15 @@ export type ChatLogSummary = {
 	unverified: boolean,
 	/**  It ran with No sandbox. */
 	ran_as_you: boolean,
+	/**
+	 *  Its harness, by the word the plane calls it, where its latest start names one purlis
+	 *  ships: what the Can't tell lines name.
+	 */
+	harness: string | null,
+	/**  Its harness does not report what its own check blocks (R-097, R-100). */
+	cant_tell_its_checks_blocks: boolean,
+	/**  Its harness reports no mode purlis can check (R-099). */
+	cant_tell_its_mode: boolean,
 };
 
 /**  What a number names, as the window is sent it. */
