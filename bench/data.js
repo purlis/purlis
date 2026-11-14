@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794659787522,
+  "lastUpdate": 1794662794033,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -49266,6 +49266,48 @@ window.BENCHMARK_DATA = {
             "value": 102.4370655,
             "unit": "ms",
             "extra": "median of 5 runs: 101.039, 101.923, 102.437, 102.644, 102.936 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e7de98ee042ed51c5bba52e2bea1823b0c20802f",
+          "message": "Docker on another machine: the owned mark and vault logins (#6271) (#6627)\n\n* Docker on another machine: the owned mark, bound to the pin, gates vault values (#6271)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7CFV6140S4YDE3BM94P8EVE\nPurlis-Persona: steward\n\n* Pool setup: Connect keeps who can sign in to the machine, and the pool made is marked so (#6271)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7CFV6140S4YDE3BM94P8EVE\nPurlis-Persona: steward\n\n* Docker on another machine: who can sign in, asked on Connect and on the pool's row; parity in the remote job (#6271)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7CFV6140S4YDE3BM94P8EVE\nPurlis-Persona: steward\n\n* Who can sign in: the choices stay enabled while an answer is kept, so the keyboard keeps its place (#6271)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7CFV6140S4YDE3BM94P8EVE\nPurlis-Persona: steward\n\n* Stories: Connect's done states and Who can sign in, as this PR's stories run drew them (#6271)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7CFV6140S4YDE3BM94P8EVE\nPurlis-Persona: steward\n\n* Bindings: PoolSetupMachine's owned beside its Docker context, after main's #6552 (#6271)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7CFV6140S4YDE3BM94P8EVE\nPurlis-Persona: steward\n\n* Who can sign in: sent on Save alone, asked before forgetting logins, for the pin shown (#6271, #6614's review)\n\nP2-1: the radios send nothing; Save keeps the answer, and taking a made pool's mark back\nasks first with a Notice, since it forgets the pool's logins. Arrowing alone sends nothing.\nP2-2: the remote parity test checks the refusal after the re-pin exactly, and says why it\nchecks the gate, not a fill.\nP3-3: set_remote_owned and choose_owned take the pin the window was shown, and refuse a mark\nfor any other.\nP3-4: a TLS machine's CA is what is pinned; a row whose pin changed doesn't ask; Settings ›\nPools, on its row, in the core and the window alike.\nP3-5: poollogins answers Unconfirmed where the pools don't read.\nP3-6: tlsroute::Pin::to_json is the TLS pin's one shape, on the row, in pool-setup.json and\nin marked_on_connect.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7CFV6140S4YDE3BM94P8EVE\nPurlis-Persona: steward\n\n* Who can sign in: Save in a row of its own, a button's width in Connect's step as on the row (#6271)\n\nThe stories run showed it stretched across Connect's step, above Continue.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7CFV6140S4YDE3BM94P8EVE\nPurlis-Persona: steward\n\n* Stories: Who can sign in with Save, and Connect's done states, as #6627's stories run drew them (#6271)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7CFV6140S4YDE3BM94P8EVE\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-14T12:11:19Z",
+          "tree_id": "be289846a801d9945156643a2e78b847f66856c1",
+          "url": "https://github.com/purlis/purlis/commit/e7de98ee042ed51c5bba52e2bea1823b0c20802f"
+        },
+        "date": 1794662787066,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.678876,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.662, 0.675, 0.679, 0.682, 0.690 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.626672999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.408, 16.601, 16.627, 16.719, 16.725 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.10523900000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.464, 101.522, 102.105, 102.166, 102.919 ms"
           }
         ]
       }
