@@ -256,6 +256,12 @@ describe("an open artifact tab's memory (ADR 0086 M8)", function () {
     const pid = theApp();
 
     const before = await settledLook(pid, null, () => null, "before the tab opened");
+    // [LOOP-6589] temporary: leg 3 opens the tab under a simulated memory-pressure event.
+    if (process.env.PURLIS_PRESSURE === "1") {
+      const pressure = spawn("sudo", ["-n", "memory_pressure", "-S", "-l", "critical"], { stdio: "pipe" });
+      pressure.stderr?.on("data", (d) => console.log(`[DEBUG-6589] pressure: ${String(d).trim()}`));
+      setTimeout(() => pressure.kill("SIGINT"), 8_000);
+    }
     await icon.click();
     await browser.waitUntil(async () => (await artifactWebviews()).length === 1, {
       timeout: 20_000,

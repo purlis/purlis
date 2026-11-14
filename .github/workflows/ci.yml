@@ -1810,6 +1810,7 @@ jobs:
       PURLIS_LOOP: "10"
       PURLIS_LOOP_SPECS: "activity.e2e.ts artifact-isolation.e2e.ts artifact-links.e2e.ts artifact-memory.e2e.ts"
       PURLIS_HOGS: ${{ matrix.rep == 1 && '0' || '1' }}
+      PURLIS_PRESSURE: ${{ matrix.rep == 3 && '1' || '0' }}
     runs-on: ${{ matrix.os }}
     steps: &scenario-steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
