@@ -821,7 +821,7 @@ impl Requests for GitHub {
         let mut reviews = Vec::new();
         for page in 1..=REVIEW_PAGES {
             let call = Call::get(
-                &format!("{api}?per_page={REVIEWS_PER_PAGE}&page={page}"),
+                format!("{api}?per_page={REVIEWS_PER_PAGE}&page={page}"),
                 LIST_TIMEOUT,
             );
             let listed = self.0.ask(caller, &call, &doing)?;

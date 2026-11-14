@@ -323,13 +323,13 @@ fn watch(held: &Weak<Held>) {
         return;
     }
     drop(project);
-    let held = held.clone();
+    let watched = held.clone();
     let started = std::thread::Builder::new()
         .name("merge-watch".to_owned())
         .spawn(move || {
             loop {
                 std::thread::sleep(WATCH_EVERY);
-                let Some(project) = held.upgrade() else {
+                let Some(project) = watched.upgrade() else {
                     return;
                 };
                 if !watched_once(project.as_ref()) && !carries_on(project.merge_holds()) {
