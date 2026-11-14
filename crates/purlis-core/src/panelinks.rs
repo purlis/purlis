@@ -64,7 +64,7 @@ impl Candidate {
     /// kind; or why a marked link's target is not read.
     fn reading(&self) -> Result<(Kind, &str), String> {
         match self.kind {
-            Kind::Osc8 => osc8::kind_of(self.target.as_deref())
+            Kind::Osc8 => osc8::target_kind(self.target.as_deref())
                 .map(|kind| (kind, self.target.as_deref().unwrap_or_default())),
             kind => Ok((kind, self.text.as_str())),
         }

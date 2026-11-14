@@ -4,7 +4,7 @@
 //! **A link a program marked itself** (OSC 8, #6218, spec #6208): words on the screen, and the
 //! target the program named for them, which the pane hands over as it was handed them.
 //!
-//! - **The target is read by its scheme's kind** ([`kind_of`]): `http:` and `https:` by the web
+//! - **The target is read by its scheme's kind** ([`target_kind`]): `http:` and `https:` by the web
 //!   address's rules, `file:` by a file's (one on another host is refused, ruling Q2), and
 //!   every other scheme is refused with a sentence that names it. A target longer than
 //!   [`MOST_TARGET`] is refused unread.
@@ -33,7 +33,7 @@ pub const MOST_TEXT: usize = 4096;
 
 /// **The kind that reads a marked link's `target`**, by its scheme, or the sentence that says
 /// why it is not opened.
-pub fn kind_of(target: Option<&str>) -> Result<Kind, String> {
+pub fn target_kind(target: Option<&str>) -> Result<Kind, String> {
     let Some(target) = target.filter(|target| !target.is_empty()) else {
         return Err("the program named no address for this link".into());
     };

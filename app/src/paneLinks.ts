@@ -417,11 +417,11 @@ const cutTarget = (target: string) => target.slice(0, MOST_TARGET + 1);
 const MOST_MARKED = 256;
 
 /** The cell `[x, y]` comes before cell `[x2, y2]`, read as text is. */
-const before = (y: number, x: number, y2: number, x2: number) => y < y2 || (y === y2 && x < x2);
+const precedes = (y: number, x: number, y2: number, x2: number) => y < y2 || (y === y2 && x < x2);
 
 /** Whether buffer cell (`x`, `y`) is one of `marked`'s. */
 const covers = (marked: Marked, x: number, y: number) =>
-  !before(y, x, marked.start.line, marked.startX) && before(y, x, marked.end.line, marked.endX);
+  !precedes(y, x, marked.start.line, marked.startX) && precedes(y, x, marked.end.line, marked.endX);
 
 /**
  * **Records each link a program marks on `pane`** (OSC 8): `ESC ] 8 ; params ; target ST`
@@ -455,7 +455,7 @@ function marking(pane: Terminal, marked: Marked[]): IDisposable {
       open = undefined;
       if (end !== undefined && was.buffer === buffer) {
         const one = { ...was, end, endX: at() };
-        if (one.moved || before(one.start.line, one.startX, end.line, one.endX)) {
+        if (one.moved || precedes(one.start.line, one.startX, end.line, one.endX)) {
           marked.push(one);
           while (marked.length > MOST_MARKED) {
             const oldest = marked.shift();
