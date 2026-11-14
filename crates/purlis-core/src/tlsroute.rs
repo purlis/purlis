@@ -400,7 +400,7 @@ fn tls_file(host: &str, path: &Path, why: &str) -> Finding {
 }
 
 /// The file at `path`, read up to [`MOST_READ`], where it is a regular file.
-fn read_file(path: &Path, host: &str) -> Result<Vec<u8>, Finding> {
+pub(crate) fn read_file(path: &Path, host: &str) -> Result<Vec<u8>, Finding> {
     let file = std::fs::File::open(path).map_err(|why| {
         tls_file(
             host,

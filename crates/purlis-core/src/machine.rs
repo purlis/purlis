@@ -467,6 +467,11 @@ pub const RUNNER_HOURS_LOCK: &str = "runner-hours.jsonl.lock";
 /// [`dir`] (`crate::runners`, #3292): `<pool>.yaml`, `0600`, and its kubectl's caches.
 pub const CLUSTER_KUBECONFIGS_DIR: &str = "cluster-kubeconfigs";
 
+/// purlis's own copies of the TLS files read from Docker contexts, inside [`dir`]
+/// (`crate::dockercontext::keep_tls`, #6268): a folder for each set, named by what it holds, the
+/// key `0600`.
+pub const DOCKER_CONTEXT_TLS_DIR: &str = "docker-context-tls";
+
 /// The session host's folder's old name inside [`dir`] (`names::DAEMON_DIR`).
 pub const DAEMON_DIR: &str = "charterd";
 

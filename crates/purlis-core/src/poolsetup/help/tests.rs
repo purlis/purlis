@@ -19,6 +19,7 @@ const A_BEARER: &str = concat!(
 fn stuck_on_check(holds: Vec<String>) -> Setup {
     let facts = Facts {
         engine: Engine::Missing,
+        elsewhere: None,
         connect: None,
         pool: None,
         identity: Identity::None,

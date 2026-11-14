@@ -997,6 +997,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_machine",
     "pool_setup_ssh_hosts",
     "pool_setup_podman_connections",
+    // Picking a Docker context reads it with this machine's docker, and keeping a pool as it is
+    // changes the pool's record (#6268): the person's own press, as picking a machine is.
+    "pool_setup_docker_contexts",
+    "pool_setup_docker_context",
+    "pool_setup_keep_pool_as_it_is",
     "pool_setup_connect",
     "pool_setup_trust",
     // Check and trust again (#6270): meeting a made pool's machine again and keeping the pin the

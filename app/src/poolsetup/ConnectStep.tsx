@@ -6,7 +6,9 @@ import { KeyRound } from "lucide-react";
 import {
   commands,
   type PlaneId,
+  type PoolSetupDockerContext,
   type PoolSetupPodmanConnection,
+  type PoolSetupPrefill,
   type PoolSetupShown,
   type PoolSetupStep,
 } from "../bindings";
@@ -31,8 +33,11 @@ import { Action, Busy, Options, Recommended, Say, SeeWhat, StepHead } from "./pa
  * The machines offered are the person's SSH hosts and their Podman connections (#6269), each
  * read into an SSH route: a Podman connection's carries its key file, which the core keeps beside
  * the route. **Two routes** (#6267): SSH, recommended, and Docker's API over TLS, whose CA, client
- * certificate and key are named under Options, the key a file or a vault entry. Contexts are a
- * later ticket of #6257, so they aren't offered.
+ * certificate and key are named under Options, the key a file or a vault entry. **The person's
+ * Docker contexts** (#6268) are offered on the route their endpoint names, and one on this
+ * machine's own socket as this machine's Docker: a context is picked by its name, and the core
+ * reads it again, once, into its route and files. A pool whose context now names another route
+ * says so, with Connect again and Keep the pool as it is.
  */
 
 /** What the person may be doing on the page, beside what the core read. */
@@ -102,6 +107,7 @@ const TITLES: Record<string, string> = {
   "tls-client-expired": "Your certificate has expired",
   "tls-file": "purlis can't use one of the files you named",
   "not-a-route": "That isn't an address purlis can read",
+  "context-moved": "Your context points somewhere else",
   here: "That didn't work",
 };
 
@@ -234,30 +240,55 @@ function Chosen({ step, onChange }: { step: PoolSetupStep; onChange?: () => void
 /** A Podman connection's choice, apart from any SSH host's name. */
 const PODMAN = "podman:";
 
+/** A Docker context's choice, apart from any SSH host's or Podman connection's name (#6268). */
+const CONTEXT = "context:";
+
+/** What a context's radio says of it. */
+const contextSays = (one: PoolSetupDockerContext) =>
+  one.over === "here"
+    ? "This machine's own Docker, from your Docker contexts. purlis runs a pool here on it."
+    : "From your Docker contexts";
+
 /** **The pick**: the machines the person's SSH settings and Podman connections name, and another
  * one typed. */
 function Pick({
   step,
   hosts,
   podmans,
+  contexts,
   busy,
   onPick,
+  onPickContext,
   onConnect,
 }: {
   step: PoolSetupStep;
   hosts: readonly string[];
   podmans: readonly PoolSetupPodmanConnection[];
+  /** The contexts reached over SSH, and those on this machine's own socket (#6268). */
+  contexts: readonly PoolSetupDockerContext[];
   busy: boolean;
   onPick: (route: string | null, identity: string | null) => void;
+  onPickContext: (name: string) => void;
   onConnect: () => void;
 }) {
   const kept = step.machine?.route ?? "";
   const keptIdentity = step.machine?.identity ?? null;
-  const keptHost = keptIdentity === null ? hosts.find((host) => routeOf(host) === kept) : undefined;
-  const keptPodman = podmans.find(
-    (one) => one.route === kept && (one.identity ?? null) === keptIdentity,
-  );
-  const offered = [...hosts, ...podmans.map((one) => PODMAN + one.name)];
+  const keptContext = step.machine?.context ?? null;
+  const keptHost =
+    keptIdentity === null && keptContext === null
+      ? hosts.find((host) => routeOf(host) === kept)
+      : undefined;
+  const keptPodman =
+    keptContext === null
+      ? podmans.find((one) => one.route === kept && (one.identity ?? null) === keptIdentity)
+      : undefined;
+  const keptByContext = contexts.find((one) => one.name === keptContext);
+  // A context on this machine's own socket is never picked for the person: it changes the kind.
+  const offered = [
+    ...hosts,
+    ...podmans.map((one) => PODMAN + one.name),
+    ...contexts.filter((one) => one.over === "ssh").map((one) => CONTEXT + one.name),
+  ];
   // Until the person picks, the pick follows what is kept and what the SSH settings and Podman
   // name, which are read after the step is drawn.
   const [chosen, setPicked] = useState<string>();
@@ -265,28 +296,46 @@ function Pick({
     chosen ??
     keptHost ??
     (keptPodman ? PODMAN + keptPodman.name : undefined) ??
+    (keptByContext ? CONTEXT + keptByContext.name : undefined) ??
     (kept === "" && offered.length > 0 ? (offered[0] ?? "typed") : "typed");
   const [typed, setTyped] = useState(
-    keptHost !== undefined || keptPodman !== undefined ? "" : kept.replace(/^ssh:\/\//, ""),
+    keptHost !== undefined || keptPodman !== undefined || keptContext !== null
+      ? ""
+      : kept.replace(/^ssh:\/\//, ""),
   );
   const podman = picked.startsWith(PODMAN)
     ? podmans.find((one) => PODMAN + one.name === picked)
     : undefined;
-  const route = podman ? podman.route : picked === "typed" ? routeOf(typed) : routeOf(picked);
+  const context = picked.startsWith(CONTEXT)
+    ? contexts.find((one) => CONTEXT + one.name === picked)
+    : undefined;
+  const route = context
+    ? (context.route ?? "")
+    : podman
+      ? podman.route
+      : picked === "typed"
+        ? routeOf(typed)
+        : routeOf(picked);
   const identity = podman?.identity ?? null;
   // What is picked is kept as it is picked, so coming back finds it: the route and the key file
-  // it signs in with, either of which may change alone. Nothing is contacted.
-  const asKept = route === kept && identity === keptIdentity;
+  // it signs in with, either of which may change alone, or the context it is read from, by its
+  // name. Nothing is contacted.
+  const asKept = context
+    ? context.name === keptContext
+    : route === kept && identity === keptIdentity && keptContext === null;
   useEffect(() => {
     if (asKept) return;
-    const later = setTimeout(() => onPick(route === "" ? null : route, identity), 400);
+    const later = setTimeout(() => {
+      if (context) onPickContext(context.name);
+      else onPick(route === "" ? null : route, identity);
+    }, 400);
     return () => clearTimeout(later);
-  }, [asKept, route, identity, onPick]);
+  }, [asKept, context, route, identity, onPick, onPickContext]);
   const next = step.next;
   const host = step.machine?.host;
   return (
     <>
-      {offered.length > 0 ? (
+      {offered.length > 0 || contexts.length > 0 ? (
         <Asked label="Which machine?" value={picked} onChange={setPicked}>
           {hosts.map((one) => (
             <Radio key={one} value={one} description="From your SSH settings">
@@ -302,12 +351,21 @@ function Pick({
               {one.name}
             </Radio>
           ))}
+          {contexts.map((one) => (
+            <Radio
+              key={CONTEXT + one.name}
+              value={CONTEXT + one.name}
+              description={contextSays(one)}
+            >
+              {one.name}
+            </Radio>
+          ))}
           <Radio value="typed" description="A machine that isn't in your SSH settings.">
             Another machine
           </Radio>
         </Asked>
       ) : null}
-      {(offered.length === 0 || picked === "typed") && (
+      {((offered.length === 0 && contexts.length === 0) || picked === "typed") && (
         <TextField
           label="Its address"
           value={typed}
@@ -342,19 +400,39 @@ type TlsTyped = {
  * as the SSH machine is, and nothing is contacted until Connect to. */
 function TlsPick({
   step,
+  contexts,
   busy,
   onPick,
+  onPickContext,
   onFiles,
   onConnect,
 }: {
   step: PoolSetupStep;
+  /** The contexts reached over TLS (#6268), each with its own files. */
+  contexts: readonly PoolSetupDockerContext[];
   busy: boolean;
   onPick: (route: string | null) => void;
+  onPickContext: (name: string) => void;
   onFiles: (files: TlsTyped | null) => void;
   onConnect: () => void;
 }) {
   const kept = step.machine?.route ?? "";
   const keptFiles = step.machine?.tls ?? null;
+  const keptContext = step.machine?.context ?? null;
+  // A context is picked by its name, and the core reads its route and files; never for the
+  // person, so a machine typed stays typed.
+  const [chosen, setChosen] = useState<string>();
+  const picked =
+    chosen ??
+    (contexts.some((one) => one.name === keptContext) ? CONTEXT + (keptContext ?? "") : "typed");
+  const byContext = picked.startsWith(CONTEXT);
+  useEffect(() => {
+    if (!picked.startsWith(CONTEXT)) return;
+    const name = picked.slice(CONTEXT.length);
+    if (name === keptContext) return;
+    const later = setTimeout(() => onPickContext(name), 400);
+    return () => clearTimeout(later);
+  }, [picked, keptContext, onPickContext]);
   const [typed, setTyped] = useState(
     kept.startsWith("tcp://") ? kept.replace(/^tcp:\/\//, "") : "",
   );
@@ -382,13 +460,13 @@ function TlsPick({
         name: keptFiles.key_name ?? "",
       });
   }
-  const route = tcpRouteOf(typed);
+  const route = byContext ? kept : tcpRouteOf(typed);
   // The route is kept as it is typed, so coming back finds it. Nothing is contacted.
   useEffect(() => {
-    if (route === kept) return;
+    if (byContext || route === kept) return;
     const later = setTimeout(() => onPick(route === "" ? null : route), 400);
     return () => clearTimeout(later);
-  }, [route, kept, onPick]);
+  }, [byContext, route, kept, onPick]);
   const named =
     files.ca.trim() !== "" &&
     files.cert.trim() !== "" &&
@@ -404,80 +482,106 @@ function TlsPick({
       : keptFiles.key_vault === files.vault.trim() && keptFiles.key_name === files.name.trim());
   // The files are kept once the route is, and once all of them are named.
   useEffect(() => {
-    if (route === "" || route !== kept || !named || same) return;
+    if (byContext || route === "" || route !== kept || !named || same) return;
     const later = setTimeout(() => onFiles(files), 400);
     return () => clearTimeout(later);
-  }, [route, kept, named, same, files, onFiles]);
+  }, [byContext, route, kept, named, same, files, onFiles]);
   const set = (to: Partial<TlsTyped>) => setFiles((was) => ({ ...was, ...to }));
+  // A context picked is kept once the core has read it.
+  const contextKept = !byContext || picked === CONTEXT + (keptContext ?? "");
   const host = step.machine?.host;
   return (
     <>
-      <TextField
-        label="The machine's address"
-        value={typed}
-        onChange={setTyped}
-        placeholder="lab.example.internal:2376"
-        help="Its name, and the port Docker takes TLS connections on: 2376 unless it was set otherwise."
-      />
-      <Options open={!same}>
-        <p className="pool-setup-does">
-          purlis reads these where they are, and checks the authority before every run.
-        </p>
-        <div className="pool-setup-grid">
-          <TextField
-            label="Authority (CA) file"
-            value={files.ca}
-            onChange={(ca) => set({ ca })}
-            placeholder="~/.docker/ca.pem"
-          />
-          <TextField
-            label="Certificate"
-            value={files.cert}
-            onChange={(cert) => set({ cert })}
-            placeholder="~/.docker/cert.pem"
-          />
-        </div>
-        <Asked
-          label="Where is the key?"
-          value={files.keyIn}
-          onChange={(to) => set({ keyIn: to === "vault" ? "vault" : "file" })}
-        >
-          <Radio value="file" description="A file on this machine, beside the certificate.">
-            In a file
-          </Radio>
-          <Radio
-            value="vault"
-            description="purlis writes it only for each run, in a folder of the run's own, and removes it after."
-          >
-            In a vault entry
+      {contexts.length > 0 && (
+        <Asked label="Which machine?" value={picked} onChange={setChosen}>
+          {contexts.map((one) => (
+            <Radio
+              key={CONTEXT + one.name}
+              value={CONTEXT + one.name}
+              description={contextSays(one)}
+            >
+              {one.name}
+            </Radio>
+          ))}
+          <Radio value="typed" description="A machine that isn't one of your Docker contexts.">
+            Another machine
           </Radio>
         </Asked>
-        {files.keyIn === "file" ? (
-          <TextField
-            label="Key"
-            value={files.key}
-            onChange={(key) => set({ key })}
-            placeholder="~/.docker/key.pem"
-          />
-        ) : (
+      )}
+      {!byContext && (
+        <TextField
+          label="The machine's address"
+          value={typed}
+          onChange={setTyped}
+          placeholder="lab.example.internal:2376"
+          help="Its name, and the port Docker takes TLS connections on: 2376 unless it was set otherwise."
+        />
+      )}
+      {!byContext && (
+        <Options open={!same}>
+          <p className="pool-setup-does">
+            purlis reads these where they are, and checks the authority before every run.
+          </p>
           <div className="pool-setup-grid">
-            <TextField label="Vault" value={files.vault} onChange={(vault) => set({ vault })} />
             <TextField
-              label="Key in the vault"
-              value={files.name}
-              onChange={(name) => set({ name })}
+              label="Authority (CA) file"
+              value={files.ca}
+              onChange={(ca) => set({ ca })}
+              placeholder="~/.docker/ca.pem"
+            />
+            <TextField
+              label="Certificate"
+              value={files.cert}
+              onChange={(cert) => set({ cert })}
+              placeholder="~/.docker/cert.pem"
             />
           </div>
-        )}
-      </Options>
+          <Asked
+            label="Where is the key?"
+            value={files.keyIn}
+            onChange={(to) => set({ keyIn: to === "vault" ? "vault" : "file" })}
+          >
+            <Radio value="file" description="A file on this machine, beside the certificate.">
+              In a file
+            </Radio>
+            <Radio
+              value="vault"
+              description="purlis writes it only for each run, in a folder of the run's own, and removes it after."
+            >
+              In a vault entry
+            </Radio>
+          </Asked>
+          {files.keyIn === "file" ? (
+            <TextField
+              label="Key"
+              value={files.key}
+              onChange={(key) => set({ key })}
+              placeholder="~/.docker/key.pem"
+            />
+          ) : (
+            <div className="pool-setup-grid">
+              <TextField label="Vault" value={files.vault} onChange={(vault) => set({ vault })} />
+              <TextField
+                label="Key in the vault"
+                value={files.name}
+                onChange={(name) => set({ name })}
+              />
+            </div>
+          )}
+        </Options>
+      )}
       {step.see && <SeeWhat text={step.see.text} note={step.see.note} />}
       <Action
         does={step.next?.id === "connect-machine" ? step.next.does : undefined}
         // Named for the machine only once everything typed is kept, as the SSH pick is: what a
         // press of it reads is what Connect keeps.
-        main={route !== "" && route === kept && same && host ? `Connect to ${host}` : "Connect"}
+        main={
+          route !== "" && route === kept && same && contextKept && host
+            ? `Connect to ${host}`
+            : "Connect"
+        }
         onMain={onConnect}
-        busy={busy || route === "" || route !== kept || !same}
+        busy={busy || route === "" || route !== kept || !same || !contextKept}
       />
     </>
   );
@@ -609,6 +713,7 @@ export function ConnectStep({
   onShown,
   changed,
   onNext,
+  onConnectAgain,
 }: {
   step: PoolSetupStep;
   shown: PoolSetupShown;
@@ -618,9 +723,12 @@ export function ConnectStep({
   /** Something was kept: read again. */
   changed: () => void;
   onNext: () => void;
+  /** Connect again (#6268): a new pool's setup on the machine the pool's context names now. */
+  onConnectAgain?: (prefill: PoolSetupPrefill) => void;
 }) {
   const [hosts, setHosts] = useState<readonly string[]>([]);
   const [podmans, setPodmans] = useState<readonly PoolSetupPodmanConnection[]>([]);
+  const [contexts, setContexts] = useState<readonly PoolSetupDockerContext[]>([]);
   const [pressing, setPressing] = useState<Pressing>();
   const [trouble, setTrouble] = useState<string>();
   useEffect(() => {
@@ -630,6 +738,9 @@ export function ConnectStep({
     });
     void commands.poolSetupPodmanConnections().then((answer) => {
       if (live && answer.status === "ok") setPodmans(answer.data);
+    });
+    void commands.poolSetupDockerContexts().then((answer) => {
+      if (live && answer.status === "ok") setContexts(answer.data);
     });
     return () => {
       live = false;
@@ -641,6 +752,21 @@ export function ConnectStep({
   const over = chosenOver ?? overOf(step.machine);
   const pick = (route: string | null, identity: string | null = null) => {
     void commands.poolSetupMachine(route, identity).then((answer) => {
+      if (answer.status === "error") setTrouble(answer.error);
+      else changed();
+    });
+  };
+  const pickContext = (name: string) => {
+    void commands.poolSetupDockerContext(name).then((answer) => {
+      if (answer.status === "error") setTrouble(answer.error);
+      else changed();
+    });
+  };
+  /** Keep the pool as it is (#6268): it stays on its route, and forgets its context's name. */
+  const keepAsItIs = () => {
+    if (shown.pool === null) return;
+    setTrouble(undefined);
+    void commands.poolSetupKeepPoolAsItIs(shown.pool).then((answer) => {
       if (answer.status === "error") setTrouble(answer.error);
       else changed();
     });
@@ -718,6 +844,8 @@ export function ConnectStep({
   // the machine: once the person chose a route they are only stale until the next read.
   const declined = step.cause === "plain-tcp" || step.cause === "not-a-route";
   const finding = step.state === "attention" && !declined;
+  // The pool's Docker context names another route (ADR 0123 §7): every check of the pool holds.
+  const moved = step.cause === "context-moved";
   // A made pool whose pin no longer holds is checked and trusted again (#6270).
   const againPool = madePool && step.next?.id === "check-and-trust-again" ? shown.pool : null;
 
@@ -761,16 +889,20 @@ export function ConnectStep({
           step={step}
           hosts={hosts}
           podmans={podmans}
+          contexts={contexts.filter((one) => one.over === "ssh" || one.over === "here")}
           busy={pressing !== undefined}
           onPick={pick}
+          onPickContext={pickContext}
           onConnect={connect}
         />
       )}
       {!done && !finding && !meeting && !refused && over === "tls" && (
         <TlsPick
           step={step}
+          contexts={contexts.filter((one) => one.over === "tls")}
           busy={pressing !== undefined}
           onPick={pick}
+          onPickContext={pickContext}
           onFiles={keepFiles}
           onConnect={connect}
         />
@@ -818,7 +950,7 @@ export function ConnectStep({
           ))}
         </Say>
       )}
-      {(done || finding) && <Checked step={step} done={done} />}
+      {(done || finding) && <Checked step={step} done={done || moved} />}
       {finding && (
         <Say
           tone="trouble"
@@ -828,32 +960,46 @@ export function ConnectStep({
               : (TITLES[step.cause ?? "here"] ?? TITLES.here ?? "")
           }
           actions={
-            <>
-              {againPool !== null ? (
-                <>
-                  <Button variant="primary" onPress={() => checkAndTrustAgain(againPool)}>
-                    {step.next?.label ?? "Check and trust again"}
-                  </Button>
-                  <Button variant="secondary" onPress={checkAgain}>
-                    Check again
-                  </Button>
-                </>
-              ) : (
+            moved ? (
+              <>
                 <Button
                   variant="primary"
-                  onPress={
-                    step.next?.id === "change-machine" ? notIt : madePool ? checkAgain : connect
-                  }
+                  onPress={() => step.prefill && onConnectAgain?.(step.prefill)}
                 >
-                  {step.next?.id === "change-machine" ? "Change the machine" : "Check again"}
+                  {step.next?.label ?? "Connect again"}
                 </Button>
-              )}
-              {!madePool && step.next?.id !== "change-machine" && (
-                <Button variant="secondary" onPress={notIt}>
-                  Change the machine
+                <Button variant="secondary" onPress={keepAsItIs}>
+                  {step.other?.label ?? "Keep the pool as it is"}
                 </Button>
-              )}
-            </>
+              </>
+            ) : (
+              <>
+                {againPool !== null ? (
+                  <>
+                    <Button variant="primary" onPress={() => checkAndTrustAgain(againPool)}>
+                      {step.next?.label ?? "Check and trust again"}
+                    </Button>
+                    <Button variant="secondary" onPress={checkAgain}>
+                      Check again
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    variant="primary"
+                    onPress={
+                      step.next?.id === "change-machine" ? notIt : madePool ? checkAgain : connect
+                    }
+                  >
+                    {step.next?.id === "change-machine" ? "Change the machine" : "Check again"}
+                  </Button>
+                )}
+                {!madePool && step.next?.id !== "change-machine" && (
+                  <Button variant="secondary" onPress={notIt}>
+                    Change the machine
+                  </Button>
+                )}
+              </>
+            )
           }
         >
           {step.findings.map((one) => (
