@@ -5747,6 +5747,12 @@ impl Chats {
             whose.store(session, std::sync::atomic::Ordering::SeqCst);
             lock(&self.starting_as).insert(session, chat.persona.clone());
             lock(&self.named_while_starting).insert(session, None);
+            // **Its attendance fact** (T1-18, #6409; R-106, R-318, Q271, Q275): held from here,
+            // before its program exists, so its very first hook's report lowers it. Set by how
+            // purlis started it, and never more attended than the fact it had, as this app held
+            // it or its record kept it, so a resume, a relaunch and a reattach carry an
+            // unattended chat forward.
+            self.began_attended_or_not(session, chat, harness, on_the_runner, &started_in);
             if !reattaching && !on_the_runner && chat.runs_on.is_none() {
                 lock(&self.starting_at).insert(
                     session,
@@ -5952,6 +5958,7 @@ impl Chats {
                 lock(&self.starting_as).remove(&announced);
                 lock(&self.named_while_starting).remove(&announced);
                 lock(&self.starting_at).remove(&announced);
+                lock(&self.attendance).remove(&announced);
             }
             if announced > 0
                 && let Some(gone) = lock(&self.never_started).as_ref()
@@ -6038,10 +6045,6 @@ impl Chats {
         if let Some(start) = &mut own_start {
             start.made = false;
         }
-        // **Its attendance fact** (T1-18, #6409; R-106, R-318, Q271): set by how purlis started
-        // it, and never more attended than the fact it had, as this app held it or its record
-        // kept it, so a resume, a relaunch and a reattach carry an unattended chat forward.
-        self.began_attended_or_not(session, chat, harness, on_the_runner, &started_in);
         let mut open = lock(&self.open);
         lock(&self.starting_at).remove(&session);
         // What its harness named since its program began, which is newer than what it started
@@ -6061,6 +6064,13 @@ impl Chats {
                 under.identity.run = run;
             }
         }
+        // **What its attendance fact says, on the record a restart and a resume start from**
+        // (Q275): read under `open`, so a report that lowers the fact after this read finds the
+        // record in place ([`Self::heard_attendance`]). `attendance` is taken inside `open` and
+        // never the other way round.
+        under.unattended |= lock(&self.attendance)
+            .get(&session)
+            .is_some_and(|fact| fact.unattended());
         open.insert(
             session,
             Running {
@@ -7310,7 +7320,19 @@ impl Chats {
             fact.attendance() != was
         };
         if lowered {
+            self.lowered_on_its_record(report.chat);
             self.write_it_down();
+        }
+    }
+
+    /// **Chat `session`'s record says it is unattended** (Q275), once its fact is: Restart,
+    /// Restart without sandbox and Resume after End each start it under a new number from this
+    /// record, so the fact a report lowered comes with it. Taken after `attendance` is let go,
+    /// as the lock order says ([`Self::open_it_as`]'s insert reads `attendance` inside
+    /// `open`); a chat not on the board yet takes the fact as it is put there.
+    fn lowered_on_its_record(&self, session: u32) {
+        if let Some(running) = lock(&self.open).get_mut(&session) {
+            running.chat.unattended = true;
         }
     }
 

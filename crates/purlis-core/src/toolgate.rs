@@ -178,6 +178,10 @@ pub struct Launched<'a> {
 /// line A4 would refuse an unattended chat, so a line it has no business with costs no ask. The
 /// hook answers [`Attendance::Unattended`] where no app answers: a reader never sees attended
 /// where the fact may say otherwise.
+///
+/// **The attended answer trusts whoever holds [`crate::hookwire::SOCKET_ENV`]**, at the trust
+/// the hook config itself has: a process that can name the hook's socket and token to it can
+/// answer for the app, as it can already rewrite the config that runs the hook (Q275).
 #[derive(Clone, Copy)]
 pub struct Attending<'a>(pub &'a dyn Fn() -> Attendance);
 
@@ -348,8 +352,12 @@ pub fn said(reason: &str) -> String {
 /// unattended.
 ///
 /// - **A chat the app started** is unattended as its fact says ([`Launched::attendance`]),
-///   whatever mode its harness reports, and A4 keys on nothing else. The app is asked only of a
-///   line the floor would refuse unattended.
+///   whatever mode its harness reports. The app is asked only of a line the floor would refuse
+///   unattended.
+/// - **A line's own bypass bit still lowers the answer for that line** (Q275), on every
+///   harness ([`floorguard::unattended`]): R-289 keeps a mode the harness doesn't measure from
+///   raising anything, never this bit from lowering, so a `claude --permission-mode
+///   bypassPermissions` nested in an attended Codex chat is still refused. It only ever lowers.
 /// - **The merge hold takes precedence** (R-145, Q202): in such a chat, a line the hold reads
 ///   as a merge ([`crate::mergehold::held`]) is not A4's, attended or not. The hook refuses it
 ///   all the same and asks the person to merge the request, or refuses it as a block where it
@@ -368,7 +376,9 @@ fn release_floor(
     if crate::mergehold::held(cmd).is_some() {
         return None;
     }
-    ((attending.0)() == Attendance::Unattended).then_some(refused)
+    // The line's own bit first: it alone lowers, and spares the app the ask.
+    (floorguard::unattended(permission_mode) || (attending.0)() == Attendance::Unattended)
+        .then_some(refused)
 }
 
 /// The refusal this tool call earns, or `None` — `charter/hooks.py:pretooluse`'s eight arms in

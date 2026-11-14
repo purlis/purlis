@@ -9,9 +9,11 @@
 //! A chat is **unattended** if purlis started it unattended, or if it reports a mode purlis
 //! didn't set:
 //!
-//! - **How it started** ([`Begun`]): a task, a loop or a runner has nobody at it (R-106), and
+//! - **How it started** ([`Begun`]): a task or a runner has nobody at it (R-106), and
 //!   nor has a chat whose profile's command switches its prompts off
-//!   ([`crate::dispatchunattended::bypass_in`]), read at the start as part of its kind.
+//!   ([`crate::dispatchunattended::bypass_in`]), read at the start as part of its kind. The
+//!   app builds three kinds: [`Begun::Person`], [`Begun::Task`] and [`Begun::Runner`]. A loop's
+//!   start ([`Begun::Loop`]) is owed: no start path names it yet (#6409).
 //! - **A mode purlis didn't set** (R-107): only Claude Code's, and only as its armed hook
 //!   reports it (R-095, [`crate::hookwire::Report::mode_unproven`]), never from the start
 //!   arguments. A string nobody measured reads as [`ClaudeCodeMode::Unknown`], and that is never
@@ -29,8 +31,10 @@
 //!
 //! **Who holds it** (Q271, T1-18 #6409): the app, per chat, beside the chat's other records,
 //! from the start that opens the chat ([`Fact::resumed`] of the fact its record kept, which for
-//! a chat never started before is [`Fact::at_start`]) and fed by each report the board takes
-//! from the chat's own harness. A report a spool drain hands the event log is never heard: its
+//! a chat never started before is [`Fact::at_start`]), held from the moment its number is
+//! announced, before its program exists, and fed by each report the board takes from the chat's
+//! own harness. Once unattended, the chat's in-memory record says so too, so a restart and a
+//! resume under a new number carry it (Q275). A report a spool drain hands the event log is never heard: its
 //! mode is not proven. The reopen record keeps whether it is unattended (`chats[].unattended`,
 //! `docs/plane-format.md`), so a relaunch after the app's restart carries it forward.
 //!
@@ -50,7 +54,8 @@ pub enum Begun {
     Person,
     /// Another chat dispatched it.
     Task,
-    /// A loop started it.
+    /// A loop started it. **Owed** (#6409): no start path the app has names it yet, so no
+    /// chat is begun this way today.
     Loop,
     /// A runner runs it.
     Runner,
