@@ -45,8 +45,9 @@ export type UpdateRow = {
   /** **A finish row's ways out** (T1-33, R-300): those of its turn's unresolved blocks, as
    *  `BlockWaysOut` draws them on a block's Chat log row too. None of them allows. */
   ways?: ReactNode;
-  /** Put it away: and, where its source lists it, put away there too. */
-  dismiss: () => void;
+  /** Put it away: and, where its source lists it, put away there too. None on a line that
+   *  holds what still waits on the person (Q274): it has no Dismiss, and Dismiss all leaves it. */
+  dismiss?: () => void;
   /** What Dismiss does, as its tooltip, where it does more than put the update away. */
   dismissSays?: string;
 };
@@ -60,7 +61,9 @@ export type UpdateAnswer = {
   title: string;
   /** Whether it allows something: drawn as an Allow is. */
   allows?: boolean;
-  press: () => void;
+  /** What it does. Where it answers a sentence, the answer was refused, and the line says why
+   *  (Q274), as an ask's row does. */
+  press: () => Promise<string | undefined> | undefined;
 };
 
 /** The project's updates and the two acts on all of them. */
@@ -99,10 +102,10 @@ export function heldBy(
     ...updates,
     rows: rows
       ?.filter((row) => hold?.held.has(heldUpdate(row.update.key)) !== true)
-      .map((row) =>
-        hold === undefined
-          ? row
-          : { ...row, dismiss: () => done([heldUpdate(row.update.key)], row.dismiss) },
+      .map(({ dismiss, ...row }) =>
+        hold === undefined || dismiss === undefined
+          ? { ...row, dismiss }
+          : { ...row, dismiss: () => done([heldUpdate(row.update.key)], dismiss) },
       ),
     teammates,
     onDismissAll: (keys) => {
@@ -124,14 +127,14 @@ export function updatePlaces(updates: Updates | undefined): string[] {
   return [
     READ_ALL,
     DISMISS_EVERY,
-    ...rows.flatMap(({ update, go, report, answers = [] }) => {
+    ...rows.flatMap(({ update, go, report, answers = [], dismiss }) => {
       const key = `update:${update.key}`;
       return [
         key,
         ...answers.map((_, at) => `${key}:${at}`),
         ...(report === undefined ? [] : [`${key}:read`]),
         ...(go === undefined ? [] : [`${key}:go`]),
-        `${key}:dismiss`,
+        ...(dismiss === undefined ? [] : [`${key}:dismiss`]),
       ];
     }),
   ];
@@ -180,7 +183,12 @@ export function UpdateList({
               size="sm"
               variant="ghost"
               tooltip={DISMISS_ALL_TIP}
-              onPress={() => updates.onDismissAll(rows.map(({ update }) => update.key))}
+              // A line with no Dismiss of its own is not Dismiss all's either (Q274).
+              onPress={() =>
+                updates.onDismissAll(
+                  rows.filter((row) => row.dismiss !== undefined).map(({ update }) => update.key),
+                )
+              }
               className="inbox-go"
             >
               {DISMISS_ALL}
@@ -260,7 +268,11 @@ function UpdateItem({
       return;
     }
     setSaid(undefined);
-    answer.press();
+    const refused = answer.press();
+    if (refused !== undefined)
+      void refused.then((why) => {
+        if (why !== undefined) setSaid(why);
+      });
   };
   const key = `update:${update.key}`;
   const who = chainSaid(update.chain);
@@ -289,14 +301,16 @@ function UpdateItem({
       aria-label={about}
       aria-describedby={`${id}-kind`}
       dismiss={
-        <IconButton
-          icon={<X />}
-          size="sm"
-          variant="quiet"
-          aria-label={`Dismiss: ${about}`}
-          tooltip={dismissSays ?? "Put this update away"}
-          onPress={dismiss}
-        />
+        dismiss === undefined ? undefined : (
+          <IconButton
+            icon={<X />}
+            size="sm"
+            variant="quiet"
+            aria-label={`Dismiss: ${about}`}
+            tooltip={dismissSays ?? "Put this update away"}
+            onPress={dismiss}
+          />
+        )
       }
     >
       {/* Every word here is its source's, drawn as text and never as a control. An update

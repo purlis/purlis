@@ -30,6 +30,7 @@ use super::Event;
 use super::stops::{
     self, Answer, AskAnswered, AskGroup, AskRaised, Block, Hold, LoopPause, Qualifier, Source,
 };
+use crate::harness::Harness;
 use crate::sandbox::protection::{InForce, SANDBOX};
 
 /// **Whether an event of `kind` is part of a chat's story**: its runs starting and ending, its
@@ -197,6 +198,7 @@ pub fn rows(events: &[Event], chat: &str) -> Vec<Row> {
             && let Ok(AskAnswered {
                 ask: AskGroup::Sandbox,
                 answer: Answer::Allowed,
+                ..
             }) = serde_json::from_value(event.body.clone())
         {
             standing.retain(|(at, source, _, _)| {
@@ -306,6 +308,15 @@ pub struct Summary {
     pub unverified: bool,
     /// The chat ran with No sandbox at some point: as the person, with all they can reach.
     pub ran_as_you: bool,
+    /// The harness its latest start names, where purlis ships it; `None` where no start names
+    /// one it knows.
+    pub harness: Option<Harness>,
+    /// Some start's harness does not report what its own check blocks (R-097, R-100), or
+    /// nothing says which harness it ran: its log can't tell of those blocks.
+    pub cant_tell_its_checks_blocks: bool,
+    /// Some start's harness reports no mode purlis can check (R-099, Q152), or nothing says which
+    /// harness it ran: its log can't tell which mode it ran in.
+    pub cant_tell_its_mode: bool,
 }
 
 /// **What heads chat `chat`'s Chat log** among `events` ([`Summary`]), from its tool events,
@@ -324,6 +335,11 @@ pub struct Summary {
 /// - **Ran as you** (Q261): any start's sandbox layer was at `off`, No sandbox (where a start
 ///   did not record its protection, one with no sandbox backend, `none`), or its sandbox was
 ///   lifted for a run (`trust.sandbox.off`).
+/// - **Can't tell** (R-097, R-099, R-100; T1-38): any start's harness reports no block of its
+///   own check, or no mode purlis can check ([`Harness::reports_its_checks_blocks`],
+///   [`Harness::reports_a_mode_purlis_can_check`]), taken over the whole chat as the honesty
+///   lines are; and a chat with no start, or one whose harness purlis does not ship, can't tell
+///   either. The harness named is the latest start's.
 ///
 /// **The counts are only as good as the chat's hook lines** (Q235): a chat whose hooks run
 /// within its reach can write lines that say `allow` for calls it never made, and so inflate
@@ -341,6 +357,12 @@ pub fn summary(events: &[Event], chat: &str) -> Summary {
                 serde_json::from_value(event.body.clone()).unwrap_or_default();
             started = true;
             summary.unverified |= !stops::reported_from_outside_its_reach(&attributes);
+            let harness = attributes.harness.as_deref().and_then(Harness::of_kind);
+            summary.harness = harness;
+            summary.cant_tell_its_checks_blocks |=
+                !harness.is_some_and(Harness::reports_its_checks_blocks);
+            summary.cant_tell_its_mode |=
+                !harness.is_some_and(Harness::reports_a_mode_purlis_can_check);
             summary.ran_as_you |= match &attributes.protection {
                 Some(in_force) => in_force
                     .layers
@@ -375,6 +397,8 @@ pub fn summary(events: &[Event], chat: &str) -> Summary {
         }
     }
     summary.unverified |= !started;
+    summary.cant_tell_its_checks_blocks |= !started;
+    summary.cant_tell_its_mode |= !started;
     summary
 }
 

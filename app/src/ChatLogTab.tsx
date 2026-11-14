@@ -16,12 +16,15 @@ import { BlockTag } from "./BlockTag";
 import {
   allowedSaid,
   atSaid,
+  blockSaid,
   blockSourceSaid,
   blockTags,
   drawnRows,
   honestyLines,
+  qualifiedDetail,
   rowSaid,
   type BlockRow,
+  type QualifiedRow,
 } from "./chatLog";
 import { ToggleButton } from "./ui/button/Button";
 import { useBlocksLookedAt, useChatLogFilter } from "./blockedMarkers";
@@ -37,6 +40,9 @@ const QUIET: ChatLogSummary = {
   by_your_rules: 0,
   unverified: false,
   ran_as_you: false,
+  harness: null,
+  cant_tell_its_checks_blocks: false,
+  cant_tell_its_mode: false,
 };
 
 /** What the reason is, above it: the words of the harness's own check, never purlis's. */
@@ -81,6 +87,56 @@ function BlockedRow({ row, name, ways }: { row: BlockRow; name: string; ways?: C
       {/* Its ways out (T1-33, R-300): beside the row, never in its closed detail. */}
       {ways !== undefined && (
         <BlockWaysOut blocks={[row]} who={name} tell={ways.tell} go={ways.go} />
+      )}
+    </>
+  );
+}
+
+/** The tag of a collapsed line, by its qualifier. */
+const QUALIFIED_TAG = { unverified: "Unverified", cant_tell: "Can't tell" } as const;
+
+/**
+ * **A chat's unverified blocks, or those purlis can't tell more of, as one line** (R-104,
+ * R-105; T1-38): their count, "12 unverified", and its tag; its detail lists the latest of them
+ * in fixed words, who blocked a call and when, and counts the rest. Nothing the chat's side
+ * wrote, its tool, its target or a harness's reason, is drawn. Its blocks' ways out (T1-33,
+ * R-300) stand beside it, as a block row's do.
+ */
+function QualifiedLine({
+  row,
+  name,
+  ways,
+}: {
+  row: QualifiedRow;
+  name: string;
+  ways?: ChatLogWays;
+}) {
+  const detail = qualifiedDetail(row);
+  return (
+    <>
+      <Disclosure
+        size="sm"
+        label={<span className="chat-log-said ui-text-body">{rowSaid(row)}</span>}
+        trail={
+          <span className="chat-log-tags">
+            <BlockTag kind={row.qualifier} word={QUALIFIED_TAG[row.qualifier]} />
+          </span>
+        }
+      >
+        <p className="chat-log-source ui-text-secondary">{detail.said}</p>
+        <ol className="chat-log-qualified">
+          {detail.listed.map((one, at) => (
+            <li key={`${one.at ?? ""}:${at}`} className="ui-text-body">
+              {[atSaid(one.at), blockSaid(one)].filter((part) => part !== "").join(" · ")}
+            </li>
+          ))}
+        </ol>
+        {detail.earlier !== null && (
+          <p className="chat-log-source ui-text-secondary">{detail.earlier}</p>
+        )}
+      </Disclosure>
+      {ways !== undefined && (
+        <BlockWaysOut blocks={row.rows} who={name} tell={ways.tell} go={ways.go} />
       )}
     </>
   );
@@ -138,6 +194,8 @@ export function ChatLogRows({
             <span className="chat-log-at ui-text-secondary">{atSaid(row.at)}</span>
             {row.kind === "blocked" ? (
               <BlockedRow row={row} name={name} ways={ways} />
+            ) : row.kind === "qualified" ? (
+              <QualifiedLine row={row} name={name} ways={ways} />
             ) : (
               <span className="chat-log-said ui-text-body">{rowSaid(row)}</span>
             )}

@@ -30,6 +30,21 @@ pub struct CloneToVouch {
     pub place: Option<String>,
     /// Every address its remote names now, each once.
     pub places: Vec<String>,
+    /// When it was made, in seconds since 1970, where its disk keeps a creation time (R-337).
+    pub made: Option<u32>,
+}
+
+impl CloneToVouch {
+    /// **The clone `clone`, as the window lists it.**
+    pub fn of(clone: purlis_core::forge::gitcredential::vouch::Unvouched) -> Self {
+        Self {
+            workspace: clone.workspace,
+            folder: clone.folder,
+            place: clone.place,
+            places: clone.places,
+            made: clone.made.map(|at| u32::try_from(at).unwrap_or(u32::MAX)),
+        }
+    }
 }
 
 /// Every clone of the project's workspaces made outside purlis and not trusted yet.
@@ -55,12 +70,7 @@ pub async fn clones_to_vouch(
         // leaves out what the live chats may write (Q257).
         purlis_core::windowonly::look_at_clones(&root, &config_root, &writes)
             .into_iter()
-            .map(|clone| CloneToVouch {
-                workspace: clone.workspace,
-                folder: clone.folder,
-                place: clone.place,
-                places: clone.places,
-            })
+            .map(CloneToVouch::of)
             .collect()
     })
     .await

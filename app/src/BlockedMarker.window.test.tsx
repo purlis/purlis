@@ -124,7 +124,15 @@ function core(blocks: Record<number, Held[]>, logs: Record<number, ChatLogRow[]>
         const read: ChatLog = {
           known: true,
           rows: logs[given.session as number] ?? [],
-          summary: { allowed: 0, by_your_rules: 0, unverified: false, ran_as_you: false },
+          summary: {
+            allowed: 0,
+            by_your_rules: 0,
+            unverified: false,
+            ran_as_you: false,
+            harness: "claude",
+            cant_tell_its_checks_blocks: false,
+            cant_tell_its_mode: false,
+          },
         };
         return read;
       }

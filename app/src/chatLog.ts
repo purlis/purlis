@@ -184,18 +184,57 @@ export type AskRow = {
   answered: Extract<ChatLogRow, { kind: "ask_answered" }> | null;
 };
 
+/** How much a qualified block's report is worth, as its collapsed line groups it. */
+export type Qualified = "unverified" | "cant_tell";
+
+/**
+ * **A chat's qualified blocks, as one line draws them** (R-105, T1-38): every block whose report
+ * is unverified, or every one purlis can't tell more of, collapsed into one row with its count,
+ * where the first of them stood.
+ */
+export type QualifiedRow = {
+  kind: "qualified";
+  at: string | null;
+  qualifier: Qualified;
+  rows: BlockRow[];
+};
+
 /** A row as the timeline draws it: the core's, an ask's raise and answer joined as one. */
-export type DrawnRow = Exclude<ChatLogRow, { kind: "ask_raised" | "ask_answered" }> | AskRow;
+export type DrawnRow =
+  Exclude<ChatLogRow, { kind: "ask_raised" | "ask_answered" }> | AskRow | QualifiedRow;
+
+/**
+ * The qualifier a block's line is grouped under, or none for a plain one. A qualifier this
+ * version does not know is unverified: verified is an allowlist (Q235).
+ */
+function qualifiedAs(row: BlockRow): Qualified | null {
+  if (row.qualifier === null) return null;
+  return row.qualifier === "cant_tell" ? "cant_tell" : "unverified";
+}
 
 /**
  * **One row per ask** (R-229): each answer joins the oldest raise of its group still without
  * one, and the row stands where the ask was raised. An answer with no raise before it (a log
  * older than raises) is a row of its own.
+ *
+ * **One row for a chat's unverified blocks, and one for those it can't tell more of** (R-105):
+ * each stands where the first of its kind did, so however many a chat's side reports, they take
+ * one line of its log.
  */
 export function drawnRows(rows: readonly ChatLogRow[]): DrawnRow[] {
   const drawn: DrawnRow[] = [];
+  const qualified = new Map<Qualified, QualifiedRow>();
   for (const row of rows) {
-    if (row.kind === "ask_raised") {
+    const qualifier = row.kind === "blocked" ? qualifiedAs(row) : null;
+    if (row.kind === "blocked" && qualifier !== null) {
+      const group = qualified.get(qualifier);
+      if (group !== undefined) group.rows.push(row);
+      else {
+        const first: QualifiedRow = { kind: "qualified", at: row.at, qualifier, rows: [row] };
+        qualified.set(qualifier, first);
+        drawn.push(first);
+      }
+    } else if (row.kind === "ask_raised") {
       drawn.push({ kind: "ask", at: row.at, ask: row.ask, answered: null });
     } else if (row.kind === "ask_answered") {
       const open = drawn.find(
@@ -331,9 +370,59 @@ function whatBlocked(row: BlockRow): string {
  * **A block row's line** (R-183, R-170): an action sentence the window builds from the block,
  * who blocked what ("purlis blocked a reset that would destroy commits"), never a guard's or a
  * group's id. A target is the chat's side's word, and is drawn as text.
+ *
+ * **An unverified report's line is fixed words** (R-104, Q259): who blocked "a call", from the
+ * closed word of its source and the harness its start named, and never its tool or target,
+ * which the chat's side wrote. So is one purlis can't tell more of.
  */
 export function blockSaid(row: BlockRow): string {
+  if (qualifiedAs(row) !== null) return `${whoBlocked(row)} blocked a call`;
   return `${whoBlocked(row)} blocked ${whatBlocked(row)}`;
+}
+
+/** The most of a collapsed line's blocks its detail lists: the latest (R-105). */
+export const QUALIFIED_LISTED = 10;
+
+/** What each qualifier is called, after its count. */
+const QUALIFIED_SAID: Readonly<Record<Qualified, string>> = {
+  unverified: "unverified",
+  cant_tell: "can't tell",
+};
+
+/** **A collapsed line** (R-105): how many, and of which kind: "12 unverified". */
+export function qualifiedSaid(row: QualifiedRow): string {
+  return `${row.rows.length} ${QUALIFIED_SAID[row.qualifier]}`;
+}
+
+/** Why a collapsed line's detail says so little, by its qualifier. */
+const QUALIFIED_WHY: Readonly<Record<Qualified, string>> = {
+  unverified:
+    "each was reported from within the chat's reach, so purlis shows only who blocked a call, and when.",
+  cant_tell: "purlis can't tell more of them, so it shows only who blocked a call, and when.",
+};
+
+/**
+ * **A collapsed line's detail** (R-104, R-105): its count and why it says so little, the latest
+ * of its blocks ([`QUALIFIED_LISTED`]), each in fixed words, and how many earlier ones are not
+ * listed.
+ */
+export function qualifiedDetail(row: QualifiedRow): {
+  said: string;
+  listed: BlockRow[];
+  earlier: string | null;
+} {
+  const listed = row.rows.slice(-QUALIFIED_LISTED);
+  const left = row.rows.length - listed.length;
+  return {
+    said: `${qualifiedSaid(row)}: ${QUALIFIED_WHY[row.qualifier]}`,
+    listed,
+    earlier:
+      left === 0
+        ? null
+        : left === 1
+          ? "1 earlier one is not listed."
+          : `${left} earlier ones are not listed.`,
+  };
 }
 
 /** **A block's source, as its detail always names it** (R-187), for tagged and untagged rows. */
@@ -389,6 +478,8 @@ export function rowSaid(row: DrawnRow): string {
       return holdSaid(row);
     case "loop_paused":
       return loopPauseSaid(row);
+    case "qualified":
+      return qualifiedSaid(row);
   }
 }
 
@@ -405,6 +496,32 @@ export function honestyLines(summary: ChatLogSummary): string[] {
   if (summary.ran_as_you)
     lines.push(
       "Ran as you: this chat had No sandbox, so it could reach everything you can on this machine.",
+    );
+  return [...lines, ...cantTellLines(summary)];
+}
+
+/** The chat's harness by its name in the window, or "its harness" where none is known. */
+function itsHarness(harness: string | null): string {
+  return HARNESSES.find((one) => one.value === harness)?.label ?? "its harness";
+}
+
+/**
+ * **What purlis can't tell of the chat's harness** (R-097, R-099, R-100; T1-38): from the core,
+ * which reads it from the harness's adapter, never from the chat. A harness that gives no denial
+ * signal (opencode, and Codex for now) can't tell its own check's blocks; one that reports no
+ * mode purlis can check (Codex reports bypass for every chat, Q152) can't tell its mode, which
+ * is then never said as a mode it runs in.
+ */
+export function cantTellLines(summary: ChatLogSummary): string[] {
+  const harness = itsHarness(summary.harness);
+  const lines: string[] = [];
+  if (summary.cant_tell_its_checks_blocks)
+    lines.push(
+      `Can't tell what ${harness}'s own check blocks: it does not report them, so they are not in this log.`,
+    );
+  if (summary.cant_tell_its_mode)
+    lines.push(
+      `Can't tell which mode this chat runs in: ${harness} reports none purlis can check, so purlis goes by how it started the chat.`,
     );
   return lines;
 }

@@ -20,6 +20,7 @@ const MINE: CloneToVouch = {
   folder: "workspaces/shop/repos/storefront",
   place: "github.com/acme/storefront",
   places: ["github.com/acme/storefront"],
+  made: null,
 };
 
 const SPLIT: CloneToVouch = {

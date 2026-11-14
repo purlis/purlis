@@ -2742,6 +2742,18 @@ body {
 .inbox-hidden {
   margin: 0;
 }
+/* The clones Trust these clones would trust, each with its remote and when it was made (T1-42,
+   R-337): secondary lines of the row, one a clone, and Choose…'s boxes under it, one a line. */
+.inbox-clones {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.inbox-clones-chosen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
 .inbox-none {
   margin: var(--space-2) 0;
   color: var(--text-secondary);
@@ -9503,4 +9515,12 @@ nav.piece-files-head {
 
 .block-ways-detail ul {
   padding-inline-start: var(--space-4);
+}
+
+/* A chat's unverified blocks, collapsed into one line (R-105, T1-38): its detail lists the
+   latest of them, one fixed-words line each. */
+.chat-log-qualified {
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
 }

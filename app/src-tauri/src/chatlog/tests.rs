@@ -211,6 +211,10 @@ fn the_chat_log_hands_the_window_its_rows_and_what_heads_it() {
             by_your_rules: 1,
             unverified: true,
             ran_as_you: true,
+            // A Codex chat (R-099, R-100): its check's blocks and its mode are Can't tell.
+            harness: Some("codex".to_owned()),
+            cant_tell_its_checks_blocks: true,
+            cant_tell_its_mode: true,
         }
     );
 }
