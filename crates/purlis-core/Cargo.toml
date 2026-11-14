@@ -126,14 +126,14 @@ sha2 = "0.11"
 # unwinder walks it, with no symbols, to modules and offsets. Not `minidump-processor`, which
 # walks every thread and brings an x86 disassembler and a terminal library with it. No default
 # features: no debug-info symbolizer, no HTTP. MIT, by the rust-minidump project.
-minidump = "0.26"
-minidump-unwind = "0.26"
+minidump = "0.27"
+minidump-unwind = "0.27"
 # The project index (ADR 0079 §9, #5498): SQLite FTS5 with its bundled library, so FTS5,
 # `contentless_delete` (3.43 or later) and one known SQLite version hold on every platform. No
 # default features: their `cache` is a statement cache the index does not need, and the
 # `sqlite-wasm-rs` backend is for a target purlis never builds. rusqlite and libsqlite3-sys are
 # MIT; SQLite itself is in the public domain.
-rusqlite = { version = "0.41", default-features = false, features = ["bundled"] }
+rusqlite = { version = "0.42", default-features = false, features = ["bundled"] }
 # A branch's changes, read in-process (FM-4, D-88f): the explorer reads them by itself after
 # every write an agent makes, so no git process may start in a repository whose config the agent
 # can write. gitoxide reads the index, the working tree and the trees with no program run:
@@ -207,7 +207,7 @@ ureq = { version = "3.4", default-features = false, features = ["rustls", "platf
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 # A TLS pool's CA is shown at Connect by its subject (#6267, ADR 0123 §3): the certificate read
 # with `x509-cert`, already in this workspace's lockfile through `sigstore-verify`.
-x509-cert = { version = "0.2", default-features = false, features = ["std"] }
+x509-cert = { version = "0.3", default-features = false, features = ["std"] }
 curve25519-dalek = { version = "5", default-features = false }
 # The request and response types `ureq` speaks, and the URL a token may be sent to is parsed with.
 http = "1"
@@ -248,7 +248,7 @@ percent-encoding = "2"
 # Whether an artifact's template holds script a browser runs (#5959, ADR 0122 §4): its pages
 # read by the HTML tokenizer browsers' parsing is specified by, never by matching text. Servo's,
 # MIT OR Apache-2.0, already in this workspace's lockfile through the webview's crates.
-html5ever = "0.39"
+html5ever = "0.40"
 shell-words = "1"
 # The ids ADR 0066 gives devices, chats, runs and events: ULIDs, whose time part sorts them and
 # dates an event without a timestamp field. The standard crate for them.
