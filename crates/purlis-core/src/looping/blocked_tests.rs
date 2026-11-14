@@ -289,23 +289,68 @@ fn a_different_successful_call_resets_the_block_count() {
     );
 }
 
-/// R-211.
+/// R-211 as Q263 and Q280 narrow it: an Allow of the harness's own ask (`Loops::answered`)
+/// resolves no block, so the block count stands through it, a sandbox block's too. Mutation:
+/// `Loops::answered` clearing the block count on an Allow.
 #[test]
-fn an_allow_resets_the_block_count() {
+fn an_allow_of_the_harness_own_ask_leaves_the_block_count() {
+    for source in [Source::Sandbox, Source::Guard] {
+        let mut loops = Loops::default();
+        loops.stopped(CHAT, &block(source, "aa"));
+        loops.stopped(CHAT, &block(source, "aa"));
+        assert_eq!(loops.answered(CHAT, false, &limits()), None, "an Allow");
+        assert_eq!(
+            loops.stopped(CHAT, &block(source, "aa")),
+            Some(Why::Blocked { times: 3 }),
+            "{source:?}: 2 blocks, the harness's Allow, 1 block: the third pauses"
+        );
+    }
+}
+
+/// Q280: **an Allow of a sandbox ask resets only the loop aims of the sandbox blocks it
+/// covers**, and an Allow of another kind of ask resets none, by the rule the finish row reads
+/// too (`allow_resolves`). Mutation: `Loops::allowed` clearing every aim, or keeping every aim.
+#[test]
+fn a_sandbox_allow_resets_only_the_sandbox_aims() {
+    let twice_each = |loops: &mut Loops| {
+        for _ in 0..2 {
+            loops.stopped(CHAT, &block(Source::Sandbox, "aa"));
+            loops.stopped(CHAT, &block(Source::Guard, "bb"));
+        }
+    };
     let mut loops = Loops::default();
-    loops.stopped(CHAT, &block(Source::Sandbox, "aa"));
-    loops.stopped(CHAT, &block(Source::Sandbox, "aa"));
-    assert_eq!(loops.answered(CHAT, false, &limits()), None, "an Allow");
-    assert_eq!(loops.stopped(CHAT, &block(Source::Sandbox, "aa")), None);
+    twice_each(&mut loops);
+    loops.allowed(CHAT, AskGroup::Sandbox);
     assert_eq!(
         loops.stopped(CHAT, &block(Source::Sandbox, "aa")),
         None,
-        "2 blocks, an Allow, 2 blocks: no pause"
+        "the sandbox aim starts again"
     );
+    assert_eq!(
+        loops.stopped(CHAT, &block(Source::Guard, "bb")),
+        Some(Why::Blocked { times: 3 }),
+        "the guard's aim stands"
+    );
+
+    for ask in [AskGroup::HarnessPrompt, AskGroup::Consent] {
+        let mut loops = Loops::default();
+        twice_each(&mut loops);
+        loops.allowed(CHAT, ask);
+        assert_eq!(
+            loops.stopped(CHAT, &block(Source::Sandbox, "aa")),
+            Some(Why::Blocked { times: 3 }),
+            "{ask:?}: the sandbox aim stands"
+        );
+        assert_eq!(
+            loops.stopped(CHAT, &block(Source::Guard, "bb")),
+            Some(Why::Blocked { times: 3 }),
+            "{ask:?}: the guard's aim stands"
+        );
+    }
 }
 
-/// R-212: pins shipped behaviour (Q208, Q253); mutation: dropping the reset on an Allow in
-/// `Loops::answered`, or pausing at `refused_times + 1`.
+/// R-212: pins shipped behaviour (Q208, Q253); mutation: dropping the refusals' reset on an
+/// Allow in `Loops::answered`, or pausing at `refused_times + 1`.
 #[test]
 fn six_dont_allows_still_pause_and_an_allow_resets_them() {
     let mut loops = Loops::default();
@@ -454,13 +499,13 @@ fn the_block_loop_and_the_cool_off_are_counted_apart() {
 }
 
 /// R-211 (Q253): the person's Allow on a sandbox ask, on any of its paths (a held connection,
-/// the chooser, a late answer), starts the block count again, as an Allow of a hook's ask does.
+/// the chooser), starts the count of its sandbox blocks again.
 #[test]
 fn an_allow_on_a_held_connection_resets_the_block_count() {
     let mut loops = Loops::default();
     loops.stopped(CHAT, &block(Source::Sandbox, "aa"));
     loops.stopped(CHAT, &block(Source::Sandbox, "aa"));
-    loops.allowed(CHAT);
+    loops.allowed(CHAT, AskGroup::Sandbox);
     assert_eq!(loops.stopped(CHAT, &block(Source::Sandbox, "aa")), None);
     assert_eq!(
         loops.stopped(CHAT, &block(Source::Sandbox, "aa")),
@@ -535,26 +580,28 @@ fn alternating_blocked_calls_still_pause() {
         "blocked calls that come back still pause at A's third"
     );
 
-    // The same resets clear every aim: a different success, an Allow, Let it keep trying.
-    let resets: [fn(&mut Loops); 4] = [
-        |loops| {
+    // The same resets clear every aim they resolve: a different success and Let it keep
+    // trying every aim, a sandbox ask's Allow every sandbox aim (Q280).
+    /// Whose blocks a reset is tried on, and the reset.
+    type Reset = (Source, fn(&mut Loops));
+    let resets: [Reset; 3] = [
+        (Source::Guard, |loops| {
             loops.called(CHAT, &succeeded("cc"), true);
-        },
-        |loops| loops.allowed(CHAT),
-        |loops| {
-            loops.answered(CHAT, false, &limits());
-        },
-        |loops| loops.fine(CHAT),
+        }),
+        (Source::Sandbox, |loops| {
+            loops.allowed(CHAT, AskGroup::Sandbox)
+        }),
+        (Source::Guard, |loops| loops.fine(CHAT)),
     ];
-    for reset in resets {
+    for (source, reset) in resets {
         let mut loops = Loops::default();
         for args in ["aa", "bb", "aa", "bb"] {
-            loops.stopped(CHAT, &block(Source::Guard, args));
+            loops.stopped(CHAT, &block(source, args));
         }
         reset(&mut loops);
         for args in ["aa", "bb", "aa", "bb"] {
             assert_eq!(
-                loops.stopped(CHAT, &block(Source::Guard, args)),
+                loops.stopped(CHAT, &block(source, args)),
                 None,
                 "counted again from nothing"
             );
