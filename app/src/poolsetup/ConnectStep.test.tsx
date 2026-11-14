@@ -798,6 +798,19 @@ describe("ConnectStep", () => {
       expect(calls.some((call) => call.cmd === "pool_setup_choose_owned")).toBe(false);
     });
 
+    it("keeps the answer chosen in reach of the keyboard while it is being kept", async () => {
+      core({ pool_setup_choose_owned: () => new Promise(() => undefined) });
+      draw(trusted(false));
+      const notSure = await screen.findByRole("radio", { name: /Others might, or I.m not sure/ });
+      notSure.focus();
+      await userEvent.keyboard("{ArrowDown}");
+      const mine = screen.getByRole("radio", {
+        name: "Only me, and people I trust with my logins",
+      });
+      await waitFor(() => expect(mine).toHaveFocus());
+      expect(mine).toBeEnabled();
+    });
+
     it("is not asked before the machine is trusted", async () => {
       core();
       draw(step({}));

@@ -530,15 +530,10 @@ function PoolEntry({
 }) {
   const remove = onAsk;
   const owed = owedSaid(version, useNow());
-  const [answering, setAnswering] = useState(false);
   const [refused, setRefused] = useState<string>();
   /** Who can sign in to its other machine (#6271): what lets its runner receive saved logins. */
   const answer = (owned: boolean) => {
-    setAnswering(true);
-    void markRemotePoolOwned(pool.name, owned).then((why) => {
-      setAnswering(false);
-      setRefused(why);
-    });
+    void markRemotePoolOwned(pool.name, owned).then(setRefused);
   };
   const left = leftSaid(version);
   return (
@@ -585,7 +580,6 @@ function PoolEntry({
               <WhoCanSignIn
                 host={pool.machine}
                 owned={pool.owned === true}
-                busy={answering}
                 onChange={answer}
                 onARow
               />

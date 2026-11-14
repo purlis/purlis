@@ -17,14 +17,13 @@ export function WhoCanSignIn({
   host,
   owned,
   onChange,
-  busy,
   onARow = false,
 }: {
   host: string;
   /** Only the person, and people they trust with their logins, sign in there. */
   owned: boolean;
+  /** Kept as it is chosen. The choices stay enabled meanwhile, so the keyboard keeps its place. */
   onChange: (owned: boolean) => void;
-  busy?: boolean;
   /** Drawn on the pool's row in Settings › Pools, under no heading of a step's. */
   onARow?: boolean;
 }) {
@@ -34,7 +33,6 @@ export function WhoCanSignIn({
     <RadioGroup
       aria-labelledby={id}
       value={owned ? "mine" : "not"}
-      isDisabled={busy}
       onChange={(to) => onChange(to === "mine")}
     >
       <Radio
