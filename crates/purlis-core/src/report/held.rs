@@ -210,9 +210,14 @@ impl Held {
 /// **A filed case-6 draft's miss** (#5739, spec #5714): one `report` miss in the skill log of
 /// the project `one` was written in, of the skill and harness its words name
 /// ([`crate::skilluse::Reported`]), filed under this machine's log name (`config` is the config
-/// root its id is read from). Nothing for a draft of another case. Never the words.
+/// root its id is read from). Nothing for a draft of another case. Never the words. No
+/// `skill.missed` event: a filed Report is no moment of a chat's run, and its chat may be gone.
 fn missed_as_reported(one: &Held, config: Option<&Path>) {
-    let Some(reported) = crate::skilluse::Reported::of(&one.body) else {
+    let ran_as = one
+        .ran_as
+        .as_ref()
+        .map(|said| (said.harness.as_str(), said.harness_version.as_str()));
+    let Some(reported) = crate::skilluse::Reported::of(&one.body, ran_as) else {
         return;
     };
     crate::skilluse::missed(

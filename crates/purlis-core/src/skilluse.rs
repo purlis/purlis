@@ -813,8 +813,22 @@ pub struct Reported {
 }
 
 impl Reported {
-    /// The miss Report `body` says, or none where it is not case 6.
-    pub fn of(body: &str) -> Option<Reported> {
+    /// The miss Report `body` says, or none where it is not case 6: it needs both a `Skill:`
+    /// line naming a built-in and the `Words:` line only case 6 asks for. Where the Report names
+    /// no harness purlis starts, `ran_as` (what the drafting chat's start said, its harness's
+    /// title and version) stands in for it.
+    pub fn of(body: &str, ran_as: Option<(&str, &str)>) -> Option<Reported> {
+        Self::of_among(body, ran_as, &crate::skills::built_in_names_here())
+    }
+
+    /// [`Self::of`], with `built_ins` the names of the built-in skills this purlis ships: a
+    /// Report naming another `purlis-` skill (a typo, or the template's `purlis-<name>`) is of
+    /// no skill. Where no bundle was found (`built_ins` empty), a well-formed name is enough.
+    pub fn of_among(
+        body: &str,
+        ran_as: Option<(&str, &str)>,
+        built_ins: &[String],
+    ) -> Option<Reported> {
         let said = |field: &str| {
             body.lines().find_map(|line| {
                 let line = line.trim().trim_start_matches(['-', '*', '>', ' ']);
@@ -824,13 +838,26 @@ impl Reported {
                     .then(|| value.trim().trim_matches(['`', '"', '*', ' ']))
             })
         };
-        let skill = said("Skill")?.split_whitespace().next()?;
-        let skill = purlis_skills::run_name(skill);
-        if !purlis_skills::name_reserved(&skill) {
+        said("Words").filter(|words| !words.is_empty())?;
+        let skill = said("Skill")?
+            .split_whitespace()
+            .next()?
+            .trim_matches(|c: char| !(c.is_alphanumeric() || c == '-' || c == ':'));
+        let skill = purlis_skills::run_name(skill).to_ascii_lowercase();
+        let skill = purlis_skills::name_now(&skill).to_owned();
+        let well_formed = purlis_skills::name_reserved(&skill)
+            && skill.len() > purlis_skills::RESERVED_PREFIX.len()
+            && skill
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+        if !well_formed || !(built_ins.is_empty() || built_ins.contains(&skill)) {
             return None;
         }
-        let skill = purlis_skills::name_now(&skill.to_ascii_lowercase()).to_owned();
-        let (harness, harness_version) = said("Harness").map_or((None, None), harness_named);
+        let (harness, harness_version) = said("Harness")
+            .map(harness_named)
+            .filter(|(harness, _)| harness.is_some())
+            .or_else(|| ran_as.map(|(title, version)| harness_named(&format!("{title} {version}"))))
+            .unwrap_or((None, None));
         Some(Reported {
             skill,
             harness,

@@ -18,6 +18,7 @@ use purlis_core::report::{AgentDraft, CameFrom, Evidence, Filing, Held, How, Kin
 use purlis_core::skilluse::{self, By, Group, Signal};
 
 use crate::a_chats_report_draft_is_filed_from_the_inbox::{recorded_intake, reports};
+use crate::a_crash_report_goes_once_per_version_and_waits_while_offline::Line;
 
 const CASE_SIX: &str = "purlis-secrets did not start when I was asked for a token\n\n\
      The person asked for their API token and the chat asked them to paste it.\n\n\
@@ -170,4 +171,61 @@ fn a_filed_case_six_miss_is_counted_in_the_built_ins_row_by_harness() {
         })
         .collect();
     assert_eq!(rows, [(Group::Named("Claude Code".into()), 0, 1)]);
+}
+
+#[test]
+fn a_case_six_draft_filed_while_the_intake_cannot_be_reached_logs_its_miss_once_as_it_waits() {
+    purlis_core::unsteered!();
+    let config = tempfile::tempdir().unwrap();
+    let plane = project();
+    let line = Line::down(1);
+    let reports = purlis_core::report::Reports::new(purlis_core::report::Known::default())
+        .with_consent(purlis_core::report::Consent {
+            crash_reports: None,
+            agent_drafts: Some(true),
+            always_send: None,
+            asked: true,
+            crash_notice: None,
+        })
+        .sending_to(
+            std::sync::Arc::new(purlis_core::report::intake::Sentry::new(
+                purlis_core::report::intake::Dsn::parse(concat!(
+                    "https://f00dfeed1234",
+                    "@",
+                    "o1.ingest.de.sentry.io/4508"
+                ))
+                .expect("a DSN"),
+                line.clone(),
+            )),
+            config.path(),
+        );
+    let one = held(&reports, plane.path(), CASE_SIX);
+
+    let filing = reports.file_held(&one.id, &Caller::window(), &one.digest(), How::Check);
+    assert_eq!(filing, Filing::Queued);
+    line.set(true);
+    assert_eq!(reports.send_waiting(), 1);
+
+    assert_eq!(
+        skilluse::misses(plane.path()).len(),
+        1,
+        "logged as it was filed, and not again as it left"
+    );
+}
+
+#[test]
+fn a_report_of_another_case_that_names_a_skill_but_no_words_logs_no_miss() {
+    purlis_core::unsteered!();
+    let config = tempfile::tempdir().unwrap();
+    let plane = project();
+    let reports = reports(config.path(), Some(true), &recorded_intake());
+    let one = held(
+        &reports,
+        plane.path(),
+        "purlis-secrets asked for the token twice\n\nSkill: purlis-secrets\nHarness: codex\n",
+    );
+
+    filed(&reports, &one);
+
+    assert_eq!(skilluse::misses(plane.path()), []);
 }

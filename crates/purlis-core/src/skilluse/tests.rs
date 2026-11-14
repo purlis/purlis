@@ -648,3 +648,66 @@ fn a_run_of_a_named_copy_in_a_local_workspace_does_not_say_which_copy_it_is_of()
     assert_eq!(row.get("tree"), None, "{row}");
     assert_eq!(row["workspace"], "smart-ide", "{row}");
 }
+
+/// What `body` says was missed (#5739), with `purlis-secrets` and `purlis-handoff` shipped.
+fn reported(body: &str, ran_as: Option<(&str, &str)>) -> Option<Reported> {
+    Reported::of_among(
+        body,
+        ran_as,
+        &["purlis-secrets".to_owned(), "purlis-handoff".to_owned()],
+    )
+}
+
+fn miss_of(skill: &str, harness: Option<&str>, version: Option<&str>) -> Option<Reported> {
+    Some(Reported {
+        skill: skill.to_owned(),
+        harness: harness.map(str::to_owned),
+        harness_version: version.map(str::to_owned),
+    })
+}
+
+#[test]
+fn a_case_six_report_says_its_skill_and_harness_in_the_forms_a_draft_writes_them() {
+    for (body, said) in [
+        (
+            "Skill: purlis-secrets\nHarness: Claude Code 2.1.40\nWords: \"my token\"",
+            miss_of("purlis-secrets", Some("claude"), Some("2.1.40")),
+        ),
+        (
+            "- **Skill**: `purlis:purlis-handoff`\n- **Harness**: Codex (v0.40.1)\n- **Words**: open a chat",
+            miss_of("purlis-handoff", Some("codex"), Some("0.40.1")),
+        ),
+        (
+            "Skill: purlis-secrets, maybe purlis-browser\nHarness: opencode\nWords: \"x\"",
+            miss_of("purlis-secrets", Some("opencode"), None),
+        ),
+    ] {
+        assert_eq!(reported(body, None), said, "{body}");
+    }
+}
+
+#[test]
+fn a_report_naming_no_shipped_built_in_or_without_the_words_line_is_of_no_miss() {
+    for body in [
+        "Skill: purlis-<name>\nHarness: codex\nWords: \"x\"",
+        "Skill: purlis-secret\nHarness: codex\nWords: \"x\"",
+        "Skill: deploy\nHarness: codex\nWords: \"x\"",
+        "Skill: purlis-secrets\nHarness: codex",
+        "Skill: purlis-secrets\nHarness: codex\nWords:",
+    ] {
+        assert_eq!(reported(body, None), None, "{body}");
+    }
+}
+
+#[test]
+fn a_case_six_report_naming_no_harness_purlis_starts_takes_the_drafting_chats() {
+    let body = "Skill: purlis-secrets\nHarness: I am not sure\nWords: \"my token\"";
+    assert_eq!(
+        reported(body, Some(("claude", "2.1.3"))),
+        miss_of("purlis-secrets", Some("claude"), Some("2.1.3"))
+    );
+    assert_eq!(
+        reported(body, Some(("not known", "not known"))),
+        miss_of("purlis-secrets", None, None)
+    );
+}
