@@ -12860,6 +12860,7 @@ fn a_start_in_the_place_of_a_held_chat_carries_the_mode_that_differed() {
         Some(Harness::ClaudeCode),
         false,
         &["claude".to_owned()],
+        Why::Relaunch,
     );
 
     let held = chats.attendance_of(session).expect("held");
