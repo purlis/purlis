@@ -1961,6 +1961,7 @@ export const commands = {
 	poolSetupCheckAndTrustAgain: __WINDOW_ONLY_RESULT,
 	poolSetupTrustAgain: __WINDOW_ONLY_RESULT,
 	poolSetupTlsFiles: __WINDOW_ONLY_RESULT,
+	poolSetupChooseOwned: __WINDOW_ONLY_RESULT,
 	poolSetupChooseCluster: __WINDOW_ONLY_RESULT,
 	poolSetupInstall: __WINDOW_ONLY_RESULT,
 	poolSetupOperatorImage: __WINDOW_ONLY_RESULT,
@@ -2001,6 +2002,7 @@ export const commands = {
 	runnerStage: __WINDOW_ONLY_RESULT,
 	addClusterPool: __WINDOW_ONLY_LIMIT_REFUSED,
 	setClusterPoolOwned: __WINDOW_ONLY_RESULT,
+	setRemotePoolOwned: __WINDOW_ONLY_RESULT,
 	poolsMintingWithoutAsking: __WINDOW_ONLY_RESULT,
 	putAwayPoolMintingNotice: __WINDOW_ONLY_RESULT,
 	poolProfiles: __WINDOW_ONLY_RESULT,
@@ -10745,6 +10747,17 @@ export type PoolRow = {
 	 *  itself, as `runners.json` spells it (`24h`, `90m`; #3471).
 	 */
 	suspend_after: string,
+	/**
+	 *  **The machine its engine is on, where that is another machine** (#6271): its host, as the
+	 *  person named it. Left out for this machine's own Docker.
+	 */
+	machine?: string | null,
+	/**
+	 *  **Whether the person said only they, and people they trust with their logins, can sign in
+	 *  to that machine, as it is pinned** (#6271, ADR 0123 §5). Left out for this machine's own
+	 *  Docker, which needs no mark.
+	 */
+	owned?: boolean | null,
 };
 
 /**  One step's next action. */

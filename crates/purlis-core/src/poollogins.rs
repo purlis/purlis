@@ -449,7 +449,10 @@ fn marked_as_pinned(
 ) -> Result<String, NotSent> {
     let pool = kept.name();
     if !kept.owned() {
-        return Err(NotSent::NotYours(on_another_machine_said(pool)));
+        return Err(NotSent::NotYours(on_another_machine_said(
+            pool,
+            remote.host(),
+        )));
     }
     if crate::poolsetup::pinchange::found_now()
         .iter()
@@ -463,11 +466,11 @@ fn marked_as_pinned(
 /// **What an unmarked pool on another machine is refused a vault value with** (#6266, #6271, ADR
 /// 0123 §5): its runner is not this machine, and only the person's mark says it is their own. Its
 /// profiles, sign-ins and moves are a Docker pool's (§1).
-pub fn on_another_machine_said(pool: &str) -> String {
+pub fn on_another_machine_said(pool: &str, host: &str) -> String {
     format!(
-        "pool {pool} is on another machine that isn't marked as your own, so purlis sends its \
-         runner no vault value, for a browser login or a tool. Only you can mark it: in Settings, \
-         under Pools, turn on This is my own on its row"
+        "pool {pool} is on another machine, {host}, and you haven't said that only you sign in \
+         there, so purlis sends its runner no vault value, for a browser login or a tool. Only you \
+         can say so: in Settings, under Pools, answer Who can sign in to {host}? on its row"
     )
 }
 

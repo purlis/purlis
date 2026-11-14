@@ -404,7 +404,10 @@ fn a_pool_made_from_what_connect_kept_is_marked_only_for_the_pin_answered_for() 
     };
     super::super::trusted(config.path(), &remote).unwrap();
     let engine: crate::runners::RemoteEngine = remote.clone().into();
-    assert!(!marked_on_connect(config.path(), &engine).unwrap(), "not asked");
+    assert!(
+        !marked_on_connect(config.path(), &engine).unwrap(),
+        "not asked"
+    );
     super::super::choose_owned(config.path(), true).unwrap();
     assert!(marked_on_connect(config.path(), &engine).unwrap());
     let mut other = remote;

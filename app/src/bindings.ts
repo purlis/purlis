@@ -4278,6 +4278,13 @@ export const commands = {
 	 */
 	poolSetupTlsFiles: (plane: PlaneId, ca: string, cert: string, key: string | null, keyVault: string | null, keyName: string | null) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup_tls_files", { plane, ca, cert, key, keyVault, keyName })),
 	/**
+	 *  **Keeps who the person said can sign in to the machine Connect trusted** (#6271, ADR 0123 §5):
+	 *  only they, and people they trust with their logins (`owned`), or others might. The window's
+	 *  alone (`ui::WINDOW_ONLY`): it is what lets the pool's runner receive vault values. A pool
+	 *  already made is marked on its row instead (`set_remote_pool_owned`).
+	 */
+	poolSetupChooseOwned: (owned: boolean) => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_owned", { owned })),
+	/**
 	 *  **Keeps that the person chose their team's cluster on Where**, through kubeconfig context
 	 *  `context` (#4492): its name alone. Nothing on the cluster changes. With no context, only the
 	 *  kind is kept, as Add a cluster pool… opens Pool setup: Where then recommends a context.
@@ -4515,6 +4522,13 @@ export const commands = {
 	 *  mark asks about each again.
 	 */
 	setClusterPoolOwned: (name: string, owned: boolean) => typedError<null, string>(__TAURI_INVOKE("set_cluster_pool_owned", { name, owned })),
+	/**
+	 *  **The person says who can sign in to the machine of pool `name`, on another machine, as it is
+	 *  pinned** (#6271, ADR 0123 §5): only they, and people they trust with their logins (`owned`),
+	 *  or others might. The window's alone (`ui::WINDOW_ONLY`): no chat reaches it. Taken back, every
+	 *  login opted in on the pool is forgotten, so a later mark asks about each again.
+	 */
+	setRemotePoolOwned: (name: string, owned: boolean) => typedError<null, string>(__TAURI_INVOKE("set_remote_pool_owned", { name, owned })),
 	/**
 	 *  **The cluster pools whose Pool began minting without asking, for the person to be told** (#4442,
 	 *  the person's ruling of 2026-11-01): one Notice for each change. It holds and refuses nothing, as
@@ -13966,6 +13980,17 @@ export type PoolRow = {
 	 *  itself, as `runners.json` spells it (`24h`, `90m`; #3471).
 	 */
 	suspend_after: string,
+	/**
+	 *  **The machine its engine is on, where that is another machine** (#6271): its host, as the
+	 *  person named it. Left out for this machine's own Docker.
+	 */
+	machine?: string | null,
+	/**
+	 *  **Whether the person said only they, and people they trust with their logins, can sign in
+	 *  to that machine, as it is pinned** (#6271, ADR 0123 §5). Left out for this machine's own
+	 *  Docker, which needs no mark.
+	 */
+	owned?: boolean | null,
 };
 
 /**  One step's next action. */

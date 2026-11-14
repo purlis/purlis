@@ -738,4 +738,71 @@ describe("ConnectStep", () => {
       expect(calls.some((call) => call.cmd === "pool_setup_machine")).toBe(false);
     });
   });
+
+  describe("who can sign in to the machine (#6271)", () => {
+    const trusted = (owned: boolean) =>
+      step({
+        state: "done",
+        next: null,
+        machine: tlsMachine({
+          route: "ssh://sam@build-box/var/run/docker.sock",
+          host: "build-box",
+          over: "ssh",
+          trusted: { algorithm: "ED25519", fingerprint: FINGERPRINT },
+          owned,
+        }),
+      });
+
+    it("asks once every check passed, with not sure recommended and chosen", async () => {
+      core();
+      draw(trusted(false));
+      const asked = await screen.findByRole("radiogroup", {
+        name: "Who can sign in to build-box?",
+      });
+      expect(asked).toBeInTheDocument();
+      expect(screen.getByRole("radio", { name: /Others might, or I.m not sure/ })).toBeChecked();
+      expect(
+        screen.getByRole("radio", { name: "Only me, and people I trust with my logins" }),
+      ).not.toBeChecked();
+      expect(screen.queryByText(/owned/i)).toBeNull();
+    });
+
+    it("keeps the answer for the machine trusted, before the pool is made", async () => {
+      const calls = core();
+      const props = draw(trusted(false));
+      await userEvent.click(
+        await screen.findByRole("radio", { name: "Only me, and people I trust with my logins" }),
+      );
+      await waitFor(() => expect(props.changed).toHaveBeenCalled());
+      expect(calls.find((call) => call.cmd === "pool_setup_choose_owned")?.args).toEqual({
+        owned: true,
+      });
+      expect(calls.some((call) => call.cmd === "set_remote_pool_owned")).toBe(false);
+    });
+
+    it("marks a made pool's own machine, once trusted again", async () => {
+      const calls = core();
+      const props = { onShown: vi.fn(), changed: vi.fn(), onNext: vi.fn() };
+      const one = trusted(true);
+      render(
+        <ConnectStep step={one} shown={{ ...shown(one), pool: "builds" }} plane="p" {...props} />,
+      );
+      await userEvent.click(
+        await screen.findByRole("radio", { name: /Others might, or I.m not sure/ }),
+      );
+      await waitFor(() => expect(props.changed).toHaveBeenCalled());
+      expect(calls.find((call) => call.cmd === "set_remote_pool_owned")?.args).toEqual({
+        name: "builds",
+        owned: false,
+      });
+      expect(calls.some((call) => call.cmd === "pool_setup_choose_owned")).toBe(false);
+    });
+
+    it("is not asked before the machine is trusted", async () => {
+      core();
+      draw(step({}));
+      await screen.findByRole("textbox", { name: "Its address" });
+      expect(screen.queryByRole("radiogroup", { name: /Who can sign in/ })).toBeNull();
+    });
+  });
 });

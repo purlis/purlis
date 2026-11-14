@@ -176,6 +176,12 @@ beforeEach(() => {
         clusters = [...clusters, row];
         return row;
       }
+      if (cmd === "set_remote_pool_owned") {
+        pools = pools.map((one) =>
+          one.name === a.name ? { ...one, owned: a.owned as boolean } : one,
+        );
+        return null;
+      }
       if (cmd === "set_cluster_pool_owned") {
         clusters = clusters.map((one) =>
           one.name === a.name ? { ...one, owned: a.owned as boolean } : one,
@@ -1356,6 +1362,38 @@ describe("A cluster pool (#3292)", () => {
     expect(within(dialog).getByRole("button", { name: "Check its key" })).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add a pool" })).toBeNull());
+  });
+
+  it("on another machine asks who can sign in there, not sure until the person says otherwise (#6271)", async () => {
+    pools = [{ ...a_pool("build-box"), machine: "lab", owned: false }];
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    await within(group).findByRole("radiogroup", { name: "Who can sign in to lab?" });
+    expect(
+      within(group).getByRole("radio", { name: /Others might, or I.m not sure/ }),
+    ).toBeChecked();
+    await userEvent.click(
+      within(group).getByRole("radio", { name: "Only me, and people I trust with my logins" }),
+    );
+    await waitFor(() => expect(pools[0]?.owned).toBe(true));
+    await waitFor(() =>
+      expect(
+        within(group).getByRole("radio", { name: "Only me, and people I trust with my logins" }),
+      ).toBeChecked(),
+    );
+    expect(within(group).queryByRole("switch", { name: "This is my own" })).toBeNull();
+  });
+
+  it("on this machine's own Docker asks nobody who can sign in (#6271)", async () => {
+    pools = [a_pool("here")];
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    await within(group).findByText("here");
+    expect(within(group).queryByRole("radiogroup", { name: /Who can sign in/ })).toBeNull();
   });
 
   it("is off until the person says This is my own, which says who else can read it", async () => {

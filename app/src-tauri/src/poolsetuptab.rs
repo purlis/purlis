@@ -110,6 +110,10 @@ pub struct PoolSetupMachine {
     pub ca_now: Option<String>,
     /// The Docker context the route was read from (#6268).
     pub context: Option<String>,
+    /// **Who can sign in to it, as the person answered** (#6271, ADR 0123 §5): only they, and
+    /// people they trust with their logins (`true`), or others might, or they're not sure.
+    #[specta(optional)]
+    pub owned: Option<bool>,
 }
 
 /// The TLS files named for a `tcp://` machine, as Connect's Options show them (#6267).
@@ -290,6 +294,7 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
                     trusted_ca: machine.trusted_ca.clone(),
                     ca_now: machine.ca_now.clone(),
                     context: machine.context.clone(),
+                    owned: Some(machine.owned),
                 }),
                 prefill: step.prefill.as_ref().map(|prefill| PoolSetupPrefill {
                     route: prefill.route.clone(),
@@ -461,6 +466,28 @@ pub async fn pool_setup_machine(
     #[cfg(not(unix))]
     {
         let _ = (route, identity);
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Keeps who the person said can sign in to the machine Connect trusted** (#6271, ADR 0123 §5):
+/// only they, and people they trust with their logins (`owned`), or others might. The window's
+/// alone (`ui::WINDOW_ONLY`): it is what lets the pool's runner receive vault values. A pool
+/// already made is marked on its row instead (`set_remote_pool_owned`).
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_choose_owned(owned: bool) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("keeping your answer", move || {
+            purlis_core::poolsetup::choose_owned(&config_root()?, owned)
+                .map_err(|why| why.to_string())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = owned;
         Err(crate::dockerpools::NOT_HERE.to_owned())
     }
 }
