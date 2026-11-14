@@ -7,6 +7,7 @@ use super::*;
 
 fn url(text: &str) -> Candidate {
     Candidate {
+        target: None,
         kind: Kind::Url,
         text: text.to_owned(),
     }
@@ -105,6 +106,7 @@ fn a_hover_says_the_target_and_that_it_opens() {
     assert_eq!(
         seen,
         Some(LinkSeen {
+            its_text: None,
             kind: KindHint::Url,
             target: "https://purlis.dev/".into(),
             shown: "https://purlis.dev/".into(),
@@ -125,6 +127,7 @@ fn a_hover_over_another_scheme_says_why_it_won_t_open_and_so_does_one_carrying_a
             &url("ftp://x.example/")
         ),
         Some(LinkSeen {
+            its_text: None,
             kind: KindHint::Url,
             target: "ftp://x.example/".into(),
             shown: "ftp://x.example/".into(),
@@ -213,6 +216,7 @@ fn here() -> Here {
 
 fn file(text: &str) -> Candidate {
     Candidate {
+        target: None,
         kind: Kind::File,
         text: text.to_owned(),
     }
@@ -318,6 +322,7 @@ fn a_hover_over_a_path_to_no_file_says_nothing() {
     assert_eq!(
         seen(&Resolver::default(), &here.pane, &file("notes.md")),
         Some(LinkSeen {
+            its_text: None,
             kind: KindHint::File,
             target: here.notes.display().to_string(),
             // In the chat's workspace: said from the workspace (D2).
@@ -415,6 +420,7 @@ use purlis_core::panelinks::ChatNumber;
 
 fn chat(text: &str) -> Candidate {
     Candidate {
+        target: None,
         kind: Kind::Chat,
         text: text.to_owned(),
     }
@@ -466,6 +472,7 @@ fn a_chat_open_in_another_workspace_is_seen_by_number_and_title_with_that_worksp
     assert_eq!(
         seen_in(&links, &pane_of_652(dir.path()), &chat("chat 660"), &chats),
         Some(LinkSeen {
+            its_text: None,
             kind: KindHint::Chat,
             target: "chat 660".into(),
             shown: "#660 · Docs site: the setup page".into(),
@@ -636,6 +643,7 @@ fn a_file_git_ignores_in_a_clone_or_a_piece_is_no_link_as_the_editor_refuses_it(
     assert_eq!(
         seen(&resolver(), &pane, &file("debug.log")),
         Some(LinkSeen {
+            its_text: None,
             kind: KindHint::File,
             target: "debug.log".into(),
             shown: "debug.log".into(),
@@ -701,4 +709,159 @@ fn a_file_git_ignores_in_a_clone_or_a_piece_is_no_link_as_the_editor_refuses_it(
         })
     );
     assert!(purlis_core::files::open(&project, branch, "src/main.rs").is_ok());
+}
+
+/// A link a program marked (OSC 8): its words, and the target it named.
+fn marked(text: &str, target: &str) -> Candidate {
+    Candidate {
+        kind: Kind::Osc8,
+        text: text.to_owned(),
+        target: Some(target.to_owned()),
+    }
+}
+
+/// Opens `candidate` as the command does, with a browser that records what it was handed.
+fn opened_marked(
+    candidate: &Candidate,
+    asks: &Asks,
+    token: Option<&str>,
+) -> (LinkOpened, Vec<String>) {
+    let handed = RefCell::new(Vec::new());
+    let answered = answer(
+        &Resolver::default(),
+        &Pane::default(),
+        asks,
+        candidate,
+        token,
+        |url| {
+            handed.borrow_mut().push(url.to_owned());
+            Ok(())
+        },
+    );
+    (answered, handed.into_inner())
+}
+
+#[test]
+fn a_marked_link_whose_words_say_nothing_else_opens_its_target_in_the_browser() {
+    let link = marked("Click here", "https://purlis.dev/docs");
+    let hovered = seen(&Resolver::default(), &Pane::default(), &link).expect("a link");
+    assert_eq!(
+        hovered.its_text, None,
+        "words that say nothing else are not said"
+    );
+
+    let (answered, handed) = opened_marked(&link, &Asks::default(), None);
+    assert_eq!(
+        answered,
+        LinkOpened::Opened {
+            kind: KindHint::Url,
+            target: "https://purlis.dev/docs".into()
+        }
+    );
+    assert_eq!(handed, ["https://purlis.dev/docs"]);
+    assert_eq!(link.read_by(), Some(Kind::Url));
+}
+
+#[test]
+fn a_marked_link_naming_another_host_asks_with_both_and_its_token_opens_it_once() {
+    let asks = Asks::default();
+    let link = marked(
+        "docs.purlis.dev/setup",
+        "https://purlis-setup.example.net/s?id=7",
+    );
+
+    let (answered, handed) = opened_marked(&link, &asks, None);
+    let LinkOpened::Ask {
+        reason,
+        shown,
+        target,
+        token,
+        about,
+    } = answered
+    else {
+        panic!("expected an ask, got {answered:?}");
+    };
+    assert!(handed.is_empty(), "an ask reached the browser");
+    assert_eq!(reason, "its text says docs.purlis.dev");
+    assert_eq!(shown, "docs.purlis.dev/setup");
+    assert_eq!(target, "https://purlis-setup.example.net/s?id=7");
+    assert_eq!(
+        about,
+        LinkAsk::Misleading {
+            kind: KindHint::Url,
+            host: Some("purlis-setup.example.net".into())
+        }
+    );
+
+    let (answered, handed) = opened_marked(&link, &asks, Some(&token));
+    assert!(
+        matches!(answered, LinkOpened::Opened { .. }),
+        "{answered:?}"
+    );
+    assert_eq!(handed, ["https://purlis-setup.example.net/s?id=7"]);
+    let (again, handed) = opened_marked(&link, &asks, Some(&token));
+    assert!(matches!(again, LinkOpened::Ask { .. }), "{again:?}");
+    assert!(handed.is_empty());
+}
+
+#[test]
+fn a_marked_link_of_another_scheme_is_refused_and_its_hover_shows_the_target() {
+    let link = marked("Click here", "javascript:alert(1)");
+
+    let (answered, handed) = opened_marked(&link, &Asks::default(), None);
+    assert!(
+        matches!(&answered, LinkOpened::Refused { reason } if reason.contains("javascript:")),
+        "{answered:?}"
+    );
+    assert!(handed.is_empty());
+    assert_eq!(link.read_by(), None);
+    let seen = seen(&Resolver::default(), &Pane::default(), &link).expect("it says why");
+    assert_eq!(seen.kind, KindHint::Osc8);
+    assert_eq!(seen.target, "javascript:alert(1)");
+    assert!(matches!(seen.does, LinkDoes::Refused { .. }));
+}
+
+#[test]
+fn a_marked_link_s_hover_says_it_asks_and_why() {
+    let seen = seen(
+        &Resolver::default(),
+        &Pane::default(),
+        &marked("github.com/login", "https://evil.example/login"),
+    )
+    .expect("a link");
+
+    assert_eq!(seen.kind, KindHint::Url);
+    assert_eq!(seen.target, "https://evil.example/login");
+    assert_eq!(seen.its_text.as_deref(), Some("github.com/login"));
+    assert_eq!(
+        seen.does,
+        LinkDoes::Asks {
+            reason: "its text says github.com".into()
+        }
+    );
+}
+
+#[test]
+fn the_window_s_words_for_a_marked_link_are_these() {
+    let candidate: LinkCandidate = serde_json::from_value(serde_json::json!({
+        "kind": "osc8", "text": "Click here", "target": "https://purlis.dev/"
+    }))
+    .expect("reads");
+    assert_eq!(
+        Candidate::from(candidate),
+        marked("Click here", "https://purlis.dev/")
+    );
+    // A found link sends no target.
+    let found: LinkCandidate =
+        serde_json::from_value(serde_json::json!({"kind": "url", "text": "https://a.example/"}))
+            .expect("reads");
+    assert_eq!(found.target, None);
+    assert_eq!(
+        serde_json::to_value(LinkAsk::Misleading {
+            kind: KindHint::Url,
+            host: Some("a.example".into())
+        })
+        .expect("serialises"),
+        serde_json::json!({"about": "misleading", "kind": "url", "host": "a.example"})
+    );
 }

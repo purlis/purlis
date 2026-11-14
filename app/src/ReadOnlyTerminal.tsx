@@ -35,7 +35,7 @@ import { FindBar } from "./FindBar";
 import { opensFindInAFile } from "./keys/findKeys";
 import { onAMac } from "./mac";
 import { opensTheLinksList } from "./paneLinksKey";
-import { linkPane, type LinkCore, type LinkPlace, type LinkedPane } from "./paneLinks";
+import { INERT_LINKS, linkPane, type LinkCore, type LinkPlace, type LinkedPane } from "./paneLinks";
 import type { ChatGo } from "./bindings";
 import { usePaneLinks } from "./PaneLinkSurfaces";
 import {
@@ -177,6 +177,8 @@ export function ReadOnlyTerminal({
     if (!where) return;
     const look = theme ?? inForce();
     const pane = new Terminal({
+      // A program's own link (OSC 8) opens nothing here, unless the pane links (#6218).
+      linkHandler: INERT_LINKS,
       fontSize,
       fontFamily:
         theme === undefined ? terminalFont() : (drawnFont("terminal", theme) ?? "monospace"),

@@ -11476,7 +11476,7 @@ export type KeyAct = "down" | "up";
  *  **What the pane's pattern took a candidate for**: a hint, never trusted for more. The wire's
  *  half of the core's [`Kind`]; a kind's resolver is the core's `LinkKind`.
  */
-export type KindHint = "url" | "file" | "chat";
+export type KindHint = "url" | "file" | "chat" | "osc8";
 
 /**  One context of the person's kubeconfig, as Point kubectl at it lists it. */
 export type KubeContext = {
@@ -11711,12 +11711,22 @@ export type LinkAsk =
 /**  A link, asked about in general words. */
 { about: "link" } | 
 /**  A file outside the chat's home (the prototype's S7), and that home where it has one. */
-{ about: "file-outside"; home: LinkHome | null };
+{ about: "file-outside"; home: LinkHome | null } | 
+/**
+ *  A link a program marked whose words read as another address or path (the prototype's
+ *  S8, #6218): what its target is, and a web address's host, which the ask draws apart.
+ */
+{ about: "misleading"; kind: KindHint; host: string | null };
 
-/**  **Text a pane found that may be a link**: the words as printed, and the pattern's hint. */
+/**
+ *  **Text a pane found that may be a link**: the words as printed, and the pattern's hint. A
+ *  link a program marked (`osc8`) also carries `target`, the address the program named, as the
+ *  pane was handed it: the core reads it again, and a target the pane resolved is never sent.
+ */
 export type LinkCandidate = {
 	kind: KindHint,
 	text: string,
+	target?: string | null,
 };
 
 /**  **What ⌘-click on a link would do**, said on its hover. */
@@ -11790,6 +11800,8 @@ export type LinkSeen = {
 	target: string,
 	shown: string,
 	does: LinkDoes,
+	/**  The words of a link a program marked, where they name another target than it goes to. */
+	its_text?: string | null,
 	/**  What the chat a chat link names is: none for every other kind. */
 	chat: ChatSeen | null,
 };

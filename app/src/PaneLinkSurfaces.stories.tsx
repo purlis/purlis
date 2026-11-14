@@ -107,6 +107,16 @@ function chatSeen(text: string): LinkSeen | null {
   return null;
 }
 
+/** A link a program marked (OSC 8, #6218): words that read as one address, marked as a link to
+ *  another, as the prototype's `HoverAnOsc8Link` draws it. */
+const MARKED_WORDS = "docs.purlis.dev/setup";
+const MARKED_TARGET = "https://purlis-setup.example.net/s?id=7";
+const MARKED_TURN = [
+  "\u001b[1m● Set-up is described in the docs.\u001b[0m",
+  `  Read \u001b]8;;${MARKED_TARGET}\u001b\\${MARKED_WORDS}\u001b]8;;\u001b\\ before you start.`,
+  "\u001b[2m  ⎿ 1 link\u001b[22m",
+].join("\r\n");
+
 function Pane({ screen = TURN }: { screen?: string }) {
   // A chat link's card, as a chat's pane draws it.
   const chats = usePaneLinkChats(() => {});
@@ -134,27 +144,38 @@ const meta = {
   beforeEach: () => {
     mockIPC((cmd, args) => {
       if (cmd === "pane_link_resolve") {
-        const { candidates } = args as { candidates: { kind: string; text: string }[] };
+        const { candidates } = args as {
+          candidates: { kind: string; text: string; target?: string }[];
+        };
         return candidates.map((one) =>
-          one.kind === "chat"
-            ? chatSeen(one.text)
-            : one.kind === "file"
-              ? one.text === FILE
-                ? {
-                    kind: "file",
-                    target: FILE_IN_FULL,
-                    shown: FILE,
-                    does: { does: "opens", into: "editor-tab" },
+          one.kind === "osc8"
+            ? {
+                kind: "url",
+                target: one.target,
+                shown: one.target,
+                does: { does: "asks", reason: "its text says docs.purlis.dev" },
+                its_text: one.text,
+                chat: null,
+              }
+            : one.kind === "chat"
+              ? chatSeen(one.text)
+              : one.kind === "file"
+                ? one.text === FILE
+                  ? {
+                      kind: "file",
+                      target: FILE_IN_FULL,
+                      shown: FILE,
+                      does: { does: "opens", into: "editor-tab" },
+                      chat: null,
+                    }
+                  : null
+                : {
+                    kind: "url",
+                    target: one.text,
+                    shown: one.text,
+                    does: { does: "opens", into: "browser" },
                     chat: null,
-                  }
-                : null
-              : {
-                  kind: "url",
-                  target: one.text,
-                  shown: one.text,
-                  does: { does: "opens", into: "browser" },
-                  chat: null,
-                },
+                  },
         );
       }
       if (cmd === "pane_link_open") {
@@ -484,6 +505,134 @@ export const FileOutsideTheWorkspace: StoryObj<typeof meta> = {
     await untilFocused(
       () => within(dialog).getByRole("button", { name: "Don't open" }),
       "and then Don't open",
+    );
+    expectFocusInSight();
+
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(page.queryByRole("dialog")).toBeNull());
+  },
+};
+
+/**
+ * **Hovering a link a program marked** (OSC 8, #6218, the prototype's `HoverAnOsc8Link`): its
+ * tooltip says where it really goes first, "Goes to …", then that its words say another host
+ * and ⌘-click asks first.
+ */
+export const HoverAnOsc8Link: StoryObj<typeof meta> = {
+  render: () => <Pane screen={MARKED_TURN} />,
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement.ownerDocument.body);
+    await waitFor(() =>
+      expect(canvasElement.querySelector(".xterm-screen")?.textContent ?? "").toContain(
+        MARKED_WORDS,
+      ),
+    );
+    // On the words: row 1, past "  Read ".
+    const { screen, init } = cellOf(canvasElement, 12, 1);
+    screen.dispatchEvent(new MouseEvent("mousemove", init));
+    const tip = await page.findByRole("tooltip", {}, { timeout: 3000 });
+    await expect(tip).toHaveTextContent(`Goes to ${MARKED_TARGET}`);
+    await expect(tip).toHaveTextContent(/Its text says docs\.purlis\.dev · .+-click asks first/);
+  },
+};
+
+/**
+ * **The ask for a marked link whose words name another address** (#6218, the prototype's S8
+ * `Osc8Mismatch`, D10): its words and where it really goes, the real host in bold. It starts on
+ * *Don't open*, Return never opens it, and *Open in browser* is plain.
+ */
+export const Osc8Mismatch: StoryObj<typeof meta> = {
+  render: () => (
+    <Answer
+      answer={{
+        answer: "ask",
+        reason: "its text says docs.purlis.dev",
+        shown: MARKED_WORDS,
+        target: MARKED_TARGET,
+        token: "a-one-use-token",
+        about: { about: "misleading", kind: "url", host: "purlis-setup.example.net" },
+      }}
+      candidate={{ kind: "osc8", text: MARKED_WORDS, target: MARKED_TARGET }}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement.ownerDocument.body);
+    const dialog = await page.findByRole("dialog", {
+      name: "This link goes somewhere its text doesn't say",
+    });
+    await expect(dialog).toHaveTextContent(MARKED_WORDS);
+    await expect(dialog).toHaveTextContent(MARKED_TARGET);
+    await expect(within(dialog).getByText("purlis-setup.example.net").tagName).toBe("STRONG");
+    await expect(dialog).toHaveTextContent(
+      "Open it only if you expected purlis-setup.example.net.",
+    );
+    const dont = within(dialog).getByRole("button", { name: "Don't open" });
+    await untilFocused(() => dont, "It starts on Don't open (D10)");
+    expectFocusInSight();
+    await pictureNow();
+
+    // Tab walks the answers in order, and back to Don't open.
+    await userEvent.tab();
+    await untilFocused(
+      () => within(dialog).getByRole("button", { name: "Copy address" }),
+      "Tab reaches Copy address",
+    );
+    expectFocusInSight();
+    await userEvent.tab();
+    await untilFocused(
+      () => within(dialog).getByRole("button", { name: "Open in browser" }),
+      "and then Open in browser",
+    );
+    expectFocusInSight();
+    await userEvent.tab({ shift: true });
+    await userEvent.tab({ shift: true });
+    await untilFocused(() => dont, "Shift+Tab goes back to Don't open");
+    expectFocusInSight();
+
+    // Return on Don't open closes it, and never opens the link.
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(page.queryByRole("dialog")).toBeNull());
+  },
+};
+
+/** **The same ask for a file** (#6218): a marked link whose words name another file. */
+export const Osc8MismatchAFile: StoryObj<typeof meta> = {
+  render: () => (
+    <Answer
+      answer={{
+        answer: "ask",
+        reason: "its text says src/main.rs",
+        shown: "src/main.rs",
+        target: "/Users/you/projects/plane/workspaces/smart-ide/purlis/src/secrets.rs",
+        token: "a-one-use-token",
+        about: { about: "misleading", kind: "file", host: null },
+      }}
+      candidate={{
+        kind: "osc8",
+        text: "src/main.rs",
+        target: "file:///Users/you/projects/plane/workspaces/smart-ide/purlis/src/secrets.rs",
+      }}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement.ownerDocument.body);
+    const dialog = await page.findByRole("dialog", {
+      name: "This link goes somewhere its text doesn't say",
+    });
+    await expect(dialog).toHaveTextContent("a link to a different file");
+    const dont = within(dialog).getByRole("button", { name: "Don't open" });
+    await untilFocused(() => dont, "It starts on Don't open");
+    expectFocusInSight();
+    await userEvent.tab();
+    await untilFocused(
+      () => within(dialog).getByRole("button", { name: "Copy path" }),
+      "Tab reaches Copy path",
+    );
+    expectFocusInSight();
+    await userEvent.tab();
+    await untilFocused(
+      () => within(dialog).getByRole("button", { name: "Open file" }),
+      "and then Open file",
     );
     expectFocusInSight();
 
