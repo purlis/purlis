@@ -35,6 +35,9 @@
 //! Dispatch (#6410), the briefing (#6411) and the commit gate (#6412) read the fact A4 holds.
 //! The commit gate takes it as an argument ([`crate::commitgate::nudge`]); until the holder
 //! reaches a hook's process, its caller passes the old one-way mark heard from the report.
+//! Dispatch reads it already, from the app's record of the chat
+//! ([`crate::dispatchunattended::fact_of`]), lowered by the old mark until that holder hears
+//! the reports itself.
 
 use crate::dispatchunattended::Attendance;
 use crate::harness::Harness;

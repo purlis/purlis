@@ -915,7 +915,8 @@ export const commands = {
 	/**  The vaults chat `session` was refused and the person has not answered, oldest first. */
 	vaultRefusals: (plane: PlaneId, session: number) => typedError<VaultRefused[], string>(__TAURI_INVOKE("vault_refusals", { plane, session })),
 	/**
-	 *  **Whether a person is at chat `session`** (#1501): not where its harness ever reported its
+	 *  **Whether a person is at chat `session`** (#1501): its attendance fact, as every dispatch
+	 *  reader takes it (R-110, #6410): not for a task, nor where its harness ever reported its
 	 *  prompts off or it was started with them off, and not for a chat this app does not have
 	 *  open. What the window asks before it explains anything on that chat's tab: a chat nobody is
 	 *  at is told nothing, as it is told of no dispatch. It only reads.
