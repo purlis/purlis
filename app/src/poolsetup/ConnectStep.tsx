@@ -736,7 +736,6 @@ export function ConnectStep({
   const [contexts, setContexts] = useState<readonly PoolSetupDockerContext[]>([]);
   const [pressing, setPressing] = useState<Pressing>();
   const [trouble, setTrouble] = useState<string>();
-  const [answering, setAnswering] = useState(false);
   useEffect(() => {
     let live = true;
     void commands.poolSetupSshHosts().then((answer) => {
@@ -840,7 +839,6 @@ export function ConnectStep({
   const madePool = shown.pool !== null;
   /** Who can sign in there (#6271): kept for the pool to be made, or a made pool's own mark. */
   const answer = (owned: boolean) => {
-    setAnswering(true);
     setTrouble(undefined);
     const made = shown.pool;
     void (
@@ -848,7 +846,6 @@ export function ConnectStep({
         ? commands.poolSetupChooseOwned(owned)
         : commands.setRemotePoolOwned(made, owned)
     ).then((kept) => {
-      setAnswering(false);
       if (kept.status === "error") setTrouble(kept.error);
       else changed();
     });
@@ -1030,14 +1027,7 @@ export function ConnectStep({
           ))}
         </Say>
       )}
-      {done && (
-        <WhoCanSignIn
-          host={host}
-          owned={step.machine?.owned === true}
-          busy={answering}
-          onChange={answer}
-        />
-      )}
+      {done && <WhoCanSignIn host={host} owned={step.machine?.owned === true} onChange={answer} />}
       {done && (
         <Action
           does={`Keeps ${host} as this pool's machine. Next, you choose its image and limits.`}
