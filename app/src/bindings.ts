@@ -915,7 +915,8 @@ export const commands = {
 	/**  The vaults chat `session` was refused and the person has not answered, oldest first. */
 	vaultRefusals: (plane: PlaneId, session: number) => typedError<VaultRefused[], string>(__TAURI_INVOKE("vault_refusals", { plane, session })),
 	/**
-	 *  **Whether a person is at chat `session`** (#1501): not where its harness ever reported its
+	 *  **Whether a person is at chat `session`** (#1501): its attendance fact, as every dispatch
+	 *  reader takes it (R-110, #6410): not for a task, nor where its harness ever reported its
 	 *  prompts off or it was started with them off, and not for a chat this app does not have
 	 *  open. What the window asks before it explains anything on that chat's tab: a chat nobody is
 	 *  at is told nothing, as it is told of no dispatch. It only reads.
@@ -1267,9 +1268,10 @@ export const commands = {
 	/**  **"It's fine"**: chat `session` is not stuck until it changes state. */
 	stuckFine: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("stuck_fine", { plane, session })),
 	/**
-	 *  **Answers chat `session`'s pause with `option`** (#6015): Continue, It's fine, continue, or
-	 *  Stop, as its ask in Asks offers them; for a block loop (T1-36), Tell it to stop trying, which
-	 *  types purlis's one line when the chat next waits, Let it keep trying, or Stop chat.
+	 *  **Answers chat `session`'s pause with `option`** (#6015): Continue, Raise the budget, It's
+	 *  fine, continue, or Stop, as its ask in Asks offers them; for a block loop (T1-36), Tell it to
+	 *  stop trying, which types purlis's one line when the chat next waits, Let it keep trying, or
+	 *  Stop chat.
 	 */
 	answerPause: (plane: PlaneId, session: number, option: string) => typedError<null, string>(__TAURI_INVOKE("answer_pause", { plane, session, option })),
 	/**
@@ -7925,6 +7927,7 @@ export type ChatLog = {
 	/**  purlis knows the chat by its number: open, or ended here and still kept. */
 	known: boolean,
 	rows: ChatLogRow[],
+	summary: ChatLogSummary,
 };
 
 /**  One row of a chat's Chat log. */
@@ -7938,10 +7941,41 @@ export type ChatLogRow =
 at: string | null; cause: string; protection: StartProtection | null } | 
 /**  The chat's run ended: `completed`, `failed` or `stopped`, why, and its exit code. */
 { kind: "ended"; at: string | null; state: string; cause: string; code: number | null } | 
+/**
+ *  The chat's sandbox was lifted for a run (`off`) or put back on (`on`), and who did it:
+ *  `actor_kind` `human`, `host` or `agent`, and the actor's word.
+ */
+{ kind: "protection_changed"; at: string | null; change: string; actor_kind: string; actor: string } | 
+/**  The chat raised an ask, by its group's word. */
+{ kind: "ask_raised"; at: string | null; ask: string } | 
+/**  The chat's ask was answered: `allowed` or `refused`, and by whom: `window` or `inbox`. */
+{ kind: "ask_answered"; at: string | null; ask: string; answer: string; by: string } | 
+/**
+ *  purlis held an action and asked the person: the tool, and the guard's arm it was held
+ *  at, where it names one (`merge-hold`).
+ */
+{ kind: "held"; at: string | null; tool: string; arm: string | null; 
+/**  It was held under one of the chat's sub-agents. */
+sub_agent: boolean } | 
+/**  The chat was paused as looping: the rule's word and how many times. */
+{ kind: "loop_paused"; at: string | null; rule: string; times: number } | 
 /**  A call was blocked: by whom, how much its report is worth, at what, and why it said. */
 { kind: "blocked"; at: string | null; tool: string; source: string; qualifier: string | null; target_kind: string | null; target: string | null; harness: string; reason: string | null; 
 /**  It has since been resolved (Q272): its row offers no Tell the chat…. */
 resolved: boolean };
+
+/**
+ *  What heads a chat's Chat log: its allowed calls in one count, with those its person's rules
+ *  allowed, and its honesty lines.
+ */
+export type ChatLogSummary = {
+	allowed: number,
+	by_your_rules: number,
+	/**  What reports its calls is within its own reach. */
+	unverified: boolean,
+	/**  It ran with No sandbox. */
+	ran_as_you: boolean,
+};
 
 /**  What a number names, as the window is sent it. */
 export type ChatLookup = 

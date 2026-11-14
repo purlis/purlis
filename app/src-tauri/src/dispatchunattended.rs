@@ -10,8 +10,9 @@
 //! [`request_dispatch_as`]`(held, asking, attendance, target, brief)`, with the asking chat
 //! as the caller read it once (#1543), in place of
 //! [`crate::dispatchgrants::request_dispatch_grant`], which it hands an attended chat's ask to
-//! unchanged. [`request_dispatch`] is the same for a chat read from its session, for tests. `attendance` is the app's own mark on the chat
-//! ([`purlis_core::dispatchunattended::Mark`]), never a word of the request.
+//! unchanged. [`request_dispatch`] is the same for a chat read from its session, for tests. `attendance` is the chat's attendance fact
+//! as the app reads it (R-110, #6410; [`purlis_core::dispatchunattended::attendance_of`]),
+//! never a word of the request.
 //!
 //! # What an unattended chat cannot do
 //!
@@ -92,7 +93,8 @@ pub fn request_dispatch_as(
     crate::dispatchgrants::requested_as(held, asking, (target, brief), uncovered, works_in, task)
 }
 
-/// **Whether a person is at chat `session`** (#1501): not where its harness ever reported its
+/// **Whether a person is at chat `session`** (#1501): its attendance fact, as every dispatch
+/// reader takes it (R-110, #6410): not for a task, nor where its harness ever reported its
 /// prompts off or it was started with them off, and not for a chat this app does not have
 /// open. What the window asks before it explains anything on that chat's tab: a chat nobody is
 /// at is told nothing, as it is told of no dispatch. It only reads.

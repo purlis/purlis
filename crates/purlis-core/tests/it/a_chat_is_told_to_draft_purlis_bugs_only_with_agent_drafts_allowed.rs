@@ -123,6 +123,7 @@ fn told(here: &Here, harness: Harness) -> Vec<String> {
             payload: &payload,
             env: &lookup,
             now: chrono::Utc::now(),
+            attendance: purlis_core::dispatchunattended::Attendance::Attended,
         },
         None,
     )
@@ -212,6 +213,7 @@ fn a_harness_started_outside_the_app_is_not_told_even_with_agent_drafts_allowed(
             payload: &payload,
             env: &lookup,
             now: chrono::Utc::now(),
+            attendance: purlis_core::dispatchunattended::Attendance::Attended,
         },
         None,
     );

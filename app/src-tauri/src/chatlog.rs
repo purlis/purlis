@@ -3,7 +3,15 @@
 
 //! **A chat's Chat log, for its tab** (R-224, R-227, R-233, R-310; ADR 0124 decision 11): the
 //! rows of its story, read from this machine's event log through `purlis_core::eventlog::
-//! chatlog::rows`, oldest first. Phase 1 draws its start, its end and its blocks (T1-29).
+//! chatlog::rows`, oldest first, and what heads it (`chatlog::summary`): its start and its end,
+//! and between them its protection changes, its blocks (T1-29), its asks and their answers, its
+//! holds and its loop pauses (T1-28).
+//!
+//! **What writes an ask** (R-229, Q261): loop and budget pauses (`crate::pausing`), harness
+//! prompts (`crate::hooks`, raised as the hook holds the ask and answered as the registry
+//! applies it, a late answer included), sandbox asks (`crate::sandboxing`,
+//! `crate::taskblocks`) and a held merge (`crate::mergeholds`). Consent, a hook's give-up and an
+//! answer from `purlis inbox` write none yet: a follow-up's.
 //!
 //! **Pull-only** (R-225): read when the tab opens, told to no window, and nothing here counts
 //! or marks a row as new. It holds nothing of its own: the Chat log is a query of the event
@@ -17,9 +25,11 @@
 
 use std::sync::LazyLock;
 
-use purlis_core::eventlog::chatlog::{self, Row};
+use purlis_core::eventlog::chatlog::{self, Row, Summary};
 use purlis_core::eventlog::reasons::Reasons;
-use purlis_core::eventlog::stops::{Block, Source, Target};
+use purlis_core::eventlog::stops::{
+    Answer, AnsweredBy, AskAnswered, AskGroup, AskRaised, Block, Source, Stop, Target,
+};
 use purlis_core::sandbox::protection::InForce;
 
 use crate::planes::PlaneId;
@@ -67,6 +77,38 @@ pub enum ChatLogRow {
         cause: String,
         code: Option<i32>,
     },
+    /// The chat's sandbox was lifted for a run (`off`) or put back on (`on`), and who did it:
+    /// `actor_kind` `human`, `host` or `agent`, and the actor's word.
+    ProtectionChanged {
+        at: Option<String>,
+        change: String,
+        actor_kind: String,
+        actor: String,
+    },
+    /// The chat raised an ask, by its group's word.
+    AskRaised { at: Option<String>, ask: String },
+    /// The chat's ask was answered: `allowed` or `refused`, and by whom: `window` or `inbox`.
+    AskAnswered {
+        at: Option<String>,
+        ask: String,
+        answer: String,
+        by: String,
+    },
+    /// purlis held an action and asked the person: the tool, and the guard's arm it was held
+    /// at, where it names one (`merge-hold`).
+    Held {
+        at: Option<String>,
+        tool: String,
+        arm: Option<String>,
+        /// It was held under one of the chat's sub-agents.
+        sub_agent: bool,
+    },
+    /// The chat was paused as looping: the rule's word and how many times.
+    LoopPaused {
+        at: Option<String>,
+        rule: String,
+        times: u32,
+    },
     /// A call was blocked: by whom, how much its report is worth, at what, and why it said.
     Blocked {
         at: Option<String>,
@@ -82,6 +124,18 @@ pub enum ChatLogRow {
     },
 }
 
+/// What heads a chat's Chat log: its allowed calls in one count, with those its person's rules
+/// allowed, and its honesty lines.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, specta::Type)]
+pub struct ChatLogSummary {
+    pub allowed: u32,
+    pub by_your_rules: u32,
+    /// What reports its calls is within its own reach.
+    pub unverified: bool,
+    /// It ran with No sandbox.
+    pub ran_as_you: bool,
+}
+
 /// **The reasons the harnesses' own checks gave, for the app's life** (R-340): held as the
 /// hook channel hears them (`hooks.rs`), read as a Chat log is, never written.
 pub(crate) static HARNESS_REASONS: LazyLock<Reasons> = LazyLock::new(Reasons::default);
@@ -92,6 +146,7 @@ pub struct ChatLog {
     /// purlis knows the chat by its number: open, or ended here and still kept.
     pub known: bool,
     pub rows: Vec<ChatLogRow>,
+    pub summary: ChatLogSummary,
 }
 
 fn at(ms: Option<u64>) -> Option<String> {
@@ -162,6 +217,45 @@ fn row_of(row: Row, reason: &dyn Fn(&str) -> Option<String>) -> ChatLogRow {
             cause,
             code: code.and_then(|code| i32::try_from(code).ok()),
         },
+        Row::ProtectionChanged {
+            at_ms,
+            change,
+            actor_kind,
+            actor,
+        } => ChatLogRow::ProtectionChanged {
+            at: at(at_ms),
+            change,
+            actor_kind,
+            actor,
+        },
+        Row::AskRaised { at_ms, ask } => ChatLogRow::AskRaised {
+            at: at(at_ms),
+            ask: word_of(ask),
+        },
+        Row::AskAnswered { at_ms, answered } => ChatLogRow::AskAnswered {
+            at: at(at_ms),
+            ask: word_of(answered.ask),
+            answer: word_of(answered.answer),
+            by: word_of(answered.by),
+        },
+        Row::Held {
+            at_ms,
+            hold,
+            sub_agent,
+        } => ChatLogRow::Held {
+            at: at(at_ms),
+            arm: match hold.target {
+                Some(Target::GuardArm(arm)) => Some(arm.as_str().to_owned()),
+                _ => None,
+            },
+            tool: hold.tool,
+            sub_agent,
+        },
+        Row::LoopPaused { at_ms, pause } => ChatLogRow::LoopPaused {
+            at: at(at_ms),
+            rule: word_of(pause.rule),
+            times: pause.times,
+        },
         Row::Blocked {
             at_ms,
             block,
@@ -214,6 +308,23 @@ fn row_of(row: Row, reason: &dyn Fn(&str) -> Option<String>) -> ChatLogRow {
     }
 }
 
+/// The window's summary for the core's.
+fn summary_of(
+    Summary {
+        allowed,
+        by_your_rules,
+        unverified,
+        ran_as_you,
+    }: Summary,
+) -> ChatLogSummary {
+    ChatLogSummary {
+        allowed,
+        by_your_rules,
+        unverified,
+        ran_as_you,
+    }
+}
+
 /// The Chat log of the chat with id `chat` (`None`: purlis does not know it) in `events`, with
 /// no reason for any block.
 #[cfg(test)]
@@ -231,6 +342,7 @@ fn chat_log_with(
         None => ChatLog {
             known: false,
             rows: Vec::new(),
+            summary: ChatLogSummary::default(),
         },
         Some(chat) => ChatLog {
             known: true,
@@ -238,6 +350,7 @@ fn chat_log_with(
                 .into_iter()
                 .map(|row| row_of(row, reason))
                 .collect(),
+            summary: summary_of(chatlog::summary(events, chat)),
         },
     }
 }
@@ -271,6 +384,47 @@ pub(crate) async fn chat_log(
         }))
     })
     .await
+}
+
+/// **Writes chat `chat`'s ask raised or answered, a hold or a loop pause** (R-229, R-232) into
+/// the event log through `hooks`, where this machine keeps one: what its Chat log lists. A
+/// write that fails is said in the app's log and changes nothing the person sees: the ask is
+/// raised, answered or paused all the same.
+pub(crate) fn record(hooks: &crate::hooks::Hooks, chat: u32, stop: Stop) {
+    let kind = stop.kind();
+    if let Err(why) = hooks.write_stop(chat, stop) {
+        tracing::warn!("purlis: chat {chat}'s {kind} was not written to its log: {why}");
+    }
+}
+
+/// **Chat `chat` raised an ask of group `ask`** (R-229), in its Chat log ([`record`]).
+pub(crate) fn raised(hooks: &crate::hooks::Hooks, chat: u32, ask: AskGroup) {
+    record(hooks, chat, Stop::AskRaised(AskRaised { ask }));
+}
+
+/// **The person answered chat `chat`'s ask of group `ask` in the window**, `allowed` it or not
+/// (R-229), in its Chat log: an answer the window's own command applied, not the asks registry,
+/// so by the window's answerer ([`crate::asking::the_window`]).
+pub(crate) fn answered_in_the_window(
+    hooks: &crate::hooks::Hooks,
+    chat: u32,
+    ask: AskGroup,
+    allowed: bool,
+) {
+    record(hooks, chat, Stop::AskAnswered(in_the_window(ask, allowed)));
+}
+
+/// The person's answer to an ask of group `ask` in the window, `allowed` it or not.
+pub(crate) fn in_the_window(ask: AskGroup, allowed: bool) -> AskAnswered {
+    AskAnswered {
+        ask,
+        answer: if allowed {
+            Answer::Allowed
+        } else {
+            Answer::Refused
+        },
+        by: AnsweredBy::from(crate::asking::the_window()),
+    }
 }
 
 /// One chat the window asks the blocked marker of, and its last look: the `seq` of the latest

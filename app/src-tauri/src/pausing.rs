@@ -11,8 +11,8 @@
 //! - **A budget** is a dispatch limit the person set and a task reached (`crate::overlimit`):
 //!   `minutes-per-task`, or its session's `tokens-per-session`. Asked: Continue, which lets it
 //!   go on past that limit; Raise the budget, which the window answers by opening Settings where
-//!   the limit is, the chat going on once a look finds it within the limit again
-//!   ([`let_go_of_budgets`]); or Stop, the stop the limit made before (asked for its report,
+//!   the limit is, the ask answered and the chat going on once a look finds it within the limit
+//!   again ([`let_go_of_budgets`]); or Stop, the stop the limit made before (asked for its report,
 //!   then ended).
 //! - **A loop** is `purlis_core::looping`'s: the same command failing again and again, its
 //!   asks refused again and again, or blocks on the same target (R-206), heard from its hook
@@ -35,9 +35,10 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use purlis_core::dispatched::Seen;
 use purlis_core::dispatchlimits::Reached;
+use purlis_core::eventlog::stops::{AskGroup, LoopPause, LoopRule, Stop};
 use purlis_core::looping::{self, Loops};
 
-use crate::asking::pauses::{CONTINUE, FINE, KEEP_TRYING, STOP, STOP_TRYING};
+use crate::asking::pauses::{CONTINUE, FINE, KEEP_TRYING, RAISE, STOP, STOP_TRYING};
 use crate::planes::{Held, PlaneId, Planes};
 
 /// Why a chat is paused.
@@ -57,6 +58,9 @@ pub struct Paused {
     pub since: u32,
     /// The chats held still for it: itself, and its tasks at work below it then.
     pub held: Vec<u32>,
+    /// Whether the person has answered it already, with Raise the budget, while it still holds
+    /// them (Q262): an ask is answered once, so a later press writes no answer.
+    pub raised: bool,
 }
 
 /// What one project holds.
@@ -167,6 +171,7 @@ impl Pauses {
                 why,
                 since: u32::try_from(now).unwrap_or(0),
                 held: chats.clone(),
+                raised: false,
             },
         );
         Some(chats)
@@ -248,12 +253,25 @@ impl Pauses {
         let Some(paused) = inner.paused.get(&chat).cloned() else {
             return Err("This chat is no longer paused.".to_owned());
         };
+        let answers = !paused.raised;
         let then = match (paused.why, option) {
             (Why::Budget(reached), CONTINUE) => {
                 inner.continued.insert(chat, reached);
                 Then::GoOn
             }
             (Why::Budget(reached), STOP) => Then::StopAt(reached),
+            // Answered, and still held: it goes on once a look finds it within the limit the
+            // person raises ([`let_go_of_budgets`]).
+            (Why::Budget(_), RAISE) => {
+                if let Some(paused) = inner.paused.get_mut(&chat) {
+                    paused.raised = true;
+                }
+                return Ok(Answered {
+                    held: Vec::new(),
+                    then: Then::Raise,
+                    answers,
+                });
+            }
             (Why::Looping(looping::Why::Blocked { .. }), STOP_TRYING) => {
                 inner.loops.fine(chat);
                 Then::TellToStopTrying
@@ -276,6 +294,7 @@ impl Pauses {
         Ok(Answered {
             held: paused.held,
             then,
+            answers,
         })
     }
 }
@@ -286,6 +305,9 @@ pub struct Answered {
     /// The chats it held still, which go on.
     pub held: Vec<u32>,
     pub then: Then,
+    /// Whether this press is the ask's answer, its first (Q262): a Raise the budget answered
+    /// it already, and a later press writes none.
+    pub answers: bool,
 }
 
 /// What follows a pause's end.
@@ -293,6 +315,9 @@ pub struct Answered {
 pub enum Then {
     /// Nothing: it goes on.
     GoOn,
+    /// Nothing yet: the person raises the budget in Settings, and it stays held until a look
+    /// finds it within the new limit ([`let_go_of_budgets`]).
+    Raise,
     /// It goes on, told in one line to stop trying what it was blocked on (R-217).
     TellToStopTrying,
     /// It is stopped as the budget's limit stops it: asked for its report, then ended.
@@ -437,13 +462,36 @@ fn hold(held: &Held, chats: &[u32], still: bool) {
     held.chats().asks_may_have_moved();
 }
 
+/// The group of ask a pause for `why` is (R-229).
+fn group_of(why: Why) -> AskGroup {
+    match why {
+        Why::Budget(_) => AskGroup::Budget,
+        Why::Looping(_) => AskGroup::LoopPause,
+    }
+}
+
+/// **A loop pause as the event log writes it** (R-232): the rule, and at how many times.
+fn loop_pause_of(why: looping::Why) -> LoopPause {
+    let (rule, times) = match why {
+        looping::Why::Failing { times } => (LoopRule::Failing, times),
+        looping::Why::Refused { times } => (LoopRule::Refused, times),
+        looping::Why::Blocked { times } => (LoopRule::Blocked, times),
+    };
+    LoopPause { rule, times }
+}
+
 /// **Pauses chat `chat` for `why`, at `now`**, and asks the person: it and its tasks at work
-/// below it are held still. Answers whether it was paused ([`Pauses::pause`]).
+/// below it are held still. Answers whether it was paused ([`Pauses::pause`]). A pause for a
+/// loop is written as one (R-232), and its ask as raised (R-229), for the chat's Chat log.
 pub(crate) fn pause(held: &Held, chat: u32, why: Why, now: i64) -> bool {
     let below = crate::handoff::at_work_below(held, chat);
     let Some(chats) = held.pauses().pause(chat, why, now, below) else {
         return false;
     };
+    if let Why::Looping(found) = why {
+        crate::chatlog::record(held.hooks(), chat, Stop::LoopPause(loop_pause_of(found)));
+    }
+    crate::chatlog::raised(held.hooks(), chat, group_of(why));
     hold(held, &chats, true);
     true
 }
@@ -517,13 +565,26 @@ pub(crate) fn called(held: &Held, call: &purlis_core::hookwire::ToolCall) {
 /// fine, continue and Let it keep trying let it go on; Tell it to stop trying lets it go on, and
 /// types [`STOP_TRYING_LINE`] at once where it waits, at its turn's end where it is mid-turn or
 /// shows a prompt, and never where it takes no keys ([`telling`]); Stop and Stop chat let it go
-/// on only to stop it, as the budget's limit or the window's Stop stops it. Raise the budget is
-/// the window's own and never comes here.
+/// on only to stop it, as the budget's limit or the window's Stop stops it. Raise the budget
+/// answers it and leaves it held, as the window opens Settings where the limit is (Q261).
 pub(crate) fn answer(held: &Arc<Held>, chat: u32, option: &str) -> Result<(), String> {
+    let group = held
+        .pauses()
+        .now()
+        .into_iter()
+        .find(|(paused, _)| *paused == chat)
+        .map(|(_, paused)| group_of(paused.why));
     let answered = held.pauses().answer(chat, option)?;
+    // R-229: the person's answer, from the window (`answer_pause` is the window's alone).
+    if let Some(ask) = group
+        && answered.answers
+    {
+        let allowed = matches!(answered.then, Then::GoOn | Then::Raise);
+        crate::chatlog::answered_in_the_window(held.hooks(), chat, ask, allowed);
+    }
     hold(held, &answered.held, false);
     match answered.then {
-        Then::GoOn => Ok(()),
+        Then::GoOn | Then::Raise => Ok(()),
         Then::TellToStopTrying => {
             tell_to_stop_trying(held, chat);
             Ok(())
@@ -536,9 +597,10 @@ pub(crate) fn answer(held: &Arc<Held>, chat: u32, option: &str) -> Result<(), St
     }
 }
 
-/// **Answers chat `session`'s pause with `option`** (#6015): Continue, It's fine, continue, or
-/// Stop, as its ask in Asks offers them; for a block loop (T1-36), Tell it to stop trying, which
-/// types purlis's one line when the chat next waits, Let it keep trying, or Stop chat.
+/// **Answers chat `session`'s pause with `option`** (#6015): Continue, Raise the budget, It's
+/// fine, continue, or Stop, as its ask in Asks offers them; for a block loop (T1-36), Tell it to
+/// stop trying, which types purlis's one line when the chat next waits, Let it keep trying, or
+/// Stop chat.
 // Its plane is a `PlaneId` the registry vouches for. Not a doc comment, because the generated
 // bindings carry those. **The window's alone, over Tauri's IPC**
 // (`purlis_session_protocol::ui::WINDOW_ONLY`): no link serves it and no hook line reaches it.
