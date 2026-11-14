@@ -11386,6 +11386,11 @@ export type PoolSetupTried = {
 	 *  step's own line stands: no App of Agent identity's, no repo, or a step not done.
 	 */
 	identity: PoolSetupCheck | null,
+	/**
+	 *  **The link's round trip** (#6272, ADR 0123 §6), measured once a chat started on a pool on
+	 *  another machine: `about` is `link`. None for a pool on this machine.
+	 */
+	link: PoolSetupCheck | null,
 	/**  The workspace its chat started in, where it got that far: where Open a chat opens. */
 	workspace: string | null,
 };

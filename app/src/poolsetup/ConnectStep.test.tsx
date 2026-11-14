@@ -330,6 +330,10 @@ describe("ConnectStep", () => {
       "ok",
       "missing",
       "todo",
+      "todo",
+      "todo",
+      "todo",
+      "todo",
     ]);
     expect(verdictsOf(null, true).every((one) => one === "ok")).toBe(true);
     expect(verdictsOf("no-such-name", false)[0]).toBe("missing");
@@ -344,7 +348,76 @@ describe("ConnectStep", () => {
       "missing",
       "todo",
       "todo",
+      "todo",
+      "todo",
+      "todo",
+      "todo",
     ]);
+  });
+
+  it("asks the engine last, in the core's order, over SSH and over TLS alike", () => {
+    const order = ["unconfined", "unsupported-architecture", "image-unreachable", "disk-full"];
+    order.forEach((cause, at) => {
+      expect(verdictsOf(cause, false).indexOf("missing")).toBe(7 + at);
+      expect(verdictsOf(cause, false, "tls").indexOf("missing")).toBe(6 + at);
+    });
+    expect(verdictsOf("pool-engine-changed", false).indexOf("missing")).toBe(6);
+  });
+
+  it("shows a finding's commands under See what this does, beside its one way on", async () => {
+    core();
+    draw(
+      step({
+        state: "attention",
+        cause: "disk-full",
+        findings: ["Docker's disk on build-box is full, so purlis makes no runner there."],
+        next: {
+          id: "check-again",
+          label: "Check again",
+          does: "Contacts the machine again. It changes nothing.",
+          command: null,
+          url: null,
+        },
+        see: {
+          note: "The first shows what takes Docker's disk on build-box.",
+          text: "docker -H ssh://sam@build-box system df\ndocker -H ssh://sam@build-box system prune",
+        },
+      }),
+    );
+    expect(screen.getByText("Docker's disk there is full")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "See what this does" }));
+    expect(screen.getByText(/system prune/)).toBeTruthy();
+  });
+
+  it("shows the words for the machine's admin to copy, and asks nothing of the core", async () => {
+    const calls = core();
+    draw(
+      step({
+        state: "attention",
+        cause: "not-allowed",
+        findings: ["sam on build-box isn't allowed to use Docker."],
+        next: {
+          id: "check-again",
+          label: "Check again",
+          does: "Contacts the machine again. It changes nothing.",
+          command: null,
+          url: null,
+        },
+        also: {
+          id: "send-to-admin",
+          label: "Send to your admin",
+          does: "Shows the words to send the machine's admin.",
+          command: null,
+          url: null,
+        },
+        admin: "Hello. Route: ssh://sam@build-box",
+      }),
+    );
+    expect(screen.queryByText(/Route: ssh:\/\/sam@build-box/)).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Send to your admin" }));
+    expect(screen.getByText(/Route: ssh:\/\/sam@build-box/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Copy/ })).toBeTruthy();
+    expect(calls.some((call) => call.cmd === "pool_setup_ask_admin")).toBe(false);
   });
 
   it("spells a host as Docker's ssh:// route", () => {
@@ -469,6 +542,10 @@ describe("ConnectStep", () => {
       "ok",
       "ok",
       "missing",
+      "todo",
+      "todo",
+      "todo",
+      "todo",
       "todo",
       "todo",
     ]);

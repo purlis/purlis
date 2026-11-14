@@ -209,3 +209,35 @@ export const WorksExceptForThis: Story = {
     await expectFocusInSight();
   },
 };
+
+/** A pool on another machine (#6272): once its chat started, the link's round trip, measured. */
+export const LinkRoundTrip: Story = {
+  // The step as the core reads it again once the try kept its chat's start.
+  args: {
+    step: {
+      ...READY,
+      checks: [check("ok", "A chat started on dev-box"), ...READY.checks.slice(1)],
+    },
+  },
+  beforeEach: faked(() => ({
+    failed: null,
+    cancelled: false,
+    workspace: "web",
+    identity: null,
+    link: {
+      about: "link",
+      verdict: "ok",
+      title: "A round trip to dev-box takes 48 ms.",
+      more: null,
+    },
+  })),
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Start a test chat" }));
+    await expect(await canvas.findByText("A round trip to dev-box takes 48 ms.")).toBeVisible();
+    const start = canvas.getByRole("button", { name: "Start a test chat" });
+    start.focus();
+    await expect(start).toHaveFocus();
+    await expectFocusInSight();
+  },
+};

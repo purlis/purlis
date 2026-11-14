@@ -101,6 +101,14 @@ pub fn opening(setup: &Setup, step: StepId, error: Option<&str>) -> Result<Strin
     let kind = match setup.kind {
         super::Kind::Docker => "on this machine's Docker",
         super::Kind::Cluster => "on a team's Kubernetes cluster",
+        super::Kind::RemoteDocker
+            if shown
+                .machine
+                .as_ref()
+                .is_some_and(|machine| machine.over == "tls") =>
+        {
+            "on Docker on another machine, over Docker's API over TLS"
+        }
         super::Kind::RemoteDocker => "on Docker on another machine, over SSH",
     };
     let mut quoted: Vec<String> = Vec::new();
@@ -138,6 +146,14 @@ pub fn opening(setup: &Setup, step: StepId, error: Option<&str>) -> Result<Strin
             }
         }),
     );
+    // The machine of a pool on another machine (#6272): its route, host and fingerprints, never
+    // a key or a value.
+    if let Some(machine) = &shown.machine {
+        quote(
+            "The machine",
+            &mut super::connecting::machine_lines(machine).into_iter(),
+        );
+    }
     quote(
         "The error it showed",
         &mut error.map(str::to_owned).into_iter(),

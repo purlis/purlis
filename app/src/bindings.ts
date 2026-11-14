@@ -4290,8 +4290,10 @@ export const commands = {
 	/**  **Each step's state, read now**: the pool this setup made, else a new one's. */
 	poolSetup: (plane: PlaneId) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup", { plane })),
 	/**
-	 *  **Check again** (#6266): [`pool_setup`], with every pool on another machine whose forward
-	 *  has been failing tried again and looked at again now, not after its wait.
+	 *  **Check again** (#6266, #6272): [`pool_setup`], with every pool on another machine whose
+	 *  forward has been failing tried again and looked at again now, not after its wait, and, for a
+	 *  pool on another machine, every check of doctor's run on it (ADR 0123 §7), as `purlis pool
+	 *  doctor` runs them.
 	 */
 	poolSetupCheckAgain: (plane: PlaneId) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup_check_again", { plane })),
 	/**  **Keeps that the person chose Docker on Where.** Nothing else changes. */
@@ -14662,6 +14664,11 @@ export type PoolSetupTried = {
 	 *  step's own line stands: no App of Agent identity's, no repo, or a step not done.
 	 */
 	identity: PoolSetupCheck | null,
+	/**
+	 *  **The link's round trip** (#6272, ADR 0123 §6), measured once a chat started on a pool on
+	 *  another machine: `about` is `link`. None for a pool on this machine.
+	 */
+	link: PoolSetupCheck | null,
 	/**  The workspace its chat started in, where it got that far: where Open a chat opens. */
 	workspace: string | null,
 };
