@@ -14,6 +14,11 @@
 //! chat that way itself, and a profile's command or a switch in the pane is the person's. The
 //! app keeps what a chat's harness reported as a [`Mark`], which only ever goes one way.
 //!
+//! **Dispatch reads the attendance fact** (R-110, #6410): [`attendance_of`] the chat's
+//! [`crate::attendance::Fact`] ([`fact_of`], so a task is a chat nobody is at), lowered by
+//! that [`Mark`] until the fact's holder hears the reports itself (T1-18, #6409). Every reader
+//! of how the asking chat runs takes it from there.
+//!
 //! # The one question, for an unattended chat
 //!
 //! [`covers`] is [`crate::dispatchgrant::covers`] with two differences:
@@ -57,6 +62,7 @@
 //! level rides the task's record in the app, never the [`crate::start::Start`], and is never a
 //! bypass.
 
+use crate::attendance::{Begun, Fact};
 use crate::dispatchgrant::{self, Covers, InForce};
 use crate::sandbox::policy::Locks;
 use crate::start::Start;
@@ -93,6 +99,48 @@ impl Mark {
         } else {
             Attendance::Attended
         }
+    }
+}
+
+/// **The attendance fact a dispatch reads of the chat that asks** (R-110, #6410), from the
+/// app's record of it, `chat`: how it began, its harness, and the command it was started with,
+/// its own words and `declared`, its profile's command as this machine declares it. A task
+/// another chat dispatched began [`Begun::Task`], so nobody is at it (R-106); any other chat
+/// the record names began [`Begun::Person`].
+///
+/// **Read from the record until the fact is held** (Q271): the holder T1-18 builds (#6409)
+/// starts each chat with [`Fact::at_start`], carries it across a resume ([`Fact::resumed`]) and
+/// hears every report, and dispatch then reads the fact it holds in place of this one. Until
+/// then the reports reach dispatch only as the [`Mark`] [`attendance_of`] lowers this by.
+pub fn fact_of(chat: &crate::reopen::Chat, declared: Option<&[String]>) -> Fact {
+    let begun = match &chat.from {
+        Some(from) if from.mode == crate::reopen::Mode::Task => Begun::Task,
+        _ => Begun::Person,
+    };
+    // The profile's words first, so the chat's own last mode is the one set.
+    let command: Vec<String> = declared
+        .unwrap_or_default()
+        .iter()
+        .cloned()
+        .chain(std::iter::once(chat.program.clone()))
+        .chain(chat.args.iter().cloned())
+        .collect();
+    Fact::at_start(
+        begun,
+        crate::harness::Harness::of_command(&chat.program),
+        &command,
+    )
+}
+
+/// **Whether a person is at the chat that asks, as every dispatch reader takes it** (R-110,
+/// #6410): the handoff path, the dispatch grants, the dispatch-away path and the window's
+/// `chat_attended`. Its attendance `fact`, lowered by `mark`, what its harness's reports said,
+/// until the fact's holder hears them itself (T1-18, #6409). Never more attended than either:
+/// a chat either says nobody is at is unattended.
+pub fn attendance_of(fact: Fact, mark: Mark) -> Attendance {
+    match (fact.attendance(), mark.attendance()) {
+        (Attendance::Attended, Attendance::Attended) => Attendance::Attended,
+        _ => Attendance::Unattended,
     }
 }
 
