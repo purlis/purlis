@@ -433,25 +433,8 @@ fn briefing_ask<'a>(hook: &'a Hook) -> purlis_core::briefing::Ask<'a> {
         payload: hook.payload,
         env: &env,
         now: hook.now,
-        attendance: attendance_here(hook),
+        attendance: attendance(hook),
     }
-}
-
-/// **The attendance fact, as far as the hook can read it alone** (R-111, #6411). The fact is
-/// held per chat in the app, and handing it to this hook is T1-18's (#6409): until then the hook
-/// reads the one part of it its own payload carries, the bypass bit that lowers the fact
-/// ([`purlis_core::attendance::Fact::heard`], Q271), through the reader of today
-/// ([`purlis_core::dispatchunattended::Mark`]). So the briefing is never told more attended than
-/// it was. What only the app sees, how a chat began and a mode purlis did not set, reaches it
-/// with #6409.
-fn attendance_here(hook: &Hook) -> purlis_core::dispatchunattended::Attendance {
-    let mut mark = purlis_core::dispatchunattended::Mark::default();
-    mark.heard(
-        hook.payload
-            .get("permission_mode")
-            .and_then(serde_json::Value::as_str),
-    );
-    mark.attendance()
 }
 
 /// **What others say to a chat at its start, quoted**: each extension's section, the reports
@@ -555,22 +538,26 @@ pub fn sessionstart_skills(payload: &str, now: Option<&str>) {
     });
 }
 
-/// **This chat's attendance, as the commit gate reads it** (R-112, T1-21). The gate keys on the
-/// chat's attendance fact ([`purlis_core::attendance::Fact`]); the fact's holder, which keeps it
-/// per chat in the app, is T1-18's (#6409) and does not yet reach a hook's process. Until it
-/// does, this hands the gate the most this process can know: unattended where this report says
-/// the chat's prompts are off, read one way only as the app's mark is
-/// ([`purlis_core::dispatchunattended::Mark`]), so nothing in a payload can make a chat read as
-/// more attended than it did before. Reading the held fact here is #6409's, and removing the
-/// mark is T1-22's (#6413).
+/// **This chat's attendance, as the briefing and the commit gate read it** (R-111, R-112;
+/// T1-22, #6413): the fact the app holds, asked as A4 asks it
+/// ([`crate::guard::attendance_of_this_chat`]) and read as A4 reads it
+/// ([`purlis_core::attendance::of_a_line`]). In a chat the app started, attended only where the
+/// app says so, so no app, an app older than the ask and a refusal all read as unattended; on a
+/// harness whose mode purlis can check, the line's own bypass bit lowers it first (Q276). In a
+/// harness the app did not start, the line's own bit is all there is. Nothing in a payload
+/// raises it.
 fn attendance(hook: &Hook) -> purlis_core::dispatchunattended::Attendance {
-    let mut mark = purlis_core::dispatchunattended::Mark::default();
-    mark.heard(
-        hook.payload
-            .get("permission_mode")
-            .and_then(serde_json::Value::as_str),
+    use purlis_core::dispatchunattended::Attendance;
+    let permission_mode = hook
+        .payload
+        .get("permission_mode")
+        .and_then(serde_json::Value::as_str);
+    let asked = || crate::guard::attendance_of_this_chat(permission_mode);
+    let held = crate::session::chat_number().map(|_| &asked as &dyn Fn() -> Attendance);
+    let harness = purlis_core::harness::Harness::of_chat(
+        purlis_core::hookwire::chat_harness(hook.env).as_deref(),
     );
-    mark.attendance()
+    purlis_core::attendance::of_a_line(held, harness, permission_mode)
 }
 
 /// `userpromptsubmit`'s own work, handed to the turn that is starting as one

@@ -20,7 +20,7 @@
 //! **The app's own record of what the asking chat's harness reported** in its hook payloads'
 //! `permission_mode` ([`Reported`], kept as [`Heard`]), never a line the chat sends: only the
 //! chat's own harness's, not a sub-agent's, about the conversation the board holds for it
-//! ([`of_its_own_harness`]). Unlike [`crate::dispatchunattended::Mark`] this goes both ways:
+//! ([`of_its_own_harness`]). Unlike [`crate::attendance::Fact`] this goes both ways:
 //! the person may switch a chat out of auto, and its next task then asks.
 //!
 //! **And only from its armed hook** (#3822): a report's mode is believed where the line carries
@@ -77,9 +77,12 @@ impl Reported {
     /// as manual), `plan`, `acceptEdits`, `auto`, `dontAsk` and `bypassPermissions`. Only
     /// the exact words count; any other reads as asking.
     pub fn of_claude_code(permission_mode: Option<&str>) -> Option<Self> {
-        Some(match permission_mode? {
-            CLAUDE_CODE_AUTO => Self::Classifier,
-            crate::floorguard::UNATTENDED_MODE => Self::PromptsOff,
+        use crate::attendance::ClaudeCodeMode;
+        // The attendance fact's reading of the word (T1-22, #6413), so no copy of the bypass is
+        // kept here: `auto` is [`CLAUDE_CODE_AUTO`].
+        Some(match ClaudeCodeMode::of(permission_mode?) {
+            ClaudeCodeMode::Auto => Self::Classifier,
+            ClaudeCodeMode::BypassPermissions => Self::PromptsOff,
             _ => Self::Asks,
         })
     }

@@ -3664,13 +3664,9 @@ impl Planes {
                     crate::smartclose::reported(&held, report);
                     // The first report after a start timed at a launch: the chat is live (#4988).
                     crate::starttiming::heard(report.chat);
-                    // Whether its harness runs with its permission prompts off, which a
-                    // dispatch from it is held to (#1446). Only a report the board took: a
-                    // harness nested in the chat never marks the chat.
-                    held.unattended()
-                        .heard(report.chat, report.detail.unattended);
-                    // And its attendance fact, which A4 reads (T1-18): the same report, from the
-                    // live listener alone, never a line a spool drain hands the event log.
+                    // Its attendance fact, which A4 and every dispatch from it read (T1-18,
+                    // T1-22, #1446): from the live listener alone, never a line a spool drain
+                    // hands the event log.
                     held.chats().heard_attendance(report);
                     // And the mode its own harness runs in, which a task it dispatches starts
                     // from (#3787): the same report, its own harness's alone, and never a line

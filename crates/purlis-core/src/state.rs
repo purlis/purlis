@@ -127,9 +127,9 @@ pub struct Detail {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub smart_close: bool,
     /// The harness said it runs with its permission prompts off
-    /// ([`crate::floorguard::unattended`] of the payload's `permission_mode`): one bit, which
-    /// the app keeps as the chat's [`crate::dispatchunattended::Mark`] (#1446). It can only
-    /// ever mark a chat unattended, never clear the mark, so a line that leaves it out, as an
+    /// ([`crate::attendance::says_prompts_off`] of the payload's `permission_mode`): one bit,
+    /// which the chat's attendance fact hears ([`crate::attendance::Fact::heard`], #1446, T1-22).
+    /// It can only ever lower the fact, never raise it, so a line that leaves it out, as an
     /// older hook's does, takes nothing away.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unattended: bool,

@@ -1,14 +1,11 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **Whether a chat is attended: one fact purlis sets** (T1-17, #6408; Q142, Q152, Q105). The
-//! expand step: the fact stands beside the readers of today, which keep reading what they read
-//! ([`crate::dispatchunattended::Mark`], [`crate::floorguard::unattended`]), until each moves to
-//! it. A4 has (#6409). Dispatch (#6410), the briefing (#6411) and the commit gate (#6412) read
-//! it through a seam each until T1-22 (#6413) hands them the fact A4 holds: dispatch from the
-//! app's record of the chat ([`crate::dispatchunattended::fact_of`]), the briefing from
-//! [`crate::briefing::Ask::attendance`], the commit gate as an argument
-//! ([`crate::commitgate::nudge`]), each lowered by the old one-way mark heard from the report.
+//! **Whether a chat is attended: one fact purlis sets** (T1-17, #6408; Q142, Q152, Q105). Its
+//! readers each read it (T1-18 to T1-22, #6409 to #6413): A4 and dispatch from the fact the app
+//! holds, the briefing and the commit gate from the same fact, asked of the app as A4 asks it
+//! ([`of_a_line`], [`of_held`]). **This module alone compares a chat's `permission_mode` with the
+//! bypass** ([`PROMPTS_OFF`], [`says_prompts_off`]): no reader keeps a copy of its own.
 //!
 //! A chat is **unattended** if purlis started it unattended, or if it reports a mode purlis
 //! didn't set:
@@ -43,9 +40,10 @@
 //! `docs/plane-format.md`), so a relaunch after the app's restart carries it forward.
 //!
 //! **Who reads it**: A4, the release floor ([`crate::toolgate`]), which the hook asks of a line
-//! it would refuse unattended, with what that line's own report says ([`Fact::hearing`]).
-//! Dispatch (#6410), the briefing (#6411) and the commit gate (#6412) read it through their seams
-//! until T1-22 (#6413).
+//! it would refuse unattended, with what that line's own report says ([`Fact::hearing`]);
+//! dispatch, from the fact the app holds ([`of_held`]); and the briefing and the commit gate,
+//! whose hooks ask the app as A4's does ([`of_a_line`]). **Each fails closed**: a chat the app
+//! started whose app does not answer, or for which it holds no fact, is unattended.
 
 use crate::dispatchunattended::Attendance;
 use crate::harness::Harness;
@@ -101,7 +99,7 @@ impl ClaudeCodeMode {
         ("acceptEdits", Self::AcceptEdits),
         ("plan", Self::Plan),
         ("auto", Self::Auto),
-        ("bypassPermissions", Self::BypassPermissions),
+        (PROMPTS_OFF, Self::BypassPermissions),
     ];
 
     /// The mode `permission_mode` names: only the exact measured strings count.
@@ -147,6 +145,54 @@ impl ClaudeCodeMode {
 
 /// The flag Claude Code starts a chat in a permission mode by.
 const PERMISSION_MODE_FLAG: &str = "--permission-mode";
+
+/// **The `permission_mode` a harness names its prompts-off mode by**, `bypassPermissions`: the
+/// one place purlis spells it to read a chat by it (T1-22, #6413). Claude Code names it for a chat
+/// in that mode; Codex names it for every chat (R-289).
+pub const PROMPTS_OFF: &str = "bypassPermissions";
+
+/// **Whether a hook line's `permission_mode` is the bypass**: one bit of one line. It is never a
+/// fact on its own: it lowers the fact ([`Fact::heard`], [`Fact::hearing`]), and A4's answer for
+/// its own line where the harness's mode is one purlis can check ([`of_a_line`]), and it raises
+/// nothing.
+pub fn says_prompts_off(permission_mode: Option<&str>) -> bool {
+    permission_mode == Some(PROMPTS_OFF)
+}
+
+/// **The attendance a hook line reads of its chat** (R-109, R-111, R-112; T1-22, #6413): what
+/// A4, the briefing and the commit gate each take the chat for.
+///
+/// - **A chat the app started**: `held`, the hook's ask of the app for the fact it holds, which
+///   the asker answers attended only where the app says so. On a harness whose mode purlis can
+///   check ([`Harness::reports_a_mode_purlis_can_check`], Claude Code's), the line's own bypass
+///   bit lowers the answer for that line first, and spares the ask (Q275, Q276). Elsewhere the
+///   bit is no fact, since Codex names the bypass on every line (R-289), and the held fact alone
+///   answers.
+/// - **A harness the app did not start** (`held` is `None`) has no fact: the line's own bit is
+///   all there is, as the recorded charter answered.
+///
+/// It can only lower what the app holds: no line raises it.
+pub fn of_a_line(
+    held: Option<&dyn Fn() -> Attendance>,
+    harness: Option<Harness>,
+    permission_mode: Option<&str>,
+) -> Attendance {
+    let off = says_prompts_off(permission_mode);
+    match held {
+        None if off => Attendance::Unattended,
+        None => Attendance::Attended,
+        Some(_) if off && harness.is_some_and(Harness::reports_a_mode_purlis_can_check) => {
+            Attendance::Unattended
+        }
+        Some(ask) => ask(),
+    }
+}
+
+/// **The attendance of a chat whose fact the app holds as `held`** (R-110, T1-22, #6413): what
+/// dispatch reads. A chat it holds no fact for is unattended, never attended by default.
+pub fn of_held(held: Option<Fact>) -> Attendance {
+    held.map_or(Attendance::Unattended, Fact::attendance)
+}
 
 /// **Whether a chat is attended**, for the chat's life: set at its start, moved only toward
 /// unattended.

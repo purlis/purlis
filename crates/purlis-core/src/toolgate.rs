@@ -356,34 +356,35 @@ pub fn said(reason: &str) -> String {
 ///   whatever mode its harness reports. The app is asked only of a line the floor would refuse
 ///   unattended.
 /// - **A line's own bypass bit lowers the answer for that line** (Q275, Q276), only on a harness
-///   whose mode purlis can check ([`Harness::reports_a_mode_purlis_can_check`], Claude Code's;
-///   [`floorguard::unattended`]). Codex reports `bypassPermissions` on every line (R-289), so
-///   there the bit is no fact, and A4 reads the held fact alone: an attended Codex chat
-///   publishes, and one nobody is at is refused because its fact says so. It only ever lowers.
+///   whose mode purlis can check ([`Harness::reports_a_mode_purlis_can_check`], Claude Code's).
+///   Codex reports `bypassPermissions` on every line (R-289), so there the bit is no fact, and A4
+///   reads the held fact alone: an attended Codex chat publishes, and one nobody is at is refused
+///   because its fact says so. It only ever lowers ([`crate::attendance::of_a_line`]).
 /// - **The merge hold takes precedence** (R-145, Q202): in such a chat, a line the hold reads
 ///   as a merge ([`crate::mergehold::held`]) is not A4's, attended or not. The hook refuses it
 ///   all the same and asks the person to merge the request, or refuses it as a block where it
 ///   cannot name the request; it never runs.
 /// - **A harness the app did not start** has no fact, and no hold: its own `permission_mode`
-///   is all there is ([`floorguard::unattended`]), as the recorded charter answered.
+///   is all there is ([`crate::attendance::of_a_line`]), as the recorded charter answered.
 fn release_floor(
     cmd: &str,
     harness: Option<&str>,
     permission_mode: Option<&str>,
     launched: Launched<'_>,
 ) -> Option<String> {
+    let harness = Harness::of_chat(harness);
     let Some(attending) = launched.attendance else {
-        return floorguard::release_floor_reason(cmd, floorguard::unattended(permission_mode));
+        let unattended = crate::attendance::of_a_line(None, harness, permission_mode);
+        return floorguard::release_floor_reason(cmd, unattended == Attendance::Unattended);
     };
     let refused = floorguard::release_floor_reason(cmd, true)?;
     if crate::mergehold::held(cmd).is_some() {
         return None;
     }
-    // The line's own bit first, where its harness's mode is one purlis can check: it alone
-    // lowers, and spares the app the ask.
-    let checked = Harness::of_chat(harness).is_some_and(Harness::reports_a_mode_purlis_can_check);
-    ((checked && floorguard::unattended(permission_mode))
-        || (attending.0)() == Attendance::Unattended)
+    // Asked of the app only past the line's own bit, where its harness's mode is one purlis can
+    // check: that bit alone lowers, and spares the app the ask.
+    (crate::attendance::of_a_line(Some(attending.0), harness, permission_mode)
+        == Attendance::Unattended)
         .then_some(refused)
 }
 
@@ -1200,7 +1201,7 @@ mod tests {
             caller: attended(),
         };
         assert_eq!(verdict(&c, Some(&plane)), None, "attended is untouched");
-        c.caller.permission_mode = Some(floorguard::UNATTENDED_MODE);
+        c.caller.permission_mode = Some(crate::attendance::PROMPTS_OFF);
         assert_eq!(
             verdict(&c, Some(&plane)).map(|v| v.reason),
             Some(REASON_RELEASE_FLOOR.to_string())

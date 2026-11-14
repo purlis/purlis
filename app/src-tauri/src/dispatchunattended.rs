@@ -11,7 +11,7 @@
 //! as the caller read it once (#1543), in place of
 //! [`crate::dispatchgrants::request_dispatch_grant`], which it hands an attended chat's ask to
 //! unchanged. [`request_dispatch`] is the same for a chat read from its session, for tests. `attendance` is the chat's attendance fact
-//! as the app reads it (R-110, #6410; [`purlis_core::dispatchunattended::attendance_of`]),
+//! as the app holds it (R-110, #6410, T1-22; [`purlis_core::attendance::of_held`]),
 //! never a word of the request.
 //!
 //! # What an unattended chat cannot do

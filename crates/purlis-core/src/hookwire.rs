@@ -245,7 +245,9 @@ impl Report {
                 smart_close: event == Event::UserPromptSubmit
                     && field("prompt")
                         .is_some_and(|prompt| crate::state::smart_close_typed(&prompt)),
-                unattended: crate::floorguard::unattended(field("permission_mode").as_deref()),
+                unattended: crate::attendance::says_prompts_off(
+                    field("permission_mode").as_deref(),
+                ),
                 // The mode as the chat's own harness names it (#3787): read by that harness's
                 // adapter alone, so a harness whose word is not read says nothing.
                 mode: chat_harness(env)
@@ -1635,7 +1637,7 @@ pub enum Ask {
 pub struct AttendanceAsk {
     /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
     pub chat: u32,
-    /// The payload's `permission_mode` is the bypass ([`crate::floorguard::unattended`]): read by
+    /// The payload's `permission_mode` is the bypass ([`crate::attendance::says_prompts_off`]): read by
     /// the fact on Claude Code alone.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unattended: bool,
@@ -1655,7 +1657,7 @@ impl AttendanceAsk {
     ) -> Self {
         Self {
             chat,
-            unattended: crate::floorguard::unattended(permission_mode),
+            unattended: crate::attendance::says_prompts_off(permission_mode),
             claude_code_mode: chat_harness(env)
                 .as_deref()
                 .and_then(crate::harness::Harness::of_registry_or_kind)

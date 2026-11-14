@@ -7,17 +7,11 @@
 //!
 //! # What "unattended" is
 //!
-//! The harness's own word for it: a hook payload whose `permission_mode` is
-//! [`crate::floorguard::UNATTENDED_MODE`], which is what [`crate::floorguard::unattended`]
-//! reads for the release floor. (The handoff guard read it too, until a handoff became a
-//! dispatch and the app's own mark took its place, #1444.) purlis keeps no other mark: it starts no
-//! chat that way itself, and a profile's command or a switch in the pane is the person's. The
-//! app keeps what a chat's harness reported as a [`Mark`], which only ever goes one way.
-//!
-//! **Dispatch reads the attendance fact** (R-110, #6410): [`attendance_of`] the chat's
-//! [`crate::attendance::Fact`] ([`fact_of`], so a task is a chat nobody is at), lowered by
-//! that [`Mark`] until the fact's holder hears the reports itself (T1-18, #6409). Every reader
-//! of how the asking chat runs takes it from there.
+//! **The chat's attendance fact** ([`crate::attendance::Fact`], R-110, #6410, T1-22 #6413): set
+//! by how purlis started the chat, a task being a chat nobody is at (R-106), and lowered, never
+//! raised, by what its own harness's armed hook reported. The app holds it per chat, and every
+//! dispatch reader takes it from there ([`crate::attendance::of_held`]): a chat it holds no fact
+//! for is unattended. Nothing here reads a hook payload's `permission_mode`.
 //!
 //! # The one question, for an unattended chat
 //!
@@ -62,7 +56,7 @@
 //! level rides the task's record in the app, never the [`crate::start::Start`], and is never a
 //! bypass.
 
-use crate::attendance::{Begun, Fact};
+use crate::attendance::ClaudeCodeMode;
 use crate::dispatchgrant::{self, Covers, InForce};
 use crate::sandbox::policy::Locks;
 use crate::start::Start;
@@ -75,73 +69,6 @@ pub enum Attendance {
     Attended,
     /// Its harness's permission prompts are off: nobody answers.
     Unattended,
-}
-
-/// **Whether a chat's harness ever reported running with its prompts off**: the app's mark on
-/// one chat, for that chat's life.
-///
-/// It goes one way. Each hook report is the harness's, relayed by a process the chat's own
-/// commands run beside, so a later report that says otherwise is not evidence that anything
-/// changed: a chat that was once unattended stays so until it is started again.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Mark(bool);
-
-impl Mark {
-    /// Hears one hook report's `permission_mode`.
-    pub fn heard(&mut self, permission_mode: Option<&str>) {
-        self.0 |= crate::floorguard::unattended(permission_mode);
-    }
-
-    /// How the chat is taken to run.
-    pub fn attendance(self) -> Attendance {
-        if self.0 {
-            Attendance::Unattended
-        } else {
-            Attendance::Attended
-        }
-    }
-}
-
-/// **The attendance fact a dispatch reads of the chat that asks** (R-110, #6410), from the
-/// app's record of it, `chat`: how it began, its harness, and the command it was started with,
-/// its own words and `declared`, its profile's command as this machine declares it. A task
-/// another chat dispatched began [`Begun::Task`], so nobody is at it (R-106); any other chat
-/// the record names began [`Begun::Person`].
-///
-/// **Read from the record until the fact is held** (Q271): the holder T1-18 builds (#6409)
-/// starts each chat with [`Fact::at_start`], carries it across a resume ([`Fact::resumed`]) and
-/// hears every report, and dispatch then reads the fact it holds in place of this one. Until
-/// then the reports reach dispatch only as the [`Mark`] [`attendance_of`] lowers this by.
-pub fn fact_of(chat: &crate::reopen::Chat, declared: Option<&[String]>) -> Fact {
-    let begun = match &chat.from {
-        Some(from) if from.mode == crate::reopen::Mode::Task => Begun::Task,
-        _ => Begun::Person,
-    };
-    // The profile's words first, so the chat's own last mode is the one set.
-    let command: Vec<String> = declared
-        .unwrap_or_default()
-        .iter()
-        .cloned()
-        .chain(std::iter::once(chat.program.clone()))
-        .chain(chat.args.iter().cloned())
-        .collect();
-    Fact::at_start(
-        begun,
-        crate::harness::Harness::of_command(&chat.program),
-        &command,
-    )
-}
-
-/// **Whether a person is at the chat that asks, as every dispatch reader takes it** (R-110,
-/// #6410): the handoff path, the dispatch grants, the dispatch-away path and the window's
-/// `chat_attended`. Its attendance `fact`, lowered by `mark`, what its harness's reports said,
-/// until the fact's holder hears them itself (T1-18, #6409). Never more attended than either:
-/// a chat either says nobody is at is unattended.
-pub fn attendance_of(fact: Fact, mark: Mark) -> Attendance {
-    match (fact.attendance(), mark.attendance()) {
-        (Attendance::Attended, Attendance::Attended) => Attendance::Attended,
-        _ => Attendance::Unattended,
-    }
 }
 
 /// What [`covers`] answers an unattended chat.
@@ -319,17 +246,19 @@ const BYPASS_FLAGS: [&str; 4] = [
     "--full-auto",
 ];
 
-/// The flags that name how a harness asks, and the value of each that means "ask nobody":
-/// Claude Code's permission mode, and Codex's approval policy by both its spellings and as a
-/// configuration override.
-const MODE_FLAGS: [(&str, &str); 5] = [
-    ("--permission-mode", crate::floorguard::UNATTENDED_MODE),
+/// The flags that name how Codex asks, and the value of each that means "ask nobody": its
+/// approval policy by both its spellings and as a configuration override. Claude Code's
+/// permission mode is the attendance fact's to read ([`crate::attendance::ClaudeCodeMode`]).
+const MODE_FLAGS: [(&str, &str); 4] = [
     ("--ask-for-approval", "never"),
     ("-a", "never"),
     // Codex's approval policy again, set as a configuration override (#1509).
     ("--config", "approval_policy=never"),
     ("-c", "approval_policy=never"),
 ];
+
+/// The flag Claude Code starts a chat in a permission mode by.
+const CLAUDE_CODE_MODE_FLAG: &str = "--permission-mode";
 
 /// **The words of `command` that start a harness with its permission prompts off**, if any
 /// do, as they are shown to a person: the flag, with its value where the value is what
@@ -360,13 +289,17 @@ pub fn bypass_in(command: &[String]) -> Option<String> {
         let value = attached.or_else(next)?;
         // A value may be written quoted and spaced (`approval_policy = "never"`).
         let plain = value.replace(['"', '\'', ' '], "");
-        MODE_FLAGS
-            .iter()
-            .any(|(known, never)| flag == *known && plain == *never)
-            .then(|| match attached {
-                Some(_) => word.clone(),
-                None => format!("{flag} {value}"),
-            })
+        let off = if flag == CLAUDE_CODE_MODE_FLAG {
+            ClaudeCodeMode::of(&plain) == ClaudeCodeMode::BypassPermissions
+        } else {
+            MODE_FLAGS
+                .iter()
+                .any(|(known, never)| flag == *known && plain == *never)
+        };
+        off.then(|| match attached {
+            Some(_) => word.clone(),
+            None => format!("{flag} {value}"),
+        })
     })
 }
 
