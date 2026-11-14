@@ -71,6 +71,8 @@ const GROUP_OF = {
   // Trust these clones (T1-15): the project's unrecorded clones, trusted by one press.
   "trust-clones": "consent",
   confirmation: "consent",
+  // Pool setup goes on (#4496): the admin gave what the install couldn't; the person's press goes on.
+  "pool-setup": "consent",
   // What purlis refused the chat and raised as an ask (R-114).
   "merge-hold": "hold",
   looping: "loop_pause",

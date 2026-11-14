@@ -139,7 +139,7 @@ fn a_chat_holds_none_of_the_pools_powers() {
     let plane = tempfile::tempdir().unwrap();
     let machine = Machine {
         env: crate::secrets::Env::of(&[("XDG_CONFIG_HOME", &config.path().display().to_string())]),
-        home: Some(std::path::PathBuf::from("/home/op")),
+        home: Some(std::path::PathBuf::from("/nonexistent-home/op")),
         os: crate::sandbox::Os::Linux,
     };
     let denied = Denied::of(plane.path(), &machine);
