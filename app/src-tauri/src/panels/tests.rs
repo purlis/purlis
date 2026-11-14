@@ -1013,10 +1013,12 @@ fn a_session_record_is_read_for_its_tab_by_its_path_and_a_path_out_is_refused() 
     );
     std::fs::write(root.join("secret.md"), "x").expect("a file outside");
 
-    let view = session_record(&root, &shown)
+    let view = session_record(&root, &shown, &|_| Some(7))
         .expect("it reads")
         .expect("it is there");
     assert_eq!(view.place, "alpha");
+    // It names its chat by number only, so no chat open here is it.
+    assert_eq!(view.session, None);
     assert_eq!(view.row.title, "Ship it");
     assert!(
         view.body.starts_with("# Ship it\n"),
@@ -1028,13 +1030,69 @@ fn a_session_record_is_read_for_its_tab_by_its_path_and_a_path_out_is_refused() 
         "workspaces/alpha/workspace.md",
         "/etc/passwd",
     ] {
-        assert!(session_record(&root, path).is_err(), "a path out was read");
+        assert!(
+            session_record(&root, path, &|_| None).is_err(),
+            "a path out was read"
+        );
     }
     assert_eq!(
-        session_record(&root, "workspaces/alpha/sessions/20260101-000000-gone.md"),
+        session_record(
+            &root,
+            "workspaces/alpha/sessions/20260101-000000-gone.md",
+            &|_| None
+        ),
         Ok(None),
         "a record that has gone is gone, not a failure"
     );
+}
+
+#[test]
+fn a_session_record_names_its_chat_s_number_only_where_that_chat_is_open_here() {
+    const CHAT: &str = "01K6CHAT0000000000000000X7";
+    let (_plane, root) = plane_with_a_todo_and_two_personas();
+    let shown = sessionrecord::record(
+        &root,
+        &sessionrecord::New {
+            title: "Ship it",
+            body: "## Goal\n\ng\n\n## Done\n\nd\n\n## Decisions\n\nx\n\n## Open\n\no\n\n\
+                   ## How to resume\n\nr\n",
+            facts: &sessionrecord::Facts {
+                place: Place::Workspace("alpha".to_owned()),
+                at: chrono::NaiveDate::from_ymd_opt(2026, 11, 13)
+                    .and_then(|d| d.and_hms_opt(10, 0, 0))
+                    .expect("a time"),
+                chat: Some(sessionrecord::ChatFacts {
+                    number: 3,
+                    name: None,
+                    harness: Some("claude".to_owned()),
+                    profile: None,
+                    conversation: None,
+                    cwd: None,
+                    unsandboxed: false,
+                    identity: purlis_core::reopen::Identity {
+                        id: Some(CHAT.to_owned()),
+                        ..Default::default()
+                    },
+                    handed_from: purlis_core::sessionrecord::Handed::No,
+                }),
+                persona: Some("steward".to_owned()),
+                pieces: Vec::new(),
+            },
+        },
+    )
+    .expect("a record")
+    .shown;
+
+    // Open here as chat 7: what its Chat log opens by (R-226).
+    let open = session_record(&root, &shown, &|id| (id == CHAT).then_some(7))
+        .expect("it reads")
+        .expect("it is there");
+    assert_eq!(open.session, Some(7));
+    // Not open here: none.
+    let closed = session_record(&root, &shown, &|_| None)
+        .expect("it reads")
+        .expect("it is there");
+    assert_eq!(closed.session, None);
 }
 
 #[test]
