@@ -395,6 +395,41 @@ fn a_piece_pushes_its_own_branch_and_a_plain_push_after_an_update_goes_through()
     );
 }
 
+/// T1-41, Q277: a push says the commit it sent, which is the one the forge's branch is at now,
+/// never a `HEAD` read after it: a commit made in the folder after the push is not it, and a
+/// push that did not go says none. Kills: `push_sent` naming no commit, and naming the
+/// folder's `HEAD` as it stands when asked.
+#[test]
+fn a_push_says_the_commit_it_sent_and_a_refused_push_says_none() {
+    purlis_core::unsteered!();
+    let w = world();
+    let (code, cut) = add(&w, "p1", None);
+    assert_eq!(code, 0, "{cut}");
+    let piece = w.piece("p1");
+    commit_in(&piece, "mine.txt", "mine\n");
+
+    let mut lines = Vec::new();
+    let (code, _, sent) =
+        brokered(|| pieceupdate::push_sent(&w.at("p1"), &Reach::default(), &mut |l| lines.push(l)));
+    assert_eq!(code, 0, "{}", said(&lines));
+    assert_eq!(sent.as_deref(), Some(forge_has(&w, "p1").as_str()));
+
+    commit_in(&piece, "later.txt", "later\n");
+    assert_ne!(
+        sent.as_deref(),
+        Some(out(&piece, &["rev-parse", "HEAD"]).as_str()),
+        "the folder's head after the push is not what was sent"
+    );
+
+    // A folder that is not there pushes nothing, so nothing was sent.
+    let mut lines = Vec::new();
+    let (code, _, sent) = brokered(|| {
+        pieceupdate::push_sent(&w.at("nowhere"), &Reach::default(), &mut |l| lines.push(l))
+    });
+    assert_ne!(code, 0, "{}", said(&lines));
+    assert_eq!(sent, None);
+}
+
 #[test]
 fn a_push_the_app_makes_for_a_chat_is_not_signed_where_the_clone_signs_every_push() {
     purlis_core::unsteered!();

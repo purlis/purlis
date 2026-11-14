@@ -37,6 +37,7 @@ const facts = (shown: Partial<MergeShown> = {}): MergeShown => ({
   read_at: 1_763_000_000,
   ruleset: "none",
   look: "not-viewed",
+  approved_by: null,
   since_viewed: null,
   pushed_here: true,
   digest: "d-passed",
@@ -91,12 +92,7 @@ const confirming = async () => {
 describe("who looked at a held merge's head (T1-41)", () => {
   const cases: [string, LookShown, number | null, string][] = [
     ["viewed in purlis", "viewed", null, "You viewed these changes in purlis at this head."],
-    [
-      "approved by someone else",
-      "approved",
-      null,
-      "Approved at this head by a reviewer who isn't its author, an app or a bot.",
-    ],
+    ["approved by someone else, who is named", "approved", null, "Approved at this head by ana."],
     [
       "neither (the author's, an app's or a bot's approval, or one of an older head, reads so)",
       "not-viewed",
@@ -115,7 +111,9 @@ describe("who looked at a held merge's head (T1-41)", () => {
         <MergeHoldNotice
           plane={PLANE}
           session={SESSION}
-          asks={[hold({ look, since_viewed: since })]}
+          asks={[
+            hold({ look, approved_by: look === "approved" ? "ana" : null, since_viewed: since }),
+          ]}
         />,
       );
       expect(notice().textContent).toContain(said);
@@ -128,6 +126,23 @@ describe("who looked at a held merge's head (T1-41)", () => {
       await vi.waitFor(() => expect(sent("merge_held_request")).toHaveLength(1));
     },
   );
+
+  it("draws the approving login as text after purlis's own words, never as a control (Q277)", () => {
+    core();
+    const login = "[Merge](https://example.com) <b>ana</b>";
+    render(
+      <MergeHoldNotice
+        plane={PLANE}
+        session={SESSION}
+        asks={[hold({ look: "approved", approved_by: login })]}
+      />,
+    );
+    expect(notice().textContent).toContain(`Approved at this head by ${login}.`);
+    expect(within(notice()).queryByRole("link")).toBeNull();
+    expect(within(notice()).queryByText("ana", { selector: "b" })).toBeNull();
+    // The buttons are the row's own, none of them the login's.
+    expect(buttons().filter((one) => one?.includes("example.com"))).toEqual([]);
+  });
 
   it("says 1 commit, not 1 commits", () => {
     core();

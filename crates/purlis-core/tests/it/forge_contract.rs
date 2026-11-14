@@ -1885,7 +1885,13 @@ fn every_method_of_the_seam_has_a_case_on_both_forges() {
 
 /// The recordings of one forge's own scene beside a case's, each read by a test of its own:
 /// `<case>.<scene>.json`.
-const SCENES: [(&str, &str, &str); 33] = [
+const SCENES: [(&str, &str, &str); 39] = [
+    ("github", "reviews", "kinds"),
+    ("github", "reviews", "bad_commit"),
+    ("github", "reviews", "pages"),
+    ("github", "reviews", "too_many"),
+    ("github", "changes", "whole"),
+    ("github", "changes", "cut"),
     ("github", "ruleset_protects", "housekeeping"),
     ("github", "ruleset_protects", "classic"),
     ("github", "ruleset_protects", "slash"),
@@ -3769,6 +3775,166 @@ mod merge_when_ready_scenes {
                 "{kind}"
             );
             spent(&recorded);
+        }
+    }
+}
+
+/// A pull request's reviews and changes, as a merge ask reads them from GitHub with the app's
+/// own login (T1-41, Q277): each review's kind of account, state and commit, an answer only
+/// where the list was read whole, and the changes View changes shows, cut or whole. Each scene
+/// runs on the recorded and the native transport.
+mod reviews_and_changes_scenes {
+    use super::*;
+    use purlis_core::forge::pr::{Changes, Review, ReviewState, Reviewer};
+
+    const HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
+    const OLDER: &str = "89abcdef0123456789abcdef0123456789abcdef";
+    const HOWS: [How; 2] = [How::Recorded, How::Native];
+
+    /// GitHub's backend over the scene `<case>.<name>.json`, the caller to ask as, and the
+    /// check that every recorded exchange was asked for.
+    fn scene(case: &str, name: &str, how: How) -> (Box<dyn ForgeBackend>, Caller, Box<dyn Fn()>) {
+        let text = recording("github", &format!("{case}.{name}"));
+        match how {
+            How::Recorded => {
+                let recorded = Arc::new(Recorded::parse(&text).unwrap());
+                let check = recorded.clone();
+                (
+                    Forge::default_of(Kind::GitHub).backend_over(recorded),
+                    caller(),
+                    Box::new(move || check.spent()),
+                )
+            }
+            _ => {
+                let over = native::over("github", default_host("github"), &text);
+                (over.backend, over.caller, over.check)
+            }
+        }
+    }
+
+    fn pr() -> Pr {
+        Pr {
+            number: 12,
+            url: String::new(),
+        }
+    }
+
+    fn review(login: &str, by: Reviewer, state: ReviewState, at: &str) -> Review {
+        Review {
+            login: login.to_owned(),
+            by,
+            state,
+            commit: at.to_owned(),
+        }
+    }
+
+    /// A person is GitHub's `User` alone; a login ending in `[bot]` is an App's, and any other
+    /// kind (`Bot`, `Organization`) is a bot's. A pending review is a comment. Kills: an App or
+    /// a bot read as a person, and a state read as another.
+    #[test]
+    fn githubs_reviews_say_who_wrote_each_what_kind_of_account_and_of_which_commit() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("reviews", "kinds", how);
+            assert_eq!(
+                backend.reviews(&me, "acme/api", &pr()),
+                Ok(vec![
+                    review("ana", Reviewer::Person, ReviewState::Approved, HEAD),
+                    review("ci-app[bot]", Reviewer::App, ReviewState::Approved, HEAD),
+                    review("deploy-bot", Reviewer::Bot, ReviewState::Approved, HEAD),
+                    review("acme", Reviewer::Bot, ReviewState::Commented, OLDER),
+                    review("bea", Reviewer::Person, ReviewState::ChangesRequested, HEAD),
+                    review("cy", Reviewer::Person, ReviewState::Dismissed, HEAD),
+                    review("dee", Reviewer::Person, ReviewState::Commented, HEAD),
+                ])
+            );
+            check();
+        }
+    }
+
+    /// A review that names no commit purlis can read may be the one that takes an approval
+    /// back, so the list is no answer, never the rest of it. Kills: such a review skipped.
+    #[test]
+    fn a_review_whose_commit_is_not_one_fails_the_read_rather_than_being_skipped() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("reviews", "bad_commit", how);
+            let got = backend.reviews(&me, "acme/api", &pr());
+            assert!(got.is_err(), "{got:?}");
+            check();
+        }
+    }
+
+    /// A full page has another read after it. Kills: the first page taken as the whole list.
+    #[test]
+    fn a_full_page_of_reviews_is_followed_by_the_next() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("reviews", "pages", how);
+            let got = backend.reviews(&me, "acme/api", &pr()).expect("two pages");
+            assert_eq!(got.len(), 101);
+            assert_eq!(
+                got.last(),
+                Some(&review(
+                    "ana",
+                    Reviewer::Person,
+                    ReviewState::Approved,
+                    HEAD
+                ))
+            );
+            check();
+        }
+    }
+
+    /// Q277: where the last page purlis reads is full, a review after it may take back an
+    /// approval read before it, so no approval is made up of a list read in part: the read is
+    /// an error. Kills: the pages read so far returned as the answer.
+    #[test]
+    fn a_review_list_longer_than_purlis_reads_is_no_answer() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("reviews", "too_many", how);
+            let got = backend.reviews(&me, "acme/api", &pr());
+            assert!(got.is_err(), "{:?}", got.map(|all| all.len()));
+            check();
+        }
+    }
+
+    /// Q277: View changes reads the changes from GitHub's compare of the base and the head,
+    /// each file under a `diff --git` line, and a file with no lines to show says so. Kills: a
+    /// diff read from anywhere but the forge, and one said whole when it is cut.
+    #[test]
+    fn a_requests_changes_are_read_whole_from_githubs_compare_of_its_base_and_head() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("changes", "whole", how);
+            assert_eq!(
+                backend.changes(&me, "acme/api", "main", HEAD),
+                Ok(Changes {
+                    text: "diff --git a/src/parser.rs b/src/parser.rs\n@@ -1 +1,2 @@\n fn a() {}\n\
+                           +fn parse() {}\ndiff --git a/old.png b/logo.png\nNo lines to show: a \
+                           binary file, or a rename alone.\n"
+                        .to_owned(),
+                    whole: true,
+                })
+            );
+            check();
+        }
+    }
+
+    /// A file with changed lines and no patch is one GitHub would not show: the changes are
+    /// not whole, so nobody viewed the head from them. Kills: `whole` set whatever was left out.
+    #[test]
+    fn changes_github_left_a_file_out_of_are_not_whole() {
+        purlis_core::unsteered!();
+        for how in HOWS {
+            let (backend, me, check) = scene("changes", "cut", how);
+            let got = backend
+                .changes(&me, "acme/api", "main", HEAD)
+                .expect("the changes it gave");
+            assert!(!got.whole, "{got:?}");
+            assert!(got.text.contains("+fn parse() {}"), "{}", got.text);
+            check();
         }
     }
 }
