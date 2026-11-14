@@ -282,6 +282,7 @@ fn plain_tcp() {
         tls: None,
         trusted_tls: None,
         docker_context: None,
+        owned: false,
     };
     let pressed = connecting::meet_chosen(&config, &fixture.docker, &chosen);
     let purlis_core::poolsetup::Pressed::Found(finding) = pressed else {
