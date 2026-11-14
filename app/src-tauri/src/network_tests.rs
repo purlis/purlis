@@ -8,6 +8,7 @@ use super::*;
 use purlis_core::eventlog::stops::{Block as StopBlock, Qualifier, Source, Target};
 use purlis_core::sandboxblock::{Block, Kind, Operation};
 use std::path::Path;
+use std::sync::Arc;
 
 const HOST: Block = Block {
     operation: Operation::Connect,
@@ -1141,4 +1142,345 @@ fn a_read_a_forget_overtook_is_answered_but_not_kept() {
     assert!(!kept.holds(), "a read from before the change was kept");
     kept.now(no_policy);
     assert!(kept.holds());
+}
+
+// ----- Allow next time on a sandbox block (T1-34, R-291; Q278) --------------------------------
+
+/// A board of live asks, as a chat's proxy started in the window holds one.
+fn a_live_board() -> Arc<purlis_core::sandbox::asks::Asks> {
+    Arc::new(purlis_core::sandbox::asks::Asks::new(Arc::new(
+        |_: purlis_core::sandbox::asks::Heard| {},
+    )))
+}
+
+/// Chat 1 open in `project`, by the id `chat-1`, its proxy asking live on `board`, or asking
+/// nobody where there is none.
+fn chat_one_asking_on(
+    project: &Path,
+    board: Option<Arc<dyn purlis_core::sandbox::Board>>,
+) -> crate::chats::Chats {
+    let chats = crate::chats::tests::restartable_chats_of(
+        project,
+        crate::host::pretend::Pretend::default(),
+    );
+    crate::chats::tests::a_chat_asking_live_on(&chats, project, 1, board);
+    chats
+}
+
+/// Chat 1's verified sandbox block of a connection to `host`, as the Blocked log lists it.
+fn chat_one_blocked(host: &str) -> Vec<Listed> {
+    vec![listed(1, 10, "chat-1", sandbox_host(host, None))]
+}
+
+/// Allow next time · once of `target` on chat 1's block, as the window sends it.
+fn allow_once(
+    root: &Path,
+    chats: &crate::chats::Chats,
+    blocked_log: &[Listed],
+    target: &str,
+    audit: Audit<'_>,
+) -> Result<Allowed, String> {
+    allow_next(
+        root,
+        chats,
+        blocked_log,
+        (1, target, GrantLevel::Once),
+        audit,
+        5,
+    )
+}
+
+/// **One grant** (R-291): Allow next time · once on chat 1's own sandbox block of a host is
+/// judged by the core, audited as a grant of once, then held on the chat's board for its next
+/// attempt at that host alone, with no ask open.
+///
+/// Mutation it kills: `audit(..., &audited(true))` deleted (nothing audited, the grant still
+/// kept), and `board.allow_next` deleted (said allowed, nothing kept).
+#[test]
+fn allow_next_time_once_is_audited_then_held_on_the_chats_board_for_its_next_attempt() {
+    let project = tempfile::tempdir().expect("a project");
+    let board = a_live_board();
+    let chats = chat_one_asking_on(project.path(), Some(Arc::clone(&board) as _));
+    let seen = std::sync::Mutex::new(Vec::new());
+    let audit = audited_into(&seen);
+    let said = allow_once(
+        project.path(),
+        &chats,
+        &chat_one_blocked("api.example.com:443"),
+        "API.example.com:443",
+        &audit,
+    )
+    .expect("allowed");
+    assert!(said.live, "its board takes it: nothing restarts");
+    assert!(said.said.contains("api.example.com:443"), "{}", said.said);
+    assert_eq!(
+        *seen.lock().expect("the audit"),
+        vec![(true, "api.example.com:443".to_owned(), "once".to_owned())]
+    );
+    assert_eq!(
+        board.next_attempts(),
+        vec!["api.example.com:443".to_owned()]
+    );
+}
+
+/// **Each refusal** (R-291, #1906, Q265): Allow next time grants only on a sandbox block purlis's
+/// own proxy saw, of this chat, at the very host and port the window names. Another chat's
+/// block, a block only the chat's hook reported or one qualified Can't tell, a guard's block,
+/// another host and another port, a host the block's covers or that covers the block's, and a
+/// chat that is not open are each refused, nothing is audited and nothing is kept.
+///
+/// Mutations it kills: `seen_by_the_sandbox` dropped from the judge (the hook's, the qualified
+/// and the guard's blocks let through), `one.chat == chat` dropped (another chat's block lets
+/// it through), and the host's equality replaced by `covers` either way (a block of a host
+/// without its port lets one port through, and one of a port lets the whole host through).
+#[test]
+fn allow_next_time_refuses_any_block_but_this_chats_own_sandbox_block_of_that_very_host() {
+    let project = tempfile::tempdir().expect("a project");
+    let board = a_live_board();
+    let chats = chat_one_asking_on(project.path(), Some(Arc::clone(&board) as _));
+    let seen = std::sync::Mutex::new(Vec::new());
+    let audit = audited_into(&seen);
+    let mut guarded = sandbox_host("api.example.com:443", None);
+    guarded.source = Source::Guard;
+    let refusals: [(&str, Vec<Listed>, &str); 9] = [
+        (
+            "another chat's block",
+            vec![listed(
+                1,
+                10,
+                "chat-2",
+                sandbox_host("api.example.com:443", None),
+            )],
+            "api.example.com:443",
+        ),
+        (
+            "a block only the chat's hook reported",
+            vec![listed(
+                1,
+                10,
+                "chat-1",
+                sandbox_host("api.example.com:443", Some(Qualifier::Unverified)),
+            )],
+            "api.example.com:443",
+        ),
+        (
+            "a block purlis can't tell who made",
+            vec![listed(
+                1,
+                10,
+                "chat-1",
+                sandbox_host("api.example.com:443", Some(Qualifier::CantTell)),
+            )],
+            "api.example.com:443",
+        ),
+        (
+            "a guard's block",
+            vec![listed(1, 10, "chat-1", guarded)],
+            "api.example.com:443",
+        ),
+        (
+            "another host",
+            chat_one_blocked("api.example.com:443"),
+            "other.example.com:443",
+        ),
+        (
+            "another port",
+            chat_one_blocked("api.example.com:443"),
+            "api.example.com:8443",
+        ),
+        (
+            "a host the block's covers",
+            chat_one_blocked("api.example.com"),
+            "api.example.com:443",
+        ),
+        (
+            "a host that covers the block's",
+            chat_one_blocked("api.example.com:443"),
+            "api.example.com",
+        ),
+        ("no block at all", Vec::new(), "api.example.com:443"),
+    ];
+    for (what, blocked_log, target) in refusals {
+        let refused =
+            allow_once(project.path(), &chats, &blocked_log, target, &audit).expect_err(what);
+        assert!(
+            refused.contains("the sandbox did not block"),
+            "{what}: {refused}"
+        );
+        // docs/ui-copy.md, as the rest of this way's words: "can't" (Q278).
+        assert!(refused.contains("can't allow it"), "{what}: {refused}");
+    }
+    let refused = allow_next(
+        project.path(),
+        &chats,
+        &chat_one_blocked("api.example.com:443"),
+        (9, "api.example.com:443", GrantLevel::Once),
+        &audit,
+        5,
+    )
+    .expect_err("a chat that is not open");
+    assert!(refused.contains("is not open"), "{refused}");
+    assert!(
+        seen.lock().expect("the audit").is_empty(),
+        "nothing audited"
+    );
+    assert!(board.next_attempts().is_empty(), "nothing kept");
+}
+
+/// **A policy lock wins** (R-291): an administrator's `allow-scopes` without `once` refuses Allow
+/// next time · once, with the policy's own sentence, and nothing is audited or kept.
+///
+/// Mutation it kills: the Once policy check (`refuses_grant(.., Level::Once)`) deleted.
+#[test]
+fn allow_next_time_once_is_refused_where_policy_keeps_no_once() {
+    let project = tempfile::tempdir().expect("a project");
+    let board = a_live_board();
+    let chats = chat_one_asking_on(project.path(), Some(Arc::clone(&board) as _));
+    let seen = std::sync::Mutex::new(Vec::new());
+    let audit = audited_into(&seen);
+    let _under = Under::policy(
+        r#"{"owner": "IT", "sandbox": {"allow-scopes": ["you", "chat", "project"]}}"#,
+    );
+    let refused = allow_once(
+        project.path(),
+        &chats,
+        &chat_one_blocked("api.example.com:443"),
+        "api.example.com:443",
+        &audit,
+    )
+    .expect_err("policy keeps no once");
+    assert!(refused.contains("Policy removed Allow"), "{refused}");
+    assert!(seen.lock().expect("the audit").is_empty());
+    assert!(board.next_attempts().is_empty());
+}
+
+/// **No board** (R-291): a chat whose proxy asks nobody has no next attempt to let through, so
+/// Allow next time · once is refused, saying the wider labels still work, and nothing is
+/// audited.
+#[test]
+fn allow_next_time_once_is_refused_for_a_chat_whose_proxy_asks_nobody() {
+    let project = tempfile::tempdir().expect("a project");
+    let chats = chat_one_asking_on(project.path(), None);
+    let seen = std::sync::Mutex::new(Vec::new());
+    let audit = audited_into(&seen);
+    let refused = allow_once(
+        project.path(),
+        &chats,
+        &chat_one_blocked("api.example.com:443"),
+        "api.example.com:443",
+        &audit,
+    )
+    .expect_err("no board");
+    assert!(refused.contains("doesn't ask about hosts"), "{refused}");
+    assert!(seen.lock().expect("the audit").is_empty());
+}
+
+/// **A board error** (R-291): where the chat's board can't take it (a session host whose link
+/// is gone), nothing is said to be allowed, and the audit that granted it is told it ended
+/// (`granted: false`), so the event log never holds a grant nothing kept.
+#[test]
+fn a_board_that_cant_take_allow_next_time_audits_it_ended() {
+    let project = tempfile::tempdir().expect("a project");
+    let chats = chat_one_asking_on(
+        project.path(),
+        Some(crate::chats::tests::a_board_refusing_next(
+            "the session host is gone",
+        )),
+    );
+    let seen = std::sync::Mutex::new(Vec::new());
+    let audit = audited_into(&seen);
+    let refused = allow_once(
+        project.path(),
+        &chats,
+        &chat_one_blocked("api.example.com:443"),
+        "api.example.com:443",
+        &audit,
+    )
+    .expect_err("the board refused it");
+    assert!(refused.contains("the session host is gone"), "{refused}");
+    assert_eq!(
+        *seen.lock().expect("the audit"),
+        vec![
+            (true, "api.example.com:443".to_owned(), "once".to_owned()),
+            (false, "api.example.com:443".to_owned(), "once".to_owned()),
+        ]
+    );
+}
+
+/// **Audited before it is kept** (R-291): an audit that can't be written keeps nothing on the
+/// board, so no grant stands that the event log does not hold.
+///
+/// Mutation it kills: the audit and `board.allow_next` swapped (kept first, then the audit
+/// refuses, and the grant stands unaudited).
+#[test]
+fn allow_next_time_keeps_nothing_where_its_audit_cant_be_written() {
+    let project = tempfile::tempdir().expect("a project");
+    let board = a_live_board();
+    let chats = chat_one_asking_on(project.path(), Some(Arc::clone(&board) as _));
+    let unaudited = |_: Option<u32>, _: &grant::Audited<'_>| Err("no event log".to_owned());
+    assert!(
+        allow_once(
+            project.path(),
+            &chats,
+            &chat_one_blocked("api.example.com:443"),
+            "api.example.com:443",
+            &unaudited,
+        )
+        .is_err()
+    );
+    assert!(board.next_attempts().is_empty(), "nothing kept unaudited");
+}
+
+/// **The labels a sandbox block's row may offer** (Q278, #1906: no Allow that wouldn't unblock
+/// it): the core says them, as the Blocked log's `levels_for` does. Every label of Allow next
+/// time, in its order, under no policy; only those an `allow-scopes` policy keeps under one;
+/// and none for a block Allow next time is not offered on.
+///
+/// Mutation it kills: the policy filter dropped (Project offered where policy removed it).
+#[test]
+fn a_sandbox_blocks_row_offers_only_the_labels_policy_keeps() {
+    let none = sandbox::policy::Locks::none();
+    let host = |locks: &sandbox::policy::Locks| {
+        next_time_levels(
+            locks,
+            "sandbox",
+            None,
+            Some("host"),
+            Some("api.example.com:443"),
+        )
+    };
+    assert_eq!(
+        host(&none),
+        vec![
+            GrantLevel::Once,
+            GrantLevel::You,
+            GrantLevel::Chat,
+            GrantLevel::Project
+        ]
+    );
+    let locked = sandbox::policy::Locks::parse(
+        r#"{"owner": "IT", "sandbox": {"allow-scopes": ["once", "you", "chat"]}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    );
+    assert_eq!(
+        host(&locked),
+        vec![GrantLevel::Once, GrantLevel::You, GrantLevel::Chat]
+    );
+    for (source, qualifier, kind, target) in [
+        ("guard", None, Some("host"), Some("api.example.com:443")),
+        (
+            "sandbox",
+            Some("unverified"),
+            Some("host"),
+            Some("api.example.com:443"),
+        ),
+        ("sandbox", None, Some("folder"), Some("/opt/cache")),
+        ("sandbox", None, Some("host"), None),
+    ] {
+        assert_eq!(
+            next_time_levels(&none, source, qualifier, kind, target),
+            Vec::new(),
+            "{source} {qualifier:?} {kind:?} {target:?}"
+        );
+    }
 }

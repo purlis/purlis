@@ -211,6 +211,8 @@ mod tests {
                 target: Some("A3b".to_owned()),
                 // Whose check it was (Q272): the chat's harness, as its start said.
                 harness: "codex".to_owned(),
+                // A guard's block offers no Allow next time, so no label (Q278).
+                allow_levels: Vec::new(),
             }],
         );
     }

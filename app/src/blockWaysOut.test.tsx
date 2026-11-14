@@ -86,6 +86,8 @@ const SANDBOX = blocked({
   source: "sandbox",
   target_kind: "host",
   target: "registry.example.com:443",
+  // Every label, as the core says them under no policy (Q278).
+  allow_levels: ["once", "you", "chat", "project"],
 });
 
 /** The one Chat log row drawn for `row`, with its ways out. */
@@ -485,6 +487,28 @@ describe("a sandbox block's ways out (T1-34; R-196, R-291)", () => {
     }
     expect(waysOf(rowOf({ ...SANDBOX, qualifier: "cant_tell" }))).toEqual([GO_TO_CHAT]);
   });
+
+  // Q278 (#1906: no Allow that wouldn't unblock it): the core says which labels a block's row
+  // may offer, as the Blocked log's do, and the row offers those alone.
+  it("an allow-scopes policy without Project shows no Project label", async () => {
+    const row = rowOf({ ...SANDBOX, allow_levels: ["once", "you", "chat"] });
+    await userEvent.click(within(row).getByRole("button", { name: ALLOW_NEXT_TIME }));
+    const labels = within(within(row).getByRole("region", { name: "Next time" }))
+      .getAllByRole("button")
+      .map((one) => one.textContent?.trim());
+    expect(labels).toEqual([
+      "Allow once",
+      "Allow for me on this machine",
+      "Allow only for this chat",
+    ]);
+    expect(labels).not.toContain(SANDBOX_ALLOW_SAID.project);
+  });
+
+  it("a sandbox block whose policy leaves no label offers no Allow next time", () => {
+    expect(waysOf(rowOf({ ...SANDBOX, allow_levels: [] }))).toEqual([SHOW_THIS_RULE]);
+    cleanup();
+    expect(waysOf(rowOf({ ...SANDBOX, allow_levels: undefined }))).toEqual([SHOW_THIS_RULE]);
+  });
 });
 
 describe("a finish row's Allow next time (T1-34, Q273)", () => {
@@ -517,6 +541,7 @@ describe("a finish row's Allow next time (T1-34, Q273)", () => {
           target_kind: "host",
           target: "registry.example.com:443",
           harness: "claude",
+          allow_levels: ["once", "you", "chat", "project"],
         }),
         turn(4, {
           source: "guard",
@@ -555,6 +580,86 @@ describe("a finish row's Allow next time (T1-34, Q273)", () => {
           { plane: PLANE, session: 3, target: "registry.example.com:443", level: "once" },
         ]),
       );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Q278 (Q273: grouped rows act per chat): two chats blocked on the same host. Each chat is
+  // named before any press, its own labels grant it alone, and the labels for you and for the
+  // project are one grant, sent once.
+  it("a grouped row offers Allow next time one chat at a time, and pressing A's label grants A only", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "performance"] });
+    try {
+      const asked: { session: number; target: string; level: string }[] = [];
+      mockIPC((cmd, args) => {
+        if (cmd !== "allow_next_time") return null;
+        asked.push(args as (typeof asked)[number]);
+        return { said: "Allowed registry.example.com:443.", live: true };
+      });
+      const sandboxed: FinishedBlock = {
+        source: "sandbox",
+        qualifier: null,
+        target_kind: "host",
+        target: "registry.example.com:443",
+        harness: "claude",
+        allow_levels: ["once", "you", "chat", "project"],
+      };
+      const turns = [turn(3, sandboxed), turn(4, sandboxed)];
+      const keys = finishUpdates(turns, nameOf).map((one) => one.key);
+      render(
+        <FinishRowWays
+          plane={PLANE}
+          turns={turns}
+          keys={keys}
+          who="steward 3, planner 4"
+          nameOf={nameOf}
+          go={() => undefined}
+        />,
+      );
+      const settle = () => vi.advanceTimersByTime(2000);
+      await userEvent.click(screen.getByRole("button", { name: ALLOW_NEXT_TIME }), {
+        advanceTimers: vi.advanceTimersByTime,
+      });
+      settle();
+      const choices = screen.getByRole("region", { name: "Next time" });
+      // Each chat named before the press, and no line says one chat's of a grouped row.
+      const forA = within(choices).getByRole("group", { name: "steward 3" });
+      const forB = within(choices).getByRole("group", { name: "planner 4" });
+      expect(choices.textContent).toContain("steward 3");
+      expect(choices.textContent).toContain("planner 4");
+      expect(choices.textContent).not.toContain("this chat's");
+      // Per chat: once and this chat alone. For you and the project: one label each, once.
+      for (const one of [forA, forB])
+        expect(buttonsOf(one)).toEqual([SANDBOX_ALLOW_SAID.once, SANDBOX_ALLOW_SAID.chat]);
+      expect(within(choices).getAllByRole("button", { name: SANDBOX_ALLOW_SAID.you })).toHaveLength(
+        1,
+      );
+      expect(
+        within(choices).getAllByRole("button", { name: SANDBOX_ALLOW_SAID.project }),
+      ).toHaveLength(1);
+
+      await userEvent.click(within(forA).getByRole("button", { name: SANDBOX_ALLOW_SAID.once }), {
+        advanceTimers: vi.advanceTimersByTime,
+      });
+      await vi.waitFor(() => expect(asked).toHaveLength(1));
+      expect(asked).toEqual([
+        { plane: PLANE, session: 3, target: "registry.example.com:443", level: "once" },
+      ]);
+
+      settle();
+      await userEvent.click(within(choices).getByRole("button", { name: SANDBOX_ALLOW_SAID.you }), {
+        advanceTimers: vi.advanceTimersByTime,
+      });
+      await vi.waitFor(() => expect(asked).toHaveLength(2));
+      settle();
+      expect(asked).toHaveLength(2);
+      expect(asked[1]).toEqual({
+        plane: PLANE,
+        session: 3,
+        target: "registry.example.com:443",
+        level: "you",
+      });
     } finally {
       vi.useRealTimers();
     }

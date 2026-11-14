@@ -195,6 +195,7 @@ fn with_no_notice_to_raise_a_held_connection_is_refused_at_once() {
             blocks: Arc::default(),
             moved: Arc::new(Mutex::new(None)),
             stops: Arc::new(Mutex::new(None)),
+            ended: Arc::new(Mutex::new(None)),
         },
         std::env::temp_dir().join("purlis-no-such-project-1709"),
     )
@@ -248,6 +249,7 @@ fn a_live_ask_is_held_for_its_chat_and_the_window_told_though_no_notice_went_up(
             blocks: Arc::clone(&blocks),
             moved,
             stops: Arc::new(Mutex::new(None)),
+            ended: Arc::new(Mutex::new(None)),
         },
         std::env::temp_dir().join("purlis-no-such-project-1709-2"),
     )
@@ -295,6 +297,7 @@ fn a_burst_of_live_asks_keeps_each_held_while_its_connection_waits() {
             blocks: Arc::clone(&blocks),
             moved,
             stops: Arc::new(Mutex::new(None)),
+            ended: Arc::new(Mutex::new(None)),
         },
         std::env::temp_dir().join("purlis-no-such-project-1709-3"),
     )
@@ -357,6 +360,7 @@ fn a_sandbox_refusal_leaves_asks_and_becomes_one_block_when_the_chat_stops_waiti
             blocks: Arc::clone(&chats.blocks),
             moved: Arc::new(Mutex::new(None)),
             stops: Arc::clone(&chats.stops),
+            ended: Arc::new(Mutex::new(None)),
         },
         std::env::temp_dir().join("purlis-no-such-project-290"),
     )
@@ -417,6 +421,56 @@ fn a_sandbox_refusal_leaves_asks_and_becomes_one_block_when_the_chat_stops_waiti
     // Its connection is told timed out again: the refusal is a block already, never a second.
     tell(Heard::TimedOut("slow.example.com:443".to_owned()));
     assert_eq!(blocks_of("slow.example.com").len(), 1, "never a second");
+}
+
+/// **A waiting Allow next time · once that ended is audited** (T1-34, Q278): used up by the
+/// chat's next attempt, or put out past the most a board keeps, the chat's proxy tells it, and
+/// it reaches the audit of the person's grant ending, for the chat it waited for. It lives in
+/// memory alone, so nothing else keeps it.
+///
+/// Mutation it kills: the proxy's `UsedNext` or `DroppedNext` arm left without its audit.
+#[test]
+fn a_waiting_once_used_up_or_put_out_is_audited_for_its_chat() {
+    use purlis_core::sandbox::asks::Heard;
+    let chats = Chats::new();
+    let ended: Arc<Mutex<Vec<(u32, String)>>> = Arc::default();
+    chats.audit_nexts_ended_with({
+        let ended = Arc::clone(&ended);
+        Arc::new(move |chat, target: &str| lock(&ended).push((chat, target.to_owned())))
+    });
+    let tell = super::asked_by_the_proxy(
+        super::Asking {
+            hear: Arc::new(Mutex::new(Some(Arc::new(|_| {})))),
+            reached: Arc::new(Mutex::new(None)),
+            whose: Arc::new(std::sync::atomic::AtomicU32::new(9)),
+            who: super::ReachedAs::default(),
+            harness: Some(Harness::ClaudeCode),
+            blocks: Arc::clone(&chats.blocks),
+            moved: Arc::new(Mutex::new(None)),
+            stops: Arc::clone(&chats.stops),
+            ended: Arc::clone(&chats.nexts_ended),
+        },
+        std::env::temp_dir().join("purlis-no-such-project-t1-34"),
+    )
+    .tell;
+    tell(Heard::UsedNext("registry.example.com:443".to_owned()));
+    tell(Heard::DroppedNext("old.example.com:443".to_owned()));
+    // Each is told on a thread of its own, so a held connection never waits on the audit.
+    for _ in 0..400 {
+        if lock(&ended).len() == 2 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let mut audited = lock(&ended).clone();
+    audited.sort();
+    assert_eq!(
+        audited,
+        [
+            (9, "old.example.com:443".to_owned()),
+            (9, "registry.example.com:443".to_owned()),
+        ]
+    );
 }
 
 /// #1664: a local address the proxy refused is the chat's Block of a local socket, naming no
@@ -9516,6 +9570,20 @@ fn one_function_names_a_chats_persona_for_every_path_after_a_handoff_too() {
 struct Told {
     allowed: Mutex<Vec<(String, purlis_core::sandbox::reach::By)>>,
     forgot: Mutex<Vec<(String, purlis_core::sandbox::reach::By)>>,
+    /// What waits for the chat's next attempt (T1-34).
+    next: Mutex<Vec<String>>,
+    /// Why it can't take an Allow next time, where it can't (T1-34): a session host's board
+    /// whose link is gone, say.
+    refuses_next: Option<String>,
+}
+
+/// **A board that can't take an Allow next time, saying `why`** (T1-34): as a session host's
+/// board does whose link is gone.
+pub(crate) fn a_board_refusing_next(why: &str) -> Arc<dyn purlis_core::sandbox::Board> {
+    Arc::new(Told {
+        refuses_next: Some(why.to_owned()),
+        ..Told::default()
+    })
 }
 
 impl purlis_core::sandbox::Board for Told {
@@ -9567,20 +9635,27 @@ impl purlis_core::sandbox::Board for Told {
         false
     }
 
-    fn allow_next(&self, _: &purlis_core::sandbox::hosts::Host) -> Result<(), String> {
+    fn allow_next(&self, host: &purlis_core::sandbox::hosts::Host) -> Result<(), String> {
+        if let Some(why) = &self.refuses_next {
+            return Err(why.clone());
+        }
+        lock(&self.next).push(host.to_string());
         Ok(())
     }
 
     fn next_attempts(&self) -> Vec<String> {
-        Vec::new()
+        lock(&self.next).clone()
     }
 
-    fn forget_next(&self, _: &purlis_core::sandbox::hosts::Host) {}
+    fn forget_next(&self, host: &purlis_core::sandbox::hosts::Host) {
+        let gone = host.to_string();
+        lock(&self.next).retain(|one| *one != gone);
+    }
 }
 
-/// What holds a [`Told`] board, as the session host holds a chat's proxy.
+/// What holds a board, as the session host holds a chat's proxy.
 #[derive(Debug)]
-struct HeldWith(Arc<Told>);
+struct HeldWith(Arc<dyn purlis_core::sandbox::Board>);
 
 impl purlis_core::sandbox::HeldElsewhere for HeldWith {
     fn id(&self) -> &str {
@@ -9592,7 +9667,7 @@ impl purlis_core::sandbox::HeldElsewhere for HeldWith {
     }
 
     fn board(&self) -> Option<Arc<dyn purlis_core::sandbox::Board>> {
-        Some(Arc::clone(&self.0) as Arc<dyn purlis_core::sandbox::Board>)
+        Some(Arc::clone(&self.0))
     }
 }
 
@@ -9602,9 +9677,24 @@ fn two_chats_asking_live(plane: &std::path::Path) -> (Chats, [Arc<Told>; 2]) {
     let chats = restartable_chats_of(plane, Pretend::default());
     let boards = [Arc::new(Told::default()), Arc::new(Told::default())];
     for (number, board) in (1..).zip(&boards) {
-        let mut chat = a_resumable_chat_in(plane);
-        chat.identity.id = Some(format!("chat-{number}"));
-        let confinement = purlis_core::sandbox::Confinement::held_on_another_machine(
+        a_chat_asking_live_on(&chats, plane, number, Some(Arc::clone(board) as _));
+    }
+    (chats, boards)
+}
+
+/// **Chat `number` open in `chats`, in `plane`, by the id `chat-<number>`** (T1-34): its proxy
+/// asking live on `board`, held as the session host holds one, or asking nobody where there is
+/// none.
+pub(crate) fn a_chat_asking_live_on(
+    chats: &Chats,
+    plane: &std::path::Path,
+    number: u32,
+    board: Option<Arc<dyn purlis_core::sandbox::Board>>,
+) {
+    let mut chat = a_resumable_chat_in(plane);
+    chat.identity.id = Some(format!("chat-{number}"));
+    let confinement = board.map(|board| {
+        purlis_core::sandbox::Confinement::held_on_another_machine(
             purlis_core::sandbox::Placed {
                 http: 1,
                 socks: 2,
@@ -9614,37 +9704,36 @@ fn two_chats_asking_live(plane: &std::path::Path) -> (Chats, [Arc<Told>; 2]) {
                 left_out: Vec::new(),
                 host_name: None,
             },
-            Box::new(HeldWith(Arc::clone(board))),
-        );
-        lock(&chats.open).insert(
-            number,
-            Running {
-                chat,
-                how: Reopened::Resumed(SessionId::new(ID).expect("an id")),
-                harness: Some(Harness::ClaudeCode),
-                declared: None,
-                workspace: None,
-                confinement: Some(confinement),
-                confines: None,
-                started_with: StartedWith::default(),
-                composed_by_its_host: false,
-                ran: Some(purlis_session_protocol::session::RunSandbox::By(
-                    "seatbelt".to_owned(),
-                )),
-                grants_as: None,
-                skills: None,
-                plane_skills: true,
-                skills_read: Default::default(),
-                last_prompt: None,
-                runs_as: None,
-                runners_word: None,
-                reports_verified: false,
-                clones_at_start: None,
-                prompt_key: None,
-            },
-        );
-    }
-    (chats, boards)
+            Box::new(HeldWith(board)),
+        )
+    });
+    lock(&chats.open).insert(
+        number,
+        Running {
+            chat,
+            how: Reopened::Resumed(SessionId::new(ID).expect("an id")),
+            harness: Some(Harness::ClaudeCode),
+            declared: None,
+            workspace: None,
+            confinement,
+            confines: None,
+            started_with: StartedWith::default(),
+            composed_by_its_host: false,
+            ran: Some(purlis_session_protocol::session::RunSandbox::By(
+                "seatbelt".to_owned(),
+            )),
+            grants_as: None,
+            skills: None,
+            plane_skills: true,
+            skills_read: Default::default(),
+            last_prompt: None,
+            runs_as: None,
+            runners_word: None,
+            reports_verified: false,
+            clones_at_start: None,
+            prompt_key: None,
+        },
+    );
 }
 
 /// Chat `number`, a harness chat named `name` working in `cwd`, open in `chats` with
@@ -11781,6 +11870,7 @@ mod moved_on {
                 blocks: Arc::clone(&chats.blocks),
                 moved: Arc::new(Mutex::new(None)),
                 stops: Arc::clone(&chats.stops),
+                ended: Arc::new(Mutex::new(None)),
             },
             plane.path().to_path_buf(),
         );
@@ -12236,6 +12326,7 @@ fn a_timed_out_hold_is_written_to_the_event_log_as_one_sandbox_block() {
             blocks: Arc::clone(&chats.blocks),
             moved: Arc::new(Mutex::new(None)),
             stops: Arc::clone(&chats.stops),
+            ended: Arc::new(Mutex::new(None)),
         },
         std::env::temp_dir().join("purlis-no-such-project-290-log"),
     )

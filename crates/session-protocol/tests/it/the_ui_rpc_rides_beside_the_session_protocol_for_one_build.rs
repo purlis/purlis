@@ -326,6 +326,8 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
         "allow_project_expects",
         "decline_project_expects",
         "allow_blocked_host",
+        // Allow next time on a sandbox block (T1-34, R-291): a grant with no ask open.
+        "allow_next_time",
         "allow_sandbox_port",
         "forget_sandbox_block",
     ] {

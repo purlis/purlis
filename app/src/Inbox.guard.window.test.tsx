@@ -279,6 +279,7 @@ describe.each(BOTH)("the settle guard on Allow next time, pressed by the %s (T1-
     target_kind: "host",
     target: "registry.example.com:443",
     harness: "claude",
+    allow_levels: ["once", "you", "chat", "project"] as const,
   };
 
   it("the settle guard covers Allow next time: nothing during the settle window, and it acts once settled", async () => {
@@ -303,5 +304,34 @@ describe.each(BOTH)("the settle guard on Allow next time, pressed by the %s (T1-
     await press(screen.getByRole("button", { name: "Allow once" }), by);
     expect(allowNext).toHaveBeenCalledTimes(1);
     expect(allowNext).toHaveBeenCalledWith("registry.example.com:443", "once");
+  });
+
+  // Q278: what the row offers is keyed by the targets it shows too, so a label that comes to
+  // stand for another host under the pointer is a moved row, not a settled one.
+  it("a row whose target changed under its open labels is not settled: nothing until it is read", async () => {
+    const allowNext = vi.fn(() => Promise.resolve({ said: "Allowed it once." }));
+    const drawn = (target: string) => (
+      <BlockWaysOut
+        blocks={[{ ...SANDBOX_BLOCK, target }]}
+        who="steward 3"
+        tell={() => Promise.resolve({})}
+        go={() => undefined}
+        allowNext={allowNext}
+      />
+    );
+    const { rerender } = render(drawn("registry.example.com:443"));
+    read();
+    await press(screen.getByRole("button", { name: ALLOW_NEXT_TIME }), by);
+    read();
+    // The same ways, the same detail open, another host under the same label.
+    rerender(drawn("mirror.example.com:443"));
+    await press(screen.getByRole("button", { name: "Allow once" }), by);
+    expect(allowNext).not.toHaveBeenCalled();
+    expect(screen.getByRole("status")).toHaveTextContent(ROW_MOVED_JUST_NOW);
+
+    read();
+    await press(screen.getByRole("button", { name: "Allow once" }), by);
+    expect(allowNext).toHaveBeenCalledTimes(1);
+    expect(allowNext).toHaveBeenCalledWith("mirror.example.com:443", "once");
   });
 });

@@ -557,6 +557,7 @@ export const SandboxBlockWaysOut: Story = {
         source: "sandbox",
         target_kind: "host",
         target: "registry.example.com:443",
+        allow_levels: ["once", "you", "chat", "project"],
       },
     ],
     ways: WAYS,

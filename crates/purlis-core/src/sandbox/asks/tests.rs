@@ -591,15 +591,16 @@ fn a_grant_from_a_block_with_no_open_ask_lets_the_next_attempt_through_once() {
     );
     assert_eq!(asks.holding(), 0, "nothing is held for it");
 
-    // The chat's next attempt goes on at once, with no new ask, and the grant is gone.
+    // The chat's next attempt goes on at once, with no new ask, as the person's grant (Q278:
+    // never one the chat holds), and the grant is gone, told as used up so it is audited.
     assert_eq!(
         asks.hold("api.example.com", 443, &[443]),
-        Answer::Allowed(By::Chat)
+        Answer::Allowed(By::You)
     );
-    assert!(
-        heard.lock().unwrap().is_empty(),
-        "nothing was asked: {:?}",
-        heard.lock().unwrap()
+    assert_eq!(
+        *heard.lock().unwrap(),
+        vec![Heard::UsedNext("api.example.com:443".to_owned())],
+        "nothing was asked"
     );
     assert!(asks.next_attempts().is_empty(), "used, it is gone");
     assert!(
@@ -650,4 +651,66 @@ fn keep_blocked_after_allow_next_time_ends_it() {
     asks.keep_blocked(&host("api.example.com"));
     assert!(asks.next_attempts().is_empty());
     assert_eq!(asks.hold("api.example.com", 443, &[443]), Answer::Refused);
+}
+
+/// **An attempt already held when Allow next time · once lands takes it** (Q278): the chat's
+/// connection waiting on its ask goes on at once, as the person's grant, the once is used up,
+/// and its use is told, so it is audited.
+///
+/// Mutation it kills: the waiting once left unread by the hold's wait loop (the held
+/// connection waits out its hold and times out, the once left waiting).
+#[test]
+fn an_attempt_already_held_when_allow_next_time_lands_takes_it() {
+    let (asks, heard) = board(Duration::from_secs(30), Duration::from_millis(20));
+    let waiting = held(&asks, "api.example.com", 443);
+    until_holding(&asks, 1);
+    asks.allow_next(&host("api.example.com:443"));
+    assert_eq!(waiting.join().unwrap(), Answer::Allowed(By::You));
+    assert!(asks.next_attempts().is_empty(), "used up");
+    assert!(
+        heard
+            .lock()
+            .unwrap()
+            .contains(&Heard::UsedNext("api.example.com:443".to_owned())),
+        "{:?}",
+        heard.lock().unwrap()
+    );
+    assert!(
+        !heard
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|one| matches!(one, Heard::TimedOut(_))),
+        "no timeout"
+    );
+}
+
+/// **A waiting once that ends without its attempt is told** (Q278), so it is audited: put out
+/// by the newest past the most a board keeps, and ended by a Keep blocked that covers it (the
+/// later answer wins). The ones kept stay listed.
+///
+/// Mutations it kills: the eviction's tell deleted, and the Keep blocked's tell deleted.
+#[test]
+fn a_waiting_once_put_out_or_ended_by_keep_blocked_is_told() {
+    let (asks, heard) = board(Duration::from_millis(100), Duration::from_millis(20));
+    for n in 0..=super::MOST_KEPT {
+        asks.allow_next(&host(&format!("h{n}.example.com:443")));
+    }
+    assert_eq!(asks.next_attempts().len(), super::MOST_KEPT);
+    assert_eq!(
+        *heard.lock().unwrap(),
+        vec![Heard::DroppedNext("h0.example.com:443".to_owned())],
+        "the oldest is put out, and told"
+    );
+    heard.lock().unwrap().clear();
+    asks.keep_blocked(&host("h1.example.com"));
+    assert_eq!(
+        *heard.lock().unwrap(),
+        vec![Heard::DroppedNext("h1.example.com:443".to_owned())]
+    );
+    assert!(
+        !asks
+            .next_attempts()
+            .contains(&"h1.example.com:443".to_owned())
+    );
 }

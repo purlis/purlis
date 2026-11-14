@@ -48,6 +48,8 @@ const BLOCK: ChatLogRow = {
   harness: "claude",
   reason: null,
   resolved: false,
+  // What the core says this row may offer (Q278): every label, under no policy.
+  allow_levels: ["once", "you", "chat", "project"],
 };
 
 const LOG: ChatLog = {
@@ -67,11 +69,37 @@ const LOG: ChatLog = {
 /** One grant the store keeps: for which chat, of what, at which level. */
 type Kept = { session: number; target: string; level: GrantLevel };
 
+/** **A grant's id, as the core's Allowed list names it** (`sandboxing::grants_of`): a waiting
+ *  once is `next␟<chat>␟<host>`, one chat's `chat␟<its id>␟host␟<host>`, a wider one
+ *  `<level>␟host␟<host>`. */
+const idOf = (one: Kept) =>
+  one.level === "once"
+    ? `next\u001f${one.session}\u001f${one.target}`
+    : one.level === "chat"
+      ? `chat\u001fchat-${one.session}\u001fhost\u001f${one.target}`
+      : `${one.level}\u001fhost\u001f${one.target}`;
+
 /** **The grant store** the window allows into: what `allow_next_time` keeps, and what the
  *  chat's attempts are judged by. */
 function grantStore() {
   const kept: Kept[] = [];
   const asked: string[] = [];
+  const revoked: string[] = [];
+  const listed = () =>
+    kept.map((one): SandboxGrant => ({
+      id: idOf(one),
+      what: "host",
+      target: one.target,
+      persona: null,
+      level: one.level,
+      by: null,
+      at: null,
+      chat: "steward 3",
+      locked: null,
+      waiting: null,
+      for_no_persona: false,
+      expected: false,
+    }));
   mockIPC((cmd, args) => {
     const a = args as Record<string, unknown>;
     if (cmd === "opened_chats") return [];
@@ -82,26 +110,21 @@ function grantStore() {
       kept.push(one as Kept);
       return { said: `Allowed ${one.target}.`, live: true };
     }
-    if (cmd === "sandbox_grants")
-      return kept.map((one): SandboxGrant => ({
-        id: `${one.level}:${one.session}:host:${one.target}`,
-        what: "host",
-        target: one.target,
-        persona: null,
-        level: one.level,
-        by: null,
-        at: null,
-        chat: "steward 3",
-        locked: null,
-        waiting: null,
-        for_no_persona: false,
-        expected: false,
-      }));
+    if (cmd === "sandbox_grants") return listed();
+    if (cmd === "revoke_sandbox_grant") {
+      const id = a.id as string;
+      const at = kept.findIndex((one) => idOf(one) === id);
+      if (at === -1) throw new Error("purlis did not remove it: it is no longer there.");
+      revoked.push(id);
+      kept.splice(at, 1);
+      return listed();
+    }
     return null;
   });
   return {
     kept,
     asked,
+    revoked,
     /** **The chat's next attempt at `target`**: through on a grant, which a once uses up;
      *  else held and asked about. */
     attempt(session: number, target: string): "through" | "asked" {
@@ -156,6 +179,22 @@ describe("Allow next time on a sandbox block (T1-34, R-291)", () => {
     expect(store.asked).toEqual([]);
     expect(await allowedList()).toEqual([]);
     // The attempt after it is asked about again.
+    expect(store.attempt(SESSION, TARGET)).toBe("asked");
+  });
+
+  it("Remove takes a waiting once away by its id before it is used, so the next attempt is asked about", async () => {
+    const store = grantStore();
+    render(<ChatLogTab plane={PLANE} session={SESSION} name="steward 3" />);
+    await allowNextTime(SANDBOX_ALLOW_SAID.once);
+    const drawn = render(
+      <AllowedRows plane={PLANE} file="purlis.toml" ids={{ id: "allowed", labelledBy: "a" }} />,
+    );
+    await waitFor(() => expect(drawn.queryByText("Reading what is allowed…")).toBeNull());
+    const list = drawn.getByRole("list", { name: "Allowed" });
+    await userEvent.click(within(list).getByRole("button", { name: /^Remove/ }));
+    await waitFor(() => expect(store.revoked).toEqual([`next\u001f${SESSION}\u001f${TARGET}`]));
+    drawn.unmount();
+    expect(await allowedList()).toEqual([]);
     expect(store.attempt(SESSION, TARGET)).toBe("asked");
   });
 
