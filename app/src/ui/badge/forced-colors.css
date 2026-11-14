@@ -14,4 +14,18 @@
     color: MarkText;
     background-color: Mark;
   }
+
+  /* A round count (#6342) is what needs you too: the same pair. */
+  [data-scope="count"][data-part="round"] {
+    forced-color-adjust: none;
+    color: MarkText;
+    background-color: Mark;
+  }
+
+  /* A round count (#6342) is what needs you too: the same pair. */
+  [data-scope="count"][data-part="round"] {
+    forced-color-adjust: none;
+    color: MarkText;
+    background-color: Mark;
+  }
 }

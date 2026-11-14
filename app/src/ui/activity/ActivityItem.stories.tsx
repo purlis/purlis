@@ -241,7 +241,8 @@ export const TheRightColumn: Story = {
   play: async (context) => {
     await pressedByTheKeyboard(context);
     const hot = context.canvasElement.querySelector('[data-part="count"][data-tone="needs-you"]');
-    await expect(hot).toHaveAttribute("data-count", "2");
+    // The badge family's round count (#6342), in the shell that places it.
+    await expect(hot?.querySelector('[data-part="round"]')).toHaveAttribute("data-drawn", "2");
     const dot = context.canvasElement.querySelector('[data-part="count"][data-tone="danger"]');
     await expect(dot).not.toHaveAttribute("data-count");
     await expect(
