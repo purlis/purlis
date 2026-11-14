@@ -349,15 +349,16 @@ fn a_file_address_on_this_machine_follows_the_file_rules() {
 }
 
 #[test]
-fn a_path_naming_the_same_file_is_no_mismatch_and_another_file_asks() {
+fn a_path_leading_to_the_file_from_the_chats_folder_opens_and_another_asks() {
     let here = fixture();
     let links = links();
     let main = here.url_of(&here.ws().join("src/main.rs"));
     for text in [
         "src/main.rs",
         "./src/main.rs:12",
-        "main.rs",
+        "src/",
         &here.ws().join("src/main.rs").display().to_string(),
+        &here.ws().join("src").display().to_string(),
     ] {
         assert!(
             matches!(
@@ -367,9 +368,11 @@ fn a_path_naming_the_same_file_is_no_mismatch_and_another_file_asks() {
             "{text}"
         );
     }
+    // A relative path is read from the chat's folder: the end of another path is another file.
     for text in [
         "/etc/passwd",
         "src/lib.rs",
+        "main.rs",
         "README.md",
         "https://github.com/x",
     ] {
@@ -531,8 +534,8 @@ fn another_scheme_asks_and_none_shown_is_the_targets() {
 #[test]
 fn another_port_asks() {
     assert_eq!(
-        asks_saying("localhost.test:5173/x", "http://localhost.test:3000/x"),
-        "its text says localhost.test:5173/x"
+        asks_saying("localhost:5173/x", "http://localhost:3000/x"),
+        "its text says localhost:5173/x"
     );
     assert_eq!(
         asks_saying("https://purlis.dev/", "https://purlis.dev:8443/"),
@@ -706,7 +709,7 @@ fn a_mark_drawn_over_a_host_asks() {
 }
 
 #[test]
-fn a_single_name_with_a_port_and_localhost_are_hosts() {
+fn localhost_is_a_host_and_a_port_counts_only_with_a_host_that_names_one() {
     assert_eq!(
         asks_saying("localhost:3000", "http://localhost:9999/"),
         "its text says localhost:3000"
@@ -715,18 +718,14 @@ fn a_single_name_with_a_port_and_localhost_are_hosts() {
         asks_saying("localhost", "https://evil.example/"),
         "its text says localhost"
     );
-    assert_eq!(
-        asks_saying("dev:3000", "http://evil.example:3000/"),
-        "its text says dev"
-    );
+    // A name no browser goes to by itself is plain, port or not: `intranet:8080`, `step:3`.
+    assert!(opens("dev:3000", "http://evil.example:3000/"));
+    assert!(opens("step:3", "https://evil.example/"));
     assert!(opens("localhost:3000", "http://localhost:3000/"));
     assert!(opens("localhost", "http://localhost/"));
     assert!(opens("(localhost)", "http://localhost/"));
     assert!(asks_about_its_words("*localhost*", "https://evil.example/"));
-    assert!(asks_about_its_words(
-        "localhost.test:5173",
-        "http://localhost.test:3000/"
-    ));
+    assert!(opens("localhost.test:5173", "http://localhost.test:3000/"));
     // A time names no host, though a browser could read one in it.
     assert!(opens("12:30", "https://purlis.dev/"));
 }
@@ -876,7 +875,7 @@ const PR: &str = "https://github.com/purlis/purlis/pull/6384";
 /// The file target of the rows that name `{WS}`: the workspace's `src/main.rs`.
 const MAIN: &str = "{WS}/src/main.rs";
 
-/// **The regression table**: 203 rows, each a marked link's words, its target and what opening
+/// **The regression table**: 214 rows, each a marked link's words, its target and what opening
 /// it does (an `@` written `{AT}`). A row's text is what the pane hands the core (row 103:
 /// a hard line break inside one link, its row's blank tail not read as spaces).
 #[rustfmt::skip]
@@ -971,7 +970,7 @@ const TABLE: &[(u16, &str, &str, Does)] = {
         (84, "localhost", T, A),
         (85, "LOCALHOST", T, A),
         (86, "localhost:3000", T, A),
-        (87, "intranet:8080", T, A),
+        (87, "intranet:8080", T, O),
         (88, "localhost.", T, A),
         (89, "xn--80ak6aa92e.com", "https://apple.com/", A),
         (90, "\u{0430}pple.com", "https://apple.com/", A),
@@ -1051,7 +1050,7 @@ const TABLE: &[(u16, &str, &str, Does)] = {
         (162, "good.com", T, O),
         (163, "evil.com/x", T, A),
         (164, "src/main.rs", MAIN, O),
-        (165, "main.rs", MAIN, O),
+        (165, "main.rs", MAIN, A),
         (166, "./src/main.rs", MAIN, O),
         (167, "src/main.rs:12", MAIN, O),
         (168, "src/main.rs:12:5", MAIN, O),
@@ -1091,6 +1090,17 @@ const TABLE: &[(u16, &str, &str, Does)] = {
         (201, "\u{F09B} purlis", PR, O),
         (202, "\u{1F517} link", PR, O),
         (203, "2026-11-13", PR, O),
+        (1001, "evil.com:good.com", T, A),
+        (1002, "good.com:evil.com", T, A),
+        (1003, "evil.com:x", T, A),
+        (1004, "see:evil.com", T, A),
+        (1005, "Docs:evil.com", T, A),
+        (1018, "[fe80::1%25eth0]", T, A),
+        (1025, "src/", MAIN, O),
+        (1026, "{WS}/src", MAIN, O),
+        (1028, "smart-ide/src/main.rs", MAIN, A),
+        (1036, "step:3", PR, O),
+        (1037, "main:42", PR, O),
     ]
 };
 
@@ -1127,6 +1137,30 @@ fn every_row_of_the_table_opens_asks_or_is_refused_as_it_says() {
                 .then(|| format!("row {row} {text:?} → {target}: expected {does:?}, got {did:?}"))
         })
         .collect();
-    assert_eq!(TABLE.len(), 203);
+    assert_eq!(TABLE.len(), 214);
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn a_word_holding_a_colon_that_is_no_scheme_or_port_is_read_part_by_part() {
+    for text in [
+        "evil.com:good.com",
+        "good.com:evil.com",
+        "see:evil.com",
+        "x:y:evil.com",
+        "user:pass{AT}evil.com:8080",
+        "good.com\u{A789}evil.com",
+    ] {
+        let text = text.replace("{AT}", "@");
+        assert!(asks_about_its_words(&text, "https://good.com/"), "{text}");
+    }
+    for text in ["foo::bar", "Note:", "step:3", "12:30:45", "good.com:443"] {
+        assert!(opens(text, "https://good.com/"), "{text}");
+    }
+    // An IPv6 address's colons are its own; one with a zone names no address a browser opens.
+    assert!(asks_about_its_words(
+        "[fe80::1%25eth0]",
+        "https://good.com/"
+    ));
+    assert!(asks_about_its_words("fe80::1%25eth0", "https://good.com/"));
 }

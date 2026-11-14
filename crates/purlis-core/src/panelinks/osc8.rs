@@ -91,9 +91,10 @@ fn ask_first(text: &str, target: Target, said: &str) -> Opening {
 /// ("docs.purlis.dev", "src/lib.rs"), or `None` when no word of it names another target.
 ///
 /// A word asks only if it **names a target** ([`names_a_target`]: a scheme, an IP address,
-/// `localhost`, a host with a port, a domain under a public suffix, a path) and that target is not
-/// `target` ([`names_web`], [`names_file`]), or its letters may not be what they look like
-/// ([`reads_as_written`]). Any other word is plain, in any script: "Click here", "v1.2.3",
+/// `localhost`, a domain under a public suffix, any of them with a port, a path) and that target
+/// is not `target` ([`names_web`], [`names_file`]), or its letters may not be what they look like
+/// ([`reads_as_written`]). A word whose colons are no address's is read part by part
+/// ([`colon_parts`]). Any other word is plain, in any script: "Click here", "v1.2.3",
 /// "#6384", "café", an emoji. Each word is read as a reader sees it ([`drawn`], NFKC), and the
 /// shape that decides whether it names a target is its UTS #39 skeleton ([`shape`]), so a
 /// look-alike of `.`, `:` or `/` counts as the character. Reads no file's contents.
@@ -111,6 +112,11 @@ pub fn misleading(text: &str, target: &Target, pane: &Pane) -> Option<String> {
 /// around it taken off, and where that leaves it naming no target, as written (`::1`).
 fn said_by(original: &str, target: &Target, pane: &Pane) -> Option<String> {
     let word: String = original.nfkc().collect();
+    if let Some(parts) = colon_parts(trimmed(&word)) {
+        return parts
+            .into_iter()
+            .find_map(|part| said_by(part, target, pane));
+    }
     let file = matches!(target, Target::File(_));
     let trimmed = trimmed(&word);
     let read = [trimmed, word.as_str()]
@@ -142,18 +148,58 @@ fn drawn(text: &str) -> String {
         .collect()
 }
 
+/// **The parts of `word` either side of each colon**, or `None` where its colons are an
+/// address's own: a scheme's (`https:`, `x://`), an IPv6 address's, or one before a port or a
+/// line in digits alone (`localhost:8080`, `main.rs:12`, `12:30`). A reader may take any part
+/// for the address (`see:evil.com`, `evil.com:good.com`), so each is read as a word of its own.
+/// A look-alike of `:` is a colon.
+fn colon_parts(word: &str) -> Option<Vec<&str>> {
+    let colon = |c: char| c == ':' || (!c.is_ascii() && shape(c.encode_utf8(&mut [0; 4])) == ":");
+    if !word.contains(colon) {
+        return None;
+    }
+    let shape = shape(word);
+    let authority = shape
+        .split(['/', '\\', '?', '#'])
+        .next()
+        .unwrap_or_default();
+    let mut bare = authority;
+    for _ in 0..2 {
+        if let Some((name, digits)) = bare.rsplit_once(':')
+            && !digits.is_empty()
+            && digits.chars().all(|c| c.is_ascii_digit())
+        {
+            bare = name;
+        }
+    }
+    let own = has_scheme(&shape) || ipv6(&shape) || !bare.contains(':');
+    (!own).then(|| word.split(colon).collect())
+}
+
+/// Whether `text` is an IPv6 address, in brackets or not, with a zone (`%25eth0`) or without.
+fn ipv6(text: &str) -> bool {
+    let host = text.split(['/', '?', '#']).next().unwrap_or_default();
+    let inner = host
+        .strip_prefix('[')
+        .and_then(|inner| inner.split_once(']'))
+        .map_or(host, |(inner, _)| inner);
+    let address = inner.split_once('%').map_or(inner, |(address, _)| address);
+    address.contains(':') && address.parse::<std::net::Ipv6Addr>().is_ok()
+}
+
 /// The punctuation a sentence puts around a word, which [`trimmed`] takes off.
 const WRAPPERS: &str = "()[]{}<>\"'`*_,;:!?.«»“”‘’「」";
 
 /// `word` without the punctuation a sentence puts around it ([`WRAPPERS`]): never a path's
 /// leading `./` or `../`, nor the brackets of an IPv6 address (`[::1]:8080`).
 fn trimmed(word: &str) -> &str {
-    let start = if word.starts_with("./") || word.starts_with("../") || bracketed_ip(word) {
-        word
-    } else {
-        word.trim_start_matches(|c| WRAPPERS.contains(c))
-    };
-    let ip = bracketed_ip(start);
+    let start =
+        if word.starts_with("./") || word.starts_with("../") || bracketed_ip(word) || ipv6(word) {
+            word
+        } else {
+            word.trim_start_matches(|c| WRAPPERS.contains(c))
+        };
+    let ip = bracketed_ip(start) || ipv6(start);
     start.trim_end_matches(|c| WRAPPERS.contains(c) && !(ip && c == ']'))
 }
 
@@ -204,8 +250,8 @@ fn shape(word: &str) -> String {
 }
 
 /// **Whether the [`shape`] of a word names a target**: a scheme (`https:`, `x://`), an IP
-/// address (four numbers, a `0x` number, IPv6 in brackets or not), `localhost`, a name with a
-/// port (`intranet:8080`), or a domain whose last label is a public suffix (ICANN); and a path
+/// address (four numbers, a `0x` number, IPv6 in brackets or not), `localhost`, or a domain whose
+/// last label is a public suffix (ICANN), with a port or without; and a path
 /// (`./x`, `~/x`, `a/b.rs`, `/a/b`), or over a file any file's name (`main.rs`). "1.2.3",
 /// "12:30", "e.g", "self.x" and "foo::bar" name none.
 fn names_a_target(shape: &str, file: bool) -> bool {
@@ -261,31 +307,25 @@ fn names_a_place(shape: &str) -> bool {
     let host = decoded(authority.rsplit('@').next().unwrap_or_default());
     let authority = decoded(authority);
     bracketed_ip(&host)
-        || host.parse::<std::net::Ipv6Addr>().is_ok()
+        || ipv6(&host)
         || authority
             .split(|c: char| !(c.is_alphanumeric() || matches!(c, '-' | '.' | ':')))
             .any(names_a_host)
 }
 
-/// Whether `piece`, with no characters a host cannot hold, is a host and maybe a port: any
-/// name with a port counts (`intranet:8080`, `localhost.test:5173`), a time (`12:30`) does not.
+/// Whether `piece`, with no characters a host cannot hold, is a host and maybe a port. A port
+/// counts only with a host that names one: `localhost:5173` does, `intranet:8080`, `step:3`
+/// and a time (`12:30`) do not.
 fn names_a_host(piece: &str) -> bool {
-    let (name, port) = match piece.rsplit_once(':') {
-        Some((name, port)) if port.chars().all(|c| c.is_ascii_digit()) => (name, Some(port)),
-        _ => (piece, None),
+    let name = match piece.rsplit_once(':') {
+        Some((name, port)) if port.chars().all(|c| c.is_ascii_digit()) => name,
+        _ => piece,
     };
     if name.contains(':') {
         return false;
     }
     let name = name.trim_matches('.');
-    name == "localhost"
-        || port.is_some_and(|port| !port.is_empty())
-            && name.starts_with(|c: char| c.is_ascii_alphabetic())
-            && name
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.'))
-        || numbers_a_host(name)
-        || public_domain(name)
+    name == "localhost" || numbers_a_host(name) || public_domain(name)
 }
 
 /// Whether `name` is an IPv4 address as a browser reads one and a reader may: four numbers, or
@@ -461,46 +501,38 @@ fn names_file(word: &str, file: &Path, pane: &Pane) -> Option<String> {
     (!same_file(&path, file, pane)).then(|| word.to_owned())
 }
 
-/// Whether `words`, a path as a program printed it, names `file` (absolute, resolved): the
-/// same path from `/` (resolved through its links), the same from the chat's folder where it
-/// climbs out with `..`, and otherwise the end of `file`'s path.
+/// **Whether `words`, a path as a program printed it, leads to `file`** (absolute, resolved):
+/// read from `/`, from home (`~`), or else from the chat's folder (the project where it has
+/// none), it is `file` or a folder `file` is in, compared by whole parts of the path, as
+/// written or with its links resolved. With nowhere to read a relative path from, it does not.
 fn same_file(words: &str, file: &Path, pane: &Pane) -> bool {
-    let home;
     let path = if words == "~" || words.starts_with("~/") {
-        let Some(dir) = std::env::var_os("HOME") else {
+        let Some(home) = std::env::var_os("HOME") else {
             return false;
         };
-        home = PathBuf::from(dir).join(words.trim_start_matches('~').trim_start_matches('/'));
-        home.as_path()
+        PathBuf::from(home).join(words.trim_start_matches('~').trim_start_matches('/'))
     } else if words.starts_with('~') {
         return false;
+    } else if Path::new(words).is_absolute() {
+        PathBuf::from(words)
     } else {
-        Path::new(words)
-    };
-    if path.is_absolute() {
-        return path == file || std::fs::canonicalize(path).is_ok_and(|real| real == file);
-    }
-    let parts: Vec<Component> = path
-        .components()
-        .filter(|part| *part != Component::CurDir)
-        .collect();
-    if parts.contains(&Component::ParentDir) {
-        let Some(folder) = pane.folder.as_ref() else {
+        let Some(base) = pane.folder.as_ref().or(pane.project.as_ref()) else {
             return false;
         };
-        let mut joined = PathBuf::new();
-        for part in folder.join(path).components() {
-            match part {
-                Component::ParentDir => {
-                    joined.pop();
-                }
-                Component::CurDir => {}
-                other => joined.push(other),
+        base.join(words)
+    };
+    let mut joined = PathBuf::new();
+    for part in path.components() {
+        match part {
+            Component::ParentDir => {
+                joined.pop();
             }
+            Component::CurDir => {}
+            other => joined.push(other),
         }
-        return joined == file || std::fs::canonicalize(&joined).is_ok_and(|real| real == file);
     }
-    !parts.is_empty() && file.ends_with(parts.iter().collect::<PathBuf>())
+    file.starts_with(&joined)
+        || std::fs::canonicalize(&joined).is_ok_and(|real| file.starts_with(real))
 }
 
 #[cfg(test)]
