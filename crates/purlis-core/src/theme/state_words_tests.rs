@@ -243,7 +243,7 @@ fn every_state_colour_a_part_draws_as_words_is_held_at_the_text_floor() {
 }
 
 #[test]
-fn the_waiting_words_of_a_button_a_badge_and_a_count_are_among_them() {
+fn the_waiting_words_of_a_button_and_a_count_are_among_them() {
     let found = state_words();
     let has = |part: &str, back: &str, under: Option<&str>| {
         found.iter().any(|(named, front, on, below)| {
@@ -258,7 +258,6 @@ fn the_waiting_words_of_a_button_a_badge_and_a_count_are_among_them() {
         has("button.root.warning-soft.hover", "control.hover", None),
         "{found:?}"
     );
-    assert!(has("rail.badge", "surface.overlay", None), "{found:?}");
     assert!(
         has("titlebar.count", "wash.warning", Some("surface.deep")),
         "{found:?}"

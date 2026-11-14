@@ -163,6 +163,7 @@ pub fn finishes(events: &[Event], chat: &str) -> Vec<Finish> {
                 if let Ok(AskAnswered {
                     ask: AskGroup::Sandbox,
                     answer: Answer::Allowed,
+                    ..
                 }) = serde_json::from_value(event.body.clone())
                 {
                     turn.sandbox_allowed();

@@ -167,11 +167,13 @@ fn a_budget_or_loop_pause_is_never_named_offered_a_rule_nor_cooled_off() {
         }),
         since: 1_000,
         held: vec![1],
+        raised: false,
     };
     let looping = Paused {
         why: Why::Looping(purlis_core::looping::Why::Failing { times: 6 }),
         since: 1_000,
         held: vec![2],
+        raised: false,
     };
     let asks = vec![
         pauses::paused(1, &budget, Vec::new(), None),

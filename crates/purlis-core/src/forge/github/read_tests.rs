@@ -356,8 +356,9 @@ fn a_repo_s_milestones_are_read_with_their_progress_open_ones_by_default() {
     let open = github
         .milestone_progress(&Caller::window(), "acme/api", false)
         .unwrap();
+    assert!(!open.cut);
     assert_eq!(
-        open,
+        open.listed,
         vec![MilestoneProgress {
             number: 4,
             title: "M4".into(),
@@ -373,7 +374,36 @@ fn a_repo_s_milestones_are_read_with_their_progress_open_ones_by_default() {
     let all = github
         .milestone_progress(&Caller::window(), "acme/api", true)
         .unwrap();
-    assert_eq!(all[0].description, "The first.");
-    assert_eq!(all[0].due_on, None);
+    assert_eq!(all.listed[0].description, "The first.");
+    assert_eq!(all.listed[0].due_on, None);
+    assert_eq!(recorded.unspent(), Vec::new());
+}
+
+#[test]
+fn a_repo_s_milestones_are_read_a_few_pages_at_most_and_say_when_more_were_left() {
+    let page = |n: usize| {
+        let listed: Vec<Value> = (0..100)
+            .map(|i| {
+                json!({
+                    "number": n * 100 + i, "title": "M", "description": null, "due_on": null,
+                    "state": "open", "open_issues": 0, "closed_issues": 0,
+                    "html_url": "https://github.com/acme/api/milestone/1",
+                    "updated_at": "2026-11-10T09:00:00Z"
+                })
+            })
+            .collect();
+        rest(
+            &format!("repos/acme/api/milestones?state=open&per_page=100&page={n}"),
+            Value::Array(listed),
+        )
+    };
+    let pages: Vec<Value> = (1..=3).map(page).collect();
+    let (github, recorded) = over(Value::Array(pages));
+    let read = github
+        .milestone_progress(&Caller::window(), "acme/api", false)
+        .unwrap();
+    assert_eq!(read.listed.len(), 300);
+    assert!(read.cut, "a full last page may have more after it");
+    // No page past the last was asked for: the recording holds none, and every one was spent.
     assert_eq!(recorded.unspent(), Vec::new());
 }

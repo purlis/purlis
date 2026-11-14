@@ -57,7 +57,9 @@ use crate::counts::{counted, plural};
 use crate::workspaces::Plane;
 use crate::{memstore, personagrant, pieces, shown};
 
-/// `hooks.UNATTENDED_MODE`: the harness's own name for a run with nobody at the keyboard.
+/// `hooks.UNATTENDED_MODE`: the harness's own name for a run with nobody at the keyboard. Only
+/// the unattended stop's recorded words name it (`sessionstart-tells-an-unattended-unlocked-run-
+/// to-stop`, ADR 0046); whether a chat is unattended is [`Ask::attendance`], never this string.
 pub const UNATTENDED_MODE: &str = "bypassPermissions";
 
 /// How many of the newest memory titles each store shows — `_MEM_DIGEST_N`.
@@ -119,6 +121,12 @@ pub struct Ask<'a> {
     /// The environment, as a lookup.
     pub env: &'a dyn Fn(&str) -> Option<String>,
     pub now: DateTime<Utc>,
+    /// **Whether anyone is at the chat** (R-111, T1-20, #6411): the chat's attendance fact
+    /// ([`crate::attendance::Fact::attendance`]), the same on every harness. The briefing never
+    /// reads it from the payload's `permission_mode`, so a mode that asks never makes an
+    /// unattended chat look watched (Q198, Q270), and a resume briefs as the fact it carried
+    /// forward (Q271).
+    pub attendance: crate::dispatchunattended::Attendance,
 }
 
 impl Ask<'_> {
@@ -169,7 +177,7 @@ impl Ask<'_> {
     }
 
     fn unattended(&self) -> bool {
-        self.text("permission_mode") == Some(UNATTENDED_MODE)
+        self.attendance == crate::dispatchunattended::Attendance::Unattended
     }
 }
 

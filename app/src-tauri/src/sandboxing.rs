@@ -2214,7 +2214,17 @@ pub async fn allow_sandbox_block(
         // count again (R-211, Q253).
         crate::pausing::allowed(&held, session);
         // Answered: neither this Notice nor a question for several tasks answers it again.
-        held.chats().blocks().answered(session, &block);
+        // R-229: the person's Allow, in the chat's Chat log, only where this Allow let the
+        // block go: a dismissal racing it that let it go first wrote the one answer (Q262
+        // amended).
+        if held.chats().blocks().answered(session, &block) {
+            crate::chatlog::answered_in_the_window(
+                held.hooks(),
+                session,
+                purlis_core::eventlog::stops::AskGroup::Sandbox,
+                true,
+            );
+        }
         Ok(allowed)
     })
     .await
@@ -2400,6 +2410,13 @@ pub fn keep_sandbox_block(
     let Some(block) = keep_block(held.chats(), session, &shown, reason.as_deref(), &audit) else {
         return Ok(());
     };
+    // R-229: the person's Keep blocked, in the chat's Chat log.
+    crate::chatlog::answered_in_the_window(
+        held.hooks(),
+        session,
+        purlis_core::eventlog::stops::AskGroup::Sandbox,
+        false,
+    );
     // The person's no, kept where the Inbox's look back reads it (#1700).
     if block.what == GrantWhat::Host {
         crate::network::record_kept_blocked(
@@ -2423,8 +2440,11 @@ pub(crate) fn keep_block(
     audit: Audit<'_>,
 ) -> Option<crate::taskblocks::HeldBlock> {
     let block = crate::taskblocks::shown_one(chats.blocks(), session, shown).ok()?;
-    // The person's no: the ask leaves, and the refusal is one block from now on (T1-10).
-    chats.blocks().kept_blocked(session, &block);
+    // The person's no: the ask leaves, and the refusal is one block from now on (T1-10). An
+    // Allow racing this that let the block go first is the one answer (Q262 amended).
+    if !chats.blocks().kept_blocked(session, &block) {
+        return None;
+    }
     if block.what == GrantWhat::Host
         && let Ok(host) = sandbox::grant::host(&block.target)
     {

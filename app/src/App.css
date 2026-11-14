@@ -9435,6 +9435,15 @@ nav.piece-files-head {
   font-size: var(--font-size-sm);
 }
 
+/* What heads a chat's Chat log (R-234, R-235, T1-28): its honesty lines, then its allowed calls
+   in one line, above its rows. */
+.chat-log-honesty,
+.chat-log-allowed {
+  max-width: 70rem;
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-sm);
+}
+
 /* The Chat log's head: its blocks filter and their count (R-299, R-301; T1-30). */
 .chat-log-head {
   display: flex;
