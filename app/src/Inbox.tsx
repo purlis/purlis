@@ -626,8 +626,8 @@ export function Inbox({
     }
     const button = buttonFor(row, key);
     if (button === null || button.hasAttribute("disabled")) return true;
-    // Go to chat leaves Asks for the chat; Go to project takes triage into that project's Asks.
-    if (key === "go" && row.dataset.source !== "here") endTriage();
+    // Go to chat leaves Asks for the chat, and triage ends there.
+    if (key === "go") endTriage();
     button.click();
     return true;
   };
@@ -656,7 +656,8 @@ export function Inbox({
     const at = lastRow.current >= 0 && lastRow.current < rows.length ? lastRow.current : 0;
     leadOf(rows[at]).focus();
   };
-  useLayoutEffect(() => {
+  /** Where the keyboard goes once the element it was on has gone: nowhere while it stands. */
+  const afterGone = () => {
     const was = lastOn.current;
     if (was === null || was.isConnected) return;
     lastOn.current = null;
@@ -672,7 +673,26 @@ export function Inbox({
       return;
     }
     list.querySelector<HTMLElement>('[role="row"][data-key]')?.focus();
+  };
+  /** The latest {@link afterGone}, for the watch below, which outlives a render. */
+  const goneLater = useRef(afterGone);
+  useLayoutEffect(() => {
+    goneLater.current = afterGone;
+    afterGone();
   });
+  /**
+   * **The last row answered** (#6346): the list family takes a row out a commit after this
+   * one, and where none stands after it, it gives the keyboard to nothing, so neither the commit
+   * above nor `onFocus` sees it fall to the page. The list's own changes are watched for that,
+   * a frame later, once the list family has put the keyboard where it puts it.
+   */
+  useEffect(() => {
+    const list = listAt.current;
+    if (list === null) return;
+    const watch = new MutationObserver(() => requestAnimationFrame(() => goneLater.current()));
+    watch.observe(list, { childList: true, subtree: true });
+    return () => watch.disconnect();
+  }, []);
 
   const [noticed, setNoticed] = useState(0);
   /** What Dismiss all on the Notices does now (#5650): none while no Notice has a Dismiss. */
@@ -839,8 +859,7 @@ export function Inbox({
           // Leaving for somewhere else lets go; an element taken away is still remembered.
           if (event.relatedTarget !== null && !listAt.current?.contains(event.relatedTarget))
             lastOn.current = null;
-          // Leaving Asks for anywhere but another project's Asks ends triage (#6016): the
-          // person went somewhere of their own.
+          // Leaving Asks ends triage (#6016): the person went somewhere of their own.
           if (
             drawsAsks &&
             event.relatedTarget instanceof Element &&
