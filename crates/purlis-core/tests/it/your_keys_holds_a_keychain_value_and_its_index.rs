@@ -182,27 +182,20 @@ fn the_read_function_serves_one_entry_to_any_project_or_persona() {
 /// The store's writers: each a function only the window calls.
 const WRITERS: [&str; 2] = ["add", "set_approval"];
 
-/// The surfaces a person or a chat reaches purlis through other than the window, each by the
-/// source that serves it. A writer named in any of them is a write the window did not make.
-const SURFACES: [(&str, &str); 4] = [
-    ("crates/purlis-cli/src", "the `purlis` command's verbs"),
-    (
-        "crates/session-protocol/src",
-        "the session protocol's methods",
-    ),
-    (
-        "crates/host/src",
-        "the session host, which serves the protocol",
-    ),
-    (
-        "crates/purlis-core/src",
-        "the verbs, protocol handlers and chat tools core implements",
-    ),
+/// Where the code a person or a chat reaches purlis through lives: every crate of the
+/// workspace (the `purlis` command's verbs, the session protocol and the host serving it, the
+/// chat tools, the browser engine, the stand-in) and the app's own Rust, whose files also serve
+/// chats (`secretasks.rs`, `secretfills.rs`, `hooks.rs`, `vaultroute.rs`).
+const SURFACES: [&str; 2] = ["crates", "app/src-tauri/src"];
+
+/// The only files that may write your keys or name its keychain service: the store itself and
+/// the window's commands for it (T1a-11 and T1a-13 add the second; it is allowed before then).
+const ALLOWED: [&str; 2] = [
+    "crates/purlis-core/src/yourkeys.rs",
+    "app/src-tauri/src/yourkeyscmds.rs",
 ];
 
-/// The window: the one place a writer may be called from.
-const THE_WINDOW: &str = "app/src-tauri/src";
-
+/// Every Rust file under `dir` that ships: no `tests` folder or `tests.rs`, no build output.
 fn rust_files(dir: &Path, into: &mut Vec<PathBuf>) {
     let Ok(read) = std::fs::read_dir(dir) else {
         return;
@@ -210,7 +203,10 @@ fn rust_files(dir: &Path, into: &mut Vec<PathBuf>) {
     for item in read.flatten() {
         let path = item.path();
         if path.is_dir() {
-            if path.file_name().is_some_and(|n| n == "tests") {
+            if path
+                .file_name()
+                .is_some_and(|n| n == "tests" || n == "target" || n == "node_modules")
+            {
                 continue;
             }
             rust_files(&path, into);
@@ -222,26 +218,69 @@ fn rust_files(dir: &Path, into: &mut Vec<PathBuf>) {
     }
 }
 
-/// The writers `text` names through a path into the store: `yourkeys::add(`, or a `use` of
-/// the store whose list holds one.
-fn writers_named(text: &str) -> Vec<&'static str> {
-    let mut named = Vec::new();
-    for (at, _) in text.match_indices("yourkeys::") {
-        let after = &text[at + "yourkeys::".len()..];
-        let reach = if after.starts_with('{') {
-            &after[..after.find('}').unwrap_or(after.len())]
-        } else {
-            let end = after
-                .find(|c: char| !(c.is_alphanumeric() || c == '_'))
-                .unwrap_or(after.len());
-            &after[..end]
+fn is_ident(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+/// What `text` reaches of the store's writing side: a writer or [`SERVICE`] named through a path
+/// into the store (`yourkeys::add(`, `use …yourkeys::{SERVICE, set_approval}`), a glob of it
+/// (`yourkeys::*`), an alias of it (`yourkeys as yk`, `yourkeys::{self as yk}`), or the
+/// service's name written out (`"purlis/@your-keys"`).
+fn writes_named(text: &str) -> Vec<String> {
+    let mut named: Vec<String> = Vec::new();
+    let mut note = |what: String| {
+        if !named.contains(&what) {
+            named.push(what);
+        }
+    };
+    if text.contains("@your-keys") {
+        note("the service's name, @your-keys".to_owned());
+    }
+    for (at, _) in text.match_indices("yourkeys") {
+        if text[..at].chars().next_back().is_some_and(is_ident) {
+            continue;
+        }
+        let after = &text[at + "yourkeys".len()..];
+        if after.starts_with(|c: char| is_ident(c)) {
+            continue;
+        }
+        if after.trim_start().starts_with("as ") {
+            note("an alias of the store".to_owned());
+            continue;
+        }
+        let Some(path) = after.strip_prefix("::") else {
+            continue;
         };
-        for writer in WRITERS {
-            let words = reach
-                .split(|c: char| !(c.is_alphanumeric() || c == '_'))
-                .any(|word| word == writer);
-            if words && !named.contains(&writer) {
-                named.push(writer);
+        let reach = if path.starts_with('{') {
+            // The whole group, nested groups and all.
+            let mut depth = 0usize;
+            let end = path
+                .char_indices()
+                .find(|&(_, c)| {
+                    match c {
+                        '{' => depth += 1,
+                        '}' => depth -= 1,
+                        _ => {}
+                    }
+                    depth == 0
+                })
+                .map_or(path.len(), |(i, _)| i + 1);
+            &path[..end]
+        } else if path.starts_with('*') {
+            "*"
+        } else {
+            &path[..path.find(|c: char| !is_ident(c)).unwrap_or(path.len())]
+        };
+        if reach.contains('*') {
+            note("a glob of the store".to_owned());
+        }
+        let words: Vec<&str> = reach.split(|c: char| !is_ident(c)).collect();
+        if reach.contains("self as ") {
+            note("an alias of the store".to_owned());
+        }
+        for word in WRITERS.iter().copied().chain(["SERVICE"]) {
+            if words.contains(&word) {
+                note(word.to_owned());
             }
         }
     }
@@ -252,36 +291,84 @@ fn writers_named(text: &str) -> Vec<&'static str> {
 fn nothing_but_the_window_writes_your_keys() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     // The writers are the store's: a rename would make the walk below look for nothing.
-    let store = std::fs::read_to_string(root.join("crates/purlis-core/src/yourkeys.rs")).unwrap();
+    let store = std::fs::read_to_string(root.join(ALLOWED[0])).unwrap();
     for writer in WRITERS {
         assert!(
             store.contains(&format!("pub fn {writer}(")),
             "your keys has no writer `{writer}`"
         );
     }
-    assert!(writers_named("crate::yourkeys::add(").contains(&"add"));
-    assert!(writers_named("use crate::yourkeys::{list, set_approval};").contains(&"set_approval"));
-    assert!(writers_named("crate::yourkeys::list(").is_empty());
+    assert!(store.contains("pub const SERVICE: &str = \"purlis/@your-keys\";"));
+    // Each way of reaching a writer is seen, and a reader is not a write.
+    for (text, sees) in [
+        ("crate::yourkeys::add(", "add"),
+        ("use crate::yourkeys::{list, set_approval};", "set_approval"),
+        ("use purlis_core::yourkeys::{\n    self,\n    add,\n};", "add"),
+        ("use purlis_core::{yourkeys::{Product, set_approval}};", "set_approval"),
+        ("use purlis_core::yourkeys::add as put;", "add"),
+        ("use purlis_core::yourkeys::*;", "a glob of the store"),
+        ("use purlis_core::yourkeys as yk;", "an alias of the store"),
+        ("use purlis_core::{yourkeys as yk};", "an alias of the store"),
+        ("use purlis_core::yourkeys::{self as yk};", "an alias of the store"),
+        ("credentials.set(yourkeys::SERVICE, &id, value)", "SERVICE"),
+        ("use crate::yourkeys::{SERVICE as S};", "SERVICE"),
+        ("store.set(\"purlis/@your-keys\", &id, value)", "the service's name, @your-keys"),
+    ] {
+        assert!(
+            writes_named(text).iter().any(|n| n == sees),
+            "{text:?} was not seen to name {sees}: {:?}",
+            writes_named(text)
+        );
+    }
+    for reader in [
+        "crate::yourkeys::list(",
+        "home.join(crate::yourkeys::DIR)",
+        "use purlis_core::yourkeys::{self, Product, read_key};",
+        "notyourkeys::add(",
+        "SERVICE.to_owned()",
+    ] {
+        assert!(writes_named(reader).is_empty(), "{reader:?}: {:?}", writes_named(reader));
+    }
 
     let mut offenders = Vec::new();
-    for (surface, what) in SURFACES {
+    let mut walked = 0;
+    for surface in SURFACES {
         let mut files = Vec::new();
         rust_files(&root.join(surface), &mut files);
-        assert!(!files.is_empty(), "{surface} ({what}) holds no Rust file");
+        assert!(!files.is_empty(), "{surface} holds no Rust file");
         for file in files {
-            if file.ends_with("purlis-core/src/yourkeys.rs") {
+            let at = file.strip_prefix(&root).unwrap_or(&file).to_path_buf();
+            if ALLOWED.iter().any(|allowed| at == Path::new(allowed)) {
                 continue;
             }
+            walked += 1;
             let text = std::fs::read_to_string(&file).unwrap();
-            let named = writers_named(&text);
+            let named = writes_named(&text);
             if !named.is_empty() {
-                offenders.push(format!("{} ({what}): {named:?}", file.display()));
+                offenders.push(format!("{}: {named:?}", at.display()));
             }
         }
     }
+    // The walk reached the chat-reachable files the window's crate and the other crates hold.
+    for must in [
+        "app/src-tauri/src/secretasks.rs",
+        "app/src-tauri/src/secretfills.rs",
+        "app/src-tauri/src/hooks.rs",
+        "app/src-tauri/src/vaultroute.rs",
+        "crates/browser-engine",
+        "crates/stand-in",
+        "crates/purlis-cli/src",
+        "crates/host/src",
+        "crates/session-protocol/src",
+    ] {
+        assert!(root.join(must).exists(), "{must} is gone: name what replaced it");
+    }
+    assert!(walked > 100, "the walk read only {walked} files");
     assert!(
         offenders.is_empty(),
-        "only the window ({THE_WINDOW}) writes your keys:\n{}",
+        "only your keys' store and the window's commands for it ({}) write your keys or name \
+         its service:\n{}",
+        ALLOWED[1],
         offenders.join("\n")
     );
 }
@@ -383,6 +470,186 @@ fn the_index_line_is_written_before_the_item_and_removed_on_failure() {
         Ok(0),
         "a failed item write left its line behind"
     );
+}
+
+/// The stub keyring with a write that answers as told: held as `held`, or landing and then
+/// failing; and a delete that fails when told to.
+struct Answering {
+    inner: FileStore,
+    held: Held,
+    lands_then_fails: bool,
+    delete_fails: bool,
+}
+
+impl Answering {
+    fn at(config: &Path) -> Self {
+        Self {
+            inner: stub(config),
+            held: Held::NoRule,
+            lands_then_fails: false,
+            delete_fails: false,
+        }
+    }
+}
+
+impl Store for Answering {
+    fn get(&self, service: &str, account: &str) -> Result<Option<Secret>, VaultError> {
+        self.inner.get(service, account)
+    }
+    fn set(&self, service: &str, account: &str, value: &str) -> Result<Held, VaultError> {
+        self.inner.set(service, account, value)?;
+        if self.lands_then_fails {
+            return Err(VaultError::new("the stub keychain wrote the item and then failed"));
+        }
+        Ok(self.held)
+    }
+    fn delete(&self, service: &str, account: &str) -> Result<bool, VaultError> {
+        if self.delete_fails {
+            return Err(VaultError::new("the stub keychain refuses this delete"));
+        }
+        self.inner.delete(service, account)
+    }
+}
+
+/// Adds an Anthropic key through `store` behind a recording seam: what `add` answered, the
+/// account its one write went to, and the record.
+fn add_through(config: &Path, store: Answering) -> (Result<Saved, String>, String, Record) {
+    let record = Record::default();
+    let credentials = RecordingCredentials::new(Box::new(store), record.clone());
+    let saved = add(
+        config,
+        &credentials,
+        Product::anthropic(),
+        Checked::Passed,
+        "synthetic-value",
+    );
+    let written: Vec<String> = record
+        .ops()
+        .into_iter()
+        .filter(|op| op.kind == Kind::CredentialWrite)
+        .filter_map(|op| match op.target {
+            Target::Entry { service, account } if service == SERVICE => Some(account),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(written.len(), 1, "{:?}", record.ops());
+    (saved, written[0].clone(), record)
+}
+
+#[test]
+fn a_key_the_keychain_does_not_hold_to_the_app_is_refused_and_taken_out() {
+    let config = tempfile::tempdir().unwrap();
+    // Outside the app on macOS the write falls back to the calling program's own item.
+    let (saved, account, record) = add_through(
+        config.path(),
+        Answering {
+            held: Held::NotYet,
+            ..Answering::at(config.path())
+        },
+    );
+
+    assert!(saved.is_err(), "{saved:?}");
+    assert!(stub(config.path()).get(SERVICE, &account).unwrap().is_none());
+    assert!(
+        record.ops().iter().any(|op| op.kind == Kind::CredentialDelete
+            && op.target == entry(&account)),
+        "{:?}",
+        record.ops()
+    );
+    let credentials = RecordingCredentials::new(Box::new(stub(config.path())), Record::default());
+    assert_eq!(list(config.path(), &credentials).map(|l| l.len()), Ok(0));
+    // Held to the app, or by a store that keeps no rule, the key is added.
+    for held in [Held::ToTheApp, Held::NoRule] {
+        let config = tempfile::tempdir().unwrap();
+        let (saved, _, _) = add_through(
+            config.path(),
+            Answering {
+                held,
+                ..Answering::at(config.path())
+            },
+        );
+        assert!(matches!(saved, Ok(Saved::Added(_))), "{held:?}: {saved:?}");
+    }
+}
+
+#[test]
+fn an_item_whose_write_failed_is_taken_out_again() {
+    let config = tempfile::tempdir().unwrap();
+    let (saved, account, record) = add_through(
+        config.path(),
+        Answering {
+            lands_then_fails: true,
+            ..Answering::at(config.path())
+        },
+    );
+
+    assert!(saved.is_err(), "{saved:?}");
+    assert!(
+        stub(config.path()).get(SERVICE, &account).unwrap().is_none(),
+        "the item the failed write left is still in the keychain"
+    );
+    assert!(
+        record.ops().iter().any(|op| op.kind == Kind::CredentialDelete
+            && op.target == entry(&account)),
+        "{:?}",
+        record.ops()
+    );
+
+    // Where the keychain refuses the delete too, the error says the item may be left.
+    let config = tempfile::tempdir().unwrap();
+    let (saved, _, _) = add_through(
+        config.path(),
+        Answering {
+            lands_then_fails: true,
+            delete_fails: true,
+            ..Answering::at(config.path())
+        },
+    );
+    assert!(
+        saved.as_ref().is_err_and(|why| why.contains("may be left in your keychain")),
+        "{saved:?}"
+    );
+}
+
+#[test]
+fn an_unread_line_naming_the_product_blocks_a_second_key() {
+    let unread = |product: serde_json::Value| {
+        serde_json::json!({
+            "version": 1,
+            "entries": [{
+                "id": Ulid::generate().to_string(),
+                "kind": "reference",
+                "product": product,
+                "approval": "off",
+                "checked": "passed",
+            }],
+        })
+        .to_string()
+    };
+    // A line this build can't read, for the product or for a product it can't tell: no add.
+    for planted in [
+        unread(serde_json::json!({ "from": "built-in", "id": "anthropic" })),
+        unread(serde_json::json!("not a product")),
+        "{\"version\": 1, \"entries\": [{\"id\": 7}]}".to_owned(),
+    ] {
+        let here = Here::new();
+        plant(&here, &planted);
+        let saved = add(
+            here.root(),
+            &here.credentials,
+            Product::anthropic(),
+            Checked::Passed,
+            "synthetic-value",
+        );
+        assert!(saved.is_err(), "{planted}: {saved:?}");
+        assert_eq!(std::fs::read_to_string(here.index()).unwrap(), planted);
+        assert_eq!(here.record.count(Kind::CredentialWrite), 0, "{planted}");
+    }
+    // One for another product is kept, and does not block.
+    let here = Here::new();
+    plant(&here, &unread(serde_json::json!({ "from": "built-in", "id": "openai" })));
+    here.added("synthetic-value");
+    assert_eq!(here.index_json()["entries"].as_array().map(Vec::len), Some(2));
 }
 
 // ---------------------------------------------------------------------------------------------
