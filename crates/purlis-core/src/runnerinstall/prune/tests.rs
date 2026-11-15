@@ -159,9 +159,70 @@ fn a_version_whose_host_left_chats_in_its_record_is_never_removed() {
     assert_eq!(runner.prune("3.0.0").removed, ["1.0.0"]);
 }
 
+/// Lines as `purlis_host`'s host record writes them: `started` with the whole program, `ended`.
+fn started(program: &str) -> String {
+    format!(
+        "{{\"started\":{{\"program\":\"{program}\",\"project\":\"01J9PRJCT00000000000000000\",\
+         \"project_path\":\"/w/p\",\"number\":1,\"process\":4242}}}}\n"
+    )
+}
+
+fn ended(program: &str) -> String {
+    format!("{{\"ended\":{{\"program\":\"{program}\"}}}}\n")
+}
+
+#[test]
+fn a_host_stopped_by_a_signal_whose_chats_had_all_ended_has_drained() {
+    let runner = Runner::with(&["1.0.0", "2.0.0", "3.0.0"]);
+    let record = runner.host_folder("1.0.0").join(HOST_RECORD);
+    // Killed outright, a host empties nothing: its record still names each chat it ended.
+    std::fs::write(
+        &record,
+        format!(
+            "{}{}{}{}",
+            started("p1"),
+            started("p2"),
+            ended("p2"),
+            ended("p1")
+        ),
+    )
+    .unwrap();
+    assert_eq!(runner.prune("3.0.0").removed, ["1.0.0"]);
+}
+
+#[test]
+fn a_chat_started_and_never_ended_keeps_its_version_and_a_torn_line_is_passed_over() {
+    let runner = Runner::with(&["1.0.0", "2.0.0", "3.0.0"]);
+    let record = runner.host_folder("1.0.0").join(HOST_RECORD);
+    std::fs::write(
+        &record,
+        format!(
+            "{}{}{}{{\"ended\":{{\"prog",
+            started("p1"),
+            started("p2"),
+            ended("p1")
+        ),
+    )
+    .unwrap();
+    assert_eq!(
+        runner.prune("3.0.0").kept,
+        [("1.0.0".to_owned(), Live::Chats)]
+    );
+    assert!(runner.binary("1.0.0").exists());
+    // A record larger than any host writes is not read, and keeps its version.
+    let runner = Runner::with(&["1.0.0", "2.0.0", "3.0.0"]);
+    let record = runner.host_folder("1.0.0").join(HOST_RECORD);
+    std::fs::write(&record, vec![b'\n'; (READ_AT_MOST + 1) as usize]).unwrap();
+    assert_eq!(
+        runner.prune("3.0.0").kept,
+        [("1.0.0".to_owned(), Live::Chats)]
+    );
+}
+
 #[test]
 fn the_host_record_named_is_the_one_the_host_keeps() {
     assert_eq!(HOST_RECORD, purlis_host::HOST_RECORD);
+    assert_eq!(READ_AT_MOST, purlis_host::READ_AT_MOST);
 }
 
 #[test]

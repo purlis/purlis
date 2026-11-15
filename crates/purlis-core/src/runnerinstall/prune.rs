@@ -21,8 +21,9 @@
 //! - its lock is held by a host: it serves, and stays ([`Live::Serving`]);
 //! - something answers on its socket (a host whose lock file the system cleaned away): it
 //!   stays ([`Live::Serving`]);
-//! - its host record ([`HOST_RECORD`]) names programs: a host killed outright left chats that
-//!   may still run, and it stays ([`Live::Chats`]). A host that ends as it should empties it.
+//! - its host record ([`HOST_RECORD`]) names a program started and not ended: a host killed
+//!   outright left a chat that may still run, and it stays ([`Live::Chats`]). A host that ends as
+//!   it should empties its record; one stopped by a signal leaves each start beside its end.
 //!
 //! Otherwise its binary's folder goes first, so nothing can start it again, then its host's
 //! folder, then the socket, link socket and lock file its host left behind. A folder that is a
@@ -37,12 +38,15 @@ use super::{SERVER_DIR, a_version, binary_at, for_login_shell, host_folder_of};
 /// names the programs a host started and has not ended.
 pub const HOST_RECORD: &str = "hosts.jsonl";
 
+/// The most of a host record that is read (`purlis_host::READ_AT_MOST`).
+pub const READ_AT_MOST: u64 = 4 * 1024 * 1024;
+
 /// Why a version that may go stays.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Live {
     /// Its host serves: it holds its lock, or answers on its socket.
     Serving,
-    /// Its host's record names programs that may still run.
+    /// Its host's record names a program started and not ended, which may still run.
     Chats,
 }
 
@@ -178,12 +182,43 @@ fn drained(socket: &Path, host: &Path) -> Result<Option<std::fs::File>, Live> {
     if std::os::unix::net::UnixStream::connect(socket).is_ok() {
         return Err(Live::Serving);
     }
-    match std::fs::symlink_metadata(host.join(HOST_RECORD)) {
-        Ok(record) if record.len() > 0 => Err(Live::Chats),
-        Ok(_) => Ok(held),
-        Err(why) if why.kind() == std::io::ErrorKind::NotFound => Ok(held),
-        Err(_) => Err(Live::Chats),
+    match left_running(&host.join(HOST_RECORD)) {
+        Some(false) => Ok(held),
+        Some(true) | None => Err(Live::Chats),
     }
+}
+
+/// **Whether the host record at `record` names a program started and not ended**: `Some(false)`
+/// where there is no record, or each program it names started has ended (a host that ended as it
+/// should empties it; one stopped by a signal leaves each start beside its end). `None` where it
+/// can't be read: not a regular file, or larger than any host writes ([`READ_AT_MOST`]). A line
+/// that can't be read, a torn last one among them, is passed over, as the host passes it over.
+fn left_running(record: &Path) -> Option<bool> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    enum Line {
+        Started { program: String },
+        Ended { program: String },
+    }
+    match std::fs::symlink_metadata(record) {
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => return Some(false),
+        Ok(found) if found.is_file() && found.len() <= READ_AT_MOST => {}
+        _ => return None,
+    }
+    let text = std::fs::read(record).ok()?;
+    let mut running = std::collections::HashSet::new();
+    for line in text.split(|byte| *byte == b'\n') {
+        match serde_json::from_slice::<Line>(line) {
+            Ok(Line::Started { program }) => {
+                running.insert(program);
+            }
+            Ok(Line::Ended { program }) => {
+                running.remove(&program);
+            }
+            Err(_) => {}
+        }
+    }
+    Some(!running.is_empty())
 }
 
 /// `path` removed, a link as a link; one that is not there is removed already.
