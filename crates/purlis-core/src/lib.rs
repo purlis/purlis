@@ -38,6 +38,7 @@ pub mod checks;
 pub mod cistate;
 pub mod cliname;
 pub mod clipath;
+pub mod clock;
 pub mod cloneupdate;
 pub mod cloning;
 #[cfg(unix)]
@@ -328,6 +329,7 @@ pub mod touching;
 pub mod trace;
 pub mod tui;
 pub mod updates;
+pub mod upstream;
 pub mod usage;
 pub mod version;
 pub mod wakeline;

@@ -1,0 +1,21 @@
+# The Anthropic built-in model provider declaration (T1a-07, #6750), shipped in the binary and
+# read through the one reader (`purlis_core::model_provider`). The background model is shipped
+# data: a cheaper model's name change is an edit here, not code. Its row in `[[models.table]]`
+# carries where the name comes from and when it was read; prices are T1a-32's.
+id = "anthropic"
+name = "Anthropic"
+kind = "vendor"
+key = "required"
+
+[[endpoint]]
+format = "anthropic-messages"
+base = "https://api.anthropic.com"
+auth = "x-api-key"
+
+[models]
+background = "claude-haiku-5-5"
+
+[[models.table]]
+id = "claude-haiku-5-5"
+source = "https://platform.claude.com/docs/en/about-claude/models/overview"
+as_of = "2026-11-15"

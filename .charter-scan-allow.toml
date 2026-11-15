@@ -2,3 +2,38 @@
 reason = "The recorded tests' made-up forge token: a fixture value every row lists as text that must never be printed."
 fingerprint = "sha256:99041bcad5bc73b82096efd118632a674723b3b9b60b40747989b5335fd964fc"
 paths = ["tests/fixtures/recorded/behaviour.jsonl"]
+
+[[allow]]
+reason = "A synthetic fixture for T1a-28's subscription-shape check: the made-up sample of a Claude plan access token (T1a-18, R-711). Every sample value spells SYNTHETIC, which tools/subscription-shapes.test.mjs asserts."
+fingerprint = "sha256:839f796f91194049925323a455d5d96e816166cbbf59559f648a84a4c1c6d352"
+paths = ["tests/fixtures/subscription-shapes/samples.json"]
+
+[[allow]]
+reason = "A synthetic fixture for T1a-28's subscription-shape check: the made-up sample of a Claude plan refresh token (T1a-18, R-711). Every sample value spells SYNTHETIC, which tools/subscription-shapes.test.mjs asserts."
+fingerprint = "sha256:635e95e87bdd5acd644410483338cb936d4684662d65902a34c7b30b96abdbeb"
+paths = ["tests/fixtures/subscription-shapes/samples.json"]
+
+[[allow]]
+reason = "A synthetic fixture for T1a-28's subscription-shape check: the made-up sample of an Anthropic API key (T1a-18, R-711). Every sample value spells SYNTHETIC, which tools/subscription-shapes.test.mjs asserts."
+fingerprint = "sha256:b022f2306f0f8cfe8b764730cb0410721d6bc023f8e070db88383978117b6d0f"
+paths = ["tests/fixtures/subscription-shapes/samples.json"]
+
+[[allow]]
+reason = "A synthetic fixture for T1a-28's subscription-shape check: the made-up sample of an Anthropic Admin key (T1a-18, R-711). Every sample value spells SYNTHETIC, which tools/subscription-shapes.test.mjs asserts."
+fingerprint = "sha256:33cf26b2803060bcdbe8b6840f6db2ceda0bfeb8b51fcced782f585e1944cc03"
+paths = ["tests/fixtures/subscription-shapes/samples.json"]
+
+[[allow]]
+reason = "A synthetic fixture for T1a-28's subscription-shape check: the made-up sample of a Claude Code session-ingress token (T1a-18, R-711). Every sample value spells SYNTHETIC, which tools/subscription-shapes.test.mjs asserts."
+fingerprint = "sha256:8f2c9d95978c28326f311a8fef905cee4849a436d8cafe8023ba7b69c2b17b8a"
+paths = ["tests/fixtures/subscription-shapes/samples.json"]
+
+[[allow]]
+reason = "A synthetic fixture for T1a-28's subscription-shape check: the made-up sample of an OpenAI API key (T1a-18, R-711). Every sample value spells SYNTHETIC, which tools/subscription-shapes.test.mjs asserts."
+fingerprint = "sha256:bc77eea1e1d64787bbfa38d9e090dbdc8f8596b5024df829202979e3639efb18"
+paths = ["tests/fixtures/subscription-shapes/samples.json"]
+
+[[allow]]
+reason = "A synthetic fixture for T1a-28's subscription-shape check: the made-up sample of a claude.ai web session key (T1a-18, R-711). Every sample value spells SYNTHETIC, which tools/subscription-shapes.test.mjs asserts."
+fingerprint = "sha256:c5abe8f86fb5975d25aaebd52f85c3ddc7a6bfca493c3b4e182a795ec3cb654c"
+paths = ["tests/fixtures/subscription-shapes/samples.json"]
