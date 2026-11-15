@@ -157,8 +157,15 @@ pub fn standing_and_host(
     if standing != Standing::Approved {
         return (standing, serve::origin_host(&real, &own));
     }
+    let host = approved_host(entry.as_ref(), view, pin_id, snapshot.fingerprint());
+    (standing, host)
+}
+
+/// The host of the page approved by `entry`, as `pin_id` with the template whose fingerprint is
+/// `fingerprint`, in view `view`: drawn from the approval's `storage`, its pin and its
+/// fingerprint ([`page_host`]).
+fn approved_host(entry: Option<&Value>, view: &str, pin_id: &str, fingerprint: &str) -> String {
     let storage = entry
-        .as_ref()
         .and_then(|entry| entry.get("storage"))
         .and_then(Value::as_str)
         .filter(|drawn| is_storage(drawn))
@@ -174,14 +181,20 @@ pub fn standing_and_host(
     frame("view", view.as_bytes());
     frame("storage", storage.as_bytes());
     frame("pin", pin_id.as_bytes());
-    frame("fingerprint", snapshot.fingerprint().as_bytes());
-    let host = hash
-        .finalize()
+    frame("fingerprint", fingerprint.as_bytes());
+    hash.finalize()
         .iter()
         .take(16)
         .map(|byte| format!("{byte:02x}"))
-        .collect();
-    (standing, host)
+        .collect()
+}
+
+/// Whether approval `entry` drew a `storage` of its own, so its page's host is its alone.
+fn drew_storage(entry: &Value) -> bool {
+    entry
+        .get("storage")
+        .and_then(Value::as_str)
+        .is_some_and(is_storage)
 }
 
 /// A new `storage` for an approval: 128 random bits, as 32 hex digits.
@@ -376,13 +389,30 @@ pub fn plane_granted(
 }
 
 /// **Forgets the approval of folder `folder`** of the workspace at `workspace`: its script stops
-/// running at its next load and it asks again. Whether there was one.
-pub fn forget(config_root: &Path, workspace: &Path, folder: &str) -> Result<bool, String> {
-    let mut had = false;
+/// running at its next load and it asks again. The host its page was served from while it was
+/// approved ([`page_host`]), whose web data nothing will ever be served again (#6697); nothing
+/// when there was no approval, or when it was recorded before its `storage` was drawn: such a
+/// page's host is its pin and fingerprint alone, which a clone of the plane approved alike
+/// shares, so what it kept is not this approval's to remove.
+pub fn forget(
+    config_root: &Path,
+    workspace: &Path,
+    folder: &str,
+) -> Result<Option<String>, String> {
+    let mut forgot = None;
     change(config_root, |entries| {
-        had = entries.remove(&key(workspace, folder)).is_some();
+        forgot = entries
+            .remove(&key(workspace, folder))
+            .filter(drew_storage)
+            .map(|entry| {
+                let approved = approval_of(&entry);
+                let (pin, fingerprint) = approved
+                    .as_ref()
+                    .map_or(("", ""), |one| (&one.pin, &one.fingerprint));
+                approved_host(Some(&entry), "", pin, fingerprint)
+            });
     })?;
-    Ok(had)
+    Ok(forgot)
 }
 
 /// **Carries every approval of the workspace that was at `from` to where it is now, `to`**: a
@@ -749,7 +779,11 @@ mod tests {
 
         here.approve(PIN);
         let again = host(PIN, "");
-        assert!(forget(&here.config, &here.workspace, "board").unwrap());
+        assert!(
+            forget(&here.config, &here.workspace, "board")
+                .unwrap()
+                .is_some()
+        );
         here.approve(PIN);
         assert_ne!(
             host(PIN, ""),
@@ -802,12 +836,71 @@ mod tests {
         )
         .unwrap();
 
-        assert!(forget(&here.config, &here.workspace, "board").unwrap());
-        assert!(!forget(&here.config, &here.workspace, "board").unwrap());
+        assert!(
+            forget(&here.config, &here.workspace, "board")
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            forget(&here.config, &here.workspace, "board")
+                .unwrap()
+                .is_none()
+        );
         assert_eq!(here.standing(PIN), Standing::New);
         assert_eq!(
             standing(Some(&here.config), &here.workspace, "other", PIN, &shown),
             Standing::Approved
+        );
+    }
+
+    #[test]
+    fn forgetting_an_approval_names_the_host_its_page_was_served_from_so_its_web_data_can_go() {
+        let here = Here::new();
+        here.approve(PIN);
+        let served = page_host(
+            Some(&here.config),
+            &here.workspace,
+            "board",
+            PIN,
+            &here.snapshot(),
+            "",
+        );
+        assert_ne!(
+            served,
+            serve::origin_host(&here.workspace.canonicalize().unwrap(), "board")
+        );
+
+        assert_eq!(
+            forget(&here.config, &here.workspace, "board").unwrap(),
+            Some(served)
+        );
+    }
+
+    /// An approval recorded before its `storage` was drawn serves its page from its pin and
+    /// fingerprint alone, a host a clone of the plane approved alike shares: forgetting it here
+    /// names no host, so the other clone's page keeps what it kept (#6697).
+    #[test]
+    fn forgetting_an_approval_recorded_before_its_storage_names_no_host_whose_data_would_go() {
+        let here = Here::new();
+        let shown = here.snapshot().fingerprint().to_owned();
+        crate::machine::private_dir(&here.config).unwrap();
+        let entry = json!({ "version": 1, "approved": {
+            key(&here.workspace, "board"): {
+                "workspace": here.workspace.canonicalize().unwrap().to_string_lossy(),
+                "folder": "board", "pin": PIN, "fingerprint": shown,
+            }
+        }});
+        std::fs::write(path(&here.config), entry.to_string()).unwrap();
+        assert_eq!(here.standing(PIN), Standing::Approved);
+
+        assert_eq!(
+            forget(&here.config, &here.workspace, "board").unwrap(),
+            None
+        );
+        assert_eq!(
+            here.standing(PIN),
+            Standing::New,
+            "the approval itself is gone"
         );
     }
 

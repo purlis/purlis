@@ -110,7 +110,7 @@ notify = "8.2"
 purlis-crash-handler.workspace = true
 objc2 = "0.6.4"
 block2 = "0.6"
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSArray", "NSBundle", "NSData", "NSDictionary", "NSError", "NSString", "NSValue"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSArray", "NSBundle", "NSData", "NSDictionary", "NSError", "NSProcessInfo", "NSString", "NSValue"] }
 # The system's Increase contrast, read as a window is created (#2582, `syscontrast.rs`): two more
 # features of the same crate, no crate new to the tree (operator, 2026-10-18).
 # The window's colour, read back for the scenario tests (#2760), takes more of its features: the

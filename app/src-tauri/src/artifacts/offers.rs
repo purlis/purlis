@@ -329,6 +329,7 @@ mod tests {
                 declared: None,
                 load: None,
                 offered: 0,
+                store: None,
             },
         );
         assert!(artifacts.offering("artifact-1", LOAD).is_none());
@@ -366,6 +367,7 @@ mod tests {
                 declared: None,
                 load: Some(LOAD.to_owned()),
                 offered: 0,
+                store: None,
             },
         );
         let mut drawn = Vec::new();
