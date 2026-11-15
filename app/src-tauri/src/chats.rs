@@ -9408,14 +9408,17 @@ impl Chats {
     /// [`Self::start_keeping_finished_screens`] never ran, and
     /// [`Self::close_what_was_not_reattached`] would close each unread. It returns at once, and
     /// [`Self::close_finished_left`] waits for the screens and closes the chats.
+    ///
+    /// **The deadline is taken first** (#6504's review), so asking a slow pool which chats it
+    /// still runs counts against it.
     pub(crate) fn start_keeping_screens_left(&self, finished: &[Chat]) -> KeepingLeft {
+        let by = crate::chatcard::screens_by_from_now();
         let left: Vec<(u32, String)> = finished
             .iter()
             .filter_map(|chat| Some((chat, chat.number?, chat.identity.id.clone()?)))
             .filter(|(chat, _, _)| self.left_running(chat))
             .map(|(_, number, id)| (number, id))
             .collect();
-        let by = crate::chatcard::screens_by_from_now();
         KeepingLeft {
             screens: crate::chatcard::start_keeping_screens_left(
                 &self.project,
