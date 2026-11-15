@@ -116,8 +116,8 @@ fn a_link_in_the_logs_place_is_refused_and_what_it_points_to_is_left_alone() {
 #[cfg(unix)]
 #[test]
 fn a_copy_that_fails_leaves_the_older_files_and_the_log_as_they_were() {
-    use std::os::unix::fs::PermissionsExt as _;
     purlis_core::unsteered!();
+    use std::os::unix::fs::PermissionsExt as _;
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join(hostlog::NAME);
     for (n, fill) in (1..=3).zip(*b"bcd") {
