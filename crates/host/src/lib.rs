@@ -40,6 +40,13 @@
 //! within it takes them back, and ends them as a quit would once it passes. The window holds the
 //! other end of its standard input, which says when the window that started it has gone
 //! ([`serve_for_the_window_if_asked`]). On the way out it removes its socket.
+//!
+//! **A host that is a login item** (FD-17, #655; ADR 0068 §2, X24) is started by the service
+//! manager, not the window ([`serve_as_a_login_item_if_asked`]): only while something keeps it
+//! running (a trigger or a paired device), it serves until it is told to quit, by the tray's
+//! Stop or a quit with nothing keeping it, and a window that goes without a word leaves every
+//! program running, with no grace period. Finding another host serving, it has nothing to do,
+//! and exits as a success, so the manager does not start it again.
 
 #[cfg(unix)]
 mod browsers;
@@ -133,6 +140,9 @@ pub use unattended::{Idles, UNLINKED_FOR};
 /// own business: the binary is the window's, and only the window starts it so.
 pub const SERVE_FOR_THE_WINDOW: &str = "purlis-serve-for-the-window";
 
+/// The argument the service manager starts the window's binary with as a login item (FD-17).
+pub const SERVE_AS_A_LOGIN_ITEM: &str = "purlis-serve-as-a-login-item";
+
 /// The line the host writes on its standard output once it accepts on its socket.
 pub const READY: &str = "ready";
 
@@ -163,11 +173,57 @@ pub fn serve_for_the_window_if_asked(
             // (ADR 0071): the window's binary keeps it in the place's credentials folder.
             let hosting = hosting(&place);
             let lives = hosting.clone();
-            run(&place, Some(window), hosting, None, async move {
-                lives
-                    .while_a_window_may_come_back(GRACE, until_the_window_closes_its_end())
-                    .await;
-            })
+            run(
+                &place,
+                Some(window),
+                hosting,
+                None,
+                Serves::ForTheWindow,
+                async move {
+                    lives
+                        .while_a_window_may_come_back(GRACE, until_the_window_closes_its_end())
+                        .await;
+                },
+            )
+        }
+        None => {
+            say("there is no home folder to keep the session host's credentials in");
+            1
+        }
+    })
+}
+
+/// When the window's binary was started by the service manager as the session host's login
+/// item ([`SERVE_AS_A_LOGIN_ITEM`]), serve at the place `place` names until a window or the
+/// tray tells it to quit ([`Hosting::while_it_is_a_login_item`]), holding its programs and
+/// projects in what `hosting` gives, and give the code to exit with; otherwise `None`, before
+/// anything is read or opened.
+///
+/// No window started it, so no window is its parent and its programs run below it alone, as
+/// `purlis serve`'s do. **Another host serving is a success** ([`exit_code`]): a window started
+/// one before the manager did, and the manager is not to start this one again.
+#[cfg(unix)]
+pub fn serve_as_a_login_item_if_asked(
+    place: impl FnOnce() -> Option<Place>,
+    hosting: impl FnOnce(&Place) -> Hosting,
+) -> Option<i32> {
+    if std::env::args_os().nth(1)? != SERVE_AS_A_LOGIN_ITEM {
+        return None;
+    }
+    Some(match place() {
+        Some(place) => {
+            let hosting = hosting(&place);
+            let lives = hosting.clone();
+            run(
+                &place,
+                None,
+                hosting,
+                None,
+                Serves::AsALoginItem,
+                async move {
+                    lives.while_it_is_a_login_item().await;
+                },
+            )
         }
         None => {
             say("there is no home folder to keep the session host's credentials in");
@@ -181,7 +237,14 @@ pub fn serve_for_the_window_if_asked(
 /// code is what a failure to start gives.
 #[cfg(unix)]
 pub fn serve_alone(place: &Place, hosting: impl FnOnce(&Place) -> Hosting) -> i32 {
-    run(place, None, hosting(place), None, std::future::pending())
+    run(
+        place,
+        None,
+        hosting(place),
+        None,
+        Serves::Alone,
+        std::future::pending(),
+    )
 }
 
 /// [`serve_alone`], as a runner's host: it also answers links from the one desktop it is paired
@@ -234,7 +297,39 @@ pub fn serve_alone_answering(
             () = idle => {}
         }
     };
-    run(place, None, hosting, Some(pairing), suspended)
+    run(
+        place,
+        None,
+        hosting,
+        Some(pairing),
+        Serves::Alone,
+        suspended,
+    )
+}
+
+#[cfg(unix)]
+/// Who a host serves for, which decides what finding another serving means ([`exit_code`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Serves {
+    /// The window started it, and reattaches to the one serving (exit code 3).
+    ForTheWindow,
+    /// The service manager started it as a login item: another serving is a success.
+    AsALoginItem,
+    /// `purlis serve`, on a runner or at a terminal.
+    Alone,
+}
+
+#[cfg(unix)]
+/// **The code a host exits with**, by how serving went and who it serves for: 0 when it stopped
+/// as asked, 3 when another host of this user already serves (which the window reattaches to),
+/// and 1 for any other failure. A login item finding another serving exits 0: the service
+/// manager restarts it only after a failure, and a host already serving is none.
+pub fn exit_code(served: Result<(), &HostError>, serves: Serves) -> i32 {
+    match (served, serves) {
+        (Ok(()), _) | (Err(HostError::AlreadyServing { .. }), Serves::AsALoginItem) => 0,
+        (Err(HostError::AlreadyServing { .. }), _) => 3,
+        (Err(_), _) => 1,
+    }
 }
 
 #[cfg(unix)]
@@ -243,6 +338,7 @@ fn run(
     window: Option<Window>,
     hosting: Hosting,
     pairing: Option<Pairing>,
+    serves: Serves,
     until: impl Future<Output = ()>,
 ) -> i32 {
     let runtime = match tokio::runtime::Builder::new_current_thread()
@@ -267,18 +363,13 @@ fn run(
         let mut out = std::io::stdout().lock();
         let _ = writeln!(out, "{READY}").and_then(|()| out.flush());
     };
-    match runtime.block_on(serve_answering(
+    let served = runtime.block_on(serve_answering(
         place, window, hosting, pairing, ready, until,
-    )) {
-        Ok(()) => 0,
-        Err(why) => {
-            say(&why.to_string());
-            match why {
-                HostError::AlreadyServing { .. } => 3,
-                _ => 1,
-            }
-        }
+    ));
+    if let Err(why) = &served {
+        say(&why.to_string());
     }
+    exit_code(served.as_ref().map(|_| ()), serves)
 }
 
 /// Resolves once this process's standard input reaches its end, or fails: the window that
@@ -295,4 +386,37 @@ async fn until_the_window_closes_its_end() {
 pub(crate) fn say(line: &str) {
     use std::io::Write;
     let _ = writeln!(std::io::stderr(), "purlisd: {line}");
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    fn another_serves() -> HostError {
+        HostError::AlreadyServing {
+            socket: "/the/socket".into(),
+        }
+    }
+
+    #[test]
+    fn a_login_item_finding_another_host_serving_exits_as_a_success() {
+        assert_eq!(
+            exit_code(Err(&another_serves()), Serves::AsALoginItem),
+            0,
+            "the manager restarts it only after a failure, and another serving is none"
+        );
+    }
+
+    #[test]
+    fn the_windows_host_finding_another_serving_says_so_for_the_window_to_reattach() {
+        assert_eq!(exit_code(Err(&another_serves()), Serves::ForTheWindow), 3);
+        assert_eq!(exit_code(Err(&another_serves()), Serves::Alone), 3);
+    }
+
+    #[test]
+    fn a_host_that_stopped_as_asked_exits_0_whoever_it_serves_for() {
+        for serves in [Serves::ForTheWindow, Serves::AsALoginItem, Serves::Alone] {
+            assert_eq!(exit_code(Ok(()), serves), 0, "{serves:?}");
+        }
+    }
 }

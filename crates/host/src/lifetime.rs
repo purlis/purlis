@@ -24,6 +24,12 @@
 //! Nothing polls: the host sleeps until the next grace period ends, or until a window links or
 //! goes, or a project is held or let go of. A host started as `purlis serve` lives until it is
 //! ended, as a runner's does: chats on a runner keep running with the desktop away.
+//!
+//! **A host that is a login item has no grace period** (FD-17, #655; ADR 0068 §2): something
+//! keeps it running (a trigger or a paired device), so a window that goes, with or without a
+//! word, ends nothing, and no project is let go of for want of a window. It lives until it is
+//! told to quit ([`Hosting::while_it_is_a_login_item`]). A program started to end with its
+//! window still ends as that window goes, as it does on every host.
 
 use std::time::Duration;
 
@@ -33,6 +39,12 @@ use crate::hosting::Hosting;
 pub const GRACE: Duration = Duration::from_secs(10 * 60);
 
 impl Hosting {
+    /// Lives as a login item's host does: until a window, or the tray's Stop, tells it to quit.
+    /// Every program and project is kept however long no window is linked.
+    pub async fn while_it_is_a_login_item(&self) {
+        self.until_it_quits().await;
+    }
+
     /// Lives as the window's host does, with a grace period of `grace`, until there is nothing
     /// more to wait for, or the window quits. `starter_went` resolves once the window that
     /// started this host has gone. What a project let go of here ends, it ends off the runtime.
