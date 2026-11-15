@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794769598569,
+  "lastUpdate": 1794772685257,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -50148,6 +50148,48 @@ window.BENCHMARK_DATA = {
             "value": 101.390515,
             "unit": "ms",
             "extra": "median of 5 runs: 101.096, 101.302, 101.391, 101.538, 102.092 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4c8cbb8078d899d8112d7adede86e109c0d42c45",
+          "message": "RR-15: a runner's session host kept by systemd (with linger) or launchd, surviving SSH drops, sign-outs and restarts (#724) (#6699)\n\n* RR-15: purlis serve --install hands a runner's host to systemd (with linger) or launchd, and doctor checks it (#724)\n\npurlis_core::runnerhost: one service per installed version (purlis-runner-v<hash>.service,\ndev.purlis.runner.v<hash>), wanted by default.target, restarted on failure within FD-17's\nlimits; linger turned on with loginctl, or the administrator's command named; a container\ntold to run serve --foreground. Doctor's runner host rows, on a runner only. A host started\nas a service takes another of its version serving as a success.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7FFC81RZ3W70EY12RR5AB28\nPurlis-Persona: steward\n\n* RR-15: prove it on a machine that boots systemd; ADR 0068 amended for #724; changelog\n\ntests/ssh-runner/systemd.Dockerfile and up-systemd.sh: Ubuntu with systemd as init, sshd with\nPAM sessions and polkitd. The test installs a version, hands its host to systemd with linger,\ncuts every SSH connection and signs the account out (host and chats keep running), restarts\nthe machine (the host comes back on its own and settles what the restart ended), and checks\ndoctor before and after.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7FFC81RZ3W70EY12RR5AB28\nPurlis-Persona: steward\n\n* RR-15: the systemd fixture checks purlis's libraries in /root, since systemd mounts a tmpfs over /tmp\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7FFC81RZ3W70EY12RR5AB28\nPurlis-Persona: steward\n\n* RR-15 test: signed out is logind's lingering state (list-sessions also lists the manager's own session), and the host record is found wherever the machine store is\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7FFC81RZ3W70EY12RR5AB28\nPurlis-Persona: steward\n\n* RR-15: runnerhost::remove_version takes a pruned version's unit or agent back by its name alone\n\nFor pruning (#6688): never runs the old version's binary, and an error means keep the version.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7FFC81RZ3W70EY12RR5AB28\nPurlis-Persona: steward\n\n* RR-15: prune takes back a drained version's service by name, under its lock, and reads the runtime folder a supervised host uses\n\nThe unit or LaunchAgent goes first, while the version's lock is held, named from the version\nalone; the old binary is never run. A version whose service could not be removed is kept\nwhole. Without XDG_RUNTIME_DIR, prune reads /run/user/<uid>, where systemd's user manager\nputs a supervised host's socket and lock. ADR 0068's #724 amendment: D-724-11 and D-724-12.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7FFC81RZ3W70EY12RR5AB28\nPurlis-Persona: steward\n\n* RR-15: review fixes for #6699\n\n1. The runtime folder: Here takes /run/user/<uid> where XDG_RUNTIME_DIR is unset, and gives it\n   to systemctl; removal with no manager reachable but a unit or plist there is an error, so\n   prune keeps that version.\n2. Linger turned on only after enable succeeds, said as turned on (with the undo) or already\n   on; a note that purlis turned it on, and the last --remove turns it off only then.\n3. The resolved config home pinned in the unit's Environment= and the agent's\n   EnvironmentVariables.\n4. After enable, is-active: a host started by hand is said, and systemd is not claimed to keep it;\n   neither is a failure with where to look.\n5. macOS: after a restart, only at a sign-in at the screen; no automatic-login advice. A\n   container's row is a warning: its restart policy is unknown from inside.\n6. Fixture: sshd must answer and the system must boot to running; after --remove the unit file\n   is gone, not enabled, and linger is off. D-724-5, 7, 9, 12 amended, D-724-13 and 14 added.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7FFC81RZ3W70EY12RR5AB28\nPurlis-Persona: steward\n\n* RR-15 tests: fake homes under /nonexistent-home, not /home (macOS's automounter)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7FFC81RZ3W70EY12RR5AB28\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-15T18:43:19Z",
+          "tree_id": "9765d852394442bc95d574dd7e4fae25ab1b0e66",
+          "url": "https://github.com/purlis/purlis/commit/4c8cbb8078d899d8112d7adede86e109c0d42c45"
+        },
+        "date": 1794772676984,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5624439999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.543, 0.560, 0.562, 0.566, 0.571 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.270792,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.174, 16.225, 16.271, 16.379, 16.549 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.6611345,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.166, 101.327, 101.661, 102.848, 102.868 ms"
           }
         ]
       }
