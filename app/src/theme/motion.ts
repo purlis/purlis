@@ -164,3 +164,23 @@ export function motionReduced(): boolean {
 /** The root's attribute that says motion is off: `reduced`, or none. The one global switch in
  *  `styles.css` reads it, so a transition or a keyframe written without a token still stops. */
 export const MOTION_ATTRIBUTE = "data-motion";
+
+/**
+ * **The root's attribute that says an overlay is drawn at once** (#4351): `at-once`, set only in
+ * the scenario-test build ({@link arriveAtOnceInScenarioTests}). Under it a dialog, the palette
+ * among them, and a popover skip their fade in (`ui/dialog/dialog.css`, `ui/popover/popover.css`)
+ * and are at full opacity from their first frame.
+ *
+ * WebKit suspends CSS animations while its window is hidden or behind another, as a scenario run
+ * on a person's own Mac often is. A suspended fade leaves an overlay at opacity 0, which
+ * WebDriver reads as not displayed. React Aria also waits for an overlay's animations to finish
+ * before it takes the overlay away, so a fade that never ends leaves the overlay up for good.
+ * A region's arrivals keep their motion: the specs that hear them run in front.
+ */
+export const ARRIVALS_ATTRIBUTE = "data-arrivals";
+
+/** Marks the root {@link ARRIVALS_ATTRIBUTE} in the scenario-test build, and does nothing in any
+ *  other: `VITE_E2E` is set by `vite build --mode e2e` alone. */
+export function arriveAtOnceInScenarioTests(root: HTMLElement, scenarioBuild: boolean): void {
+  if (scenarioBuild) root.setAttribute(ARRIVALS_ATTRIBUTE, "at-once");
+}

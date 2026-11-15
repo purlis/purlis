@@ -26,6 +26,7 @@ import { sayAppearance } from "./appearance";
 import { fetchFace } from "./theme/faces";
 import { firstFollowsSystem, firstFrameOnce } from "./windowprefs";
 import { drawNatively } from "./theme/native";
+import { arriveAtOnceInScenarioTests } from "./theme/motion";
 import { partsLand } from "./theme/partsLater";
 import { watchWindowErrors } from "./windowErrors";
 
@@ -71,6 +72,9 @@ listenForSizeKeys(window);
 // In a scenario-test build only, WebdriverIO's window-side plugin, which its Tauri service
 // looks for. `vite build --mode e2e` is the only build that sets this.
 if (import.meta.env.VITE_E2E) void import("@wdio/tauri-plugin");
+// And in that build an overlay is drawn at once, not faded in: WebKit suspends a fade while the
+// window is hidden, which would leave a dialog unseen and a popover that never goes (#4351).
+arriveAtOnceInScenarioTests(document.documentElement, Boolean(import.meta.env.VITE_E2E));
 
 // The seam `tools/bench.mjs` measures the window through, in that same build and no other.
 attach();
