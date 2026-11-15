@@ -591,6 +591,16 @@ pub(crate) fn put_back_without_the_finished(
     (back, out)
 }
 
+/// **The task chats of `record` that had finished**, which a put back leaves out
+/// ([`put_back_without_the_finished`]): what a launch that starts fresh still keeps the screens
+/// of, where the session host runs one after a crash (#6504's review).
+pub(crate) fn finished_in(
+    root: &std::path::Path,
+    record: &purlis_core::reopen::Record,
+) -> Vec<purlis_core::reopen::Chat> {
+    purlis_core::dispatched::left_out_at_launch(record, |chat| left_out(root, chat)).1
+}
+
 /// The task chat `chat` was reopened from, by name, where it was reopened from one: its own
 /// record says which chat it resumed (`Identity::resumed_from`), and that chat's dispatch
 /// record says it was a task. What a report from it is refused by.

@@ -1262,6 +1262,9 @@ impl Held {
         // get ids of their own before any of them starts, and are written with them once
         // they are back, so no two clones ever hold one chat's id.
         let mut arrived = None;
+        // The finished tasks of a record started fresh, which puts none back: the session host
+        // may still run one after a crash, and its screen is kept all the same (#6504's review).
+        let mut finished_fresh = Vec::new();
         let record = record.map(|record| {
             let was = record.clone_seat.clone();
             let (arrival, record) =
@@ -1282,6 +1285,7 @@ impl Held {
         });
         let record = match record {
             Ok(record) if choice == Choice::StartFresh => {
+                finished_fresh = crate::finished::finished_in(&self.root, &record);
                 let fresh = record.chosen(Choice::StartFresh);
                 self.recorded.write_now(fresh.clone());
                 tracing::info!(
@@ -1309,8 +1313,9 @@ impl Held {
         };
         // A task that had reported when the app quit is not started again: it is a finished
         // row from its dispatch record (#1485). Before anything is put back.
-        let (record, finished) =
+        let (record, mut finished) =
             crate::finished::put_back_without_the_finished(&self.root, &record);
+        finished.append(&mut finished_fresh);
         let wanted = record.chats.len();
         // A task that had not reported comes back on its conversation, told to carry on, and
         // one that cannot has ended by itself (#1513). **It reads the dispatch records as they
