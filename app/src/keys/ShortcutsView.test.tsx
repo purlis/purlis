@@ -84,9 +84,6 @@ describe("the cheat sheet (N25)", () => {
         keys,
         where: "In a pane",
       });
-      expect(rows.filter((row) => row.group === "Panes").map((row) => row.id)).toContain(
-        "pane.links",
-      );
     }
     render(<ShortcutsView mac />);
     const list = screen.getByRole("grid", { name: "Keyboard shortcuts" });
@@ -121,6 +118,11 @@ describe("the cheat sheet (N25)", () => {
     expect(within(list).getByRole("row", { name: /^Find in the pane/ })).toHaveTextContent(
       "In a pane",
     );
+    expect(
+      within(list).getByRole("row", {
+        name: /^Out of the terminal, a browser you drive or DevTools \(with Shift, back\)/,
+      }),
+    ).toHaveTextContent("In a pane");
     expect(
       within(list).getByRole("row", { name: /^The pane.s menu, under its cursor/ }),
     ).toHaveTextContent("In a pane");

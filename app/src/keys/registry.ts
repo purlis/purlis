@@ -824,7 +824,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   },
   {
     id: "chat.leave",
-    does: "Out of the pane's terminal, a browser you drive or DevTools (with Shift, back)",
+    does: "Out of the terminal, a browser you drive or DevTools (with Shift, back)",
     // Any terminal pane's (#6483). Its id is the one `leavesTheChat` (`SessionPane`) and
     // `leaveKeys.ts` ask `isKey` for.
     group: "Panes",
