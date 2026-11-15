@@ -16,7 +16,10 @@
 //! 2. version 1 is installed, paired, its host started, and five chats run on it;
 //! 3. version 2 is installed beside it and its host started: version 1's binary is untouched,
 //!    its five chats keep running and are still listed by its host through its own bridge, and
-//!    new chats run on version 2's host, which holds none of version 1's.
+//!    new chats run on version 2's host, which holds none of version 1's;
+//! 4. version 3 is installed while version 1's chats run: nothing is removed (#6688). Once they
+//!    have ended and its host has been stopped by a signal, the next install removes version 1's
+//!    folders, its binary's and its host's, and versions 2 and 3 stay.
 //!
 //! The issue asks for five live chats; each is a shell on the runner (the chat's harness is not
 //! what this checks), so five cost CI next to nothing, and five are run.
@@ -45,6 +48,7 @@ const PROJECT: &str = "01J9PRJCT00000000000000000";
 const CHATS: usize = 5;
 const V1: &str = "0.0.1-rr14.1";
 const V2: &str = "0.0.1-rr14.2";
+const V3: &str = "0.0.1-rr14.3";
 
 struct Fixture {
     reach: Reach,
@@ -212,6 +216,44 @@ async fn running(client: &Client) -> Vec<String> {
     ids
 }
 
+/// Whether version `version`'s host has a folder of its own in `config` on the runner
+/// (`<config>/purlisd/server/<version>`, under either spelling of the host's folder).
+fn host_folder_there(reach: &Reach, config: &str, version: &str) -> bool {
+    let folders: Vec<String> = purlis_core::names::DAEMON_DIR
+        .spellings()
+        .map(|daemon| format!("{config}/{daemon}/{}/{version}", runnerinstall::SERVER_DIR))
+        .collect();
+    let ran = there(
+        reach,
+        &format!(
+            "for f in {}; do [ -e \"$f\" ] && exit 0; done; exit 1",
+            folders.join(" ")
+        ),
+        None,
+    );
+    ran.code == Some(0)
+}
+
+/// Once version `binary`'s host has stopped on the runner.
+async fn stopped(reach: &Reach, binary: &str) {
+    let until = std::time::Instant::now() + PATIENCE;
+    loop {
+        let ran = there(
+            reach,
+            &format!("pgrep -f '^{binary} serve$' >/dev/null"),
+            None,
+        );
+        if ran.code == Some(1) {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < until,
+            "{binary}'s host is still serving"
+        );
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+}
+
 fn identity(key: &LinkKey) -> Identity {
     Identity {
         device: "01JA0DESKT0P00000000000000".into(),
@@ -234,6 +276,7 @@ fn a_new_version_is_installed_beside_the_old_whose_chats_keep_running() {
     );
     let v1 = release.verified(&fixture.binary, V1, probed.target);
     let v2 = release.verified(&fixture.binary, V2, probed.target);
+    let v3 = release.verified(&fixture.binary, V3, probed.target);
 
     // 1. A copy that isn't the one verified is deleted, and nothing is installed.
     let liar_probed = runnerinstall::probe(&fixture.liar).expect("the liar is probed");
@@ -424,13 +467,81 @@ fn a_new_version_is_installed_beside_the_old_whose_chats_keep_running() {
             "both hosts serve: {serving}"
         );
 
+        // 4. Version 3 installed while version 1's chats run: version 1 stays, all of it.
+        let probed = runnerinstall::probe(&fixture.reach).unwrap();
+        let installed = runnerinstall::install(
+            &fixture.reach,
+            &probed,
+            &v3,
+            Delivery::Upload(&fixture.binary),
+        )
+        .expect("version 3 is installed");
+        assert!(matches!(installed, Installed::Placed { .. }));
+        assert!(
+            installed.pruned().is_empty(),
+            "a version with a live chat is never removed: {installed:?}"
+        );
+        assert_eq!(
+            runnerinstall::probe(&fixture.reach).unwrap().versions,
+            [V1, V2, V3]
+        );
+        assert!(host_folder_there(&fixture.reach, &probed.config, V1));
+        assert_eq!(running(&old).await, on_v1, "version 1's chats still run");
+
+        // Version 1 drains: its chats end, and its host is stopped as a person or a supervisor
+        // stops it, by a signal (a desktop's link may not quit a runner's host; only the
+        // window's may quit its own). Killed so, it empties nothing: its record keeps each
+        // chat's start beside its end.
         for chat in &on_v1 {
             old.stop(chat).await.expect("a version 1 chat stops");
         }
+        let killed = there(
+            &fixture.reach,
+            &format!("pkill -TERM -f '^{bin_v1} serve$'"),
+            None,
+        );
+        assert_eq!(
+            killed.code,
+            Some(0),
+            "version 1's host signalled: {}",
+            killed.said
+        );
+        stopped(&fixture.reach, &bin_v1).await;
+
+        // The next install removes version 1's folders, and versions 2 and 3 stay.
+        let probed = runnerinstall::probe(&fixture.reach).unwrap();
+        let installed = runnerinstall::install(
+            &fixture.reach,
+            &probed,
+            &v3,
+            Delivery::Upload(&fixture.binary),
+        )
+        .expect("version 3 is checked again");
+        assert!(matches!(installed, Installed::AlreadyThere { .. }));
+        assert_eq!(installed.pruned(), [V1]);
+        assert_eq!(
+            runnerinstall::probe(&fixture.reach).unwrap().versions,
+            [V2, V3]
+        );
+        let left = there(
+            &fixture.reach,
+            &format!("ls -A {}", runnerinstall::server_dir(&probed.config)),
+            None,
+        );
+        assert_eq!(
+            left.printed.split_whitespace().collect::<Vec<_>>(),
+            [V2, V3]
+        );
+        assert!(
+            !host_folder_there(&fixture.reach, &probed.config, V1),
+            "version 1's host folder is gone"
+        );
+        assert!(host_folder_there(&fixture.reach, &probed.config, V2));
+        assert_eq!(running(&new).await, on_v2, "version 2's chats still run");
+
         for chat in &on_v2 {
             new.stop(chat).await.expect("a version 2 chat stops");
         }
-        let _ = old.quit().await;
         let _ = new.quit().await;
     });
     runtime.shutdown_timeout(Duration::from_secs(5));

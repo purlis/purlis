@@ -85,6 +85,27 @@ pub struct Started {
     pub ends_strays: bool,
 }
 
+impl Started {
+    /// **The process this start names, while it is still the very process that was started**:
+    /// noted in this boot of the machine ([`of_this_boot`]), and the kernel's word on when the
+    /// process with its number started the same as when it was noted. `None` where a number has
+    /// since gone to another process, the kernel cannot say anything of it (it ended, or it is
+    /// not this user's), it was noted in another boot, or nothing was noted to tell it by. What
+    /// a host left running is ended only on this word (`Terminals::end_what_was_left`), and a
+    /// runner's drained version is told by it (`purlis_core::runnerinstall::prune`, #6688).
+    #[must_use]
+    pub fn still_running(&self) -> Option<u32> {
+        let (Some(process), Some(started)) = (self.process, self.process_started.as_deref()) else {
+            return None;
+        };
+        if !of_this_boot(self.boot.as_deref(), this_boot().as_deref()) {
+            return None;
+        }
+        (process > 1 && purlis_same_user::Parents::started(process).as_deref() == Some(started))
+            .then_some(process)
+    }
+}
+
 /// **This boot of the machine**, where the system names it: Linux's `boot_id`, new at every
 /// boot. `None` elsewhere: macOS says when a process started as a time of day, which no reboot
 /// makes again.
@@ -549,6 +570,37 @@ mod tests {
             format!("{whole}\n"),
             "written through a link"
         );
+    }
+
+    #[test]
+    fn a_start_still_runs_only_as_the_very_process_noted_in_this_boot() {
+        let me = std::process::id();
+        let mine = Started {
+            process: Some(me),
+            process_started: purlis_same_user::Parents::started(me),
+            boot: this_boot(),
+            ..started("a", 1)
+        };
+        assert_eq!(mine.still_running(), Some(me));
+        let another_boot = Started {
+            boot: Some(format!("{}-before", this_boot().unwrap_or_default())),
+            ..mine.clone()
+        };
+        assert_eq!(another_boot.still_running(), None, "noted in another boot");
+        let another_start = Started {
+            process_started: Some("another time".to_owned()),
+            ..mine.clone()
+        };
+        assert_eq!(
+            another_start.still_running(),
+            None,
+            "its number went to another"
+        );
+        let untold = Started {
+            process_started: None,
+            ..mine
+        };
+        assert_eq!(untold.still_running(), None, "nothing to tell it by");
     }
 
     #[test]

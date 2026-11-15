@@ -452,18 +452,9 @@ impl Run for Terminals {
     /// is left alone, and so is a leader the kernel cannot say anything of, and anything noted
     /// in another boot.
     fn end_what_was_left(&self, left: &Started) {
-        let (Some(process), Some(started)) = (left.process, left.process_started.as_deref()) else {
+        let Some(process) = left.still_running() else {
             return;
         };
-        if !crate::hostrecord::of_this_boot(
-            left.boot.as_deref(),
-            crate::hostrecord::this_boot().as_deref(),
-        ) {
-            return;
-        }
-        if process <= 1 || purlis_same_user::Parents::started(process).as_deref() != Some(started) {
-            return;
-        }
         let Ok(group) = i32::try_from(process) else {
             return;
         };
