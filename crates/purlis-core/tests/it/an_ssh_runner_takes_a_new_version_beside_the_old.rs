@@ -19,7 +19,7 @@
 //! The issue asks for five live chats; each is a shell on the runner (the chat's harness is not
 //! what this checks), so five cost CI next to nothing, and five are run.
 //!
-//! It needs the fixture: `SSH_RUNNER_TEST_ROUTE` (`ssh://runner@127.0.0.1:2223`),
+//! It needs the fixture: `SSH_RUNNER_TEST_ROUTE` (`ssh://runner@127.0.0.1:2224`),
 //! `SSH_RUNNER_TEST_LIAR_ROUTE` and `SSH_RUNNER_TEST_PURLIS` (this build's `purlis`, for the
 //! runner's platform). Without them it runs nothing and passes: a sandboxed agent can't run it.
 

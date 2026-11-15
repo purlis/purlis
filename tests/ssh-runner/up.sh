@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # **A machine without Docker, behind an sshd, for RR-14's install test** (#723): the image of
-# `sshd.Dockerfile` on 127.0.0.1:2223 with simulated latency and loss, a key in an agent this
+# `sshd.Dockerfile` on 127.0.0.1:2224 with simulated latency and loss, a key in an agent this
 # job's ssh signs with (the one `tests/remote-docker/up.sh` started, where it did), and this
 # build's purlis, stripped of its debug information, named for the test. Run from the
 # repository's root once `purlis` is built: `up.sh <purlis>`.
@@ -16,10 +16,10 @@ docker build --file "$here/sshd.Dockerfile" --tag ssh-runner-sshd "$here"
 ssh-keygen -q -t ed25519 -N '' -C ssh-runner -f "$dir/id"
 cp "$dir/id.pub" "$dir/authorized/runner"
 cp "$dir/id.pub" "$dir/authorized/liar"
-docker run --detach --name ssh-runner --cap-add NET_ADMIN --publish 127.0.0.1:2223:22 \
+docker run --detach --name ssh-runner --cap-add NET_ADMIN --publish 127.0.0.1:2224:22 \
   --volume "$dir/authorized:/etc/ssh/authorized-src:ro" ssh-runner-sshd
 for _ in $(seq 60); do
-  if ssh-keyscan -p 2223 127.0.0.1 >/dev/null 2>&1; then
+  if ssh-keyscan -p 2224 127.0.0.1 >/dev/null 2>&1; then
     break
   fi
   sleep 1
@@ -43,7 +43,7 @@ if [ -z "${SSH_AUTH_SOCK:-}" ]; then
 fi
 ssh-add "$dir/id"
 {
-  echo "SSH_RUNNER_TEST_ROUTE=ssh://runner@127.0.0.1:2223"
-  echo "SSH_RUNNER_TEST_LIAR_ROUTE=ssh://liar@127.0.0.1:2223"
+  echo "SSH_RUNNER_TEST_ROUTE=ssh://runner@127.0.0.1:2224"
+  echo "SSH_RUNNER_TEST_LIAR_ROUTE=ssh://liar@127.0.0.1:2224"
   echo "SSH_RUNNER_TEST_PURLIS=$dir/purlis"
 } >> "$GITHUB_ENV"
