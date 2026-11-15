@@ -220,6 +220,11 @@ async function openInFront(name: string): Promise<void> {
 /** Opens the artifact named `name` in front and approves its script, as the person does. */
 async function openApproved(name: string): Promise<void> {
   await openInFront(name);
+  await approveInFront();
+}
+
+/** Approves the script of the artifact in front, as the person does. */
+async function approveInFront(): Promise<void> {
   const approve = await $('[data-testid="artifact-bar"]').$("aria/Approve script");
   await approve.waitForExist({ timeout: 20_000 });
   await approve.click();
@@ -375,9 +380,22 @@ describe("an artifact, as purlis renders it, is isolated from the window and its
     await closeTabOf(STORES.b);
     expect(await keptByTheWindow()).toEqual([]);
 
-    // A's template changed: approved again, it is a new page that finds nothing.
+    // A's template changed: approved again, it is a new page that finds nothing. It changes
+    // under A's open tab, and is approved only once the window has heard it (the bar says so),
+    // so the folder's watch cannot open the new approval's page a second time after the press:
+    // that second load would find what the first had just kept, its own approval's, and read as
+    // the old one's.
+    await openInFront(STORES.a);
+    expect(stored(await heard("store-")).seen).toEqual(first.wrote);
     writeFileSync(join(at, "isolation-store-a", "app.js"), `${STORE}\n// changed\n`);
-    await openApproved(STORES.a);
+    await browser.waitUntil(
+      async () =>
+        (await $('[data-testid="artifact-bar"]').getText()).includes(
+          "Its template changed since you approved it",
+        ),
+      { timeout: 20_000, timeoutMsg: "the window never heard that A's template changed" },
+    );
+    await approveInFront();
     const changed = stored(await heard("store-"));
     expect(changed.seen).toEqual([]);
     await closeTabOf(STORES.a);
