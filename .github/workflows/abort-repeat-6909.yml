@@ -1,0 +1,41 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# TEMPORARY (#6909): loops the crash probe's abort on macOS, to find and then prove the fix for an
+# abort that leaves no minidump. Removed before the pull request merges.
+name: abort repeat (#6909)
+
+on:
+  push:
+    branches: [6909-abort-leaves-no-minidump-on-macos-r-1p8qsjqs]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: the probe's abort, looped (${{ matrix.mode }})
+    runs-on: macos-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [serial, parallel, loaded]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/rust-toolchain
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: false
+      - run: cargo build --locked -p purlis-crash-handler --bin crash-probe
+      - name: Loop
+        env:
+          MODE: ${{ matrix.mode }}
+        run: |
+          case "$MODE" in
+            serial) N=600; J=1 ;;
+            parallel) N=2000; J=8 ;;
+            loaded) N=2000; J=8
+              for k in 1 2 3 4; do (while :; do :; done) & done ;;
+          esac
+          bash tools/abort-loop-6909.sh target/debug/crash-probe "$N" "$J"

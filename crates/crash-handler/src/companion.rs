@@ -47,6 +47,7 @@ pub(crate) fn serve(socket: &Path, crashes: &Path) -> Result<(), minidumper::Err
         })
         .map_err(minidumper::Error::Io)?;
     let served = server.run(Box::new(handler), &stop, None);
+    eprintln!("[DEBUG-6909] companion served={served:?} stopped={}", stop.load(Ordering::SeqCst));
     let _ = std::fs::remove_file(socket);
     served
 }
@@ -94,6 +95,7 @@ impl ServerHandler for Keeper {
             .lock()
             .ok()
             .and_then(|mut writing| writing.take());
+        eprintln!("[DEBUG-6909] companion minidump {:?}", result.as_ref().map(|_| ()));
         match result {
             Ok(written) => {
                 let MinidumpBinary { file, path, .. } = written;
@@ -102,6 +104,7 @@ impl ServerHandler for Keeper {
                 let kept = whole.is_ok()
                     && !self.a_panic_already_told()
                     && std::fs::rename(&path, path.with_extension("dmp")).is_ok();
+                eprintln!("[DEBUG-6909] companion kept={kept} whole={whole:?}");
                 if !kept {
                     let _ = std::fs::remove_file(&path);
                 }
@@ -118,6 +121,7 @@ impl ServerHandler for Keeper {
     }
 
     fn on_message(&self, kind: u32, _buffer: Vec<u8>) {
+        eprintln!("[DEBUG-6909] companion message {kind}");
         if kind == crate::PANICKED
             && let Ok(mut told) = self.panicked_at.lock()
         {
@@ -126,12 +130,14 @@ impl ServerHandler for Keeper {
     }
 
     fn on_client_connected(&self, _num_clients: usize) -> LoopAction {
+        eprintln!("[DEBUG-6909] companion connected {_num_clients}");
         self.connected.store(true, Ordering::SeqCst);
         LoopAction::Continue
     }
 
     fn on_client_disconnected(&self, _num_clients: usize) -> LoopAction {
         // The app ended without crashing.
+        eprintln!("[DEBUG-6909] companion disconnected {_num_clients}");
         LoopAction::Exit
     }
 }
