@@ -2101,7 +2101,7 @@ fn a_chats_confinement_is_reattached_and_its_proxy_heard_by_the_window_that_came
     let heard_first = Arc::new(Mutex::new(Vec::new()));
     let confined = first
         .sessions
-        .confine(&plan, refused_by(&heard_first))
+        .confine(&plan, &[], refused_by(&heard_first))
         .expect("confined");
     let id = confined.held_as().expect("held in the host").to_owned();
     first
@@ -2212,6 +2212,7 @@ impl purlis_host::Compose for ComposesConfined {
             any_port: false,
             beside: session::Beside::Wrapped,
             given: vec![5432],
+            held: None,
         })?;
         Ok(purlis_core::session::Spec::new("/bin/true", starting.size))
     }

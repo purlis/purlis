@@ -1195,11 +1195,12 @@ impl SessionHost for RoutedSessions {
     fn confine(
         &self,
         plan: &purlis_core::sandbox::plan::Plan,
+        pools_held: &[PathBuf],
         hearing: purlis_core::sandbox::plan::Hearing,
     ) -> Result<purlis_core::sandbox::Confinement, String> {
         match &self.every_start_on {
-            Some(pool) => self.pool(pool)?.confine(plan, hearing),
-            None => self.here.confine(plan, hearing),
+            Some(pool) => self.pool(pool)?.confine(plan, pools_held, hearing),
+            None => self.here.confine(plan, pools_held, hearing),
         }
     }
 
@@ -1499,6 +1500,13 @@ impl SessionHost for RoutedSessions {
         match self.host_of(number) {
             Some(host) => host.ran_with(number),
             None => self.here.ran_with(number),
+        }
+    }
+
+    fn pools_held_left(&self, number: u32) -> Option<Vec<PathBuf>> {
+        match self.host_of(number) {
+            Some(host) => host.pools_held_left(number),
+            None => self.here.pools_held_left(number),
         }
     }
 

@@ -1356,6 +1356,42 @@ impl PoolsHeld {
     }
 }
 
+/// **What the pools on a machine named when last read**, which says whether a read finds a pool
+/// added however it came: from the window, or from `purlis pool add` in a terminal, which tells
+/// the window nothing.
+pub(crate) struct PoolsWatch {
+    last: PoolsHeld,
+}
+
+impl PoolsWatch {
+    /// A watch that starts from what the pools on `machine` name now.
+    pub(crate) fn on(machine: &purlis_core::sandbox::Machine) -> Self {
+        Self {
+            last: PoolsHeld::on(machine),
+        }
+    }
+
+    /// **What every window is told of the pools on `machine` now**, keeping them as the last
+    /// read: [`crate::clusterpools::CLUSTER_POOL_ADDED`] where a cluster pool names a program the
+    /// last read did not, and [`crate::poolsetuptab::TLS_POOL_ADDED`] where a pool over Docker's
+    /// TLS API names a file it did not. A pool removed is told nothing: no chat is behind for it.
+    pub(crate) fn added(&mut self, machine: &purlis_core::sandbox::Machine) -> Vec<&'static str> {
+        let now = PoolsHeld::on(machine);
+        let more = |now: &[std::path::PathBuf], last: &[std::path::PathBuf]| {
+            now.iter().any(|path| !last.contains(path))
+        };
+        let mut told = Vec::new();
+        if more(&now.cluster, &self.last.cluster) {
+            told.push(crate::clusterpools::CLUSTER_POOL_ADDED);
+        }
+        if more(&now.tls, &self.last.tls) {
+            told.push(crate::poolsetuptab::TLS_POOL_ADDED);
+        }
+        self.last = now;
+        told
+    }
+}
+
 /// **What of a running chat its sandbox is compiled from now** ([`Chats::on_older_sandbox`]):
 /// two chats alike in all of it compile to the same sandbox in one ask (#2157).
 #[derive(Debug, PartialEq, Eq)]
@@ -1383,14 +1419,17 @@ enum CompiledNow {
 
 impl Settled {
     /// What `confines` settles to, with `pools` what every pool has held now: the programs each
-    /// cluster pool runs and the files each pool over Docker's TLS API names.
+    /// cluster pool runs and the files each pool over Docker's TLS API names. What `confines`
+    /// held of them is what its compile recorded
+    /// ([`purlis_core::sandbox::Confines::pools_held`]), which for a chat taken back from the
+    /// session host is that host's record of its start.
     fn of(confines: &purlis_core::sandbox::Confines, pools: &PoolsHeld) -> Self {
         let held = |of: &[std::path::PathBuf]| -> Vec<std::path::PathBuf> {
             let mut list: Vec<std::path::PathBuf> = confines
-                .denied
+                .pools_held
                 .iter()
-                .filter(|denial| of.contains(&denial.path))
-                .map(|denial| denial.path.clone())
+                .filter(|path| of.contains(path))
+                .cloned()
                 .collect();
             list.sort();
             list.dedup();
@@ -5644,11 +5683,14 @@ impl Chats {
                 // The plan is its network's alone, and says nothing of the files its start
                 // denied: whether that start held the project's git is not on record, so the
                 // chat saves and updates the project with its own git, as one this window did
-                // not compile does.
+                // not compile does. What it held of the pools is on record beside the plan, as
+                // the window that started it said: a host that kept none is taken as holding
+                // none, so a pool there now asks it to restart.
                 (now == then)
                     .then(|| {
                         sandbox.map(|applied| purlis_core::sandbox::Confines {
                             roots_git: None,
+                            pools_held: self.sessions.pools_held_left(number).unwrap_or_default(),
                             ..applied.confines().clone()
                         })
                     })
@@ -5681,16 +5723,24 @@ impl Chats {
                 .number
                 .and_then(|number| self.sessions.confined_again(number, hearing))
                 .transpose()?,
-            Some(plan) => Some(self.sessions.confine(&plan, hearing).map_err(|err| {
-                purlis_core::sandbox::under_policy(
-                    &purlis_core::sandbox::policy::Locks::of(&self.project),
-                    format!(
-                        "{}, and purlis could not start what the sandbox needs beside \
+            Some(plan) => Some(
+                self.sessions
+                    .confine(
+                        &plan,
+                        sandbox.map_or(&[][..], |applied| &applied.confines().pools_held),
+                        hearing,
+                    )
+                    .map_err(|err| {
+                        purlis_core::sandbox::under_policy(
+                            &purlis_core::sandbox::policy::Locks::of(&self.project),
+                            format!(
+                                "{}, and purlis could not start what the sandbox needs beside \
                                  this chat ({err}), so nothing was started.",
-                        purlis_core::sandbox::LEAD
-                    ),
-                )
-            })?),
+                                purlis_core::sandbox::LEAD
+                            ),
+                        )
+                    })?,
+            ),
             None => None,
         };
         crate::starttiming::mark(crate::starttiming::Phase::Proxy);

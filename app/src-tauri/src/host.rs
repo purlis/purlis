@@ -699,12 +699,17 @@ pub trait SessionHost: Send + Sync {
     /// where this host runs its chats (#1999), with `hearing` told what the proxy does. In the
     /// window's own process it starts here; the session host starts it there, from the same
     /// plan with the same code, and holds it for as long as the chat runs. A start that runs in
-    /// it names it ([`Opening::confinement`]).
+    /// it names it ([`Opening::confinement`]). `pools_held` is what of every pool's programs and
+    /// files the chat's sandbox holds ([`purlis_core::sandbox::Confines::pools_held`]): the
+    /// session host keeps it with the plan, for a window that takes the chat back
+    /// ([`Self::pools_held_left`]).
     fn confine(
         &self,
         plan: &purlis_core::sandbox::plan::Plan,
+        pools_held: &[std::path::PathBuf],
         hearing: purlis_core::sandbox::plan::Hearing,
     ) -> Result<purlis_core::sandbox::Confinement, String> {
+        let _ = pools_held;
         plan.start(hearing.here()).map_err(|why| why.to_string())
     }
 
@@ -810,6 +815,15 @@ pub trait SessionHost: Send + Sync {
     /// it, where it is left running in one (#2006): what the window compares with the plan it
     /// makes now, to know whether its sandbox changed while no window was there.
     fn ran_with(&self, number: u32) -> Option<purlis_core::sandbox::plan::Plan> {
+        let _ = number;
+        None
+    }
+
+    /// **What of every pool's programs and files chat `number`'s sandbox held as it started**,
+    /// as the window that confined it said ([`Self::confine`]), where it is left running in a
+    /// confinement: what the window compares with what a start would hold now. `None` where the
+    /// host keeps no such record.
+    fn pools_held_left(&self, number: u32) -> Option<Vec<std::path::PathBuf>> {
         let _ = number;
         None
     }
@@ -1066,6 +1080,12 @@ pub(crate) mod pretend {
         left: Mutex<Vec<(u32, Option<purlis_core::sandbox::plan::Plan>)>>,
         /// The plans chats were confined from, in order ([`Pretend::plans_confined`]).
         confined: Mutex<Vec<purlis_core::sandbox::plan::Plan>>,
+        /// What of the pools each of those chats' sandboxes held, in the same order
+        /// ([`Pretend::pools_held_confined`]).
+        pools_held: Mutex<Vec<Vec<std::path::PathBuf>>>,
+        /// What of the pools each chat left running held as it started, as its host kept it
+        /// ([`Pretend::left_holding`]).
+        pools_held_left: Mutex<Vec<(u32, Vec<std::path::PathBuf>)>>,
         /// How each chat left running is sandboxed, as its host recorded it (#2636).
         ran_in: Mutex<Vec<(u32, Option<purlis_session_protocol::session::RunSandbox>)>>,
         /// What each session shows, where a test said ([`Pretend::shows`]): what a view of it
@@ -1276,6 +1296,17 @@ pub(crate) mod pretend {
         /// The plans the chats it started were confined from, in order.
         pub fn plans_confined(&self) -> Vec<purlis_core::sandbox::plan::Plan> {
             lock(&self.seen.confined).clone()
+        }
+
+        /// What of the pools the sandbox of each chat it confined held, in order.
+        pub fn pools_held_confined(&self) -> Vec<Vec<std::path::PathBuf>> {
+            lock(&self.seen.pools_held).clone()
+        }
+
+        /// Chat `number`, left running, held `held` of the pools as it started, as its host
+        /// kept it.
+        pub fn left_holding(&self, number: u32, held: Vec<std::path::PathBuf>) {
+            lock(&self.seen.pools_held_left).push((number, held));
         }
 
         /// [`Self::leaves_running`], its run sandboxed as `ran` says, as the host recorded it:
@@ -1513,9 +1544,11 @@ pub(crate) mod pretend {
         fn confine(
             &self,
             plan: &purlis_core::sandbox::plan::Plan,
+            pools_held: &[std::path::PathBuf],
             hearing: purlis_core::sandbox::plan::Hearing,
         ) -> Result<purlis_core::sandbox::Confinement, String> {
             lock(&self.seen.confined).push(plan.clone());
+            lock(&self.seen.pools_held).push(pools_held.to_vec());
             plan.start(hearing.here()).map_err(|why| why.to_string())
         }
         fn open(
@@ -1817,6 +1850,12 @@ pub(crate) mod pretend {
                 .iter()
                 .find(|(one, _)| *one == number)
                 .and_then(|(_, plan)| plan.clone())
+        }
+        fn pools_held_left(&self, number: u32) -> Option<Vec<std::path::PathBuf>> {
+            lock(&self.seen.pools_held_left)
+                .iter()
+                .find(|(one, _)| *one == number)
+                .map(|(_, held)| held.clone())
         }
         fn ran_in(&self, number: u32) -> Option<purlis_session_protocol::session::RunSandbox> {
             lock(&self.seen.ran_in)

@@ -386,7 +386,7 @@ fn a_port_the_host_could_not_withdraw_ends_the_chats_network_and_is_said() {
     std::fs::write(root.join(purlis_core::plane::MANIFEST), "").expect("a manifest");
     let sessions = HostedSessions::new(connection, &root);
     let confinement = sessions
-        .confine(&a_plan(), Hearing::default())
+        .confine(&a_plan(), &[], Hearing::default())
         .expect("confined");
     let id = confinement.held_as().expect("held in the host").to_owned();
     confines.refuse_changes("the host's board is gone");

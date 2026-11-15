@@ -240,6 +240,7 @@ fn every_command() -> Vec<Command> {
                 any_port: false,
                 beside: session::Beside::Wrapped,
                 given: Vec::new(),
+                held: None,
             },
             asks: true,
         })),

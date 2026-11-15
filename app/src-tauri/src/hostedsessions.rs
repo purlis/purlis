@@ -5469,6 +5469,7 @@ impl SessionHost for HostedSessions {
     fn confine(
         &self,
         plan: &purlis_core::sandbox::plan::Plan,
+        pools_held: &[PathBuf],
         hearing: purlis_core::sandbox::plan::Hearing,
     ) -> Result<purlis_core::sandbox::Confinement, String> {
         use crate::hostedconfinement::{Hears, HeldInTheHost, placed, wire};
@@ -5480,7 +5481,15 @@ impl SessionHost for HostedSessions {
         let answered = link.call_heard_in_a_start(Command::Confine(Box::new(session::Confine {
             confinement: id.clone(),
             project,
-            plan: wire(plan),
+            plan: session::ConfinePlan {
+                held: Some(
+                    pools_held
+                        .iter()
+                        .map(|path| path.display().to_string())
+                        .collect(),
+                ),
+                ..wire(plan)
+            },
             asks,
         })));
         let confined = match answered {
@@ -5581,6 +5590,14 @@ impl SessionHost for HostedSessions {
                 tracing::warn!("purlis: the plan chat {number} ran in could not be read: {why}");
             })
             .ok()
+    }
+
+    /// What the window that confined it said its sandbox held of the pools: none from a host
+    /// before 1.89, or a window before it.
+    fn pools_held_left(&self, number: u32) -> Option<Vec<PathBuf>> {
+        self.link().ok()?;
+        let held = lock(&self.left).get(&number)?.plan.as_ref()?.held.clone()?;
+        Some(held.into_iter().map(PathBuf::from).collect())
     }
 
     fn prompt_key_left(&self, number: u32) -> Option<purlis_core::skillspan::PromptSalt> {

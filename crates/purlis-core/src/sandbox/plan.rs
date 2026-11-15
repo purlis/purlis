@@ -149,6 +149,8 @@ impl Plan {
                 },
             },
             given: self.given.clone(),
+            // Not the network's: the window that confines a chat adds what its sandbox held.
+            held: None,
         }
     }
 

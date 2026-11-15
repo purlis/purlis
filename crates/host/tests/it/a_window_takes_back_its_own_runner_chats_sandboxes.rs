@@ -79,6 +79,7 @@ fn planned(id: &str) -> Confine {
             any_port: false,
             beside: Beside::Wrapped,
             given: vec![5432],
+            held: None,
         },
         asks: true,
     }

@@ -12992,6 +12992,163 @@ fn a_chat_started_before_a_tls_pool_was_added_is_told_to_restart_for_it() {
     chats.close(again).expect("ends");
 }
 
+/// A chat in `plane` whose harness runs behind the proxy purlis starts beside it, so its start
+/// confines it from a plan: Codex.
+fn a_proxied_chat_in(plane: &std::path::Path) -> Chat {
+    Chat {
+        cwd: Some(plane.to_path_buf()),
+        ..chat(&standing("codex"), "proxied", Some(ID))
+    }
+}
+
+/// A machine whose config home is `config`, and the CA, certificate and key of a pool over
+/// Docker's TLS API kept in `docker`, its key named by a link.
+#[cfg(unix)]
+fn a_machine_with_tls_files(
+    config: &std::path::Path,
+    docker: &std::path::Path,
+) -> (purlis_core::sandbox::Machine, [std::path::PathBuf; 3]) {
+    let [ca, cert, real_key] = ["ca.pem", "cert.pem", "real-key.pem"].map(|name| {
+        let file = docker.join(name);
+        std::fs::write(&file, "pem").expect("a TLS file");
+        file
+    });
+    let key = docker.join("key.pem");
+    std::os::unix::fs::symlink(&real_key, &key).expect("the key's link");
+    let machine = purlis_core::sandbox::Machine {
+        env: purlis_core::secrets::Env::of(&[("XDG_CONFIG_HOME", &config.display().to_string())]),
+        ..a_machine()
+    };
+    (machine, [ca, cert, key])
+}
+
+/// **A chat's start hands its host what its sandbox holds of the pools**, with the plan of its
+/// confinement: the files a pool over Docker's TLS API names, by name and by the file a link
+/// leads to. With no pool, it holds none of them.
+#[cfg(unix)]
+#[test]
+fn a_chats_start_hands_its_host_what_its_sandbox_holds_of_the_pools() {
+    let config = tempfile::tempdir().expect("a config home");
+    let docker = tempfile::tempdir().expect("the person's Docker folder");
+    let (machine, [ca, cert, key]) = a_machine_with_tls_files(config.path(), docker.path());
+    let plane = a_sandboxed_plane();
+    let host = Pretend::default();
+    let chats = restartable_chats_on(plane.path(), host.clone(), machine);
+    let before = chats
+        .start(&a_proxied_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    the_pools_become(
+        config.path(),
+        serde_json::json!([a_tls_pool("build-box", [&ca, &cert, &key])]),
+    );
+    let after = chats
+        .start(&a_proxied_chat_in(plane.path()), SIZE)
+        .expect("starts");
+
+    let handed = host.pools_held_confined();
+    assert_eq!(handed.len(), 2, "both were confined: {handed:?}");
+    assert!(handed[0].is_empty(), "no pool yet: {:?}", handed[0]);
+    let real_key = std::fs::canonicalize(&key).expect("the file the key leads to");
+    for file in [&ca, &cert, &key, &real_key] {
+        assert!(
+            handed[1].iter().any(|held| held == file),
+            "{} is handed: {:?}",
+            file.display(),
+            handed[1]
+        );
+    }
+    chats.close(before).expect("ends");
+    chats.close(after).expect("ends");
+}
+
+/// **A chat taken back from its host is asked to restart by what its start held**, not by what
+/// a start would hold now: one that started before a pool over Docker's TLS API was added is
+/// asked, and the Notice says that pool is why, though its network's plan is the same; one whose
+/// host kept that its start held the pool's files is not.
+#[cfg(unix)]
+#[test]
+fn a_reattached_chat_is_asked_to_restart_by_what_its_start_held_of_the_pools() {
+    let config = tempfile::tempdir().expect("a config home");
+    let docker = tempfile::tempdir().expect("the person's Docker folder");
+    let (machine, files) = a_machine_with_tls_files(config.path(), docker.path());
+    let plane = a_sandboxed_plane();
+    // The plan its start made, which the pool added since leaves as it was, and what a start
+    // holds of the pools once it is added.
+    let compiled = || {
+        purlis_core::sandbox::for_start(Harness::Codex, plane.path(), &machine, &|_| true)
+            .expect("compiles")
+            .expect("sandboxed")
+    };
+    let plan = compiled().plan().expect("its plan");
+    the_pools_become(
+        config.path(),
+        serde_json::json!([a_tls_pool(
+            "build-box",
+            files.each_ref().map(|f| f.as_path())
+        )]),
+    );
+    let held_now = compiled().confines().pools_held.clone();
+    assert!(!held_now.is_empty(), "a start now holds the pool's files");
+
+    for (start_held, behind) in [(Vec::new(), true), (held_now, false)] {
+        let host = Pretend::default();
+        host.leaves_running(3, Some(plan.clone()));
+        host.left_holding(3, start_held);
+        let chats = restartable_chats_on(plane.path(), host.clone(), machine.clone());
+        chats.put_back(
+            &left_running_in(plane.path(), a_proxied_chat_in(plane.path())),
+            SIZE,
+        );
+        assert_eq!(host.reattached(), [3]);
+
+        let older = chats.on_older_sandbox_on(&machine, &|_| true);
+        if behind {
+            let older = older.expect("asked");
+            assert_eq!(older.sessions(), [3]);
+            assert_eq!(
+                older.chats[0].pool.as_deref(),
+                Some(TLS_POOL_ADDED),
+                "the TLS pool is why"
+            );
+        } else {
+            assert_eq!(older, None, "its start held the pool's files");
+        }
+    }
+}
+
+/// **A pool added however it came is heard** (#6472): a read of the machine's pools finds a pool
+/// over Docker's TLS API that the last did not, and tells the windows that one was added, once.
+/// A pool removed is told nothing.
+#[cfg(unix)]
+#[test]
+fn a_pool_added_outside_the_window_is_heard_as_added() {
+    let config = tempfile::tempdir().expect("a config home");
+    let docker = tempfile::tempdir().expect("the person's Docker folder");
+    let (machine, files) = a_machine_with_tls_files(config.path(), docker.path());
+    let mut watch = PoolsWatch::on(&machine);
+    assert!(watch.added(&machine).is_empty(), "nothing yet");
+
+    the_pools_become(
+        config.path(),
+        serde_json::json!([a_tls_pool(
+            "build-box",
+            files.each_ref().map(|f| f.as_path())
+        )]),
+    );
+    assert_eq!(
+        watch.added(&machine),
+        [crate::poolsetuptab::TLS_POOL_ADDED],
+        "added"
+    );
+    assert!(watch.added(&machine).is_empty(), "told once");
+
+    the_pools_become(config.path(), serde_json::json!([]));
+    assert!(
+        watch.added(&machine).is_empty(),
+        "a removal is told nothing"
+    );
+}
+
 /// #6472: **which pool the Notice names is which pool moved what a chat holds**, and none where
 /// anything else moved too: a cluster pool's programs, a TLS pool's files, or both. A file a
 /// TLS pool names that a chat already holds, where only the real path it leads to is new, is a
