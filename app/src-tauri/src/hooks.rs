@@ -385,6 +385,9 @@ pub struct Hooks {
     /// held-back repeats are told when a chat goes quiet or ends, and when the project is let
     /// go of, not only at the next block heard.
     throttle: Arc<Mutex<purlis_core::sandboxblock::Throttle>>,
+    /// The one value the project's sandbox timers wait by (T1.1-01): its throttle's, the
+    /// window's end of a live ask's hold (`asking::hold_ends`), and its chats' confinements'.
+    timings: purlis_core::sandbox::timings::Timings,
     /// The road every sandbox block takes into the app (#1338): the throttle, then
     /// [`Self::blocked`], which keeps it in the network record and shows it (#1662). Handed
     /// to what else hears a chat refused (#1663): purlis's own proxy beside a chat it wraps.
@@ -2429,7 +2432,10 @@ impl Hooks {
             said_taken: Arc::new(Mutex::new(None)),
             blocked: Arc::new(Mutex::new(None)),
             repeated: Arc::new(Mutex::new(None)),
-            throttle: Arc::default(),
+            throttle: Arc::new(Mutex::new(purlis_core::sandboxblock::Throttle::new(
+                &purlis_core::sandbox::timings::Timings::production(),
+            ))),
+            timings: purlis_core::sandbox::timings::Timings::production(),
             hear_block: None,
             secret_exec: Arc::new(Mutex::new(None)),
             parking: Arc::new(Mutex::new(None)),
@@ -2531,7 +2537,10 @@ impl Hooks {
         // A sandbox block (#1338), a chat's hook's or a brokered run's: handed on for the
         // network record and the chat's Notice (#1662). Taken out of the lock before it runs,
         // as an answer is. One throttle for both roads.
-        let throttle: Arc<Mutex<purlis_core::sandboxblock::Throttle>> = Arc::default();
+        let timings = purlis_core::sandbox::timings::Timings::production();
+        let throttle = Arc::new(Mutex::new(purlis_core::sandboxblock::Throttle::new(
+            &timings,
+        )));
         let hear: HeardBlocks = {
             let blocked = Arc::clone(&blocked);
             let repeated = Arc::clone(&repeated);
@@ -2954,6 +2963,7 @@ impl Hooks {
             blocked,
             repeated,
             throttle,
+            timings,
             hear_block: Some(hear_block),
             secret_exec,
             parking,
@@ -3743,6 +3753,28 @@ impl Hooks {
                 .cloned();
         }
         self.tokens.as_ref()?.program_of(chat)
+    }
+
+    /// **The one value the project's sandbox timers wait by** (T1.1-01).
+    pub fn timings(&self) -> purlis_core::sandbox::timings::Timings {
+        self.timings
+    }
+
+    /// How long its throttle hears one chat's same block once, as the throttle itself holds it.
+    #[cfg(test)]
+    pub fn throttle_window(&self) -> std::time::Duration {
+        self.throttle
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .window()
+    }
+
+    /// **These hooks, waiting by `timings`** (T1.1-01): its throttle starts again with them,
+    /// before it has heard a block.
+    pub fn timed_by(&mut self, timings: purlis_core::sandbox::timings::Timings) {
+        self.timings = timings;
+        *self.throttle.lock().unwrap_or_else(PoisonError::into_inner) =
+            purlis_core::sandboxblock::Throttle::new(&timings);
     }
 
     /// What a chat started in this plane is told to report to: the socket and the tokens it

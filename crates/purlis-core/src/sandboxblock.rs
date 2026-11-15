@@ -2282,11 +2282,10 @@ fn unprivate(path: &Path) -> PathBuf {
 
 // ---- how often the app takes one -------------------------------------------------------------
 
-/// How long one chat's same block is heard once, and the window [`Throttle::PER_CHAT`] counts in.
-pub const THROTTLE_WINDOW: std::time::Duration = std::time::Duration::from_secs(60);
-
-/// **What the app lets through, per chat** (#1338): the same block once a minute, and at most
-/// [`Throttle::PER_CHAT`] blocks a minute in all. A chat holds its own token, so it can send
+/// **What the app lets through, per chat** (#1338): the same block once a
+/// [`Timings::throttle_window`](crate::sandbox::timings::Timings::throttle_window), and at most
+/// [`Timings::throttle_per_chat`](crate::sandbox::timings::Timings::throttle_per_chat) blocks in
+/// one in all. A chat holds its own token, so it can send
 /// the app as many block lines as it likes; each one kept rewrites the store, and this keeps
 /// that to a handful a minute and the real blocks in it from being pushed out.
 ///
@@ -2298,8 +2297,12 @@ pub const THROTTLE_WINDOW: std::time::Duration = std::time::Duration::from_secs(
 /// came again within its minute is told once that minute is over ([`Throttle::repeats_over`]),
 /// for one line of the record, so what the record counts is what the sandbox refused, and a
 /// chat flooding the app still writes at most a line per block a minute.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Throttle {
+    /// How long one chat's same block is heard once, and the window `per_chat` counts in.
+    window: std::time::Duration,
+    /// The most blocks one chat is heard in a `window`.
+    per_chat: usize,
     heard: std::collections::HashMap<u32, Vec<Heard>>,
     /// Repeats whose minute ended while their chat's list was read, not told yet.
     over: Vec<Repeated>,
@@ -2329,8 +2332,22 @@ pub struct Repeated {
 }
 
 impl Throttle {
-    /// The most blocks one chat is heard in a [`THROTTLE_WINDOW`].
-    pub const PER_CHAT: usize = 10;
+    /// A throttle that hears nothing yet, letting through as `timings` say
+    /// ([`Timings::throttle_window`](crate::sandbox::timings::Timings::throttle_window),
+    /// [`Timings::throttle_per_chat`](crate::sandbox::timings::Timings::throttle_per_chat)).
+    pub fn new(timings: &crate::sandbox::timings::Timings) -> Self {
+        Self {
+            window: timings.throttle_window,
+            per_chat: timings.throttle_per_chat,
+            heard: std::collections::HashMap::new(),
+            over: Vec::new(),
+        }
+    }
+
+    /// How long one chat's same block is heard once.
+    pub fn window(&self) -> std::time::Duration {
+        self.window
+    }
 
     /// Whether chat `chat`'s `block`, naming no target, heard at `now`, is let through;
     /// remembered if it is.
@@ -2373,10 +2390,11 @@ impl Throttle {
         read: bool,
         now: std::time::Instant,
     ) -> bool {
+        let window = self.window;
         let heard = self.heard.entry(chat).or_default();
         let over = &mut self.over;
         heard.retain(|one| {
-            let within = now.saturating_duration_since(one.at) < THROTTLE_WINDOW;
+            let within = now.saturating_duration_since(one.at) < window;
             if !within && one.repeats > 0 {
                 over.push(one.repeated(chat));
             }
@@ -2399,7 +2417,7 @@ impl Throttle {
             again.last = now;
             return false;
         }
-        if heard.len() >= Self::PER_CHAT {
+        if heard.len() >= self.per_chat {
             return false;
         }
         heard.push(Heard {
@@ -2417,9 +2435,10 @@ impl Throttle {
     /// oldest first: what the record keeps a line of its own for (#1681).
     pub fn repeats_over(&mut self, now: std::time::Instant) -> Vec<Repeated> {
         let mut over = std::mem::take(&mut self.over);
+        let window = self.window;
         for (chat, heard) in &mut self.heard {
             heard.retain(|one| {
-                let within = now.saturating_duration_since(one.at) < THROTTLE_WINDOW;
+                let within = now.saturating_duration_since(one.at) < window;
                 if !within && one.repeats > 0 {
                     over.push(one.repeated(*chat));
                 }

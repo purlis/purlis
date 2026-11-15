@@ -672,7 +672,9 @@ impl Tunnel {
             reach,
             word: decision.word(),
             reached,
-            tally: Mutex::new(Tally::default()),
+            // A database route is not one of a chat's confinement's timers (T1.1-01 names the
+            // proxy, the board, the throttle and the tally): it keeps production's.
+            tally: Mutex::new(Tally::new(&super::timings::Timings::production())),
             live: Mutex::new(Vec::new()),
             next: AtomicU64::new(0),
             open: AtomicUsize::new(0),
@@ -774,7 +776,14 @@ fn carry(client: TcpStream, carrying: &Carrying) {
     let _held = Held(carrying, id);
     let own = super::hosts::own_addresses();
     let target = egress::host_and_port(&carrying.host, carrying.port);
-    let upstream = match egress::connect(&carrying.host, carrying.port, &carrying.reach, &own) {
+    let patience = super::timings::Timings::production().patience;
+    let upstream = match egress::connect(
+        &carrying.host,
+        carrying.port,
+        &carrying.reach,
+        &own,
+        patience,
+    ) {
         egress::Connected::To(upstream) => upstream,
         egress::Connected::OnlyLocal | egress::Connected::AtAModel => {
             carrying.tell(|tally| tally.heard(&target, "refused", Instant::now()));

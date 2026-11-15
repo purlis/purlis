@@ -199,7 +199,7 @@ fn with_no_notice_to_raise_a_held_connection_is_refused_at_once() {
         },
         std::env::temp_dir().join("purlis-no-such-project-1709"),
     )
-    .board();
+    .board(&purlis_core::sandbox::timings::Timings::production());
     let quick = |host: &str| {
         let started = std::time::Instant::now();
         let answer = board.hold(host, 443, &[443]);
@@ -253,7 +253,7 @@ fn a_live_ask_is_held_for_its_chat_and_the_window_told_though_no_notice_went_up(
         },
         std::env::temp_dir().join("purlis-no-such-project-1709-2"),
     )
-    .board();
+    .board(&purlis_core::sandbox::timings::Timings::production());
     let held = {
         let board = Arc::clone(&board);
         std::thread::spawn(move || board.hold("API.example.com", 443, &[443]))
@@ -301,7 +301,7 @@ fn a_burst_of_live_asks_keeps_each_held_while_its_connection_waits() {
         },
         std::env::temp_dir().join("purlis-no-such-project-1709-3"),
     )
-    .board();
+    .board(&purlis_core::sandbox::timings::Timings::production());
     let many = purlis_core::sandboxblock::AT_MOST_PER_RESULT + 2;
     let hosts: Vec<String> = (0..many).map(|at| format!("h{at}.example.com")).collect();
     let held: Vec<_> = hosts

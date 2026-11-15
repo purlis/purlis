@@ -698,7 +698,9 @@ fn recorded_violation_lines_reach_the_window_as_the_notice_says_them() {
 #[test]
 fn a_heard_block_is_told_once_and_a_flood_is_held_back() {
     use purlis_core::hookwire::SandboxBlocked;
-    let throttle = Mutex::new(purlis_core::sandboxblock::Throttle::default());
+    let throttle = Mutex::new(purlis_core::sandboxblock::Throttle::new(
+        &purlis_core::sandbox::timings::Timings::production(),
+    ));
     let told: Arc<Mutex<Vec<HeardBlock>>> = Arc::new(Mutex::new(Vec::new()));
     let slot: Mutex<Option<HeardBlocks>> = Mutex::new(Some({
         let told = Arc::clone(&told);
@@ -734,8 +736,10 @@ fn a_heard_block_is_told_once_and_a_flood_is_held_back() {
 #[test]
 fn the_repeats_held_back_are_told_once_their_minute_is_over() {
     use purlis_core::hookwire::SandboxBlocked;
-    use purlis_core::sandboxblock::{Repeated, THROTTLE_WINDOW};
-    let throttle = Mutex::new(purlis_core::sandboxblock::Throttle::default());
+    use purlis_core::sandboxblock::Repeated;
+    let throttle = Mutex::new(purlis_core::sandboxblock::Throttle::new(
+        &purlis_core::sandbox::timings::Timings::production(),
+    ));
     let told: Arc<Mutex<Vec<HeardBlock>>> = Arc::default();
     let slot: Mutex<Option<HeardBlocks>> = Mutex::new(Some({
         let told = Arc::clone(&told);
@@ -768,7 +772,7 @@ fn the_repeats_held_back_are_told_once_their_minute_is_over() {
         &slot,
         &repeated,
         other.into(),
-        now + THROTTLE_WINDOW,
+        now + purlis_core::sandbox::timings::Timings::production().throttle_window,
     );
     let counted = counted.lock().unwrap();
     assert_eq!(
@@ -827,7 +831,9 @@ fn a_host_a_brokered_run_was_refused_is_the_asking_chats_block_to_allow() {
     let plane: PlaneId =
         serde_json::from_value(serde_json::json!(root.display().to_string())).expect("an id");
     let told: Arc<Mutex<Vec<HeardBlock>>> = Arc::default();
-    let throttle = Arc::new(Mutex::new(purlis_core::sandboxblock::Throttle::default()));
+    let throttle = Arc::new(Mutex::new(purlis_core::sandboxblock::Throttle::new(
+        &purlis_core::sandbox::timings::Timings::production(),
+    )));
     let slot: Arc<Mutex<Option<HeardBlocks>>> = Arc::new(Mutex::new(Some({
         let told = Arc::clone(&told);
         Arc::new(move |block| told.lock().unwrap().push(block))

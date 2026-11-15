@@ -4697,12 +4697,17 @@ pub fn only_updates(chat: InQueue) -> bool {
 /// How soon the window looks again at a hold already past its minute (#1709).
 pub const LOOK_AGAIN: u64 = 5;
 
-/// **When a live ask's hold ends** (#1709): the proxy holds a connection
-/// [`purlis_core::sandbox::asks::HOLD`] from when it asked, which is when its block was first
-/// heard (`since`). A block heard before its connection was held is still held past that, so
-/// the window is told to look again shortly, and is told anew then while it is held.
-pub fn hold_ends(since: Option<u64>, now: u64) -> u64 {
-    let hold = purlis_core::sandbox::asks::HOLD.as_secs();
+/// **When a live ask's hold ends** (#1709): the proxy holds a connection its board's
+/// [`Timings::hold`](purlis_core::sandbox::timings::Timings::hold) from when it asked, which is
+/// when its block was first heard (`since`); `timings` is the same value the board holds by
+/// (T1.1-01). A block heard before its connection was held is still held past that, so the
+/// window is told to look again shortly, and is told anew then while it is held.
+pub fn hold_ends(
+    since: Option<u64>,
+    now: u64,
+    timings: &purlis_core::sandbox::timings::Timings,
+) -> u64 {
+    let hold = timings.hold.as_secs();
     match since {
         Some(at) if at.saturating_add(hold) > now => at.saturating_add(hold),
         Some(_) => now.saturating_add(LOOK_AGAIN),
@@ -4766,6 +4771,8 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     let store = held.dispatch_grants();
     let now = Instant::now();
     let now_secs = crate::sandboxing::now_secs();
+    // The board's hold, from the one value the project's sandbox waits by (T1.1-01).
+    let timings = held.hooks().timings();
     let mut permissions = held.hooks().asks().pending_since(now);
     // **When each ask's wait ended unanswered, by its key** (ADR 0121 decision 15, #6007),
     // where an answer still reaches the chat: a hook ask that lapsed, a run grant and a Secret
@@ -5010,7 +5017,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         },
         held: &|session, target, began| {
             chats.asking(session, Some(target)).then(|| {
-                let ends = hold_ends(began.map(u64::from), now_secs);
+                let ends = hold_ends(began.map(u64::from), now_secs, &timings);
                 u32::try_from(ends).unwrap_or(u32::MAX)
             })
         },
