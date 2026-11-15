@@ -493,14 +493,17 @@ fn carries(token: &Token, headers: &HeaderMap) -> bool {
 /// it. A key or an origin that can't be a header value is refused, and `headers` then carry no
 /// credential at all.
 fn swap(headers: &mut HeaderMap, route: &Route) -> Result<(), &'static str> {
-    headers.remove(AUTHORIZATION); // RED STUB
-    let _ = (CREDENTIAL_HEADERS, NOT_A_HOST, NOT_A_HEADER_VALUE, HOST);
+    for name in CREDENTIAL_HEADERS {
+        headers.remove(name);
+    }
+    let host = HeaderValue::from_str(&route.origin.authority()).map_err(|_| NOT_A_HOST)?;
     let (name, value) = match &route.key {
         Key::XApiKey(key) => (HeaderName::from_static("x-api-key"), key.clone()),
         Key::Bearer(key) => (AUTHORIZATION, format!("Bearer {key}")),
     };
-    let mut value = HeaderValue::from_str(&value).unwrap_or_else(|_| HeaderValue::from_static(""));
+    let mut value = HeaderValue::from_str(&value).map_err(|_| NOT_A_HEADER_VALUE)?;
     value.set_sensitive(true);
+    headers.insert(HOST, host);
     headers.insert(name, value);
     Ok(())
 }
@@ -533,7 +536,7 @@ impl Unreached {
         let untrusted = why
             .get_ref()
             .and_then(|inner| inner.downcast_ref::<rustls::Error>())
-            .is_some_and(|inner| matches!(inner, rustls::Error::InvalidCertificate(_)) && false); // RED STUB
+            .is_some_and(|inner| matches!(inner, rustls::Error::InvalidCertificate(_)));
         if untrusted {
             Unreached::Untrusted
         } else {
@@ -564,7 +567,7 @@ fn destination(origin: &Origin, proxies: &Matcher) -> (Destination, Option<Inter
             .is_ok_and(|address| address.is_loopback());
     let intercept = origin
         .uri()
-        .filter(|_| !loopback && false) // RED STUB
+        .filter(|_| !loopback)
         .and_then(|uri| proxies.intercept(&uri));
     let proxy = intercept.as_ref().and_then(|intercept| {
         let uri = intercept.uri();
@@ -590,8 +593,7 @@ fn destination(origin: &Origin, proxies: &Matcher) -> (Destination, Option<Inter
 fn connect_request(origin: &Origin, proxy: &Intercept) -> Option<Request<Empty<Bytes>>> {
     let authority = format!("{}:{}", origin.bracketed(), origin.port);
     let mut request = Request::connect(authority.as_str()).header(HOST, authority.as_str());
-    if let Some(credential) = proxy.basic_auth().filter(|_| false) {
-        // RED STUB
+    if let Some(credential) = proxy.basic_auth() {
         request = request.header(PROXY_AUTHORIZATION, credential.clone());
     }
     request.body(Empty::new()).ok()
@@ -647,8 +649,7 @@ async fn connect(origin: &Origin, reach: &Reach) -> Result<Box<dyn Wire>, Unreac
         None => Box::new(stream),
     };
     match origin.scheme {
-        Scheme::Http | Scheme::Https => Ok(wire), // RED STUB
-        #[allow(unreachable_patterns)]
+        Scheme::Http => Ok(wire),
         Scheme::Https => {
             let name =
                 ServerName::try_from(origin.host.clone()).map_err(|_| Unreached::NoConnection)?;
