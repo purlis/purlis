@@ -131,6 +131,14 @@ pub struct Chat {
     /// was not: a bump drops every operator's open chats, and this field's absence reads as
     /// the behaviour every record without it was written under.
     pub number: Option<u32>,
+    /// **The numbers this chat answered to before a restart dealt it [`Self::number`]**, oldest
+    /// first (#6486): a restart keeps the chat's ULID and deals a new number, and a `chat 702`
+    /// link printed before it still names this chat. Carried into its closed record
+    /// ([`crate::chatrecords::ChatRecord::earlier`]) as it closes. Held to
+    /// [`crate::chatrecords::MOST_EARLIER`]; empty for a chat never restarted, which is what
+    /// every record written before this field says — not a format change, for
+    /// [`Self::pinned`]'s reason.
+    pub earlier: Vec<u32>,
     /// The name the operator gave this chat, where they gave one (charter-app#254) — what its
     /// tab says instead of the default `<persona> <N>`.
     ///
@@ -355,6 +363,26 @@ pub struct Chat {
     /// run ends, or it is closed for good. `None` for a chat that kept none, and every record
     /// written before this field, for [`Self::pinned`]'s reason.
     pub kept_tmp: Option<String>,
+}
+
+impl Chat {
+    /// **This chat as a restart starts it again** (#6486): the same chat under its ULID, in a new
+    /// run, its process gone, a new number to be dealt, and the number it has now kept with
+    /// those it had before ([`Self::earlier`]).
+    pub fn renumbered(self) -> Chat {
+        let mut earlier = self.earlier;
+        earlier.extend(self.number);
+        Chat {
+            identity: Identity {
+                run: None,
+                ..self.identity
+            },
+            pid: None,
+            number: None,
+            earlier: crate::chatrecords::held_earlier(&earlier),
+            ..self
+        }
+    }
 }
 
 impl Chat {
@@ -1718,6 +1746,10 @@ struct ChatOnDisk {
     /// counts from one.
     #[serde(default)]
     number: u32,
+    /// [`Chat::earlier`], or absent for a chat never restarted, so a project that never
+    /// restarted a chat writes the record it always wrote.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    earlier: Vec<u32>,
     /// The name the operator gave the chat, or absent — see [`Chat::label`]. Absent in every
     /// record written before a chat could have one, and whenever none was given, so a plane
     /// that never renamed a chat writes the record it always wrote. Held to [`label`] on the
@@ -2081,6 +2113,7 @@ impl From<&Record> for OnDisk {
                     },
                     pinned: chat.pinned,
                     number: chat.number.unwrap_or_default(),
+                    earlier: crate::chatrecords::held_earlier(&chat.earlier),
                     label: chat.label.clone().unwrap_or_default(),
                     from: chat.from.as_ref().map(FromOnDisk::from),
                     reopened: chat
@@ -2186,6 +2219,7 @@ impl From<ChatOnDisk> for Chat {
             // that `contain::segment_ok` would pass for any integer, and a record that names
             // a number no chat here holds costs at most a gap in the counting.
             number: (chat.number > 0).then_some(chat.number),
+            earlier: crate::chatrecords::held_earlier(&chat.earlier),
             label: label(&chat.label).ok().flatten(),
             tab_opened,
             unseen: chat.unseen,

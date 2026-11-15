@@ -77,6 +77,24 @@ pub struct ChatRecord {
     pub started_by: StartedBy,
     /// Where it ran: its workspace's name, or `project root`.
     pub place: String,
+    /// The numbers it answered to before a restart dealt it [`Self::number`], oldest first
+    /// (#6486): each is looked up to it too. At most [`MOST_EARLIER`].
+    pub earlier: Vec<u32>,
+}
+
+/// The most earlier numbers a chat keeps, the oldest going first: a month of restarts.
+pub const MOST_EARLIER: usize = 64;
+
+/// **The numbers `earlier` keeps**: none zero, none twice, at most [`MOST_EARLIER`], the newest.
+pub fn held_earlier(earlier: &[u32]) -> Vec<u32> {
+    let mut kept: Vec<u32> = Vec::new();
+    for number in earlier.iter().rev() {
+        if *number != 0 && !kept.contains(number) && kept.len() < MOST_EARLIER {
+            kept.push(*number);
+        }
+    }
+    kept.reverse();
+    kept
 }
 
 /// **Who started a chat**, as the app knows it.
@@ -99,6 +117,10 @@ pub(crate) struct OnDisk {
     ended: String,
     started_by: StartedBy,
     place: String,
+    /// [`ChatRecord::earlier`]: absent for a chat never restarted, and in every entry written
+    /// before it was kept.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    earlier: Vec<u32>,
 }
 
 impl OnDisk {
@@ -111,6 +133,7 @@ impl OnDisk {
             ended: chat.ended.clone(),
             started_by: chat.started_by.clone(),
             place: chat.place.clone(),
+            earlier: held_earlier(&chat.earlier),
         }
     }
 }
@@ -156,6 +179,7 @@ fn sound(value: serde_json::Value) -> Option<ChatRecord> {
         ended: one.ended,
         started_by: one.started_by,
         place: one.place,
+        earlier: held_earlier(&one.earlier),
     };
     holds_together(&chat).then_some(chat)
 }
@@ -197,10 +221,18 @@ pub fn every(root: &Path) -> Vec<ChatRecord> {
         .collect()
 }
 
-/// **The chat that closed under `number`**, in `chats` as [`every`] read them: the newest close,
-/// as a number is never dealt twice in a project (`reopen::Record::dealt`).
+/// **The chat that closed under `number`**, or had it before a restart (#6486), in `chats` as
+/// [`every`] read them: the newest close, as a number is never dealt twice in a project
+/// (`reopen::Record::dealt`).
 pub fn of_number(chats: &[ChatRecord], number: u32) -> Option<&ChatRecord> {
-    chats.iter().find(|chat| chat.number == number)
+    chats.iter().find(|chat| chat.answers_to(number))
+}
+
+impl ChatRecord {
+    /// Whether this chat had `number`, as it closed or before a restart (#6486).
+    pub fn answers_to(&self, number: u32) -> bool {
+        self.number == number || self.earlier.contains(&number)
+    }
 }
 
 /// Writes `chats`, newest first, whole, under the folder's lock already held.

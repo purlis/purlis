@@ -21,6 +21,7 @@ fn chat(number: u32, id: &str, ended: &str) -> ChatRecord {
         ended: ended.to_owned(),
         started_by: StartedBy::Person,
         place: "smart-ide".to_owned(),
+        earlier: Vec::new(),
     }
 }
 
@@ -288,4 +289,17 @@ fn chats_kept_together_are_refused_whole_where_one_does_not_hold_together() {
     );
     assert!(refused.is_err());
     assert!(every(&root).is_empty());
+}
+
+#[test]
+fn a_closed_chat_keeps_the_numbers_it_had_before_a_restart() {
+    // #6486.
+    let (_dir, root) = project();
+    let restarted = ChatRecord {
+        earlier: vec![650, 702],
+        ..chat(731, ID, "2026-11-12T11:00:00Z")
+    };
+    keep(&root, &restarted).unwrap();
+    assert_eq!(every(&root), vec![restarted.clone()]);
+    assert_eq!(of_number(&every(&root), 650), Some(&restarted));
 }

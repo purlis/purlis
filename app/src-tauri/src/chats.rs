@@ -4349,15 +4349,12 @@ impl Chats {
             )),
             Some(was) if was.resume.is_none() => Err(nothing_to_resume_on(session)),
             Some(was) => {
+                // Its number is the one it closed under: kept with those it had (#6486).
                 let again = Chat {
-                    identity: purlis_core::reopen::Identity {
-                        run: None,
-                        ..was.identity.clone()
-                    },
-                    pid: None,
-                    number: None,
+                    number: Some(session),
                     ..was
-                };
+                }
+                .renumbered();
                 self.start_recorded_told(&again, size, Why::Relaunch, None, None)
             }
         };
@@ -4376,14 +4373,10 @@ impl Chats {
             .map(|one| one.chat.clone())
             .ok_or_else(|| format!("purlis did not restart chat {session}: it is not open."))?;
         Ok(Chat {
-            identity: purlis_core::reopen::Identity {
-                run: None,
-                ..was.identity.clone()
-            },
-            pid: None,
-            number: None,
+            number: Some(session),
             ..was
-        })
+        }
+        .renumbered())
     }
 
     /// `started` takes the place of `session` in the strip's order, and the record says so.
@@ -9328,14 +9321,12 @@ impl Chats {
             .map(|one| one.chat.clone())
             .ok_or_else(|| format!("chat {session} is not open"))?;
         let again = Chat {
-            identity: purlis_core::reopen::Identity {
-                run: None,
-                ..was.identity.clone()
-            },
             resume: None,
-            pid: None,
-            number: None,
-            ..was
+            ..Chat {
+                number: Some(session),
+                ..was
+            }
+            .renumbered()
         };
         // **A dispatched chat is handed its brief again** (#1609), as its first message: the
         // brief was the whole of what it was asked, and this run has no conversation to hold it.

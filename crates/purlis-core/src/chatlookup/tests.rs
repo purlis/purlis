@@ -84,6 +84,7 @@ fn open_chat(number: u32, id: &str) -> OpenChat {
     OpenChat {
         number,
         id: Some(id.to_owned()),
+        earlier: Vec::new(),
     }
 }
 
@@ -228,6 +229,7 @@ fn closed_702() -> ChatRecord {
         ended: "2026-11-12T09:40:00Z".to_owned(),
         started_by: StartedBy::Person,
         place: "smart-ide".to_owned(),
+        earlier: Vec::new(),
     }
 }
 
@@ -350,6 +352,7 @@ fn closed_641() -> ChatRecord {
             name: "steward 3".to_owned(),
         },
         place: "smart-ide".to_owned(),
+        earlier: Vec::new(),
     }
 }
 
@@ -416,4 +419,44 @@ fn a_closed_handoff_is_found_by_its_ulid_closed_again_under_a_later_number() {
         by_number_in(&root, 641, &[]),
         Found::Closed(Box::new(later))
     );
+}
+
+// #6486: a restart deals a new number and keeps the ULID, so every number a chat had answers.
+
+#[test]
+fn an_open_chat_is_found_under_every_number_it_had_before_a_restart() {
+    let (_dir, root) = project();
+    let restarted = OpenChat {
+        earlier: vec![702, 715],
+        ..open_chat(731, ORDINARY_ID)
+    };
+    for was in [702, 715] {
+        assert_eq!(
+            by_number_in(&root, was, std::slice::from_ref(&restarted)),
+            Found::Restarted { now: 731 },
+            "chat {was}"
+        );
+    }
+    assert_eq!(
+        by_number_in(&root, 716, std::slice::from_ref(&restarted)),
+        Found::NoChat
+    );
+}
+
+#[test]
+fn a_closed_chat_is_found_under_every_number_it_had_before_a_restart() {
+    let (_dir, root) = project();
+    let closed = ChatRecord {
+        number: 731,
+        earlier: vec![702, 715],
+        ..closed_702()
+    };
+    chatrecords::keep(&root, &closed).unwrap();
+    for was in [702, 715, 731] {
+        assert_eq!(
+            by_number_in(&root, was, &[]),
+            Found::Closed(Box::new(closed.clone())),
+            "chat {was}"
+        );
+    }
 }

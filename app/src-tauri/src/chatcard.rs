@@ -93,6 +93,12 @@ pub(crate) fn open_chats(held: &Held) -> Vec<chatlookup::OpenChat> {
         .map(|one| chatlookup::OpenChat {
             number: one.session,
             id: one.id,
+            // The numbers it had before a restart answer to it too (#6486).
+            earlier: held
+                .chats()
+                .recorded_chat(one.session)
+                .map(|chat| chat.earlier)
+                .unwrap_or_default(),
         })
         .collect()
 }
@@ -409,6 +415,7 @@ pub(crate) fn closed_record(
             _ => StartedBy::Person,
         },
         place: workspace.map_or_else(|| PROJECT_ROOT.to_owned(), str::to_owned),
+        earlier: chat.earlier.clone(),
     })
 }
 

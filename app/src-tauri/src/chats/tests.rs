@@ -2874,6 +2874,51 @@ fn a_restart_keeps_the_conversation_and_compiles_the_sandbox_the_project_has_now
     );
 }
 
+/// #6486: **a restarted chat answers to every number it had**, open and once it has closed.
+#[test]
+fn a_restarted_chat_answers_to_its_older_number_open_and_closed() {
+    let plane = a_sandboxed_plane();
+    let chats = restartable_chats_of(plane.path(), Pretend::default());
+    let first = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    chats.ask_restart(first).expect("asked");
+    let second = chats.restart(first, SIZE).expect("restarts");
+    chats.close(first).expect("the old run ends");
+    assert_eq!(
+        chats.recorded_chat(second).map(|chat| chat.earlier),
+        Some(vec![first]),
+        "the restart keeps the number it had"
+    );
+    chats.close(second).expect("ends");
+    let third = chats.resume_ended(second, SIZE).expect("resumes");
+    assert_eq!(
+        chats.recorded_chat(third).map(|chat| chat.earlier),
+        Some(vec![first, second]),
+        "a resume keeps both"
+    );
+
+    chats.close(third).expect("ends for good");
+
+    let closed = purlis_core::chatrecords::every(plane.path());
+    assert_eq!(
+        closed
+            .iter()
+            .map(|one| (one.number, one.earlier.clone()))
+            .collect::<Vec<_>>(),
+        [(third, vec![first, second])]
+    );
+    for was in [first, second, third] {
+        assert!(
+            matches!(
+                purlis_core::chatlookup::by_number_in(plane.path(), was, &[]),
+                purlis_core::chatlookup::Found::Closed(_)
+            ),
+            "chat {was} names the closed chat"
+        );
+    }
+}
+
 /// **Resume on the band of a chat the person ended** (#5019, spec #4750 story 62): End… takes
 /// the chat off the board, and its band's Resume starts it again on its conversation, the same
 /// chat under its id in a new run, as Restart does for one still open.
