@@ -755,7 +755,8 @@ export const SHORTCUTS: readonly Shortcut[] = [
   {
     id: "chat.find",
     does: "Find in the pane",
-    // Any terminal pane's, a shell's as much as a chat's (#6483): the id is kept, as callers use it.
+    // Any terminal pane's, a shell's as much as a chat's (#6483). Its id, from when only a chat
+    // had a terminal, is the one `SessionPane`'s key handler asks `isKey` for.
     group: "Panes",
     where: "terminal",
     kind: "key",
@@ -796,6 +797,9 @@ export const SHORTCUTS: readonly Shortcut[] = [
   {
     id: "chat.menu",
     does: "The pane's menu, under its cursor",
+    // Any terminal pane's (#6483). Nothing asks `isKey` for this id: `SessionPane`'s key handler
+    // calls `asksForTheMenu` itself, to know whether a program has the mouse. The id is the
+    // sheet's row, kept as it was.
     group: "Panes",
     where: "terminal",
     kind: "key",
@@ -821,6 +825,8 @@ export const SHORTCUTS: readonly Shortcut[] = [
   {
     id: "chat.leave",
     does: "Out of the pane's terminal, a browser you drive or DevTools (with Shift, back)",
+    // Any terminal pane's (#6483). Its id is the one `leavesTheChat` (`SessionPane`) and
+    // `leaveKeys.ts` ask `isKey` for.
     group: "Panes",
     where: "terminal",
     kind: "key",
