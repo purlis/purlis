@@ -2167,17 +2167,71 @@ fn claude_code_and_codex_both_deny_a_chat_the_forge_etag_store() {
     );
 }
 
+/// A Linux machine whose config home is `home/.config`, paired as a runner where `paired` says.
+fn runner_machine(home: &std::path::Path, paired: bool) -> Machine {
+    let config = home.join(".config");
+    std::fs::create_dir_all(&config).expect("a config home");
+    if paired {
+        let desktop = purlis_session_protocol::hostlink::Pinned {
+            device: "01JA0DESKT0P00000000000000".into(),
+            key: purlis_session_protocol::hostlink::LinkKey::generate()
+                .expect("a key")
+                .public(),
+        };
+        crate::runnerlink::pair(&config, &desktop).expect("paired");
+    }
+    Machine {
+        env: crate::secrets::Env::of(&[(
+            crate::machine::HOME_VAR,
+            config.to_str().expect("a path"),
+        )]),
+        home: Some(home.to_path_buf()),
+        os: Os::Linux,
+    }
+}
+
 #[test]
 fn off_a_runner_there_are_no_runner_internals_to_deny() {
-    // A placeholder for class 4, kept because ADR 0067 fixes the classes: charter has no
-    // runner yet (RR-5), so there is nothing of one to deny. The runner slice replaces this
-    // with the paths it installs, denied on a runner.
+    // ADR 0067 class 4 holds only what a runner installs: a desktop, and a Linux machine that is
+    // not paired as a runner, have none.
     let (_plane, denied) = denied_with(None, Os::Linux);
     assert!(
         denied
             .paths
             .iter()
             .all(|it| it.class != Class::RunnerInternals)
+    );
+    let held = tempfile::tempdir().expect("a home");
+    let plane = tempfile::tempdir().expect("a plane");
+    let denied = Denied::of(plane.path(), &runner_machine(&real(held.path()), false));
+    assert!(
+        denied
+            .paths
+            .iter()
+            .all(|it| it.class != Class::RunnerInternals)
+    );
+}
+
+#[test]
+fn on_a_runner_a_chat_writes_nothing_where_purlis_versions_are_installed() {
+    // V16 (d), RR-14 (#723): the versions installed in `<config>/server/` are denied to chats for
+    // writing, under every spelling of the config home, there or not, so no chat can change the
+    // binary a later host or a connector runs. Reading stays open: a chat's hooks run it.
+    let held = tempfile::tempdir().expect("a home");
+    let home = real(held.path());
+    let plane = tempfile::tempdir().expect("a plane");
+    let denied = Denied::of(plane.path(), &runner_machine(&home, true));
+    let written = paths(&denied, Class::RunnerInternals, Access::Write);
+    for spelled in crate::machine::dirs_spelled(&home.join(".config")) {
+        assert!(
+            written.contains(&spelled.join(crate::runnerinstall::SERVER_DIR)),
+            "{} in {written:?}",
+            spelled.display()
+        );
+    }
+    assert!(
+        paths(&denied, Class::RunnerInternals, Access::ReadWrite).is_empty(),
+        "a chat's hooks run the installed binary, so it is never denied reading"
     );
 }
 
