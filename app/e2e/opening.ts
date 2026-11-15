@@ -28,23 +28,32 @@ export async function pickAndStart(within = 20_000, withoutTheSandbox = false): 
   let pressing = "";
   let instead: string | null = null;
   const words = withoutTheSandbox ? STARTS_WITHOUT_THE_SANDBOX : STARTS;
-  await browser.waitUntil(
-    async () => {
-      // The box is ticked once the rows' details are in, and the press waits for the words it
-      // turns the button to: a tick is a render away from what the button says.
-      if (withoutTheSandbox) await browser.execute(tickStartWithoutTheSandbox, PICKER);
-      // Not while the rows' details are read (#4736): until they arrive the button says Start
-      // chat even for a profile that asks for its approval, and a press then shows the approval
-      // instead of going, so it is chosen once the picker knows which it is. In one look, so the
-      // dialog cannot be drawn between "is it checking?" and "which button?" (#4979).
-      pressing = (await browser.execute(whatThePickerOffers, PICKER, words)) ?? "";
-      if (pressing !== "") return true;
-      // A project where nothing can start draws no picker at all (#5580): said at once.
-      instead = await browser.execute(whatCameInsteadOfThePicker);
-      return instead !== null;
-    },
-    { timeout: within, timeoutMsg: "the picker never offered Start" },
-  );
+  const neverOffered = "the picker never offered Start";
+  await browser
+    .waitUntil(
+      async () => {
+        // The box is ticked once the rows' details are in, and the press waits for the words it
+        // turns the button to: a tick is a render away from what the button says.
+        if (withoutTheSandbox) await browser.execute(tickStartWithoutTheSandbox, PICKER);
+        // Not while the rows' details are read (#4736): until they arrive the button says Start
+        // chat even for a profile that asks for its approval, and a press then shows the approval
+        // instead of going, so it is chosen once the picker knows which it is. In one look, so the
+        // dialog cannot be drawn between "is it checking?" and "which button?" (#4979).
+        pressing = (await browser.execute(whatThePickerOffers, PICKER, words)) ?? "";
+        if (pressing !== "") return true;
+        // A project where nothing can start draws no picker at all (#5580): said at once.
+        instead = await browser.execute(whatCameInsteadOfThePicker);
+        return instead !== null;
+      },
+      { timeout: within, timeoutMsg: neverOffered },
+    )
+    .catch(async (error: unknown) => {
+      if (!(error instanceof Error) || error.message !== neverOffered) throw error;
+      // Said with what the picker shows, so a red run says why (#4351): a window left hidden or
+      // behind another can hold the picker's fade-in at nothing, and it is then never seen.
+      const shows = await browser.execute(whatThePickerShows, PICKER).catch(String);
+      throw new Error(`${neverOffered}: ${shows}`);
+    });
   if (instead !== null)
     throw new Error(
       `the picker was never drawn: nothing can start in the project in front, so New chat ` +
@@ -125,6 +134,54 @@ export function whatThePickerOffers(
     for (const one of words) if (said.includes(one)) return one;
   }
   return null;
+}
+
+/**
+ * What the shown dialog saying `text` looks like to {@link whatThePickerOffers}, in words, for a
+ * wait on it that ran out (#4351): not up, up and still checking its rows, not seen (and which
+ * element holds it at nothing: the `charter-appear` fade-in, paused by WebKit while the window
+ * is hidden or behind another, leaves the dialog at opacity 0), or the buttons it offers, and
+ * whether the page itself is visible. **Run in the page.**
+ */
+export function whatThePickerShows(text: string): string {
+  const page = `the page is ${document.visibilityState}`;
+  const describe = (one: Element): string =>
+    one.tagName.toLowerCase() +
+    (one.id === "" ? "" : `#${one.id}`) +
+    [...one.classList].map((name) => `.${name}`).join("");
+  const looks: string[] = [];
+  for (const dialog of document.querySelectorAll('[role="dialog"]')) {
+    if (!(dialog.textContent ?? "").includes(text)) continue;
+    if (dialog.querySelector('[aria-busy="true"]') !== null) {
+      looks.push("it is up, still checking its rows");
+      continue;
+    }
+    const seen = dialog as Element & { checkVisibility?: (options?: object) => boolean };
+    if (
+      typeof seen.checkVisibility === "function" &&
+      !seen.checkVisibility({ opacityProperty: true, visibilityProperty: true })
+    ) {
+      let why = "it is not visible";
+      for (let one: Element | null = dialog; one !== null; one = one.parentElement) {
+        const style = getComputedStyle(one);
+        if (style.visibility === "hidden") {
+          why = `${describe(one)} is hidden`;
+          break;
+        }
+        if (Number.parseFloat(style.opacity) === 0) {
+          why = `${describe(one)} is at opacity ${style.opacity}`;
+          break;
+        }
+      }
+      looks.push(`not seen: ${why}`);
+      continue;
+    }
+    const said = [...dialog.querySelectorAll("button")].map((one) =>
+      (one.textContent ?? "").trim(),
+    );
+    looks.push(`its buttons: ${said.join(", ")}`);
+  }
+  return `${looks.length === 0 ? "it is not up" : looks.join(" | ")}; ${page}`;
 }
 
 /**
@@ -404,11 +461,15 @@ export async function answerTheAsk(ending: string): Promise<void> {
 
 /**
  * **Opens the palette**, and makes sure it is up: F2, and where the driver's F2 reaches nothing
- * that opens it (the keyboard left on something that takes the key, such as a terminal or a
- * dialog that just closed), the same key dispatched on the window, where the palette listens,
- * as `reach.ts`'s `runFromThePalette` does.
+ * that opens it (the keyboard left on something that takes the key, such as a terminal, a
+ * dialog that just closed, or a tab or a chat's row, which rename on F2), the same key
+ * dispatched on the window, where the palette listens, as `reach.ts`'s `runFromThePalette` does.
+ *
+ * The driver's keys are `KeyboardEvent`s it dispatches in the page on the element with the
+ * keyboard (`tauri-plugin-wdio-webdriver`'s `key_input.rs`), so a Mac's F-keys set to media keys
+ * play no part: F2 is F2 to the page whatever the keyboard says (#4351).
  */
-async function openThePalette(): Promise<void> {
+export async function openThePalette(): Promise<void> {
   const palette = await $(PALETTE);
   if (await palette.isDisplayed().catch(() => false)) return;
   await browser.keys(["F2"]);
@@ -663,8 +724,7 @@ const PALETTE = '[role="dialog"][aria-label="Command palette"]';
  * no button for, New project… among them since the project strip went (#2915).
  */
 export async function fromThePalette(words: string): Promise<void> {
-  await browser.keys(["F2"]);
-  await $(PALETTE).waitForDisplayed({ timeout: 20_000 });
+  await openThePalette();
   const box = await $("#palette-query");
   await browser.waitUntil(async () => box.isFocused(), {
     timeout: 10_000,

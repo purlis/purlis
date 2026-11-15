@@ -57,6 +57,12 @@
   animation: charter-appear var(--motion-duration-enter) var(--motion-easing-enter);
 }
 
+/* A scenario-test build draws it at once (`theme/motion.ts`, `ARRIVALS_ATTRIBUTE`, #4351): WebKit
+   suspends a fade while the window is hidden, and React Aria keeps the dialog up until it ends. */
+:root[data-arrivals="at-once"] [data-scope="dialog"][data-part="scrim"][data-entering] {
+  animation: none;
+}
+
 /* React Aria's modal element holds the dialog and nothing of its own to draw: the dialog is laid
    out by the scrim. */
 [data-scope="dialog"][data-part="modal"] {
