@@ -221,7 +221,7 @@ sentence. `{what}` is the store's own name for itself, such as "your extension a
 - **Unplaceable: refused, kept, and never written over.** "purlis cannot read {what}: their
   version is not one any purlis writes. Nothing was changed." Its one remedy is Set it aside and
   start fresh, on the person's press. Update purlis is not offered, because nothing says a newer
-  purlis would read it. See [New questions](#new-questions-for-the-operator), N1.
+  purlis would read it. See [New questions](#new-questions-for-the-operator-decided), N1.
 - **Damaged, whole file: copied aside automatically, then the store starts fresh** (R6). This is
   the machine store's rule of 2026-11-08, made every store's. The read answers `Damaged` and the
   feature reads nothing. The next `update` first copies the bytes to `<file>.unread`, or to
@@ -483,7 +483,7 @@ standing does, in every window. It says:
   it, it is also a Blocking ask (below).
 - **MCP servers:** in Notices of its project. Its remedy is Copy command for
   `purlis persona approve-mcp`, the one approve this adapter has today. See
-  [New questions](#new-questions-for-the-operator), N2.
+  [New questions](#new-questions-for-the-operator-decided), N2.
 
 **A code approval a chat is held on is a Blocking ask as well as the Notice** (R7, reverting
 Q14). ADR 0121 decision 2 makes anything that stops one of the person's chats a Blocking ask,
@@ -736,18 +736,18 @@ the draft's recommendation. "Changed" means the operator chose an alternative. "
 - **R11, Q16 narrowed.** The MCP-server adapter answers only Approved or New, with an approve that
   replaces the persona's set. There is no format change.
 
-## New questions for the operator
+## New questions for the operator (decided)
 
-Two choices the rulings do not make surfaced while folding round 1 in. The record follows the
-recommendation until the operator rules.
+Two choices the rulings did not make surfaced while folding round 1 in. The operator decided
+both on 2026-11-15 as recommended, so the record stands as written.
 
-- **N1. Does an Unplaceable version get the damage rule or a refusal?** A version that is a
+- **N1, decided: a refusal.** *Does an Unplaceable version get the damage rule or a refusal?* A version that is a
   string, a float, zero or negative is written by no purlis. The machine store today treats it as
   a file that does not parse, copies it aside and starts fresh. This record refuses it and offers
   Set it aside and start fresh on a press, because R6 names only garbage for the automatic rule.
   *Recommendation:* the refusal, as written: a version purlis cannot place is not proof that
   nothing newer wrote it.
-- **N2. Does the MCP adapter's Notice get a window press?** Today a persona's MCP servers are
+- **N2, decided: Copy command.** *Does the MCP adapter's Notice get a window press?* Today a persona's MCP servers are
   approved only in the person's own terminal, so its Notice can offer only Copy command, which
   `app/src/Notice.guard.test.ts` lists as debt. A window press would be a new place that can
   approve code. *Recommendation:* Copy command, as written, and no new approve surface in this
