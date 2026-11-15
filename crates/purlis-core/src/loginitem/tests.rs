@@ -533,3 +533,24 @@ fn removing_on_linux_disables_the_unit_and_deletes_both_files() {
     assert!(!manager.places.host_unit.exists());
     assert!(!manager.places.app_autostart.exists());
 }
+
+#[test]
+fn each_platform_has_the_manager_its_login_items_need_and_none_where_there_is_none() {
+    let home = Path::new("/home/me");
+    let on = |os, systemd_user| {
+        manager_on(
+            os,
+            systemd_user,
+            places(home, None),
+            host_job(),
+            app_job(),
+            home.join("host.log"),
+            runs_for_real(),
+        )
+        .map(|(kind, _)| kind)
+    };
+    assert_eq!(on(Os::Macos, false), Some(Supervisor::Launchd));
+    assert_eq!(on(Os::Linux, true), Some(Supervisor::SystemdUser));
+    assert_eq!(on(Os::Linux, false), None);
+    assert_eq!(on(Os::Other, true), None);
+}

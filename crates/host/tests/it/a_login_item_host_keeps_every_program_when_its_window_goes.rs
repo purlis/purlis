@@ -49,7 +49,10 @@ impl Compose for Echo {
 
 /// Each program's end the host kept, by number and the host's act that ended it.
 #[derive(Clone, Default)]
-struct Ends(Arc<Mutex<Vec<(u32, Option<Stopped>)>>>);
+struct Ends(Arc<Mutex<Vec<Kept>>>);
+
+/// One end kept: the program's number and the host's act that ended it.
+type Kept = (u32, Option<Stopped>);
 
 impl Record for Ends {
     fn record(&self, _entry: Value) -> Result<(), String> {
@@ -62,7 +65,7 @@ impl Record for Ends {
 }
 
 impl Ends {
-    fn kept(&self) -> Vec<(u32, Option<Stopped>)> {
+    fn kept(&self) -> Vec<Kept> {
         let mut kept = self.0.lock().unwrap().clone();
         kept.sort();
         kept

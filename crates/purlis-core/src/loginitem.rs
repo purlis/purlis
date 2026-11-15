@@ -312,6 +312,14 @@ pub fn places(home: &Path, xdg_config: Option<&Path>) -> Places {
     }
 }
 
+/// The files' places for this user: under the home folder, with `XDG_CONFIG_HOME` where it
+/// names one.
+pub fn places_here() -> Option<Places> {
+    let home = dirs::home_dir()?;
+    let xdg = crate::envvar::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
+    Some(places(&home, xdg.as_deref()))
+}
+
 /// Runs a manager's command (`launchctl`, `systemctl`) and gives what it printed and how it
 /// ended. A test records the commands instead.
 pub type Runs = Arc<dyn Fn(&str, &[String]) -> std::io::Result<Output> + Send + Sync>;
@@ -356,6 +364,43 @@ pub struct SystemdUser {
     pub host: Job,
     pub app: Job,
     pub runs: Runs,
+}
+
+/// **This platform's service manager, whether or not anything keeps the host running now**: so
+/// a login item an earlier launch installed is removed once nothing does. launchd on macOS, the
+/// systemd user manager on Linux where there is one, and none elsewhere. Answers which it is.
+pub fn manager_on(
+    os: Os,
+    systemd_user: bool,
+    places: Places,
+    host: Job,
+    app: Job,
+    log: PathBuf,
+    runs: Runs,
+) -> Option<(Supervisor, Arc<dyn Manager>)> {
+    match os {
+        Os::Macos => Some((
+            Supervisor::Launchd,
+            Arc::new(Launchd {
+                places,
+                host,
+                app,
+                log,
+                uid: rustix::process::getuid().as_raw(),
+                runs,
+            }),
+        )),
+        Os::Linux if systemd_user => Some((
+            Supervisor::SystemdUser,
+            Arc::new(SystemdUser {
+                places,
+                host,
+                app,
+                runs,
+            }),
+        )),
+        Os::Linux | Os::Other => None,
+    }
 }
 
 /// Runs a manager's command, failing with which command and what it said.
