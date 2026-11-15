@@ -158,18 +158,12 @@ pub fn stack_of(minidump: &[u8]) -> Result<CrashStack, String> {
     // A signal is answered on the crashing thread itself, so its live registers, all the
     // minidump has, are the handler's: the crash is past the trampoline it was called from.
     let from = if arrived_as_a_signal(&exception, system.os) {
-        let own = modules
-            .main_module()
-            .map(|module| file_name(&module.code_file()));
-        past_the_trampoline(
-            stack.frames.iter().map(|frame| {
-                frame
-                    .module
-                    .as_ref()
-                    .map(|module| file_name(&module.code_file()))
-            }),
-            own.as_deref(),
-        )
+        past_the_trampoline(stack.frames.iter().map(|frame| {
+            frame
+                .module
+                .as_ref()
+                .map(|module| file_name(&module.code_file()))
+        }))
     } else {
         0
     };
@@ -223,6 +217,10 @@ fn arrived_as_a_signal(exception: &MinidumpException, os: minidump::system_info:
         && record.exception_flags == EXC_SOFT_SIGNAL
 }
 
+/// The prefix of the libSystem libraries' file names (`libsystem_kernel`, `libsystem_pthread`,
+/// `libsystem_platform`, `libsystem_c`): the system's own C library, never the handler's code.
+const LIBSYSTEM: &str = "libsystem_";
+
 /// **How many of a signalled thread's frames are the crash handler's**, each frame as the file
 /// name of the module it is in, the innermost first: every frame up to and including
 /// [`TRAMPOLINE`]'s `_sigtramp`, the frame the kernel called the handler from. The frame after it
@@ -230,22 +228,23 @@ fn arrived_as_a_signal(exception: &MinidumpException, os: minidump::system_info:
 /// its module, but `libsystem_platform` holds more than the trampoline: `memset`, `memmove` and
 /// the unfair locks are there too, and the handler's thread can be stopped in one of them on its
 /// way to the condition variable it waits on, its innermost frame in the trampoline's module
-/// (#6736). So the trampoline is the first frame in that module **past a frame in `own`**, the
-/// app's own binary, where the handler (`signal_handler`, `simulate_exception`) runs: the
-/// handler's frames always stand between where it was stopped and the trampoline that called it.
-/// With `own` unknown, the first frame in that module. With no trampoline past the handler, none:
-/// the stack is kept whole rather than guessed at.
-fn past_the_trampoline(
-    modules: impl IntoIterator<Item = Option<String>>,
-    own: Option<&str>,
-) -> usize {
-    let mut in_the_handler = own.is_none();
+/// (#6736). So the trampoline is the first frame in that module **past a frame outside
+/// libSystem** ([`LIBSYSTEM`]): the handler (`signal_handler`, `simulate_exception`) is the app's
+/// own code, so its frames always stand between where its thread was stopped (in libSystem, or
+/// in the handler itself) and the trampoline that called it. Not the minidump's main module:
+/// minidump-writer takes the first image with no version for it, which in the app is not
+/// always the app (#6822's repeat runs). With no trampoline past the handler, none: the stack
+/// is kept whole rather than guessed at.
+fn past_the_trampoline(modules: impl IntoIterator<Item = Option<String>>) -> usize {
+    let mut in_the_handler = false;
     for (at, module) in modules.into_iter().enumerate() {
-        let module = module.as_deref();
-        if in_the_handler && module == Some(TRAMPOLINE) {
+        let Some(module) = module else {
+            continue;
+        };
+        if in_the_handler && module == TRAMPOLINE {
             return at + 1;
         }
-        in_the_handler |= module.is_some() && module == own;
+        in_the_handler |= !module.starts_with(LIBSYSTEM);
     }
     0
 }
@@ -360,7 +359,7 @@ fn in_folder(crashes: &Path, extension: &str) -> Vec<(PathBuf, Option<u64>)> {
 mod tests {
     use super::past_the_trampoline;
 
-    /// The app's own binary, the minidump's main module.
+    /// The app's own binary.
     const APP: &str = "purlis-app";
 
     fn modules(names: &[&str]) -> Vec<Option<String>> {
@@ -387,7 +386,7 @@ mod tests {
             APP,                        // nativecrash::crash_if_asked: the crash
         ]);
 
-        assert_eq!(past_the_trampoline(stack, Some(APP)), 7);
+        assert_eq!(past_the_trampoline(stack), 7);
     }
 
     #[test]
@@ -406,7 +405,7 @@ mod tests {
         names.extend(["libsystem_pthread.dylib", "libsystem_pthread.dylib", APP]);
         let stack = modules(&names);
 
-        assert_eq!(past_the_trampoline(stack, Some(APP)), 16);
+        assert_eq!(past_the_trampoline(stack), 16);
     }
 
     #[test]
@@ -420,28 +419,21 @@ mod tests {
             "libsystem_pthread.dylib",  // pthread_kill
         ]);
 
-        assert_eq!(past_the_trampoline(stack, Some(APP)), 5);
-    }
-
-    #[test]
-    fn with_no_main_module_known_the_first_trampoline_is_the_handlers() {
-        let stack = modules(&[APP, "libsystem_platform.dylib", "libsystem_c.dylib"]);
-
-        assert_eq!(past_the_trampoline(stack, None), 2);
+        assert_eq!(past_the_trampoline(stack), 5);
     }
 
     #[test]
     fn a_stack_with_no_signal_trampoline_is_kept_whole() {
         let stack = modules(&[APP, "AppKit", "libdyld.dylib"]);
 
-        assert_eq!(past_the_trampoline(stack, Some(APP)), 0);
+        assert_eq!(past_the_trampoline(stack), 0);
     }
 
     #[test]
     fn a_stack_whose_trampoline_has_no_handler_frame_before_it_is_kept_whole() {
         let stack = modules(&["libsystem_platform.dylib", "libsystem_c.dylib", APP]);
 
-        assert_eq!(past_the_trampoline(stack, Some(APP)), 0);
+        assert_eq!(past_the_trampoline(stack), 0);
     }
 
     #[test]
@@ -455,6 +447,6 @@ mod tests {
             APP,
         ]);
 
-        assert_eq!(past_the_trampoline(stack, Some(APP)), 2);
+        assert_eq!(past_the_trampoline(stack), 2);
     }
 }
