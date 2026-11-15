@@ -1,0 +1,339 @@
+{
+  "about": "Synthetic samples of a subscription-shaped credential, for T1a-28's classifier. Every value is made up. The rules and their sources: README.md beside this file (T1a-18, R-711).",
+  "read": "2026-11-15",
+  "labels": [
+    "claude-plan",
+    "chatgpt-plan",
+    "not-subscription"
+  ],
+  "samples": [
+    {
+      "name": "claude_plan_bearer",
+      "rule": "C1",
+      "label": "claude-plan",
+      "headers": [
+        [
+          "authorization",
+          "Bearer sk-ant-oat01-SYNTHETIC-claude-plan-access-SYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNAA"
+        ],
+        [
+          "anthropic-beta",
+          "oauth-2025-04-20,claude-code-20250219"
+        ]
+      ],
+      "note": "What Claude Code sends on a plan: its OAuth access token as a bearer, with the OAuth beta."
+    },
+    {
+      "name": "claude_plan_bearer_without_the_beta",
+      "rule": "C1",
+      "label": "claude-plan",
+      "headers": [
+        [
+          "authorization",
+          "Bearer sk-ant-oat01-SYNTHETIC-claude-plan-access-SYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNAA"
+        ]
+      ],
+      "note": "The token decides; the anthropic-beta marker is not needed."
+    },
+    {
+      "name": "claude_plan_bearer_scheme_in_lower_case",
+      "rule": "C1",
+      "label": "claude-plan",
+      "headers": [
+        [
+          "authorization",
+          "bearer sk-ant-oat01-SYNTHETIC-claude-plan-access-SYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNAA"
+        ]
+      ],
+      "note": "The auth scheme is case-insensitive (RFC 9110 §11.1)."
+    },
+    {
+      "name": "claude_plan_token_in_x_api_key",
+      "rule": "C1",
+      "label": "claude-plan",
+      "headers": [
+        [
+          "x-api-key",
+          "sk-ant-oat01-SYNTHETIC-claude-plan-access-SYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNAA"
+        ]
+      ],
+      "note": "A plan token where an API key belongs is still a plan token."
+    },
+    {
+      "name": "claude_plan_refresh_token",
+      "rule": "C1",
+      "label": "claude-plan",
+      "headers": [
+        [
+          "authorization",
+          "Bearer sk-ant-ort01-SYNTHETIC-claude-plan-refresh-SYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYAA"
+        ]
+      ],
+      "note": "A refresh token is never sent to Messages, but if it arrives it is a plan credential."
+    },
+    {
+      "name": "claude_plan_token_beside_another_credential",
+      "rule": "C1",
+      "label": "claude-plan",
+      "headers": [
+        [
+          "authorization",
+          "Bearer 5c0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd"
+        ],
+        [
+          "x-api-key",
+          "sk-ant-oat01-SYNTHETIC-claude-plan-access-SYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNAA"
+        ]
+      ],
+      "note": "Any credential header carrying a plan token makes the request subscription-shaped, even beside the run's token."
+    },
+    {
+      "name": "chatgpt_plan_bearer_with_account_header",
+      "rule": "C2",
+      "label": "chatgpt-plan",
+      "headers": [
+        [
+          "authorization",
+          "Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6IlNZTlRIRVRJQyIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2F1dGgub3BlbmFpLmNvbSIsImF1ZCI6WyJodHRwczovL2FwaS5vcGVuYWkuY29tL3YxIl0sInN1YiI6IlNZTlRIRVRJQy11c2VyIiwiZXhwIjoxODkzNDU2MDAwLCJpYXQiOjE4OTM0NTI0MDAsImh0dHBzOi8vYXBpLm9wZW5haS5jb20vYXV0aCI6eyJjaGF0Z3B0X2FjY291bnRfaWQiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDAiLCJjaGF0Z3B0X3BsYW5fdHlwZSI6InBsdXMiLCJjaGF0Z3B0X3VzZXJfaWQiOiJ1c2VyLVNZTlRIRVRJQyJ9fQ.SYNTHETIC-signature"
+        ],
+        [
+          "chatgpt-account-id",
+          "00000000-0000-4000-8000-000000000000"
+        ]
+      ],
+      "note": "What Codex sends on a ChatGPT sign-in: the access token (a JWT) as a bearer, with the account header."
+    },
+    {
+      "name": "chatgpt_plan_bearer_without_account_header",
+      "rule": "C2",
+      "label": "chatgpt-plan",
+      "headers": [
+        [
+          "authorization",
+          "Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6IlNZTlRIRVRJQyIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2F1dGgub3BlbmFpLmNvbSIsImF1ZCI6WyJodHRwczovL2FwaS5vcGVuYWkuY29tL3YxIl0sInN1YiI6IlNZTlRIRVRJQy11c2VyIiwiZXhwIjoxODkzNDU2MDAwLCJpYXQiOjE4OTM0NTI0MDAsImh0dHBzOi8vYXBpLm9wZW5haS5jb20vYXV0aCI6eyJjaGF0Z3B0X2FjY291bnRfaWQiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDAiLCJjaGF0Z3B0X3BsYW5fdHlwZSI6InBsdXMiLCJjaGF0Z3B0X3VzZXJfaWQiOiJ1c2VyLVNZTlRIRVRJQyJ9fQ.SYNTHETIC-signature"
+        ]
+      ],
+      "note": "The JWT's OpenAI auth claim decides; the account header is not needed."
+    },
+    {
+      "name": "anthropic_api_key_in_x_api_key",
+      "rule": "N1",
+      "label": "not-subscription",
+      "headers": [
+        [
+          "x-api-key",
+          "sk-ant-api03-SYNTHETIC-anthropic-api-key-SYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYAA"
+        ]
+      ],
+      "note": "An Anthropic API key, as Claude Code sends one."
+    },
+    {
+      "name": "anthropic_api_key_as_bearer",
+      "rule": "N1",
+      "label": "not-subscription",
+      "headers": [
+        [
+          "authorization",
+          "Bearer sk-ant-api03-SYNTHETIC-anthropic-api-key-SYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYAA"
+        ]
+      ],
+      "note": "An API key set in ANTHROPIC_AUTH_TOKEN."
+    },
+    {
+      "name": "anthropic_admin_key",
+      "rule": "N1",
+      "label": "not-subscription",
+      "headers": [
+        [
+          "x-api-key",
+          "sk-ant-admin01-SYNTHETIC-anthropic-admin-key-SYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICAA"
+        ]
+      ],
+      "note": "An Admin API key is a key, not a plan sign-in."
+    },
+    {
+      "name": "the_runs_token_as_hex",
+      "rule": "N2",
+      "label": "not-subscription",
+      "headers": [
+        [
+          "authorization",
+          "Bearer 5c0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd"
+        ]
+      ],
+      "note": "The run's token, 32 bytes, if T1a-05 encodes it as hex."
+    },
+    {
+      "name": "the_runs_token_as_base64url",
+      "rule": "N2",
+      "label": "not-subscription",
+      "headers": [
+        [
+          "authorization",
+          "Bearer XAEjRWeJq83vASNFZ4mrze8BI0VniavN7wEjRWeJq80"
+        ]
+      ],
+      "note": "The same 32 bytes, if T1a-05 encodes them as unpadded base64url."
+    },
+    {
+      "name": "no_credential_header",
+      "rule": "N3",
+      "label": "not-subscription",
+      "headers": [
+        [
+          "anthropic-version",
+          "2023-06-01"
+        ]
+      ],
+      "note": "No credential at all."
+    },
+    {
+      "name": "empty_authorization",
+      "rule": "N3",
+      "label": "not-subscription",
+      "headers": [
+        [
+          "authorization",
+          ""
+        ]
+      ],
+      "note": "An empty header."
+    },
+    {
+      "name": "bearer_with_no_token",
+      "rule": "N3",
+      "label": "not-subscription",
+      "headers": [
+        [
+          "authorization",
+          "Bearer "
+        ]
+      ],
+      "note": "A scheme with no token."
+    },
+    {
+      "name": "empty_x_api_key",
+      "rule": "N3",
+      "label": "not-subscription",
+      "headers": [
+        [
+          "x-api-key",
+          ""
+        ]
+      ],
+      "note": "An empty key."
+    },
+    {
+      "name": "garbled_authorization",
+      "rule": "N4",
+      "label": "not-subscription",
+      "headers": [
+        [
+          "authorization",
+          "Bearer !!SYNTHETIC garbled ~~"
+        ]
+      ],
+      "note": "Garbled bytes."
+    },
+    {
+      "name": "plan_prefix_under_another_scheme",
+      "rule": "N4",
+      "label": "not-subscription",
+      "headers": [
+        [
+          "authorization",
+          "Basic sk-ant-oat01-SYNTHETIC-claude-plan-access-SYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNAA"
+        ]
+      ],
+      "note": "Not a bearer, so not where the token belongs."
+    },
+    {
+      "name": "plan_prefix_not_at_the_start",
+      "rule": "N4",
+      "label": "not-subscription",
+      "headers": [
+        [
+          "authorization",
+          "Bearer xsk-ant-oat01-SYNTHETIC-claude-plan-access-SYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNAA"
+        ]
+      ],
+      "note": "The prefix must open the value."
+    },
+    {
+      "name": "a_jwt_without_openais_claim",
+      "rule": "N4",
+      "label": "not-subscription",
+      "headers": [
+        [
+          "authorization",
+          "Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6IlNZTlRIRVRJQyIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2lkcC5leGFtcGxlLmludmFsaWQiLCJzdWIiOiJTWU5USEVUSUMtdXNlciIsImV4cCI6MTg5MzQ1NjAwMH0.SYNTHETIC-signature"
+        ]
+      ],
+      "note": "Some other issuer's JWT is not a ChatGPT sign-in."
+    },
+    {
+      "name": "three_segments_that_are_not_a_jwt",
+      "rule": "N4",
+      "label": "not-subscription",
+      "headers": [
+        [
+          "authorization",
+          "Bearer SYNTHETIC.not-json.SYNTHETIC"
+        ]
+      ],
+      "note": "A garbled JWT."
+    },
+    {
+      "name": "claude_code_session_ingress_token",
+      "rule": "N4",
+      "label": "not-subscription",
+      "headers": [
+        [
+          "authorization",
+          "Bearer sk-ant-si-SYNTHETIC-session-ingress-token-not-a-plan-sign-in"
+        ]
+      ],
+      "note": "sk-ant-si- is a remote session's ingress token, not a plan sign-in."
+    },
+    {
+      "name": "openai_api_key",
+      "rule": "N4",
+      "label": "not-subscription",
+      "headers": [
+        [
+          "authorization",
+          "Bearer sk-proj-SYNTHETIC-openai-api-key-SYNTHETICSYNTHET3BlbkFJSYNTHETICSYNTHETICSYNTHETICSYNTHETICSYNT"
+        ]
+      ],
+      "note": "An OpenAI API key is a key, not a plan sign-in."
+    },
+    {
+      "name": "chatgpt_account_header_alone",
+      "rule": "Q3",
+      "label": "not-subscription",
+      "headers": [
+        [
+          "authorization",
+          "Bearer 5c0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd"
+        ],
+        [
+          "chatgpt-account-id",
+          "00000000-0000-4000-8000-000000000000"
+        ]
+      ],
+      "note": "Open question Q3: the account header alone carries no credential, so it does not classify."
+    },
+    {
+      "name": "claude_ai_web_session_key",
+      "rule": "Q2",
+      "label": "not-subscription",
+      "headers": [
+        [
+          "cookie",
+          "sessionKey=sk-ant-sid01-SYNTHETICsessionSYNTHETIC"
+        ]
+      ],
+      "note": "Open question Q2: a claude.ai web session key in a cookie is not where the run's token belongs, so it does not classify."
+    }
+  ]
+}

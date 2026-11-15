@@ -19,9 +19,18 @@ serde_json.workspace = true
 # the host does, through the same crate.
 purlis-core.workspace = true
 portable-pty.workspace = true
+# The fake provider (`model`, R-695): TLS under a test root it generates, and gzip answers. The
+# rustls the core links; rcgen, the rustls project's own certificate generator, on the same
+# `ring`; flate2, which the core already links.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rcgen = { version = "0.14", default-features = false, features = ["ring", "crypto"] }
+flate2 = "1"
 
 [dev-dependencies]
 tempfile.workspace = true
+# The seams the fake provider is reached through in its tests: the injected clock, the test
+# reach entry, the recording outbound and the trust store's test root (R-696, R-700).
+purlis-core = { workspace = true, features = ["test-support"] }
 
 [lints]
 workspace = true
