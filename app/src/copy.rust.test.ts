@@ -356,6 +356,11 @@ const PLACES: readonly Place[] = [
     opener: IN_WINDOW,
     follow: true,
   },
+  {
+    file: "crates/purlis-core/src/window_copy.rs",
+    what: "phase 1a's Window copy lines core writes (T1a-75)",
+    opener: /\bpub mod line \{/g,
+  },
 ];
 
 /**

@@ -16,3 +16,7 @@ e2e/fixtures
 
 # The core's answers for the window's one rule, written by the app crate's `unicoderule` test.
 src/invisible.cases.json
+
+# Phase 1a's Window copy table, kept as spec.md writes it so a change to a line diffs as one
+# line (`src/windowCopy.test.ts` reads it).
+src/windowCopy.table.md
