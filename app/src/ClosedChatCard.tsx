@@ -27,11 +27,14 @@ import { Fact, Facts } from "./ui/card/Facts";
 import { HeldPopover } from "./ui/popover/Popover";
 import {
   NO_REPORT,
+  READ_IT,
+  REOPEN,
   SCREEN_NOT_KEPT,
+  canRead,
+  cannotReopen as whyNot,
   cardOutcome,
   cardTitle,
   cardWhen,
-  whyCardCannotReopen,
 } from "./closedChat";
 
 /** Why *Reopen* does nothing on a card whose task names no conversation. */
@@ -54,7 +57,8 @@ export function ClosedChatCard({
   const outcome = cardOutcome(card);
   // A chat no dispatch started has no task: no report, and no Reopen (#6304).
   const task = card.task;
-  const cannotReopen = whyCardCannotReopen(card);
+  const cannotReopen = whyNot(card);
+  const readable = canRead(card);
   return (
     <div className="closed-chat-card" data-testid="closed-chat-card">
       <div className="closed-chat-card-head">
@@ -81,18 +85,16 @@ export function ClosedChatCard({
         <Button
           variant="primary"
           onPress={onRead}
-          isDisabled={!card.screen_kept}
-          tooltip={card.screen_kept ? undefined : SCREEN_NOT_KEPT}
+          isDisabled={!readable}
+          tooltip={readable ? undefined : SCREEN_NOT_KEPT}
         >
-          Read it
+          {READ_IT}
         </Button>
         <Button onPress={onReopen} isDisabled={cannotReopen !== undefined} tooltip={cannotReopen}>
-          Reopen
+          {REOPEN}
         </Button>
       </ButtonRow>
-      {!card.screen_kept && (
-        <p className="closed-chat-card-note ui-text-secondary">{SCREEN_NOT_KEPT}</p>
-      )}
+      {!readable && <p className="closed-chat-card-note ui-text-secondary">{SCREEN_NOT_KEPT}</p>}
     </div>
   );
 }

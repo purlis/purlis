@@ -327,18 +327,7 @@ fn remove_left_behind(root: &Path) {
 
 /// Whether `name` is a temp file a write of [`FILE_NAME`] leaves when it is cut short.
 fn left_behind(name: &str) -> bool {
-    let prefix = crate::names::GENERATED_TEMP_PREFIX;
-    std::iter::once(prefix.write)
-        .chain(prefix.reads.iter().copied())
-        .filter_map(|prefix| name.strip_prefix(prefix))
-        .filter_map(|rest| rest.strip_prefix(FILE_NAME))
-        .filter_map(|rest| rest.strip_prefix('.'))
-        .filter_map(|rest| rest.strip_suffix(".tmp"))
-        // `<pid>.<tag>`: the two parts a write adds.
-        .any(|rest| {
-            rest.split_once('.')
-                .is_some_and(|(pid, tag)| !pid.is_empty() && !tag.is_empty() && !tag.contains('.'))
-        })
+    crate::rewrite::temp_of(name).and_then(|temp| temp.of) == Some(FILE_NAME)
 }
 
 /// Whether `chat` is [`crate::retention::KEEP_FOR`] or more old at `now`, or ended after `now`.

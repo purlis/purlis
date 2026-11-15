@@ -11,7 +11,7 @@ import {
   numberRows,
   opensACard,
   outcomeOf,
-  whyCardCannotReopen,
+  cannotReopen,
 } from "./closedChat";
 
 const TASK: NonNullable<ChatCard["task"]> = {
@@ -94,11 +94,11 @@ describe("a chat found by its number in the palette (#6214)", () => {
   });
 
   it("says why Reopen does nothing in words that fit how the chat was started", () => {
-    expect(whyCardCannotReopen(CARD)).toBeUndefined();
+    expect(cannotReopen(CARD)).toBeUndefined();
     const ordinary = { ...CARD, task: null, dispatched: false };
-    expect(whyCardCannotReopen(ordinary)).toBe(ORDINARY_NO_REOPEN);
+    expect(cannotReopen(ordinary)).toBe(ORDINARY_NO_REOPEN);
     // A handoff, or a task that owed no report: a dispatch started it, so not the ordinary words.
-    const handedOff = whyCardCannotReopen({ ...ordinary, dispatched: true });
+    const handedOff = cannotReopen({ ...ordinary, dispatched: true });
     expect(handedOff).toMatch(/^It cannot be reopened/);
     expect(handedOff).not.toBe(ORDINARY_NO_REOPEN);
   });

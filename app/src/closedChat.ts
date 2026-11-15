@@ -87,8 +87,23 @@ export const ORDINARY_NO_REOPEN =
 export const DISPATCHED_NO_REOPEN =
   "It cannot be reopened: purlis reopens a task that owed a report, and this chat was handed off or owed none. Start a new chat to go on.";
 
-/** Why *Reopen* on `card` does nothing, or nothing where it reopens. */
-export function whyCardCannotReopen(card: ChatCard): string | undefined {
+/** The card's two buttons, as the card draws them and its palette row names them. */
+export const READ_IT = "Read it";
+export const REOPEN = "Reopen";
+
+/**
+ * **Whether *Read it* on `card` opens anything**: its screen was kept. The card enables the
+ * button by it, and its palette row names the button by it (#6506).
+ */
+export function canRead(card: ChatCard): boolean {
+  return card.screen_kept;
+}
+
+/**
+ * **Why *Reopen* on `card` does nothing**, or nothing where it reopens: the card disables the
+ * button with it, and its palette row names the button only where it is nothing (#6506).
+ */
+export function cannotReopen(card: ChatCard): string | undefined {
   if (card.task !== null) return whyNoReopen(card.task);
   return card.dispatched ? DISPATCHED_NO_REOPEN : ORDINARY_NO_REOPEN;
 }
@@ -171,8 +186,8 @@ export type ByNumber = { number: number; lookup: ChatLookup };
  */
 function showsItsCard(card: ChatCard): string {
   const can = [
-    card.screen_kept ? "Read it" : undefined,
-    whyCardCannotReopen(card) === undefined ? "Reopen" : undefined,
+    canRead(card) ? READ_IT : undefined,
+    cannotReopen(card) === undefined ? REOPEN : undefined,
   ].filter((one) => one !== undefined);
   return can.length === 0 ? "Shows its card." : `Shows its card, with ${can.join(" and ")}.`;
 }
