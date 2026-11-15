@@ -40,6 +40,9 @@ const placeSaid = (mac: boolean): Readonly<Record<Scope, string>> => ({
   view: "In a view tab",
 });
 
+/** Where a window key is kept from it, as its row says it (#6824). */
+const KEPT_SAID = "Not in a terminal or a browser you drive";
+
 /** One row of the sheet: an act, its key on this keyboard, and where it applies. */
 export interface SheetRow {
   id: string;
@@ -57,7 +60,9 @@ export function sheetRows(mac: boolean, entries: readonly Shortcut[] = SHORTCUTS
     if (said === "" || (one.kind !== "path" && one.chords[platform].length === 0)) return [];
     const also = one.alsoSaid?.(mac) ?? [];
     const off = !mac && one.yields.includes("terminal-off-mac");
-    const kept = one.yields.includes("terminal") || off ? "Not in a chat" : "";
+    // Kept by whatever has the keyboard as a terminal does (`CHAT_KEYBOARD`): any terminal pane,
+    // a shell's too, and a browser being driven (#6824).
+    const kept = one.yields.includes("terminal") || off ? KEPT_SAID : "";
     return [
       {
         id: one.id,

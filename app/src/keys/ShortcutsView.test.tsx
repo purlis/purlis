@@ -23,11 +23,19 @@ describe("the cheat sheet (N25)", () => {
     }
   });
 
-  it("says this keyboard's keys, and where a chat keeps one", () => {
+  it("says this keyboard's keys, and where a terminal or a browser you drive keeps one (#6824)", () => {
     const mac = sheetRows(true).find((row) => row.id === "region.navigation");
     const other = sheetRows(false).find((row) => row.id === "region.navigation");
     expect(mac).toMatchObject({ keys: "⌘B", where: "" });
-    expect(other).toMatchObject({ keys: "Ctrl+B", where: "Not in a chat" });
+    // Kept by whatever has the keyboard as a terminal does (`CHAT_KEYBOARD`): any terminal pane,
+    // a shell's as much as a chat's, and a browser being driven.
+    expect(other).toMatchObject({
+      keys: "Ctrl+B",
+      where: "Not in a terminal or a browser you drive",
+    });
+    expect(sheetRows(true).find((row) => row.id === "region.next")?.where).toBe(
+      "Not in a terminal or a browser you drive",
+    );
     expect(sheetRows(true).find((row) => row.id === "palette.open")?.keys).toBe("⌘K · F2");
     expect(sheetRows(false).some((row) => row.id === "app.hide")).toBe(false);
   });
