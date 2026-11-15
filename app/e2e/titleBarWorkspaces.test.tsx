@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { OUTSIDE } from "../src/actions";
 import { TitleBarSwitch, type SwitchProject } from "../src/TitleBarSwitch";
 import { Dialog } from "../src/ui/dialog/Dialog";
-import { ALL_WORKSPACES, LISTED, pressedWhenReady } from "./titleBarWorkspaces";
+import { ALL_WORKSPACES, LISTED, closedOrAskedAgain, pressedWhenReady } from "./titleBarWorkspaces";
 
 /**
  * **The ⌄'s press, as a spec makes it** (#5035): read in the page and pressed from there, a step
@@ -112,5 +112,61 @@ describe("the ⌄'s press from a spec (#5035)", () => {
     rerender(<></>);
     rerender(<TheWindow dialog={false} />);
     expect(await aStep(false)).toEqual({ at: "ready", cameAndWent: true });
+  });
+});
+
+/**
+ * **The palette, up and unseen** (#4351): while it is up it takes every Escape on the window,
+ * captured, before anything under it hears it (`Palette.tsx`). This one takes the first, as a
+ * palette left up at opacity 0 did in a spec's `after`, and goes.
+ */
+function aPaletteTakesTheFirstEscape(): () => void {
+  let up = true;
+  const take = (e: KeyboardEvent) => {
+    if (!up || e.key !== "Escape") return;
+    e.stopPropagation();
+    up = false;
+  };
+  window.addEventListener("keydown", take, true);
+  return () => window.removeEventListener("keydown", take, true);
+}
+
+/** One step of the spec's close, and the 250 ms it waits before the next. */
+async function aClosingStep(): Promise<boolean> {
+  const gone = act(() => closedOrAskedAgain(LISTED));
+  await act(async () => {
+    await new Promise((done) => setTimeout(done, 250));
+  });
+  return gone;
+}
+
+describe("closing the workspace popover from a spec (#4351)", () => {
+  let gone: () => void = () => {};
+  afterEach(() => gone());
+
+  it("asked once, leaves it up when the palette took that Escape", async () => {
+    render(<TheWindow dialog={false} />);
+    expect((await aStep()).at).toBe("pressed");
+    gone = aPaletteTakesTheFirstEscape();
+    expect(await aClosingStep()).toBe(false);
+    expect(document.querySelector(LISTED)).not.toBeNull();
+  });
+
+  it("asks again until it has gone", async () => {
+    render(<TheWindow dialog={false} />);
+    expect((await aStep()).at).toBe("pressed");
+    gone = aPaletteTakesTheFirstEscape();
+    let closed = false;
+    for (let step = 0; step < 4 && !closed; step++) closed = await aClosingStep();
+    expect(closed).toBe(true);
+    expect(document.querySelector(LISTED)).toBeNull();
+  });
+
+  it("closes it at the first ask where nothing else takes the Escape", async () => {
+    render(<TheWindow dialog={false} />);
+    expect((await aStep()).at).toBe("pressed");
+    expect(await aClosingStep()).toBe(false);
+    expect(document.querySelector(LISTED)).toBeNull();
+    expect(await aClosingStep()).toBe(true);
   });
 });

@@ -25,6 +25,7 @@ import {
   runFromThePalette,
   tabNames,
 } from "../reach.js";
+import { openThePalette } from "../opening.js";
 import { runningIn } from "../running.js";
 import { paneInFront, startAChat, theChatInFrontSays } from "../started.js";
 
@@ -145,10 +146,9 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
     await closeTheViewTabsOpenedSince(wereOpen);
     const already = await $('[data-testid="skill-studio"]').isExisting();
     if (already) throw new Error("the studio's tab is still open, so this would time no opening");
-    await browser.keys(["F2"]);
-    const box = await $("#palette-query");
-    await box.waitForDisplayed({ timeout: 10_000 });
-    await box.addValue("Open Skill studio");
+    // F2, and the same key on the window where the driver's lands on a tab, which renames on it.
+    await openThePalette();
+    await $("#palette-query").addValue("Open Skill studio");
     await $(`[id="${STUDIO_OF_ALPHA}"]`).waitForExist({ timeout: 20_000 });
     // The clock is the window's own, started in the same task as the press, and stopped by the
     // frame after the row is drawn: so WebDriver's round trips are in neither end of it.
