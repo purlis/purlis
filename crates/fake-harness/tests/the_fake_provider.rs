@@ -427,6 +427,36 @@ fn the_401_fixture_carries_the_recorded_real_headers() {
         panic!("the 401 fixture is not marked recorded");
     };
     assert!(!source.is_empty(), "the 401 fixture names no recording");
+    // Anthropic's real 401 as T1a-02 recorded it at api.anthropic.com (spike 1a-startup,
+    // 2026-11-15), in the order received. Identifiers stay redacted as the record has them;
+    // content-length is the provider's own, and content-type is the body's type.
+    let recorded = [
+        ("content-type", "application/json"),
+        ("date", "Sun, 15 Nov 2026 20:52:05 GMT"),
+        ("server-timing", "x-originResponse;dur="),
+        ("cache-control", "no-store"),
+        ("request-id", "req_<redacted>"),
+        ("x-should-retry", "false"),
+        ("server", "cloudflare"),
+        ("cf-cache-status", "DYNAMIC"),
+        ("x-robots-tag", "none"),
+        (
+            "content-security-policy",
+            "default-src 'none'; frame-ancestors 'none'",
+        ),
+        ("cf-ray", "<redacted>-SOF"),
+    ];
+    let carried: Vec<(&str, &str)> = unauthorised
+        .recording
+        .headers
+        .iter()
+        .map(|(name, value)| (name.as_str(), value.as_str()))
+        .collect();
+    assert_eq!(carried, recorded, "the 401 fixture is not the recorded header set");
+    assert!(
+        !source.contains("waits"),
+        "the 401 fixture still says its headers wait for a record: {source}"
+    );
     let provider = Provider::builder()
         .answer("/v1/messages", unauthorised.recording.clone())
         .start()
