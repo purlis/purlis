@@ -182,10 +182,11 @@ test("the shipping workflows' builds, as read, one by one", () => {
       // `cargo run --release -p release-manifest --bin sign-runner-image`: signs the runner
       // image's line with the updater's key (#2749).
       { manifest: "Cargo.toml", packages: ["release-manifest"] },
-      // `runner-binaries`: the purlis a machine reached over SSH runs, one per platform (#723).
+      // `runner-binary-aarch64`: the purlis a Linux aarch64 machine reached over SSH runs; the
+      // other two runner platforms' are `build`'s own (#723).
       { manifest: "Cargo.toml", packages: ["purlis-cli"] },
-      // `cargo run --release -p release-manifest --bin sign-runner-binary`: signs each of them
-      // with the updater's key (#723).
+      // `cargo build --release -p release-manifest --bin sign-runner-binary`: the signer
+      // `runner-binaries` runs over each of them with the updater's key (#723).
       { manifest: "Cargo.toml", packages: ["release-manifest"] },
       // `cargo run --release -p release-manifest`: the tool that writes the update manifests.
       { manifest: "Cargo.toml", packages: ["release-manifest"] },
