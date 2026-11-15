@@ -607,7 +607,7 @@ function besideOf(
     x -= 1;
     if (cell.getWidth() === 0) continue;
     const chars = drawn(cell.getChars());
-    if (chars === undefined || /\s/u.test(chars)) break;
+    if (chars === undefined || /\p{White_Space}/u.test(chars)) break;
     before = chars + before;
   }
   let after = "";
@@ -623,7 +623,7 @@ function besideOf(
     x += 1;
     if (cell.getWidth() === 0) continue;
     const chars = drawn(cell.getChars());
-    if (chars === undefined || /\s/u.test(chars)) break;
+    if (chars === undefined || /\p{White_Space}/u.test(chars)) break;
     after += chars;
   }
   return { before, after };

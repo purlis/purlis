@@ -394,6 +394,8 @@ describe("a link a program marked (OSC 8)", () => {
     ["N18", "\u2029\u0338"],
     ["N44", "\u2028\u0301"],
     ["N49", "\u2029\u20DD"],
+    ["a Hangul vowel", "\u2028\u1161"],
+    ["a Hangul final", "\u2029\u11A8"],
   ])(
     "joins text printed after its words across a separator holding a mark that draws (%s)",
     async (_row, between) => {
@@ -409,6 +411,18 @@ describe("a link a program marked (OSC 8)", () => {
       );
     },
   );
+
+  it("joins text printed before its words across a U+FEFF, which draws nothing", async () => {
+    const { term, drawn } = await opened();
+    await write(term, `evil\uFEFF${osc8(TARGET, ".com")} y`);
+
+    hover(drawn, 5, 0);
+    await waitFor(() =>
+      expect(asked("pane_link_resolve").map((one) => one.args.candidates)).toContainEqual([
+        { kind: "osc8", text: ".com evil.com", target: TARGET },
+      ]),
+    );
+  });
 
   it("joins nothing across a space holding a mark, which still draws a blank (N20)", async () => {
     const { term, drawn } = await opened();
