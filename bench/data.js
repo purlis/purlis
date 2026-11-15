@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794765587933,
+  "lastUpdate": 1794769598569,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -50106,6 +50106,48 @@ window.BENCHMARK_DATA = {
             "value": 102.47395700000001,
             "unit": "ms",
             "extra": "median of 5 runs: 102.179, 102.341, 102.474, 102.492, 103.964 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "31cf3b2397df532f15fe3d96764f8f6a0ed62ccd",
+          "message": "Dependency updates to green: playwright 1.65.1, tauri plugins, web group with jsdom 31, html5ever 0.40 and x509-cert 0.3 (supersedes #6690, #6693, #6694, #6695) (#6739)\n\n* Bump playwright image from v1.65.0-noble to v1.65.1-noble (#6690)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7FWM8SM7S0Z1D0FVK7GSF57\nPurlis-Persona: steward\n\n* Move the playwright npm package to 1.65.1, with its image (#6690)\n\nDependabot's playwright group moved the stories' image to v1.65.1-noble but\nnot the npm package, so tools/story-image.mjs refused the pair and every\nstories shard stopped before drawing (and web part 2's story-image test\nfailed). The lockfile now locks Playwright 1.65.1, the image's version.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7FWM8SM7S0Z1D0FVK7GSF57\nPurlis-Persona: steward\n\n* Bump the tauri group: tauri-plugin-opener 2.7.3, tauri-plugin-notification 2.8.1, @tauri-apps/plugin-opener 2.7.3 (#6693)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7FWM8SM7S0Z1D0FVK7GSF57\nPurlis-Persona: steward\n\n* Bump the web group in /app with 7 updates (#6694)\n\n@storybook/addon-a11y, @storybook/addon-vitest, @storybook/react-vite and\nstorybook 10.6.6 to 10.6.7; @testing-library/user-event 14.6.8 to 14.6.10;\njsdom 30.1.3 to 31.0.0; prettier 3.9.10 to 3.10.1.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7FWM8SM7S0Z1D0FVK7GSF57\nPurlis-Persona: steward\n\n* Fit the web tests to jsdom 31 (#6694)\n\njsdom 31 replaced nwsapi with its own CSS code, and four things the tests\nleaned on moved with it:\n\n- It serialises a style as CSS does: translate(x, 0) reads back as\n  translate(x), and clip: rect(0) as rect(0px 0px 0px 0px). The pane\n  drag test's reading of a transform now takes the one-argument form, and\n  the Chats list fixture the e2e measures is drawn again (-u, as its file\n  says).\n- :focus-visible matches every focus, so jsdom no longer tells a pointer's\n  focus from the keyboard's. The two tests of what a pointer's focus does\n  not hold (the Chats list, V100-47) say a real engine's answer with\n  focusVisible.testkit's focusIsNotTheKeyboards. The app's own check of\n  :focus-visible is right in a real engine and does not change.\n- Its new focus fixup starts its frame loop on the global setInterval. A\n  focused element removed under fake clocks left that loop on a fake\n  interval, dropped by vi.useRealTimers with the loop still marked as\n  running, and no requestAnimationFrame came again in TabChip's file: the\n  menu's keyboard open never landed (jsdom/jsdom#4455, closed as not to be\n  fixed there). Its afterEach unmounts first and lets the fake clocks run\n  one frame before the real ones come back.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7FWM8SM7S0Z1D0FVK7GSF57\nPurlis-Persona: steward\n\n* Bump the rust group: x509-cert 0.2.5 to 0.3.0, html5ever 0.39.0 to 0.40.1 (#6695)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7FWM8SM7S0Z1D0FVK7GSF57\nPurlis-Persona: steward\n\n* Fit purlis-core to html5ever 0.40 and x509-cert 0.3 (#6695)\n\nhtml5ever 0.40's Atom implements AsRef for more than one type, so\n.as_ref() on a tag's or an attribute's name no longer infers str; the\nartifact tokenizer sites deref to str instead (in search.rs that also keeps\nthe lowercased name a String, as Atom has its own to_ascii_lowercase).\nx509-cert 0.3 makes tbs_certificate private; tlsroute uses its accessors.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7FWM8SM7S0Z1D0FVK7GSF57\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-15T18:29:04Z",
+          "tree_id": "0ed23e50d1961eb253317e2e92582adb1e791af9",
+          "url": "https://github.com/purlis/purlis/commit/31cf3b2397df532f15fe3d96764f8f6a0ed62ccd"
+        },
+        "date": 1794769593078,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.339967,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.329, 0.337, 0.340, 0.351, 0.360 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5737215,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.207, 16.504, 16.574, 16.630, 16.696 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.390515,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.096, 101.302, 101.391, 101.538, 102.092 ms"
           }
         ]
       }
