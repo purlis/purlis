@@ -1348,17 +1348,12 @@ async fn reopen_closed_chat(
     let held = planes.held(&plane)?;
     off_the_window(STARTING_A_CHAT, move || {
         let session = chatcard::reopen_closed(&held, number, Size { columns, rows })?;
-        held.chats()
-            .open_now()
-            .into_iter()
-            .find(|open| open.session == session)
-            .map(|open| drawn_of(&held, open))
-            .ok_or_else(|| {
-                format!(
-                    "chat {number} was reopened as chat {session}, which ended as it started. \
-                     Reopen it again from its card, or start a new chat in its place."
-                )
-            })
+        drawn(&held, session).map_err(|_| {
+            format!(
+                "chat {number} was reopened as chat {session}, which ended as it started. Reopen \
+                 it again from its card, or start a new chat in its place."
+            )
+        })
     })
     .await
 }
