@@ -909,20 +909,33 @@ pub fn run_giving(
     input: Option<&str>,
     most: u64,
 ) -> Result<Ran, String> {
+    run_giving_bytes(ssh, args, input.map(str::as_bytes), most, RUN_WITHIN)
+}
+
+/// [`run_giving`], with `input` as bytes and the whole run bounded by `within`: a binary sent to
+/// the other machine (`runnerinstall`, #723), which may take longer than a contact.
+pub fn run_giving_bytes(
+    ssh: &Path,
+    args: &[String],
+    input: Option<&[u8]>,
+    most: u64,
+    within: Duration,
+) -> Result<Ran, String> {
     let mut command = std::process::Command::new(ssh);
     command.args(args);
-    let ran = crate::boundedrun::run_within(&mut command, input, most, MOST_SAID, Some(RUN_WITHIN))
-        .map_err(|why| match why {
-            crate::boundedrun::Unanswered::NotStarted(why) => {
-                format!("{} could not be run: {why}", ssh.display())
-            }
-            crate::boundedrun::Unanswered::PrintedTooMuch => {
-                "ssh printed more than purlis reads of it".to_owned()
-            }
-            crate::boundedrun::Unanswered::NotFinished(_) => {
-                format!("ssh did not finish within {} seconds", RUN_WITHIN.as_secs())
-            }
-        })?;
+    let ran =
+        crate::boundedrun::run_within_giving(&mut command, input, most, MOST_SAID, Some(within))
+            .map_err(|why| match why {
+                crate::boundedrun::Unanswered::NotStarted(why) => {
+                    format!("{} could not be run: {why}", ssh.display())
+                }
+                crate::boundedrun::Unanswered::PrintedTooMuch => {
+                    "ssh printed more than purlis reads of it".to_owned()
+                }
+                crate::boundedrun::Unanswered::NotFinished(_) => {
+                    format!("ssh did not finish within {} seconds", within.as_secs())
+                }
+            })?;
     Ok(Ran {
         code: ran.status.code(),
         printed: String::from_utf8_lossy(&ran.printed).into_owned(),
@@ -998,6 +1011,15 @@ pub struct Reach {
 }
 
 impl Reach {
+    /// The pinned `known_hosts` for one of this reach's runs, in a run folder of its own, kept
+    /// for as long as the folder is: what a run of another module through this reach is handed
+    /// (`runnerinstall`, #723).
+    pub fn known_hosts_for_a_run(
+        &self,
+    ) -> Result<(crate::dockerpool::settings::RunFolder, PathBuf), String> {
+        self.known_hosts()
+    }
+
     /// The pinned `known_hosts` for one of this reach's runs, in a run folder of its own.
     fn known_hosts(&self) -> Result<(crate::dockerpool::settings::RunFolder, PathBuf), String> {
         let folder =
