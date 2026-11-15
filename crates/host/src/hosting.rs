@@ -54,7 +54,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, Weak};
 use std::time::{Duration, Instant};
 
@@ -676,6 +676,10 @@ struct State {
     /// clone, and a window may hold two clones of it at once, each on a link of its own (#2178).
     projects: HashMap<HeldAt, Held>,
     programs: HashMap<String, Hosted>,
+    /// Set as [`Hosting::end_all`] takes every program (#6700): from then on no program
+    /// starts, so none is listed after the host has ended them all, nor written to its record
+    /// after it is emptied.
+    ending_all: bool,
     /// The processes of programs closed or ended by the host, kept for the admission check for
     /// as long as the host runs: a process a program started may outlive it in its session, in
     /// a group of its own the close did not reach, and is still inside that chat. Keeping a
@@ -992,6 +996,10 @@ struct Hosted {
     exit: Option<Exit>,
     /// The host's own act that is ending it, where one is ([`Stopped`]).
     stopping: Arc<Mutex<Option<Stopped>>>,
+    /// Set once what its end leaves is kept, and its host record says it ended (#6700): what
+    /// [`Hosting::end_all`] waits for before it empties that record. None for a browser, whose
+    /// end keeps nothing and which the host record never names.
+    end_kept: Option<Arc<AtomicBool>>,
     /// How its run is sandboxed, as this host applied it (#2636).
     sandbox: session::RunSandbox,
     /// The window's note of it (1.39, #2025): its own words, kept for it and never read here.
@@ -2271,7 +2279,10 @@ impl Hosting {
                 Arc::clone(&hosted.running)
             })
             .collect();
-        let _ = tokio::task::spawn_blocking(move || stop_together(programs)).await;
+        let _ = tokio::task::spawn_blocking(move || {
+            stop_together(programs, Instant::now() + ENDS_WITHIN)
+        })
+        .await;
         // Then every runner this machine keeps, once this host's own programs are stopped
         // (#2051).
         self.inner.runners.stop_every().await;
@@ -2528,9 +2539,15 @@ impl Hosting {
             channel.bind(number, pid);
         }
         let stopping: Arc<Mutex<Option<Stopped>>> = Arc::default();
+        let end_kept = Arc::new(AtomicBool::new(false));
         let ends_with_its_window = start.ends_with_its_window && peer.scope() == Scope::LocalUi;
-        let windowless = {
+        let listed = 'listed: {
             let mut state = self.state();
+            // The host is ending every program as it stops (#6700): this one, started as it
+            // did, is ended at once and never listed or written to the host record.
+            if state.ending_all {
+                break 'listed None;
+            }
             // Its window went while it was being started: ended once it is listed, below.
             let windowless = ends_with_its_window && state.windows.is_empty();
             state.programs.insert(
@@ -2552,6 +2569,7 @@ impl Hosting {
                     ended: false,
                     exit: None,
                     stopping: Arc::clone(&stopping),
+                    end_kept: Some(Arc::clone(&end_kept)),
                     sandbox: sandbox.clone(),
                     note: start.note.clone(),
                     logins: Arc::default(),
@@ -2568,7 +2586,15 @@ impl Hosting {
                         .and_then(|launch| launch.pools_held.clone()),
                 },
             );
-            windowless
+            Some(windowless)
+        };
+        let Some(windowless) = listed else {
+            stopping_by(&stopping, Stopped::Quit);
+            let ending = Arc::clone(&running);
+            let _ = tokio::task::spawn_blocking(move || ending.stop()).await;
+            forget(&channel);
+            self.end_confinements_of(&program);
+            return Err(not_started(STOPPING.into()));
         };
         // Written down before the start is answered, so a host killed from here on leaves it
         // for the next to settle (#2007).
@@ -2631,6 +2657,7 @@ impl Hosting {
             if let Some(host_record) = &hosting.inner.host_record {
                 host_record.ended(&ended);
             }
+            end_kept.store(true, Ordering::Release);
             hosting.tell(&Pushed::Ended {
                 program: ended,
                 run,
@@ -2764,6 +2791,14 @@ impl Hosting {
         ));
         let process = running.process();
         let mut state = self.state();
+        // The host is ending every program as it stops (#6700): this browser is ended at once.
+        if state.ending_all {
+            drop(state);
+            let ending = Arc::clone(&running);
+            off_the_runtime(move || ending.stop());
+            let _ = std::fs::remove_dir_all(&data);
+            return Err(not_started(STOPPING.into()));
+        }
         let opened_by = opened_by(&state, peer);
         // From here it counts as running: its place is given back in the same step.
         place.started(&mut state);
@@ -2782,6 +2817,7 @@ impl Hosting {
                 ended: false,
                 exit: None,
                 stopping,
+                end_kept: None,
                 // An engine the host starts outside every chat's sandbox, its reach its own
                 // proxy's: no chat's run.
                 sandbox: session::RunSandbox::Off,
@@ -3360,6 +3396,7 @@ impl Hosting {
                     .iter()
                     .map(|hosted| Arc::clone(&hosted.running))
                     .collect(),
+                Instant::now() + ENDS_WITHIN,
             );
             drop(confinements);
             drop(hosted);
@@ -4807,6 +4844,7 @@ impl Hosting {
                 .iter()
                 .map(|hosted| Arc::clone(&hosted.running))
                 .collect(),
+            Instant::now() + ENDS_WITHIN,
         );
         drop(confinements);
         drop(held);
@@ -4819,13 +4857,23 @@ impl Hosting {
     }
 }
 
-/// How long [`Hosting::end_all`] gives every program, together, to end.
+/// How long [`Hosting::end_all`] gives every program, together, to end and have its end kept.
 pub const ENDS_WITHIN: Duration = Duration::from_secs(5);
 
+/// Why a start that lands as the host ends every program is refused (#6700).
+const STOPPING: &str = "the session host is stopping, so it starts nothing more";
+
 impl Hosting {
-    /// Ends every program, all at once, and returns once they are gone or [`ENDS_WITHIN`] has
-    /// passed: what the host does as it stops, so a quit still ends every chat.
+    /// Ends every program, all at once, and returns once they are gone and each chat's end is
+    /// kept, or [`ENDS_WITHIN`] has passed: what the host does as it stops, so a quit still ends
+    /// every chat. From the moment it is called no program starts (#6700).
+    ///
+    /// The host record is emptied only where every chat's end was kept in time (#6700): one
+    /// still being written when the time runs out, or never told, is left in it, so the next
+    /// host settles that chat as the crash it is rather than nobody settling it at all. Each
+    /// whose end was kept took itself out of the record as it was.
     pub fn end_all(&self) {
+        let deadline = Instant::now() + ENDS_WITHIN;
         // Saving first: nothing starts a save of a project whose chats are being ended.
         let saving: Vec<Box<dyn Saving>> = self
             .state()
@@ -4836,6 +4884,7 @@ impl Hosting {
         drop(saving);
         let (hosted, confinements) = {
             let mut state = self.state();
+            state.ending_all = true;
             let hosted: Vec<Hosted> = state
                 .programs
                 .drain()
@@ -4853,13 +4902,38 @@ impl Hosting {
                 .collect();
             (hosted, confinements)
         };
-        stop_together(hosted.into_iter().map(|hosted| hosted.running).collect());
+        let ends: Vec<Arc<AtomicBool>> = hosted
+            .iter()
+            .filter_map(|hosted| hosted.end_kept.clone())
+            .collect();
+        stop_together(
+            hosted.into_iter().map(|hosted| hosted.running).collect(),
+            deadline,
+        );
         // Each chat's proxy ends with the programs: no chat reaches anything once the host has.
         drop(confinements);
-        // Every program was ended as the host stopped, whether or not its end was told in
-        // time: there is nothing for the next host to settle (#2007).
-        if let Some(host_record) = &self.inner.host_record {
-            host_record.empty();
+        // Each chat's end is written on a thread of its own once its program is reaped: the
+        // host waits for it, as its process ending would end that thread mid-write (#6700).
+        let unkept = |ends: &[Arc<AtomicBool>]| {
+            ends.iter()
+                .filter(|kept| !kept.load(Ordering::Acquire))
+                .count()
+        };
+        while unkept(&ends) > 0 && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let Some(host_record) = &self.inner.host_record else {
+            return;
+        };
+        match unkept(&ends) {
+            // Every program was ended as the host stopped, and its end told: there is nothing
+            // for the next host to settle (#2007).
+            0 => host_record.empty(),
+            left => crate::say(&format!(
+                "{left} of the chats ended as the host stopped had no end kept within {}s; the \
+                 next host settles each as ended by its crash",
+                ENDS_WITHIN.as_secs()
+            )),
         }
     }
 
@@ -4889,9 +4963,9 @@ impl Hosting {
     }
 }
 
-/// Stops every one of `programs` at once, and returns once they are gone or [`ENDS_WITHIN`]
-/// has passed.
-fn stop_together(programs: Vec<Arc<dyn Running>>) {
+/// Stops every one of `programs` at once, and returns once they are gone or `deadline` has
+/// passed.
+fn stop_together(programs: Vec<Arc<dyn Running>>, deadline: Instant) {
     let ending: Vec<_> = programs
         .into_iter()
         .filter_map(|running| {
@@ -4901,9 +4975,8 @@ fn stop_together(programs: Vec<Arc<dyn Running>>) {
                 .ok()
         })
         .collect();
-    let deadline = std::time::Instant::now() + ENDS_WITHIN;
     for thread in ending {
-        while !thread.is_finished() && std::time::Instant::now() < deadline {
+        while !thread.is_finished() && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(10));
         }
     }

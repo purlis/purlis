@@ -408,8 +408,8 @@ fn run(
                 Ok(told) => Some(told),
                 Err(why) => {
                     say(&format!(
-                        "SIGTERM could not be handled, so a stop ends this host as a crash \
-                         would: {why}"
+                        "SIGTERM and SIGINT could not be handled, so a stop ends this host as \
+                         a crash would: {why}"
                     ));
                     None
                 }

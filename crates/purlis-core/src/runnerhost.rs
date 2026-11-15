@@ -158,10 +158,12 @@ pub fn unit(service: &Service) -> String {
 
 /// **The LaunchAgent**: loaded now, into the account's GUI domain or, signed in over SSH alone,
 /// its user domain; started again after an exit that was not a success. After a restart launchd
-/// loads it only at a sign-in at the Mac's screen. A bootout sends `SIGTERM` to the host alone,
-/// which ends every chat as a quit (#6700), and `SIGKILL` only after `ExitTimeOut`
-/// ([`STOPS_WITHIN_SECONDS`]), as `KillMode=mixed` does for the unit. The config home install
-/// resolved is pinned in `EnvironmentVariables`. What the host says on standard error goes to
+/// loads it only at a sign-in at the Mac's screen. A bootout sends `SIGTERM` to the host, which
+/// ends every chat as a quit (#6700), and `SIGKILL` only after `ExitTimeOut`
+/// ([`STOPS_WITHIN_SECONDS`]). This is not `KillMode=mixed`: launchd signals the job's process
+/// group, and each chat runs in a session of its own, so neither signal reaches a chat. The host
+/// alone ends them; a chat a host killed at `ExitTimeOut` left running is ended by the next host,
+/// which settles it as ended by that crash. The config home install resolved is pinned in `EnvironmentVariables`. What the host says on standard error goes to
 /// `log`.
 pub fn plist(service: &Service, log: &Path) -> String {
     let mut keep_alive = plist::Dictionary::new();

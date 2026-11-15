@@ -166,15 +166,12 @@ async fn what_the_last_host_left_is_settled_once() {
 #[tokio::test]
 async fn a_host_that_ended_every_program_as_it_stopped_leaves_nothing_to_settle() {
     let (folder, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-    let runs = StandIns::default();
-    runs.hold_on();
-    let hosting = a_host_in(folder.path(), &runs, &Kept::default());
+    let hosting = a_host_in(folder.path(), &StandIns::default(), &Kept::default());
     let window = the_window(&hosting, project.path()).await;
     window
         .start_program(a_chat("run-1"))
         .await
         .expect("it starts");
-    // Its program ignores being stopped, so its end is never told: the host still ended it.
     let ending = hosting.clone();
     tokio::task::spawn_blocking(move || ending.end_all())
         .await
@@ -186,6 +183,34 @@ async fn a_host_that_ended_every_program_as_it_stopped_leaves_nothing_to_settle(
 
     assert_eq!(settled, 0);
     assert!(kept.left.lock().unwrap().is_empty());
+}
+
+/// #6700: a program whose end is never told as the host stops has no end kept, so the host
+/// record keeps its start for the next host to settle as ended by the crash, rather than nobody
+/// settling it at all.
+#[tokio::test]
+async fn a_program_whose_end_is_never_told_as_the_host_stops_is_left_for_the_next_to_settle() {
+    let (folder, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let runs = StandIns::default();
+    runs.hold_on();
+    let hosting = a_host_in(folder.path(), &runs, &Kept::default());
+    let window = the_window(&hosting, project.path()).await;
+    window
+        .start_program(a_chat("run-1"))
+        .await
+        .expect("it starts");
+    // Its program ignores being stopped, so its end is never told.
+    let ending = hosting.clone();
+    tokio::task::spawn_blocking(move || ending.end_all())
+        .await
+        .unwrap();
+    let kept = Kept::default();
+
+    let settled =
+        a_host_in(folder.path(), &StandIns::default(), &kept).take_over_from_the_last_host();
+
+    assert_eq!(settled, 1);
+    assert_eq!(kept.left.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]

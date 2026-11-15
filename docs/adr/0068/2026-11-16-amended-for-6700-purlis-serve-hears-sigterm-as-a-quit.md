@@ -5,12 +5,14 @@ at a stop or a shutdown, and the next host settle each chat from the host record
 crash. The record was right, but a planned restart read as a crash in every chat's history. It
 left hearing `SIGTERM` as a quit for later. This note takes that up. §3, the amendment for #724
 and the rest of D-724-8 stay as accepted. Each item was **decided in implementation, to be
-confirmed** (D-6700-1 to D-6700-4).
+confirmed** (D-6700-1 to D-6700-5).
 
-1. **`purlis serve` hears `SIGTERM` as a quit.** systemd sends it at a stop, `purlis serve
-   --remove` and a shutdown, and launchd sends it at a bootout. The host stops serving and ends
+1. **`purlis serve` hears `SIGTERM` as a quit, and `SIGINT` too.** systemd sends `SIGTERM` at a
+   stop, `purlis serve --remove` and a shutdown, and launchd sends it at a bootout; a person at a
+   terminal sends `SIGINT` with Ctrl-C. The host stops serving and ends
    each program as a quit ends it (`Stopped::Quit`, its run ended `stopped` for `quit`). It
-   empties its host record and exits 0. It says `told to stop (SIGTERM)` on standard error, which
+   empties its host record (item 5) and exits 0. It says `told to stop (SIGTERM)`, or
+   `(SIGINT)`, on standard error, which
    is the unit's journal or the agent's `serve.log` (`purlis_host::TOLD_TO_STOP`). The handler is
    installed before the host says it is ready, so a `SIGTERM` sent the moment it serves is heard.
    This covers bare `purlis serve` as well as `purlis serve --as-a-service`, because a
@@ -33,10 +35,15 @@ confirmed** (D-6700-1 to D-6700-4).
    (`control-group`) sent `SIGTERM` to every process in the group at once. A chat could then end
    by its own signal before the host marked it as a quit, and an interactive shell ignores
    `SIGTERM` anyway. The LaunchAgent has `ExitTimeOut` 30. launchd already sends `SIGTERM` to the
-   job alone at a bootout, and kills its process group only after the job exits. The host waits
-   at most `purlis_host::ENDS_WITHIN` (five seconds) for its programs, so thirty seconds leaves
-   room for a slow machine (`runnerhost::STOPS_WITHIN_SECONDS`). A unit or agent already
-   installed is written again by the next `--install`, which rewrites a unit that differs.
+   job at a bootout, and `SIGKILL` once `ExitTimeOut` has passed. That is not the same as
+   `KillMode=mixed`: launchd signals the job's process group, and each chat runs in a session of
+   its own, so neither signal reaches a chat. The host alone ends them, and a chat left running
+   by a host killed at `ExitTimeOut` is ended by the next host, which settles it as that crash.
+   The host waits at most `purlis_host::ENDS_WITHIN` (five seconds) for its programs to end and
+   their ends to be kept, so thirty seconds leaves room for a slow machine
+   (`runnerhost::STOPS_WITHIN_SECONDS`). A unit or agent installed before this keeps systemd's
+   default `KillMode=control-group` until the next `--install`, which rewrites a unit that
+   differs.
    *D-6700-3.*
 4. **What this means for pruning (#6688, #6705) and the login item.** `runnerinstall::prune`
    counts a version as live while its host record names a start of this boot whose process is
@@ -47,3 +54,14 @@ confirmed** (D-6700-1 to D-6700-4).
    crash. CI's `an_ssh_runner_host_outlives_the_sign_out_and_a_restart` now reads the boot that
    the restart ended (every journal on its disk merged, `journalctl -m`, so the fixture keeps its journal there). It checks
    that boot for the quit, and checks that the next boot settles nothing as a crash. *D-6700-4.*
+5. **The host record is emptied only once every chat's end is kept.** A terminal's program is
+   reaped first, and what its end leaves (the spool drained, `run.ended`, the host record's
+   `ended` line) is written after, on a thread of its own. So `Hosting::end_all` waits, within
+   the same `ENDS_WITHIN`, for each chat's end to be written, not only for its program to be
+   gone, since a host that exited at the reaping would end that thread mid-write. Each chat whose
+   end is written takes itself out of the record as it is; the record is emptied only when none
+   is left. A chat whose end is not written in time stays in the record, and the next host
+   settles it as ended by a crash, which is true, rather than nobody settling it at all. From
+   the moment `end_all` begins, the host starts nothing: a start that lands then is refused, so
+   none is written to the record after it is emptied, nor left running past the host.
+   *D-6700-5.*
