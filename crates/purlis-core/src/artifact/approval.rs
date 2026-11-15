@@ -189,6 +189,14 @@ fn approved_host(entry: Option<&Value>, view: &str, pin_id: &str, fingerprint: &
         .collect()
 }
 
+/// Whether approval `entry` drew a `storage` of its own, so its page's host is its alone.
+fn drew_storage(entry: &Value) -> bool {
+    entry
+        .get("storage")
+        .and_then(Value::as_str)
+        .is_some_and(is_storage)
+}
+
 /// A new `storage` for an approval: 128 random bits, as 32 hex digits.
 fn drawn_storage() -> Result<String, String> {
     let mut bytes = [0u8; 16];
@@ -383,7 +391,9 @@ pub fn plane_granted(
 /// **Forgets the approval of folder `folder`** of the workspace at `workspace`: its script stops
 /// running at its next load and it asks again. The host its page was served from while it was
 /// approved ([`page_host`]), whose web data nothing will ever be served again (#6697); nothing
-/// when there was no approval.
+/// when there was no approval, or when it was recorded before its `storage` was drawn: such a
+/// page's host is its pin and fingerprint alone, which a clone of the plane approved alike
+/// shares, so what it kept is not this approval's to remove.
 pub fn forget(
     config_root: &Path,
     workspace: &Path,
@@ -391,13 +401,16 @@ pub fn forget(
 ) -> Result<Option<String>, String> {
     let mut forgot = None;
     change(config_root, |entries| {
-        forgot = entries.remove(&key(workspace, folder)).map(|entry| {
-            let approved = approval_of(&entry);
-            let (pin, fingerprint) = approved
-                .as_ref()
-                .map_or(("", ""), |one| (&one.pin, &one.fingerprint));
-            approved_host(Some(&entry), "", pin, fingerprint)
-        });
+        forgot = entries
+            .remove(&key(workspace, folder))
+            .filter(drew_storage)
+            .map(|entry| {
+                let approved = approval_of(&entry);
+                let (pin, fingerprint) = approved
+                    .as_ref()
+                    .map_or(("", ""), |one| (&one.pin, &one.fingerprint));
+                approved_host(Some(&entry), "", pin, fingerprint)
+            });
     })?;
     Ok(forgot)
 }
@@ -860,6 +873,34 @@ mod tests {
         assert_eq!(
             forget(&here.config, &here.workspace, "board").unwrap(),
             Some(served)
+        );
+    }
+
+    /// An approval recorded before its `storage` was drawn serves its page from its pin and
+    /// fingerprint alone, a host a clone of the plane approved alike shares: forgetting it here
+    /// names no host, so the other clone's page keeps what it kept (#6697).
+    #[test]
+    fn forgetting_an_approval_recorded_before_its_storage_names_no_host_whose_data_would_go() {
+        let here = Here::new();
+        let shown = here.snapshot().fingerprint().to_owned();
+        crate::machine::private_dir(&here.config).unwrap();
+        let entry = json!({ "version": 1, "approved": {
+            key(&here.workspace, "board"): {
+                "workspace": here.workspace.canonicalize().unwrap().to_string_lossy(),
+                "folder": "board", "pin": PIN, "fingerprint": shown,
+            }
+        }});
+        std::fs::write(path(&here.config), entry.to_string()).unwrap();
+        assert_eq!(here.standing(PIN), Standing::Approved);
+
+        assert_eq!(
+            forget(&here.config, &here.workspace, "board").unwrap(),
+            None
+        );
+        assert_eq!(
+            here.standing(PIN),
+            Standing::New,
+            "the approval itself is gone"
         );
     }
 

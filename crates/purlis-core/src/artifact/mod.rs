@@ -451,8 +451,9 @@ pub struct Unpinned {
     pub pin: Pin,
     /// Why its approval on this machine stays, when it could not be forgotten.
     pub kept: Option<String>,
-    /// The host its approved page was served from, when an approval was forgotten: the app
-    /// removes the web data kept there (#6697).
+    /// The host its approved page was served from, when an approval of its own was forgotten:
+    /// the app removes the web data kept there (#6697). None for one recorded before its
+    /// `storage` was drawn, whose host a clone of the plane may share ([`approval::forget`]).
     pub forgot: Option<String>,
 }
 
