@@ -11,6 +11,7 @@ import type {
   Terminal,
 } from "@xterm/xterm";
 import type { LinkCandidate, LinkFrom, LinkOpened, LinkSeen } from "./bindings";
+import { invisible } from "./invisible";
 
 /**
  * **Links in a pane's output** (spec #6208, #6215): the one hook every xterm pane registers, a
@@ -568,8 +569,14 @@ function withBeside(pane: Terminal, text: string, start: Cell, end: Cell): strin
 function besideOf(pane: Terminal, start: Cell, end: Cell): { before: string; after: string } {
   const buffer = pane.buffer.active;
   const blank = (chars: string): boolean => chars === "" || /\s/u.test(chars);
-  // A line or paragraph separator, or NEL, takes a cell but draws nothing: it joins.
-  const drawsNothing = (chars: string): boolean => /^[\u0085\u2028\u2029]+$/u.test(chars);
+  // A cell may hold characters that take room but draw nothing: a line or paragraph separator,
+  // with any invisible xterm folded into it (U+2028 U+200B). They join, as the core's `drawn`
+  // reads them: a control, a separator, or an invisible character that is no blank.
+  const drawsNothing = (chars: string): boolean =>
+    chars !== "" &&
+    [...chars].every(
+      (ch) => /^[\p{Cc}\u2028\u2029]$/u.test(ch) || (invisible(ch) && !/\s/u.test(ch)),
+    );
   let before = "";
   for (let { y, x } = { y: start.y, x: start.x - 1 }; before.length < MOST_TARGET;) {
     if (x < 0) {

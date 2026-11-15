@@ -338,6 +338,37 @@ describe("a link a program marked (OSC 8)", () => {
     },
   );
 
+  it.each([
+    ["T10", "\u2028\u200B"],
+    ["T13", "\u2028\u2060"],
+    ["T14", "\u2029\u200D"],
+  ])(
+    "joins text printed before its words across a separator holding an invisible (%s)",
+    async (_row, between) => {
+      const { term, drawn } = await opened();
+      await write(term, `evil${between}${osc8(TARGET, ".com")} y`);
+
+      hover(drawn, 6, 0);
+      await waitFor(() =>
+        expect(asked("pane_link_resolve").map((one) => one.args.candidates)).toContainEqual([
+          { kind: "osc8", text: ".com evil.com", target: TARGET },
+        ]),
+      );
+    },
+  );
+
+  it("joins text printed after its words across a separator holding an invisible (T16)", async () => {
+    const { term, drawn } = await opened();
+    await write(term, `${osc8(TARGET, "evil.")}\u2028\u200Bcom y`);
+
+    hover(drawn, 1, 0);
+    await waitFor(() =>
+      expect(asked("pane_link_resolve").map((one) => one.args.candidates)).toContainEqual([
+        { kind: "osc8", text: "evil. evil.com", target: TARGET },
+      ]),
+    );
+  });
+
   it("reads a NEL before its words as the next line, joining nothing across it", async () => {
     const { term, drawn } = await opened();
     await write(term, `evil\u0085${osc8(TARGET, ".com")} y`);
