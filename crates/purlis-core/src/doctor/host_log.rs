@@ -90,7 +90,10 @@ mod tests {
     #[test]
     fn a_doctor_a_test_names_never_reads_the_persons_own_log() {
         let dir = tempfile::tempdir().unwrap();
-        assert_eq!(host_log(&Doctor::at(dir.path(), dir.path(), false, false)), None);
+        assert_eq!(
+            host_log(&Doctor::at(dir.path(), dir.path(), false, false)),
+            None
+        );
     }
 
     #[test]

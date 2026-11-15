@@ -19,6 +19,7 @@ fn len(path: &Path) -> u64 {
 
 #[test]
 fn a_log_past_its_cap_is_moved_aside_whole_and_the_log_starts_again_empty() {
+    purlis_core::unsteered!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join(hostlog::NAME);
     write(&log, 2_000, b'a');
@@ -26,11 +27,15 @@ fn a_log_past_its_cap_is_moved_aside_whole_and_the_log_starts_again_empty() {
     assert_eq!(hostlog::cap_at(&log, 1_000, 3).unwrap(), Capped::Rotated);
 
     assert_eq!(len(&log), 0, "the log starts again");
-    assert_eq!(std::fs::read(hostlog::older(&log, 1)).unwrap(), vec![b'a'; 2_000]);
+    assert_eq!(
+        std::fs::read(hostlog::older(&log, 1)).unwrap(),
+        vec![b'a'; 2_000]
+    );
 }
 
 #[test]
 fn a_log_within_its_cap_is_left_as_it_is() {
+    purlis_core::unsteered!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join(hostlog::NAME);
     write(&log, 1_000, b'a');
@@ -43,6 +48,7 @@ fn a_log_within_its_cap_is_left_as_it_is() {
 
 #[test]
 fn no_log_yet_is_nothing_to_cap() {
+    purlis_core::unsteered!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join(hostlog::NAME);
 
@@ -52,9 +58,10 @@ fn no_log_yet_is_nothing_to_cap() {
 
 #[test]
 fn each_rotation_shifts_the_older_files_and_only_the_newest_few_are_kept() {
+    purlis_core::unsteered!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join(hostlog::NAME);
-    for fill in [b'a', b'b', b'c', b'd', b'e'] {
+    for fill in *b"abcde" {
         write(&log, 2_000, fill);
         assert_eq!(hostlog::cap_at(&log, 1_000, 3).unwrap(), Capped::Rotated);
     }
@@ -71,6 +78,7 @@ fn each_rotation_shifts_the_older_files_and_only_the_newest_few_are_kept() {
 /// past a hole the size of what was there.
 #[test]
 fn a_writer_holding_the_log_open_to_append_writes_on_into_the_emptied_log() {
+    purlis_core::unsteered!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join(hostlog::NAME);
     let mut held = std::fs::OpenOptions::new()
@@ -90,6 +98,7 @@ fn a_writer_holding_the_log_open_to_append_writes_on_into_the_emptied_log() {
 #[cfg(unix)]
 #[test]
 fn a_link_in_the_logs_place_is_refused_and_what_it_points_to_is_left_alone() {
+    purlis_core::unsteered!();
     let dir = tempfile::tempdir().unwrap();
     let elsewhere = dir.path().join("elsewhere");
     write(&elsewhere, 2_000, b'a');
@@ -103,6 +112,40 @@ fn a_link_in_the_logs_place_is_refused_and_what_it_points_to_is_left_alone() {
 
 #[test]
 fn the_host_keeps_a_few_older_files_of_a_bounded_size() {
+    purlis_core::unsteered!();
     assert_eq!(hostlog::KEPT, 3);
     assert_eq!(hostlog::CAP, 1024 * 1024);
+}
+
+/// The acceptance (#6687): a host running with its log past the cap rotates it, keeping the
+/// older files, without a restart.
+#[test]
+fn a_running_host_rotates_its_log_once_it_passes_the_cap_and_keeps_older_files() {
+    purlis_core::unsteered!();
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join(hostlog::NAME);
+    let mut held = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log)
+        .unwrap();
+    hostlog::keep_capped_at(log.clone(), 1_000, 3, std::time::Duration::from_millis(10));
+
+    for fill in *b"abcd" {
+        held.write_all(&[fill; 2_000]).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while len(&log) != 0 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the log was not rotated while the host ran"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
+    let kept: Vec<u8> = (1..=3)
+        .map(|n| std::fs::read(hostlog::older(&log, n)).unwrap()[0])
+        .collect();
+    assert_eq!(kept, b"dcb", "newest first, three kept");
+    assert!(!hostlog::older(&log, 4).exists());
 }

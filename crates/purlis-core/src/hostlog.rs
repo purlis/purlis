@@ -119,3 +119,39 @@ fn empty(log: &Path) -> io::Result<()> {
     options.open(log)?.set_len(0)
 }
 
+/// **Keeps `log` capped while this process runs**: [`cap`] now, and every [`LOOK_EVERY`] after,
+/// on a thread of its own. What the session host that is a login item starts, before it serves.
+pub fn keep_capped(log: PathBuf) {
+    keep_capped_at(log, CAP, KEPT, LOOK_EVERY);
+}
+
+/// [`keep_capped`], past `cap` bytes, keeping `kept`, looking `every` so long.
+///
+/// A rotation that fails is said once, as a warning, which goes to the host's standard error and
+/// so into the log itself; again only once it fails for another reason. The doctor's `session
+/// host log` row says the log's size once it is far past its cap.
+pub fn keep_capped_at(log: PathBuf, cap: u64, kept: usize, every: Duration) {
+    let spawned = std::thread::Builder::new()
+        .name("session-host-log".into())
+        .spawn(move || {
+            let mut said: Option<String> = None;
+            loop {
+                match cap_at(&log, cap, kept) {
+                    Ok(_) => said = None,
+                    Err(why) => {
+                        let why = why.to_string();
+                        if said.as_deref() != Some(why.as_str()) {
+                            tracing::warn!(
+                                "purlis: the session host's log could not be rotated: {why}"
+                            );
+                            said = Some(why);
+                        }
+                    }
+                }
+                std::thread::sleep(every);
+            }
+        });
+    if let Err(why) = spawned {
+        tracing::warn!("purlis: the session host's log is not kept capped: {why}");
+    }
+}
