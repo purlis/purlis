@@ -2097,3 +2097,44 @@ fn opencode_is_the_kind_and_the_command_of_the_same_harness() {
 }
 
 mod matrix;
+
+/// R-294 (T1a-33): purlis never sets Claude Code's fast-mode skip variable. Behind a base URL
+/// that isn't Anthropic's `/fast` is off, and the table lists that loss rather than turning
+/// the check off. Neither what the adapter puts in the chat's environment nor its `--settings`
+/// `env` carries it, unsandboxed or sandboxed. Seen red by a deliberate mutation: the variable
+/// added to the adapter's `--settings` `env`.
+#[test]
+fn no_generated_env_carries_the_fast_mode_skip_variable() {
+    const SKIP: &str = "CLAUDE_CODE_SKIP_FAST_MODE_ORG_CHECK";
+    let (plane, applied) = testing::sandbox_compiled_for(Harness::ClaudeCode);
+    let applied = applied.expect("a Claude Code sandbox");
+    let cwd = plane.path().join("w");
+    std::fs::create_dir_all(&cwd).expect("a workspace");
+    for sandbox in [None, Some(&applied)] {
+        let StateHooks::ThisSessionOnly { args, env, .. } = Harness::ClaudeCode.state_hooks(
+            kit("/bin/charter"),
+            Some(&cwd),
+            &crate::harness_plugin::Chosen::new(),
+            sandbox,
+        ) else {
+            panic!("Claude Code is armed per session");
+        };
+        let settings: serde_json::Value =
+            serde_json::from_str(settings_of(&args)).expect("--settings is JSON");
+        let settings_env = settings["env"]
+            .as_object()
+            .map(|env| env.keys().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+        let named: Vec<&String> = env
+            .iter()
+            .map(|(name, _)| name)
+            .chain(settings_env.iter())
+            .filter(|name| name.as_str() == SKIP)
+            .collect();
+        assert!(
+            named.is_empty(),
+            "sandboxed: {}: {SKIP} is set",
+            sandbox.is_some()
+        );
+    }
+}

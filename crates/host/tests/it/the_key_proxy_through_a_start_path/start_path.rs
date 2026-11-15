@@ -1,0 +1,447 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! **What the tests start a run's key proxy through** (D-3): a [`StartPath`], and the desktop's,
+//! [`Desktop`]: the window's `StartKeyProxy` to its session host, which starts the real key
+//! proxy through the binary's trait. Here that trait is the test's own: it hands the key proxy
+//! the test route and the stand-in key the test named for the run (the run's real route is
+//! T1a-08's, its key T1a-61's). A start path is made with the [`Reach`] its key proxy reaches
+//! upstreams through (T1a-60): [`plain_reach`] for a plain-HTTP provider on loopback, or one the
+//! test made, with the fake provider's test root in the trust store, its name reached on
+//! loopback and the outbound proxy the test names in place of the system's.
+
+use std::collections::HashMap;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use bytes::Bytes;
+use fake_harness::model::{Provider, Recording, TestRoot};
+use http_body_util::{BodyExt, Full};
+use hyper::{HeaderMap, Request};
+use hyper_util::rt::TokioIo;
+use purlis_core::upstream::{Direct, TestReach, trust};
+use purlis_host::standin::StandIns;
+use purlis_host::{
+    Compose, Ended, Hosting, KeyProxyStarted, KeyProxyTell, KeyProxyTold, ProxiesKeys, Record,
+    ToCompose,
+};
+use purlis_key_proxy::{Heard, Key, KeyProxy, Matcher, Origin, Reach, Route};
+use purlis_session_protocol::auth::{Credentials, Scope};
+use purlis_session_protocol::link;
+use purlis_session_protocol::session::{self, Answer, Client, Command, Events};
+use purlis_terminal::session::Spec;
+use tokio::io::duplex;
+
+/// How long a test waits on the key proxy or the host before it fails.
+pub const PATIENCE: Duration = Duration::from_secs(10);
+
+/// The stand-in for the run's key, which the fake provider must be handed in the token's place.
+pub const STAND_IN_KEY: &str = "stand-in-for-the-runs-key";
+
+/// **How a run's key proxy is started and stopped**, and what its host wrote and raised: the
+/// parameter every test here takes, so each runs through the desktop's start and, from T1a-66,
+/// the runner's.
+pub(crate) trait StartPath {
+    /// Starts `run`'s key proxy with `route` as its route: its port and token.
+    async fn start(&self, run: &str, route: Route) -> (u16, String);
+
+    /// Stops `run`'s key proxy, as its run ends.
+    async fn stop(&self, run: &str);
+
+    /// What the host raised for the window since this was last asked: each event it pushed,
+    /// as its variant's name, and the `kind` of each line it wrote in the event log.
+    async fn raised(&mut self) -> Vec<String>;
+
+    /// Everything the host wrote, as text: the files it wrote, the lines of its event log and
+    /// every line the key proxy told it.
+    fn written(&self) -> Vec<String>;
+}
+
+/// A route to `provider` over plain HTTP, with the stand-in key in `x-api-key`, as the Anthropic
+/// built-in names.
+pub fn route_to(provider: &Provider) -> Route {
+    Route {
+        origin: Origin::http("127.0.0.1", provider.port()),
+        key: Key::XApiKey(STAND_IN_KEY.to_owned()),
+    }
+}
+
+/// The name the TLS tests' upstream is declared by, served by the fake provider on loopback.
+pub const UPSTREAM: &str = "api.anthropic.com";
+
+/// A route to [`UPSTREAM`] over TLS on its own port, 443, with the stand-in key in `x-api-key`.
+pub fn route_to_upstream() -> Route {
+    Route {
+        origin: Origin::https(UPSTREAM, 443),
+        key: Key::XApiKey(STAND_IN_KEY.to_owned()),
+    }
+}
+
+/// How a key proxy reaches a plain-HTTP provider on loopback: no outbound proxy, whatever this
+/// machine's settings name.
+pub fn plain_reach() -> Reach {
+    Reach {
+        outbound: Arc::new(Direct::new()),
+        tls: Arc::new(trust::client_config().expect("the OS trust store")),
+        proxies: Matcher::builder().build(),
+    }
+}
+
+/// How a key proxy reaches [`UPSTREAM`] when it is served at `served`: its name resolves there,
+/// `trusted` (the fake provider's test root, or none) sits in the trust-store seam beside the
+/// OS's own roots, and `proxies` stands for the proxy variables in `purlisd`'s environment.
+pub fn reach(served: std::net::SocketAddr, trusted: Option<&TestRoot>, proxies: Matcher) -> Reach {
+    let tls = match trusted {
+        Some(root) => trust::trusting_test_root(root.certificate()),
+        None => trust::client_config(),
+    };
+    Reach {
+        outbound: Arc::new(Direct::with_test_reach(TestReach::new(UPSTREAM, served))),
+        tls: Arc::new(tls.expect("a TLS client")),
+        proxies,
+    }
+}
+
+/// A fake provider for [`UPSTREAM`] over TLS under a fresh test root, answering Messages: the
+/// provider and its root.
+pub fn tls_provider() -> (Provider, TestRoot) {
+    let root = TestRoot::generate(&[UPSTREAM]);
+    let provider = Provider::builder()
+        .answer("/v1/messages", Recording::message(MESSAGE))
+        .tls(&root)
+        .start()
+        .expect("the fake provider serves");
+    (provider, root)
+}
+
+/// A fake provider answering Messages with a non-streamed message.
+pub fn provider() -> Provider {
+    Provider::builder()
+        .answer("/v1/messages", Recording::message(MESSAGE))
+        .start()
+        .expect("the fake provider serves")
+}
+
+/// A non-streamed Messages answer.
+pub const MESSAGE: &str = r#"{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"hé"}],"model":"claude-test","stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":1}}"#;
+
+/// What the key proxy answered the harness.
+#[derive(Debug)]
+pub struct Answered {
+    pub status: u16,
+    pub headers: HeaderMap,
+    pub body: Vec<u8>,
+}
+
+/// Sends a `POST` of `body` to `path` on `port`, carrying `token` as the bearer credential when
+/// there is one, as Claude Code sets it from `ANTHROPIC_AUTH_TOKEN`; or why it got no answer.
+pub async fn try_send(
+    port: u16,
+    token: Option<&str>,
+    path: &str,
+    body: &[u8],
+) -> Result<Answered, String> {
+    try_send_with(port, token, path, body, &[]).await
+}
+
+/// [`try_send`], with `extra` headers beside the token as the harness set them; a `host` among
+/// them in place of the listener's own.
+pub async fn try_send_with(
+    port: u16,
+    token: Option<&str>,
+    path: &str,
+    body: &[u8],
+    extra: &[(&str, &str)],
+) -> Result<Answered, String> {
+    let stream = tokio::time::timeout(
+        PATIENCE,
+        tokio::net::TcpStream::connect(("127.0.0.1", port)),
+    )
+    .await
+    .map_err(|_| "no connection in time".to_owned())?
+    .map_err(|why| format!("no connection: {why}"))?;
+    let (mut sender, connection) = hyper::client::conn::http1::handshake(TokioIo::new(stream))
+        .await
+        .map_err(|why| why.to_string())?;
+    tokio::spawn(connection);
+    let mut request = Request::post(path)
+        .header("content-type", "application/json")
+        .header("anthropic-version", "2023-06-01");
+    if !extra
+        .iter()
+        .any(|(name, _)| name.eq_ignore_ascii_case("host"))
+    {
+        request = request.header("host", format!("127.0.0.1:{port}"));
+    }
+    if let Some(token) = token {
+        request = request.header("authorization", format!("Bearer {token}"));
+    }
+    for (name, value) in extra {
+        request = request.header(*name, *value);
+    }
+    let request = request
+        .body(Full::new(Bytes::copy_from_slice(body)))
+        .expect("a request of fixed parts");
+    let answered = tokio::time::timeout(PATIENCE, async {
+        let response = sender.send_request(request).await?;
+        let (parts, body) = response.into_parts();
+        let body = body.collect().await?.to_bytes().to_vec();
+        Ok::<_, hyper::Error>(Answered {
+            status: parts.status.as_u16(),
+            headers: parts.headers,
+            body,
+        })
+    })
+    .await
+    .map_err(|_| "no answer in time".to_owned())?;
+    answered.map_err(|why| why.to_string())
+}
+
+/// [`try_send`], answered.
+pub async fn send(port: u16, token: Option<&str>, path: &str, body: &[u8]) -> Answered {
+    try_send(port, token, path, body)
+        .await
+        .expect("the key proxy answers")
+}
+
+/// [`try_send_with`], answered.
+pub async fn send_with(
+    port: u16,
+    token: Option<&str>,
+    path: &str,
+    body: &[u8],
+    extra: &[(&str, &str)],
+) -> Answered {
+    try_send_with(port, token, path, body, extra)
+        .await
+        .expect("the key proxy answers")
+}
+
+/// The `error.message` of an answer in the Messages error shape.
+pub fn message(answered: &Answered) -> String {
+    let body: serde_json::Value =
+        serde_json::from_slice(&answered.body).expect("an answer in the Messages error shape");
+    body["error"]["message"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no error message in {body}"))
+        .to_owned()
+}
+
+/// Every value of `name` in a request the fake provider read, in any letter case.
+pub fn headers_named<'a>(request: &'a fake_harness::model::Request, name: &str) -> Vec<&'a str> {
+    request
+        .headers
+        .iter()
+        .filter(|(sent, _)| sent.eq_ignore_ascii_case(name))
+        .map(|(_, value)| value.as_str())
+        .collect()
+}
+
+/// The value of `name` in a request the fake provider read, if it was sent.
+pub fn header<'a>(request: &'a fake_harness::model::Request, name: &str) -> Option<&'a str> {
+    request
+        .headers
+        .iter()
+        .find(|(sent, _)| sent.eq_ignore_ascii_case(name))
+        .map(|(_, value)| value.as_str())
+}
+
+static HELD: std::sync::LazyLock<Credentials> =
+    std::sync::LazyLock::new(|| Credentials::mint().unwrap());
+
+struct Echo;
+
+impl Compose for Echo {
+    fn compose(&self, starting: &ToCompose<'_>) -> Result<Spec, String> {
+        Ok(Spec::new("/bin/echo", starting.size))
+    }
+}
+
+/// The binary's event log, kept in memory.
+#[derive(Clone, Default)]
+struct Kept(Arc<Mutex<Vec<serde_json::Value>>>);
+
+impl Record for Kept {
+    fn record(&self, entry: serde_json::Value) -> Result<(), String> {
+        self.0.lock().unwrap().push(entry);
+        Ok(())
+    }
+
+    fn ended(&self, _ended: &Ended<'_>) {}
+}
+
+/// The binary's trait, the test's own: the real key proxy, given the route the test named for
+/// each run, keeping every line it tells the host.
+#[derive(Clone)]
+struct RoutesTheTestNamed {
+    proxy: Arc<KeyProxy>,
+    routes: Arc<Mutex<HashMap<String, Route>>>,
+    told: Arc<Mutex<Vec<String>>>,
+}
+
+impl ProxiesKeys for RoutesTheTestNamed {
+    fn start(&self, run: &str, tell: KeyProxyTell) -> Result<KeyProxyStarted, String> {
+        let route = self.routes.lock().unwrap().get(run).cloned();
+        let (said, recorded) = (Arc::clone(&self.told), Arc::clone(&self.told));
+        let (tell_said, tell_recorded) = (Arc::clone(&tell), tell);
+        let started = self
+            .proxy
+            .start(
+                run,
+                route,
+                Heard {
+                    say: Arc::new(move |line| {
+                        let told = KeyProxyTold::Said(line.to_string());
+                        said.lock().unwrap().push(format!("{told:?}"));
+                        tell_said(told);
+                    }),
+                    record: Arc::new(move |record| {
+                        let told = KeyProxyTold::Record {
+                            method: record.method.clone(),
+                            path: record.path.clone(),
+                            status: record.status,
+                        };
+                        recorded.lock().unwrap().push(format!("{told:?}"));
+                        tell_recorded(told);
+                    }),
+                },
+            )
+            .map_err(|why| why.to_string())?;
+        Ok(KeyProxyStarted {
+            port: started.port,
+            token: started.token.reveal().to_string(),
+        })
+    }
+
+    fn stop(&self, run: &str) -> Result<(), String> {
+        if self.proxy.stop(run) {
+            Ok(())
+        } else {
+            Err("no key proxy runs for that run".into())
+        }
+    }
+}
+
+/// **The desktop's start**: the window's `StartKeyProxy` and `StopKeyProxy` to its session host,
+/// which keeps its files in a folder of its own and its event log in memory.
+pub struct Desktop {
+    window: Client,
+    events: Events,
+    proxies: RoutesTheTestNamed,
+    log: Kept,
+    folder: tempfile::TempDir,
+}
+
+impl Desktop {
+    /// The desktop's start, its key proxy reaching a plain-HTTP provider ([`plain_reach`]).
+    pub async fn new() -> Desktop {
+        Desktop::reaching(plain_reach()).await
+    }
+
+    /// The desktop's start, its key proxy reaching upstreams through `reach`.
+    pub async fn reaching(reach: Reach) -> Desktop {
+        let folder = tempfile::tempdir().unwrap();
+        let proxies = RoutesTheTestNamed {
+            proxy: Arc::new(KeyProxy::reaching(reach).expect("its runtime starts")),
+            routes: Arc::default(),
+            told: Arc::default(),
+        };
+        let log = Kept::default();
+        let hosting = Hosting::running_with_its_switch_in(folder.path(), Echo, StandIns::default())
+            .recording_with(log.clone())
+            .proxying_keys_with(proxies.clone());
+        let (a, b) = duplex(64 * 1024);
+        let (client, served) = tokio::join!(
+            link::connect(
+                a,
+                session::speaks(),
+                Scope::LocalUi,
+                HELD.of(Scope::LocalUi)
+            ),
+            link::serve_any(b, session::speaks(), &HELD)
+        );
+        tokio::spawn(session::serve(served.unwrap(), hosting, None));
+        let (window, _views, events) = Client::new(client.unwrap());
+        window
+            .subscribe(Default::default())
+            .await
+            .expect("subscribed");
+        Desktop {
+            window,
+            events,
+            proxies,
+            log,
+            folder,
+        }
+    }
+}
+
+impl StartPath for Desktop {
+    async fn start(&self, run: &str, route: Route) -> (u16, String) {
+        self.proxies
+            .routes
+            .lock()
+            .unwrap()
+            .insert(run.to_owned(), route);
+        let answer = self
+            .window
+            .call(Command::StartKeyProxy { run: run.into() })
+            .await
+            .expect("the start is answered");
+        let Answer::KeyProxyStarted { port, token } = answer else {
+            panic!("not a key proxy's start: {answer:?}");
+        };
+        (port, token.0)
+    }
+
+    async fn stop(&self, run: &str) {
+        self.window
+            .call(Command::StopKeyProxy { run: run.into() })
+            .await
+            .expect("the stop is answered");
+    }
+
+    async fn raised(&mut self) -> Vec<String> {
+        let mut raised = Vec::new();
+        while let Ok(Some(event)) =
+            tokio::time::timeout(Duration::from_millis(300), self.events.recv()).await
+        {
+            let shown = format!("{event:?}");
+            let name = shown
+                .split(|c: char| !c.is_alphanumeric() && c != '_')
+                .find(|word| !word.is_empty())
+                .unwrap_or_default()
+                .to_owned();
+            raised.push(format!("pushed {name}: {shown}"));
+        }
+        for entry in self.log.0.lock().unwrap().drain(..) {
+            raised.push(format!("logged {}: {entry}", entry["kind"]));
+        }
+        raised
+    }
+
+    fn written(&self) -> Vec<String> {
+        let mut written = Vec::new();
+        files_in(self.folder.path(), &mut written);
+        written.extend(self.log.0.lock().unwrap().iter().map(ToString::to_string));
+        written.extend(self.proxies.told.lock().unwrap().iter().cloned());
+        written
+    }
+}
+
+/// The contents of every file under `folder`, as text.
+fn files_in(folder: &Path, into: &mut Vec<String>) {
+    for entry in std::fs::read_dir(folder).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            files_in(&path, into);
+        } else if let Ok(bytes) = std::fs::read(&path) {
+            into.push(format!(
+                "{}: {}",
+                path.display(),
+                String::from_utf8_lossy(&bytes)
+            ));
+        }
+    }
+}

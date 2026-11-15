@@ -1244,7 +1244,7 @@ fn a_local_replacement_of_a_built_in_changes_its_facts_in_the_built_ins_place() 
     assert_eq!(Harness::ClaudeCode.declared().origin, Origin::BuiltIn);
     assert_eq!(
         Harness::ClaudeCode.declared().tested.as_deref(),
-        Some("2.1.283")
+        Some("2.1.300")
     );
 }
 

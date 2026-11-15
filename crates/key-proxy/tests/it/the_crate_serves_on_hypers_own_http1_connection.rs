@@ -16,7 +16,7 @@ async fn the_crate_serves_on_hypers_own_http1_connection() {
     let proxy = KeyProxy::new().expect("its runtime starts");
     let told = Told::default();
     let started = proxy
-        .start("run-1", told.heard())
+        .start("run-1", None, told.heard())
         .expect("a listener starts");
 
     let answer = exchange(

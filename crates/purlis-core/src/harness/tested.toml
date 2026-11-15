@@ -1,0 +1,37 @@
+# The shipped table of corrections and loss lists (design §3.11, T1a-33, #6782), read by
+# `purlis_core::harness::tested`. One `[[entry]]` per harness × model provider declaration
+# (× model pattern, where a model behaves apart from its provider's others):
+#
+#   harness         a harness purlis ships: claude, codex, opencode
+#   provider        a model provider declaration's id
+#   model           optional: a model pattern
+#   format          the wire format the pair speaks, one the provider serves
+#   grade           optional, only where it overrides the rule: blocked, native, supported, degraded
+#   losses          what the pair loses, each a word; the window's words for one are window copy
+#   source          required: "measured on <YYYY-MM-DD>, <harness version>" or "reported: <link>"
+#   asks_for_usage  a Chat Completions pair (format = "openai-chat") only, and required there
+#
+# A harness's last tested version is its declaration's `tested` field
+# (`harness_declaration/<name>.toml`), never restated here.
+
+# Claude Code × Anthropic: the losses behind a base URL that isn't Anthropic's, which the key
+# proxy's route is (D6640-R2 §18). purlis never sets the fast-mode skip variable.
+[[entry]]
+harness = "claude"
+provider = "anthropic"
+format = "anthropic-messages"
+losses = [
+  # Background tasks run on the main model unless the `haiku` variable names one.
+  "background-on-main-model-unless-haiku",
+  # Remote Control and voice dictation are off.
+  "remote-control-and-voice-off",
+  # `/fast` says it is disabled by the organization.
+  "fast-disabled",
+  # Fine-grained tool streaming is off.
+  "tool-streaming-off",
+  # `/feedback` saves locally.
+  "feedback-local",
+  # The HIPAA configuration doesn't cover the session.
+  "hipaa-not-covered",
+]
+source = "reported: https://code.claude.com/docs/en/llm-gateway-protocol"
