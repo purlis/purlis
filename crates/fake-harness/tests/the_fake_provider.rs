@@ -500,6 +500,17 @@ fn the_documented_fixtures_are_marked_unrecorded() {
     }
     let spend_cap = connection.post("/429-spend-cap", &[], ASKED).unwrap();
     assert_eq!(spend_cap.head.header("retry-after"), None);
+    let cap: Value = serde_json::from_slice(&spend_cap.body).unwrap();
+    assert_eq!(
+        cap["error"]["details"]["error_code"], "enforced_spend_limit_reached",
+        "{cap}"
+    );
+    assert!(
+        cap["error"]["message"]
+            .as_str()
+            .is_some_and(|m| m.starts_with("You have reached your API usage limits:")),
+        "{cap}"
+    );
     let spend_limit = connection.post("/400-spend-limit", &[], ASKED).unwrap();
     let message: Value = serde_json::from_slice(&spend_limit.body).unwrap();
     assert!(

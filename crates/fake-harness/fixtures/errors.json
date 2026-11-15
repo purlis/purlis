@@ -2,7 +2,7 @@
   "about": [
     "The fake provider's error answers (crates/fake-harness, T1a-03). Each says where its shape came from:",
     "\"recorded\" names the recording; \"unrecorded\" waits for the gate's hand run on a real key;",
-    "\"from the docs, unrecorded\" follows Anthropic's documented errors (platform.claude.com/docs/en/api/errors)",
+    "\"from the docs, unrecorded\" follows Anthropic's documented errors (platform.claude.com/docs/en/api/errors; the spend cap's from /api/rate-limits)",
     "until a recording replaces it. A test that reads an unrecorded fixture says so. Only the headers listed",
     "were recorded or documented; the provider adds its own content-length, and content_type is the body's type."
   ],
@@ -62,7 +62,7 @@
       "provenance": "from the docs, unrecorded",
       "headers": [],
       "content_type": "application/json",
-      "body": "{\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\",\"message\":\"Your workspace has reached its spend limit.\"}}"
+      "body": "{\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\",\"message\":\"You have reached your API usage limits: your organization has crossed its monthly API usage threshold, set based on your organization's API tier. You will regain access on 2026-09-01 at 00:00 UTC.\",\"details\":{\"error_code\":\"enforced_spend_limit_reached\"}}}"
     },
     {
       "name": "413",

@@ -311,15 +311,12 @@ impl Serving {
             .then(|| GzEncoder::new(Vec::new(), Compression::default()));
         let start = self.clock.now();
         for (index, chunk) in recording.chunks.iter().enumerate() {
-            if let Some(per_second) = self.pace {
+            // When a paced chunk went out; recorded once it has been written, so a chunk the
+            // peer's close refused is not counted as sent.
+            let paced_at = self.pace.map(|per_second| {
                 self.clock.sleep_until(start + paced(index, per_second));
-                let at = self.clock.now();
-                lock(&self.seen).sends.push(ChunkSend {
-                    connection,
-                    index,
-                    at,
-                });
-            }
+                self.clock.now()
+            });
             let bytes = match encoder.as_mut() {
                 Some(encoder) => {
                     encoder.write_all(chunk)?;
@@ -334,6 +331,13 @@ impl Serving {
                     sent: index,
                 });
                 return Ok(false);
+            }
+            if let Some(at) = paced_at {
+                lock(&self.seen).sends.push(ChunkSend {
+                    connection,
+                    index,
+                    at,
+                });
             }
         }
         if let Some(encoder) = encoder {

@@ -17,6 +17,7 @@
 //! A later seam adds its use to [`SEAMS`], as T1a-69's recording file-system and vault have;
 //! T1a-35's policy fixture path is next.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -77,8 +78,17 @@ fn core() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../purlis-core")
 }
 
-/// purlis-core's library, built with the features a release build has: none.
-fn release_library() -> PathBuf {
+/// purlis-core's library as a release build has it, and what it links against.
+struct Release {
+    /// purlis-core's `.rlib`, built with the features a release build has: none.
+    library: PathBuf,
+    /// Every folder cargo put a crate of that build in, for `-L dependency=`. Cargo's layout of
+    /// its build folder is its own (1.100 moved each crate into a folder of its own), so the
+    /// folders are taken from what cargo says it built, never guessed.
+    dependencies: BTreeSet<PathBuf>,
+}
+
+fn release_build() -> Release {
     let out = Command::new(env!("CARGO"))
         .args(["build", "--quiet", "--lib", "-p", "purlis-core"])
         .args(["--message-format", "json"])
@@ -90,13 +100,24 @@ fn release_library() -> PathBuf {
         "purlis-core did not build without test-support:\n{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    String::from_utf8_lossy(&out.stdout)
+    let artifacts: Vec<serde_json::Value> = String::from_utf8_lossy(&out.stdout)
         .lines()
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-        .filter(|message| {
-            message["reason"] == "compiler-artifact"
-                && message["target"]["name"] == "purlis_core"
-                && message["target"]["kind"][0] == "lib"
+        .filter(|message| message["reason"] == "compiler-artifact")
+        .collect();
+    let filenames = |artifact: &serde_json::Value| -> Vec<PathBuf> {
+        artifact["filenames"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|f| f.as_str())
+            .map(PathBuf::from)
+            .collect()
+    };
+    let library = artifacts
+        .iter()
+        .filter(|artifact| {
+            artifact["target"]["name"] == "purlis_core" && artifact["target"]["kind"][0] == "lib"
         })
         .find_map(|artifact| {
             assert_eq!(
@@ -104,22 +125,32 @@ fn release_library() -> PathBuf {
                 serde_json::json!([]),
                 "the build turned a feature on"
             );
-            artifact["filenames"]
-                .as_array()?
-                .iter()
-                .filter_map(|f| f.as_str())
-                .find(|f| f.ends_with(".rlib"))
-                .map(PathBuf::from)
+            filenames(artifact)
+                .into_iter()
+                .find(|f| f.extension().is_some_and(|e| e == "rlib"))
         })
-        .expect("cargo named purlis-core's library")
+        .expect("cargo named purlis-core's library");
+    // Every artifact's folder, a proc-macro's library (`.dylib`, `.so`, `.dll`) included.
+    let dependencies = artifacts
+        .iter()
+        .flat_map(filenames)
+        .filter_map(|f| f.parent().map(Path::to_path_buf))
+        .collect();
+    Release {
+        library,
+        dependencies,
+    }
 }
 
-/// Whether `source` compiles against `library` and the crates beside it.
-fn compiles(library: &Path, name: &str, source: &str) -> (bool, String) {
+/// Whether `source` compiles against purlis-core's release library and the crates it links.
+fn compiles(release: &Release, name: &str, source: &str) -> (bool, String) {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join(format!("{name}.rs"));
     std::fs::write(&file, format!("#![allow(unused)]\n{source}\n")).unwrap();
-    let out = Command::new("rustc")
+    // The compiler cargo was told to use, when it was told one.
+    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+    let mut command = Command::new(rustc);
+    command
         .args([
             "--edition",
             "2024",
@@ -131,15 +162,15 @@ fn compiles(library: &Path, name: &str, source: &str) -> (bool, String) {
         .arg("--crate-name")
         .arg(format!("seam_{}", name.to_lowercase()))
         .arg("--out-dir")
-        .arg(dir.path())
-        .arg("-L")
-        // The library cargo names is the copy beside `deps/`, where the crates it links are.
-        .arg(format!(
-            "dependency={}",
-            library.parent().unwrap().join("deps").display()
-        ))
+        .arg(dir.path());
+    for folder in &release.dependencies {
+        command
+            .arg("-L")
+            .arg(format!("dependency={}", folder.display()));
+    }
+    let out = command
         .arg("--extern")
-        .arg(format!("purlis_core={}", library.display()))
+        .arg(format!("purlis_core={}", release.library.display()))
         .arg(&file)
         .output()
         .expect("rustc runs");
@@ -151,17 +182,17 @@ fn compiles(library: &Path, name: &str, source: &str) -> (bool, String) {
 
 #[test]
 fn test_seams_are_absent_from_a_release_build() {
-    let library = release_library();
-    let (always, why) = compiles(&library, "always", ALWAYS);
+    let release = release_build();
+    let (always, why) = compiles(&release, "always", ALWAYS);
     assert!(
         always,
         "what every build has did not compile against {}, so this check proves nothing:\n{why}",
-        library.display()
+        release.library.display()
     );
     let carried: Vec<_> = SEAMS
         .iter()
         .filter(|(name, source)| {
-            let (compiled, why) = compiles(&library, name, source);
+            let (compiled, why) = compiles(&release, name, source);
             // A use refused for another reason (a typo here) would prove nothing.
             assert!(
                 compiled || why.contains(name),

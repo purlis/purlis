@@ -10,9 +10,9 @@
 //!
 //! **The test seams** live in `upstream/seams.rs` and beside [`trust`]'s client, only with
 //! `test-support`, never behind an environment variable, file or setting a release build reads
-//! (`crates/fake-harness/tests/test_seams_are_absent_from_a_release_build.rs` holds it, and
-//! reads this crate's release library for their names, its documentation included, so the
-//! documentation of what every build has does not name them). They are: a resolver hook with
+//! (`crates/fake-harness/tests/test_seams_are_absent_from_a_release_build.rs` holds it: it
+//! builds this crate without `test-support` and compiles a use of each seam against that
+//! library, each of which must fail to compile). They are: a resolver hook with
 //! a test-only reach entry, which resolves one name to a loopback address and lets it be
 //! reached; the recording outbound; and a test root added to the trust store. With them a
 //! built-in's real `https` origin, `api.anthropic.com`, is served by the fake provider on this

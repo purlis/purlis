@@ -84,7 +84,8 @@ mod injected {
     #[derive(Debug, Default)]
     struct State {
         elapsed: Duration,
-        sleepers: usize,
+        /// The time each caller in [`Clock::sleep_until`] waits for, one entry per caller.
+        waiting: Vec<Instant>,
     }
 
     impl Default for InjectedClock {
@@ -114,9 +115,13 @@ mod injected {
             self.lock().elapsed
         }
 
-        /// How many callers are waiting on it in [`Clock::sleep_until`] now.
+        /// How many callers are waiting on it in [`Clock::sleep_until`] for a time it has not
+        /// reached. One that [`InjectedClock::advance`] has woken no longer counts, even before
+        /// it has run again, so a test that waits for a count sees the next wait, not the last.
         pub fn sleepers(&self) -> usize {
-            self.lock().sleepers
+            let state = self.lock();
+            let now = self.start + state.elapsed;
+            state.waiting.iter().filter(|at| **at > now).count()
         }
 
         fn lock(&self) -> MutexGuard<'_, State> {
@@ -131,14 +136,74 @@ mod injected {
 
         fn sleep_until(&self, at: Instant) {
             let mut state = self.lock();
-            state.sleepers += 1;
+            if self.start + state.elapsed >= at {
+                return;
+            }
+            state.waiting.push(at);
             while self.start + state.elapsed < at {
                 state = self
                     .moved
                     .wait(state)
                     .unwrap_or_else(PoisonError::into_inner);
             }
-            state.sleepers -= 1;
+            if let Some(place) = state.waiting.iter().position(|waits| *waits == at) {
+                state.waiting.swap_remove(place);
+            }
         }
+    }
+}
+
+#[cfg(all(test, feature = "test-support"))]
+mod tests {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use super::{Clock, InjectedClock};
+
+    #[test]
+    fn a_waiter_the_injected_clock_has_woken_is_no_longer_counted_as_a_sleeper() {
+        const WAITERS: usize = 8;
+        let clock = Arc::new(InjectedClock::new());
+        let at = clock.now() + Duration::from_millis(10);
+        let waiters: Vec<_> = (0..WAITERS)
+            .map(|_| {
+                let clock = Arc::clone(&clock);
+                std::thread::spawn(move || clock.sleep_until(at))
+            })
+            .collect();
+        while clock.sleepers() < WAITERS {
+            std::thread::yield_now();
+        }
+
+        clock.advance(Duration::from_millis(10));
+
+        assert_eq!(
+            clock.sleepers(),
+            0,
+            "a woken waiter still counted before it ran again"
+        );
+        for waiter in waiters {
+            waiter.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn a_waiter_for_a_time_not_yet_reached_still_counts_after_an_advance() {
+        let clock = Arc::new(InjectedClock::new());
+        let at = clock.now() + Duration::from_millis(20);
+        let waiter = {
+            let clock = Arc::clone(&clock);
+            std::thread::spawn(move || clock.sleep_until(at))
+        };
+        while clock.sleepers() < 1 {
+            std::thread::yield_now();
+        }
+
+        clock.advance(Duration::from_millis(10));
+        assert_eq!(clock.sleepers(), 1);
+
+        clock.advance(Duration::from_millis(10));
+        assert_eq!(clock.sleepers(), 0);
+        waiter.join().unwrap();
     }
 }
