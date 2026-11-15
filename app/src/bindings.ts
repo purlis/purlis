@@ -60,6 +60,12 @@ export const commands = {
 	 */
 	artifactReload: (label: string) => typedError<ArtifactOpened, string>(__TAURI_INVOKE("artifact_reload", { label })),
 	/**
+	 *  **Whether the template of artifact webview `label` moved from what it was served** (#6697):
+	 *  a change to its folder heard by the window opens the page again only when it did, so a late
+	 *  event of a write it was already served loads nothing twice.
+	 */
+	artifactTemplateMoved: (label: string) => typedError<boolean, string>(__TAURI_INVOKE("artifact_template_moved", { label })),
+	/**
 	 *  **Draws an artifact's page in the theme the window draws now** (#5955): its sheet is
 	 *  written again, and the page asks for it again when it changed.
 	 */

@@ -32,6 +32,7 @@ export const commands = {
 	artifactPlace: __WINDOW_ONLY_RESULT,
 	artifactEnter: __WINDOW_ONLY_RESULT,
 	artifactReload: __WINDOW_ONLY_RESULT,
+	artifactTemplateMoved: __WINDOW_ONLY_RESULT,
 	artifactTheme: __WINDOW_ONLY_RESULT,
 	artifactClose: __WINDOW_ONLY_RESULT,
 	artifactPinAsk: __WINDOW_ONLY_RESULT,
