@@ -7532,6 +7532,7 @@ pub(crate) fn applied_of(
     }
     // Held for a chat of every harness wherever it stands ([`Applied::chain`]).
     let roots_git = roots_git_held(root).map(|denial| denial.path);
+    let pools_held = pools_held(&held, machine);
     Ok(Applied {
         harness,
         os: machine.os,
@@ -7553,6 +7554,7 @@ pub(crate) fn applied_of(
             clones: crate::forge::apptoken::clones_now(root),
             roots_git,
             whole: harness.adapter().sandbox_holds_what_it_starts() || wrapped,
+            pools_held,
         }),
         reach: Box::new(compiled.reach.clone()),
         // Claude Code on its own sandbox waits for its program's answer ([`Applied::answered`]).
@@ -7686,6 +7688,26 @@ pub struct Confines {
     /// for a Claude Code chat on its own sandbox, which holds only the commands it runs, and for
     /// a record that does not say ([`Default`]).
     pub whole: bool,
+    /// **What of every pool's programs and files this sandbox holds, as its compile read the
+    /// pools** ([`pools_held`]): what a window compares with a sandbox compiled later, for a chat
+    /// this one started and for one it takes back from the session host alike, so a pool added
+    /// since is told as the chat's sandbox not holding it yet.
+    pub pools_held: Vec<PathBuf>,
+}
+
+/// **What of every pool's programs and files `denied` holds**, of those the pools on `machine`
+/// name now ([`cluster_programs`], [`tls_pool_files`]): each path once, sorted.
+pub fn pools_held(denied: &[Denial], machine: &Machine) -> Vec<PathBuf> {
+    let mut named = cluster_programs(machine);
+    named.extend(tls_pool_files(machine));
+    let mut held: Vec<PathBuf> = denied
+        .iter()
+        .filter(|denial| named.contains(&denial.path))
+        .map(|denial| denial.path.clone())
+        .collect();
+    held.sort();
+    held.dedup();
+    held
 }
 
 impl Confines {

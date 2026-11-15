@@ -1502,6 +1502,13 @@ impl SessionHost for RoutedSessions {
         }
     }
 
+    fn pools_held_left(&self, number: u32) -> Option<Vec<PathBuf>> {
+        match self.host_of(number) {
+            Some(host) => host.pools_held_left(number),
+            None => self.here.pools_held_left(number),
+        }
+    }
+
     fn prompt_key_started(
         &self,
         number: u32,

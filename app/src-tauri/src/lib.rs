@@ -5018,6 +5018,8 @@ pub fn run() {
             // This machine's sandbox policy, read again now and then (#1431): a policy that
             // lands is told to the window, which asks again which chats it leaves behind.
             sandboxing::watch_policy(app.handle().clone());
+            // And what its pools name: a pool added from a terminal is told as one added here.
+            sandboxing::watch_pools(app.handle().clone());
 
             if let Err(why) = lifecycle::tray(app.handle()) {
                 tracing::warn!("purlis: no tray icon ({why}); the window is reached from the dock");

@@ -373,6 +373,7 @@ fn a_runner_starts_no_harness_from_a_launch_by_its_words() {
         reporting: None,
         confinement: confinement.map(str::to_owned),
         prompt_key: None,
+        pools_held: None,
     };
     let refused =
         launch_by_words_refused(&program(Some("codex"), None), true).expect_err("refused");

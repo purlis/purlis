@@ -4593,6 +4593,10 @@ fn launch_of(opening: &Opening, program: String) -> Launch {
             .prompt_key
             .as_ref()
             .and_then(purlis_core::skillspan::PromptSalt::key),
+        pools_held: opening
+            .pools_held
+            .as_ref()
+            .map(|held| held.iter().map(|path| path.display().to_string()).collect()),
     }
 }
 
@@ -5581,6 +5585,14 @@ impl SessionHost for HostedSessions {
                 tracing::warn!("purlis: the plan chat {number} ran in could not be read: {why}");
             })
             .ok()
+    }
+
+    /// What the window that started it said its sandbox held of the pools: none from a host
+    /// before 1.89, or for a chat started with no sandbox.
+    fn pools_held_left(&self, number: u32) -> Option<Vec<PathBuf>> {
+        self.link().ok()?;
+        let held = lock(&self.left).get(&number)?.pools_held.clone()?;
+        Some(held.into_iter().map(PathBuf::from).collect())
     }
 
     fn prompt_key_left(&self, number: u32) -> Option<purlis_core::skillspan::PromptSalt> {

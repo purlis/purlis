@@ -3023,6 +3023,7 @@ fn a_port_withdrawn_while_a_chat_runs_is_withdrawn_from_a_browser_it_opens_after
             confines: Some(applied.confines().clone()),
             started_with: StartedWith::default(),
             composed_by_its_host: false,
+            pools_unknown: false,
             ran: Some(purlis_session_protocol::session::RunSandbox::By(
                 "seatbelt".to_owned(),
             )),
@@ -3107,6 +3108,7 @@ fn chats_started_with_different_grants_are_compiled_apart_and_listed_apart() {
                     "seatbelt".to_owned(),
                 )),
                 composed_by_its_host: false,
+                pools_unknown: false,
                 grants_as: None,
                 skills: None,
                 plane_skills: true,
@@ -3552,6 +3554,7 @@ fn a_chat_on_a_profile_is_compared_under_the_persona_grants_it_started_with() {
                     "seatbelt".to_owned(),
                 )),
                 composed_by_its_host: false,
+                pools_unknown: false,
                 grants_as: None,
                 skills: None,
                 plane_skills: true,
@@ -8896,6 +8899,7 @@ fn each_path_reads_the_run_record_in_the_direction_that_fails_closed_for_it() {
                 started_with: StartedWith::default(),
                 ran: ran.clone(),
                 composed_by_its_host: false,
+                pools_unknown: false,
                 grants_as: None,
                 skills: None,
                 plane_skills: true,
@@ -9390,6 +9394,7 @@ fn only_a_chat_with_no_sandbox_at_all_runs_unconfined() {
                 confines,
                 started_with: StartedWith::default(),
                 composed_by_its_host: false,
+                pools_unknown: false,
                 grants_as: None,
                 skills: None,
                 plane_skills: true,
@@ -9449,6 +9454,7 @@ fn a_login_is_asked_for_by_the_persona_its_chat_was_started_as() {
                 confines: None,
                 started_with: StartedWith::default(),
                 composed_by_its_host: false,
+                pools_unknown: false,
                 ran: Some(purlis_session_protocol::session::RunSandbox::Off),
                 grants_as: None,
                 skills: None,
@@ -9719,6 +9725,7 @@ pub(crate) fn a_chat_asking_live_on(
             confines: None,
             started_with: StartedWith::default(),
             composed_by_its_host: false,
+            pools_unknown: false,
             ran: Some(purlis_session_protocol::session::RunSandbox::By(
                 "seatbelt".to_owned(),
             )),
@@ -9760,6 +9767,7 @@ fn open_a_harness_chat(
             confines: None,
             started_with: StartedWith::default(),
             composed_by_its_host: false,
+            pools_unknown: false,
             ran: None,
             grants_as: None,
             skills: None,
@@ -10085,6 +10093,7 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
                 confines: None,
                 started_with: StartedWith::default(),
                 composed_by_its_host: false,
+                pools_unknown: false,
                 ran: None,
                 grants_as: None,
                 skills: harness.map(|harness| {
@@ -10173,6 +10182,7 @@ fn a_chat_skill_stamp_is_read_again_only_once_the_instructions_change() {
                 confines: None,
                 started_with: StartedWith::default(),
                 composed_by_its_host: false,
+                pools_unknown: false,
                 ran: None,
                 grants_as: None,
                 skills: Some(purlis_core::skills::stamp_now(
@@ -11907,6 +11917,7 @@ mod moved_on {
                 confines: None,
                 started_with: StartedWith::default(),
                 composed_by_its_host: false,
+                pools_unknown: false,
                 ran: Some(purlis_session_protocol::session::RunSandbox::By(
                     "seatbelt".to_owned(),
                 )),
@@ -12990,6 +13001,208 @@ fn a_chat_started_before_a_tls_pool_was_added_is_told_to_restart_for_it() {
     chats.close(started).expect("the old run ends");
     assert_eq!(older_on(&chats), None, "restarted, it holds the new file");
     chats.close(again).expect("ends");
+}
+
+/// A machine whose config home is `config`, and the CA, certificate and key of a pool over
+/// Docker's TLS API kept in `docker`, its key named by a link.
+#[cfg(unix)]
+fn a_machine_with_tls_files(
+    config: &std::path::Path,
+    docker: &std::path::Path,
+) -> (purlis_core::sandbox::Machine, [std::path::PathBuf; 3]) {
+    let [ca, cert, real_key] = ["ca.pem", "cert.pem", "real-key.pem"].map(|name| {
+        let file = docker.join(name);
+        std::fs::write(&file, "pem").expect("a TLS file");
+        file
+    });
+    let key = docker.join("key.pem");
+    std::os::unix::fs::symlink(&real_key, &key).expect("the key's link");
+    let machine = purlis_core::sandbox::Machine {
+        env: purlis_core::secrets::Env::of(&[("XDG_CONFIG_HOME", &config.display().to_string())]),
+        ..a_machine()
+    };
+    (machine, [ca, cert, key])
+}
+
+/// **A chat's start hands its host what its sandbox holds of the pools**: the files a pool over
+/// Docker's TLS API names, by name and by the file a link leads to. With no pool, it holds none
+/// of them. A Claude Code chat on its own sandbox, which runs with no proxy beside it.
+#[cfg(unix)]
+#[test]
+fn a_chats_start_hands_its_host_what_its_sandbox_holds_of_the_pools() {
+    let config = tempfile::tempdir().expect("a config home");
+    let docker = tempfile::tempdir().expect("the person's Docker folder");
+    let (machine, [ca, cert, key]) = a_machine_with_tls_files(config.path(), docker.path());
+    let plane = a_sandboxed_plane();
+    let host = Pretend::default();
+    let chats = restartable_chats_on(plane.path(), host.clone(), machine);
+    let before = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    the_pools_become(
+        config.path(),
+        serde_json::json!([a_tls_pool("build-box", [&ca, &cert, &key])]),
+    );
+    let after = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+
+    let handed = host.pools_held_opened();
+    assert_eq!(handed.len(), 2, "both were opened: {handed:?}");
+    assert_eq!(handed[0].as_deref(), Some(&[][..]), "no pool yet");
+    let real_key = std::fs::canonicalize(&key).expect("the file the key leads to");
+    let held = handed[1].clone().expect("it says what it holds");
+    for file in [&ca, &cert, &key, &real_key] {
+        assert!(
+            held.iter().any(|one| one == file),
+            "{} is handed: {held:?}",
+            file.display()
+        );
+    }
+    chats.close(before).expect("ends");
+    chats.close(after).expect("ends");
+}
+
+/// **A chat taken back from its host is asked to restart by what its start held**, not by what
+/// a start would hold now: one that started before a pool over Docker's TLS API was added is
+/// asked, and the Notice says that pool is why, though nothing else of its sandbox moved; one
+/// whose host kept that its start held the pool's files is not. A Claude Code chat on its own
+/// sandbox, with no proxy beside it, and on macOS a Codex chat behind purlis's proxy too.
+#[cfg(unix)]
+#[test]
+fn a_reattached_chat_is_asked_to_restart_by_what_its_start_held_of_the_pools() {
+    let config = tempfile::tempdir().expect("a config home");
+    let docker = tempfile::tempdir().expect("the person's Docker folder");
+    let (machine, files) = a_machine_with_tls_files(config.path(), docker.path());
+    let plane = a_sandboxed_plane();
+    let mut harnesses = vec![(Harness::ClaudeCode, a_resumable_chat_in(plane.path()))];
+    if cfg!(target_os = "macos") {
+        harnesses.push((Harness::Codex, a_codex_chat_in(plane.path())));
+    }
+    let compiled = |harness| {
+        purlis_core::sandbox::for_start(harness, plane.path(), &machine, &|_| true)
+            .expect("compiles")
+            .expect("sandboxed")
+    };
+    // The plan each start made, if any, which the pool added since leaves as it was.
+    let plans: Vec<_> = harnesses
+        .iter()
+        .map(|(harness, _)| compiled(*harness).plan())
+        .collect();
+    the_pools_become(
+        config.path(),
+        serde_json::json!([a_tls_pool(
+            "build-box",
+            files.each_ref().map(|f| f.as_path())
+        )]),
+    );
+
+    for ((harness, chat), plan) in harnesses.iter().zip(plans) {
+        let held_now = compiled(*harness).confines().pools_held.clone();
+        assert!(!held_now.is_empty(), "{harness:?}: a start now holds them");
+        for (start_held, behind) in [(Vec::new(), true), (held_now, false)] {
+            let host = Pretend::default();
+            host.leaves_running(3, plan.clone());
+            host.left_holding(3, start_held);
+            let chats = restartable_chats_on(plane.path(), host.clone(), machine.clone());
+            chats.put_back(&left_running_in(plane.path(), chat.clone()), SIZE);
+            assert_eq!(host.reattached(), [3], "{harness:?}");
+
+            let older = chats.on_older_sandbox_on(&machine, &|_| true);
+            if behind {
+                let older = older.expect("asked");
+                assert_eq!(older.sessions(), [3], "{harness:?}");
+                assert_eq!(
+                    older.chats[0].pool.as_deref(),
+                    Some(NOTICE_TLS_POOL_ADDED),
+                    "{harness:?}: the TLS pool is why"
+                );
+            } else {
+                assert_eq!(older, None, "{harness:?}: its start held the pool's files");
+            }
+        }
+    }
+}
+
+/// **A chat taken back from a host that kept no record of what its start held of the pools is
+/// asked to restart where a pool is held now, with no pool named as why**: nothing says which
+/// pools it holds. With no pool, it is not asked.
+#[cfg(unix)]
+#[test]
+fn a_reattached_chat_whose_host_kept_nothing_of_the_pools_is_asked_with_no_pool_named() {
+    let config = tempfile::tempdir().expect("a config home");
+    let docker = tempfile::tempdir().expect("the person's Docker folder");
+    let (machine, files) = a_machine_with_tls_files(config.path(), docker.path());
+    let plane = a_sandboxed_plane();
+    let reattached = || {
+        let host = Pretend::default();
+        host.leaves_running(3, None);
+        let chats = restartable_chats_on(plane.path(), host.clone(), machine.clone());
+        chats.put_back(
+            &left_running_in(plane.path(), a_resumable_chat_in(plane.path())),
+            SIZE,
+        );
+        assert_eq!(host.reattached(), [3]);
+        chats.on_older_sandbox_on(&machine, &|_| true)
+    };
+    assert_eq!(reattached(), None, "no pool");
+
+    the_pools_become(
+        config.path(),
+        serde_json::json!([a_tls_pool(
+            "build-box",
+            files.each_ref().map(|f| f.as_path())
+        )]),
+    );
+    let older = reattached().expect("asked");
+    assert_eq!(older.sessions(), [3]);
+    assert_eq!(older.chats[0].pool, None, "no pool is named");
+}
+
+/// **A pool added however it came is heard** (#6472): a read of the machine's pools finds a pool
+/// that the last did not, and tells the windows which kind was added, once: a pool over Docker's
+/// TLS API, then a cluster pool. A pool removed is told nothing.
+#[cfg(unix)]
+#[test]
+fn a_pool_added_outside_the_window_is_heard_as_added() {
+    let config = tempfile::tempdir().expect("a config home");
+    let docker = tempfile::tempdir().expect("the person's Docker folder");
+    let (machine, files) = a_machine_with_tls_files(config.path(), docker.path());
+    let mut watch = PoolsWatch::on(&machine);
+    assert!(watch.added(&machine).is_empty(), "nothing yet");
+
+    let tls = a_tls_pool("build-box", files.each_ref().map(|f| f.as_path()));
+    the_pools_become(config.path(), serde_json::json!([tls.clone()]));
+    assert_eq!(
+        watch.added(&machine),
+        [crate::poolsetuptab::TLS_POOL_ADDED],
+        "added"
+    );
+    assert!(watch.added(&machine).is_empty(), "told once");
+
+    let kubectl = docker.path().join("kubectl");
+    std::fs::write(&kubectl, "#!/bin/sh\n").expect("a program");
+    the_pools_become(
+        config.path(),
+        serde_json::json!([tls, {
+            "name": "team", "kind": "cluster", "kubeconfig": "/home/op/.kube/config",
+            "context": "team", "pool": "default", "namespace": "ada",
+            "operatorKey": format!("ed25519:{}", "ab".repeat(32)),
+            "cluster": "3e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b",
+            "holds": [kubectl.display().to_string()],
+        }]),
+    );
+    assert_eq!(
+        watch.added(&machine),
+        [crate::clusterpools::CLUSTER_POOL_ADDED],
+        "a cluster pool added"
+    );
+
+    the_pools_become(config.path(), serde_json::json!([]));
+    assert!(
+        watch.added(&machine).is_empty(),
+        "a removal is told nothing"
+    );
 }
 
 /// #6472: **which pool the Notice names is which pool moved what a chat holds**, and none where

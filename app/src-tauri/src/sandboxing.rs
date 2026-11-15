@@ -3692,6 +3692,37 @@ pub(crate) fn watch_policy(app: tauri::AppHandle) {
     }
 }
 
+/// How often what the pools on this machine name is read again, as this machine's policy is
+/// ([`POLICY_READ_EVERY`]).
+const POOLS_READ_EVERY: std::time::Duration = POLICY_READ_EVERY;
+
+/// **Reads what the pools on this machine name every [`POOLS_READ_EVERY`]**, and tells every
+/// window that a pool was added when a read finds one ([`crate::chats::PoolsWatch`]): a pool
+/// added from a terminal while the window has focus asks the chats it leaves behind to restart,
+/// as one added from the window does. It only reads. On a thread of its own for the life of the
+/// app.
+pub(crate) fn watch_pools(app: tauri::AppHandle) {
+    use tauri::Emitter as _;
+    let spawned = std::thread::Builder::new()
+        .name("purlis-pools".into())
+        .spawn(move || {
+            let machine = sandbox::Machine::this();
+            let mut watch = crate::chats::PoolsWatch::on(&machine);
+            loop {
+                std::thread::sleep(POOLS_READ_EVERY);
+                for event in watch.added(&machine) {
+                    let _ = app.emit(event, ());
+                }
+            }
+        });
+    if let Err(why) = spawned {
+        tracing::warn!(
+            "purlis: the watch on this machine's pools could not be started ({why}), so a pool \
+             added from a terminal is told when the window is next focused"
+        );
+    }
+}
+
 /// The event the window hears when a project's Run grants moved some way it did not make itself
 /// (#5800): an Allow once its run took or a check dropped, or the grants of a chat that closed.
 /// The Allowed list lists Allow once grants, so it reads again.
