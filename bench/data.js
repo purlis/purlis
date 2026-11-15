@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794757391043,
+  "lastUpdate": 1794760069583,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -49980,6 +49980,48 @@ window.BENCHMARK_DATA = {
             "value": 101.66823400000001,
             "unit": "ms",
             "extra": "median of 5 runs: 99.063, 101.012, 101.668, 102.173, 102.492 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "cf081a67e403c2d26cc26f7c8f177f5a7837053a",
+          "message": "Bump ubuntu in /runner-image in the runner-image group (#6691)\n\nBumps the runner-image group in /runner-image with 1 update: ubuntu.\n\n\nUpdates `ubuntu` from `6a06111` to `065aa86`\n\n---\nupdated-dependencies:\n- dependency-name: ubuntu\n  dependency-version: '26.04'\n  dependency-type: direct:production\n  dependency-group: runner-image\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-15T15:18:21Z",
+          "tree_id": "990242281a7357babdcbbdb37b2c82b3cc63b3f0",
+          "url": "https://github.com/purlis/purlis/commit/cf081a67e403c2d26cc26f7c8f177f5a7837053a"
+        },
+        "date": 1794760062600,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.453832,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.443, 0.445, 0.454, 0.455, 0.471 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.774646500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.755, 16.759, 16.775, 16.820, 17.104 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.811621,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.210, 101.724, 101.812, 102.104, 103.431 ms"
           }
         ]
       }
