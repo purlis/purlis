@@ -91,17 +91,23 @@ test("the samples cover each shape and each negative the spike names", () => {
   assert.equal(new Set(names).size, names.length, "sample names are unique");
 });
 
-test("every credential in the samples is marked synthetic", () => {
+// The run's token in the samples: 32 bytes of a fixed, made-up pattern, as hex and as unpadded
+// base64url. Hex can't spell SYNTHETIC, so these two values alone are pinned here instead.
+const RUN_TOKEN_HEX = "5c0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd";
+const RUN_TOKEN_SAMPLES = new Set([
+  RUN_TOKEN_HEX,
+  Buffer.from(RUN_TOKEN_HEX, "hex").toString("base64url"),
+]);
+
+// Every value `.charter-scan-allow.toml` lets through for samples.json must be visibly made up.
+test("every credential value in the samples contains SYNTHETIC", () => {
   for (const sample of samples()) {
-    for (const value of credentialValues(sample.headers)) {
-      const decoded = value
-        .split(".")
-        .map((segment) => Buffer.from(segment, "base64url").toString("latin1"))
-        .join(".");
-      assert.ok(
-        value === "" || /SYNTHETIC/i.test(value) || /SYNTHETIC/i.test(decoded) || sample.synthetic,
-        `sample ${sample.name} carries a value not marked synthetic`,
-      );
+    for (const [name, value] of sample.headers) {
+      const header = name.toLowerCase();
+      if (!["authorization", "x-api-key", "cookie"].includes(header)) continue;
+      const credential = value.replace(/^[A-Za-z]+ +/, "").trim();
+      if (credential === "" || RUN_TOKEN_SAMPLES.has(credential)) continue;
+      assert.match(credential, /SYNTHETIC/, `sample ${sample.name}, header ${name}`);
     }
   }
 });
