@@ -2146,6 +2146,61 @@ fn a_chats_confinement_is_reattached_and_its_proxy_heard_by_the_window_that_came
     );
 }
 
+/// **What of the pools a chat's sandbox held as it started comes back with it**: the window that
+/// confined it hands it with the plan, the host keeps it, and a window that comes back reads it
+/// for that chat, and for no other.
+#[test]
+fn what_a_chats_sandbox_held_of_the_pools_comes_back_with_it_to_a_window_that_came_back() {
+    use purlis_core::sandbox::egress::{PLAIN_PORTS, TUNNEL_PORTS};
+    use purlis_core::sandbox::plan::{Beside, Hearing, Plan};
+    use purlis_core::sandbox::reach::Reach;
+    let plan = Plan {
+        reach: Reach::of(Vec::new()).written(),
+        tunnel_ports: TUNNEL_PORTS.to_vec(),
+        plain_ports: PLAIN_PORTS.to_vec(),
+        any_port: false,
+        beside: Beside::Wrapped,
+        given: Vec::new(),
+    };
+    let held = vec![
+        std::path::PathBuf::from("/home/op/.docker/ca.pem"),
+        std::path::PathBuf::from("/home/op/.docker/key.pem"),
+    ];
+    let host = Comeback::new();
+    let first = host.window();
+    let confined = first
+        .sessions
+        .confine(&plan, &held, Hearing::default())
+        .expect("confined");
+    let id = confined.held_as().expect("held in the host").to_owned();
+    first
+        .sessions
+        .open(
+            Some(4),
+            &Opening {
+                confinement: Some(id),
+                ..a_shell("true")
+            },
+            &|_| {},
+        )
+        .unwrap();
+    first
+        .sessions
+        .open(Some(5), &a_shell("true"), &|_| {})
+        .unwrap();
+    std::mem::forget(confined);
+    first.crashes();
+
+    let back = host.window();
+    assert!(back.sessions.left_running(4));
+    assert_eq!(back.sessions.pools_held_left(4), Some(held));
+    assert_eq!(
+        back.sessions.pools_held_left(5),
+        None,
+        "it runs in no confinement"
+    );
+}
+
 /// A window that comes back puts its record back as a launch does (#2006): each chat the host
 /// still runs is reattached under its number and none is started again, a chat the host no
 /// longer has is started, and what the host runs that the record does not name is closed.

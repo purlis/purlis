@@ -12993,7 +12993,8 @@ fn a_chat_started_before_a_tls_pool_was_added_is_told_to_restart_for_it() {
 }
 
 /// A chat in `plane` whose harness runs behind the proxy purlis starts beside it, so its start
-/// confines it from a plan: Codex.
+/// confines it from a plan: Codex, on macOS.
+#[cfg(target_os = "macos")]
 fn a_proxied_chat_in(plane: &std::path::Path) -> Chat {
     Chat {
         cwd: Some(plane.to_path_buf()),
@@ -13024,8 +13025,9 @@ fn a_machine_with_tls_files(
 
 /// **A chat's start hands its host what its sandbox holds of the pools**, with the plan of its
 /// confinement: the files a pool over Docker's TLS API names, by name and by the file a link
-/// leads to. With no pool, it holds none of them.
-#[cfg(unix)]
+/// leads to. With no pool, it holds none of them. On macOS, where a Codex chat on no profile
+/// starts behind purlis's proxy; elsewhere it starts only on a profile for sandboxed chats only.
+#[cfg(target_os = "macos")]
 #[test]
 fn a_chats_start_hands_its_host_what_its_sandbox_holds_of_the_pools() {
     let config = tempfile::tempdir().expect("a config home");
