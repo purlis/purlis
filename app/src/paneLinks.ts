@@ -11,7 +11,6 @@ import type {
   Terminal,
 } from "@xterm/xterm";
 import type { LinkCandidate, LinkFrom, LinkOpened, LinkSeen } from "./bindings";
-import { invisible } from "./invisible";
 
 /**
  * **Links in a pane's output** (spec #6208, #6215): the one hook every xterm pane registers, a
@@ -275,6 +274,10 @@ export type LinkCore = {
   /** Opens a candidate, resolved again: `pane_link_open`. `token` answers an ask: the one-use
    *  token the core issued with it (#6216). */
   open: (from: LinkFrom, candidate: LinkCandidate, token: string | null) => Promise<LinkOpened>;
+  /** Whether the character `ch` draws nothing, by the core's rule (`purlis_unicode`'s
+   *  invisible set): text either side of a cell holding only such characters reads as one word
+   *  ({@link besideOf}). */
+  drawsNothing: (ch: string) => boolean;
 };
 
 /** What a pane does with a link's hover, and with the open command's answer. */
@@ -314,6 +317,8 @@ export function relayed(to: () => LinkHands | undefined): LinkHands {
       open: (from, candidate, token) =>
         to()?.core.open(from, candidate, token) ??
         Promise.reject(new Error("no pane shows this terminal")),
+      // With no pane, nothing is resolved, so nothing is read beside a link either.
+      drawsNothing: (ch) => to()?.core.drawsNothing(ch) ?? false,
     },
     from: () => to()?.from() ?? { plane: null, session: null },
     hovered: (link) => to()?.hovered(link),
@@ -504,7 +509,7 @@ function marking(pane: Terminal, marked: Marked[]): IDisposable {
  * {@link MOST_ROWS} of them: from its start to its end, or its whole rows where the program
  * moved the cursor while it was open.
  */
-function wordsOf(pane: Terminal, marked: Marked): string {
+function wordsOf(pane: Terminal, marked: Marked, nothing: DrawsNothing): string {
   const buffer = pane.buffer.active;
   const first = Math.min(marked.start.line, marked.end.line);
   const last = Math.min(Math.max(marked.start.line, marked.end.line), first + MOST_ROWS - 1);
@@ -534,6 +539,7 @@ function wordsOf(pane: Terminal, marked: Marked): string {
   if (marked.moved) return text.trim();
   return withBeside(
     pane,
+    nothing,
     text,
     { y: marked.start.line, x: marked.startX },
     { y: marked.end.line, x: marked.endX },
@@ -543,14 +549,23 @@ function wordsOf(pane: Terminal, marked: Marked): string {
 /** Where a cell is on the buffer, zero-based. */
 type Cell = { y: number; x: number };
 
+/** The core's rule for a character that draws nothing ({@link LinkCore.drawsNothing}). */
+type DrawsNothing = (ch: string) => boolean;
+
 /**
  * **A link's words `text`, and again with the characters drawn against them** ({@link besideOf}),
  * the link running from cell `start` to just before `end`. A reader may read text drawn against
  * the link as one word with it, or the link's own words alone, so the core reads both: the
  * joined word never stands in for the drawn one. Across a blank, nothing is joined.
  */
-function withBeside(pane: Terminal, text: string, start: Cell, end: Cell): string {
-  const { before, after } = besideOf(pane, start, end);
+function withBeside(
+  pane: Terminal,
+  nothing: DrawsNothing,
+  text: string,
+  start: Cell,
+  end: Cell,
+): string {
+  const { before, after } = besideOf(pane, nothing, start, end);
   const own = text.trim();
   const joined = (
     (/^\s/u.test(text) ? "" : before) +
@@ -566,17 +581,17 @@ function withBeside(pane: Terminal, text: string, start: Cell, end: Cell): strin
  * {@link MOST_TARGET} characters. A link's words are read whole with them: a program may print
  * text against its link's cells, and the reader reads them as one word.
  */
-function besideOf(pane: Terminal, start: Cell, end: Cell): { before: string; after: string } {
+function besideOf(
+  pane: Terminal,
+  nothing: DrawsNothing,
+  start: Cell,
+  end: Cell,
+): { before: string; after: string } {
   const buffer = pane.buffer.active;
   const blank = (chars: string): boolean => chars === "" || /\s/u.test(chars);
   // A cell may hold characters that take room but draw nothing: a line or paragraph separator,
-  // with any invisible xterm folded into it (U+2028 U+200B). They join, as the core's `drawn`
-  // reads them: a control, a separator, or an invisible character that is no blank.
-  const drawsNothing = (chars: string): boolean =>
-    chars !== "" &&
-    [...chars].every(
-      (ch) => /^[\p{Cc}\u2028\u2029]$/u.test(ch) || (invisible(ch) && !/\s/u.test(ch)),
-    );
+  // with any invisible xterm folded into it (U+2028 U+200B). They join, as the core reads them.
+  const drawsNothing = (chars: string): boolean => chars !== "" && [...chars].every(nothing);
   let before = "";
   for (let { y, x } = { y: start.y, x: start.x - 1 }; before.length < MOST_TARGET;) {
     if (x < 0) {
@@ -757,12 +772,13 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
       .join("");
     const linked = withBeside(
       pane,
+      hands.core.drawsNothing,
       cells,
       { y: range.start.y - 1, x: range.start.x - 1 },
       { y: range.end.y - 1, x: range.end.x },
     );
     const one = markedAt(range, cut);
-    const words = one === undefined ? "" : wordsOf(pane, one);
+    const words = one === undefined ? "" : wordsOf(pane, one, hands.core.drawsNothing);
     // A word of the cells' that the recorded words hold already (a wrapped row's part) adds
     // nothing.
     const more = linked.split(/\s+/u).filter((word) => word !== "" && !words.includes(word));
@@ -887,7 +903,7 @@ type OnScreen = { candidate: LinkCandidate; y: number; x: number; place: LinkPla
 
 /** The candidates on `pane`'s screen, newest first, each once: {@link LinkedPane.onScreen}.
  *  `marked` are the program's own links, which the patterns' candidates under them give way to. */
-function onScreenNewestFirst(pane: Terminal, marked: Marked[]): OnScreen[] {
+function onScreenNewestFirst(pane: Terminal, marked: Marked[], nothing: DrawsNothing): OnScreen[] {
   const buffer = pane.buffer.active;
   const top = buffer.viewportY;
   const bottom = top + pane.rows - 1;
@@ -918,7 +934,7 @@ function onScreenNewestFirst(pane: Terminal, marked: Marked[]): OnScreen[] {
   }
   for (const link of marked) {
     if (link.end.line < top || link.start.line > bottom) continue;
-    const text = wordsOf(pane, link);
+    const text = wordsOf(pane, link, nothing);
     // Where it is drawn: its first row on screen, from its first cell there.
     const y = Math.max(link.start.line, top);
     const x = y === link.start.line ? link.startX : 0;
@@ -947,7 +963,7 @@ async function screenLinks(
   kept: Kept,
   marked: Marked[],
 ): Promise<ScreenLink[]> {
-  const found = onScreenNewestFirst(pane, marked);
+  const found = onScreenNewestFirst(pane, marked, hands.core.drawsNothing);
   /** Each candidate's answer, held here too: one the pane lets go of still counts now. */
   const answerOf = new Map<string, Promise<LinkSeen | null>>();
   const unasked: LinkCandidate[] = [];
