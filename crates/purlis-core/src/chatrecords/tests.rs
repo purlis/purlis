@@ -510,3 +510,33 @@ fn a_file_of_another_version_is_never_written_over() {
 
     assert_eq!(std::fs::read_to_string(path(&root)).unwrap(), later);
 }
+
+#[test]
+fn words_longer_than_a_record_keeps_are_cut_as_they_are_read() {
+    let (_dir, root) = project();
+    std::fs::create_dir_all(dir(&root)).unwrap();
+    let long = "x".repeat(10_000);
+    let one = ChatRecord {
+        title: long.clone(),
+        place: long.clone(),
+        started_by: StartedBy::Chat { name: long.clone() },
+        ..chat(702, ID, "2026-11-12T09:40:00Z")
+    };
+    std::fs::write(
+        path(&root),
+        format!(
+            r#"{{"v":1,"chats":[{}]}}"#,
+            serde_json::to_string(&OnDisk::of(&one)).unwrap()
+        ),
+    )
+    .unwrap();
+
+    let read = every(&root).remove(0);
+
+    assert_eq!(read.title.chars().count(), 200);
+    assert_eq!(read.place.chars().count(), 200);
+    let StartedBy::Chat { name } = read.started_by else {
+        panic!("started by a chat");
+    };
+    assert_eq!(name.chars().count(), 200);
+}

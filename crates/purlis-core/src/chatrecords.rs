@@ -69,8 +69,26 @@ pub const MOST_KEPT: usize = 2000;
 /// its Reopen (#6485) each.
 pub const MOST_FILE_BYTES: u64 = 8 * 1024 * 1024;
 
-/// The longest title kept, in characters: a tab's name is far shorter.
+/// The longest title, place or name of the chat that started one kept, in characters, as it is
+/// written and as it is read: a tab's name is far shorter.
 const MOST_TITLE_CHARS: usize = 200;
+
+/// `words`, held to [`MOST_TITLE_CHARS`].
+fn held_words(words: &str) -> String {
+    words.chars().take(MOST_TITLE_CHARS).collect()
+}
+
+impl StartedBy {
+    /// Who started it, the name of a chat held to [`MOST_TITLE_CHARS`].
+    fn held(self) -> Self {
+        match self {
+            Self::Person => Self::Person,
+            Self::Chat { name } => Self::Chat {
+                name: held_words(&name),
+            },
+        }
+    }
+}
 
 /// **A chat that closed**, as its card shows it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -277,11 +295,11 @@ fn sound(value: serde_json::Value) -> Option<ChatRecord> {
     let chat = ChatRecord {
         number: one.number,
         id: one.id,
-        title: one.title,
+        title: held_words(&one.title),
         started: one.started,
         ended: one.ended,
-        started_by: one.started_by,
-        place: one.place,
+        started_by: one.started_by.held(),
+        place: held_words(&one.place),
         earlier: held_earlier(&one.earlier),
         chat: one.chat.and_then(crate::reopen::chat_from_json),
     };
@@ -441,7 +459,9 @@ pub fn keep_all(root: &Path, chats: &[ChatRecord]) -> std::io::Result<()> {
     let chats: Vec<ChatRecord> = chats
         .iter()
         .map(|chat| ChatRecord {
-            title: chat.title.chars().take(MOST_TITLE_CHARS).collect(),
+            title: held_words(&chat.title),
+            place: held_words(&chat.place),
+            started_by: chat.started_by.clone().held(),
             ended: no_later_than_now(&chat.ended),
             ..chat.clone()
         })
