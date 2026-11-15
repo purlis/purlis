@@ -18,8 +18,9 @@ decided in implementation and is marked *decided in implementation, to be confir
    host lock (the `flock` a host holds while it serves) and keeps it while it looks and removes,
    so no host of it starts in between. The version stays when the lock is held, when something
    answers on its socket (a host whose lock file the system cleaned away), or when its
-   `hosts.jsonl` names programs (a host killed outright left chats that may still run; a host
-   that ends as it should empties it). Doubt keeps it: a lock it cannot open, or a record it
+   `hosts.jsonl` names a program started and not ended (a host killed outright left a chat that
+   may still run). A host that ends as it should empties its record, and one stopped by a signal
+   leaves each start beside its end, so its version goes once each chat has ended. Doubt keeps it: a lock it cannot open, or a record it
    cannot read, counts as live. What the runner prints (`removed=<ver>`) is what the desktop
    says it removed, never what it decides by. *Decided in implementation, to be confirmed*
    (D-6688-2).
@@ -32,4 +33,5 @@ decided in implementation and is marked *decided in implementation, to be confir
    probe* of #6688. A prune that fails leaves the old versions for the next. An SSH runner's host
    does not stop by itself when its last chat ends (only a cluster runner's suspends when idle),
    so an old version goes once its host is stopped: by the person, by a restart of the machine,
-   or by RR-15's supervisor. *Decided in implementation, to be confirmed* (D-6688-4).
+   or by RR-15's supervisor. A desktop's link can't stop it: only the window's link may quit a
+   host, and a runner's host has no window. *Decided in implementation, to be confirmed* (D-6688-4).

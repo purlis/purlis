@@ -18,8 +18,8 @@
 //!    its five chats keep running and are still listed by its host through its own bridge, and
 //!    new chats run on version 2's host, which holds none of version 1's;
 //! 4. version 3 is installed while version 1's chats run: nothing is removed (#6688). Once they
-//!    have ended and its host has stopped, the next install removes version 1's folders, its
-//!    binary's and its host's, and versions 2 and 3 stay.
+//!    have ended and its host has been stopped by a signal, the next install removes version 1's
+//!    folders, its binary's and its host's, and versions 2 and 3 stay.
 //!
 //! The issue asks for five live chats; each is a shell on the runner (the chat's harness is not
 //! what this checks), so five cost CI next to nothing, and five are run.
@@ -488,11 +488,24 @@ fn a_new_version_is_installed_beside_the_old_whose_chats_keep_running() {
         assert!(host_folder_there(&fixture.reach, &probed.config, V1));
         assert_eq!(running(&old).await, on_v1, "version 1's chats still run");
 
-        // Version 1 drains: its chats end, and its host stops.
+        // Version 1 drains: its chats end, and its host is stopped as a person or a supervisor
+        // stops it, by a signal (a desktop's link may not quit a runner's host; only the
+        // window's may quit its own). Killed so, it empties nothing: its record keeps each
+        // chat's start beside its end.
         for chat in &on_v1 {
             old.stop(chat).await.expect("a version 1 chat stops");
         }
-        let _ = old.quit().await;
+        let killed = there(
+            &fixture.reach,
+            &format!("pkill -TERM -f '^{bin_v1} serve$'"),
+            None,
+        );
+        assert_eq!(
+            killed.code,
+            Some(0),
+            "version 1's host signalled: {}",
+            killed.said
+        );
         stopped(&fixture.reach, &bin_v1).await;
 
         // The next install removes version 1's folders, and versions 2 and 3 stay.

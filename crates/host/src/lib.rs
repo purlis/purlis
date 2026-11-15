@@ -112,7 +112,7 @@ pub use hosting::{
     ToSave, Working,
 };
 #[cfg(unix)]
-pub use hostrecord::{HOST_RECORD, Started, this_boot};
+pub use hostrecord::{HOST_RECORD, READ_AT_MOST, Started, this_boot};
 #[cfg(unix)]
 pub use killswitch::{KILL_SWITCH, NoStopsElsewhere, StopsElsewhere};
 #[cfg(unix)]
