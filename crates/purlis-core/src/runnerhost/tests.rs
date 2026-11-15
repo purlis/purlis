@@ -509,3 +509,54 @@ fn what_install_says_is_plain() {
     assert!(said[0].contains("starts it again if it stops or the machine restarts"));
     assert_eq!(said[1], "✓ Your chats keep running after you sign out.");
 }
+
+#[test]
+fn a_pruned_versions_service_is_removed_by_its_name_alone_without_its_binary() {
+    let home = tempfile::tempdir().unwrap();
+    let ran = Arc::new(Ran::default());
+    let here = here(Keeper::SystemdUser, home.path(), &ran);
+    install(&here, &versioned()).unwrap();
+    ran.take();
+    remove_version(&here, "0.9.0-rc.1").expect("removed");
+    assert!(!here.unit_path(&versioned()).exists());
+    let name = versioned().unit_name();
+    assert_eq!(
+        ran.take(),
+        [
+            format!("systemctl --user disable --now {name}"),
+            "systemctl --user daemon-reload".to_owned(),
+        ],
+        "systemd is told by the unit's name; the version's own binary is never run"
+    );
+}
+
+#[test]
+fn a_pruned_versions_agent_is_removed_by_its_label_alone() {
+    let home = tempfile::tempdir().unwrap();
+    let ran = Arc::new(Ran::default());
+    let here = here(Keeper::Launchd, home.path(), &ran);
+    install(&here, &versioned()).unwrap();
+    ran.take();
+    remove_version(&here, "0.9.0-rc.1").expect("removed");
+    assert!(!here.plist_path(&versioned()).exists());
+    let label = versioned().label();
+    let lines = ran.take();
+    assert!(
+        lines.contains(&format!("launchctl bootout gui/501/{label}")),
+        "{lines:?}"
+    );
+    assert!(
+        lines.iter().all(|line| line.starts_with("launchctl ")),
+        "{lines:?}"
+    );
+}
+
+#[test]
+fn a_service_that_cannot_be_removed_says_so_so_its_version_is_kept() {
+    let home = tempfile::tempdir().unwrap();
+    let ran = Arc::new(Ran::default());
+    let here = here(Keeper::SystemdUser, home.path(), &ran);
+    install(&here, &versioned()).unwrap();
+    ran.fails("systemctl --user daemon-reload", "Failed to connect to bus");
+    assert!(remove_version(&here, "0.9.0-rc.1").is_err());
+}

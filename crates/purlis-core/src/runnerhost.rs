@@ -398,6 +398,21 @@ pub fn remove(here: &Here, service: &Service) -> Result<(), String> {
     }
 }
 
+/// **Takes the service of the installed version `version` back from the manager, by its name
+/// alone** ([`Service::unit_name`], [`Service::label`]): what pruning a drained version does
+/// before it deletes the version's folders (#6688). The version's own binary is never run, since
+/// an older one may not know `serve --remove`, and it is about to go. An error means the service
+/// may still be there, so the version is to be kept.
+pub fn remove_version(here: &Here, version: &str) -> Result<(), String> {
+    remove(
+        here,
+        &Service {
+            binary: PathBuf::new(),
+            version: Some(version.to_owned()),
+        },
+    )
+}
+
 /// **What doctor finds of a runner's host** (read by [`look`], judged by [`rows`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Look {
