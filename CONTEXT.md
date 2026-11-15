@@ -269,6 +269,14 @@ store there is syncable or device-bound. **Keyring** is the operating system's c
 A derived store is also marked rebuildable (ADR 0069).
 _Avoid_: app data (for the Machine tier as a whole), cache (for clone state), local state
 
+**Private record**:
+A file purlis keeps for itself in the Machine tier or in clone state, such as the extension
+list, an approval or a queued message. Each says which version wrote it. A record written by a
+newer purlis is never deleted or overwritten: a whole-file record is refused and says which
+purlis wrote it, and one row of a record of rows is skipped and kept (ADR 0125).
+_Avoid_: config (that is what a person edits), cache (unless it is marked rebuildable), state
+file
+
 **Clone-key**:
 A project clone's identity on a machine: the first 16 hex characters of the SHA-256 of the
 clone's canonical root path. It keys the reopen record's `clone` (V43), the search index will
@@ -1981,6 +1989,36 @@ such as showing a badge or adding a CLI command. It describes purlis's conduct. 
 the extension itself can do only for a **studio capability**, whose extension is confined
 (ADR 0101).
 _Avoid_: permission, grant (that is a runner's **Grant**), power
+
+**Code approval**:
+A person's yes, on this machine, to code purlis will run that the person did not write into
+purlis: an **Extension**, a pinned **Artifact**'s script with its **Regenerate** code, or a
+project's **Harness declaration**. It covers exactly what the person was shown, and it asks
+again when that changes. A teammate's never counts as yours. A setting of **Project**, as the
+trust gate is, kept where its subject belongs: a harness declaration's in the clone, the others
+on this machine (ADR 0125).
+_Avoid_: trust (for the record), permission (that is the harness's), grant (that is a
+runner's), consent (for this kind alone)
+
+**Standing** (of a code approval):
+Where a **Code approval** is now: approved; new, never approved here; changed, because its
+code, its pin or its **Reach** moved since; or not asked, because nothing would run. The same
+four words for every kind of code purlis approves (ADR 0125).
+_Avoid_: state, status, trust level
+
+**Reach** (of a page):
+What a pinned **Artifact**'s declared queries read, as purlis resolves them when the page is
+approved: each query, whether it reads the workspace or the whole plane, and each parameter
+that widens it. It is part of what the person approves, so a purlis or an extension that later
+lets the same query read more asks again (ADR 0125).
+_Avoid_: scope (alone, that is one query's), permissions, access
+
+**Regenerate**:
+A press in a pinned **Artifact**'s bar that runs the pin's command in a chat's sandbox to make
+the page's data on this machine. Its code is approved with its page, as one **Code approval**:
+unpinning forgets both, a workspace rename carries both, and it runs only for a page that is
+approved (ADR 0122, ADR 0125).
+_Avoid_: refresh, rebuild, sync
 
 **Suspend** (a runner):
 A runner that stops itself, or is stopped, keeping its home: a **Docker pool**'s runner left a
