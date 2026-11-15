@@ -726,16 +726,16 @@ dependencies = [
 
 [[package]]
 name = "breakpad-symbols"
-version = "0.27.0"
+version = "0.26.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2dae6ece2d0e62389d1b24953ee54da7e385cf56653324304afd6c89c4bc73b5"
+checksum = "9b544545512b213899840bb26f72cd13f9fb4c3de3dd5f8dc7219688f54aebe9"
 dependencies = [
  "async-trait",
  "cachemap2",
  "circular",
  "debugid",
  "futures-util",
- "minidump-common 0.27.0",
+ "minidump-common",
  "nom",
  "range-map",
  "thiserror 2.0.21",
@@ -3620,7 +3620,7 @@ checksum = "daa0a64d21a7eb230583b4c5f4e23b7e4e57974f96620f42a7e75e08ae66d745"
 dependencies = [
  "log",
  "plain",
- "scroll 0.12.0",
+ "scroll",
 ]
 
 [[package]]
@@ -4780,19 +4780,19 @@ checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
 
 [[package]]
 name = "minidump"
-version = "0.27.0"
+version = "0.26.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a03516f742a87e757019a3019707b38900663397d63cdb0442721c5dbd29ed6b"
+checksum = "a902ca21d9772a66d3d1b050b3436dcadb192694be01409e0219902dcf4bc1e8"
 dependencies = [
  "debugid",
  "encoding_rs",
  "memmap2",
- "minidump-common 0.27.0",
+ "minidump-common",
  "num-traits",
- "procfs-core",
+ "procfs-core 0.17.0",
  "prost",
  "range-map",
- "scroll 0.13.0",
+ "scroll",
  "thiserror 2.0.21",
  "time",
  "tracing",
@@ -4807,39 +4807,24 @@ checksum = "2e16d10087ae9e375bad7a40e8ef5504bc08e808ccc6019067ff9de42a84570f"
 dependencies = [
  "bitflags 2.13.2",
  "debugid",
- "num-derive 0.4.2",
+ "num-derive",
  "num-traits",
  "range-map",
- "scroll 0.12.0",
- "smart-default",
-]
-
-[[package]]
-name = "minidump-common"
-version = "0.27.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8e6411f30cf59f8a4815820a9b5d0c38962a719f5c43f80f5afbb71e791af16"
-dependencies = [
- "bitflags 2.13.2",
- "debugid",
- "num-derive 0.5.1",
- "num-traits",
- "range-map",
- "scroll 0.13.0",
+ "scroll",
  "smart-default",
 ]
 
 [[package]]
 name = "minidump-unwind"
-version = "0.27.0"
+version = "0.26.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a98fe0ffc82b1f29b0f9510fceb345b90f87820cb7923b06a74280abee4a45f"
+checksum = "4aa8b7212f59c525f93c62457c54f9f9ac550316ee0e41f129b4b19165d5acd1"
 dependencies = [
  "async-trait",
  "breakpad-symbols",
  "minidump",
- "minidump-common 0.27.0",
- "scroll 0.13.0",
+ "minidump-common",
+ "scroll",
  "tracing",
 ]
 
@@ -4860,10 +4845,10 @@ dependencies = [
  "log",
  "mach2",
  "memmap2",
- "minidump-common 0.26.1",
+ "minidump-common",
  "process-backend",
- "procfs-core",
- "scroll 0.12.0",
+ "procfs-core 0.18.0",
+ "scroll",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -4882,7 +4867,7 @@ dependencies = [
  "minidump-writer",
  "parking_lot",
  "polling",
- "scroll 0.12.0",
+ "scroll",
  "thiserror 2.0.21",
  "uds",
 ]
@@ -5184,17 +5169,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "num-derive"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4e98dc3b890f6c23a0f9d3d491a2823d0dea0fa656302a13dd225fa924112a8"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.6",
 ]
 
 [[package]]
@@ -6185,6 +6159,16 @@ dependencies = [
 
 [[package]]
 name = "procfs-core"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "239df02d8349b06fc07398a3a1697b06418223b1c7725085e801e7c0fc6a12ec"
+dependencies = [
+ "bitflags 2.13.2",
+ "hex",
+]
+
+[[package]]
+name = "procfs-core"
 version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6401bf7b6af22f78b563665d15a22e9aef27775b79b149a66ca022468a4e405"
@@ -6225,9 +6209,9 @@ dependencies = [
 
 [[package]]
 name = "prost"
-version = "0.14.6"
+version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ef0b569d1d907ab3a28596aee62cf1f61dacb0529a4bedcd8e7460e2d5228b4"
+checksum = "2796faa41db3ec313a31f7624d9286acf277b52de526150b7e69f3debf891ee5"
 dependencies = [
  "bytes",
  "prost-derive",
@@ -6235,9 +6219,9 @@ dependencies = [
 
 [[package]]
 name = "prost-derive"
-version = "0.14.6"
+version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ad9c5423459fa2f729b8d9235fab810aa29628b171467744fc86d21460ad70d"
+checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
  "itertools",
@@ -7277,16 +7261,7 @@ version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ab8598aa408498679922eff7fa985c25d58a90771bd6be794434c5277eab1a6"
 dependencies = [
- "scroll_derive 0.12.1",
-]
-
-[[package]]
-name = "scroll"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1257cd4248b4132760d6524d6dda4e053bc648c9070b960929bf50cfb1e7add"
-dependencies = [
- "scroll_derive 0.13.2",
+ "scroll_derive",
 ]
 
 [[package]]
@@ -7298,17 +7273,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "scroll_derive"
-version = "0.13.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1a36a382ed65dbcc0ab47fd5e9a94112417ccd34560a392ef3b7b0f0ec39148"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.6",
 ]
 
 [[package]]

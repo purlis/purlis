@@ -142,7 +142,7 @@ fn the_wrap() -> Option<PathBuf> {
         assert!(named.is_file(), "no program at {}", named.display());
         return Some(named);
     }
-    let beside = purlis_core::testrun::profile_dir()?.join("sandbox-probe");
+    let beside = purlis_core::testrun::bin_dir()?.join("sandbox-probe");
     beside.is_file().then_some(beside)
 }
 

@@ -1695,21 +1695,10 @@ fn purlis() -> String {
         .to_string()
 }
 
-/// The binary `name` of package `package`, built beside this test's binary when it is not
-/// there yet.
+/// The binary `name` of package `package`, as this test's build has it: built first when it is
+/// not there yet, and never over one that is (`purlis_core::testrun::built`).
 pub(crate) fn built_beside(name: &str, package: &str) -> PathBuf {
-    let beside = purlis_core::testrun::profile_dir()
-        .expect("the target folder")
-        .join(name);
-    if !beside.is_file() {
-        let status = purlis_core::forklock::status(
-            std::process::Command::new(env!("CARGO"))
-                .args(["build", "--quiet", "-p", package, "--bin", name]),
-        )
-        .expect("cargo runs");
-        assert!(status.success(), "{name} did not build: {status}");
-    }
-    beside
+    purlis_core::testrun::built(name, package)
 }
 
 /// The repo's fake harness, built once beside this test's binary when it is not there yet.

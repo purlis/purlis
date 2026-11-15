@@ -48,7 +48,8 @@ export type HeldBy<E extends HTMLElement> = {
  * Chats list's rule, #3566): no row moves under a click or a key. Taken as the pointer or the
  * keyboard comes in, and let go when both have left. Neither outlives the window being the one
  * in use, since a pointer parked over a list while the person works elsewhere sends no leave,
- * nor a focused row taken out of the page, which sends no blur.
+ * nor a focused row taken out of the page, which sends no blur: once the focus has landed
+ * somewhere else than the list, and never in between, while React Aria puts it back.
  *
  * **What React hands the list is the list's own** ({@link heardIn}, #3594): React hands the
  * element around the list what happens in every element drawn inside it in React's tree, a
@@ -153,13 +154,31 @@ export function useHeldStill<E extends HTMLElement>(
       window.removeEventListener("pointerover", pointedAt);
     };
   }, [on, stay, leave]);
+  /** Asked to look again where the focus landed, once the row it went with has gone. */
+  const lookAgain = useRef<(() => void) | undefined>(undefined);
+  useEffect(() => () => lookAgain.current?.(), []);
   // After each draw of new rows: a row the keyboard was on, taken out of the page, took the
   // focus with it. The element the hold saw is asked, never what the list holds in the page:
-  // a row's menu is drawn outside it.
+  // a row's menu is drawn outside it. **Kept until the focus lands** (V100-47): the browser
+  // drops the focus with the row and React hears no blur of it, so React Aria, which still
+  // takes the list to have the keyboard, puts it back in the list after this draw. Let go here
+  // and taken again there, the hold would draw for that one frame every row that came while it
+  // held. So a focus on nothing is looked at again a frame later: on the list's own then, the
+  // hold has followed it there (`onFocus`); on nothing still, or elsewhere, it lets go.
   useLayoutEffect(() => {
     if (!inside) return;
     const at = focused.current;
-    if (at === null || !at.isConnected || at !== document.activeElement) setInside(false);
+    if (at !== null && at.isConnected && at === document.activeElement) return;
+    if (at === null || at.isConnected || !onNothing()) {
+      setInside(false);
+      return;
+    }
+    if (lookAgain.current !== undefined) return;
+    lookAgain.current = afterAFrame(() => {
+      lookAgain.current = undefined;
+      const now = focused.current;
+      if (now === null || !now.isConnected || now !== document.activeElement) setInside(false);
+    });
   }, [inside, drawn]);
   const holding = on && (over || inside);
   return {
@@ -211,6 +230,25 @@ export function useHeldStill<E extends HTMLElement>(
         if (!inside) setInside(true);
       },
     },
+  };
+}
+
+/** Whether the focus is on nothing of the page's: on its body, where a focused element taken
+ *  out of the page leaves it. */
+function onNothing(): boolean {
+  return document.activeElement === null || document.activeElement === document.body;
+}
+
+/** Runs `then` once the next frame has been drawn and what it ran has settled, and answers
+ *  what calls it off. */
+function afterAFrame(then: () => void): () => void {
+  let timer: number | undefined;
+  const frame = window.requestAnimationFrame(() => {
+    timer = window.setTimeout(then);
+  });
+  return () => {
+    window.cancelAnimationFrame(frame);
+    window.clearTimeout(timer);
   };
 }
 
