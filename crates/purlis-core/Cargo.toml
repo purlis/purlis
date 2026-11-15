@@ -204,6 +204,10 @@ ureq = { version = "3.4", default-features = false, features = ["rustls", "platf
 # workspace's lockfile through `ureq`; `curve25519-dalek` is a major ahead of the copy `snow` and
 # `ed25519-dalek` hold, which `deny.toml` allows.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+# The key proxy's upstream TLS is verified against the operating system's trust store as `ureq`'s
+# is (`upstream::trust`, R-056), with a test root added only under `test-support` (R-700). The
+# version `ureq` already links, so it adds no crate to the tree.
+rustls-platform-verifier = "0.7"
 # A TLS pool's CA is shown at Connect by its subject (#6267, ADR 0123 §3): the certificate read
 # with `x509-cert`, already in this workspace's lockfile through `sigstore-verify`.
 x509-cert = { version = "0.2", default-features = false, features = ["std"] }

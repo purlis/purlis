@@ -6,6 +6,22 @@
 //! answered with one Bash call of the command named, and every later one, or a request that
 //! offers no Bash tool, with an end. What the call's result said goes to the file named. It
 //! needs no credential and calls no model.
+//!
+//! **The fake provider** (R-695, design §5.4) is this module's library half: a [`Provider`]
+//! replays [`Recording`]s of Messages exchanges, streamed and not, over plain HTTP and over TLS
+//! under a [`TestRoot`] it generates, and reports what each request carried, the usage each
+//! answer recorded, its accepts, each paced chunk's send time and a peer's close. Its error
+//! answers are [`ErrorFixture`]s, each marked with where its shape came from.
+
+mod errors;
+mod provider;
+mod recording;
+mod tls;
+
+pub use errors::{ErrorFixture, Provenance, error_fixtures};
+pub use provider::{Builder, ChunkSend, PeerClose, Provider, Request};
+pub use recording::{Recording, Usage};
+pub use tls::TestRoot;
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
