@@ -579,9 +579,21 @@ use crate::view::{Limits, Views};
 /// ([`HeldProgram::pools_held`]), so a window that takes the chat back asks it to restart by the
 /// sandbox it started with, not by one compiled now. A host before 1.89 keeps none, and the
 /// window cannot say which pools such a chat holds.
+///
+/// 1.90 has a host start a key proxy for a run, and stop it ([`Command::StartKeyProxy`],
+/// [`Command::StopKeyProxy`], T1a-04): a listener on `127.0.0.1` whose port and token only the
+/// start's answer carries, run by the binary on a runtime of its own. The window's alone, and
+/// relayed to no other host. An older host refuses either `unknown_command`, so it is not asked.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 89,
+    minor: 90,
+};
+
+/// The version that first starts a key proxy for a run ([`Command::StartKeyProxy`], T1a-04):
+/// none is asked of a host before.
+pub const KNOWS_KEY_PROXY: Version = Version {
+    major: 1,
+    minor: 90,
 };
 
 /// The version that first takes a block's Allow next time · once ([`ReachChange::AllowNext`],
@@ -1485,6 +1497,16 @@ pub enum Command {
         project_path: String,
         change: SkillChangeAudit,
     },
+    /// **Start a key proxy for `run`** (1.90, T1a-04, R-055): a listener on `127.0.0.1`, with a
+    /// 256-bit token of its own, that the run's harness sends its model calls to. The window's
+    /// alone ([`crate::grants::Power::KeyProxy`]), and relayed to no other host. Answered
+    /// [`Answer::KeyProxyStarted`] with its port and token, which leave the host in this answer
+    /// and nowhere else; refused in the binary's words where none can start, or one runs for
+    /// `run` already.
+    StartKeyProxy { run: String },
+    /// **Stop `run`'s key proxy** (1.90): its listener and every connection on it end. Answered
+    /// [`Answer::Done`]; refused where none runs for `run`.
+    StopKeyProxy { run: String },
 }
 
 /// **A skill change made at a terminal, as the host audits it** (1.82, SK-11a): metadata only
@@ -2527,6 +2549,18 @@ pub enum ViewRole {
 /// Empty is from the start.
 pub type Since = BTreeMap<String, u64>;
 
+/// **A run's key-proxy token** (1.90, B-2): what its harness proves itself to the key proxy
+/// with. Never written out by `Debug`, so no log line that prints an answer carries it.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct KeyProxyToken(pub String);
+
+impl std::fmt::Debug for KeyProxyToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("KeyProxyToken(..)")
+    }
+}
+
 /// What the host answers a command with.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -2579,6 +2613,9 @@ pub enum Answer {
     Programs(Vec<HeldProgram>),
     /// Where the confinement it started is: [`Command::Confine`] (1.4).
     Confined(Confined),
+    /// The key proxy it started for a run: its port on `127.0.0.1` and its token
+    /// ([`Command::StartKeyProxy`], 1.90).
+    KeyProxyStarted { port: u16, token: KeyProxyToken },
     /// The hosts held connections gave up on before an Allow, which the chat is told to retry:
     /// [`Command::ChangeReach`] (1.4).
     ReachChanged { retry: Vec<String> },
@@ -3240,6 +3277,8 @@ wire_words!(Command {
     AnswerGrade => "answer_grade",
     GradeStep => "grade_step",
     AuditSkillChange => "audit_skill_change",
+    StartKeyProxy => "start_key_proxy",
+    StopKeyProxy => "stop_key_proxy",
 });
 
 impl Command {
@@ -3313,6 +3352,7 @@ impl Command {
             Command::AskGrade { .. } => Power::AskGrade,
             Command::AnswerGrade { .. } | Command::GradeStep { .. } => Power::RunGrade,
             Command::AuditSkillChange { .. } => Power::AuditSkillChange,
+            Command::StartKeyProxy { .. } | Command::StopKeyProxy { .. } => Power::KeyProxy,
         }
     }
 }
@@ -3373,6 +3413,7 @@ wire_words!(Answer {
     Board => "board",
     Programs => "programs",
     Confined => "confined",
+    KeyProxyStarted => "key_proxy_started",
     ReachChanged => "reach_changed",
     Reach => "reach",
     KillSwitch => "kill_switch",
@@ -3813,6 +3854,8 @@ enum Lane {
     Grade(u64),
     /// The commands about one confinement (1.4).
     Confinement(String),
+    /// The start and stop of one run's key proxy (1.90).
+    KeyProxy(String),
     /// The commands about one project's saving (1.7): a stop is never overtaken by the start
     /// before it.
     Saving(String),
@@ -3900,6 +3943,10 @@ impl Lane {
             // A grade's answer and its steps keep their order: its end comes last.
             Command::AnswerGrade { question, .. } | Command::GradeStep { question, .. } => {
                 Some(Lane::Grade(*question))
+            }
+            // A run's key proxy is stopped after the start before it.
+            Command::StartKeyProxy { run } | Command::StopKeyProxy { run } => {
+                Some(Lane::KeyProxy(run.clone()))
             }
             Command::StartSaving { project }
             | Command::StopSaving { project }

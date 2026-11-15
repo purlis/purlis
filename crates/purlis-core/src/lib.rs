@@ -177,6 +177,7 @@ pub mod memorypressure;
 pub mod memscope;
 pub mod memstore;
 pub mod mergehold;
+pub mod model_provider;
 pub mod names;
 pub mod netlog;
 pub mod news;
@@ -331,6 +332,7 @@ pub mod upstream;
 pub mod usage;
 pub mod version;
 pub mod wakeline;
+pub mod window_copy;
 #[cfg(unix)]
 pub mod windowline;
 #[cfg(unix)]

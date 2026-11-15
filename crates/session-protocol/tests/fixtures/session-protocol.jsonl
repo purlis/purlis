@@ -269,3 +269,7 @@
 {"reply":{"re":215,"ok":{"reach":{"next":["api.example.com:443"]}}}}
 {"pushed":{"sandbox":{"confinement":"01J9CNFNMNT0000000000000000","told":"used_next","target":"api.example.com:443"}}}
 {"pushed":{"sandbox":{"confinement":"01J9CNFNMNT0000000000000000","told":"dropped_next","target":"old.example.com:443"}}}
+{"call":{"id":216,"command":"start_key_proxy","run":"01J9CHAT0000000000000000KP"}}
+{"reply":{"re":216,"ok":{"key_proxy_started":{"port":49152,"token":"00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"}}}}
+{"call":{"id":217,"command":"stop_key_proxy","run":"01J9CHAT0000000000000000KP"}}
+{"reply":{"re":217,"ok":"done"}}

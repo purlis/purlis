@@ -689,3 +689,27 @@ async fn host_a_sends_no_start_from_kept_logins_on_to_host_b() {
     assert_eq!(refusal.code, session::NOT_ALLOWED);
     assert_eq!(dials.load(Ordering::SeqCst), 0, "nothing was sent on");
 }
+
+/// **No link carries a key proxy's start** (T1a-04): the window starts a run's key proxy on its
+/// own host, and a runner's starts from the plan its desktop sends.
+#[tokio::test]
+async fn host_a_sends_no_key_proxy_start_on_to_host_b() {
+    let runs = StandIns::default();
+    let dials = Arc::new(AtomicUsize::new(0));
+    let relay = Relay::new(counting(
+        &dials,
+        as_its_window(Hosting::running_with(Echo, runs.clone())),
+    ));
+    let (client, _views, _events) = Client::new(local_ui(relay).await);
+
+    let refused = client
+        .call(session::Command::StartKeyProxy {
+            run: "01J9RUN000000000000000000R".into(),
+        })
+        .await
+        .unwrap_err();
+
+    let refusal = refused.refusal().expect("host A's relay refuses it");
+    assert_eq!(refusal.code, session::NOT_ALLOWED);
+    assert_eq!(dials.load(Ordering::SeqCst), 0, "nothing was sent on");
+}

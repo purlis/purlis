@@ -131,6 +131,8 @@ mod freshkept;
 #[cfg(unix)]
 mod hostedconfinement;
 #[cfg(unix)]
+mod hostedkeyproxy;
+#[cfg(unix)]
 mod hostedsessions;
 mod hostfailing;
 mod hostlost;
@@ -3766,7 +3768,9 @@ fn hosting_here(place: &purlis_host::Place) -> purlis_host::Hosting {
             hostedconfinement::ConfinesHere,
         )
         .recording_with(kept)
-        .saving_with(hostsaving::InTheHost);
+        .saving_with(hostsaving::InTheHost)
+        // A run's key proxy, on its own runtime, started by the window (T1a-04).
+        .proxying_keys_with(hostedkeyproxy::ProxiesKeysHere::default());
         // `purlis stop --all` is heard with no window there (#2190).
         let hosting = match purlis_core::machine::config_root() {
             // A window's link is relayed to a pool's runner this machine keeps (#2679).

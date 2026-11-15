@@ -26,6 +26,9 @@ path = "src/alias.rs"
 purlis-core.workspace = true
 # `purlis serve`: the session host, the same code the window's binary runs as its own (#1997).
 purlis-host.workspace = true
+# The key proxy a runner's session host runs (T1a-04, R-053): the crate the desktop's binary
+# links too.
+purlis-key-proxy.workspace = true
 # The hidden `purlis _sandbox`: purlis's own wrap of a chat on Linux (#1040).
 purlis-linux-sandbox.workspace = true
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }

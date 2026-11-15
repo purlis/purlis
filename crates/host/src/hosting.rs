@@ -654,6 +654,9 @@ struct Inner {
     most_bundle: OnceLock<u64>,
     /// Which runner it relays to drains (#2865): the binary's, or nothing.
     drains: OnceLock<crate::routing::DrainsTo>,
+    /// What starts and stops a run's key proxy (T1a-04): the binary's, or nothing, and every
+    /// start is refused.
+    key_proxies: OnceLock<Box<dyn crate::confining::ProxiesKeys>>,
     /// What asks for a suspended runner it relays to to run again, as a chat starts there (#3980).
     runs_again: OnceLock<crate::routing::RunsAgain>,
     /// Until when a start waits for each runner asked to run again (#4403), by `<pool>/<runner>`:
@@ -1263,6 +1266,7 @@ impl Hosting {
                 projects: OnceLock::new(),
                 most_bundle: OnceLock::new(),
                 drains: OnceLock::new(),
+                key_proxies: OnceLock::new(),
                 runs_again: OnceLock::new(),
                 waking: Mutex::default(),
                 runners,
@@ -1348,6 +1352,14 @@ impl Hosting {
     /// once, as the binary builds its host; a second is let go of.
     pub fn recording_with(self, record: impl Record) -> Hosting {
         let _ = self.inner.record.set(Box::new(record));
+        self
+    }
+
+    /// **This host starts and stops a run's key proxy with `proxies`** (T1a-04, R-055): the
+    /// binary's, which owns the key proxy's runtime. Set once, as the binary builds its host; a
+    /// second is let go of. A host given none refuses every start.
+    pub fn proxying_keys_with(self, proxies: impl crate::confining::ProxiesKeys) -> Hosting {
+        let _ = self.inner.key_proxies.set(Box::new(proxies));
         self
     }
 
@@ -1870,6 +1882,45 @@ impl Hosting {
                     why: "the purlis window did not answer, so nothing was started".to_owned(),
                 })
             }
+        }
+    }
+
+    /// **Starts a key proxy for `run`** (1.90, T1a-04, R-055), through the binary's
+    /// [`crate::confining::ProxiesKeys`]: answered with its port and token, which leave the host
+    /// in this answer alone. What it says goes to the host's log; its network record is carried
+    /// to the window by T1a-19, and until then goes nowhere.
+    fn start_key_proxy(&self, run: &str) -> Result<Answer, Refusal> {
+        let tell: crate::confining::KeyProxyTell = Arc::new(|told| {
+            if let crate::confining::KeyProxyTold::Said(line) = told {
+                crate::say(&format!("key proxy: {line}"));
+            }
+        });
+        let started = self.key_proxies().start(run, tell).map_err(|why| Refusal {
+            code: session::NOT_STARTED.into(),
+            why,
+        })?;
+        Ok(Answer::KeyProxyStarted {
+            port: started.port,
+            token: session::KeyProxyToken(started.token),
+        })
+    }
+
+    /// **Stops `run`'s key proxy** (1.90), through the binary's
+    /// [`crate::confining::ProxiesKeys`]; refused where none runs.
+    fn stop_key_proxy(&self, run: &str) -> Result<Answer, Refusal> {
+        self.key_proxies()
+            .stop(run)
+            .map(|()| Answer::Done)
+            .map_err(|why| Refusal {
+                code: session::NOT_STARTED.into(),
+                why,
+            })
+    }
+
+    fn key_proxies(&self) -> &dyn crate::confining::ProxiesKeys {
+        match self.inner.key_proxies.get() {
+            Some(proxies) => proxies.as_ref(),
+            None => &crate::confining::ProxiesNoKeys,
         }
     }
 
@@ -4190,6 +4241,9 @@ impl session::Host for Hosting {
             } => self.ask_grade(project, project_path, ask, peer).await,
             Command::AnswerGrade { question, answer } => self.answer_grade(question, answer, peer),
             Command::GradeStep { question, step } => self.grade_step(question, step, peer),
+            // Only the window's link reaches these: the grants refuse every other.
+            Command::StartKeyProxy { run } => self.start_key_proxy(&run),
+            Command::StopKeyProxy { run } => self.stop_key_proxy(&run),
             // Only a terminal's link reaches this: the grants refuse every other.
             Command::AuditSkillChange {
                 project_path,

@@ -1543,6 +1543,17 @@ impl session::Host for Relay {
                 ),
             });
         }
+        // A run's key proxy is started by the window on its own host (T1a-04): a runner's
+        // starts from the plan its desktop sends, so no link carries the command.
+        if command.power() == Power::KeyProxy {
+            return Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: format!(
+                    "`{}` starts a key proxy on the window's own host, and is relayed to no other",
+                    command.word()
+                ),
+            });
+        }
         if the_windows_alone(&command) && peer.scope() != Scope::LocalUi {
             return Err(Refusal {
                 code: session::NOT_ALLOWED.into(),
