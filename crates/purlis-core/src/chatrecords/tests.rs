@@ -249,3 +249,43 @@ fn the_sweep_leaves_a_write_still_under_way() {
     sweep(&root, SystemTime::now());
     assert!(live.exists());
 }
+
+#[test]
+fn chats_that_close_together_are_kept_together_each_replacing_its_older_close() {
+    // #6487: a fresh start drops several chats at once.
+    const THIRD: &str = "01K6CHATS0000000000000000E";
+    let (_dir, root) = project();
+    keep(&root, &chat(702, ID, "2026-11-12T09:40:00Z")).unwrap();
+    keep(&root, &chat(650, THIRD, "2026-11-12T09:00:00Z")).unwrap();
+
+    keep_all(
+        &root,
+        &[
+            chat(731, ID, "2026-11-12T11:00:00Z"),
+            chat(732, OTHER, "2026-11-12T11:00:00Z"),
+        ],
+    )
+    .unwrap();
+
+    assert_eq!(
+        every(&root)
+            .iter()
+            .map(|one| (one.number, one.id.as_str()))
+            .collect::<Vec<_>>(),
+        [(731, ID), (732, OTHER), (650, THIRD)]
+    );
+}
+
+#[test]
+fn chats_kept_together_are_refused_whole_where_one_does_not_hold_together() {
+    let (_dir, root) = project();
+    let refused = keep_all(
+        &root,
+        &[
+            chat(731, ID, "2026-11-12T11:00:00Z"),
+            chat(732, "732", "2026-11-12T11:00:00Z"),
+        ],
+    );
+    assert!(refused.is_err());
+    assert!(every(&root).is_empty());
+}

@@ -86,6 +86,12 @@ pub(crate) fn begin(held: &Held, record: &Record) -> Begun {
             chat.label.as_deref().unwrap_or(&chat.name)
         );
     }
+    // Each ends for good here, and keeps its card (#6487).
+    crate::chatcard::keep_closed_records(
+        held.root(),
+        &launch.not_resumed,
+        "that could not carry on at a launch",
+    );
     let coming = coming_back(held, &launch.back);
     let kept = launch
         .back

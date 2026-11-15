@@ -7600,7 +7600,9 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   id that is not a ULID, a time that is not one) is left out, and a file of another version,
   too large, a link or not a file reads as empty.
 - **Status:** **internal** — **purlis only**. Written by the app as a chat closes for good:
-  not at a restart, not at a quit, never from anything a chat sent. Read by a closed chat's
+  closed in the window, dropped at a launch's Start fresh, or left out of a launch's put back
+  (a task that had finished, or one that cannot carry on; #6487). Not at a restart, not at a
+  quit, never from anything a chat sent. Read by a closed chat's
   card (`chat_by_number`, a pane's chat links). Denied a sandboxed chat's reading and writing
   under every harness, as the dispatch records are. **Collected at the project's open**
   (`chatrecords::sweep`, from `retention::on_open`): an entry whose chat ended 30 days or more

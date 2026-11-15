@@ -412,6 +412,35 @@ pub(crate) fn closed_record(
     })
 }
 
+/// **Keeps the closed records of `chats`, recorded chats that end for good at once** (#6487):
+/// the ones a fresh start drops, and the ones a launch leaves out of its put back, which never
+/// close through `Chats::close_as`. Each by its number and ULID as its record has them, its
+/// workspace by where it ran; a chat its record names no number or ULID for has none, as a
+/// close keeps none for it. `why` says which path in the log where the write fails.
+pub(crate) fn keep_closed_records<'c>(
+    root: &std::path::Path,
+    chats: impl IntoIterator<Item = &'c purlis_core::reopen::Chat>,
+    why: &str,
+) {
+    let now = chrono::Utc::now();
+    let records: Vec<_> = chats
+        .into_iter()
+        .filter_map(|chat| {
+            closed_record(
+                chat.number?,
+                chat.identity.id.as_deref()?,
+                chat,
+                chat.harness(),
+                crate::chats::workspace_at_start(Some(root), chat.cwd.as_deref()).as_deref(),
+                now,
+            )
+        })
+        .collect();
+    if let Err(error) = purlis_core::chatrecords::keep_all(root, &records) {
+        tracing::info!("purlis: the records of the chats {why} were not kept ({error})");
+    }
+}
+
 /// Where a chat ran that ran in no workspace, as a finished task's row says it.
 const PROJECT_ROOT: &str = "project root";
 

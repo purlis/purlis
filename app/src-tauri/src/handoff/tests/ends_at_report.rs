@@ -845,6 +845,27 @@ fn a_task_that_had_reported_when_the_app_quit_is_a_finished_row_at_the_next_laun
     );
 }
 
+#[test]
+fn a_task_a_launch_leaves_out_keeps_its_closed_record() {
+    // #6487. It ends for good where the put back leaves it out, never closing through
+    // `close_as`, so the record a close keeps is kept here.
+    let (_plane, _host, _quit, id, held, steward, task) = a_steward_and_its_task();
+    let (still_working, finished, _) =
+        a_reported_task_and_one_working(&_host, &held, &id, steward, task);
+    let at_quit = held.chats().record();
+
+    crate::finished::put_back_without_the_finished(held.root(), &at_quit);
+
+    let kept = purlis_core::chatrecords::every(held.root());
+    assert_eq!(
+        kept.iter()
+            .map(|one| (one.number, one.id.as_str()))
+            .collect::<Vec<_>>(),
+        [(task, finished.as_str())],
+        "only the task left out, not {steward} or {still_working}, which go on"
+    );
+}
+
 /// A steward chat, a task that reported and one still working, each showing a screen of its own:
 /// the task's id, and the one still working's.
 fn a_reported_task_and_one_working(

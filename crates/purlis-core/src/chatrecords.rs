@@ -11,8 +11,10 @@
 //!   and ended, who started it and where it ran. **No screen**: the person's ruling of
 //!   2026-11-11 keeps a screen for dispatched tasks only ([`crate::chatscreens`]), so *Read it*
 //!   on an ordinary chat's card is always disabled.
-//! - **Kept as the chat closes for good**, by the app: not at a restart (the chat goes on), not at
-//!   a quit (the record of open chats brings it back), and never from anything a chat sent. A
+//! - **Kept as the chat closes for good**, by the app: closed in the window, dropped at a
+//!   launch's Start fresh, or left out of a launch's put back (#6487, [`keep_all`]). Not at a
+//!   restart (the chat goes on), not at a quit (the record of open chats brings it back), and
+//!   never from anything a chat sent. A
 //!   chat closed again under a later number replaces its entry, by its ULID.
 //! - **Why a store of its own.** The record of open chats ([`crate::reopen`]) holds a chat only
 //!   while it is open, and drops it as it closes. The event log ([`crate::eventlog`]) is the
@@ -237,25 +239,42 @@ fn no_later_than_now(ended: &str) -> String {
 /// replacing one of the same ULID (a chat closed again) or the same number, then held to
 /// [`MOST_KEPT`]. Refused for an id that is not a ULID or a time that is not one.
 pub fn keep(root: &Path, chat: &ChatRecord) -> std::io::Result<()> {
-    if !holds_together(chat) {
+    keep_all(root, std::slice::from_ref(chat))
+}
+
+/// **Keeps every chat in `chats`, which have just closed for good together** (#6487): a fresh
+/// start's, or what a launch leaves out of its put back. [`keep`] for each, under one lock and
+/// one write, the first in `chats` the newest. Refused whole where any does not hold together.
+pub fn keep_all(root: &Path, chats: &[ChatRecord]) -> std::io::Result<()> {
+    if chats.is_empty() {
+        return Ok(());
+    }
+    if !chats.iter().all(holds_together) {
         return Err(std::io::Error::other(
             "a closed chat is kept by its ULID, with when it started and ended",
         ));
     }
-    let chat = ChatRecord {
-        title: chat.title.chars().take(MOST_TITLE_CHARS).collect(),
-        ended: no_later_than_now(&chat.ended),
-        ..chat.clone()
-    };
-    let entry = serde_json::to_value(OnDisk::of(&chat)).map_err(std::io::Error::other)?;
+    let chats: Vec<ChatRecord> = chats
+        .iter()
+        .map(|chat| ChatRecord {
+            title: chat.title.chars().take(MOST_TITLE_CHARS).collect(),
+            ended: no_later_than_now(&chat.ended),
+            ..chat.clone()
+        })
+        .collect();
+    let entries = chats
+        .iter()
+        .map(|chat| serde_json::to_value(OnDisk::of(chat)).map_err(std::io::Error::other))
+        .collect::<std::io::Result<Vec<_>>>()?;
     let _held = locked(root)?;
     let others = read_values(&path(root)).into_iter().filter(|one| {
-        let same_id = one.get("id").and_then(serde_json::Value::as_str) == Some(chat.id.as_str());
-        let same_number =
-            one.get("number").and_then(serde_json::Value::as_u64) == Some(u64::from(chat.number));
-        !same_id && !same_number
+        let id = one.get("id").and_then(serde_json::Value::as_str);
+        let number = one.get("number").and_then(serde_json::Value::as_u64);
+        !chats
+            .iter()
+            .any(|chat| id == Some(chat.id.as_str()) || number == Some(u64::from(chat.number)))
     });
-    write_all(root, std::iter::once(entry).chain(others))
+    write_all(root, entries.into_iter().chain(others))
 }
 
 /// **Takes away every chat that ended [`crate::retention::KEEP_FOR`] or more before `now`**,

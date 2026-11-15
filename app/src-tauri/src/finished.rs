@@ -585,6 +585,8 @@ pub(crate) fn put_back_without_the_finished(
             purlis_core::dispatchtalk::forget(root, number);
         }
     }
+    // Each ends for good here, and keeps its card as a close would (#6487).
+    crate::chatcard::keep_closed_records(root, &out, "a launch left out, having finished");
     back
 }
 
