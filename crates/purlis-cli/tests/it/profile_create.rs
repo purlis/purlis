@@ -281,7 +281,10 @@ mod declaration {
         machine.said(&made(&["anthropic"]));
 
         let listed = machine.listed();
-        let record = listed.iter().find(|p| p.name == "claude-anthropic").unwrap();
+        let record = listed
+            .iter()
+            .find(|p| p.name == "claude-anthropic")
+            .unwrap();
 
         assert_eq!(
             record.sign_in.as_ref().unwrap().card_state(),
@@ -297,7 +300,15 @@ mod declaration {
         let before = machine.store();
 
         for args in [
-            &["profile", "create", "work", "--harness", "claude", "--declaration", "anthropic"][..],
+            &[
+                "profile",
+                "create",
+                "work",
+                "--harness",
+                "claude",
+                "--declaration",
+                "anthropic",
+            ][..],
             &["profile", "import", "work", "--declaration", "anthropic"],
             &["profile", "declaration", "work", "anthropic"],
             &["profile", "set", "work", "--declaration", "anthropic"],
@@ -306,7 +317,11 @@ mod declaration {
             assert!(!out.status.success(), "{args:?}: {out:?}");
         }
         assert_eq!(machine.store(), before);
-        let work = machine.listed().into_iter().find(|p| p.name == "work").unwrap();
+        let work = machine
+            .listed()
+            .into_iter()
+            .find(|p| p.name == "work")
+            .unwrap();
         assert_eq!(work.sign_in, None);
     }
 

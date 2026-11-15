@@ -12,6 +12,13 @@
 //! ([`handed`]): a declaration may not name a variable that reads as a credential (ADR 0073 §5,
 //! ADR 0087's ADR 0073 amendment), so only a harness purlis ships is handed any. Each list is
 //! the harness's own documented variables for that sign-in.
+//!
+//! **An `api-key` profile names its declaration and its entry in your keys** (T1a-12, R-650,
+//! design §4.8): `{ "kind": "api-key", "declaration": { "from": "built-in", "id": "anthropic" },
+//! "key": "<entry id>" }`, kept in [`SignIn::rest`] and read through [`SignIn::declaration`] and
+//! [`SignIn::key`], so `profiles.json` keeps `version` 1 and an older purlis keeps both fields.
+//! A record with `credentials` and no declaration is an old one: its `credentials` are read only
+//! for the one-time *Copy to your keys* offer (T1a-39), never as a source of a key.
 
 use std::collections::BTreeMap;
 
@@ -60,39 +67,126 @@ impl Reference {
     }
 }
 
-/// What a profile's card says of whether it can start, as core reports it (STUB, T1a-12 red).
+/// The field of an `api-key` sign-in that names its declaration, `{ "from", "id" }`.
+pub const DECLARATION: &str = "declaration";
+
+/// The field of an `api-key` sign-in that names its entry in your keys, by the entry's id.
+pub const KEY: &str = "key";
+
+/// The words a declaration's `from` may be: where the declaration comes from.
+pub const FROM: [&str; 3] = ["built-in", "project", "yours"];
+
+/// **What a profile's card says of whether it can start**, as core reports it, before any start.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CardState {
+    /// Nothing its sign-in says stops it.
     Available,
+    /// It cannot start, and why.
     Unavailable(Unavailable),
 }
 
 /// Why a card is unavailable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Unavailable {
+    /// A key profile that names no entry in your keys: *Add a key…* (W14).
     KeyMissing,
 }
 
 impl std::fmt::Display for CardState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("available")
+        match self {
+            Self::Available => f.write_str("available"),
+            Self::Unavailable(Unavailable::KeyMissing) => f.write_str("unavailable: key missing"),
+        }
     }
 }
 
 impl SignIn {
-    /// STUB (T1a-12 red).
+    /// **The declaration an `api-key` profile names**, read loosely from the file and judged
+    /// here: `None` where it names none, and `Err` in words where what it names is not one
+    /// `{ "from", "id" }` with `from` one of [`FROM`]'s words. A profile names exactly one
+    /// (R-166), so a list of them is refused.
     pub fn declaration(&self) -> Result<Option<crate::yourkeys::Product>, String> {
-        Ok(None)
+        let Some(named) = self.rest.get(DECLARATION) else {
+            return Ok(None);
+        };
+        if named.is_array() {
+            return Err(
+                "a profile names one declaration, and this one names a list of them".to_owned(),
+            );
+        }
+        let not_one = || {
+            "a declaration is named by where it comes from, built-in, project or yours, and its \
+             id, and what is written for it is not one"
+                .to_owned()
+        };
+        let product: crate::yourkeys::Product =
+            serde_json::from_value(named.clone()).map_err(|_| not_one())?;
+        if !FROM.contains(&product.from.as_str()) || product.id.is_empty() {
+            return Err(not_one());
+        }
+        Ok(Some(product))
     }
 
-    /// STUB (T1a-12 red).
+    /// **An `api-key` sign-in for the declaration `product`, naming no entry in your keys**: what
+    /// `purlis profile create --declaration` writes (T1a-12).
+    pub fn declaring(product: &crate::yourkeys::Product) -> Self {
+        let mut rest = serde_json::Map::new();
+        rest.insert(
+            DECLARATION.to_owned(),
+            serde_json::json!({ "from": product.from, "id": product.id }),
+        );
+        Self {
+            kind: SignInKind::ApiKey.word().to_owned(),
+            rest,
+            ..Self::default()
+        }
+    }
+
+    /// The id of the entry in your keys an `api-key` profile names, where it names one: `None`
+    /// for a keyless profile.
     pub fn key(&self) -> Option<&str> {
-        None
+        self.rest.get(KEY).and_then(serde_json::Value::as_str)
     }
 
-    /// STUB (T1a-12 red).
+    /// **Its card's state, as core reports it**: a key profile that names a declaration and no
+    /// entry in your keys is `unavailable: key missing` (V7); everything else is available as
+    /// far as its sign-in says.
     pub fn card_state(&self) -> CardState {
-        CardState::Available
+        let names_a_declaration = matches!(self.declaration(), Ok(Some(_)));
+        if self.kind() == Some(SignInKind::ApiKey) && names_a_declaration && self.key().is_none() {
+            CardState::Unavailable(Unavailable::KeyMissing)
+        } else {
+            CardState::Available
+        }
+    }
+
+    /// For a sign-in that names a declaration: `kind` must be `api-key`, the declaration one,
+    /// and the entry, where named, an entry's id. Its `credentials`, if any, are not a source
+    /// of a key, so they are not judged.
+    fn check_declared(&self, kind: SignInKind) -> Result<(), String> {
+        if kind != SignInKind::ApiKey {
+            return Err(format!(
+                "a {} profile names no declaration, and this one names one",
+                kind.word()
+            ));
+        }
+        self.declaration()?;
+        match self.rest.get(KEY) {
+            None => Ok(()),
+            Some(key)
+                if key
+                    .as_str()
+                    .is_some_and(|id| id.parse::<ulid::Ulid>().is_ok()) =>
+            {
+                Ok(())
+            }
+            Some(_) => Err(
+                "its key names an entry in your keys by the entry's id, and what is written for \
+                 it is not one"
+                    .to_owned(),
+            ),
+        }
     }
 
     /// Its kind, where it is one of the four words.
@@ -103,9 +197,10 @@ impl SignIn {
     }
 
     /// Why a profile of `harness` cannot sign in so, or `Ok` where it can: a kind its harness
-    /// declares; for `api-key` and `cloud`, at least one credential, each a variable the
-    /// harness is handed for that kind and a vault reference; for the others, none. A refusal
-    /// names a variable, never what was written for it.
+    /// declares; one that names a declaration, an `api-key` naming exactly one and, where it
+    /// names its entry, an entry's id; otherwise, for `api-key` and `cloud`, at least one
+    /// credential, each a variable the harness is handed for that kind and a vault reference;
+    /// for the others, none. A refusal names a variable, never what was written for it.
     pub fn check(&self, harness: &str) -> Result<(), String> {
         let Some(declaration) = crate::harness_declaration::builtin(harness) else {
             return Err(format!(
@@ -130,6 +225,9 @@ impl SignIn {
                 crate::shown::short(&self.kind)
             ));
         };
+        if self.rest.contains_key(DECLARATION) {
+            return self.check_declared(kind);
+        }
         let names_credentials = matches!(kind, SignInKind::ApiKey | SignInKind::Cloud);
         if !names_credentials {
             return match self.credentials.keys().next() {
@@ -253,7 +351,10 @@ impl std::fmt::Debug for Handed {
 }
 
 /// **Reads each credential a chat's profile names**, from the vaults of the project `ctx` is
-/// for, as the chat starts. A vault opens only as it opens to the chat's `persona` today
+/// for, as the chat starts: a cloud's, once its path opens (#2151). A model key is never read
+/// here: it is read from your keys only (T1a-12), which are the person's and gated by no
+/// persona, and a record whose key is in a vault is an old one, refused until *Copy to your
+/// keys* copies it (W118). A vault opens only as it opens to the chat's `persona` today
 /// ([`crate::secrets::brokered::authorise`]: tagged for it, or allowed for it on this machine),
 /// so a profile never widens who reads a vault: a chat on no persona, or on one the vault is not
 /// open to, is handed nothing and does not start, and the refusal says which vault and how to
@@ -519,20 +620,33 @@ fn billed_in(
     if kept.check(&profile.kind).is_err() {
         return Some(format!("{said} · {CANNOT_SIGN_IN_AS_KEPT}"));
     }
+    if let Some(line) = key_refused(kept) {
+        return Some(format!("{said} · {line}"));
+    }
     let credentials = references(kept);
-    let (Some(kind), false) = (kept.kind(), credentials.is_empty()) else {
+    let (Some(SignInKind::Cloud), false) = (kept.kind(), credentials.is_empty()) else {
         return Some(said);
     };
-    Some(
-        match handing(&profile.kind, kind, &credentials, cloud_handed) {
-            Handing::Environment => format!("{said} · {READABLE_BY_ITS_COMMANDS}"),
-            Handing::Refused { row, .. } => format!("{said} · {row}"),
-        },
-    )
+    Some(match handing(&profile.kind, &credentials, cloud_handed) {
+        Handing::Environment => format!("{said} · {READABLE_BY_ITS_COMMANDS}"),
+        Handing::Refused { row, .. } => format!("{said} · {row}"),
+    })
 }
 
-/// What a key profile's row and refusal say until the key proxy is there (#822).
-pub const WAITS_FOR_THE_PROXY: &str = "waits for the key proxy";
+/// **Why a chat on a checked `api-key` sign-in does not start yet**, in the copy module's words:
+/// one that names a declaration until the route exists (W117, until T1a-17), and an old record,
+/// its key in a vault, until *Copy to your keys* exists (W118, until T1a-39). `None` for any
+/// other kind.
+fn key_refused(kept: &SignIn) -> Option<&'static str> {
+    use crate::window_copy::line::{W117, W118};
+    (kept.kind() == Some(SignInKind::ApiKey)).then(|| {
+        if kept.rest.contains_key(DECLARATION) {
+            W117
+        } else {
+            W118
+        }
+    })
+}
 
 /// What a row says where its credentials go into the harness's environment (ADR 0087 §7).
 pub const READABLE_BY_ITS_COMMANDS: &str = "the commands it runs can read these credentials";
@@ -639,14 +753,20 @@ fn at_start_in(
             crate::shown::short(&profile.name)
         )
     })?;
+    if let Some(line) = key_refused(kept) {
+        return Err(format!(
+            "profile '{}': {line} Nothing was started.",
+            crate::shown::short(&profile.name)
+        ));
+    }
     // Checked: a kind of the four, and each credential a reference.
     let Some(kind) = kept.kind() else {
         return Ok(None);
     };
     let credentials = references(kept);
-    if !credentials.is_empty()
-        && let Handing::Refused { why, .. } =
-            handing(&profile.kind, kind, &credentials, cloud_handed)
+    if kind == SignInKind::Cloud
+        && !credentials.is_empty()
+        && let Handing::Refused { why, .. } = handing(&profile.kind, &credentials, cloud_handed)
     {
         return Err(format!(
             "profile '{}' signs in with {why}. Nothing was started.",
@@ -662,8 +782,7 @@ fn at_start_in(
 
 /// **Whether this version hands a cloud's credentials to its chat's harness.** The operator
 /// ruled on 2026-10-15 (#2151) that a cloud's credentials go into the harness's process
-/// environment, and a key waits for the key proxy; this version does not open the cloud path,
-/// and #2151 is where it opens.
+/// environment; this version does not open the cloud path, and #2151 is where it opens.
 const CLOUD_IS_HANDED: bool = false;
 
 /// How a sign-in's credentials reach its chat's harness.
@@ -676,23 +795,15 @@ enum Handing {
     Refused { row: &'static str, why: String },
 }
 
-/// How the `credentials` of a `kind` sign-in reach a `harness` chat, as the operator ruled on
+/// How the `credentials` of a `cloud` sign-in reach a `harness` chat, as the operator ruled on
 /// 2026-10-15 (#2151, amending how ADR 0095 §4 applies ADR 0087 §7), with `cloud_handed`
-/// whether this version opens the cloud path ([`CLOUD_IS_HANDED`]):
-///
-/// - **A cloud's credentials go into the harness's process environment.** A cloud signs its
-///   requests in ways a proxy that swaps one header cannot carry. Only where variables alone
-///   sign the harness in: Vertex signs in with a credentials file, which purlis does not write
-///   for a chat, and Codex reaches Azure through a provider set in its configuration, so both
-///   are refused in words.
-/// - **A key waits for the key proxy** (#822, ruling V36), wherever the harness takes a base
-///   URL, which every harness purlis ships does: the chat does not start, and says so.
-fn handing(
-    harness: &str,
-    kind: SignInKind,
-    credentials: &[(String, Reference)],
-    cloud_handed: bool,
-) -> Handing {
+/// whether this version opens the cloud path ([`CLOUD_IS_HANDED`]). **A cloud's credentials go
+/// into the harness's process environment**: a cloud signs its requests in ways a proxy that
+/// swaps one header cannot carry. Only where variables alone sign the harness in: Vertex signs
+/// in with a credentials file, which purlis does not write for a chat, and Codex reaches Azure
+/// through a provider set in its configuration, so both are refused in words. A key is never
+/// handed so: it reaches its harness through the key proxy ([`key_refused`] until then).
+fn handing(harness: &str, credentials: &[(String, Reference)], cloud_handed: bool) -> Handing {
     let title = crate::harness_declaration::builtin(harness)
         .map_or_else(|| harness.to_owned(), |d| d.title.clone());
     let names = |wanted: &[&str]| {
@@ -707,36 +818,31 @@ fn handing(
         "GOOGLE_CLOUD_PROJECT",
         "VERTEX_LOCATION",
     ]);
-    match kind {
-        SignInKind::Cloud if harness == "codex" => Handing::Refused {
+    if harness == "codex" {
+        Handing::Refused {
             row: "Codex on Azure is not signed in from a vault",
             why: format!(
                 "cloud credentials from your vault, and {title} reaches Azure through a \
                  provider set in its own configuration, which purlis does not write for a chat \
                  (#2151)"
             ),
-        },
-        SignInKind::Cloud if vertex => Handing::Refused {
+        }
+    } else if vertex {
+        Handing::Refused {
             row: "Vertex is not signed in from a vault",
             why: format!(
                 "Vertex credentials from your vault, and {title} signs in to Vertex with a \
                  credentials file, which purlis does not write for a chat (#2151)"
             ),
-        },
-        SignInKind::Cloud if !cloud_handed => Handing::Refused {
+        }
+    } else if !cloud_handed {
+        Handing::Refused {
             row: "cloud credentials are not handed to a chat in this version",
             why: "cloud credentials from your vault, which this version of purlis does not \
                   hand to a chat (#2151)"
                 .to_owned(),
-        },
-        SignInKind::Cloud => Handing::Environment,
-        _ => Handing::Refused {
-            row: WAITS_FOR_THE_PROXY,
-            why: format!(
-                "a key from your vault, and {title} is handed a key only through purlis's key \
-                 proxy, which this version of purlis does not have, so a chat on it \
-                 {WAITS_FOR_THE_PROXY} (#822)"
-            ),
-        },
+        }
+    } else {
+        Handing::Environment
     }
 }

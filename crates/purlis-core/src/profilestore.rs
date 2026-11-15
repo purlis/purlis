@@ -284,9 +284,36 @@ pub fn sign_in_with(
     })?
 }
 
-/// STUB (T1a-12 red).
-pub fn key_into(_config_root: &Path, _name: &str, _entry: ulid::Ulid) -> Result<(), String> {
-    Err("stub".to_owned())
+/// **Writes the entry `entry` of your keys into the keyless key profile `name`** (T1a-12, V7),
+/// keeping every other field of its record: what T1a-11's key form aimed at "this profile" does
+/// once the entry is saved and marked, and what *Use the key you already have* does with the held
+/// entry. Nothing else writes `sign_in.key`. A profile that is not a key profile naming a
+/// declaration and no key yet is refused, and nothing is written.
+pub fn key_into(config_root: &Path, name: &str, entry: ulid::Ulid) -> Result<(), String> {
+    use crate::profilesignin::{CardState, KEY, Unavailable};
+    update(config_root, |store| {
+        let Some(profile) = store.profiles.iter_mut().find(|p| p.name == name) else {
+            return Err(format!(
+                "this machine has no profile named '{}'",
+                crate::shown::short(name)
+            ));
+        };
+        let keyless = |s: &crate::profilesignin::SignIn| {
+            s.card_state() == CardState::Unavailable(Unavailable::KeyMissing)
+        };
+        match profile.sign_in.as_mut().filter(|s| keyless(s)) {
+            Some(sign_in) => {
+                sign_in
+                    .rest
+                    .insert(KEY.to_owned(), Value::String(entry.to_string()));
+                Ok(())
+            }
+            None => Err(format!(
+                "profile '{}' is not a key profile without a key, so no key was written into it",
+                crate::shown::short(name)
+            )),
+        }
+    })?
 }
 
 /// [`list`] of this machine's own config home, for a reader that only shows what is there: empty
