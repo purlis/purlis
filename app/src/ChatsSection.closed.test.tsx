@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { ChatsSection } from "./ChatsSection";
@@ -64,9 +64,17 @@ const CARD: ChatCard = {
 
 function draw(answers: { closed?: () => unknown; byNumber?: (number: number) => unknown } = {}) {
   const asked: string[] = [];
-  mockIPC((cmd, args) => {
+  const answered = { closed: 0 };
+  mockIPC(async (cmd, args) => {
     asked.push(cmd);
-    if (cmd === "closed_chats") return answers.closed === undefined ? [CLOSED] : answers.closed();
+    if (cmd === "closed_chats") {
+      try {
+        return answers.closed === undefined ? [CLOSED] : answers.closed();
+      } finally {
+        await Promise.resolve();
+        answered.closed += 1;
+      }
+    }
     if (cmd === "chat_by_number") {
       const { number } = args as { number: number };
       if (answers.byNumber !== undefined) return answers.byNumber(number);
@@ -85,7 +93,7 @@ function draw(answers: { closed?: () => unknown; byNumber?: (number: number) => 
       />
     </ChatsHere.Provider>,
   );
-  return { asked, pressed };
+  return { asked, pressed, answered };
 }
 
 function theTree(): Promise<HTMLElement> {
@@ -97,8 +105,11 @@ async function typeInTheFilter(text: string) {
 }
 
 describe("a closed chat in the Chats list's filter (#6484)", () => {
-  it("is not read, nor drawn, until something is typed", () => {
+  it("is not read, nor drawn, until something is typed", async () => {
     const { asked } = draw();
+    // The list has drawn, and asked whatever it asks as it draws.
+    await theTree();
+    await act(() => Promise.resolve());
     expect(asked).not.toContain("closed_chats");
     const tree = queryTree("Chats of this project");
     expect(tree === null ? null : queryRow(tree, /Closed chats/)).toBeNull();
@@ -158,10 +169,13 @@ describe("a closed chat in the Chats list's filter (#6484)", () => {
   });
 
   it("is not found by words it does not hold, and the open chats stay as the filter finds them", async () => {
-    draw();
+    const { answered } = draw();
     await typeInTheFilter("steward");
     const tree = await theTree();
     expect(await findRow(tree, /^steward 1/)).toBeInTheDocument();
+    // What the core answered has reached the list before it is looked for.
+    await waitFor(() => expect(answered.closed).toBeGreaterThan(0));
+    await act(() => Promise.resolve());
     expect(queryRow(tree, /Closed chats/)).toBeNull();
   });
 });
