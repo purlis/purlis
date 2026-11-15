@@ -240,7 +240,13 @@ pub(crate) fn start_keeping_screens_at_quit(
     host: &std::sync::Arc<dyn crate::host::SessionHost>,
     chats: &[(u32, String)],
 ) -> ScreensComing {
-    start_keeping_screens(root, host, chats, crate::skillgrade::screen_of)
+    start_keeping_screens(
+        root,
+        host,
+        chats,
+        crate::skillgrade::screen_of,
+        "as purlis quit",
+    )
 }
 
 /// **Starts keeping the last screens of the task chats `chats` as a launch puts its record
@@ -254,15 +260,23 @@ pub(crate) fn start_keeping_screens_left(
     host: &std::sync::Arc<dyn crate::host::SessionHost>,
     chats: &[(u32, String)],
 ) -> ScreensComing {
-    start_keeping_screens(root, host, chats, crate::skillgrade::screen_left_of)
+    start_keeping_screens(
+        root,
+        host,
+        chats,
+        crate::skillgrade::screen_left_of,
+        "as purlis opened the project after a crash",
+    )
 }
 
-/// Each of `chats` kept on a thread of its own, its screen read by `read`.
+/// Each of `chats` kept on a thread of its own, its screen read by `read`; `when` says in the log
+/// when that was, if the wait gives up.
 fn start_keeping_screens(
     root: &std::path::Path,
     host: &std::sync::Arc<dyn crate::host::SessionHost>,
     chats: &[(u32, String)],
     read: fn(&dyn crate::host::SessionHost, u32) -> Option<String>,
+    when: &'static str,
 ) -> ScreensComing {
     let (done, finished) = std::sync::mpsc::channel();
     let mut left = 0;
@@ -285,7 +299,11 @@ fn start_keeping_screens(
             Err(why) => tracing::info!("purlis: task chat {session}'s screen was not kept ({why})"),
         }
     }
-    ScreensComing { finished, left }
+    ScreensComing {
+        finished,
+        left,
+        when,
+    }
 }
 
 /// The task screens a quit or a launch is keeping, until [`Self::wait_until`] has waited for them.
@@ -293,6 +311,8 @@ fn start_keeping_screens(
 pub(crate) struct ScreensComing {
     finished: std::sync::mpsc::Receiver<()>,
     left: usize,
+    /// When they were being kept, as the log says it: as purlis quit, or opened a project.
+    when: &'static str,
 }
 
 impl ScreensComing {
@@ -307,8 +327,9 @@ impl ScreensComing {
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                     tracing::info!(
-                        "purlis: {} did not come in time, and {} not kept",
+                        "purlis: {} did not come in time {}, and {} not kept",
                         purlis_core::counts::counted(self.left, "task screen", "task screens"),
+                        self.when,
                         purlis_core::counts::plural(self.left, "was", "were")
                     );
                     break;
