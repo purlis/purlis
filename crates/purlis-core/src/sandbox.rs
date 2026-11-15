@@ -2611,6 +2611,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
                 home.join(crate::forge::etag::DIR),
                 Access::ReadWrite,
             );
+            // Your keys' index, and every model-keys store beside it (T1a-09, spec C-23): a chat
+            // neither reads which keys there are nor writes a line of them.
+            deny(
+                Class::HumanPowers,
+                home.join(crate::yourkeys::DIR),
+                Access::ReadWrite,
+            );
         }
         // The files each pool over Docker's TLS API names (#6267): its CA, which a chat could
         // otherwise swap, and its client certificate and a key kept where it is, which would
