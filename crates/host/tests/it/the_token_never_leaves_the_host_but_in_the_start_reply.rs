@@ -51,6 +51,7 @@ impl ProxiesKeys for KeepsWhatItTells {
             .proxy
             .start(
                 run,
+                None,
                 Heard {
                     say: Arc::new(move |line| {
                         let told = KeyProxyTold::Said(line.to_string());
