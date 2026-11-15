@@ -323,13 +323,19 @@ fn the_versions_lock_is_held_while_each_of_its_folders_and_files_is_removed() {
     let peek = runner.socket_of("1.0.0").with_extension("peek");
     std::fs::hard_link(&lock, &peek).unwrap();
     let mut held = Vec::new();
-    let pruned = prune_with(&runner.config_root, "3.0.0", &runner.socket, &mut |path| {
-        let looked = std::fs::File::open(&peek).unwrap();
-        let free = looked.try_lock_shared().is_ok();
-        held.push((path.to_owned(), !free));
-        drop(looked);
-        remove(path)
-    });
+    let pruned = prune_with(
+        &runner.config_root,
+        "3.0.0",
+        &runner.socket,
+        &mut |_| Ok(()),
+        &mut |path| {
+            let looked = std::fs::File::open(&peek).unwrap();
+            let free = looked.try_lock_shared().is_ok();
+            held.push((path.to_owned(), !free));
+            drop(looked);
+            remove(path)
+        },
+    );
     assert_eq!(pruned.removed, ["1.0.0"]);
     assert_eq!(
         held.len(),
@@ -347,13 +353,19 @@ fn a_removal_cut_short_at_any_step_is_finished_by_the_next_prune() {
     for failing in 0..5 {
         let runner = Runner::with(&["1.0.0", "2.0.0", "3.0.0"]);
         let mut step = 0;
-        let pruned = prune_with(&runner.config_root, "3.0.0", &runner.socket, &mut |path| {
-            step += 1;
-            if step - 1 == failing {
-                return Err(std::io::Error::other("the disk said no"));
-            }
-            remove(path)
-        });
+        let pruned = prune_with(
+            &runner.config_root,
+            "3.0.0",
+            &runner.socket,
+            &mut |_| Ok(()),
+            &mut |path| {
+                step += 1;
+                if step - 1 == failing {
+                    return Err(std::io::Error::other("the disk said no"));
+                }
+                remove(path)
+            },
+        );
         assert!(pruned.removed.is_empty(), "step {failing}: {pruned:?}");
         assert_eq!(
             pruned.failed,
@@ -473,4 +485,110 @@ fn the_prune_command_runs_the_running_versions_binary_for_sh() {
         prune_command("/home/r/.config/purlis", "3.0.0"),
         "exec sh -c '/home/r/.config/purlis/server/3.0.0/purlis bridge --prune'"
     );
+}
+
+#[test]
+fn a_drained_versions_service_is_taken_back_first_while_its_lock_is_held() {
+    let runner = Runner::with(&["1.0.0", "2.0.0", "3.0.0"]);
+    let lock = runner.socket_of("1.0.0").with_extension("lock");
+    std::fs::File::create(&lock).unwrap();
+    let peek = runner.socket_of("1.0.0").with_extension("peek");
+    std::fs::hard_link(&lock, &peek).unwrap();
+    let steps = std::cell::RefCell::new(Vec::new());
+    let pruned = prune_with(
+        &runner.config_root,
+        "3.0.0",
+        &runner.socket,
+        &mut |version| {
+            let looked = std::fs::File::open(&peek).unwrap();
+            let held = looked.try_lock_shared().is_err();
+            steps
+                .borrow_mut()
+                .push(format!("service of {version}, lock held: {held}"));
+            Ok(())
+        },
+        &mut |path| {
+            steps
+                .borrow_mut()
+                .push(format!("removed {}", path.display()));
+            remove(path)
+        },
+    );
+    assert_eq!(pruned.removed, ["1.0.0"]);
+    let steps = steps.into_inner();
+    assert_eq!(
+        steps.first().map(String::as_str),
+        Some("service of 1.0.0, lock held: true"),
+        "the service goes first, under the lock: {steps:?}"
+    );
+    assert_eq!(steps.len(), 6, "{steps:?}");
+}
+
+#[test]
+fn a_version_whose_service_could_not_be_taken_back_is_kept_whole() {
+    let runner = Runner::with(&["1.0.0", "2.0.0", "3.0.0"]);
+    let mut removed = Vec::new();
+    let pruned = prune_with(
+        &runner.config_root,
+        "3.0.0",
+        &runner.socket,
+        &mut |_| {
+            Err("`systemctl --user daemon-reload` failed: Failed to connect to bus".to_owned())
+        },
+        &mut |path| {
+            removed.push(path.to_owned());
+            remove(path)
+        },
+    );
+    assert!(pruned.removed.is_empty(), "{pruned:?}");
+    assert!(removed.is_empty(), "nothing of it was removed: {removed:?}");
+    assert_eq!(pruned.failed.len(), 1, "{pruned:?}");
+    assert_eq!(pruned.failed[0].0, "1.0.0");
+    assert!(
+        pruned.failed[0]
+            .1
+            .contains("its service could not be removed"),
+        "{pruned:?}"
+    );
+    assert!(runner.binary("1.0.0").exists() && runner.host_folder("1.0.0").exists());
+}
+
+#[test]
+fn a_version_whose_host_serves_keeps_its_service() {
+    let runner = Runner::with(&["1.0.0", "2.0.0", "3.0.0"]);
+    let lock = std::fs::File::create(runner.socket_of("1.0.0").with_extension("lock")).unwrap();
+    lock.lock().unwrap();
+    let mut asked = Vec::new();
+    let pruned = prune_with(
+        &runner.config_root,
+        "3.0.0",
+        &runner.socket,
+        &mut |version| {
+            asked.push(version.to_owned());
+            Ok(())
+        },
+        &mut remove,
+    );
+    assert_eq!(pruned.kept.len(), 1, "{pruned:?}");
+    assert!(
+        asked.is_empty(),
+        "a serving version's service is left be: {asked:?}"
+    );
+}
+
+#[test]
+fn without_a_runtime_folder_named_prune_looks_where_the_user_manager_keeps_its_hosts() {
+    let run_user = tempfile::tempdir().unwrap();
+    let named = std::ffi::OsString::from("/run/user/1000");
+    assert_eq!(
+        runtime_dir(Some(&named), run_user.path()),
+        Some(PathBuf::from("/run/user/1000")),
+        "a runtime folder the environment names is the one"
+    );
+    assert_eq!(
+        runtime_dir(None, run_user.path()),
+        Some(run_user.path().to_path_buf()),
+        "run from cron or `sudo -u`, it looks where a supervised host listens"
+    );
+    assert_eq!(runtime_dir(None, &run_user.path().join("absent")), None);
 }

@@ -6,7 +6,7 @@ on one already lived until it was ended (`purlis_host::lifetime`), but nothing k
 over SSH it went with the sign-in that started it, and with every restart of the machine. RR-15
 hands it to the machine's own service manager. §3 and the amendments above stay as accepted, and
 this note adds to them. Each item was **decided in implementation, to be confirmed** (D-724-1 to
-D-724-10).
+D-724-12).
 
 1. **The machine's service manager keeps a runner's host, never purlis.** On Linux with a
    systemd user manager, a user unit, with **linger**, without which the user manager and every
@@ -84,3 +84,18 @@ D-724-10).
     *Rejected:* simulating the restart by running the unit's command in a fresh container, which
     the ticket allowed where systemd could not run: it would prove the command, not the unit,
     linger or the boot. *D-724-10.*
+11. **Pruning a drained version takes back its service first, by name** (ruled in the review of
+    #6702; `runnerinstall::prune_in`, `runnerhost::remove_version`). It happens while that
+    version's lock is held, before any of its folders go, so the manager can never start a host
+    of it again from a binary that is gone. The unit or agent is named from the version alone
+    (`hostsocket::version_key`). The old binary's `serve --remove` is never run: an older one may
+    not know the flag, and it is about to be deleted. Where the service could not be removed, the
+    version is kept whole and said as one that could not be removed. Under a supervisor an old
+    version's host comes back at every boot and holds its lock, so it is never found drained;
+    who stops an idle old host is #6704. *D-724-11.*
+12. **Prune reads the runtime folder a supervised host uses.** Over SSH, pam_systemd gives
+    `XDG_RUNTIME_DIR=/run/user/<uid>`, the same as the user manager gives a unit. Run without
+    the variable (from cron, or `sudo -u`), prune would have looked in `/tmp/purlis-<uid>`, found
+    no lock and no socket there, and taken a serving version for a drained one. It now reads
+    `/run/user/<uid>` where that is there, and the environment's folder where it names one.
+    *D-724-12.*
