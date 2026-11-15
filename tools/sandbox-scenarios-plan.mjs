@@ -86,7 +86,7 @@ function main([event, base]) {
   const say = (line) => (out ? appendFileSync(out, `${line}\n`) : console.log(line));
   let result;
   try {
-    const labels = JSON.parse(process.env.LABELS || "[]");
+    const labels = JSON.parse(process.env.LABELS || "[]") ?? [];
     const paths = [];
     const deleted = [];
     if (event === "pull_request") {
