@@ -13114,7 +13114,7 @@ fn a_reattached_chat_is_asked_to_restart_by_what_its_start_held_of_the_pools() {
                 assert_eq!(older.sessions(), [3], "{harness:?}");
                 assert_eq!(
                     older.chats[0].pool.as_deref(),
-                    Some(TLS_POOL_ADDED),
+                    Some(NOTICE_TLS_POOL_ADDED),
                     "{harness:?}: the TLS pool is why"
                 );
             } else {
