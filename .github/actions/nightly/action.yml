@@ -18,7 +18,7 @@ runs:
   using: composite
   steps:
     - name: An entry this action knows
-      if: ${{ !contains(fromJSON('["sandbox-scenarios", "existing-macos-sandbox-tests"]'), inputs.entry) }}
+      if: ${{ !contains(fromJSON('["sandbox-scenarios", "existing-macos-sandbox-tests", "fuzz-parsers"]'), inputs.entry) }}
       shell: bash
       env:
         ENTRY: ${{ inputs.entry }}
@@ -33,3 +33,10 @@ runs:
       uses: ./.github/actions/macos-sandbox-tests
       with:
         purlis-app: "true"
+    # The parsers' fuzz targets, each fuzzed from its committed seeds for five minutes (T1.1-47,
+    # `docs/fuzzing.md`). A crash is a public issue; one that means an escape is labelled
+    # `area:security` and `priority:p0` and fixed first (Q301).
+    - if: inputs.entry == 'fuzz-parsers'
+      uses: ./.github/actions/fuzz-parsers
+      with:
+        seconds: "300"

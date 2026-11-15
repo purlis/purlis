@@ -69,7 +69,9 @@ labelled `area:security` and `priority:p0`, and fixed first (Q301).
 - **Every pull request** that changes `crates/purlis-core/` (or the toolchain, the lock file or
   the workflow) runs `.github/workflows/fuzz.yml`: the targets built, every seed and the runner's
   fresh curl and Node recordings replayed once.
-- **Nightly**, the entry `fuzz-parsers` fuzzes each target from its seeds for a time box
-  (`.github/actions/fuzz-parsers` with `seconds`).
+- **Nightly**, the entry `fuzz-parsers` in `.github/nightly-on-phase-1-proven.txt` fuzzes each
+  target from its seeds for five minutes (`.github/actions/nightly`, which runs
+  `.github/actions/fuzz-parsers` with `seconds: "300"`). A crash it finds is a public issue; one
+  that means an escape is labelled `area:security` and `priority:p0` and fixed first (Q301).
 
 [cargo-fuzz]: https://github.com/rust-fuzz/cargo-fuzz

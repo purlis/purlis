@@ -11,3 +11,4 @@ sandbox-scenarios               ubuntu-24.04   45
 sandbox-scenarios               macos-15       120
 sandbox-scenarios               macos-26       120
 existing-macos-sandbox-tests    macos-latest   120
+fuzz-parsers                    ubuntu-24.04   120
