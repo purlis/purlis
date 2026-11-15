@@ -9388,19 +9388,53 @@ impl Chats {
     /// then waits once, until the one deadline it gives them all
     /// ([`crate::chatcard::ScreensComing::wait_until`]).
     pub fn start_keeping_finished_screens(&self) -> crate::chatcard::ScreensComing {
-        let finished: Vec<(u32, String)> = self
+        let finished: Vec<purlis_core::dispatchrecord::ChatRef> = self
             .record()
             .chats
             .iter()
             .filter(|chat| crate::finished::left_out(&self.project, chat))
-            .filter_map(|chat| {
-                let number = chat
-                    .number
-                    .filter(|number| lock(&self.open).contains_key(number))?;
-                Some((number, chat.identity.id.clone()?))
+            .filter(|chat| {
+                chat.number
+                    .is_some_and(|number| lock(&self.open).contains_key(&number))
             })
+            .filter_map(task_ref)
             .collect();
         crate::chatcard::start_keeping_screens_at_quit(&self.project, &self.sessions, &finished)
+    }
+
+    /// **Starts keeping the screens of the task chats `finished`, left out of a launch's put
+    /// back, that the session host still runs** (#6504): the window went without quitting, so
+    /// [`Self::start_keeping_finished_screens`] never ran, and
+    /// [`Self::close_what_was_not_reattached`] would close each unread. It returns at once, and
+    /// [`Self::close_finished_left`] waits for the screens and closes the chats.
+    ///
+    /// **The deadline is taken first** (#6504's review), so asking a slow pool which chats it
+    /// still runs counts against it.
+    pub(crate) fn start_keeping_screens_left(&self, finished: &[Chat]) -> KeepingLeft {
+        let by = crate::chatcard::screens_by_from_now();
+        let left: Vec<purlis_core::dispatchrecord::ChatRef> = finished
+            .iter()
+            .filter(|chat| self.left_running(chat))
+            .filter_map(task_ref)
+            .collect();
+        KeepingLeft {
+            screens: crate::chatcard::start_keeping_screens_left(
+                &self.project,
+                &self.sessions,
+                &left,
+            ),
+            by,
+            chats: left.into_iter().map(|chat| chat.chat).collect(),
+        }
+    }
+
+    /// **Waits for the screens `keeping` is keeping, until its deadline, and closes their chats**
+    /// (#6504), each where the session host holds it: a pool the settings no longer route among
+    /// them, which the sweep would leave running with no tab (#6504's review).
+    pub(crate) fn close_finished_left(&self, keeping: KeepingLeft) {
+        let KeepingLeft { screens, by, chats } = keeping;
+        screens.wait_until(by);
+        self.sessions.close_left(&chats);
     }
 
     /// Ends every chat, and does not return until their programs are gone.
@@ -9429,6 +9463,25 @@ impl Default for Chats {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Task chat `chat` as a dispatch record names it, by its number and its id: none where its record
+/// holds neither.
+fn task_ref(chat: &Chat) -> Option<purlis_core::dispatchrecord::ChatRef> {
+    Some(purlis_core::dispatchrecord::ChatRef {
+        chat: chat.number?,
+        id: Some(chat.identity.id.clone()?),
+        ..Default::default()
+    })
+}
+
+/// The screens of the finished task chats a launch found still running, being kept, and the
+/// chats they are of ([`Chats::start_keeping_screens_left`], #6504).
+#[must_use = "the chats whose screens are being kept are closed once they are kept"]
+pub(crate) struct KeepingLeft {
+    screens: crate::chatcard::ScreensComing,
+    by: std::time::Instant,
+    chats: Vec<u32>,
 }
 
 /// What a start in a project being let go of is refused with (#1949).

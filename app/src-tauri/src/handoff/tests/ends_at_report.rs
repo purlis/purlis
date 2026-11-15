@@ -20,6 +20,9 @@ mod working_again;
 /// window counts as nothing.
 mod in_a_tab_window;
 
+/// A window that crashed keeps the screen of a task that had finished (#6504).
+mod after_a_crash;
+
 /// A steward chat and the one task it dispatched, on a pretend host.
 fn a_steward_and_its_task() -> (Plane, Pretend, Planes, PlaneId, Arc<Held>, u32, u32) {
     let plane = a_plane_with_personas();
@@ -805,7 +808,7 @@ fn a_task_that_had_reported_when_the_app_quit_is_a_finished_row_at_the_next_laun
     let asker_id = held.chats().chat_at(steward).and_then(|at| at.id);
 
     // The next launch: the record is read, and the finished task is left out of the put-back.
-    let back = crate::finished::put_back_without_the_finished(held.root(), &at_quit);
+    let (back, _) = crate::finished::put_back_without_the_finished(held.root(), &at_quit);
 
     let numbers: Vec<u32> = back.chats.iter().filter_map(|chat| chat.number).collect();
     assert_eq!(numbers, [steward, still_working]);
@@ -898,7 +901,7 @@ fn a_task_that_had_reported_when_the_app_quit_has_its_screen_kept() {
     assert_eq!(purlis_core::chatscreens::kept(root, &working), None);
     assert_eq!(purlis_core::chatscreens::kept(root, &steward_id), None);
     // And it is the very chat the put back leaves out.
-    let back = crate::finished::put_back_without_the_finished(root, &at_quit);
+    let (back, _) = crate::finished::put_back_without_the_finished(root, &at_quit);
     let numbers: Vec<u32> = back.chats.iter().filter_map(|chat| chat.number).collect();
     assert_eq!(numbers, [steward, still_working]);
 }
@@ -918,7 +921,7 @@ fn a_task_s_screen_kept_at_a_quit_reads_on_its_card_after_the_next_launch() {
     let planes = planes_on(&relaunched);
     let again = planes.open(&plane.root);
     let held = planes.held(&again).expect("held");
-    let back = crate::finished::put_back_without_the_finished(held.root(), &at_quit);
+    let (back, _) = crate::finished::put_back_without_the_finished(held.root(), &at_quit);
     held.chats().put_back(&back, A_SIZE);
 
     let crate::chatcard::ChatLookup::Ended { card } = crate::chatcard::lookup(&held, task) else {
@@ -949,7 +952,7 @@ fn a_quit_is_not_held_past_its_deadline_by_a_task_screen_that_will_not_come() {
     host.terminal_answers();
     let slack = std::time::Duration::from_millis(1500);
     assert!(
-        took < crate::chatcard::SCREENS_AT_QUIT_WITHIN + slack,
+        took < crate::chatcard::SCREENS_KEPT_WITHIN + slack,
         "the quit took {took:?}"
     );
 }
@@ -978,7 +981,7 @@ fn a_quit_keeps_every_project_s_task_screen_within_its_one_deadline() {
         let (_, task_id, _) = a_reported_task_and_one_working(host, &held, &id, steward, task);
         finished.push((plane.root.clone(), task_id));
     }
-    let a_third = crate::chatcard::SCREENS_AT_QUIT_WITHIN / 3;
+    let a_third = crate::chatcard::SCREENS_KEPT_WITHIN / 3;
     one.terminal_takes(a_third);
     two.terminal_takes(a_third);
 
@@ -1077,7 +1080,7 @@ fn a_task_the_person_took_over_and_a_blocked_one_come_back_at_the_next_launch() 
     );
     let at_quit = held.chats().record();
 
-    let back = crate::finished::put_back_without_the_finished(held.root(), &at_quit);
+    let (back, _) = crate::finished::put_back_without_the_finished(held.root(), &at_quit);
 
     // Both are the chats they were: the person's work, and a task waiting on something.
     assert_eq!(back, at_quit);
