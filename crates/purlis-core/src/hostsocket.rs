@@ -100,7 +100,10 @@ pub fn of_version(socket: &Path, version: &str) -> PathBuf {
         .and_then(|name| name.strip_suffix(".sock"))
         .unwrap_or("purlisd");
     let digest = Sha256::digest(version.as_bytes());
-    let short: String = digest[..4].iter().map(|byte| format!("{byte:02x}")).collect();
+    let short: String = digest[..4]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
     socket.with_file_name(format!("{stem}-v{short}.sock"))
 }
 

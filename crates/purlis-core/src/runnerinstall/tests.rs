@@ -333,7 +333,10 @@ fn the_probe_deletes_what_a_delivery_cut_off_a_day_ago_left_and_keeps_the_rest()
     let (code, printed) = sh(&probe_command(), &home_path, &[], None);
     assert_eq!(code, 0, "{printed}");
     assert!(!stale.exists(), "a day-old temporary file is deleted");
-    assert!(fresh.exists(), "a delivery that may still be going on is left");
+    assert!(
+        fresh.exists(),
+        "a delivery that may still be going on is left"
+    );
     assert!(binary.exists(), "an installed version is never swept");
 }
 
@@ -412,7 +415,11 @@ fn an_upload_lands_private_and_not_executable_then_one_command_checks_and_places
     let (code, printed) = sh(&incoming_command(&config), &root, &[], None);
     assert_eq!(code, 0);
     let incoming = incoming_from(&config, &printed).expect("its temporary name is said");
-    assert_eq!(mode_of(&incoming), 0o600, "private, and executable by no one");
+    assert_eq!(
+        mode_of(&incoming),
+        0o600,
+        "private, and executable by no one"
+    );
     let (code, _) = sh(&receive_command(&incoming), &root, &[], Some(BYTES));
     assert_eq!(code, 0);
     assert_eq!(mode_of(&incoming), 0o600, "still private once filled");
@@ -485,7 +492,10 @@ fn a_copy_that_is_not_the_one_verified_is_deleted_by_the_command_that_checks_it(
     assert_eq!(code, NOT_THE_SAME);
     assert_eq!(found_in(&printed), digest_of(b"changed on the way"));
     assert!(!Path::new(&incoming).exists(), "deleted");
-    assert!(!Path::new(&binary_at(&config, "1.4.0")).exists(), "nothing placed");
+    assert!(
+        !Path::new(&binary_at(&config, "1.4.0")).exists(),
+        "nothing placed"
+    );
 }
 
 #[test]
@@ -674,9 +684,12 @@ fn an_install_through_a_login_shell_that_is_not_bash_places_checks_again_and_rep
     assert!(probed.versions.is_empty());
     let installed = install(&stub.reach, &probed, &verified, Delivery::Upload(BYTES)).unwrap();
     let binary = binary_at(&probed.config, "1.4.0");
-    assert_eq!(installed, Installed::Placed {
-        binary: binary.clone()
-    });
+    assert_eq!(
+        installed,
+        Installed::Placed {
+            binary: binary.clone()
+        }
+    );
     assert_eq!(std::fs::read(&binary).unwrap(), BYTES);
     assert_eq!(mode_of(&binary), 0o700);
     assert!(incoming_left(&probed.config).is_empty());
@@ -728,7 +741,10 @@ fn a_copy_changed_on_the_way_is_refused_and_nothing_is_left() {
         panic!("{refused:?}");
     };
     assert_eq!(found, &"0".repeat(64));
-    assert!(incoming_left(&probed.config).is_empty(), "nothing left behind");
+    assert!(
+        incoming_left(&probed.config).is_empty(),
+        "nothing left behind"
+    );
     assert!(!Path::new(&binary_at(&probed.config, "1.4.0")).exists());
 }
 

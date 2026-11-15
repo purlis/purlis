@@ -220,7 +220,10 @@ fn an_installed_versions_socket_lock_and_link_are_its_own() {
         )
     };
     let (lock, link) = place(&versioned);
-    assert_eq!(lock, Path::new("/run/user/1000/purlis/purlisd-v74b860b3.lock"));
+    assert_eq!(
+        lock,
+        Path::new("/run/user/1000/purlis/purlisd-v74b860b3.lock")
+    );
     assert_eq!(
         link,
         Path::new("/run/user/1000/purlis/purlisd-v74b860b3.link.sock")

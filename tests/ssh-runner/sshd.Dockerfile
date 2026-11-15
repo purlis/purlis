@@ -6,17 +6,21 @@
 # pinned route as `runner`, into `~/.config/<purlis's folder>/server/<version>/`. `liar` signs in
 # with the same key and its sessions find a `sha256sum` that reports another digest first on their
 # PATH, standing for a copy changed on the way, which the install must delete and refuse.
+# `fisher` signs in with it too and its login shell is fish, which reads no POSIX `sh`: every
+# command purlis sends must reach `sh` whatever the login shell is (ADR 0123 as amended
+# 2026-11-12).
 # `libdbus-1-3` is what purlis links beyond the base image. Its one host key is ed25519. tc gives
 # the job its latency and loss (QA-15, #598).
 FROM ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c
 RUN apt-get --option Acquire::Retries=5 update \
  && apt-get --option Acquire::Retries=5 install --yes --no-install-recommends \
-      openssh-server iproute2 procps ca-certificates libdbus-1-3 \
+      openssh-server iproute2 procps ca-certificates libdbus-1-3 fish \
  && rm -rf /var/lib/apt/lists/* \
  && userdel --remove ubuntu \
  && useradd --create-home --shell /bin/bash runner \
  && useradd --create-home --shell /bin/bash liar \
- && sed -i -e 's/^runner:!/runner:*/' -e 's/^liar:!/liar:*/' /etc/shadow \
+ && useradd --create-home --shell /usr/bin/fish fisher \
+ && sed -i -e 's/^runner:!/runner:*/' -e 's/^liar:!/liar:*/' -e 's/^fisher:!/fisher:*/' /etc/shadow \
  && mkdir -p /opt/liar /run/sshd \
  && printf '%s\n' '#!/bin/sh' 'echo "0000000000000000000000000000000000000000000000000000000000000000  $2"' \
       > /opt/liar/sha256sum && chmod 0755 /opt/liar/sha256sum \

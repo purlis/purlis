@@ -16,6 +16,7 @@ docker build --file "$here/sshd.Dockerfile" --tag ssh-runner-sshd "$here"
 ssh-keygen -q -t ed25519 -N '' -C ssh-runner -f "$dir/id"
 cp "$dir/id.pub" "$dir/authorized/runner"
 cp "$dir/id.pub" "$dir/authorized/liar"
+cp "$dir/id.pub" "$dir/authorized/fisher"
 docker run --detach --name ssh-runner --cap-add NET_ADMIN --publish 127.0.0.1:2224:22 \
   --volume "$dir/authorized:/etc/ssh/authorized-src:ro" ssh-runner-sshd
 for _ in $(seq 60); do
@@ -45,5 +46,6 @@ ssh-add "$dir/id"
 {
   echo "SSH_RUNNER_TEST_ROUTE=ssh://runner@127.0.0.1:2224"
   echo "SSH_RUNNER_TEST_LIAR_ROUTE=ssh://liar@127.0.0.1:2224"
+  echo "SSH_RUNNER_TEST_FISH_ROUTE=ssh://fisher@127.0.0.1:2224"
   echo "SSH_RUNNER_TEST_PURLIS=$dir/purlis"
 } >> "$GITHUB_ENV"

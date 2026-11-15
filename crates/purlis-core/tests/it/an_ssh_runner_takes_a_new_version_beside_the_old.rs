@@ -10,7 +10,9 @@
 //! runner asset, and verified as the desktop verifies one. Then, through the pinned route:
 //!
 //! 1. a copy changed on the way (a `sha256sum` that reports another digest, as for the fixture's
-//!    `liar` user) is deleted, and nothing is installed;
+//!    `liar` user) is deleted, and nothing is installed; and for the fixture's `fisher` user,
+//!    whose login shell is fish, which reads no POSIX `sh`, a version is installed, found there
+//!    again and hashed before it is trusted, and placed again once it changed;
 //! 2. version 1 is installed, paired, its host started, and five chats run on it;
 //! 3. version 2 is installed beside it and its host started: version 1's binary is untouched,
 //!    its five chats keep running and are still listed by its host through its own bridge, and
@@ -20,8 +22,9 @@
 //! what this checks), so five cost CI next to nothing, and five are run.
 //!
 //! It needs the fixture: `SSH_RUNNER_TEST_ROUTE` (`ssh://runner@127.0.0.1:2224`),
-//! `SSH_RUNNER_TEST_LIAR_ROUTE` and `SSH_RUNNER_TEST_PURLIS` (this build's `purlis`, for the
-//! runner's platform). Without them it runs nothing and passes: a sandboxed agent can't run it.
+//! `SSH_RUNNER_TEST_LIAR_ROUTE`, `SSH_RUNNER_TEST_FISH_ROUTE` and `SSH_RUNNER_TEST_PURLIS` (this
+//! build's `purlis`, for the runner's platform). Without them it runs nothing and passes: a
+//! sandboxed agent can't run it.
 
 #![cfg(unix)]
 
@@ -46,6 +49,7 @@ const V2: &str = "0.0.1-rr14.2";
 struct Fixture {
     reach: Reach,
     liar: Reach,
+    fish: Reach,
     binary: Vec<u8>,
     _settings: tempfile::TempDir,
 }
@@ -53,6 +57,7 @@ struct Fixture {
 fn fixture() -> Option<Fixture> {
     let route = Route::parse(&std::env::var("SSH_RUNNER_TEST_ROUTE").ok()?).expect("a route");
     let liar = Route::parse(&std::env::var("SSH_RUNNER_TEST_LIAR_ROUTE").ok()?).expect("a route");
+    let fish = Route::parse(&std::env::var("SSH_RUNNER_TEST_FISH_ROUTE").ok()?).expect("a route");
     let binary = std::fs::read(std::env::var("SSH_RUNNER_TEST_PURLIS").ok()?).expect("purlis");
     let settings = tempfile::Builder::new()
         .prefix("rr")
@@ -71,6 +76,7 @@ fn fixture() -> Option<Fixture> {
     Some(Fixture {
         reach: reach(route, "rr14"),
         liar: reach(liar, "rr14-liar"),
+        fish: reach(fish, "rr14-fish"),
         binary,
         _settings: settings,
     })
@@ -249,6 +255,55 @@ fn a_new_version_is_installed_beside_the_old_whose_chats_keep_running() {
         "",
         "nothing left behind: {}",
         left.printed
+    );
+
+    // 1a. Through a login shell that is fish: installed, found again and checked, and placed
+    // again once the copy there changed.
+    let fish_probed = runnerinstall::probe(&fixture.fish).expect("the fish user is probed");
+    let fish_bin = runnerinstall::install(
+        &fixture.fish,
+        &fish_probed,
+        &v1,
+        Delivery::Upload(&fixture.binary),
+    )
+    .expect("installed through fish")
+    .binary()
+    .to_owned();
+    let fish_probed = runnerinstall::probe(&fixture.fish).unwrap();
+    assert_eq!(fish_probed.versions, [V1]);
+    assert!(matches!(
+        runnerinstall::install(
+            &fixture.fish,
+            &fish_probed,
+            &v1,
+            Delivery::Upload(&fixture.binary)
+        ),
+        Ok(Installed::AlreadyThere { .. })
+    ));
+    let changed = there(
+        &fixture.fish,
+        &runnerinstall::for_login_shell(&format!("printf x >> {fish_bin}")),
+        None,
+    );
+    assert_eq!(changed.code, Some(0), "{}", changed.said);
+    assert!(matches!(
+        runnerinstall::install(
+            &fixture.fish,
+            &fish_probed,
+            &v1,
+            Delivery::Upload(&fixture.binary)
+        ),
+        Ok(Installed::Placed { .. })
+    ));
+    let fish_digest = there(
+        &fixture.fish,
+        &runnerinstall::for_login_shell(&format!("sha256sum {fish_bin}")),
+        None,
+    );
+    assert!(
+        fish_digest.printed.starts_with(v1.digest()),
+        "placed again: {}",
+        fish_digest.printed
     );
 
     // 2. Version 1 installed, paired, and five chats on its host.
