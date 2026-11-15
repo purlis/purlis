@@ -275,7 +275,8 @@ pub fn meet(ssh: &Path, route: &Route, settings_in: &Path) -> Result<HostKey, Fi
     let scratch = folder
         .keep("known_hosts", b"")
         .map_err(|why| Finding::Here(format!("purlis could not meet the machine: {why}")))?;
-    let ran = super::run(ssh, &super::contact_args(route, &scratch)).map_err(Finding::Here)?;
+    let args = super::contact_args(route, &scratch).map_err(Finding::Here)?;
+    let ran = super::run(ssh, &args).map_err(Finding::Here)?;
     let written = std::fs::read_to_string(&scratch).unwrap_or_default();
     super::key_met(&written).ok_or_else(|| Finding::NotMet {
         host: route.host().to_owned(),
@@ -337,8 +338,11 @@ pub fn probe(
     let known_hosts = folder
         .keep("known_hosts", super::known_hosts(pool, key).as_bytes())
         .map_err(|why| Finding::Here(format!("purlis could not write the host key: {why}")))?;
-    let signed_in =
-        super::run(ssh, &super::sign_in_args(route, pool, &known_hosts)).map_err(Finding::Here)?;
+    let signed_in = super::run(
+        ssh,
+        &super::sign_in_args(route, pool, &known_hosts).map_err(Finding::Here)?,
+    )
+    .map_err(Finding::Here)?;
     if signed_in.code != Some(0) {
         // Met again with nothing pinned: a key other than this one is said as such.
         return Err(match meet(ssh, route, settings_in) {
@@ -350,8 +354,11 @@ pub fn probe(
             _ => Finding::SignInRefused { host: host() },
         });
     }
-    let probed =
-        super::run(ssh, &super::probe_args(route, pool, &known_hosts)).map_err(Finding::Here)?;
+    let probed = super::run(
+        ssh,
+        &super::probe_args(route, pool, &known_hosts).map_err(Finding::Here)?,
+    )
+    .map_err(Finding::Here)?;
     let found = probed.printed.lines().next().unwrap_or_default().trim();
     match probed.code {
         Some(0) => route.clone().with_socket(found).map_err(Finding::Here),
@@ -459,7 +466,8 @@ pub fn forwarding_refused(opening: &super::forward::Opening<'_>) -> bool {
     ) {
         return false;
     }
-    super::run(opening.ssh, &super::probe_args(route, pool, &known_hosts))
+    super::probe_args(route, pool, &known_hosts)
+        .and_then(|args| super::run(opening.ssh, &args))
         .is_ok_and(|probed| probed.code == Some(0))
 }
 

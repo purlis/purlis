@@ -543,18 +543,48 @@ pub fn known_hosts(pool: &str, key: &HostKey) -> String {
 /// (ADR 0123 §2): its host key checked strictly against `known_hosts` alone, under `alias`; no
 /// other place a key could come from; no master connection; no prompt; nothing forwarded to the
 /// machine; and the keep-alive.
-#[must_use]
-pub fn pinned_options(known_hosts: &Path, alias: &str) -> Vec<String> {
+pub fn pinned_options(known_hosts: &Path, alias: &str) -> Result<Vec<String>, String> {
     let mut out = common_options();
     for option in [
         "StrictHostKeyChecking=yes".to_owned(),
-        format!("UserKnownHostsFile={}", known_hosts.display()),
+        file_option("UserKnownHostsFile", known_hosts)?,
         format!("HostKeyAlias={alias}"),
     ] {
         out.push("-o".to_owned());
         out.push(option);
     }
-    out
+    Ok(out)
+}
+
+/// **`<name>=<path>` as one ssh option naming one file**. ssh splits a path option's
+/// value into words at spaces, and `UserKnownHostsFile` takes each word for a file of its own:
+/// a run folder under macOS's `~/Library/Application Support` became `~/Library/Application`
+/// and a second file. The value is written in double quotes, which ssh reads as one word, with
+/// `%` doubled, since ssh expands `%` tokens in a file's path. A path that holds a double quote,
+/// a backslash, `$` (ssh expands `${…}` in it) or a control character is refused: no spelling
+/// of it reaches ssh as itself.
+fn file_option(name: &str, path: &Path) -> Result<String, String> {
+    let path = path_for_ssh(path, &['"', '\\', '$'])?;
+    Ok(format!("{name}=\"{path}\""))
+}
+
+/// **`path` as ssh takes it as itself**: `%` doubled, refused where it holds a control character
+/// or one of `refused`, with what to do.
+fn path_for_ssh(path: &Path, refused: &[char]) -> Result<String, String> {
+    let Some(text) = path.to_str() else {
+        return Err(format!(
+            "purlis can't hand ssh {} because the path isn't UTF-8: move purlis's data folder",
+            path.display()
+        ));
+    };
+    if let Some(c) = text.chars().find(|c| c.is_control() || refused.contains(c)) {
+        return Err(format!(
+            "purlis can't hand ssh {} because the path holds {c:?}, which ssh reads as more than a \
+             path: move purlis's data folder to a path without it",
+            crate::shown::short(text)
+        ));
+    }
+    Ok(text.replace('%', "%%"))
 }
 
 /// What every ssh purlis runs is given, pinned or a first contact.
@@ -616,7 +646,7 @@ pub fn forward_args(
         );
     };
     let mut args = vec!["-T".to_owned()];
-    args.extend(pinned_options(known_hosts, &alias(pool)));
+    args.extend(pinned_options(known_hosts, &alias(pool))?);
     for option in [
         "ExitOnForwardFailure=yes",
         "StreamLocalBindUnlink=yes",
@@ -631,7 +661,11 @@ pub fn forward_args(
     }
     args.extend(route.where_options());
     args.push("-L".to_owned());
-    args.push(format!("{}:{remote}", local.display()));
+    // One word already, but ssh expands `%` and `${…}` in a socket's path, and `:` ends it.
+    args.push(format!(
+        "{}:{remote}",
+        path_for_ssh(local, &['"', '\\', '$', ':'])?
+    ));
     args.push("--".to_owned());
     args.push(route.destination());
     args.push(HELD_BY.to_owned());
@@ -641,12 +675,11 @@ pub fn forward_args(
 /// **A first contact's arguments** (ADR 0123 §3): ssh meets the machine and writes the key it
 /// presents into `scratch`, a `known_hosts` of the run's own, and signs in with nothing, so it
 /// learns the key and is let in nowhere. Nothing is pinned by it.
-#[must_use]
-pub fn contact_args(route: &Route, scratch: &Path) -> Vec<String> {
+pub fn contact_args(route: &Route, scratch: &Path) -> Result<Vec<String>, String> {
     let mut args = common_options();
     for option in [
         "StrictHostKeyChecking=accept-new".to_owned(),
-        format!("UserKnownHostsFile={}", scratch.display()),
+        file_option("UserKnownHostsFile", scratch)?,
         format!("HostKeyAlias={FIRST_CONTACT}"),
         // Written plainly whatever the system's ssh_config says, so it is found by its alias.
         "HashKnownHosts=no".to_owned(),
@@ -664,21 +697,20 @@ pub fn contact_args(route: &Route, scratch: &Path) -> Vec<String> {
     args.push("--".to_owned());
     args.push(route.destination());
     args.push("true".to_owned());
-    args
+    Ok(args)
 }
 
 /// **A sign-in's arguments**: ssh, pinned, signs in and runs `true` there, so its exit says
 /// whether the machine let the person in.
-#[must_use]
-pub fn sign_in_args(route: &Route, pool: &str, known_hosts: &Path) -> Vec<String> {
-    let mut args = pinned_options(known_hosts, &alias(pool));
+pub fn sign_in_args(route: &Route, pool: &str, known_hosts: &Path) -> Result<Vec<String>, String> {
+    let mut args = pinned_options(known_hosts, &alias(pool))?;
     // It forwards nothing, whatever the person's settings add.
     args.extend(["-o".to_owned(), "ClearAllForwardings=yes".to_owned()]);
     args.extend(route.where_options());
     args.push("--".to_owned());
     args.push(route.destination());
     args.push("true".to_owned());
-    args
+    Ok(args)
 }
 
 /// **What finds the engine's socket on the other machine** (ADR 0123 §2), run there by the
@@ -700,9 +732,8 @@ pub const PROBE_NOT_ALLOWED: i32 = 4;
 
 /// **The probe's arguments**: [`sign_in_args`]'s, running [`PROBE`] in place of `true`, and for
 /// a route whose socket is named, the same checks of that socket alone.
-#[must_use]
-pub fn probe_args(route: &Route, pool: &str, known_hosts: &Path) -> Vec<String> {
-    let mut args = sign_in_args(route, pool, known_hosts);
+pub fn probe_args(route: &Route, pool: &str, known_hosts: &Path) -> Result<Vec<String>, String> {
+    let mut args = sign_in_args(route, pool, known_hosts)?;
     args.pop();
     args.push(match route.socket() {
         // Checked only: the path is one [`a_socket_path`] lets through, so it is a plain word.
@@ -712,7 +743,7 @@ pub fn probe_args(route: &Route, pool: &str, known_hosts: &Path) -> Vec<String> 
         ),
         None => PROBE.to_owned(),
     });
-    args
+    Ok(args)
 }
 
 /// **The forward check's arguments** (#6349): ssh, pinned, asks the machine's SSH server for one
@@ -731,7 +762,7 @@ pub fn forward_check_args(
             "the pool's route names no socket on the other machine: connect it again".to_owned(),
         );
     };
-    let mut args = pinned_options(known_hosts, &alias(pool));
+    let mut args = pinned_options(known_hosts, &alias(pool))?;
     for option in ["ExitOnForwardFailure=yes", "ClearAllForwardings=yes"] {
         args.push("-o".to_owned());
         args.push(option.to_owned());
@@ -760,7 +791,7 @@ pub fn read_args(
             crate::shown::short(path)
         ));
     }
-    let mut args = sign_in_args(route, pool, known_hosts);
+    let mut args = sign_in_args(route, pool, known_hosts)?;
     args.pop();
     // Checked only: the path is one [`a_socket_path`] lets through, so it is a plain word.
     args.push(format!("test -f {path} && exec cat -- {path}"));
@@ -782,7 +813,7 @@ pub fn is_file_args(
             crate::shown::short(path)
         ));
     }
-    let mut args = sign_in_args(route, pool, known_hosts);
+    let mut args = sign_in_args(route, pool, known_hosts)?;
     args.pop();
     // Checked only: the path is one [`a_socket_path`] lets through, so it is a plain word.
     args.push(format!("test -f {path}"));
@@ -816,7 +847,7 @@ pub fn keep_args(
             crate::shown::short(&format!("{beside}/{name}"))
         ));
     }
-    let mut args = sign_in_args(route, pool, known_hosts);
+    let mut args = sign_in_args(route, pool, known_hosts)?;
     args.pop();
     // Checked only: both are plain words, as checked above.
     args.push(format!(
@@ -843,7 +874,7 @@ pub fn let_go_args(
             crate::shown::short(folder)
         ));
     }
-    let mut args = sign_in_args(route, pool, known_hosts);
+    let mut args = sign_in_args(route, pool, known_hosts)?;
     args.pop();
     args.push(format!("rm -rf -- {folder}"));
     Ok(args)
