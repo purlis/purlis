@@ -500,6 +500,9 @@ fn billed_in(
 /// What a key profile's row and refusal say until the key proxy is there (#822).
 pub const WAITS_FOR_THE_PROXY: &str = "waits for the key proxy";
 
+/// What a key profile's row says where its harness takes no base URL, so its own sign-in only.
+pub const TAKES_ITS_OWN_SIGN_IN_ONLY: &str = "";
+
 /// What a row says where its credentials go into the harness's environment (ADR 0087 §7).
 pub const READABLE_BY_ITS_COMMANDS: &str = "the commands it runs can read these credentials";
 

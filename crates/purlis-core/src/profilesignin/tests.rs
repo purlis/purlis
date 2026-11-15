@@ -570,6 +570,39 @@ mod handing {
         );
     }
 
+    /// R-257: a harness that takes no base URL (its declaration states no `[route] formats`)
+    /// takes its own sign-in only, so a key from a vault is never set in its environment.
+    #[test]
+    fn a_harness_with_no_base_url_gets_no_key_in_its_environment() {
+        for (harness, variable) in [
+            ("codex", "OPENAI_API_KEY"),
+            ("opencode", "OPENROUTER_API_KEY"),
+        ] {
+            assert!(
+                crate::harness_declaration::builtin(harness)
+                    .unwrap()
+                    .route
+                    .formats
+                    .is_empty(),
+                "{harness} states no format in 1a"
+            );
+            let (profile, machine) =
+                signed_in(harness, key_sign_in(variable, "vault:providers/key"));
+
+            let why = at_start(&profile, &machine, &[]).expect_err("no key is handed");
+
+            assert!(why.contains("its own sign-in"), "{harness}: {why}");
+            assert!(!why.contains("waits for the key proxy"), "{harness}: {why}");
+            assert_eq!(
+                billed(&profile, &machine, &[]).as_deref(),
+                Some(TAKES_ITS_OWN_SIGN_IN_ONLY)
+                    .map(|row| format!("your key · work key · {row}"))
+                    .as_deref(),
+                "{harness}"
+            );
+        }
+    }
+
     #[test]
     fn a_cloud_that_signs_in_with_more_than_variables_is_refused_in_words() {
         for (harness, credentials, said) in [
