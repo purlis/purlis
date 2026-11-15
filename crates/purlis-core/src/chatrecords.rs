@@ -151,6 +151,11 @@ impl ChatRecord {
     pub fn cannot_reopen(&self) -> Option<CannotReopen> {
         self.reopened().err()
     }
+
+    /// Whether this chat had `number`, as it closed or before a restart (#6486).
+    pub fn answers_to(&self, number: u32) -> bool {
+        self.number == number || self.earlier.contains(&number)
+    }
 }
 
 /// **What a closed chat keeps for its Reopen** (#6485): `chat` as it closed, without what was
@@ -415,13 +420,6 @@ pub fn every(root: &Path) -> Vec<ChatRecord> {
 /// (`reopen::Record::dealt`).
 pub fn of_number(chats: &[ChatRecord], number: u32) -> Option<&ChatRecord> {
     chats.iter().find(|chat| chat.answers_to(number))
-}
-
-impl ChatRecord {
-    /// Whether this chat had `number`, as it closed or before a restart (#6486).
-    pub fn answers_to(&self, number: u32) -> bool {
-        self.number == number || self.earlier.contains(&number)
-    }
 }
 
 /// Writes `chats`, newest first, whole, under the folder's lock already held: at most

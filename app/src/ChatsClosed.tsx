@@ -100,7 +100,6 @@ export function closedChatsRow({
     <TreeRow
       id={CLOSED_CHATS}
       textValue="Closed chats"
-      className="chats-closed"
       alwaysOpen
       content={<RowLabel className="session">Closed chats</RowLabel>}
     >
@@ -165,7 +164,6 @@ function ClosedChatRow({
       ref={row}
       id={`closed:${chat.number}`}
       textValue={name}
-      className="chat-closed"
       description={at === undefined ? "closed" : `closed at ${at}`}
       onAction={choose}
       content={
@@ -173,7 +171,7 @@ function ClosedChatRow({
           <RowLabel className="session ui-text-secondary">{name}</RowLabel>
           {at !== undefined && (
             <RowTrail>
-              <span className="chat-closed-at ui-text-meta">{at}</span>
+              <span className="ui-text-meta">{at}</span>
             </RowTrail>
           )}
           {card !== null && (

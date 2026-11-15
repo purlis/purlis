@@ -32,7 +32,7 @@ import {
   REOPEN,
   SCREEN_NOT_KEPT,
   canRead,
-  cannotReopen as whyNot,
+  cannotReopen,
   cardOutcome,
   cardTitle,
   cardWhen,
@@ -52,9 +52,9 @@ export function ClosedChatCard({
   onReopen: () => void;
 }) {
   const outcome = cardOutcome(card);
-  // A chat no dispatch started has no task: no report, and no Reopen (#6304).
+  // A chat no dispatch started has no task, so no report; its Reopen is its record's (#6485).
   const task = card.task;
-  const cannotReopen = whyNot(card);
+  const whyNoReopen = cannotReopen(card);
   const readable = canRead(card);
   return (
     <div className="closed-chat-card" data-testid="closed-chat-card">
@@ -87,7 +87,7 @@ export function ClosedChatCard({
         >
           {READ_IT}
         </Button>
-        <Button onPress={onReopen} isDisabled={cannotReopen !== undefined} tooltip={cannotReopen}>
+        <Button onPress={onReopen} isDisabled={whyNoReopen !== undefined} tooltip={whyNoReopen}>
           {REOPEN}
         </Button>
       </ButtonRow>
