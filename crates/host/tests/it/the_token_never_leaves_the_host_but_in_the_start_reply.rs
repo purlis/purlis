@@ -31,8 +31,10 @@ const RUN: &str = "01J9RUN000000000000000000C";
 /// Set in the child's environment alone: only there does [`the_hosts_run_of_the_start`] run.
 const CHILD: &str = "PURLIS_TEST_TOKEN_CHILD";
 
-/// The line the child hands the token back on, the one line not read for it.
-const HANDED_BACK: &str = "the start answered the token: ";
+/// The marker the child hands the token back after, the one occurrence not read for it. libtest
+/// may have written its `test … ... ` to the same line without a newline, so the child starts
+/// its own line and the parent looks for the marker anywhere in one.
+const HANDED_BACK: &str = "purlis-test-handed-back-token:";
 
 /// The real key proxy behind the trait, keeping a copy of all it tells the host.
 #[derive(Clone)]
@@ -102,17 +104,22 @@ fn the_token_never_leaves_the_host_but_in_the_start_reply() {
     );
     let canary = stdout
         .lines()
-        .find_map(|line| line.strip_prefix(HANDED_BACK))
+        .find_map(|line| line.split_once(HANDED_BACK).map(|(_, token)| token.trim()))
         .expect("the child handed the token back")
         .to_owned();
+    assert_eq!(
+        canary.len(),
+        64,
+        "the handed-back token is a 256-bit one, as hex"
+    );
     assert!(
         stderr.contains("purlisd: key proxy: "),
         "the host's log is not in what the child wrote, so it was not read: {stderr}"
     );
-    let handed_back = format!("{HANDED_BACK}{canary}");
-    for line in stdout.lines().chain(stderr.lines()) {
+    let rest = stdout.replacen(&format!("{HANDED_BACK}{canary}"), "", 1);
+    for line in rest.lines().chain(stderr.lines()) {
         assert!(
-            line == handed_back || !line.contains(&canary),
+            !line.contains(&canary),
             "the token is in what the host wrote: {line}"
         );
     }
@@ -158,7 +165,7 @@ async fn the_hosts_run_of_the_start() {
     };
     let canary = token.0.clone();
     assert_eq!(canary.len(), 64, "a 256-bit token, as hex");
-    println!("{HANDED_BACK}{canary}");
+    println!("\n{HANDED_BACK}{canary}");
 
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
