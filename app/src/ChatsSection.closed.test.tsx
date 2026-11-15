@@ -83,17 +83,20 @@ function draw(answers: { closed?: () => unknown; byNumber?: (number: number) => 
     return null;
   });
   const pressed: Offer[] = [];
-  render(
+  const list = (open: ListedChat[]) => (
     <ChatsHere.Provider value={{ ...fixedChats(), plane: PLANE }}>
       <ChatsSection
-        rows={chatsTree([OPEN])}
+        rows={chatsTree(open)}
         front={1}
         onOpen={() => {}}
         onPress={(offer) => pressed.push(offer)}
       />
-    </ChatsHere.Provider>,
+    </ChatsHere.Provider>
   );
-  return { asked, pressed, answered };
+  const { rerender } = render(list([OPEN, { ...OPEN, session: 2, name: "steward 2" }]));
+  /** Chat 2 closes: the list is drawn with chat 1 alone. */
+  const closeChat2 = () => rerender(list([OPEN]));
+  return { asked, pressed, answered, closeChat2 };
 }
 
 function theTree(): Promise<HTMLElement> {
@@ -177,5 +180,15 @@ describe("a closed chat in the Chats list's filter (#6484)", () => {
     await waitFor(() => expect(answered.closed).toBeGreaterThan(0));
     await act(() => Promise.resolve());
     expect(queryRow(tree, /Closed chats/)).toBeNull();
+  });
+
+  it("is read again when a chat closes while the filter asks", async () => {
+    const { answered, closeChat2 } = draw();
+    await typeInTheFilter("changelog");
+    await waitFor(() => expect(answered.closed).toBe(1));
+
+    closeChat2();
+
+    await waitFor(() => expect(answered.closed).toBe(2));
   });
 });

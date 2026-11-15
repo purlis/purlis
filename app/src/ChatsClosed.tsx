@@ -43,10 +43,15 @@ function whyOf(error: unknown): string {
 
 /**
  * **The closed chats of `plane`, read as the filter starts to ask** (`asking`): none while it
- * does not, and the newest read while it does, read again each time it starts again, so a chat
- * closed meanwhile is found. A refusal finds none, and says why (`failed`).
+ * does not, and the newest read while it does, read again each time it starts again and each
+ * time the chats open now (`openNow`, their numbers) change while it asks, so a chat that closes
+ * meanwhile is found. A refusal finds none, and says why (`failed`).
  */
-export function useClosedChats(plane: PlaneId | undefined, asking: boolean): ClosedRead {
+export function useClosedChats(
+  plane: PlaneId | undefined,
+  asking: boolean,
+  openNow: string,
+): ClosedRead {
   const [read, setRead] = useState<ClosedRead>(NOTHING_READ);
   useEffect(() => {
     if (plane === undefined || !asking) return;
@@ -65,7 +70,7 @@ export function useClosedChats(plane: PlaneId | undefined, asking: boolean): Clo
     return () => {
       current = false;
     };
-  }, [plane, asking]);
+  }, [plane, asking, openNow]);
   return asking ? read : NOTHING_READ;
 }
 

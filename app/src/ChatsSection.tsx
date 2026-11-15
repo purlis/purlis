@@ -464,7 +464,12 @@ export function ChatsSection({
 
   /** **The closed chats the filter finds** (#6484): read only while words or a number are typed,
    *  and none the list draws already as a finished task. */
-  const closedAsked = useClosedChats(chats.plane, filter.text.trim() !== "" && ranks.length === 0);
+  const openNow = useMemo(() => every.map((row) => row.session).join(","), [every]);
+  const closedAsked = useClosedChats(
+    chats.plane,
+    filter.text.trim() !== "" && ranks.length === 0,
+    openNow,
+  );
   const closedRead = closedAsked.chats;
   const closedShown = useMemo(() => {
     if (closedRead.length === 0) return closedRead;
