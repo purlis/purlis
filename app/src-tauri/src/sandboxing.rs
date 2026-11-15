@@ -788,9 +788,9 @@ pub(crate) fn claude_is_wrapped_here_for_tests() -> bool {
 /// the test binary. The wrap is purlis's own program run as `<program> _sandbox …`
 /// ([`purlis_core::sandbox::program::checked_wrap`]), which in a test is the test binary, and
 /// libtest refuses that line (`Unrecognized option: 'profile'`): the chat would end at once,
-/// before anything ran inside the wrap. The app program, which Cargo puts with this build's other
-/// binaries for this crate's integration tests, serves `_sandbox` before anything else, as it does for a person.
-/// Nothing where no wrap is held.
+/// before anything ran inside the wrap. The app program, which Cargo puts with this build's
+/// other binaries for this crate's integration tests, serves `_sandbox` before anything else,
+/// as it does for a person. Nothing where no wrap is held.
 #[cfg(test)]
 pub(crate) fn the_app_program_wraps_for_tests(applied: &mut purlis_core::sandbox::Applied) {
     if applied.wrap_program().is_none() {

@@ -70,12 +70,14 @@ pub fn profile_dir_of(exe: &std::path::Path) -> Option<&std::path::Path> {
 ///
 /// Cargo builds under its build directory and copies each binary into the target directory,
 /// and the two are apart when `build.build-dir` says so (in `~/.cargo/config.toml`, say), so
-/// where they are is asked of Cargo (`cargo metadata`). `None` where this binary was not built
-/// for a test ([`profile_dir`]) or Cargo cannot say.
+/// where they are is asked of Cargo (`cargo metadata`, once a process). Where Cargo cannot say,
+/// the profile directory itself. `None` where this binary was not built for a test
+/// ([`profile_dir`]).
 pub fn bin_dir() -> Option<std::path::PathBuf> {
-    let profile = resolved(profile_dir()?);
-    let (build_dir, target_dir) = cargo_dirs()?;
-    bin_dir_of(&profile, &build_dir, &target_dir)
+    Some(folder_of_binaries(
+        &resolved(profile_dir()?),
+        cargo_dirs().as_ref(),
+    ))
 }
 
 /// [`bin_dir`] for the profile directory `profile` of a build under `build_dir`, whose binaries
@@ -88,10 +90,29 @@ pub fn bin_dir_of(
     Some(target_dir.join(profile.strip_prefix(build_dir).ok()?))
 }
 
+/// [`bin_dir_of`] for the profile directory `profile`, with what `cargo metadata` said, or the
+/// profile directory itself where Cargo said nothing or names a build directory it is not in (a
+/// `--target-dir` given on the command line, a test binary run from an archive): there the
+/// build directory is the target directory, as Cargo has it when nothing sets it apart.
+fn folder_of_binaries(
+    profile: &std::path::Path,
+    dirs: Option<&(std::path::PathBuf, std::path::PathBuf)>,
+) -> std::path::PathBuf {
+    dirs.and_then(|(build_dir, target_dir)| bin_dir_of(profile, build_dir, target_dir))
+        .unwrap_or_else(|| profile.to_path_buf())
+}
+
 /// The build directory and the target directory, as `cargo metadata` says them for the
 /// workspace this test was built in, each with its links resolved as [`std::env::current_exe`]
 /// resolves them. The build directory is the target directory for a Cargo that names none.
 fn cargo_dirs() -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+    static SAID: std::sync::OnceLock<Option<(std::path::PathBuf, std::path::PathBuf)>> =
+        std::sync::OnceLock::new();
+    SAID.get_or_init(asked_of_cargo).clone()
+}
+
+/// [`cargo_dirs`], asked of Cargo.
+fn asked_of_cargo() -> Option<(std::path::PathBuf, std::path::PathBuf)> {
     let mut cargo = cargo();
     cargo.args(["metadata", "--format-version", "1", "--no-deps"]);
     let out = crate::forklock::output(&mut cargo).ok()?;
@@ -133,20 +154,11 @@ fn cargo() -> Command {
 ///
 /// # Panics
 ///
-/// Where this binary was not built for a test, Cargo cannot say where its binaries go, the
-/// build fails, or what it built is not where its binaries go.
+/// Where this binary was not built for a test, the build fails (with what Cargo said), or what
+/// it built is not where this build's binaries are.
 pub fn built(name: &str, package: &str) -> std::path::PathBuf {
-    let profile =
-        resolved(profile_dir().expect("this test binary is in a folder of Cargo's build"));
-    let (build_dir, target_dir) = cargo_dirs().expect("cargo metadata says where it builds");
-    let bins = bin_dir_of(&profile, &build_dir, &target_dir).unwrap_or_else(|| {
-        panic!(
-            "this test was built in {}, outside the build directory Cargo names, {}",
-            profile.display(),
-            build_dir.display()
-        )
-    });
-    let beside = bins.join(name);
+    let bins = bin_dir().expect("this test binary is in a folder of Cargo's build");
+    let beside = bins.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
     if beside.is_file() {
         return beside;
     }
@@ -159,12 +171,22 @@ pub fn built(name: &str, package: &str) -> std::path::PathBuf {
         "--bin",
         name,
     ]);
-    // `[<triple>/]<profile>`, as Cargo names a build of the profile for that target.
-    let filed: Vec<_> = bins
-        .strip_prefix(&target_dir)
-        .expect("in the target directory")
-        .iter()
-        .collect();
+    // `[<triple>/]<profile>` under the target directory, as Cargo names a build of the profile
+    // for that target. Where Cargo did not say where that is, the build is taken to be for no
+    // other target, and the check below says so if it was.
+    let filed: Vec<_> = cargo_dirs()
+        .and_then(|(_, target_dir)| {
+            bins.strip_prefix(target_dir)
+                .ok()
+                .map(std::path::Path::to_path_buf)
+        })
+        .map(|filed| filed.iter().map(ToOwned::to_owned).collect())
+        .unwrap_or_else(|| {
+            bins.file_name()
+                .into_iter()
+                .map(ToOwned::to_owned)
+                .collect()
+        });
     if let [triple, _] = filed.as_slice() {
         build.arg("--target").arg(triple);
     }
@@ -175,15 +197,19 @@ pub fn built(name: &str, package: &str) -> std::path::PathBuf {
         }
         None => panic!("no profile in {}", bins.display()),
     }
-    build.stderr(std::process::Stdio::inherit());
     let out = crate::forklock::output(&mut build).expect("cargo runs");
-    assert!(out.status.success(), "{name} did not build: {}", out.status);
+    assert!(
+        out.status.success(),
+        "{name} did not build ({}):\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr)
+    );
     let made = executable_of(&String::from_utf8_lossy(&out.stdout), name)
         .unwrap_or_else(|| panic!("cargo built {name} and named no executable for it"));
     assert!(
         made.is_file() && resolved(made.clone()) == resolved(beside.clone()),
-        "cargo built {name} at {}, where this test's build has its binaries in {}: \
-         no test runs a binary of another build",
+        "cargo built {name} at {}, where this test's build has its binaries in {}: no test \
+         runs a binary of another build",
         made.display(),
         bins.display()
     );
@@ -373,6 +399,25 @@ mod tests {
         let bins = super::bin_dir().expect("a folder of binaries");
         assert!(bins.starts_with(&target_dir), "{}", bins.display());
         assert_eq!(bins.file_name(), profile.file_name());
+    }
+
+    #[test]
+    fn the_folder_of_binaries_is_the_profiles_own_where_cargo_cannot_place_it() {
+        let profile = Path::new("/x/debug");
+        let dirs = (PathBuf::from("/w/target"), PathBuf::from("/w/target"));
+        assert_eq!(super::folder_of_binaries(profile, Some(&dirs)), profile);
+        assert_eq!(super::folder_of_binaries(profile, None), profile);
+        let apart = (PathBuf::from("/cache/w"), PathBuf::from("/w/target"));
+        assert_eq!(
+            super::folder_of_binaries(Path::new("/cache/w/debug"), Some(&apart)),
+            Path::new("/w/target/debug")
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "did not match any packages")]
+    fn a_binary_that_does_not_build_says_what_cargo_said() {
+        super::built("no-such-binary", "no-such-package");
     }
 
     #[test]
