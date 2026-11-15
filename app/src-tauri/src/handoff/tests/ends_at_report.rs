@@ -20,6 +20,9 @@ mod working_again;
 /// window counts as nothing.
 mod in_a_tab_window;
 
+/// A window that crashed keeps the screen of a task that had finished (#6504).
+mod after_a_crash;
+
 /// A steward chat and the one task it dispatched, on a pretend host.
 fn a_steward_and_its_task() -> (Plane, Pretend, Planes, PlaneId, Arc<Held>, u32, u32) {
     let plane = a_plane_with_personas();
