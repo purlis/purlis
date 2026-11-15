@@ -303,16 +303,31 @@ fn nothing_but_the_window_writes_your_keys() {
     for (text, sees) in [
         ("crate::yourkeys::add(", "add"),
         ("use crate::yourkeys::{list, set_approval};", "set_approval"),
-        ("use purlis_core::yourkeys::{\n    self,\n    add,\n};", "add"),
-        ("use purlis_core::{yourkeys::{Product, set_approval}};", "set_approval"),
+        (
+            "use purlis_core::yourkeys::{\n    self,\n    add,\n};",
+            "add",
+        ),
+        (
+            "use purlis_core::{yourkeys::{Product, set_approval}};",
+            "set_approval",
+        ),
         ("use purlis_core::yourkeys::add as put;", "add"),
         ("use purlis_core::yourkeys::*;", "a glob of the store"),
         ("use purlis_core::yourkeys as yk;", "an alias of the store"),
-        ("use purlis_core::{yourkeys as yk};", "an alias of the store"),
-        ("use purlis_core::yourkeys::{self as yk};", "an alias of the store"),
+        (
+            "use purlis_core::{yourkeys as yk};",
+            "an alias of the store",
+        ),
+        (
+            "use purlis_core::yourkeys::{self as yk};",
+            "an alias of the store",
+        ),
         ("credentials.set(yourkeys::SERVICE, &id, value)", "SERVICE"),
         ("use crate::yourkeys::{SERVICE as S};", "SERVICE"),
-        ("store.set(\"purlis/@your-keys\", &id, value)", "the service's name, @your-keys"),
+        (
+            "store.set(\"purlis/@your-keys\", &id, value)",
+            "the service's name, @your-keys",
+        ),
     ] {
         assert!(
             writes_named(text).iter().any(|n| n == sees),
@@ -327,7 +342,11 @@ fn nothing_but_the_window_writes_your_keys() {
         "notyourkeys::add(",
         "SERVICE.to_owned()",
     ] {
-        assert!(writes_named(reader).is_empty(), "{reader:?}: {:?}", writes_named(reader));
+        assert!(
+            writes_named(reader).is_empty(),
+            "{reader:?}: {:?}",
+            writes_named(reader)
+        );
     }
 
     let mut offenders = Vec::new();
@@ -361,7 +380,10 @@ fn nothing_but_the_window_writes_your_keys() {
         "crates/host/src",
         "crates/session-protocol/src",
     ] {
-        assert!(root.join(must).exists(), "{must} is gone: name what replaced it");
+        assert!(
+            root.join(must).exists(),
+            "{must} is gone: name what replaced it"
+        );
     }
     assert!(walked > 100, "the walk read only {walked} files");
     assert!(
@@ -499,7 +521,9 @@ impl Store for Answering {
     fn set(&self, service: &str, account: &str, value: &str) -> Result<Held, VaultError> {
         self.inner.set(service, account, value)?;
         if self.lands_then_fails {
-            return Err(VaultError::new("the stub keychain wrote the item and then failed"));
+            return Err(VaultError::new(
+                "the stub keychain wrote the item and then failed",
+            ));
         }
         Ok(self.held)
     }
@@ -549,10 +573,17 @@ fn a_key_the_keychain_does_not_hold_to_the_app_is_refused_and_taken_out() {
     );
 
     assert!(saved.is_err(), "{saved:?}");
-    assert!(stub(config.path()).get(SERVICE, &account).unwrap().is_none());
     assert!(
-        record.ops().iter().any(|op| op.kind == Kind::CredentialDelete
-            && op.target == entry(&account)),
+        stub(config.path())
+            .get(SERVICE, &account)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        record
+            .ops()
+            .iter()
+            .any(|op| op.kind == Kind::CredentialDelete && op.target == entry(&account)),
         "{:?}",
         record.ops()
     );
@@ -585,12 +616,17 @@ fn an_item_whose_write_failed_is_taken_out_again() {
 
     assert!(saved.is_err(), "{saved:?}");
     assert!(
-        stub(config.path()).get(SERVICE, &account).unwrap().is_none(),
+        stub(config.path())
+            .get(SERVICE, &account)
+            .unwrap()
+            .is_none(),
         "the item the failed write left is still in the keychain"
     );
     assert!(
-        record.ops().iter().any(|op| op.kind == Kind::CredentialDelete
-            && op.target == entry(&account)),
+        record
+            .ops()
+            .iter()
+            .any(|op| op.kind == Kind::CredentialDelete && op.target == entry(&account)),
         "{:?}",
         record.ops()
     );
@@ -606,7 +642,9 @@ fn an_item_whose_write_failed_is_taken_out_again() {
         },
     );
     assert!(
-        saved.as_ref().is_err_and(|why| why.contains("may be left in your keychain")),
+        saved
+            .as_ref()
+            .is_err_and(|why| why.contains("may be left in your keychain")),
         "{saved:?}"
     );
 }
@@ -647,9 +685,15 @@ fn an_unread_line_naming_the_product_blocks_a_second_key() {
     }
     // One for another product is kept, and does not block.
     let here = Here::new();
-    plant(&here, &unread(serde_json::json!({ "from": "built-in", "id": "openai" })));
+    plant(
+        &here,
+        &unread(serde_json::json!({ "from": "built-in", "id": "openai" })),
+    );
     here.added("synthetic-value");
-    assert_eq!(here.index_json()["entries"].as_array().map(Vec::len), Some(2));
+    assert_eq!(
+        here.index_json()["entries"].as_array().map(Vec::len),
+        Some(2)
+    );
 }
 
 // ---------------------------------------------------------------------------------------------

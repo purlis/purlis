@@ -11,18 +11,22 @@
 //! its `approval` setting and whether it was `checked` at save. Never its value.
 //!
 //! - **Written by the window alone** (R-173): [`add`] and [`set_approval`] are called from the
-//!   app's window commands and from nothing a CLI verb, a session-protocol method or a chat tool
-//!   reaches (`nothing_but_the_window_writes_your_keys` walks those surfaces).
+//!   app's window commands (`app/src-tauri/src/yourkeyscmds.rs`) and from nothing a CLI verb, a
+//!   session-protocol method or a chat tool reaches. `nothing_but_the_window_writes_your_keys`
+//!   walks every crate and the app's Rust, and only this file and that one may name a writer or
+//!   [`SERVICE`].
 //! - **Read by one function** (R-169, R-172): [`read_key`] reads the index and the entry's item,
 //!   and nothing else: no project vault, whatever it holds under the same name, and no persona's
 //!   grant, so any chat on a profile naming the entry gets the same key in any project.
 //! - **The write order** (C-23, H-4): the index line first, then the item; a failed item write
-//!   removes the line again. A crash in between leaves at worst a line with no item.
+//!   removes the line again and takes out the item it may have left, as does a write the
+//!   keychain could not hold to the app. A crash in between leaves at worst a line with no item.
 //! - **Recovery** (C-23): a line with no item lists as unreadable ([`Listed::readable`]); an item
 //!   with no line is ignored and listed nowhere; a missing index is empty; an index that does not
 //!   parse is refused with its error and nothing is written over it.
 //! - **One key per product in 1a** (U9): a second entry for a product the index holds is not
-//!   written; [`Saved::ReplaceOffered`] names the entry held, for the form's W9.
+//!   written; [`Saved::ReplaceOffered`] names the entry held, for the form's W9. A line this
+//!   build can't read that names the product, or whose product can't be read, blocks it too.
 //! - **The approval setting** (R-030, R-621): fixed off, since adding the key in the window is
 //!   its approval. Any other setting is refused with W39.
 //!
@@ -38,7 +42,7 @@ use serde_json::{Map, Value};
 use ulid::Ulid;
 
 use crate::seam::{Credentials, Files};
-use crate::secrets::keyring::{Presence, Secret};
+use crate::secrets::keyring::{Held, Presence, Secret};
 
 /// The keychain service every entry's item is under; the account is the entry's id.
 pub const SERVICE: &str = "purlis/@your-keys";
@@ -262,7 +266,9 @@ fn read_to_write(config_root: &Path) -> Result<Index, String> {
 
 /// **Adds a key to your keys** (the window's save): the index line, then the keychain item under
 /// [`SERVICE`] and the new entry's id. A product your keys already holds a key for is not
-/// written ([`Saved::ReplaceOffered`]). A failed item write removes the line again, and the
+/// written ([`Saved::ReplaceOffered`]), nor one an unread line may already hold a key for. An
+/// item write that fails, or leaves the item the calling program's rather than held to the app
+/// ([`Held::NotYet`]), takes the item out again (best effort) and removes the line, and the
 /// error says why. Only the window calls this (R-173).
 pub fn add(
     config_root: &Path,
@@ -276,6 +282,14 @@ pub fn add(
     if let Some(held) = index.entries.iter().find(|e| e.product == product) {
         return Ok(Saved::ReplaceOffered { held: held.id });
     }
+    if index.unread.iter().any(|line| may_be_for(line, &product)) {
+        return Err(format!(
+            "{} holds a line this purlis can't read that may be a key for {}, so it adds no \
+             second one: remove that line, or open your keys in the purlis that wrote it",
+            index_path(config_root).display(),
+            product.id
+        ));
+    }
     let id = Ulid::generate();
     index.entries.push(Entry {
         id,
@@ -286,17 +300,35 @@ pub fn add(
         rest: Map::new(),
     });
     write(config_root, &index)?;
-    if let Err(why) = credentials.set(SERVICE, &id.to_string(), value) {
-        index.entries.retain(|e| e.id != id);
-        return Err(match write(config_root, &index) {
-            Ok(()) => format!("purlis couldn't keep the key in your keychain: {why}"),
-            Err(left) => format!(
-                "purlis couldn't keep the key in your keychain: {why}; and its line is left in \
-                 your keys: {left}"
-            ),
-        });
+    let account = id.to_string();
+    let why = match credentials.set(SERVICE, &account, value) {
+        // Held to the app, or by a store that keeps no rule (the stub, or off macOS).
+        Ok(Held::ToTheApp | Held::NoRule) => return Ok(Saved::Added(id)),
+        // Outside the app on macOS: the item is the calling program's, which only the window's
+        // write may never leave.
+        Ok(Held::NotYet) => "the item couldn't be held to the purlis app; add the key in \
+                             the purlis window"
+            .to_owned(),
+        Err(why) => why.to_string(),
+    };
+    // The item may have landed: it is taken out again, best effort, with its line.
+    let mut said = format!("purlis couldn't keep the key in your keychain: {why}");
+    if let Err(left) = credentials.delete(SERVICE, &account) {
+        said += &format!("; and an item for it may be left in your keychain: {left}");
     }
-    Ok(Saved::Added(id))
+    index.entries.retain(|e| e.id != id);
+    if let Err(left) = write(config_root, &index) {
+        said += &format!("; and its line is left in your keys: {left}");
+    }
+    Err(said)
+}
+
+/// Whether an index line this build can't read may be a key for `product`: it names the
+/// product, or its product can't be read at all, so a second key is never added beside it.
+fn may_be_for(line: &Value, product: &Product) -> bool {
+    line.get("product")
+        .and_then(|p| serde_json::from_value::<Product>(p.clone()).ok())
+        .is_none_or(|named| named == *product)
 }
 
 /// **Your keys as listed**: every entry the index holds, each readable unless the keychain
