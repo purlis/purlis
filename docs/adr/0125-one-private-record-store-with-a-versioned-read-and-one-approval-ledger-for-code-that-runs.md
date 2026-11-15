@@ -5,8 +5,8 @@ epic: **R1** (build A, the record store, with B, the approval ledger, on top of 
 later efforts), **R2** (a newer record is never deleted or overwritten), **R3** (one subject and
 one lifecycle for a page and its Regenerate), **R4** (gaps 14 and 17 are in scope) and **R5**
 (two review rounds before building). Those rulings are decided and this record does not reopen
-them. Where it needs a choice the rulings do not make, it says **Open: Qn**, and the question is
-listed under [Open questions](#open-questions) for the operator's grill.
+them. The choices the rulings did not make were grilled with the operator on 2026-11-15 as Q1 to
+Q16. Each is marked (Qn) where it applies and listed under [Decisions](#decisions-on-q1-to-q16).
 
 The background is [`docs/surfaces.md`](../surfaces.md): gaps 1, 2, 7, 10, 11, 12, 14, 16 and 17,
 and seams 1 and 2. The call-site inventory, the contract tests and the order of tickets are in
@@ -123,10 +123,10 @@ reads keep their bounds; they move into the declaration.
 - **The private write is one function**, `rewrite::replace` with `Mode::Private`, gated from
   the store's root. It is never called by a store's own code.
 
-**Which purlis wrote it.** Every write stamps `written_by`, the writing purlis's version, beside
-the version field. It is additive: a reader that does not know it keeps it (above) or ignores
-it. A refusal names it. A record written before this shipped says "a newer purlis (version N)".
-**Open: Q1.**
+**Which purlis wrote it.** No new key is added (Q1). A refusal names the record's version and
+the store, "written by a newer purlis (record version N)", and its remedy is Update purlis. A
+store that bumps its version records the release that introduced it in the store's
+declaration, so the sentence can say "purlis X.Y or later" without anything on disk.
 
 ### 2. Whole-file and row stores under R2
 
@@ -136,19 +136,21 @@ R2 decides the behaviour. This record says where it lives:
   write. The file stays as it is. What the feature then does is the store's declared
   **fail-closed** answer, which can only ask more or do less, never grant more. An approval
   record that refuses reads as nothing approved, so the subject asks, and approving refuses with
-  the sentence. Where the refusal is shown: **Open: Q3.**
+  the sentence. Where the refusal is shown (Q3): one Notice per refused store, cause `record-refused:<store>`, saying it was written by a newer purlis, with Update purlis as its fix, plus a doctor line.
 - **A row store skips a row it cannot place and keeps it on disk.** For a JSONL file, a rewrite
   carries every skipped line through byte for byte, in its place. For a folder of files, the
   file is left. **The dispatch queue stops deleting**: a message of another `v`
   (`dispatchqueue.rs`) is left in place, and `purlis dispatch list` shows it as waiting for a
   newer purlis. A message whose MAC fails is an integrity failure, not a version, and it is
   still never delivered. It stops being silent: `purlis dispatch list` and the doctor say so,
-  where today only a log line does. Whether it is also kept on disk: **Open: Q15.** The doctor
+  where today only a log line does. It is moved aside, not removed (Q15): into a `refused/` folder beside the queue, kept for the person to inspect, and never read as a message again. The doctor
   counts each store's skipped rows.
 - **`forge-accounts.json` stops downgrading on write.** It becomes a whole-file store at version
   1, so a version-2 file is refused and kept.
 - **A store marked rebuildable or transient** is read through the store, so it never misreads.
-  Whether R2's "never overwritten" binds it, or whether it may simply be rebuilt: **Open: Q2.**
+  It may be rebuilt over a newer one, because nothing is lost (Q2). This is the one narrow
+  exception to R2, and it holds only for a store whose declaration says rebuildable or
+  transient.
 
 ### 3. Which private writers survive
 
@@ -197,10 +199,10 @@ keep their spelling. `widened` is new.
 
 | Adapter | Key | Fingerprint | Record and tier | Approved by | Forgotten by | Moved by |
 | --- | --- | --- | --- | --- | --- | --- |
-| **Extension** | its id, and its folder in the entry | every path and byte of the folder, plus the manifest's protocol when it has a program | `<config>/extensions.json`, Machine, device-bound | the Extensions view's press (`app/src-tauri/src/extensions.rs:1530`, `approve_extension`; `app/src-tauri/src/views.rs:760`, `:1235`) | Remove (`app/src-tauri/src/extensions.rs:1551`, `forget_extension`) | nothing: a move is a new program and asks again (**Open: Q13**) |
+| **Extension** | its id, and its folder in the entry | every path and byte of the folder, plus the manifest's protocol when it has a program | `<config>/extensions.json`, Machine, device-bound | the Extensions view's press (`app/src-tauri/src/extensions.rs:1530`, `approve_extension`; `app/src-tauri/src/views.rs:760`, `:1235`) | Remove (`app/src-tauri/src/extensions.rs:1551`, `forget_extension`) | carried when its fingerprint is unchanged, since every path and byte is the same; otherwise it is a new subject and asks (Q13) |
 | **Page and Regenerate**, one subject | `artifact::approval::key`: the workspace's real path and the folder | two parts: the template (every path and byte but its data) with its reach (§6), and the Regenerate code folder with its command words | both files as they are, `<config>/artifact-approvals.json` and `<config>/artifact-regenerate-approvals.json`, Machine, device-bound | the page bar's press (`app/src-tauri/src/artifacts.rs:1400`, `artifact_approve`) and Regenerate's (`app/src-tauri/src/regenerate.rs:168`, `artifact_regenerate_approve`) | an unpin here (`artifact/mod.rs:428`, `unpin_here`), which forgets **both** parts | a workspace rename (`wscmd/rename.rs:1292`, `follow_in_approvals`), which carries **both** parts |
-| **Harness declaration** | the declaration's name | its whole digest | `.charter/harness-declarations-approved.json`, **Clone state**, as ADR 0069 has it | the start dialog's press (`app/src-tauri/src/lib.rs:1865`, `approve_profile`) | **Open: Q9** | nothing to move: the record lives in the clone, and a renamed declaration is a new name |
-| *(with the harness, **Open: Q10**)* local profile | the profile's name | its kind, command and environment as declared | `.charter/harness-profiles-launched.json`, Clone state | the same press | as the declaration | as the declaration |
+| **Harness declaration** | the declaration's name | its whole digest | `.charter/harness-declarations-approved.json`, **Clone state**, as ADR 0069 has it | the start dialog's press (`app/src-tauri/src/lib.rs:1865`, `approve_profile`) | removing it through purlis, or Forget on its harness card. A pull that removes it leaves the record, and the same bytes added back stand approved (Q9) | nothing to move: the record lives in the clone, and a renamed declaration is a new name |
+| *(part of the harness adapter, Q10)* local profile | the profile's name | its kind, command and environment as declared | `.charter/harness-profiles-launched.json`, Clone state | the same press | as the declaration | as the declaration |
 
 **Each adapter keeps its tier** (R3, ADR 0069). The ledger does not move a record between tiers,
 and gap 12 is closed by naming the difference, not by removing it. A harness declaration is
@@ -216,11 +218,12 @@ tells every window, as an approval of a page does today.
 (`personaverbs/mcp.rs:32`, `approve` at `:374`) holds the fingerprints of each persona's MCP
 server lines that this clone approved. That is code that runs, and R3 does not name it. A bad
 file reads as empty there, and the next approval then writes only its own persona, losing every
-other approval. It moves onto the record store in any case. Whether it is also a fifth adapter
-of the ledger: **Open: Q16.**
+other approval. It moves onto the record store in any case. It also becomes a fifth adapter of
+the ledger, in Clone state like the harness declaration, with the same events and the
+code-approval Notice. It lands after the four adapters R3 names (Q16).
 
-**Removing a workspace** ends every pin in it. Whether it also forgets their approvals:
-**Open: Q11.**
+**Removing a workspace** ends every pin in it. It also forgets their approvals, as unpinning
+each would (Q11).
 
 ### 6. A page's reach is part of what is approved (R4, gap 17)
 
@@ -262,9 +265,9 @@ plane cannot ride an old grant.
 A result's shape is left out too. For a core `@N` it is frozen by
 `tests/fixtures/queries/v1.json`, so a wider result is a new `@N`, which the page must declare.
 For an extension, a wider result is a change to the extension, and its own approval catches it.
-**Open: Q7.** Whether installing an extension a page was waiting on asks again: **Open: Q8.**
+Result shapes stay out of the reach (Q7). A page approved while its extension was missing records `needs-extension` in its reach, so installing the extension asks again, because what the page can read grew (Q8).
 
-Pages approved before the reach existed have no `reach`. How they stand: **Open: Q6.**
+Pages approved before the reach existed have no `reach`. They are compared with a **baseline reach**: the reach the catalogue gave at the release that ships this, frozen in a fixture. Such a page asks again only if something widened since that release (Q6).
 
 ### 7. One re-ask drawing (R4, gap 14)
 
@@ -301,14 +304,14 @@ already a Notice, and the code-approval Notice follows its shape.
 
 **A first ask and a re-ask are one drawing.** They differ in their "why" line, and only a
 re-ask says what changed. Re-installing a changed extension therefore shows the re-ask, because
-the ledger's standing chooses the sentence, not the way in. Whether a first ask raised by the
-person's own press (installing an extension, pressing Regenerate) keeps a dialog:
-**Open: Q12.** Whether a code approval that a waiting chat is held on is also listed in Asks
-(ADR 0121, amended 2026-11-10, "consents and confirmations are asks"): **Open: Q14.**
+the ledger's standing chooses the sentence, not the way in. A first ask raised by the person's
+own press (installing an extension, pressing Regenerate) uses the same Notice, opened by the
+press (Q12). A code approval that a waiting chat is held on is a Notice only. It is not also
+listed in Asks, because the chat's start refusal already says why it waits (Q14).
 
 **One press for one subject.** The page and its Regenerate are one subject, so they ask in one
-Notice that lists each part that asks. Whether one Approve approves every part it lists, or each
-part keeps its own press: **Open: Q5.**
+Notice that lists each part that asks. One Approve approves exactly the parts it lists,
+each by the fingerprint it showed (Q5).
 
 ### 8. Regenerate runs only for an approved page (R3, gap 16)
 
@@ -317,8 +320,9 @@ at the same time as Regenerate's own standing: right before the run, in `run_pre
 (`app/src-tauri/src/regenerate.rs:232`), and in `artifact_regenerate_about`
 (`app/src-tauri/src/regenerate.rs:118`), so the button is disabled with its reason before any
 press. `purlis artifact regenerate --check` prints both parts. The refusal says "Approve the
-page first", and its remedy opens the subject's Notice. Whether a script-free page, which has
-nothing to approve, satisfies the gate: **Open: Q4.**
+page first", and its remedy opens the subject's Notice. A script-free page satisfies the gate,
+because it has nothing to approve and its data is inert. A page on a platform where script never
+runs does not, because it cannot be approved there (Q4).
 
 ### 9. What stays out
 
@@ -344,9 +348,9 @@ nothing to approve, satisfies the gate: **Open: Q4.**
 - **Every existing file keeps its name, place, tier and shape.** The page record and the
   Regenerate record stay two files. The ledger joins them by the key they already share, so no
   approval is lost: an entry approved yesterday stands Approved tomorrow.
-- **Two keys are added, both additive:** `written_by` on every record the store writes (§1), and
-  `reach` on a page approval's entry (§6). `docs/plane-format.md` records both before the code
-  writes them, as the repository's rules require.
+- **One key is added, additively:** `reach` on a page approval's entry (§6).
+  `docs/plane-format.md` records it before the code writes it, as the repository's rules
+  require. No `written_by` key is added (Q1).
 - **The approval records' `version: 1` is read at last.** 1, or absent, is Understood. A higher
   version is refused and kept (R2). The two harness consent records have no version, and they
   read as unstamped version 1.
@@ -369,8 +373,8 @@ nothing to approve, satisfies the gate: **Open: Q4.**
 
 - **Every store's read moves to one place.** About forty call sites change, one store per
   ticket, each behind a contract test that pins today's answer first (design note).
-- **An older purlis meets `written_by` and `reach`.** Each store's current reader must tolerate
-  an unknown key before either key ships. A contract test holds that for every store, and a
+- **An older purlis meets `reach`.** Each store's current reader must tolerate an unknown key
+  before it ships. A contract test holds that for every store, and a
   store that refuses unknown keys today is changed first.
 - **A person may be asked once more.** A re-pinned page's Regenerate asks again, and a page whose
   reach widens asks again. Both are the point of R3 and R4.
@@ -419,66 +423,29 @@ an approval is device-bound by its tier, not keyed by the device id.
 - **Put link hosts and dispatch grants in the ledger.** They are reach between people, personas
   and hosts, not code. Folding them in would give a ledger whose "Changed" means nothing for them.
 
-## Open questions
+## Decisions on Q1 to Q16
 
-Each is for the operator. The recommendation is first, and the alternatives follow.
+The operator decided these on 2026-11-15, after the draft. "Default" means the operator took the
+draft's recommendation. "Changed" means the operator chose an alternative.
 
-- **Q1. `written_by` on every record.** Recommended: add it, additive, on every write, so R2's
-  refusal can name the purlis. Alternatives: name only "a newer purlis" and the version, with
-  no new key; or add it only when a store bumps its version.
-- **Q2. Rebuildable and transient stores under R2.** Recommended: they read through the store,
-  but a newer one may be rebuilt over, because nothing is lost. Alternatives: R2 in full, so an
-  older purlis keeps its own file beside the newer one's; or leave them out of the store.
-- **Q3. Where a refused whole-file store is shown.** Recommended: one Notice per refused store,
-  cause `record-refused:<store>`, saying which purlis wrote it, with "Update purlis" as its fix,
-  plus the doctor line. Alternatives: the doctor alone; or a refusal only at the feature that
-  touches it.
-- **Q4. Regenerate's gate and a script-free page.** Recommended: a script-free page satisfies
-  the gate, because it has nothing to approve and its data is inert. A page on a platform where
-  script never runs does not, because it cannot be approved there. Alternatives: every page with
-  a Regenerate needs an explicit approval, scripted or not; or the gate applies only to a
-  scripted page.
-- **Q5. One press or two for a page and its Regenerate.** Recommended: one Notice and one
-  Approve, which approves exactly the parts it lists, each by the fingerprint it showed.
-  Alternative: one Notice, a press per part, so the page can be approved without its code.
-- **Q6. Page approvals with no `reach`.** Recommended: compare them with a baseline reach, the
-  one computed from the catalogue as the release that ships reach froze it in the fixture. An
-  approval is then asked again only if something widened since. Alternatives: ask every approved
-  page once after the upgrade; or treat a missing `reach` as approved until the next approval,
-  which leaves gap 17 open for old approvals.
-- **Q7. Result shapes in the reach.** Recommended: leave them out, because core results are
-  frozen per `@N` by the fixture and an extension's are covered by its own approval.
-  Alternative: put each declared query's result schema digest in the reach.
-- **Q8. A page approved while its extension was missing.** Recommended: the reach records
-  `needs-extension`, and installing the extension asks again, because what the page can read
-  grew. Alternative: record only the extension's id, so installing it asks nothing more.
-- **Q9. What forgets a harness declaration's approval.** Recommended: removing it through purlis,
-  and a Forget on the harness card. A declaration removed by a pull leaves its record, and the
-  same bytes added back stand approved, as an extension's id does. Alternatives: forget when a
-  launch finds it gone, which makes a read write; or never forget.
-- **Q10. The local-profile record.** Recommended: it is part of the harness adapter, with the
-  same events and drawing, because the same press approves both. Alternatives: a fifth adapter;
-  or out of the ledger.
-- **Q11. Removing a workspace.** Recommended: it forgets the approvals of its pages, as
-  unpinning each would. Alternative: leave them, so a restore at the same path finds them
-  approved.
-- **Q12. A first ask raised by the person's own press.** Recommended: the same Notice, opened by
-  the press (ADR 0121, amended 2026-11-12), so first ask and re-ask are one drawing.
-  Alternative: keep a dialog for the first ask after a press, and use the Notice only for a
-  re-ask.
-- **Q13. A moved extension.** Recommended: it stays a new subject and asks again, as today,
-  because the folder is what was approved. Alternative: carry the approval when the bytes are
-  the same.
-- **Q14. A code approval a waiting chat is held on.** Recommended: it is listed in Asks as well
-  as being a Notice, derived from one state as ADR 0121's consents are. This applies to a
-  harness declaration a dispatched or restarted chat waits on. Alternative: a Notice alone,
-  because the chat's start refusal already says so.
-- **Q15. A queued dispatch message whose MAC fails.** Recommended: never delivered, removed, and
-  said in `purlis dispatch list` and the doctor. R2's "stops deleting silently" is then met by
-  saying it, and a forged file does not linger. Alternatives: move it aside into a refused
-  folder and keep it for the person to inspect; or keep it in place like a newer row.
-- **Q16. A persona's MCP server approvals** (`.charter/mcp-approved.json`, Clone state).
-  Recommended: a fifth adapter of the ledger, in Clone state like the harness declaration, with
-  the same events and the code-approval Notice, landed after the four R3 names. Alternatives:
-  in this epic from the start; or only its versioned read now, with the ledger left to a later
-  effort.
+- **Q1, changed.** No `written_by` key. A refusal names the record's version, and a store's
+  declaration names the release that introduced each version.
+- **Q2, default.** A rebuildable or transient store may be rebuilt over a newer one.
+- **Q3, default.** One Notice per refused store, `record-refused:<store>`, plus a doctor line.
+- **Q4, default.** A script-free page satisfies the Regenerate gate. A page where script never
+  runs does not.
+- **Q5, default.** One Notice and one Approve, which approves exactly the parts it lists.
+- **Q6, default.** Approvals with no reach are compared with a baseline reach frozen at the
+  release that ships this.
+- **Q7, default.** Result shapes stay out of the reach.
+- **Q8, default.** Installing an extension a page waited on asks again.
+- **Q9, default.** A harness declaration's approval is forgotten by removing it through purlis,
+  or by Forget on its card. A pull that removes it does not forget it.
+- **Q10, default.** The local-profile record is part of the harness adapter.
+- **Q11, default.** Removing a workspace forgets its pages' approvals.
+- **Q12, default.** A first ask raised by the person's press uses the same Notice.
+- **Q13, changed.** A moved extension carries its approval when its fingerprint is unchanged.
+- **Q14, changed.** A code approval a waiting chat is held on is a Notice only, not also an Ask.
+- **Q15, changed.** A queued dispatch message whose MAC fails is moved aside into `refused/`,
+  kept for inspection and never delivered, and said in `purlis dispatch list` and the doctor.
+- **Q16, default.** `.charter/mcp-approved.json` is a fifth ledger adapter, landed after the four.

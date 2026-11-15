@@ -5,8 +5,8 @@ This note is the working half of
 for epic #6677. The ADR decides. This note lists what moves: every private record that would
 move onto the record store, every approval adapter with its record, key and lifecycle callers,
 the contract tests that must exist before anything moves, and a proposed order of tickets. It
-proposes and does not decide. Where the ADR leaves a question open (Q1 to Q16), this note
-follows the ADR's recommendation and marks the row.
+proposes and does not decide. Where the ADR records a decision on Q1 to Q16, this note
+follows that decision and marks the row.
 
 Every `path:line` was read at `2dc0d73c2`. Paths are shortened as in
 [`docs/surfaces.md`](../surfaces.md): `core` is `crates/purlis-core/src`, `tauri` is
@@ -40,14 +40,14 @@ only) or **none**. A ⚠ marks a store that loses data today when its file is da
 | 3 | `<config>/artifact-regenerate-approvals.json` | `core/artifact/regenerate.rs:49` | Machine, device-bound (`pf:8814`) | whole | unread (`:495`) | refuse | no | none |
 | 4 | `.charter/harness-declarations-approved.json` ⚠ | `core/harness_declaration.rs:54` | Clone state (`pf:1124`) | whole | none; a bad file reads `{}` and the next approval writes only itself | refuse | while it parses | none |
 | 5 | `.charter/harness-profiles-launched.json` ⚠ | `core/profiletrust.rs:26` | Clone state (`pf:1010`) | whole | as 4 | refuse | while it parses | none |
-| 6 | `.charter/mcp-approved.json` ⚠ | `core/personaverbs/mcp.rs:32` | Clone state (`pf:4806`, listed again at `pf:8158`) | whole | none; as 4 | refuse (ADR Q16) | while it parses | none |
+| 6 | `.charter/mcp-approved.json` ⚠ | `core/personaverbs/mcp.rs:32` | Clone state (`pf:4806`, listed again at `pf:8158`) | whole | none; as 4 | refuse; fifth adapter (ADR Q16) | while it parses | none |
 | 7 | `<config>/artifact-link-hosts.json` | `core/artifact/links.rs:32` | Machine, device-bound (`pf:8816`) | whole | unread | refuse | no | none |
 
 **Rows** (ticket 10):
 
 | # | File | Module | Tier | Today | Under R2 | Lock |
 | --- | --- | --- | --- | --- | --- | --- |
-| 8 | `.charter/app/spool/messages/<chat>/<seq>.json` | `core/dispatchqueue.rs:49` | Machine, device-bound (`pf:7928`; no heading of its own) | **deleted** (`:625`; `hookwire/relay/carrying.rs:216`) | skip, listed as waiting (ADR §2, Q15 for a bad MAC) | none (made once) |
+| 8 | `.charter/app/spool/messages/<chat>/<seq>.json` | `core/dispatchqueue.rs:49` | Machine, device-bound (`pf:7928`; no heading of its own) | **deleted** (`:625`; `hookwire/relay/carrying.rs:216`) | skip, listed as waiting (ADR §2); a bad MAC is moved aside into `refused/` (ADR Q15) | none (made once) |
 | 9 | `.charter/app/dispatches/<ULID>.json` | `core/dispatchrecord.rs:73` | Clone state (`pf:7392`) | skipped | skip | flock |
 | 10 | `.charter/app/spool/<chat>/<key>-<seq>` | `core/hookwire/spool.rs:96` | Clone state, transient (`pf:7829`) | unread; an unparseable line is deleted | skip (gap 7) | none (made once) |
 | 11 | `…/skill-grades/<YYYY-MM>.jsonl` and `routers/` | `core/skills/grades.rs:35`, `core/skills/grades/routers.rs:39` | Machine, device-bound (`pf:9029`, `:9038`) | skipped | skip | none (append) |
@@ -57,10 +57,10 @@ only) or **none**. A ⚠ marks a store that loses data today when its file is da
 | 15 | `<config home>/runner-hours.jsonl` | `core/runnerhours.rs:32` | Machine, device-bound (`pf:8874`) | none; a bad line is skipped and dropped on rewrite | skip | flock |
 | 16 | `<data>/network/<key>.jsonl` | `core/sandboxblock_record.rs:46` | Machine, device-bound (`pf:8842`) | none; skipped and kept | skip | flock only with a config home |
 | 17 | `.charter/save-journal.jsonl` | `core/planegit.rs:3383` | Clone state (`pf:8417`) | none; skipped and kept | skip | none |
-| 18 | `.charter/app/arrived/<chat>.json` | `core/sandbox/arrived.rs:407` | Clone state, rebuildable (`pf:7531`) | overwritten (stamped 1) | per ADR Q2 | flock |
-| 19 | `…/skill-levels/<chat>.json` | `core/skills/levels.rs:26` | Machine, device-bound, transient (`pf:9256`) | none; replaced | per ADR Q2 | none |
-| 20 | `<config>/forge-budget/<account>.json` | `core/forge/budget.rs:236` | Machine, device-bound, transient (`pf:8819`) | none; overwritten | per ADR Q2 | flock |
-| 21 | `<config>/forge-etags/…/<sha>.json` | `core/forge/etag.rs:69` | Machine, device-bound, rebuildable (`pf:8818`) | none; replaced | per ADR Q2 | none |
+| 18 | `.charter/app/arrived/<chat>.json` | `core/sandbox/arrived.rs:407` | Clone state, rebuildable (`pf:7531`) | overwritten (stamped 1) | rebuild over (ADR Q2) | flock |
+| 19 | `…/skill-levels/<chat>.json` | `core/skills/levels.rs:26` | Machine, device-bound, transient (`pf:9256`) | none; replaced | rebuild over (ADR Q2) | none |
+| 20 | `<config>/forge-budget/<account>.json` | `core/forge/budget.rs:236` | Machine, device-bound, transient (`pf:8819`) | none; overwritten | rebuild over (ADR Q2) | flock |
+| 21 | `<config>/forge-etags/…/<sha>.json` | `core/forge/etag.rs:69` | Machine, device-bound, rebuildable (`pf:8818`) | none; replaced | rebuild over (ADR Q2) | none |
 
 **Whole-file records** (ticket 11):
 
@@ -71,7 +71,7 @@ only) or **none**. A ⚠ marks a store that loses data today when its file is da
 | 24 | `<config>/forge-accounts.json` | `core/forge/accounts.rs:62` | Machine, device-bound (`pf:8838`) | **overwritten** (stamped 1, `:689`) | refuse (R2) | yes | mutex |
 | 25 | `<config>/onboarding.json` | `core/onboarding.rs:37` | Machine, device-bound (`pf:8797`) | overwritten | refuse | no | none |
 | 26 | `<config>/layout.json` | `core/windowprefs.rs:63` | Machine, syncable (`pf:8795`) | refused on read, overwritten by a whole write | refuse | partly | flock |
-| 27 | `<config>/runner-log-cursors.json` | `core/runnercursors.rs:29` | Machine, device-bound, rebuildable (`pf:8794`) | overwritten | per ADR Q2 | no | mutex |
+| 27 | `<config>/runner-log-cursors.json` | `core/runnercursors.rs:29` | Machine, device-bound, rebuildable (`pf:8794`) | overwritten | rebuild over (ADR Q2) | no | mutex |
 | 28 | `<config>/theme-choices.json` | `core/theme/choices.rs:69` | **not in `docs/plane-format.md`**: add it first | refused on edit | refuse | no | flock |
 | 29 | `<config>/reports.json` | `core/report/consent.rs:35` | Machine, device-bound (`pf:8798`) | overwritten | refuse | no | none |
 | 30 | `<config>/report-drafts.json` | `core/report/held.rs:99` | Machine, device-bound (`pf:8800`) | overwritten | refuse | no | mutex |
@@ -82,7 +82,7 @@ only) or **none**. A ⚠ marks a store that loses data today when its file is da
 | 35 | `<config home>/purlisd/runners-stopped.json` | `crates/host/src/reach.rs:53` | Machine, device-bound (`pf:8810`) | none; overwritten | refuse | no | mutex |
 | 36 | `<data>/inbox/<key>.json` and `.snoozed`, `.baseline`, `.seen`, `rules.json` | `core/inboxupdates.rs:34`, `askrules.rs:37` | Machine, device-bound (`pf:8846`-`:8850`) | none; overwritten | refuse (the first is transient: ADR Q2) | no | flock |
 | 37 | `.charter/app/spool/messages/records.json` | `core/dispatchtalk.rs:304` | Machine, device-bound (`pf:7928`) | overwritten (stamped 2) | refuse | no | none |
-| 38 | `.charter/app/dispatches/ended.json` | `core/dispatchrecord/ended.rs:38` | Clone state, rebuildable (`pf:7420`) | overwritten | per ADR Q2 | no | none |
+| 38 | `.charter/app/dispatches/ended.json` | `core/dispatchrecord/ended.rs:38` | Clone state, rebuildable (`pf:7420`) | overwritten | rebuild over (ADR Q2) | no | none |
 | 39 | `.charter/app/dispatches/refused-while-away.json` | `core/dispatchaway.rs:86` | Clone state (`pf:7511`) | refused | refuse | no | flock |
 | 40 | `.charter/app/dispatch-never.json` | `core/dispatchnever.rs:60` | Clone state (`pf:6664`) | none; a bad entry refuses the change | refuse | yes | flock |
 | 41 | `.charter/app/chat-records/closed.json` ⚠ | `core/chatrecords.rs:50` | Clone state (`pf:7610`) | overwritten, earlier entries lost | refuse | partly | flock |
@@ -90,16 +90,16 @@ only) or **none**. A ⚠ marks a store that loses data today when its file is da
 | 43 | `<data>/app-state/<clone>/studio-chats.json` ⚠ | `core/reopen/studio_chats.rs:28` | Machine, device-bound (`pf:9012`) | overwritten, earlier entries lost | refuse | partly | flock |
 | 44 | `.charter/app/secret-asks.json` | `core/secrets/ask.rs:79` | Clone state (`pf:6818`) | overwritten (stamped 1) | refuse | no | mutex |
 | 45 | `<config home>/purlis/sandbox-grants/<clone>.json` and `every-project.json` | `core/sandbox/local.rs:41`, `:1453` | Machine, device-bound (`pf:4738`) | none; overwritten | refuse | no | flock |
-| 46 | `.charter/app/browsers-at-quit.json` | `core/browsersatquit.rs:26` | Clone state, rebuildable (`pf:6678`) | none; deleted on read | per ADR Q2 | no | none |
-| 47 | `.charter/app/browser-timelines/<chat>/timeline.json` | `core/browsertimeline.rs:48` | Clone state, transient (`pf:6713`) | none; a bad list deletes the chat's folder | per ADR Q2 | no | mutex |
+| 46 | `.charter/app/browsers-at-quit.json` | `core/browsersatquit.rs:26` | Clone state, rebuildable (`pf:6678`) | none; deleted on read | rebuild over (ADR Q2) | no | none |
+| 47 | `.charter/app/browser-timelines/<chat>/timeline.json` | `core/browsertimeline.rs:48` | Clone state, transient (`pf:6713`) | none; a bad list deletes the chat's folder | rebuild over (ADR Q2) | no | mutex |
 | 48 | `.charter/app/mirrors-offered.json` | `core/guest.rs:480` | Clone state (`pf:6746`) | none; overwritten | refuse | no | flock |
 | 49 | `.charter/app/spool/keys.json` | `core/hookwire/spool.rs:101` | Clone state, transient (`pf:8014`) | refused (and the doctor checks it again, `core/doctor/spool.rs:50`) | refuse; the doctor asks the store | no | flock |
 | 50 | `app/spool/messages/waits.json` (runner) ⚠ | `core/hookwire/relay/carrying.rs:88` | Machine, device-bound (`pf:7951`) | overwritten, queued messages retired | refuse | no | mutex |
 | 51 | `…/skill-grade-after-edit.json`, `…/skill-earlier-names.json` | `core/skills/grades/after_edit.rs:33`, `core/skills/grades/earlier.rs:45` | Machine, device-bound (`pf:9070`, `:9098`) | overwritten | refuse | no | flock |
 | 52 | `skills.local.lock` | `core/skills/source/lock.rs:26` | Clone state (`pf:1767`) | refused | refuse | no | compare-and-swap |
-| 53 | `.charter/cache/skill-sources-checked.json` | `core/skills/source/checked.rs:31` | Clone state, rebuildable (`pf:8663`) | overwritten | per ADR Q2 | no | mutex |
+| 53 | `.charter/cache/skill-sources-checked.json` | `core/skills/source/checked.rs:31` | Clone state, rebuildable (`pf:8663`) | overwritten | rebuild over (ADR Q2) | no | mutex |
 | 54 | `.charter/plane-push.json`, `.charter/save-branch.json` | `core/planegit.rs:277`, `planegit/prsave.rs:280` | Clone state (`pf:8184`, `:8226`) | none | refuse | no | none |
-| 55 | `.charter/guard-seen.json` | `core/guardseen.rs:30` | Clone state, rebuildable, legacy (`pf:8136`) | none; rebuilt | per ADR Q2 | no | none |
+| 55 | `.charter/guard-seen.json` | `core/guardseen.rs:30` | Clone state, rebuildable, legacy (`pf:8136`) | none; rebuilt | rebuild over (ADR Q2) | no | none |
 | 56 | `<config home>/signing/pushed.json`, `commit-emails.json`; `.charter/signing/waiting.json` | `core/signingsetup.rs:520`, `:620`; `signingsetup/retry.rs:109` | **not in `docs/plane-format.md`**: add them first | none; overwritten | refuse | no | none |
 
 **Out of scope:** the Plane tier (`charter.toml`, `pins.toml`, `skills.lock`, workspace markdown,
@@ -132,7 +132,7 @@ and whose `docs/plane-format.md` entry (`pf:6614`) should say so.
 | Read | `core/extension.rs:2448`, `read_record`, which already refuses a newer record and never overwrites it (`:2624`, `update`) |
 | Approved | `tauri/extensions.rs:1530`, `approve_extension`; `tauri/views.rs:760`, `:1235`; all call `core/extension.rs:2715`, `approve` |
 | Forgotten | `tauri/extensions.rs:1551`, `forget_extension`, calling `core/extension.rs:2791`, `forget` |
-| Moved | not carried: an id from another folder is another program (`core/extension.rs:2738`, `moved_clears_reading`). ADR Q13 recommends keeping that |
+| Moved | not carried: an id from another folder is another program (`core/extension.rs:2738`, `moved_clears_reading`). ADR Q13 changes it: carried to the new folder when the fingerprint is unchanged; `moved_clears_reading` changes with it |
 | Gated at use | every question re-reads the record and re-fingerprints the folder (`core/executor.rs`, surfaces section 1) |
 | Re-ask today | `ui/ApproveExtension.tsx:59` (a `Dialog`, "Trust it anyway" at `:73`); the row in `ui/Extensions.tsx` |
 | Moves to | the code-approval Notice; the Extensions row keeps its state word |
@@ -150,7 +150,7 @@ and whose `docs/plane-format.md` entry (`pf:6614`) should say so.
 | Approved | page: `tauri/artifacts.rs:1400`, `artifact_approve` (also `grant_plane`, `core/artifact/approval.rs:331`); Regenerate: `tauri/regenerate.rs:168`, `artifact_regenerate_approve` |
 | Forgotten | `core/artifact/mod.rs:428`, `unpin_here`, which calls page `forget` only (`:436`). Under the ADR it forgets both |
 | Moved | `core/wscmd/rename.rs:758` calls `follow_in_approvals` (`:1292`), which calls page `moved` only (`:1298`). Under the ADR it moves both |
-| Removed | `core/wscmd/remove.rs` (workspace remove) touches neither today. ADR Q11 recommends forgetting both |
+| Removed | `core/wscmd/remove.rs` (workspace remove) touches neither today. ADR Q11: it forgets both |
 | Gated at use | page: every load and every ask on the port (`tauri/artifacts.rs:447`, `:654`, `:1012`; `tauri/artifacts/calls.rs:88`, `:242`); Regenerate: `tauri/regenerate.rs:232`, `run_pressed` (its standing at `:243`), and `:118`, `artifact_regenerate_about` (`:146`). The new page gate goes in both |
 | CLI | `crates/purlis-cli/src/artifact.rs:438` (`regenerate --check`); `purlis artifact approve-status` (`core/artifact/tools.rs:185`) |
 | Re-ask today | page: `ui/ArtifactTab.tsx:236`, `ScriptStanding`, and `:264`, `standingSaid`; Regenerate: `ui/ArtifactRegenerate.tsx:144` (`AlertDialog`) and `:165`, `asksBecause` |
@@ -167,11 +167,11 @@ and whose `docs/plane-format.md` entry (`pf:6614`) should say so.
 | Read | `core/profiletrust.rs:133`, `read_record`: no version field, and a malformed or missing file reads as empty |
 | Write | `core/profiletrust.rs:167`, `record`: keeps other entries; no lock |
 | Approved | `tauri/lib.rs:1865`, `approve_profile`, calling `core/profiletrust.rs:351`, `approve` |
-| Forgotten | nothing today. ADR Q9 recommends removal through purlis and a Forget on the harness card |
+| Forgotten | nothing today. ADR Q9: removal through purlis, or a Forget on the harness card |
 | Moved | not applicable: the record is inside the clone |
 | Gated at use | `core/profiletrust.rs:312`, `declaration_approval_needed_in`, from every launch (`core/personaprofile.rs:156`) |
 | Re-ask today | `ui/StartApproval.tsx:78`, `StartApproveAsk` (a dialog titled "Approve <profile>?") |
-| Moves to | the code-approval Notice; listed in Asks as well when a chat waits on it (ADR Q14) |
+| Moves to | the code-approval Notice; a Notice only, even when a chat waits on it (ADR Q14) |
 
 ### A persona's MCP servers (ADR Q16)
 
@@ -183,7 +183,7 @@ and whose `docs/plane-format.md` entry (`pf:6614`) should say so.
 | Read | `core/personaverbs/mcp.rs:355`, `approved`: no version, no bound, follows a link |
 | Approved | `core/personaverbs/mcp.rs:374`, `approve`, which replaces the persona's set; no lock, and a bad file loses every other persona's |
 | Forgotten, moved | nothing today |
-| Moves to | the record store in any case (row 6 above); a fifth ledger adapter if Q16 is taken |
+| Moves to | the record store in any case (row 6 above); and a fifth ledger adapter, after the four (ADR Q16) |
 
 ### Out of the ledger, for the record
 
@@ -204,14 +204,15 @@ ticket first shows its test red against a deliberately broken store.
 1. *A record of a newer version is never overwritten.* Write a record at `VERSION + 1`, run every
    write path of that store, and assert the bytes are unchanged and the write refused. For a row
    store, assert the newer row is still there, in its place, after a rewrite.
-2. *A newer whole-file record is refused with the purlis that wrote it.* The refusal names the
-   store, the path, the version and `written_by`.
+2. *A newer whole-file record is refused, naming what is known.* The refusal names the store,
+   the path, the record's version and, where the store declares it, the release that introduced
+   that version (ADR Q1: no `written_by` key).
 3. *A garbage version is not a missing one* (gap 2): `"8"`, `7.5` and `-1` are `Unplaceable`,
    with their own sentence.
 4. *An unknown key survives a write*, at the top level and in an entry.
-5. *Today's reader tolerates `written_by` and `reach`.* Run each store's reader as it is on main
-   against a record carrying both keys, and assert it reads the same as without them. This must
-   be green **before** either key is written (ADR, What it costs).
+5. *Today's reader tolerates `reach` and any unknown key.* Run each store's reader as it is on
+   main against a record carrying an extra key, and assert it reads the same as without it. This
+   must be green **before** `reach` is written (ADR, What it costs).
 6. *Every store the record store declares is in `docs/plane-format.md`* with its tier, beside
    the existing `every_store_the_plane_format_names_has_a_tier.rs`.
 7. *Two writers do not lose each other's change*: two threads, then two processes, each
@@ -263,11 +264,11 @@ it writes a new key, and a changelog fragment where a person would notice.
 1. **Contract tests 1 to 8 as a harness.** A test module that takes a store declaration and runs
    the record-store contract against it. It lands red-skipped for every store, so the next
    tickets switch each on.
-2. **Test 5: today's readers tolerate the two new keys.** Fix any store that refuses an unknown
+2. **Test 5: today's readers tolerate an unknown key.** Fix any store that refuses an unknown
    key. No new key is written yet.
 3. **The record store module**: the declaration, `read` built on a general `compat::Schema`,
    `update` with the lock, the kept unknown keys, and the private write. No store uses it yet.
-   `docs/plane-format.md` gains `written_by`, under the tiers section.
+   `docs/plane-format.md` gains each store's declared version history, under the tiers section.
 4. **Move the approval records first**: `artifact-approvals.json`,
    `artifact-regenerate-approvals.json`, `extensions.json`, and the two `.charter/` consent
    records. Tests 12 and 1 to 8 go green for them. The version is now read.
