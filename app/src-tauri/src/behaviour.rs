@@ -1698,10 +1698,7 @@ fn purlis() -> String {
 /// The binary `name` of package `package`, built beside this test's binary when it is not
 /// there yet.
 pub(crate) fn built_beside(name: &str, package: &str) -> PathBuf {
-    let deps = std::env::current_exe().expect("this test's path");
-    let beside = deps
-        .parent()
-        .and_then(Path::parent)
+    let beside = purlis_core::testrun::profile_dir()
         .expect("the target folder")
         .join(name);
     if !beside.is_file() {

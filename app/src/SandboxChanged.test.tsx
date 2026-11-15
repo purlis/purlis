@@ -137,7 +137,8 @@ describe("a chat's tab, where policy now requires the sandbox it runs without", 
 /**
  * **A cluster pool added while chats ran** (#1750): a chat started before it holds none of the
  * programs the pool runs until it restarts. The Notice says that is why, in the person's terms,
- * and the window asks again as the pool is added, with nothing else moving.
+ * in the core's one sentence for every chat (`OlderSandbox.pool`), and the window asks again as
+ * the pool is added, with nothing else moving.
  */
 describe("the Notice after a cluster pool was added", () => {
   const POOL =
@@ -149,6 +150,7 @@ describe("the Notice after a cluster pool was added", () => {
         { session: 4, change: "c1", pool: POOL },
         { session: 5, change: "c1", pool: POOL },
       ],
+      pool: POOL,
     });
     expect(notice).toHaveTextContent(
       `${POOL} 2 chats keep the old sandbox until they restart. A restart keeps the conversation`,
@@ -180,37 +182,40 @@ describe("the Notice after a cluster pool was added", () => {
 });
 
 /**
- * **A pool over Docker's TLS API added while chats ran** (#6472): a chat started before it reads
- * the pool's certificate and key until it restarts. The Notice says so in the person's terms, and
- * the window asks again as the pool is added.
+ * **A pool on another machine added while chats ran** (#6472): a chat started before it reads
+ * the files the pool connects with until it restarts. The Notice says so in the person's terms,
+ * and the window asks again as the pool is added.
  */
-describe("the Notice after a pool over Docker's TLS API was added", () => {
+describe("the Notice after a pool on another machine was added", () => {
   const TLS =
-    "A pool over Docker's TLS API was added, so purlis now keeps chats from reading its certificate and key.";
+    "A pool on another machine was added, so purlis now keeps chats from reading the files it connects with.";
   const CLUSTER =
     "A cluster pool was added, so purlis now keeps chats from changing the programs it runs.";
+  const POOLS = "Pools were added, so purlis now keeps more of their files from chats.";
 
-  it("leads with the TLS pool, and says the chat keeps the old sandbox until it restarts", () => {
-    const notice = theNotice({ chats: [{ session: 4, change: "c1", pool: TLS }] });
+  it("leads with the pool, and says the chat keeps the old sandbox until it restarts", () => {
+    const notice = theNotice({ chats: [{ session: 4, change: "c1", pool: TLS }], pool: TLS });
     expect(notice).toHaveTextContent(
       `${TLS} 1 chat keeps the old sandbox until it restarts. A restart keeps the conversation`,
     );
     expect(within(notice).getByRole("button", { name: "Restart it" })).toBeInTheDocument();
   });
 
-  it("says the project's change where the chats are behind different pools", () => {
+  it("says pools were added where the chats are behind different pools: a pool is the machine's, not the project's", () => {
     const notice = theNotice({
       chats: [
         { session: 4, change: "c1", pool: CLUSTER },
         { session: 5, change: "c2", pool: TLS },
       ],
+      pool: POOLS,
     });
-    expect(notice).toHaveTextContent("This project's sandbox changed.");
+    expect(notice).toHaveTextContent(`${POOLS} 2 chats keep the old sandbox until they restart.`);
+    expect(notice).not.toHaveTextContent("This project's sandbox changed.");
     expect(notice).not.toHaveTextContent(TLS);
     expect(notice).not.toHaveTextContent(CLUSTER);
   });
 
-  it("is asked again when a pool over Docker's TLS API is added", async () => {
+  it("is asked again when a pool on another machine is added", async () => {
     const asked = answering([null]);
     render(<Window onRestart={vi.fn()} />);
     await waitFor(() => expect(asked.length).toBe(1));
