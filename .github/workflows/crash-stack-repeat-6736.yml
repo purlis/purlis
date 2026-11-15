@@ -1,0 +1,73 @@
+# TEMPORARY (#6736): repeats the macOS crash-stack checks on this pull request, to show the fix
+# holds. Removed before the pull request merges.
+name: crash stack repeat (#6736)
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/crash-stack-repeat-6736.yml
+      - crates/purlis-core/src/report/native.rs
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: the crash probe's abort, 200 times
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/rust-toolchain
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: false
+      - run: cargo test --locked -p purlis-crash-handler --test a_native_crash_leaves_a_minidump --no-run
+      - name: Repeat
+        run: |
+          failed=0
+          for i in $(seq 1 200); do
+            if ! cargo test --locked -q -p purlis-crash-handler --test a_native_crash_leaves_a_minidump -- an_aborts_stack_starts_where_it_aborted_not_in_the_crash_handler > out.txt 2>&1; then
+              failed=$((failed + 1))
+              echo "::group::run $i failed"; cat out.txt; echo "::endgroup::"
+            fi
+          done
+          echo "$failed of 200 failed"
+          test "$failed" -eq 0
+
+  scenario:
+    name: the app's crash scenario, 20 times
+    runs-on: macos-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/rust-toolchain
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: ./.github/actions/npm-ci
+      - uses: ./.github/actions/npm-ci
+        with:
+          directory: app
+      - name: Build the app as the scenario tests do
+        timeout-minutes: 110
+        run: >-
+          npx tauri build --debug --no-bundle --features e2e
+          --config src-tauri/tauri.e2e.conf.json -- -p purlis-app -p fake-harness -p purlis-cli
+        working-directory: app
+      - name: Repeat
+        working-directory: app
+        run: |
+          failed=0
+          for i in $(seq 1 20); do
+            if ! npm run e2e:crash > out.txt 2>&1; then
+              failed=$((failed + 1))
+              echo "::group::run $i failed"; cat out.txt; echo "::endgroup::"
+            fi
+          done
+          echo "$failed of 20 failed"
+          test "$failed" -eq 0
