@@ -1,0 +1,116 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+name: nightly on the integration branch
+
+# **The integration branch's nightlies, scheduled from main** (M74.1, T1.1-09; Q285). GitHub runs
+# `schedule` only from the default branch, and dispatches only workflows whose files are there, so
+# this workflow lives on main. It is the one exception to "prerequisites only from main" (the
+# milestone's Process). Each night it checks out `BRANCH` and runs every entry of the branch's
+# `.github/nightly-on-<branch>.txt`. The list's format, and what `repo: mirror` and `kind: escape`
+# do, is in `tools/nightly-list.mjs`. Each entry runs through the branch's own
+# `.github/actions/nightly`, so a ticket adds a nightly without touching main.
+#
+# **At the gate it is re-pointed at main, never removed** (ticket 55): `BRANCH` is the one place
+# that names the branch, so the switch is that line and a list file on main.
+#
+# A loud entry that goes red uploads what it left and opens an issue, or comments on the one already
+# open. A quiet entry (`kind: escape` on any repository but the private mirror) prints only its id:
+# no issue and no artifacts, so the public log says nothing of how a sandbox was escaped (Q287,
+# Q298). The mirror's private report channel is ticket 57's. The mirror names itself in the
+# repository variable `NIGHTLY_MIRROR`. Unset, `repo: mirror` entries never run.
+#
+# A composite action cannot read `secrets`: an entry that needs one gets it as an input here.
+
+on:
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-branch
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+  CARGO_NET_RETRY: "10"
+  # The branch whose nightlies run. Ticket 55 sets it to main.
+  BRANCH: phase-1-proven
+
+jobs:
+  list:
+    name: the branch's nightly list
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
+      count: ${{ steps.list.outputs.count }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.BRANCH }}
+          persist-credentials: false
+      - name: The list, as a matrix
+        id: list
+        env:
+          REPOSITORY: ${{ github.repository }}
+          MIRROR: ${{ vars.NIGHTLY_MIRROR }}
+        run: node tools/nightly-list.mjs ".github/nightly-on-$BRANCH.txt" "$REPOSITORY" "$MIRROR"
+
+  entry:
+    name: ${{ matrix.entry }} (${{ matrix.runs-on }})
+    needs: list
+    if: needs.list.outputs.count != '0'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.list.outputs.matrix) }}
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: ${{ matrix.timeout }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.BRANCH }}
+          persist-credentials: false
+      - name: The entry
+        uses: ./.github/actions/nightly
+        with:
+          entry: ${{ matrix.entry }}
+          quiet: ${{ matrix.quiet }}
+      - name: What a red night leaves
+        if: failure() && !matrix.quiet
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nightly-${{ matrix.entry }}-${{ matrix.runs-on }}
+          path: |
+            target/sandbox-scenarios/
+            target/nextest/ci/junit.xml
+          if-no-files-found: ignore
+      # One open issue for each red entry and runner: a later red night comments on it.
+      - name: A red night's issue
+        if: failure() && !matrix.quiet
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ENTRY: ${{ matrix.entry }}
+          RUNS_ON: ${{ matrix.runs-on }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Nightly on $BRANCH: $ENTRY on $RUNS_ON is red"
+          open=$(gh issue list -R "$REPO" --state open --label bot-maintained --search "\"$title\" in:title" \
+            --json number,title -q ".[] | select(.title == \"$title\") | .number" | head -1)
+          if [ -n "$open" ]; then
+            gh issue comment "$open" -R "$REPO" --body "Red again: $RUN_URL"
+          else
+            gh issue create -R "$REPO" --title "$title" --label bot-maintained \
+              --body "The nightly entry \`$ENTRY\` went red on \`$RUNS_ON\` against \`$BRANCH\`: $RUN_URL"
+          fi
+      - name: A quiet entry's verdict
+        if: failure() && matrix.quiet
+        env:
+          ENTRY: ${{ matrix.entry }}
+        run: echo "::error::$ENTRY is red"
