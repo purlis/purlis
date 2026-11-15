@@ -260,7 +260,8 @@ pub fn serve_alone(place: &Place, hosting: impl FnOnce(&Place) -> Hosting) -> i3
 /// opens (ADR 0078 §2). **Paired, it suspends itself after `suspends` with no link from its
 /// desktop** (#2051, [`UNLINKED_FOR`] by default), where it is given one: it stops serving, and
 /// every program it runs ends as at a quit. **Paired, it also stops once it has been idle**
-/// ([`Idles`], #3980), where it is told to.
+/// ([`Idles`], #3980), where it is told to. `serves` says who started it: a service manager
+/// ([`Serves::AsALoginItem`], RR-15) takes another host already serving as a success.
 #[cfg(unix)]
 pub fn serve_alone_answering(
     place: &Place,
@@ -268,6 +269,7 @@ pub fn serve_alone_answering(
     pairing: Pairing,
     suspends: Option<std::time::Duration>,
     idles: Option<Idles>,
+    serves: Serves,
 ) -> i32 {
     let hosting = hosting(place);
     let answering = std::sync::Arc::clone(&pairing.answering);
@@ -310,7 +312,7 @@ pub fn serve_alone_answering(
         None,
         hosting,
         Some(pairing),
-        Serves::Alone,
+        serves,
         || {},
         suspended,
     )

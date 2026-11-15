@@ -54,6 +54,8 @@ mod profiles;
 mod remote;
 mod repos_folder;
 mod rules;
+#[cfg(unix)]
+mod runner_host;
 mod sandbox;
 pub(crate) mod session;
 mod shadowed;
@@ -398,6 +400,11 @@ pub struct Doctor {
     /// says once trimming it has stopped working while a host serves. `None` for a doctor a
     /// test names, which must never read the operator's own.
     pub(crate) host_log: Option<host_log::HostLog>,
+    /// What this machine's runner host looks like (RR-15, #724), where this purlis is a
+    /// runner's: installed as a version (RR-14) or kept by a service manager. `None` on a
+    /// desktop, and for a doctor a test names.
+    #[cfg(unix)]
+    pub(crate) runner_host: Option<crate::runnerhost::Look>,
 }
 
 impl Doctor {
@@ -429,6 +436,10 @@ impl Doctor {
             crate::forge::Caller::command(),
             std::sync::Arc::new(crate::forge::cli::Cli::default()),
         ));
+        #[cfg(unix)]
+        if !preflight {
+            d.runner_host = runner_host::look_here();
+        }
         d.machine = std::env::current_exe()
             .and_then(|p| p.canonicalize())
             .ok()
@@ -498,6 +509,8 @@ impl Doctor {
             extensions: None,
             cache_home: None,
             host_log: None,
+            #[cfg(unix)]
+            runner_host: None,
         }
     }
 
@@ -608,6 +621,8 @@ impl Doctor {
         rows.push(plugin::plugin_files(self));
         rows.push(plugin::superseded_plugin(self));
         rows.extend(plugin::renamed_tool_rules(self));
+        #[cfg(unix)]
+        rows.extend(runner_host::rows(self));
         rows
     }
 }

@@ -93,18 +93,26 @@ pub fn here() -> PathBuf {
 /// there takes half of them.
 #[must_use]
 pub fn of_version(socket: &Path, version: &str) -> PathBuf {
-    use sha2::{Digest as _, Sha256};
     let stem = socket
         .file_name()
         .and_then(OsStr::to_str)
         .and_then(|name| name.strip_suffix(".sock"))
         .unwrap_or("purlisd");
+    socket.with_file_name(format!("{stem}-{}.sock", version_key(version)))
+}
+
+/// **What names the installed version `version` where its whole name may not fit**: `v` and the
+/// first 8 hex digits of its SHA-256. Its socket ([`of_version`]) and the service that keeps its
+/// host running on a runner (`crate::runnerhost`) are named by it.
+#[must_use]
+pub fn version_key(version: &str) -> String {
+    use sha2::{Digest as _, Sha256};
     let digest = Sha256::digest(version.as_bytes());
     let short: String = digest[..4]
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect();
-    socket.with_file_name(format!("{stem}-v{short}.sock"))
+    format!("v{short}")
 }
 
 /// Where the session host of the config home `config` listens for this user, with `runtime`

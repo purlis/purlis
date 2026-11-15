@@ -137,6 +137,24 @@ enum Command {
             value_parser = unlinked_for
         )]
         suspends_unlinked: Option<Option<std::time::Duration>>,
+        /// Hand this host to this machine's service manager and start it there, so it keeps
+        /// running after you sign out or the SSH connection drops, and starts again after a
+        /// restart: a systemd user unit with linger on Linux, a LaunchAgent on macOS. In a
+        /// container, run `purlis serve --foreground` instead.
+        #[arg(long, conflicts_with_all = ["remove", "foreground", "suspends_unlinked"])]
+        install: bool,
+        /// Take this host back from the service manager: it stops, with every chat in it, and
+        /// does not start again.
+        #[arg(long, conflicts_with_all = ["install", "foreground", "suspends_unlinked"])]
+        remove: bool,
+        /// Run the host here, in the foreground, until it is ended: what a container's command
+        /// is. The same as `purlis serve` alone.
+        #[arg(long)]
+        foreground: bool,
+        /// Started by the service manager (`--install`): another host of this version already
+        /// serving is a success, so the manager does not restart this one.
+        #[arg(long, hide = true, conflicts_with_all = ["install", "remove"])]
+        as_a_service: bool,
     },
     /// On a runner: join this standard input and output to the session host's link socket,
     /// for the connector the desktop runs (ADR 0078 §2). It holds no key and decides nothing.
@@ -951,15 +969,82 @@ fn idle_after_asked() -> Option<std::time::Duration> {
 /// `purlis serve`: this user's session host, at the place the window's own host would take, so
 /// one finds the other serving and leaves it be.
 #[cfg(not(unix))]
-fn serve(_suspends_after: Option<std::time::Duration>) -> ExitCode {
+fn serve(_suspends_after: Option<std::time::Duration>, _as_a_service: bool) -> ExitCode {
     voice::err("the session host runs on macOS and Linux only");
     ExitCode::FAILURE
 }
 
+/// `purlis serve --install` and `--remove`, on macOS and Linux only.
+#[cfg(not(unix))]
+fn serve_kept(_install: bool) -> ExitCode {
+    voice::err("the session host runs on macOS and Linux only");
+    ExitCode::FAILURE
+}
+
+/// **`purlis serve --install`**, or `--remove` (RR-15, #724): this binary's host handed to this
+/// machine's service manager, or taken back from it (`purlis_core::runnerhost`).
+#[cfg(unix)]
+fn serve_kept(install: bool) -> ExitCode {
+    use purlis_core::runnerhost;
+    let Some(config) = purlis_core::machine::config_root() else {
+        voice::err("there is no home folder to keep the session host's credentials in");
+        return ExitCode::FAILURE;
+    };
+    let binary = match std::env::current_exe().and_then(std::fs::canonicalize) {
+        Ok(binary) => binary,
+        Err(why) => {
+            voice::err(format!("this purlis could not find its own program: {why}"));
+            return ExitCode::FAILURE;
+        }
+    };
+    let service = runnerhost::Service {
+        version: purlis_core::runnerinstall::version_of_binary(&config, &binary),
+        binary,
+    };
+    let log = purlis_core::machine::host_folder(&config).join("serve.log");
+    let Some(here) = runnerhost::Here::this(log) else {
+        voice::err("this account has no home folder to install the session host in");
+        return ExitCode::FAILURE;
+    };
+    if !install {
+        return match runnerhost::remove(&here, &service) {
+            Ok(()) => {
+                println!("✓ The session host is no longer kept running by this machine.");
+                ExitCode::SUCCESS
+            }
+            Err(why) => {
+                voice::err(format!("the session host's service was not removed: {why}"));
+                ExitCode::FAILURE
+            }
+        };
+    }
+    match runnerhost::install(&here, &service) {
+        Ok(installed) => {
+            for line in runnerhost::said(&installed, &service, &here.user) {
+                println!("{line}");
+            }
+            ExitCode::SUCCESS
+        }
+        Err(runnerhost::Refused::Foreground(why)) => {
+            voice::err(runnerhost::refused(why));
+            ExitCode::FAILURE
+        }
+        Err(runnerhost::Refused::Manager(why)) => {
+            voice::err(format!(
+                "the session host could not be handed to this machine's service manager: {why}"
+            ));
+            ExitCode::FAILURE
+        }
+    }
+}
+
 /// `purlis serve`: this user's session host, at the place the window's own host would take, so
 /// one finds the other serving and leaves it be.
+///
+/// `as_a_service`: a service manager started it (`--install`), so finding another host of its
+/// version serving is a success, which the manager does not restart (FD-17's login item's rule).
 #[cfg(unix)]
-fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
+fn serve(suspends_after: Option<std::time::Duration>, as_a_service: bool) -> ExitCode {
     // A service: its standard error is its log, the journal or the container's (#2753), so the
     // core's `info` is said there too, redacted as the app's log is.
     purlis_core::applog::widen_for_a_service();
@@ -1151,6 +1236,11 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
             pairing,
             suspends_after,
             idles,
+            if as_a_service {
+                purlis_host::Serves::AsALoginItem
+            } else {
+                purlis_host::Serves::Alone
+            },
         ))
         .unwrap_or(1),
     )
@@ -5521,8 +5611,18 @@ fn main() -> ExitCode {
         return listen::run(*port, command);
     }
     // Needs no project: one host serves every project of this user on this device (ADR 0068).
-    if let Command::Serve { suspends_unlinked } = &cli.command {
-        return serve(suspends_after(*suspends_unlinked));
+    if let Command::Serve {
+        suspends_unlinked,
+        install,
+        remove,
+        foreground: _,
+        as_a_service,
+    } = &cli.command
+    {
+        if *install || *remove {
+            return serve_kept(*install);
+        }
+        return serve(suspends_after(*suspends_unlinked), *as_a_service);
     }
     // Needs no project: a runner's bridge to its own host, or its pairing (ADR 0078 §2, §3).
     if let Command::Bridge {

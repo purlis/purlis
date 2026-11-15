@@ -119,6 +119,16 @@ pub fn account_home() -> Option<std::path::PathBuf> {
         .filter(|dir| dir.is_absolute())
 }
 
+/// This account's login name, as the user database records it (`getpwuid`), never as `$USER`
+/// says. `None` where the database has no entry for this uid.
+pub fn account_name() -> Option<String> {
+    nix::unistd::User::from_uid(nix::unistd::getuid())
+        .ok()
+        .flatten()
+        .map(|user| user.name)
+        .filter(|name| !name.is_empty())
+}
+
 /// The uid of the process at the other end of the unix socket `socket`.
 pub fn peer_of(socket: &impl AsFd) -> io::Result<Uid> {
     #[cfg(any(target_os = "linux", target_os = "android"))]
