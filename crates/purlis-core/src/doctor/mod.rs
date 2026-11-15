@@ -41,6 +41,7 @@ pub(crate) mod fsx;
 mod git;
 mod guard;
 mod harnesses;
+mod host_log;
 mod inventory;
 mod layer;
 mod mcp;
@@ -393,6 +394,10 @@ pub struct Doctor {
     /// ([`crate::sandbox::caches::root_of`]), whose size the `sandbox cache home` row says
     /// (#1364). `None` for a doctor a test names, which must never read the operator's own.
     pub(crate) cache_home: Option<PathBuf>,
+    /// The session host's `session-host.log` (#6687), whose size the `session host log` row
+    /// says once its rotation has failed. `None` for a doctor a test names, which must never
+    /// read the operator's own.
+    pub(crate) host_log: Option<PathBuf>,
 }
 
 impl Doctor {
@@ -419,6 +424,7 @@ impl Doctor {
             .clone()
             .map(|config_root| (config_root, crate::extension::BuiltIn::of_this_program()));
         d.cache_home = crate::sandbox::caches::root_of(&crate::sandbox::Machine::this(), &d.root);
+        d.host_log = crate::hostlog::path();
         d.forges = Some((
             crate::forge::Caller::command(),
             std::sync::Arc::new(crate::forge::cli::Cli::default()),
@@ -457,6 +463,12 @@ impl Doctor {
         self
     }
 
+    /// This doctor, reading the session host's log at `log` (#6687).
+    pub fn reading_host_log(mut self, log: &Path) -> Self {
+        self.host_log = Some(log.to_path_buf());
+        self
+    }
+
     /// This doctor, reading `machine`'s harness configuration.
     pub fn with_machine(mut self, machine: crate::plugin_install::Machine) -> Self {
         self.machine = Some(machine);
@@ -481,6 +493,7 @@ impl Doctor {
             network: None,
             extensions: None,
             cache_home: None,
+            host_log: None,
         }
     }
 
@@ -574,6 +587,7 @@ impl Doctor {
         rows.extend(sandbox::grants_held(self));
         rows.extend(sandbox::relayed_internal(self));
         rows.extend(sandbox::cache_home(self));
+        rows.extend(host_log::host_log(self));
         rows.push(memory::memory_indexes(self));
         rows.push(personas::personas(self));
         rows.push(personas::persona_grant(self));
