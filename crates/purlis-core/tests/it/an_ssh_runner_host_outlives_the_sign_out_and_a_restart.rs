@@ -48,6 +48,11 @@ const PATIENCE: Duration = Duration::from_secs(90);
 const PROJECT: &str = "01J9PRJCT00000000000000000";
 const VERSION: &str = "0.0.1-rr15.1";
 const CHATS: usize = 2;
+/// The version's host record, wherever its machine store is (`purlisd`, or `charterd` before
+/// rename-local), printed and measured from outside.
+const RECORD_CAT: &str = "find /home/keeper/.config -path '*/server/*/hosts.jsonl' -exec cat {} +";
+const RECORD_SIZE: &str =
+    "find /home/keeper/.config -path '*/server/*/hosts.jsonl' -exec wc -c {} + | awk '{print $1}'";
 
 struct Fixture {
     reach: Reach,
@@ -335,14 +340,34 @@ fn a_runners_host_outlives_the_sign_out_and_comes_back_after_a_restart() {
     rt.shutdown_timeout(Duration::from_secs(5));
     // A dropped link: each of the account's SSH connections ends without a word.
     let _ = as_root(machine, "pkill -KILL -u keeper '^sshd' || true");
-    until("the account is signed out, its manager lingering", || {
-        let (_, sessions) = as_root(machine, "loginctl list-sessions --no-legend | grep keeper");
+    // logind's `lingering`: no session of the account's own is left, and its manager runs on.
+    // (`list-sessions` also lists the manager's own session, of class `manager`, so it is not
+    // what says the account signed out.)
+    let deadline = Instant::now() + PATIENCE;
+    loop {
         let (_, state) = as_root(
             machine,
             "loginctl show-user keeper --property=State --value",
         );
-        sessions.trim().is_empty() && state.trim() == "lingering"
-    });
+        if state.trim() == "lingering" {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "never signed out with its manager lingering: logind says {:?}",
+            state.trim()
+        );
+        std::thread::sleep(Duration::from_secs(1));
+    }
+    let (_, sessions) = as_root(
+        machine,
+        "loginctl list-sessions --no-legend | grep keeper | grep -v manager || true",
+    );
+    assert_eq!(
+        sessions.trim(),
+        "",
+        "no session of the account's own is left"
+    );
     let (active, said) = as_root(
         machine,
         &format!("systemctl --user --machine=keeper@ is-active {unit}"),
@@ -367,10 +392,7 @@ fn a_runners_host_outlives_the_sign_out_and_comes_back_after_a_restart() {
         kept.abort();
     });
     rt.shutdown_timeout(Duration::from_secs(5));
-    let (_, record) = as_root(
-        machine,
-        "cat /home/keeper/.config/*/purlisd/server/*/hosts.jsonl",
-    );
+    let (_, record) = as_root(machine, RECORD_CAT);
     assert_eq!(
         record.matches("\"started\"").count(),
         CHATS,
@@ -407,10 +429,7 @@ fn a_runners_host_outlives_the_sign_out_and_comes_back_after_a_restart() {
             "ended without ending {CHATS} of its programs; each is settled as ended by its crash"
         ))
     });
-    let (_, record) = as_root(
-        machine,
-        "wc -c < /home/keeper/.config/*/purlisd/server/*/hosts.jsonl",
-    );
+    let (_, record) = as_root(machine, RECORD_SIZE);
     assert_eq!(record.trim(), "0", "the record was taken over: {journal}");
     assert_eq!(
         chat_processes(machine),
