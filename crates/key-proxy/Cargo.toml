@@ -27,6 +27,9 @@ bytes = "1"
 getrandom = "0.4"
 # The token's comparison in constant time (R-063): the version rustls and ring already bring.
 subtle = "2.6"
+# A run's route and the checks of each request against it (T1a-08): core owns the allowlist and
+# the URL join, as it owns the declarations they come from. Both binaries link it already.
+purlis-core.workspace = true
 
 [dev-dependencies]
 tokio = { version = "1", features = ["io-util", "macros", "net", "rt", "time"] }
