@@ -12992,16 +12992,6 @@ fn a_chat_started_before_a_tls_pool_was_added_is_told_to_restart_for_it() {
     chats.close(again).expect("ends");
 }
 
-/// A chat in `plane` whose harness runs behind the proxy purlis starts beside it, so its start
-/// confines it from a plan: Codex, on macOS.
-#[cfg(target_os = "macos")]
-fn a_proxied_chat_in(plane: &std::path::Path) -> Chat {
-    Chat {
-        cwd: Some(plane.to_path_buf()),
-        ..chat(&standing("codex"), "proxied", Some(ID))
-    }
-}
-
 /// A machine whose config home is `config`, and the CA, certificate and key of a pool over
 /// Docker's TLS API kept in `docker`, its key named by a link.
 #[cfg(unix)]
@@ -13037,14 +13027,14 @@ fn a_chats_start_hands_its_host_what_its_sandbox_holds_of_the_pools() {
     let host = Pretend::default();
     let chats = restartable_chats_on(plane.path(), host.clone(), machine);
     let before = chats
-        .start(&a_proxied_chat_in(plane.path()), SIZE)
+        .start(&a_codex_chat_in(plane.path()), SIZE)
         .expect("starts");
     the_pools_become(
         config.path(),
         serde_json::json!([a_tls_pool("build-box", [&ca, &cert, &key])]),
     );
     let after = chats
-        .start(&a_proxied_chat_in(plane.path()), SIZE)
+        .start(&a_codex_chat_in(plane.path()), SIZE)
         .expect("starts");
 
     let handed = host.pools_held_confined();
@@ -13098,7 +13088,7 @@ fn a_reattached_chat_is_asked_to_restart_by_what_its_start_held_of_the_pools() {
         host.left_holding(3, start_held);
         let chats = restartable_chats_on(plane.path(), host.clone(), machine.clone());
         chats.put_back(
-            &left_running_in(plane.path(), a_proxied_chat_in(plane.path())),
+            &left_running_in(plane.path(), a_codex_chat_in(plane.path())),
             SIZE,
         );
         assert_eq!(host.reattached(), [3]);
