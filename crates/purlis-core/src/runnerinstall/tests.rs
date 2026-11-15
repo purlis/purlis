@@ -115,6 +115,11 @@ fn each_platform_has_an_asset_named_and_published_under_its_version() {
         asset_url("1.4.0", Target::LinuxAarch64),
         "https://github.com/purlis/purlis/releases/download/v1.4.0/purlis-1.4.0-linux-aarch64"
     );
+    // A dev build's assets are on the one `dev` release, whose tag moves with every build.
+    assert_eq!(
+        asset_url("1.4.0-dev.812", Target::LinuxX86_64),
+        "https://github.com/purlis/purlis/releases/download/dev/purlis-1.4.0-dev.812-linux-x86_64"
+    );
     let names: Vec<_> = Target::ALL.iter().map(|t| t.name()).collect();
     assert_eq!(names, ["linux-x86_64", "linux-aarch64", "macos-arm64"]);
 }

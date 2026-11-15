@@ -144,10 +144,18 @@ pub fn asset_name(version: &str, target: Target) -> String {
     format!("{BINARY}-{version}-{}", target.name())
 }
 
-/// **Where the release publishes that asset**; its signature is beside it, with `.sig` (`release-manifest`'s `sign-runner-binary`).
+/// **Where the release publishes that asset**: on the `v<version>` release, or, for a dev
+/// build (`<version>-dev.<run>`), on the one `dev` release whose tag moves with every build
+/// (`crate::updates::DEV_TAG`). Its signature is beside it, with `.sig` (`release-manifest`'s
+/// `sign-runner-binary`).
 #[must_use]
 pub fn asset_url(version: &str, target: Target) -> String {
-    format!("{RELEASES}/v{version}/{}", asset_name(version, target))
+    let tag = if version.contains("-dev.") {
+        crate::updates::DEV_TAG.to_owned()
+    } else {
+        format!("v{version}")
+    };
+    format!("{RELEASES}/{tag}/{}", asset_name(version, target))
 }
 
 /// The SHA-256 of `bytes`, as 64 lower-case hex digits.

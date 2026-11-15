@@ -1277,6 +1277,108 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+  # **A `purlis` binary for each runner platform, signed with the updater's key** (RR-14, #723;
+  # ADR 0042 as amended by ADR 0078): what the desktop installs on a machine it reaches over SSH,
+  # into `<config>/server/<version>/`. Linux x86_64 and aarch64 and macOS arm64, each built on a
+  # runner of its own platform with the build's profile and version stamp, published as
+  # `purlis-<version>-<target>` with `<asset>.sig` beside it: minisign by the key every app checks
+  # its bundles with, the version and the asset's own name in its trusted comment
+  # (`release-manifest`'s `sign-runner-binary`), which `purlis_core::runnerinstall::verify` checks
+  # before the desktop trusts the binary's digest.
+  #
+  # **A missing asset fails the release loudly**, as a bundle without its signature does (ADR 0042
+  # as amended): `provenance` and `publish` ask for this job's success by name and download each
+  # asset by its exact name, so a platform that did not build or sign stops the publish with this
+  # job red, never a release with one platform quietly missing. A build that publishes nothing
+  # builds them unsigned, to prove they build, and says so. In the `release` environment only when
+  # it publishes, as `build` is: it reads the key then.
+  runner-binaries:
+    name: runner binary (${{ matrix.target }})
+    needs: plan
+    if: needs.plan.outputs.skip != 'true'
+    environment: ${{ needs.plan.outputs.publish == 'true' && 'release' || '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            os: ubuntu-24.04
+          - target: linux-aarch64
+            os: ubuntu-24.04-arm
+          - target: macos-arm64
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    # A cold build of `purlis` alone, with no cache as `build` has none; the `release` profile's
+    # thin LTO is the slow part (ADR 0092). Off the longest chain, which is `build`'s.
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+      PUBLISH: ${{ needs.plan.outputs.publish }}
+      PROFILE: ${{ needs.plan.outputs.profile }}
+      TARGET: ${{ matrix.target }}
+      # The version the app announces, as every binary of this build says it (#2749).
+      PURLIS_VERSION_STAMP: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      # No cache, as `build`: this job reads the signing key when it publishes.
+      - uses: ./.github/actions/rust-toolchain
+      - name: cargo-auditable
+        env:
+          CARGO_AUDITABLE_VERSION: 0.7.6
+        run: cargo install --locked cargo-auditable --version "$CARGO_AUDITABLE_VERSION"
+      - name: The purlis binary
+        env:
+          # The Report intake's address, as `build` compiles it in (#5687).
+          PURLIS_REPORT_INTAKE_DSN: ${{ secrets.PURLIS_REPORT_INTAKE_DSN }}
+        run: cargo auditable build --profile "$PROFILE" --locked -p purlis-cli
+      - name: It is this platform's, and says this release's version
+        run: |
+          set -euo pipefail
+          bin="target/$PROFILE/purlis"
+          described=$(file -b "$bin")
+          echo "$described"
+          case "$TARGET:$described" in
+            linux-x86_64:*ELF*x86-64*|linux-aarch64:*ELF*aarch64*|macos-arm64:*Mach-O*arm64*) ;;
+            *) echo "::error::the $TARGET binary is: $described"; exit 1 ;;
+          esac
+          line=$("$bin" --version)
+          echo "$line"
+          case "$line" in
+            "purlis $VERSION"|"purlis $VERSION "*) ;;
+            *) echo "::error::the release is $VERSION and the binary says: $line"; exit 1 ;;
+          esac
+          mkdir -p runner
+          cp "$bin" "runner/purlis-$VERSION-$TARGET"
+      - name: Signed with the updater's key for this version and platform
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          asset="runner/purlis-$VERSION-$TARGET"
+          if [ "$PUBLISH" != true ]; then
+            echo "::notice::the $TARGET runner binary is built and not signed: this run publishes nothing"
+            exit 0
+          fi
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY is not set, so the $TARGET runner binary cannot be signed and this release would ship without it. It has to be a secret of the release environment. See docs/updating.md, steps 0 and 1."
+            exit 1
+          fi
+          cargo run --locked --release -p release-manifest --bin sign-runner-binary -- \
+            "$asset" "$VERSION" "$TARGET"
+          test -s "$asset.sig" || { echo "::error::no signature beside $asset"; exit 1; }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: purlis-runner-${{ matrix.target }}-${{ needs.plan.outputs.version }}
+          path: runner/
+          if-no-files-found: error
+          retention-days: 90
+
   # **A CycloneDX SBOM for each platform a release ships** (#584). What it covers, exactly:
   #
   #   - The Rust crates of the purlis binaries (the app, the `purlis` command beside it with
@@ -1492,10 +1594,10 @@ jobs:
   # A hand-started build publishes nothing, so it is not attested.
   provenance:
     name: build provenance
-    needs: [plan, build, sbom, manifest]
+    needs: [plan, build, runner-binaries, sbom, manifest]
     # Asked of each job it needs by name, so a runner image that failed before it holds nothing
-    # back (#2880).
-    if: ${{ !cancelled() && needs.plan.outputs.publish == 'true' && needs.plan.result == 'success' && needs.build.result == 'success' && needs.sbom.result == 'success' && needs.manifest.result == 'success' }}
+    # back (#2880), and a runner binary that did not build or sign holds everything back (#723).
+    if: ${{ !cancelled() && needs.plan.outputs.publish == 'true' && needs.plan.result == 'success' && needs.build.result == 'success' && needs.runner-binaries.result == 'success' && needs.sbom.result == 'success' && needs.manifest.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     # `id-token` mints the token Sigstore signs with; `attestations` stores the result. Nothing
@@ -1522,6 +1624,22 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: purlis-linux-x86_64-${{ needs.plan.outputs.version }}
+          path: dist
+
+      # Each runner platform's binary and its signature, by exact name (#723).
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: purlis-runner-linux-x86_64-${{ needs.plan.outputs.version }}
+          path: dist
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: purlis-runner-linux-aarch64-${{ needs.plan.outputs.version }}
+          path: dist
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: purlis-runner-macos-arm64-${{ needs.plan.outputs.version }}
           path: dist
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -1580,10 +1698,10 @@ jobs:
 
   publish:
     name: publish to the ${{ needs.plan.outputs.channel }} channel
-    needs: [plan, build, manifest, provenance]
+    needs: [plan, build, runner-binaries, manifest, provenance]
     # Asked of each job it needs by name, so a runner image that failed before it holds nothing
-    # back (#2880).
-    if: ${{ !cancelled() && needs.plan.outputs.publish == 'true' && needs.plan.result == 'success' && needs.build.result == 'success' && needs.manifest.result == 'success' && needs.provenance.result == 'success' }}
+    # back (#2880), and a runner binary that did not build or sign holds everything back (#723).
+    if: ${{ !cancelled() && needs.plan.outputs.publish == 'true' && needs.plan.result == 'success' && needs.build.result == 'success' && needs.runner-binaries.result == 'success' && needs.manifest.result == 'success' && needs.provenance.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     # It holds no signing key, but it is what a release IS, so it runs under the same
@@ -1621,6 +1739,22 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: purlis-linux-x86_64-${{ needs.plan.outputs.version }}
+          path: dist
+
+      # Each runner platform's binary and its signature, by exact name (#723).
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: purlis-runner-linux-x86_64-${{ needs.plan.outputs.version }}
+          path: dist
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: purlis-runner-linux-aarch64-${{ needs.plan.outputs.version }}
+          path: dist
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: purlis-runner-macos-arm64-${{ needs.plan.outputs.version }}
           path: dist
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -1739,6 +1873,16 @@ jobs:
               grep -q 'HTTP 404' <<<"$out" || { echo "$out" >&2; exit 1; }
             fi
             echo "removed the .dmg an earlier dev publish left (asset $id)"
+          done
+          # A runner binary is named by its version, which a dev build changes every time (#723):
+          # the ones an earlier dev publish left are removed the same way, so the `dev` release
+          # holds this build's three and their signatures alone.
+          for id in $(gh api --paginate "repos/$GITHUB_REPOSITORY/releases/tags/dev" \
+            --jq '.assets[] | select(.name | test("^purlis-.+-(linux-x86_64|linux-aarch64|macos-arm64)(\\.sig)?$")) | select(.name | startswith("purlis-'"$VERSION"'-") | not) | .id'); do
+            if ! out=$(gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$id" 2>&1); then
+              grep -q 'HTTP 404' <<<"$out" || { echo "$out" >&2; exit 1; }
+            fi
+            echo "removed a runner binary an earlier dev publish left (asset $id)"
           done
           tools/replace-release-assets.sh dev dist/dev.json dist/dev-weekly.json
           gh release edit dev --repo "$GITHUB_REPOSITORY" \
