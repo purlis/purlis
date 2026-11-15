@@ -10,9 +10,9 @@ use super::*;
 
 fn versioned() -> Service {
     Service {
-        binary: PathBuf::from("/home/runner/.config/purlis/server/0.9.0-rc.1/purlis"),
+        binary: PathBuf::from("/nonexistent-home/runner/.config/purlis/server/0.9.0-rc.1/purlis"),
         version: Some("0.9.0-rc.1".into()),
-        config_home: Some(PathBuf::from("/home/runner/.config")),
+        config_home: Some(PathBuf::from("/nonexistent-home/runner/.config")),
     }
 }
 
@@ -125,7 +125,7 @@ fn the_unit_starts_with_the_user_manager_whether_or_not_anyone_has_a_desktop() {
     assert!(unit.contains("\nStartLimitIntervalSec=300\n"), "{unit}");
     assert!(
         unit.contains(
-            "\nExecStart=\"/home/runner/.config/purlis/server/0.9.0-rc.1/purlis\" \"serve\" \
+            "\nExecStart=\"/nonexistent-home/runner/.config/purlis/server/0.9.0-rc.1/purlis\" \"serve\" \
              \"--as-a-service\"\n"
         ),
         "{unit}"
@@ -137,7 +137,7 @@ fn the_unit_starts_with_the_user_manager_whether_or_not_anyone_has_a_desktop() {
 fn the_unit_and_the_agent_pin_the_config_home_install_resolved() {
     let unit = unit(&versioned());
     assert!(
-        unit.contains("\nEnvironment=\"PURLIS_CONFIG_HOME=/home/runner/.config\"\n"),
+        unit.contains("\nEnvironment=\"PURLIS_CONFIG_HOME=/nonexistent-home/runner/.config\"\n"),
         "{unit}"
     );
     assert!(!super::unit(&by_hand()).contains("Environment="));
@@ -149,7 +149,7 @@ fn the_unit_and_the_agent_pin_the_config_home_install_resolved() {
     .unwrap();
     assert_eq!(
         agent["EnvironmentVariables"].as_dictionary().unwrap()["PURLIS_CONFIG_HOME"].as_string(),
-        Some("/home/runner/.config")
+        Some("/nonexistent-home/runner/.config")
     );
 }
 
@@ -182,7 +182,7 @@ fn the_agent_loads_in_a_background_session_too_and_restarts_after_a_failure() {
     assert_eq!(
         arguments,
         [
-            "/home/runner/.config/purlis/server/0.9.0-rc.1/purlis",
+            "/nonexistent-home/runner/.config/purlis/server/0.9.0-rc.1/purlis",
             "serve",
             "--as-a-service"
         ]
@@ -303,7 +303,7 @@ fn a_new_versions_service_never_touches_the_old_ones() {
     let old = std::fs::read_to_string(here.unit_path(&versioned())).unwrap();
     ran.take();
     let new = Service {
-        binary: PathBuf::from("/home/runner/.config/purlis/server/0.9.0/purlis"),
+        binary: PathBuf::from("/nonexistent-home/runner/.config/purlis/server/0.9.0/purlis"),
         version: Some("0.9.0".into()),
         config_home: None,
     };
@@ -485,7 +485,7 @@ fn doctor_says_each_fault_with_what_to_do() {
             (REACHABLE_ROW, Status::Fail)
         ]
     );
-    let bin = "/home/runner/.config/purlis/server/0.9.0-rc.1/purlis";
+    let bin = "/nonexistent-home/runner/.config/purlis/server/0.9.0-rc.1/purlis";
     assert!(
         missing[0]
             .hint
@@ -645,7 +645,7 @@ fn the_last_remove_turns_linger_off_only_where_purlis_turned_it_on() {
     let ran = Arc::new(Ran::default());
     let here = here(Keeper::SystemdUser, home.path(), &ran);
     let other = Service {
-        binary: PathBuf::from("/home/runner/.config/purlis/server/0.9.0/purlis"),
+        binary: PathBuf::from("/nonexistent-home/runner/.config/purlis/server/0.9.0/purlis"),
         version: Some("0.9.0".into()),
         config_home: None,
     };
