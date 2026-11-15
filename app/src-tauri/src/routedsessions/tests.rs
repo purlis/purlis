@@ -1524,3 +1524,56 @@ fn a_chats_end_asks_nothing_about_a_workspace_that_never_ran_on_its_pool() {
     );
     assert!(window.routed_pools().contains("builds"));
 }
+
+/// **A finished task a restart found on a pool the settings no longer route is read there, then
+/// closed there, and its record goes** (#6504's review): finding it keeps it as that pool's, so
+/// the settling of records skips it, and the sweep closes only what routed pools hold.
+#[test]
+fn a_finished_task_found_on_a_pool_no_longer_routed_is_read_and_closed_there_and_its_record_goes() {
+    let machine = AMachine::new();
+    let number = machine.a_chat_left_on_builds();
+    machine.builds.shows(number, "check prod: all green\r\n");
+    machine.moves_app_to(None);
+    let back = machine.window();
+    assert!(
+        back.left_running_in(number, Some("app")),
+        "precondition: found on builds"
+    );
+
+    let screen = crate::skillgrade::screen_left_of(&back, number);
+    back.close_left(&[number]);
+    back.close_what_was_not_reattached();
+
+    assert_eq!(screen.as_deref(), Some("check prod: all green\r\n"));
+    assert_eq!(
+        machine.builds.terminal(),
+        [
+            format!("watched left {number}"),
+            format!("unwatched left {number} 1")
+        ],
+        "read through a view on the pool that holds it"
+    );
+    assert_eq!(machine.builds.closed_left(), [number], "closed there");
+    assert!(machine.here.closed_left().is_empty());
+    assert!(machine.kept().is_empty(), "and its record is out");
+}
+
+/// A finished task left on this machine is read and closed here (#6504).
+#[test]
+fn a_finished_task_left_on_this_machine_is_read_and_closed_here() {
+    let world = a_world();
+    world.here.leaves_running(7, None);
+    world.here.shows(7, "done\r\n");
+    assert!(world.sessions.left_running_in(7, Some("app")));
+
+    let screen = crate::skillgrade::screen_left_of(&world.sessions, 7);
+    world.sessions.close_left(&[7]);
+
+    assert_eq!(screen.as_deref(), Some("done\r\n"));
+    assert_eq!(
+        world.here.terminal(),
+        ["watched left 7", "unwatched left 7 1"]
+    );
+    assert_eq!(world.here.closed_left(), [7]);
+    assert!(world.builds.terminal().is_empty());
+}

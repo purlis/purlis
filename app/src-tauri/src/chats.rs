@@ -9406,18 +9406,34 @@ impl Chats {
     /// **Starts keeping the screens of the task chats `finished`, left out of a launch's put
     /// back, that the session host still runs** (#6504): the window went without quitting, so
     /// [`Self::start_keeping_finished_screens`] never ran, and
-    /// [`Self::close_what_was_not_reattached`] would close each unread. Before that, and
-    /// returning at once, as at a quit.
-    pub(crate) fn start_keeping_screens_left(
-        &self,
-        finished: &[Chat],
-    ) -> crate::chatcard::ScreensComing {
+    /// [`Self::close_what_was_not_reattached`] would close each unread. It returns at once, and
+    /// [`Self::close_finished_left`] waits for the screens and closes the chats.
+    pub(crate) fn start_keeping_screens_left(&self, finished: &[Chat]) -> KeepingLeft {
         let left: Vec<(u32, String)> = finished
             .iter()
-            .filter(|chat| self.left_running(chat))
-            .filter_map(|chat| Some((chat.number?, chat.identity.id.clone()?)))
+            .filter_map(|chat| Some((chat, chat.number?, chat.identity.id.clone()?)))
+            .filter(|(chat, _, _)| self.left_running(chat))
+            .map(|(_, number, id)| (number, id))
             .collect();
-        crate::chatcard::start_keeping_screens_left(&self.project, &self.sessions, &left)
+        let by = crate::chatcard::screens_by_from_now();
+        KeepingLeft {
+            screens: crate::chatcard::start_keeping_screens_left(
+                &self.project,
+                &self.sessions,
+                &left,
+            ),
+            by,
+            chats: left.into_iter().map(|(number, _)| number).collect(),
+        }
+    }
+
+    /// **Waits for the screens `keeping` is keeping, until its deadline, and closes their chats**
+    /// (#6504), each where the session host holds it: a pool the settings no longer route among
+    /// them, which the sweep would leave running with no tab (#6504's review).
+    pub(crate) fn close_finished_left(&self, keeping: KeepingLeft) {
+        let KeepingLeft { screens, by, chats } = keeping;
+        screens.wait_until(by);
+        self.sessions.close_left(&chats);
     }
 
     /// Ends every chat, and does not return until their programs are gone.
@@ -9446,6 +9462,15 @@ impl Default for Chats {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// The screens of the finished task chats a launch found still running, being kept, and the
+/// chats they are of ([`Chats::start_keeping_screens_left`], #6504).
+#[must_use = "the chats whose screens are being kept are closed once they are kept"]
+pub(crate) struct KeepingLeft {
+    screens: crate::chatcard::ScreensComing,
+    by: std::time::Instant,
+    chats: Vec<u32>,
 }
 
 /// What a start in a project being let go of is refused with (#1949).

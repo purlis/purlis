@@ -1351,11 +1351,10 @@ impl Held {
         }
         // A task that had finished when the window went without quitting is still in the
         // session host, and nothing kept its screen: it is read now, while the chats put back
-        // start, and kept before the sweep below closes it (#6504).
+        // start, and kept before each is closed where it is held (#6504).
         let screens = self.chats.start_keeping_screens_left(&finished);
-        let screens_by = crate::chatcard::screens_by_from_now();
         let back = crate::restored::finish(self, begun, size, read).len();
-        screens.wait_until(screens_by);
+        self.chats.close_finished_left(screens);
         // What the session host still runs of this project from before this window and no
         // chat put back reattached ends now, so nothing runs with no tab (#2006).
         self.chats.close_what_was_not_reattached();
