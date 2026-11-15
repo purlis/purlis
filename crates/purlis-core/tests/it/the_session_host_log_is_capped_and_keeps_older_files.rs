@@ -19,6 +19,7 @@ fn len(path: &Path) -> u64 {
 
 #[test]
 fn a_log_past_its_cap_is_moved_aside_whole_and_the_log_starts_again_empty() {
+    purlis_core::unsteered!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join(hostlog::NAME);
     write(&log, 2_000, b'a');
@@ -34,6 +35,7 @@ fn a_log_past_its_cap_is_moved_aside_whole_and_the_log_starts_again_empty() {
 
 #[test]
 fn a_log_within_its_cap_is_left_as_it_is() {
+    purlis_core::unsteered!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join(hostlog::NAME);
     write(&log, 1_000, b'a');
@@ -46,6 +48,7 @@ fn a_log_within_its_cap_is_left_as_it_is() {
 
 #[test]
 fn no_log_yet_is_nothing_to_cap() {
+    purlis_core::unsteered!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join(hostlog::NAME);
 
@@ -55,6 +58,7 @@ fn no_log_yet_is_nothing_to_cap() {
 
 #[test]
 fn each_rotation_shifts_the_older_files_and_only_the_newest_few_are_kept() {
+    purlis_core::unsteered!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join(hostlog::NAME);
     for fill in *b"abcde" {
@@ -74,6 +78,7 @@ fn each_rotation_shifts_the_older_files_and_only_the_newest_few_are_kept() {
 /// past a hole the size of what was there.
 #[test]
 fn a_writer_holding_the_log_open_to_append_writes_on_into_the_emptied_log() {
+    purlis_core::unsteered!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join(hostlog::NAME);
     let mut held = std::fs::OpenOptions::new()
@@ -93,6 +98,7 @@ fn a_writer_holding_the_log_open_to_append_writes_on_into_the_emptied_log() {
 #[cfg(unix)]
 #[test]
 fn a_link_in_the_logs_place_is_refused_and_what_it_points_to_is_left_alone() {
+    purlis_core::unsteered!();
     let dir = tempfile::tempdir().unwrap();
     let elsewhere = dir.path().join("elsewhere");
     write(&elsewhere, 2_000, b'a');
@@ -106,6 +112,7 @@ fn a_link_in_the_logs_place_is_refused_and_what_it_points_to_is_left_alone() {
 
 #[test]
 fn the_host_keeps_a_few_older_files_of_a_bounded_size() {
+    purlis_core::unsteered!();
     assert_eq!(hostlog::KEPT, 3);
     assert_eq!(hostlog::CAP, 1024 * 1024);
 }
@@ -114,6 +121,7 @@ fn the_host_keeps_a_few_older_files_of_a_bounded_size() {
 /// older files, without a restart.
 #[test]
 fn a_running_host_rotates_its_log_once_it_passes_the_cap_and_keeps_older_files() {
+    purlis_core::unsteered!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join(hostlog::NAME);
     let mut held = std::fs::OpenOptions::new()
