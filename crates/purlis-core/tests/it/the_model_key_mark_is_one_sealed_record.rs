@@ -421,8 +421,9 @@ fn a_key_marked_for_a_built_in_is_refused_on_another_declaration() {
             },
             origins: marked.origins.clone(),
         };
-        let why = route_allowed(&marked, &route)
-            .expect_err(&format!("a key marked for the built-in went to a {from} route"));
+        let why = route_allowed(&marked, &route).expect_err(&format!(
+            "a key marked for the built-in went to a {from} route"
+        ));
         assert!(why.contains(from), "{why}");
     }
 }
@@ -480,7 +481,11 @@ fn the_first_mark_makes_the_device_key() {
         origins: origins(&["https://router.acme.dev"]),
     };
     mark::mark(here.root(), &here.credentials, b, &acme).unwrap();
-    assert_eq!(device_writes(&here.record), 0, "a second device key was made");
+    assert_eq!(
+        device_writes(&here.record),
+        0,
+        "a second device key was made"
+    );
     assert_eq!(here.device_key(), made);
     assert!(here.read(a).is_ok() && here.read(b).is_ok());
 }
@@ -553,7 +558,10 @@ fn there_is_one_write_path_to_the_mark() {
         ("use purlis_core::yourkeys::mark::{self, mark};", true),
         ("use purlis_core::yourkeys::mark::*;", true),
         ("use purlis_core::yourkeys::mark as m;", true),
-        ("use purlis_core::yourkeys::mark::{Binding, read_model_key};", false),
+        (
+            "use purlis_core::yourkeys::mark::{Binding, read_model_key};",
+            false,
+        ),
         ("crate::yourkeys::mark::path(root, id)", false),
         ("personamark::mark(", false),
     ] {
@@ -562,7 +570,10 @@ fn there_is_one_write_path_to_the_mark() {
 
     // In the mark's own file, one function writes a record, and only the writer calls it.
     let own = std::fs::read_to_string(root.join(MAY_CALL_THE_WRITER[0])).unwrap();
-    assert!(own.contains("pub fn mark("), "the mark has no writer `mark`");
+    assert!(
+        own.contains("pub fn mark("),
+        "the mark has no writer `mark`"
+    );
     assert_eq!(
         own.matches("write_beside(").count(),
         1,
@@ -574,14 +585,21 @@ fn there_is_one_write_path_to_the_mark() {
         "the record's one writing function is defined and called once"
     );
     let writer = &own[own.find("pub fn mark(").unwrap()..];
-    let writer = &writer[..writer[1..].find("\npub fn ").map_or(writer.len(), |at| at + 1)];
+    let writer = &writer[..writer[1..]
+        .find("\npub fn ")
+        .map_or(writer.len(), |at| at + 1)];
     assert!(
         writer.contains("seal_into("),
         "the record is written outside `mark`"
     );
     // Your keys reaches it from Replace alone.
     let store = std::fs::read_to_string(root.join(MAY_CALL_THE_WRITER[1])).unwrap();
-    assert_eq!(store.matches("mark::mark(").count(), 1, "{}", MAY_CALL_THE_WRITER[1]);
+    assert_eq!(
+        store.matches("mark::mark(").count(),
+        1,
+        "{}",
+        MAY_CALL_THE_WRITER[1]
+    );
 
     let mut offenders = Vec::new();
     let mut walked = 0;

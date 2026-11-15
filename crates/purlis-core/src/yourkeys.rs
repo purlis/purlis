@@ -10,7 +10,7 @@
 //! (`keychain`), the `product` it is a key for (the declaration's `{ "from", "id" }` reference),
 //! its `approval` setting and whether it was `checked` at save. Never its value.
 //!
-//! - **Written by the window alone** (R-173): [`add`] and [`set_approval`] are called from the
+//! - **Written by the window alone** (R-173): [`add`], [`replace`] and [`set_approval`] are called from the
 //!   app's window commands (`app/src-tauri/src/yourkeyscmds.rs`) and from nothing a CLI verb, a
 //!   session-protocol method or a chat tool reaches. `nothing_but_the_window_writes_your_keys`
 //!   walks every crate and the app's Rust, and only this file and that one may name a writer or
@@ -30,9 +30,14 @@
 //! - **The approval setting** (R-030, R-621): fixed off, since adding the key in the window is
 //!   its approval. Any other setting is refused with W39.
 //!
+//! - **The mark** ([`mark`], T1a-10): an entry is used as a model key only while its sealed
+//!   record says so. [`replace`] seals it again over the new value; any other write unmarks it.
+//!
 //! The index is on the Machine tier, device-bound, backed up; the items are on the Keyring tier
 //! and not backed up (H-18). The whole `model-keys` folder is denied to every chat's sandbox,
 //! reading and writing (`crate::sandbox`).
+
+pub mod mark;
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -363,12 +368,20 @@ pub fn set_approval(config_root: &Path, id: Ulid, setting: &str) -> Result<(), S
 /// **The one way a model key is read** (R-169, R-172): the entry's line from the index, through
 /// `files`, and its keychain item, through `credentials`. Nothing else is read: no project vault
 /// and no persona's grant, so the key is the same for a chat in any project under any persona.
+/// A start reads it as a model key through [`mark::read_model_key`], which also verifies its
+/// mark (R-177).
 pub fn read_key(
     config_root: &Path,
     files: &dyn Files,
     credentials: &dyn Credentials,
     id: Ulid,
 ) -> Result<Secret, ReadError> {
+    let entry = read_entry(config_root, files, id)?;
+    read_item(credentials, &entry)
+}
+
+/// Entry `id`'s line, read through `files`.
+fn read_entry(config_root: &Path, files: &dyn Files, id: Ulid) -> Result<Entry, ReadError> {
     let at = index_path(config_root);
     let index = match files.read(&at) {
         Ok(bytes) => parse(&at, &bytes).map_err(ReadError::Index)?,
@@ -380,14 +393,74 @@ pub fn read_key(
             )));
         }
     };
-    let entry = index
+    index
         .entries
-        .iter()
+        .into_iter()
         .find(|e| e.id == id)
-        .ok_or(ReadError::NotInYourKeys)?;
+        .ok_or(ReadError::NotInYourKeys)
+}
+
+/// Entry's value, from its keychain item through `credentials`.
+fn read_item(credentials: &dyn Credentials, entry: &Entry) -> Result<Secret, ReadError> {
     match credentials.get(SERVICE, &entry.id.to_string()) {
         Ok(Some(value)) => Ok(value),
         Ok(None) => Err(ReadError::Unreadable),
         Err(why) => Err(ReadError::Store(why.to_string())),
     }
+}
+
+/// What a *Replace* left the entry as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Replaced {
+    /// The new value is in, and its mark is sealed again over it: a rotated key keeps its mark.
+    Marked,
+    /// The new value is in, and the entry is not marked: it wasn't before, or its value had been
+    /// changed outside purlis, so the person marks it again.
+    Unmarked,
+}
+
+/// **Replaces an entry's value** (the window's *Replace*, R-176): where the entry's mark
+/// verifies against the value it holds now, the new value is written and the mark sealed again
+/// over it, through the mark's one writer, so the rotated key keeps its mark. A mark that
+/// doesn't verify is never sealed again: the value is written and the entry stays unmarked.
+/// Only the window calls this (R-173).
+pub fn replace(
+    config_root: &Path,
+    credentials: &dyn Credentials,
+    id: Ulid,
+    value: &str,
+) -> Result<Replaced, String> {
+    let _held = crate::machine::Lock::named(config_root, LOCK);
+    let index = read_to_write(config_root)?;
+    let entry = index
+        .entries
+        .iter()
+        .find(|e| e.id == id)
+        .ok_or_else(|| ReadError::NotInYourKeys.to_string())?;
+    let kept = match read_item(credentials, entry) {
+        Ok(old) => mark::binding_for(config_root, credentials, entry, &old).ok(),
+        Err(ReadError::Unreadable) => None,
+        Err(why) => return Err(why.to_string()),
+    };
+    match credentials.set(SERVICE, &id.to_string(), value) {
+        Ok(Held::ToTheApp | Held::NoRule) => {}
+        Ok(Held::NotYet) => {
+            return Err(
+                "the key couldn't be held to the purlis app; replace it in the purlis \
+                        window"
+                    .to_owned(),
+            );
+        }
+        Err(why) => {
+            return Err(format!(
+                "purlis couldn't keep the key in your keychain: {why}"
+            ));
+        }
+    }
+    let Some(binding) = kept else {
+        return Ok(Replaced::Unmarked);
+    };
+    mark::mark(config_root, credentials, id, &binding)
+        .map_err(|why| format!("the key was replaced and couldn't be marked again: {why}"))?;
+    Ok(Replaced::Marked)
 }

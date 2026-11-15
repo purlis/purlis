@@ -104,6 +104,11 @@ impl Secret {
     pub fn into_inner(self) -> String {
         self.0
     }
+
+    /// The value, borrowed, for a use that never keeps it (a keyed fingerprint).
+    pub(crate) fn expose(&self) -> &str {
+        &self.0
+    }
 }
 
 impl std::fmt::Debug for Secret {
