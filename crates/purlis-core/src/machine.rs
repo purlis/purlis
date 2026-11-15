@@ -485,6 +485,24 @@ pub fn charterd(config_root: &Path) -> PathBuf {
     crate::names::DAEMON_DIR.folder_at(&dir(config_root))
 }
 
+/// **The session host's own folder for this binary**: [`charterd`], or, for a binary installed
+/// on a runner as one version of several (`<config>/server/<version>/purlis`, RR-14, #723),
+/// `server/<version>` inside it ([`crate::runnerinstall::host_folder_of`]). What a host keeps
+/// as its own and nothing else reads (its credentials, its kill switch and its host record), so
+/// a new version's host started beside an old one neither rotates the old one's credentials nor
+/// ends the programs the old one's host record names (ADR 0068 §8: the old one drains). What
+/// every version shares (the link key, the peers, the window names) stays in [`charterd`].
+pub fn host_folder(config_root: &Path) -> PathBuf {
+    let daemon = charterd(config_root);
+    match std::env::current_exe()
+        .ok()
+        .and_then(|exe| crate::runnerinstall::version_of_binary(config_root, &exe))
+    {
+        Some(version) => crate::runnerinstall::host_folder_of(&daemon, &version),
+        None => daemon,
+    }
+}
+
 /// The store's own path inside `config_root`.
 pub fn file(config_root: &Path) -> PathBuf {
     dir(config_root).join(FILE)

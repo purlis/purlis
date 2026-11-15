@@ -251,6 +251,7 @@ pub mod runnercursors;
 pub mod runnerhours;
 #[cfg(unix)]
 pub mod runnerimage;
+pub mod runnerinstall;
 #[cfg(unix)]
 pub mod runnerlink;
 #[cfg(unix)]

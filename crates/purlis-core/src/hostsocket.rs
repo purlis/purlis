@@ -64,12 +64,38 @@ pub fn socket_for(runtime: Option<&OsStr>) -> PathBuf {
 
 /// Where the host's socket is for this process: the place [`socket_for`] names, under the name
 /// [`named_for`] gives this process's config home.
+///
+/// A binary installed on a runner as one version of several (`<config>/server/<version>/purlis`,
+/// RR-14, #723) has a socket of its version's own, [`of_version`]: its host, its bridge and
+/// every client it runs there name that one, so a new version's host serves beside an old one,
+/// which keeps its chats until each ends (ADR 0068 §8).
 #[cfg(unix)]
 pub fn here() -> PathBuf {
-    here_for(
+    let config = crate::machine::config_root_unheld();
+    let socket = here_for(
         std::env::var_os("XDG_RUNTIME_DIR").as_deref(),
-        crate::machine::config_root_unheld().as_deref(),
-    )
+        config.as_deref(),
+    );
+    let version = config.as_deref().and_then(|config| {
+        crate::runnerinstall::version_of_binary(config, &std::env::current_exe().ok()?)
+    });
+    match version {
+        Some(version) => of_version(&socket, &version),
+        None => socket,
+    }
+}
+
+/// **`socket`, named for the installed version `version`**: `purlisd-v1.4.0.sock` for
+/// `purlisd.sock`, in the same folder. Its lock and link socket are named from it as any
+/// socket's are, so they are the version's own too.
+#[must_use]
+pub fn of_version(socket: &Path, version: &str) -> PathBuf {
+    let stem = socket
+        .file_name()
+        .and_then(OsStr::to_str)
+        .and_then(|name| name.strip_suffix(".sock"))
+        .unwrap_or("purlisd");
+    socket.with_file_name(format!("{stem}-v{version}.sock"))
 }
 
 /// Where the session host of the config home `config` listens for this user, with `runtime`

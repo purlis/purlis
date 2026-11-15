@@ -133,7 +133,7 @@ pub(crate) async fn linked_as_terminal() -> Result<purlis_session_protocol::link
     use purlis_session_protocol::auth::{Credential, Scope};
     use purlis_session_protocol::{link, session};
     let config = purlis_core::machine::config_root().ok_or(NotLinked::NoHost)?;
-    let credential = Credential::read(&purlis_core::machine::charterd(&config), Scope::Terminal)
+    let credential = Credential::read(&purlis_core::machine::host_folder(&config), Scope::Terminal)
         .map_err(|_| NotLinked::NoHost)?;
     let stream = tokio::net::UnixStream::connect(purlis_core::hostsocket::here())
         .await

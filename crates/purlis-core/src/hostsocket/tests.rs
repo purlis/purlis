@@ -197,3 +197,33 @@ fn a_config_home_not_made_yet_names_the_socket_it_will_once_it_is() {
         named_for(&socket, Some(&real.join("config")), Some(&default))
     );
 }
+
+#[test]
+fn an_installed_versions_socket_lock_and_link_are_its_own() {
+    let socket = Path::new("/run/user/1000/purlis/purlisd.sock");
+    let versioned = of_version(socket, "1.4.0");
+    assert_eq!(
+        versioned,
+        Path::new("/run/user/1000/purlis/purlisd-v1.4.0.sock")
+    );
+    assert_ne!(of_version(socket, "1.5.0"), versioned);
+    // A config home of its own keeps its key, and gains the version.
+    let keyed = Path::new("/tmp/purlis-1000/purlisd-0123456789abcdef.sock");
+    assert_eq!(
+        of_version(keyed, "1.4.0"),
+        Path::new("/tmp/purlis-1000/purlisd-0123456789abcdef-v1.4.0.sock")
+    );
+    let place = |socket: &Path| {
+        (
+            socket.with_extension("lock"),
+            socket.with_extension("link.sock"),
+        )
+    };
+    let (lock, link) = place(&versioned);
+    assert_eq!(lock, Path::new("/run/user/1000/purlis/purlisd-v1.4.0.lock"));
+    assert_eq!(
+        link,
+        Path::new("/run/user/1000/purlis/purlisd-v1.4.0.link.sock")
+    );
+    assert_ne!(place(&versioned), place(socket));
+}

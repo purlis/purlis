@@ -263,7 +263,10 @@ test("plan asks whether the dev channel already serves this commit or a later on
   assert.ok(plan.includes("GH_TOKEN: ${{ github.token }}"));
   // And `skip` is what keeps every build, and so every publish, from starting.
   assert.equal(value(job("build"), 4, "if"), "needs.plan.outputs.skip != 'true'");
-  assert.equal(value(job("publish"), 4, "needs"), "[plan, build, manifest, provenance]");
+  assert.equal(
+    value(job("publish"), 4, "needs"),
+    "[plan, build, runner-binaries, manifest, provenance]",
+  );
 });
 
 test("the publish job asks again before it replaces the first dev asset, and stops unless told to publish", () => {
@@ -308,6 +311,7 @@ test("every job has a deadline, so a hung one cannot hold the dev builds' group 
     "build",
     "runner-image",
     "runner-image-signature",
+    "runner-binaries",
     "sbom",
     "manifest",
     "provenance",
