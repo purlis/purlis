@@ -85,7 +85,8 @@ pub enum Format {
 }
 
 impl Format {
-    fn word(self) -> &'static str {
+    /// The word a declaration writes for this format.
+    pub fn word(self) -> &'static str {
         match self {
             Self::AnthropicMessages => "anthropic-messages",
             Self::OpenaiChat => "openai-chat",
