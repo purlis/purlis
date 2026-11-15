@@ -404,11 +404,15 @@ export async function answerTheAsk(ending: string): Promise<void> {
 
 /**
  * **Opens the palette**, and makes sure it is up: F2, and where the driver's F2 reaches nothing
- * that opens it (the keyboard left on something that takes the key, such as a terminal or a
- * dialog that just closed), the same key dispatched on the window, where the palette listens,
- * as `reach.ts`'s `runFromThePalette` does.
+ * that opens it (the keyboard left on something that takes the key, such as a terminal, a
+ * dialog that just closed, or a tab or a chat's row, which rename on F2), the same key
+ * dispatched on the window, where the palette listens, as `reach.ts`'s `runFromThePalette` does.
+ *
+ * The driver's keys are `KeyboardEvent`s it dispatches in the page on the element with the
+ * keyboard (`tauri-plugin-wdio-webdriver`'s `key_input.rs`), so a Mac's F-keys set to media keys
+ * play no part: F2 is F2 to the page whatever the keyboard says (#4351).
  */
-async function openThePalette(): Promise<void> {
+export async function openThePalette(): Promise<void> {
   const palette = await $(PALETTE);
   if (await palette.isDisplayed().catch(() => false)) return;
   await browser.keys(["F2"]);
@@ -663,8 +667,7 @@ const PALETTE = '[role="dialog"][aria-label="Command palette"]';
  * no button for, New project… among them since the project strip went (#2915).
  */
 export async function fromThePalette(words: string): Promise<void> {
-  await browser.keys(["F2"]);
-  await $(PALETTE).waitForDisplayed({ timeout: 20_000 });
+  await openThePalette();
   const box = await $("#palette-query");
   await browser.waitUntil(async () => box.isFocused(), {
     timeout: 10_000,
