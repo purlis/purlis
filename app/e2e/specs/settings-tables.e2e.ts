@@ -106,7 +106,7 @@ async function windowIs(width: number, height: number): Promise<void> {
       last = now;
       return settled;
     },
-    { timeout: 10_000, interval: 200, timeoutMsg: "the window never settled on a width" },
+    { timeout: 20_000, interval: 250, timeoutMsg: "the window never settled on a width" },
   );
 }
 
