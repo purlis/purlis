@@ -14,7 +14,8 @@
 //!   2026-11-11 keeps a screen for dispatched tasks only ([`crate::chatscreens`]), so *Read it*
 //!   on an ordinary chat's card is always disabled.
 //! - **Kept as the chat closes for good**, by the app: closed in the window, dropped at a
-//!   launch's Start fresh, or left out of a launch's put back (#6487, [`keep_all`]). Not at a
+//!   launch's Start fresh, left out of a launch's put back, or let go with *Forget this chat*
+//!   after a launch could not start it (#6487, [`keep_all`]). Not at a
 //!   restart (the chat goes on), not at a quit (the record of open chats brings it back), and
 //!   never from anything a chat sent. A
 //!   chat closed again under a later number replaces its entry, by its ULID.

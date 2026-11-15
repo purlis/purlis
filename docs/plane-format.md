@@ -7612,8 +7612,10 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   newest closes that fit in 2000 entries and 8 MiB, so purlis never writes one too large to
   read.
 - **Status:** **internal** — **purlis only**. Written by the app as a chat closes for good:
-  closed in the window, dropped at a launch's Start fresh, or left out of a launch's put back
-  (a task that had finished, or one that cannot carry on; #6487). Not at a restart, not at a
+  closed in the window, dropped at a launch's Start fresh, left out of a launch's put back
+  (a task that had finished, or one that cannot carry on), or let go with *Forget this chat*
+  after a launch could not start it (#6487). A workspace's removal ends none: it is refused
+  while a chat runs there. Not at a restart, not at a
   quit, never from anything a chat sent. Read by a closed chat's
   card (`chat_by_number`, a pane's chat links), by the Chats list's filter (`closed_chats`), and
   by the card's *Reopen* (`reopen_closed_chat`, #6485), which **starts the program its entry

@@ -497,8 +497,9 @@ pub(crate) fn closed_record(
 }
 
 /// **Keeps the closed records of `chats`, recorded chats that end for good at once** (#6487):
-/// the ones a fresh start drops, and the ones a launch leaves out of its put back, which never
-/// close through `Chats::close_as`. Each by its number and ULID as its record has them, its
+/// the ones a fresh start drops, the ones a launch leaves out of its put back, and one let go
+/// with Forget this chat after a launch could not start it, which never close through
+/// `Chats::close_as`. Each by its number and ULID as its record has them, its
 /// workspace by where it ran; a chat its record names no number or ULID for has none, as a
 /// close keeps none for it. `why` says which path in the log where the write fails.
 pub(crate) fn keep_closed_records<'c>(
