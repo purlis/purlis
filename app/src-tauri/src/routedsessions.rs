@@ -1461,6 +1461,22 @@ impl SessionHost for RoutedSessions {
         self.here.close_left(numbers);
     }
 
+    /// Of the host that said it runs the chat ([`Self::left_running_in`] keeps a pool's), else of
+    /// this machine's (#6504).
+    fn watch_left(&self, number: u32, sink: Sink) -> Result<Watching, String> {
+        match self.host_of(number) {
+            Some(host) => host.watch_left(number, sink),
+            None => self.here.watch_left(number, sink),
+        }
+    }
+
+    fn unwatch_left(&self, number: u32, view: u32) {
+        match self.host_of(number) {
+            Some(host) => host.unwatch_left(number, view),
+            None => self.here.unwatch_left(number, view),
+        }
+    }
+
     /// A chat a restart found with no record of where it runs is kept as its pool's once it is
     /// taken back there (#4683), as its start would have kept it: the pool its workspace's setting
     /// named when it was asked, and the workspace the window asked for.

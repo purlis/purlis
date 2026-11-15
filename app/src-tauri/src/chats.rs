@@ -9403,6 +9403,23 @@ impl Chats {
         crate::chatcard::start_keeping_screens_at_quit(&self.project, &self.sessions, &finished)
     }
 
+    /// **Starts keeping the screens of the task chats `finished`, left out of a launch's put
+    /// back, that the session host still runs** (#6504): the window went without quitting, so
+    /// [`Self::start_keeping_finished_screens`] never ran, and
+    /// [`Self::close_what_was_not_reattached`] would close each unread. Before that, and
+    /// returning at once, as at a quit.
+    pub(crate) fn start_keeping_screens_left(
+        &self,
+        finished: &[Chat],
+    ) -> crate::chatcard::ScreensComing {
+        let left: Vec<(u32, String)> = finished
+            .iter()
+            .filter(|chat| self.left_running(chat))
+            .filter_map(|chat| Some((chat.number?, chat.identity.id.clone()?)))
+            .collect();
+        crate::chatcard::start_keeping_screens_left(&self.project, &self.sessions, &left)
+    }
+
     /// Ends every chat, and does not return until their programs are gone.
     pub fn end_all(&self) {
         self.ending.store(true, Ordering::SeqCst);

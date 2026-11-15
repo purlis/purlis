@@ -5671,6 +5671,50 @@ impl SessionHost for HostedSessions {
         };
         self.closes_left(left);
     }
+
+    /// By the program the host said it left (#6504): never drawn into a pane, so nothing paces
+    /// it, and no running chat lists it.
+    fn watch_left(&self, number: u32, sink: Sink) -> Result<Watching, String> {
+        let (link, _) = self.link()?;
+        let program = lock(&self.left)
+            .get(&number)
+            .map(|left| left.program.clone())
+            .ok_or_else(|| format!("chat {number} was not left in the session host"))?;
+        let attached = match link.call(Command::AttachView {
+            program,
+            kind: ViewKind::Terminal,
+            role: None,
+            rate: None,
+            // All of its history, as [`SessionHost::watch`] asks.
+            history: Some(u32::MAX),
+        })? {
+            Answer::Attached(attached) => attached,
+            other => return Err(format!("the session host answered a view with {other:?}")),
+        };
+        link.draw(attached.view, sink, false);
+        Ok(Watching {
+            view: attached.view,
+            size: Size {
+                columns: attached.cols,
+                rows: attached.rows,
+            },
+            older: attached.older.unwrap_or(0),
+        })
+    }
+
+    fn unwatch_left(&self, number: u32, view: u32) {
+        let Ok((link, _)) = self.link() else {
+            return;
+        };
+        link.undraw(view);
+        // A chat the sweep closed meanwhile took its views with it.
+        if let Some(program) = lock(&self.left)
+            .get(&number)
+            .map(|left| left.program.clone())
+        {
+            link.send(Command::DetachView { program, view });
+        }
+    }
 }
 
 impl HostedSessions {

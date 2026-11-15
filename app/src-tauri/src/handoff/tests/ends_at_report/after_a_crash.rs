@@ -85,7 +85,11 @@ fn a_task_that_had_reported_when_the_window_crashed_keeps_its_screen_before_its_
 
     let (_planes, held) = launches_on(&host, &crashed);
 
-    assert_eq!(host.reattached(), [crashed.steward], "precondition: put back");
+    assert_eq!(
+        host.reattached(),
+        [crashed.steward],
+        "precondition: put back"
+    );
     assert_eq!(
         host.closed_left(),
         [crashed.task],
@@ -100,5 +104,53 @@ fn a_task_that_had_reported_when_the_window_crashed_keeps_its_screen_before_its_
     assert_eq!(
         purlis_core::chatscreens::kept(held.root(), &crashed.steward_id),
         None
+    );
+}
+
+#[test]
+fn a_launch_keeps_no_screen_of_a_task_left_running_where_this_machine_keeps_none() {
+    let crashed = a_window_that_crashed_after_its_task_reported();
+    std::fs::write(
+        crashed
+            .plane
+            .root
+            .join(purlis_core::settings::Which::Local.file_at(&crashed.plane.root)),
+        "[task_screens]\nkeep = false\n",
+    )
+    .expect("written");
+    let host = a_host_that_kept_both(&crashed);
+
+    let (_planes, held) = launches_on(&host, &crashed);
+
+    assert_eq!(host.closed_left(), [crashed.task], "it is still closed");
+    assert_eq!(
+        purlis_core::chatscreens::kept(held.root(), &crashed.task_id),
+        None
+    );
+}
+
+#[test]
+fn a_launch_is_not_held_past_its_deadline_by_a_left_task_s_screen_that_will_not_come() {
+    // As a quit is not (#6451's review): a view a host never answers holds the launch, and the
+    // sweep after it, no longer than the deadline.
+    let crashed = a_window_that_crashed_after_its_task_reported();
+    let host = a_host_that_kept_both(&crashed);
+    host.terminal_takes(std::time::Duration::from_secs(30));
+    let began = std::time::Instant::now();
+
+    let (_planes, _held) = launches_on(&host, &crashed);
+
+    let took = began.elapsed();
+    // The read left behind ends now, not 30 s on in a folder already deleted.
+    host.terminal_answers();
+    assert_eq!(
+        host.closed_left(),
+        [crashed.task],
+        "the sweep still closed it"
+    );
+    let slack = std::time::Duration::from_secs(5);
+    assert!(
+        took < crate::chatcard::SCREENS_AT_QUIT_WITHIN + slack,
+        "the launch took {took:?}"
     );
 }

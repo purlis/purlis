@@ -568,10 +568,13 @@ pub(crate) fn left_out(root: &std::path::Path, chat: &purlis_core::reopen::Chat)
 ///
 /// What was still waiting for a chat left out goes where a closed chat's goes: a report
 /// waiting for its next turn to its workspace, and its messages away.
+///
+/// **It answers the chats it left out too**: after a crash the session host may still run one,
+/// and the launch keeps its screen before it closes it (#6504).
 pub(crate) fn put_back_without_the_finished(
     root: &std::path::Path,
     record: &purlis_core::reopen::Record,
-) -> purlis_core::reopen::Record {
+) -> (purlis_core::reopen::Record, Vec<purlis_core::reopen::Chat>) {
     let (back, out) =
         purlis_core::dispatched::left_out_at_launch(record, |chat| left_out(root, chat));
     for chat in &out {
@@ -585,7 +588,7 @@ pub(crate) fn put_back_without_the_finished(
             purlis_core::dispatchtalk::forget(root, number);
         }
     }
-    back
+    (back, out)
 }
 
 /// The task chat `chat` was reopened from, by name, where it was reopened from one: its own

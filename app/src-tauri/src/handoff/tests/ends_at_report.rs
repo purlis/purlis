@@ -808,7 +808,7 @@ fn a_task_that_had_reported_when_the_app_quit_is_a_finished_row_at_the_next_laun
     let asker_id = held.chats().chat_at(steward).and_then(|at| at.id);
 
     // The next launch: the record is read, and the finished task is left out of the put-back.
-    let back = crate::finished::put_back_without_the_finished(held.root(), &at_quit);
+    let (back, _) = crate::finished::put_back_without_the_finished(held.root(), &at_quit);
 
     let numbers: Vec<u32> = back.chats.iter().filter_map(|chat| chat.number).collect();
     assert_eq!(numbers, [steward, still_working]);
@@ -901,7 +901,7 @@ fn a_task_that_had_reported_when_the_app_quit_has_its_screen_kept() {
     assert_eq!(purlis_core::chatscreens::kept(root, &working), None);
     assert_eq!(purlis_core::chatscreens::kept(root, &steward_id), None);
     // And it is the very chat the put back leaves out.
-    let back = crate::finished::put_back_without_the_finished(root, &at_quit);
+    let (back, _) = crate::finished::put_back_without_the_finished(root, &at_quit);
     let numbers: Vec<u32> = back.chats.iter().filter_map(|chat| chat.number).collect();
     assert_eq!(numbers, [steward, still_working]);
 }
@@ -921,7 +921,7 @@ fn a_task_s_screen_kept_at_a_quit_reads_on_its_card_after_the_next_launch() {
     let planes = planes_on(&relaunched);
     let again = planes.open(&plane.root);
     let held = planes.held(&again).expect("held");
-    let back = crate::finished::put_back_without_the_finished(held.root(), &at_quit);
+    let (back, _) = crate::finished::put_back_without_the_finished(held.root(), &at_quit);
     held.chats().put_back(&back, A_SIZE);
 
     let crate::chatcard::ChatLookup::Ended { card } = crate::chatcard::lookup(&held, task) else {
@@ -1080,7 +1080,7 @@ fn a_task_the_person_took_over_and_a_blocked_one_come_back_at_the_next_launch() 
     );
     let at_quit = held.chats().record();
 
-    let back = crate::finished::put_back_without_the_finished(held.root(), &at_quit);
+    let (back, _) = crate::finished::put_back_without_the_finished(held.root(), &at_quit);
 
     // Both are the chats they were: the person's work, and a task waiting on something.
     assert_eq!(back, at_quit);
