@@ -47,6 +47,10 @@
           "type": "string",
           "pattern": "^[A-Z]+(-[A-Za-z0-9]+)+$"
         },
+        "escape": {
+          "description": "An escape cell: its failure means the refused action happened. It carries no expected_fail; a failing one is filed as an area:security, priority:p0 issue and fixed first (Q301).",
+          "type": "boolean"
+        },
         "dialects": {
           "description": "Default: every dialect.",
           "type": "array",
@@ -247,6 +251,7 @@
         "assertion": {"type": "string", "pattern": "^((require|forbid|window|transcript)\\[[0-9]+\\]|outcome|calls|repeat_of)$"},
         "check": {"type": "string"},
         "refusal": {"type": "string"},
+        "note": {"description": "The observation the mark pins, cited from the run record it came from.", "type": "string", "minLength": 1},
         "observed": {
           "oneOf": [
             {

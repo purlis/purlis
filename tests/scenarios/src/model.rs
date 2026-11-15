@@ -104,6 +104,10 @@ fn all_dialects() -> Vec<Dialect> {
 pub struct Cell {
     /// The matrix row (`M-NET-05`), or an escape, control or just-inside entry's id.
     pub id: String,
+    /// An escape cell: its failure means the refused action happened, so it carries no
+    /// `expected_fail` (Q301).
+    #[serde(default)]
+    pub escape: bool,
     #[serde(default = "all_dialects")]
     pub dialects: Vec<Dialect>,
     /// What a dialect shows where it lacks an event the cell names, and its own steps' wording.
@@ -349,6 +353,9 @@ pub struct Mark {
     pub refusal: Option<String>,
     #[serde(default)]
     pub observed: Option<Value>,
+    /// The observation pinned, cited from its run record.
+    #[serde(default)]
+    pub note: Option<String>,
     #[serde(default)]
     pub leg: Option<Leg>,
     #[serde(default)]

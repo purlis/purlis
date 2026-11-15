@@ -24,7 +24,7 @@ use serde_json::Value;
 use crate::kinds::Kinds;
 use crate::model::{
     Batch, Cell, Dialect, Expect, Mark, Os, Override, PinsFile, Press, Require, Restart, Step,
-    StepPatch,
+    StepPatch, TimingsMode,
 };
 use crate::timings::{Expr, TimingsCatalogue};
 
@@ -134,6 +134,9 @@ impl Validator {
     /// Every problem in `batch`, each naming the batch and the cell; none for a good batch.
     pub fn check(&self, batch: &Batch) -> Vec<String> {
         let mut found = BTreeSet::new();
+        self.check_pins(&mut |msg| {
+            found.insert(format!("{}: {msg}", batch.batch));
+        });
         let mut earlier: BTreeMap<&str, usize> = BTreeMap::new();
         for cell in &batch.cells {
             let mut say = |msg: String| {
@@ -194,11 +197,48 @@ impl Validator {
                 ));
             }
         }
+        if cell.escape && !cell.expected_fail.is_empty() {
+            say("an escape cell carries no expected_fail: a failing escape is an area:security, priority:p0 issue, fixed first (Q301)".into());
+        }
+        if cell.production_only.is_some() && cell.production_nightly_only.is_some() {
+            say("production_only and production_nightly_only together: a production_nightly_only cell runs scaled on PRs and in the merge queue (Q300), which production_only forbids".into());
+        }
         self.check_marks(cell, say);
+        self.check_dead_marks(cell, say);
         for &dialect in &cell.dialects {
             for os in OSES {
                 let steps = resolve(cell, dialect, os, &self.pins);
                 self.check_resolved(cell, dialect, os, &steps, say);
+            }
+        }
+    }
+
+    /// A mark scoped to timings the cell never runs at pins nothing, for ever.
+    fn check_dead_marks(&self, cell: &Cell, say: &mut dyn FnMut(String)) {
+        let timing = crate::plan::profile(cell, self.catalogue.as_ref());
+        for (i, mark) in cell.expected_fail.iter().enumerate() {
+            let at = format!("expected_fail[{i}] (#{})", mark.issue);
+            match mark.timings {
+                Some(TimingsMode::Production) if !timing.in_production_set() => say(format!(
+                    "{at}: scoped to production timings, and the cell is not in the production-timing set"
+                )),
+                Some(TimingsMode::Scaled) if timing.skips_scaled() => say(format!(
+                    "{at}: scoped to scaled timings, and the cell skips scaled runs"
+                )),
+                _ => {}
+            }
+        }
+    }
+
+    /// The pins files' `shows`: each kind purlis-core writes, as a cell's must be.
+    fn check_pins(&self, say: &mut dyn FnMut(String)) {
+        for (dialect, shows) in &self.pins.shows {
+            let at = format!("pins/{}.json shows", dialect.word());
+            for (kind, instead) in shows {
+                self.check_kind(&at, kind, say);
+                for e in instead {
+                    self.check_kind(&format!("{at}.{kind}"), &e.kind, say);
+                }
             }
         }
     }

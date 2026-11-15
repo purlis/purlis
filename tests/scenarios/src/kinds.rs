@@ -4,8 +4,8 @@
 //! **The event kinds a cell may name, read from purlis-core.** A `require` or `forbid` on a
 //! kind purlis never writes would pass or fail for ever without testing anything.
 //!
-//! - **Hook kinds** are `hook.<word>` for every word in `hookreg::HANDLERS` and `NO_OPS`, the
-//!   tool event's kind (`eventlog::phase`). Which a dialect produces is the words it is armed
+//! - **Hook kinds** are `hook.<word>` for every word in `hookreg::HANDLERS` (never `NO_OPS`,
+//!   which purlis answers with nothing and never writes). Which a dialect produces is the words it is armed
 //!   with: every handler for Claude Code, `plugin::CODEX` for Codex, and for OpenCode the words
 //!   its shim forwards (`opencode::TOOLS`, `DEFAULT_PRE`, and the state words below).
 //! - **Kinds purlis writes itself** (stops, asks, grants, the spool, a run's start and end) are
@@ -46,11 +46,8 @@ pub struct Kinds {
 impl Kinds {
     /// The kinds as purlis-core has them now.
     pub fn from_core() -> Self {
-        let hook_words = hookreg::HANDLERS
-            .iter()
-            .map(|h| h.name)
-            .chain(hookreg::NO_OPS)
-            .collect();
+        // `hookreg::NO_OPS` are answered with exit 0 and never written, so they are not kinds.
+        let hook_words = hookreg::HANDLERS.iter().map(|h| h.name).collect();
         let own = [
             stops::BLOCK,
             stops::HOLD,

@@ -16,12 +16,18 @@
         "refusal_expected": true,
         "require": [
           {"kind": "ask.raised", "ask": "sandbox", "count": 1, "before": "post"},
-          {"kind": "stop.block", "source": "sandbox", "target.host": "$h1", "qualifier": null, "count": 1}
+          {"kind": "stop.block", "source": "sandbox", "target.host": "$h1", "qualifier": null, "count": 1},
+          {"kind": "ask.raised", "ask": "sandbox", "within": "group+1"}
         ],
         "forbid": [{"kind": "ask.answered"}]
       }],
       "expected_fail": [
-        {"issue": 6674, "step": 1, "assertion": "require[0]", "observed": 2}
+        {"issue": 6674, "step": 1, "assertion": "require[0]", "observed": 2,
+         "note": "chat 682 (test-matrix-phase-1.md §8): every held ask wrote ask.raised twice"},
+        {"issue": 6673, "step": 1, "assertion": "require[1]", "observed": 0,
+         "note": "chat 682 (§8): the block was written only at the next prompt, so it landed in step 2 (M-PRB-02)"},
+        {"issue": 6672, "step": 1, "assertion": "require[2]", "observed": {"from": "35s", "to": "50s"},
+         "note": "chat 682 (§8): the ask came 45 s after the call started, not at about 2 s"}
       ]
     },
     {
@@ -40,8 +46,10 @@
         "forbid": [{"kind": "stop.block"}]
       }],
       "expected_fail": [
-        {"issue": 6674, "step": 1, "assertion": "require[0]", "observed": 2},
-        {"issue": 6673, "step": 1, "assertion": "forbid[0]", "observed": 1}
+        {"issue": 6674, "step": 1, "assertion": "require[0]", "observed": 2,
+         "note": "chat 682 (§8): every held ask wrote ask.raised twice"},
+        {"issue": 6673, "step": 1, "assertion": "forbid[0]", "observed": 1,
+         "note": "chat 682 (§8): step 1's block, written at the next prompt, landed in this turn"}
       ]
     },
     {
@@ -61,7 +69,8 @@
         "forbid": [{"kind": "stop.block", "at": "next_prompt"}]
       }],
       "expected_fail": [
-        {"issue": 6674, "step": 1, "assertion": "require[0]", "observed": 2}
+        {"issue": 6674, "step": 1, "assertion": "require[0]", "observed": 2,
+         "note": "chat 682 (§8): every held ask wrote ask.raised twice; the rest of the cell passed"}
       ]
     },
     {
@@ -78,8 +87,10 @@
         "forbid": [{"kind": "ask.raised"}]
       }],
       "expected_fail": [
-        {"issue": 6657, "step": 1, "assertion": "require[0]", "observed": 0},
-        {"issue": 6657, "step": 1, "assertion": "forbid[0]", "observed": 1}
+        {"issue": 6657, "step": 1, "assertion": "require[0]", "observed": 0,
+         "note": "chat 682 (§8): the block was unverified, named no host, and came at the next prompt"},
+        {"issue": 6657, "step": 1, "assertion": "forbid[0]", "observed": 1,
+         "note": "chat 682 (§8): an unnamed-host ask was raised"}
       ]
     },
     {
@@ -96,7 +107,8 @@
         ]
       }],
       "expected_fail": [
-        {"issue": 6657, "step": 1, "assertion": "require[0]", "observed": 0}
+        {"issue": 6657, "step": 1, "assertion": "require[0]", "observed": 0,
+         "note": "chat 682 (§8): the repeat was throttled and silent"}
       ]
     },
     {
@@ -110,7 +122,8 @@
         "require": [{"kind": "stop.block", "source": "sandbox"}]
       }],
       "expected_fail": [
-        {"issue": 6675, "step": 1, "assertion": "require[0]", "observed": 0}
+        {"issue": 6675, "step": 1, "assertion": "require[0]", "observed": 0,
+         "note": "chat 682 (§8): black hole confirmed; urllib's refusal wrote nothing"}
       ]
     },
     {
@@ -123,10 +136,19 @@
           {"tool": "Bash", "input": {"command": "echo moved-on"}}
         ],
         "require": [
-          {"kind": "ask.raised", "ask": "sandbox", "count": 1},
-          {"kind": "stop.block", "source": "sandbox", "target.host": "$h6", "qualifier": null, "count": 1}
-        ]
-      }]
+          {"kind": "ask.raised", "ask": "sandbox", "count": 1, "before": "post"},
+          {"kind": "stop.block", "source": "sandbox", "target.host": "$h6", "qualifier": null, "args": "this_call", "count": 1}
+        ],
+        "forbid": [{"kind": "stop.block", "at": "next_prompt"}]
+      }],
+      "expected_fail": [
+        {"issue": 6672, "step": 1, "assertion": "require[0]", "observed": 0,
+         "note": "chat 682 (§8): the client was gone at 3 s; the ask came 35 s later, once, after hook.stop"},
+        {"issue": 6676, "step": 1, "assertion": "require[1]", "observed": 0,
+         "note": "chat 682 (§8): the hook lines were spooled and lost args, so the block carried no GET digest"},
+        {"issue": 6673, "step": 1, "assertion": "forbid[0]", "observed": 1,
+         "note": "chat 682 (§8): the block was written 30 s after the ask, after hook.stop"}
+      ]
     }
   ]
 }

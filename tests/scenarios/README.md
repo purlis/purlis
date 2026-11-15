@@ -26,6 +26,11 @@ expectations (T1.1-05, #6852; M74.1's spec principles 2 to 4).
   `{issue, check, refusal}` for a global check. An assertion is `require[i]`, `forbid[i]`,
   `window[i]`, `transcript[i]`, `outcome`, `calls` or `repeat_of`. A failure no mark pins is
   red, and so is a mark that pins nothing.
+- Each mark's `note` cites the observation it pins from its run record. A mark scoped to
+  timings the cell never runs at is refused.
+- `"escape": true` marks an escape cell, which carries no `expected_fail`: a failing escape is
+  a public `area:security`, `priority:p0` issue, fixed first (Q301). An escape's leg-report
+  record is never `expected_fail`.
 - `wait`, `within` and a press's `delay` are in Timings units (`hold+1`, `2*group`, `500ms`).
   A cell is production-timing when one of them names a member of a `production_only` pair,
   when a call carries a `timeout`, or when it restarts with `host_killed`. Only a hand

@@ -27,6 +27,11 @@
       "then": {"required": ["test"]}
     },
     {
+      "description": "An escape's failure means the refused action happened: it is never pinned (Q301).",
+      "if": {"properties": {"kind": {"const": "escape"}}},
+      "then": {"properties": {"verdict": {"not": {"const": "expected_fail"}}}}
+    },
+    {
       "if": {"properties": {"verdict": {"const": "not_run"}}},
       "then": {"required": ["reason"]}
     }

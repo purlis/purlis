@@ -156,6 +156,9 @@ fn every_cells_file_validates() {
     if pins.is_dir() {
         for entry in fs::read_dir(&pins).expect("pins reads") {
             let path = entry.expect("an entry").path();
+            if path.extension().is_none_or(|x| x != "json") {
+                continue;
+            }
             let errors = schema_errors("cells.schema.json", Some("pins_file"), &read_json(&path));
             assert!(
                 errors.is_empty(),
@@ -798,4 +801,194 @@ fn the_ticket_1_fixture_keeps_holds_tie_with_the_hook_timeout_production_only() 
         scaled["HOOK_TIMEOUT"], 60.0,
         "out of process, so never scaled"
     );
+}
+
+// ---- review of #6911 -------------------------------------------------------------------------
+
+#[test]
+fn an_escape_cell_carries_no_expected_fail() {
+    let mark = json!({"issue": 6674, "step": 1, "assertion": "require[0]", "observed": 2});
+    let found = problems(json!([{
+        "id": "E-T-30", "escape": true, "steps": [held_get()], "expected_fail": [mark]
+    }]));
+    assert!(
+        found
+            .iter()
+            .any(|p| p.contains("E-T-30") && p.contains("escape")),
+        "{found:#?}"
+    );
+    assert!(problems(json!([{"id": "E-T-30", "escape": true, "steps": [held_get()]}])).is_empty());
+    assert!(
+        problems(json!([{"id": "M-T-30", "steps": [held_get()], "expected_fail": [mark]}]))
+            .is_empty()
+    );
+}
+
+#[test]
+fn an_escape_record_is_never_expected_fail() {
+    let record = |kind: &str, verdict: &str| {
+        json!({"kind": kind, "row": "E-NET-01", "dialect": "claude", "protection": "full",
+               "os": "linux", "leg": "fake", "verdict": verdict})
+    };
+    assert!(schema_errors("leg-report.schema.json", None, &record("escape", "fail")).is_empty());
+    assert!(
+        schema_errors(
+            "leg-report.schema.json",
+            None,
+            &record("cell", "expected_fail")
+        )
+        .is_empty()
+    );
+    assert!(
+        !schema_errors(
+            "leg-report.schema.json",
+            None,
+            &record("escape", "expected_fail")
+        )
+        .is_empty()
+    );
+}
+
+#[test]
+fn a_mark_for_a_run_the_cell_never_has_fails_validation() {
+    let untimed = json!({"calls": [{"tool": "Bash", "input": {"command": "get https://$h1 3"}}],
+                         "require": [{"kind": "stop.block", "source": "sandbox"}]});
+    let mark = |timings: &str| json!([{"issue": 6672, "step": 1, "assertion": "require[0]", "observed": 0, "timings": timings}]);
+    // Outside the production-timing set: never run at production timings.
+    let found = problems(
+        json!([{"id": "M-T-31", "steps": [untimed], "expected_fail": mark("production")}]),
+    );
+    assert!(
+        found
+            .iter()
+            .any(|p| p.contains("M-T-31") && p.contains("production")),
+        "{found:#?}"
+    );
+    assert!(
+        problems(json!([{"id": "M-T-31", "steps": [untimed], "expected_fail": mark("scaled")}]))
+            .is_empty()
+    );
+    // A hand production_only cell skips scaled runs.
+    let found = problems(
+        json!([{"id": "M-T-32", "production_only": ["hold", "HOOK_TIMEOUT"],
+                                 "steps": [untimed], "expected_fail": mark("scaled")}]),
+    );
+    assert!(
+        found
+            .iter()
+            .any(|p| p.contains("M-T-32") && p.contains("scaled")),
+        "{found:#?}"
+    );
+    assert!(
+        problems(
+            json!([{"id": "M-T-32", "production_only": ["hold", "HOOK_TIMEOUT"],
+                             "steps": [untimed], "expected_fail": mark("production")}])
+        )
+        .is_empty()
+    );
+}
+
+#[test]
+fn production_only_and_production_nightly_only_together_fail_validation() {
+    let found = problems(
+        json!([{"id": "M-T-33", "production_only": ["hold", "HOOK_TIMEOUT"],
+                                 "production_nightly_only": "Q300", "steps": [held_get()]}]),
+    );
+    assert!(
+        found
+            .iter()
+            .any(|p| p.contains("M-T-33") && p.contains("production_nightly_only")),
+        "{found:#?}"
+    );
+}
+
+#[test]
+fn a_pins_file_naming_an_unknown_kind_fails_validation() {
+    for shows in [
+        json!({"hook.no-such-word": []}),
+        json!({"hook.posttoolusefailure-blocked": [{"kind": "stop.blok"}]}),
+    ] {
+        let pins: PinsFile = serde_json::from_value(json!({"dialect": "codex", "shows": shows}))
+            .expect("a pins file");
+        let check = validator().with_pins(Pins::from_files(vec![pins]));
+        let found = check.check(&batch(json!([{"id": "M-T-34", "steps": [held_get()]}])));
+        assert!(
+            found
+                .iter()
+                .any(|p| p.contains("pins") && p.contains("codex")),
+            "{shows}: {found:#?}"
+        );
+    }
+}
+
+#[test]
+fn a_hook_word_purlis_answers_with_nothing_is_not_a_kind() {
+    // `hookreg::NO_OPS`: answered with exit 0 and never written.
+    let kinds = Kinds::from_core();
+    for word in purlis_core::hookreg::NO_OPS {
+        assert!(!kinds.knows(&format!("hook.{word}")), "{word}");
+    }
+    assert!(kinds.knows("hook.posttooluse-blocked"));
+}
+
+/// Chat 682's run record (test-matrix-phase-1.md §8, B0, 2026-11-15) as the assertions it makes
+/// fail, judged against B0's marks: every cell `expected_fail` on the issues the record lists,
+/// M-PRB-03 included (its only failure is the doubled ask, #6674).
+#[test]
+fn b0_judges_chat_682s_record_as_the_record_says() {
+    let b0 = Batch::from_value(read_json(&root().join("cells/B0.json"))).expect("B0 reads");
+    let live = run(Dialect::Claude, Leg::Live, TimingsMode::Production);
+    let record: [(&str, Vec<Assertion>, &[u64]); 7] = [
+        (
+            "M-PRB-01",
+            vec![
+                fails(1, "require[0]", json!(2)),
+                fails(1, "require[1]", json!(0)),
+                fails(1, "require[2]", json!(45.0)),
+            ],
+            &[6672, 6673, 6674],
+        ),
+        (
+            "M-PRB-02",
+            vec![
+                fails(1, "require[0]", json!(2)),
+                fails(1, "forbid[0]", json!(1)),
+            ],
+            &[6673, 6674],
+        ),
+        ("M-PRB-03", vec![fails(1, "require[0]", json!(2))], &[6674]),
+        (
+            "M-PRB-04",
+            vec![
+                fails(1, "require[0]", json!(0)),
+                fails(1, "forbid[0]", json!(1)),
+            ],
+            &[6657],
+        ),
+        ("M-PRB-04b", vec![fails(1, "require[0]", json!(0))], &[6657]),
+        ("M-PRB-05", vec![fails(1, "require[0]", json!(0))], &[6675]),
+        (
+            "M-PRB-06",
+            vec![
+                fails(1, "require[0]", json!(0)),
+                fails(1, "require[1]", json!(0)),
+                fails(1, "forbid[0]", json!(1)),
+            ],
+            &[6672, 6673, 6676],
+        ),
+    ];
+    for (id, failed, issues) in record {
+        let cell = b0.cells.iter().find(|c| c.id == id).expect("the cell");
+        assert!(
+            cell.expected_fail.iter().all(|m| m.note.is_some()),
+            "{id}: every mark cites the record"
+        );
+        assert_eq!(
+            judge(cell, &live, &failed, &[]),
+            Verdict::ExpectedFail {
+                issues: issues.iter().copied().collect()
+            },
+            "{id}"
+        );
+    }
 }
