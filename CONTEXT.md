@@ -270,10 +270,13 @@ A derived store is also marked rebuildable (ADR 0069).
 _Avoid_: app data (for the Machine tier as a whole), cache (for clone state), local state
 
 **Private record**:
-A file purlis keeps for itself in the Machine tier or in clone state, such as the extension
-list, an approval or a queued message. Each says which version wrote it. A record written by a
-newer purlis is never deleted or overwritten: a whole-file record is refused and says which
-purlis wrote it, and one row of a record of rows is skipped and kept (ADR 0125).
+A part of **Project**: a file purlis keeps for itself in the Machine tier or in clone state,
+such as the extension list, an approval or a queued message. Each says which version wrote it.
+A record written by a newer purlis is never deleted or overwritten: a whole-file record is
+refused, with Update purlis and Set it aside and start fresh as its remedies, and one row of a
+record of rows is skipped and kept. Only a record marked rebuildable may be rebuilt over a newer
+one, since nothing is lost. A damaged record is set aside, never deleted, and purlis starts it
+fresh (ADR 0125).
 _Avoid_: config (that is what a person edits), cache (unless it is marked rebuildable), state
 file
 
@@ -911,7 +914,7 @@ The sites and local ports a browser may open and the ones its agent may write to
 in the one Granted list. A site new to the project that the agent itself writes an address for,
 posts a form to, or types on, asks once; a link the page offered does not, and on the open web
 nothing asks. A private address is reached only by the literal address and port the person
-allowed.
+allowed. Not an artifact's **Reach**.
 _Avoid_: allowlist (in UI text), network access, browser allowlist
 
 **Browser site**:
@@ -1991,33 +1994,44 @@ the extension itself can do only for a **studio capability**, whose extension is
 _Avoid_: permission, grant (that is a runner's **Grant**), power
 
 **Code approval**:
-A person's yes, on this machine, to code purlis will run that the person did not write into
-purlis: an **Extension**, a pinned **Artifact**'s script with its **Regenerate** code, or a
-project's **Harness declaration**. It covers exactly what the person was shown, and it asks
-again when that changes. A teammate's never counts as yours. A setting of **Project**, as the
-trust gate is, kept where its subject belongs: a harness declaration's in the clone, the others
-on this machine (ADR 0125).
+A setting of **Project**, as the trust gate is: a person's yes to code purlis will run that the
+person did not write into purlis. Its **Subject** is an **Extension**, a pinned **Artifact**'s
+script with its **Regenerate** code, a project's **Harness declaration** or local profile, or a
+**Persona**'s MCP servers. It covers exactly what the person was shown, and it asks again when
+that changes. A teammate's approval never counts as yours. It is kept where its subject belongs:
+an extension's and an artifact's on this machine, and a harness declaration's, a local
+profile's and a persona's MCP servers' in this clone, never committed. While a chat waits on
+one, it is a **Blocking ask** as well as a **Notice** (ADR 0125).
 _Avoid_: trust (for the record), permission (that is the harness's), grant (that is a
-runner's), consent (for this kind alone)
+runner's), consent (for this kind alone), ledger (that is the code's)
+
+**Subject** (of a code approval):
+A part of **Code approval**: the one thing it is about, as the person sees it. A pinned
+**Artifact**'s page and its **Regenerate** code are one subject, so they ask in one **Notice**
+and one press approves them both. Unpinning forgets the whole subject, and a workspace rename
+carries it (ADR 0125).
+_Avoid_: item, target, entry (that is the record's)
 
 **Standing** (of a code approval):
-Where a **Code approval** is now: approved; new, never approved here; changed, because its
-code, its pin or its **Reach** moved since; or not asked, because nothing would run. The same
-four words for every kind of code purlis approves (ADR 0125).
+A part of **Code approval**: where it is now. Approved; new, never approved here; changed,
+because its code, its pin or its **Reach** changed since; or not asked, because nothing would
+run here. The same words for every kind of code purlis approves (ADR 0125).
 _Avoid_: state, status, trust level
 
-**Reach** (of a page):
-What a pinned **Artifact**'s declared queries read, as purlis resolves them when the page is
-approved: each query, whether it reads the workspace or the whole plane, and each parameter
-that widens it. It is part of what the person approves, so a purlis or an extension that later
-lets the same query read more asks again (ADR 0125).
-_Avoid_: scope (alone, that is one query's), permissions, access
+**Reach** (of an artifact):
+A part of a pinned **Artifact**'s **Code approval**: what its declared queries read, as purlis
+resolves them when it is approved: each query, whether it reads the workspace or the whole
+plane, and each parameter that widens it. A purlis or an extension that later changes what the
+same query reads asks again, saying what it now also reads and no longer reads (ADR 0125). Not
+a browser's **Reach**.
+_Avoid_: scope (alone, that is one query's), permissions, access (that is a link host's or a
+**Dispatch grant**'s)
 
 **Regenerate**:
-A press in a pinned **Artifact**'s bar that runs the pin's command in a chat's sandbox to make
-the page's data on this machine. Its code is approved with its page, as one **Code approval**:
-unpinning forgets both, a workspace rename carries both, and it runs only for a page that is
-approved (ADR 0122, ADR 0125).
+A part of **Artifact**: a press in a pinned artifact's bar that runs the pin's command in a
+chat's sandbox to make the page's data on this machine. Its code is approved with its page, as
+one **Subject**, and it runs only beside a page that stands approved or has no script
+(ADR 0122, ADR 0125).
 _Avoid_: refresh, rebuild, sync
 
 **Suspend** (a runner):
