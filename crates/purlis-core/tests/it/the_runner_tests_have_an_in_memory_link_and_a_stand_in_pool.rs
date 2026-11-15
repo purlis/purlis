@@ -13,6 +13,7 @@
 
 use crate::support::runner_link::{Crossed, End, InMemoryLink, LinkDown};
 use crate::support::stand_in_pool::{Outcome, StandInPool, Switch};
+use purlis_session_protocol::version::Version;
 
 /// A message shaped as the key-proxy plan T1a-51 sends with a run's start.
 fn plan(run: &str) -> serde_json::Value {
@@ -78,6 +79,9 @@ fn in_memory_link_records_each_message_that_crossed_and_survives_a_drop_and_reli
     });
 }
 
+/// A change to one field of a stand-in pool.
+type Change = fn(&mut StandInPool);
+
 #[test]
 fn stand_in_pool_yields_each_ownership_outcome_as_the_built_check_judges_it() {
     for (switch, expected) in [
@@ -92,7 +96,7 @@ fn stand_in_pool_yields_each_ownership_outcome_as_the_built_check_judges_it() {
     // Each identity field, each claim field, the protocol version and the team-image flag is
     // set on its own: a caller reading the pool sees that one field changed, and no other.
     let was = StandInPool::new(Switch::MarkedCluster);
-    let changes: [(&str, fn(&mut StandInPool)); 11] = [
+    let changes: [(&str, Change); 11] = [
         ("pool name", |p| p.identity.pool = "elsewhere".into()),
         ("context", |p| p.identity.context = "another".into()),
         ("cluster uid", |p| {
@@ -100,11 +104,15 @@ fn stand_in_pool_yields_each_ownership_outcome_as_the_built_check_judges_it() {
         }),
         ("operator key", |p| p.identity.operator_key = [9; 32]),
         ("socket", |p| p.identity.socket = "/tmp/another.sock".into()),
-        ("claim uid", |p| p.claim.claim_uid = "another".into()),
+        ("claim uid", |p| {
+            p.claim.claim_uid = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".into();
+        }),
         ("pod", |p| p.claim.pod = "another".into()),
-        ("device", |p| p.claim.device = "01JB0ANOTHER00000000000000".into()),
+        ("device", |p| {
+            p.claim.device = "01JB0ANOTHER00000000000000".into()
+        }),
         ("link key", |p| p.claim.link_key = [7; 32]),
-        ("protocol", |p| p.protocol = (1, 0)),
+        ("protocol", |p| p.protocol = Version { major: 1, minor: 0 }),
         ("team image", |p| p.team_image = !p.team_image),
     ];
     for (field, change) in changes {
