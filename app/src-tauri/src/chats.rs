@@ -9388,17 +9388,16 @@ impl Chats {
     /// then waits once, until the one deadline it gives them all
     /// ([`crate::chatcard::ScreensComing::wait_until`]).
     pub fn start_keeping_finished_screens(&self) -> crate::chatcard::ScreensComing {
-        let finished: Vec<(u32, String)> = self
+        let finished: Vec<purlis_core::dispatchrecord::ChatRef> = self
             .record()
             .chats
             .iter()
             .filter(|chat| crate::finished::left_out(&self.project, chat))
-            .filter_map(|chat| {
-                let number = chat
-                    .number
-                    .filter(|number| lock(&self.open).contains_key(number))?;
-                Some((number, chat.identity.id.clone()?))
+            .filter(|chat| {
+                chat.number
+                    .is_some_and(|number| lock(&self.open).contains_key(&number))
             })
+            .filter_map(task_ref)
             .collect();
         crate::chatcard::start_keeping_screens_at_quit(&self.project, &self.sessions, &finished)
     }
@@ -9413,11 +9412,10 @@ impl Chats {
     /// still runs counts against it.
     pub(crate) fn start_keeping_screens_left(&self, finished: &[Chat]) -> KeepingLeft {
         let by = crate::chatcard::screens_by_from_now();
-        let left: Vec<(u32, String)> = finished
+        let left: Vec<purlis_core::dispatchrecord::ChatRef> = finished
             .iter()
-            .filter_map(|chat| Some((chat, chat.number?, chat.identity.id.clone()?)))
-            .filter(|(chat, _, _)| self.left_running(chat))
-            .map(|(_, number, id)| (number, id))
+            .filter(|chat| self.left_running(chat))
+            .filter_map(task_ref)
             .collect();
         KeepingLeft {
             screens: crate::chatcard::start_keeping_screens_left(
@@ -9426,7 +9424,7 @@ impl Chats {
                 &left,
             ),
             by,
-            chats: left.into_iter().map(|(number, _)| number).collect(),
+            chats: left.into_iter().map(|chat| chat.chat).collect(),
         }
     }
 
@@ -9465,6 +9463,16 @@ impl Default for Chats {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Task chat `chat` as a dispatch record names it, by its number and its id: none where its record
+/// holds neither.
+fn task_ref(chat: &Chat) -> Option<purlis_core::dispatchrecord::ChatRef> {
+    Some(purlis_core::dispatchrecord::ChatRef {
+        chat: chat.number?,
+        id: Some(chat.identity.id.clone()?),
+        ..Default::default()
+    })
 }
 
 /// The screens of the finished task chats a launch found still running, being kept, and the
