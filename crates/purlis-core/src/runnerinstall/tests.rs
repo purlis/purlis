@@ -147,19 +147,25 @@ fn a_version_is_one_a_folder_and_a_command_hold_as_they_are() {
     }
 }
 
-/// What `sh -c script` prints with `env` alone and `HOME` at `home`.
-fn sh(script: &str, home: &Path, env: &[(&str, &str)], input: Option<&[u8]>) -> (i32, String) {
-    let mut command = std::process::Command::new("/bin/sh");
-    command
-        .args(["-c", script])
+/// What `sh -c command` prints with `env` alone, `PATH` at `path` and `HOME` at `home`: a
+/// POSIX login shell handed `command` as ssh hands it one.
+fn sh_on_path(
+    command: &str,
+    home: &Path,
+    path: &str,
+    env: &[(&str, &str)],
+    input: Option<&[u8]>,
+) -> (i32, String) {
+    let mut run = std::process::Command::new("/bin/sh");
+    run.args(["-c", command])
         .env_clear()
-        .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
+        .env("PATH", path)
         .env("HOME", home);
     for (name, value) in env {
-        command.env(name, value);
+        run.env(name, value);
     }
     let ran = crate::boundedrun::run_within_giving(
-        &mut command,
+        &mut run,
         input,
         64 * 1024,
         64 * 1024,
@@ -172,11 +178,78 @@ fn sh(script: &str, home: &Path, env: &[(&str, &str)], input: Option<&[u8]>) -> 
     )
 }
 
+const PATH: &str = "/usr/bin:/bin:/usr/sbin:/sbin";
+
+/// [`sh_on_path`] with the system's `PATH`.
+fn sh(command: &str, home: &Path, env: &[(&str, &str)], input: Option<&[u8]>) -> (i32, String) {
+    sh_on_path(command, home, PATH, env, input)
+}
+
+/// The hash tool this machine has, as the probe picks it.
+fn hash_tool_here() -> HashTool {
+    let on_path = |name: &str| {
+        PATH.split(':')
+            .any(|folder| Path::new(folder).join(name).exists())
+    };
+    if on_path("sha256sum") {
+        HashTool::Sha256sum
+    } else {
+        HashTool::Shasum
+    }
+}
+
+fn mode_of(path: &str) -> u32 {
+    std::os::unix::fs::PermissionsExt::mode(&std::fs::metadata(path).unwrap().permissions()) & 0o777
+}
+
+/// The temporary files in `config`'s server folder.
+fn incoming_left(config: &str) -> Vec<String> {
+    std::fs::read_dir(server_dir(config))
+        .map(|entries| {
+            entries
+                .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+                .filter(|name| name.starts_with(INCOMING))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+fn every_command_is_handed_to_posix_sh_whatever_the_login_shell_is() {
+    let config = "/home/runner/.config/purlis";
+    let incoming = "/home/runner/.config/purlis/server/.incoming-AbCdE12345";
+    let digest = "a".repeat(64);
+    let url = asset_url("1.4.0", Target::LinuxX86_64);
+    for command in [
+        probe_command(),
+        incoming_command(config),
+        receive_command(incoming),
+        fetch_command(incoming, &url).unwrap(),
+        settle_command(HashTool::Sha256sum, config, "1.4.0", incoming, &digest),
+        settle_command(HashTool::Shasum, config, "1.4.0", incoming, &digest),
+        installed_command(HashTool::Sha256sum, &binary_at(config, "1.4.0"), &digest),
+        discard_command(incoming),
+    ] {
+        let script = command
+            .strip_prefix("exec sh -c '")
+            .and_then(|rest| rest.strip_suffix('\''))
+            .unwrap_or_else(|| panic!("not handed to sh: {command}"));
+        // fish reads `\` inside single quotes, and csh reads `!`.
+        assert!(!script.contains(['\'', '\\', '!']), "{script}");
+    }
+}
+
+#[test]
+#[should_panic(expected = "quote")]
+fn a_script_that_would_end_its_quoting_is_never_sent() {
+    let _ = for_login_shell("echo 'x'");
+}
+
 #[test]
 fn the_probe_names_the_platform_the_store_the_tools_and_each_version_installed() {
     let home = tempfile::tempdir().unwrap();
     let home_path = std::fs::canonicalize(home.path()).unwrap();
-    let (code, printed) = sh(&probe_script(), &home_path, &[], None);
+    let (code, printed) = sh(&probe_command(), &home_path, &[], None);
     assert_eq!(code, 0, "{printed}");
     let probed = probed_from(&printed).expect("the probe is read");
     // No folder of purlis's is there yet: the one it would make.
@@ -196,7 +269,7 @@ fn the_probe_names_the_platform_the_store_the_tools_and_each_version_installed()
             .unwrap();
     }
     std::fs::create_dir_all(server.join("1.6.0")).unwrap();
-    let (_, printed) = sh(&probe_script(), &home_path, &[], None);
+    let (_, printed) = sh(&probe_command(), &home_path, &[], None);
     let probed = probed_from(&printed).unwrap();
     assert_eq!(probed.versions, ["1.3.0", "1.4.0"]);
 }
@@ -208,7 +281,7 @@ fn the_probe_resolves_the_store_as_purlis_does_from_its_variables() {
     let elsewhere = home_path.join("elsewhere");
     let xdg = home_path.join("xdg");
     let case = |env: &[(&str, &str)]| {
-        let (_, printed) = sh(&probe_script(), &home_path, env, None);
+        let (_, printed) = sh(&probe_command(), &home_path, env, None);
         probed_from(&printed).unwrap().config
     };
     let named = |root: &Path| crate::machine::dir(root).display().to_string();
@@ -237,6 +310,87 @@ fn the_probe_resolves_the_store_as_purlis_does_from_its_variables() {
 }
 
 #[test]
+fn the_probe_deletes_what_a_delivery_cut_off_a_day_ago_left_and_keeps_the_rest() {
+    let home = tempfile::tempdir().unwrap();
+    let home_path = std::fs::canonicalize(home.path()).unwrap();
+    let server = crate::machine::dir(&home_path.join(".config")).join(SERVER_DIR);
+    std::fs::create_dir_all(server.join("1.4.0")).unwrap();
+    let stale = server.join(".incoming-Stale12345");
+    let fresh = server.join(".incoming-Fresh12345");
+    let binary = server.join("1.4.0").join(BINARY);
+    let two_days_ago = std::time::SystemTime::now() - Duration::from_secs(2 * 24 * 3600);
+    for path in [&stale, &fresh, &binary] {
+        std::fs::write(path, b"x").unwrap();
+    }
+    for path in [&stale, &binary] {
+        std::fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(two_days_ago)
+            .unwrap();
+    }
+    let (code, printed) = sh(&probe_command(), &home_path, &[], None);
+    assert_eq!(code, 0, "{printed}");
+    assert!(!stale.exists(), "a day-old temporary file is deleted");
+    assert!(fresh.exists(), "a delivery that may still be going on is left");
+    assert!(binary.exists(), "an installed version is never swept");
+}
+
+#[test]
+fn the_probe_says_when_wget_is_the_only_way_to_download_and_install_refuses_it() {
+    let home = tempfile::tempdir().unwrap();
+    let home_path = std::fs::canonicalize(home.path()).unwrap();
+    // A PATH with what the probe needs, and wget alone of the two.
+    let bin = home_path.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let found = |name: &str| {
+        PATH.split(':')
+            .map(|folder| Path::new(folder).join(name))
+            .find(|path| path.exists())
+            .unwrap_or_else(|| panic!("no {name} here"))
+    };
+    for tool in ["sh", "uname", "find"] {
+        std::os::unix::fs::symlink(found(tool), bin.join(tool)).unwrap();
+    }
+    let wget = bin.join("wget");
+    std::fs::write(&wget, "#!/bin/sh\nexit 0\n").unwrap();
+    std::fs::set_permissions(&wget, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let (code, printed) = sh_on_path(
+        &probe_command(),
+        &home_path,
+        bin.to_str().unwrap(),
+        &[],
+        None,
+    );
+    assert_eq!(code, 0, "{printed}");
+    let probed = probed_from(&printed).unwrap();
+    assert_eq!(probed.fetch, Fetch::OnlyWget);
+
+    let reach = stub_reach(&home_path, "/bin/sh", PATH, "");
+    let key = Key::new();
+    let target = probed.target;
+    let name = asset_name("1.4.0", target);
+    let verified = verify(
+        &key.public(),
+        BYTES,
+        &key.sign(BYTES, "1.4.0", &name),
+        "1.4.0",
+        target,
+    )
+    .unwrap();
+    let probed = Probed {
+        hash: Some(hash_tool_here()),
+        ..probed
+    };
+    let refused = install(&reach.reach, &probed, &verified, Delivery::Download).unwrap_err();
+    assert!(matches!(refused, Refused::OnlyWget { .. }), "{refused:?}");
+    let said = refused.to_string();
+    assert!(said.contains("redirect away from https"), "{said}");
+    assert!(said.contains("Install curl"), "{said}");
+}
+
+#[test]
 fn a_store_whose_path_a_shell_would_read_as_its_own_is_refused() {
     let printed = "system=Linux\nmachine=x86_64\nconfig=/home/a b/.config/purlis\nhash=sha256sum\nfetch=none\n";
     let refused = probed_from(printed).unwrap_err();
@@ -246,7 +400,7 @@ fn a_store_whose_path_a_shell_would_read_as_its_own_is_refused() {
 }
 
 #[test]
-fn an_upload_lands_private_and_not_executable_is_checked_then_placed_beside_the_others() {
+fn an_upload_lands_private_and_not_executable_then_one_command_checks_and_places_it() {
     let home = tempfile::tempdir().unwrap();
     let root = std::fs::canonicalize(home.path()).unwrap();
     let config = root.join("store").display().to_string();
@@ -255,38 +409,30 @@ fn an_upload_lands_private_and_not_executable_is_checked_then_placed_beside_the_
     std::fs::create_dir_all(older.parent().unwrap()).unwrap();
     std::fs::write(&older, b"older").unwrap();
 
-    let (code, printed) = sh(&receive_command(&config), &root, &[], Some(BYTES));
+    let (code, printed) = sh(&incoming_command(&config), &root, &[], None);
     assert_eq!(code, 0);
     let incoming = incoming_from(&config, &printed).expect("its temporary name is said");
-    let mode = std::os::unix::fs::PermissionsExt::mode(
-        &std::fs::metadata(&incoming).unwrap().permissions(),
-    );
-    assert_eq!(mode & 0o777, 0o600, "private, and executable by no one");
+    assert_eq!(mode_of(&incoming), 0o600, "private, and executable by no one");
+    let (code, _) = sh(&receive_command(&incoming), &root, &[], Some(BYTES));
+    assert_eq!(code, 0);
+    assert_eq!(mode_of(&incoming), 0o600, "still private once filled");
     assert_eq!(std::fs::read(&incoming).unwrap(), BYTES);
 
-    let tool = if Path::new("/usr/bin/sha256sum").exists() || Path::new("/bin/sha256sum").exists() {
-        HashTool::Sha256sum
-    } else {
-        HashTool::Shasum
-    };
-    let (code, printed) = sh(&digest_command(tool, &incoming), &root, &[], None);
-    assert_eq!(code, 0);
-    assert_eq!(
-        digest_from(&printed).as_deref(),
-        Some(digest_of(BYTES).as_str())
-    );
-
-    let (code, _) = sh(
-        &place_command(&config, "1.4.0", &incoming),
+    let (code, printed) = sh(
+        &settle_command(
+            hash_tool_here(),
+            &config,
+            "1.4.0",
+            &incoming,
+            &digest_of(BYTES),
+        ),
         &root,
         &[],
         None,
     );
-    assert_eq!(code, 0);
+    assert_eq!(code, 0, "{printed}");
     let placed = binary_at(&config, "1.4.0");
-    let mode =
-        std::os::unix::fs::PermissionsExt::mode(&std::fs::metadata(&placed).unwrap().permissions());
-    assert_eq!(mode & 0o777, 0o700);
+    assert_eq!(mode_of(&placed), 0o700);
     assert_eq!(std::fs::read(&placed).unwrap(), BYTES);
     assert!(!Path::new(&incoming).exists());
     assert_eq!(
@@ -294,6 +440,52 @@ fn an_upload_lands_private_and_not_executable_is_checked_then_placed_beside_the_
         b"older",
         "the old version is left as it is"
     );
+    // The version there, hashed again, is the one verified, and another digest is not.
+    let (code, _) = sh(
+        &installed_command(hash_tool_here(), &placed, &digest_of(BYTES)),
+        &root,
+        &[],
+        None,
+    );
+    assert_eq!(code, 0);
+    let (code, _) = sh(
+        &installed_command(hash_tool_here(), &placed, &"0".repeat(64)),
+        &root,
+        &[],
+        None,
+    );
+    assert_eq!(code, NOT_THE_SAME);
+}
+
+#[test]
+fn a_copy_that_is_not_the_one_verified_is_deleted_by_the_command_that_checks_it() {
+    let home = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(home.path()).unwrap();
+    let config = root.join("store").display().to_string();
+    let (_, printed) = sh(&incoming_command(&config), &root, &[], None);
+    let incoming = incoming_from(&config, &printed).unwrap();
+    sh(
+        &receive_command(&incoming),
+        &root,
+        &[],
+        Some(b"changed on the way"),
+    );
+    let (code, printed) = sh(
+        &settle_command(
+            hash_tool_here(),
+            &config,
+            "1.4.0",
+            &incoming,
+            &digest_of(BYTES),
+        ),
+        &root,
+        &[],
+        None,
+    );
+    assert_eq!(code, NOT_THE_SAME);
+    assert_eq!(found_in(&printed), digest_of(b"changed on the way"));
+    assert!(!Path::new(&incoming).exists(), "deleted");
+    assert!(!Path::new(&binary_at(&config, "1.4.0")).exists(), "nothing placed");
 }
 
 #[test]
@@ -301,12 +493,7 @@ fn a_discarded_upload_is_gone() {
     let home = tempfile::tempdir().unwrap();
     let root = std::fs::canonicalize(home.path()).unwrap();
     let config = root.join("store").display().to_string();
-    let (_, printed) = sh(
-        &receive_command(&config),
-        &root,
-        &[],
-        Some(b"changed on the way"),
-    );
+    let (_, printed) = sh(&incoming_command(&config), &root, &[], None);
     let incoming = incoming_from(&config, &printed).unwrap();
     let (code, _) = sh(&discard_command(&incoming), &root, &[], None);
     assert_eq!(code, 0);
@@ -335,33 +522,35 @@ fn only_a_temporary_name_of_the_store_is_taken_from_what_the_runner_printed() {
 }
 
 #[test]
-fn a_download_is_of_the_release_over_https_alone() {
+fn a_download_is_of_the_release_by_curl_over_https_alone_redirects_included() {
     let url = asset_url("1.4.0", Target::LinuxX86_64);
-    let curl = fetch_command("/s", &url, Fetcher::Curl).unwrap();
-    assert!(curl.contains("--proto =https"), "{curl}");
+    let incoming = "/s/server/.incoming-AbCdE12345";
+    let curl = fetch_command(incoming, &url).unwrap();
+    // `-q` is read only as curl's first argument: no `.curlrc` of the person's turns any of it
+    // off.
+    assert!(curl.contains("curl -q "), "{curl}");
+    assert!(curl.contains("--proto =https "), "{curl}");
+    assert!(curl.contains("--proto-redir =https "), "{curl}");
     assert!(curl.contains(&url));
-    let wget = fetch_command("/s", &url, Fetcher::Wget).unwrap();
-    assert!(wget.contains("--https-only"), "{wget}");
+    assert!(!curl.contains("wget"));
     for bad in [
         "http://github.com/purlis/purlis/releases/download/v1/x",
         "https://example.com/purlis",
         "https://github.com/purlis/purlis/releases/download/v1/x;rm -rf ~",
         "https://github.com/purlis/purlis/releases/download/../x",
     ] {
-        assert!(fetch_command("/s", bad, Fetcher::Curl).is_err(), "{bad}");
+        assert!(fetch_command(incoming, bad).is_err(), "{bad}");
     }
 }
 
 #[test]
-fn a_digest_is_read_from_either_tool_and_nothing_else_is_one() {
+fn what_the_check_found_is_read_only_as_a_digest() {
     let hex = "a".repeat(64);
-    assert_eq!(digest_from(&format!("{hex}  /x\n")), Some(hex.clone()));
-    assert_eq!(
-        digest_from(&format!("{}  /x", hex.to_uppercase())),
-        Some(hex)
-    );
-    assert_eq!(digest_from("sha256sum: /x: No such file"), None);
-    assert_eq!(digest_from(""), None);
+    assert_eq!(found_in(&format!("found={hex}\n")), hex);
+    assert_eq!(found_in(&format!("found={}", hex.to_uppercase())), hex);
+    assert_eq!(found_in("found="), "");
+    assert_eq!(found_in("found=$(rm)"), "");
+    assert_eq!(found_in(""), "");
 }
 
 #[test]
@@ -404,4 +593,164 @@ fn a_binary_knows_its_version_from_its_folder_in_the_store_and_only_there() {
     std::fs::create_dir_all(unversioned.parent().unwrap()).unwrap();
     std::fs::write(&unversioned, b"x").unwrap();
     assert_eq!(version_of_binary(&root, &unversioned), None);
+}
+
+// ---- install(), end to end, through a stub ssh --------------------------------------------
+
+const HOST_KEY: &str =
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiGzfjDDJsgYLYCmdkf8Fel9sE6Ma14Y2+c33Y/qZ2n";
+
+/// A login shell that is not bash, as a person's may be: fish where it is installed, else zsh,
+/// else the system's `sh`.
+fn not_bash() -> &'static str {
+    [
+        "/opt/homebrew/bin/fish",
+        "/usr/local/bin/fish",
+        "/usr/bin/fish",
+        "/bin/zsh",
+        "/usr/bin/zsh",
+    ]
+    .into_iter()
+    .find(|shell| Path::new(shell).exists())
+    .unwrap_or("/bin/sh")
+}
+
+struct StubReach {
+    reach: Reach,
+    _folder: tempfile::TempDir,
+}
+
+/// A [`Reach`] whose `ssh` is a script that runs the command it is handed, as sshd does, with
+/// `shell -c <command>`, in an environment of `HOME` at `home` and `PATH` at `path` alone.
+/// `before` runs first in the script, with the command in `$last`.
+fn stub_reach(home: &Path, shell: &str, path: &str, before: &str) -> StubReach {
+    let folder = tempfile::tempdir().unwrap();
+    let ssh = folder.path().join("ssh");
+    std::fs::write(
+        &ssh,
+        format!(
+            "#!/bin/sh\nfor last; do :; done\n{before}\nexec /usr/bin/env -i HOME={} PATH={path} \
+             {shell} -c \"$last\"\n",
+            home.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&ssh, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let settings = folder.path().join("settings");
+    StubReach {
+        reach: Reach {
+            ssh,
+            route: sshroute::Route::parse("ssh://runner@127.0.0.1:2224").unwrap(),
+            pool: "rr14".to_owned(),
+            key: sshroute::HostKey::parse(HOST_KEY).unwrap(),
+            settings_in: settings,
+        },
+        _folder: folder,
+    }
+}
+
+fn verified_here(version: &str) -> Verified {
+    let key = Key::new();
+    let target = Target::here().expect("a platform purlis runs on as a runner");
+    verify(
+        &key.public(),
+        BYTES,
+        &key.sign(BYTES, version, &asset_name(version, target)),
+        version,
+        target,
+    )
+    .unwrap()
+}
+
+#[test]
+fn an_install_through_a_login_shell_that_is_not_bash_places_checks_again_and_replaces_a_changed_copy()
+ {
+    let home = tempfile::tempdir().unwrap();
+    let home = std::fs::canonicalize(home.path()).unwrap();
+    let stub = stub_reach(&home, not_bash(), PATH, "");
+    let verified = verified_here("1.4.0");
+
+    let probed = probe(&stub.reach).expect("probed");
+    assert!(probed.versions.is_empty());
+    let installed = install(&stub.reach, &probed, &verified, Delivery::Upload(BYTES)).unwrap();
+    let binary = binary_at(&probed.config, "1.4.0");
+    assert_eq!(installed, Installed::Placed {
+        binary: binary.clone()
+    });
+    assert_eq!(std::fs::read(&binary).unwrap(), BYTES);
+    assert_eq!(mode_of(&binary), 0o700);
+    assert!(incoming_left(&probed.config).is_empty());
+
+    // There already, and the file verified: nothing is sent.
+    let probed = probe(&stub.reach).unwrap();
+    assert_eq!(probed.versions, ["1.4.0"]);
+    assert_eq!(
+        install(&stub.reach, &probed, &verified, Delivery::Upload(BYTES)).unwrap(),
+        Installed::AlreadyThere {
+            binary: binary.clone()
+        }
+    );
+
+    // There, but changed since: hashed again, not trusted, and placed again.
+    std::fs::write(&binary, b"changed since").unwrap();
+    assert_eq!(
+        install(&stub.reach, &probed, &verified, Delivery::Upload(BYTES)).unwrap(),
+        Installed::Placed {
+            binary: binary.clone()
+        }
+    );
+    assert_eq!(std::fs::read(&binary).unwrap(), BYTES);
+}
+
+#[test]
+fn a_copy_changed_on_the_way_is_refused_and_nothing_is_left() {
+    let home = tempfile::tempdir().unwrap();
+    let home = std::fs::canonicalize(home.path()).unwrap();
+    // Both tools, first on the PATH, report another digest.
+    let liar = home.join("liar");
+    std::fs::create_dir_all(&liar).unwrap();
+    for tool in ["sha256sum", "shasum"] {
+        let path = liar.join(tool);
+        std::fs::write(
+            &path,
+            format!("#!/bin/sh\necho \"{}  x\"\n", "0".repeat(64)),
+        )
+        .unwrap();
+        std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .unwrap();
+    }
+    let path = format!("{}:{PATH}", liar.display());
+    let stub = stub_reach(&home, not_bash(), &path, "");
+    let verified = verified_here("1.4.0");
+    let probed = probe(&stub.reach).unwrap();
+    let refused = install(&stub.reach, &probed, &verified, Delivery::Upload(BYTES)).unwrap_err();
+    let Refused::NotTheSame { found, .. } = &refused else {
+        panic!("{refused:?}");
+    };
+    assert_eq!(found, &"0".repeat(64));
+    assert!(incoming_left(&probed.config).is_empty(), "nothing left behind");
+    assert!(!Path::new(&binary_at(&probed.config, "1.4.0")).exists());
+}
+
+#[test]
+fn a_delivery_cut_off_leaves_nothing_behind() {
+    let home = tempfile::tempdir().unwrap();
+    let home = std::fs::canonicalize(home.path()).unwrap();
+    // The connection drops partway through the upload, as ssh says with 255.
+    let stub = stub_reach(
+        &home,
+        not_bash(),
+        PATH,
+        "case \"$last\" in *\"cat > \"*) head -c 3 >/dev/null; exit 255;; esac",
+    );
+    let verified = verified_here("1.4.0");
+    let probed = probe(&stub.reach).unwrap();
+    let refused = install(&stub.reach, &probed, &verified, Delivery::Upload(BYTES)).unwrap_err();
+    assert!(matches!(refused, Refused::Unreached { .. }), "{refused:?}");
+    assert!(
+        incoming_left(&probed.config).is_empty(),
+        "the temporary file is deleted: {:?}",
+        incoming_left(&probed.config)
+    );
+    assert!(!Path::new(&binary_at(&probed.config, "1.4.0")).exists());
 }

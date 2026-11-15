@@ -8,19 +8,35 @@
 //! as the runner resolves it. This module installs it there, over the pinned route of the SSH
 //! module ([`crate::sshroute`], #6266), and nothing else:
 //!
-//! 1. **The probe** ([`PROBE`]) asks the runner, through the route, its platform, its resolved
-//!    `<config>`, which of sha256sum and shasum it has, whether it can download (curl or wget),
-//!    and the versions already installed. It writes nothing.
+//! 1. **The probe** ([`probe_script`]) asks the runner, through the route, its platform, its
+//!    resolved `<config>`, which of sha256sum and shasum it has, whether it has curl (or only
+//!    wget, which purlis does not download with), and the versions already installed. Its one
+//!    write is sweeping away the temporary files of deliveries cut off more than a day ago.
 //! 2. **The desktop has already verified the asset** ([`verify`]): its minisign signature by ADR
 //!    0042's key, with the version and the asset's own name in the signature's trusted comment,
 //!    as a bundle's and the runner image's are. Only then is its SHA-256 trusted.
 //! 3. **The file lands under a temporary name, not executable**: `<config>/server/.incoming-*`,
-//!    `0600`, either uploaded through the route ([`Delivery::Upload`]) or downloaded by the runner
-//!    from GitHub Releases over https alone ([`Delivery::Download`]).
-//! 4. **Its SHA-256 is computed there, through the route** ([`digest_command`]), and compared
-//!    with the verified one. A mismatch deletes the file and refuses, in plain words
-//!    ([`Refused::NotTheSame`]). Only a match makes it executable and moves it, by one rename,
-//!    to `<config>/server/<version>/purlis`.
+//!    `0600`, made by a run of its own ([`incoming_command`]) before a byte is sent, so purlis
+//!    knows its path and deletes it however the delivery ends. It is then filled, either uploaded
+//!    through the route ([`Delivery::Upload`]) or downloaded by the runner from GitHub Releases
+//!    by curl over https alone, redirects included ([`Delivery::Download`]).
+//! 4. **One command there checks it and places it** ([`settle_command`]): its SHA-256 computed
+//!    on the runner and compared with the verified one there, and only on a match made
+//!    executable and moved, by one rename, to `<config>/server/<version>/purlis`. A mismatch
+//!    deletes the file in the same command and refuses, in plain words ([`Refused::NotTheSame`]).
+//!    A version already there is hashed again the same way before it is trusted
+//!    ([`installed_command`]), and replaced where it is not the file verified.
+//!
+//! **What the check protects is the transfer** (ADR 0078 §5 as amended 2026-11-15): that the
+//! bytes placed are the bytes the release signed, whatever the network or a mirror did to them.
+//! It does not protect against the runner's account itself: whoever can run commands as that
+//! user can replace the binary after it is placed, or answer the hash for it, and no check run
+//! as that user can tell.
+//!
+//! **Every command is `exec sh -c '…'`** ([`for_login_shell`]), as sshroute's
+//! [`crate::sshroute::HELD_BY`] is (ADR 0123 as amended 2026-11-12): ssh hands the command to the
+//! person's login shell, which may be `bash`, `zsh` or `fish`, and each reads that line alike,
+//! so the script inside is read by POSIX `sh` alone.
 //!
 //! **Versions sit side by side** (ADR 0068 §8): an install never touches another version's
 //! folder, and never stops a host. A binary run from `<config>/server/<version>/` knows its
@@ -28,9 +44,9 @@
 //! (`crate::hostsocket::here`, `crate::machine::host_folder`), so a new version's host starts
 //! beside the old one, takes the new chats, and the old one keeps its chats until each ends.
 //!
-//! **Nothing ssh prints decides anything but what purlis's own commands print**: the probe's
-//! lines, the temporary file's path and the digest. What ssh says on standard error is shown,
-//! never read.
+//! **Nothing ssh prints decides anything but what purlis's own commands print and how they
+//! exit**: the probe's lines, the temporary file's path, and the exit of the command that checks
+//! and places it. What ssh says on standard error is shown, never read.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -59,6 +75,28 @@ pub const DELIVER_WITHIN: Duration = Duration::from_secs(30 * 60);
 
 /// The most of what the probe prints that is read.
 const MOST_PROBED: u64 = 16 * 1024;
+
+/// How [`settle_command`] and [`installed_command`] exit when the file there is not the one
+/// verified (ssh's own failures are 255).
+pub const NOT_THE_SAME: i32 = 3;
+
+/// **`script` as a command for the runner's login shell**: `exec sh -c '<script>'`, so POSIX
+/// `sh` reads the script whatever the person's login shell is (sshroute's
+/// [`crate::sshroute::HELD_BY`], ADR 0123 as amended 2026-11-12). The script holds no `'`, which
+/// would end the quoting, no `\`, which `fish` reads inside single quotes, and no `!`, which
+/// `csh` would: every part of it is purlis's own text or a path, version or digest that is
+/// plain ([`a_plain_path`], [`a_version`]).
+///
+/// # Panics
+/// On a script with one of those three, which no input that passed those checks can make.
+#[must_use]
+pub fn for_login_shell(script: &str) -> String {
+    assert!(
+        !script.contains(['\'', '\\', '!']),
+        "a script for the runner's login shell holds a quote, backslash or bang: {script}"
+    );
+    format!("exec sh -c '{script}'")
+}
 
 /// **A platform purlis runs on as a runner** (ADR 0078 §5): one release asset each.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -147,7 +185,10 @@ pub fn asset_name(version: &str, target: Target) -> String {
 /// **Where the release publishes that asset**: on the `v<version>` release, or, for a dev
 /// build (`<version>-dev.<run>`), on the one `dev` release whose tag moves with every build
 /// (`crate::updates::DEV_TAG`). Its signature is beside it, with `.sig` (`release-manifest`'s
-/// `sign-runner-binary`).
+/// `sign-runner-binary`). The asset's name carries its version, so the address of one dev
+/// build's asset never names another's, and the `dev` release keeps the last five dev builds'
+/// runner assets (`tools/dev-runner-assets.mjs`), not only the newest: a desktop a few dev
+/// builds behind still finds its own version's there.
 #[must_use]
 pub fn asset_url(version: &str, target: Target) -> String {
     let tag = if version.contains("-dev.") {
@@ -270,11 +311,16 @@ pub enum HashTool {
     Shasum,
 }
 
-/// The tool that downloads on the runner.
+/// **What the runner can download with.** Only curl is used: it can be told to refuse every
+/// protocol but https for the address and for each redirect alike (`--proto =https
+/// --proto-redir =https`). wget has no switch that does that for one file (its `--https-only`
+/// is for links a recursive download follows), so a runner with only wget is told so.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Fetcher {
+pub enum Fetch {
     Curl,
-    Wget,
+    /// wget and no curl: purlis does not download with it.
+    OnlyWget,
+    Neither,
 }
 
 /// **What the probe found on the runner.**
@@ -284,17 +330,19 @@ pub struct Probed {
     /// `<config>`, the runner's purlis folder in its machine store, absolute and plain.
     pub config: String,
     pub hash: Option<HashTool>,
-    pub fetch: Option<Fetcher>,
+    pub fetch: Fetch,
     /// The versions already installed, each a folder with an executable `purlis` in it.
     pub versions: Vec<String>,
 }
 
-/// **The probe** (ADR 0078 §5), a POSIX `sh` script run by the runner's login shell. It prints
-/// one `key=value` line each: `system` and `machine` (`uname -s`, `uname -m`), `config` (the
-/// machine store resolved as purlis resolves it: `$PURLIS_CONFIG_HOME`, its old spelling, then
-/// `$XDG_CONFIG_HOME`, then `~/.config`, and in it the folder of purlis's name that is there),
-/// `hash` and `fetch` (the tools it has, or `none`), and a `version` line for each version
-/// installed. Its only act is reading.
+/// **The probe** (ADR 0078 §5), a POSIX `sh` script, run as [`for_login_shell`] wraps it. It
+/// prints one `key=value` line each: `system` and `machine` (`uname -s`, `uname -m`), `config`
+/// (the machine store resolved as purlis resolves it: `$PURLIS_CONFIG_HOME`, its old spelling,
+/// then `$XDG_CONFIG_HOME`, then `~/.config`, and in it the folder of purlis's name that is
+/// there), `hash` (the tool it has, or `none`), `fetch` (`curl`, `wget` where wget is the only
+/// one, or `none`), and a `version` line for each version installed. Its one write: the
+/// temporary files in `<config>/server/` more than a day old, which only a delivery cut off
+/// leaves, are deleted.
 #[must_use]
 pub fn probe_script() -> String {
     let env = |rest: &str| -> Vec<String> {
@@ -328,6 +376,8 @@ pub fn probe_script() -> String {
          elif command -v shasum >/dev/null 2>&1; then echo hash=shasum; else echo hash=none; fi; \
          if command -v curl >/dev/null 2>&1; then echo fetch=curl; \
          elif command -v wget >/dev/null 2>&1; then echo fetch=wget; else echo fetch=none; fi; \
+         [ -d \"$d/{SERVER_DIR}\" ] && find \"$d/{SERVER_DIR}\" -maxdepth 1 -type f \
+         -name \"{INCOMING}*\" -mtime +0 -exec rm -f -- {{}} + 2>/dev/null; \
          for v in \"$d/{SERVER_DIR}\"/*/; do v=${{v%/}}; \
          [ -x \"$v/{BINARY}\" ] && [ -f \"$v/{BINARY}\" ] && echo \"version=${{v##*/}}\"; done; true"
     )
@@ -339,7 +389,7 @@ pub fn probed_from(printed: &str) -> Result<Probed, String> {
     let mut machine = None;
     let mut config = None;
     let mut hash = None;
-    let mut fetch = None;
+    let mut fetch = Fetch::Neither;
     let mut versions = Vec::new();
     for line in printed.lines() {
         let Some((key, value)) = line.split_once('=') else {
@@ -358,9 +408,9 @@ pub fn probed_from(printed: &str) -> Result<Probed, String> {
             }
             "fetch" => {
                 fetch = match value {
-                    "curl" => Some(Fetcher::Curl),
-                    "wget" => Some(Fetcher::Wget),
-                    _ => None,
+                    "curl" => Fetch::Curl,
+                    "wget" => Fetch::OnlyWget,
+                    _ => Fetch::Neither,
                 }
             }
             // A folder that is not a version purlis names is no version of its.
@@ -415,21 +465,34 @@ pub fn binary_at(config: &str, version: &str) -> String {
     format!("{}/{version}/{BINARY}", server_dir(config))
 }
 
-/// **What receives an upload there**: a temporary file in `<config>/server/`, `0600`, standard
-/// input written to it, its path printed.
+/// **The probe as a command for the runner's login shell.**
 #[must_use]
-pub fn receive_command(config: &str) -> String {
-    let server = server_dir(config);
-    format!(
-        "umask 077 && mkdir -p -- {server} && t=$(mktemp {server}/{INCOMING}XXXXXXXXXX) && \
-         cat > \"$t\" && printf '%s\\n' \"$t\""
-    )
+pub fn probe_command() -> String {
+    for_login_shell(&probe_script())
 }
 
-/// **What downloads the asset there, over https alone**, into a temporary file as
-/// [`receive_command`] makes one, printing its path. Refused for an address that is not one of
-/// the release's (`url` is written into the command, so it must be plain).
-pub fn fetch_command(config: &str, url: &str, fetcher: Fetcher) -> Result<String, String> {
+/// **What makes the temporary file there**, before anything is sent: in `<config>/server/`,
+/// `0600`, empty, its path printed, so purlis can delete it however the delivery that follows
+/// ends.
+#[must_use]
+pub fn incoming_command(config: &str) -> String {
+    let server = server_dir(config);
+    for_login_shell(&format!(
+        "umask 077 && mkdir -p -- {server} && mktemp {server}/{INCOMING}XXXXXXXXXX"
+    ))
+}
+
+/// **What fills `incoming` there with what arrives on standard input**: an upload.
+#[must_use]
+pub fn receive_command(incoming: &str) -> String {
+    for_login_shell(&format!("cat > {incoming}"))
+}
+
+/// **What downloads `url` into `incoming` there, with curl over https alone**: the address and
+/// every redirect (`--proto =https --proto-redir =https`), the person's `.curlrc` not read
+/// (`-q`, which must come first). Refused for an address that is not one of the release's (`url`
+/// is written into the command, so it must be plain).
+pub fn fetch_command(incoming: &str, url: &str) -> Result<String, String> {
     let plain = url.strip_prefix(RELEASES).is_some_and(|rest| {
         rest.starts_with('/')
             && !rest.contains("..")
@@ -443,23 +506,14 @@ pub fn fetch_command(config: &str, url: &str, fetcher: Fetcher) -> Result<String
             crate::shown::short(url)
         ));
     }
-    let server = server_dir(config);
-    let fetch = match fetcher {
-        Fetcher::Curl => {
-            format!(
-                "curl --proto =https --tlsv1.2 --fail --silent --show-error --location -o \"$t\" {url}"
-            )
-        }
-        Fetcher::Wget => format!("wget --quiet --https-only -O \"$t\" {url}"),
-    };
-    Ok(format!(
-        "umask 077 && mkdir -p -- {server} && t=$(mktemp {server}/{INCOMING}XXXXXXXXXX) && \
-         {{ {fetch} || {{ rm -f -- \"$t\"; exit 1; }}; }} && printf '%s\\n' \"$t\""
-    ))
+    Ok(for_login_shell(&format!(
+        "curl -q --proto =https --proto-redir =https --tlsv1.2 --fail --silent --show-error \
+         --location -o {incoming} {url}"
+    )))
 }
 
-/// **Whether `printed` is a temporary file [`receive_command`] or [`fetch_command`] made in
-/// `config`'s server folder**: the path, or `None`.
+/// **Whether `printed` is a temporary file [`incoming_command`] made in `config`'s server
+/// folder**: the path, or `None`.
 #[must_use]
 pub fn incoming_from(config: &str, printed: &str) -> Option<String> {
     let path = printed.trim_end_matches('\n');
@@ -469,40 +523,63 @@ pub fn incoming_from(config: &str, printed: &str) -> Option<String> {
         .then(|| path.to_owned())
 }
 
-/// **What computes the SHA-256 of `incoming` there**, with the tool the probe found.
-#[must_use]
-pub fn digest_command(hash: HashTool, incoming: &str) -> String {
+/// The part of a script that sets `$1` to the SHA-256 of `file` there, as `hash` prints it
+/// (its first word; unset where the tool fails).
+fn hashed(hash: HashTool, file: &str) -> String {
     match hash {
-        HashTool::Sha256sum => format!("sha256sum -- {incoming}"),
-        HashTool::Shasum => format!("shasum -a 256 -- {incoming}"),
+        HashTool::Sha256sum => format!("set -- $(sha256sum -- {file})"),
+        HashTool::Shasum => format!("set -- $(shasum -a 256 -- {file})"),
     }
 }
 
-/// **The digest a hash tool printed**: its first word, where that is 64 hex digits, lower-cased.
+/// **What checks `incoming` and places it, in one command there**: its SHA-256 computed with
+/// `hash` and compared with `digest`, the verified one; on a match it is made executable, by
+/// this user alone, and moved by one rename to `<config>/server/<version>/purlis`, and on any
+/// other answer deleted, printing `found=<what the tool said>` and exiting [`NOT_THE_SAME`].
+/// Another version's folder is not touched. `digest` is 64 hex digits, as [`verify`] makes it.
 #[must_use]
-pub fn digest_from(printed: &str) -> Option<String> {
-    let word = printed.split_whitespace().next()?;
-    (word.len() == 64 && word.chars().all(|c| c.is_ascii_hexdigit()))
-        .then(|| word.to_ascii_lowercase())
-}
-
-/// **What makes `incoming` the binary of `version`**: executable, by this user alone, and moved
-/// by one rename to `<config>/server/<version>/purlis`. Another version's folder is not touched.
-#[must_use]
-pub fn place_command(config: &str, version: &str, incoming: &str) -> String {
+pub fn settle_command(
+    hash: HashTool,
+    config: &str,
+    version: &str,
+    incoming: &str,
+    digest: &str,
+) -> String {
     let folder = format!("{}/{version}", server_dir(config));
     // No `--` for chmod: macOS's refuses it after a numeric mode. Every path here is absolute
     // ([`a_plain_path`], [`incoming_from`]), so none is read as an option.
-    format!(
-        "umask 077 && mkdir -p -- {folder} && chmod 0700 {incoming} && mv -f -- {incoming} \
-         {folder}/{BINARY}"
-    )
+    for_login_shell(&format!(
+        "{}; if [ \"${{1:-}}\" = {digest} ]; then umask 077 && mkdir -p -- {folder} && \
+         chmod 0700 {incoming} && mv -f -- {incoming} {folder}/{BINARY}; else rm -f -- {incoming}; \
+         echo \"found=${{1:-}}\"; exit {NOT_THE_SAME}; fi",
+        hashed(hash, incoming)
+    ))
+}
+
+/// **What checks a version already there**: the SHA-256 of `binary`, computed with `hash`,
+/// compared with `digest`; exits 0 on a match and [`NOT_THE_SAME`] otherwise.
+#[must_use]
+pub fn installed_command(hash: HashTool, binary: &str, digest: &str) -> String {
+    for_login_shell(&format!(
+        "{}; [ \"${{1:-}}\" = {digest} ] || exit {NOT_THE_SAME}",
+        hashed(hash, binary)
+    ))
+}
+
+/// What [`settle_command`] said it found, where it said.
+fn found_in(printed: &str) -> String {
+    printed
+        .lines()
+        .find_map(|line| line.strip_prefix("found="))
+        .filter(|word| word.len() <= 64 && word.chars().all(|c| c.is_ascii_hexdigit()))
+        .unwrap_or_default()
+        .to_ascii_lowercase()
 }
 
 /// **What deletes `incoming`**.
 #[must_use]
 pub fn discard_command(incoming: &str) -> String {
-    format!("rm -f -- {incoming}")
+    for_login_shell(&format!("rm -f -- {incoming}"))
 }
 
 /// **How the asset reaches the runner.**
@@ -574,12 +651,19 @@ pub enum Refused {
          Install coreutils on {host}, then try again"
     )]
     NoHashTool { host: String },
-    /// The runner can't download: it has neither curl nor wget.
+    /// The runner can't download: it has no curl, and no wget either.
     #[error(
-        "{host} has neither curl nor wget to download purlis with. Send it from this computer \
-         instead"
+        "{host} doesn't have curl to download purlis with. Install curl on {host}, or send purlis \
+         from this computer instead"
     )]
     NoFetcher { host: String },
+    /// The runner has wget and no curl: wget can't be held to https through a redirect.
+    #[error(
+        "{host} has wget but not curl. purlis downloads only with curl, because wget can't be \
+         made to refuse a redirect away from https. Install curl on {host}, or send purlis from \
+         this computer instead"
+    )]
+    OnlyWget { host: String },
     /// The probe's answer can't be used.
     #[error("purlis can't install on {host}: {why}")]
     Unusable { host: String, why: String },
@@ -608,19 +692,24 @@ fn run_there(
     sshroute::run_giving_bytes(&reach.ssh, &args, input, most, within).map_err(unreached)
 }
 
+/// What a run that did not succeed said, as a refusal.
+fn unreached(reach: &Reach, ran: sshroute::Ran) -> Refused {
+    Refused::Unreached {
+        host: reach.route.host().to_owned(),
+        said: if ran.said.is_empty() {
+            format!("it stopped with code {}", ran.code.unwrap_or(-1))
+        } else {
+            ran.said
+        },
+    }
+}
+
 /// A run that must succeed: what it printed, or what it said.
 fn ran_ok(reach: &Reach, ran: sshroute::Ran) -> Result<String, Refused> {
     if ran.code == Some(0) {
         Ok(ran.printed)
     } else {
-        Err(Refused::Unreached {
-            host: reach.route.host().to_owned(),
-            said: if ran.said.is_empty() {
-                format!("it stopped with code {}", ran.code.unwrap_or(-1))
-            } else {
-                ran.said
-            },
-        })
+        Err(unreached(reach, ran))
     }
 }
 
@@ -628,7 +717,7 @@ fn ran_ok(reach: &Reach, ran: sshroute::Ran) -> Result<String, Refused> {
 pub fn probe(reach: &Reach) -> Result<Probed, Refused> {
     let ran = run_there(
         reach,
-        probe_script(),
+        probe_command(),
         None,
         MOST_PROBED,
         sshroute::RUN_WITHIN,
@@ -641,8 +730,9 @@ pub fn probe(reach: &Reach) -> Result<Probed, Refused> {
 }
 
 /// **`verified` installed on the runner `probed` describes, through `reach`**, delivered as
-/// `delivery` says: the four steps of the module's docs. A version already there is left as it
-/// is. Whatever happens after the file lands, it is either placed or deleted.
+/// `delivery` says: the steps of the module's docs. A version already there is hashed again
+/// and left as it is where it is the file verified, and replaced, by the same steps, where it
+/// is not. Once the temporary file is made, whatever happens, it is either placed or deleted.
 pub fn install(
     reach: &Reach,
     probed: &Probed,
@@ -658,13 +748,26 @@ pub fn install(
             runner: probed.target.said(),
         });
     }
-    if probed.versions.iter().any(|v| v == verified.version()) {
-        return Ok(Installed::AlreadyThere { binary });
-    }
     let Some(hash) = probed.hash else {
         return Err(Refused::NoHashTool { host });
     };
-    let (command, input) = match delivery {
+    if probed.versions.iter().any(|v| v == verified.version()) {
+        let ran = run_there(
+            reach,
+            installed_command(hash, &binary, verified.digest()),
+            None,
+            4 * 1024,
+            sshroute::RUN_WITHIN,
+        )?;
+        match ran.code {
+            Some(0) => return Ok(Installed::AlreadyThere { binary }),
+            // Not the file verified: placed again below, by one rename over it, which a host
+            // running the old file keeps running.
+            Some(NOT_THE_SAME) => {}
+            _ => return Err(unreached(reach, ran)),
+        }
+    }
+    let (url, input) = match delivery {
         Delivery::Upload(bytes) => {
             if digest_of(bytes) != verified.digest() {
                 return Err(Refused::Unusable {
@@ -672,69 +775,82 @@ pub fn install(
                     why: "the file to send isn't the one purlis checked".to_owned(),
                 });
             }
-            (receive_command(&probed.config), Some(bytes))
+            (None, Some(bytes))
         }
-        Delivery::Download => {
-            let Some(fetcher) = probed.fetch else {
-                return Err(Refused::NoFetcher { host });
-            };
-            let url = asset_url(verified.version(), verified.target());
-            let command =
-                fetch_command(&probed.config, &url, fetcher).map_err(|why| Refused::Unusable {
-                    host: host.clone(),
-                    why,
-                })?;
-            (command, None)
-        }
+        Delivery::Download => match probed.fetch {
+            Fetch::Curl => (Some(asset_url(verified.version(), verified.target())), None),
+            Fetch::OnlyWget => return Err(Refused::OnlyWget { host }),
+            Fetch::Neither => return Err(Refused::NoFetcher { host }),
+        },
     };
-    let ran = run_there(reach, command, input, 4 * 1024, DELIVER_WITHIN)?;
-    let printed = ran_ok(reach, ran)?;
+    let made = run_there(
+        reach,
+        incoming_command(&probed.config),
+        None,
+        4 * 1024,
+        sshroute::RUN_WITHIN,
+    )?;
+    let printed = ran_ok(reach, made)?;
     let Some(incoming) = incoming_from(&probed.config, &printed) else {
         return Err(Refused::Unusable {
             host,
             why: "it didn't say where it put the file".to_owned(),
         });
     };
-    let checked = run_there(
-        reach,
-        digest_command(hash, &incoming),
-        None,
-        4 * 1024,
-        sshroute::RUN_WITHIN,
-    )
-    .and_then(|ran| ran_ok(reach, ran));
-    let found = match checked {
-        Ok(printed) => digest_from(&printed),
-        Err(refused) => {
-            discard(reach, &incoming);
-            return Err(refused);
-        }
-    };
-    if found.as_deref() != Some(verified.digest()) {
-        discard(reach, &incoming);
-        return Err(Refused::NotTheSame {
+    let settled = deliver(reach, &incoming, url.as_deref(), input).and_then(|()| {
+        run_there(
+            reach,
+            settle_command(
+                hash,
+                &probed.config,
+                verified.version(),
+                &incoming,
+                verified.digest(),
+            ),
+            None,
+            4 * 1024,
+            sshroute::RUN_WITHIN,
+        )
+    });
+    match settled {
+        Ok(ran) if ran.code == Some(0) => Ok(Installed::Placed { binary }),
+        // Deleted by the command itself.
+        Ok(ran) if ran.code == Some(NOT_THE_SAME) => Err(Refused::NotTheSame {
             host,
             expected: verified.digest().to_owned(),
-            found: found.unwrap_or_default(),
-        });
+            found: found_in(&ran.printed),
+        }),
+        Ok(ran) => {
+            discard(reach, &incoming);
+            Err(unreached(reach, ran))
+        }
+        Err(refused) => {
+            discard(reach, &incoming);
+            Err(refused)
+        }
     }
-    let placed = run_there(
-        reach,
-        place_command(&probed.config, verified.version(), &incoming),
-        None,
-        4 * 1024,
-        sshroute::RUN_WITHIN,
-    )
-    .and_then(|ran| ran_ok(reach, ran));
-    if let Err(refused) = placed {
-        discard(reach, &incoming);
-        return Err(refused);
-    }
-    Ok(Installed::Placed { binary })
+}
+
+/// The temporary file `incoming` filled: downloaded there from `url`, or uploaded from `input`.
+fn deliver(
+    reach: &Reach,
+    incoming: &str,
+    url: Option<&str>,
+    input: Option<&[u8]>,
+) -> Result<(), Refused> {
+    let command = match url {
+        Some(url) => fetch_command(incoming, url).map_err(|why| Refused::Unusable {
+            host: reach.route.host().to_owned(),
+            why,
+        })?,
+        None => receive_command(incoming),
+    };
+    let ran = run_there(reach, command, input, 4 * 1024, DELIVER_WITHIN)?;
+    ran_ok(reach, ran).map(|_| ())
 }
 
 /// `incoming` deleted there, as well as can be: a failure leaves a file no one runs, which the
-/// next install's temporary name never meets.
+/// next install's temporary name never meets and the next probe deletes once it is a day old.
 fn discard(reach: &Reach, incoming: &str) {
     let _ = run_there(
         reach,
