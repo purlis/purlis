@@ -14,14 +14,14 @@
 //! - the files that hold the seams read no environment variable and no file, so nothing a
 //!   release build reads could turn one on.
 //!
-//! A later seam adds its use to [`SEAMS`] (T1a-35's policy fixture path, T1a-69's recording
-//! file-system and vault).
+//! A later seam adds its use to [`SEAMS`], as T1a-69's recording file-system and vault have;
+//! T1a-35's policy fixture path is next.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// A use of each seam, by its name.
-const SEAMS: [(&str, &str); 5] = [
+const SEAMS: [(&str, &str); 8] = [
     ("TestReach", "use purlis_core::upstream::TestReach;"),
     (
         "with_test_reach",
@@ -36,6 +36,17 @@ const SEAMS: [(&str, &str); 5] = [
         "use purlis_core::upstream::RecordingOutbound;",
     ),
     ("InjectedClock", "use purlis_core::clock::InjectedClock;"),
+    // T1a-69's recording file-system and vault seam (R-697, `seam.rs`). Its file is not in
+    // `SEAM_FILES`: its real `Files` reads files, which is what it is for.
+    ("RecordingFiles", "use purlis_core::seam::RecordingFiles;"),
+    (
+        "RecordingSpawner",
+        "use purlis_core::seam::RecordingSpawner;",
+    ),
+    (
+        "RecordingCredentials",
+        "use purlis_core::seam::RecordingCredentials;",
+    ),
 ];
 
 /// A use of what every build has, from the same files.
