@@ -330,6 +330,7 @@ pub mod updates;
 pub mod usage;
 pub mod version;
 pub mod wakeline;
+pub mod window_copy;
 #[cfg(unix)]
 pub mod windowline;
 #[cfg(unix)]
