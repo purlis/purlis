@@ -4,11 +4,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createPortal } from "react-dom";
-import { userEvent } from "@testing-library/user-event";
-import { useLayoutEffect } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { useHeldStill, useHeldWhile } from "./heldStill";
-import { Tree, TreeRow } from "./ui/tree/Tree";
-import { RowLabel } from "./ui/list/Row";
 
 /**
  * **The hold a list keeps still by** (V100-47), drawn small: one row, the row's menu drawn in a
@@ -223,45 +220,81 @@ describe("a list held still (useHeldStill)", () => {
 });
 
 /**
- * **A list of rows in a tree, held as the Chats list is** (#3566): a row the plane added while
- * it holds is drawn once it lets go, and a row the plane took away goes at once. Every draw
- * the window commits writes down whether it was held, which is what the person saw.
+ * **A list whose rows the plane changes under the hold**, drawn as the Chats list draws them: a
+ * row the plane added while it holds waits for it to let go, and a row the plane took away goes
+ * at once. As React Aria does in a browser, the list puts the keyboard back on itself a frame
+ * after the row it was on went with it (the browser drops the focus with the row, and React
+ * hears no blur). Every draw the window commits writes down whether it was held.
  */
-function HeldTree({ rows, frames }: { rows: readonly string[]; frames: boolean[] }) {
+function HeldRows({ rows, frames }: { rows: readonly string[]; frames: boolean[] }) {
   const { holding, held } = useHeldStill<HTMLDivElement>(rows);
   const order = useHeldWhile(holding, rows);
   const drawn = order.filter((row) => rows.includes(row));
   useLayoutEffect(() => {
     frames.push(holding);
   });
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (document.activeElement !== document.body) return;
+    const frame = requestAnimationFrame(() => root.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [rows]);
   return (
     <div {...held}>
-      <Tree aria-label="Chats" items={drawn.map((id) => ({ id }))}>
-        {(row) => <TreeRow id={row.id} textValue={row.id} content={<RowLabel>{row.id}</RowLabel>} />}
-      </Tree>
+      <div ref={root} tabIndex={-1} role="list" aria-label="Chats">
+        {drawn.map((row) => (
+          <button key={row} type="button" role="listitem">
+            {row}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
 
-describe("a tree held still while the keyboard is in it (useHeldStill)", () => {
+describe("a list held still while the keyboard is in it (useHeldStill)", () => {
   it("is held through every draw as the row the keyboard is on is taken away, and draws no row that came meanwhile", async () => {
     const frames: boolean[] = [];
-    const { rerender } = render(<HeldTree rows={["a", "b"]} frames={frames} />);
-    const user = userEvent.setup();
-    await user.tab();
-    expect(document.activeElement).toBe(screen.getByRole("row", { name: "a" }));
+    const { rerender } = render(<HeldRows rows={["a", "b"]} frames={frames} />);
+    const row = (name: string) => screen.queryByText(name);
+    act(() => row("a")?.focus());
+    fireEvent.keyDown(row("a") as HTMLElement, { key: "ArrowDown" });
     await waitFor(() => expect(frames.at(-1)).toBe(true));
     // A chat arrives while the keyboard is in the list: held, so not drawn.
-    rerender(<HeldTree rows={["a", "b", "c"]} frames={frames} />);
-    expect(screen.queryByRole("row", { name: "c" })).toBeNull();
+    rerender(<HeldRows rows={["a", "b", "c"]} frames={frames} />);
+    expect(row("c")).toBeNull();
     const from = frames.length;
     // And the row the keyboard is on is taken away, which sends no blur.
-    rerender(<HeldTree rows={["b", "c"]} frames={frames} />);
-    await waitFor(() =>
-      expect(screen.getByRole("treegrid").contains(document.activeElement)).toBe(true),
-    );
+    rerender(<HeldRows rows={["b", "c"]} frames={frames} />);
+    expect(row("a")).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("list")));
     await act(() => new Promise((done) => requestAnimationFrame(() => setTimeout(done))));
-    expect(frames.slice(from)).not.toContain(false);
-    expect(screen.queryByRole("row", { name: "c" })).toBeNull();
+    expect(frames.slice(from), "a draw let go of the hold").not.toContain(false);
+    expect(row("c")).toBeNull();
+  });
+
+  it("lets go once the focus a taken-away row went with lands nowhere in the list", async () => {
+    const frames: boolean[] = [];
+    function Bare({ rows }: { rows: readonly string[] }) {
+      const { holding, held } = useHeldStill<HTMLDivElement>(rows);
+      useLayoutEffect(() => {
+        frames.push(holding);
+      });
+      return (
+        <div {...held}>
+          {rows.map((row) => (
+            <button key={row} type="button">
+              {row}
+            </button>
+          ))}
+        </div>
+      );
+    }
+    const { rerender } = render(<Bare rows={["a", "b"]} />);
+    act(() => button("a").focus());
+    fireEvent.keyDown(button("a"), { key: "ArrowDown" });
+    await waitFor(() => expect(frames.at(-1)).toBe(true));
+    rerender(<Bare rows={["b"]} />);
+    await waitFor(() => expect(frames.at(-1)).toBe(false));
   });
 });
