@@ -11,8 +11,19 @@
       "name": "401",
       "status": 401,
       "provenance": "recorded",
-      "recorded": "api.anthropic.com, POST /v1/messages with a dummy x-api-key, 2026-11-15 (specs review round 2, axis C, finding 1). Status, x-should-retry and body recorded; the rest of the header set waits for T1a-02's record at the pin.",
-      "headers": [["x-should-retry", "false"]],
+      "recorded": "api.anthropic.com, POST /v1/messages with a dummy x-api-key, 2026-11-15 20:52 UTC (T1a-02's spike record, 1a-startup). Every header in the order received, identifiers redacted as the record has them; the body's error type recorded.",
+      "headers": [
+        ["date", "Sun, 15 Nov 2026 20:52:05 GMT"],
+        ["server-timing", "x-originResponse;dur="],
+        ["cache-control", "no-store"],
+        ["request-id", "req_<redacted>"],
+        ["x-should-retry", "false"],
+        ["server", "cloudflare"],
+        ["cf-cache-status", "DYNAMIC"],
+        ["x-robots-tag", "none"],
+        ["content-security-policy", "default-src 'none'; frame-ancestors 'none'"],
+        ["cf-ray", "<redacted>-SOF"]
+      ],
       "content_type": "application/json",
       "body": "{\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"}}"
     },
