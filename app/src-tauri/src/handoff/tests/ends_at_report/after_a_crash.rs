@@ -150,7 +150,7 @@ fn a_launch_is_not_held_past_its_deadline_by_a_left_task_s_screen_that_will_not_
     );
     let slack = std::time::Duration::from_secs(5);
     assert!(
-        took < crate::chatcard::SCREENS_AT_QUIT_WITHIN + slack,
+        took < crate::chatcard::SCREENS_KEPT_WITHIN + slack,
         "the launch took {took:?}"
     );
 }

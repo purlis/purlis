@@ -952,7 +952,7 @@ fn a_quit_is_not_held_past_its_deadline_by_a_task_screen_that_will_not_come() {
     host.terminal_answers();
     let slack = std::time::Duration::from_millis(1500);
     assert!(
-        took < crate::chatcard::SCREENS_AT_QUIT_WITHIN + slack,
+        took < crate::chatcard::SCREENS_KEPT_WITHIN + slack,
         "the quit took {took:?}"
     );
 }
@@ -981,7 +981,7 @@ fn a_quit_keeps_every_project_s_task_screen_within_its_one_deadline() {
         let (_, task_id, _) = a_reported_task_and_one_working(host, &held, &id, steward, task);
         finished.push((plane.root.clone(), task_id));
     }
-    let a_third = crate::chatcard::SCREENS_AT_QUIT_WITHIN / 3;
+    let a_third = crate::chatcard::SCREENS_KEPT_WITHIN / 3;
     one.terminal_takes(a_third);
     two.terminal_takes(a_third);
 

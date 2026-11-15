@@ -218,11 +218,11 @@ fn keep_screen(
 /// How long a quit waits, over every project together, for the screens of the tasks that had
 /// finished (#6305): as long as it gives every plane's saving to stop. A launch after a crash
 /// gives a project's the same (#6504).
-pub(crate) const SCREENS_AT_QUIT_WITHIN: std::time::Duration = crate::autosave::QUIT_STOPS_WITHIN;
+pub(crate) const SCREENS_KEPT_WITHIN: std::time::Duration = crate::autosave::QUIT_STOPS_WITHIN;
 
-/// [`SCREENS_AT_QUIT_WITHIN`] from now: the deadline a quit's task screens are given.
+/// [`SCREENS_KEPT_WITHIN`] from now: the deadline a quit's or a launch's task screens are given.
 pub(crate) fn screens_by_from_now() -> std::time::Instant {
-    std::time::Instant::now() + SCREENS_AT_QUIT_WITHIN
+    std::time::Instant::now() + SCREENS_KEPT_WITHIN
 }
 
 /// **Starts keeping the last screens of the task chats `chats` as the app quits** (#6305), by
@@ -590,7 +590,7 @@ mod tests {
         let shared: Arc<dyn SessionHost> = Arc::new(host);
 
         start_keeping_screens_at_quit(&root, &shared, &[(7, TASK.to_owned())])
-            .wait_until(Instant::now() + SCREENS_AT_QUIT_WITHIN);
+            .wait_until(Instant::now() + SCREENS_KEPT_WITHIN);
 
         assert_eq!(
             purlis_core::chatscreens::kept(&root, TASK).as_deref(),
@@ -605,7 +605,7 @@ mod tests {
         let shared: Arc<dyn SessionHost> = Arc::new(host.clone());
 
         start_keeping_screens_left(&root, &shared, &[(7, TASK.to_owned())])
-            .wait_until(Instant::now() + SCREENS_AT_QUIT_WITHIN);
+            .wait_until(Instant::now() + SCREENS_KEPT_WITHIN);
 
         assert_eq!(
             purlis_core::chatscreens::kept(&root, TASK).as_deref(),
@@ -630,7 +630,7 @@ mod tests {
         let shared: Arc<dyn SessionHost> = Arc::new(host.clone());
 
         start_keeping_screens_left(&root, &shared, &[(7, TASK.to_owned())])
-            .wait_until(Instant::now() + SCREENS_AT_QUIT_WITHIN);
+            .wait_until(Instant::now() + SCREENS_KEPT_WITHIN);
 
         assert_eq!(purlis_core::chatscreens::kept(&root, TASK), None);
         assert!(host.terminal().is_empty(), "not even read");
