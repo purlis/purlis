@@ -477,6 +477,8 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             // wake of the supervisor's thread.
             "session_host_failing",
             "start_the_session_host_again",
+            // Why the session host is not run in the background (FD-17): in memory.
+            "session_host_not_in_the_background",
             // A task's quiet note, read and put away (#1981): in memory.
             "task_quiet",
             "put_away_task_quiet",

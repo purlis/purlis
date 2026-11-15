@@ -146,6 +146,8 @@ mod kubectl;
 mod lifecycle;
 mod live;
 mod loginasks;
+#[cfg(unix)]
+mod loginitems;
 mod mcpfailed;
 mod memories;
 pub mod nativecrash;
@@ -3727,7 +3729,23 @@ fn refuse_beside_the_old_app() {
 /// anything is read or opened. `main` asks first, so nothing of the app starts in the host.
 #[cfg(unix)]
 pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
-    purlis_host::serve_for_the_window_if_asked(sessionhost::place, |place| {
+    purlis_host::serve_for_the_window_if_asked(sessionhost::place, hosting_here)
+}
+
+/// When this binary was started by the service manager as the session host's login item
+/// (FD-17, `loginitems.rs`), serve until a window or the tray's Stop tells it to quit, and give
+/// the code to exit with; otherwise `None`, before anything is read or opened. Its standard
+/// error is where launchd writes the host's log, or systemd's journal.
+#[cfg(unix)]
+pub fn serve_as_a_login_item_if_asked() -> Option<i32> {
+    purlis_host::serve_as_a_login_item_if_asked(sessionhost::place, hosting_here)
+}
+
+/// What the session host holds its programs and projects in, on this machine, whoever started
+/// it: the window, or the service manager.
+#[cfg(unix)]
+fn hosting_here(place: &purlis_host::Place) -> purlis_host::Hosting {
+    {
         // The core's warnings raised in this host go to its standard error, which the window
         // reads into its own log (#2745): this process installs no log of its own.
         purlis_core::applog::install_for_a_terminal();
@@ -3755,7 +3773,7 @@ pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
             None => hosting,
         };
         purlis_core::browsers::given_to(hosting)
-    })
+    }
 }
 
 /// Where every project's chats run, chosen once as the app starts: in the session host the
@@ -4162,11 +4180,23 @@ pub fn run() {
                         let _ = window.emit(hostfailing::FAILING, now);
                     })
                 });
+                // And when the system will not run it in the background (FD-17).
+                failing.telling_not_in_the_background({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |why: hostfailing::NotInTheBackground| {
+                        let _ = window.emit(hostfailing::NOT_IN_THE_BACKGROUND, why);
+                    })
+                });
                 app.manage(failing);
                 // With chats in the window's own process, a host a crashed window left is ended,
                 // with the chats it kept, before this window puts any back (#2004).
                 if !hostedsessions::chats_run_in_the_host() {
                     host.ending_a_host_it_finds();
+                }
+                // While something keeps the host running, its service manager runs it, and the
+                // window connects to that one (FD-17, ADR 0068 §3).
+                if let Some((manager, runs_it)) = loginitems::manager() {
+                    host.with_manager(manager, runs_it);
                 }
                 host.start();
                 // The person's browsers run in it too (#2012).
@@ -4276,6 +4306,9 @@ pub fn run() {
             // native appearance and colour of the theme its first frame draws
             // (`nativewindow.rs`), and nothing else. First in `setup`, which is exactly where
             // Tauri would have built it.
+            // Started by its login item, purlis starts in the background: no window shown until
+            // the person opens it from the tray (FD-17).
+            let in_the_background = std::env::args().any(|arg| arg == lifecycle::IN_THE_BACKGROUND);
             let mut main = app
                 .config()
                 .app
@@ -4286,6 +4319,9 @@ pub fn run() {
                 .ok_or("tauri.conf.json declares no main window")?;
             // The default size, or the screen's usable size where that is smaller (`screenfit.rs`).
             screenfit::fit_to_the_screen(app.handle(), &mut main, None);
+            if in_the_background {
+                main.visible = false;
+            }
             let config_root = purlis_core::machine::config_root();
             // The working directory, resolved ONCE (`planes::at_launch` below takes this
             // answer): the plane it names is the one the window opens on, and its theme levels
@@ -4325,6 +4361,12 @@ pub fn run() {
             }
             panics::send_waiting();
             app.manage(Quitting::default());
+            // What a quit does, read at each one: to the background while something keeps the
+            // session host running (FD-17).
+            #[cfg(unix)]
+            app.manage(lifecycle::Lifetime::new(loginitems::kept_for));
+            #[cfg(not(unix))]
+            app.manage(lifecycle::Lifetime::new(|| None));
             app.manage(updates::Installed::default());
             app.manage(skillset::SetUpdateUndos::default());
             // The extension executor (ADR 0041 stage 2). Managed for the table of
@@ -5021,8 +5063,26 @@ pub fn run() {
             // And what its pools name: a pool added from a terminal is told as one added here.
             sandboxing::watch_pools(app.handle().clone());
 
-            if let Err(why) = lifecycle::tray(app.handle()) {
-                tracing::warn!("purlis: no tray icon ({why}); the window is reached from the dock");
+            match lifecycle::tray(app.handle()) {
+                // Whether it shows: on Linux, only where the desktop watches for one (FD-17).
+                Ok(()) => app
+                    .state::<lifecycle::Lifetime>()
+                    .tray_shown(lifecycle::a_tray_shows_here()),
+                Err(why) => tracing::warn!(
+                    "purlis: no tray icon ({why}); the window is reached from the dock"
+                ),
+            }
+            if in_the_background {
+                match app.state::<lifecycle::Lifetime>().quit_does() {
+                    lifecycle::QuitDoes::ToTheBackground { kept_for } => {
+                        lifecycle::to_the_background(app.handle(), kept_for);
+                    }
+                    // Its login item outlived what kept the host running, or no tray shows to
+                    // stop it from: the window is shown, and the next quit says what it does.
+                    lifecycle::QuitDoes::Exit | lifecycle::QuitDoes::StaysOpen { .. } => {
+                        lifecycle::show(app.handle());
+                    }
+                }
             }
             Ok(())
         })
@@ -5050,7 +5110,14 @@ pub fn run() {
             }
             // Before any window goes: a tab window closed by the quit is not closed by the
             // person, so its tabs stay where they were for the next launch (#4768).
-            if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+            if let tauri::RunEvent::ExitRequested { api, code, .. } = &event {
+                // Every window gone while something keeps the session host running goes to the
+                // background, as the menu's Quit does; an exit with a code (Stop, a restart to
+                // update or onto the session bus) always goes ahead (FD-17).
+                if lifecycle::on_exit_requested(app, *code) {
+                    api.prevent_exit();
+                    return;
+                }
                 tabwindows::quitting(app);
             }
             if matches!(event, tauri::RunEvent::Exit) {
@@ -5074,6 +5141,12 @@ pub fn run() {
                 #[cfg(unix)]
                 if let Some(host) = app.try_state::<sessionhost::SessionHost>() {
                     host.end();
+                    // Nothing keeps the host running any more: it ends with the app from now
+                    // on, as before (FD-17). A Stop while something does leaves them, so the
+                    // host starts again at the next login.
+                    if loginitems::reasons().is_empty() {
+                        host.forget_login_items();
+                    }
                 }
                 // Once no chat links over them: every SSH forward to a pool on another machine
                 // ends now, with nothing left to the other machine to end (ADR 0123 §8, as

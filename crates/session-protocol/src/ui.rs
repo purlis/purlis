@@ -1652,6 +1652,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "session_drawn",
     // Whether the session host is failing, and what the window says of it (#2007).
     "session_host_failing",
+    // Why the session host is not run in the background, if it could not be (FD-17).
+    "session_host_not_in_the_background",
     "session_record",
     "set_dismissed",
     // What setup's Protection row shows: the host's bound and the local project's level, a read.

@@ -31,6 +31,12 @@ fn main() {
     if let Some(code) = purlis_app_lib::serve_as_the_session_host_if_asked() {
         std::process::exit(code);
     }
+    // Started by the service manager as the session host's login item (FD-17): serve until
+    // told to quit, before anything of the app starts.
+    #[cfg(unix)]
+    if let Some(code) = purlis_app_lib::serve_as_a_login_item_if_asked() {
+        std::process::exit(code);
+    }
     // Started again as the bounded reader of a branch (FM-4, D-88h): answer one question and
     // exit, before anything of the app starts.
     if let Some(code) = purlis_core::files::serve_if_asked() {
