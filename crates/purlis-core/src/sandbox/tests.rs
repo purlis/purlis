@@ -9183,6 +9183,11 @@ fn the_tls_pool_files_a_restart_ask_compares_are_named_and_real_but_never_purlis
         compared, wanted,
         "each file by name and real path, no copy of purlis's"
     );
+    assert_eq!(
+        super::tls_pool_files_named(&machine),
+        [ca.clone(), cert.clone(), key.clone()],
+        "by name alone, no copy of purlis's"
+    );
     assert!(
         Denied::of(tempfile::tempdir().unwrap().path(), &machine)
             .paths

@@ -1168,6 +1168,11 @@ type Deciding = Box<
 pub struct OlderSandbox {
     /// The chats, by session, lowest first.
     pub chats: Vec<OnOlderSandbox>,
+    /// **What the Notice says where pools on this machine are the only cause for every one of
+    /// them** (#1750, #6472): one sentence true of them all (`PoolMoved::said_for_all`), as a
+    /// pool is the machine's and not a project's. None otherwise.
+    #[specta(optional)]
+    pub pool: Option<String>,
 }
 
 #[cfg(test)]
@@ -1202,30 +1207,82 @@ pub struct OnOlderSandbox {
     /// None where the project's settings moved it.
     #[specta(optional)]
     pub policy: Option<String>,
-    /// **Where a pool added since the chat started is the only cause** (#1750, #6472): the
-    /// chat's sandbox does not yet keep it from changing the programs a cluster pool runs, or
-    /// from reading the certificate and key of a pool over Docker's TLS API, which it holds once
-    /// it restarts. The sentence the Notice says it in ([`POOL_ADDED`], [`TLS_POOL_ADDED`],
-    /// [`POOLS_ADDED`]). None otherwise.
+    /// **Where pools on this machine are the only cause** (#1750, #6472): the chat's sandbox
+    /// does not yet keep it from changing the programs a cluster pool runs, or from reading
+    /// the files a pool on another machine connects with, which it holds once it restarts. The
+    /// sentence for this chat alone (`PoolMoved::said`); the Notice says
+    /// [`OlderSandbox::pool`]. None otherwise.
     #[specta(optional)]
     pub pool: Option<String>,
 }
 
 /// What the Notice after a sandbox change says where a cluster pool added while chats ran is
 /// its only cause (#1750): what changed, in the person's terms, and why it matters.
-pub const POOL_ADDED: &str = "A cluster pool was added, so purlis now keeps chats from changing \
-                              the programs it runs.";
+pub const NOTICE_CLUSTER_POOL_ADDED: &str =
+    "A cluster pool was added, so purlis now keeps chats from changing the programs it runs.";
 
-/// What the Notice says where a pool over Docker's TLS API added while chats ran is its only
-/// cause (#6472): the files a chat could reach that engine with, in the person's terms.
-pub const TLS_POOL_ADDED: &str = "A pool over Docker's TLS API was added, so purlis now keeps \
-                                  chats from reading its certificate and key.";
+/// What the Notice says where a pool on another machine, reached over Docker's API over TLS,
+/// added while chats ran is its only cause (#6472). "The files it connects with" are its
+/// authority's certificate, its certificate and its key, or the first two alone where the key is
+/// in a vault: the sentence is true of both.
+pub const NOTICE_TLS_POOL_ADDED: &str = "A pool on another machine was added, so purlis now keeps \
+                                         chats from reading the files it connects with.";
 
-/// What the Notice says where both a cluster pool and a pool over Docker's TLS API were added
-/// while chats ran, and nothing else moved (#6472).
-pub const POOLS_ADDED: &str = "Pools were added, so purlis now keeps chats from changing the \
-                               programs a cluster pool runs and from reading the certificate and \
-                               key of a pool over Docker's TLS API.";
+/// What the Notice says where cluster pools and pools on another machine were added while chats
+/// ran, and nothing else moved (#6472).
+pub const NOTICE_POOLS_ADDED: &str = "Pools were added, so purlis now keeps more of their files \
+                                      from chats.";
+
+/// What the Notice says where no pool was added, but a file a pool on another machine names
+/// leads to another file than it did when the chat started (the review of #6662): the chat
+/// holds the file it led to, and reads the one it leads to now.
+pub const NOTICE_TLS_FILE_RETARGETED: &str = "A file a pool on another machine connects with now \
+                                              leads elsewhere, so purlis now keeps chats from \
+                                              reading where it leads.";
+
+/// **What pools moved of what a chat's sandbox holds**, where they are all that moved
+/// ([`Settled::pool_added`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct PoolMoved {
+    /// A cluster pool's programs it does not hold.
+    cluster: bool,
+    /// A file a pool on another machine names that it does not hold by that name: a pool
+    /// added.
+    tls_added: bool,
+    /// Every such file held by its name, but a real path one leads to now that it does not
+    /// hold: a link pointed anew.
+    tls_retargeted: bool,
+}
+
+impl PoolMoved {
+    /// The Notice's sentence for it, where one is true of all of it.
+    fn said(self) -> Option<&'static str> {
+        match (self.cluster, self.tls_added, self.tls_retargeted) {
+            (true, false, false) => Some(NOTICE_CLUSTER_POOL_ADDED),
+            (false, true, _) => Some(NOTICE_TLS_POOL_ADDED),
+            (true, true, _) => Some(NOTICE_POOLS_ADDED),
+            (false, false, true) => Some(NOTICE_TLS_FILE_RETARGETED),
+            // A cluster pool added and a link pointed anew: no one sentence says both.
+            (true, false, true) | (false, false, false) => None,
+        }
+    }
+
+    /// The one sentence for every chat behind, each with what pools moved for it (`None` where
+    /// anything else moved): none where any chat is behind something else.
+    fn said_for_all(chats: &[Option<Self>]) -> Option<&'static str> {
+        let mut all: Option<Self> = None;
+        for chat in chats {
+            let one = (*chat)?;
+            let was = all.unwrap_or_default();
+            all = Some(Self {
+                cluster: was.cluster || one.cluster,
+                tls_added: was.tls_added || one.tls_added,
+                tls_retargeted: was.tls_retargeted || one.tls_retargeted,
+            });
+        }
+        all?.said()
+    }
+}
 
 /// **What a project's settings decide of a chat's sandbox** (#1428, D-1428-10): the hosts it
 /// may reach, what the presets widen, and the folders every chat may write. The Notice after a
@@ -1260,6 +1317,10 @@ struct Settled {
     /// (#6267, #6472), by name and by real path, of those the pools name now: a chat started
     /// before such a pool was added reads them until it restarts.
     tls: Vec<std::path::PathBuf>,
+    /// Of `tls`, those held by the names the pools give them: where these are alike and `tls`
+    /// is not, a link leads elsewhere and no pool was added. Not in [`Settled::key`], since
+    /// `tls` holds every one of them.
+    tls_named: Vec<std::path::PathBuf>,
 }
 
 /// **What every pool on a machine has a chat's sandbox hold** (#1750, #6472), read once for
@@ -1270,6 +1331,9 @@ struct PoolsHeld {
     /// The files each pool over Docker's TLS API names
     /// ([`purlis_core::sandbox::tls_pool_files`]).
     tls: Vec<std::path::PathBuf>,
+    /// Those files by the names the pools give them alone
+    /// ([`purlis_core::sandbox::tls_pool_files_named`]).
+    tls_named: Vec<std::path::PathBuf>,
 }
 
 impl PoolsHeld {
@@ -1277,6 +1341,7 @@ impl PoolsHeld {
         Self {
             cluster: purlis_core::sandbox::cluster_programs(machine),
             tls: purlis_core::sandbox::tls_pool_files(machine),
+            tls_named: purlis_core::sandbox::tls_pool_files_named(machine),
         }
     }
 
@@ -1286,6 +1351,7 @@ impl PoolsHeld {
         Self {
             cluster: Vec::new(),
             tls: Vec::new(),
+            tls_named: Vec::new(),
         }
     }
 }
@@ -1382,27 +1448,29 @@ impl Settled {
             },
             cluster: held(&pools.cluster),
             tls: held(&pools.tls),
+            tls_named: held(&pools.tls_named),
         }
     }
 
-    /// **The sentence for a chat on `self` whose next start would be `now`, where pools added
-    /// are the only cause** (#1750, #6472): which kind of pool moved what it holds. None where
-    /// anything else moved too, or nothing did.
-    fn pool_added(&self, now: &Self) -> Option<&'static str> {
+    /// **What pools moved for a chat on `self` whose next start would be `now`, where they are
+    /// the only cause** (#1750, #6472): which kind of pool moved what it holds, or a link a pool
+    /// names that leads elsewhere. None where anything else moved too, or nothing did.
+    fn pool_added(&self, now: &Self) -> Option<PoolMoved> {
         let without_pools = |settled: &Self| Self {
             cluster: Vec::new(),
             tls: Vec::new(),
+            tls_named: Vec::new(),
             ..settled.clone()
         };
-        if without_pools(self) != without_pools(now) {
+        if without_pools(self) != without_pools(now) || self == now {
             return None;
         }
-        match (self.cluster != now.cluster, self.tls != now.tls) {
-            (true, false) => Some(POOL_ADDED),
-            (false, true) => Some(TLS_POOL_ADDED),
-            (true, true) => Some(POOLS_ADDED),
-            (false, false) => None,
-        }
+        let tls_added = self.tls_named != now.tls_named;
+        Some(PoolMoved {
+            cluster: self.cluster != now.cluster,
+            tls_added,
+            tls_retargeted: !tls_added && self.tls != now.tls,
+        })
     }
 
     /// What stands for `settled`, or for a start with no sandbox: a SHA-256 over one canonical
@@ -4362,6 +4430,7 @@ impl Chats {
         // chat opens or closes, and chats started alike (most of them) compile alike, so a
         // compile per chat made the asks grow with the square of the chats open.
         let mut compiled: Vec<(StartKey, CompiledNow)> = Vec::new();
+        let mut pools_moved: Vec<Option<PoolMoved>> = Vec::new();
         for (session, chat, harness, started, with) in running {
             let persona = grants_persona_of(
                 &Chat {
@@ -4429,15 +4498,16 @@ impl Chats {
                 let policy = (required && started.is_none() && now.is_some())
                     .then(|| locks.led_by("The sandbox is now required by this machine's policy"));
                 // A pool added since it started is the cause where nothing else moved.
-                let pool = match (&started, &now) {
-                    (Some(started), Some(now)) => started.pool_added(now).map(str::to_owned),
+                let moved = match (&started, &now) {
+                    (Some(started), Some(now)) => started.pool_added(now),
                     _ => None,
                 };
+                pools_moved.push(moved);
                 chats.push(OnOlderSandbox {
                     session,
                     change: Settled::key(now.as_ref()),
                     policy,
-                    pool,
+                    pool: moved.and_then(PoolMoved::said).map(str::to_owned),
                 });
             }
         }
@@ -4445,7 +4515,8 @@ impl Chats {
             return None;
         }
         chats.sort_unstable_by_key(|one| one.session);
-        Some(OlderSandbox { chats })
+        let pool = PoolMoved::said_for_all(&pools_moved).map(str::to_owned);
+        Some(OlderSandbox { chats, pool })
     }
 
     /// **Why each open chat runs at its level** (#5207): each harness chat, by session, with
