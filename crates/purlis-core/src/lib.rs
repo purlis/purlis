@@ -268,6 +268,7 @@ pub mod sandboxblock;
 pub mod savefix;
 pub mod scaffold;
 pub mod scanallow;
+pub mod seam;
 pub mod secretfill;
 pub mod secrets;
 pub mod secretshape;
