@@ -11,7 +11,7 @@ const PHASE_LIST: &[&str] = &["anthropic"];
 
 /// The Anthropic built-in's digest. It moves only when a covered field of the shipped
 /// declaration does, which the runner's check (set iii) reads as another build's built-in.
-const ANTHROPIC_DIGEST: &str = "PINNED";
+const ANTHROPIC_DIGEST: &str = "73623dd42b5f14e3b19ee11d111111d47b3b41442629a29caead011dc8d0ef69";
 
 fn anthropic() -> &'static Declaration {
     built_ins()

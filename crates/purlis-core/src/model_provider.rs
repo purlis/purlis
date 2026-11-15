@@ -215,7 +215,7 @@ impl Declaration {
     /// The model for Claude Code's `haiku` slot, the background model (R-148, R-293): its
     /// `[models] background`, or nothing, which leaves the slot to the chosen model.
     pub fn background_model(&self) -> Option<&str> {
-        None
+        self.models.background.as_deref()
     }
 
     /// The origins this declaration may reach: its endpoints' and its list's, and no other.
@@ -229,9 +229,30 @@ impl Declaration {
     }
 }
 
-/// The built-in declarations this build ships, in the binary and read-only (R-159, R-613).
+/// Each built-in declaration's text, shipped in the binary: one file per built-in under
+/// `model_provider/built_in/`. 1a ships `anthropic` only (R-159, R-160).
+const SHIPPED: &[(&str, &str)] = &[(
+    "anthropic.toml",
+    include_str!("model_provider/built_in/anthropic.toml"),
+)];
+
+/// The built-in declarations this build ships, in the binary and read-only (R-159, R-613). A
+/// built-in is never replaced: every other tier is read beside these, so its id is refused there.
+///
+/// # Panics
+///
+/// When a shipped file is not a declaration this reader reads, which a test catches first.
 pub fn built_ins() -> &'static [Declaration] {
-    &[]
+    static BUILT_INS: std::sync::LazyLock<Vec<Declaration>> = std::sync::LazyLock::new(|| {
+        let mut read = Vec::new();
+        for (file, text) in SHIPPED {
+            let declaration = parse(text, &From::BuiltIn, &read, file)
+                .unwrap_or_else(|why| panic!("a built-in this build ships is refused: {why}"));
+            read.push(declaration);
+        }
+        read
+    });
+    &BUILT_INS
 }
 
 /// A reference to a project's declaration: the project's identity, the declaration's id and
@@ -295,8 +316,9 @@ struct RawModels {
     table: Vec<ModelRow>,
 }
 
-/// `text` as a declaration from `from`, read beside the declarations already `known` and
-/// named `file` in every refusal — or the one sentence saying why it is not one. The first
+/// `text` as a declaration from `from`, read beside the declarations already `known` (and,
+/// for every tier but the built-in one, beside the binary's [`built_ins`]) and named `file` in
+/// every refusal — or the one sentence saying why it is not one. The first
 /// failure wins.
 pub fn parse(
     text: &str,
@@ -319,6 +341,14 @@ pub fn parse(
         )
     })?;
     let refused = |field: &str, why: String| format!("{file}'s `{field}` {why}");
+    // A built-in is never replaced (R-613): every other tier is read beside the binary's.
+    let beside_built_ins;
+    let known = if *from == From::BuiltIn {
+        known
+    } else {
+        beside_built_ins = built_ins().iter().chain(known).cloned().collect::<Vec<_>>();
+        beside_built_ins.as_slice()
+    };
 
     let id = raw.id.trim();
     if !is_word(id) {
