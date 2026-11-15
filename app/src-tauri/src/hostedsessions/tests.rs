@@ -2045,6 +2045,38 @@ fn a_chat_that_ended_with_no_window_there_is_reattached_and_told_ended() {
     assert_eq!(back.sessions.running(), [2], "its tab stays");
 }
 
+/// **A chat left in the host is read through a view of its own, never reattached, and the view
+/// closes after the sweep took the chat** (#6504): what a launch keeps a finished task's screen
+/// from.
+#[test]
+fn a_chat_left_in_the_host_is_read_without_a_reattach_and_its_view_closes_after_the_sweep() {
+    let host = Comeback::new();
+    let first = host.window();
+    first
+        .sessions
+        .open(Some(3), &a_shell("true"), &|_| {})
+        .unwrap();
+    let program = host.runs.last();
+    program.writes(b"check prod: all green");
+    first.crashes();
+
+    let back = host.window();
+    let (sink, seen) = a_pane();
+    let view = back.sessions.watch_left(3, sink).expect("a view opens");
+    until("its screen is drawn", || {
+        seen.lock().unwrap().contains("check prod: all green")
+    });
+    back.sessions.close_what_was_not_reattached();
+    back.sessions.unwatch_left(3, view.view);
+
+    until("the sweep ended it", || program.seen().stopped);
+    assert!(back.sessions.running().is_empty(), "never a running chat");
+    assert!(
+        back.sessions.watch_left(3, a_pane().0).is_err(),
+        "nothing left to read once it is closed"
+    );
+}
+
 #[test]
 fn what_no_put_back_reattached_is_closed_and_what_it_did_runs_on() {
     let host = Comeback::new();
