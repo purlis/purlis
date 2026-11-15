@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794744474027,
+  "lastUpdate": 1794753820622,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -49896,6 +49896,48 @@ window.BENCHMARK_DATA = {
             "value": 100.50731999999999,
             "unit": "ms",
             "extra": "median of 5 runs: 99.394, 100.089, 100.507, 101.044, 103.306 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a6279f7ad9195457556d0878ebe4306966a461d0",
+          "message": "Cap session-host.log by size and keep three older files, with review fixes (#6687, continues #6698) (#6703)\n\n* Cap session-host.log by size and keep three older files; doctor says its size when rotation failed (#6687)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7FKSKBJTSDF6JGQFDYAYA8S\nPurlis-Persona: steward\n\n* Cap session-host.log by size and keep three older files: the new modules and test (#6687)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7FKSKBJTSDF6JGQFDYAYA8S\nPurlis-Persona: steward\n\n* A running session host keeps session-host.log capped, looked at each minute; the login-item host does it; plane-format records the older files (#6687, replayed from #6698)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7FKSKBJTSDF6JGQFDYAYA8S\nPurlis-Persona: steward\n\n* Review fixes for the session host log cap: copy before shifting, trim only once serving, the doctor row says how to empty it and only while a host serves, 1 MB (#6687)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7FKSKBJTSDF6JGQFDYAYA8S\nPurlis-Persona: steward\n\n* The copy-fails test opens by shedding the shell's steering (#6687)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7FKSKBJTSDF6JGQFDYAYA8S\nPurlis-Persona: steward",
+          "timestamp": "2026-11-15T14:03:25Z",
+          "tree_id": "9287ea652ef3997e1cda77b55410adc2a6f4dc3b",
+          "url": "https://github.com/purlis/purlis/commit/a6279f7ad9195457556d0878ebe4306966a461d0"
+        },
+        "date": 1794753813817,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6947725,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.683, 0.686, 0.695, 0.699, 0.700 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.524625999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.464, 16.522, 16.525, 16.678, 16.747 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.22343799999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.248, 101.903, 102.223, 102.937, 104.450 ms"
           }
         ]
       }
