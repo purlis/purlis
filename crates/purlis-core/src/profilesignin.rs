@@ -192,12 +192,27 @@ mod tests;
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct Handed {
     pairs: Vec<(String, String)>,
+    /// The vault entry each of `pairs` was read from, in step with it: what a kept screen's mask
+    /// names (#6309).
+    entries: Vec<String>,
 }
 
 impl Handed {
     /// Each variable and its value, as a caller that read them hands them on.
     pub fn of(pairs: Vec<(String, String)>) -> Self {
-        Self { pairs }
+        let entries = pairs.iter().map(|(name, _)| name.clone()).collect();
+        Self { pairs, entries }
+    }
+
+    /// **Each value as a kept screen knows it to mask** (#6309), under the vault entry it was
+    /// read from; `None` where it could not be known
+    /// ([`crate::secrets::handedto::Known::of`]).
+    pub fn known(&self) -> Option<Vec<crate::secrets::handedto::Known>> {
+        let mut known = Vec::new();
+        for ((_, value), entry) in self.pairs.iter().zip(&self.entries) {
+            known.extend(crate::secrets::handedto::Known::of(entry, value)?);
+        }
+        Some(known)
     }
 
     /// The variables it sets, never a value.
@@ -238,6 +253,7 @@ pub fn read(
 ) -> Result<Handed, String> {
     use crate::secrets::{brokered, cmd};
     let mut pairs = Vec::with_capacity(credentials.len());
+    let mut entries = Vec::with_capacity(credentials.len());
     let mut resolved = Vec::with_capacity(credentials.len());
     for (variable, reference) in credentials {
         brokered::authorise(ctx, persona, &reference.vault).map_err(|why| {
@@ -335,6 +351,7 @@ pub fn read(
             }
         };
         pairs.push((variable.clone(), value));
+        entries.push(reference.key.clone());
         resolved.push(format!("{}/{}", reference.vault, reference.key));
     }
     // The values are what the record is scrubbed of; it names the entries.
@@ -348,7 +365,7 @@ pub fn read(
             ("vaults", serde_json::json!(resolved)),
         ],
     );
-    Ok(Handed { pairs })
+    Ok(Handed { pairs, entries })
 }
 
 /// **The Secret ask a start was refused on** (#5137): the ask for its profile's credential,

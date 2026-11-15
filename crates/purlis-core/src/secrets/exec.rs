@@ -184,6 +184,9 @@ fn temp_file(
 pub(crate) struct Prepared {
     pub env: Vec<(OsString, OsString)>,
     pub secret_values: Vec<String>,
+    /// **Each value handed, with the vault entry it came from** (#6309): what a kept task screen
+    /// is masked with ([`super::handedto`]), the entry named in place of the value.
+    pub named: Vec<(String, String)>,
     pub key_names: Vec<String>,
     pub env_names: Vec<String>,
     /// The temp files, in the order they were made.
@@ -201,11 +204,30 @@ impl Drop for Prepared {
     fn drop(&mut self) {
         wipe_env(&mut self.env);
         self.secret_values.zeroize();
+        for (_, value) in &mut self.named {
+            value.zeroize();
+        }
         for handed in &mut self.handed {
             for (_, value) in &mut handed.entries {
                 value.zeroize();
             }
         }
+    }
+}
+
+impl Prepared {
+    /// **`now` handed in place of `was`** (#1667's tunnels): redacted as `was` is, and masked
+    /// under the vault entry `was` came from (#6309).
+    pub(crate) fn handed_instead(&mut self, was: &str, now: String) {
+        let entry = self
+            .named
+            .iter()
+            .find(|(_, value)| value == was)
+            .map(|(entry, _)| entry.clone());
+        if let Some(entry) = entry {
+            self.named.push((entry, now.clone()));
+        }
+        self.secret_values.push(now);
     }
 }
 
@@ -263,6 +285,7 @@ pub(crate) fn prepare_from(
     let mut out = Prepared {
         env,
         secret_values: Vec::new(),
+        named: Vec::new(),
         key_names: Vec::new(),
         env_names: Vec::new(),
         files: Vec::new(),
@@ -294,6 +317,7 @@ pub(crate) fn prepare_from(
         let val = resolve(key)?;
         set_var(&mut out.env, name, val.as_str());
         out.secret_values.push(val.as_str().to_owned());
+        out.named.push((key.to_owned(), val.as_str().to_owned()));
         out.key_names.push(key.to_string());
         out.env_names.push(name.to_string());
     }
@@ -309,6 +333,7 @@ pub(crate) fn prepare_from(
         };
         let val = resolve(key)?;
         out.secret_values.push(val.as_str().to_owned());
+        out.named.push((key.to_owned(), val.as_str().to_owned()));
         out.key_names.push(key.to_string());
         out.env_names.push(name.to_string());
         match temp_file(&mut out._cleanup, within, val.as_bytes()) {
@@ -369,10 +394,12 @@ pub(crate) fn prepare_from(
         for (name, key) in entries {
             let val = resolve(key)?;
             out.secret_values.push(val.as_str().to_owned());
+            out.named.push((key.clone(), val.as_str().to_owned()));
             out.key_names.push(key.clone());
             let escaped = Zeroizing::new(dotenv::escaped(&val));
             if *escaped != *val {
                 out.secret_values.push(escaped.as_str().to_owned());
+                out.named.push((key.clone(), escaped.as_str().to_owned()));
             }
             match dotenv::line(name, &val) {
                 Ok(line) => lines.push(line),

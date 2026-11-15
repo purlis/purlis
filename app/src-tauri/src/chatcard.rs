@@ -210,6 +210,15 @@ fn keep_screen(
         tracing::info!("purlis: task chat {session}'s screen could not be read as it closed");
         return;
     };
+    // Never one of purlis's own secrets (#6309): what the chat was handed is masked first, and
+    // a screen whose secrets could not be known is not kept.
+    let Some(screen) = purlis_core::secrets::handedto::masked_for(root, session, &screen) else {
+        tracing::info!(
+            "purlis: task chat {session}'s screen was not kept: what it was handed could not be \
+             known to mask"
+        );
+        return;
+    };
     if let Err(why) = purlis_core::chatscreens::keep(root, id, &screen) {
         tracing::info!("purlis: task chat {session}'s screen was not kept ({why})");
     }
@@ -625,6 +634,24 @@ mod tests {
         assert_eq!(
             purlis_core::chatscreens::kept(&root, TASK).as_deref(),
             Some("check prod: all green\r\n")
+        );
+    }
+
+    #[test]
+    fn a_vault_value_a_task_was_handed_and_printed_is_masked_in_its_kept_screen() {
+        // An obvious fake: no credential is or was this.
+        let host = Pretend::default();
+        let (_dir, root) = a_task();
+        host.open(Some(7), &crate::host::Opening::default(), &|_| {})
+            .expect("running");
+        host.shows(7, "token: FAKE-VAULT-VALUE-6309\r\n");
+        purlis_core::secrets::handedto::remember(&root, 7, "github-token", "FAKE-VAULT-VALUE-6309");
+
+        keep_screen_on_close(&root, &host, 7, TASK);
+
+        assert_eq!(
+            purlis_core::chatscreens::kept(&root, TASK).as_deref(),
+            Some("token: ‹secret: github-token›\r\n")
         );
     }
 

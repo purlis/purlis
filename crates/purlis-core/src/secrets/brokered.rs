@@ -4199,6 +4199,10 @@ pub(crate) fn serve_recorded(
             );
         }
     };
+    // Whatever the run prints of them, the chat's kept screen never keeps one (#6309).
+    for (entry, value) in &prepared.named {
+        super::handedto::remember(&asker.root, asker.chat, entry, value);
+    }
     #[cfg(test)]
     if let Wrap::Refusing(targets) = wrap {
         for target in targets.split_whitespace() {
@@ -4497,7 +4501,7 @@ fn tunnelled(
         } else {
             let swapped = pointed.at(at);
             exec::set_var(&mut prepared.env, name, swapped.clone());
-            prepared.secret_values.push(swapped);
+            prepared.handed_instead(&value, swapped);
         }
     }
     // A value a credential file holds, pointed in the file itself, every other line as it was.
@@ -4510,6 +4514,12 @@ fn tunnelled(
             };
             let routed = route(value, &client, &opening.reach, &opening.own);
             if let Some((pointed, at)) = opening.open(&name, routed)? {
+                // Masked under the entry the value it was came from (#6309).
+                let entry = prepared
+                    .named
+                    .iter()
+                    .find(|(_, was)| was == value)
+                    .map(|(entry, _)| entry.clone());
                 // The value it was is wiped as the file is pointed (#3420).
                 drop(zeroize::Zeroizing::new(std::mem::replace(
                     value,
@@ -4517,6 +4527,12 @@ fn tunnelled(
                 )));
                 prepared.secret_values.push(value.clone());
                 let escaped = super::dotenv::escaped(value);
+                if let Some(entry) = &entry {
+                    prepared.named.push((entry.clone(), value.clone()));
+                    if escaped != *value {
+                        prepared.named.push((entry.clone(), escaped.clone()));
+                    }
+                }
                 if escaped != *value {
                     prepared.secret_values.push(escaped);
                 }

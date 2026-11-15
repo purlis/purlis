@@ -5039,6 +5039,27 @@ fn under_a_service_a_brokered_run_is_logged_by_its_program_and_never_its_vault()
     assert!(!logged.contains("team"), "the vault was logged: {logged}");
 }
 
+/// #6309: a value a brokered run was handed is known to mask the chat's kept screen with, under
+/// its vault entry's name, and only that chat's.
+#[test]
+fn a_value_a_brokered_run_was_handed_masks_the_chat_s_kept_screen_under_its_entry_s_name() {
+    let project = project();
+    let mut ran = wanted(project.path(), "team", sh("echo ok"));
+    ran.env = vec!["X=TOKEN".into()];
+    let frames = served(&asker(project.path(), Some("devops")), ran);
+    assert_eq!(frames.first(), Some(&Frame::Started), "{frames:?}");
+
+    let shown = format!("printed {TOKEN}\r\n");
+    assert_eq!(
+        super::super::handedto::masked_for(project.path(), 7, &shown).as_deref(),
+        Some("printed ‹secret: TOKEN›\r\n")
+    );
+    assert_eq!(
+        super::super::handedto::masked_for(project.path(), 8, &shown).as_deref(),
+        Some(shown.as_str())
+    );
+}
+
 // ----------------------------------------------------------------------------------------
 // A runner's host: a declared tool run on the values its desktop handed (#2047)
 

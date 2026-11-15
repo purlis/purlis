@@ -733,7 +733,7 @@ pub fn run_on_its_runner(
     let clones_at_start = held.chats().clones_at_start(session);
     // And only those purlis cloned or the person saved from the window.
     let config_root = purlis_core::forge::apptoken::record_root();
-    let read = |persona: &str, tool: &Tool| match tool.mint {
+    let read_or_mint = |persona: &str, tool: &Tool| match tool.mint {
         // Its App's key is read to mint with, through a link too, judged as any read (#5795).
         Some(_) => judged(&ctx, persona, tool, || {
             minted(
@@ -756,6 +756,14 @@ pub fn run_on_its_runner(
             )
         }),
         None => read(&ctx, persona, tool),
+    };
+    let read = |persona: &str, tool: &Tool| {
+        let values = read_or_mint(persona, tool);
+        // Whatever the run prints of them, the chat's kept screen never keeps one (#6309).
+        for (key, value) in values.iter().flatten() {
+            purlis_core::secrets::handedto::remember(root, session, key, value);
+        }
+        values
     };
     let moved = || held.chats().asks_may_have_moved();
     // The runner this chat's link reached, as the desktop's host said it (#3417).
