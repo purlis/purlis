@@ -40,7 +40,11 @@ fn the_recording_seam_counts_each_kind_of_operation() {
     // Written straight into the stub, so the read below finds a value and the write is not
     // one the seam counts.
     FileStore::at(dir.path().join(purlis_core::secrets::keyring::STUB_FILE))
-        .set("purlis/models/0a1b2c3d", "anthropic", "stub-value-never-recorded")
+        .set(
+            "purlis/models/0a1b2c3d",
+            "anthropic",
+            "stub-value-never-recorded",
+        )
         .unwrap();
 
     let files: &dyn Files = &files;
@@ -50,7 +54,11 @@ fn the_recording_seam_counts_each_kind_of_operation() {
     files.stat(&index).unwrap();
     assert_eq!(files.read(&index).unwrap(), b"{}");
     let status = spawner
-        .spawn(Command::new(env!("CARGO")).arg("-V").stdout(std::process::Stdio::null()))
+        .spawn(
+            Command::new(env!("CARGO"))
+                .arg("-V")
+                .stdout(std::process::Stdio::null()),
+        )
         .unwrap()
         .wait()
         .unwrap();
@@ -99,7 +107,11 @@ fn an_outside_write_bypasses_the_window_command() {
     assert_eq!(record.count(Kind::CredentialWrite), 1);
 
     credentials
-        .write_outside("purlis/models/0a1b2c3d", "anthropic", "stub-value-from-elsewhere")
+        .write_outside(
+            "purlis/models/0a1b2c3d",
+            "anthropic",
+            "stub-value-from-elsewhere",
+        )
         .unwrap();
 
     // The item holds the outside value, and no further write went through the window's path.
@@ -139,9 +151,9 @@ fn the_recording_seam_is_absent_from_a_release_build() {
 
     // Every recording type is defined inside the one gated module, and nowhere outside it.
     let gate = "#[cfg(any(test, feature = \"test-support\"))]\nmod recording {";
-    let (open, gated) = source
-        .split_once(gate)
-        .expect("seam.rs keeps its recording implementations in one `mod recording` behind test-support");
+    let (open, gated) = source.split_once(gate).expect(
+        "seam.rs keeps its recording implementations in one `mod recording` behind test-support",
+    );
     for name in RECORDING {
         assert!(
             gated.contains(&format!("pub struct {name}")),
@@ -168,8 +180,22 @@ fn the_recording_seam_is_absent_from_a_release_build() {
     // Nothing but a dev-dependency turns test-support on, anywhere in the workspace.
     let out = purlis_core::forklock::output(
         Command::new(env!("CARGO"))
-            .args(["tree", "--locked", "--offline", "--workspace", "--edges", "no-dev"])
-            .args(["--invert", "purlis-core", "--depth", "0", "--format", "{p} [{f}]"])
+            .args([
+                "tree",
+                "--locked",
+                "--offline",
+                "--workspace",
+                "--edges",
+                "no-dev",
+            ])
+            .args([
+                "--invert",
+                "purlis-core",
+                "--depth",
+                "0",
+                "--format",
+                "{p} [{f}]",
+            ])
             .current_dir(&root),
     )
     .expect("cargo tree runs");
