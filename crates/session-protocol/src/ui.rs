@@ -1208,6 +1208,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     "artifact_enter",
     // Its page loaded again when its folder changed, and drawn in the window's theme (#5955).
     "artifact_reload",
+    // Whether its template moved from what it was served, before it is opened again (#6697).
+    "artifact_template_moved",
     "artifact_theme",
     "artifact_close",
     // Managing pins from the window (#5953): only the person's press pins or reorders, and an

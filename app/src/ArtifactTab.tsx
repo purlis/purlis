@@ -58,7 +58,8 @@ import { Notice } from "./Notice";
  * - **Script runs only once approved, and only from this bar** (ADR 0122 §4, #5959): a page with
  *   script is shown without it, and the bar says so and offers Approve script. The frame's edge,
  *   which the page cannot draw, shows where it stands. An approval in any window, or a change to
- *   its template, tears the page down and opens it again under its new standing.
+ *   its template, tears the page down and opens it again under its new standing; a change to
+ *   its folder that leaves the template it is served as it was opens nothing again (#6697).
  * - **Live** (#5955): the page is loaded again in place when its data changes, as the plane's
  *   watch tells every window, and keeps where it was scrolled; it is drawn in the theme the
  *   window draws, and in each one it draws after; and the bar says when its data was last
@@ -113,7 +114,10 @@ export function ArtifactTab({
   const [opened, setOpened] = useState<ArtifactOpened | null>(null);
   // Each change of either loads the page again: the old webview closes before the new one opens.
   const approvals = useApprovalsHeard(workspace, folder);
-  const template = useViewChanged([plane], templateOf(workspace, folder));
+  const template = useTemplateMoved(
+    useViewChanged([plane], templateOf(workspace, folder)),
+    opened?.label ?? null,
+  );
   const data = useViewChanged([plane], artifactDataIn(workspace, folder));
   // Shown as of a version from its History (#5966): nothing on it reloads or runs live.
   const [asOf, setAsOf] = useState<AsOf | null>(null);
@@ -293,6 +297,35 @@ function useApprovalsHeard(workspace: string, folder: string): number {
     [workspace, folder],
   );
   return heard;
+}
+
+/**
+ * **How many times the template the page is served moved** (#6697): each change to its folder
+ * the window hears (`heard`) asks the core whether what webview `label` was served differs from
+ * the folder now, and only a yes moves it. So a late event of a write the page was already
+ * served, as when it was written just before the page opened, loads nothing twice. A change
+ * heard while the page opens is asked of once it is open; one the core cannot answer moves it.
+ */
+function useTemplateMoved(heard: number, label: string | null): number {
+  const [moved, setMoved] = useState(0);
+  const asked = useRef(heard);
+  useEffect(() => {
+    if (heard === asked.current || label === null) return;
+    asked.current = heard;
+    let gone = false;
+    commands.artifactTemplateMoved(label).then(
+      (answer) => {
+        if (!gone && (answer.status === "error" || answer.data)) setMoved((n) => n + 1);
+      },
+      () => {
+        if (!gone) setMoved((n) => n + 1);
+      },
+    );
+    return () => {
+      gone = true;
+    };
+  }, [heard, label]);
+  return moved;
 }
 
 /** A sentence the core said, as the window starts one: its first letter capital. */
