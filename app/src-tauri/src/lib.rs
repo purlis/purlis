@@ -1353,7 +1353,12 @@ async fn reopen_closed_chat(
             .into_iter()
             .find(|open| open.session == session)
             .map(|open| drawn_of(&held, open))
-            .ok_or_else(|| format!("chat {session} ended as it started"))
+            .ok_or_else(|| {
+                format!(
+                    "chat {number} was reopened as chat {session}, which ended as it started. \
+                     Reopen it again from its card, or start a new chat in its place."
+                )
+            })
     })
     .await
 }

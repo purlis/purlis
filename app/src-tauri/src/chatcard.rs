@@ -355,7 +355,9 @@ pub(crate) fn reopen_closed(
             .cloned()
             .ok_or_else(|| {
                 format!(
-                    "purlis did not reopen chat {number}: it keeps no record of it as it closed."
+                    "purlis did not reopen chat {number}: it keeps no record of it as it closed, \
+                     as it closed more than 30 days ago or before purlis kept one. Start a new \
+                     chat in its place."
                 )
             })?;
     held.chats().reopen_closed(&record, size)

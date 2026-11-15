@@ -21,7 +21,7 @@ import {
   type FinishedTask,
   type PlaneId,
 } from "./bindings";
-import { NO_CONVERSATION, qualifierOf, shownOf, whyNoReopen } from "./finished";
+import { qualifierOf, shownOf, whyNoReopen } from "./finished";
 import { capitalised, endedAt } from "./chatEnded";
 import { chatNumberIn, chatNumberSaid, numberedName } from "./chatNumber";
 import type { ViewRef } from "./tabs";
@@ -83,6 +83,13 @@ export function cardWhen(card: ChatCard): string {
 export const NOT_KEPT_NO_REOPEN =
   "It cannot be reopened: it closed before purlis kept what a reopen needs. Start a new chat to go on.";
 
+/**
+ * Why *Reopen* does nothing on a card drawn from its chat's record where its harness named no
+ * conversation to start it again on (#6485), and what to do instead.
+ */
+export const NO_CONVERSATION_NO_REOPEN =
+  "It cannot be reopened: its harness named no conversation to resume. Start a new chat to go on.";
+
 /** The card's two buttons, as the card draws them and its palette row names them. */
 export const READ_IT = "Read it";
 export const REOPEN = "Reopen";
@@ -106,7 +113,7 @@ export function cannotReopen(card: ChatCard): string | undefined {
     case "reopens":
       return undefined;
     case "no_conversation":
-      return NO_CONVERSATION;
+      return NO_CONVERSATION_NO_REOPEN;
     case "not_kept":
     case null:
       return NOT_KEPT_NO_REOPEN;

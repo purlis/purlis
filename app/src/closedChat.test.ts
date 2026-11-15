@@ -4,10 +4,10 @@
 import { describe, expect, it } from "vitest";
 import type { ChatCard } from "./bindings";
 import { narrow } from "./actions";
-import { NO_CONVERSATION } from "./finished";
 import { reopenOffer } from "./actions";
 import {
   NOT_KEPT_NO_REOPEN,
+  NO_CONVERSATION_NO_REOPEN,
   cardRowId,
   cardWhen,
   numberRows,
@@ -100,8 +100,16 @@ describe("a chat found by its number in the palette (#6214)", () => {
     expect(cannotReopen(CARD)).toBeUndefined();
     const chat = { ...CARD, task: null };
     expect(cannotReopen({ ...chat, chat_reopen: "reopens" })).toBeUndefined();
-    expect(cannotReopen({ ...chat, chat_reopen: "no_conversation" })).toBe(NO_CONVERSATION);
+    expect(cannotReopen({ ...chat, chat_reopen: "no_conversation" })).toBe(
+      NO_CONVERSATION_NO_REOPEN,
+    );
     expect(cannotReopen({ ...chat, chat_reopen: "not_kept" })).toBe(NOT_KEPT_NO_REOPEN);
+  });
+
+  it("a chat's card that does not reopen says what to do instead", () => {
+    const chat = { ...CARD, task: null };
+    for (const why of ["no_conversation", "not_kept"] as const)
+      expect(cannotReopen({ ...chat, chat_reopen: why })).toMatch(/Start a new chat to go on\.$/);
   });
 
   it("Reopen on a chat's card reopens it by its number, and on a task's card its task", () => {
