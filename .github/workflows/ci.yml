@@ -588,7 +588,7 @@ jobs:
           fi
           changed=$(git diff --name-only "$BASE" HEAD)
           echo "$changed"
-          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|dockercontext|pools|poolsetup|sshroute|tlsroute|codelink|session)[^/]*(\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_(is_reached_(over_(ssh|tls)|through_a_docker_context)|doctor_names_each_fault)\.rs$|crates/purlis-core/tests/it/an_ssh_runner_takes_a_new_version_beside_the_old\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman|ssh-runner)/|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
+          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|dockercontext|pools|poolsetup|sshroute|tlsroute|codelink|session)[^/]*(\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_(is_reached_(over_(ssh|tls)|through_a_docker_context)|doctor_names_each_fault)\.rs$|crates/purlis-core/tests/it/an_ssh_runner_(takes_a_new_version_beside_the_old|host_outlives_the_sign_out_and_a_restart)\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman|ssh-runner)/|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::nothing of the host, the protocol, the sandbox or the browsers has changed; the parity suite is not run against Docker"
@@ -721,7 +721,7 @@ jobs:
             exit 0
           fi
           changed=$(git diff --name-only "$BASE" HEAD)
-          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|dockercontext|pools|poolsetup|sshroute|tlsroute|codelink|session)[^/]*(\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_(is_reached_(over_(ssh|tls)|through_a_docker_context)|doctor_names_each_fault)\.rs$|crates/purlis-core/tests/it/an_ssh_runner_takes_a_new_version_beside_the_old\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman|ssh-runner)/|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
+          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|dockercontext|pools|poolsetup|sshroute|tlsroute|codelink|session)[^/]*(\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_(is_reached_(over_(ssh|tls)|through_a_docker_context)|doctor_names_each_fault)\.rs$|crates/purlis-core/tests/it/an_ssh_runner_(takes_a_new_version_beside_the_old|host_outlives_the_sign_out_and_a_restart)\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman|ssh-runner)/|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::nothing of the pools or the SSH route has changed; the parity suite is not run against Docker on another machine"
@@ -821,6 +821,21 @@ jobs:
         run: >-
           cargo nextest run --locked -p purlis-core --profile ci --retries 0 --no-tests fail
           --test-threads 1 --test it -E 'test(/^an_ssh_runner_takes_a_new_version_beside_the_old::/)'
+      # **A runner's host kept by systemd outlives an SSH drop and a sign-out, and comes back after
+      # a restart** (RR-15, #724, ADR 0068 §3 as amended for #724): an Ubuntu machine that boots
+      # systemd, behind an sshd whose sign-ins are logind sessions (`tests/ssh-runner/up-systemd.sh`).
+      # `purlis serve --install` hands the host to the account's user manager with linger; every
+      # SSH connection is cut and the account signed out, and the host and its chats keep running;
+      # `docker restart` restarts the machine, and the host comes back on its own and settles what
+      # the restart ended from its record.
+      - name: A machine that boots systemd, behind an sshd
+        if: steps.scope.outputs.run == 'true'
+        run: tests/ssh-runner/up-systemd.sh
+      - name: A runner's host outlives the sign-out and comes back after a restart
+        if: steps.scope.outputs.run == 'true'
+        run: >-
+          cargo nextest run --locked -p purlis-core --profile ci --retries 0 --no-tests fail
+          --test-threads 1 --test it -E 'test(/^an_ssh_runner_host_outlives_the_sign_out_and_a_restart::/)'
       - name: The behaviour suite on its remote Docker pool target
         if: ${{ !cancelled() && steps.scope.outputs.run == 'true' }}
         run: >-
@@ -838,6 +853,8 @@ jobs:
           tail -n 200 "$RUNNER_TEMP/podman-service.log" || true
           docker logs --tail 100 ssh-runner || true
           docker exec ssh-runner sh -c 'tail -n 200 /home/runner/serve.log; ls -laR /home/runner/.config' || true
+          docker logs --tail 100 ssh-runner-systemd || true
+          docker exec ssh-runner-systemd sh -c 'systemctl --failed --no-pager; loginctl list-users; journalctl -b --no-pager -n 300; ls -laR /home/keeper/.config' || true
 
   # A required check, so it always runs, and skips its steps when nothing Rust reads has changed.
   deny:
