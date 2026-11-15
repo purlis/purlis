@@ -298,6 +298,49 @@ impl ScreensComing {
     }
 }
 
+/// **A closed chat as the Chats list's filter finds it** (#6484): its number and the ones it had
+/// before a restart, what its tab said, where it ran and when it closed. Choosing it opens its
+/// card (`chat_by_number`).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub(crate) struct ClosedChat {
+    pub number: u32,
+    pub earlier: Vec<u32>,
+    pub title: String,
+    pub place: String,
+    /// When it closed, UTC, RFC 3339.
+    pub ended: String,
+}
+
+/// The chats of `held`'s project that closed and are not open again, newest close first
+/// (`chatlookup::closed_now`).
+pub(crate) fn closed_chats_of(held: &Held) -> Vec<ClosedChat> {
+    let chats = purlis_core::chatrecords::every(held.root());
+    chatlookup::closed_now(&chats, &open_chats(held))
+        .into_iter()
+        .map(|chat| ClosedChat {
+            number: chat.number,
+            earlier: chat.earlier.clone(),
+            title: chat.title.clone(),
+            place: chat.place.clone(),
+            ended: chat.ended.clone(),
+        })
+        .collect()
+}
+
+/// **The closed chats the Chats list's filter looks among** (#6484): read as the filter asks,
+/// on a blocking thread. The window's alone, as the card's lookup is (ADR 0052).
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn closed_chats(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<Vec<ClosedChat>, String> {
+    let held = planes.held(&plane)?;
+    tauri::async_runtime::spawn_blocking(move || closed_chats_of(&held))
+        .await
+        .map_err(|err| format!("reading the closed chats did not finish: {err}"))
+}
+
 /// **Reopens closed chat `number` from the record the app kept of it** (#6485): *Reopen* on a
 /// card drawn from its chat's record. It starts again on its conversation as the same chat
 /// (`Chats::reopen_closed`); a card drawn from a task reopens through its finished row

@@ -462,3 +462,23 @@ fn a_closed_chat_is_found_under_every_number_it_had_before_a_restart() {
         );
     }
 }
+
+// #6484: the Chats list's filter finds a closed chat among those not open again.
+
+#[test]
+fn the_closed_chats_are_every_record_but_those_open_again() {
+    const OTHER_ID: &str = "01K6CHATS0000000000000000D";
+    let reopened = ChatRecord {
+        number: 650,
+        id: OTHER_ID.to_owned(),
+        ..closed_702()
+    };
+    let chats = vec![closed_702(), reopened];
+
+    let closed = closed_now(&chats, &[open_chat(731, OTHER_ID)]);
+
+    assert_eq!(
+        closed.iter().map(|chat| chat.number).collect::<Vec<_>>(),
+        [702]
+    );
+}

@@ -1598,6 +1598,7 @@ export const commands = {
 	 */
 	taskFolderShared: (plane: PlaneId, session: number, place: string | null) => typedError<string | null, string>(__TAURI_INVOKE("task_folder_shared", { plane, session, place })),
 	chatByNumber: __WINDOW_ONLY_RESULT,
+	closedChats: __WINDOW_ONLY_RESULT,
 	chatScreen: __WINDOW_ONLY_RESULT,
 	taskScreens: __WINDOW_ONLY_RESULT,
 	setTaskScreens: __WINDOW_ONLY_RESULT,
@@ -1608,12 +1609,7 @@ export const commands = {
 	finishedTasks: (plane: PlaneId) => typedError<FinishedTask[], string>(__TAURI_INVOKE("finished_tasks", { plane })),
 	clearFinishedTasks: __WINDOW_ONLY_RESULT,
 	reopenFinishedTask: __WINDOW_ONLY_RESULT,
-	/**
-	 *  **Reopen** on the card of a closed chat drawn from its chat's record (#6485): the chat started
-	 *  again on its conversation, as the same chat under a new number
-	 *  ([`chatcard::reopen_closed`]). The answer is the chat as the window draws it.
-	 */
-	reopenClosedChat: (plane: PlaneId, number: number, columns: number, rows: number) => typedError<OpenChat, string>(__TAURI_INVOKE("reopen_closed_chat", { plane, number, columns, rows })),
+	reopenClosedChat: __WINDOW_ONLY_RESULT,
 	resumeEndedChat: __WINDOW_ONLY_RESULT,
 	taskBrief: __WINDOW_ONLY_RESULT,
 	activity: __WINDOW_ONLY_RESULT,
@@ -5282,6 +5278,20 @@ export type CloneToVouch = {
 export type CloseHanded = {
 	plane: PlaneId,
 	sessions: number[],
+};
+
+/**
+ *  **A closed chat as the Chats list's filter finds it** (#6484): its number and the ones it had
+ *  before a restart, what its tab said, where it ran and when it closed. Choosing it opens its
+ *  card (`chat_by_number`).
+ */
+export type ClosedChat = {
+	number: number,
+	earlier: number[],
+	title: string,
+	place: string,
+	/**  When it closed, UTC, RFC 3339. */
+	ended: string,
 };
 
 /**

@@ -145,6 +145,21 @@ fn closed(chat: Option<&ChatRecord>, open: &[OpenChat]) -> Found {
     }
 }
 
+/// **The chats that closed and are not open again** (#6484), in `chats` as
+/// [`chatrecords::every`] read them, newest close first: what the Chats list's filter finds a
+/// closed chat among. One open again under another number is that open chat's row, matched by
+/// its ULID.
+pub fn closed_now<'c>(chats: &'c [ChatRecord], open: &[OpenChat]) -> Vec<&'c ChatRecord> {
+    chats
+        .iter()
+        .filter(|chat| {
+            !open
+                .iter()
+                .any(|one| one.id.as_deref() == Some(chat.id.as_str()))
+        })
+        .collect()
+}
+
 fn open_under(number: u32, open: &[OpenChat]) -> Option<Found> {
     open.iter()
         .any(|chat| chat.number == number)

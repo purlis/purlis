@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  closedFound,
   arranged,
   asking,
   filters,
@@ -18,6 +19,7 @@ import {
   type Rank,
 } from "./chatsList";
 import { chatsTree, type ChatRow, type ListedChat } from "./chatsTree";
+import type { ClosedChat } from "./bindings";
 import type { Shown, ShownKind } from "./shownState";
 
 /** A chat started by `parent`, where one started it, working in `workspace`. */
@@ -278,5 +280,47 @@ describe("how long a chat has been in its state", () => {
       "23h",
       "3d",
     ]);
+  });
+});
+
+describe("a closed chat found by the filter (#6484)", () => {
+  const CLOSED: ClosedChat[] = [
+    {
+      number: 731,
+      earlier: [702],
+      title: "Tidy the changelog",
+      place: "smart-ide",
+      ended: "2026-11-12T11:00:00Z",
+    },
+    {
+      number: 650,
+      earlier: [],
+      title: "Sign commits",
+      place: "docs",
+      ended: "2026-11-12T09:00:00Z",
+    },
+  ];
+  const words = (text: string) => closedFound(CLOSED, { text, ranks: [] }, new Set());
+
+  it("is found by its title and where it ran, every word", () => {
+    expect(words("changelog").map((one) => one.number)).toEqual([731]);
+    expect(words("tidy smart").map((one) => one.number)).toEqual([731]);
+    expect(words("docs").map((one) => one.number)).toEqual([650]);
+    expect(words("tidy docs")).toEqual([]);
+  });
+
+  it("is found by its number, or one it had before a restart, and by nothing else then", () => {
+    expect(words("731").map((one) => one.number)).toEqual([731]);
+    expect(words("#702").map((one) => one.number)).toEqual([731]);
+    expect(words("70")).toEqual([]);
+  });
+
+  it("is never found by a chip, nor with nothing typed: both ask about running chats", () => {
+    expect(closedFound(CLOSED, { text: "", ranks: [] }, new Set())).toEqual([]);
+    expect(closedFound(CLOSED, { text: "tidy", ranks: [0] }, new Set())).toEqual([]);
+  });
+
+  it("is not found twice where the list draws it already as a finished task", () => {
+    expect(closedFound(CLOSED, { text: "tidy", ranks: [] }, new Set([731]))).toEqual([]);
   });
 });

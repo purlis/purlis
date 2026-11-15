@@ -3478,6 +3478,11 @@ export const commands = {
 	 */
 	chatByNumber: (plane: PlaneId, number: number) => typedError<ChatLookup, string>(__TAURI_INVOKE("chat_by_number", { plane, number })),
 	/**
+	 *  **The closed chats the Chats list's filter looks among** (#6484): read as the filter asks,
+	 *  on a blocking thread. The window's alone, as the card's lookup is (ADR 0052).
+	 */
+	closedChats: (plane: PlaneId) => typedError<ClosedChat[], string>(__TAURI_INVOKE("closed_chats", { plane })),
+	/**
 	 *  **What chat `chat` showed as it closed** (#6214), where this machine kept it: what *Read it*
 	 *  draws read-only. Null where nothing was kept.
 	 */
@@ -8560,6 +8565,20 @@ export type CloneToVouch = {
 export type CloseHanded = {
 	plane: PlaneId,
 	sessions: number[],
+};
+
+/**
+ *  **A closed chat as the Chats list's filter finds it** (#6484): its number and the ones it had
+ *  before a restart, what its tab said, where it ran and when it closed. Choosing it opens its
+ *  card (`chat_by_number`).
+ */
+export type ClosedChat = {
+	number: number,
+	earlier: number[],
+	title: string,
+	place: string,
+	/**  When it closed, UTC, RFC 3339. */
+	ended: string,
 };
 
 /**
