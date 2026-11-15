@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794720902337,
+  "lastUpdate": 1794736182800,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -49728,6 +49728,48 @@ window.BENCHMARK_DATA = {
             "value": 101.712123,
             "unit": "ms",
             "extra": "median of 5 runs: 101.147, 101.347, 101.712, 102.223, 102.649 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "2a0d21d3cdb262a51e2020cbcbe7cdb04a3e74f1",
+          "message": "e2e: every window-settle wait gets 20s, as two specs already do (#6686)\n\n* e2e: tab-chip waits 20s for the window to settle\n\n* e2e: settings-tables waits 20s for the window to settle\n\n* e2e: settings-limits waits 20s for the window to settle",
+          "timestamp": "2026-11-15T09:14:41Z",
+          "tree_id": "e9f3d1cae6ef3129903ce0515d648ed83df7f190",
+          "url": "https://github.com/purlis/purlis/commit/2a0d21d3cdb262a51e2020cbcbe7cdb04a3e74f1"
+        },
+        "date": 1794736175308,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5463005000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.541, 0.544, 0.546, 0.547, 0.554 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.178121500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.090, 16.158, 16.178, 16.258, 16.415 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.06772699999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.536, 100.821, 101.068, 101.926, 103.050 ms"
           }
         ]
       }
