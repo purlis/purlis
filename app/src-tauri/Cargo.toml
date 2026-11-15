@@ -47,6 +47,8 @@ purlis-core.workspace = true
 purlis-unicode.workspace = true
 # The session host the window starts with its own binary and is the first client of (#1997).
 purlis-host.workspace = true
+# The key proxy its session host starts for a run, through `purlis_host::ProxiesKeys` (T1a-04).
+purlis-key-proxy.workspace = true
 # purlis's own wrap of a chat on Linux (#1040): the app answers the hidden `_sandbox` itself, so
 # the program that starts a chat can wrap it.
 purlis-linux-sandbox.workspace = true

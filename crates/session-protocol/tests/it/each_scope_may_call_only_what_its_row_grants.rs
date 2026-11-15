@@ -513,6 +513,13 @@ fn every_command() -> Vec<Command> {
         },
         // Where the host's own event log ends (1.41, #3393): the window's, and relayed.
         Command::LogEnd,
+        // A run's key proxy, started and stopped by the window on its own host (1.90, T1a-04).
+        Command::StartKeyProxy {
+            run: "01J9CHAT0000000000000000KP".into(),
+        },
+        Command::StopKeyProxy {
+            run: "01J9CHAT0000000000000000KP".into(),
+        },
         // A skill change at the person's terminal, audited by the host (1.82, SK-11a): the
         // terminal's alone.
         Command::AuditSkillChange {
@@ -654,6 +661,8 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "repos_held",
             "undo_turn",
             "log_end",
+            "start_key_proxy",
+            "stop_key_proxy",
             "answer_grade",
             "grade_step",
             "inspect",

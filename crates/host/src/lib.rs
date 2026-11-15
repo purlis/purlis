@@ -98,7 +98,10 @@ pub use browsers::{
 #[cfg(unix)]
 pub use code::{Carried, Code, MovesNoCode, TRANSFER_WITHIN};
 #[cfg(unix)]
-pub use confining::{Askable, Confine, ConfinesNothing, Confining, Planned, Tell, ToConfine};
+pub use confining::{
+    Askable, Confine, ConfinesNothing, Confining, KeyProxyStarted, KeyProxyTell, KeyProxyTold,
+    Planned, ProxiesKeys, ProxiesNoKeys, Tell, ToConfine,
+};
 #[cfg(unix)]
 pub use connector::{
     BeforeEach, BeforeEachChecked, CommandConnector, Connected, NotChecked, Prepare, Prepared,

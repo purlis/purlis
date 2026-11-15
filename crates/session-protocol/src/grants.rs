@@ -61,6 +61,7 @@
 //! | `ask_grade`, a grade of a skill asked for from a terminal, and the pushed `grade_step` of it (1.63) | | yes | | | | |
 //! | `answer_grade`, `grade_step`, and the pushed `grade_asked` and `stop_grade`: running a grade a terminal asked for (1.63) | yes | | | | | |
 //! | `audit_skill_change`, a skill change at a terminal on an org's project, which the host writes in the event log (1.82) | | yes | | | | |
+//! | `start_key_proxy`, `stop_key_proxy`, a run's key proxy (1.90) | yes | | | | | |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
 //! **Why each row is what it is.**
@@ -68,6 +69,12 @@
 //! - **Vault values and settings writes are `local-ui`'s alone** (V7). The session protocol has
 //!   no command that reads a value or writes a setting; both are the app's commands, which ride
 //!   only the UI RPC, and the UI RPC opens for `local-ui` only.
+//! - **A run's key proxy is the window's alone, on its own host** (1.90, T1a-04, R-055, B-16).
+//!   Its start's answer carries the run's token, which leaves the host in that answer and in
+//!   the harness's environment the window composes, and nowhere else (B-2): a chat's MCP path,
+//!   a terminal, an approval client or an editor never starts one or stops one. A runner's key
+//!   proxy starts from the plan its desktop sends (phase 1a's set iii), not from this command,
+//!   so the desktop's relay carries it to no other host.
 //! - **A start's `launch` is the window's alone** (1.2). It is what the window composed above
 //!   its seam, the program, its words and its environment. No other scope hands the host a
 //!   program and an environment to run; each starts by persona, profile and harness, which the
@@ -390,6 +397,9 @@ pub enum Power {
     /// an org's project, written in the event log by the host. The person's, at their terminal,
     /// and no other scope's.
     AuditSkillChange,
+    /// `start_key_proxy`, `stop_key_proxy` (1.90, T1a-04): a run's key proxy, started and
+    /// stopped by the window on its own host, and no other scope's.
+    KeyProxy,
 }
 
 impl Scope {

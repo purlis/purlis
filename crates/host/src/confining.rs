@@ -29,6 +29,10 @@
 //! connection while the person is asked only once a program runs in it and such a link is there
 //! to ask. A confinement the host composes for a chat is named to the link that started it,
 //! where the start asked (1.16, #2407).
+//!
+//! **A run's key proxy is started the same way** (T1a-04, R-055): through [`ProxiesKeys`], the
+//! binary's, which owns the key proxy's own runtime and crate, so this crate links no HTTP code.
+//! Only the window's link starts or stops one ([`purlis_session_protocol::grants::Power::KeyProxy`]).
 
 use std::path::Path;
 use std::sync::Arc;
@@ -130,5 +134,56 @@ impl Confine for ConfinesNothing {
         _askable: Askable,
     ) -> Result<Box<dyn Confining>, String> {
         Err("this session host was given no way to start a chat's confinement".into())
+    }
+}
+
+/// **A run's key proxy, as the host hands it to its [`ProxiesKeys`]** (T1a-04, R-055): what it
+/// tells the host, through the callback the host supplies with each start.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KeyProxyTold {
+    /// A line for the host's log. Never the token.
+    Said(String),
+    /// A line of the network record: a request it answered, and how. Never a header, so never
+    /// the token.
+    Record {
+        method: String,
+        path: String,
+        status: u16,
+    },
+}
+
+/// Who hears what a run's key proxy did: the host.
+pub type KeyProxyTell = Arc<dyn Fn(KeyProxyTold) + Send + Sync + 'static>;
+
+/// A key proxy started for a run: its port on `127.0.0.1`, and its token, which leaves the host
+/// in the start's answer alone (B-2).
+pub struct KeyProxyStarted {
+    pub port: u16,
+    pub token: String,
+}
+
+/// **Starts and stops a run's key proxy** (T1a-04, R-055): the binary's, beside [`Confine`], so
+/// the host links no HTTP code (`tests/it/the_host_links_no_git_http_or_keyring_code.rs`). The
+/// binary's own owns the key proxy's runtime and its crate; the host only calls it, on the
+/// window's [`session::Command::StartKeyProxy`] and [`session::Command::StopKeyProxy`].
+pub trait ProxiesKeys: Send + Sync + 'static {
+    /// Starts a listener for `run`, telling `tell` what it does; or why it cannot, in a
+    /// sentence. Binds and returns: never waits on a request.
+    fn start(&self, run: &str, tell: KeyProxyTell) -> Result<KeyProxyStarted, String>;
+
+    /// Stops `run`'s listener and every connection on it; or why not (none runs), in a sentence.
+    fn stop(&self, run: &str) -> Result<(), String>;
+}
+
+/// A host whose binary starts no key proxy: every start is refused with a sentence.
+pub struct ProxiesNoKeys;
+
+impl ProxiesKeys for ProxiesNoKeys {
+    fn start(&self, _run: &str, _tell: KeyProxyTell) -> Result<KeyProxyStarted, String> {
+        Err("this session host was given no way to start a key proxy".into())
+    }
+
+    fn stop(&self, _run: &str) -> Result<(), String> {
+        Err("this session host was given no way to start a key proxy".into())
     }
 }

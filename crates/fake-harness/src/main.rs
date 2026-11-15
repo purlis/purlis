@@ -18,7 +18,6 @@
 mod acp;
 #[cfg(unix)]
 mod mcp;
-mod model;
 mod net;
 mod synthetic;
 
@@ -227,7 +226,7 @@ fn run(args: &Args) -> Result<(), String> {
             .map_err(|err| format!("cannot grant port {port}: {err}"));
     }
     if let (Some(command), Some(said)) = (&args.model, &args.model_said) {
-        return model::serve(command, said);
+        return fake_harness::model::serve(command, said);
     }
     if args.serve {
         return net::serve();
