@@ -5,8 +5,9 @@
 //! binary's [`purlis_host::ProxiesKeys`], as the window's binary has its own, which owns the key
 //! proxy's runtime and its crate, so the host links no HTTP code. Only the window's link starts
 //! one, and a runner's link is never the window's, so none is started here yet: a runner's key
-//! proxy starts from its desktop's plan in phase 1a's set iii. The runtime, two threads of its own, is made at the first start and not
-//! before, so a host that never starts one has none (R-062).
+//! proxy starts from its desktop's plan in phase 1a's set iii. The runtime, two threads of its
+//! own, is made at the first start and not before, so a host that never starts one has none
+//! (R-062).
 
 use std::sync::{Arc, OnceLock};
 

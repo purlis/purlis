@@ -6,9 +6,14 @@
 //! keeps everything the key proxy tells the host: its log lines and its network record. A
 //! request carrying the token in both credential headers is served, the run is stopped, and the
 //! token is in none of those lines, nor in any event the host pushed its window.
+//!
+//! The host's own log goes to its standard error, which a test in this process cannot read, so
+//! the start runs in this test binary run again as a child, and every byte that child writes,
+//! on either stream, is read for the token: but for the one line it hands the token back on.
 
 #![cfg(unix)]
 
+use std::process::Command as Program;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -22,6 +27,12 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, duplex};
 use crate::the_start_command_brings_up_a_listener_through_the_trait::hosting_with;
 
 const RUN: &str = "01J9RUN000000000000000000C";
+
+/// Set in the child's environment alone: only there does [`the_hosts_run_of_the_start`] run.
+const CHILD: &str = "PURLIS_TEST_TOKEN_CHILD";
+
+/// The line the child hands the token back on, the one line not read for it.
+const HANDED_BACK: &str = "the start answered the token: ";
 
 /// The real key proxy behind the trait, keeping a copy of all it tells the host.
 #[derive(Clone)]
@@ -71,8 +82,50 @@ impl ProxiesKeys for KeepsWhatItTells {
     }
 }
 
+#[test]
+fn the_token_never_leaves_the_host_but_in_the_start_reply() {
+    let ran = Program::new(std::env::current_exe().expect("the test binary"))
+        .args([
+            "the_token_never_leaves_the_host_but_in_the_start_reply::the_hosts_run_of_the_start",
+            "--exact",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env(CHILD, "1")
+        .output()
+        .expect("the child runs");
+    let stdout = String::from_utf8_lossy(&ran.stdout);
+    let stderr = String::from_utf8_lossy(&ran.stderr);
+    assert!(
+        ran.status.success(),
+        "the host's run of the start failed\n--- stdout\n{stdout}\n--- stderr\n{stderr}"
+    );
+    let canary = stdout
+        .lines()
+        .find_map(|line| line.strip_prefix(HANDED_BACK))
+        .expect("the child handed the token back")
+        .to_owned();
+    assert!(
+        stderr.contains("purlisd: key proxy: "),
+        "the host's log is not in what the child wrote, so it was not read: {stderr}"
+    );
+    let handed_back = format!("{HANDED_BACK}{canary}");
+    for line in stdout.lines().chain(stderr.lines()) {
+        assert!(
+            line == handed_back || !line.contains(&canary),
+            "the token is in what the host wrote: {line}"
+        );
+    }
+}
+
+/// The start, the request and the stop, in the child that
+/// [`the_token_never_leaves_the_host_but_in_the_start_reply`] starts; in any other run it does
+/// nothing.
 #[tokio::test]
-async fn the_token_never_leaves_the_host_but_in_the_start_reply() {
+async fn the_hosts_run_of_the_start() {
+    if std::env::var_os(CHILD).is_none() {
+        return;
+    }
     let proxies = KeepsWhatItTells {
         proxy: Arc::new(KeyProxy::new().expect("its runtime starts")),
         told: Arc::default(),
@@ -105,6 +158,7 @@ async fn the_token_never_leaves_the_host_but_in_the_start_reply() {
     };
     let canary = token.0.clone();
     assert_eq!(canary.len(), 64, "a 256-bit token, as hex");
+    println!("{HANDED_BACK}{canary}");
 
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
