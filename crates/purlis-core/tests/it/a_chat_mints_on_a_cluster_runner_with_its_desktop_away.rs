@@ -369,6 +369,7 @@ fn outside_the_sandbox(kind: ProgramKind) -> StartProgram {
             reporting: None,
             confinement: None,
             prompt_key: None,
+            pools_held: None,
         }),
         ..StartProgram::of(PROJECT, kind)
     }
