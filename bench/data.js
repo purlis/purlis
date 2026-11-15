@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794753820622,
+  "lastUpdate": 1794757391043,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -49938,6 +49938,48 @@ window.BENCHMARK_DATA = {
             "value": 102.22343799999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.248, 101.903, 102.223, 102.937, 104.450 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ac54d76fc20ffeb9b78d7ef9a26722638ef49874",
+          "message": "Runner: prune drained versions, counting only live chats and finishing a cut-short removal (#6688) (#6705)\n\n* Runner: prune drained version folders on the next install (#6688)\n\nOnce a version is in place on an SSH runner, its own binary removes the\nfolders of every version older than the one before it whose host has\ndrained (lock free, socket silent, host record empty), holding that\nhost's lock while it looks and removes. The running version and the one\nbefore it always stay; a version with a live chat is never removed.\n\nRun as exec sh -c '<config>/server/<ver>/purlis bridge --prune', values\nheld to runnerinstall's plain checks. ADR 0078 amended (D-6688-1..4),\nplane-format rows updated, changelog fragment.\n\nReplayed from #6702.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7FQXXBAEQH5FFCF0A252EEJ\nPurlis-Persona: steward\n\n* Runner prune: the new module, its tests, the CLI test, ADR amendment and fragment (#6688)\n\nReplayed from #6702.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7FQXXBAEQH5FFCF0A252EEJ\nPurlis-Persona: steward\n\n* Runner prune: a host stopped by a signal has drained once each chat ended (#6688)\n\nThe SSH fixture showed two things. A desktop's link may not quit a\nrunner's host (only the window's may), so the test now stops version 1's\nhost by a signal, as a person or supervisor does. And a host killed so\nleaves each chat's start beside its end in hosts.jsonl, which the\nnon-empty check read as live for ever: the record now keeps a version\nonly for a program started and not ended.\n\nReplayed from #6702.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7FQXXBAEQH5FFCF0A252EEJ\nPurlis-Persona: steward\n\n* Runner prune: a chat counts as live only as the very process noted in this boot; a removal cut short is finished next time (#6688)\n\nReview fixes to #6702:\n\n- left_running read any start with no end as live, so a host killed\n  while chats ran (SIGKILL, a reboot, no SIGTERM handler, #6700) kept\n  its version for ever. A start now keeps its version only where it is\n  of this boot and its process number's start is the one noted: the\n  host's own check, now purlis_host::Started::still_running, which\n  Terminals::end_what_was_left uses too.\n- The host's folder (its credentials) goes last, after the binary's\n  folder, the sockets and the lock, and a host folder with no binary\n  folder older than the running version is pruned too, so the next\n  prune finishes a removal cut short at any step. A leftover that\n  can't be removed is a failure now, not passed over.\n- Tests: the lock held as each path goes (red when it is dropped\n  first), a removal failing at each of the five steps, a lock that\n  can't be opened, a record that is not a regular file, a host folder\n  with no binary, and starts of another boot, another process, or with\n  nothing to tell them by (each red before the fix).\n- runnerinstall::prune holds probed.config to a_plain_path and refuses\n  it as Unusable rather than reaching for_login_shell's assert.\n- ADR 0078 amendment D-6688-2..4 and the plane-format row say what\n  frees a version now: its host's end, however it comes, once none of\n  its chats' processes still runs.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7FQXXBAEQH5FFCF0A252EEJ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-15T15:07:12Z",
+          "tree_id": "1f821b8d12bf4a3f9e115a6f58d6d16744071691",
+          "url": "https://github.com/purlis/purlis/commit/ac54d76fc20ffeb9b78d7ef9a26722638ef49874"
+        },
+        "date": 1794757384851,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5535865,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.549, 0.551, 0.554, 0.557, 0.562 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2361775,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.160, 16.236, 16.236, 16.246, 16.424 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.66823400000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.063, 101.012, 101.668, 102.173, 102.492 ms"
           }
         ]
       }
