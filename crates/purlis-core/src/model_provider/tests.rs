@@ -101,7 +101,20 @@ fn an_unknown_field_is_refused_naming_it() {
 #[test]
 fn a_missing_id_is_refused() {
     let why = refusal(&edited("id = \"anthropic\"\n", ""), &From::BuiltIn);
-    assert!(why.contains("id"), "{why}");
+    assert!(why.contains("`id`"), "{why}");
+}
+
+#[test]
+fn a_missing_name_is_refused_naming_it() {
+    let why = refusal(&edited("name = \"Anthropic\"\n", ""), &From::BuiltIn);
+    assert!(why.contains("`name`"), "{why}");
+}
+
+#[test]
+fn a_project_cloud_auth_mode_is_refused() {
+    let text = project_text("acme", "Acme gateway", "router") + "auth = \"sigv4\"\n";
+    let why = refusal(&text, &project());
+    assert!(why.contains("auth") && why.contains("sigv4"), "{why}");
 }
 
 #[test]
