@@ -144,7 +144,7 @@ pub fn asset_name(version: &str, target: Target) -> String {
     format!("{BINARY}-{version}-{}", target.name())
 }
 
-/// **Where the release publishes that asset**; its signature is beside it, with `.minisig`.
+/// **Where the release publishes that asset**; its signature is beside it, with `.sig` (`release-manifest`'s `sign-runner-binary`).
 #[must_use]
 pub fn asset_url(version: &str, target: Target) -> String {
     format!("{RELEASES}/v{version}/{}", asset_name(version, target))
