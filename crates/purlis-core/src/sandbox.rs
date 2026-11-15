@@ -2543,8 +2543,19 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
     // is decided by which is there, so a chat that could make `purlis/` beside `charter/`
     // would be writing the approvals charter reads next.
     if let Some(config_root) = config_root {
+        let a_runner = machine.is_a_runner();
         for home in crate::machine::dirs_spelled(&config_root) {
             deny(Class::HumanPowers, home.clone(), Access::Write);
+            // On a runner, the versions of purlis installed over SSH (V16 d, RR-14, #723): no
+            // chat writes there, so none changes the binary a later host or a connector runs.
+            // Reading stays open, since a chat's hooks run that binary.
+            if a_runner {
+                deny(
+                    Class::RunnerInternals,
+                    home.join(crate::runnerinstall::SERVER_DIR),
+                    Access::Write,
+                );
+            }
             // The human client scopes' credentials (FD-27, V16a): a chat neither reads nor
             // writes anything there, so it holds no person's credential. The host's socket
             // is in the runtime directory (below); a connect to it is network to a sandbox,

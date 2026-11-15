@@ -25,7 +25,7 @@ use workflow::{Job, release_jobs};
 /// when the run publishes, so it names the environment outright. And `x && 'release' || ''`,
 /// never `x && '' || 'release'`: an empty string is falsy in a workflow expression, so the
 /// second form is `release` every time.
-const EXPECTED: [(&str, &str); 5] = [
+const EXPECTED: [(&str, &str); 7] = [
     (
         "plan",
         "${{ github.event_name == 'push' && 'release' || '' }}",
@@ -36,6 +36,17 @@ const EXPECTED: [(&str, &str); 5] = [
     ),
     // Signs the runner image's line with the updater's key (#2749).
     ("runner-image-signature", "release"),
+    // Builds the Linux aarch64 runner binary with the Report intake's address compiled in, as
+    // `build` does, keyed on what `plan` decided as `build` is (#723).
+    (
+        "runner-binary-aarch64",
+        "${{ needs.plan.outputs.publish == 'true' && 'release' || '' }}",
+    ),
+    // Signs each runner platform's purlis with the updater's key when the run publishes (#723).
+    (
+        "runner-binaries",
+        "${{ needs.plan.outputs.publish == 'true' && 'release' || '' }}",
+    ),
     ("publish", "release"),
     // Reads the Report intake's upload token, which lives in the environment beside the signing
     // keys and is held to the same refs (#5692).

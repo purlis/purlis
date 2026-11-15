@@ -263,7 +263,10 @@ test("plan asks whether the dev channel already serves this commit or a later on
   assert.ok(plan.includes("GH_TOKEN: ${{ github.token }}"));
   // And `skip` is what keeps every build, and so every publish, from starting.
   assert.equal(value(job("build"), 4, "if"), "needs.plan.outputs.skip != 'true'");
-  assert.equal(value(job("publish"), 4, "needs"), "[plan, build, manifest, provenance]");
+  assert.equal(
+    value(job("publish"), 4, "needs"),
+    "[plan, build, runner-binaries, manifest, provenance]",
+  );
 });
 
 test("the publish job asks again before it replaces the first dev asset, and stops unless told to publish", () => {
@@ -308,6 +311,8 @@ test("every job has a deadline, so a hung one cannot hold the dev builds' group 
     "build",
     "runner-image",
     "runner-image-signature",
+    "runner-binary-aarch64",
+    "runner-binaries",
     "sbom",
     "manifest",
     "provenance",
@@ -532,4 +537,49 @@ test("every compile of a build takes the Report intake's address from the releas
       `${name} builds without the intake's address`,
     );
   }
+});
+
+// The runner binaries (#723): two are `build`'s own binaries, the third a keyless job's, and the
+// job that signs them builds nothing while the key is in its environment.
+test("the runner binaries are build's own and one keyless job's, signed by a job that builds nothing with the key", () => {
+  const build = job("build");
+  assert.ok(build.some((line) => line.trim() === "runner_target: macos-arm64"));
+  assert.ok(build.some((line) => line.trim() === "runner_target: linux-x86_64"));
+  const handed = step(build, "It is this platform's runner binary, saying this release's version");
+  assert.ok(handed.some((line) => line.includes('tools/runner-binary-check.sh "target/$PROFILE/purlis"')));
+
+  const arm = job("runner-binary-aarch64");
+  assert.equal(value(arm, 4, "runs-on"), "ubuntu-24.04-arm");
+  assert.ok(!arm.some((line) => line.includes("SIGNING")), "it names no signing key");
+  assert.ok(arm.some((line) => line.includes('cargo auditable build --profile "$PROFILE" --locked -p purlis-cli')));
+  // cargo-auditable is the pinned release binary, checked against its digest, not compiled.
+  assert.ok(arm.some((line) => line.trim() === "tool: cargo-auditable@0.7.6"));
+  assert.ok(!arm.some((line) => line.includes("cargo install")));
+
+  const sign = job("runner-binaries");
+  assert.equal(value(sign, 4, "needs"), "[plan, build, runner-binary-aarch64]");
+  const signer = step(sign, "The signer, built with no key in reach");
+  assert.ok(!signer.some((line) => line.includes("secrets.")), "no secret where it compiles");
+  const signing = step(sign, "Signed with the updater's key for this version and platform");
+  assert.ok(signing.some((line) => line.includes("secrets.TAURI_SIGNING_PRIVATE_KEY")));
+  assert.ok(
+    !signing.some((line) => /\bcargo\b/.test(line)),
+    "nothing is compiled, and no build script runs, in the step that holds the key",
+  );
+  for (const target of ["linux-x86_64", "linux-aarch64", "macos-arm64"]) {
+    assert.ok(
+      sign.some((line) => line.trim() === `name: purlis-runner-unsigned-${target}-\${{ needs.plan.outputs.version }}`),
+      `${target} is downloaded by its exact name`,
+    );
+    assert.ok(
+      sign.some((line) => line.trim() === `name: purlis-runner-${target}-\${{ needs.plan.outputs.version }}`),
+      `${target} is handed on by its exact name`,
+    );
+  }
+});
+
+test("a dev publish keeps the last dev builds' runner assets, not only its own", () => {
+  const publish = job("publish").join("\n");
+  assert.match(publish, /node tools\/dev-runner-assets\.mjs "\$VERSION"/);
+  assert.doesNotMatch(publish, /startswith\("purlis-'"\$VERSION"'-"\)/);
 });

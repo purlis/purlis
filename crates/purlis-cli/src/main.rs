@@ -995,9 +995,11 @@ fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
             }),
         }
     });
+    // A runner's binary installed as one version of several keeps a socket and a folder of its
+    // version's own, so it serves beside an older version's host, which drains (RR-14, #723).
     let place = purlis_host::Place::at(
         purlis_core::hostsocket::here(),
-        purlis_core::machine::charterd(&config),
+        purlis_core::machine::host_folder(&config),
     );
     // A cluster runner follows a roll of the key it holds the operator's mint port to (#4207).
     purlis_core::forge::mintport::keep_following(config.clone());
