@@ -44,7 +44,7 @@ test("a malformed line is refused with its line number", () => {
   assert.throws(() => parseList("A_B ubuntu-24.04 30\n"), /line 1.*entry/);
 });
 
-test("the_main_scheduler_runs_a_listed_branch_entry", () => {
+test("a listed entry becomes one row of the scheduler's matrix", () => {
   const { include } = matrixOf(parseList(sample), PUBLIC).matrix;
   assert.deepEqual(include[0], { entry: "placeholder", "runs-on": "ubuntu-24.04", timeout: 30, quiet: false });
 });
