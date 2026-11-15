@@ -7598,8 +7598,15 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   `{"by": "chat", "name": "<the chat that handed off, as the person saw it then>"}`; `place`,
   its workspace's name or `project root`; `earlier`, absent for a chat never restarted, the
   numbers it had before a restart, oldest first, at most 64 (#6486): a lookup of any of them
-  finds the chat. A chat closed again replaces its entry, by its ULID
-  or its number. At most 2000 entries and 2 MiB read; an entry that does not hold together (an
+  finds the chat; `chat`, absent in an entry written before it was kept, **what its Reopen
+  starts** (#6485): the chat as it closed, spelt as a `chats[]` entry of
+  [`app/reopen.json`](#appreopenjson) is, without what was its run's or its place's alone (no
+  `pid`, `run`, tab or pane, work left running, or `from`, so a handoff or a task reopens as an
+  ordinary chat that owes nobody a report). Reopen starts it again on its `resume`
+  conversation, as the same `id` under a new number; one with no `resume`, or an entry with no
+  `chat`, does not reopen, and its card says why. A `chat` that does not read as one reads as
+  absent. A chat closed again replaces its entry, by its ULID
+  or its number. At most 2000 entries and 8 MiB read; an entry that does not hold together (an
   id that is not a ULID, a time that is not one) is left out, and a file of another version,
   too large, a link or not a file reads as empty.
 - **Status:** **internal** — **purlis only**. Written by the app as a chat closes for good:

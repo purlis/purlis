@@ -7,8 +7,10 @@
 //! what lets a chat the person started by hand, or a handoff, still open its card when its
 //! number is looked up after it closed.
 //!
-//! - **Only what the card shows**: its number, its ULID, its title as it closed, when it started
-//!   and ended, who started it and where it ran. **No screen**: the person's ruling of
+//! - **What the card shows, and what its Reopen starts**: its number (and those it had before a
+//!   restart, #6486), its ULID, its title as it closed, when it started and ended, who started
+//!   it and where it ran; and the chat as it closed, held to what a reopen needs (#6485,
+//!   [`ChatRecord::reopened`]). **No screen**: the person's ruling of
 //!   2026-11-11 keeps a screen for dispatched tasks only ([`crate::chatscreens`]), so *Read it*
 //!   on an ordinary chat's card is always disabled.
 //! - **Kept as the chat closes for good**, by the app: closed in the window, dropped at a
@@ -55,8 +57,9 @@ const VERSION: u32 = 1;
 /// chats, with room to spare.
 pub const MOST_KEPT: usize = 2000;
 
-/// The most bytes of the file read: [`MOST_KEPT`] entries of a long title each.
-pub const MOST_FILE_BYTES: u64 = 2 * 1024 * 1024;
+/// The most bytes of the file read: [`MOST_KEPT`] entries of a long title and a chat kept for
+/// its Reopen (#6485) each.
+pub const MOST_FILE_BYTES: u64 = 8 * 1024 * 1024;
 
 /// The longest title kept, in characters: a tab's name is far shorter.
 const MOST_TITLE_CHARS: usize = 200;
@@ -80,6 +83,79 @@ pub struct ChatRecord {
     /// The numbers it answered to before a restart dealt it [`Self::number`], oldest first
     /// (#6486): each is looked up to it too. At most [`MOST_EARLIER`].
     pub earlier: Vec<u32>,
+    /// **What its Reopen starts** (#6485): the chat as it closed, held to what a reopen needs
+    /// ([`for_a_reopen`]), spelt as the record of open chats spells it. `None` in an entry
+    /// written before it was kept, which does not reopen.
+    pub chat: Option<crate::reopen::Chat>,
+}
+
+/// **Why a closed chat's Reopen does nothing** (#6485).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CannotReopen {
+    /// It closed before purlis kept what a reopen needs.
+    NotKept,
+    /// Its harness named no conversation, so there is nothing to start it again on.
+    NoConversation,
+}
+
+impl ChatRecord {
+    /// **The chat its Reopen starts** (#6485): the chat as it closed, on its conversation, the
+    /// same chat under its ULID in a new run, a new number to be dealt and the one it closed
+    /// under kept with those it had ([`crate::reopen::Chat::renumbered`]), as Resume on an
+    /// ended chat starts one. Refused where nothing was kept or its harness named no
+    /// conversation.
+    pub fn reopened(&self) -> Result<crate::reopen::Chat, CannotReopen> {
+        let chat = self.chat.clone().ok_or(CannotReopen::NotKept)?;
+        if chat.resume.is_none() {
+            return Err(CannotReopen::NoConversation);
+        }
+        Ok(crate::reopen::Chat {
+            number: Some(self.number),
+            earlier: self.earlier.clone(),
+            identity: crate::reopen::Identity {
+                id: Some(self.id.clone()),
+                ..chat.identity.clone()
+            },
+            ..for_a_reopen(&chat)
+        }
+        .renumbered())
+    }
+
+    /// Why its Reopen does nothing, or `None` where it reopens.
+    pub fn cannot_reopen(&self) -> Option<CannotReopen> {
+        self.reopened().err()
+    }
+}
+
+/// **What a closed chat keeps for its Reopen** (#6485): `chat` as it closed, without what was
+/// its run's or its place's alone. No process, run, tab or pane; no work left running; and no
+/// dispatch it came from, so a handoff or a task reopens as an ordinary chat that owes nobody a
+/// report, as a finished task's Reopen does. Its program, words, folder, conversation, persona,
+/// profile, name and sandbox choices stay.
+pub fn for_a_reopen(chat: &crate::reopen::Chat) -> crate::reopen::Chat {
+    crate::reopen::Chat {
+        active: false,
+        from: None,
+        reopened: None,
+        held: None,
+        tab_opened: false,
+        unseen: false,
+        held_from_clusters: false,
+        unattended: false,
+        shows: None,
+        beside: None,
+        pid: None,
+        studio: None,
+        own_work: None,
+        own_pieces: Vec::new(),
+        mid_turn: false,
+        kept_tmp: None,
+        identity: crate::reopen::Identity {
+            run: None,
+            ..chat.identity.clone()
+        },
+        ..chat.clone()
+    }
 }
 
 /// The most earlier numbers a chat keeps, the oldest going first: a month of restarts.
@@ -121,6 +197,10 @@ pub(crate) struct OnDisk {
     /// before it was kept.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     earlier: Vec<u32>,
+    /// [`ChatRecord::chat`], as `reopen::chat_to_json` spells it: absent in every entry written
+    /// before it was kept. One that does not read as a chat reads as absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    chat: Option<serde_json::Value>,
 }
 
 impl OnDisk {
@@ -134,6 +214,10 @@ impl OnDisk {
             started_by: chat.started_by.clone(),
             place: chat.place.clone(),
             earlier: held_earlier(&chat.earlier),
+            chat: chat
+                .chat
+                .as_ref()
+                .map(|kept| crate::reopen::chat_to_json(&for_a_reopen(kept))),
         }
     }
 }
@@ -180,6 +264,7 @@ fn sound(value: serde_json::Value) -> Option<ChatRecord> {
         started_by: one.started_by,
         place: one.place,
         earlier: held_earlier(&one.earlier),
+        chat: one.chat.and_then(crate::reopen::chat_from_json),
     };
     holds_together(&chat).then_some(chat)
 }

@@ -57,10 +57,34 @@ pub(crate) struct ChatCard {
     pub started_by: String,
     /// Whether its last screen was kept: *Read it* is disabled where it was not.
     pub screen_kept: bool,
-    /// Whether a dispatch started it. True with no task for a handoff, or a task that ended
-    /// owing no report: its card is drawn from its chat's record, and *Reopen* says why it does
-    /// nothing in words of its own.
-    pub dispatched: bool,
+    /// **Whether *Reopen* starts a card drawn from its chat's record again** (#6485), and why
+    /// not where it cannot. `None` for a card drawn from its task, whose Reopen is its finished
+    /// row's (`task.reopens`).
+    pub chat_reopen: Option<ChatReopen>,
+}
+
+/// **What *Reopen* does on a card drawn from its chat's record** (#6485): a chat the person
+/// started, a handoff, or a task that ended owing no report.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ChatReopen {
+    /// It starts again on its conversation (`reopen_closed_chat`).
+    Reopens,
+    /// It closed before purlis kept what a reopen needs.
+    NotKept,
+    /// Its harness named no conversation to resume.
+    NoConversation,
+}
+
+impl ChatReopen {
+    fn of(chat: &purlis_core::chatrecords::ChatRecord) -> Self {
+        use purlis_core::chatrecords::CannotReopen;
+        match chat.cannot_reopen() {
+            None => Self::Reopens,
+            Some(CannotReopen::NotKept) => Self::NotKept,
+            Some(CannotReopen::NoConversation) => Self::NoConversation,
+        }
+    }
 }
 
 /// What a card says of a task the person dispatched themselves.
@@ -134,14 +158,15 @@ pub(crate) fn card_of(
         } else {
             record.asker.chat.name.clone()
         },
-        dispatched: true,
+        chat_reopen: None,
     })
 }
 
 /// **The card of a chat no dispatch started** (#6304), from the record the app kept as it
-/// closed: its title, when it closed, who started it and where it ran. No task, so no report
-/// and no Reopen; and its screen was never kept (the person's ruling keeps a task's only), so
-/// *Read it* is disabled with "Its screen was not kept."
+/// closed: its title, when it closed, who started it and where it ran. No task, so no report;
+/// *Reopen* starts it again on its conversation where one was kept (#6485); and its screen was
+/// never kept (the person's ruling keeps a task's only), so *Read it* is disabled with "Its
+/// screen was not kept."
 pub(crate) fn card_of_chat(held: &Held, chat: &purlis_core::chatrecords::ChatRecord) -> ChatCard {
     ChatCard {
         number: chat.number,
@@ -156,21 +181,8 @@ pub(crate) fn card_of_chat(held: &Held, chat: &purlis_core::chatrecords::ChatRec
             purlis_core::chatrecords::StartedBy::Person => STARTED_BY_YOU.to_owned(),
             purlis_core::chatrecords::StartedBy::Chat { name } => name.clone(),
         },
-        dispatched: dispatched(held.root(), chat),
+        chat_reopen: Some(ChatReopen::of(chat)),
     }
-}
-
-/// Whether a dispatch record names chat `chat` as its worker, by its ULID: a handoff, or a task
-/// that ended owing no report, whose card the lookup draws from its chat's record.
-fn dispatched(root: &std::path::Path, chat: &purlis_core::chatrecords::ChatRecord) -> bool {
-    let worker = dispatchrecord::ChatRef {
-        chat: chat.number,
-        id: Some(chat.id.clone()),
-        ..Default::default()
-    };
-    dispatchrecord::ledger(root)
-        .latest_for(root, &worker)
-        .is_some()
 }
 
 /// **Keeps chat `session`'s last screen as it closes for good**, where it is a dispatched task
@@ -284,6 +296,26 @@ impl ScreensComing {
             }
         }
     }
+}
+
+/// **Reopens closed chat `number` from the record the app kept of it** (#6485): *Reopen* on a
+/// card drawn from its chat's record. It starts again on its conversation as the same chat
+/// (`Chats::reopen_closed`); a card drawn from a task reopens through its finished row
+/// (`reopen_finished_task`) instead. Answers the chat it started.
+pub(crate) fn reopen_closed(
+    held: &Held,
+    number: u32,
+    size: purlis_core::engine::Size,
+) -> Result<u32, String> {
+    let record =
+        purlis_core::chatrecords::of_number(&purlis_core::chatrecords::every(held.root()), number)
+            .cloned()
+            .ok_or_else(|| {
+                format!(
+                    "purlis did not reopen chat {number}: it keeps no record of it as it closed."
+                )
+            })?;
+    held.chats().reopen_closed(&record, size)
 }
 
 /// **What `number` names** (#6214): an open chat, one open again under another number, a
@@ -416,6 +448,8 @@ pub(crate) fn closed_record(
         },
         place: workspace.map_or_else(|| PROJECT_ROOT.to_owned(), str::to_owned),
         earlier: chat.earlier.clone(),
+        // What its Reopen starts again (#6485).
+        chat: Some(chat.clone()),
     })
 }
 

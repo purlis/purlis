@@ -230,6 +230,7 @@ fn closed_702() -> ChatRecord {
         started_by: StartedBy::Person,
         place: "smart-ide".to_owned(),
         earlier: Vec::new(),
+        chat: None,
     }
 }
 
@@ -353,6 +354,7 @@ fn closed_641() -> ChatRecord {
         },
         place: "smart-ide".to_owned(),
         earlier: Vec::new(),
+        chat: None,
     }
 }
 

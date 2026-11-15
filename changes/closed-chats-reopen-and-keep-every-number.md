@@ -1,3 +1,9 @@
+### Added
+
+- **Reopen a chat you started yourself after it closed.** *Reopen* on its card starts it again on
+  its conversation, where its harness named one; where it cannot, the card says why. A handoff's
+  card reopens it the same way.
+
 ### Fixed
 
 - **Chats dropped at Start fresh, or left out as a launch put chats back, keep their card.** Their

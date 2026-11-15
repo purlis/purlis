@@ -21,7 +21,7 @@ import {
   type FinishedTask,
   type PlaneId,
 } from "./bindings";
-import { qualifierOf, shownOf, whyNoReopen } from "./finished";
+import { NO_CONVERSATION, qualifierOf, shownOf, whyNoReopen } from "./finished";
 import { capitalised, endedAt } from "./chatEnded";
 import { chatNumberIn, chatNumberSaid, numberedName } from "./chatNumber";
 import type { ViewRef } from "./tabs";
@@ -76,16 +76,12 @@ export function cardWhen(card: ChatCard): string {
   return `${at === undefined ? how : `${how} at ${at}`} · its chat has closed`;
 }
 
-/** Why *Reopen* does nothing on the card of a chat no dispatch started (#6304). */
-export const ORDINARY_NO_REOPEN =
-  "It cannot be reopened from here: purlis keeps the conversation of a dispatched task only.";
-
 /**
- * Why *Reopen* does nothing on the card of a handoff, or of a task that ended owing no report: a
- * dispatch started it, but only a task that owed a report has a finished row to reopen.
+ * Why *Reopen* does nothing on a card drawn from its chat's record where that record kept
+ * nothing to reopen (#6485): it closed before purlis kept what a reopen needs.
  */
-export const DISPATCHED_NO_REOPEN =
-  "It cannot be reopened: purlis reopens a task that owed a report, and this chat was handed off or owed none. Start a new chat to go on.";
+export const NOT_KEPT_NO_REOPEN =
+  "It cannot be reopened: it closed before purlis kept what a reopen needs. Start a new chat to go on.";
 
 /** The card's two buttons, as the card draws them and its palette row names them. */
 export const READ_IT = "Read it";
@@ -105,7 +101,16 @@ export function canRead(card: ChatCard): boolean {
  */
 export function cannotReopen(card: ChatCard): string | undefined {
   if (card.task !== null) return whyNoReopen(card.task);
-  return card.dispatched ? DISPATCHED_NO_REOPEN : ORDINARY_NO_REOPEN;
+  // A card drawn from its chat's record reopens from that record (#6485).
+  switch (card.chat_reopen) {
+    case "reopens":
+      return undefined;
+    case "no_conversation":
+      return NO_CONVERSATION;
+    case "not_kept":
+    case null:
+      return NOT_KEPT_NO_REOPEN;
+  }
 }
 
 /** What *Read it* says where nothing was kept: the person's ruling of 2026-11-11. */

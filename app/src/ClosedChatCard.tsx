@@ -14,9 +14,10 @@
  *   ruling of 2026-11-11). ***Reopen* is plain**, because it starts a program: the chat's
  *   conversation started again as an ordinary chat. Where it cannot, it is disabled with why.
  * - **A chat no dispatch started** (#6304) has no task: its badge says Closed, it has no report
- *   line, *Reopen* is disabled with why, and *Read it* is disabled, as its screen is never kept.
- *   A handoff, or a task that ended owing no report, is drawn the same way from its chat's
- *   record, with *Reopen*'s own words, and *Read it* opens its screen where one was kept.
+ *   line, and *Read it* is disabled, as its screen is never kept. *Reopen* starts it again on
+ *   its conversation from the record kept as it closed, and is disabled with why where that
+ *   record kept none (#6485). A handoff, or a task that ended owing no report, is drawn the
+ *   same way from its chat's record, and *Read it* opens its screen where one was kept.
  * - Built from the families: `HeldPopover`, `Facts`, `Badge`, `ButtonRow` and `Button`.
  */
 import type { RefObject } from "react";
@@ -36,10 +37,6 @@ import {
   cardTitle,
   cardWhen,
 } from "./closedChat";
-
-/** Why *Reopen* does nothing on a card whose task names no conversation. */
-export const NO_CONVERSATION =
-  "It cannot be reopened: its harness named no conversation to resume.";
 
 /** The card's own words and answers, inside whatever holds it. */
 export function ClosedChatCard({

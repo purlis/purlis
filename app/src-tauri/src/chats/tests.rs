@@ -2955,6 +2955,68 @@ fn a_chat_the_person_ended_resumes_on_its_conversation_once() {
     assert_eq!(chats.record().chats.len(), 1, "nothing more started");
 }
 
+/// #6485: **Reopen on a closed chat's card** starts the chat its record kept again on its
+/// conversation, as the same chat under a new number, from a later window too: nothing but the
+/// record is needed.
+#[test]
+fn a_closed_chat_reopens_from_its_record_on_its_conversation() {
+    let plane = a_sandboxed_plane();
+    let host = Pretend::default();
+    let chats = restartable_chats_of(plane.path(), host.clone());
+    let session = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    let id = chats.record().chats[0].identity.id.clone();
+    chats.close(session).expect("closes for good");
+    let record = purlis_core::chatrecords::of_number(
+        &purlis_core::chatrecords::every(plane.path()),
+        session,
+    )
+    .cloned()
+    .expect("its record was kept");
+    // Another window: what was ended here is not held, only the record.
+    let later = restartable_chats_of(plane.path(), host.clone());
+
+    let started = later.reopen_closed(&record, SIZE).expect("reopens");
+
+    let opening = host.openings().pop().expect("opened");
+    assert!(
+        opening
+            .args
+            .windows(2)
+            .any(|pair| pair[0] == "--resume" && pair[1] == ID),
+        "{:?}",
+        opening.args
+    );
+    let now = later.record();
+    assert_eq!(now.chats.len(), 1);
+    assert_eq!(now.chats[0].identity.id, id, "the same chat");
+    assert_eq!(now.chats[0].earlier, [session], "its number still finds it");
+    assert_ne!(started, 0);
+    // Open again, it is not reopened twice.
+    let twice = later.reopen_closed(&record, SIZE).unwrap_err();
+    assert!(twice.contains("open again"), "{twice}");
+    later.end_all();
+}
+
+/// A closed chat whose harness named no conversation is not reopened, and says why (#6485).
+#[test]
+fn a_closed_chat_with_no_conversation_is_not_reopened_and_says_why() {
+    let plane = a_sandboxed_plane();
+    let chats = restartable_chats_of(plane.path(), Pretend::default());
+    let fresh = chats
+        .start(&a_chat_in_with(plane.path(), None), SIZE)
+        .expect("starts");
+    lock(&chats.open).get_mut(&fresh).expect("open").chat.resume = None;
+    chats.close(fresh).expect("closes for good");
+    let record = purlis_core::chatrecords::every(plane.path()).remove(0);
+
+    let none = chats.reopen_closed(&record, SIZE).unwrap_err();
+
+    assert!(none.contains("no conversation to resume"), "{none}");
+    assert!(chats.record().chats.is_empty(), "nothing started");
+}
+
 /// Resume on an ended band is for a chat the person ended and that has a conversation (#5019):
 /// one still open is restarted instead, one purlis never ended has nothing to resume, and one
 /// with no conversation says so. Each is refused, and nothing starts.

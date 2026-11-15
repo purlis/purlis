@@ -11,7 +11,7 @@ import {
   inPalette,
   narrow,
   readItOffer,
-  reopenTaskOffer,
+  reopenOffer,
   PASS_THROUGH_ID,
   PASS_THROUGH_KEY,
   revealSaid,
@@ -911,7 +911,7 @@ export function Palette({
           onRead={() => runOffer(readItOffer(card))}
           onReopen={() => {
             setCarded(undefined);
-            runOffer(reopenTaskOffer(card));
+            runOffer(reopenOffer(card));
           }}
         />
       )}

@@ -22,6 +22,7 @@ fn chat(number: u32, id: &str, ended: &str) -> ChatRecord {
         started_by: StartedBy::Person,
         place: "smart-ide".to_owned(),
         earlier: Vec::new(),
+        chat: None,
     }
 }
 
@@ -302,4 +303,99 @@ fn a_closed_chat_keeps_the_numbers_it_had_before_a_restart() {
     keep(&root, &restarted).unwrap();
     assert_eq!(every(&root), vec![restarted.clone()]);
     assert_eq!(of_number(&every(&root), 650), Some(&restarted));
+}
+
+// #6485: a closed chat keeps what a reopen needs, and Reopen starts it again on its
+// conversation.
+
+const CONVERSATION: &str = "11111111-2222-4333-8444-555555555555";
+
+fn as_it_ran(resume: Option<&str>) -> crate::reopen::Chat {
+    crate::reopen::Chat {
+        program: "claude".to_owned(),
+        args: vec!["--model".to_owned(), "opus".to_owned()],
+        name: "steward 702".to_owned(),
+        label: Some("Tidy the changelog".to_owned()),
+        persona: Some("steward".to_owned()),
+        resume: resume.map(|id| crate::harness::SessionId::new(id).unwrap()),
+        number: Some(702),
+        earlier: vec![650],
+        pid: Some(4242),
+        active: true,
+        identity: crate::reopen::Identity {
+            id: Some(ID.to_owned()),
+            run: Some(OTHER.to_owned()),
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
+
+fn closed_with(ran: crate::reopen::Chat) -> ChatRecord {
+    ChatRecord {
+        chat: Some(ran),
+        earlier: vec![650],
+        ..chat(702, ID, "2026-11-12T09:40:00Z")
+    }
+}
+
+#[test]
+fn a_closed_chat_reopens_on_its_conversation_as_the_same_chat_under_a_new_number() {
+    let (_dir, root) = project();
+    keep(&root, &closed_with(as_it_ran(Some(CONVERSATION)))).unwrap();
+    let read = every(&root).remove(0);
+
+    let again = read.reopened().expect("it reopens");
+
+    assert_eq!(
+        again.resume.map(|id| id.to_string()).as_deref(),
+        Some(CONVERSATION)
+    );
+    assert_eq!(again.identity.id.as_deref(), Some(ID), "the same chat");
+    assert_eq!(again.identity.run, None, "in a new run");
+    assert_eq!(again.number, None, "a new number is dealt as it starts");
+    assert_eq!(again.earlier, [650, 702], "its numbers still find it");
+    assert_eq!(again.program, "claude");
+    assert_eq!(again.args, ["--model", "opus"]);
+    assert_eq!(again.label.as_deref(), Some("Tidy the changelog"));
+    assert_eq!(again.persona.as_deref(), Some("steward"));
+    assert_eq!(again.pid, None);
+}
+
+#[test]
+fn a_closed_handoff_reopens_as_an_ordinary_chat_that_owes_nobody_anything() {
+    let (_dir, root) = project();
+    let handed = crate::reopen::Chat {
+        from: Some(crate::reopen::HandedFrom {
+            id: None,
+            chat: 3,
+            name: "steward 3".into(),
+            workspace: crate::active::Place::Workspace("smart-ide".into()),
+            report: crate::reopen::Owed::Due,
+            mode: crate::reopen::Mode::Task,
+            depth: 1,
+            root: None,
+            above: None,
+            by_person: false,
+            long: false,
+        }),
+        ..as_it_ran(Some(CONVERSATION))
+    };
+    keep(&root, &closed_with(handed)).unwrap();
+
+    let again = every(&root).remove(0).reopened().expect("it reopens");
+
+    assert_eq!(again.from, None);
+}
+
+#[test]
+fn a_closed_chat_whose_harness_named_no_conversation_does_not_reopen() {
+    let record = closed_with(as_it_ran(None));
+    assert_eq!(record.reopened().unwrap_err(), CannotReopen::NoConversation);
+}
+
+#[test]
+fn a_chat_closed_before_its_reopen_was_kept_does_not_reopen() {
+    let record = chat(702, ID, "2026-11-12T09:40:00Z");
+    assert_eq!(record.reopened().unwrap_err(), CannotReopen::NotKept);
 }

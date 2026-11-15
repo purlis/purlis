@@ -23,7 +23,7 @@ const TASKED: ChatCard = {
   place: "smart-ide",
   started_by: "steward 4",
   screen_kept: true,
-  dispatched: true,
+  chat_reopen: null,
   task: {
     id: "01K9DISPATCH0000000000000A",
     asker: 0,
@@ -55,8 +55,15 @@ const CARDS: [string, ChatCard][] = [
     "a task that does not reopen",
     { ...TASKED, task: { ...TASK, reopens: false, not_reopened: "it was cleared" } },
   ],
-  ["a chat no dispatch started", { ...TASKED, task: null, dispatched: false, screen_kept: false }],
-  ["a handoff with its screen", { ...TASKED, task: null }],
+  [
+    "a chat no dispatch started",
+    { ...TASKED, task: null, chat_reopen: "reopens", screen_kept: false },
+  ],
+  [
+    "a chat whose harness named no conversation",
+    { ...TASKED, task: null, chat_reopen: "no_conversation" },
+  ],
+  ["a chat closed before its reopen was kept", { ...TASKED, task: null, chat_reopen: "not_kept" }],
 ];
 
 function enabled(): string[] {
