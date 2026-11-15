@@ -1,0 +1,71 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# **The parsers' fuzz targets** (T1.1-47, `docs/fuzzing.md`): builds every cargo-fuzz target in
+# `crates/purlis-core/fuzz/`, records what this runner's curl and Node send a proxy for the
+# differential target's URLs, and runs each target over its committed seeds and those
+# recordings. `seconds: 0` replays them once each (a pull request's check); more fuzzes each
+# target for that long from them (the nightly entry, `fuzz-parsers`). A crash fails the step,
+# names the target, and prints the input that made it; libFuzzer writes it under `artifacts/`.
+#
+# Public, as everything is (Q301): a crash that means an escape is filed as an `area:security`
+# `priority:p0` issue and fixed first.
+name: Fuzz the parsers
+description: Builds the cargo-fuzz targets and replays (or fuzzes from) the committed corpus.
+inputs:
+  seconds:
+    description: How long to fuzz each target; 0 replays the corpus once.
+    required: false
+    default: "0"
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/rust-toolchain
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version-file: .nvmrc
+    # The version `docs/fuzzing.md` names, so a local run and CI build the targets alike.
+    - name: Install cargo-fuzz
+      shell: bash
+      run: cargo install cargo-fuzz --locked --version 0.13.2
+    - name: Record what curl and Node send a proxy
+      shell: bash
+      run: |
+        curl --version | head -1
+        node --version
+        node crates/purlis-core/fuzz/clients/record.mjs "$RUNNER_TEMP/clients"
+    # No sanitizer: purlis-core is safe Rust, so a fault is a panic (an assertion, an overflow,
+    # an index), which libFuzzer catches as it is. The pinned stable toolchain builds it.
+    - name: Build the targets
+      shell: bash
+      working-directory: crates/purlis-core
+      run: cargo fuzz build --sanitizer none
+    - name: Run each target
+      shell: bash
+      working-directory: crates/purlis-core
+      env:
+        SECONDS_EACH: ${{ inputs.seconds }}
+      run: |
+        set -euo pipefail
+        status=0
+        for target in $(cargo fuzz list); do
+          dirs=("fuzz/seeds/$target")
+          if [ "$target" = differential_host_parse_against_curl_and_node ]; then
+            dirs+=("$RUNNER_TEMP/clients")
+          fi
+          if [ "$SECONDS_EACH" = 0 ]; then
+            flags=(-runs=0)
+          else
+            # New inputs go to a corpus of this run's own; the seeds are only read.
+            mkdir -p "fuzz/corpus/$target"
+            dirs=("fuzz/corpus/$target" "${dirs[@]}")
+            flags=("-max_total_time=$SECONDS_EACH")
+          fi
+          echo "::group::$target"
+          if ! cargo fuzz run --sanitizer none "$target" "${dirs[@]}" -- "${flags[@]}"; then
+            echo "::error::fuzz target $target failed; the input is under crates/purlis-core/fuzz/artifacts/$target"
+            status=1
+          fi
+          echo "::endgroup::"
+        done
+        exit "$status"

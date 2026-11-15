@@ -8429,6 +8429,9 @@ pub mod codex;
 pub mod confined;
 pub mod door;
 pub mod egress;
+#[cfg(feature = "fuzzing")]
+#[doc(hidden)]
+pub mod fuzzing;
 pub mod grant;
 pub mod held;
 pub mod hosted;

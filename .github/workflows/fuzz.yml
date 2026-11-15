@@ -1,0 +1,45 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# **The parsers' fuzz targets, on every pull request that can change what they reach** (T1.1-47):
+# built, and the committed corpus replayed once, with this runner's curl's and Node's recorded
+# heads. Fuzzing for longer is the nightly entry `fuzz-parsers` (`docs/fuzzing.md`), or a
+# dispatch of this workflow with `seconds`.
+name: fuzz
+
+on:
+  pull_request:
+    branches: [main, phase-1-proven]
+    paths:
+      - "crates/purlis-core/**"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".nvmrc"
+      - ".github/workflows/fuzz.yml"
+      - ".github/actions/fuzz-parsers/**"
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: How long to fuzz each target, in seconds; 0 replays the corpus once.
+        required: false
+        default: "0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    name: fuzz targets (build, replay the corpus)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/fuzz-parsers
+        with:
+          seconds: ${{ inputs.seconds || '0' }}
